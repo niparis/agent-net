@@ -62,6 +62,9 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 	if err != nil {
 		return protocol.ChangeView{}, err
 	}
+	if err := s.closeChangeAsks(tx, c.ID, protocol.AskReasonChangeDone); err != nil {
+		return protocol.ChangeView{}, err
+	}
 	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=?)`, s.now().UnixNano(), c.ID); err != nil {
 		return protocol.ChangeView{}, err
 	}

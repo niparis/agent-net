@@ -407,6 +407,11 @@ func (s *Store) StoreHandoff(p protocol.MsgHandoff) (protocol.Message, error) {
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, false, false, workerTask, p.Sender); err != nil {
 		return none, err
 	}
+	if m.State == protocol.StateHeld {
+		if err := s.openHeldAsk(tx, m.ID, m.From, m.To, m.Body); err != nil {
+			return none, err
+		}
+	}
 	if _, err = tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,
 		protocol.StateReplied, orig.ID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
 		return none, err

@@ -1,0 +1,541 @@
+package gateway
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+// Asks and the Desk (decision 0090). inbox_items is the one store of asks.
+// This file reads them as one list, closes them by themselves when their
+// reason goes away, and keeps the event log.
+
+// askDB is what both *sql.DB and *sql.Tx offer. An ask is written in the same
+// transaction as the change that makes it.
+type askDB interface {
+	Exec(string, ...any) (sql.Result, error)
+	Query(string, ...any) (*sql.Rows, error)
+	QueryRow(string, ...any) *sql.Row
+}
+
+const (
+	deskLogKeep    = 2000
+	deskLogDefault = 100
+	deskLogMax     = 500
+	// gatewayAsker is the session an ask carries when no session asked.
+	gatewayAsker = "agent-net"
+)
+
+// askFirstLine is the first line of s, cut for one row of the Desk or the log.
+func askFirstLine(s string, max int) string {
+	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
+	s = strings.TrimSpace(protocol.CleanWaitingText(s))
+	if r := []rune(s); len(r) > max {
+		s = string(r[:max-1]) + "…"
+	}
+	return s
+}
+
+// deskLog adds one line to the event log. Options carry what undoes the event.
+func (s *Store) deskLog(q askDB, source, aboutKind, aboutID, text, detail string, options []string) error {
+	text = askFirstLine(text, 300)
+	if text == "" {
+		return nil
+	}
+	if options == nil {
+		options = []string{}
+	}
+	raw, err := json.Marshal(options)
+	if err != nil {
+		return err
+	}
+	res, err := q.Exec(`INSERT INTO desk_log(at,source,about_kind,about_id,text,detail,options) VALUES(?,?,?,?,?,?,?)`,
+		s.now().UnixNano(), source, aboutKind, aboutID, text, detail, string(raw))
+	if err != nil {
+		return err
+	}
+	// Keep the log short: a few hundred inserts at most between two prunes.
+	if id, err := res.LastInsertId(); err == nil && id%200 == 0 {
+		_, err = q.Exec(`DELETE FROM desk_log WHERE id<=?`, id-deskLogKeep)
+		return err
+	}
+	return nil
+}
+
+// DeskLog returns the newest log lines, newest first.
+func (s *Store) DeskLog(limit int) ([]protocol.DeskLogEntry, error) {
+	if limit <= 0 {
+		limit = deskLogDefault
+	}
+	if limit > deskLogMax {
+		limit = deskLogMax
+	}
+	rows, err := s.db.Query(`SELECT id,at,source,about_kind,about_id,text,detail,options FROM desk_log ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.DeskLogEntry{}
+	for rows.Next() {
+		var e protocol.DeskLogEntry
+		var at int64
+		var options string
+		if err := rows.Scan(&e.ID, &at, &e.Source, &e.AboutKind, &e.AboutID, &e.Text, &e.Detail, &options); err != nil {
+			return nil, err
+		}
+		e.At = time.Unix(0, at).UTC()
+		if err := json.Unmarshal([]byte(options), &e.Options); err != nil {
+			return nil, err
+		}
+		if len(e.Options) == 0 {
+			e.Options = nil
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+const askSelect = `SELECT i.id,i.kind,i.session_id,i.node,i.text,i.recommendation,i.message_id,i.conversation_id,i.created_at,i.status,i.answer,i.answered_at,i.options,
+ COALESCE(NULLIF(i.asker_name,''), CASE WHEN s.archived_at=0 THEN COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.title,'') ELSE '' END, ''),
+ i.change_title,i.from_kind,i.source_ref,i.about_kind,i.about_id,i.next_who,i.why_you,i.detail,
+ COALESCE(d.change_id,''),COALESCE(d.step,''),COALESCE(d.for_step,''),COALESCE(d.after_merge,0),COALESCE(d.commit_hash,''),COALESCE(c.project,''),COALESCE(c.title,'')
+ FROM inbox_items i LEFT JOIN sessions s ON s.id=i.session_id LEFT JOIN profiles p ON p.session_id=i.session_id
+ LEFT JOIN delivery_step_inbox d ON d.item_id=i.id LEFT JOIN delivery_changes c ON c.id=d.change_id`
+
+// askNotices are the Inbox rows that are events, not questions: what the CTO
+// applied or sent and a new app. Until the Desk replaces the Inbox tab they are
+// still written there for the old screen, and they are also lines of the log.
+// They are not asks.
+const askNotices = `(i.kind='check' AND i.from_kind IN ('cto','apps'))`
+
+// ListAsks returns every open ask, oldest first, in one query. The Desk reads
+// this one list instead of building rows from the Inbox, held requests,
+// outcomes, learned suggestions and sessions.
+func (s *Store) ListAsks() ([]protocol.Ask, error) {
+	rows, err := s.db.Query(askSelect + ` WHERE i.status='open' AND NOT ` + askNotices + ` ORDER BY i.created_at,i.id`)
+	if err != nil {
+		return nil, err
+	}
+	type step struct {
+		project string
+		ask     int
+	}
+	var steps []step
+	asks := []protocol.Ask{}
+	for rows.Next() {
+		var a protocol.Ask
+		var created, answered int64
+		var options, status, changeID, changeTitle, project string
+		var after int
+		var d protocol.InboxDelivery
+		if err := rows.Scan(&a.ID, &a.Kind, &a.FromSession, &a.Node, &a.Question, &a.Recommendation, &a.MessageID, &a.ConversationID, &created, &status, &a.Answer, &answered, &options,
+			&a.From, &changeTitle, &a.FromKind, &a.Ref, &a.AboutKind, &a.AboutID, &a.Next, &a.WhyYou, &a.Detail,
+			&changeID, &d.Step, &d.For, &after, &d.Commit, &project, &a.AboutTitle); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(options), &a.Options); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		a.CreatedAt = time.Unix(0, created).UTC()
+		if answered != 0 {
+			a.ClosedAt = time.Unix(0, answered).UTC()
+		}
+		a.State = protocol.AskStateOpen
+		if a.Next != "" && a.Next != protocol.AskNextOwner {
+			a.State = protocol.AskWithSomeone
+		}
+		if a.FromKind == "" {
+			a.FromKind = protocol.AskFromSession
+		}
+		if a.FromKind == protocol.AskFromSession && (a.From == "" || strings.HasPrefix(a.From, "s_")) {
+			a.From = "an agent"
+		}
+		if changeID != "" {
+			d.ChangeID, d.AfterMerge = changeID, after != 0
+			a.Delivery = &d
+			a.AboutKind, a.AboutID = protocol.AskAboutChange, changeID
+			if a.AboutTitle == "" {
+				a.AboutTitle = changeTitle
+			}
+			steps = append(steps, step{project, len(asks)})
+		}
+		if a.AboutTitle == "" {
+			a.AboutTitle = changeTitle
+		}
+		asks = append(asks, a)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	pipelines := map[string]protocol.Pipeline{}
+	for _, st := range steps {
+		p, ok := pipelines[st.project]
+		if !ok {
+			if p, err = s.deliveryPipeline(st.project); err != nil {
+				return nil, err
+			}
+			pipelines[st.project] = p
+		}
+		asks[st.ask].Delivery.ReportFields = p.ReportFields(asks[st.ask].Delivery.StepRef)
+	}
+	return asks, nil
+}
+
+// closeAsks closes every open ask that matches cond, keeps the reason in the
+// answer, and writes one log line for each. cond is a SQL condition on
+// inbox_items that this package writes; it never holds user text.
+func (s *Store) closeAsks(q askDB, cond string, args []any, reason string) (int, error) {
+	rows, err := q.Query(`SELECT id,kind,text,about_kind,about_id FROM inbox_items WHERE status='open' AND (`+cond+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	type closed struct{ id, kind, text, aboutKind, aboutID string }
+	var list []closed
+	for rows.Next() {
+		var c closed
+		if err := rows.Scan(&c.id, &c.kind, &c.text, &c.aboutKind, &c.aboutID); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		list = append(list, c)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, err
+	}
+	now := s.now().UnixNano()
+	for _, c := range list {
+		if _, err := q.Exec(`UPDATE inbox_items SET status='closed',answer=?,answered_at=? WHERE id=? AND status='open'`, reason, now, c.id); err != nil {
+			return 0, err
+		}
+		// A source that was decided by a person is not automation: only the
+		// closes that the gateway does by itself go to the log.
+		if reason == protocol.AskReasonResolved {
+			continue
+		}
+		if err := s.deskLog(q, "desk", c.aboutKind, c.aboutID, fmt.Sprintf("Closed %s ask (%s): %s", c.kind, strings.ReplaceAll(reason, "_", " "), askFirstLine(c.text, 120)), "", nil); err != nil {
+			return 0, err
+		}
+	}
+	return len(list), nil
+}
+
+// closeAskRef closes the open ask of one source key.
+func (s *Store) closeAskRef(q askDB, ref, reason string) error {
+	if ref == "" {
+		return nil
+	}
+	_, err := s.closeAsks(q, `source_ref=?`, []any{ref}, reason)
+	return err
+}
+
+// askKindsOfSession are the asks that a session itself raises and that lose
+// their meaning when the session ends. A rejection or a held request is work
+// between two sessions and stays until the owner decides it.
+const askKindsOfSession = `'question','approval','feature_idea','waiting','session_stall','check'`
+
+// reconcileEndedSessionAsks closes the asks of archived sessions.
+func (s *Store) reconcileEndedSessionAsks(q askDB) (int, error) {
+	return s.closeAsks(q, `from_kind IN ('','session') AND kind IN (`+askKindsOfSession+`)
+		AND EXISTS (SELECT 1 FROM sessions x WHERE x.id=inbox_items.session_id AND x.archived_at<>0)`, nil, protocol.AskReasonSessionEnded)
+}
+
+// reconcileChangeAsks closes the asks about a change that is done or stopped.
+func (s *Store) reconcileChangeAsks(q askDB) (int, error) {
+	return s.closeAsks(q, `about_kind='change' AND EXISTS (SELECT 1 FROM delivery_changes c WHERE c.id=inbox_items.about_id AND c.state IN ('done','stopped'))`, nil, protocol.AskReasonChangeDone)
+}
+
+// closeChangeAsks closes every open ask about one change.
+func (s *Store) closeChangeAsks(q askDB, changeID, reason string) error {
+	_, err := s.closeAsks(q, `about_kind='change' AND about_id=?`, []any{changeID}, reason)
+	return err
+}
+
+// reconcileHeldAsks opens an ask for every held request and closes the asks of
+// requests that are no longer held or have expired.
+func (s *Store) reconcileHeldAsks(q askDB) error {
+	now := s.now().UnixNano()
+	if _, err := s.closeAsks(q, `kind='held' AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id=substr(inbox_items.source_ref,6) AND m.state='held' AND m.expires_at>?)`, []any{now}, protocol.AskReasonExpired); err != nil {
+		return err
+	}
+	rows, err := q.Query(`SELECT m.id,m.sender,m.recipient,m.body FROM messages m WHERE m.state='held' AND m.expires_at>?
+		AND NOT EXISTS (SELECT 1 FROM inbox_items i WHERE i.source_ref='held:'||m.id AND i.status='open')`, now)
+	if err != nil {
+		return err
+	}
+	type held struct{ id, from, to, body string }
+	var list []held
+	for rows.Next() {
+		var h held
+		if err := rows.Scan(&h.id, &h.from, &h.to, &h.body); err != nil {
+			rows.Close()
+			return err
+		}
+		list = append(list, h)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, h := range list {
+		if err := s.openHeldAsk(q, h.id, h.from, h.to, h.body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// openHeldAsk is the ask of one held request: from the sender, about the
+// session it wants to reach.
+func (s *Store) openHeldAsk(q askDB, id, from, to, body string) error {
+	_, err := s.createInboxItem(q, protocol.InboxItem{
+		Kind: protocol.AskKindHeld, SessionID: from, SourceRef: "held:" + id, MessageID: id,
+		AboutKind: protocol.AskAboutSession, AboutID: to,
+		Text: askFirstLine(body, 300), Detail: body, WhyYou: "A rule says to ask you before this request goes through.",
+	})
+	return err
+}
+
+// closeHeldAsk closes the ask of a held request the owner decided or that expired.
+func (s *Store) closeHeldAsk(q askDB, id, reason string) error {
+	return s.closeAskRef(q, "held:"+id, reason)
+}
+
+// syncWaitingAsk keeps the ask of a session that waits for its user. waiting
+// is the stored JSON of the session's wait; empty means it does not wait.
+func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
+	ref := "waiting:" + session
+	if waiting == "" {
+		return s.closeAskRef(q, ref, protocol.AskReasonResolved)
+	}
+	var w protocol.Waiting
+	// An explicit wait comes from agent_owner_ask, which has its own ask.
+	if json.Unmarshal([]byte(waiting), &w) != nil || strings.TrimSpace(w.Text) == "" || w.Explicit {
+		return s.closeAskRef(q, ref, protocol.AskReasonResolved)
+	}
+	var harness, worker string
+	if err := q.QueryRow(`SELECT harness,worker FROM sessions WHERE id=?`, session).Scan(&harness, &worker); err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	// The owner's own sessions and workers (which a lead answers) are not asks.
+	if protocol.IsOwner(harness) || worker != "" {
+		return nil
+	}
+	_, err := s.createInboxItem(q, protocol.InboxItem{
+		Kind: protocol.AskKindWaiting, SessionID: session, SourceRef: ref,
+		AboutKind: protocol.AskAboutSession, AboutID: session,
+		Text: w.Text, Options: w.Options, Detail: w.Kind,
+	})
+	return err
+}
+
+// reconcileLearnedAsks opens an ask for every ready major learned suggestion
+// and every pending charter draft, and closes the asks of those the owner or
+// the CTO decided. It reads the same two lists the owner saw before, so the
+// same suggestions show up.
+func (s *Store) reconcileLearnedAsks() error {
+	if _, err := s.closeAsks(s.db, `kind='learned' AND NOT EXISTS (SELECT 1 FROM learned_suggestions l WHERE l.id=CAST(substr(inbox_items.source_ref,9) AS INTEGER) AND l.status='pending')`, nil, protocol.AskReasonResolved); err != nil {
+		return err
+	}
+	if _, err := s.closeAsks(s.db, `kind='draft' AND NOT EXISTS (SELECT 1 FROM charter_drafts d WHERE d.id=CAST(substr(inbox_items.source_ref,7) AS INTEGER) AND d.status='pending')`, nil, protocol.AskReasonResolved); err != nil {
+		return err
+	}
+	open := map[string]bool{}
+	rows, err := s.db.Query(`SELECT source_ref FROM inbox_items WHERE status='open' AND kind IN ('learned','draft')`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var ref string
+		if err := rows.Scan(&ref); err != nil {
+			rows.Close()
+			return err
+		}
+		open[ref] = true
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	ready, err := s.LearnedSuggestions(true)
+	if err != nil {
+		return err
+	}
+	for _, v := range ready {
+		ref := fmt.Sprintf("learned:%d", v.ID)
+		if v.Severity != "major" || open[ref] {
+			continue
+		}
+		verb := "add"
+		if v.Kind == "remove" {
+			verb = "remove"
+		}
+		if _, err := s.createInboxItem(s.db, protocol.InboxItem{
+			Kind: protocol.AskKindLearned, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: v.Node, AskerName: "learned",
+			SourceRef: ref, AboutKind: protocol.AskAboutProject, AboutID: v.Node,
+			Text:    fmt.Sprintf("Learned for %s: %s %q in %s?", v.Node, verb, askFirstLine(v.Phrase, 120), v.Field),
+			Options: []string{"accept", "reject"},
+		}); err != nil {
+			return err
+		}
+	}
+	drafts, err := s.PendingCharterDrafts()
+	if err != nil {
+		return err
+	}
+	for _, d := range drafts {
+		ref := fmt.Sprintf("draft:%d", d.ID)
+		if open[ref] {
+			continue
+		}
+		if _, err := s.createInboxItem(s.db, protocol.InboxItem{
+			Kind: protocol.AskKindDraft, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: d.Scope, AskerName: "charter draft",
+			SourceRef: ref, AboutKind: protocol.AskAboutProject, AboutID: d.Scope,
+			Text:    fmt.Sprintf("Charter draft for %s %s: %s?", d.Level, d.Name, askFirstLine(d.Attr+" = "+d.Value, 200)),
+			Options: []string{"accept", "reject"}, Detail: "Drafted from " + d.Source,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reconcileAsks brings every derived ask in line with its source. The gateway
+// runs it on its minute tick and at start. Each source also acts at the moment
+// it changes, so this is the safety net and the only path for time-based
+// changes such as a held request that expires.
+func (s *Store) reconcileAsks() error {
+	if err := s.reconcileHeldAsks(s.db); err != nil {
+		return fmt.Errorf("held asks: %w", err)
+	}
+	if err := s.reconcileLearnedAsks(); err != nil {
+		return fmt.Errorf("learned asks: %w", err)
+	}
+	if _, err := s.reconcileEndedSessionAsks(s.db); err != nil {
+		return fmt.Errorf("ended session asks: %w", err)
+	}
+	if _, err := s.reconcileChangeAsks(s.db); err != nil {
+		return fmt.Errorf("change asks: %w", err)
+	}
+	return nil
+}
+
+// OpenExternalAsk opens or refreshes an ask that a source outside the gateway
+// owns, such as a CTO proposal on a machine. The ref makes it safe to repeat.
+func (s *Store) OpenExternalAsk(node string, a protocol.AskOpen) (protocol.Ask, error) {
+	switch a.Kind {
+	case protocol.AskKindProposal, protocol.AskKindCheck:
+	default:
+		return protocol.Ask{}, reject("invalid ask kind")
+	}
+	if strings.TrimSpace(a.Ref) == "" || len(a.Ref) > 200 {
+		return protocol.Ask{}, reject("ask ref required")
+	}
+	ref := node + ":" + a.Ref
+	fromKind := protocol.AskFromCTO
+	if a.Kind == protocol.AskKindCheck {
+		fromKind = protocol.AskFromGateway
+	}
+	item, err := s.createInboxItem(s.db, protocol.InboxItem{
+		Kind: a.Kind, SessionID: node, Node: node, FromKind: fromKind, AskerName: a.From, SourceRef: a.Kind + ":" + ref,
+		AboutKind: a.AboutKind, AboutID: a.AboutID, Text: a.Question, Options: a.Options, Recommendation: a.Recommendation, Detail: a.Detail,
+	})
+	if err != nil {
+		return protocol.Ask{}, err
+	}
+	return protocol.Ask{ID: item.ID, Kind: item.Kind, Ref: item.SourceRef, Question: item.Text, State: protocol.AskStateOpen, Next: protocol.AskNextOwner, CreatedAt: item.CreatedAt}, nil
+}
+
+// CloseExternalAsk closes the ask that OpenExternalAsk opened for a key.
+func (s *Store) CloseExternalAsk(node string, c protocol.AskClose) error {
+	if c.Reason == "" {
+		c.Reason = protocol.AskReasonResolved
+	}
+	for _, kind := range []string{protocol.AskKindProposal, protocol.AskKindCheck} {
+		if err := s.closeAskRef(s.db, kind+":"+node+":"+c.Ref, c.Reason); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// stepAskRef is the source key of the ask for one step of one revision.
+func stepAskRef(c protocol.Change, ref protocol.StepRef) string {
+	return fmt.Sprintf("step:%s:%d:%s:%s:%t", c.ID, c.Revision, ref.Step, ref.For, ref.AfterMerge)
+}
+
+// syncStepAsk follows a step report. A needs_owner report is an ask about the
+// change; any later report for the same step answers it. The approve step has
+// its own written-approval ask and is left to that path.
+func (s *Store) syncStepAsk(q askDB, c protocol.Change, e protocol.Evidence) error {
+	ref := stepAskRef(c, e.StepRef)
+	if e.Result != string(protocol.StepResultNeedsOwner) || e.Step == protocol.StepApprove {
+		return s.closeAskRef(q, ref, protocol.AskReasonResolved)
+	}
+	question := askFirstLine(e.Note, 300)
+	if question == "" {
+		question = fmt.Sprintf("%s needs you for change %s", e.StepRef.String(), c.ID)
+	}
+	_, err := s.createInboxItem(q, protocol.InboxItem{
+		Kind: protocol.AskKindStep, SessionID: e.By, Node: c.Project, ChangeTitle: c.Title, SourceRef: ref,
+		AboutKind: protocol.AskAboutChange, AboutID: c.ID, Text: question, Detail: e.Note,
+		WhyYou: "The step reported that only you can decide it.",
+	})
+	return err
+}
+
+// SyncExternalAsks makes the open asks of one kind from one machine equal to
+// the list. It is the repair path for OpenExternalAsk and CloseExternalAsk.
+func (s *Store) SyncExternalAsks(node string, sync protocol.AskSync) error {
+	if len(sync.Asks) > 200 {
+		return reject("too many asks")
+	}
+	keep := map[string]bool{}
+	for _, a := range sync.Asks {
+		a.Kind = sync.Kind
+		if _, err := s.OpenExternalAsk(node, a); err != nil {
+			return err
+		}
+		keep[sync.Kind+":"+node+":"+a.Ref] = true
+	}
+	rows, err := s.db.Query(`SELECT source_ref FROM inbox_items WHERE status='open' AND kind=? AND session_id=? AND source_ref LIKE ?`, sync.Kind, node, sync.Kind+":"+node+":%")
+	if err != nil {
+		return err
+	}
+	var stale []string
+	for rows.Next() {
+		var ref string
+		if err := rows.Scan(&ref); err != nil {
+			rows.Close()
+			return err
+		}
+		if !keep[ref] {
+			stale = append(stale, ref)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, ref := range stale {
+		if err := s.closeAskRef(s.db, ref, protocol.AskReasonResolved); err != nil {
+			return err
+		}
+	}
+	return nil
+}

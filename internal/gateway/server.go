@@ -451,6 +451,9 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				if err := g.store.checkSessionStalls(); err != nil {
 					g.logLine("error", "where", "session stalls", "err", err)
 				}
+				if err := g.store.reconcileAsks(); err != nil {
+					g.logLine("error", "where", "asks", "err", err)
+				}
 				if err := g.store.samplePendingStalls(); err != nil {
 					g.logLine("error", "where", "pending sample", "err", err)
 				}
@@ -461,12 +464,18 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				for _, m := range reminders {
 					g.dispatch(ctx, m)
 				}
+				if len(reminders) > 0 {
+					_ = g.store.deskLog(g.store.db, "gateway", "", "", fmt.Sprintf("Reminded %d sessions about messages they have not answered", len(reminders)), "", nil)
+				}
 				checks, err := g.store.checkIdle()
 				if err != nil {
 					g.logLine("error", "where", "idle checks", "err", err)
 				}
 				for _, m := range checks {
 					g.dispatch(ctx, m)
+				}
+				if len(checks) > 0 {
+					_ = g.store.deskLog(g.store.db, "gateway", "", "", fmt.Sprintf("Asked %d idle sessions whether they are done", len(checks)), "", nil)
 				}
 				startNotices, err := g.store.ExpireStarts(0, 0)
 				if err != nil {
@@ -2027,7 +2036,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		case "learned.list":
 			return st.OwnerLearned()
 		case "learned.answer":
-			return map[string]bool{"ok": true}, st.DecideLearned(p.ID, p.Action)
+			if err := st.DecideLearned(p.ID, p.Action); err != nil {
+				return map[string]bool{"ok": true}, err
+			}
+			return map[string]bool{"ok": true}, st.reconcileLearnedAsks()
 		default:
 			return map[string]bool{"ok": true}, st.MarkLearnedViewed(p.Node, p.ID)
 		}
@@ -2119,6 +2131,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				}
 				nodeName = "cto"
 			}
+			// What the CTO applied or sent is an event, not a question (decision
+			// 0090). It is a line of the log with the way to undo it. The old
+			// Inbox row stays for the old screen until the Desk replaces it; it
+			// is not an ask.
+			from := ""
+			switch {
+			case nodeName == "cto":
+				from = protocol.AskFromCTO
+				if err := st.deskLog(st.db, "cto", "", "", p.Text, p.Recommendation, p.Options); err != nil {
+					return nil, err
+				}
+			case strings.HasPrefix(p.Text, "Disk space low on "):
+				from = protocol.AskFromDisk
+			}
 			item, err := st.CreateInboxItem(protocol.InboxItem{
 				Kind:           "check",
 				SessionID:      sid,
@@ -2127,6 +2153,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				Recommendation: p.Recommendation,
 				Options:        p.Options,
 				AskerName:      nodeName,
+				FromKind:       from,
 			})
 			return map[string]any{"item": item}, err
 		}
@@ -2201,7 +2228,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		var text string
-		if err := st.db.QueryRow(`SELECT text FROM inbox_items WHERE message_id=?`, "app-approval:"+p.ID).Scan(&text); err == nil && g.logger != nil {
+		if err := st.db.QueryRow(`SELECT text FROM desk_log WHERE detail=?`, "app-approval:"+p.ID).Scan(&text); err == nil && g.logger != nil {
 			g.logLine("apps.approved", "notice", text)
 		}
 		return nil, nil
@@ -2245,6 +2272,40 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "inbox.list":
 		items, err := st.ListInbox()
 		return map[string]any{"items": items}, err
+
+	case "asks.list":
+		asks, err := st.ListAsks()
+		return protocol.AsksResult{Asks: asks}, err
+
+	case "desk.log":
+		var p protocol.DeskLogQuery
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad desk.log")
+		}
+		entries, err := st.DeskLog(p.Limit)
+		return protocol.DeskLogResult{Entries: entries}, err
+
+	case "ask.open":
+		var p protocol.AskOpen
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad ask.open")
+		}
+		ask, err := st.OpenExternalAsk(nc.id, p)
+		return map[string]any{"ask": ask}, err
+
+	case "ask.sync":
+		var p protocol.AskSync
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad ask.sync")
+		}
+		return map[string]bool{"ok": true}, st.SyncExternalAsks(nc.id, p)
+
+	case "ask.close":
+		var p protocol.AskClose
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad ask.close")
+		}
+		return map[string]bool{"ok": true}, st.CloseExternalAsk(nc.id, p)
 
 	case "inbox.answer":
 		var p struct {

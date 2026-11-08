@@ -444,7 +444,7 @@ The retained references include `projects`, `sessions`, `profiles`,
 `graph_edges`, `graph_history`, `setting_values`, `setting_history`,
 `delivery_changes`, `delivery_revisions`, `delivery_evidence`,
 `delivery_step_tasks`, `delivery_step_messages`, `delivery_step_inbox`,
-`project_mergers`, `worker_starts`, `worker_runs`, `inbox_items`,
+`project_mergers`, `worker_starts`, `worker_runs`, `inbox_items`, `desk_log`,
 `learned_suggestions`, `learned_views`, `learned_message_flow`,
 `charter_signals`, `findings`, `playbook` and `repos.owner_agent_id`.
 No ownership, edge, delivery, charter or session is silently moved or deleted.
@@ -2388,6 +2388,21 @@ The Claude Code hook output, when there is a suggestion (one line of JSON on std
 ```
 {"hookSpecificOutput":{"hookEventName":"PostToolUseFailure","additionalContext":"agent-net: another session may own or see this. ..."}}
 ```
+
+## Asks and the Desk (store and log, decision 0090)
+
+Everything that waits on a person is an ask, kept in the gateway's `inbox_items` table. An ask has a source key (`source_ref`), a `from_kind` (session, cto, gateway, disk, apps), what it is `about` (a change, project or session), who must act `next_who` (owner, a session id, or chief), a `why_you` line and a longer `detail`. Its state is read from `status`: open (or "with someone" when the next actor is not the owner), answered or closed, with the close reason in `answer`.
+
+| Operator method | Gateway frame | Answer |
+|---|---|---|
+| `asks_list` | `asks.list` | `{"asks": [...]}`: only the open asks, oldest first, in one query. Each has `id`, `kind`, `state`, `from_kind`, `from`, `from_session`, `about_kind`, `about_id`, `about_title`, `question`, `options`, `recommendation`, `detail`, `next`, `why_you`, `ref`, `message_id`, `created_at` and, for a delivery approval, `delivery`. |
+| `desk_log` | `desk.log` | `{"entries": [...]}`: the newest log lines first (`limit`, default 100, at most 500). Each has `at`, `source`, `about_kind`, `about_id`, `text`, `detail` and `options` (the way to undo a CTO change). |
+
+Kinds: `question`, `approval`, `feature_idea`, `rejection`, `escalation`, `held`, `learned`, `draft`, `proposal`, `step`, `waiting`, `session_stall` and `check`. A source outside the gateway opens an ask with `ask.open`, closes it with `ask.close`, or replaces all of its open asks of one kind with `ask.sync`; each call is safe to repeat and only touches asks of the calling machine.
+
+An ask closes by itself with a kept reason: `change_done` (the change it is about is done or stopped), `session_ended` (the asking session was archived or its worker run ended; held requests and outcomes are work between two sessions and stay), `resolved` (its source was decided), `expired` (a held request ran out), `activity_or_end` (a stall), `replaced` (the asker replaced or withdrew it). The gateway runs a set-based reconcile at start and every minute for the changes that come with time.
+
+The log (`desk_log`) holds what is not a question: "CTO applied ...", "CTO sent ...", a new app, and what the gateway did by itself (closing an ask, reminders, idle checks, retired notices). It keeps the newest 2000 lines. The TUI shows asks and the log on one Desk tab in part A2 of the decision; until then the Inbox and Delivery tabs below read the old lists, and the CTO and app notices are in the log and also still in the old Inbox.
 
 ## Inbox (tab 7)
 

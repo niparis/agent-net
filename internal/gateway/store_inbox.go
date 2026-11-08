@@ -70,13 +70,10 @@ func (s *Store) RequestWrittenApproval(session, node string, req protocol.Approv
 	return s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: session, Node: node, Text: req.Action, Recommendation: req.Recommendation})
 }
 
-type inboxExecer interface {
-	Exec(string, ...any) (sql.Result, error)
-}
-
-func (s *Store) createInboxItem(db inboxExecer, item protocol.InboxItem) (protocol.InboxItem, error) {
+func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.InboxItem, error) {
 	switch item.Kind {
-	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall":
+	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
+		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindStep, protocol.AskKindWaiting:
 	default:
 		return item, reject("invalid inbox kind")
 	}
@@ -86,14 +83,13 @@ func (s *Store) createInboxItem(db inboxExecer, item protocol.InboxItem) (protoc
 	if (item.Kind == "question" || item.Kind == "approval" || item.Kind == "feature_idea") && utf8.RuneCountInString(item.Text) > protocol.MaxOwnerAskChars {
 		return item, reject("inbox text too long")
 	}
-	if len(item.Text) > protocol.MaxBodyBytes || len(item.Recommendation) > protocol.MaxBodyBytes {
+	if len(item.Text) > protocol.MaxBodyBytes || len(item.Recommendation) > protocol.MaxBodyBytes || len(item.Detail) > protocol.MaxBodyBytes {
 		return item, reject("inbox text too long")
 	}
-	item.ID = protocol.NewID("i")
-	item.CreatedAt = s.now().UTC()
-	item.Status = "open"
-	item.Answer = ""
-	item.AnsweredAt = time.Time{}
+	nextWho := item.NextWho
+	if nextWho == "" {
+		nextWho = protocol.AskNextOwner
+	}
 	if len(item.Options) > 4 {
 		return item, reject("too many options")
 	}
@@ -101,7 +97,29 @@ func (s *Store) createInboxItem(db inboxExecer, item protocol.InboxItem) (protoc
 	if err != nil {
 		return item, err
 	}
-	_, err = db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status, string(options), item.AskerName, item.ChangeTitle)
+	// One open ask per source key: a repeat refreshes the text it shows.
+	if item.SourceRef != "" {
+		var id string
+		err := db.QueryRow(`SELECT id FROM inbox_items WHERE source_ref=? AND status='open'`, item.SourceRef).Scan(&id)
+		if err == nil {
+			_, err = db.Exec(`UPDATE inbox_items SET text=?,recommendation=?,options=?,detail=?,why_you=? WHERE id=?`,
+				item.Text, item.Recommendation, string(options), item.Detail, item.WhyYou, id)
+			item.ID = id
+			return item, err
+		}
+		if err != sql.ErrNoRows {
+			return item, err
+		}
+	}
+	item.ID = protocol.NewID("i")
+	item.CreatedAt = s.now().UTC()
+	item.Status = "open"
+	item.Answer = ""
+	item.AnsweredAt = time.Time{}
+	_, err = db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,
+		from_kind,source_ref,about_kind,about_id,next_who,why_you,detail) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status, string(options), item.AskerName, item.ChangeTitle,
+		item.FromKind, item.SourceRef, item.AboutKind, item.AboutID, nextWho, item.WhyYou, item.Detail)
 	return item, err
 }
 
@@ -128,7 +146,9 @@ func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at,options,asker_name,change_title`
 
 func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
-	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items ORDER BY created_at,id`)
+	// The kinds that decision 0090 added are asks for the Desk only: the old
+	// Inbox screen does not know them.
+	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items WHERE kind NOT IN ('held','learned','draft','proposal','step','waiting') ORDER BY created_at,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +324,7 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 
 // CloseArchivedSessionInbox closes only requests belonging to a session on the authenticated node.
 func (s *Store) CloseArchivedSessionInbox(node, session string) error {
-	_, err := s.db.Exec(`UPDATE inbox_items SET status='closed',answer='session_archived',answered_at=? WHERE session_id=? AND kind IN ('question','approval') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=?)`, s.now().UnixNano(), session, session, node)
+	_, err := s.db.Exec(`UPDATE inbox_items SET status='closed',answer='session_archived',answered_at=? WHERE session_id=? AND kind IN ('question','approval','feature_idea','waiting','session_stall','check') AND from_kind IN ('','session') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=?)`, s.now().UnixNano(), session, session, node)
 	return err
 }
 

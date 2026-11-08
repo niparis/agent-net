@@ -1156,7 +1156,49 @@ CREATE TABLE IF NOT EXISTS repo_held_back (repo_id TEXT PRIMARY KEY REFERENCES r
 -- row left, and the setting that chose which governs modes could approve a merge.
 DELETE FROM graph_edges WHERE kind='governs';
 DELETE FROM setting_values WHERE key='delivery.delegated_approver_modes';
+`, `
+-- Asks and the Desk (decision 0090). inbox_items is the one store of asks:
+-- everything that waits on a person. These columns give an ask its source key,
+-- what it is about, who must act now, and a line on why it is the owner's. The
+-- state of an ask is read from status: open, answered or closed with the
+-- reason kept in answer. desk_log is the one event log; it holds what used to
+-- be notices (CTO applied or sent, app approved) and what automation did.
+ALTER TABLE inbox_items ADD COLUMN from_kind TEXT NOT NULL DEFAULT '';
+ALTER TABLE inbox_items ADD COLUMN source_ref TEXT NOT NULL DEFAULT '';
+ALTER TABLE inbox_items ADD COLUMN about_kind TEXT NOT NULL DEFAULT '';
+ALTER TABLE inbox_items ADD COLUMN about_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE inbox_items ADD COLUMN next_who TEXT NOT NULL DEFAULT 'owner';
+ALTER TABLE inbox_items ADD COLUMN why_you TEXT NOT NULL DEFAULT '';
+ALTER TABLE inbox_items ADD COLUMN detail TEXT NOT NULL DEFAULT '';
 `}
+
+// asksMigrationRest is the part of the asks migration that is safe to replay
+// after its columns exist: the log table, the indexes and the backfill of old
+// open items. It does not delete any data.
+const asksMigrationRest = `
+CREATE TABLE IF NOT EXISTS desk_log (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ at INTEGER NOT NULL,
+ source TEXT NOT NULL,
+ about_kind TEXT NOT NULL DEFAULT '',
+ about_id TEXT NOT NULL DEFAULT '',
+ text TEXT NOT NULL,
+ detail TEXT NOT NULL DEFAULT '',
+ options TEXT NOT NULL DEFAULT '[]');
+CREATE INDEX IF NOT EXISTS inbox_items_status ON inbox_items(status, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS inbox_items_open_source ON inbox_items(source_ref) WHERE source_ref<>'' AND status='open';
+UPDATE inbox_items SET from_kind='cto' WHERE from_kind='' AND node='cto' AND kind='check';
+UPDATE inbox_items SET from_kind='apps' WHERE from_kind='' AND node='apps' AND kind='check';
+UPDATE inbox_items SET from_kind='disk' WHERE from_kind='' AND kind='check' AND text LIKE 'Disk space low on %';
+UPDATE inbox_items SET about_kind='change', about_id=(SELECT d.change_id FROM delivery_step_inbox d WHERE d.item_id=inbox_items.id LIMIT 1)
+ WHERE about_kind='' AND id IN (SELECT item_id FROM delivery_step_inbox);
+UPDATE inbox_items SET about_kind='project', about_id=node
+ WHERE about_kind='' AND node<>'' AND kind IN ('question','approval','feature_idea','session_stall');
+INSERT INTO desk_log(at,source,about_kind,about_id,text,detail,options)
+ SELECT i.created_at, i.from_kind, '', '', i.text, i.recommendation, i.options
+ FROM inbox_items i WHERE i.kind='check' AND i.status='open' AND i.from_kind IN ('cto','apps')
+ AND NOT EXISTS (SELECT 1 FROM desk_log l WHERE l.at=i.created_at AND l.source=i.from_kind AND l.text=i.text);
+`
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1214,6 +1256,10 @@ func OpenStore(path string) (*Store, error) {
 	if err := s.retireObsoleteNotices(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("retire obsolete notices: %w", err)
+	}
+	if err := s.reconcileAsks(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("reconcile asks: %w", err)
 	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
@@ -1520,6 +1566,26 @@ func (s *Store) migrate() error {
 			}
 			if err == nil {
 				result, err = tx.Exec(`CREATE TABLE IF NOT EXISTS repo_held_back (repo_id TEXT PRIMARY KEY REFERENCES repos(id), held_back TEXT NOT NULL DEFAULT '')`)
+			}
+		} else if strings.Contains(migrations[i], "Asks and the Desk (decision 0090)") {
+			for _, col := range []struct{ name, spec string }{
+				{"from_kind", `TEXT NOT NULL DEFAULT ''`}, {"source_ref", `TEXT NOT NULL DEFAULT ''`},
+				{"about_kind", `TEXT NOT NULL DEFAULT ''`}, {"about_id", `TEXT NOT NULL DEFAULT ''`},
+				{"next_who", `TEXT NOT NULL DEFAULT 'owner'`}, {"why_you", `TEXT NOT NULL DEFAULT ''`},
+				{"detail", `TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
+					break
+				}
+				if has == 0 {
+					if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
+				result, err = tx.Exec(asksMigrationRest)
 			}
 		} else if strings.Contains(migrations[i], "Message hand-off: the lead who passed") {
 			var has int
@@ -2228,6 +2294,11 @@ func (s *Store) upsertSession(q interface {
 		nodeID, in.Harness, in.NativeID).Scan(&id)
 	if err != nil {
 		return "", false, err
+	}
+	if waiting != knownWaiting {
+		if err := s.syncWaitingAsk(q, id, waiting); err != nil {
+			return "", false, err
+		}
 	}
 	if in.Worker != nil && in.Worker.RunGeneration > 0 {
 		if _, err := q.Exec(`UPDATE sessions SET worker_run_generation=MAX(worker_run_generation,?) WHERE id=?`, in.Worker.RunGeneration, id); err != nil {
@@ -3437,6 +3508,11 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	if err != nil {
 		return msg, false, err
 	}
+	if m.State == protocol.StateHeld {
+		if err := s.openHeldAsk(tx, m.ID, m.From, m.To, m.Body); err != nil {
+			return msg, false, err
+		}
+	}
 
 	if len(p.Files) > 0 {
 		raw, err := json.Marshal(p.Files)
@@ -4207,6 +4283,9 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 	if m.State == protocol.StateHeld {
 		// The held path answers the sender with its own reply.
 		if err = s.heldReply(tx, m, "your request expired while awaiting your user", "expired"); err != nil {
+			return false, err
+		}
+		if err = s.closeHeldAsk(tx, m.ID, protocol.AskReasonExpired); err != nil {
 			return false, err
 		}
 	} else if notice, noticed, err = s.expiryNotice(tx, m); err != nil {
