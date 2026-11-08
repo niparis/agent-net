@@ -918,12 +918,11 @@ instead (see [Peer trust and hints](#peer-trust-and-hints)).
 When a request is delivered to a session that waits for its user (see
 [the Inbox](#inbox-tab-7)), the sender gets one notice from agent-net, once
 per waiting period (decision [0060](decisions/0060-waiting-for-user-auto-answer.md)):
-`[agent-net] <name> is waiting for its user's answer to: <question> (since
-<time> UTC). Your message was delivered and will be read when the user
-answers. No reply is needed.` A permission wait says `approval of: <tool
-summary>`. The question or tool summary is cleaned to one line, limited to
-200 characters and has secrets redacted. When there is no text, the notice
-says `answer` or `approval` without a question or summary. The request itself is
+`[agent-net] <name> is waiting for its user's answer (since <time> UTC). Your
+message was delivered and will be read when the user answers. No reply is
+needed.` A permission wait says `approval` instead of `answer`. The notice
+never quotes the waiting question or tool summary: those are for the owner's
+TUI and CLI only. The session name in it is cleaned. The request itself is
 delivered as usual. The key is `waiting:<recipient>:<since>:<sender>`, so a
 second request from the same sender in the same wait gets no notice, also after
 a gateway restart; another sender gets its own, and a new wait starts a new
@@ -2429,7 +2428,7 @@ The log (`desk_log`) holds what is not a question: "CTO applied ...", "CTO sent 
 
 A session can wait for you: it asks permission for a tool, asks a question, or wants your input. The TUI lists those sessions in the Inbox tab (decision [0016](decisions/0016-needs-you.md)). Every machine's TUI sees them, so one screen answers "what needs me" across the network.
 
-Non-worker sessions on Claude Code, Codex, Pi and OpenCode can call `agent_owner_ask` with `kind: "question"`, `text`, optional `options`, optional `urgency`, and optional `replaces` (the ID of an earlier pending ask from this session to replace or close). Giving `replaces` closes the earlier Inbox item as replaced; an empty question closes it without creating a new one. The question is one line, cut to 200 characters with control characters removed. Options are up to four short strings, cleaned the same way. Urgency is `normal` or `high`. The guidance asks an agent to call this tool when it ends a turn waiting for your decision or input. A plain-text question at the end of a turn does not raise an alert by itself. A worker cannot call this tool; it must put the question in its hand-back or ask its caller with `agent_message_reply`. Worker rows do not appear in the TUI Inbox. When a worker reports a wait, its caller receives one blocked notice for that wait, including the question or permission.
+Non-worker sessions on Claude Code, Codex, Pi and OpenCode can call `agent_owner_ask` with `kind: "question"`, `text`, optional `options`, optional `urgency`, and optional `replaces` (the ID of an earlier pending ask from this session to replace or close). Giving `replaces` closes the earlier Inbox item as replaced; an empty question closes it without creating a new one. The question is one line, cut to 200 characters with control characters removed. Options are up to four short strings, cleaned the same way. Urgency is `normal` or `high`. The guidance asks an agent to call this tool when it ends a turn waiting for your decision or input. A plain-text question at the end of a turn does not raise an alert by itself. A worker cannot call this tool; it must put the question in its hand-back or ask its caller with `agent_message_reply`. Worker rows do not appear in the TUI Inbox. When a worker reports a wait, its caller receives one blocked notice for that wait, naming the kind (approval or answer), the start time and the question text. The caller started the worker and must unblock it, so the text is for the caller, not an outside peer.
 
 The daemon stores the question as a `question` waiting state with the options, urgency and start time. It sends the state with the session to the gateway, and every machine reads it from the agent list. The existing harness hooks still report permission prompts, forms and input dialogs. `agent_announce` also accepts an optional `waiting` string as a fallback.
 

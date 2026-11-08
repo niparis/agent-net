@@ -164,11 +164,14 @@ func TestWaitingSessionAnswersItsSenderOnceEndToEnd(t *testing.T) {
 	first := sendAndDeliver("first")
 	eventually(t, "alice's harness gets the notice", func() bool { return len(noticesTo(fa)) == 1 })
 	n := noticesTo(fa)[0]
-	// The notice includes bob's question and when the wait started.
-	if !strings.HasPrefix(n.Body, "[agent-net] bob is waiting for its user's answer to: Merge branch w_1 into main? (since ") ||
+	// The notice says the kind and when the wait started, never bob's question.
+	if !strings.HasPrefix(n.Body, "[agent-net] bob is waiting for its user's answer (since ") ||
 		!strings.HasSuffix(n.Body, " UTC). Your message was delivered and will be read when the user answers. No reply is needed.") ||
 		n.Type != protocol.TypeNotification || n.FromHarness != "agent-net" || n.ParentID != first.ID {
 		t.Fatalf("notice: %+v", n)
+	}
+	if strings.Contains(n.Body, "Merge branch w_1 into main?") {
+		t.Fatalf("notice quotes the waiting question: %q", n.Body)
 	}
 	if got := fb.delivered(); len(got) != 1 || got[0].ID != first.ID {
 		t.Fatalf("bob did not get the request: %+v", got)

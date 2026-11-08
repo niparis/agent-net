@@ -69,6 +69,9 @@ No notice is stored for a notification or a reply, for agent-net's own messages 
 
 ### Waiting text in notices
 
+Reversed on 2026-11-08 by [0091](0091-waiting-notices-do-not-quote-the-question.md):
+notices and bot receipts no longer quote the question or tool summary.
+
 On 2026-11-04, the owner chose to include the question in notices to senders
 and bot receipts. Permission notices include the tool summary. The text is
 cleaned to one line, limited to 200 characters and has secrets redacted. When

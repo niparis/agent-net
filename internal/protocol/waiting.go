@@ -78,6 +78,16 @@ func ValidWaitingKind(k string) bool {
 	return k == WaitingPermission || k == WaitingQuestion || k == WaitingInput
 }
 
+// WaitingKindText is the word a notice to a peer uses for a wait: "approval"
+// for a permission, "answer" for a question or input. The question itself is
+// for the owner only.
+func WaitingKindText(kind string) string {
+	if kind == WaitingPermission {
+		return "approval"
+	}
+	return "answer"
+}
+
 // CleanWaitingText drops control characters, makes one line of the text, and
 // cuts it to MaxWaitingTextLen characters.
 func CleanWaitingText(s string) string {
@@ -100,8 +110,8 @@ func CleanWaitingText(s string) string {
 // CleanWaiting returns the state to store, or nil when there is nothing to
 // wait for. A text with no kind is an input question; an unknown kind is not
 // accepted from a client and becomes input. Secrets in the text and the
-// options are masked first: the text leaves the machine, goes to every TUI,
-// and is quoted to agents and bots that write to the session.
+// options are masked first: the text leaves the machine and goes to every TUI.
+// A peer sees only the kind and the time, never the text.
 func CleanWaiting(w *Waiting) *Waiting {
 	if w == nil {
 		return nil
