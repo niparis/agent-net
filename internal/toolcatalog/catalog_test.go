@@ -50,8 +50,8 @@ func checkInputRoot(t *testing.T, name string, raw json.RawMessage) {
 }
 
 func TestInputSchemaShape(t *testing.T) {
-	if len(Tools) != 45 {
-		t.Errorf("catalog has %d tools, want 45", len(Tools))
+	if len(Tools) != 46 {
+		t.Errorf("catalog has %d tools, want 46", len(Tools))
 	}
 	for _, tool := range Tools {
 		checkInputRoot(t, tool.Name, tool.InputSchema)
@@ -293,7 +293,7 @@ func TestBotRole(t *testing.T) {
 }
 
 func TestExistingRoleListsUnchanged(t *testing.T) {
-	if got, want := names(ForRole(RoleAgent)), []string{"agent_announce", "agent_change_submit", "agent_changes_find", "agent_file_send", "agent_graph_read", "agent_learn", "agent_machine_get", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_mcp_test", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_owner_ask", "agent_project_add", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_step_claim", "agent_step_report", "agent_worker_profiles_find", "agent_worker_rate", "agent_worker_start", "agent_worker_stop", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
+	if got, want := names(ForRole(RoleAgent)), []string{"agent_announce", "agent_change_submit", "agent_changes_find", "agent_charter_draft", "agent_file_send", "agent_graph_read", "agent_learn", "agent_machine_get", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_mcp_test", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_owner_ask", "agent_project_add", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_step_claim", "agent_step_report", "agent_worker_profiles_find", "agent_worker_rate", "agent_worker_start", "agent_worker_stop", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RoleAgent tools changed: %v", got)
 	}
 	if got, want := names(ForRole(RoleWorker)), []string{"agent_changes_find", "agent_file_send", "agent_graph_read", "agent_handback", "agent_learn", "agent_machine_get", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_messages_find", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_workers_find"}; !reflect.DeepEqual(got, want) {

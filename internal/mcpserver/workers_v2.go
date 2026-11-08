@@ -15,7 +15,7 @@ import (
 // addRedesignedTools registers the agent and worker contracts directly from
 // the shared catalog. The daemon methods remain the existing implementations.
 func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, string, any) (any, error)) {
-	for _, name := range []string{"agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_ask", "agent_learn", "agent_project_add", "agent_mcp_test"} {
+	for _, name := range []string{"agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_ask", "agent_learn", "agent_charter_draft", "agent_project_add", "agent_mcp_test"} {
 		entry := redesignedCatalogTool(name)
 		t := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: json.RawMessage(entry.InputSchema)}
 		s.AddTool(t, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -33,7 +33,7 @@ func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, st
 	if os.Getenv("AGENT_NET_WORKER") != "" {
 		// These are agent-only capabilities.
 		s.RemoveTools("agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_owner_ask",
-			"agent_project_add", "agent_announce")
+			"agent_project_add", "agent_announce", "agent_charter_draft")
 	}
 }
 
@@ -215,6 +215,12 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			remaining = float64(0)
 		}
 		return map[string]any{"recorded": m["accepted"], "id": id, "left_today": remaining}, nil
+	case "agent_charter_draft":
+		m, err := charterDraftCall(ctx, run, protocol.CharterDraftRequest{Level: str("level"), Attr: str("attr"), Value: str("value"), Team: str("team")})
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": m["id"], "status": m["status"]}, nil
 	case "agent_project_add":
 		m, err := projectAddCall(ctx, run, protocol.ProjectAddRequest{Paths: stringSlice(a["paths"]), Dir: str("dir"), Scan: boolValue(a["scan"]), Depth: integer("depth"), DryRun: boolValue(a["dry_run"])})
 		if err != nil {

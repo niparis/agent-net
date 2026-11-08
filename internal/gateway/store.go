@@ -1121,6 +1121,25 @@ INSERT INTO agent_charter(agent_id,attr,value,updated_at,updated_by)
  GROUP BY agent_id
  ON CONFLICT(agent_id,attr) DO UPDATE SET value=CASE WHEN agent_charter.value='' THEN excluded.value ELSE agent_charter.value||char(10)||char(10)||excluded.value END;
 DELETE FROM agent_charter WHERE attr IN ('consumers','needs','notes');
+`, `
+-- Charter drafts (decision 0087). A session proposes a charter value read from
+-- AGENTS.md; it stays pending until the owner or CTO decides. One ask row per
+-- repo, agent or team keeps the request to once per version of AGENTS.md. All
+-- statements are safe to replay.
+CREATE TABLE IF NOT EXISTS charter_drafts (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ level TEXT NOT NULL CHECK(level IN ('repo','agent','team')),
+ scope TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL,
+ source TEXT NOT NULL, source_hash TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected','superseded')),
+ drafted_by TEXT NOT NULL DEFAULT '',
+ created_at INTEGER NOT NULL,
+ decided_at INTEGER NOT NULL DEFAULT 0, decided_by TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS charter_drafts_key ON charter_drafts(level,scope,attr,status);
+CREATE TABLE IF NOT EXISTS charter_draft_asks (
+ level TEXT NOT NULL, scope TEXT NOT NULL, source_hash TEXT NOT NULL,
+ asked_at INTEGER NOT NULL, session_id TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY(level,scope));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

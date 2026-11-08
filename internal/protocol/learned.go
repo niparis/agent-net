@@ -28,4 +28,8 @@ type LearnedSuggestion struct {
 	OldValue  string            `json:"old_value,omitempty"`
 	NewValue  string            `json:"new_value,omitempty"`
 	By        string            `json:"by,omitempty"`
+	// Level and Scope say where a charter draft (Origin "draft") would be
+	// written. The ID of a draft is the negative of its charter_drafts ID.
+	Level string `json:"level,omitempty"`
+	Scope string `json:"scope,omitempty"`
 }

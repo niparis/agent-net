@@ -16,8 +16,9 @@ func TestCharterLevelsMigrationReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Rewind only the new migration, as recovery of an interrupted upgrade does.
-	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, len(migrations)-1); err != nil {
+	// Rewind to just before the charter migration, as recovery of an interrupted upgrade does.
+	rewind := migrationVersion(t, "Charter levels and enum cutover") - 1
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.migrate(); err != nil {
@@ -41,7 +42,7 @@ func TestCharterLevelsMigrationReplay(t *testing.T) {
 		if err := s.db.QueryRow(`SELECT count(*) FROM graph_charter WHERE attr IN ('consumers','needs','notes')`).Scan(&n); err != nil || n != 0 {
 			t.Fatalf("dropped: %d %v", n, err)
 		}
-		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, len(migrations)-1); err != nil {
+		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.migrate(); err != nil {

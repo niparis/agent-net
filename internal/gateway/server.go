@@ -1552,6 +1552,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.AddFinding(protocol.Finding{SubjectKind: p.SubjectKind, Subject: p.Subject,
 			Finding: p.Finding, Evidence: p.Evidence, Reporter: p.Reporter, NodeID: nc.id})
 
+	case "charter.draft":
+		p, err := decode[protocol.CharterDraftFrame](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad charter.draft")
+		}
+		owner, err := st.SessionNode(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("session %q does not belong to this node", p.SessionID)
+		}
+		return st.SubmitCharterDraft(p.SessionID, p.CharterDraftRequest, p.SourceHash)
+
 	case "rate.offer":
 		p, err := decode[protocol.RateOfferFrame](raw)
 		if err != nil || p.SessionID == "" {
@@ -2082,7 +2096,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: c.Project, Charter: c.agentText()}, nil
+		got := protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: c.Project, Charter: c.agentText()}
+		if p.Turn {
+			// The one-time charter draft request rides on the per-turn text
+			// (decision 0087). A failure here never blocks the turn.
+			if ask, derr := st.charterDraftAskFor(p.SessionID, c, p.AgentsHash); derr == nil {
+				got.DraftRequest = ask
+			}
+		}
+		return got, nil
 
 	case "profile.announce":
 		p, err := decode[protocol.ProfileAnnounce](raw)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/claudeagents"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/repoinfo"
 )
 
 // Delegation policy (decision 0014). A harness adapter asks for the effective
@@ -52,7 +53,24 @@ func (p *policyState) forget(sid string) {
 }
 
 // policyOf returns the gateway's answer for a session of this machine.
-func (d *Daemon) policyOf(ctx context.Context, sid string) (protocol.PolicyGot, bool) {
+// agentsHashOf hashes the AGENTS.md of the session's repo on this machine. The
+// gateway asks for a charter draft once per hash (decision 0087).
+func (d *Daemon) agentsHashOf(ls *localSession) string {
+	if ls == nil {
+		return ""
+	}
+	info := d.infoOf(ls)
+	dir := info.Repo.Root
+	if dir == "" {
+		dir = info.Repo.Worktree
+	}
+	if dir == "" {
+		dir = info.Cwd
+	}
+	return repoinfo.AgentsHash(dir)
+}
+
+func (d *Daemon) policyOf(ctx context.Context, sid, agentsHash string) (protocol.PolicyGot, bool) {
 	p := &d.policy
 	now := p.clock()
 	p.mu.Lock()
@@ -63,11 +81,15 @@ func (d *Daemon) policyOf(ctx context.Context, sid string) (protocol.PolicyGot, 
 	}
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	raw, err := d.call(cctx, "policy.get", protocol.PolicyGet{SessionID: sid})
+	raw, err := d.call(cctx, "policy.get", protocol.PolicyGet{SessionID: sid, AgentsHash: agentsHash, Turn: true})
 	var got protocol.PolicyGot
 	if err == nil {
 		err = json.Unmarshal(raw, &got)
 	}
+	// The one-time charter draft request is shown to this turn only. It stays
+	// out of the cache, so a stale answer never repeats it.
+	draft := got.DraftRequest
+	got.DraftRequest = ""
 	if err == nil {
 		// The node's charter travels with the policy answer, so a harness hook
 		// asks once per turn (decision 0022).
@@ -90,6 +112,12 @@ func (d *Daemon) policyOf(ctx context.Context, sid string) (protocol.PolicyGot, 
 	}
 	p.cache[sid] = policyEntry{at: now, got: got}
 	p.mu.Unlock()
+	if draft != "" {
+		if got.Charter != "" {
+			got.Charter += "\n"
+		}
+		got.Charter += draft
+	}
 	return got, true
 }
 
@@ -191,7 +219,7 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 			_, _ = d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true})
 		}
 	}
-	got, ok := d.policyOf(ctx, sid)
+	got, ok := d.policyOf(ctx, sid, d.agentsHashOf(ls))
 	if !ok {
 		return protocol.PolicyResult{}, nil
 	}

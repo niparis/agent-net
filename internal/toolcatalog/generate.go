@@ -31,7 +31,7 @@ var pluginMethods = map[string]string{
 	"agent_worker_profiles_find": "worker_profiles", "agent_message_send": "send",
 	"agent_file_send":     "file_send",
 	"agent_message_reply": "reply", "agent_announce": "announce",
-	"agent_owner_ask": "waiting", "agent_learn": "agent_learn",
+	"agent_owner_ask": "waiting", "agent_learn": "agent_learn", "agent_charter_draft": protocol.OpCharterDraft,
 	"agent_worker_start": "worker_start", "agent_worker_stop": "worker_stop",
 	"agent_worker_rate": protocol.OpRate, "agent_handback": "worker_handback",
 	"agent_project_add": "project_add", "agent_mcp_test": "mcp_test",

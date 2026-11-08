@@ -142,6 +142,56 @@ export const TOOL_CATALOG = [
     "method": "changes_find"
   },
   {
+    "name": "agent_charter_draft",
+    "description": "Propose one charter value drafted from AGENTS.md, only when agent-net asked you to. The owner accepts or rejects it; nothing changes before that.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "repo",
+            "agent",
+            "team"
+          ],
+          "description": "Where the value goes: your repo, your own agent, or a team you lead."
+        },
+        "attr": {
+          "type": "string",
+          "enum": [
+            "purpose",
+            "maturity",
+            "accepts",
+            "refuses",
+            "escalate",
+            "feature_requests",
+            "rules"
+          ],
+          "description": "Repo: purpose, maturity, refuses. Agent: accepts, refuses, escalate, feature_requests, rules. Team: purpose, refuses."
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "The drafted text. Short, from AGENTS.md. Maturity is experimental, early, growing or mature."
+        },
+        "team": {
+          "type": "string",
+          "description": "Team ID, only when you lead several teams and level is team."
+        }
+      },
+      "required": [
+        "level",
+        "attr",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "agent_charter_draft"
+  },
+  {
     "name": "agent_file_send",
     "description": "Send files from this session to one peer with a note. Paths must be absolute and within the session project, worktree or /tmp. Workers send files with agent_handback.",
     "inputSchema": {

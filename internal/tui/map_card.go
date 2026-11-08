@@ -419,6 +419,7 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 		charter = []string{sDim.Render("no charter set")}
 	}
 	out = append(out, charter...)
+	out = append(out, m.mapDraftLines(node, w)...)
 	out = append(out, m.mapLearnedLines(node.Name, w)...)
 	if node.Ref == nil || node.Ref.Kind == "repo" {
 		out = append(out, section("Rules", w))

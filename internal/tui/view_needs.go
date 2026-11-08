@@ -31,6 +31,9 @@ var sNeeds = lipgloss.NewStyle().Foreground(roleWarning)
 
 // learnedQuestion describes the change in the words the owner can recognize.
 func learnedQuestion(v protocol.LearnedSuggestion) string {
+	if v.Origin == "draft" {
+		return sanitize(fmt.Sprintf("%s: set %s to «%s»? Drafted from %s.", v.Node, v.Field, v.NewValue, v.By))
+	}
 	phrase := v.Phrase
 	if v.Origin == "owner" && v.RawPhrase != "" {
 		phrase = v.RawPhrase
