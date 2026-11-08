@@ -145,14 +145,14 @@ func TestPickerTaskKeysOutcomesAndInvalidD(t *testing.T) {
 	}
 }
 
-// Every run is a task. A session that ran twice gives two tasks that share the
-// session's latest valid D, its defects and its failed steps, and keep the
-// run's own outcome and fix rounds.
-func TestPickerEveryRunIsATaskWithTheLatestD(t *testing.T) {
+// Every run is a task, with its own outcome and fix rounds. A session that ran
+// twice gives two tasks that share the session's latest valid D. The session's
+// defects and failed steps count once, on its last run.
+func TestPickerEveryRunIsATaskAndSessionPenaltiesCountOnce(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("h", "linux")
 	at := c.now().Unix()
-	pickerRun(t, s, node, "s_a", "codex", "gpt-6.1-sol:low", protocol.OutcomePartial, 0, at)
+	pickerRun(t, s, node, "s_a", "codex", "gpt-6.1-sol:low", protocol.OutcomeComplete, 0, at)
 	pickerRun(t, s, node, "s_a", "codex", "gpt-6.1-sol:low", protocol.OutcomeComplete, 1, at+10)
 	pickerAssessment(t, s, "s_a", 2.4)
 	pickerAssessment(t, s, "s_a", 3.1)
@@ -161,13 +161,52 @@ func TestPickerEveryRunIsATaskWithTheLatestD(t *testing.T) {
 	if err := s.RecordWorkerAssessment(protocol.WorkerAssessment{RunID: fmt.Sprintf("run-%d", assessmentSeq), SessionID: "s_a", StartedAt: int64(assessmentSeq) * 1e9, Error: "timed out"}); err != nil {
 		t.Fatal(err)
 	}
+	// One severity 1 defect costs a quarter for the defect and a quarter for its
+	// severity.
+	if _, err := s.db.Exec(`INSERT INTO worker_defects(session_id, severity, at) VALUES('s_a', 1, ?)`, at); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.refreshPicker(); err != nil {
+		t.Fatal(err)
+	}
 	got := pickerTasksByKey(t, s)["gpt-6.1-sol:low"]
 	if len(got) != 2 {
 		t.Fatalf("tasks: %+v", got)
 	}
-	scores := []float64{got[0].Score, got[1].Score}
-	if got[0].D != 3.1 || got[1].D != 3.1 || scores[0] != 0 || math.Abs(scores[1]-.75) > 1e-9 {
-		t.Fatalf("latest D 3.1 on both runs, partial run 0, complete run with one fix round .75: %+v", got)
+	if got[0].D != 3.1 || got[1].D != 3.1 || got[0].Score != 1 || math.Abs(got[1].Score-.25) > 1e-9 {
+		t.Fatalf("latest D 3.1 on both runs; the first run is clean, the last has one fix round and the defect: %+v", got)
+	}
+}
+
+// Stopped and infra runs say nothing about the model: they are not tasks, so
+// they add nothing to n and nothing to the score. The session's penalties go to
+// its last run that counts.
+func TestPickerStoppedAndInfraRunsAreLeftOut(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	at := c.now().Unix()
+	pickerRun(t, s, node, "s_x", "codex", "gpt-6.1-sol:low", protocol.OutcomeComplete, 0, at)
+	pickerRun(t, s, node, "s_x", "codex", "gpt-6.1-sol:low", protocol.OutcomeStopped, 0, at+10)
+	pickerRun(t, s, node, "s_y", "codex", "gpt-6.1-sol:low", protocol.OutcomeInfra, 0, at+20)
+	pickerRun(t, s, node, "s_y", "codex", "gpt-6.1-sol:low", protocol.OutcomeStopped, 0, at+30)
+	pickerRun(t, s, node, "s_z", "codex", "gpt-6.1-sol:low", protocol.OutcomeTimedOut, 0, at+40)
+	for _, session := range []string{"s_x", "s_y", "s_z"} {
+		pickerAssessment(t, s, session, 2.5)
+	}
+	if _, err := s.db.Exec(`INSERT INTO worker_defects(session_id, severity, at) VALUES('s_x', 1, ?)`, at); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.refreshPicker(); err != nil {
+		t.Fatal(err)
+	}
+	got := pickerTasksByKey(t, s)["gpt-6.1-sol:low"]
+	// s_x gives one task, with its defect; s_y gives none; a timed out run is a
+	// failed task and scores 0.
+	if len(got) != 2 || math.Abs(got[0].Score-.5) > 1e-9 || got[1].Score != 0 {
+		t.Fatalf("tasks: %+v", got)
+	}
+	if n := s.pickerTable().Cell("gpt-6.1-sol:low", s.pickerTable().Bucket(2.5)).N; n != 2 {
+		t.Fatalf("n = %d", n)
 	}
 }
 

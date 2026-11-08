@@ -17,12 +17,15 @@ import (
 //  2. A candidate with three tasks or more is allowed unless the top of its
 //     interval is below AllowedFraction x best. A candidate with fewer is
 //     allowed when its benchmark ceiling reaches the bucket.
-//  3. An allowed candidate is left out when its score is more than
-//     OverqualifiedMargin under the best, its benchmark ceiling is more than one
-//     bucket above D, and a weaker allowed candidate exists.
+//  3. An allowed candidate whose benchmark ceiling is more than one bucket above
+//     D is left out when a weaker allowed candidate exists and either its score
+//     is more than OverqualifiedMargin under the best, or it has fewer than
+//     three tasks in the bucket (then the benchmark alone decides). This keeps
+//     strong models off easy work, and an untried strong model too.
 //  4. The rest rotate with the smooth weighted round robin of the level rule.
 //     The weight is the quota room term, the cell score, the boost for a cell
-//     with fewer than UncertainN tasks and the track terms.
+//     with fewer than UncertainN tasks and the track terms. A cell more than
+//     one bucket below the model's ceiling gets no boost.
 //
 // When nothing is allowed the caller falls back to the level rule.
 
@@ -36,6 +39,9 @@ type pickerEntry struct {
 	bench   float64
 	scored  bool
 	ceiling float64
+	// above is true when the benchmark ceiling is more than one bucket above D:
+	// the model is well above this work.
+	above bool
 	// quota room terms
 	quotaNote string
 	room      float64
@@ -84,6 +90,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			e.name = PickerModelDisplay(key)
 		}
 		e.bench, _, e.ceiling, e.scored = WorkerBenchmarkCeiling(c, scores, minimums)
+		e.above = e.scored && table.Bucket(e.ceiling-pickerEdgeTolerance*10)-bucket > 1
 		entries = append(entries, e)
 	}
 	if len(entries) == 0 {
@@ -116,7 +123,9 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		}
 	}
 
-	// 3. Strong models stay off easy work when a weaker allowed one exists.
+	// 3. Strong models stay off easy work when a weaker allowed one exists. A
+	// cell with a record says so by its score. A thin cell has no score of its
+	// own, so the benchmark alone decides.
 	var allowed []*pickerEntry
 	for _, e := range entries {
 		if e.allowed {
@@ -124,7 +133,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		}
 	}
 	for _, e := range allowed {
-		if !e.scored || best-e.cell.Score <= set.OverqualifiedMargin || table.Bucket(e.ceiling-pickerEdgeTolerance*10)-bucket <= 1 {
+		if !e.above || e.cell.N >= PickerMinCellTasks && best-e.cell.Score <= set.OverqualifiedMargin {
 			continue
 		}
 		for _, other := range allowed {
@@ -146,7 +155,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		c := e.c
 		c.Failed = c.Failed || c.EarlyQuitLevels[level]
 		fit := math.Max(e.cell.Score, .05)
-		if e.cell.N < set.UncertainN {
+		if e.cell.N < set.UncertainN && !e.above {
 			fit *= set.UncertainBoost
 		}
 		weight := rotationWeight(c, fit, e.room, e.measured)

@@ -291,8 +291,10 @@ func TestWorkerStartCellRuleUsesTheBenchmarkWhereThereIsNoRecord(t *testing.T) {
 	score = 32.5
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m2", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: "adequate", Harness: "opencode", Model: "fake/m2"})
+	// With a weaker adequate model on the roster, an untried strong model is
+	// kept off normal work: its benchmark is far above the task.
 	res, err = w.start(protocol.WorkerStartRequest{Project: "shop", Difficulty: "normal", Task: "x"})
-	if err != nil || (res.Model != "fake/m1" && res.Model != "fake/m2") || !strings.Contains(res.ModelNote, "strong n0") || !strings.Contains(res.ModelNote, "adequate n0") {
-		t.Fatalf("both profiles are considered: %+v %v", res, err)
+	if err != nil || res.Model != "fake/m2" || !strings.Contains(res.ModelNote, "strong n0 left out (overqualified)") || !strings.Contains(res.ModelNote, "adequate n0, chosen (benchmark)") {
+		t.Fatalf("the strong model is left out by its benchmark: %+v %v", res, err)
 	}
 }

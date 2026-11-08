@@ -58,12 +58,16 @@ func (s *Store) pickerSettings() (protocol.PickerSettings, error) {
 }
 
 // pickerTasks scores one task per worker run (a row of worker_runs) that has a
-// valid judge result. This is the join the owner's tables were built from:
+// valid judge result. This is the join the owner's tables were built from, with
+// the owner's corrections of 2026-11-08:
 //
 //   - the model key, outcome and fix rounds are the run's own;
 //   - D is the latest valid judge result (D above 0) of the run's session;
-//   - the defects and the failed accept, review and test steps are those of the
-//     session, so a session that ran several times counts them on each run.
+//   - the defects and the failed accept, review and test steps are the session's.
+//     They count once, on the last run of the session that counts, so a session
+//     that ran several times is not punished on every run;
+//   - a run that ended stopped or infra is not a task. It says nothing about the
+//     model, so it adds nothing to the score or to n.
 //
 // The whole data set counts, with no time cut.
 func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
@@ -139,16 +143,27 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 		return nil, err
 	}
 
+	counts := func(outcome string) bool {
+		return outcome != protocol.OutcomeStopped && outcome != protocol.OutcomeInfra
+	}
+	// The last run of each session that counts. The rows come oldest first.
+	last := map[string]int{}
+	for i, r := range snap.rows {
+		if r.session != "" && counts(r.outcome) {
+			last[r.session] = i
+		}
+	}
 	out := make([]protocol.PickerTask, 0, len(snap.rows))
-	for _, r := range snap.rows {
+	for i, r := range snap.rows {
 		d := judged[r.session]
 		key := protocol.PickerModelKey(r.harness, r.model)
-		if r.session == "" || d <= 0 || key == "" {
+		if r.session == "" || d <= 0 || key == "" || !counts(r.outcome) {
 			continue
 		}
-		facts := protocol.PickerTaskFacts{
-			Complete: r.outcome == protocol.OutcomeComplete, FixRounds: r.fix, FailedSteps: failed[r.session],
-			Defects: defects[r.session][0], DefectSeverity: defects[r.session][1],
+		facts := protocol.PickerTaskFacts{Complete: r.outcome == protocol.OutcomeComplete, FixRounds: r.fix}
+		if last[r.session] == i {
+			facts.FailedSteps = failed[r.session]
+			facts.Defects, facts.DefectSeverity = defects[r.session][0], defects[r.session][1]
 		}
 		out = append(out, protocol.PickerTask{Key: key, D: d, Score: protocol.PickerTaskScore(facts)})
 	}

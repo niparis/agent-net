@@ -217,9 +217,10 @@ func TestPickLeavesOutAConfidentlyWorseModel(t *testing.T) {
 
 func TestPickKeepsAnUncertainModelInTheRotation(t *testing.T) {
 	tasks := append(pickTasks("good", 2.5, repeat(15, 1, .5)...), pickTasks("new", 2.5, 1, 0, 1, 0)...)
-	scores := pickScores(map[string]float64{"good": 51, "new": 51})
+	// "new" benchmarks at normal (ceiling D 3.0), one bucket above this task, so
+	// it keeps the boost. Its interval is wide because it has four tasks.
+	scores := pickScores(map[string]float64{"good": 51, "new": 39})
 	counts := pickN(t, pickCandidates("good", "new"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 40)
-	// "new" has four tasks, so its interval is wide and it gets the 1.5x boost.
 	if counts["new"] < 10 || counts["good"] < 10 {
 		t.Fatalf("picks: %v", counts)
 	}
@@ -236,7 +237,8 @@ func TestPickBetterScoreGetsMorePicksWhenBothAreKnown(t *testing.T) {
 
 func TestPickUncertainBoostIsOnTheWeight(t *testing.T) {
 	tasks := append(pickTasks("known", 2.5, repeat(10, 1, 0)...), pickTasks("fresh", 2.5, 1, 0, 1, 0)...)
-	scores := pickScores(map[string]float64{"known": 51, "fresh": 51})
+	// Both benchmark at normal: the ceiling (D 3.0) is one bucket above D 2.5.
+	scores := pickScores(map[string]float64{"known": 39, "fresh": 39})
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
 	choice, err := ChooseWorkerModel(pickCandidates("fresh"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
 	if err != nil {
@@ -248,6 +250,29 @@ func TestPickUncertainBoostIsOnTheWeight(t *testing.T) {
 		t.Fatal(err)
 	}
 	near(t, "weight", choice.Weight, table.Cell("known", 4).Score)
+}
+
+// A cell more than one bucket below the model's benchmark ceiling gets no
+// boost, with or without tasks: the model is well above this work.
+func TestPickNoUncertainBoostMoreThanOneBucketBelowTheCeiling(t *testing.T) {
+	tasks := pickTasks("fresh", 2.5, 1, 0, 1, 0)
+	table := BuildPickerTable(tasks, DefaultPickerSettings())
+	in := &PickerInput{D: 2.5, Table: table}
+	for _, c := range []struct {
+		name  string
+		score float64
+		boost float64
+	}{
+		{"near the ceiling", 39, 1.5},    // ceiling 3.0, one bucket above D 2.5
+		{"far below the ceiling", 51, 1}, // ceiling 5.0
+		{"hard model", 41, 1},            // ceiling 3.75
+	} {
+		choice, err := ChooseWorkerModel(pickCandidates("fresh"), "normal", pickScores(map[string]float64{"fresh": c.score}), nil, nil, nil, &WorkerRotation{}, in)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		near(t, c.name, choice.Weight, table.Cell("fresh", 4).Score*c.boost)
+	}
 }
 
 func TestPickLeavesOutAnOverqualifiedModel(t *testing.T) {
@@ -280,6 +305,39 @@ func TestPickOverqualifiedRuleNeedsAWeakerAllowedModel(t *testing.T) {
 	counts := pickN(t, pickCandidates("s1", "s2"), "simple", 1.8, tasks, scores, s, 20)
 	if counts["s1"] == 0 || counts["s2"] == 0 {
 		t.Fatalf("picks: %v", counts)
+	}
+}
+
+func TestPickKeepsUntriedStrongModelsOffEasyWork(t *testing.T) {
+	// D 1.8 is bucket 2. "cheap" has a record. "strong" benchmarks very_complex
+	// (ceiling D 5.0), far above the task, and has no record, or only two tasks.
+	scores := pickScores(map[string]float64{"cheap": 29, "strong": 51})
+	cheap := pickTasks("cheap", 1.8, repeat(10, 1, .8, 1)...)
+	for name, tasks := range map[string][]PickerTask{
+		"no record": cheap,
+		"two tasks": append(append([]PickerTask(nil), cheap...), pickTasks("strong", 1.8, 1, 1)...),
+	} {
+		counts := pickN(t, pickCandidates("cheap", "strong"), "simple", 1.8, tasks, scores, DefaultPickerSettings(), 20)
+		if counts["strong"] != 0 || counts["cheap"] != 20 {
+			t.Fatalf("%s: picks %v", name, counts)
+		}
+	}
+	// Near its ceiling the same model with no record still gets tries.
+	hard := pickTasks("cheap", 4.5, repeat(10, 1, .8, 1)...)
+	counts := pickN(t, pickCandidates("cheap", "strong"), "very_complex", 4.5, hard, scores, DefaultPickerSettings(), 20)
+	if counts["strong"] == 0 {
+		t.Fatalf("near the ceiling: picks %v", counts)
+	}
+	// With no weaker model allowed, the strong one is not left out.
+	counts = pickN(t, pickCandidates("strong"), "simple", 1.8, nil, scores, DefaultPickerSettings(), 5)
+	if counts["strong"] != 5 {
+		t.Fatalf("alone: picks %v", counts)
+	}
+	// Two untried strong models are equally strong: neither is weaker.
+	both := pickScores(map[string]float64{"s1": 51, "s2": 51})
+	counts = pickN(t, pickCandidates("s1", "s2"), "simple", 1.8, nil, both, DefaultPickerSettings(), 10)
+	if counts["s1"] == 0 || counts["s2"] == 0 {
+		t.Fatalf("equal strong models: picks %v", counts)
 	}
 }
 
@@ -397,10 +455,9 @@ func TestPickNoteShowsOverqualifiedAndPriorAndChosenNotBest(t *testing.T) {
 	if !strings.Contains(choice.PickNote, "strong ") || !strings.Contains(choice.PickNote, "left out (overqualified)") {
 		t.Fatalf("note: %q", choice.PickNote)
 	}
-	// "fresh" has no record, so its benchmark lets it in and its cell sits at the
-	// bucket mean. It is not 0.25 under the best, so it is not overqualified.
-	if !strings.Contains(choice.PickNote, "fresh n0") || !strings.Contains(choice.PickNote, "(benchmark)") ||
-		!strings.Contains(choice.PickNote, "cheap 0.90 [0.86-0.95] n30") {
+	// "fresh" has no record and benchmarks far above this easy task, and "cheap"
+	// is a weaker model that is allowed, so fresh is left out by its benchmark.
+	if !strings.Contains(choice.PickNote, "fresh n0 left out (overqualified)") || !strings.Contains(choice.PickNote, "cheap 0.90 [0.86-0.95] n30") {
 		t.Fatalf("note should name the model with no record and the best cell: %q", choice.PickNote)
 	}
 }

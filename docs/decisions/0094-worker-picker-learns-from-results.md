@@ -44,14 +44,23 @@ prefix (`opencode-go/`) stays in the key and is removed only to display it.
 ### Task score, 0 to 1
 
 A task is one row of `worker_runs` that has a judge result, joined to its
-session. This is the join the owner's tables were built from.
+session. This is the join the owner's tables were built from. On 2026-11-08 the
+owner corrected two points of the first table: session penalties count once, and
+stopped and infra runs are left out.
 
 - The model key, the outcome and the fix rounds are the run's own.
 - D is the latest valid judge result (D above 0) of the run's session.
-- The defects and the failed delivery steps are the session's. A session that
-  ran several times (a continue) counts them on each of its runs.
+- The defects and the failed delivery steps are the session's. They count once,
+  on the last run of the session that counts. Earlier runs of the session keep
+  their own outcome and fix rounds and carry no defect or failed step.
+- A run that ended `stopped` or `infra` is not a task. It says nothing about the
+  model, so it adds nothing to a score or to n. If a session's last run was
+  stopped, its penalties go to the last run before it that counts.
+- A run that ended `partial`, `failed` or `timed_out` is a task and scores 0.
 
-- 0 if the task did not end complete.
+The score of a task:
+
+- 0 if the run did not end complete.
 - Otherwise `1 - 0.25 x fix rounds - 0.25 x failed accept, review and test steps
   - 0.25 x (defect count + sum of defect severities)`, and never below 0. A
   severity 4 defect costs 1.25.
@@ -102,15 +111,22 @@ uses the middle of the level's range):
 3. A candidate with 3 tasks or more is allowed unless the top of its interval is
    below `picker.allowed_fraction` (0.9) x best. A candidate with fewer is allowed
    by the benchmark prior.
-4. An allowed candidate is also left out when its score is more than
-   `picker.overqualified_margin` (0.25) under the best, its benchmark ceiling is
-   more than one bucket above D, and a weaker allowed candidate exists. This keeps
-   strong, expensive models off easy work.
+4. An allowed candidate whose benchmark ceiling is more than one bucket above D is
+   left out when a weaker allowed candidate exists and either:
+   - it has 3 tasks or more and its score is more than
+     `picker.overqualified_margin` (0.25) under the best; or
+   - it has fewer than 3 tasks. A thin cell has no score of its own, so the
+     benchmark alone decides (owner decision, 2026-11-08).
+   This keeps strong, expensive models off easy work, tried or not. "Weaker" means
+   a lower benchmark score. Two models with the same benchmark are not weaker than
+   each other, and a lone strong model is never left out.
 5. The rest rotate with the smooth weighted round robin of decision 0026 (quota
    pace, running workers, recent success or failure, completion bonus). The
    over-qualification term is replaced by the cell score, and a cell with fewer
    than `picker.uncertain_n` (5) tasks gets `picker.uncertain_boost` (1.5), so an
-   uncertain model gets a few more tasks.
+   uncertain model gets a few more tasks. A cell more than one bucket below the
+   model's benchmark ceiling gets no boost, so extra tries go to models near their
+   ceiling.
 6. If no candidate is allowed, the old level rule picks, and the note says so.
 
 Removed: the fixed band (max level or one below) as the rule of eligibility, and
@@ -154,31 +170,20 @@ Settings that the cell rule replaced (`picker.fit_bands`, `picker.max_level_gap`
 
 ## Consequences
 
-- Cold start. With no data at all every candidate is allowed by its benchmark
-  ceiling and has the same cell score, so the first picks follow quota pace only.
-  The over-qualification term of 0026 that kept strong models off easy work is
-  gone until there are cells to show it. The owner's live data has cells, so this
-  matters only for a new install or a new model.
+- Cold start. With no data at all every candidate has the same cell score. The
+  weakest benchmark stays and stronger ones are left out where they are more than
+  one bucket above the task, so the first picks go to the weakest adequate model
+  and to models near their ceiling, then follow quota pace. A lone strong model on
+  the roster is still used.
 - A model with fewer than 3 tasks in a bucket is allowed up to its benchmark
-  ceiling and gets the uncertain boost. That is how it earns a record. It also
-  means a strong new model is tried on easy work a few times.
+  ceiling and, near that ceiling, gets the uncertain boost. That is how it earns a
+  record. A strong model does not get tries on easy work.
 - The Quotas heatmap forecast in the TUI still simulates the level rule. The
   gateway's own preview of the current picks (`QualityPicks`) uses the cell rule
   at the middle of each level's D range. Part 2 should move the forecast too.
-- Tasks that were stopped by the owner or ended with an infrastructure failure
-  score 0, as the owner's rule says (not complete). If that proves too harsh for
-  models behind an unreliable provider, leave such tasks out of the table.
-- A session that ran several times counts its defects and failed steps on each
-  run, because a task is a run. A severity 4 defect on a session with five runs
-  zeroes five tasks. The owner's tables were built this way and the live check
-  values match it. Counting session-level penalties once, on the last run, would
-  lift the cells of models that are continued often. It is a one-line change in
-  `pickerTasks` if the owner wants it.
-- Thin cells use the benchmark and the uncertain boost, so on the live data a
-  strong model with no record in an easy bucket is tried alongside the models
-  with a record, and the rotation spreads work over most allowed models almost
-  evenly. Rule 4 only removes a strong model that has shown it scores 0.25 under
-  the best. If the owner wants strong models kept off easy work from the start,
-  the fix is to apply the over-qualification rule to a thin cell by its
-  benchmark alone, or to skip the boost for a cell more than one bucket under the
-  model's ceiling.
+- A model that is continued often is not punished on every run: its defects and
+  failed steps land on one run per session. Its earlier runs still show their own
+  partial outcomes and fix rounds.
+- Runs that were stopped or hit an infrastructure failure are not in the table.
+  A model behind an unreliable provider is not judged by those runs. Its timed
+  out and failed runs still count as 0.
