@@ -102,6 +102,10 @@ func TestMergerStartStopProposal(t *testing.T) {
 			if argValue(rec.Args, "--name") != "garden merger" || argValue(rec.Args, "--model") != "claude-opus-5-5" || rec.Args[len(rec.Args)-1] != MergerFirstMessage {
 				t.Fatalf("args=%v", rec.Args)
 			}
+			env, _ := rec.Settings["env"].(map[string]any)
+			if got := env["GOCACHE"]; got != target.d.workerGoCacheDir() {
+				t.Fatalf("merger GOCACHE = %v, want %s", got, target.d.workerGoCacheDir())
+			}
 			if started.EnterPlan != nil {
 				t.Fatalf("merger opened a view: %+v", started.EnterPlan)
 			}

@@ -321,6 +321,9 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		name += " merger"
 	}
 	args := []string{"--bg", "--name", name}
+	if p.Merger {
+		args = append(args, "--settings", mergerClaudeSettings(d.workerGoCacheDir()))
+	}
 	if p.Model != "" {
 		args = append(args, "--model", p.Model)
 	}
@@ -502,7 +505,11 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID, socket, pane, false, false, false), nil
+	args := []string{"--bg", "--resume", a.NativeID}
+	if a.Type == "merger" {
+		args = append(args, "--settings", mergerClaudeSettings(d.workerGoCacheDir()))
+	}
+	return d.launchOwnerClaude(r, bin, args, a.NativeID, socket, pane, false, false, false), nil
 }
 
 func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {

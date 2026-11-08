@@ -75,6 +75,12 @@ func (d *Daemon) workerSettingsWith(snap settings.Snapshot, repo string) WorkerS
 			_ = json.Unmarshal(e.Value, &result.MemReserve)
 		}
 	}
+	if local.CacheMaxBytes == 0 {
+		decode("workers.cache_max_bytes", &result.CacheMaxBytes)
+	}
+	if local.CacheLowBytes == 0 {
+		decode("workers.cache_low_bytes", &result.CacheLowBytes)
+	}
 	for _, f := range []struct {
 		key   string
 		local time.Duration
