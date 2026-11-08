@@ -269,7 +269,11 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 			return p, nil
 		}
 	}
-	if p, found := d.focusHerdrSession(q.HerdrSocket, info.Harness, info.NativeID, base.Host, name); found {
+	p, found := d.focusHerdrSession(q.HerdrSocket, info.Harness, info.NativeID, base.Host, name)
+	if !found && info.Harness == "claude" && len(base.Argv) == 3 && base.Argv[1] == "attach" {
+		p, found = d.focusHerdrAttachClient(q.HerdrSocket, base.Argv[2], base.Host, name)
+	}
+	if found {
 		if viaGateway && p.OpenedHerdr {
 			return remotePane(p.HerdrPane), nil
 		}

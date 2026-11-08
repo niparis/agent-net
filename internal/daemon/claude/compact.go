@@ -22,11 +22,87 @@ import (
 type idleCompactState struct {
 	attempted, running, awaitingIdle bool
 	at                               int64
+	skipLogged                       string // last skip reason logged in this idle stretch
 }
 
 // The daemon supplies the live recipe. Other hosts (including adapter tests)
 // need not implement settings to discover and deliver sessions.
 type compactSettingsHost interface{ SettingsSnapshot() settings.Snapshot }
+
+// AttachClientsViewing says, for each `claude attach` client pid, whether the
+// owner is looking at it: it runs outside herdr, or in a herdr pane that herdr
+// reports as focused. A client in an unfocused herdr pane is not a viewer. A
+// pid missing from the answer, and a host without herdr support, count as
+// viewers. One call is one scan, so it asks herdr once for all clients.
+type compactViewHost interface {
+	AttachClientsViewing(pids []int) map[int]bool
+}
+
+// viewedJobs returns a function that says whether the owner is viewing a job.
+// exceptPID is our own attach client, which never counts.
+func (a *Adapter) viewedJobs(ctx context.Context, exceptPID int) (func(job string) bool, error) {
+	if a.compactAttached != nil {
+		jobs, err := a.compactAttached(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return func(job string) bool { return jobs[job] }, nil
+	}
+	var out []byte
+	var err error
+	if a.compactPS != nil {
+		out, err = a.compactPS(ctx)
+	} else {
+		out, err = exec.CommandContext(ctx, "ps", "-axww", "-o", "pid=,args=").Output()
+	}
+	if err != nil {
+		return nil, err
+	}
+	clients := attachClients(out, exceptPID)
+	view, _ := a.host.(compactViewHost)
+	// Built on first use, so a scan that finds no candidate past the token
+	// check does not ask herdr at all.
+	var snapshot map[int]bool
+	return func(job string) bool {
+		if len(clients[job]) == 0 {
+			return false
+		}
+		if view == nil {
+			return true
+		}
+		if snapshot == nil {
+			var pids []int
+			for _, list := range clients {
+				pids = append(pids, list...)
+			}
+			snapshot = view.AttachClientsViewing(pids)
+		}
+		for _, pid := range clients[job] {
+			if v, ok := snapshot[pid]; !ok || v {
+				return true
+			}
+		}
+		return false
+	}, nil
+}
+
+// compactEvent logs one line per attempt or skip decision. A skip reason is
+// logged once per session in an idle stretch.
+func (a *Adapter) compactEvent(id, result string) {
+	a.host.Logf("event=idle_compact session=%s result=%s", id, result)
+}
+
+func (a *Adapter) compactSkip(id, reason string) {
+	a.mu.Lock()
+	s := a.compactStates[id]
+	same := s.skipLogged == reason
+	s.skipLogged = reason
+	a.compactStates[id] = s
+	a.mu.Unlock()
+	if !same {
+		a.compactEvent(id, "skipped:"+reason)
+	}
+}
 
 // Called on every discovery, so even a short busy turn resets the idle stretch.
 // Our own /compact turn must not reset the attempt that is still in flight.
@@ -66,11 +142,7 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 	if a.compactNow != nil {
 		now = a.compactNow()
 	}
-	attached := a.compactAttached
-	if attached == nil {
-		attached = claudeAttachedJobs
-	}
-	jobs, err := attached(ctx)
+	viewed, err := a.viewedJobs(ctx, 0)
 	if err != nil {
 		a.host.Logf("claude idle compaction: cannot check attached clients: %v", err)
 		return
@@ -79,7 +151,7 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 	var candidates []found
 	for _, f := range a.byNative {
 		s := a.compactStates[f.info.NativeID]
-		if f.kind == "bg" && f.job != "" && f.info.Status == "idle" && !s.attempted && !jobs[f.job] && f.info.LastActive > 0 && now.Sub(time.Unix(f.info.LastActive, 0)) >= snap.Duration("sessions.idle_compaction_after", settings.Where{}) {
+		if f.kind == "bg" && f.job != "" && f.info.Status == "idle" && !s.attempted && f.info.LastActive > 0 && now.Sub(time.Unix(f.info.LastActive, 0)) >= snap.Duration("sessions.idle_compaction_after", settings.Where{}) {
 			candidates = append(candidates, f)
 		}
 	}
@@ -90,6 +162,11 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 		}
 		path := a.models.transcript(f.info.NativeID, f.info.Cwd)
 		if contextTokens(path) < int64(snap.Int("sessions.idle_compaction_min_tokens", settings.Where{})) {
+			a.compactSkip(f.info.NativeID, "small_context")
+			continue
+		}
+		if viewed(f.job) {
+			a.compactSkip(f.info.NativeID, "viewing")
 			continue
 		}
 		// Discovery may have seen a new turn since the candidate list was built.
@@ -120,33 +197,39 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 		a.mu.Unlock()
 		if err != nil {
 			a.host.Logf("claude idle compaction %s: %v", f.info.NativeID, err)
+			a.compactEvent(f.info.NativeID, "error")
 		} else {
 			a.host.Logf("claude idle compaction %s: compacted while idle", f.info.NativeID)
+			a.compactEvent(f.info.NativeID, "ok")
 		}
 	}
 }
 
 // ps is available on Linux and macOS. Match argv words, including the complete
 // job ID, rather than a substring in a shell command. Failure skips this scan.
-func claudeAttachedJobs(ctx context.Context) (map[string]bool, error) {
-	out, err := exec.CommandContext(ctx, "ps", "-axww", "-o", "pid=,args=").Output()
-	if err != nil {
-		return nil, err
-	}
-	return attachedJobs(out), nil
-}
 func attachedJobs(out []byte) map[string]bool {
 	return attachedJobsExcept(out, 0)
 }
 func attachedJobsExcept(out []byte, exceptPID int) map[string]bool {
 	jobs := map[string]bool{}
+	for job := range attachClients(out, exceptPID) {
+		jobs[job] = true
+	}
+	return jobs
+}
+
+// attachClients maps each job ID to the pids of its `claude attach` clients.
+func attachClients(out []byte, exceptPID int) map[string][]int {
+	clients := map[string][]int{}
 	for _, line := range strings.Split(string(out), "\n") {
 		args := strings.Fields(line)
 		if len(args) >= 4 && args[0] != strconv.Itoa(exceptPID) && filepath.Base(args[1]) == "claude" && args[2] == "attach" {
-			jobs[args[3]] = true
+			if pid, err := strconv.Atoi(args[0]); err == nil {
+				clients[args[3]] = append(clients[args[3]], pid)
+			}
 		}
 	}
-	return jobs
+	return clients
 }
 
 // Same definition as claudeTranscriptStats: the last assistant's input plus
@@ -271,18 +354,11 @@ func (a *Adapter) compactSession(ctx context.Context, f found, path string) (res
 	case <-prompt:
 	}
 	// Recheck immediately before typing, excluding our own attach client.
-	var jobs map[string]bool
-	if a.compactAttached != nil {
-		jobs, err = a.compactAttached(ctx)
-	} else {
-		var out []byte
-		out, err = exec.CommandContext(ctx, "ps", "-axww", "-o", "pid=,args=").Output()
-		jobs = attachedJobsExcept(out, cmd.Process.Pid)
-	}
+	viewed, err := a.viewedJobs(ctx, cmd.Process.Pid)
 	if err != nil {
 		return fmt.Errorf("attached clients: %w", err)
 	}
-	if jobs[f.job] {
+	if viewed(f.job) {
 		return fmt.Errorf("another client attached before compact")
 	}
 	raw, err := os.ReadFile(filepath.Join(a.cfg.SessionsDir, fmt.Sprintf("%d.json", f.pid)))

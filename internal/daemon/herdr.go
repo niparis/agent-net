@@ -203,6 +203,7 @@ type herdrPaneInfo struct {
 	TabID      string `json:"tab_id"`
 	TerminalID string `json:"terminal_id"`
 	Agent      string `json:"agent"`
+	Focused    bool   `json:"focused"`
 	Session    *struct {
 		Agent string `json:"agent"`
 		Kind  string `json:"kind"`
@@ -259,6 +260,50 @@ func (d *Daemon) herdrHolds(bin, socket, pane string, pids map[int]bool) bool {
 		}
 	}
 	return false
+}
+
+// herdrPaneProcesses lists the pids of a pane: its shell and the processes of
+// its foreground group.
+func (d *Daemon) herdrPaneProcesses(bin, socket, pane string) []int {
+	out, err := d.herdrRun(bin, socket, "pane", "process-info", "--pane", pane)
+	if err != nil {
+		return nil
+	}
+	var r struct {
+		Result struct {
+			Info struct {
+				ShellPID int `json:"shell_pid"`
+				Procs    []struct {
+					PID int `json:"pid"`
+				} `json:"foreground_processes"`
+			} `json:"process_info"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(out, &r) != nil {
+		return nil
+	}
+	var pids []int
+	if r.Result.Info.ShellPID > 1 {
+		pids = append(pids, r.Result.Info.ShellPID)
+	}
+	for _, p := range r.Result.Info.Procs {
+		if p.PID > 1 {
+			pids = append(pids, p.PID)
+		}
+	}
+	return pids
+}
+
+// claudeAttachJob returns the job ID of a `claude attach <job>` command line,
+// or "". The program may be started through an interpreter, so the word
+// `claude` may be the first or the second argument.
+func claudeAttachJob(args []string) string {
+	for i := 0; i < len(args) && i < 2; i++ {
+		if filepath.Base(args[i]) == "claude" && i+2 < len(args) && args[i+1] == "attach" {
+			return args[i+2]
+		}
+	}
+	return ""
 }
 
 // pidChain is pid and its parents.
@@ -367,4 +412,84 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 		out.HerdrPane = pane.PaneID
 	}
 	return out, true
+}
+
+// AttachClientsViewing says, for each `claude attach` client pid, whether the
+// owner is looking at it (idle compaction, decision 0078). A client is viewed
+// when it runs outside herdr, or in a herdr pane that herdr reports as focused.
+// A client in an unfocused pane is not. When herdr cannot say where a client
+// is, the owner may be looking at it, so it counts as viewed.
+//
+// One scan costs one `pane list` per herdr server and at most one
+// `pane process-info` per pane, however many clients there are.
+func (d *Daemon) AttachClientsViewing(pids []int) map[int]bool {
+	type server struct {
+		bin, socket string
+		panes       []herdrPaneInfo
+		ok          bool
+		procs       map[string]map[int]bool // pane -> its pids, read once
+	}
+	servers := map[string]*server{}
+	holds := func(sv *server, pane string, chain map[int]bool) bool {
+		set, seen := sv.procs[pane]
+		if !seen {
+			set = map[int]bool{}
+			for _, p := range d.herdrPaneProcesses(sv.bin, sv.socket, pane) {
+				set[p] = true
+			}
+			sv.procs[pane] = set
+		}
+		for p := range set {
+			if chain[p] {
+				return true
+			}
+		}
+		return false
+	}
+	out := make(map[int]bool, len(pids))
+	for _, pid := range pids {
+		out[pid] = true // unless a focused:false pane is found below
+		h, found := findHerdrPane(pid)
+		fromServer := false
+		if !found {
+			h, found = findHerdrServer(pid)
+			fromServer = found
+		}
+		if !found {
+			continue // outside herdr
+		}
+		key := h.bin + "|" + h.socket + "|" + h.session
+		sv := servers[key]
+		if sv == nil {
+			sv = &server{procs: map[string]map[int]bool{}}
+			servers[key] = sv
+			if bin := d.herdrBinary(h.bin); bin != "" {
+				sv.bin, sv.socket = bin, h.socket
+				if fromServer {
+					sv.panes, sv.socket, sv.ok = d.herdrPanesFromServer(bin, h)
+				} else if panes, err := d.herdrPanes(bin, h.socket); err == nil {
+					sv.panes, sv.ok = panes, true
+				}
+			}
+		}
+		if !sv.ok {
+			continue
+		}
+		// The pane in the environment is where the client started; a moved pane
+		// has a new ID, so look at the other panes only if it no longer holds it.
+		chain := pidChain(pid)
+		for _, own := range []bool{true, false} {
+			done := false
+			for _, p := range sv.panes {
+				if (p.PaneID == h.id) == own && holds(sv, p.PaneID, chain) {
+					out[pid], done = p.Focused, true
+					break
+				}
+			}
+			if done {
+				break
+			}
+		}
+	}
+	return out
 }

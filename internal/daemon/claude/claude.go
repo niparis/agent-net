@@ -56,6 +56,7 @@ type Adapter struct {
 	compactBinary                        string
 	compactPromptTimeout, compactTimeout time.Duration
 	compactAttached                      func(context.Context) (map[string]bool, error)
+	compactPS                            func(context.Context) ([]byte, error)
 	mu                                   sync.Mutex
 	// healthWarning is set after healthBroken reaches two consecutive
 	// broken delivery checks (health.go).
