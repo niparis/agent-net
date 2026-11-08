@@ -329,6 +329,14 @@ settings:
     levels: [network]
     default: "12h"
     live: true
+  - key: cleanup.uv_prune
+    rows: [137]
+    description: Run uv cache prune in the hourly housekeeping.
+    kind: rule
+    type: bool
+    levels: [network]
+    default: true
+    live: true
   - key: delivery.save_unfinished
     rows: [135]
     description: Save unfinished worker changes.
@@ -1088,7 +1096,7 @@ ledger:
   - {row: 134, keys: [delivery.worker_branch_prep, delivery.worker_agy_commit_instruction], step: 6}
   - {row: 135, keys: [delivery.save_unfinished, delivery.trailer_worker, delivery.trailer_model, delivery.trailer_harness, delivery.trailer_difficulty, delivery.trailer_caller], step: 6}
   - {row: 136, code: "worker rules stay in the repository"}
-  - {row: 137, keys: [delivery.cleanup_first_delay, delivery.cleanup_interval, delivery.step_reminder, delivery.step_stuck], step: 6}
+  - {row: 137, keys: [delivery.cleanup_first_delay, delivery.cleanup_interval, delivery.step_reminder, delivery.step_stuck, cleanup.uv_prune], step: 6}
   - {row: 138, keys: [notices.untrusted_peer_framing]}
   - {row: 139, keys: [notices.trusted_request_framing]}
   - {row: 140, keys: [notices.owner_prompt_excerpt]}

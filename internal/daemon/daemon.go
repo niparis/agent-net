@@ -338,6 +338,8 @@ type Daemon struct {
 
 	cleanupLogMu        sync.Mutex
 	cleanupProjectLogs  map[string]time.Time
+	uvTimeoutMu         sync.Mutex
+	uvTimeoutLogged     time.Time
 	cleanupWorktreeLogs map[worktreeErrKey]time.Time
 
 	// shownHost is the name the gateway lists for this machine (the owner's

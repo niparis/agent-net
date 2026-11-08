@@ -493,6 +493,8 @@ func (d *Daemon) workerCacheCleanupLoop(ctx context.Context) {
 		every = d.cfg.testWorkerCacheCleanEvery
 	}
 	runEvery(ctx, first, every, func() {
-		d.cleanWorkerCachesAndDisk(ctx, time.Now())
+		now := time.Now()
+		d.cleanWorkerCachesAndDisk(ctx, now)
+		d.pruneUVCache(now)
 	})
 }
