@@ -1149,7 +1149,9 @@ matching Claude background record has state `done` and reports no live process.
 If the record omits its kind, the session's saved mode must say background.
 It refuses stopped, removed, ambiguous or unreadable records. The gateway
 limits attempts to one per session per 10 minutes, even across gateway restarts, and a wake opens no
-view. If Claude creates a copy, the gateway moves the original session ID to
+view. A wake the machine refused is not retried on a restart; only a new message
+asks again. A message asks for an interactive Claude session, a session of
+unknown mode, Codex or OpenCode only when the agent's autonomy is `wake`. If Claude creates a copy, the gateway moves the original session ID to
 it only for the owning machine during that wake, while the old session remains
 offline and the new native ID is not already registered. The resumed session
 keeps its normal permissions and treats peer content according to the existing

@@ -2867,7 +2867,9 @@ with no running process, its folder must exist, and the session must not be a
 worker. When the record
 omits its kind, agent-net must have recorded the session as a background
 session. Stopped, removed or unreadable records are not resumed. The gateway makes at most one attempt per session per 10 minutes,
-including across gateway restarts, and logs a failure once. Queued messages
+including across gateway restarts, and logs a failure once. A failed attempt
+is kept: a restart does not retry it, only a new message asks again, and each
+sender with a queued message gets one agent-net notice that says why. Queued messages
 cannot expire during the bounded wake; normal delivery resumes when the
 session registers. If Claude resumes into a copy with a new native ID, the
 original agent-net session ID and its queued messages follow that copy. This
@@ -2881,15 +2883,26 @@ The limits are the ones above: one attempt per session per 10 minutes, kept
 across gateway restarts, a failure logged once, never a worker, and never a new
 session or a clone. A wake never opens a view, a herdr pane or a window: the
 owner opens the session with Enter as usual. With autonomy `off` (the default)
-nothing changes, for every harness. What each harness does:
+a message asks for no wake, except that a Claude background session (mode
+`background`) is still woken by the background wake above. An interactive
+Claude session, a Claude session whose mode is not known, Codex and OpenCode
+are not asked, and the sender's receipt says so: `queued; <name> is offline and
+wake is off for this agent`. A wake that the machine refused for a reason gives
+the receipt `queued; <name> is offline and its last wake failed: <reason>`, and
+the sender gets one notice with the same reason. What each harness does:
 
 - Claude, interactive: `claude --bg --resume <session id>` in the recorded
   folder, through the same launcher as the background wake. The session is not
-  running, so it has no `done` record to check: the machine refuses when
-  `claude agents --json --all` lists a matching record that is running, is a
-  background record, or does not agree with the session ID, and when the
-  session was not recorded as an interactive one. A copy with a new native ID
-  keeps the agent-net session ID and its queued messages, as above.
+  running, so it has no `done` record to check. The machine refuses when
+  `claude agents --json --all` lists a matching record that is running, names
+  another session, has no kind (unless the session is recorded as background),
+  or is a background record that is not `done` or is in another folder (a
+  stopped one, for example). A finished background
+  run of the same session in the session's folder does not refuse it: Claude
+  keeps that record after the run. The same rule holds for a session whose mode
+  is background or not known: every record of the session must allow the
+  resume, whatever the mode. A copy with a new native ID keeps the agent-net
+  session ID and its queued messages, as above.
 - Codex: `thread/resume` on the shared Codex app server, with the session's
   folder. Codex lists the thread as loaded, the daemon registers it under the
   same session ID, and the message is queued with `thread/queue/add`, which

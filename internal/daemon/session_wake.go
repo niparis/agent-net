@@ -21,6 +21,40 @@ func (d *Daemon) wakeRetiredClaude(ctx context.Context, id, token string) error 
 	return d.wakeClaude(ctx, id, token, false)
 }
 
+// claudeAgentRecord is one entry of `claude agents --json --all`.
+type claudeAgentRecord struct {
+	ID        string `json:"id"`
+	SessionID string `json:"sessionId"`
+	Kind      string `json:"kind"`
+	PID       int    `json:"pid"`
+	Cwd       string `json:"cwd"`
+	State     string `json:"state"`
+}
+
+// interactiveRecordClear tells whether one record of the session lets an
+// autonomy wake go ahead, whatever the session's mode. A live record, one that
+// names another session, and a background record that did not finish or is in
+// another folder all stop it. A record with no kind counts as background only
+// for a session recorded as background, as the retired check reads it. A
+// finished background run leaves its record behind, so a finished one in the
+// session's folder does not: the session's owner resumes it the same way.
+func interactiveRecordClear(record claudeAgentRecord, identity bool, mode, cwd string) bool {
+	if !identity || record.PID != 0 {
+		return false
+	}
+	kind := record.Kind
+	if kind == "" && mode == protocol.ModeBackground {
+		kind = "background"
+	}
+	switch kind {
+	case "interactive":
+		return true
+	case "background", "bg":
+		return record.State == "done" && record.Cwd != "" && filepath.Clean(record.Cwd) == filepath.Clean(cwd)
+	}
+	return false
+}
+
 // wakeClaude is the Claude wake. A background session is resumed only from a
 // retired record. With autonomy wake the gateway also asks for an interactive
 // session, which is resumed in the background the same way (never a view).
@@ -70,23 +104,17 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 	if err != nil {
 		return fmt.Errorf("cannot read Claude background records: %w", err)
 	}
-	var agents []struct {
-		ID        string `json:"id"`
-		SessionID string `json:"sessionId"`
-		Kind      string `json:"kind"`
-		PID       int    `json:"pid"`
-		Cwd       string `json:"cwd"`
-		State     string `json:"state"`
-	}
+	var agents []claudeAgentRecord
 	if err := json.Unmarshal(out, &agents); err != nil {
 		return errors.New("cannot parse Claude background records")
 	}
 	matches := 0
 	retired := false
 	// An interactive session that is not running has no background record to
-	// check, so its absence is normal. Anything live, or any record that is
-	// not plainly an interactive one, is not.
-	interactive := autonomy && a.Mode == protocol.ModeForeground
+	// check, so its absence is normal. Anything live, or any record that does
+	// not say plainly what it is, is not. With autonomy wake, every record of
+	// the session must be clear, whatever the session's mode.
+	interactive := autonomy
 	for _, record := range agents {
 		// Some Claude records carry the full session ID. When they do, it
 		// must agree; otherwise use the short job ID only as a prefix.
@@ -100,7 +128,7 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 		identity := full || (prefix && record.SessionID == "")
 		background := record.Kind == "background" || record.Kind == "bg" || (record.Kind == "" && a.Mode == protocol.ModeBackground)
 		retired = identity && background && record.PID == 0 && record.State == "done" && record.Cwd != "" && filepath.Clean(record.Cwd) == filepath.Clean(a.Cwd)
-		if record.Kind != "interactive" || record.PID != 0 || !identity {
+		if !interactiveRecordClear(record, identity, a.Mode, a.Cwd) {
 			interactive = false
 		}
 	}
