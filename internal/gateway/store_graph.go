@@ -1254,9 +1254,12 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) erro
 	return nil
 }
 
-// graphNodesTables are the tables graphNodes reads. Keep it equal to the query
-// there (see readThrough).
-var graphNodesTables = []string{"graph_nodes", "projects", "sessions", "graph_edges"}
+// graphNodesTables are the tables and columns graphNodes reads. The graph reads
+// four columns of sessions, and no other: an upsert of a session rewrites its
+// status and last_seen, which the graph does not show, so only a change of these
+// four moves the graph. Keep it equal to the query there (see readThrough).
+var graphNodesTables = []string{"graph_nodes", "projects", "sessions.repo_project", "sessions.repo_root",
+	"sessions.archived_at", "sessions.graph_excluded", "graph_edges"}
 
 // graphTables are the tables graphWith reads, through every function it calls:
 // the nodes, the charters and their levels (charterTables), the settings

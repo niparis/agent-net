@@ -434,7 +434,25 @@ func (s *Store) PlaybookFor(model, harness string) (*protocol.PlaybookNote, bool
 
 // RecentWorkerFailures returns models with a real failed run in the failure window.
 // A stopped run is neutral and does not count as a model failure.
+// failuresTables are the tables RecentWorkerFailures reads. Keep it equal to the
+// query there (see readThrough).
+var failuresTables = []string{"worker_runs"}
+
+// RecentWorkerFailures returns the models that failed lately on a node. The read
+// is kept until worker_runs is written, and never past the second it was read in:
+// the failures are those of the last few hours by the clock. Each caller gets a
+// copy.
 func (s *Store) RecentWorkerFailures(nodeID, harness string) (map[string]bool, error) {
+	v, err := s.readThrough("failures|"+nodeID+"|"+harness, failuresTables, true, func() (any, error) {
+		return s.recentWorkerFailuresRead(nodeID, harness)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return copyOf(v.(map[string]bool)), nil
+}
+
+func (s *Store) recentWorkerFailuresRead(nodeID, harness string) (map[string]bool, error) {
 	rows, err := s.db.Query(`SELECT DISTINCT model FROM worker_runs WHERE node_id = ? AND harness = ? AND outcome = ? AND ended_at >= ?`, nodeID, harness, protocol.OutcomeFailed, s.now().Add(-protocol.ModelFailureHours*time.Hour).Unix())
 	if err != nil {
 		return nil, err

@@ -36,8 +36,17 @@ func readCases() []readCase {
 		{"agents online", agentsTables, func(s *Store) {
 			s.Agents(protocol.QueryAgents{OnlineOnly: true, IncludeOwners: true, Project: "cogforge", Text: "a"})
 		}},
+		{"worker log", workerLogTables, func(s *Store) { s.WorkerLog(200) }},
+		{"inbox", inboxTables, func(s *Store) { s.ListInbox() }},
+		{"agent", agentOneTables, func(s *Store) { s.Agent(richAgentID) }},
+		{"visible graph", visibleTables, func(s *Store) { s.visibleGraph(false) }},
+		{"worker failures", failuresTables, func(s *Store) { s.RecentWorkerFailures("n_readcase", "opencode") }},
+		{"calibration", calibrationTables, func(s *Store) { s.Calibration() }},
 	}
 }
+
+// richAgentID is the session of richReadStore that the agent read is about.
+const richAgentID = "s_readcase"
 
 // richReadStore is a store whose cached reads take every branch: sessions with
 // delegation policies (so models are resolved), charters, edges, a loop, a
@@ -70,14 +79,24 @@ func richReadStore(t *testing.T) *Store {
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: oc1, Recipient: oc2, Body: "question", Type: protocol.TypeRequest}); err != nil {
 		t.Fatal(err)
 	}
+	// A session of a fixed ID, for the reads of one agent.
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{SessionID: richAgentID, Harness: "opencode", NativeID: "rc",
+		Name: "rc", Cwd: "/w/rc", Repo: protocol.RepoInfo{Project: "cogforge"}}); err != nil {
+		t.Fatal(err)
+	}
+	// A finished run, so the worker log looks up its assessment and notice.
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: oc1, Harness: "opencode", Model: "p/m",
+		Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: oc2, Difficulty: "hard"}); err != nil {
+		t.Fatal(err)
+	}
 	return s
 }
 
-// observed runs f and returns the tables its statements read and the
-// statements the connector could not describe.
-func observed(t *testing.T, s *Store, f func()) (reads map[string]bool, unknown []string) {
+// observed runs f and returns the tables and the table.column names its
+// statements read, and the statements the connector could not describe.
+func observed(t *testing.T, s *Store, f func()) (reads, cols map[string]bool, unknown []string) {
 	t.Helper()
-	reads = map[string]bool{}
+	reads, cols = map[string]bool{}, map[string]bool{}
 	s.connector.SetObserver(func(st sqlitecache.Statement) {
 		if !st.Known {
 			unknown = append(unknown, st.Query)
@@ -85,35 +104,68 @@ func observed(t *testing.T, s *Store, f func()) (reads map[string]bool, unknown 
 		for _, r := range st.Reads {
 			reads[r] = true
 		}
+		for _, c := range st.ReadColumns {
+			cols[c] = true
+		}
 	})
 	defer s.connector.SetObserver(nil)
 	f()
-	return reads, unknown
+	return reads, cols, unknown
+}
+
+// undeclared returns the reads the declared keys do not name. A table read
+// through some columns is named by the table or by each column. A table read
+// through no column (a count of rows) is named by any key of the table: rows
+// are counted by the table's inserts and deletes, which every key sees.
+func undeclared(declared []string, reads, cols map[string]bool) []string {
+	have := map[string]bool{}
+	for _, d := range declared {
+		have[d] = true
+	}
+	colsOf := map[string][]string{}
+	for c := range cols {
+		tbl, col, _ := strings.Cut(c, ".")
+		colsOf[tbl] = append(colsOf[tbl], col)
+	}
+	var missing []string
+	for tbl := range reads {
+		if have[tbl] {
+			continue
+		}
+		if len(colsOf[tbl]) == 0 {
+			named := false
+			for _, d := range declared {
+				if strings.HasPrefix(d, tbl+".") {
+					named = true
+				}
+			}
+			if !named {
+				missing = append(missing, tbl)
+			}
+			continue
+		}
+		for _, col := range colsOf[tbl] {
+			if !have[tbl+"."+col] {
+				missing = append(missing, tbl+"."+col)
+			}
+		}
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 func TestCachedReadsDeclareEveryTableTheyRead(t *testing.T) {
 	check := func(t *testing.T, s *Store) {
 		for _, c := range readCases() {
 			s.rc = readCache{}
-			reads, unknown := observed(t, s, func() { c.run(s) })
+			reads, cols, unknown := observed(t, s, func() { c.run(s) })
 			if len(unknown) > 0 {
 				t.Errorf("%s: the connector could not tell the tables of: %.100s", c.name, unknown[0])
 			}
 			if len(reads) == 0 {
 				t.Fatalf("%s: no statement was seen", c.name)
 			}
-			declared := map[string]bool{}
-			for _, d := range c.tables {
-				declared[d] = true
-			}
-			var missing []string
-			for r := range reads {
-				if !declared[r] {
-					missing = append(missing, r)
-				}
-			}
-			sort.Strings(missing)
-			if len(missing) > 0 {
+			if missing := undeclared(c.tables, reads, cols); len(missing) > 0 {
 				t.Errorf("%s reads %v, which its declared tables do not name. Add them to the set next to the query.", c.name, missing)
 			}
 		}
@@ -138,30 +190,36 @@ func TestCachedReadsDeclareEveryTableTheyRead(t *testing.T) {
 	})
 }
 
-// The sets name tables that exist, spelled in lower case, once each.
+// The sets name tables and columns that exist, spelled in lower case, once each.
 func TestCachedReadTableSetsNameRealTables(t *testing.T) {
 	s, _ := newTestStore(t)
-	real := map[string]bool{}
-	rows, err := s.db.Query(`SELECT name FROM sqlite_master WHERE type='table'`)
+	real := map[string]map[string]bool{}
+	rows, err := s.db.Query(`SELECT m.name, p.name FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type='table'`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for rows.Next() {
-		var n string
-		rows.Scan(&n)
-		real[n] = true
+		var tbl, col string
+		rows.Scan(&tbl, &col)
+		if real[tbl] == nil {
+			real[tbl] = map[string]bool{}
+		}
+		real[tbl][col] = true
 	}
 	rows.Close()
 	for _, c := range readCases() {
 		seen := map[string]bool{}
-		for _, tbl := range c.tables {
-			if !real[tbl] {
-				t.Errorf("%s declares %q, which is no table", c.name, tbl)
+		for _, key := range c.tables {
+			tbl, col, dotted := strings.Cut(key, ".")
+			if real[tbl] == nil {
+				t.Errorf("%s declares %q, which is no table", c.name, key)
+			} else if dotted && !real[tbl][col] {
+				t.Errorf("%s declares %q, which is no column of %s", c.name, key, tbl)
 			}
-			if seen[tbl] || tbl != strings.ToLower(tbl) {
-				t.Errorf("%s declares %q twice or not in lower case", c.name, tbl)
+			if seen[key] || key != strings.ToLower(key) {
+				t.Errorf("%s declares %q twice or not in lower case", c.name, key)
 			}
-			seen[tbl] = true
+			seen[key] = true
 		}
 	}
 }
@@ -180,6 +238,14 @@ func TestSchemaHasNoWritesTheConnectorMisses(t *testing.T) {
 		t.Fatalf("foreign_keys is %d (%v): actions write tables a statement does not name", fk, err)
 	}
 }
+
+// jsonColumns are the columns that hold JSON, which the reads decode or a
+// CHECK constraint validates.
+var jsonColumns = map[string]string{"options": "[]", "origin": "{}", "fields": "{}", "reasons": "[]", "capabilities": "[]"}
+
+// checkedColumns are the table.column values a CHECK constraint accepts, for the
+// columns the generic row cannot guess.
+var checkedColumns = map[string]string{"delivery_changes.state": "open", "worker_runs.early_quit": "0", "worker_ratings.score": "3"}
 
 // rowFor inserts a row with fresh values into table. The values are not
 // meaningful; they only have to be accepted.
@@ -215,14 +281,39 @@ func rowFor(s *Store, table string, n int) error {
 		}
 		cols = append(cols, `"`+c.name+`"`)
 		marks = append(marks, "?")
-		if strings.Contains(typ, "INT") || strings.Contains(typ, "BOOL") {
+		switch {
+		case jsonColumns[c.name] != "":
+			args = append(args, jsonColumns[c.name])
+		case checkedColumns[table+"."+c.name] != "":
+			args = append(args, checkedColumns[table+"."+c.name])
+		case strings.Contains(typ, "INT") || strings.Contains(typ, "BOOL"):
 			args = append(args, n)
-		} else {
+		default:
 			args = append(args, fmt.Sprintf("zz%d", n))
 		}
 	}
 	_, err = s.db.Exec(`INSERT INTO "`+table+`"(`+strings.Join(cols, ",")+`) VALUES(`+strings.Join(marks, ",")+`)`, args...)
 	return err
+}
+
+// writeKey changes what a declared key names: a table gets a row, and a
+// table.column gets a changed value in its rows (a value that did not change
+// moves no column, see sqlitecache.Stamp).
+func writeKey(t *testing.T, s *Store, key string, n int) {
+	t.Helper()
+	tbl, col, dotted := strings.Cut(key, ".")
+	if !dotted {
+		writeTo(t, s, key, n)
+		return
+	}
+	before := s.connector.Stamp(key)
+	q := fmt.Sprintf(`UPDATE "%[1]s" SET "%[2]s" = CASE WHEN typeof("%[2]s") IN ('integer','real') THEN "%[2]s"+1 ELSE coalesce("%[2]s",'')||'probe' END`, tbl, col)
+	if _, err := s.db.Exec(q); err != nil {
+		t.Fatalf("write to %s: %v", key, err)
+	}
+	if s.connector.Stamp(key) == before {
+		t.Fatalf("a write that changed %s did not move its stamp", key)
+	}
 }
 
 // writeRow is how the tests change a table. A table the generic row does not
@@ -274,16 +365,16 @@ func TestCachedReadsAreInvalidatedByEveryDeclaredTable(t *testing.T) {
 			if n := statements(s, func() { c.run(s) }); n != 0 {
 				t.Fatalf("the second read ran %d statements: it is not kept", n)
 			}
-			for i, table := range c.tables {
-				i, table := i, table
-				t.Run(table, func(t *testing.T) {
-					writeTo(t, s, table, i)
+			for i, key := range c.tables {
+				i, key := i, key
+				t.Run(key, func(t *testing.T) {
+					writeKey(t, s, key, i)
 					if n := statements(s, func() { c.run(s) }); n == 0 {
-						t.Errorf("a write to %s did not make the read load again", table)
+						t.Errorf("a write to %s did not make the read load again", key)
 					}
 					// And it is kept again.
 					if n := statements(s, func() { c.run(s) }); n != 0 {
-						t.Errorf("after the write to %s the read was not kept (%d statements)", table, n)
+						t.Errorf("after the write to %s the read was not kept (%d statements)", key, n)
 					}
 				})
 			}
@@ -333,4 +424,73 @@ func TestCachedReadsSurviveWritesToOtherTables(t *testing.T) {
 			}
 		}
 	}
+}
+
+// A session.upsert rewrites the status and the last_seen of a session on every
+// report. The graph shows four columns of sessions, so a report that changes
+// none of them keeps the graph, and the agent list (which shows the status)
+// loads again.
+func TestCachedGraphSurvivesAnUpsertThatChangesNoGraphColumn(t *testing.T) {
+	s := richReadStore(t)
+	graph, agents := readCases()[1], readCases()[2]
+	graph.run(s)
+	agents.run(s)
+	in := protocol.SessionInfo{Harness: "opencode", NativeID: "a", Name: "a", Cwd: "/w/a", Status: "busy",
+		Repo: protocol.RepoInfo{Project: "cogforge"}}
+	node := mustNodeID(t, s)
+	if _, err := s.UpsertSession(node, in); err != nil {
+		t.Fatal(err)
+	}
+	if n := statements(s, func() { graph.run(s) }); n != 0 {
+		t.Fatalf("the graph loaded again after an upsert that changed no graph column (%d statements)", n)
+	}
+	if n := statements(s, func() { agents.run(s) }); n == 0 {
+		t.Fatal("the agent list was kept after an upsert that changed its status")
+	}
+}
+
+// The same report with a new repo root changes a graph column: the graph loads
+// again, and so does the graph after a new session.
+func TestCachedGraphReloadsWhenASessionChangesItsRepoOrIsNew(t *testing.T) {
+	s := richReadStore(t)
+	graph := readCases()[1]
+	graph.run(s)
+	node := mustNodeID(t, s)
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "a", Name: "a", Cwd: "/w/a",
+		Repo: protocol.RepoInfo{Project: "cogforge", Root: "/w/a"}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := statements(s, func() { graph.run(s) }); n == 0 {
+		t.Fatal("the graph was kept after a session changed its repo root")
+	}
+	graph.run(s)
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "new", Name: "new", Cwd: "/w/new",
+		Repo: protocol.RepoInfo{Project: "fresh"}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := statements(s, func() { graph.run(s) }); n == 0 {
+		t.Fatal("the graph was kept after a new session")
+	}
+}
+
+// A write to a column the graph does not read leaves the graph alone.
+func TestCachedGraphSurvivesWritesToOtherColumnsOfSessions(t *testing.T) {
+	s := richReadStore(t)
+	graph := readCases()[1]
+	graph.run(s)
+	if _, err := s.db.Exec(`UPDATE sessions SET last_seen = last_seen + 1, status = 'idle'`); err != nil {
+		t.Fatal(err)
+	}
+	if n := statements(s, func() { graph.run(s) }); n != 0 {
+		t.Fatalf("the graph loaded again after a write to last_seen and status (%d statements)", n)
+	}
+}
+
+func mustNodeID(t *testing.T, s *Store) string {
+	t.Helper()
+	var node string
+	if err := s.db.QueryRow(`SELECT id FROM nodes LIMIT 1`).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	return node
 }

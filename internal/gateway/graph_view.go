@@ -1,8 +1,10 @@
 package gateway
 
 import (
-	"github.com/niparis/agent-net/internal/protocol"
+	"strconv"
 	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // handleGraphView answers "query.graph" from a machine's daemon.
@@ -101,8 +103,26 @@ func (s *Store) graphView(project string, historyPerNode int, all bool) (protoco
 	return out, rows.Err()
 }
 
-// visibleGraph hides inactive implicit nodes from owner-facing graph reads.
+// visibleTables are the tables visibleGraph reads: the graph, the nodes it
+// keeps, the sessions that keep a project visible (whole rows: their online flag
+// and last_seen are read), the CTO session (owner_settings) and the agent rows
+// that graphContext adds (agentListTables). Keep it equal to those queries (see
+// readThrough).
+var visibleTables = tableUnion(graphTables, agentListTables, []string{"sessions"})
+
+// visibleGraph hides inactive implicit nodes from owner-facing graph reads. The
+// read is kept until one of visibleTables is written, and never past the second
+// it was read in: the sessions that keep a project visible are seen for seven
+// days. Each caller gets a copy.
 func (s *Store) visibleGraph(all bool) (protocol.Graph, error) {
+	v, err := s.readThrough("visible|"+strconv.FormatBool(all), visibleTables, true, func() (any, error) { return s.visibleGraphRead(all) })
+	if err != nil {
+		return protocol.Graph{}, err
+	}
+	return copyOf(v.(protocol.Graph)), nil
+}
+
+func (s *Store) visibleGraphRead(all bool) (protocol.Graph, error) {
 	g, err := s.Graph()
 	if err != nil {
 		return g, err

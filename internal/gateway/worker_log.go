@@ -5,17 +5,36 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// workerLogTables are the tables workerLogRead reads: the runs, the notices
+// that a run's lookup finds (messages), and the agent rows of the workers
+// (agentListTables, which covers the session, node and caller profile). Keep it
+// equal to those queries (see readThrough).
+var workerLogTables = tableUnion([]string{"worker_runs", "messages"}, agentListTables)
+
 // WorkerLog combines ended runs and current starts, with a hard owner-view limit.
+//
+// The read is kept until one of workerLogTables is written, but never past the
+// second it was read in: a running worker's time and the windows of the agent
+// rows depend on the clock. Each caller gets a copy.
 func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 200
 	}
+	v, err := s.readThrough("worker_log|"+strconv.Itoa(limit), workerLogTables, true, func() (any, error) { return s.workerLogRead(limit) })
+	if err != nil {
+		return nil, err
+	}
+	return copyOf(v.([]protocol.WorkerLogEntry)), nil
+}
+
+func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 	// worker_runs.started_at is Unix seconds. An assessment's started_at is
 	// Unix nanoseconds; the join below converts explicitly.
 	rows, err := s.db.Query(`SELECT r.session_id,r.node_id,COALESCE(n.hostname,''),COALESCE(NULLIF(s.repo_project,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.project'),''),r.harness,r.model,COALESCE(NULLIF(s.worker_title,''),s.title,''),COALESCE(NULLIF(r.difficulty_used,''),r.difficulty),r.outcome,r.started_at,r.run_seconds,r.ended_at,COALESCE(NULLIF(r.caller_session_id,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.owner'),'') FROM worker_runs r LEFT JOIN sessions s ON s.id=r.session_id LEFT JOIN nodes n ON n.id=r.node_id ORDER BY r.started_at DESC,r.id DESC LIMIT ?`, limit)
