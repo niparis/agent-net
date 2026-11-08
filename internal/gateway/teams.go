@@ -102,6 +102,9 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 				if err = liveTeamMember(tx, *q.Owner); err != nil {
 					return err
 				}
+				if err = refuseBotLead(tx, q.Owner.ID); err != nil {
+					return err
+				}
 				owner = q.Owner.ID
 			}
 			_, err = tx.Exec(`INSERT INTO teams(id,name,purpose,owner_agent_id,created_at,updated_at) VALUES(?,?,?,?,?,?)`, q.ID, q.Name, q.Purpose, owner, now, now)

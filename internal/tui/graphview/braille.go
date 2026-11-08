@@ -515,7 +515,7 @@ func colorRole(role, text string) string {
 		color = talkColor
 	case "talkFaint":
 		color = talkFaintColor
-	case "depends", "trail":
+	case "depends", "calls", "trail":
 		color = palette.Color("#00666b", "#5fc4c9")
 	case "cto":
 		color = palette.Color("#6445a1", "#b49cf5")

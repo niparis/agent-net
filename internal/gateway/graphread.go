@@ -141,6 +141,11 @@ func graphIdentityQuery(q identityQuerier, session string) (graphIdentity, bool,
 	if worker || agent == "" {
 		agent = project
 	}
+	// A bot's node carries its charter and place, but its messages route as
+	// before: it has no project, so the node adds no routing identity.
+	if harness == "bot" {
+		agent = project
+	}
 	var trust bool
 	err = q.QueryRow(`SELECT peer_trust FROM sessions WHERE id=?`, session).Scan(&trust)
 	return graphIdentity{project, agent}, trust, err

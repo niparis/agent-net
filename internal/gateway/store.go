@@ -1170,7 +1170,7 @@ ALTER TABLE inbox_items ADD COLUMN about_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE inbox_items ADD COLUMN next_who TEXT NOT NULL DEFAULT 'owner';
 ALTER TABLE inbox_items ADD COLUMN why_you TEXT NOT NULL DEFAULT '';
 ALTER TABLE inbox_items ADD COLUMN detail TEXT NOT NULL DEFAULT '';
-`}
+`, botAgentMigration}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay
 // after its columns exist: the log table, the indexes and the backfill of old

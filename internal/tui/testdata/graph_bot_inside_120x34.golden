@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 12 online · 0 busy     updated 14:05:00
+   Graph · team forge · inside
+  ╭─ forge ────────────────────────────────────────────────────────────╮ ╭───────────────────────────────────────────╮
+  │ lead strategist · charter first · 1 project · 3 sessions           │ │ Trade                                     │
+  │                                                                    │ │ idle                                      │
+  │                                                                    │ │                                           │
+  │                                                                    │ │ SESSIONS                                  │
+  │                                                                    │ │ Trade    idle                             │
+  │                                                  ⢀⠔○  ingest-forge │ │                                           │
+  │                                                ⢀⠔⠁↗   1 session    │ │ CLIENT  Cursor                            │
+  │                                               ⡠⠊                   │ │ CONNECTED  Oct 27                         │
+  │                                             ⡠⠊                     │ │ LAST USED  never                          │
+  │                                          ⢀⡠⠊                       │ │ can call: ingest-forge                    │
+  │                                        ⢀⠔⠁                         │ │                                           │
+  │                                 (●) ★ strategist                   │ │ CHARTER                                   │
+  │                                   ⣀⠔1 session                      │ │ purpose  Places paper trades              │
+  │                               ⢀⡠⠔⠊                                 │ │ accepts  trade ideas                      │
+  │                            ⣀⠤⠊⠁                                    │ │ A bot reads its charter only if its own   │
+  │                       ⢀⣀⠤⠒⠉                                        │ │ instructions tell it to; its grants and   │
+  │                 ⣀⡠⠤⠒⠒⠉⠁                                            │ │ app limits are what bind it.              │
+  │               (●) ⚙ Trade                                          │ │                                           │
+  │                   1 session                                        │ │ ROUTING                                   │
+  │                                                                    │ │                                           │
+  │                                                                    │ │ EDGES                                     │
+  │                                                                    │ │ to ingest-forge  calls                    │
+  ╰────────────────────────────────────────────────────────────────────╯ ╰───────────────────────────────────────────╯
+  no messages yet
+  needs you: highlighted · busy: bright · idle: normal · offline: dim
+  selected: strategist · agent · 0 edges
+
+
+
+  f focus/zoom  d dormant  esc back  x/X remove  t team: forge  left/right select  ? help
+1-8 tabs  c CTO  ? help  q quit

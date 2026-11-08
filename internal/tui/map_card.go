@@ -376,6 +376,7 @@ func mapLegendLines(w int) []string {
 	for _, e := range []struct{ kind, text string }{
 		{"depends", "consumer uses provider"},
 		{"deploys", "deployer runs the app's deploys"},
+		{"calls", "bot uses a shared MCP server it is granted"},
 	} {
 		label := edgeKindStyle(e.kind).Render("──▶") + " " + e.kind
 		out = append(out, mapLegendEntry(label, 12, e.text, lipgloss.NewStyle(), w)...)

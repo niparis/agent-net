@@ -38,6 +38,9 @@ func (s *Store) GraphLifecycle(action string, p protocol.GraphLifecycleRequest, 
 		if kind == "repo" && p.Role != "" {
 			return reject("role belongs to an agent")
 		}
+		if p.Role == "bot" {
+			return reject("the role bot belongs to connected apps")
+		}
 		if len(p.Role) > protocol.CharterValueMaxBytes || strings.IndexFunc(p.Role, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
 			return reject("invalid agent role")
 		}
@@ -136,6 +139,15 @@ func setLifecycleTx(tx *sql.Tx, kind, id, expected, next, actor string, now int6
 	}
 	if current != expected || (next != "active" && next != "inactive") || next == current {
 		return reject("%s state changed since that history entry", kind)
+	}
+	if kind == "agent" && next == "inactive" {
+		var bot bool
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND role='bot')`, id).Scan(&bot); err != nil {
+			return err
+		}
+		if bot {
+			return reject("a bot node is archived when its app is revoked")
+		}
 	}
 	if next == "inactive" {
 		refs, err := lifecycleReferences(tx, kind, id)

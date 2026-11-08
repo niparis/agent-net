@@ -593,6 +593,9 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 			if err = liveTeamMember(tx, ref); err != nil {
 				return err
 			}
+			if err = refuseBotLead(tx, old); err != nil {
+				return err
+			}
 			lead = old
 		}
 		switch targetKind {
@@ -1054,6 +1057,9 @@ func (s *Store) SetDeliveryOwner(q protocol.DeliveryOwnerSetRequest, actor strin
 }
 
 func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
+	if e.Kind == protocol.EdgeCalls {
+		return errCallsEdge
+	}
 	if err := validateEdgeRefs(e); err != nil {
 		return err
 	}
@@ -1195,6 +1201,9 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 
 // RemoveEdge deletes an edge and records its previous value.
 func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) error {
+	if e.Kind == protocol.EdgeCalls {
+		return errCallsEdge
+	}
 	if err := validateEdgeRefs(e); err != nil {
 		return err
 	}

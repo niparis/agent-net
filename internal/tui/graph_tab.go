@@ -145,6 +145,7 @@ func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.
 		scene.Nodes[i].Card.Name = m.graphName(scene.Nodes[i].Name)
 		if node, ok := m.mapNode(scene.Nodes[i].Name); ok && node.Ref != nil {
 			scene.Nodes[i].Kind = node.Ref.Kind
+			scene.Nodes[i].Label = graphBotLabel(node, scene.Nodes[i].Label)
 			if (node.Ref.Kind == "repo" || node.Ref.Kind == "agent") && duplicates[strings.ToLower(m.graphName(node.Name))] > 1 {
 				scene.Nodes[i].LabelSuffix = " · " + node.Ref.Kind
 				scene.Nodes[i].Label += scene.Nodes[i].LabelSuffix

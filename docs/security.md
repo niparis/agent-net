@@ -1305,6 +1305,18 @@ limit is added. The grant and ungrant operations are owner-only: agents,
 including the CTO, cannot make them. Each call is logged as `apps.mcp_server_call`
 with the app, server and tool, never the arguments.
 
+**A bot is an agent node** ([decision 0091](decisions/0091-bots-as-agents.md)).
+The node gives a bot no permission: its grants and app limits are the only
+things that bind it, and a bot reads its charter only if its own instructions
+tell it to. A bot can join a Team but can never be a Team or Repo lead, so it
+holds no routing or approval authority over other agents. A message from a bot
+routes as before, because the node adds no routing identity. The Graph read
+that every enrolled machine can make now shows a bot's name, client name, when
+it connected and last used, the servers it may call and one derived `calls`
+edge per granted server. Those were already visible to the owner only; share
+them knowingly. The `calls` edge is derived on read from the grants and cannot
+be written, so the Graph edit methods cannot grant a bot anything.
+
 **Its own Tailscale node.** With `agent-net setup --gateway
 --apps-tailscale-name NAME` ([decision 0058](decisions/0058-own-tailscale-name.md)),
 the gateway runs its own Tailscale node in its process (tsnet) and serves the

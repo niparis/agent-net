@@ -12,9 +12,11 @@ import (
 func (s *Store) touchBot(app App) (string, error) {
 	now := s.now().UnixNano()
 	id := protocol.NewID("s")
-	_, err := s.db.Exec(`INSERT INTO sessions (id,node_id,harness,native_id,name,status,last_seen,last_active,online,created_at)
-		SELECT ?,id,'bot',id,name,'idle',?,?,1,? FROM apps WHERE id=? AND kind='bot' AND revoked_at IS NULL
-		ON CONFLICT (node_id,harness,native_id) DO UPDATE SET name=excluded.name, last_seen=excluded.last_seen, last_active=excluded.last_active, online=1`, id, now, now, now, app.ID)
+	// The session links to the bot's agent node, so its charter and place resolve
+	// like an agent's (decision 0091).
+	_, err := s.db.Exec(`INSERT INTO sessions (id,node_id,harness,native_id,name,status,last_seen,last_active,online,created_at,agent_id)
+		SELECT ?,id,'bot',id,name,'idle',?,?,1,?,id FROM apps WHERE id=? AND kind='bot' AND revoked_at IS NULL
+		ON CONFLICT (node_id,harness,native_id) DO UPDATE SET name=excluded.name, last_seen=excluded.last_seen, last_active=excluded.last_active, online=1, agent_id=excluded.agent_id`, id, now, now, now, app.ID)
 	if err != nil {
 		return "", err
 	}

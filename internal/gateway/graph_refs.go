@@ -144,7 +144,12 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 	}
 	g := protocol.Graph{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}
 	for _, table := range []string{"repos", "agents"} {
-		rows, err := s.db.Query(`SELECT display_name,group_concat(id, ', ') FROM ` + table + ` GROUP BY display_name COLLATE NOCASE HAVING COUNT(*)>1 ORDER BY display_name`)
+		// An archived agent keeps its name, so a new bot may reuse it.
+		live := ""
+		if table == "agents" {
+			live = " WHERE tombstone=0"
+		}
+		rows, err := s.db.Query(`SELECT display_name,group_concat(id, ', ') FROM ` + table + live + ` GROUP BY display_name COLLATE NOCASE HAVING COUNT(*)>1 ORDER BY display_name`)
 		if err != nil {
 			return g, err
 		}
@@ -294,6 +299,9 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
+		return g, err
+	}
+	if err = s.addBotGraph(&g, byRef); err != nil {
 		return g, err
 	}
 	projects, err := s.Projects("")

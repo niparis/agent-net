@@ -592,7 +592,7 @@ func (c *pixelCanvas) edge(e SceneEdge, nodes []SceneNode) {
 
 func edgeColor(kind string) color.NRGBA {
 	switch kind {
-	case "depends":
+	case "depends", "calls":
 		return dependsColor
 	case "deploys":
 		return deploysColor
