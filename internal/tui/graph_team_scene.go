@@ -12,12 +12,12 @@ import (
 )
 
 type teamGraphData struct {
-	key, label, lead, leadKind string
-	mode, held                 string
-	heldCount                  int
-	members                    []string
-	projects, sessions, busy   int
-	role, merger               string
+	key, label, lead, leadKind, leadName string
+	mode, held                           string
+	heldCount                            int
+	members                              []string
+	projects, sessions, busy             int
+	role, merger                         string
 }
 type teamLink struct {
 	a, b, kind string
@@ -150,6 +150,7 @@ func (m Model) graphTeamData() ([]teamGraphData, []teamLink) {
 			if a, ok := m.mp.aliases[g.lead]; ok {
 				g.lead = a
 			}
+			g.leadName = m.graphLeadLabel(ref)
 		}
 		index[g.key] = len(groups)
 		groups = append(groups, g)
@@ -713,8 +714,8 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		switch {
 		case g.key == unassignedTeam:
 			lead = "answers to owner"
-		case g.lead != "":
-			lead = teamLeadStar(g.leadKind) + m.graphName(g.lead)
+		case g.leadName != "":
+			lead = teamLeadStar(g.leadKind) + g.leadName
 			if g.mode != "" {
 				lead += " · " + teamModeCompact(g.mode)
 			}
@@ -905,8 +906,8 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			titleBase += " · " + protocol.AuthorityModeLabel(g.mode)
 		}
 	} else {
-		if g.lead != "" {
-			titleBase = teamLeadStar(g.leadKind) + m.graphName(g.lead)
+		if g.leadName != "" {
+			titleBase = teamLeadStar(g.leadKind) + g.leadName
 		}
 		if g.mode != "" {
 			// The mode comes right after the lead, so a narrow frame still shows it.
