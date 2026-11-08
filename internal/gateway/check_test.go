@@ -413,6 +413,38 @@ func TestCheckNotRepeatedAfterSameAnswerSameTask(t *testing.T) {
 	}
 }
 
+// The live bug (2026-11-08): a session with open work was checked, answered
+// "done", and announced "done" as its task. The task text counted as open
+// work, so each new activity re-armed the check, up to the daily cap.
+func TestCheckNotRepeatedAfterDone(t *testing.T) {
+	s, c := newTestStore(t)
+	_, b := twoSessions(t, s)
+	node := mustNode(t, s, b)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "writing the migration"}); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("first check = %+v", got)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		c.t = c.t.Add(time.Minute)
+		activity(t, s, b, "pi", "nb")
+		c.t = c.t.Add(21 * time.Minute)
+		if got := checks(t, s); len(got) != 0 {
+			t.Fatalf("round %d: check after done: %+v", i, got)
+		}
+	}
+	counts, err := s.SessionCounts(24 * time.Hour)
+	if err != nil || counts.ChecksSent != 1 || counts.CheckAnswersDone != 1 {
+		t.Fatalf("counts = %+v, %v", counts, err)
+	}
+}
+
 func TestCheckTaskChangeAllowsNewCheck(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
