@@ -359,6 +359,8 @@ Legend ────────────────────────�
   l                      choose or clear the team lead
   m                      move the team to the next authority mode: absolute,
                          charter first, negotiate
+  o                      send the questions of the team's members to its lead,
+                         or back to the owner
   h                      change what the owner holds back from the team
   H                      change what the owner holds back from the selected repo
   u                      put back the last mode or held back change

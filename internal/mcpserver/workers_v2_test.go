@@ -139,6 +139,23 @@ func TestWorkerRoleDoesNotSeeDelegationTools(t *testing.T) {
 	}
 }
 
+// When the team lead takes the question, the tool result says so and tells the
+// asker to carry on.
+func TestOwnerAskSentToTheTeamLeadSaysSo(t *testing.T) {
+	note := "Your team (forge) sends questions to its lead, tenebrae. Sent there; carry on with work that does not need the answer."
+	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
+		return json.RawMessage(`{"item":{"id":"i_9","kind":"question","status":"open"},"redirected":{"team":"forge","lead":"tenebrae","item_id":"i_9","message_id":"m_1","note":"` + note + `"}}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "question", "text": "Can I?", "recommendation": "yes"}})
+	if err != nil || res.IsError {
+		t.Fatalf("%v %+v", err, res)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	if out["state"] != "sent_to_lead" || out["note"] != note || out["item_id"] != "i_9" || out["kind"] != "question" {
+		t.Fatalf("result: %#v", out)
+	}
+}
+
 func TestRedesignedOwnerKindsAndTextJSON(t *testing.T) {
 	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
 		return json.RawMessage(`{"item_id":"i_1","kind":"question","state":"open"}`), nil

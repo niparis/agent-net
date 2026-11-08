@@ -26,6 +26,7 @@ type teamEntry struct {
 	Purpose     string
 	Mode        string
 	HeldBack    string
+	AsksTo      string
 	MemberCount int
 }
 
@@ -42,7 +43,7 @@ func teamsOf(v protocol.GraphView) []teamEntry {
 			continue
 		}
 		index[n.Ref.ID] = len(out)
-		out = append(out, teamEntry{ID: n.Ref.ID, Name: n.Name, Purpose: n.Charter.Purpose, Mode: protocol.NormalAuthorityMode(n.AuthorityMode), HeldBack: n.HeldBack})
+		out = append(out, teamEntry{ID: n.Ref.ID, Name: n.Name, Purpose: n.Charter.Purpose, Mode: protocol.NormalAuthorityMode(n.AuthorityMode), HeldBack: n.HeldBack, AsksTo: normalAsksTo(n.AsksTo)})
 	}
 	for _, e := range v.Edges {
 		if e.Kind != "member_of" || e.ToRef == nil || e.ToRef.Kind != "team" {
@@ -54,6 +55,14 @@ func teamsOf(v protocol.GraphView) []teamEntry {
 	}
 	sortTeams(out)
 	return out
+}
+
+// normalAsksTo reads an older gateway's missing value as the default.
+func normalAsksTo(v string) string {
+	if v == protocol.AsksToLead {
+		return v
+	}
+	return protocol.AsksToOwner
 }
 
 func sortTeams(teams []teamEntry) {
@@ -332,6 +341,19 @@ func (m Model) teamMenuKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			done: "Put the mode of team " + sanitize(team.Name) + " back to " + protocol.AuthorityModeLabel(team.Mode) + "."}
 		return m, m.teamWriteCmd(protocol.TeamWrite{Action: "mode", ID: team.ID, Mode: next},
 			"Set the mode of team "+sanitize(team.Name)+" to "+protocol.AuthorityModeLabel(next)+". u undoes it.")
+	case "asks to":
+		if !ok {
+			m.fail("No team yet. Press c to make one.")
+			return m, nil
+		}
+		next := protocol.AsksToLead
+		if team.AsksTo == protocol.AsksToLead {
+			next = protocol.AsksToOwner
+		}
+		m.teamUndo = &teamUndoStep{q: protocol.TeamWrite{Action: "asks_to", ID: team.ID, AsksTo: team.AsksTo},
+			done: "Put the questions of team " + sanitize(team.Name) + " back to go to the " + team.AsksTo + "."}
+		return m, m.teamWriteCmd(protocol.TeamWrite{Action: "asks_to", ID: team.ID, AsksTo: next},
+			"Questions of team "+sanitize(team.Name)+" now go to the "+next+". u undoes it.")
 	case "edit held back":
 		if !ok {
 			m.fail("No team yet. Press c to make one.")
@@ -424,6 +446,11 @@ func (m Model) teamsView(w, rows int) []string {
 	}
 	if team, ok := m.currentTeam(); ok {
 		out = append(out, sDim.Render(clip("  mode: "+protocol.AuthorityModeLabel(team.Mode)+" - "+protocol.AuthorityModeMeaning(team.Mode), w)))
+		asks := "the owner"
+		if team.AsksTo == protocol.AsksToLead {
+			asks = "the team lead first"
+		}
+		out = append(out, sDim.Render(clip("  questions for the owner go to: "+asks, w)))
 		held := "nothing beyond the always list"
 		if h := strings.TrimSpace(team.HeldBack); h != "" {
 			held = sanitize(h)

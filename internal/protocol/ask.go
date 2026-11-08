@@ -164,3 +164,23 @@ type AskSync struct {
 	Kind string    `json:"kind"`
 	Asks []AskOpen `json:"asks"`
 }
+
+// Where the questions of a team's members go (decision 0100).
+const (
+	AsksToOwner = "owner"
+	AsksToLead  = "lead"
+)
+
+// ValidAsksTo says whether v is a team asks_to value.
+func ValidAsksTo(v string) bool { return v == AsksToOwner || v == AsksToLead }
+
+// AskRedirect says that a member's agent_owner_ask went to its team lead
+// instead of the owner. Note is what the asking agent reads.
+type AskRedirect struct {
+	Team        string `json:"team"`
+	Lead        string `json:"lead"`
+	LeadSession string `json:"lead_session"`
+	MessageID   string `json:"message_id"`
+	ItemID      string `json:"item_id"`
+	Note        string `json:"note"`
+}
