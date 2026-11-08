@@ -449,7 +449,8 @@ func TestStepReportIndependenceByMaker(t *testing.T) {
 			t.Errorf("done_by %s accepted for a worker the reporter did not start", doneBy)
 		}
 	}
-	// The review step needs another maker: only the latest such pass counts.
+	// The default independence is none, so all three passes count and the
+	// latest, the review worker's family pass, is the one shown.
 	v := r.get(id)
 	if len(v.Evidence) != 3 {
 		t.Fatalf("evidence %d, want 3", len(v.Evidence))
@@ -458,6 +459,50 @@ func TestStepReportIndependenceByMaker(t *testing.T) {
 		if st.Step == protocol.StepReview && (st.State != protocol.StepStatePassed || st.Evidence == nil || st.Evidence.Fields[protocol.FieldIndependent] != protocol.IndependentFamily) {
 			t.Fatalf("review %+v", st)
 		}
+	}
+}
+
+// The default review independence is none, so a review by the change's own
+// caller and author counts. A repo set to family keeps the old rule.
+func TestReviewIndependenceDefaultAcceptsTheCaller(t *testing.T) {
+	r := newDeliveryRig(t)
+	submit := func(branch string) string {
+		r.t.Helper()
+		return r.submit(r.a, protocol.ChangeSubmitRequest{
+			SessionID: r.caller, Project: "demo", Branch: branch, HeadCommit: commitA, Difficulty: "hard",
+			Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: r.caller},
+		}).Change.Change.ID
+	}
+	reviewStep := func(id string) protocol.StepStatus {
+		r.t.Helper()
+		for _, st := range r.get(id).Steps {
+			if st.Step == protocol.StepReview {
+				return st
+			}
+		}
+		r.t.Fatalf("no review step in %+v", r.get(id).Steps)
+		return protocol.StepStatus{}
+	}
+	review := func(id string) protocol.StepStatus {
+		r.t.Helper()
+		r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id,
+			StepRef: protocol.StepRef{Step: protocol.StepReview}, Result: protocol.StepResultPass, Commit: commitA,
+			Fields: map[string]string{protocol.FieldFindingsOpen: "0"}})
+		return reviewStep(id)
+	}
+
+	own := submit("agent-net/own")
+	if st := review(own); st.State != protocol.StepStatePassed || st.Evidence == nil ||
+		st.Evidence.Fields[protocol.FieldIndependent] != protocol.IndependentNone {
+		t.Fatalf("the caller's own review at the default: %+v", st)
+	}
+
+	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.pipeline.review.independent", Level: "repo", Scope: "demo", Value: json.RawMessage(`"family"`)}}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	family := submit("agent-net/family")
+	if st := review(family); st.State != protocol.StepStateReady || !strings.Contains(st.Note, "needs independent=family") {
+		t.Fatalf("the caller's own review with family: %+v", st)
 	}
 }
 

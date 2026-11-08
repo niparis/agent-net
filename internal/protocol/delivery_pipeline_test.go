@@ -370,6 +370,11 @@ func TestReviewRequiredFromHard(t *testing.T) {
 // independent enough; a fail always counts.
 func TestIndependentReview(t *testing.T) {
 	p := PipelineToday()
+	for i := range p.Steps {
+		if p.Steps[i].Step == StepReview {
+			p.Steps[i].Independent = IndependentFamily
+		}
+	}
 	c := testChange()
 	c.Difficulty = "hard"
 	base := []Evidence{pass(c, refAccept, 1, nil), pass(c, refTest, 2, map[string]string{FieldSuite: SuiteChanged})}
@@ -401,6 +406,24 @@ func TestIndependentReview(t *testing.T) {
 	}
 	if got := IndependenceOf(ChangeOrigin{Kind: OriginPerson, Person: "owner"}, "s_b", "anthropic"); got != IndependentFamily {
 		t.Errorf("a model reviewing a person's work = %s", got)
+	}
+}
+
+// With independence none, the author's own pass counts.
+func TestReviewNoneCountsTheAuthor(t *testing.T) {
+	p := PipelineToday()
+	c := testChange()
+	c.Difficulty = "hard"
+	base := []Evidence{pass(c, refAccept, 1, nil), pass(c, refTest, 2, map[string]string{FieldSuite: SuiteChanged})}
+	own := pass(c, refReview, 3, map[string]string{FieldIndependent: IndependentNone})
+	ev := append(base, own)
+	if ok, missing := p.Ready(refMerge, c, ev); !ok {
+		t.Fatalf("the author's own review did not count: %v", missing)
+	}
+	for _, st := range p.Status(c, ev) {
+		if st.Step == StepReview && (st.State != StepStatePassed || st.Note != "") {
+			t.Fatalf("review status = %+v", st)
+		}
 	}
 }
 
@@ -545,7 +568,7 @@ func TestShorthandTable(t *testing.T) {
 		if tc.tests == TestsSuiteNewTestsReview {
 			wantFrom = ""
 		}
-		if review.RequiredFrom != wantFrom || review.Independent != IndependentFamily {
+		if review.RequiredFrom != wantFrom || review.Independent != IndependentNone {
 			t.Errorf("%s: review %+v", tc.tests, review)
 		}
 	}

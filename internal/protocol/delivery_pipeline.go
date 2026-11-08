@@ -1273,9 +1273,9 @@ func (p Pipeline) ReportFields(ref StepRef) []string {
 
 // PipelineFromShorthand builds the pipeline the three step 6 delivery settings
 // describe (the mapping table in the design), every step owned by the caller:
-// accept, test, review (from difficulty hard, on another model family),
-// approve for merge, merge. Deploy rule ask or owner adds approve for deploy
-// and deploy after merge; brief adds no deploy step, because a deploy step
+// accept, test, review (from difficulty hard), approve for merge, merge.
+// Deploy rule ask or owner adds approve for deploy and deploy after merge;
+// brief adds no deploy step, because a deploy step
 // exists only when the repo's recipe has one. The settings say only what merge
 // and deploy require and who approves; the steps after merge (CI, release,
 // verify) come from a repo's recipe, as in PipelineToday.
@@ -1289,7 +1289,7 @@ func PipelineFromShorthand(tests, merge, deploy string) (Pipeline, error) {
 		return Pipeline{}, fmt.Errorf("deploy_rule must be brief, ask or owner, not %q", deploy)
 	}
 	caller := StepOwner{Kind: OwnerCaller}
-	review := PipelineStep{StepRef: StepRef{Step: StepReview}, Owner: caller, Independent: IndependentFamily, RequiredFrom: reviewRequiredFrom}
+	review := PipelineStep{StepRef: StepRef{Step: StepReview}, Owner: caller, Independent: IndependentNone, RequiredFrom: reviewRequiredFrom}
 	reviewReq := Requirement{StepRef: review.StepRef}
 	var testReq *Requirement
 	switch tests {

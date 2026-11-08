@@ -2063,6 +2063,12 @@ The step note says, for example,
 `required: risk 4` or `required: touches migrations`. A later submit cannot
 erase a risk or sensitive-path trigger already recorded on the change.
 Older daemons omit these fields, so unknown risk keeps the difficulty rule.
+
+With the default `delivery.pipeline.review.independent` value `none`, any
+review pass counts, including the caller's review of its own change. The owner
+can set it to `session` to require another session, or `family` to require
+another model maker. Evidence from the owner or GitHub always counts as
+`family`.
 Worker risk is kept in the daemon's `worker_delivery_risk` table across restarts.
 
 For an after-merge release pass without a `tag` field, the daemon looks for a
