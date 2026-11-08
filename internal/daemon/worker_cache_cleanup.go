@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,25 +39,32 @@ func (d *Daemon) workerGoTmpDir() string {
 	return "/tmp/agent-net-gotmp"
 }
 
-func isOwnerGoBuildCache(cacheDir, homeDir string) bool {
+func ownerGoBuildCacheDir(homeDir string) string {
 	if homeDir == "" {
 		homeDir, _ = os.UserHomeDir()
 	}
 	if homeDir == "" {
+		return ""
+	}
+	return filepath.Join(homeDir, ".cache", "go-build")
+}
+
+// sameDir tells whether two paths name the same folder, following symlinks.
+func sameDir(a, b string) bool {
+	if a == "" || b == "" {
 		return false
 	}
-	ownerCache := filepath.Join(homeDir, ".cache", "go-build")
-	cleanCache := filepath.Clean(cacheDir)
-	cleanOwner := filepath.Clean(ownerCache)
-	if cleanCache == cleanOwner {
+	cleanA, cleanB := filepath.Clean(a), filepath.Clean(b)
+	if cleanA == cleanB {
 		return true
 	}
-	realCache, err1 := filepath.EvalSymlinks(cleanCache)
-	realOwner, err2 := filepath.EvalSymlinks(cleanOwner)
-	if err1 == nil && err2 == nil && realCache == realOwner {
-		return true
-	}
-	return false
+	realA, err1 := filepath.EvalSymlinks(cleanA)
+	realB, err2 := filepath.EvalSymlinks(cleanB)
+	return err1 == nil && err2 == nil && realA == realB
+}
+
+func isOwnerGoBuildCache(cacheDir, homeDir string) bool {
+	return sameDir(cacheDir, ownerGoBuildCacheDir(homeDir))
 }
 
 // trimWorkerGoCache walks the worker Go build cache folder and removes old
@@ -101,6 +109,148 @@ func (d *Daemon) trimWorkerGoCache(now time.Time, maxAge time.Duration) uint64 {
 		}
 		return nil
 	})
+	return freed
+}
+
+// goCacheEntry is one removable file of a Go build cache.
+type goCacheEntry struct {
+	path  string
+	size  int64
+	mtime time.Time
+	owner bool
+}
+
+type cacheTrimFreed struct {
+	Worker uint64
+	Owner  uint64
+}
+
+func (f cacheTrimFreed) total() uint64 { return f.Worker + f.Owner }
+
+// isGoCacheDir tells whether a folder holds a Go build cache. Go writes its
+// README when it creates the cache, so a wrong path is never trimmed.
+func isGoCacheDir(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(dir, "README"))
+	return err == nil
+}
+
+func goCacheBytes(dir string) int64 {
+	var size int64
+	_ = filepath.WalkDir(dir, func(_ string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.Type().IsRegular() {
+			if info, ierr := entry.Info(); ierr == nil {
+				size += info.Size()
+			}
+		}
+		return nil
+	})
+	return size
+}
+
+// goCacheFiles counts a Go build cache and lists the files the daemon may
+// remove. Files at the top level (README, trim.txt) and the folder layout are
+// kept, so only files inside a hash folder are listed.
+func goCacheFiles(dir string, owner bool) (int64, []goCacheEntry) {
+	var total int64
+	var entries []goCacheEntry
+	_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, ierr := entry.Info()
+		if ierr != nil {
+			return nil
+		}
+		size := info.Size()
+		total += size
+		rel, rerr := filepath.Rel(dir, path)
+		if rerr != nil || !strings.ContainsRune(rel, os.PathSeparator) {
+			return nil
+		}
+		if entry.Name() == "README" || entry.Name() == "trim.txt" {
+			return nil
+		}
+		entries = append(entries, goCacheEntry{path: path, size: size, mtime: info.ModTime(), owner: owner})
+		return nil
+	})
+	return total, entries
+}
+
+func sizeText(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d bytes", n)
+}
+
+// trimCacheSize applies one size cap to the worker Go build cache and the
+// owner's ~/.cache/go-build. When their combined size is over maxBytes it
+// removes the oldest entries across both caches (Go touches an entry when it
+// uses it) until the total is at or below lowBytes. The owner cache is trimmed
+// by size only, never by age. README, trim.txt and the folder layout are kept.
+func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
+	var freed cacheTrimFreed
+	if maxBytes <= 0 {
+		return freed
+	}
+	if lowBytes <= 0 || lowBytes >= maxBytes {
+		lowBytes = maxBytes * 2 / 3
+	}
+	workerDir := d.workerGoCacheDir()
+	ownerDir := ownerGoBuildCacheDir(d.cfg.HomeDir)
+	var total int64
+	var entries []goCacheEntry
+	if isGoCacheDir(workerDir) {
+		size, list := goCacheFiles(workerDir, false)
+		total += size
+		entries = append(entries, list...)
+	}
+	if ownerDir != "" && !sameDir(workerDir, ownerDir) && isGoCacheDir(ownerDir) {
+		size, list := goCacheFiles(ownerDir, true)
+		total += size
+		entries = append(entries, list...)
+	}
+	if total <= maxBytes {
+		return freed
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].mtime.Equal(entries[j].mtime) {
+			return entries[i].path < entries[j].path
+		}
+		return entries[i].mtime.Before(entries[j].mtime)
+	})
+	for _, entry := range entries {
+		if total <= lowBytes {
+			break
+		}
+		if err := os.Remove(entry.path); err != nil {
+			continue
+		}
+		total -= entry.size
+		if entry.owner {
+			freed.Owner += uint64(entry.size)
+		} else {
+			freed.Worker += uint64(entry.size)
+		}
+	}
+	if d.log != nil {
+		d.Logf("cache size trim: worker %d bytes freed, owner %d bytes freed (%d bytes left, cap %d, low %d)", freed.Worker, freed.Owner, total, maxBytes, lowBytes)
+	}
 	return freed
 }
 
@@ -169,7 +319,7 @@ func (d *Daemon) diskMaxUsagePct() (float64, bool) {
 	}
 	var maxPct float64
 	var found bool
-	for _, path := range []string{d.cfg.StateDir, d.workerGoCacheDir()} {
+	for _, path := range []string{d.cfg.StateDir, d.workerGoCacheDir(), ownerGoBuildCacheDir(d.cfg.HomeDir)} {
 		if path == "" {
 			continue
 		}
@@ -231,6 +381,9 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 	)
 
 	if pct >= warnThreshold {
+		// Free space at once, not only at the next hourly cleanup.
+		settings := d.workerSettings("")
+		d.trimCacheSize(settings.CacheMaxBytes, settings.CacheLowBytes)
 		if active {
 			return nil
 		}
@@ -245,7 +398,19 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 				}
 			}
 		}
-		text := fmt.Sprintf("Disk space low on %s: %.0f%% used (daemon state or worker cache)", d.hostName(), pct)
+		workerDir := d.workerGoCacheDir()
+		ownerDir := ownerGoBuildCacheDir(d.cfg.HomeDir)
+		workerSize := goCacheBytes(workerDir)
+		ownerSize := int64(0)
+		ownerText := sizeText(0)
+		if ownerDir != "" && sameDir(workerDir, ownerDir) {
+			ownerText = "same as worker cache"
+		} else if ownerDir != "" {
+			ownerSize = goCacheBytes(ownerDir)
+			ownerText = sizeText(ownerSize)
+		}
+		text := fmt.Sprintf("Disk space low on %s: %.0f%% used (worker Go cache %s, owner Go cache %s, total %s of %s cap)",
+			d.hostName(), pct, sizeText(workerSize), ownerText, sizeText(workerSize+ownerSize), sizeText(settings.CacheMaxBytes))
 		rec := "Free space by removing old worker files or enlarge the disk."
 		raw, err := d.call(ctx, "inbox.create", map[string]any{
 			"session_id":     d.cfg.NodeID,
@@ -308,10 +473,11 @@ func (d *Daemon) cleanWorkerCachesAndDisk(ctx context.Context, now time.Time) ui
 	snap := d.SettingsSnapshot()
 	settings := d.workerSettingsWith(snap, "")
 	cacheFreed := d.trimWorkerGoCache(now, settings.CacheMaxAge)
+	sizeFreed := d.trimCacheSize(settings.CacheMaxBytes, settings.CacheLowBytes)
 	tmpFreed := d.cleanWorkerGoTmp(now, settings.TmpMaxAge)
-	totalFreed := cacheFreed + tmpFreed
+	totalFreed := cacheFreed + sizeFreed.total() + tmpFreed
 	if d.log != nil {
-		d.Logf("worker cache cleanup: %d bytes freed", totalFreed)
+		d.Logf("cache cleanup: %d bytes freed", totalFreed)
 	}
 	_ = d.checkDiskWarning(ctx, now)
 	return totalFreed

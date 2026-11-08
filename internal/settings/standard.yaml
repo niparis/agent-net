@@ -427,6 +427,26 @@ settings:
     levels: [network, repo]
     default: 24h
     live: true
+  - key: workers.cache_max_bytes
+    rows: [53]
+    description: Size cap in bytes for the worker and owner Go build caches together.
+    kind: rule
+    type: int
+    min: 1
+    stricter: lower
+    levels: [network, repo]
+    default: 16106127360
+    live: true
+  - key: workers.cache_low_bytes
+    rows: [53]
+    description: Size in bytes the Go build caches are trimmed down to when over the cap.
+    kind: rule
+    type: int
+    min: 1
+    stricter: lower
+    levels: [network, repo]
+    default: 10737418240
+    live: true
   - key: workers.tmp_max_age
     rows: [53]
     description: Maximum age of subfolders kept in the worker test temp directory.
@@ -984,7 +1004,7 @@ ledger:
   - {row: 50, keys: [relationships.edge_semantics]}
   - {row: 51, keys: [workers.isolation_minimum], step: 7}
   - {row: 52, keys: [workers.sandbox_level], step: 7}
-  - {row: 53, keys: [workers.max_age, workers.cache_max_age, workers.tmp_max_age], step: 7}
+  - {row: 53, keys: [workers.max_age, workers.cache_max_age, workers.cache_max_bytes, workers.cache_low_bytes, workers.tmp_max_age], step: 7}
   - {row: 54, keys: [workers.idle_timeout], step: 7}
   - {row: 55, keys: [workers.caller_gone_grace], step: 7}
   - {row: 56, keys: [workers.queue_timeout], step: 7}
