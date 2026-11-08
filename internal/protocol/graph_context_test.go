@@ -22,8 +22,6 @@ func contextGraph() Graph {
 		},
 		Edges: []Edge{
 			{From: "tenebrae", To: "cogforge", Kind: "depends", Rule: "normal"},
-			{From: "wbg-architect", To: "cogforge", Kind: "governs", Mode: "owner", Rule: "normal"},
-			{From: "cogforge", To: "tenebrae", Kind: "governs", Mode: "advisor", Rule: "normal"},
 			{From: "cogforge", To: "homelab", Kind: "depends", Rule: "normal"},
 		},
 	}
@@ -38,7 +36,6 @@ func TestNodeContextIsShortAndSaysTheEdgesThatMatter(t *testing.T) {
 		"Generic endpoints and bug fixes from any consumer.",
 		"Client-specific endpoints for one consumer.",
 		"Breaking API changes: ask the owner.",
-		"wbg-architect governs your node as owner.",
 		"You depend on homelab.",
 		"tenebrae depends on your node",
 	} {
@@ -54,13 +51,6 @@ func TestNodeContextIsShortAndSaysTheEdgesThatMatter(t *testing.T) {
 	}
 	if strings.Contains(got, "\u2014") {
 		t.Errorf("em dash:\n%s", got)
-	}
-}
-
-func TestNodeContextForAnArchitectNamesTheNodesItGoverns(t *testing.T) {
-	got := NodeContext(contextGraph(), "wbg-architect")
-	if !strings.Contains(got, "You govern") || !strings.Contains(got, "cogforge as owner") {
-		t.Errorf("architect context lacks its governs edges:\n%s", got)
 	}
 }
 
@@ -135,8 +125,6 @@ func TestRelationText(t *testing.T) {
 		name, from, to, want string
 	}{
 		{"consumer", "tenebrae", "cogforge", "tenebrae is a consumer of your node cogforge"},
-		{"owner architect", "wbg-architect", "cogforge", "wbg-architect governs your node cogforge as owner"},
-		{"advisor architect", "cogforge", "tenebrae", "cogforge governs your node tenebrae as advisor"},
 		{"none", "name-that-is-not-here", "cogforge", "no graph relation"},
 	}
 	for _, tc := range tests {

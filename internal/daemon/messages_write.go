@@ -54,6 +54,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		MessageType    string      `json:"message_type"`
 		Type           string      `json:"type"`
 		AsOwner        bool        `json:"as_owner"`
+		Order          bool        `json:"order"`
 		IdempotencyKey string      `json:"idempotency_key"`
 		Receipt        bool        `json:"receipt"`
 	}
@@ -94,7 +95,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		address = p.To
 	}
 	data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: kind, LeadAddress: address,
-		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner})
+		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner, Order: p.Order})
 	if err == nil && sid == d.ctoSessionID() {
 		err = d.recordCTOSent(ctx, to, p.AsOwner)
 	}
@@ -161,12 +162,12 @@ func (d *Daemon) recordCTOSent(ctx context.Context, to string, asOwner bool) err
 }
 
 // sendSet sends one message to every online session that matches the set.
-// Only the CTO session and advisor nodes may call it. The receipt list always
+// Only the CTO session may call it. The receipt list always
 // names every attempted recipient, so a partial failure can be repaired
 // without sending twice.
 func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body, kind, key string, asOwner bool) (any, error) {
 	if !d.maySendGroup(ctx, sid) {
-		return nil, errors.New("group messages are for the CTO and advisor nodes only; send to one session with to")
+		return nil, errors.New("group messages are for the CTO only; send to one session with to")
 	}
 	if strings.TrimSpace(set.Team) == "" && strings.TrimSpace(set.Machine) == "" && strings.TrimSpace(set.Project) == "" && strings.TrimSpace(set.Harness) == "" {
 		return nil, errors.New(`to_set needs a nonempty team, machine, project or harness filter; example: {"to_set":{"harness":"claude"},"body":"Please review."}`)
@@ -237,43 +238,10 @@ func (d *Daemon) sendSet(ctx context.Context, sid string, set *messageSet, body,
 	return out, nil
 }
 
-// maySendGroup is the daemon-side authority check. A session is a CTO when it
-// is the registered CTO network session. A node is an advisor when the graph
-// has a governs edge in mode advisor whose source is the node the session
-// verifiably works in (the repository folder, never an announced project).
-func (d *Daemon) maySendGroup(ctx context.Context, sid string) bool {
-	if sid != "" && sid == d.ctoSessionID() {
-		return true
-	}
-	raw, err := d.call(ctx, "group.authority", protocol.QueryAgent{SessionID: sid})
-	if err == nil {
-		var got struct {
-			Allowed bool `json:"allowed"`
-		}
-		return json.Unmarshal(raw, &got) == nil && got.Allowed
-	}
-	if !strings.Contains(err.Error(), "unknown frame type") {
-		return false
-	}
-	// An older gateway still uses the project string for advisor edges.
-	view, err := d.agentView(ctx, sid)
-	if err != nil || view.Repo.Project == "" {
-		return false
-	}
-	raw, err = d.call(ctx, "graph.read", protocol.GraphRead{})
-	if err != nil {
-		return false
-	}
-	var got protocol.GraphGot
-	if json.Unmarshal(raw, &got) != nil {
-		return false
-	}
-	for _, e := range got.Graph.Edges {
-		if e.From == view.Repo.Project && e.Kind == "governs" && e.Mode == "advisor" {
-			return true
-		}
-	}
-	return false
+// maySendGroup is the daemon-side authority check. Only the registered CTO
+// network session may send to a group (decision 0089).
+func (d *Daemon) maySendGroup(_ context.Context, sid string) bool {
+	return sid != "" && sid == d.ctoSessionID()
 }
 
 func messageKinds(kinds []string) (map[string]bool, error) {

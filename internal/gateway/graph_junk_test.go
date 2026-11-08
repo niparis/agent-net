@@ -219,7 +219,7 @@ func TestGraphKeepsManagedEdgeEndpointsWithoutEligibleRoots(t *testing.T) {
 	if err := s.AddArchitect("architect", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetEdge(protocol.Edge{From: "architect", To: "scratch", Kind: "governs", Mode: "advisor"}, "owner"); err != nil {
+	if err := s.SetEdge(protocol.Edge{From: "architect", To: "scratch", Kind: "deploys"}, "owner"); err != nil {
 		t.Fatal(err)
 	}
 	g, err := s.Graph()

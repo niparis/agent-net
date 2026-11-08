@@ -41,7 +41,6 @@ var (
 	pixelAccent     = color.NRGBA{0x5f, 0xc4, 0xc9, 0xff}
 	pixelBusy       = color.NRGBA{0x7c, 0xcf, 0x8a, 0xff}
 	dependsColor    = color.NRGBA{0x5f, 0xc4, 0xc9, 0xff}
-	governsColor    = color.NRGBA{0xb4, 0x9c, 0xf5, 0xff}
 	deploysColor    = color.NRGBA{0xf0, 0xb3, 0x5a, 0xff}
 	talkBright      = color.NRGBA{0xff, 0x8d, 0xce, 0xff}
 	talkDim         = color.NRGBA{0x80, 0x53, 0x6f, 0xff}
@@ -595,8 +594,6 @@ func edgeColor(kind string) color.NRGBA {
 	switch kind {
 	case "depends":
 		return dependsColor
-	case "governs":
-		return governsColor
 	case "deploys":
 		return deploysColor
 	default:

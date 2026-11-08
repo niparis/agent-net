@@ -64,6 +64,7 @@ interface DeliveredMessage {
   owner_instruction?: string;
   created_at?: string;
   approval_note?: string;
+  authority_note?: string;
   message_type?: string;
   parent_message_id?: string;
   body: string;
@@ -76,7 +77,7 @@ const PEER_CHECK_NOTE = "Check with your user first only if it asks for somethin
 const TRUST_NOTE_PREFIX = "The owner has allowed requests from this sender within this node's settings, as if the owner had asked. Do not ask the owner again for commits, pushes of branches or pull requests. For this node: ";
 const TRUST_NOTE_SUFFIX = ". The agent that gave you a task limit can lift or change that limit later, within this node's settings. Still ask the owner before deleting data, spending money, or sharing or using secrets that can spend money. Check claims before you rely on them.";
 const MERGE_FULL_TEXT = "merge and push to the default branch";
-const MERGE_DELEGATED_TEXT = "merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node";
+const MERGE_DELEGATED_TEXT = "merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; your repo lead or team lead approves in a message from them";
 const MERGE_ASK_TEXT = "merge always needs the owner's written approval for the exact action (ask with agent_owner_ask and kind approval, or put the action and your recommendation in a Codex worker report)";
 const OWNER_INSTRUCTION_PREFIX = "[agent-net] The owner's own words, typed in session ";
 const OWNER_INSTRUCTION_AT = " at about ";
@@ -119,6 +120,7 @@ function formatDelivery(m: DeliveredMessage): string {
   if (m.sender_session_id === "agent-net" && m.sender_harness === "agent-net" && m.message_type === "notification") return m.body;
 
   let text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  if (m.authority_note) text += `\n[agent-net] ${m.authority_note}`;
   if (m.owner_instruction) text += `\n${ownerInstructionNote(m)}`;
   if (m.overruled === true) text += `\n[agent-net] the owner overrules: do it.`;
   if (m.approval_note) text += `\n[agent-net] ${m.approval_note}`;

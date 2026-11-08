@@ -660,14 +660,18 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 			}
 		} else {
 			var current, after, before protocol.Team
-			current, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,created_at,updated_at FROM teams WHERE id=?`, node))
+			current, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams WHERE id=?`, node))
 			if err != nil {
 				return err
 			}
 			if err = json.Unmarshal([]byte(value), &after); err != nil {
 				return err
 			}
-			if current.Name != after.Name || current.Active != after.Active || current.Purpose != after.Purpose {
+			// Snapshots from before authority fields carry neither key: those
+			// fields are then neither compared nor restored.
+			afterKeys, beforeKeys := snapshotKeys(value), snapshotKeys(old)
+			if current.Name != after.Name || current.Active != after.Active || current.Purpose != after.Purpose ||
+				(afterKeys["authority_mode"] && current.AuthorityMode != after.AuthorityMode) || (afterKeys["held_back"] && current.HeldBack != after.HeldBack) {
 				return reject("Team changed since that history entry")
 			}
 			if old == "" {
@@ -683,10 +687,16 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 			} else if err = json.Unmarshal([]byte(old), &before); err != nil {
 				return err
 			}
-			if _, err = tx.Exec(`UPDATE teams SET name=?,purpose=?,active=?,updated_at=? WHERE id=?`, before.Name, before.Purpose, before.Active, now, node); err != nil {
+			if !beforeKeys["authority_mode"] {
+				before.AuthorityMode = current.AuthorityMode
+			}
+			if !beforeKeys["held_back"] {
+				before.HeldBack = current.HeldBack
+			}
+			if _, err = tx.Exec(`UPDATE teams SET name=?,purpose=?,active=?,authority_mode=?,held_back=?,updated_at=? WHERE id=?`, before.Name, before.Purpose, before.Active, before.AuthorityMode, before.HeldBack, now, node); err != nil {
 				return err
 			}
-			current, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,created_at,updated_at FROM teams WHERE id=?`, node))
+			current, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams WHERE id=?`, node))
 			if err != nil {
 				return err
 			}
@@ -700,6 +710,32 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 			return err
 		}
 		if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES('undo',?,?,?,?,?,?,?,?)`, teamID, oldTeam, memberKind, memberID, value, nextValue, now, actor); err != nil {
+			return err
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil
+		}
+		return tx.Commit()
+	case "repo_held_back":
+		if !actorAllowed(actor, "rule") {
+			return reject("only the owner or CTO may undo held back text")
+		}
+		current, err := repoHeldBack(tx, node)
+		if err != nil {
+			return err
+		}
+		if current != value {
+			return reject("held back text changed since that history entry")
+		}
+		if old == "" {
+			_, err = tx.Exec(`DELETE FROM repo_held_back WHERE repo_id=?`, node)
+		} else {
+			_, err = tx.Exec(`INSERT INTO repo_held_back(repo_id,held_back) VALUES(?,?) ON CONFLICT(repo_id) DO UPDATE SET held_back=excluded.held_back`, node, old)
+		}
+		if err != nil {
+			return err
+		}
+		if err = graphRecord(tx, "repo_held_back", node, attr, value, old, actor, now); err != nil {
 			return err
 		}
 		if len(validate) > 0 && validate[0] {
@@ -1073,17 +1109,14 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 		return reject("invalid edge rule")
 	}
 	deliveryEdge := deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys"
-	if e.Kind != "depends" && e.Kind != "governs" && e.Kind != "deploys" && !deliveryEdge {
+	if e.Kind != "depends" && e.Kind != "deploys" && !deliveryEdge {
 		return reject("invalid edge kind")
 	}
 	if deliveryEdgeStep(e.Kind) != "" && !actorAllowed(actor, "rule") {
 		return reject("only the owner may change delivery step owners")
 	}
-	if (e.Kind == "depends" || e.Kind == "deploys" || deliveryEdge) && e.Mode != "" {
-		return reject("this edge kind has no mode")
-	}
-	if e.Kind == "governs" && e.Mode != "advisor" && e.Mode != "arbiter" && e.Mode != "owner" {
-		return reject("invalid mode")
+	if e.Mode != "" {
+		return reject("an edge has no mode")
 	}
 	var err error
 	from := "component"
@@ -1102,9 +1135,6 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	} else if e.From != "*" {
 		if typed {
 			from = "component"
-			if e.Kind == "governs" {
-				from = "architect"
-			}
 		} else {
 			from, err = graphKind(tx, e.From)
 		}
@@ -1120,9 +1150,6 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	}
 	if err != nil {
 		return err
-	}
-	if e.Kind == "governs" && (from != "architect" || to != "component") {
-		return reject("governs requires architect to component")
 	}
 	if deliveryEdge {
 		if to != "component" || (from != "component" && from != "architect") {
@@ -1467,4 +1494,15 @@ func graphProjectRoot(root string) bool {
 	}
 	parts := strings.Split(strings.Trim(root, "/"), "/")
 	return len(parts) != 2 || (parts[0] != "home" && parts[0] != "Users")
+}
+
+// snapshotKeys lists the keys of a stored JSON snapshot.
+func snapshotKeys(raw string) map[string]bool {
+	var m map[string]json.RawMessage
+	_ = json.Unmarshal([]byte(raw), &m)
+	out := map[string]bool{}
+	for k := range m {
+		out[k] = true
+	}
+	return out
 }

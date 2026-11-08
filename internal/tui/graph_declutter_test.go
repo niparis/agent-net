@@ -386,19 +386,3 @@ func TestGraphMergedNodeKeepsDeliveryAssignments(t *testing.T) {
 		t.Fatalf("card lost the agent's internal assignment:\n%s", card)
 	}
 }
-
-func TestGraphMergedNodeKeepsGovernanceIdentity(t *testing.T) {
-	v := declutterFixture()
-	v.Edges = append(v.Edges, protocol.Edge{FromRef: &protocol.GraphRef{Kind: "agent", ID: "builder"}, ToRef: &protocol.GraphRef{Kind: "repo", ID: "shop"}, Kind: "governs", Mode: "advisor"})
-	m := mapModel(120, 34, v)
-	m.applyMap(mapMsg{view: v, at: t0})
-	m.mp.selected = "shop"
-	card := ansi.Strip(strings.Join(m.mapFocusView(120, 34), "\n"))
-	if !strings.Contains(card, "governed by: builder (advisor)") {
-		t.Fatal("governing agent replaced by the merged repo")
-	}
-	edges := ansi.Strip(strings.Join(m.mapEdgeColumns("shop", 120, 6), "\n"))
-	if strings.Contains(edges, "governs") {
-		t.Fatal("governance repeated as an outgoing self-link")
-	}
-}

@@ -207,7 +207,7 @@ func TestCTOV2ActionArgumentsReachExistingHandler(t *testing.T) {
 	}{
 		{"graph_change", map[string]any{"action": "charter_set", "node": "x", "attr": "purpose", "value": "v"}},
 		{"graph_change", map[string]any{"action": "node_add", "name": "x"}}, {"graph_change", map[string]any{"action": "node_remove", "name": "x"}},
-		{"graph_change", map[string]any{"action": "edge_set", "from": "a", "to": "b", "kind": "depends", "mode": "advisor", "rule": "normal"}},
+		{"graph_change", map[string]any{"action": "edge_set", "from": "a", "to": "b", "kind": "depends", "rule": "normal"}},
 		{"graph_change", map[string]any{"action": "edge_remove", "from": "a", "to": "b", "kind": "depends"}},
 		{"graph_change", map[string]any{"action": "settings_set", "node": "a", "setting": "autonomy", "value": "owner"}}, {"graph_change", map[string]any{"action": "undo"}},
 		{"graph_change", map[string]any{"action": "team_create", "name": "t", "purpose": "p"}},

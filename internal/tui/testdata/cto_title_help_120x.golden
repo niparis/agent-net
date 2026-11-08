@@ -79,7 +79,6 @@
 Legend ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Edges
   ──▶ depends  consumer uses provider
-  ──▶ governs  architect over component; mode advisor, arbiter or owner
   ──▶ deploys  deployer runs the app's deploys
   Request rule on an edge from A to B
   normal  delivered; B judges it
@@ -325,6 +324,10 @@ Legend ────────────────────────�
   a                      archive a team with no members
   space                  add or remove the selected repo or agent
   l                      choose or clear the team lead
+  m                      move the team to the next authority mode: absolute, charter first, negotiate
+  h                      change what the owner holds back from the team
+  H                      change what the owner holds back from the selected repo
+  u                      put back the last mode or held back change
   ?                      help
   esc                    back
 

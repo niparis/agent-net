@@ -64,7 +64,7 @@ func TestMaturityDefaultsOverrides(t *testing.T) {
 
 func TestMaturityRulesText(t *testing.T) {
 	got := DefaultsForMaturity("mature").RulesText()
-	want := "maturity mature: run the suite and add tests for new behavior; merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node; ask before deploying"
+	want := "maturity mature: run the suite and add tests for new behavior; merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; your repo lead or team lead approves in a message from them; ask before deploying"
 	if got != want {
 		t.Fatalf("rules text:\n got %q\nwant %q", got, want)
 	}
@@ -119,16 +119,8 @@ func TestCharterBriefStatesTheNodeRules(t *testing.T) {
 func TestMergeApproval(t *testing.T) {
 	g := Graph{
 		Nodes: []Node{
-			{Name: "cogforge", Kind: "component", Charter: Charter{Maturity: "mature"}},
+			{Name: "cogforge", Kind: "component", Lead: &GraphRef{Kind: "agent", ID: "trading"}, Charter: Charter{Maturity: "mature"}},
 			{Name: "early-app", Kind: "component", Charter: Charter{Maturity: "early"}},
-			{Name: "trading", Kind: "architect"},
-			{Name: "ops", Kind: "architect"},
-			{Name: "observer", Kind: "architect"},
-		},
-		Edges: []Edge{
-			{From: "trading", To: "cogforge", Kind: "governs", Mode: "owner", Rule: "normal"},
-			{From: "ops", To: "cogforge", Kind: "governs", Mode: "arbiter", Rule: "normal"},
-			{From: "observer", To: "cogforge", Kind: "governs", Mode: "advisor", Rule: "normal"},
 		},
 	}
 	got := MergeApprovalFor(g, "cogforge")
@@ -136,10 +128,10 @@ func TestMergeApproval(t *testing.T) {
 		t.Fatalf("delegated approval: %#v", got)
 	}
 	joined := strings.Join(got.Approvers, ",")
-	if !strings.Contains(joined, "trading") || !strings.Contains(joined, "ops") || strings.Contains(joined, "observer") {
-		t.Fatalf("delegates: %#v", got.Approvers)
+	if joined != "the owner,trading" {
+		t.Fatalf("approvers: %#v", got.Approvers)
 	}
-	if !strings.Contains(got.Text, "the owner's or a delegate's approval") {
+	if !strings.Contains(got.Text, "anyone above you in the tree who holds merge") {
 		t.Fatalf("text: %q", got.Text)
 	}
 	if got := MergeApprovalFor(g, "early-app"); got.Authority != MergeFull || got.Required {

@@ -15,7 +15,7 @@ func TestLearnedClassify(t *testing.T) {
 	cases := []struct{ field, kind, edge, origin, want string }{
 		{"accepts", "add", "", "owner", "minor"}, {"accepts", "add", "", "peer", "major"},
 		{"rules", "add", "", "peer", "minor"}, {"rules", "add", "", "peer", "minor"},
-		{"edge", "add", "depends", "peer", "minor"}, {"edge", "add", "governs", "peer", "major"}, {"edge", "add", "deploys", "peer", "major"},
+		{"edge", "add", "depends", "peer", "minor"}, {"edge", "add", "deploys", "peer", "major"},
 		{"rules", "remove", "", "owner", "major"}, {"rules", "narrow", "", "owner", "major"},
 		{"refuses", "add", "", "owner", "major"}, {"escalate", "add", "", "owner", "major"}, {"maturity", "add", "", "owner", "major"},
 		{"deploy_rules", "add", "", "owner", "major"}, {"request_rules", "add", "", "owner", "major"}, {"unknown", "add", "", "owner", "major"},
@@ -204,7 +204,7 @@ func TestLearnedEdgeCriticalTargetAndExistingRule(t *testing.T) {
 func TestLearnedRejectionAlsoSuppressesPendingSamePhrase(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
 	id := insertLearned(t, s, "app", "edge", "depends", "add", "ops", "flow")
-	insertLearned(t, s, "app", "edge", "governs", "add", "ops", "flow")
+	insertLearned(t, s, "app", "edge", "deploys", "add", "ops", "flow")
 	if err := s.RejectLearnedSuggestion(id); err != nil {
 		t.Fatal(err)
 	}

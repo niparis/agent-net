@@ -59,8 +59,8 @@ type PublicGraphNode struct {
 	Charter    *Charter         `json:"charter,omitempty"`
 }
 
-// PublicGraphEdge is the public part of an edge: who, what kind, the mode of a
-// governs edge, and the request rule.
+// PublicGraphEdge is the public part of an edge: who, what kind, and the request
+// rule.
 type PublicGraphEdge struct {
 	FromRef *GraphRef `json:"-"`
 	ToRef   *GraphRef `json:"-"`

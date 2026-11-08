@@ -44,15 +44,6 @@ func TestSessionAgentOwnerAssignmentAndHistory(t *testing.T) {
 	if err != nil || string(effective.Value) != "false" || effective.Source != "agent advisor" {
 		t.Fatalf("agent setting %+v: %v", effective, err)
 	}
-	if err := r.s.SetEdge(protocol.Edge{From: "advisor", To: "demo", Kind: "governs", Mode: "advisor"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	group, err := deliveryCall[struct {
-		Allowed bool `json:"allowed"`
-	}](r, r.a, "group.authority", map[string]string{"session_id": r.caller})
-	if err != nil || !group.Allowed {
-		t.Fatalf("assigned advisor authority %+v: %v", group, err)
-	}
 	// A pre-3d daemon sends only the original session fields on every sync.
 	if _, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: "claude", NativeID: "caller", Repo: protocol.RepoInfo{Project: "demo", Root: "/code/demo"}}); err != nil {
 		t.Fatal(err)
@@ -141,39 +132,6 @@ func TestSessionAgentAssignmentSurvivesOldDaemonSyncForEveryHarness(t *testing.T
 				t.Fatalf("history count %d: %v", count, err)
 			}
 		})
-	}
-}
-
-func TestSessionAgentHeldAlwaysUpdatesGovernanceRule(t *testing.T) {
-	r := newDeliveryRig(t)
-	if err := r.s.AddArchitect("advisor", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	owner, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := map[string]string{"session_id": r.caller, "agent": "advisor", "owner_session": owner}
-	if _, err = deliveryCall[map[string]any](r, r.a, "session.agent.set", req); err != nil {
-		t.Fatal(err)
-	}
-	if err = r.s.SetEdge(protocol.Edge{From: "advisor", To: "demo", Kind: "governs", Mode: "advisor", Rule: "ask"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	m, _, err := send(r.s, r.caller, r.sonnet, "request", "")
-	if err != nil || m.State != protocol.StateHeld {
-		t.Fatalf("held state %q: %v", m.State, err)
-	}
-	if _, err = r.s.AnswerHeld(m.ID, "A"); err != nil {
-		t.Fatalf("always decision: %v", err)
-	}
-	rule, err := r.s.RequestRule(r.caller, r.sonnet)
-	if err != nil || rule != "auto" {
-		t.Fatalf("rule %q: %v", rule, err)
-	}
-	var got string
-	if err = r.s.db.QueryRow(`SELECT rule FROM graph_edges WHERE source='advisor' AND target='demo' AND kind='governs'`).Scan(&got); err != nil || got != "auto" {
-		t.Fatalf("governance rule %q: %v", got, err)
 	}
 }
 

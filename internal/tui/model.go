@@ -229,6 +229,7 @@ type Model struct {
 	teamFilter  string
 	teamIndex   int
 	teamForm    teamForm
+	teamUndo    *teamUndoStep
 	charterForm charterForm
 	// tl is the Tools tab (tools.go).
 	tl toolsState

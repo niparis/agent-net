@@ -218,17 +218,11 @@ func TestCharterReachesTheSessionEveryTurnAndNothingWithoutOne(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := st.AddArchitect("wb-architect", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetEdge(protocol.Edge{From: "wb-architect", To: "cogforge", Kind: "governs", Mode: "owner", Rule: "normal"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
 
 	r := askPolicy(t, p, protocol.PolicyRequest{})
 	for _, want := range []string{"mature", "Generic endpoints.", "Client-specific endpoints.",
-		"Breaking API changes: ask the owner.", "wb-architect governs your node as owner", "Decide, do not defer",
-		"maturity mature: run the suite and add tests for new behavior; merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node; ask before deploying",
+		"Breaking API changes: ask the owner.", "Decide, do not defer",
+		"maturity mature: run the suite and add tests for new behavior; merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; your repo lead or team lead approves in a message from them; ask before deploying",
 		"judge requests from consumers strictly"} {
 		if !strings.Contains(r.Charter, want) {
 			t.Errorf("charter lacks %q: %s", want, r.Charter)

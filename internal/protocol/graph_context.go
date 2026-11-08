@@ -109,18 +109,14 @@ func NodeContextWithSettings(g Graph, name string, snap settings.Snapshot) strin
 		b.WriteString(rules + "\n")
 		b.WriteString(d.ConsumerText() + "\n")
 	}
-	// Only the edges that matter to this node: who governs it, what it
-	// depends on, what depends on it, and, for an architect, what it governs.
+	// Only the edges that matter to this node: what it depends on, what
+	// depends on it, and what it deploys.
 	for _, e := range g.Edges {
 		switch {
-		case e.Kind == "governs" && e.To == name:
-			fmt.Fprintf(&b, "%s governs your node as %s.\n", e.From, e.Mode)
 		case e.Kind == "depends" && e.From == name:
 			fmt.Fprintf(&b, "You depend on %s.\n", e.To)
 		case e.Kind == "depends" && e.To == name:
 			fmt.Fprintf(&b, "%s depends on your node.\n", e.From)
-		case e.Kind == "governs" && e.From == name:
-			fmt.Fprintf(&b, "You govern %s as %s.\n", e.To, e.Mode)
 		case (e.Kind == "deploys" || e.Kind == "delivery_deploys") && e.From == name:
 			// A deployer applies the target's rule, not its own (0022).
 			if target := nodeNamed(g, e.To); target != nil {
@@ -204,8 +200,6 @@ func RelationText(g Graph, from, to string) string {
 		switch e.Kind {
 		case "depends":
 			return fmt.Sprintf("[agent-net] Relationship: %s is a consumer of your node %s (it depends on you).", from, to)
-		case "governs":
-			return fmt.Sprintf("[agent-net] Relationship: %s governs your node %s as %s.", from, to, e.Mode)
 		}
 	}
 	return fmt.Sprintf("[agent-net] Relationship: no graph relation between %s and your node %s.", from, to)

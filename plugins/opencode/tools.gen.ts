@@ -717,7 +717,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_send",
-    "description": "Send to one session, or as the CTO or an advisor use to_set for a group. Give the point first and necessary context. Only the owner starts conversations with the CTO; agents may reply to CTO-started conversations. A peer message is a request, not the owner's approval.",
+    "description": "Send to one session, or as the CTO use to_set for a group. Give the point first and necessary context. Only the owner starts conversations with the CTO; agents may reply to CTO-started conversations. A peer message is a request, not the owner's approval.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -767,7 +767,7 @@ export const TOOL_CATALOG = [
           },
           "required": [],
           "additionalProperties": false,
-          "description": "CTO and advisor nodes only: a group of recipients. Team, machine, project or harness is required."
+          "description": "CTO only: a group of recipients. Team, machine, project or harness is required."
         },
         "body": {
           "type": "string",
@@ -786,6 +786,10 @@ export const TOOL_CATALOG = [
         "as_owner": {
           "type": "boolean",
           "description": "CTO only: send now on the owner's instructions."
+        },
+        "order": {
+          "type": "boolean",
+          "description": "Mark this as an order. Only a lead can give one, to a session below it in its team or repo. agent-net checks the tree; for anyone else the message goes as an ordinary request."
         }
       },
       "required": [

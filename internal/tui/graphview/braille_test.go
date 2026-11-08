@@ -16,7 +16,7 @@ func renderGraph(b Braille, g *Graph, cam Camera, width, height int, now time.Ti
 func TestBrailleGraphShowsNodesAndWildcard(t *testing.T) {
 	g := New(fixture())
 	out := strings.Join(renderGraph(Braille{}, g, g.Fit(60, 15), 60, 15, time.Time{}), "\n")
-	for _, want := range []string{"a", "b", "c", "all projects governs"} {
+	for _, want := range []string{"a", "b", "c", "all projects deploys"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in\n%s", want, out)
 		}
@@ -151,7 +151,7 @@ func TestRendererAccentsSelectedEdgesAndDimsTheRest(t *testing.T) {
 	}
 }
 
-func TestBrailleDashAndEdgeRoles(t *testing.T) {
+func TestBrailleEdgeRoles(t *testing.T) {
 	makeGraph := func(kind string) *Graph {
 		g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}}, Edges: []protocol.Edge{{From: "a", To: "b", Kind: kind}}})
 		g.Positions = map[string]Point{"a": {-4, 0}, "b": {4, 0}}
@@ -177,12 +177,8 @@ func TestBrailleDashAndEdgeRoles(t *testing.T) {
 		}
 		return n
 	}
-	solid := dots("depends")
-	dashed := dots("governs")
+	dots("depends")
 	dots("deploys")
-	if dashed >= solid {
-		t.Fatalf("dash has %d dots, solid %d", dashed, solid)
-	}
 }
 func TestBrailleDropsLabelThatDoesNotFit(t *testing.T) {
 	g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "a-very-long-project-name"}}})

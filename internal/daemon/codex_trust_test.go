@@ -50,7 +50,7 @@ func TestCodexCTOFrame(t *testing.T) {
 }
 
 func TestCodexFrameCarriesTheGraphRelationAfterTheBody(t *testing.T) {
-	m := protocol.Message{ID: "m1", From: "s_a", FromName: "alice", FromHarness: "claude", Type: protocol.TypeRequest, Body: "fix it", RecipientRelation: "[agent-net] Relationship: alice governs your node as owner."}
+	m := protocol.Message{ID: "m1", From: "s_a", FromName: "alice", FromHarness: "claude", Type: protocol.TypeRequest, Body: "fix it", RecipientRelation: "[agent-net] Relationship: alice is a consumer of your node bob (it depends on you)."}
 	got := codexFrame(m)
 	if !strings.Contains(got, m.RecipientRelation) || strings.Index(got, "fix it") > strings.Index(got, m.RecipientRelation) {
 		t.Fatalf("relation: %q", got)

@@ -766,7 +766,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 			var online int
 			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates d JOIN sessions s ON s.online=1 AND s.worker=''
 				LEFT JOIN profiles p ON p.session_id=s.id WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=?
-				AND d.node=`+sessionRepoSQL+` AND s.harness NOT IN ('owner','bot','cto'))`,
+				AND (d.node=`+sessionRepoSQL+` OR d.node='agent:'||COALESCE(s.agent_id,'')) AND s.harness NOT IN ('owner','bot','cto'))`,
 				c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&online)
 			if err != nil {
 				return protocol.ChangeView{}, err

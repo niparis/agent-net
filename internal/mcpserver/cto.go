@@ -44,7 +44,7 @@ var ctoCharterAttrs = func() []string {
 	return attrs
 }()
 
-var ctoEdgeKinds = []string{"depends", "governs", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies"}
+var ctoEdgeKinds = []string{"depends", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies"}
 
 func settingsChangesField() ctoField {
 	return ctoField{typ: "array", desc: "Setting changes with key, level, scope, value or delete, and expect.", items: map[string]any{"type": "object", "additionalProperties": false, "required": []string{"key", "level", "scope"}, "properties": map[string]any{"key": map[string]any{"type": "string"}, "level": map[string]any{"type": "string"}, "scope": map[string]any{"type": "string"}, "value": map[string]any{}, "delete": map[string]any{"type": "boolean"}, "expect": map[string]any{}}}}
@@ -97,8 +97,7 @@ var ctoTools = map[string]ctoToolDef{
 			"role":    {typ: "string", desc: "Agent role; optional."},
 			"from":    {typ: "graph_endpoint", desc: "Source."},
 			"to":      {typ: "graph_endpoint", desc: "Target."},
-			"kind":    {typ: "string", desc: "Dependency, governance or delivery owner edge.", enum: ctoEdgeKinds},
-			"mode":    {typ: "string", desc: "Advise, arbitrate, decide.", enum: []string{"advisor", "arbiter", "owner"}},
+			"kind":    {typ: "string", desc: "Dependency, deploy or delivery owner edge.", enum: ctoEdgeKinds},
 			"rule":    {typ: "string", desc: "Deliver, own, hold, refuse.", enum: []string{"normal", "auto", "ask", "never"}},
 			"id":      {typ: "integer", desc: "History ID; omit for latest."},
 			"setting": {typ: "string", desc: "Node setting.", enum: ctoNodeSettings},

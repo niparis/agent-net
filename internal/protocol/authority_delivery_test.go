@@ -37,7 +37,7 @@ func TestDeliveredMergeRulesAgree(t *testing.T) {
 			if strings.Contains(delivery, "or merging a pull request into the default branch") {
 				t.Error("unconditional merge consent contradicts receiver settings")
 			}
-			if authority == "delegated" && (!strings.Contains(delivery, "agent_owner_ask") || !strings.Contains(d.MergeText(), "governs")) {
+			if authority == "delegated" && (!strings.Contains(delivery, "agent_owner_ask") || !strings.Contains(d.MergeText(), "above you in the tree")) {
 				t.Error("delegated approval must name its source and delivery path")
 			}
 			if !strings.Contains(guidance.Block(guidance.Other), "For merges, follow the receiving node's merge rule in agent-net's note") {

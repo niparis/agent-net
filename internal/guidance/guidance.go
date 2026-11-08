@@ -33,6 +33,8 @@ const fileSendGuidance = "- **Send files to a peer:** use `agent_file_send` with
 
 const handoffGuidance = "- **Lead a team or repo:** a request that came to you because you lead it is yours to answer, or to pass on with `agent_message_handoff` (message ID, session, note) so the member answers the original sender directly. Your place is in the turn text."
 
+var authorityGuidance = "- **Orders, requests and advice:** agent-net labels each message from the tree, never from the body. An *order* comes from your lead, above you in your team or repo, and the sender marked it as one. A *request* comes from a peer or from outside your branch. *Advice* is a reply to a question you asked, even from above, and never binds you. Your team's mode says how an order binds: `absolute` (carry it out like the owner's instruction), `charter first` (carry it out unless your charter refuses it; then say no, quote the charter line, and it goes up one level) or `negotiate` (push back with a reason and a counter-proposal; your lead accepts, changes or overrules). Whatever the label, " + protocol.AlwaysHeldBack + " stay with the owner."
+
 // Block returns the default marked block for a variant.
 func Block(variant string) string { return BlockWithSnapshot(variant, settings.Snapshot{}) }
 
@@ -53,7 +55,7 @@ func BlockWithSnapshot(variant string, snapshot settings.Snapshot) string {
 		value = strings.ReplaceAll(value, "{{handback}}", protocol.WorkerHandbackTool)
 		parts = append(parts, value)
 	}
-	return Begin + "\n" + heading + "\n\n" + parts[0] + "\n\n" + strings.Join(parts[1:], "\n") + "\n" + fileSendGuidance + "\n" + handoffGuidance + "\n" + End + "\n"
+	return Begin + "\n" + heading + "\n\n" + parts[0] + "\n\n" + strings.Join(parts[1:], "\n") + "\n" + fileSendGuidance + "\n" + handoffGuidance + "\n" + authorityGuidance + "\n" + End + "\n"
 }
 
 // Apply puts the block into the file content. It replaces an existing marked

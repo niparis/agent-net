@@ -274,7 +274,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 		}
 		a, b = project(a), project(b)
 		accented := selected != "" && (e.From == selected || e.To == selected)
-		scene.Edges = append(scene.Edges, SceneEdge{FromName: e.From, ToName: e.To, From: a, To: b, Arrow: Point{a.X*0.2 + b.X*0.8, a.Y*0.2 + b.Y*0.8}, Kind: e.Kind, Mode: e.Mode, Rule: e.Rule, Dashed: e.Kind == "governs", Selected: accented, Dimmed: selected != "" && !accented})
+		scene.Edges = append(scene.Edges, SceneEdge{FromName: e.From, ToName: e.To, From: a, To: b, Arrow: Point{a.X*0.2 + b.X*0.8, a.Y*0.2 + b.Y*0.8}, Kind: e.Kind, Mode: e.Mode, Rule: e.Rule, Selected: accented, Dimmed: selected != "" && !accented})
 	}
 	for _, c := range comets {
 		a, b := g.Positions[c.From], g.Positions[c.To]

@@ -26,7 +26,6 @@ func TestCTOGraphClass(t *testing.T) {
 		{"node_settings_set", `{"node":"app","setting":"autonomy","value":"wake"}`, "rule"},
 		{"edge_set", `{"from":"app","to":"ops","kind":"depends"}`, "minor"},
 		{"edge_remove", `{"from":"app","to":"ops","kind":"depends"}`, "minor"},
-		{"edge_set", `{"from":"app","to":"ops","kind":"governs","mode":"owner"}`, "major"},
 		{"edge_set", `{"from":"app","to":"ops","kind":"deploys"}`, "rule"},
 	} {
 		t.Run(c.tool+c.args, func(t *testing.T) {

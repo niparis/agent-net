@@ -27,7 +27,7 @@ func runGraphCommand(ctx context.Context, op graphCaller, out io.Writer, cmd str
 	method := ""
 	var params any = struct{}{}
 	usage := func() error {
-		return fmt.Errorf("usage: agent-net charter show|set|history ...; graph [undo [id]]; node add-architect|remove <name>|settings <name> [setting value...]; edge set|remove <from> <kind> <to> [mode] [rule]; merger set <project> <node-id> <session-id> | merger clear <project> <node-id>")
+		return fmt.Errorf("usage: agent-net charter show|set|history ...; graph [undo [id]]; node add-architect|remove <name>|settings <name> [setting value...]; edge set|remove <from> <kind> <to> [rule]; merger set <project> <node-id> <session-id> | merger clear <project> <node-id>")
 	}
 	switch cmd {
 	case "merger":
@@ -111,15 +111,12 @@ func runGraphCommand(ctx context.Context, op graphCaller, out io.Writer, cmd str
 			return usage()
 		}
 	case "edge":
-		if len(args) < 4 || len(args) > 6 {
+		if len(args) < 4 || len(args) > 5 {
 			return usage()
 		}
 		e := protocol.Edge{From: args[1], Kind: args[2], To: args[3]}
 		if len(args) > 4 {
-			e.Mode = args[4]
-		}
-		if len(args) > 5 {
-			e.Rule = args[5]
+			e.Rule = args[4]
 		}
 		params = e
 		switch args[0] {
@@ -159,7 +156,7 @@ func runGraphCommand(ctx context.Context, op graphCaller, out io.Writer, cmd str
 		}
 		if cmd == "graph" {
 			for _, e := range g.Edges {
-				fmt.Fprintf(out, "%s %s %s mode=%s rule=%s\n", e.From, e.Kind, e.To, e.Mode, e.Rule)
+				fmt.Fprintf(out, "%s %s %s rule=%s\n", e.From, e.Kind, e.To, e.Rule)
 			}
 		}
 	} else if method == protocol.OpCharterHistory {

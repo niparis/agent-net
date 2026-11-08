@@ -80,13 +80,10 @@ func (s *Store) RelationFor(fromSession, toSession string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Dependencies speak about repos; governance speaks about agents.
+	// Dependencies speak about repos.
 	for _, e := range g.Edges {
 		f, t := from.repo, to.repo
-		if e.Kind == "governs" {
-			f, t = from.agent, to.agent
-		}
-		if e.From == f && e.To == t && f != "" && t != "" && f != t && (e.Kind == "depends" || e.Kind == "governs") {
+		if e.From == f && e.To == t && f != "" && t != "" && f != t && e.Kind == "depends" {
 			return protocol.RelationText(protocol.Graph{Edges: []protocol.Edge{e}}, f, t), nil
 		}
 	}
@@ -175,9 +172,8 @@ func requestRuleTx(q identityQuerier, fromSession, toSession string) (string, er
 	}
 	var rule string
 	err = q.QueryRow(`SELECT rule FROM graph_edges WHERE
- ((kind='governs' AND target=? AND target<>'' AND (source=? OR source='*')) OR
- (kind IN ('depends','deploys') AND target=? AND target<>'' AND (source=? OR source='*')))
- ORDER BY CASE WHEN source='*' THEN 1 ELSE 0 END, kind LIMIT 1`, to.agent, from.agent, to.repo, from.repo).Scan(&rule)
+ (kind IN ('depends','deploys') AND target=? AND target<>'' AND (source=? OR source='*'))
+ ORDER BY CASE WHEN source='*' THEN 1 ELSE 0 END, kind LIMIT 1`, to.repo, from.repo).Scan(&rule)
 	if err == sql.ErrNoRows {
 		return "normal", nil
 	}

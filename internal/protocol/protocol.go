@@ -94,6 +94,13 @@ type Message struct {
 	// body, and a sender cannot set it.
 	RecipientRelation string `json:"recipient_relation,omitempty"`
 	OwnerInstruction  string `json:"owner_instruction,omitempty"`
+	// IsOrder is true when the sender flagged the message as an order and the
+	// gateway checked that the sender is above the recipient in the tree.
+	IsOrder bool `json:"is_order,omitempty"`
+	// AuthorityNote is agent-net's label for an order, or for a reply from
+	// above (advice). The gateway fills it on every delivery from the live
+	// tree, and a sender cannot set it (decision 0089).
+	AuthorityNote string `json:"authority_note,omitempty"`
 	// Files is the manifest of the files that come with the message
 	// (decision 0054). The sending daemon builds it; the gateway stores it
 	// and hands it to the receiving daemon, which collects the bytes before
@@ -519,9 +526,13 @@ type (
 		// LeadAddress records an explicit repo: or team: address. The gateway
 		// validates the recipient is still that lead before bypassing routing.
 		LeadAddress string `json:"lead_address,omitempty"`
-		Type        string `json:"message_type"`
-		Body        string `json:"body"`
-		ParentID    string `json:"parent_message_id,omitempty"`
+		// Order asks the gateway to label the message an order. The gateway
+		// checks that the sender is above the recipient in the tree. If not,
+		// the message goes as a request.
+		Order    bool   `json:"order,omitempty"`
+		Type     string `json:"message_type"`
+		Body     string `json:"body"`
+		ParentID string `json:"parent_message_id,omitempty"`
 		// ConversationID, without ParentID, threads the message into an
 		// existing conversation without naming a message it answers. The
 		// recipient must have written to the sender in that conversation. A

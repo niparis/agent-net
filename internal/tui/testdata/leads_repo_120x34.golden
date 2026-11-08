@@ -7,10 +7,9 @@ no purpose set
 ○ no live sessions
 agents 4/3 · over max
 accept, test, review, merge, release, verify: caller
-governed by: api-architect (-)
 
-IN 0                                                         OUT 2
-                                                             ──▶ shop depends
+IN 1                                                         OUT 2
+api-architect ──▶ deploys                                    ──▶ shop depends
                                                              ──▶ Alpha member_of
 Card ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -22,6 +21,7 @@ worker_sandbox     sandboxed              default
 judge_consumers    charter                default
 deploy_rule        brief                  default
 autonomy           off                    default
+
 
 
 RECENT  no changes yet

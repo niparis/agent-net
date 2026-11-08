@@ -59,7 +59,7 @@ func TestEdgeKindsMigrationPreservesRouting(t *testing.T) {
 	}
 	for _, e := range []protocol.Edge{
 		{From: "demo", To: "other", Kind: "depends", Rule: "normal"},
-		{From: "advisor", To: "demo", Kind: "governs", Mode: "advisor", Rule: "normal"},
+		{From: "advisor", To: "demo", Kind: "deploys", Rule: "normal"},
 	} {
 		if _, err := r.s.db.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?,?,?,?,?)`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
 			t.Fatal(err)
@@ -144,9 +144,6 @@ func TestEdgeKindsMigrationPreservesRouting(t *testing.T) {
 			wantS, wantT := "agent", "repo"
 			if kind == "depends" {
 				wantS = "repo"
-			}
-			if kind == "governs" {
-				wantT = "agent"
 			}
 			if strings.HasPrefix(from, "/delivery/") {
 				wantS = "special"

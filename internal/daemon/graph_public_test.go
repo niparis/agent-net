@@ -48,7 +48,7 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 	cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "purpose", "value": "Owns the design"})
 	for _, e := range []map[string]any{
 		{"from": "shop", "to": "billing", "kind": "depends", "rule": "ask"},
-		{"from": "architect", "to": "shop", "kind": "governs", "mode": "owner", "rule": "normal"},
+		{"from": "architect", "to": "shop", "kind": "deploys", "rule": "normal"},
 	} {
 		cli.mustCall("edge_set", e)
 	}
@@ -99,8 +99,8 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 	if e := found["shop->billing"]; e.Kind != "depends" || e.Rule != "ask" {
 		t.Fatalf("depends edge: %+v", e)
 	}
-	if e := found["architect->shop"]; e.Kind != "governs" || e.Mode != "owner" {
-		t.Fatalf("governs edge: %+v", e)
+	if e := found["architect->shop"]; e.Kind != "deploys" {
+		t.Fatalf("deploys edge: %+v", e)
 	}
 
 	var detail protocol.PublicGraphPage

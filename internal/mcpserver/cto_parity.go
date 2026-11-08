@@ -30,8 +30,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("node_remove", "Remove an edgeless architect.", map[string]ctoField{"name": s("Name.")})
 	add("edge_set", "Set a directed edge.", map[string]ctoField{
 		"from": {typ: "graph_endpoint"}, "to": {typ: "graph_endpoint"},
-		"kind": en("Consumer to provider, architect to component, deployer to app.", ctoEdgeKinds...),
-		"mode": en("Advise, arbitrate, decide.", "advisor", "arbiter", "owner"),
+		"kind": en("Consumer to provider, deployer to app.", ctoEdgeKinds...),
 		"rule": en("Deliver, own, hold, refuse.", "normal", "auto", "ask", "never"),
 	})
 	add("edge_remove", "Remove a graph edge.", map[string]ctoField{"from": {typ: "graph_endpoint"}, "to": {typ: "graph_endpoint"}, "kind": en("Kind and direction.", ctoEdgeKinds...)})

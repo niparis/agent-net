@@ -549,7 +549,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		WHERE t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
 		AND ((t.owner_node='/merger' AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)) OR (t.owner_node=? AND s.id=c.caller) OR `+sessionRepoSQL+`=t.owner_node OR
 		 (t.owner_node=? AND EXISTS(SELECT 1 FROM delivery_step_delegates a WHERE a.change_id=t.change_id AND a.revision=t.revision
-		 AND a.step=t.step AND a.for_step=t.for_step AND a.after_merge=t.after_merge AND a.node=`+sessionRepoSQL+`)))
+		 AND a.step=t.step AND a.for_step=t.for_step AND a.after_merge=t.after_merge AND (a.node=`+sessionRepoSQL+` OR a.node='agent:'||COALESCE(s.agent_id,'')))))
 		AND s.harness NOT IN ('owner','bot','cto')
 		AND NOT EXISTS (SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
 		WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
@@ -1404,31 +1404,7 @@ func (s *Store) queueDelegateTask(tx *sql.Tx, c protocol.Change, ref protocol.St
 	if err != nil || inserted == 0 {
 		return err
 	}
-	snap, err := settingsSnapshotTx(tx)
-	if err != nil {
-		return err
-	}
-	allowed := snap.Strings("delivery.delegated_approver_modes", settings.Where{})
-	rows, err := tx.Query(`SELECT source,mode FROM graph_edges WHERE target=? AND kind='governs'`, c.Project)
-	if err != nil {
-		return err
-	}
-	var delegates []string
-	for rows.Next() {
-		var node, mode string
-		if err := rows.Scan(&node, &mode); err != nil {
-			rows.Close()
-			return err
-		}
-		for _, v := range allowed {
-			if v == mode {
-				delegates = append(delegates, node)
-				break
-			}
-		}
-	}
-	err = rows.Err()
-	rows.Close()
+	delegates, err := delegateAgents(tx, c)
 	if err != nil {
 		return err
 	}
@@ -1439,6 +1415,46 @@ func (s *Store) queueDelegateTask(tx *sql.Tx, c protocol.Change, ref protocol.St
 		}
 	}
 	return nil
+}
+
+// delegateAgents lists the agents above the change's repo in the tree: the
+// repo lead and the lead of the repo's team. Each holds merge unless the owner
+// holds it back, and each is written as "agent:<id>". The caller is never its
+// own approver (decision 0089).
+func delegateAgents(tx *sql.Tx, c protocol.Change) ([]string, error) {
+	var caller string
+	if err := tx.QueryRow(`SELECT COALESCE(agent_id,'') FROM sessions WHERE id=?`, c.Caller).Scan(&caller); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	var out []string
+	add := func(agent string) {
+		if agent == "" || agent == caller {
+			return
+		}
+		for _, have := range out {
+			if have == "agent:"+agent {
+				return
+			}
+		}
+		out = append(out, "agent:"+agent)
+	}
+	var repoID, repoName string
+	var lead, pinned sql.NullString
+	err := tx.QueryRow(repoLeadQuery(`id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`), c.Project).Scan(&repoID, &repoName, &lead, &pinned)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil && lead.Valid {
+		add(lead.String)
+	}
+	_, _, _, _, owner, _, err := repoTeam(tx, c.Project)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil && owner.Valid {
+		add(owner.String)
+	}
+	return out, nil
 }
 
 func (s *Store) queueOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.StepRef) error {
@@ -1520,10 +1536,10 @@ func claimNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	if completed != 0 {
 		return true, reject("%s was already reported by %s", ref, claimed)
 	}
-	var project, worker, harness, node string
+	var project, worker, harness, node, agent string
 	var online int
-	err = tx.QueryRow(`SELECT `+sessionRepoSQL+`,s.worker,s.online,s.harness,s.node_id
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node)
+	err = tx.QueryRow(`SELECT `+sessionRepoSQL+`,s.worker,s.online,s.harness,s.node_id,COALESCE(s.agent_id,'')
+		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return true, reject("unknown session %q", session)
 	}
@@ -1543,8 +1559,8 @@ func claimNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	}
 	if owner == delegateTaskOwner {
 		var allowed int
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND node=?)`,
-			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), project).Scan(&allowed); err != nil {
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND (node=? OR node=?))`,
+			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), project, "agent:"+agent).Scan(&allowed); err != nil {
 			return true, err
 		}
 		allowedOwner = allowed != 0
@@ -1576,18 +1592,18 @@ func claimDirectOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.StepRe
 	if owner != delegateTaskOwner || completed != 0 {
 		return true, reject("%s is not an open delegated approval", ref)
 	}
-	var project, worker, harness, node string
+	var project, worker, harness, node, agent string
 	var online int
-	err = tx.QueryRow(`SELECT `+sessionRepoSQL+`,s.worker,s.online,s.harness,s.node_id
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node)
+	err = tx.QueryRow(`SELECT `+sessionRepoSQL+`,s.worker,s.online,s.harness,s.node_id,COALESCE(s.agent_id,'')
+		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
 	if err != nil {
 		return true, err
 	}
 	allowed := session == c.Caller
 	if !allowed {
 		var delegate int
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND node=?)`,
-			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), project).Scan(&delegate)
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND (node=? OR node=?))`,
+			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), project, "agent:"+agent).Scan(&delegate)
 		if err != nil {
 			return true, err
 		}

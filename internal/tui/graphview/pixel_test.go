@@ -28,7 +28,7 @@ func pixelScene() Scene {
 		},
 		Edges: []SceneEdge{
 			{From: Point{.20, .28}, To: Point{.50, .50}, Kind: "depends", Selected: true},
-			{From: Point{.80, .78}, To: Point{.20, .28}, Kind: "governs", Dashed: true},
+			{From: Point{.80, .78}, To: Point{.20, .28}, Kind: "deploys", Dashed: true},
 			{From: Point{.82, .26}, To: Point{.50, .50}, Kind: "deploys"},
 			{From: Point{.22, .80}, To: Point{.82, .26}, Kind: "depends", Dimmed: true},
 		},

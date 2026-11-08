@@ -44,7 +44,7 @@ func publicGraphFixture() Graph {
 		},
 		Edges: []Edge{
 			{From: "shop", To: "billing", Kind: "depends", Rule: "ask"},
-			{From: "architect", To: "shop", Kind: "governs", Mode: "owner", Rule: "normal"},
+			{From: "architect", To: "shop", Kind: "deploys", Rule: "normal"},
 		},
 	}
 }

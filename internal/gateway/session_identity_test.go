@@ -73,13 +73,7 @@ func TestSessionIdentityMigrationBackfill(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		group, err := deliveryCall[struct {
-			Allowed bool `json:"allowed"`
-		}](r, r.a, "group.authority", map[string]string{"session_id": r.caller})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return []any{relation, rule, authority, policy, pipeline, group}
+		return []any{relation, rule, authority, policy, pipeline}
 	}
 	before := snapshot()
 	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Explicit session and run identity")); err != nil {
@@ -121,13 +115,6 @@ func TestSessionIdentityUsesSelectedAgentAndRepoSeparately(t *testing.T) {
 	if err != nil || c.Project != "demo" || c.Agent != "advisor" || c.AgentCharter.Purpose != "Advisor purpose" {
 		t.Fatalf("context %+v: %v", c, err)
 	}
-	if err := r.s.SetEdge(protocol.Edge{From: "advisor", To: "demo", Kind: "governs", Mode: "advisor", Rule: "auto"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	rule, err := r.s.RequestRule(r.caller, r.sonnet)
-	if err != nil || rule != "auto" {
-		t.Fatalf("governs rule %q: %v", rule, err)
-	}
 }
 
 func TestWorkerRunKeepsCallerAgentAtStart(t *testing.T) {
@@ -161,33 +148,6 @@ func TestWorkerRunKeepsCallerAgentAtStart(t *testing.T) {
 	c, err = r.s.resolveRunContext(id)
 	if err != nil || c.Agent != "advisor" {
 		t.Fatalf("run context %+v: %v", c, err)
-	}
-}
-
-func TestSessionIdentityGroupAuthority(t *testing.T) {
-	r := newDeliveryRig(t)
-	if err := r.s.AddArchitect("advisor", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.s.SetEdge(protocol.Edge{From: "advisor", To: "demo", Kind: "governs", Mode: "advisor"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	type result struct {
-		Allowed bool `json:"allowed"`
-	}
-	allowed, err := deliveryCall[result](r, r.a, "group.authority", map[string]string{"session_id": r.caller})
-	if err != nil || allowed.Allowed {
-		t.Fatalf("ordinary session %+v: %v", allowed, err)
-	}
-	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='advisor' WHERE id=?`, r.caller); err != nil {
-		t.Fatal(err)
-	}
-	allowed, err = deliveryCall[result](r, r.a, "group.authority", map[string]string{"session_id": r.caller})
-	if err != nil || !allowed.Allowed {
-		t.Fatalf("advisor session %+v: %v", allowed, err)
-	}
-	if _, err = deliveryCall[result](r, r.b, "group.authority", map[string]string{"session_id": r.caller}); err == nil {
-		t.Fatal("another machine got authority")
 	}
 }
 
@@ -358,33 +318,6 @@ func TestSessionFindKeepsLegacyAnnouncedProjectDisplay(t *testing.T) {
 		}
 	}
 	t.Fatalf("legacy announced project changed: %+v", page.Items)
-}
-
-func TestRequestRuleAndStorageUseResolvedFallbackAgent(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.AddProjects(r.a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.s.AddArchitect("advisor", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='advisor' WHERE id=?`, r.caller); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.s.db.Exec(`UPDATE sessions SET repo_id='other',agent_id=NULL WHERE id=?`, r.sonnet); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.s.SetEdge(protocol.Edge{From: "advisor", To: "other", Kind: "governs", Mode: "advisor", Rule: "ask"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	rule, err := r.s.RequestRule(r.caller, r.sonnet)
-	if err != nil || rule != "ask" {
-		t.Fatalf("rule %q: %v", rule, err)
-	}
-	m, _, err := send(r.s, r.caller, r.sonnet, "request", "")
-	if err != nil || m.State != protocol.StateHeld {
-		t.Fatalf("message state %q: %v", m.State, err)
-	}
 }
 
 func TestSessionIdentityMigrationRejectsExistingColumns(t *testing.T) {

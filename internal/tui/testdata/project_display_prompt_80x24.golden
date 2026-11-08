@@ -4,10 +4,10 @@ Tools: 0 skills, 0 MCP servers · t open
 Document and evidence API.
 ○ no live sessions
 accept, test, review, merge, release, verify: caller
-governed by: trading-architect (owner)
 
-IN 1                                     OUT 1
+IN 2                                     OUT 1
 tenebrae ──▶ depends ask                 ──▶ shop depends auto
+trading-architect ──▶ deploys
 Card 1-7/11  ctrl+u/d scroll ───────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 accepts          Generic endpoints and bug fixes.

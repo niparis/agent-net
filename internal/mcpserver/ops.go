@@ -86,11 +86,12 @@ func ownerAskCall(ctx context.Context, run func(context.Context, string, any) (a
 
 // sendCall sends one message. receipt asks the daemon for a receipt, which is
 // what the new tool reports; the old tool keeps the sent-message answer.
-func sendCall(ctx context.Context, run func(context.Context, string, any) (any, error), to string, set map[string]any, body, kind string, asOwner, receipt bool) (map[string]any, error) {
+func sendCall(ctx context.Context, run func(context.Context, string, any) (any, error), to string, set map[string]any, body, kind string, asOwner, order, receipt bool) (map[string]any, error) {
 	params := map[string]any{
 		"body":            body,
 		"type":            kind,
 		"as_owner":        asOwner,
+		"order":           order,
 		"receipt":         receipt,
 		"idempotency_key": protocol.NewID("k"),
 	}
