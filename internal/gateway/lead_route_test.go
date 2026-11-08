@@ -158,6 +158,81 @@ func TestLeadRouteIdempotentReceipt(t *testing.T) {
 	}
 }
 
+// A reply must reach the session that sent the message it answers, even when
+// the sender is outside the recipient's team. Only new requests and
+// notifications still go to the lead.
+func TestTeamLeadRouteReplyReachesParentSender(t *testing.T) {
+	s := teamStore(t)
+	var target, lead string
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='demo'`).Scan(&target); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='other'`).Scan(&lead); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := graphSessions(t, s, "outside")
+	outsider := ids["outside"]
+	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
+	agent := protocol.GraphRef{Kind: "agent", ID: "other"}
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &agent})
+	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &repo})
+	if err := s.SetLead(protocol.LeadSetRequest{Ref: repo}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: target, Recipient: outsider, Body: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, _, note, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: target, ParentID: req.ID, Body: "answer"})
+	if err != nil || reply.To != target || note != "" {
+		t.Fatalf("reply went to %s instead of %s (note %q): %v", reply.To, target, note, err)
+	}
+
+	// A new request from the same outside session still goes to the lead.
+	m, _, note, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: target, Body: "new request"})
+	if err != nil || m.To != lead || !strings.Contains(note, "Redirected") {
+		t.Fatalf("new request: %+v %q %v", m, note, err)
+	}
+}
+
+// The same holds for a Repo lead.
+func TestRepoLeadRouteReplyReachesParentSender(t *testing.T) {
+	s := teamStore(t)
+	var lead, outsider, node string
+	if err := s.db.QueryRow(`SELECT id,node_id FROM sessions WHERE repo_id='demo'`).Scan(&lead, &node); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='other'`).Scan(&outsider); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddArchitect("helper", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	target, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "helper", Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='helper',name='Helper' WHERE id=?`, target); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: target, Recipient: outsider, Body: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, _, note, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: target, ParentID: req.ID, Body: "answer"})
+	if err != nil || reply.To != target || note != "" {
+		t.Fatalf("reply went to %s instead of %s (note %q): %v", reply.To, target, note, err)
+	}
+
+	// A new request from the same outside session still goes to the lead.
+	m, _, note, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: target, Body: "new request"})
+	if err != nil || m.To != lead || !strings.Contains(note, "Redirected") {
+		t.Fatalf("new request: %+v %q %v", m, note, err)
+	}
+}
+
 func TestLeadAddressResolution(t *testing.T) {
 	s := teamStore(t)
 	var demo string

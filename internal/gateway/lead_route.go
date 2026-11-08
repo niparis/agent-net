@@ -43,6 +43,17 @@ func routeLead(tx *sql.Tx, m *protocol.Message) (string, error) {
 	if protocol.IsOwner(harness) || m.From == cto || m.FromCTO {
 		return "", nil
 	}
+	// A reply always reaches the session that sent the message it answers.
+	// Lead routing only applies to new requests and notifications.
+	if m.ParentID != "" {
+		var parentSender string
+		if err = tx.QueryRow(`SELECT sender FROM messages WHERE id=?`, m.ParentID).Scan(&parentSender); err != nil && err != sql.ErrNoRows {
+			return "", err
+		}
+		if parentSender == m.To {
+			return "", nil
+		}
+	}
 	if worker != "" {
 		var owner string
 		if err = tx.QueryRow(`SELECT COALESCE(CASE WHEN json_valid(worker) THEN json_extract(worker,'$.owner') END,'') FROM sessions WHERE id=?`, m.From).Scan(&owner); err != nil {

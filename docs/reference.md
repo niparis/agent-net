@@ -2884,8 +2884,9 @@ For messages to a non-lead session from outside its Repo or Team crew, the
 gateway redirects to the selected session when online, otherwise to a live session of its Agent, and adds a note to the message and receipt.
 The owner and CTO are exempt, as are workers messaging their caller. If there is
 no lead or no live lead session, the original target receives the message and
-the receipt says why. Use `repo:<name>` or `team:<name>` to address a live lead
-by name or ID. Typed Graph reads expose `lead`, `max_agents`, `agent_count` and
+the receipt says why. A reply is never redirected: it goes to the session that
+sent the message it answers. Use `repo:<name>` or `team:<name>` to address a
+live lead by name or ID. Typed Graph reads expose `lead`, `max_agents`, `agent_count` and
 `over_max`; session views expose corresponding Repo counts and lead flags.
 
 The repo setting `max_agents` is a non-negative integer; zero or unset means no
