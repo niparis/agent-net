@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/settings"
 )
@@ -38,7 +39,7 @@ func TestDeliveryNoteUsesGatewayRuleText(t *testing.T) {
 	if got := AuthorityNoteWithRule(true, false, "ask", ""); strings.Contains(got, MergeAskText) {
 		t.Fatalf("empty rule was replaced: %s", got)
 	}
-	owner := OwnerInstructionNoteWithRule("please merge", "ask", "custom merge rule")
+	owner := OwnerInstructionNoteWithRule("please merge", "sender", time.Time{}, "custom merge rule")
 	if !strings.Contains(owner, "custom merge rule") {
 		t.Fatal(owner)
 	}

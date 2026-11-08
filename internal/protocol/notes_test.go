@@ -44,7 +44,7 @@ func TestPluginsCarryAllAuthorityNoteFragments(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{TrustNotePrefix, TrustNoteSuffix, MergeFullText, MergeDelegatedText, MergeAskText, OwnerInstructionPrefix, OwnerInstructionSuffix, CTONote, CTOPeerNote, NoAuthorityNote, PeerCheckNote} {
+		for _, want := range []string{TrustNotePrefix, TrustNoteSuffix, MergeFullText, MergeDelegatedText, MergeAskText, OwnerInstructionPrefix, OwnerInstructionAt, OwnerInstructionQuote, OwnerInstructionSuffix, CTONote, CTOPeerNote, NoAuthorityNote, PeerCheckNote} {
 			if !strings.Contains(string(b), want) {
 				t.Errorf("%s lacks %q", path, want)
 			}

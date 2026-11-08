@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+	"time"
 )
 
 // This fixture records delivery output before the settings cutover. Each node
@@ -25,7 +26,7 @@ func deliveryFixture() []byte {
 				}
 				d := NodeDefaults(maturity, overrides)
 				g := Graph{Nodes: []Node{{Name: "repo", Charter: Charter{Maturity: maturity}, Settings: overrides}}, Edges: []Edge{{From: "lead", To: "repo", Kind: "governs", Mode: "owner"}, {From: "adviser", To: "repo", Kind: "governs", Mode: "advisor"}}}
-				out[maturity+"/"+key+"/"+value] = map[string]any{"rules": d.RulesText(), "consumer": d.ConsumerText(), "approval": MergeApprovalFor(g, "repo"), "trust": AuthorityNote(true, false, d.MergeAuthority), "owner_note": OwnerInstructionNote("do work", d.MergeAuthority), "brief": WorkerTaskBodyWithCharter("codex", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "autonomy": NodeAutonomy(overrides), "brief-claude": WorkerTaskBodyWithCharter("claude", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "brief-agy": WorkerTaskBodyWithCharter("agy", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "brief-opencode": WorkerTaskBodyWithCharter("opencode", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "worker-deploy": WorkerDeployApprovalRules(Graph{Nodes: g.Nodes, Edges: []Edge{{From: "deployer", To: "repo", Kind: "deploys"}}}, "deployer")}
+				out[maturity+"/"+key+"/"+value] = map[string]any{"rules": d.RulesText(), "consumer": d.ConsumerText(), "approval": MergeApprovalFor(g, "repo"), "trust": AuthorityNote(true, false, d.MergeAuthority), "owner_note": OwnerInstructionNote("do work", "sender", time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC), d.MergeAuthority), "brief": WorkerTaskBodyWithCharter("codex", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "autonomy": NodeAutonomy(overrides), "brief-claude": WorkerTaskBodyWithCharter("claude", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "brief-agy": WorkerTaskBodyWithCharter("agy", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "brief-opencode": WorkerTaskBodyWithCharter("opencode", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "worker-deploy": WorkerDeployApprovalRules(Graph{Nodes: g.Nodes, Edges: []Edge{{From: "deployer", To: "repo", Kind: "deploys"}}}, "deployer")}
 			}
 		}
 	}

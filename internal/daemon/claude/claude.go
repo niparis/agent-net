@@ -363,7 +363,7 @@ func BuildFrameFor(m protocol.Message, replySock string, toWorker bool) ([]byte,
 		details += " " + m.RecipientRelation
 	}
 	if m.OwnerInstruction != "" {
-		details += "\n" + protocol.OwnerInstructionNoteWithRule(m.OwnerInstruction, m.RecipientMergeAuthority, protocol.MessageMergeText(m))
+		details += "\n" + protocol.OwnerInstructionNoteFor(m)
 	}
 	if m.ApprovalNote != "" {
 		details += "\n[agent-net] " + m.ApprovalNote

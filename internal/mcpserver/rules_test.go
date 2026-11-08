@@ -35,6 +35,8 @@ func TestPluginsCarryTheSameNotesAndRules(t *testing.T) {
 			"MergeDelegatedText":     protocol.MergeDelegatedText,
 			"MergeAskText":           protocol.MergeAskText,
 			"OwnerInstructionPrefix": protocol.OwnerInstructionPrefix,
+			"OwnerInstructionAt":     protocol.OwnerInstructionAt,
+			"OwnerInstructionQuote":  protocol.OwnerInstructionQuote,
 			"OwnerInstructionSuffix": protocol.OwnerInstructionSuffix,
 			"CTONote":                protocol.CTONote,
 			"NoAuthorityNote":        protocol.NoAuthorityNote,
