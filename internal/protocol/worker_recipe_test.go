@@ -85,3 +85,45 @@ func TestWorkerBriefProtocolTokensAreFixed(t *testing.T) {
 		})
 	}
 }
+
+// The brief tells a worker to run only its own tests when another owner runs
+// the project's test step. The owner of that step decides whether the line is
+// there; the caller's own step gets no line.
+func TestWorkerBriefTestScopeFollowsTestStepOwner(t *testing.T) {
+	const line = "\n- Tests: run only the tests that cover your change, by name (Go: -run '^(TestA|TestB)$'). Do not run whole packages, race runs, repeat or load runs, or full suites, and run one test command at a time. The delivery test step and CI run the suites."
+	for _, tc := range []struct {
+		name        string
+		project     string
+		assignments []settings.DeliveryAssignment
+		want        bool
+	}{
+		{"merger owns the test step", "shop", []settings.DeliveryAssignment{{Project: "shop", Step: StepTest, Node: "/delivery/merger", Kind: "tests"}}, true},
+		{"a node owns the test step", "shop", []settings.DeliveryAssignment{{Project: "shop", Step: StepTest, Node: "tenebrae", Kind: "tests"}}, true},
+		{"caller owns the test step", "shop", []settings.DeliveryAssignment{{Project: "shop", Step: StepTest, Node: "/delivery/caller", Kind: "tests"}}, false},
+		{"no assignment", "shop", nil, false},
+		{"another project owns the test step", "shop", []settings.DeliveryAssignment{{Project: "other", Step: StepTest, Node: "/delivery/merger", Kind: "tests"}}, false},
+	} {
+		snap := settings.Snapshot{DeliveryPipelineCutover: true, DeliveryAssignments: tc.assignments}
+		for _, harness := range []string{"claude", "codex", "opencode", "pi", "agy"} {
+			t.Run(tc.name+"/"+harness, func(t *testing.T) {
+				body := WorkerTaskBodyWithSettingsForRepo(harness, "do work", "", "", "", "", "sandboxed", snap, tc.project)
+				if got := strings.Contains(body, line); got != tc.want {
+					t.Fatalf("test scope line present = %t, want %t: %s", got, tc.want, body)
+				}
+				if tc.want && strings.Index(body, line) > strings.Index(body, "\n- If you are blocked") {
+					t.Fatalf("test scope line comes after the blocked line: %s", body)
+				}
+			})
+		}
+	}
+}
+
+func TestWorkerBriefTestScopeTextCanBeSet(t *testing.T) {
+	snap := settings.Snapshot{DeliveryPipelineCutover: true,
+		DeliveryAssignments: []settings.DeliveryAssignment{{Project: "shop", Step: StepTest, Node: "/delivery/merger", Kind: "tests"}},
+		Values:              []settings.Value{{Key: "workers.brief_tests", Level: "repo", Scope: "shop", Value: json.RawMessage(`"Run only your own tests."`)}}}
+	body := WorkerTaskBodyWithSettingsForRepo("claude", "task", "", "", "", "", "sandboxed", snap, "shop")
+	if !strings.Contains(body, "\n- Run only your own tests.\n") {
+		t.Fatalf("repo text for the test scope line was not used: %s", body)
+	}
+}
