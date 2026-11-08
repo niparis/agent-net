@@ -577,7 +577,10 @@ func (m Model) quotaModelsView(w int) []string {
 			}
 		}
 	}
-	legend := "T S N H V: the picker's preview at the middle of each level · ▸ = chosen · gateway preview, not simulated"
+	legend := []string{
+		"T:trivial S:simple N:normal H:hard V:very complex · ▸ = chosen",
+		"the gateway's picker preview at the middle of each level, not simulated",
+	}
 	if len(preview) > 0 {
 		var picks []string
 		for _, level := range levels {
@@ -593,7 +596,9 @@ func (m Model) quotaModelsView(w int) []string {
 	} else {
 		body = append(body, sDim.Render(clip("the gateway sent no picker preview", w-4)))
 	}
-	body = append(body, sDim.Render(clip(legend, w-4)))
+	for _, line := range legend {
+		body = append(body, sDim.Render(clip(line, w-4)))
+	}
 	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	if len(m.snap.ProtectedProviders.Providers) > 0 {
 		title = fmt.Sprintf("Workers · 🔒 protected · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)

@@ -549,7 +549,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"3 · 67% done · 1 failed",
 		"5 · 100% done",
 		"unused",
-		"T S N H V: the picker's preview",
+		"T:trivial S:simple N:normal H:hard V:very complex",
 		"T terra high · S terra high · N terra high",
 	} {
 		if !strings.Contains(plain, want) {
@@ -590,7 +590,7 @@ func TestWorkersPanelShowsGatewayPreview(t *testing.T) {
 }
 
 func TestWorkersPanelKeyAndLinesFitResponsiveWidths(t *testing.T) {
-	const legend = "T S N H V: the picker's preview"
+	legend := []string{"T:trivial S:simple N:normal H:hard V:very complex", "picker preview at the middle"}
 	for _, width := range []int{80, 100, 120} {
 		m := newModel(width, 34)
 		m.tab = 2
@@ -601,8 +601,10 @@ func TestWorkersPanelKeyAndLinesFitResponsiveWidths(t *testing.T) {
 				t.Errorf("Workers line at width %d is %d columns: %q", width, got, ansi.Strip(line))
 			}
 		}
-		if !strings.Contains(plain, legend) {
-			t.Errorf("Workers legend at width %d is missing %q:\n%s", width, legend, plain)
+		for _, want := range legend {
+			if !strings.Contains(plain, want) {
+				t.Errorf("Workers legend at width %d is missing %q:\n%s", width, want, plain)
+			}
 		}
 	}
 }

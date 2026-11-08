@@ -8,9 +8,9 @@
 ╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME            HARNESS  MODEL             T   S   N   H   V                 │
 │ the gateway sent no picker preview                                           │
-│ T S N H V: the picker's preview at the middle of each level · ▸ = chosen · … │
+│ T:trivial S:simple N:normal H:hard V:very complex · ▸ = chosen               │
+│ the gateway's picker preview at the middle of each level, not simulated      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 
