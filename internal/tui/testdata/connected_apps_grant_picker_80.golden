@@ -4,21 +4,21 @@ Connected apps
 ▸ Internet access: off
   Use your own tunnel URL
   Add an app
-  NAME           KIND       CLIENT        RETURN HOST    CONNECTED     LAST USED
-  trade-bot      bot        Trade         -              Jan 02        never
-    grants: mcp server ingest-forge
-    Shared MCP servers trade-bot may use (enter: grant or remove, esc: close)
-      [x] ingest-forge  on research
+  NAME          KIND       CLIENT        RETURN HOST   CONNECTED     LAST USED
+  trade-bot     bot        Trade         -             Jan 02        never
+    can call: ingest-forge
+    MCP servers trade-bot can call. Enter adds or removes, esc closes.
+      [x] ingest-forge  on research · 1 tool
       [ ] notes  on nas
-  grok-bot       bot        Grok Bot      -              Jan 02        never
+  grok-bot      bot        Grok Bot      -             Jan 02        never
+    can call: agent-net tools only
 
 Integrations
   Choose integrations for every machine in your network.
   Configure integrations
 
-Machines (more below)
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down server  enter grant or remove  esc close
+up/down server  enter add or remove  esc close

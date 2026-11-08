@@ -4,9 +4,10 @@ Connected apps
 ▸ Internet access: off
   Use your own tunnel URL
   Add an app
-  NAME           KIND       CLIENT        RETURN HOST    CONNECTED     LAST USED
-  phone          owner app  Safari        -              Jan 01        never
-  helper         bot        Cursor        -              Jan 01        never
+  NAME          KIND       CLIENT        RETURN HOST   CONNECTED     LAST USED
+  phone         owner app  Safari        -             Jan 01        never
+  helper        bot        Cursor        -             Jan 01        never
+    can call: agent-net tools only
 
 Integrations
   Choose integrations for every machine in your network.
@@ -16,7 +17,6 @@ Machines
   The name every machine in your network shows for each machine.
   NAME                  HOST NAME             VERSION       ONLINE
   Mac                   Mac                   v0.4.0        yes
-  build-vm              build-vm              v0.4.0        yes
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

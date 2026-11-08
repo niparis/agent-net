@@ -78,6 +78,13 @@ func (m Model) toolDetailView(w, h int) []string {
 			if r.Item.Host != "" {
 				add("host: " + r.Item.Host)
 			}
+			if names := m.tl.bots[r.Name]; len(names) > 0 {
+				clean := make([]string, len(names))
+				for i, n := range names {
+					clean[i] = sanitize(n)
+				}
+				add("bots: " + strings.Join(clean, ", "))
+			}
 		} else {
 			desc := wordsLines(sanitize(r.Item.Description), w-4)
 			limit := min(6, max(h-4, 1))

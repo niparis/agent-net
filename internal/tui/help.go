@@ -75,7 +75,11 @@ func (m Model) hints() []hint {
 		case "confirm", "public-confirm":
 			return []hint{bindingHint(contextConfirm, "yes"), bindingHint(contextConfirm, "no")}
 		default:
-			return []hint{bindingHint(contextApps, "public"), bindingHint(contextApps, "url"), bindingHint(contextApps, "add"), bindingHint(contextApps, "revoke"), bindingHint(contextApps, "back")}
+			hs := []hint{bindingHint(contextApps, "public"), bindingHint(contextApps, "url"), bindingHint(contextApps, "add"), bindingHint(contextApps, "revoke")}
+			if len(m.apps.apps) > 0 {
+				hs = append(hs, bindingHint(contextApps, "name"))
+			}
+			return append(hs, bindingHint(contextApps, "back"))
 		}
 	case m.mapOn && m.focus != focusCTO:
 		hs := []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools")}
@@ -112,10 +116,10 @@ func (m Model) hints() []hint {
 	case m.tab == settingsTab:
 		item := m.settingsItems()[min(max(m.settingsRow, 0), len(m.settingsItems())-1)]
 		if m.apps.stage == "grant" {
-			return []hint{{key: "up/down", label: "server"}, {key: "enter", label: "grant or remove"}, {key: "esc", label: "close"}}
+			return []hint{{key: "up/down", label: "server"}, {key: "enter", label: "add or remove"}, {key: "esc", label: "close"}}
 		}
 		if item.kind == "app" {
-			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "revoke"), bindingHint(contextSettings, "grant"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
+			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "name"), bindingHint(contextSettings, "revoke"), bindingHint(contextSettings, "grant"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 		}
 		if item.kind == "machine" {
 			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), {key: "x", label: "remove", prio: 1}, bindingHint(contextSettings, "rotate token"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}

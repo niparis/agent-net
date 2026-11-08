@@ -9,8 +9,8 @@ Connected apps ─────────────────────�
 
   NAME         KIND       CLIENT  RETURN HOST     CONNECTED    LAST USED
 ▸ weather-bot  bot        Cursor  www.cursor.com  today 14:05  never
+    can call: agent-net tools only
   phone        owner app  Safari  -               today 14:05  never
-
 
 
 
@@ -31,4 +31,4 @@ Connected apps ─────────────────────�
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-p internet access  u tunnel URL  a add  x revoke  esc back
+p internet access  u tunnel URL  a add  x revoke  n name  esc back

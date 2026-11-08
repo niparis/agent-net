@@ -4,9 +4,10 @@ Connected apps
 ▸ Internet access: off
   Use your own tunnel URL
   Add an app
-  NAME              KIND       CLIENT        RETURN HOST           CONNECTED     LAST USED
-  phone             owner app  Safari        -                     Jan 01        never
-  helper            bot        Cursor        -                     Jan 01        never
+  NAME              KIND       CLIENT          RETURN HOST           CONNECTED     LAST USED
+  phone             owner app  Safari          -                     Jan 01        never
+  helper            bot        Cursor          -                     Jan 01        never
+    can call: agent-net tools only
 
 Integrations
   Choose integrations for every machine in your network.
@@ -23,8 +24,7 @@ Time zone
   The clock every time on this screen uses, wherever you run it.
   Time zone: auto
 
-Notifications
-  Choose whether this machine shows desktop notifications. (more below)
+Notifications (more below)
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

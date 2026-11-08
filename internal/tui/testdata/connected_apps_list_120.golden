@@ -9,8 +9,8 @@ Connected apps ─────────────────────�
 
   NAME    KIND       CLIENT         RETURN HOST     CONNECTED  LAST USED
 ▸ cursor  bot        Cursor         www.cursor.com  Jan 02     never
+    can call: agent-net tools only
   iphone  owner app  iPhone Safari  phone.example   Jan 02     Feb 03
-
 
 
 
@@ -31,4 +31,4 @@ Connected apps ─────────────────────�
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-p internet access  u tunnel URL  a add  x revoke  esc back
+p internet access  u tunnel URL  a add  x revoke  n name  esc back

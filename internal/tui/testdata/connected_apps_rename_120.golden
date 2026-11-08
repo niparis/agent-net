@@ -4,8 +4,9 @@ Connected apps
 ▸ Internet access: off
   Use your own tunnel URL
   Add an app
-  NAME              KIND       CLIENT        RETURN HOST           CONNECTED     LAST USED
-  grok-bot          bot        Grok Bot      -                     Jan 02        never
+  NAME              KIND       CLIENT          RETURN HOST           CONNECTED     LAST USED
+  grok-bot          bot        Grok Bot        -                     Jan 02        never
+    can call: agent-net tools only
     name for grok-bot> grok-bot
 
 Integrations
@@ -23,8 +24,7 @@ Time zone
   The clock every time on this screen uses, wherever you run it.
   Time zone: auto
 
-Notifications
-  Choose whether this machine shows desktop notifications. (more below)
+Notifications (more below)
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

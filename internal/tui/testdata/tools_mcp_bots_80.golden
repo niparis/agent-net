@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+  Skills per project    [ All tools ]
+╭─Tools · 40 tools─────────────────────────────────────────────────────────────╮
+│   NAME                          STATUS                              COST     │
+│   react-best-practices          on for wbg-housing, wbg-worldview,… ~0       │
+│   research                      on everywhere                       ~0       │
+│   scratch-notes                 outside agent-net                   ~0       │
+│   using-git-worktrees           on everywhere                       ~0       │
+│   ◆ tenebrae-library            on research, healthy                -        │
+│ 40 tools · ! needs attention · enter opens actions                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─tenebrae-library─────────────────────────────────────────────────────────────╮
+│ scope: global                                                                │
+│ host: research                                                               │
+│ bots: cursor                                                                 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+tab agents  ? help  / filter  t costs  esc clear  n add  enter open  R rescan
