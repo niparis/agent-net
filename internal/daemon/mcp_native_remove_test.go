@@ -133,7 +133,7 @@ func TestCTOMCPNativeRemoveInboxUndo(t *testing.T) {
 	if _, err = f.n.d.runCTOToolRaw(ctx, "tools_change", args); err != nil {
 		t.Fatal(err)
 	}
-	items, err := f.g.gw.Store().ListInbox()
+	items, err := inboxAndLog(f.g.gw.Store())
 	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "mcp_native_remove" {
 		t.Fatalf("native removal undo missing: %+v %v", items, err)
 	}

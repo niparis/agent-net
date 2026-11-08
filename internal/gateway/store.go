@@ -1170,6 +1170,13 @@ ALTER TABLE inbox_items ADD COLUMN about_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE inbox_items ADD COLUMN next_who TEXT NOT NULL DEFAULT 'owner';
 ALTER TABLE inbox_items ADD COLUMN why_you TEXT NOT NULL DEFAULT '';
 ALTER TABLE inbox_items ADD COLUMN detail TEXT NOT NULL DEFAULT '';
+`, `
+-- Notices leave the queue for good (decision 0090, part A2). What the CTO
+-- applied or sent and a new app are lines of desk_log, and the Desk shows them
+-- there. The old Inbox rows of these notices are closed, not deleted. The
+-- statement is safe to replay.
+UPDATE inbox_items SET status='closed', answer='moved_to_log', answered_at=created_at
+ WHERE kind='check' AND status='open' AND from_kind IN ('cto','apps');
 `}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay

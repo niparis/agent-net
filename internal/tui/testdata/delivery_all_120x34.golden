@@ -1,19 +1,19 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
-╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────8 shown─╮
-│   TITLE                            REPO             STEP      STATUS                                    AGE     DONE │
-│ Needs you · 1                                                                                                        │
-│ ▸ Approve the deploy gate          voicemechs       approve   waiting for you                           3h0m    ○    │
-│ Moving · 3                                                                                                           │
-│   Show which provider each quota…  agent-net        review    waiting for merger                        2h14m   ●○●  │
-│   Say what a delivery row waits …  agent-net        test      waiting for ci-runner (online)            6m      ●●○○ │
-│   merged: abcdef1                                                                                                    │
-│   Fix the deploy gate              voicemechs       review    back to strategies to restart the worker  2h5m    ●✗   │
-│ Stuck · 3                                                                                                            │
-│   Import suppliers from the CSV    wbg-procurement  accept    waiting for an unknown session (exited)   1d6h    ○    │
-│   wbg-procurement · 2 changes wait for accept by wbg-procurement (exited) · 15h-22h                                  │
-│ Done · 1                                                                                                             │
-│   Drop the old parser              agent-net        -         done                                      3d0h    ●    │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 sessions, 5 online · 1 busy      updated 00:00:00
+Desk · all clear · log closed (l opens it)
+╭─Needs you · 0───────────────────────────────────────────────────────╮ ╭─Change c_8───────────────────────────────────╮
+│ Nothing is waiting for you.                                         │ │ Approve the deploy gate                      │
+╰─────────────────────────────────────────────────────────────────────╯ │ step approve: waiting for you                │
+╭─In flight · 7───────────────────────────────────────────────────────╮ │ with you                                     │
+│   TITLE                     STEP     STATUS             AGE    DONE │ │                                              │
+│ ▸ Approve the deploy gate   approve  waiting for you    3h0m   ○    │ │ enter evidence  v all changes  R refresh     │
+│   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │                                              │
+│   Say what a delivery row … test     waiting for ci-ru… 6m     ●●○○ │ │                                              │
+│   merged: abcdef1                                                   │ │                                              │
+│   Fix the deploy gate       review   back to strategie… 2h5m   ●✗   │ │                                              │
+│   Import suppliers from th… accept   waiting for an un… 1d6h   ○    │ │                                              │
+│   wbg-procurement · 2 changes: accept by wbg-procurement (exited) … │ │                                              │
+│   Drop the old parser       -        done               3d0h   ●    │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter evidence  a show all  R refresh  ? help  q quit
+enter evidence  v all changes  R refresh  ↑↓ select  l log  ? help

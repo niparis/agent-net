@@ -175,10 +175,10 @@ func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
 }
 
 // deliveryTick loads again after deliveryRefreshEvery
-// since the last load. Only the Sessions table and the Delivery tab show a
-// change state, so other tabs do not ask for it.
+// since the last load. Only the Sessions table and the Desk show a change
+// state, so other tabs do not ask for it.
 func (m Model) deliveryTick() (Model, tea.Cmd) {
-	if m.tab != sessionsTab && m.tab != deliveryTab {
+	if m.tab != sessionsTab && m.tab != inboxTab {
 		return m, nil
 	}
 	d := m.delivery
@@ -263,8 +263,8 @@ func (m Model) deliveryGroupFor(ch deliveryChange) deliveryGroup {
 	}
 	// An open approval for this change blocks an agent: it belongs under
 	// Needs you, even when the step itself is an after-merge check.
-	for _, item := range m.inboxItems {
-		if item.Status == "open" && item.Kind == "approval" && item.Delivery != nil && item.Delivery.ChangeID == ch.ID {
+	for _, a := range m.asks {
+		if a.Kind == protocol.AskKindApproval && a.Delivery != nil && a.Delivery.ChangeID == ch.ID {
 			return groupNeedsYou
 		}
 	}
@@ -433,6 +433,11 @@ func (m Model) deliveryDetailCmd(id string) tea.Cmd {
 // list changes under it, and an open detail keeps its full evidence until the
 // fresh one arrives.
 func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
+	onChange := false
+	if m.tab == inboxTab {
+		sec, _ := m.deskPosition()
+		onChange = sec == deskSecChange
+	}
 	d := m.delivery
 	prev, had := m.selectedChange()
 	d.loaded, d.loading = true, false
@@ -466,6 +471,9 @@ func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 		d.detail = false
 	}
 	m.delivery = d
+	if onChange {
+		m.inboxIndex = m.askRowCount() + d.row
+	}
 	if sel, ok := m.selectedChange(); ok && d.detail && msg.err == nil {
 		m.delivery.detailLoading = true
 		return m, m.deliveryDetailCmd(sel.ID)

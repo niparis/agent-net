@@ -32,8 +32,8 @@ func (f *fetchCountSource) Call(_ context.Context, method string, _ any) (json.R
 			f.onboarding.Steps = map[string]string{}
 		}
 		return json.Marshal(f.onboarding)
-	case "inbox_list":
-		return json.Marshal(map[string]any{"items": f.inbox})
+	case protocol.OpAsksList:
+		return json.Marshal(map[string]any{"asks": append(askItems(f.inbox), openProposalAsks(f.proposals)...)})
 	case protocol.OpProposalList:
 		return json.Marshal(f.proposals)
 	}
@@ -129,14 +129,14 @@ func TestFetchAsksForInboxListsOnlyWhereNeeded(t *testing.T) {
 				clock = clock.Add(time.Second)
 				m = send(m, m.fetchCmd()())
 			}
-			for _, method := range []string{"inbox_list", protocol.OpProposalList} {
+			for _, method := range []string{protocol.OpAsksList, protocol.OpProposalList} {
 				if got := src.count(method); got != tc.wantPerMinute {
 					t.Errorf("%s: %d calls per minute, want %d", method, got, tc.wantPerMinute)
 				}
 			}
 			t.Logf("%s per minute: Snapshot=%d worker_log=%d Events=%d hidden_get=%d onboarding_get=%d usage=%d counts=%d inbox_list=%d proposal_list=%d tools_differences=%d",
 				tc.name, src.count("Snapshot"), src.count("worker_log"), src.count("Events"), src.count("hidden_get"), src.count("onboarding_get"),
-				src.count("usage"), src.count("counts"), src.count("inbox_list"), src.count(protocol.OpProposalList), src.count("tools_differences"))
+				src.count("usage"), src.count("counts"), src.count(protocol.OpAsksList), src.count(protocol.OpProposalList), src.count("tools_differences"))
 		})
 	}
 }
@@ -158,20 +158,20 @@ func TestFetchPicksUpAChangedInboxMarkerOnAnyTab(t *testing.T) {
 	src.resetCalls()
 	m = refreshTimes(m, 1)
 
-	if src.count(protocol.OpProposalList) != 1 || src.count("inbox_list") != 1 {
+	if src.count(protocol.OpProposalList) != 1 || src.count(protocol.OpAsksList) != 1 {
 		t.Fatalf("lists were not fetched after the count changed: %v", src.calls)
 	}
 	if got := m.waitingCount(); got != 1 {
 		t.Fatalf("badge = %d, want 1", got)
 	}
-	if line := m.titleLine(160); !strings.Contains(line, "Inbox (1)") {
+	if line := m.titleLine(160); !strings.Contains(line, "Desk (1)") {
 		t.Fatalf("title %q", line)
 	}
 
 	// The next refresh is quiet again.
 	src.resetCalls()
 	m = refreshTimes(m, 1)
-	if src.count(protocol.OpProposalList) != 0 || src.count("inbox_list") != 0 {
+	if src.count(protocol.OpProposalList) != 0 || src.count(protocol.OpAsksList) != 0 {
 		t.Fatalf("lists fetched again without a change: %v", src.calls)
 	}
 }
@@ -196,19 +196,19 @@ func TestFetchChecksGatewayInboxOnAnotherTabEveryTenSeconds(t *testing.T) {
 		clock = clock.Add(time.Second)
 		m = send(m, m.fetchCmd()())
 	}
-	if src.count("inbox_list") != 0 || m.waitingCount() != 0 {
-		t.Fatalf("checked too early: calls %d, badge %d", src.count("inbox_list"), m.waitingCount())
+	if src.count(protocol.OpAsksList) != 0 || m.waitingCount() != 0 {
+		t.Fatalf("checked too early: calls %d, badge %d", src.count(protocol.OpAsksList), m.waitingCount())
 	}
 
 	clock = clock.Add(time.Second) // ten seconds after the last check
 	m = send(m, m.fetchCmd()())
-	if src.count("inbox_list") != 1 {
-		t.Fatalf("inbox_list calls = %d, want 1", src.count("inbox_list"))
+	if src.count(protocol.OpAsksList) != 1 {
+		t.Fatalf("inbox_list calls = %d, want 1", src.count(protocol.OpAsksList))
 	}
 	if got := m.waitingCount(); got != 1 {
 		t.Fatalf("badge = %d, want 1", got)
 	}
-	if line := m.titleLine(160); !strings.Contains(line, "Inbox (1)") {
+	if line := m.titleLine(160); !strings.Contains(line, "Desk (1)") {
 		t.Fatalf("title %q", line)
 	}
 }
@@ -227,7 +227,7 @@ func TestFetchPicksUpANewWaitingSession(t *testing.T) {
 	src.snap.Agents[0].Waiting = &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "may I?", Since: t0.Unix()}
 	src.resetCalls()
 	m = refreshTimes(m, 1)
-	if src.count("inbox_list") != 1 {
+	if src.count(protocol.OpAsksList) != 1 {
 		t.Fatalf("inbox not fetched after a wait appeared: %v", src.calls)
 	}
 }
@@ -292,8 +292,8 @@ func TestDeliveryTickOnlyOnShowingScreens(t *testing.T) {
 		t.Fatal("Graph asked for delivery changes")
 	}
 	m.tab = inboxTab
-	if _, cmd := m.deliveryTick(); cmd != nil {
-		t.Fatal("Inbox asked for delivery changes")
+	if _, cmd := m.deliveryTick(); cmd == nil {
+		t.Fatal("the Desk did not ask for delivery changes")
 	}
 	m.tab = sessionsTab
 	if _, cmd := m.deliveryTick(); cmd == nil {

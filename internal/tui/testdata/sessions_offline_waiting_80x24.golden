@@ -1,11 +1,11 @@
-1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox (1) 8 Delivery │ 4 online
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (1) │ 4 online
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ●       cpu ? mem ? disk ?                                                  │
 │  ● build cpu ? mem ? disk ?                                                  │
 │  ○ desk  cpu ? mem ? disk ?                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT MODEL        STATUS      CPU   RAM TASK
- Idle (5)                                                     Inbox: 1 to decide
+ Idle (5)                                                      Desk: 1 to decide
   ★ pin          -       -       claude       idle          ?     ?
   ★ lead         desk    demo    claude       offline               no report
   └─ worker      build   -       codex        idle          ?     ?

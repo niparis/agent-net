@@ -1,10 +1,10 @@
-1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox (1) 8 Delivery │ 26 online
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (1) │ 26 online
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● build cpu ? mem ? disk ?                                                  │
 │  ● desk  cpu ? mem ? disk ?                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT MODEL        STATUS      CPU   RAM TASK
- Needs you (1)                                                Inbox: 1 to decide
+ Needs you (1)                                                 Desk: 1 to decide
   video          desk    -       claude · op… needs you     ?     ? Combine the…
  Working (3)
 ▸ ★ demo lead    desk    demo    claude · gp… idle          ?     ? +2 (1 busy)

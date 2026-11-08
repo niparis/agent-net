@@ -61,7 +61,9 @@ type Model struct {
 	proposalConfirmScroll               int
 	proposalHistory                     bool
 	proposalHistoryIndex                int
-	inboxItems                          []protocol.InboxItem
+	asks                                []protocol.Ask
+	deskLog                             []protocol.DeskLogEntry
+	deskLogOpen                         bool
 	inboxDetail, inboxEditing           bool
 	inboxDeliveryID                     string
 	inboxIndex, inboxDetailScroll       int
@@ -275,8 +277,10 @@ type pendingStop struct {
 type fetchedMsg struct {
 	proposals   []protocol.CTOProposal
 	proposalsOK bool
-	inboxItems  []protocol.InboxItem
+	asks        []protocol.Ask
 	inboxOK     bool
+	deskLog     []protocol.DeskLogEntry
+	deskLogOK   bool
 	listsAsked  bool // the Inbox and proposals were asked for this refresh
 	snap        Snapshot
 	err         error
@@ -368,6 +372,7 @@ func (m Model) fetchCmd() tea.Cmd {
 	askTools := m.onboardingWantsTools()
 	inboxOnScreen := m.tab == inboxTab || m.focus == focusCTO
 	inboxSeen, inboxAt := m.inboxSeen, m.inboxAt
+	deskLogOpen := m.deskLogOpen
 	wantWorkerLog := m.tab == quotasTab && m.workersLog
 	now := m.now
 	return func() tea.Msg {
@@ -426,12 +431,17 @@ func (m Model) fetchCmd() tea.Cmd {
 			if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
 				res.proposalsOK = true
 			}
-			var data struct {
-				Items []protocol.InboxItem `json:"items"`
-			}
-			raw, err := c.Call(ctx, "inbox_list", nil)
+			var data protocol.AsksResult
+			raw, err := c.Call(ctx, protocol.OpAsksList, nil)
 			if err == nil && json.Unmarshal(raw, &data) == nil {
-				res.inboxItems, res.inboxOK = data.Items, true
+				res.asks, res.inboxOK = data.Asks, true
+			}
+			if deskLogOpen {
+				var log protocol.DeskLogResult
+				raw, err := c.Call(ctx, protocol.OpDeskLog, protocol.DeskLogQuery{Limit: deskLogShown})
+				if err == nil && json.Unmarshal(raw, &log) == nil {
+					res.deskLog, res.deskLogOK = log.Entries, true
+				}
 			}
 		}
 		if skipFeed {
@@ -456,16 +466,6 @@ func (m Model) fetchCmd() tea.Cmd {
 func inboxMarkerOf(s Snapshot) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "p%d;", s.ProposalCount)
-	for _, held := range s.Held {
-		b.WriteString("h")
-		b.WriteString(held.ID)
-		b.WriteByte(';')
-	}
-	for _, out := range s.Outcomes {
-		b.WriteString("o")
-		b.WriteString(out.ReplyID)
-		b.WriteByte(';')
-	}
 	for _, learned := range s.Learned {
 		if learned.Status == "pending" && learned.Severity == "major" {
 			fmt.Fprintf(&b, "l%d;", learned.ID)
@@ -787,17 +787,26 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case deskLogMsg:
+		if msg.err == nil {
+			m.deskLog = msg.entries
+		}
+		return m, nil
+	case deskUndoneMsg:
+		m.say("Undone.")
+		for i := range m.deskLog {
+			if m.deskLog[i].ID == msg.id {
+				m.deskLog[i].Options = nil
+				m.deskLog[i].Text = "Undone: " + m.deskLog[i].Text
+			}
+		}
+		return m, m.deskLogCmd()
 	case inboxAnswerMsg:
 		switch {
 		case msg.err == nil:
 			m.inboxDetail = false
 			m.inboxError, m.inboxNote = "", ""
-			for i := range m.inboxItems {
-				if m.inboxItems[i].ID == msg.id {
-					m.inboxItems[i].Status = "answered"
-				}
-			}
-			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
+			m.dropInboxItem(msg.id)
 		case inboxGone(msg.err):
 			// The item left the gateway while the row waited. Keep the list
 			// honest: drop the row and say it is gone, not the raw error.
@@ -840,8 +849,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		before := m.onboardingStep().id
 		if msg.inboxOK {
-			m.inboxItems = msg.inboxItems
-			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
+			m.asks = msg.asks
+			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
+		}
+		if msg.deskLogOK {
+			m.deskLog = msg.deskLog
 		}
 		m.fetching = false
 		m.applyFetch(msg)
@@ -1471,20 +1483,18 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	for i := range tabNames {
-		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab", "inbox tab", "delivery tab"}[i] {
+		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab", "inbox tab"}[i] {
 			m.tab = i
 			m.uiFilter = ""
 			m.focus = focusSessions
-			if i == deliveryTab {
-				m.delivery.project = ""
-				return m.startDeliveryLoad()
-			}
 			if i == sessionsTab {
 				m.sessionCell = 0
 			}
 			if i == inboxTab {
 				m.inboxDetail, m.inboxEditing = false, false
-				m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
+				m.delivery.project, m.delivery.detail = "", false
+				m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
+				return m.startDeliveryLoad()
 			}
 			if i == settingsTab {
 				m.settingsRow = 0
@@ -1502,9 +1512,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-	}
-	if m.tab == deliveryTab {
-		return m.deliveryKey(k)
 	}
 	if m.tab == graphTab {
 		return m.graphKey(k)
@@ -2078,8 +2085,8 @@ func (m Model) sessionHasOwnerRequest(a protocol.AgentView) bool {
 	if a.Status == "needs you" || a.Status == "needs_you" || a.Worker == nil && a.Waiting != nil {
 		return true
 	}
-	for _, item := range m.inboxItems {
-		if item.SessionID == a.SessionID && item.Status == "open" && (item.Kind == "question" || item.Kind == "approval") {
+	for _, ask := range m.asks {
+		if ask.FromSession == a.SessionID && ask.State != protocol.AskWithSomeone && (ask.Kind == protocol.AskKindQuestion || ask.Kind == protocol.AskKindApproval || ask.Kind == protocol.AskKindWaiting) {
 			return true
 		}
 	}

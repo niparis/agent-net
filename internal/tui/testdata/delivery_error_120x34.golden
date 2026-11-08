@@ -1,11 +1,11 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
-╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Could not load changes: the gateway did not answer in time                                                           │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-
-
-
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 sessions, 5 online · 1 busy      updated 00:00:00
+Desk · all clear · log closed (l opens it)
+╭─Needs you · 0───────────────────────────────────────────────────────╮
+│ Nothing is waiting for you.                                         │
+╰─────────────────────────────────────────────────────────────────────╯
+╭─In flight · 0───────────────────────────────────────────────────────╮
+│ Could not load changes: the gateway did not answer in time          │
+╰─────────────────────────────────────────────────────────────────────╯
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter evidence  a show all  R refresh  ? help  q quit
+l log  ? help  q quit

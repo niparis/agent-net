@@ -2132,17 +2132,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				nodeName = "cto"
 			}
 			// What the CTO applied or sent is an event, not a question (decision
-			// 0090). It is a line of the log with the way to undo it. The old
-			// Inbox row stays for the old screen until the Desk replaces it; it
-			// is not an ask.
+			// 0090). It is a line of the log with the way to undo it.
+			if nodeName == "cto" {
+				err := st.deskLog(st.db, "cto", "", "", p.Text, p.Recommendation, p.Options)
+				return map[string]any{"item": protocol.InboxItem{Kind: "check", SessionID: sid, Node: nodeName, Text: p.Text, Status: "logged"}}, err
+			}
 			from := ""
-			switch {
-			case nodeName == "cto":
-				from = protocol.AskFromCTO
-				if err := st.deskLog(st.db, "cto", "", "", p.Text, p.Recommendation, p.Options); err != nil {
-					return nil, err
-				}
-			case strings.HasPrefix(p.Text, "Disk space low on "):
+			if strings.HasPrefix(p.Text, "Disk space low on ") {
 				from = protocol.AskFromDisk
 			}
 			item, err := st.CreateInboxItem(protocol.InboxItem{
@@ -2284,6 +2280,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		entries, err := st.DeskLog(p.Limit)
 		return protocol.DeskLogResult{Entries: entries}, err
+
+	case "desk.settle":
+		var p struct {
+			ID int64 `json:"id"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.ID <= 0 {
+			return nil, reject("bad desk.settle")
+		}
+		return map[string]bool{"ok": true}, st.SettleDeskLog(p.ID)
 
 	case "ask.open":
 		var p protocol.AskOpen

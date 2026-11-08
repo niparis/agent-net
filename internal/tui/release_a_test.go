@@ -23,7 +23,7 @@ func TestWorkerLogTodayTitleSpace(t *testing.T) {
 func TestInboxCountKeepsTitleSeparator(t *testing.T) {
 	m, _ := inboxAllKindsModel(80, 24)
 	line := ansi.Strip(m.titleLine(80))
-	if !strings.Contains(line, "Inbox (") || !strings.Contains(line, " │ ") {
+	if !strings.Contains(line, "Desk (") || !strings.Contains(line, " │ ") {
 		t.Fatalf("missing count or separator: %q", line)
 	}
 }

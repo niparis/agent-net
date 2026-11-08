@@ -146,9 +146,7 @@ func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at,options,asker_name,change_title`
 
 func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
-	// The kinds that decision 0090 added are asks for the Desk only: the old
-	// Inbox screen does not know them.
-	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items WHERE kind NOT IN ('held','learned','draft','proposal','step','waiting') ORDER BY created_at,id`)
+	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items ORDER BY created_at,id`)
 	if err != nil {
 		return nil, err
 	}

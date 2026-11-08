@@ -114,7 +114,7 @@ The CTO is an agent that runs the network for you. Press `c` and ask it in plain
   <img alt="Sessions with the Inbox tab showing 2 waiting, and the CTO box with two open proposals" src="docs/img/tui/cto-inbox.png" width="900">
 </p>
 
-Everything that waits for you is in one place (tab 7): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. See [owner inbox](docs/reference.md#owner-inbox-and-written-approvals).
+Everything that waits for you, and every change in flight, is on one screen, the Desk (tab 7): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. See [owner inbox](docs/reference.md#owner-inbox-and-written-approvals).
 
 ### Connected apps
 

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -53,6 +52,7 @@ func TestLearnedMajorNeedsActions(t *testing.T) {
 			m := New(src)
 			m.snap = src.snap
 			m.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", OldValue: "", NewValue: "deploys", Status: "pending", Severity: "major"}}
+			m.asks = []protocol.Ask{askFromLearned(m.snap.Learned[0])}
 			m.tab = inboxTab
 			if view := m.testView(); !strings.Contains(view, "ops") || !strings.Contains(view, "deploys") {
 				t.Fatalf("needs missing: %s", view)
@@ -148,34 +148,4 @@ func TestGoldenLearnedMapAndInbox(t *testing.T) {
 	n.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", Kind: "add", NewValue: "deploys", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops refuses deploys"}}, Status: "pending", Severity: "major"}}
 	n = keys(n, "7")
 	golden(t, "inbox_learned_100x30", n.testView())
-}
-
-func TestLearnedMajorWording(t *testing.T) {
-	cases := []struct {
-		name string
-		s    protocol.LearnedSuggestion
-		want string
-	}{
-		{"add owner words", protocol.LearnedSuggestion{Node: "ops", Field: "refuses", Kind: "add", Phrase: "deployment work", RawPhrase: "deploys", Origin: "owner", Evidence: []protocol.LearnedEvidence{{Excerpt: "owner said deploys"}}}, `add "deploys" to what it refuses`},
-		{"remove", protocol.LearnedSuggestion{Node: "app", Field: "accepts", Kind: "remove", Phrase: "backups", Evidence: []protocol.LearnedEvidence{{Excerpt: "moved to ops"}}}, `remove "backups" from what it accepts`},
-		{"edge", protocol.LearnedSuggestion{Node: "ops", Field: "edge", EdgeKind: "deploys", Kind: "add", Phrase: "app", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops deploys app"}}}, "add a deploys edge to app"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			m := newModel(160, 30)
-			tc.s.ID = 7
-			tc.s.Status = "pending"
-			tc.s.Severity = "major"
-			m.snap.Learned = []protocol.LearnedSuggestion{tc.s}
-			var got string
-			for _, row := range m.inboxRows() {
-				if row.kind == "learned" {
-					got = ansi.Strip(row.text)
-				}
-			}
-			if !strings.Contains(got, tc.want) {
-				t.Fatalf("want %q in %q", tc.want, got)
-			}
-		})
-	}
 }

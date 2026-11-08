@@ -33,6 +33,8 @@ func (s *proposalSource) Call(_ context.Context, method string, arg any) (json.R
 		return json.RawMessage(`{}`), nil
 	case protocol.OpProposalList:
 		return json.Marshal(s.proposals)
+	case protocol.OpAsksList:
+		return json.Marshal(protocol.AsksResult{Asks: openProposalAsks(s.proposals)})
 	case protocol.OpProposalAnswer:
 		s.answers = append(s.answers, arg.(protocol.CTOProposalAnswer))
 		return json.RawMessage(`{}`), nil
@@ -51,6 +53,7 @@ func TestProposalKeysAndConfirm(t *testing.T) {
 			s := &proposalSource{proposals: []protocol.CTOProposal{p}}
 			m := New(s)
 			m.proposals = s.proposals
+			m.asks = openProposalAsks(s.proposals)
 			m.tab = inboxTab
 			_, cmd := m.update(tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
 			if cmd == nil {
@@ -70,6 +73,7 @@ func TestProposalKeysAndConfirm(t *testing.T) {
 	s := &proposalSource{proposals: []protocol.CTOProposal{p}}
 	m := New(s)
 	m.proposals = s.proposals
+	m.asks = openProposalAsks(s.proposals)
 	m.tab = inboxTab
 	updated, cmd := m.update(tea.KeyPressMsg{Text: "A", Code: []rune("A")[0]})
 	m = updated.(Model)
@@ -110,6 +114,7 @@ func TestProposalFreshDiffAndResult(t *testing.T) {
 	s := &proposalSource{proposals: []protocol.CTOProposal{p}, graph: protocol.Graph{Nodes: []protocol.Node{{Name: "shop", Charter: protocol.Charter{Purpose: "old value"}}}}}
 	m := New(s)
 	m.proposals = s.proposals
+	m.asks = openProposalAsks(s.proposals)
 	m.tab = inboxTab
 	updated, cmd := m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)

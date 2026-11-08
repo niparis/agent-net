@@ -231,8 +231,6 @@ func (m Model) renderView() string {
 			out = append(out, m.settingsView(w, contentHeight)...)
 		case m.tab == inboxTab:
 			out = append(out, m.inboxTabView(w, contentHeight)...)
-		case m.tab == deliveryTab:
-			out = append(out, m.deliveryView(w, contentHeight)...)
 		default:
 			out = append(out, m.mainView(w, contentHeight)...)
 		}
@@ -347,8 +345,7 @@ const (
 	messagesTab = 3
 	toolsTab    = 4
 	settingsTab = 5
-	inboxTab    = 6
-	deliveryTab = 7
+	inboxTab    = 6 // the Desk (decision 0090); the Delivery tab is part of it
 )
 
 func (m Model) composeView(w, room int) []string {
@@ -371,8 +368,8 @@ func (m Model) composeView(w, room int) []string {
 	return panel(title, lines, w, roleAccent)
 }
 
-var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings", "Inbox", "Delivery"}
-var shortTabNames = []string{"Sess", "Graph", "Quota", "Msg", "Tools", "Set", "Inbox", "Delivery"}
+var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings", "Desk"}
+var shortTabNames = []string{"Sess", "Graph", "Quota", "Msg", "Tools", "Set", "Desk"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 // sessionViewName is the view the v key selected.
@@ -392,7 +389,7 @@ func (m Model) titleLine(w int) string {
 	var tabs []string
 	count := m.waitingCount()
 	names := tabNames
-	fullWidth := ansi.StringWidth(strings.Join(tabNames, " ")) + len("1 2 3 4 5 6 7 8 ")
+	fullWidth := ansi.StringWidth(strings.Join(tabNames, " ")) + len("1 2 3 4 5 6 7 ")
 	if count > 0 {
 		fullWidth += len(fmt.Sprintf(" (%d)", count))
 	}
@@ -1282,7 +1279,7 @@ func (m Model) groupLine(g group, w int) string {
 	head := " " + sBold.Render(fmt.Sprintf("%s (%d)", g.host, g.total))
 	right := ""
 	if g.first && m.waitingCount() > 0 {
-		right = fmt.Sprintf("Inbox: %d to decide", m.waitingCount())
+		right = fmt.Sprintf("Desk: %d to decide", m.waitingCount())
 	}
 	room := max(0, w-ansi.StringWidth(head)-ansi.StringWidth(right))
 	return clip(head+sDim.Render(strings.Repeat(" ", room))+sAccent.Render(right), w)

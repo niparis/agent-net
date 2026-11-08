@@ -1,5 +1,5 @@
  Global keys
-  1-8                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox, Delivery
+  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Desk
   enter                  go into the selected thing
   arrows, j/k            move
   esc                    back; first clears a filter you typed
@@ -162,7 +162,7 @@ Legend ────────────────────────�
   g                      choose the shared MCP servers the selected bot may use
   r                      rotate the selected online machine token
 
- Inbox
+ Desk
   pgup/pgdn              page
   home/g, end            first, last row
   a                      approve
@@ -173,6 +173,9 @@ Legend ────────────────────────�
   t                      answer
   x                      dismiss
   u                      undo
+  v                      show or hide the done and stale changes in the In flight section
+  l                      open or close the Log section: what the Atlas and the gateway did, with the undo of a Atlas
+                         change
 
  On a held request row
   a                      approve
@@ -192,7 +195,7 @@ Legend ────────────────────────�
   r                      decline
   A                      approve all
 
- Delivery
+ On a change in flight
   pgup                   ten changes up
   pgdown                 ten changes down
   a                      show all

@@ -370,10 +370,9 @@ func TestNoticesGoToTheLogNotTheQueue(t *testing.T) {
 	if asks, _ := s.ListAsks(); len(asks) != 0 {
 		t.Fatalf("CTO notice in the queue: %+v", asks)
 	}
-	// The old Inbox screen still reads its row, with the undo, until the Desk
-	// replaces it.
-	if old, _ := s.ListInbox(); len(old) != 1 || old[0].Text != "CTO applied mcp add github" || len(old[0].Options) != 2 {
-		t.Fatalf("old inbox row: %+v", old)
+	// No Inbox row is written for it any more.
+	if old, _ := s.ListInbox(); len(old) != 0 {
+		t.Fatalf("CTO notice in the old inbox: %+v", old)
 	}
 	log, err := s.DeskLog(10)
 	if err != nil || len(log) != 1 || log[0].Source != "cto" || log[0].Text != "CTO applied mcp add github" || len(log[0].Options) != 2 || log[0].Options[0] != "mcp_remove" {
@@ -548,11 +547,11 @@ func TestAsksMigrationKeepsOpenItems(t *testing.T) {
 		got["i_disk"].FromKind != protocol.AskFromDisk || got["i_appr"].AboutKind != protocol.AskAboutChange || got["i_appr"].AboutID != "ch_1" {
 		t.Fatalf("asks after upgrade: %+v", asks)
 	}
-	// The notices are not asks. They stay as old Inbox rows and are copied to
-	// the log once, even when the migration runs twice.
+	// The notices are not asks. They are copied to the log once, even when the
+	// migration runs twice, and their old Inbox rows are closed, not deleted.
 	for _, id := range []string{"i_cto", "i_app"} {
-		if status, _, _ := askRow(t, s, `id=?`, id); status != "open" {
-			t.Fatalf("%s: %s", id, status)
+		if status, reason, _ := askRow(t, s, `id=?`, id); status != "closed" || reason != protocol.AskReasonMovedToLog {
+			t.Fatalf("%s: %s %s", id, status, reason)
 		}
 	}
 	log, _ := s.DeskLog(10)
@@ -639,4 +638,41 @@ func TestStepDispatchWritesToTheLog(t *testing.T) {
 		}
 	}
 	t.Fatalf("no dispatch line for %s in the log: %+v", id, log)
+}
+
+// An undone log line cannot be undone twice.
+func TestSettleDeskLog(t *testing.T) {
+	s, _ := newTestStore(t)
+	if err := s.deskLog(s.db, "cto", "", "", "CTO applied graph edge", "", []string{"graph_undo", `{"id":1}`}); err != nil {
+		t.Fatal(err)
+	}
+	log, _ := s.DeskLog(5)
+	for i := 0; i < 2; i++ {
+		if err := s.SettleDeskLog(log[0].ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	log, _ = s.DeskLog(5)
+	if len(log) != 1 || len(log[0].Options) != 0 || log[0].Text != "Undone: CTO applied graph edge" {
+		t.Fatalf("log: %+v", log)
+	}
+}
+
+// A learned suggestion reads in the owner's words, with the owner's own words
+// when the owner said them.
+func TestLearnedAskWording(t *testing.T) {
+	cases := []struct {
+		name string
+		s    protocol.LearnedSuggestion
+		want string
+	}{
+		{"add owner words", protocol.LearnedSuggestion{Node: "ops", Field: "refuses", Kind: "add", Phrase: "deployment work", RawPhrase: "deploys", Origin: "owner"}, `add "deploys" to what it refuses`},
+		{"remove", protocol.LearnedSuggestion{Node: "app", Field: "accepts", Kind: "remove", Phrase: "backups"}, `remove "backups" from what it accepts`},
+		{"edge", protocol.LearnedSuggestion{Node: "ops", Field: "edge", EdgeKind: "deploys", Kind: "add", Phrase: "app"}, "add a deploys edge to app"},
+	}
+	for _, tc := range cases {
+		if got := learnedAskText(tc.s); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
 }

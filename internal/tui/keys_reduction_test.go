@@ -109,7 +109,7 @@ func TestHelpSectionsFollowTheCurrentTab(t *testing.T) {
 		{messagesTab, "4", "Messages"},
 		{toolsTab, "5", "Tools"},
 		{settingsTab, "6", "Settings"},
-		{inboxTab, "7", "Inbox"},
+		{inboxTab, "7", "Desk"},
 	} {
 		m := keys(newModel(120, 40), tc.key, "?")
 		text := ansi.Strip(strings.Join(m.helpContent(120), "\n"))

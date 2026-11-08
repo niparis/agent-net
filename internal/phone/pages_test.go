@@ -15,7 +15,7 @@ import (
 type fakeOperator struct{ calls []string }
 
 func (f *fakeOperator) Snapshot(context.Context) (operator.Snapshot, error) {
-	return operator.Snapshot{Connected: true, Nodes: []protocol.NodeView{{Hostname: "test-machine"}}, Agents: []protocol.AgentView{{SessionID: "s_1", Harness: "codex", Profile: protocol.Profile{Name: "test-agent", Task: "test-task"}}}, Held: []protocol.Message{{ID: "m_1", Body: "held request"}}, Outcomes: []protocol.OutcomeInboxEntry{{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r_1"}, Request: "outcome request"}}}, nil
+	return operator.Snapshot{Connected: true, Nodes: []protocol.NodeView{{Hostname: "test-machine"}}, Agents: []protocol.AgentView{{SessionID: "s_1", Harness: "codex", Profile: protocol.Profile{Name: "test-agent", Task: "test-task"}}}}, nil
 }
 func (f *fakeOperator) SessionText(context.Context, protocol.TextQuery) (protocol.TextPage, error) {
 	return protocol.TextPage{Entries: []protocol.TextEntry{{Text: "conversation text"}}}, nil
@@ -33,8 +33,8 @@ func (f *fakeOperator) SendAsOwner(_ context.Context, to, body string) (protocol
 	return protocol.MessageSent{}, nil
 }
 func (f *fakeOperator) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
-	if method == "inbox_list" {
-		return json.RawMessage(`{"items":[{"id":"i_1","status":"open","text":"inbox request"}]}`), nil
+	if method == protocol.OpAsksList {
+		return json.RawMessage(`{"asks":[{"id":"i_h","kind":"held","message_id":"m_1","detail":"held request"},{"id":"i_o","kind":"escalation","message_id":"r_1","question":"Request: outcome request\nReason: unclear"},{"id":"i_1","kind":"question","question":"inbox request"}]}`), nil
 	}
 	f.calls = append(f.calls, method)
 	return nil, nil

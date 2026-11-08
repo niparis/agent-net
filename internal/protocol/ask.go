@@ -45,6 +45,7 @@ const (
 	AskReasonResolved     = "resolved"
 	AskReasonExpired      = "expired"
 	AskReasonActivity     = "activity_or_end"
+	AskReasonMovedToLog   = "moved_to_log"
 )
 
 // Ask kinds name the source and so the owner's actions on a row.

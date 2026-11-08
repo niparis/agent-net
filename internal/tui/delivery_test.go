@@ -119,7 +119,7 @@ func deliveryModel(src deliverySource, w, h int) Model {
 	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "s_wbg", Profile: protocol.Profile{Name: "wbg-procurement"}, Online: false})
 	m.haveData = true
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
-	m.tab = deliveryTab
+	m.tab = inboxTab
 	m.width, m.height = w, h
 	m = m.withDeliverySource(src)
 	return m
@@ -130,7 +130,7 @@ func openDelivery(t *testing.T, m Model) Model {
 	t.Helper()
 	m.workersLog = false
 	m.delivery.on = true
-	m.tab = deliveryTab
+	m.tab = inboxTab
 	cmd := m.deliveryLoad()
 	if cmd == nil {
 		t.Fatal("no load command")
@@ -195,6 +195,7 @@ func TestDeliveryTitleIsTheMainColumn(t *testing.T) {
 		}
 	}
 	m.delivery.row = visibleRow(m, "c_1")
+	m.inboxIndex = m.askRowCount() + m.delivery.row
 	m.delivery.detail = true
 	detail := deliveryText(m, 120, 30)
 	if !strings.Contains(detail, "delivery-pipeline") && !strings.Contains(detail, "w_1bcfc4c4a93b2687") {
@@ -248,7 +249,7 @@ func TestDeliverySaysWhatItWaitsFor(t *testing.T) {
 func TestDeliveryGroupsAndHidesDoneAndStale(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 24))
 	got := deliveryText(m, 120, 24)
-	for _, want := range []string{"Needs you", "Moving", "Stuck", "1 done and 1 stale hidden · a shows all"} {
+	for _, want := range []string{"Needs you", "Moving", "Stuck", "1 done and 1 stale hidden · v shows all"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q:\n%s", want, got)
 		}
@@ -545,7 +546,7 @@ func TestDeliveryInboxApprovalNeedsOwner(t *testing.T) {
 	if got := m.deliveryGroupFor(ch); got != groupMoving {
 		t.Fatalf("unlinked approval step is %v", got)
 	}
-	m.inboxItems = []protocol.InboxItem{{Kind: "approval", Status: "open", Delivery: &protocol.InboxDelivery{ChangeID: ch.ID}}}
+	m.asks = askItems([]protocol.InboxItem{{Kind: "approval", Status: "open", Delivery: &protocol.InboxDelivery{ChangeID: ch.ID}}})
 	if got := m.deliveryGroupFor(ch); got != groupNeedsYou {
 		t.Fatalf("inbox approval is %v", got)
 	}
@@ -576,10 +577,10 @@ func TestDeliverySubtabCycle(t *testing.T) {
 	if !m.qualityDetail || m.workersLog {
 		t.Fatal("Quality did not open")
 	}
-	next, cmd := m.Update(tea.KeyPressMsg{Text: "8", Code: '8'})
+	next, cmd := m.Update(tea.KeyPressMsg{Text: "7", Code: '7'})
 	m = next.(Model)
-	if m.tab != deliveryTab || cmd == nil {
-		t.Fatal("delivery tab did not open and load")
+	if m.tab != inboxTab || cmd == nil {
+		t.Fatal("the Desk did not open and load the changes")
 	}
 }
 
@@ -605,7 +606,7 @@ func TestDeliveryEnterOpensDetailAndEscCloses(t *testing.T) {
 		}
 	}
 	press(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if m.delivery.detail || m.tab != deliveryTab {
+	if m.delivery.detail || m.tab != inboxTab {
 		t.Fatal("esc should only close the detail")
 	}
 }
@@ -678,14 +679,14 @@ func TestDeliveryHelpAndHints(t *testing.T) {
 	for _, h := range m.hints() {
 		hints += h.key + " " + h.label + "|"
 	}
-	for _, want := range []string{"evidence", "show all", "refresh"} {
+	for _, want := range []string{"evidence", "all changes", "refresh"} {
 		if !strings.Contains(hints, want) {
 			t.Errorf("hints %q missing %q", hints, want)
 		}
 	}
 	m.help = true
-	if got := ansi.Strip(strings.Join(m.helpContent(120), "\n")); !strings.Contains(got, "Delivery") {
-		t.Errorf("help has no Delivery section: %s", got)
+	if got := ansi.Strip(strings.Join(m.helpContent(120), "\n")); !strings.Contains(got, "On a change in flight") {
+		t.Errorf("help has no section for a change in flight: %s", got)
 	}
 }
 
@@ -798,7 +799,7 @@ func TestDeliveryApproveStepStaysNeedsYou(t *testing.T) {
 	// reported needs_owner.
 	m := deliveryModel(nil, 120, 34)
 	ch := deliveryToTryScenes()[0]
-	m.inboxItems = []protocol.InboxItem{{Kind: "approval", Status: "open", Delivery: &protocol.InboxDelivery{ChangeID: ch.ID}}}
+	m.asks = askItems([]protocol.InboxItem{{Kind: "approval", Status: "open", Delivery: &protocol.InboxDelivery{ChangeID: ch.ID}}})
 	if got := m.deliveryGroupFor(ch); got != groupNeedsYou {
 		t.Errorf("a change with an open approval is %v, want Needs you", got)
 	}
@@ -818,7 +819,7 @@ func TestDeliveryToTryNeverCountsAsNeedingYou(t *testing.T) {
 		t.Errorf("Delivery Needs you counts To try rows:\n%s", got)
 	}
 	// One real approval still counts, beside the four checks.
-	m.inboxItems = []protocol.InboxItem{{Kind: "approval", Status: "open", ID: "i_1", Delivery: &protocol.InboxDelivery{ChangeID: "ch_approve"}}}
+	m.asks = askItems([]protocol.InboxItem{{Kind: "approval", Status: "open", ID: "i_1", Delivery: &protocol.InboxDelivery{ChangeID: "ch_approve"}}})
 	if n := m.waitingCount(); n != 1 {
 		t.Errorf("waitingCount = %d, want 1", n)
 	}
@@ -862,6 +863,7 @@ func TestDeliveryTryKeysReportAndMoveTheRow(t *testing.T) {
 	m := openDelivery(t, deliveryModel(src, 120, 34))
 	const id = "ch_1e511e8f2a1fa9c8"
 	m.delivery.row = visibleRow(m, id)
+	m.inboxIndex = m.askRowCount() + m.delivery.row
 	if m.delivery.row < 0 {
 		t.Fatal("the To try row is not in the list")
 	}
@@ -888,6 +890,7 @@ func TestDeliveryTryKeysReportAndMoveTheRow(t *testing.T) {
 	src = &fakeDelivery{changes: deliveryToTryScenes()}
 	m = openDelivery(t, deliveryModel(src, 120, 34))
 	m.delivery.row = visibleRow(m, id)
+	m.inboxIndex = m.askRowCount() + m.delivery.row
 	next, _ = m.Update(tea.KeyPressMsg{Text: "n", Code: 'n'})
 	m = next.(Model)
 	if !m.delivery.reporting {
@@ -939,6 +942,7 @@ func TestDeliveryGoldens(t *testing.T) {
 			m.delivery.detail, m.delivery.showAll = s.detail, s.all
 			if s.rowID != "" {
 				m.delivery.row = visibleRow(m, s.rowID)
+				m.inboxIndex = m.askRowCount() + m.delivery.row
 			}
 			golden(t, fmt.Sprintf("%s_%dx%d", s.name, size[0], size[1]), m.testView())
 		}
@@ -952,7 +956,7 @@ func TestDeliveryTopLevelAndProjectFilter(t *testing.T) {
 	if got := m.deliveryVisible(); len(got) != 1 || got[0].ID != "ch_a" {
 		t.Fatalf("project filter: %+v", got)
 	}
-	if len(tabNames) != 8 || tabNames[7] != "Delivery" {
+	if len(tabNames) != 7 || tabNames[6] != "Desk" {
 		t.Fatalf("tabs: %v", tabNames)
 	}
 }

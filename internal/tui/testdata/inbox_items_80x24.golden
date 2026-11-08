@@ -1,16 +1,16 @@
-1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox (7) 8 Delivery │ 12 online
-╭─Needs you · 3────────────────────────────────────────────────────────────────╮
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (7) │ 12 online
+Desk · 7 need you · log closed (l opens it)
+╭─Needs you · 7────────────────────────────────────────────────────────────────╮
 │ ▸ ci-runner     [question] which branch?                                 10m │
 │   ci-runner     [approval] deploy abc                                     9m │
 │   alice         held request → strategies                                 5m │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Proposals · 2────────────────────────────────────────────────────────────────╮
+│   ops → app     deploy app refused: "not now"                             6m │
 │   CTO           start a Pi session in shop, on Mac                        8m │
 │   ops (learned) add "deploys" to what it refuses                          7m │
+│   Notice        checker is blocked on the deploy key                     11m │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─For your information · 2─────────────────────────────────────────────────────╮
-│   ops → app     deploy app refused: "not now"                             6m │
-│   cursor        connected as a bot (www.cursor.com)                      11m │
+╭─In flight · 0────────────────────────────────────────────────────────────────╮
+│ Loading changes...                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ci-runner asks───────────────────────────────────────────────────────────────╮
 │ which branch?                                                                │
@@ -21,4 +21,4 @@
 │                                                                              │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-t answer  x dismiss  enter details  ↑↓ select  ? help
+t answer  x dismiss  enter details  ↑↓ select  l log  ? help

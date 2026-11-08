@@ -85,7 +85,7 @@ func withLocal(b keyBinding) keyBinding {
 // globalHelpRows is the fixed Global keys list. It is written once here and
 // never built by joining other contexts' labels.
 var globalHelpRows = []struct{ keys, help string }{
-	{"1-8", "switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Inbox, Delivery"},
+	{"1-7", "switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Desk"},
 	{"enter", "go into the selected thing"},
 	{"arrows, j/k", "move"},
 	{"esc", "back; first clears a filter you typed"},
@@ -149,8 +149,7 @@ var keyBindings = []keyBinding{
 	bind(contextGlobal, "4", "messages tab", "Messages", -1),
 	bind(contextGlobal, "5", "tools tab", "Tools", -1),
 	bind(contextGlobal, "6", "settings tab", "Settings", -1),
-	bind(contextGlobal, "7", "inbox tab", "Inbox", -1),
-	bind(contextGlobal, "8", "delivery tab", "Delivery", -1),
+	bind(contextGlobal, "7", "inbox tab", "Desk", -1),
 	withHelp(bind(contextGlobal, "c", "open CTO", "open CTO", -1), "open the CTO session"),
 	withHelp(bind(contextGlobal, "C", "focus CTO", "focus CTO box", -1), "focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip"),
 	withHelp(bind(contextGlobal, "ctrl+p", "find session", "find session", -1), "find a session by name, project, folder, machine or task"),
@@ -245,6 +244,8 @@ var keyBindings = []keyBinding{
 	bind(contextInbox, "t", "answer", "answer", 1),
 	bind(contextInbox, "x", "dismiss", "dismiss", 1),
 	bind(contextInbox, "u", "undo", "undo", 1),
+	withHelp(bind(contextInbox, "v", "show all", "all changes", 2), "show or hide the done and stale changes in the In flight section"),
+	withHelp(bind(contextInbox, "l", "log", "log", 1), "open or close the Log section: what the CTO and the gateway did, with the undo of a CTO change"),
 	bind(contextInbox, "?", "help", "help", 1),
 	bind(contextInbox, "q", actQuit, "quit", 0),
 	bind(contextApps, "esc", "back", "back", 1),

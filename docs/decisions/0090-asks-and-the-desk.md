@@ -1,8 +1,8 @@
 # 0090 - Asks and the Desk
 
 Date: 2026-11-08
-Status: Accepted by the owner. Part A1 (store, sources, auto-close, log, RPC) is
-built. Part A2 (the Desk tab) and part B (the chief of staff) are not.
+Status: Accepted by the owner. Part A1 (store, sources, auto-close, log, RPC)
+and part A2 (the Desk tab) are built. Part B (the chief of staff) is not.
 
 ## The problem
 
@@ -77,23 +77,50 @@ four gateway calls and returned the whole history of items, closed ones too.
 
 ## Upgrade
 
-Open Inbox items need no move: they are asks already. The migration fills the
+Open Inbox items need no move: they are asks already. Migration 146 fills the
 new columns for them (about the change for delivery approvals, about the
 project for questions, approvals and stalls; the source for CTO, app and disk
-checks). Open CTO and "Connected" notices are copied to the log once and stay
-as old Inbox rows. No row is deleted or closed by the migration. Held requests
-and learned suggestions that were pending get their asks at start from the
-reconcile. The old `inbox.list` leaves out the kinds that this decision added
-(held, learned, draft, proposal, step, waiting), so the old screen shows what
-it showed before.
+checks) and copies the open CTO and "Connected" notices to the log once. Migration
+147 closes the old Inbox rows of those notices with the reason `moved_to_log`.
+Nothing is deleted. Held requests and learned suggestions that were pending get
+their asks at start from the reconcile.
 
-## Part A2 and part B
+## The Desk (part A2)
 
-A2: the Desk on the Inbox tab slot (tab 7), the Delivery tab (tab 8) removed, the TUI
-reading `asks_list`, the Sessions "Needs you" band and every count from the
-same list, and the log
-section with the CTO undo. B: the chief of staff, a separate role that sorts
-asks (`next = chief`, `why_you`) under its own charter.
+The Inbox (tab 7) and the Delivery (tab 8) tabs are one Desk on tab 7. There
+are seven tabs now. The Desk has three sections and one cursor:
+
+- **Needs you** is the one list `asks_list` returns. The TUI makes a row for
+  each ask and keeps the keys of each kind: approve and refuse, accept and
+  reject, let stand and overrule, answer, dismiss. Held request, outcome,
+  learned and draft rows are built from the ask itself. The words of a learned
+  suggestion or a draft are written by the gateway.
+- **In flight** is the list of delivery changes, with the same row look. A
+  change that has an open ask shows it under its row.
+- **Log** is closed until `l` opens it. A CTO line that can be undone offers
+  `u`. The undo runs, then `desk_settle` marks the line as undone, so it cannot
+  run twice.
+
+The tab label, the header, the Sessions "Needs you" band and every count read
+the same ask list. The offline, hidden, junk and name-filter choices still
+apply to a session's wait. A worker's wait and the owner's own wait are not
+asks.
+
+The Snapshot no longer asks for `held_list` and `outcome_inbox`, and the
+screen no longer reads `inbox_list`: the gateway cost of the old refresh is the
+single `asks_list` call (see Cost). `learned_list` stays in the Snapshot,
+because the Graph shows applied learned changes and charter drafts from it.
+
+CTO and app notices are written to the log only. The kind filter that hid the
+new kinds from `inbox.list` is gone. The phone app reads `asks_list` too.
+
+Two keys changed. "Show all changes" was `a` on the Delivery tab and is `v` on
+the Desk, because `a` approves an ask. `l` opens the log.
+
+## Part B
+
+The chief of staff, a separate role that sorts asks (`next = chief`,
+`why_you`) under its own charter. Not built.
 
 ## Cost
 

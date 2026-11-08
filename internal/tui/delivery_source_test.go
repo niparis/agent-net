@@ -542,6 +542,7 @@ func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
 	m.delivery.row = visibleRow(m, "c_2")
+	m.inboxIndex = m.askRowCount() + m.delivery.row
 	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.delivery.detail || cmd == nil {
 		t.Fatal("enter should open the detail and fetch the change")
@@ -576,6 +577,7 @@ func TestDeliveryReloadKeepsTheSelectionAndTheFullDetail(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
 	m.delivery.row = visibleRow(m, "c_2")
+	m.inboxIndex = m.askRowCount() + m.delivery.row
 	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	next, _ := m.Update(cmd())
 	m = next.(Model)
@@ -820,7 +822,7 @@ func TestDeliveryRefreshUpdatesSessionsAndDoesNotOverlap(t *testing.T) {
 	if got := m.sessionTaskText(a); got != "" {
 		t.Fatalf("stale task %q", got)
 	}
-	m.tab = deliveryTab
+	m.tab = inboxTab
 	m, cmd = m.startDeliveryLoad()
 	if cmd == nil {
 		t.Fatal("load missing")
@@ -898,7 +900,7 @@ func TestDeliveryStoppedFailureHidden(t *testing.T) {
 	if done, stale := m.deliveryHidden(); done+stale != 1 {
 		t.Errorf("hidden: %d done %d stale", done, stale)
 	}
-	m = keys(m, "a")
+	m = keys(m, "v")
 	if got := m.deliveryVisible(); len(got) != 1 || got[0].Group == groupMoving {
 		t.Errorf("show all: %+v", got)
 	}

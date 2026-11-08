@@ -201,23 +201,18 @@ func TestAppsApprovalNotice(t *testing.T) {
 	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "apps.approve", raw); err != nil {
 		t.Fatal(err)
 	}
-	items, err := s.ListInbox()
+	// A new app is a line of the Desk log, not an ask (decision 0090).
+	asks, err := s.ListAsks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.DeskLog(10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := "Connected: my bot (bot, Cursor, client.example). If this was not you, revoke it in Settings."
-	if len(items) != 1 || items[0].Text != want || !strings.Contains(logs.String(), want) {
-		t.Fatalf("notice %v logs %s", fmt.Sprint(items), logs.String())
-	}
-	// A new app is a line of the Desk log, not an ask (decision 0090).
-	if asks, _ := s.ListAsks(); len(asks) != 0 {
-		t.Fatalf("app notice in the asks: %+v", asks)
-	}
-	if entries, _ := s.DeskLog(5); len(entries) != 1 || entries[0].Text != want || entries[0].Source != "apps" {
-		t.Fatalf("app notice not in the log: %+v", entries)
-	}
-	if _, err := s.AnswerInbox(items[0].ID, "seen"); err != nil {
-		t.Fatalf("notice cannot be dismissed: %v", err)
+	if len(asks) != 0 || len(entries) != 1 || entries[0].Text != want || entries[0].Source != "apps" || !strings.Contains(logs.String(), want) {
+		t.Fatalf("asks %v log %v logs %s", fmt.Sprint(asks), fmt.Sprint(entries), logs.String())
 	}
 }
 

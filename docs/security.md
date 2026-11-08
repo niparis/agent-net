@@ -125,7 +125,7 @@ The read rule follows decision 0035: a CTO data view calls the same daemon
 function as its matching ordinary agent tool, with the CTO caller identity,
 never a CLI or owner identity. The parity table in [reference.md](reference.md)
 lists every source. Views with no ordinary tool are removed, including charter
-history and the owner-only parts of the graph, the Inbox (tab 7), inboxes, settings,
+history and the owner-only parts of the graph, the Desk (tab 7), inboxes, settings,
 tools inventory, session text, the network feed and worker lists. Static
 charter guidance and the CTO's own timeline are the only exceptions. A protected-provider read schema exists
 for ordinary agents, but its daemon method is owner-gated, so it is removed
@@ -553,9 +553,9 @@ After a failed tool call, agent-net can add one line telling the model which oth
 - Limits: at most two suggestions; the same suggestion for the same session at most once per 30 minutes; any hint for a session at most once per 45 seconds; never the session itself, an offline session, the owner, a worker or a session of the same project.
 - The `expertise` line is stored at the gateway with the profile, cut to 200 characters, with control characters removed.
 
-## Inbox (tab 7)
+## Desk (tab 7)
 
-The Inbox (tab 7) excludes worker sessions. The daemon refuses a worker's explicit `agent_owner_ask` request; workers should use their hand-back or `agent_message_reply`. The section shows what another session waits for: a permission, a question or input (decision [0016](decisions/0016-needs-you.md)). The state is `kind`, `text` and `since` on the session. The daemon sends it to the gateway with the session, and every enrolled machine's TUI can read it: the same audience as the agent list, not only the session's own machine.
+The Desk (tab 7) excludes worker sessions. The daemon refuses a worker's explicit `agent_owner_ask` request; workers should use their hand-back or `agent_message_reply`. The section shows what another session waits for: a permission, a question or input (decision [0016](decisions/0016-needs-you.md)). The state is `kind`, `text` and `since` on the session. The daemon sends it to the gateway with the session, and every enrolled machine's TUI can read it: the same audience as the agent list, not only the session's own machine.
 
 - **What leaves the machine.** The text comes from the harness: a Claude Code permission request (the tool name and its command, path or URL), an `AskUserQuestion` question, or notification, an OpenCode permission or form title, or the agent's own `waiting` line. Claude Code's own session file says that a dialog blocks the turn; the daemon then reads the transcript for the one tool call that has no result yet and keeps only its name and short summary or question, never other transcript text (decision [0060](decisions/0060-waiting-for-user-auto-answer.md)). Codex thread flags carry no text. The line is cleaned of common secret shapes (`[REDACTED]`), cut to 200 characters, turned into one line and stripped of control characters at the daemon and again at the gateway. A permission request can name a file, a command or a URL, so treat the line as metadata that every enrolled machine's TUI can see. Do not put secrets in a question you ask an agent to announce.
 - **Who sees the question.** The owner's TUI and CLI only. Agent reads (`agent_sessions_find`, `agent_session_get`, the CTO's views) show that a session waits, its `kind` and `since`, never the question; the canary test checks this.
@@ -1009,7 +1009,7 @@ The daemon accepts `inbox_list` and `inbox_answer` only through the owner operat
 
 An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that the owner approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.
 
-Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in the Inbox (tab 7) closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.
+Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome on the Desk (tab 7) closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.
 
 The full CTO UI attaches as a client of the private OpenCode server or Claude background session. CTO tools still run in the CTO process tree and pass the same private-tool process checks.
 
@@ -1214,7 +1214,7 @@ A check is a notification, not a request or an approval, and carries no owner
 authority. It asks the session to answer with `agent_announce`: done, more with
 one line, or blocked on X. The gateway reads only the next announce. It does
 not start or resume a session, and it routes nothing to the CTO. `blocked`
-leaves one open row per session in the owner's Inbox (tab 7) queue, whatever the
+leaves one open row per session in the owner's Desk (tab 7) queue, whatever the
 autonomy. The row text is cleaned and the `[agent-net` marker is neutralized.
 
 A node's `autonomy` setting is `off` by default or `wake`. With `wake`, a

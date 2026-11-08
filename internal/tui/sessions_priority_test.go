@@ -31,11 +31,11 @@ func TestSessionsPriorityGroups(t *testing.T) {
 	if got := strings.Join(ids(m), ","); got != "lead,kid,merge,pin" {
 		t.Fatalf("order %s", got)
 	}
-	m.inboxItems = []protocol.InboxItem{{ID: "q", SessionID: "kid", Kind: "question", Status: "open"}}
+	m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "kid", Kind: "question", Status: "open"}})
 	if g = m.groups(); g[0].host != "Needs you" || len(g[0].agents) != 3 {
 		t.Fatalf("question did not move whole tree: %+v", g)
 	}
-	m.inboxItems = nil
+	m.asks = nil
 	m.snap.Agents[1].Status = "needs you"
 	if m.groups()[0].host != "Needs you" {
 		t.Fatal("needs you status ignored")
@@ -50,7 +50,7 @@ func TestOfflineWaitingSessionIsIdle(t *testing.T) {
 	m.snap.Agents[0].Waiting = &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "waiting for owner"}
 	m.snap.Agents[1].Status = "idle"
 	m.snap.Agents[1].Worker = &protocol.WorkerInfo{Owner: "lead"}
-	m.inboxItems = []protocol.InboxItem{{ID: "q", SessionID: "lead", Kind: "question", Status: "open"}}
+	m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "lead", Kind: "question", Status: "open"}})
 
 	if m.sessionNeedsOwner(m.snap.Agents[0]) {
 		t.Fatal("offline session needs owner")
@@ -142,9 +142,9 @@ func TestSessionsPriorityIdleAndInbox(t *testing.T) {
 	if !strings.Contains(view, "1 more idle · v to show") {
 		t.Fatalf("missing fold:\n%s", view)
 	}
-	m.inboxItems = []protocol.InboxItem{{ID: "q", SessionID: "kid", Kind: "question", Status: "open"}}
+	m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "kid", Kind: "question", Status: "open"}})
 	view = ansi.Strip(m.testView())
-	if !strings.Contains(view, fmt.Sprintf("Inbox: %d to decide", m.waitingCount())) || strings.Contains(view, "waiting in Inbox") {
+	if !strings.Contains(view, fmt.Sprintf("Desk: %d to decide", m.waitingCount())) || strings.Contains(view, "waiting in Inbox") {
 		t.Fatal(view)
 	}
 	m = keys(m, "v")
@@ -267,7 +267,7 @@ func TestSessionsPriorityGoldens(t *testing.T) {
 		m.snap.Agents[2].Profile.Name = "merger"
 		m.snap.Agents[4].Profile.Name = "pinned"
 		m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "video", NodeID: "one", Hostname: "desk", Harness: "claude", Model: "opus", Online: true, Status: "idle", Profile: protocol.Profile{Name: "video", Task: "Combine the recorded demos"}})
-		m.inboxItems = []protocol.InboxItem{{ID: "q", SessionID: "video", Kind: "question", Status: "open", Text: "Combine the recorded demos?"}}
+		m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "video", Kind: "question", Status: "open", Text: "Combine the recorded demos?"}})
 		for i := 0; i < 20; i++ {
 			m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: fmt.Sprintf("idle-%02d", i), NodeID: "two", Hostname: "build", Harness: "codex", Online: true, Status: "idle"})
 		}

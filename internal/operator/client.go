@@ -148,8 +148,8 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true}, required: true},
 		{method: protocol.OpNodes}, {method: "notification_settings"}, {method: protocol.OpTimeZoneGet}, {method: protocol.OpWorkerProfiles},
 		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet}, {method: protocol.OpWorkerFloorsGet},
-		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: protocol.OpWorkerRotationGet}, {method: "outcome_inbox"}, {method: "learned_list"},
-		{method: protocol.OpHeldList}, {method: protocol.OpGraphGet},
+		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: protocol.OpWorkerRotationGet}, {method: "learned_list"},
+		{method: protocol.OpGraphGet},
 		{method: protocol.OpProjects, params: protocol.QueryProjects{}},
 	}
 	if opts.WorkerLog {
@@ -220,20 +220,8 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 				err = json.Unmarshal(c.raw, &snap.DifficultyMinimums)
 			case protocol.OpWorkerRotationGet:
 				err = json.Unmarshal(c.raw, &snap.WorkerRotation)
-			case "outcome_inbox":
-				var v struct {
-					Entries []protocol.OutcomeInboxEntry `json:"entries"`
-				}
-				err = json.Unmarshal(c.raw, &v)
-				snap.Outcomes = v.Entries
 			case "learned_list":
 				err = json.Unmarshal(c.raw, &snap.Learned)
-			case protocol.OpHeldList:
-				var v struct {
-					Messages []protocol.Message `json:"messages"`
-				}
-				err = json.Unmarshal(c.raw, &v)
-				snap.Held = v.Messages
 			case protocol.OpGraphGet:
 				var v protocol.Graph
 				err = json.Unmarshal(c.raw, &v)

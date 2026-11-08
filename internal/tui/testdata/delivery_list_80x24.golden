@@ -1,24 +1,24 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-╭─Delivery─────────────────────────────────────────────────────────────6 shown─╮
-│   TITLE              STEP     STATUS                             AGE    DONE │
-│ Needs you · 1                                                                │
-│ ▸ Approve the deplo… approve  waiting for you                    3h0m   ○    │
-│ Moving · 3                                                                   │
-│   Show which provid… review   waiting for merger                 2h14m  ●○●  │
-│   Say what a delive… test     waiting for ci-runner (online)     6m     ●●○○ │
-│   merged: abcdef1                                                            │
-│   Fix the deploy ga… review   back to strategies to restart the… 2h5m   ●✗   │
-│ Stuck · 2                                                                    │
-│   wbg-procurement · 2 changes: accept by wbg-procurement (exited) · 15h-22h  │
-│ 1 done and 1 stale hidden · a shows all                                      │
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
+Desk · all clear · log closed (l opens it)
+╭─Needs you · 0────────────────────────────────────────────────────────────────╮
+│ Nothing is waiting for you.                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
-
-
-
-
+╭─In flight · 5────────────────────────────────────────────────────────────────╮
+│   TITLE                      STEP     STATUS                     AGE    DONE │
+│ ▸ Approve the deploy gate    approve  waiting for you            3h0m   ○    │
+│   Show which provider each … review   waiting for merger         2h14m  ●○●  │
+│   Say what a delivery row w… test     waiting for ci-runner (on… 6m     ●●○○ │
+│   merged: abcdef1                                                            │
+│   Fix the deploy gate        review   back to strategies to res… 2h5m   ●✗   │
+│ … 2 more                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Change c_8───────────────────────────────────────────────────────────────────╮
+│ Approve the deploy gate                                                      │
+│ step approve: waiting for you                                                │
+│ with you                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter evidence  a show all  R refresh  ? help  q quit
+enter evidence  v all changes  R refresh  ↑↓ select  l log  ? help

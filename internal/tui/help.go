@@ -100,8 +100,6 @@ func (m Model) hints() []hint {
 		return []hint{move, msg, bindingHint(contextMessages, "message body"), bindingHint(contextMessages, actLast), cto, bindingHint(contextMessages, "help"), bindingHint(contextMessages, actQuit)}
 	case m.tab == quotasTab && m.qualityDetail:
 		return []hint{bindingPairHint(contextQualityDetails, actUp, actDown), bindingPairHint(contextQualityDetails, actPageUp, actPageDown), bindingPairHint(contextQualityDetails, "previous agent", "next agent"), bindingHint(contextQualityDetails, "sub tab")}
-	case m.tab == deliveryTab:
-		return m.deliveryHints()
 	case m.tab == quotasTab && m.workersLog:
 		if m.workerLogDetailsFocus {
 			return []hint{{key: "tab", label: "sub tab"}, {key: "↑↓", label: "scroll details"}, {key: "←", label: "runs"}, sessionHelp, sessionQuit}
@@ -125,15 +123,10 @@ func (m Model) hints() []hint {
 		}
 		return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "toggle"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 	case m.tab == graphTab:
-		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "delivery tab").key, label: "tabs", prio: 1}
+		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "inbox tab").key, label: "tabs", prio: 1}
 		return []hint{tabs, cto, bindingHint(contextGraph, "help"), bindingHint(contextGraph, actQuit)}
 	case m.tab == toolsTab:
 		return m.toolsHints()
-	}
-	for _, e := range m.snap.Outcomes {
-		if m.selected == "outcome:"+e.ReplyID {
-			return []hint{bindingHint(contextOutcome, "let stand"), bindingHint(contextOutcome, "overrule"), sessionHelp, sessionQuit}
-		}
 	}
 	if _, ok := m.selectedProposal(); ok {
 		return []hint{bindingHint(contextProposal, "detail"), bindingHint(contextProposal, "approve"), bindingHint(contextProposal, "decline"), bindingHint(contextProposal, "approve all"), sessionHelp}
@@ -141,12 +134,6 @@ func (m Model) hints() []hint {
 	if strings.HasPrefix(m.selected, "learned:") {
 		return []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSuggestion, "accept"), bindingHint(contextSuggestion, "reject"), sessionHelp, sessionQuit}
 	}
-	for _, held := range m.snap.Held {
-		if held.ID == m.selected {
-			return []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextHeld, "approve"), bindingHint(contextHeld, "refuse"), sessionHelp, sessionQuit}
-		}
-	}
-
 	if m.tab == sessionsTab && m.sessionCell > 0 {
 		if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
 			if m.sessionCell == 3 && canChangeSessionAgent(a) {
@@ -208,7 +195,7 @@ func (m Model) helpLine(w int) string {
 	if m.tab == inboxTab && m.inboxEditing {
 		return clip(m.inboxInput.View()+" enter sends, esc cancels", w)
 	}
-	if m.tab == deliveryTab && m.delivery.reporting {
+	if m.tab == inboxTab && m.delivery.reporting {
 		return clip(m.delivery.reportInput.View()+" enter sends, esc cancels", w)
 	}
 
@@ -416,7 +403,7 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextCTO)
 	case m.open != nil:
 		return m.helpContextSection(contextBody)
-	case m.tab == deliveryTab:
+	case m.tab == inboxTab && m.deskOnChange():
 		return m.helpContextSection(contextDelivery)
 	case m.tab == quotasTab && m.workersLog:
 		return m.helpContextSection(contextWorkersLog)
@@ -459,8 +446,7 @@ func helpSections() []helpSection {
 		{"Messages", []keyContext{contextMessages}},
 		{"Tools", []keyContext{contextToolsAgents, contextToolsSkills, contextTools}},
 		{"Settings", []keyContext{contextSettings}},
-		{"Inbox", []keyContext{contextInbox, contextHeld, contextSuggestion, contextOutcome, contextProposal}},
-		{"Delivery", []keyContext{contextDelivery}},
+		{"Desk", []keyContext{contextInbox, contextHeld, contextSuggestion, contextOutcome, contextProposal, contextDelivery}},
 	}
 }
 
@@ -519,7 +505,9 @@ func (m Model) helpSubsectionTitle(context keyContext) string {
 	case contextBody:
 		return "Message body"
 	case contextInbox:
-		return "Inbox"
+		return "Desk"
+	case contextDelivery:
+		return "On a change in flight"
 	case contextApps:
 		return "Connected apps"
 	case contextProposalDetail:

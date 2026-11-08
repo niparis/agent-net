@@ -1,19 +1,19 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-╭─Delivery─────────────────────────────────────────────────────────────3 shown─╮
-│   TITLE             STEP     STATUS                             AGE    DONE  │
-│ Needs you · 1                                                                │
-│ ▸ Say what a deliv… approve  waiting for you                    6m     ●●●○○ │
-│ Moving · 2                                                                   │
-│   Show the provide… review   waiting for merger                 2h0m   ●○○○  │
-│   Fix the deploy g… review   back to an unknown session to res… 5h0m   ●✗●○○ │
-│ Stuck · 0                                                                    │
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
+Desk · all clear · log closed (l opens it)
+╭─Needs you · 0────────────────────────────────────────────────────────────────╮
+│ Nothing is waiting for you.                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
-
-
-
-
-
+╭─In flight · 3────────────────────────────────────────────────────────────────╮
+│   TITLE                      STEP     STATUS                    AGE    DONE  │
+│ ▸ Say what a delivery row w… approve  waiting for you           6m     ●●●○○ │
+│   Show the provider in each… review   waiting for merger        2h0m   ●○○○  │
+│   Fix the deploy gate        review   back to an unknown sessi… 5h0m   ●✗●○○ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Change ch_7──────────────────────────────────────────────────────────────────╮
+│ Say what a delivery row waits for                                            │
+│ step approve: waiting for you                                                │
+│ with you                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
 
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter evidence  a show all  R refresh  ? help  q quit
+enter evidence  v all changes  R refresh  ↑↓ select  l log  ? help
