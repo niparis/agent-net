@@ -2515,6 +2515,8 @@ global defaults. The form shows sources and never copies inherited text into an 
 
 The owner made charters and edges public to every agent. `agent_graph_read` returns them all, with the owner-only parts of a node left out (see the agent graph read above). The CTO reads the same view through `graph`.
 
+**The `calls` edge.** Each shared MCP server granted to a bot (`g` in Connected apps) shows in the typed Graph as a read-only `calls` edge from the bot node to the Repo that hosts the server. The gateway derives it on every read, with one query for all grants and the registry, and stores nothing. The Repo is the single project of the server's assignment (scope `projects` with one project), or else the Repo named like the server. A server with neither draws no edge, because the Graph has no machine nodes; the bot card still lists it under `can call`. A disabled or removed server draws no edge. The edge has no rule and no mode. `edge_set`, `edge_remove` and undo refuse the kind `calls`: only the grant changes it. In the TUI it is drawn like a `depends` edge, and its label is `calls`.
+
 **Maturity and its defaults.** A node's `maturity` level sets five controls. A node may override any one of them in a node setting; the owner sets it with `node_settings_set`, and the override is stored beside the charter.
 
 | | `experimental` | `early` | `growing` | `mature` |
@@ -2815,6 +2817,8 @@ The bot then sees the allowed tools of that server in `tools/list` of the public
 
 Example: ingest-forge runs an MCP server on the LAN with one tool, `submit_x_post`. On the machine that can reach it (research), run `agent-net mcp add ingest-forge --url https://ingest-forge.local.org/mcp --header-file Authorization=/path/to/file`. Then press `g` on Trade's bot and grant `ingest-forge`. The bot sees one extra tool, `ingest-forge__submit_x_post`, and calls it with the file's header value, which stays on research. If the server had more tools and the entry has an allow-list (see [importing native MCP servers](#importing-native-mcp-servers)), the bot would see only the listed ones.
 
+**A bot is an agent node.** When you approve an app as a bot, the gateway makes one agent node for it with the role `bot` (decision [0092](decisions/0092-bots-as-agents.md)). The node uses the app ID as its agent ID and the app name as its display name, and it follows a rename (`apps.rename`). The bot's session is linked to the node, so its charter and place resolve like an agent's. Revoking the app archives the node (a tombstone, nothing is deleted) and takes it out of its Team. Owner apps get no node. Apps approved before this release get their node at the first gateway start (migration 147). A bot node gives the bot no permission and no tool.
+
 Skill items in `tools_items` and `tools_item` include `description`, `start_tokens` and `full_tokens` when nonempty. The description comes from the newest scanned copy. Token counts are estimates: start is (name length + description length + 20) / 4 rounded up; full is the manifest SKILL.md size / 4 rounded up, or zero when unknown. MCP items omit these fields.
 
 Claude Code and Codex sign-in probes run `claude auth status` and `codex login status` with a five second limit. Only the signed-in state and auth method are kept; account details are discarded. Antigravity's sign-in state comes from its own model list (`agy models`): a list means signed in, and no account detail is kept.
@@ -3009,6 +3013,8 @@ no members. A gateway refusal shows in the result line at the bottom. When
 the typed Graph cutover waits for machines to upgrade, the screen says so
 instead of hiding Teams.
 
+
+**Bots in Teams.** A bot node joins a Team like any agent: with `team_write` `membership` and an `agent` ref, or with Space in the Teams list. It is shown in the Team frame and on the canvas with a `⚙` before its name, and its card shows CLIENT, CONNECTED, LAST USED and `can call: ...` from Connected apps, then its CHARTER and one dim line: a bot reads its charter only if its own instructions tell it to, and its grants and app limits are what bind it. A bot can never be a Team or Repo lead: `team_write` `create` with a bot owner, `lead_set` with a bot (or a bot session) and an undo that would restore one are refused with "a bot can never be a Team or Repo lead", and the lead picker does not list it. Revoking the app removes the membership and records it in the Team history with the actor `apps`. The bot node is not offered when a session picks its agent.
 
 ### Leads and agent counts
 

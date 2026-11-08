@@ -70,6 +70,9 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		if err = liveTeamMember(tx, protocol.GraphRef{Kind: "agent", ID: lead.(string)}); err != nil {
 			return err
 		}
+		if err = refuseBotLead(tx, lead.(string)); err != nil {
+			return err
+		}
 	}
 	now := s.now().UnixNano()
 	historyAttr := "lead"

@@ -75,6 +75,16 @@ type NodeDelegation struct {
 	DelegationPolicy
 }
 
+// NodeBot is what the Graph shows of a connected bot app on its agent node.
+// ConnectedAt and LastUsedAt are Unix nanoseconds; LastUsedAt is 0 when the
+// bot never called. CanCall lists the shared MCP servers the owner granted.
+type NodeBot struct {
+	Client      string   `json:"client,omitempty"`
+	ConnectedAt int64    `json:"connected_at,omitempty"`
+	LastUsedAt  int64    `json:"last_used_at,omitempty"`
+	CanCall     []string `json:"can_call,omitempty"`
+}
+
 // Node is a component or an architect. Components can be implicit projects.
 type Node struct {
 	Active     *bool     `json:"active,omitempty"`
@@ -85,6 +95,8 @@ type Node struct {
 	AgentCount int       `json:"agent_count,omitempty"`
 	OverMax    bool      `json:"over_max,omitempty"`
 	Role       string    `json:"role,omitempty"`
+	// Bot is set on the agent node of a connected bot app (role "bot").
+	Bot *NodeBot `json:"bot,omitempty"`
 	// AuthorityMode (a team) and HeldBack (a team or a repo) are the owner's
 	// authority settings (decision 0089).
 	AuthorityMode string `json:"authority_mode,omitempty"`
@@ -119,6 +131,10 @@ type CharterChange struct {
 	At       int64     `json:"at"`
 	By       string    `json:"by"`
 }
+
+// EdgeCalls is the kind of the derived edge from a bot to the project that
+// hosts a shared MCP server the bot is granted. It is never stored or edited.
+const EdgeCalls = "calls"
 
 // Edge is a directed dependency, deploy or delivery owner relationship.
 type Edge struct {

@@ -1176,7 +1176,7 @@ ALTER TABLE inbox_items ADD COLUMN detail TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS standing_orders (
  id TEXT PRIMARY KEY, text TEXT NOT NULL, saved_at INTEGER NOT NULL,
  source TEXT NOT NULL DEFAULT 'owner');
-`}
+`, botAgentMigration}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay
 // after its columns exist: the log table, the indexes and the backfill of old

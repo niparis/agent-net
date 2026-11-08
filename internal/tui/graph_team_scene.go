@@ -50,8 +50,13 @@ func graphCharterValues(c protocol.Charter) [][2]string {
 
 func (m Model) graphLastingSessions(n protocol.Node) (online []protocol.GraphSession, offline int, busy int) {
 	seen := map[string]bool{}
+	// A bot node counts its own bot sessions; no other node counts them.
+	lasting := func(a protocol.AgentView) bool {
+		kind := protocol.SessionType(a.Harness, a.Worker, a.Type)
+		return kind == "agent" || kind == "bot" && graphIsBot(n)
+	}
 	for _, a := range m.graphSessions(n) {
-		if protocol.SessionType(a.Harness, a.Worker, a.Type) != "agent" {
+		if !lasting(a) {
 			continue
 		}
 		if merged, ok := m.mp.merged[n.Name]; ok && merged.Ref != nil && a.AgentID != "" && a.AgentID != merged.Ref.ID {
@@ -94,7 +99,7 @@ func (m Model) graphLastingSessions(n protocol.Node) (online []protocol.GraphSes
 			continue
 		}
 		if a, ok := m.agentByID(s.ID); ok {
-			if protocol.SessionType(a.Harness, a.Worker, a.Type) != "agent" || !a.Online {
+			if !lasting(a) || !a.Online {
 				continue
 			}
 		}
@@ -213,7 +218,7 @@ func (m Model) graphTeamData() ([]teamGraphData, []teamLink) {
 	type pair struct{ a, b, kind string }
 	counts := map[pair]int{}
 	for _, e := range m.mp.edges {
-		if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" || e.From == e.To || m.mp.everything[e.From] != "" || m.mp.everything[e.To] != "" {
+		if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" && e.Kind != "calls" || e.From == e.To || m.mp.everything[e.From] != "" || m.mp.everything[e.To] != "" {
 			continue
 		}
 		a, b := m.graphTeamOf(e.From), m.graphTeamOf(e.To)
@@ -683,6 +688,7 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 				label += suffix
 			}
 		}
+		label = graphBotLabel(n, label)
 		return graphview.SceneNode{Name: key, Label: label, LabelSuffix: suffix, Kind: kind, Position: teamNodePoint(x, y, size), Role: graphLastingRole(sessions), Selected: strong, HasCharter: n.Charter != (protocol.Charter{}), BusySessions: busy, Card: graphview.SceneCard{Sessions: len(sessions), Maturity: n.Charter.Maturity}}
 	}
 	// small draws a neighbour team box and returns the cell of its lead node.
@@ -1114,7 +1120,7 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		for _, ng := range neighbours {
 			target := ""
 			for _, e := range m.mp.edges {
-				if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" {
+				if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" && e.Kind != "calls" {
 					continue
 				}
 				if m.graphTeamOf(e.From) == teamKey && m.graphTeamOf(e.To) == ng.key {
@@ -1151,7 +1157,7 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		}
 	}
 	for _, e := range m.mp.edges {
-		if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" {
+		if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" && e.Kind != "calls" {
 			continue
 		}
 		a, aok := cells[e.From]
@@ -1237,6 +1243,12 @@ func (m Model) graphTeamCard(scene *graphview.Scene, selected string, x, y, w, h
 			}
 		}
 	}
+	if graphIsBot(n) {
+		add("", "label")
+		for _, l := range m.graphBotCardLines(n) {
+			add(l[0], l[1])
+		}
+	}
 	charter := n.Charter
 	if merged, ok := m.mp.merged[selected]; ok {
 		if merged.Charter != (protocol.Charter{}) {
@@ -1253,21 +1265,29 @@ func (m Model) graphTeamCard(scene *graphview.Scene, selected string, x, y, w, h
 			add(v[0]+"  "+v[1]+charterSourceSuffix(charter, v[0]), "label")
 		}
 	}
-	add("", "label")
-	add("YOUR CHOICES", "selected")
-	defaults := protocol.NodeDefaults(charter.Maturity, n.Settings)
-	for _, v := range [][2]string{{protocol.SettingTestsBeforeMerge, defaults.TestsBeforeMerge}, {protocol.SettingMergeAuthority, defaults.MergeAuthority}, {protocol.SettingWorkerSandbox, defaults.WorkerSandbox}, {protocol.SettingJudgeConsumers, defaults.JudgeConsumers}, {protocol.SettingDeployRule, defaults.DeployRule}, {protocol.SettingAutonomy, firstNonEmpty(n.Settings[protocol.SettingAutonomy], "off")}} {
-		prefix, source := "  ", " default"
-		if _, ok := n.Settings[v[0]]; ok {
-			prefix, source = "◆ ", " override"
+	if graphIsBot(n) {
+		for _, s := range wrap(graphBotNote, w-4) {
+			add(s, "labelDim")
 		}
-		add(prefix+strings.ReplaceAll(v[0], "_", " ")+"  "+v[1]+source, "label")
+	}
+	// The choices are about merging and workers; a bot has none of them.
+	if !graphIsBot(n) {
+		add("", "label")
+		add("YOUR CHOICES", "selected")
+		defaults := protocol.NodeDefaults(charter.Maturity, n.Settings)
+		for _, v := range [][2]string{{protocol.SettingTestsBeforeMerge, defaults.TestsBeforeMerge}, {protocol.SettingMergeAuthority, defaults.MergeAuthority}, {protocol.SettingWorkerSandbox, defaults.WorkerSandbox}, {protocol.SettingJudgeConsumers, defaults.JudgeConsumers}, {protocol.SettingDeployRule, defaults.DeployRule}, {protocol.SettingAutonomy, firstNonEmpty(n.Settings[protocol.SettingAutonomy], "off")}} {
+			prefix, source := "  ", " default"
+			if _, ok := n.Settings[v[0]]; ok {
+				prefix, source = "◆ ", " override"
+			}
+			add(prefix+strings.ReplaceAll(v[0], "_", " ")+"  "+v[1]+source, "label")
+		}
 	}
 	add("", "label")
 	add("ROUTING", "selected")
 	edgeLines := []string{}
 	for _, e := range m.mp.edges {
-		if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" || e.From != selected && e.To != selected {
+		if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" && e.Kind != "calls" || e.From != selected && e.To != selected {
 			continue
 		}
 		peer := e.To

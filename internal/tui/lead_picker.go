@@ -62,13 +62,14 @@ func (m Model) startLeadPicker(target protocol.GraphRef, name string) Model {
 				}
 			}
 		}
-		if allowed && a.AgentID != "" && a.SessionID != "" {
+		// A bot can never lead (decision 0092).
+		if allowed && a.AgentID != "" && a.SessionID != "" && a.Harness != "bot" {
 			ref := protocol.GraphRef{Kind: "session", ID: a.SessionID}
 			p.choices = append(p.choices, leadChoice{name: a.AgentName + " / " + a.SessionID, ref: &ref})
 		}
 	}
 	for _, n := range m.mp.full.Nodes {
-		if n.Ref != nil && n.Ref.Kind == "agent" && eligible[n.Ref.ID] && (n.Active == nil || *n.Active) {
+		if n.Ref != nil && n.Ref.Kind == "agent" && eligible[n.Ref.ID] && n.Role != "bot" && (n.Active == nil || *n.Active) {
 			ref := *n.Ref
 			name := n.Name
 			if label := m.mp.labels[graphRefKey(n.Ref)]; label != "" {

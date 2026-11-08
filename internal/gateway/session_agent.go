@@ -40,7 +40,7 @@ func (s *Store) sessionAgentOptions(node, owner string) (protocol.SessionAgentOp
 	if err := sessionAgentOwner(s.db, node, owner); err != nil {
 		return out, err
 	}
-	rows, err := s.db.Query(`SELECT id,display_name,role FROM agents WHERE tombstone=0 AND role<>'cto' ORDER BY display_name,id`)
+	rows, err := s.db.Query(`SELECT id,display_name,role FROM agents WHERE tombstone=0 AND role NOT IN ('cto','bot') ORDER BY display_name,id`)
 	if err != nil {
 		return out, err
 	}
@@ -84,7 +84,7 @@ func (s *Store) setSessionAgent(node string, p protocol.SessionAgentSetRequest) 
 		return reject("session is offline")
 	}
 	var exists bool
-	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0 AND role<>'cto')`, p.Agent).Scan(&exists); err != nil {
+	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0 AND role NOT IN ('cto','bot'))`, p.Agent).Scan(&exists); err != nil {
 		return err
 	}
 	if !exists {

@@ -96,6 +96,7 @@ Legend ────────────────────────�
   Edges
   ──▶ depends  consumer uses provider
   ──▶ deploys  deployer runs the app's deploys
+  ──▶ calls    bot uses a shared MCP server it is granted
   Request rule on an edge from A to B
   normal  delivered; B judges it
   auto    delivered with a trust note; B can act without asking you, still
