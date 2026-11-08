@@ -87,6 +87,10 @@ const deliveryLoadTimeout = 5 * time.Second
 // deliveryRefreshEvery is how often changes load again.
 const deliveryRefreshEvery = 30 * time.Second
 
+// inboxRefreshEvery is how often the Inbox lists are checked on a tab that
+// does not show them, so its count is never stale for long.
+const inboxRefreshEvery = 10 * time.Second
+
 // deliveryState is everything the view keeps. It sits in the Model by value
 // and is replaced, never shared.
 type deliveryState struct {

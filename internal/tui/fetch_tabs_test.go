@@ -109,12 +109,12 @@ func TestFetchAsksForInboxListsOnlyWhereNeeded(t *testing.T) {
 		workersLog    bool
 		wantPerMinute int
 	}{
-		{"Sessions", sessionsTab, focusSessions, false, 0},
-		{"Graph", graphTab, focusSessions, false, 0},
-		{"Messages", messagesTab, focusFeed, false, 0},
+		{"Sessions", sessionsTab, focusSessions, false, 6},
+		{"Graph", graphTab, focusSessions, false, 6},
+		{"Messages", messagesTab, focusFeed, false, 6},
 		{"Inbox", inboxTab, focusSessions, false, 60},
 		{"CTO pane focused", sessionsTab, focusCTO, false, 60},
-		{"Quotas workers log", quotasTab, focusSessions, true, 0},
+		{"Quotas workers log", quotasTab, focusSessions, true, 6},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -173,6 +173,43 @@ func TestFetchPicksUpAChangedInboxMarkerOnAnyTab(t *testing.T) {
 	m = refreshTimes(m, 1)
 	if src.count(protocol.OpProposalList) != 0 || src.count("inbox_list") != 0 {
 		t.Fatalf("lists fetched again without a change: %v", src.calls)
+	}
+}
+
+// A gateway inbox item does not change the Snapshot. Away from Inbox the
+// screen still checks the list every ten seconds, so the tab count does not
+// stay stale until the owner opens it.
+func TestFetchChecksGatewayInboxOnAnotherTabEveryTenSeconds(t *testing.T) {
+	src := &fetchCountSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+	m := New(src)
+	clock := t0
+	m.loc, m.now = time.UTC, func() time.Time { return clock }
+	m.tab, m.focus = sessionsTab, focusSessions
+	m = refreshTimes(m, 1)
+	if got := m.waitingCount(); got != 0 {
+		t.Fatalf("badge starts at %d", got)
+	}
+
+	src.inbox = []protocol.InboxItem{{ID: "i_1", Kind: "check", Status: "open", SessionID: "s_1", Text: "a check", CreatedAt: t0}}
+	src.resetCalls()
+	for i := 0; i < 9; i++ {
+		clock = clock.Add(time.Second)
+		m = send(m, m.fetchCmd()())
+	}
+	if src.count("inbox_list") != 0 || m.waitingCount() != 0 {
+		t.Fatalf("checked too early: calls %d, badge %d", src.count("inbox_list"), m.waitingCount())
+	}
+
+	clock = clock.Add(time.Second) // ten seconds after the last check
+	m = send(m, m.fetchCmd()())
+	if src.count("inbox_list") != 1 {
+		t.Fatalf("inbox_list calls = %d, want 1", src.count("inbox_list"))
+	}
+	if got := m.waitingCount(); got != 1 {
+		t.Fatalf("badge = %d, want 1", got)
+	}
+	if line := m.titleLine(160); !strings.Contains(line, "Inbox (1)") {
+		t.Fatalf("title %q", line)
 	}
 }
 

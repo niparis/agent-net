@@ -124,8 +124,10 @@ type Model struct {
 	fetching               bool
 	// inboxSeen is the Snapshot signature the Inbox and proposals were last
 	// fetched at. A different signature, or the Inbox or CTO pane on screen,
-	// asks for them again.
+	// asks for them again. inboxAt is when they were last asked for away from
+	// that screen, so the count cannot stay stale.
 	inboxSeen string
+	inboxAt   time.Time
 
 	// Stored conversations for the Messages tab. The gateway answers a page;
 	// View only reads convs, never calls the source.
@@ -272,6 +274,7 @@ type fetchedMsg struct {
 	proposalsOK bool
 	inboxItems  []protocol.InboxItem
 	inboxOK     bool
+	listsAsked  bool // the Inbox and proposals were asked for this refresh
 	snap        Snapshot
 	err         error
 	events      []protocol.FeedEvent
@@ -361,7 +364,7 @@ func (m Model) fetchCmd() tea.Cmd {
 	askU := askUsage && m.usage.unavailable == ""
 	askTools := m.onboardingWantsTools()
 	inboxOnScreen := m.tab == inboxTab || m.focus == focusCTO
-	inboxSeen := m.inboxSeen
+	inboxSeen, inboxAt := m.inboxSeen, m.inboxAt
 	wantWorkerLog := m.tab == quotasTab && m.workersLog
 	now := m.now
 	return func() tea.Msg {
@@ -410,11 +413,13 @@ func (m Model) fetchCmd() tea.Cmd {
 				res.countsErr = ErrUsageUnavailable
 			}
 		}
-		// The list is only needed on the screen that shows it, or when the
-		// Snapshot says that what waits for the owner changed. The CTO box
-		// shows its own count from the Snapshot, so other tabs stay correct
-		// without the full list.
-		if c, ok := src.(inboxCaller); ok && (inboxOnScreen || inboxMarkerOf(res.snap) != inboxSeen) {
+		// The list is needed at once on the screen that shows it, or when the
+		// Snapshot says that what waits for the owner changed. Away from that
+		// screen it is still checked now and then, because gateway items and
+		// proposals made on another machine do not change the Snapshot.
+		if c, ok := src.(inboxCaller); ok &&
+			(inboxOnScreen || inboxMarkerOf(res.snap) != inboxSeen || res.at.Sub(inboxAt) >= inboxRefreshEvery) {
+			res.listsAsked = true
 			if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
 				res.proposalsOK = true
 			}
@@ -829,6 +834,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyFetch(msg)
 		if msg.err == nil && msg.snap.Connected {
 			m.inboxSeen = inboxMarkerOf(m.snap)
+		}
+		if msg.listsAsked {
+			m.inboxAt = msg.at
 		}
 		if msg.convAsked {
 			m.applyConversationPage(conversationPageMsg{page: msg.convPage, err: msg.convErr, first: true})
