@@ -178,6 +178,7 @@ Legend ────────────────────────�
                          revision
   a                      add a connected app
   x                      remove the selected machine or revoke the selected app
+  g                      choose the shared MCP servers the selected bot may use
   r                      rotate the selected online machine token
 
  Inbox
@@ -233,6 +234,7 @@ Legend ────────────────────────�
   u                      tunnel URL
   a                      add
   x                      revoke
+  g                      grant
   enter                  approve
   r                      refuse
   left, right            change kind

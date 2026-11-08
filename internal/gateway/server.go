@@ -2235,6 +2235,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.RenameApp(p.ID, p.Name)
 
+	case protocol.OpAppsGrant, protocol.OpAppsUngrant:
+		var p struct {
+			ID    string `json:"app_id"`
+			Grant string `json:"grant"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.ID == "" || p.Grant == "" {
+			return nil, reject("bad %s", typ)
+		}
+		if err := st.SetAppGrant(p.ID, p.Grant, typ == protocol.OpAppsGrant); err != nil {
+			return nil, err
+		}
+		g.logLine(typ, "app", p.ID, "grant", safeAppLog(p.Grant))
+		return nil, nil
+
 	case "inbox.list":
 		items, err := st.ListInbox()
 		return map[string]any{"items": items}, err

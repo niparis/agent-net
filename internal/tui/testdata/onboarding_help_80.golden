@@ -7,6 +7,7 @@ Keys · all screens ────────────────────
                          revision
   a                      add a connected app
   x                      remove the selected machine or revoke the selected app
+  g                      choose the shared MCP servers the selected bot may use
   r                      rotate the selected online machine token
 
  Inbox
@@ -19,6 +20,5 @@ Keys · all screens ────────────────────
   A                      approve all
   t                      answer
   x                      dismiss
-  u                      undo
   more below
 up/down scroll  ? this screen  esc close

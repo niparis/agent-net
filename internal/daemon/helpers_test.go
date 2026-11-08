@@ -120,6 +120,11 @@ func startGatewayWithToolsPageSize(t *testing.T, dir string, size int) *testGate
 }
 
 func startGatewayPageSize(t *testing.T, dir, addr string, size int) *testGateway {
+	return startGatewayWith(t, dir, addr, size, nil)
+}
+
+// startGatewayWith starts a gateway and lets the caller change its options.
+func startGatewayWith(t *testing.T, dir, addr string, size int, mutate func(*gateway.Options)) *testGateway {
 	t.Helper()
 	if addr == "" {
 		addr = "127.0.0.1:0"
@@ -137,10 +142,14 @@ func startGatewayPageSize(t *testing.T, dir, addr string, size int) *testGateway
 	}
 	logs := &logBuf{}
 	seedDatabase(t, dir, "gateway.db", gatewayTemplateBytes)
-	gw, err := gateway.New(gateway.Options{DataDir: dir, ToolsPageSize: size, OfflineGrace: 200 * time.Millisecond,
+	opts := gateway.Options{DataDir: dir, ToolsPageSize: size, OfflineGrace: 200 * time.Millisecond,
 		Logger: log.New(logs, "", 0),
 		// The test sessions live in the test's own temporary folders.
-		TempFolders: []string{}})
+		TempFolders: []string{}}
+	if mutate != nil {
+		mutate(&opts)
+	}
+	gw, err := gateway.New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +23,7 @@ type connectedApp struct {
 	RedirectURIs               []string
 	CreatedAt                  time.Time
 	LastUsedAt, RevokedAt      *time.Time
+	Grants                     []string
 }
 type pendingApp struct{ ID, ClientName, RedirectHost, DefaultKind string }
 type appsPublicStatus struct {
@@ -40,7 +43,13 @@ type appsForm struct {
 	err            string
 	loading        bool
 	editingName    bool
+	// The grant picker: the shared MCP servers the selected bot may be given.
+	servers []grantServer
+	pick    int
 }
+
+// grantServer is one row of the grant picker.
+type grantServer struct{ name, host string }
 type appsResult struct {
 	op  string
 	raw json.RawMessage
@@ -112,6 +121,35 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 		}
 		f.index = min(f.index, max(0, len(f.apps)-1))
 		return m, m.appsCall("apps.public.status", struct{}{})
+	case "tools_mcp_list":
+		var v struct {
+			Servers []struct{ Name, Hostname string } `json:"servers"`
+		}
+		if err := json.Unmarshal(r.raw, &v); err != nil {
+			f.err = err.Error()
+			f.stage = ""
+			return m, nil
+		}
+		f.servers = f.servers[:0]
+		known := map[string]bool{}
+		for _, s := range v.Servers {
+			known[s.Name] = true
+			f.servers = append(f.servers, grantServer{s.Name, s.Hostname})
+		}
+		// A grant for a server that is gone stays on the list, so it can be removed.
+		if f.index < len(f.apps) {
+			for _, g := range f.apps[f.index].Grants {
+				if name, ok := protocol.ParseMCPServerGrant(g); ok && !known[name] {
+					f.servers = append(f.servers, grantServer{name, "removed"})
+				}
+			}
+		}
+		sort.SliceStable(f.servers, func(i, j int) bool { return f.servers[i].name < f.servers[j].name })
+		f.pick = min(f.pick, max(0, len(f.servers)-1))
+		return m, nil
+	case protocol.OpAppsGrant, protocol.OpAppsUngrant:
+		f.loading = true
+		return m, m.appsCall("apps.list", struct{}{})
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
 		var status appsPublicStatus
 		if err := json.Unmarshal(r.raw, &status); err != nil {
@@ -181,6 +219,31 @@ func (m Model) appsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if no {
 			f.stage = ""
+		}
+		return m, nil
+	}
+	if f.stage == "grant" {
+		switch {
+		case k.Code == tea.KeyEsc:
+			f.stage = ""
+			f.err = ""
+		case k.String() == "up" || k.String() == "k":
+			f.pick = max(0, f.pick-1)
+		case k.String() == "down" || k.String() == "j":
+			f.pick = min(max(0, len(f.servers)-1), f.pick+1)
+		case k.Code == tea.KeyEnter || k.String() == "space" || k.String() == " ":
+			if len(f.servers) == 0 || f.index >= len(f.apps) {
+				return m, nil
+			}
+			app := f.apps[f.index]
+			grant := protocol.MCPServerGrant(f.servers[f.pick].name)
+			op := protocol.OpAppsGrant
+			if slices.Contains(app.Grants, grant) {
+				op = protocol.OpAppsUngrant
+			}
+			f.loading = true
+			f.err = ""
+			return m, m.appsCall(op, map[string]string{"id": app.ID, "grant": grant})
 		}
 		return m, nil
 	}
@@ -279,6 +342,17 @@ func (m Model) appsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(f.apps) > 0 {
 			f.stage = "confirm"
 		}
+	case "grant":
+		if len(f.apps) == 0 {
+			return m, nil
+		}
+		if f.apps[f.index].Kind != "bot" {
+			f.err = "Only a bot can be granted a right."
+			return m, nil
+		}
+		f.stage, f.err, f.pick, f.servers = "grant", "", 0, nil
+		f.loading = true
+		return m, m.appsCall("tools_mcp_list", struct{}{})
 	}
 	if k.Code == tea.KeyEnter && len(f.apps) > 0 {
 		f.stage = "rename"
@@ -349,6 +423,10 @@ func (m Model) appsView(w, rows int) []string {
 		out = append(out, "  "+f.input.Prompt+in.View())
 		if f.err != "" {
 			out = append(out, "  "+sBad.Render(f.err))
+		}
+	case "grant":
+		for _, line := range m.appsGrantLines(w, "  ") {
+			out = append(out, line)
 		}
 	case "approve":
 		kind := "bot"
@@ -448,6 +526,9 @@ func (m Model) appsView(w, rows int) []string {
 					line = selectedRow(clip(line, w))
 				}
 				out = append(out, clip(line, w))
+				if grants := appGrantsLine(f.apps[i], w, "  "); grants != "" {
+					out = append(out, grants)
+				}
 			}
 		}
 		if f.stage == "confirm" && len(f.apps) > 0 {
@@ -462,6 +543,51 @@ func (m Model) appsView(w, rows int) []string {
 	}
 	for len(out) < rows {
 		out = append(out, "")
+	}
+	return out
+}
+
+// appGrantsLine is the dim line under an app row that lists its grants. It is
+// empty when the app has none.
+func appGrantsLine(a connectedApp, w int, indent string) string {
+	if len(a.Grants) == 0 {
+		return ""
+	}
+	clean := make([]string, len(a.Grants))
+	for i, g := range a.Grants {
+		clean[i] = sanitize(g)
+	}
+	return sDim.Render(clip(indent+"  grants: "+strings.Join(clean, ", "), w))
+}
+
+// appsGrantLines draws the grant picker of the selected bot: the shared MCP
+// servers, each marked when the bot may use it.
+func (m Model) appsGrantLines(w int, indent string) []string {
+	f := m.apps
+	if f.index >= len(f.apps) {
+		return nil
+	}
+	app := f.apps[f.index]
+	out := []string{clip(indent+"Shared MCP servers "+sanitize(app.Name)+" may use (enter: grant or remove, esc: close)", w)}
+	if f.loading && len(f.servers) == 0 {
+		return append(out, indent+"  Loading...")
+	}
+	if len(f.servers) == 0 {
+		out = append(out, clip(indent+"  No shared MCP servers yet. Add one in Tools.", w))
+	}
+	for i, s := range f.servers {
+		mark := "[ ]"
+		if slices.Contains(app.Grants, protocol.MCPServerGrant(s.name)) {
+			mark = "[x]"
+		}
+		line := indent + "  " + mark + " " + sanitize(s.name)
+		if s.host != "" {
+			line += "  " + sDim.Render("on "+sanitize(s.host))
+		}
+		if i == f.pick {
+			line = selectedRow(clip(line, w))
+		}
+		out = append(out, clip(line, w))
 	}
 	return out
 }

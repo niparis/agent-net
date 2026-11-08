@@ -193,6 +193,34 @@ refuse, send messages as the owner. It is the owner's hand.
   workers), from its row in "Connected apps". Each grant is shown on the row
   and can be removed.
 
+**Grant: `mcp server <name>`.** The first grant that exists is the use of one
+shared MCP server (see `docs/mcp-registry.md`). The owner adds the server
+as usual, on the machine that can reach it, with its header value read from a
+file or variable on that machine. Then, in "Connected apps", `g` on a bot's row
+lists the registered servers, and Enter grants or removes one. The grant is
+stored in the app's `grants` list as the text `mcp server <name>`. It is per
+bot and per server, and only a bot can hold it.
+
+- `tools/list` of the bot's `/mcp` adds, for each granted and enabled server,
+  the tools that server allows (`allowed_tools`, or all of its tools when it
+  has no list), named `<server>__<tool>` like the tools a session sees. The
+  gateway reads the grants on every request, so a new grant or a removal shows
+  at the next `tools/list` and `tools/call`, with no new sign-in.
+- `tools/call` for such a name goes through the same step as a session's
+  `mcp.call`: the allow-list check, the argument size cap, then the host
+  daemon of the server, which makes the request with the server's own
+  credentials. The project scope of the server does not apply to a bot, which
+  has no project: the grant is the owner's explicit choice. A disabled server
+  is not offered and not called.
+- A tool of a server that is not granted, or outside its allow-list, is an
+  unknown tool, as for any name the bot server does not have.
+- The call counts as one call against the bot's call limit. There is no
+  other limit.
+- The server's header value stays on the host machine. The bot, the gateway
+  and the TUI never see it. A bot with this grant can use the server's allowed
+  tools with the server's credentials, so grant it only to a bot you trust with
+  those tools.
+
 ## 8. Public address
 
 agent-net does not require Tailscale, so there are two paths.
@@ -230,7 +258,8 @@ ngrok) to `127.0.0.1:7422` and pastes its public URL in the same entry.
 ## 9. Managing connected apps in the TUI
 
 - `S` > "Connected apps": the switch and URL, then one row per app: name,
-  kind, client, redirect host, connected since, last call, grants.
+  kind, client, redirect host, connected since, last call. Grants show in a
+  dim line under the row. `g` on a bot opens the grant list.
 - "Add" asks for the code shown on the app's page (section 5).
 - `x` on a row revokes it: its tokens stop working at once.
 - Bots also show in Sessions as their own rows, kind `bot`, with their last
@@ -271,7 +300,8 @@ ngrok) to `127.0.0.1:7422` and pastes its public URL in the same entry.
 ## 11. Not decided here
 
 - Exact token lifetimes and limits.
-- Which rights can be granted to a bot, beyond the first one (start workers).
+- Which other rights can be granted to a bot, beyond the use of a shared MCP
+  server (for example start workers).
 
 ## 12. Build steps
 

@@ -13,7 +13,7 @@ import (
 
 func TestConnectedAppsOwnerGate(t *testing.T) {
 	d := &Daemon{inSession: func(int) bool { return false }}
-	for _, method := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.rename", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url"} {
+	for _, method := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.rename", "apps.grant", "apps.ungrant", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url"} {
 		for _, client := range []string{"pi", "opencode", "mcp"} {
 			lc := &localConn{d: d, client: client}
 			_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{}`))
@@ -22,7 +22,7 @@ func TestConnectedAppsOwnerGate(t *testing.T) {
 			}
 		}
 	}
-	for _, method := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.rename", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url"} {
+	for _, method := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.rename", "apps.grant", "apps.ungrant", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url"} {
 		lc := &localConn{d: &Daemon{inSession: func(int) bool { return true }}, client: "cli"}
 		_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{}`))
 		if !handled || err == nil || !strings.Contains(err.Error(), "inside an agent session") {
@@ -49,7 +49,7 @@ func TestConnectedAppsSocketPath(t *testing.T) {
 	if !strings.Contains(err.Error(), "too many tries") {
 		t.Fatalf("missing block: %v", err)
 	}
-	for _, op := range []string{"apps.approve", "apps.refuse", "apps.revoke", "apps.rename"} {
+	for _, op := range []string{"apps.approve", "apps.refuse", "apps.revoke", "apps.rename", "apps.grant", "apps.ungrant"} {
 		_, err = cli.call(op, map[string]string{"id": "missing", "kind": "bot", "name": "test"})
 		if (err == nil && op != "apps.revoke") || (err != nil && strings.Contains(err.Error(), "unknown")) {
 			t.Fatalf("%s: %v", op, err)

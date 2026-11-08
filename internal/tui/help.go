@@ -111,6 +111,12 @@ func (m Model) hints() []hint {
 		return []hint{bindingPairHint(contextQuotas, actUp, actDown), bindingHint(contextQuotas, "protect"), bindingHint(contextQuotas, "show unset"), cto, bindingHint(contextQuotas, "help"), bindingHint(contextQuotas, actQuit)}
 	case m.tab == settingsTab:
 		item := m.settingsItems()[min(max(m.settingsRow, 0), len(m.settingsItems())-1)]
+		if m.apps.stage == "grant" {
+			return []hint{{key: "up/down", label: "server"}, {key: "enter", label: "grant or remove"}, {key: "esc", label: "close"}}
+		}
+		if item.kind == "app" {
+			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "revoke"), bindingHint(contextSettings, "grant"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
+		}
 		if item.kind == "machine" {
 			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), {key: "x", label: "remove", prio: 1}, bindingHint(contextSettings, "rotate token"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 		}

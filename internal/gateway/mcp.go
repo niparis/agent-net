@@ -377,6 +377,13 @@ func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall,
 	if err != nil {
 		return nil, err
 	}
+	return g.mcpForward(ctx, srv, p, len(validate) > 0 && validate[0])
+}
+
+// mcpForward checks the tool against the allow-list and sends the call to the
+// host daemon of the server. The caller has already decided who may call.
+// With validateOnly it stops before the host is asked.
+func (g *Gateway) mcpForward(ctx context.Context, srv protocol.MCPServer, p protocol.MCPCall, validateOnly bool) (any, error) {
 	if !srv.ToolAllowed(p.Tool) {
 		return nil, reject("tool %q is not exposed by MCP server %q", p.Tool, p.Server)
 	}
@@ -387,7 +394,7 @@ func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall,
 	if hc == nil {
 		return nil, reject("host %s offline: MCP server %q runs there and is unavailable until it returns", srv.Hostname, p.Server)
 	}
-	if len(validate) > 0 && validate[0] {
+	if validateOnly {
 		return nil, nil
 	}
 	inv := protocol.MCPInvoke{Server: p.Server, Tool: p.Tool, Arguments: p.Arguments,

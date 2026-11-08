@@ -141,6 +141,22 @@ func ValidMCPName(name string) error {
 	return nil
 }
 
+// MCPServerGrantPrefix starts the grant that lets one connected bot use one
+// shared MCP server: "mcp server <name>".
+const MCPServerGrantPrefix = "mcp server "
+
+// MCPServerGrant is the grant text for a server name.
+func MCPServerGrant(name string) string { return MCPServerGrantPrefix + name }
+
+// ParseMCPServerGrant returns the server name of an "mcp server <name>" grant.
+func ParseMCPServerGrant(grant string) (string, bool) {
+	name, ok := strings.CutPrefix(grant, MCPServerGrantPrefix)
+	if !ok || ValidMCPName(name) != nil {
+		return "", false
+	}
+	return name, true
+}
+
 // ValidEnvName reports whether s is a plain environment variable name. A value
 // such as NAME=secret is refused without echoing it.
 func ValidEnvName(s string) error {

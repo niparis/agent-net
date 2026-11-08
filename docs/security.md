@@ -1270,6 +1270,24 @@ concurrent requests, app calls, and MCP sessions. An app may hold ten sessions;
 the listener permits 200 in total and closes idle sessions after ten minutes.
 Revoking an app closes its sessions.
 
+**A bot with a shared MCP server.** The owner can grant one bot the use of one
+shared MCP server (`g` on the bot's row in Connected apps; the grant is
+`mcp server <name>`). That bot can then list and call the tools the server
+allows (`allowed_tools`) through the public `/mcp`, with the server's own
+credentials. This is the owner's explicit choice, per bot and per server, and
+nothing grants it by default. A granted bot is a caller you cannot see: a
+prompt-injected bot can call those tools too. So grant a server only for tools
+you accept that risk for, and narrow it with an allow-list. The header value
+or environment value stays on the hosting machine: it is read there, never sent
+to the gateway or the bot, and redacted from results as for sessions. The
+gateway reads the grants on every request, so removing a grant, revoking the
+app, disabling or removing the server stops the calls at once. The project scope
+of a server does not apply to a bot (a bot has no project); the grant is the
+check. A call counts against the bot's call limit, like any bot call; no other
+limit is added. The grant and ungrant operations are owner-only: agents,
+including the CTO, cannot make them. Each call is logged as `apps.mcp_server_call`
+with the app, server and tool, never the arguments.
+
 **Its own Tailscale node.** With `agent-net setup --gateway
 --apps-tailscale-name NAME` ([decision 0058](decisions/0058-own-tailscale-name.md)),
 the gateway runs its own Tailscale node in its process (tsnet) and serves the
