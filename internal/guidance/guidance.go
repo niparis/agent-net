@@ -31,6 +31,8 @@ var reply = map[string]string{
 
 const fileSendGuidance = "- **Send files to a peer:** use `agent_file_send` with a session ID, absolute paths and a note; workers send files from their own worktree in the `files` list on `agent_handback`."
 
+const handoffGuidance = "- **Lead a team or repo:** a request that came to you because you lead it is yours to answer, or to pass on with `agent_message_handoff` (message ID, session, note) so the member answers the original sender directly. Your place is in the turn text."
+
 // Block returns the default marked block for a variant.
 func Block(variant string) string { return BlockWithSnapshot(variant, settings.Snapshot{}) }
 
@@ -51,7 +53,7 @@ func BlockWithSnapshot(variant string, snapshot settings.Snapshot) string {
 		value = strings.ReplaceAll(value, "{{handback}}", protocol.WorkerHandbackTool)
 		parts = append(parts, value)
 	}
-	return Begin + "\n" + heading + "\n\n" + parts[0] + "\n\n" + strings.Join(parts[1:], "\n") + "\n" + fileSendGuidance + "\n" + End + "\n"
+	return Begin + "\n" + heading + "\n\n" + parts[0] + "\n\n" + strings.Join(parts[1:], "\n") + "\n" + fileSendGuidance + "\n" + handoffGuidance + "\n" + End + "\n"
 }
 
 // Apply puts the block into the file content. It replaces an existing marked

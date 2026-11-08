@@ -487,6 +487,16 @@ type (
 		SessionID string `json:"session_id"`
 		On        bool   `json:"on"`
 	}
+	// MsgHandoff passes a message the sender received to another session. The
+	// new message keeps the original sender, so the new recipient answers the
+	// asker directly.
+	MsgHandoff struct {
+		Sender         string `json:"sender_session_id"`
+		MessageID      string `json:"message_id"`
+		Recipient      string `json:"recipient_session_id"`
+		Note           string `json:"note,omitempty"`
+		IdempotencyKey string `json:"idempotency_key,omitempty"`
+	}
 	MsgSend struct {
 		ReplyOutcome
 		// WorkerTask is set only by the daemon that builds a worker brief.

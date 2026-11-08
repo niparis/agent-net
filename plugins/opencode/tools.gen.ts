@@ -585,6 +585,38 @@ export const TOOL_CATALOG = [
     "method": "message_status"
   },
   {
+    "name": "agent_message_handoff",
+    "description": "Hand a request you received as a team or repo lead to a member. The member gets the original message with the original sender kept, answers the asker directly, and you get a copy of the reply. Use it when the request is the member's to answer; otherwise answer it yourself with agent_message_reply.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "string",
+          "description": "ID of the message you received and are handing off."
+        },
+        "to_session": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Session ID or exact name of the member who should answer."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Optional note for the member, shown before the original message."
+        }
+      },
+      "required": [
+        "message_id",
+        "to_session"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "handoff"
+  },
+  {
     "name": "agent_message_reply",
     "description": "Reply to a message you received. Outcome applies only to replies to requests. For a request, set outcome from your charter: accept and do it, reject with a reason, redirect to the node that should do it, or escalate to the owner with a recommendation.",
     "inputSchema": {

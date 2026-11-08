@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -361,4 +362,38 @@ func messageStateOf(data json.RawMessage) (id, state string) {
 		return r.Key, "queued"
 	}
 	return "", "unknown"
+}
+
+// localHandoff passes a message this session received to another session. The
+// gateway keeps the original sender on the new message, so the member's reply
+// goes straight to the asker, and stores a copy of that reply for this session.
+func (d *Daemon) localHandoff(ctx context.Context, lc *localConn, raw json.RawMessage) (any, error) {
+	sid, err := lc.boundID()
+	if err != nil {
+		return nil, err
+	}
+	var p struct {
+		MessageID      string `json:"message_id"`
+		ToSession      string `json:"to_session"`
+		Note           string `json:"note"`
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.MessageID) == "" || strings.TrimSpace(p.ToSession) == "" {
+		return nil, errors.New(`handoff needs message_id and to_session; example: {"message_id":"m_1","to_session":"ingest-forge","note":"yours"}`)
+	}
+	to, err := d.resolveTo(ctx, p.ToSession)
+	if err != nil {
+		return nil, err
+	}
+	if p.IdempotencyKey == "" {
+		p.IdempotencyKey = protocol.NewID("k")
+	}
+	d.touchWorker(sid, to)
+	data, err := d.call(withCallWait(ctx, 90*time.Second), "msg.handoff", protocol.MsgHandoff{
+		Sender: sid, MessageID: p.MessageID, Recipient: to, Note: p.Note, IdempotencyKey: p.IdempotencyKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return d.receiptForSend(ctx, data, to), nil
 }

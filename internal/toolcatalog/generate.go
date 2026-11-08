@@ -28,7 +28,7 @@ var pluginMethods = map[string]string{
 	"agent_graph_read": "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
 	"agent_worker_profiles_find": "worker_profiles", "agent_message_send": "send",
 	"agent_file_send":     "file_send",
-	"agent_message_reply": "reply", "agent_announce": "announce",
+	"agent_message_reply": "reply", "agent_message_handoff": "handoff", "agent_announce": "announce",
 	"agent_owner_ask": "waiting", "agent_learn": "agent_learn",
 	"agent_worker_start": "worker_start", "agent_worker_stop": "worker_stop",
 	"agent_worker_rate": "rate", "agent_handback": "worker_handback",

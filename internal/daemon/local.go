@@ -1037,6 +1037,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	case "reply":
 		return d.localReply(ctx, lc, raw)
 
+	case "handoff":
+		return d.localHandoff(ctx, lc, raw)
+
 	case "messages":
 		var p protocol.QueryMessages
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
