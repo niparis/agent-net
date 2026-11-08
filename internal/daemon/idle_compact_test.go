@@ -3,8 +3,10 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,30 +49,49 @@ func TestSettingsIdleCompactionCTOAppliesImmediately(t *testing.T) {
 }
 
 // An attach client blocks idle compaction only when the owner can see it:
-// outside herdr, or in a herdr pane that herdr reports as focused.
-func TestIdleCompactAttachClientViewing(t *testing.T) {
+// outside herdr, or in a herdr pane that herdr reports as focused. One scan
+// asks herdr once for the pane list and once per pane that holds a client.
+func TestIdleCompactAttachClientsViewing(t *testing.T) {
 	f := newFakeHerdr(t)
 	f.panes(t, `{"pane_id":"w1:pA","tab_id":"w1:tA","terminal_id":"term_a","agent":"claude","focused":false},`+
-		`{"pane_id":"w1:pB","tab_id":"w1:tB","terminal_id":"term_b","agent":"claude","focused":true}`)
-	unfocused, focused := f.session(t, "w1:pA"), f.session(t, "w1:pB")
+		`{"pane_id":"w1:pB","tab_id":"w1:tB","terminal_id":"term_b","agent":"claude","focused":true},`+
+		`{"pane_id":"w1:pC","tab_id":"w1:tC","terminal_id":"term_c","agent":"claude","focused":false}`)
+	unfocused, focused, second := f.session(t, "w1:pA"), f.session(t, "w1:pB"), f.session(t, "w1:pA")
 	f.holds(t, "w1:pA", unfocused)
 	f.holds(t, "w1:pB", focused)
 	d := &Daemon{}
-	if d.AttachClientViewing(unfocused) {
+	got := d.AttachClientsViewing([]int{unfocused, focused, os.Getpid()})
+	if got[unfocused] {
 		t.Error("a client in an unfocused herdr pane counts as viewing")
 	}
-	if !d.AttachClientViewing(focused) {
+	if !got[focused] {
 		t.Error("a client in a focused herdr pane does not count as viewing")
 	}
-	// A process outside herdr (this test process) is viewed.
-	if !d.AttachClientViewing(os.Getpid()) {
+	if !got[os.Getpid()] {
 		t.Error("a client outside herdr does not count as viewing")
+	}
+	calls := f.calls(t)
+	if n := strings.Count(calls, "pane list"); n != 1 {
+		t.Errorf("%d pane lists for one scan, want 1:\n%s", n, calls)
+	}
+	if n := strings.Count(calls, "pane process-info"); n != 2 || strings.Contains(calls, "--pane w1:pC") {
+		t.Errorf("%d process-info calls, want one for each of the two panes that hold a client:\n%s", n, calls)
+	}
+	// Two clients of one pane still cost one process-info for it.
+	_ = os.Remove(f.log)
+	both := fmt.Sprintf(`{"result":{"process_info":{"shell_pid":1,"foreground_processes":[{"pid":%d},{"pid":%d}]}}}`, unfocused, second)
+	if err := os.WriteFile(filepath.Join(f.dir, "info-w1:pA"), []byte(both), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d.AttachClientsViewing([]int{unfocused, second})
+	if n := strings.Count(f.calls(t), "pane process-info"); n != 1 {
+		t.Errorf("%d process-info calls for two clients of one pane, want 1", n)
 	}
 	// When herdr cannot say, the client is treated as viewed.
 	if err := os.WriteFile(filepath.Join(f.dir, "fail"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !d.AttachClientViewing(unfocused) {
+	if !d.AttachClientsViewing([]int{unfocused})[unfocused] {
 		t.Error("a client counts as not viewing when herdr does not answer")
 	}
 }

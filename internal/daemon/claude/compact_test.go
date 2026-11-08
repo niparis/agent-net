@@ -21,6 +21,7 @@ func TestIdleCompact(t *testing.T) {
 		clients                                        string // ps output; the clients' pids are asked to the host
 		viewing                                        bool   // the host says the client's herdr pane is focused, or outside herdr
 		wantLog                                        string
+		wantScans                                      int // herdr scans: none when no candidate passes the token check
 		want                                           int
 	}{
 		{name: "eligible", status: "idle", kind: "bg", tokens: 200000, age: 50 * time.Minute, want: 1},
@@ -33,8 +34,8 @@ func TestIdleCompact(t *testing.T) {
 		{name: "disabled", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, disabled: true},
 		{name: "process scan failure", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, scanError: true},
 		{name: "missing job ID", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, noJob: true},
-		{name: "attach client in an unfocused herdr pane", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, clients: "77 claude attach job-test", want: 1, wantLog: "event=idle_compact session=test result=ok"},
-		{name: "attach client in a focused herdr pane or outside herdr", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, clients: "77 claude attach job-test", viewing: true, wantLog: "event=idle_compact session=test result=skipped:viewing"},
+		{name: "attach client in an unfocused herdr pane", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, clients: "77 claude attach job-test", want: 1, wantLog: "event=idle_compact session=test result=ok", wantScans: 2},
+		{name: "attach client in a focused herdr pane or outside herdr", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, clients: "77 claude attach job-test", viewing: true, wantLog: "event=idle_compact session=test result=skipped:viewing", wantScans: 2},
 		{name: "small context is logged once", status: "idle", kind: "bg", tokens: 100000, age: time.Hour, wantLog: "event=idle_compact session=test result=skipped:small_context"},
 		{name: "prompt timeout", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, noPrompt: true},
 	} {
@@ -137,6 +138,12 @@ func TestIdleCompact(t *testing.T) {
 						}
 					}
 				}
+				h.mu.Lock()
+				scans := h.scans
+				h.mu.Unlock()
+				if scans != tc.wantScans {
+					t.Errorf("%d herdr scans, want %d", scans, tc.wantScans)
+				}
 				if n != 1 {
 					t.Errorf("%d event lines for one idle stretch, want 1; logs=%v", n, h.logs)
 				}
@@ -172,9 +179,19 @@ type compactHost struct {
 	*fakeHost
 	snap    settings.Snapshot
 	viewing map[int]bool
+	scans   int // calls of AttachClientsViewing: one per scan
 }
 
-func (h *compactHost) AttachClientViewing(pid int) bool { return h.viewing[pid] }
+func (h *compactHost) AttachClientsViewing(pids []int) map[int]bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.scans++
+	out := map[int]bool{}
+	for _, pid := range pids {
+		out[pid] = h.viewing[pid]
+	}
+	return out
+}
 
 func (h *compactHost) SettingsSnapshot() settings.Snapshot { return h.snap }
 

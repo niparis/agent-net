@@ -29,11 +29,14 @@ type idleCompactState struct {
 // need not implement settings to discover and deliver sessions.
 type compactSettingsHost interface{ SettingsSnapshot() settings.Snapshot }
 
-// AttachClientViewing says whether the owner is looking at the `claude attach`
-// client with this pid: it runs outside herdr, or in a herdr pane that herdr
+// AttachClientsViewing says, for each `claude attach` client pid, whether the
+// owner is looking at it: it runs outside herdr, or in a herdr pane that herdr
 // reports as focused. A client in an unfocused herdr pane is not a viewer. A
-// host without herdr support counts every client as a viewer.
-type compactViewHost interface{ AttachClientViewing(pid int) bool }
+// pid missing from the answer, and a host without herdr support, count as
+// viewers. One call is one scan, so it asks herdr once for all clients.
+type compactViewHost interface {
+	AttachClientsViewing(pids []int) map[int]bool
+}
 
 // viewedJobs returns a function that says whether the owner is viewing a job.
 // exceptPID is our own attach client, which never counts.
@@ -57,9 +60,25 @@ func (a *Adapter) viewedJobs(ctx context.Context, exceptPID int) (func(job strin
 	}
 	clients := attachClients(out, exceptPID)
 	view, _ := a.host.(compactViewHost)
+	// Built on first use, so a scan that finds no candidate past the token
+	// check does not ask herdr at all.
+	var snapshot map[int]bool
 	return func(job string) bool {
+		if len(clients[job]) == 0 {
+			return false
+		}
+		if view == nil {
+			return true
+		}
+		if snapshot == nil {
+			var pids []int
+			for _, list := range clients {
+				pids = append(pids, list...)
+			}
+			snapshot = view.AttachClientsViewing(pids)
+		}
 		for _, pid := range clients[job] {
-			if view == nil || view.AttachClientViewing(pid) {
+			if v, ok := snapshot[pid]; !ok || v {
 				return true
 			}
 		}

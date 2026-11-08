@@ -414,47 +414,82 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	return out, true
 }
 
-// AttachClientViewing says whether the owner is looking at the `claude attach`
-// client with this pid (idle compaction, decision 0078). It does when the
-// client runs outside herdr, or in a herdr pane that herdr reports as focused.
-// A client in an unfocused pane does not. When herdr cannot say where the
-// client is, the owner may be looking at it, so it counts as viewing.
-func (d *Daemon) AttachClientViewing(pid int) bool {
-	h, found := findHerdrPane(pid)
-	fromServer := false
-	if !found {
-		h, found = findHerdrServer(pid)
-		fromServer = found
+// AttachClientsViewing says, for each `claude attach` client pid, whether the
+// owner is looking at it (idle compaction, decision 0078). A client is viewed
+// when it runs outside herdr, or in a herdr pane that herdr reports as focused.
+// A client in an unfocused pane is not. When herdr cannot say where a client
+// is, the owner may be looking at it, so it counts as viewed.
+//
+// One scan costs one `pane list` per herdr server and at most one
+// `pane process-info` per pane, however many clients there are.
+func (d *Daemon) AttachClientsViewing(pids []int) map[int]bool {
+	type server struct {
+		bin, socket string
+		panes       []herdrPaneInfo
+		ok          bool
+		procs       map[string]map[int]bool // pane -> its pids, read once
 	}
-	if !found {
-		return true
-	}
-	bin := d.herdrBinary(h.bin)
-	if bin == "" {
-		return true
-	}
-	var panes []herdrPaneInfo
-	if fromServer {
-		var ok bool
-		panes, h.socket, ok = d.herdrPanesFromServer(bin, h)
-		if !ok {
-			return true
+	servers := map[string]*server{}
+	holds := func(sv *server, pane string, chain map[int]bool) bool {
+		set, seen := sv.procs[pane]
+		if !seen {
+			set = map[int]bool{}
+			for _, p := range d.herdrPaneProcesses(sv.bin, sv.socket, pane) {
+				set[p] = true
+			}
+			sv.procs[pane] = set
 		}
-	} else {
-		var err error
-		if panes, err = d.herdrPanes(bin, h.socket); err != nil {
-			return true
+		for p := range set {
+			if chain[p] {
+				return true
+			}
 		}
+		return false
 	}
-	// The pane in the environment is where the client started; a moved pane has
-	// a new ID, so check what the pane holds and look at the others if needed.
-	pids := pidChain(pid)
-	for _, own := range []bool{true, false} {
-		for _, p := range panes {
-			if (p.PaneID == h.id) == own && d.herdrHolds(bin, h.socket, p.PaneID, pids) {
-				return p.Focused
+	out := make(map[int]bool, len(pids))
+	for _, pid := range pids {
+		out[pid] = true // unless a focused:false pane is found below
+		h, found := findHerdrPane(pid)
+		fromServer := false
+		if !found {
+			h, found = findHerdrServer(pid)
+			fromServer = found
+		}
+		if !found {
+			continue // outside herdr
+		}
+		key := h.bin + "|" + h.socket + "|" + h.session
+		sv := servers[key]
+		if sv == nil {
+			sv = &server{procs: map[string]map[int]bool{}}
+			servers[key] = sv
+			if bin := d.herdrBinary(h.bin); bin != "" {
+				sv.bin, sv.socket = bin, h.socket
+				if fromServer {
+					sv.panes, sv.socket, sv.ok = d.herdrPanesFromServer(bin, h)
+				} else if panes, err := d.herdrPanes(bin, h.socket); err == nil {
+					sv.panes, sv.ok = panes, true
+				}
+			}
+		}
+		if !sv.ok {
+			continue
+		}
+		// The pane in the environment is where the client started; a moved pane
+		// has a new ID, so look at the other panes only if it no longer holds it.
+		chain := pidChain(pid)
+		for _, own := range []bool{true, false} {
+			done := false
+			for _, p := range sv.panes {
+				if (p.PaneID == h.id) == own && holds(sv, p.PaneID, chain) {
+					out[pid], done = p.Focused, true
+					break
+				}
+			}
+			if done {
+				break
 			}
 		}
 	}
-	return true
+	return out
 }

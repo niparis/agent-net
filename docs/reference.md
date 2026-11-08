@@ -2322,7 +2322,7 @@ While the TUI has handed its terminal to a session, agent-net keeps the bottom r
 
 **herdr.** The daemon finds the binary from the session's `HERDR_BIN_PATH`, the server command line, the configured harness path, `PATH`, or `~/.local/bin/herdr`. It uses `herdr pane list` and `herdr pane process-info` to find the pane holding a session process. A moved pane is found the same way. `herdr agent focus` focuses a recognized agent, and `herdr tab focus` focuses the tab of a plain terminal. Herdr's existing clients can remain on their previous tab after a focus command; select the named tab if needed.
 
-A background Claude session has no `agent_session` in `herdr pane list` when its pane runs `claude attach <id>`. Before opening a new view, the daemon looks at the foreground processes of every pane (`herdr pane process-info`), reads their command lines, and focuses a pane that already runs `claude attach <id>` for that session. This also works after a daemon restart.
+A background Claude session has no `agent_session` in `herdr pane list` when its pane runs `claude attach <id>`. Before opening a new view, the daemon reads the foreground processes (`herdr pane process-info`) and command lines of the panes that are claude agents with no session first, and focuses the first pane that already runs `claude attach <id>` for that session. It reads the other panes only when none of those matches. This also works after a daemon restart.
 
 For a new view, agent-net uses `herdr pane split --pane <tui-pane> --direction right --focus` and `herdr pane rename` inside herdr, or `herdr tab create --label <name> --focus` outside it. It uses `herdr pane run` to launch the session. A private one-use environment file keeps worker credentials out of command arguments and pane text. The pane removes the file after use; the daemon also removes it after one minute while it is running. Claude's herdr client has mouse tracking enabled; the old terminal fallback still disables it for text selection. A second Enter focuses the existing pane instead of creating another one, while that pane remains present. The daemon also remembers panes it opened during its current run.
 
@@ -2990,7 +2990,7 @@ compaction only when the owner can be looking at it: the client runs outside
 herdr, or in a herdr pane that `herdr pane list` reports as `focused: true`.
 A client in an unfocused herdr pane does not block, so tabs left open for days
 do not stop compaction. If herdr cannot say where a client runs, it counts as
-viewed. The daemon checks again before typing, excluding its own client.
+viewed. One scan runs `herdr pane list` once per herdr server and `herdr pane process-info` at most once per pane, and only when a session has passed the token check. The daemon checks again before typing, excluding its own client.
 If the process scan fails it skips compaction.
 
 The daemon opens its own attach client in a pseudo-terminal, waits up to 30

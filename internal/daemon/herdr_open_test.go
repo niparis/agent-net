@@ -773,8 +773,13 @@ func TestEnterHerdrFocusesExistingAttachPane(t *testing.T) {
 	t.Parallel()
 	f := newFakeHerdr(t)
 	native := "abcdefgh-1234-5678-0000-012345678901"
-	f.panes(t, `{"pane_id":"w1:pA","tab_id":"w1:tA","terminal_id":"term_a","agent":"claude","focused":false},`+
-		`{"pane_id":"w1:pB","tab_id":"w1:tB","terminal_id":"term_b","agent":"claude","focused":false}`)
+	// pS has a session and pT is a plain terminal: neither can be a live attach
+	// pane, so the lookup must not read their processes when pB matches.
+	f.panes(t, `{"pane_id":"w1:pS","tab_id":"w1:tS","terminal_id":"term_s","agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"other-native"}},`+
+		`{"pane_id":"w1:pT","tab_id":"w1:tT","terminal_id":"term_t"},`+
+		`{"pane_id":"w1:pA","tab_id":"w1:tA","terminal_id":"term_a","agent":"claude","focused":false},`+
+		`{"pane_id":"w1:pB","tab_id":"w1:tB","terminal_id":"term_b","agent":"claude","focused":false},`+
+		`{"pane_id":"w1:pZ","tab_id":"w1:tZ","terminal_id":"term_z","agent":"claude","focused":false}`)
 	f.holds(t, "w1:pA", fakeAttachClient(t, "otherjob"))
 	f.holds(t, "w1:pB", fakeAttachClient(t, "abcdefgh"))
 	g := startGateway(t, t.TempDir(), "")
@@ -799,6 +804,44 @@ func TestEnterHerdrFocusesExistingAttachPane(t *testing.T) {
 	calls := f.calls(t)
 	if !strings.Contains(calls, "agent focus w1:pB") || strings.Contains(calls, "agent focus w1:pA") || strings.Contains(calls, "tab create") || strings.Contains(calls, "pane split") {
 		t.Fatalf("calls %q", calls)
+	}
+	// First Enter: process-info for pA and pB only (stops at the match). The
+	// second Enter does the same, so each pane is read twice in all.
+	for _, pane := range []string{"w1:pS", "w1:pT", "w1:pZ"} {
+		if strings.Contains(calls, "process-info --pane "+pane) {
+			t.Errorf("read the processes of %s, which cannot match first:\n%s", pane, calls)
+		}
+	}
+	if n := strings.Count(calls, "pane process-info"); n != 4 {
+		t.Errorf("%d process-info calls for two Enters, want 4:\n%s", n, calls)
+	}
+}
+
+// A pane the first pass does not suspect (no agent) is still found.
+func TestEnterHerdrFindsAttachPaneWithoutAgent(t *testing.T) {
+	t.Parallel()
+	f := newFakeHerdr(t)
+	native := "abcdefgh-1234-5678-0000-012345678901"
+	f.panes(t, `{"pane_id":"w1:pA","tab_id":"w1:tA","terminal_id":"term_a","agent":"claude"},{"pane_id":"w1:pB","tab_id":"w1:tB","terminal_id":"term_b"}`)
+	f.holds(t, "w1:pA", fakeAttachClient(t, "otherjob"))
+	f.holds(t, "w1:pB", fakeAttachClient(t, "abcdefgh"))
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "claude")
+	bins["herdr"] = f.bin
+	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "bg", job: "abcdefgh"}
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = bins; c.Adapters = []Adapter{ea} }})
+	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: native, PID: 1, Name: "garden", Mode: protocol.ModeBackground})
+	var id string
+	eventually(t, "session", func() bool {
+		if s := n.d.Sessions(); len(s) == 1 {
+			id = s[0].SessionID
+		}
+		return id != ""
+	})
+	p := enterOfHerdr(t, n, id, f.sock)
+	calls := f.calls(t)
+	if !p.OpenedHerdr || p.HerdrPane != "w1:pB" || !strings.Contains(calls, "tab focus w1:tB") || strings.Contains(calls, "tab create") || strings.Contains(calls, "pane split") {
+		t.Fatalf("plan %+v calls %q", p, calls)
 	}
 }
 
