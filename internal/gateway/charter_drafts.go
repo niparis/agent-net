@@ -394,6 +394,9 @@ func (s *Store) SubmitCharterDraft(session string, q protocol.CharterDraftReques
 	if err = tx.Commit(); err != nil {
 		return res, err
 	}
+	if err = s.reconcileLearnedAsks(); err != nil {
+		return res, err
+	}
 	return protocol.CharterDraftResult{ID: id, Status: "pending"}, nil
 }
 

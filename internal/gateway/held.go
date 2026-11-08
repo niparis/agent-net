@@ -103,6 +103,9 @@ func (s *Store) answerHeld(id, action, actor string, validate ...bool) (protocol
 	if n != 1 {
 		return empty, reject("request is not held")
 	}
+	if err = s.closeHeldAsk(tx, id, protocol.AskReasonResolved); err != nil {
+		return empty, err
+	}
 	if !approved {
 		if err = s.heldReply(tx, m, "your user declined this request", "decline"); err != nil {
 			return empty, err

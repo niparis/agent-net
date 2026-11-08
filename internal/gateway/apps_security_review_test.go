@@ -209,6 +209,13 @@ func TestAppsApprovalNotice(t *testing.T) {
 	if len(items) != 1 || items[0].Text != want || !strings.Contains(logs.String(), want) {
 		t.Fatalf("notice %v logs %s", fmt.Sprint(items), logs.String())
 	}
+	// A new app is a line of the Desk log, not an ask (decision 0090).
+	if asks, _ := s.ListAsks(); len(asks) != 0 {
+		t.Fatalf("app notice in the asks: %+v", asks)
+	}
+	if entries, _ := s.DeskLog(5); len(entries) != 1 || entries[0].Text != want || entries[0].Source != "apps" {
+		t.Fatalf("app notice not in the log: %+v", entries)
+	}
 	if _, err := s.AnswerInbox(items[0].ID, "seen"); err != nil {
 		t.Fatalf("notice cannot be dismissed: %v", err)
 	}

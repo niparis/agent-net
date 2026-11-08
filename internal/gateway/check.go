@@ -335,7 +335,11 @@ func (s *Store) answerCheck(sessionID, task string) error {
 	}
 	if waiting == 0 {
 		// An announce that does not answer a check is progress: a stalled
-		// session has started something new.
+		// session has started something new. Its "blocked" or "stopped with
+		// work left" ask has lost its reason and closes (decision 0090).
+		if _, err := s.closeAsks(s.db, `session_id=? AND kind='check' AND from_kind IN ('','session')`, []any{sessionID}, protocol.AskReasonResolved); err != nil {
+			return err
+		}
 		if st.more != 0 || st.open != 0 || st.msgs != 0 {
 			return s.resetCheckProgress(sessionID)
 		}
@@ -518,7 +522,8 @@ func (s *Store) checkInboxItem(sessionID, node, text string) error {
 	err := s.db.QueryRow(`SELECT id FROM inbox_items WHERE session_id=? AND kind='check' AND status='open'
 		ORDER BY created_at DESC LIMIT 1`, sessionID).Scan(&id)
 	if err == nil {
-		_, err = s.db.Exec(`UPDATE inbox_items SET text=?,node=? WHERE id=?`, text, node, id)
+		// A new block is a new ask: it counts from now, not from the first one.
+		_, err = s.db.Exec(`UPDATE inbox_items SET text=?,node=?,created_at=? WHERE id=?`, text, node, s.now().UnixNano(), id)
 		return err
 	}
 	if !errors.Is(err, sql.ErrNoRows) {

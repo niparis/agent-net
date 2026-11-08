@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -366,6 +367,10 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision<>?)`, s.now().UnixNano(), c.ID, c.Revision); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
+	if _, err := s.closeAsks(tx, `about_kind='change' AND about_id=? AND kind='step' AND source_ref NOT LIKE ?`,
+		[]any{c.ID, "step:" + c.ID + ":" + strconv.Itoa(c.Revision) + ":%"}, protocol.AskReasonResolved); err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	}
 	if err := s.queueSteps(tx, c, p, now); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
@@ -534,6 +539,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
 	}
+	if err := s.syncStepAsk(tx, c, e); err != nil {
+		return protocol.StepReportResult{}, err
+	}
 	if found && q.Step == protocol.StepApprove {
 		if err := dismissStepInbox(tx, c, q.StepRef, s.now().UnixNano()); err != nil {
 			return protocol.StepReportResult{}, err
@@ -562,7 +570,15 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		}
 	}
 	var closedSessions []string
+	if next.State == protocol.ChangeDone {
+		if err := s.closeChangeAsks(tx, c.ID, protocol.AskReasonChangeDone); err != nil {
+			return protocol.StepReportResult{}, err
+		}
+	}
 	if next.State == protocol.ChangeStopped {
+		if err := s.closeChangeAsks(tx, c.ID, protocol.AskReasonChangeDone); err != nil {
+			return protocol.StepReportResult{}, err
+		}
 		if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=?)`, s.now().UnixNano(), c.ID); err != nil {
 			return protocol.StepReportResult{}, err
 		}

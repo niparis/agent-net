@@ -164,3 +164,57 @@ func TestInboxAskReplaceAndCloseDaemon(t *testing.T) {
 		}
 	}
 }
+
+// The Desk reads asks and the log through the daemon: an ask a session makes
+// is in asks_list until it is answered, and a CTO notice is only in desk_log.
+func TestAsksListAndDeskLogOperatorLink(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	fa := &fakeAdapter{harness: "fake"}
+	n := startNode(t, g, nodeOpts{adapter: fa})
+	fa.setSessions(fakeSession("asker", "asker"))
+	eventually(t, "session registered", func() bool { return fa.host.SessionID("fake", "asker") != "" })
+	sid := fa.host.SessionID("fake", "asker")
+	raw, err := n.d.call(context.Background(), "inbox.create", map[string]any{"session_id": sid, "kind": "question", "text": "Merge PR #3?", "recommendation": "yes", "options": []string{"yes", "no"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		Item protocol.InboxItem `json:"item"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil || created.Item.ID == "" {
+		t.Fatalf("create: %s %v", raw, err)
+	}
+	c := operator.New(n.sock)
+	defer c.Close()
+	asks := func() []protocol.Ask {
+		t.Helper()
+		raw, err := c.Call(context.Background(), protocol.OpAsksList, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var res protocol.AsksResult
+		if err := json.Unmarshal(raw, &res); err != nil {
+			t.Fatal(err)
+		}
+		return res.Asks
+	}
+	list := asks()
+	if len(list) != 1 || list[0].ID != created.Item.ID || list[0].Question != "Merge PR #3?" || list[0].Next != protocol.AskNextOwner || list[0].State != protocol.AskStateOpen {
+		t.Fatalf("asks: %+v", list)
+	}
+	if _, err := c.Call(context.Background(), "inbox_answer", map[string]string{"id": created.Item.ID, "answer": "dismiss"}); err != nil {
+		t.Fatal(err)
+	}
+	if list := asks(); len(list) != 0 {
+		t.Fatalf("dismissed ask still listed: %+v", list)
+	}
+	raw, err = c.Call(context.Background(), protocol.OpDeskLog, protocol.DeskLogQuery{Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var log protocol.DeskLogResult
+	if err := json.Unmarshal(raw, &log); err != nil || log.Entries == nil {
+		t.Fatalf("log: %s %v", raw, err)
+	}
+}

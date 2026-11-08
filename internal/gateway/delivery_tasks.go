@@ -539,7 +539,23 @@ func (g *Gateway) sendStepTaskBatch(ctx context.Context, targets []nodeTaskTarge
 		}
 		if m.ID != "" {
 			g.dispatch(ctx, m)
+			g.logStepSent(chunk)
 		}
+	}
+}
+
+// logStepSent says in the Desk log that the gateway sent step work by itself.
+func (g *Gateway) logStepSent(targets []nodeTaskTarget) {
+	if len(targets) == 0 {
+		return
+	}
+	aboutKind, aboutID, text := "", "", fmt.Sprintf("Sent %d delivery steps to a session", len(targets))
+	if len(targets) == 1 {
+		aboutKind, aboutID = protocol.AskAboutChange, targets[0].id
+		text = fmt.Sprintf("Sent step %s of change %s to a session", targets[0].ref.String(), targets[0].id)
+	}
+	if err := g.store.deskLog(g.store.db, "gateway", aboutKind, aboutID, text, "", nil); err != nil {
+		g.logLine("error", "where", "desk log", "err", err)
 	}
 }
 
@@ -699,6 +715,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		_ = g.store.clearTaskUrgent(t)
 		if m.ID != "" {
 			g.dispatch(ctx, m)
+			g.logStepSent([]nodeTaskTarget{t})
 		}
 	}
 	for _, t := range immediateSingle {
@@ -709,6 +726,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		}
 		if m.ID != "" {
 			g.dispatch(ctx, m)
+			g.logStepSent([]nodeTaskTarget{t})
 		}
 	}
 	for _, batch := range immediateBatches {

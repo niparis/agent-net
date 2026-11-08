@@ -25,6 +25,14 @@ type InboxItem struct {
 	AnsweredAt     time.Time      `json:"answered_at,omitempty"`
 	Delivery       *InboxDelivery `json:"delivery,omitempty"`
 	Replaces       string         `json:"replaces,omitempty"`
+	// Ask fields (decision 0090). An empty NextWho means the owner.
+	FromKind  string `json:"from_kind,omitempty"`
+	SourceRef string `json:"source_ref,omitempty"`
+	AboutKind string `json:"about_kind,omitempty"`
+	AboutID   string `json:"about_id,omitempty"`
+	NextWho   string `json:"next_who,omitempty"`
+	WhyYou    string `json:"why_you,omitempty"`
+	Detail    string `json:"detail,omitempty"`
 }
 
 // InboxDelivery links a step task to its exact revision and commit.
