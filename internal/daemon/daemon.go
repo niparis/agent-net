@@ -313,6 +313,9 @@ type Daemon struct {
 	toolsPlanKeyOnce    sync.Once
 	toolsPlanKey        [32]byte
 	toolsPlanKeyErr     error
+	toolsLogMu          sync.Mutex
+	toolsConflictLog    map[toolConflictKey]time.Time
+	toolsSummaryAt      time.Time
 	ctoDispatchMu       ctoDispatchLock
 	ctoPresenceMu       sync.Mutex
 	ctoEnterMu          sync.Mutex
