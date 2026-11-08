@@ -67,10 +67,14 @@ func (s *Store) readCheckState(id string) (checkState, error) {
 
 // checkOpenWork counts what an idle check treats as work left: requests it
 // owes an answer, running workers it started, and a non-empty announced task.
+// A task that reads as the answer "done" is not work: the session announces
+// it after a check, and counting it re-arms the check on every announce.
 func checkOpenWork(a protocol.AgentView, workers int) int {
 	n := workers
-	if strings.TrimSpace(a.Profile.Task) != "" {
-		n++
+	if task := strings.TrimSpace(a.Profile.Task); task != "" {
+		if kind, _ := parseCheckAnswer(task); kind != "done" {
+			n++
+		}
 	}
 	for _, p := range a.Pending {
 		if !p.Outgoing {
