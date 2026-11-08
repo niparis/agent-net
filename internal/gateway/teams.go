@@ -96,7 +96,7 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 				owner = q.Owner.ID
 			}
 			_, err = tx.Exec(`INSERT INTO teams(id,name,purpose,owner_agent_id,created_at,updated_at) VALUES(?,?,?,?,?,?)`, q.ID, q.Name, q.Purpose, owner, now, now)
-		case "rename", "archive":
+		case "rename", "purpose", "archive":
 			var t protocol.Team
 			t, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,created_at,updated_at FROM teams WHERE id=?`, q.ID))
 			if err == sql.ErrNoRows {
@@ -110,7 +110,8 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 			}
 			b, _ := json.Marshal(t)
 			oldValue = string(b)
-			if q.Action == "rename" {
+			switch q.Action {
+			case "rename":
 				if t.Name != q.ExpectName {
 					return reject("Team name changed; reload Graph")
 				}
@@ -121,7 +122,15 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 					return nil
 				}
 				_, err = tx.Exec(`UPDATE teams SET name=?,updated_at=? WHERE id=?`, q.Name, now, q.ID)
-			} else {
+			case "purpose":
+				if len(q.Purpose) > protocol.CharterValueMaxBytes || strings.IndexFunc(q.Purpose, func(r rune) bool { return unicode.IsControl(r) && r != '\n' }) >= 0 {
+					return reject("invalid Team purpose")
+				}
+				if t.Purpose == q.Purpose {
+					return nil
+				}
+				_, err = tx.Exec(`UPDATE teams SET purpose=?,updated_at=? WHERE id=?`, q.Purpose, now, q.ID)
+			default:
 				var members int
 				if err = tx.QueryRow(`SELECT COUNT(*) FROM team_members WHERE team_id=?`, q.ID).Scan(&members); err != nil {
 					return err

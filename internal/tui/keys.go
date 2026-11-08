@@ -424,6 +424,7 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextTeams, "enter", "show team", "show", 1), "filter the Graph to this team"),
 	withHelp(bind(contextTeams, "c", "create team", "create", 1), "make a team with a name and purpose"),
 	withHelp(bind(contextTeams, "r", "rename team", "rename", 1), "change the team's display name"),
+	withHelp(bind(contextTeams, "p", "edit purpose", "purpose", 1), "change the team's purpose"),
 	withHelp(bind(contextTeams, "a", "archive team", "archive", 2), "archive a team with no members"),
 	withHelp(bind(contextTeams, "space", "member", "add/remove", 3), "add or remove the selected repo or agent"),
 	withHelp(bind(contextTeams, "l", "lead", "lead", 2), "choose or clear the team lead"),

@@ -114,6 +114,27 @@ func ResolveTeamAction(action string, raw json.RawMessage, look TeamLookup) (Tea
 			ExpectName: expectName,
 		}, nil
 
+	case "team_purpose":
+		teamSel := str("team")
+		if teamSel == "" {
+			return TeamWrite{}, errors.New("team and purpose required")
+		}
+		if _, ok := fields["purpose"]; !ok {
+			return TeamWrite{}, errors.New("team and purpose required")
+		}
+		if look == nil {
+			return TeamWrite{}, errors.New("team lookup required")
+		}
+		id, _, err := look.Team(teamSel)
+		if err != nil {
+			return TeamWrite{}, err
+		}
+		return TeamWrite{
+			Action:  "purpose",
+			ID:      id,
+			Purpose: str("purpose"),
+		}, nil
+
 	case "team_archive":
 		teamSel := str("team")
 		if teamSel == "" {

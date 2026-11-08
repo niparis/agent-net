@@ -150,7 +150,7 @@ func TestCTOV2OutputsMatchCatalogSchemas(t *testing.T) {
 func TestCTOV2EveryActionValidates(t *testing.T) {
 	cases := []struct{ tool, args string }{
 		{"graph_change", `{"action":"charter_set"}`}, {"graph_change", `{"action":"node_add"}`}, {"graph_change", `{"action":"node_remove"}`}, {"graph_change", `{"action":"edge_set"}`}, {"graph_change", `{"action":"edge_remove"}`}, {"graph_change", `{"action":"settings_set"}`}, {"graph_change", `{"action":"undo"}`},
-		{"graph_change", `{"action":"team_create","name":"team"}`}, {"graph_change", `{"action":"team_rename","team":"team","name":"new"}`}, {"graph_change", `{"action":"team_archive","team":"team"}`}, {"graph_change", `{"action":"team_member_add","team":"team","member":{"kind":"agent","id":"a"}}`}, {"graph_change", `{"action":"team_member_remove","team":"team","member":{"kind":"agent","id":"a"}}`},
+		{"graph_change", `{"action":"team_create","name":"team"}`}, {"graph_change", `{"action":"team_rename","team":"team","name":"new"}`}, {"graph_change", `{"action":"team_purpose","team":"team","purpose":"new purpose"}`}, {"graph_change", `{"action":"team_archive","team":"team"}`}, {"graph_change", `{"action":"team_member_add","team":"team","member":{"kind":"agent","id":"a"}}`}, {"graph_change", `{"action":"team_member_remove","team":"team","member":{"kind":"agent","id":"a"}}`},
 		{"session_change", `{"action":"rename"}`}, {"session_change", `{"action":"trust"}`}, {"session_change", `{"action":"policy"}`}, {"session_change", `{"action":"session_start","project":"example"}`},
 		{"worker_change", `{"action":"start","project":"example","task":"work","touches":["docs"]}`}, {"worker_change", `{"action":"stop"}`},
 	}
@@ -165,6 +165,7 @@ func TestCTOV2GraphTeamActionsAcceptProposalReason(t *testing.T) {
 	for _, args := range []string{
 		`{"action":"team_create","name":"team","reason":"group related work"}`,
 		`{"action":"team_rename","team":"team","name":"new","reason":"clearer name"}`,
+		`{"action":"team_purpose","team":"team","purpose":"new purpose","reason":"scope changed"}`,
 		`{"action":"team_archive","team":"team","reason":"team is done"}`,
 		`{"action":"team_member_add","team":"team","member":{"kind":"agent","id":"a"},"reason":"assign ownership"}`,
 		`{"action":"team_member_remove","team":"team","member":{"kind":"agent","id":"a"},"reason":"assignment ended"}`,
@@ -211,6 +212,7 @@ func TestCTOV2ActionArgumentsReachExistingHandler(t *testing.T) {
 		{"graph_change", map[string]any{"action": "settings_set", "node": "a", "setting": "autonomy", "value": "owner"}}, {"graph_change", map[string]any{"action": "undo"}},
 		{"graph_change", map[string]any{"action": "team_create", "name": "t", "purpose": "p"}},
 		{"graph_change", map[string]any{"action": "team_rename", "team": "t", "name": "new"}},
+		{"graph_change", map[string]any{"action": "team_purpose", "team": "t", "purpose": "new purpose"}},
 		{"graph_change", map[string]any{"action": "team_archive", "team": "t"}},
 		{"graph_change", map[string]any{"action": "team_member_add", "team": "t", "member": map[string]any{"kind": "agent", "id": "a"}}},
 		{"graph_change", map[string]any{"action": "team_member_remove", "team": "t", "member": map[string]any{"kind": "agent", "id": "a"}}},

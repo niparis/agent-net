@@ -391,7 +391,7 @@ are proposals. The CTO has one action tool per area:
 | `agent_learn` | one finding, under the daily limit |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
-| `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_archive`, `team_member_add`, `team_member_remove` or `undo` |
+| `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_archive`, `team_member_add`, `team_member_remove` or `undo` |
 | `sessions_archive` | Propose archiving offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Includes the exact dry run; owner approval required. |
 | `session_change` | `action: rename`, `trust` or `policy` |
 | `worker_change` | `action: start` or `stop` |

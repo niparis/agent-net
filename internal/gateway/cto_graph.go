@@ -21,7 +21,7 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 		return "", err
 	}
 	if tool == "lead_set" || tool == "repo_create" || tool == "repo_archive" || tool == "agent_create" || tool == "agent_tombstone" ||
-		tool == "team_create" || tool == "team_rename" || tool == "team_archive" || tool == "team_member_add" || tool == "team_member_remove" {
+		tool == "team_create" || tool == "team_rename" || tool == "team_purpose" || tool == "team_archive" || tool == "team_member_add" || tool == "team_member_remove" {
 		if err := s.requireGraphRefs(); err != nil {
 			return "", err
 		}

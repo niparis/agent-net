@@ -73,6 +73,43 @@ func TestCTOAtOnceGraphInbox(t *testing.T) {
 	}
 }
 
+func TestCTOTeamPurposeInboxUndo(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	if _, err := w.d.call(context.Background(), "hello", map[string]any{"hostname": "fixture", "version": "v0.4.145", "graph_refs": true}); err != nil {
+		t.Fatal(err)
+	}
+	waitGraphCutover(t, g)
+	w.cli.mustCall("team_write", map[string]any{"action": "create", "team_id": "forge", "name": "forge", "purpose": "Old purpose"})
+	if err := w.d.registerCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, err := w.d.runCTOToolRaw(context.Background(), "graph_change", json.RawMessage(`{"action":"team_purpose","team":"forge","purpose":"New purpose","reason":"finget and tenebrae joined"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	teams, err := g.gw.Store().Teams()
+	if err != nil || len(teams) != 1 || teams[0].Purpose != "New purpose" {
+		t.Fatalf("purpose: %+v %v", teams, err)
+	}
+	items, err := g.gw.Store().ListInbox()
+	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "graph_undo" {
+		t.Fatalf("want purpose change and undo in inbox: %+v %v", items, err)
+	}
+	if !strings.Contains(items[0].Text, "forge") || !strings.Contains(items[0].Text, "finget and tenebrae joined") {
+		t.Fatalf("Inbox line: %q", items[0].Text)
+	}
+	var undo map[string]any
+	if err := json.Unmarshal([]byte(items[0].Options[1]), &undo); err != nil {
+		t.Fatal(err)
+	}
+	w.cli.mustCall("graph_undo", undo)
+	teams, err = g.gw.Store().Teams()
+	if err != nil || len(teams) != 1 || teams[0].Purpose != "Old purpose" {
+		t.Fatalf("purpose undo: %+v %v", teams, err)
+	}
+}
+
 func TestCTOAsOwnerSendsAtOnce(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)

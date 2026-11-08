@@ -293,6 +293,14 @@ func (m Model) teamMenuKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.teamForm = newTeamForm(true, team.ID, team.Name)
 		m.mode = modeTeamForm
 		return m, m.teamForm.in[0].Focus()
+	case "edit purpose":
+		if !ok {
+			m.fail("No team yet. Press c to make one.")
+			return m, nil
+		}
+		m.teamForm = newTeamPurposeForm(team.ID, team.Name, team.Purpose)
+		m.mode = modeTeamForm
+		return m, m.teamForm.in[1].Focus()
 	case "archive team":
 		if !ok {
 			m.fail("No team yet. Press c to make one.")
@@ -410,12 +418,26 @@ func (m Model) teamMemberAction(label, old string) string {
 // ---- the Team form ----
 
 type teamForm struct {
-	rename     bool
-	id         string
-	expectName string
-	in         [2]textinput.Model
-	cur        int
-	err        string
+	rename      bool
+	purposeOnly bool
+	id          string
+	expectName  string
+	in          [2]textinput.Model
+	cur         int
+	err         string
+}
+
+func newTeamPurposeForm(id, name, purpose string) teamForm {
+	f := newTeamForm(false, "", "")
+	f.purposeOnly = true
+	f.id = id
+	f.expectName = name
+	f.in[0].SetValue(name)
+	f.in[0].CursorEnd()
+	f.in[1].SetValue(purpose)
+	f.in[1].CursorEnd()
+	f.cur = 1
+	return f
 }
 
 func newTeamForm(rename bool, id, name string) teamForm {
@@ -450,17 +472,17 @@ func (m Model) teamFormKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.say("Team change cancelled.")
 		return m, nil
 	case "tab field", "next field":
-		if !f.rename && f.cur == 0 {
+		if !f.rename && !f.purposeOnly && f.cur == 0 {
 			return m, f.focus(1)
 		}
 		return m, nil
 	case "previous field":
-		if f.cur > 0 {
+		if !f.purposeOnly && f.cur > 0 {
 			return m, f.focus(0)
 		}
 		return m, nil
 	case "submit":
-		if !f.rename && f.cur == 0 {
+		if !f.rename && !f.purposeOnly && f.cur == 0 {
 			return m, f.focus(1)
 		}
 		return m.submitTeamForm()
@@ -473,6 +495,12 @@ func (m Model) teamFormKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) submitTeamForm() (tea.Model, tea.Cmd) {
 	f := &m.teamForm
+	if f.purposeOnly {
+		q := protocol.TeamWrite{Action: "purpose", ID: f.id, Purpose: sanitize(strings.TrimSpace(f.in[1].Value()))}
+		done := "Updated the purpose of team " + sanitize(f.expectName) + "."
+		m.mode = modeTeams
+		return m, m.teamWriteCmd(q, done)
+	}
 	name := sanitize(strings.TrimSpace(f.in[0].Value()))
 	if name == "" {
 		f.err = "Name the team."
@@ -496,11 +524,15 @@ func (m Model) teamFormView(w, rows int) []string {
 		title = "Rename " + sanitize(f.expectName)
 		note = "  The Team ID and its history stay the same."
 	}
+	if f.purposeOnly {
+		title = "Purpose of " + sanitize(f.expectName)
+		note = "  The Team ID, name and history stay the same."
+	}
 	out := []string{section(title, w)}
 	const labelW = 9
 	labels := [2]string{"Name", "Purpose"}
 	for i := range labels {
-		if f.rename && i == 1 {
+		if f.rename && i == 1 || f.purposeOnly && i == 0 {
 			continue
 		}
 		marker := "  "

@@ -39,6 +39,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("node_settings_set", "Set an override.", map[string]ctoField{"node": s("Node."), "setting": en("Setting.", ctoNodeSettings...), "value": s("Empty clears.")})
 	add("team_create", "Create a team.", map[string]ctoField{"name": s("Team name."), "purpose": s("Team purpose.")})
 	add("team_rename", "Rename a team.", map[string]ctoField{"team": s("Team name or ID."), "name": s("New team name.")})
+	add("team_purpose", "Change a team purpose.", map[string]ctoField{"team": s("Team name or ID."), "purpose": s("Team purpose.")})
 	add("team_archive", "Archive a team.", map[string]ctoField{"team": s("Team name or ID.")})
 	add("team_member_add", "Add a member to a team.", map[string]ctoField{"team": s("Team name or ID."), "member": {typ: "graph_ref", desc: "Member ref (agent or repo)."}, "ref": {typ: "graph_ref", desc: "Member ref (agent or repo)."}})
 	add("team_member_remove", "Remove a member from a team.", map[string]ctoField{"team": s("Team name or ID."), "member": {typ: "graph_ref", desc: "Member ref (agent or repo)."}, "ref": {typ: "graph_ref", desc: "Member ref (agent or repo)."}})

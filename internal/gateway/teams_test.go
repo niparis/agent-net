@@ -54,6 +54,33 @@ func TestTeamRecordsHistoryAndArchive(t *testing.T) {
 		t.Fatalf("archived read: %+v %v", g, err)
 	}
 }
+func TestTeamPurposeRecordsHistoryAndUndo(t *testing.T) {
+	s := teamStore(t)
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Purpose: "Old purpose"})
+	if err := s.WriteTeam(protocol.TeamWrite{Action: "purpose", ID: "alpha", Purpose: "New purpose"}, "cto"); err != nil {
+		t.Fatal(err)
+	}
+	teams, err := s.Teams()
+	if err != nil || len(teams) != 1 || teams[0].Purpose != "New purpose" {
+		t.Fatalf("purpose write: %+v %v", teams, err)
+	}
+	history, err := s.TeamHistory("alpha", 100)
+	if err != nil || len(history) != 2 || history[0].Action != "purpose" {
+		t.Fatalf("team history: %+v %v", history, err)
+	}
+	changes, err := s.CTOGraphHistory(0)
+	if err != nil || len(changes) != 1 {
+		t.Fatalf("graph history: %+v %v", changes, err)
+	}
+	if err := s.GraphUndo(changes[0].ID, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	teams, err = s.Teams()
+	if err != nil || len(teams) != 1 || teams[0].Purpose != "Old purpose" {
+		t.Fatalf("purpose undo: %+v %v", teams, err)
+	}
+}
+
 func TestTeamMembershipKindsAndExpectedValue(t *testing.T) {
 	s := teamStore(t)
 	for _, id := range []string{"alpha", "beta"} {

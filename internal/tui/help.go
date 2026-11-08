@@ -52,6 +52,7 @@ func (m Model) hints() []hint {
 			bindingHint(contextTeams, "show team"),
 			bindingHint(contextTeams, "create team"),
 			bindingHint(contextTeams, "rename team"),
+			bindingHint(contextTeams, "edit purpose"),
 			bindingHint(contextTeams, "archive team"),
 			bindingHint(contextTeams, "member"),
 			bindingHint(contextTeams, "lead"),
