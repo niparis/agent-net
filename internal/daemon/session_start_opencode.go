@@ -287,7 +287,9 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 		d.mu.Lock()
 		d.startedSessions[r.ID] = r
 		d.mu.Unlock()
-		if notify && r.Status == "started" {
+		if r.Status == "failed" {
+			d.startFailed(r, notify)
+		} else if notify {
 			d.notifySessionStart(r)
 		}
 	}(r)

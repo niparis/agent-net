@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -416,6 +417,7 @@ func TestSessionStartOutsideHerdrDoesNotClaimHerdrMissing(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "garden")
 	c.register(t, repo)
+	trustClaudeFolder(t, repo)
 	t.Cleanup(func() { killFakeClaude(t, repo) })
 	var r protocol.StartedSession
 	mustJSON(t, c.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "garden", Harness: "claude", FirstMessage: "hello"}), &r)
@@ -442,6 +444,7 @@ func TestSessionStartAndResumeHerdrClaude(t *testing.T) {
 			c := startClaudeNode(t, g, shortSet)
 			repo := newRepo(t, "garden")
 			c.register(t, repo)
+			trustClaudeFolder(t, repo)
 			t.Cleanup(func() { killFakeClaude(t, repo) })
 			socket := fakeHerdrSocket(log)
 			var r protocol.StartedSession
@@ -949,6 +952,7 @@ func TestCTOSessionProposalRemoteStartsInBackground(t *testing.T) {
 	})
 	repo := newRepo(t, "garden")
 	remote.register(t, repo)
+	trustClaudeFolder(t, repo)
 	t.Cleanup(func() { killFakeClaude(t, repo) })
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "node_id": remote.d.NodeID(), "harness": "claude", "first_message": "hello"})
 	if _, err := legacyProposalFixture(context.Background(), local.d, "session_change", args); err != nil {
@@ -980,6 +984,63 @@ func TestCTOSessionProposalRemoteStartsInBackground(t *testing.T) {
 	}
 }
 
+// A start the CTO asked for on another machine can fail there after the start
+// was answered as starting. The machine that runs it logs and records the
+// failure once. The machine the owner uses tells the owner, once.
+func TestCTOSessionProposalRemoteStartFailureNotifiesOwner(t *testing.T) {
+	remoteBin, _ := fakeOpenHerdr(t)
+	localBin, localLog := fakeOpenHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	pathTestHome(t)
+	sessions, _ := useFakeClaude(t)
+	local := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} })
+	remote := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.ClaudeSessionsDir = sessions
+		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
+		c.HarnessPaths = map[string]string{"claude": os.Args[0], "herdr": remoteBin}
+	})
+	repo := newRepo(t, "garden")
+	remote.register(t, repo)
+	trustClaudeFolder(t, repo)
+	t.Cleanup(func() { killFakeClaude(t, repo) })
+	notices := herdrNoticeChannel(t, local.node)
+	t.Setenv(envFakeStartFails, "1")
+	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "node_id": remote.d.NodeID(), "harness": "claude"})
+	if _, err := legacyProposalFixture(context.Background(), local.d, "session_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := local.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposals %v %v", items, err)
+	}
+	local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}, fakeHerdrSocket(localLog)))
+	items, err = local.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &r); err != nil || r.ID == "" {
+		t.Fatalf("approved start: %s %v", items[0].Result, err)
+	}
+	told := false
+	eventually(t, "the owner is told the remote start failed", func() bool {
+		select {
+		case q := <-notices:
+			if q["daemon_notice"] == true && strings.Contains(fmt.Sprint(q["text"]), "does not trust") {
+				told = true
+			}
+		default:
+		}
+		return told
+	})
+	if lines := remote.logs.lines("event=session.start_failed", "start="+r.ID); len(lines) != 1 {
+		t.Fatalf("want one failure log line on the machine that ran the start, got %q", remote.logs.String())
+	}
+	if lines := local.logs.lines("event=session.start_failed"); len(lines) != 0 {
+		t.Fatalf("the requesting machine logged the failure too: %q", local.logs.String())
+	}
+}
+
 func TestEnterWithoutHerdrOrTerminalExplainsChecks(t *testing.T) {
 	withoutLocalHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
@@ -997,6 +1058,7 @@ func TestSessionStartHerdrClaudeWithoutJobID(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "garden")
 	c.register(t, repo)
+	trustClaudeFolder(t, repo)
 	t.Cleanup(func() { killFakeClaude(t, repo) })
 	var r protocol.StartedSession
 	q := inHerdrStart(protocol.SessionStartRequest{Project: "garden", Harness: "claude"}, fakeHerdrSocket(log))

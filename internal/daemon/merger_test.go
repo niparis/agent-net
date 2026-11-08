@@ -24,6 +24,7 @@ func TestMergerStartStopProposal(t *testing.T) {
 			}
 			repo := newRepo(t, "garden")
 			target.register(t, repo)
+			trustClaudeFolder(t, repo)
 			t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", target.sessions)
 			if tc.optional {
 				if _, err := g.gw.Store().WriteSettings([]protocol.SettingsChange{{Key: "delivery.tests_before_merge", Level: "repo", Scope: "garden", Value: json.RawMessage(`"optional"`)}}, "owner", "test disabled tests"); err != nil {
@@ -179,6 +180,7 @@ func TestMergerStartClearsHiddenFolderOptions(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "garden")
 	c.register(t, repo)
+	trustClaudeFolder(t, repo)
 	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", c.sessions)
 	ctx := context.WithValue(context.Background(), proposalActorKey{}, "owner (CTO proposal p_1)")
 	value, err := c.d.executeApprovedCTOTool(ctx, "merger_start", json.RawMessage(`{"project":"garden","folder":"worktree","branch":"hidden-branch","create":true}`))

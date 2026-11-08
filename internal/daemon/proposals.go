@@ -596,7 +596,7 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 		if err == nil {
 			result, err = p.run(ctx, item.Call, "owner (CTO proposal "+id+")")
 		}
-		if err == nil && ((item.Call.Tool == "session_change" && item.Call.Action == "session_start") || (item.Call.Tool == "project_change" && item.Call.Action == "create")) {
+		if err == nil && startProposal(item.Call) {
 			var start protocol.StartedSession
 			if json.Unmarshal(result, &start) == nil && start.Status == "failed" {
 				message := start.Error
@@ -616,7 +616,7 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 		} else {
 			status = "applied"
 			note = id + " approved and applied"
-			if item.Call.Tool == "session_change" && item.Call.Action == "session_start" || item.Call.Tool == "project_change" && item.Call.Action == "create" {
+			if startProposal(item.Call) {
 				var start protocol.StartedSession
 				if json.Unmarshal(result, &start) == nil {
 					switch start.Status {
@@ -692,4 +692,11 @@ func (p proposalRunner) approveAll(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// startProposal says the approved call starts a session, so its answer can say
+// that nothing started (needs_trust, handed_to_tui, failed).
+func startProposal(c proposalCall) bool {
+	return c.Tool == "session_change" && (c.Action == "session_start" || c.Action == "merger_start") ||
+		c.Tool == "project_change" && c.Action == "create"
 }

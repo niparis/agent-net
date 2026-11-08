@@ -466,3 +466,35 @@ func TestCTOProjectCloneOnlyForApprovedCreate(t *testing.T) {
 		t.Fatalf("unapproved clone: %v", err)
 	}
 }
+
+// An approved merger start in an untrusted folder starts nothing, and the note
+// that the CTO and the owner read says so.
+func TestCTOMergerStartProposalAsksForTrust(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	repo := newHomeRepo(t, home, "code/garden")
+	c.register(t, repo)
+	ctx := context.Background()
+	args, _ := json.Marshal(map[string]any{"action": "merger_start", "project": "garden"})
+	if _, err := legacyProposalFixture(ctx, c.d, "session_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%v err=%v", items, err)
+	}
+	if err := c.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	items, err = c.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(items[0].Note, "trust needs the owner") {
+		t.Fatalf("merger trust note: %q", items[0].Note)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "fake-claude.json")); !os.IsNotExist(err) {
+		t.Fatalf("merger started without trust: %v", err)
+	}
+}

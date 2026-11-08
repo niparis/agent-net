@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"context"
-	"github.com/niparis/agent-net/internal/harnesses"
-	"github.com/niparis/agent-net/internal/protocol"
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/niparis/agent-net/internal/harnesses"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestSessionStartPiFirstMessageIsAnOwnerMessage(t *testing.T) {
@@ -132,5 +134,36 @@ func TestSessionStartPiRemoteAgent(t *testing.T) {
 	}
 	if agent := b.agentOf(t, id); agent == nil || agent.AgentID != "chosen" {
 		t.Fatalf("remote first identity: %+v", agent)
+	}
+}
+
+// A Pi start that never registers its session fails in the background after
+// the daemon answered "starting". The failure must be logged and recorded.
+func TestSessionStartPiFailureLogsAndRecords(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.StartTimeout = scaled(time.Second)
+	n := startWorkerNode(t, g, set, func(c *Config) {
+		c.HarnessPaths = map[string]string{"pi": "/fake/pi"}
+	})
+	repo := newRepo(t, "shop")
+	n.register(t, repo)
+	fakeOpenHerdr(t)
+
+	var r sessionStartTestResult
+	mustJSON(t, n.cli.mustCall("session_start", map[string]any{"project": "shop", "harness": "pi"}), &r)
+	eventually(t, "the Pi start fails", func() bool {
+		mustJSON(t, n.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+		return r.Status == "failed"
+	})
+	if !strings.Contains(r.Error, "did not register the Pi session") {
+		t.Fatalf("failed start error %q", r.Error)
+	}
+	if lines := n.logs.lines("event=session.start_failed", "start="+r.ID); len(lines) != 1 {
+		t.Fatalf("want one failure log line, got %q", n.logs.String())
+	}
+	events, err := g.gw.Store().Events("session.start_failed")
+	if err != nil || len(events) != 1 || !strings.Contains(events[0], r.ID) {
+		t.Fatalf("failure event: %v %v", events, err)
 	}
 }

@@ -138,9 +138,8 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		return protocol.StartedSession{}, err
 	}
 	var found *protocol.ProjectView
-	// typed is the checked folder of a path start, empty for a project start.
-	// created says agent-net made that folder on this request.
-	typed, created := "", false
+	// created says agent-net made the typed folder on this request.
+	created := false
 	if p.Path != "" {
 		path, err := cleanOwnerPath(p.Path)
 		if err != nil {
@@ -175,7 +174,6 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		if err != nil {
 			return protocol.StartedSession{}, err
 		}
-		typed = projectPath
 		found = &protocol.ProjectView{Name: projectName, Path: projectPath}
 	} else {
 		raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
@@ -238,7 +236,9 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	} else {
 		branch, _ = gitOut(ctx, found.Path, "branch", "--show-current")
 	}
-	if typed != "" && p.Harness == "claude" {
+	// Claude Code refuses an untrusted folder in `claude --bg`, so the answer is
+	// asked here for a project name and a typed path alike.
+	if p.Harness == "claude" {
 		needTrust, err := ownerClaudeTrust(sessionPath, created, p.Folder == protocol.FolderWorktree, p.TrustClaude)
 		if err != nil {
 			return protocol.StartedSession{}, err
@@ -382,8 +382,12 @@ func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) 
 			case <-ticker.C:
 				result, err := d.sessionStartGet(ctx, id)
 				if err != nil || result.Status != "starting" {
+					// The machine that runs the start logs and records a failure.
+					// This machine only tells the owner, as for a successful start.
 					if err == nil && result.Status == "started" {
 						d.notifyApprovedSessionStart(ctx, result)
+					} else if err == nil && result.Status == "failed" {
+						d.notifySessionStartFailed(result)
 					}
 					return
 				}
@@ -619,7 +623,9 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		d.mu.Lock()
 		d.startedSessions[r.ID] = r
 		d.mu.Unlock()
-		if notify && r.Status == "started" {
+		if r.Status == "failed" {
+			d.startFailed(r, notify)
+		} else if notify {
 			d.notifySessionStart(r)
 		}
 	}(r)
@@ -730,6 +736,25 @@ func (d *Daemon) failStartAgent(r protocol.StartedSession) {
 	_, err := d.call(ctx, "session.agent.reserve", protocol.SessionAgentReservation{Owner: d.ownerSessionID(), AgentID: r.AgentID, Harness: r.Harness, Ref: r.ID, Cwd: r.Path, Project: r.Project, NativeID: r.NativeID, Failed: true})
 	if err != nil {
 		d.Logf("Agent choice failure report for %s: %v", r.ID, err)
+	}
+}
+
+// startFailed reports a start that was answered as starting and then failed in
+// the background. It writes one daemon log line, tells the gateway, and, for a
+// start the owner asked for (notify), shows the error in the owner's TUI, as a
+// successful start is shown. Call it after r is stored in startedSessions, so
+// the failure is visible to session_start_get first.
+func (d *Daemon) startFailed(r protocol.StartedSession, notify bool) {
+	d.Logf("event=session.start_failed start=%s project=%s harness=%s error=%q", r.ID, r.Project, r.Harness, r.Error)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := d.call(ctx, "session.start.failed", protocol.SessionStartFailure{Owner: d.ownerSessionID(), StartID: r.ID,
+		Project: r.Project, Harness: r.Harness, Error: r.Error})
+	if err != nil {
+		d.Logf("session start %s: the gateway did not record the failure: %v", r.ID, err)
+	}
+	if notify {
+		d.notifySessionStartFailed(r)
 	}
 }
 

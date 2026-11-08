@@ -74,6 +74,7 @@ func TestSessionStartClaude(t *testing.T) {
 			c := startClaudeNode(t, g, shortSet)
 			repo := newRepo(t, "shop")
 			c.register(t, repo)
+			trustClaudeFolder(t, repo)
 			t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", c.sessions)
 			req := map[string]any{"project": "shop", "harness": "claude"}
 			if withMessage {
@@ -410,6 +411,9 @@ func TestSessionStartOpenCodeServiceFailuresKeepPasswordPrivate(t *testing.T) {
 				if r.Status != "failed" || !strings.Contains(r.Error, "first message") {
 					t.Fatalf("result: %+v", r)
 				}
+				if lines := n.logs.lines("event=session.start_failed", "start="+r.ID); len(lines) != 1 {
+					t.Fatalf("want one failure log line for the start, got %q", n.logs.String())
+				}
 				raw, _ = json.Marshal(r)
 			} else if err == nil {
 				t.Fatal("service failure accepted")
@@ -590,6 +594,7 @@ func TestSessionStartAgentFailureReportsAndNextStarts(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
+	trustClaudeFolder(t, repo)
 	c.register(t, newRepo(t, "chosen"))
 	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", c.sessions)
 	t.Setenv(envFakeStartFails, "1")
@@ -620,6 +625,58 @@ func TestSessionStartAgentFailureReportsAndNextStarts(t *testing.T) {
 	items, err = g.gw.Store().ListInbox()
 	if err != nil || len(items) != 1 {
 		t.Fatalf("duplicate Inbox: %+v %v", items, err)
+	}
+}
+
+// A start the CTO asked for can fail after the daemon answered "starting". The
+// failure must not be silent: one daemon log line, a gateway event, and a notice
+// to the owner's TUI with the error.
+func TestSessionStartAsyncFailureLogsRecordsAndNotifies(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	repo := newHomeRepo(t, home, "code/garden")
+	c.register(t, repo)
+	trustClaudeFolder(t, repo)
+	notices := herdrNoticeChannel(t, c.node)
+	t.Setenv(envFakeStartFails, "1")
+	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "claude"})
+	if _, err := legacyProposalFixture(context.Background(), c.d, "session_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposals: %+v %v", items, err)
+	}
+	if err := c.d.proposalRunner().decide(context.Background(), items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	items, err = c.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &r); err != nil || r.ID == "" {
+		t.Fatalf("approved start: %s %v", items[0].Result, err)
+	}
+	eventually(t, "the failed start", func() bool {
+		mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+		return r.Status == "failed"
+	})
+	if !strings.Contains(r.Error, "does not trust") {
+		t.Fatalf("failed start error %q", r.Error)
+	}
+	if lines := c.logs.lines("event=session.start_failed", "start="+r.ID); len(lines) != 1 {
+		t.Fatalf("want one failure log line, got %q", c.logs.String())
+	}
+	events, err := g.gw.Store().Events("session.start_failed")
+	if err != nil || len(events) != 1 || !strings.Contains(events[0], r.ID) || !strings.Contains(events[0], "does not trust") {
+		t.Fatalf("failure event: %v %v", events, err)
+	}
+	notice := waitHerdrNotice(t, notices)
+	if notice["daemon_notice"] != true || !strings.Contains(fmt.Sprint(notice["text"]), "garden") ||
+		!strings.Contains(fmt.Sprint(notice["text"]), "does not trust") {
+		t.Fatalf("owner notice %+v", notice)
 	}
 }
 

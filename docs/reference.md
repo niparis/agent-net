@@ -2641,12 +2641,12 @@ worktrees, no branch shown`. A start on another machine carries `path` and
 `create` through the gateway, and the receiving machine applies the same path,
 home, create and trust checks.
 
-For Claude, a typed path that already exists and is not trusted answers
-`status: "needs_trust"` with the checked `path` and starts nothing. The same
-request with `"trust_claude": true` records the folder in `~/.claude.json` (or
+For Claude, a start whose folder already exists and is not trusted answers
+`status: "needs_trust"` with the checked `path` and starts nothing. This holds
+for a typed path and for a known project name alike. The same request with
+`"trust_claude": true` records the folder in `~/.claude.json` (or
 `$CLAUDE_CONFIG_DIR/.claude.json`) and starts. A folder the start created on
-the owner's command is trusted at once. A start in a known project keeps its
-existing trust behavior.
+the owner's command is trusted at once.
 
 For OpenCode, the daemon reads the owner's running service address and password
 from `$XDG_STATE_HOME/opencode/service.json` (default:
@@ -2670,7 +2670,10 @@ For Claude, OpenCode and Pi, the answer is a started-session record with `id`, `
 (Unix seconds). Poll `session_start_get {"id":"<returned id>"}`. Once normal
 discovery and gateway registration finish, the record has `status: "started"`,
 `native_id` and `session_id` (and `job_id` for Claude). A failed launch or
-registration has `status: "failed"` and `error`. A typed path can first answer
+registration has `status: "failed"` and `error`. A failure after the answer
+`starting` is never silent: the machine that runs the start writes one log
+line `event=session.start_failed`, records a `session.start_failed` event in the
+gateway feed, and the owner's TUI shows the error. A start can first answer
 `needs_create` or `needs_trust`; those are not polled. An unknown id is refused. Records live in
 memory for this daemon run. A daemon restart loses the records; the harness's
 session remains discoverable as a normal session. Cancelling the requesting
