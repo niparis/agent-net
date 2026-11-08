@@ -1160,26 +1160,12 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if p.Machine != "" || p.Base != "" || p.Isolation != "" {
 		return none, reject("a continued worker keeps the machine, the branch and the isolation of the old one")
 	}
-	old, ok, err := g.store.Agent(p.Continue)
+	old, ok, err := g.store.workerForContinue(p.Continue, p.Owner)
 	if err != nil {
 		return none, err
 	}
 	if !ok || old.Worker == nil {
-		// Not a session ID: try the worker ID that the machine gave it.
-		all, err := g.store.Agents(protocol.QueryAgents{IncludeOwners: true})
-		if err != nil {
-			return none, err
-		}
-		ok = false
-		for _, a := range all {
-			if a.Worker != nil && a.Worker.ID == p.Continue && a.Worker.Owner == p.Owner {
-				old, ok = a, true
-				break
-			}
-		}
-	}
-	if !ok || old.Worker == nil {
-		return none, reject("no worker with the session or worker ID %q is known (records of ended workers are dropped after a while)", p.Continue)
+		return none, reject("no worker with the session or worker ID %q is known", p.Continue)
 	}
 	if old.Worker.Owner != p.Owner {
 		return none, reject("worker %s ended, and only the session that started it can continue it", old.SessionID)
@@ -1543,8 +1529,8 @@ func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView,
 // worker; its record names the owner. Anyone else gets a clear refusal, as for
 // an offline session. The machine decides whether its harness can resume.
 func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protocol.MsgSend) error {
-	a, ok, err := g.store.Agent(p.Recipient)
-	if err != nil || !ok || a.Worker == nil {
+	a, ok, err := g.store.workerForContinue(p.Recipient, p.Sender)
+	if err != nil || !ok || a.Worker == nil || a.SessionID != p.Recipient {
 		return err
 	}
 	if a.Online && a.Worker.Owner != p.Sender {

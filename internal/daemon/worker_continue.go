@@ -3,11 +3,30 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
+
+// checkWorkerWorktree refuses to resume a worker whose checkout is gone.
+func checkWorkerWorktree(r *workerRow) error {
+	if r.Worktree == "" {
+		return nil
+	}
+	info, err := os.Stat(r.Worktree)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("worker %s worktree is gone: %s", r.SessionID, r.Worktree)
+	}
+	if err != nil {
+		return fmt.Errorf("checking worker worktree: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("worker %s worktree is gone: %s is not a directory", r.SessionID, r.Worktree)
+	}
+	return nil
+}
 
 // continueEndWait is how long a continue waits for a worker that has sent its
 // hand-back notice to finish ending before it is refused.
@@ -94,6 +113,9 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	d.wmu.Unlock()
 	if running || r.EndedReason == "" {
 		return none, fmt.Errorf("worker %s is still running: wait for it to end, or stop it first", p.Session)
+	}
+	if err := checkWorkerWorktree(r); err != nil {
+		return none, err
 	}
 	if r.TaskFull == "" {
 		return none, fmt.Errorf("the record of worker %s has no task (it was made by an older agent-net)", p.Session)

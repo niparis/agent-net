@@ -823,7 +823,7 @@ func (g *Gateway) msgSendMayResume(raw []byte) bool {
 	if json.Unmarshal(raw, &p) != nil || p.Recipient == "" {
 		return false
 	}
-	a, ok, err := g.store.Agent(p.Recipient)
+	a, ok, err := g.store.workerForContinue(p.Recipient, p.Sender)
 	return err == nil && ok && a.Worker != nil
 }
 

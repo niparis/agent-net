@@ -2807,6 +2807,18 @@ func (s *Store) agentBase(sessionID string) (protocol.AgentView, bool, error) {
 	return a, true, nil
 }
 
+// workerForContinue looks up workers even when their sessions are archived.
+func (s *Store) workerForContinue(ref, owner string) (protocol.AgentView, bool, error) {
+	a, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.worker<>'' AND (s.id=? OR (json_extract(s.worker, '$.id')=? AND json_extract(s.worker, '$.owner')=?)) AND n.id IS NOT NULL ORDER BY (s.id=?) DESC LIMIT 1`, ref, ref, owner, ref))
+	if errors.Is(err, sql.ErrNoRows) {
+		return a, false, nil
+	}
+	if err != nil {
+		return a, false, err
+	}
+	return a, true, nil
+}
+
 // Older Pi extensions registered SDK helpers as independent sessions. Match
 // only background non-workers with a foreground session in the same process.
 // Overlapping lifetimes keep a later reuse of the PID from hiding old sessions.

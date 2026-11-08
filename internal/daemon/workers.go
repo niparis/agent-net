@@ -1298,8 +1298,11 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	if requester != row.Owner {
 		return fmt.Errorf("only the session that started worker %s can start it again", sessionID)
 	}
+	if err := checkWorkerWorktree(&row); err != nil {
+		return err
+	}
 	set := d.workerSettings("")
-	if row.StartedAt.Add(set.MaxAge).Before(time.Now()) {
+	if row.Worktree == "" && row.StartedAt.Add(set.MaxAge).Before(time.Now()) {
 		// Retention cleanup owns deletion and retries failed harness calls.
 		return fmt.Errorf("worker %s started more than %s ago (the longest run time), so it cannot be started again", sessionID, set.MaxAge)
 	}
@@ -1324,7 +1327,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		return fmt.Errorf("this machine already runs %d workers, which is the limit", n)
 	}
 	w := &worker{runGeneration: row.RunGeneration + 1, id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner, ownerName: row.OwnerName,
-		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: row.StartedAt, lastActive: time.Now(),
+		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: time.Now(), lastActive: time.Now(),
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
 		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, title: row.Title, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
 		continueCount: row.Continue, fixCount: row.Fix, pendingHandback: row.PendingHandback, pendingPartial: row.PendingPartial,
@@ -1354,19 +1357,6 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 			d.st.saveWorker(r)
 		}
 	}()
-	// The worktree is kept when it has changes. The one without changes was
-	// removed when the worker ended, so it is made again for the new run. Keep
-	// the branch and its base: createWorktree finds the branch when it is
-	// still there and checks it out with the commits it holds.
-	if w.worktree != "" {
-		if fi, err := os.Stat(w.worktree); err != nil || !fi.IsDir() {
-			w.path = w.mainPath
-			w.worktree = ""
-			if err := d.createWorktree(cctx, w); err != nil {
-				return err
-			}
-		}
-	}
 	if err := os.MkdirAll(w.dir, 0o700); err != nil {
 		return err
 	}
@@ -1451,7 +1441,12 @@ func (d *Daemon) cleanupWorkers(ctx context.Context) {
 	case <-ctx.Done():
 		return
 	}
-	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second), Running: d.runningSessionIDs(), WorktreesDir: d.worktreesDir()}); err != nil &&
+	retained, err := d.retainedWorkerSessionIDs()
+	if err != nil {
+		d.Logf("worker.cleanup: cannot read retained workers: %v", err)
+		return
+	}
+	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second), Running: retained, WorktreesDir: d.worktreesDir()}); err != nil &&
 		!strings.Contains(err.Error(), "unknown frame type") { // an older gateway has no such frame
 		d.Logf("worker.cleanup: %v", err)
 	}
@@ -1780,6 +1775,22 @@ func (d *Daemon) adoptWorkers() {
 		}
 		d.Logf("worker.adopted worker=%s session=%s project=%s pid=%d", w.id, w.sessionID, w.project, w.pid)
 	}
+}
+
+// Retain gateway records while their local worktree records exist, including
+// missing worktrees so callers get a useful explanation instead of an unknown ID.
+func (d *Daemon) retainedWorkerSessionIDs() ([]string, error) {
+	ids := d.runningSessionIDs()
+	rows, err := d.st.workers()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		if r.Worktree != "" && r.SessionID != "" {
+			ids = append(ids, r.SessionID)
+		}
+	}
+	return ids, nil
 }
 
 // runningSessionIDs lists the gateway session IDs of the workers this daemon

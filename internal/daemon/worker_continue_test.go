@@ -7,6 +7,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -448,5 +449,56 @@ func TestContinueChainKeepsEarlierCommits(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(c.Worktree, "chain.txt")); err != nil {
 		t.Errorf("missing earlier work: %v", err)
+	}
+}
+
+func TestContinueArchivedWorkerAfterCleanup(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "x", Isolation: protocol.IsolationWorktree})
+	if err := os.WriteFile(filepath.Join(old.Worktree, "work.txt"), []byte("work"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	w.waitNotice(t, 1)
+	st := g.gw.Store()
+	if _, err := w.d.st.db.Exec(`UPDATE workers SET started_at=? WHERE session_id=?`, time.Now().Add(-24*time.Hour).UnixNano(), old.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := w.d.retainedWorkerSessionIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CleanWorkers(w.d.NodeID(), time.Nanosecond, retained); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveSessions(protocol.SessionsArchiveRequest{IDs: []string{old.SessionID}}); err != nil {
+		t.Fatal(err)
+	}
+	w.d.cleanupWorkerSessions(t.Context())
+	w.d.cleanupWorkers(t.Context())
+	if _, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID}); err != nil {
+		t.Fatalf("continue archived worker: %v", err)
+	}
+}
+
+func TestContinueWorkerMissingWorktree(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "x", Isolation: protocol.IsolationWorktree})
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	w.waitNotice(t, 1)
+	if err := os.RemoveAll(old.Worktree); err != nil {
+		t.Fatal(err)
+	}
+	_, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID})
+	if err == nil || !strings.Contains(err.Error(), "worktree") || !strings.Contains(err.Error(), "gone") {
+		t.Fatalf("missing worktree error: %v", err)
 	}
 }

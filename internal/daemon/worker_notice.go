@@ -943,6 +943,11 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 		cc.mu.Unlock()
 	}
 	note := "the worker ended after its hand-back; a message from you starts it again"
+	if w.worktree != "" {
+		note += " while its worktree and branch exist"
+	} else {
+		note += fmt.Sprintf(" until %s after it started", d.workerSettings("").MaxAge)
+	}
 	if pending {
 		note = "the worker will run its queued messages before ending"
 	} else if _, canResume := d.launchers[w.harness].(resumer); !canResume {

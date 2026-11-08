@@ -461,3 +461,29 @@ func TestWorkerOwnerQuotedBriefResumes(t *testing.T) {
 		t.Fatalf("follow-up reply: %+v", r)
 	}
 }
+
+func TestArchivedOldHandbackResumesByMessage(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:edit FAKE:handback first", Isolation: protocol.IsolationWorktree})
+	w.waitNotice(t, 1)
+	eventually(t, "handback ended", func() bool { r, ok, _ := w.d.st.workerBySession(res.SessionID); return ok && r.Reported && r.Resumable })
+	if _, err := w.d.st.db.Exec(`UPDATE workers SET started_at=? WHERE session_id=?`, time.Now().Add(-24*time.Hour).UnixNano(), res.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.gw.Store().ArchiveSessions(protocol.SessionsArchiveRequest{IDs: []string{res.SessionID}}); err != nil {
+		t.Fatal(err)
+	}
+	w.d.cleanupWorkerSessions(t.Context())
+	w.d.cleanupWorkers(t.Context())
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"}), &sent)
+	if sent.Message == nil {
+		t.Fatalf("message not sent: %+v; daemon: %v; gateway: %v", sent, w.logs.lines(), g.logs.lines())
+	}
+	if reply := w.replyTo(t, w.ownerID(), sent.Message.ID); !strings.HasPrefix(reply.Body, "ok from worker") {
+		t.Fatalf("reply: %+v", reply)
+	}
+}
