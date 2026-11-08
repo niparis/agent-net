@@ -326,7 +326,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | CTO read | Source and detail |
 |---|---|
 | `agent_sessions_find`, `agent_session_get` | Sessions and one session's full profile, as for an agent |
-| `agent_machines_find`, `agent_machine_get` | Machines, and one machine's health, models, quotas, track record or playbook |
+| `agent_machines_find`, `agent_machine_get` | Machines, and one machine's health, load and busiest processes, or its models, quotas, track record or playbook |
 | `agent_machine_log` | Redacted daemon or gateway log on one online machine |
 | `agent_projects_find` | Public projects and where they live |
 | `agent_workers_find` | Workers; the CTO defaults to `started_by: anyone` |
@@ -1264,6 +1264,10 @@ filesystem. Missing helpers say `not found`; a disk read failure omits the byte
 count. The machine version is in `machine.version`. Health travels with hello
 and harness inventory; `reported_at` identifies the latest sample. Offline
 uptime is as of that sample. Older daemons show `not reported`.
+Without a category, `agent_machine_get` also returns `usage`: what the machine is doing now, so nobody has to run `top`. It has `status` (`ok`, `offline` or `unavailable`) and a `note` when it is not `ok`. With `ok` it has `cores`, `load` (1, 5 and 15 minutes), `cpu_pct` (share of all cores in use), `cpu_split` (`user`, `sys`, `nice`, `idle`, `iowait`, `steal` in percent; Linux only), `mem_used` and `mem_total`, `swap_used` and `swap_total` (bytes), `age_s` (age of the reading) and `top`: the 10 processes that used the most CPU over the last sample interval, busiest first. Each `top` row has `pid`, `ppid`, `cpu` (percent of one core, so 300 is three cores), `rss` (bytes), `elapsed_s` (run time), `cmd` (the command line, secrets masked, cut to 120 characters) and the owner: `owner_kind` (`session`, `worker`, `daemon`, `gateway`, `mcp` or `other`), `owner` (the session or worker name, `agent-net daemon`, `agent-net gateway`, `mcp server <name>` or `other`) and `owner_id` (the session ID or the worker ID). The owner is the nearest known ancestor: a process under a worker's process tree belongs to that worker, even though the daemon started the worker. Sessions that share one process (OpenCode) show one shared owner. A machine that is offline gives `status: offline`; a daemon that cannot answer gives `status: unavailable`; the rest of the call still works. The category calls (`include`) do not carry `usage`.
+
+The gateway asks the machine's daemon for each call (`node.machine_usage`). The daemon uses the readings its sampler already holds (every 5 seconds, see "CPU and memory" below) and starts no new loop. If the newest reading is more than 10 seconds old, it takes one reading first. The command lines are read only for the 10 listed processes. A daemon from before this feature gives `unavailable`.
+
 With category `models`, each row also has `scores`: the capability score at each matching effort (`effort`, `score`, `source`).
 
 `agent_machine_log` reads one online machine's service log. Give `machine` (name

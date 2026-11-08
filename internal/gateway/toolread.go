@@ -582,7 +582,7 @@ func (g *Gateway) FindMachines(p protocol.MachinesFindRequest) (protocol.Machine
 }
 
 // MachineGet answers agent_machine_get with one category.
-func (g *Gateway) MachineGet(p protocol.MachineGetRequest) (protocol.MachineGetResult, error) {
+func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) (protocol.MachineGetResult, error) {
 	if len(p.Include) > 1 {
 		return protocol.MachineGetResult{}, fmt.Errorf("agent_machine_get takes at most one include category, because the cursor pages that category. Example: {\"machine\":\"research\",\"include\":[\"models\"]}")
 	}
@@ -621,6 +621,7 @@ func (g *Gateway) MachineGet(p protocol.MachineGetRequest) (protocol.MachineGetR
 	}
 	out := protocol.MachineGetResult{Machine: machineRow(node, online, counts[node.NodeID], true), Health: health}
 	if category == "" {
+		out.Usage = g.machineUsageNow(ctx, node, online)
 		return out, nil
 	}
 	query := readQueryHash(struct {
@@ -885,7 +886,7 @@ func (g *Gateway) handleToolRead(ctx context.Context, nc *nodeConn, typ string, 
 		if err != nil || strings.TrimSpace(p.Machine) == "" {
 			return nil, true, reject("bad query.machine_get")
 		}
-		out, err := g.MachineGet(p)
+		out, err := g.MachineGet(ctx, p)
 		return out, true, err
 	case "query.projects_find":
 		p, err := decode[protocol.ProjectsFindRequest](raw)
@@ -903,4 +904,31 @@ func (g *Gateway) handleToolRead(ctx context.Context, nc *nodeConn, typ string, 
 		return out, true, err
 	}
 	return nil, false, nil
+}
+
+// machineUsageWait is how long agent_machine_get waits for a machine's daemon
+// to answer with its load and busiest processes.
+const machineUsageWait = 15 * time.Second
+
+// machineUsageNow asks the machine's daemon for its load and top processes.
+// An offline machine, an old daemon or a slow answer gives a note and never
+// fails the call.
+func (g *Gateway) machineUsageNow(ctx context.Context, node protocol.NodeView, online bool) *protocol.MachineUsageNow {
+	nc := g.conn(node.NodeID)
+	if !online || nc == nil {
+		return &protocol.MachineUsageNow{Status: protocol.MachineUsageOffline, Note: "the machine is offline, so there is no live CPU or process reading"}
+	}
+	data, err := nc.request(ctx, "node.machine_usage", struct{}{}, machineUsageWait)
+	if err != nil {
+		note := "the machine did not give a usage reading: " + err.Error()
+		if strings.Contains(err.Error(), "unknown frame type") {
+			note = "the machine runs an agent-net version that cannot report its processes"
+		}
+		return &protocol.MachineUsageNow{Status: protocol.MachineUsageUnavailable, Note: note}
+	}
+	var u protocol.MachineUsageNow
+	if json.Unmarshal(data, &u) != nil || u.Status == "" {
+		return &protocol.MachineUsageNow{Status: protocol.MachineUsageUnavailable, Note: "the machine gave an unreadable usage reading"}
+	}
+	return &u
 }

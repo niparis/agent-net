@@ -1328,6 +1328,8 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 			break
 		}
 		data = result
+	case "node.machine_usage":
+		data = d.machineUsageNow(ctx)
 	case "node.usage_top":
 		var p protocol.QueryUsageTop
 		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {

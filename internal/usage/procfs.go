@@ -20,6 +20,7 @@ type procFS struct {
 	root     string // /proc, or a fixture
 	pageSize uint64
 	buf      []byte
+	boot     time.Time // from the btime line of /proc/stat, or zero
 }
 
 func newProcFS(root string) *procFS {
@@ -48,6 +49,12 @@ func (p *procFS) Read(ctx context.Context) (Snapshot, error) {
 		}
 		// A process may end while we look: skip it.
 		if pr, ok := p.readProc(pid); ok {
+			if !p.boot.IsZero() && pr.Start > 0 {
+				started := p.boot.Add(time.Duration(float64(pr.Start) / clkTck * float64(time.Second)))
+				if e := snap.At.Sub(started); e > 0 {
+					pr.Elapsed = e
+				}
+			}
 			snap.Procs[pid] = pr
 		}
 	}
@@ -117,8 +124,14 @@ func (p *procFS) readStat(m *Machine) error {
 		return err
 	}
 	for _, line := range strings.Split(string(b), "\n") {
+		if rest, ok := strings.CutPrefix(line, "btime "); ok {
+			if secs, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64); err == nil && secs > 0 {
+				p.boot = time.Unix(secs, 0)
+			}
+			continue
+		}
 		if !strings.HasPrefix(line, "cpu") {
-			break
+			continue
 		}
 		f := strings.Fields(line)
 		if f[0] != "cpu" {
@@ -131,6 +144,8 @@ func (p *procFS) readStat(m *Machine) error {
 		}
 		// user nice system idle iowait irq softirq steal
 		idle := v[3] + v[4]
+		m.Parts = CPUParts{User: v[0], Nice: v[1], Sys: v[5] + v[6] + v[2], Idle: v[3], IOWait: v[4], Steal: v[7]}
+		m.HaveParts = true
 		for _, x := range v {
 			m.CPUTotal += x
 		}
@@ -149,7 +164,7 @@ func (p *procFS) readMem(m *Machine) {
 	}
 	var total, avail uint64
 	var haveAvail bool
-	var free, buffers, cached uint64
+	var free, buffers, cached, swapTotal, swapFree uint64
 	for _, line := range strings.Split(string(b), "\n") {
 		f := strings.Fields(line)
 		if len(f) < 2 {
@@ -168,12 +183,20 @@ func (p *procFS) readMem(m *Machine) {
 			buffers = v
 		case "Cached:":
 			cached = v
+		case "SwapTotal:":
+			swapTotal = v
+		case "SwapFree:":
+			swapFree = v
 		}
 	}
 	if !haveAvail { // kernels before 3.14
 		avail = free + buffers + cached
 	}
 	m.MemTotal = total
+	m.SwapTotal = swapTotal
+	if swapTotal > swapFree {
+		m.SwapUsed = swapTotal - swapFree
+	}
 	if total > avail {
 		m.MemUsed = total - avail
 	}

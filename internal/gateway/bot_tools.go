@@ -130,7 +130,7 @@ func (g *Gateway) botToolCall(ctx context.Context, sid, name string, in map[stri
 			return nil, err
 		}
 		p.Caller = sid
-		return g.MachineGet(p)
+		return g.MachineGet(context.Background(), p)
 	case "agent_projects_find":
 		var p protocol.ProjectsFindRequest
 		if err := botDecode(in, &p); err != nil {

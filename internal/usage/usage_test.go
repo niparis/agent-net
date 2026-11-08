@@ -171,6 +171,8 @@ func TestPSReaderWithFakeCommands(t *testing.T) {
 				return []byte("17179869184\n"), nil
 			case "vm.loadavg":
 				return []byte("{ 1.00 2.00 3.00 }\n"), nil
+			case "vm.swapusage":
+				return []byte("total = 2048.00M  used = 1024.50M  free = 1023.50M  (encrypted)\n"), nil
 			}
 		case "vm_stat":
 			return []byte("Mach Virtual Memory Statistics: (page size of 4096 bytes)\nAnonymous pages: 100.\nPages wired down: 50.\nPages occupied by compressor: 10.\nPages purgeable: 0.\n"), nil

@@ -32,7 +32,7 @@ var parallelFrames = map[string]bool{
 	"query.messages": true, "query.message": true,
 	"query.inventory": true, "query.mcp_import_candidates": true,
 	"query.tools_items": true, "query.tools_item": true,
-	"query.usage": true, "query.counts": true,
+	"query.usage": true, "query.counts": true, "query.machine_get": true,
 	"learned.list": true, "signal.list": true,
 	"inbox.list": true, "asks.list": true, "desk.log": true, "held.list": true,
 	"hidden.get": true, "settings.snapshot": true, "node.settings.get": true,

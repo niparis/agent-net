@@ -33,6 +33,19 @@ type MachineStat struct {
 	Procs    int
 	// Samples is how many samples the averages cover.
 	Samples int
+	// Split is the CPU split over the last interval, in percent of all
+	// cores. HaveSplit is false when the platform gives none.
+	Split     CPUSplit
+	HaveSplit bool
+	// SwapUsed and SwapTotal are in bytes.
+	SwapUsed, SwapTotal uint64
+}
+
+// CPUSplit is the share of all CPU time by kind over one interval, 0 to 100.
+// Sys includes interrupts. IOWait and Steal are part of the machine's idle
+// and lost time and are listed apart.
+type CPUSplit struct {
+	User, Nice, Sys, Idle, IOWait, Steal float64
 }
 
 // TreeStat is one process tree: a root process and all its descendants.
@@ -286,6 +299,7 @@ func (s *Sampler) update(roots []int) {
 	st.MemTotal = m.MemTotal
 	st.Load = m.Load
 	st.Procs = len(cur.Procs)
+	st.SwapUsed, st.SwapTotal = m.SwapUsed, m.SwapTotal
 	s.mem.add(cur.At, float64(m.MemUsed), s.window)
 	st.MemUsed = Value{Now: s.mem.value().Now, Avg: s.mem.value().Avg}
 
@@ -310,6 +324,16 @@ func (s *Sampler) update(roots []int) {
 			if ok {
 				s.cpu.add(cur.At, clamp(pct, 0, 100), s.window)
 			}
+		}
+	}
+	st.HaveSplit = false
+	if s.prev != nil && m.HaveParts && s.prev.M.HaveParts {
+		a, b := s.prev.M.Parts, m.Parts
+		d := CPUParts{b.User - a.User, b.Nice - a.Nice, b.Sys - a.Sys, b.Idle - a.Idle, b.IOWait - a.IOWait, b.Steal - a.Steal}
+		if sum := d.User + d.Nice + d.Sys + d.Idle + d.IOWait + d.Steal; sum > 0 && d.User >= 0 && d.Nice >= 0 && d.Sys >= 0 && d.Idle >= 0 && d.IOWait >= 0 && d.Steal >= 0 {
+			pc := func(v float64) float64 { return v / sum * 100 }
+			st.Split = CPUSplit{pc(d.User), pc(d.Nice), pc(d.Sys), pc(d.Idle), pc(d.IOWait), pc(d.Steal)}
+			st.HaveSplit = true
 		}
 	}
 	st.CPU = s.cpu.value()
@@ -498,4 +522,107 @@ func (s *Sampler) Top(ctx context.Context, root, n int) (Top, bool) {
 		}
 	}
 	return Top{Tree: stat, ByCPU: byCPU, ByRSS: byRSS, Procs: len(members), Cutoff: at}, true
+}
+
+// MachineProc is one process of the whole machine, for the machine top list.
+type MachineProc struct {
+	ProcStat
+	PPID    int
+	Elapsed time.Duration
+	// Lineage lists the parent, the parent's parent and so on up to the
+	// first process. It is capped, so a loop in the table cannot run long.
+	Lineage []int
+}
+
+// Elapseder is implemented by a Reader that cannot give the run time of every
+// process in each snapshot, but can give it for a few on request.
+type Elapseder interface {
+	Elapsed(ctx context.Context, pids []int) map[int]time.Duration
+}
+
+// ArgsLenTop is how many characters of the command line the machine top list
+// keeps.
+const ArgsLenTop = 120
+
+const maxLineage = 64
+
+// SnapshotAge is the age of the newest snapshot. ok is false before the first.
+func (s *Sampler) SnapshotAge() (time.Duration, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cur == nil {
+		return 0, false
+	}
+	return time.Since(s.cur.At), true
+}
+
+// TopProcs returns the n processes of the whole machine that used the most
+// CPU over the last interval, from the snapshots the sampler already holds.
+// It reads no process table; only the command lines of the listed processes
+// are read. ok is false until two snapshots exist.
+func (s *Sampler) TopProcs(ctx context.Context, n int) (procs []MachineProc, at time.Time, ok bool) {
+	s.mu.Lock()
+	cur, prev := s.cur, s.prev
+	if cur == nil || prev == nil {
+		s.mu.Unlock()
+		return nil, time.Time{}, false
+	}
+	dt := cur.At.Sub(prev.At).Seconds()
+	rows := make([]MachineProc, 0, len(cur.Procs))
+	for pid, p := range cur.Procs {
+		row := MachineProc{ProcStat: ProcStat{PID: pid, Cmd: p.Comm, RSS: p.RSS}, PPID: p.PPID, Elapsed: p.Elapsed}
+		if o, was := prev.Procs[pid]; was && o.Start == p.Start && p.CPU >= o.CPU && dt > 0 {
+			row.CPU = (p.CPU - o.CPU) / dt * 100
+		}
+		rows = append(rows, row)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].CPU != rows[j].CPU {
+			return rows[i].CPU > rows[j].CPU
+		}
+		return rows[i].PID < rows[j].PID
+	})
+	if n <= 0 {
+		n = TopN
+	}
+	rows = rows[:min(n, len(rows))]
+	for i := range rows {
+		for pid, hops := rows[i].PPID, 0; pid > 0 && hops < maxLineage; hops++ {
+			rows[i].Lineage = append(rows[i].Lineage, pid)
+			parent, found := cur.Procs[pid]
+			if !found || parent.PPID == pid {
+				break
+			}
+			pid = parent.PPID
+		}
+	}
+	at = cur.At
+	s.mu.Unlock()
+
+	pids := make([]int, len(rows))
+	for i, r := range rows {
+		pids[i] = r.PID
+	}
+	args := s.r.Args(ctx, pids)
+	var elapsed map[int]time.Duration
+	if e, isE := s.r.(Elapseder); isE {
+		var need []int
+		for _, r := range rows {
+			if r.Elapsed == 0 {
+				need = append(need, r.PID)
+			}
+		}
+		if len(need) > 0 {
+			elapsed = e.Elapsed(ctx, need)
+		}
+	}
+	for i := range rows {
+		if a := redact.ArgsN(args[rows[i].PID], ArgsLenTop); a != "" {
+			rows[i].Args = a
+		}
+		if rows[i].Elapsed == 0 {
+			rows[i].Elapsed = elapsed[rows[i].PID]
+		}
+	}
+	return rows, at, true
 }

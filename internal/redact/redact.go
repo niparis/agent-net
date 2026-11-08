@@ -67,7 +67,10 @@ const ArgsLen = 80
 // of a flag like --token abc), control characters become spaces and the
 // result is cut to ArgsLen characters. Masking comes before cutting, so a cut
 // can never leave half a secret.
-func Args(s string) string {
+func Args(s string) string { return ArgsN(s, ArgsLen) }
+
+// ArgsN is Args with a different length: it cuts to n characters.
+func ArgsN(s string, n int) string {
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
@@ -77,7 +80,7 @@ func Args(s string) string {
 	s = Secrets(s)
 	s = secretFlag.ReplaceAllString(" "+s, "${1}${2}"+Mask)
 	s = strings.Join(strings.Fields(s), " ")
-	return Cut(s, ArgsLen)
+	return Cut(s, n)
 }
 
 // Cut returns the first n characters of s (not bytes).

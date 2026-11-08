@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -33,7 +34,7 @@ func TestWorkerEarlyQuitTrackAndPicker(t *testing.T) {
 		t.Fatalf("picker levels: %v %v", levels, err)
 	}
 	g := &Gateway{store: s, conns: map[string]*nodeConn{}}
-	page, err := g.MachineGet(protocol.MachineGetRequest{Machine: node, Include: []string{"track_record"}})
+	page, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: node, Include: []string{"track_record"}})
 	if err != nil || page.TrackRecord == nil || len(page.TrackRecord.Items) != 1 || page.TrackRecord.Items[0].EarlyQuits != 1 {
 		t.Fatalf("machine track: %+v %v", page, err)
 	}
