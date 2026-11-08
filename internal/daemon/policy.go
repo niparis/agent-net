@@ -186,8 +186,8 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		return protocol.PolicyResult{}, nil
 	}
 	if client == "cli" && p.Harness == "claude" {
-		_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
 		if isHumanClaudePrompt(p.Prompt) {
+			_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
 			_, _ = d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true})
 		}
 	}
@@ -198,26 +198,11 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	return d.policyResult(d.infoOf(ls).Harness, got), nil
 }
 
-// Claude delivers peer messages, task notifications, reminders, scheduled turns,
-// and autonomous-loop turns through the prompt hook.
-var claudeNonHumanPromptMarkers = []string{
-	"<cross-session-message", "<agent-message", "Another Claude session sent a message",
-	"<task-notification", "[SYSTEM NOTIFICATION", "<system-reminder",
-	"<scheduled", "<<autonomous-loop",
-}
-
+// isHumanClaudePrompt is true for text the owner typed. Claude delivers peer
+// messages, task notifications, reminders, scheduled turns and autonomous-loop
+// turns through the same prompt hook (see protocol.InjectedClaudePrompt).
 func isHumanClaudePrompt(prompt string) bool {
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		return false
-	}
-	prompt = prompt[:min(len(prompt), 512)]
-	for _, marker := range claudeNonHumanPromptMarkers {
-		if strings.Contains(prompt, marker) {
-			return false
-		}
-	}
-	return true
+	return strings.TrimSpace(prompt) != "" && !protocol.InjectedClaudePrompt(prompt)
 }
 
 func (d *Daemon) recordOwnerOpen(ctx context.Context, id string) {

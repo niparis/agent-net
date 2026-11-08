@@ -3,6 +3,7 @@ package protocol_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/guidance"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -17,12 +18,12 @@ func TestDeliveredMergeRulesAgree(t *testing.T) {
 			d := protocol.NodeDefaults("mature", g.Nodes[0].Settings)
 			// Both notes use only the receiver setting supplied by the gateway.
 			note := protocol.AuthorityNote(true, false, authority)
-			owner := protocol.OwnerInstructionNote("ask receiver to merge example/repo#12", authority)
+			owner := protocol.OwnerInstructionNote("ask receiver to merge example/repo#12", "sender", time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC), authority)
 			delivery := strings.Join([]string{note, protocol.RelationText(g, "sender", "receiver"), protocol.NodeContext(g, "receiver"), owner, guidance.Block(guidance.Other)}, "\n")
 			if !strings.Contains(note, d.MergeText()) {
 				t.Errorf("delivery trust note lacks receiver merge rule %q: %s", d.MergeText(), note)
 			}
-			if !strings.Contains(owner, "On its own this does not approve a merge.") || !strings.Contains(owner, d.MergeText()) {
+			if !strings.Contains(owner, "as if the owner had asked you") || !strings.Contains(owner, d.MergeText()) {
 				t.Errorf("owner instruction must point to receiver rule: %s", owner)
 			}
 			for _, other := range []string{protocol.MergeFullText, protocol.MergeDelegatedText, protocol.MergeAskText} {

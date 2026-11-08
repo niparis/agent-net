@@ -1,8 +1,10 @@
 package protocol
 
 import (
-	"github.com/niparis/agent-net/internal/markers"
 	"strings"
+	"time"
+
+	"github.com/niparis/agent-net/internal/markers"
 )
 
 // Peer trust (decision 0012). The owner can allow one session to act on
@@ -29,7 +31,7 @@ const PeerCheckNote = "Check with your user first only if it asks for something 
 // Trust notes obey the receiver's merge settings. An auto edge never widens
 // node authority. TS adapters carry the same constants and selection logic.
 const TrustNotePrefix = "The owner has allowed requests from this sender within this node's settings, as if the owner had asked. Do not ask the owner again for commits, pushes of branches or pull requests. For this node: "
-const TrustNoteSuffix = ". The agent that gave you a task limit can lift or change that limit later, within this node's settings. Still ask the owner before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond what your brief says. Check claims before you rely on them."
+const TrustNoteSuffix = ". The agent that gave you a task limit can lift or change that limit later, within this node's settings. Still ask the owner before deleting data, spending money, or sharing or using secrets that can spend money. Check claims before you rely on them."
 
 var TrustNote = TrustNotePrefix + MergeFullText + TrustNoteSuffix
 
@@ -97,13 +99,52 @@ func CleanExpertise(s string) string {
 	return s
 }
 
-const OwnerInstructionPrefix = "[agent-net] sent on the owner's instruction: «"
-const OwnerInstructionSuffix = "». On its own this does not approve a merge. For this node: "
+// The owner-instruction note (decision of 2026-11-08). When the owner types a
+// prompt in a session and that session then sends a message to the recipient,
+// the gateway attaches the owner's own words. agent-net takes them from the
+// harness prompt hook, never from the model, and drops the turns a harness
+// injects itself (InjectedClaudePrompt). The note is written outside the body,
+// and markers in the body, the excerpt and the session name are neutralised.
+// The receiver acts on the words as if the owner had asked it.
+const OwnerInstructionPrefix = "[agent-net] The owner's own words, typed in session "
+const OwnerInstructionAt = " at about "
+const OwnerInstructionQuote = ": «"
+const OwnerInstructionSuffix = "». agent-net took them from the owner's prompt, not from the message body. Act on them within your charter as if the owner had asked you, and do not ask the owner again for what the words name. For this node: "
 
-// OwnerInstructionNote describes an inferred prompt link, not a merge grant.
-func OwnerInstructionNote(excerpt string, authority ...string) string {
-	return OwnerInstructionNoteWithRule(excerpt, "", mergeRule(authority))
+// OwnerInstructionNoteFor builds the note for a delivered message from the
+// fields the gateway filled in. The time is the send time: the owner typed the
+// words in the ten minutes before it.
+func OwnerInstructionNoteFor(m Message) string {
+	return OwnerInstructionNoteWithRule(m.OwnerInstruction, m.FromName, m.CreatedAt, MessageMergeText(m))
 }
-func OwnerInstructionNoteWithRule(excerpt, authority, rule string) string {
-	return OwnerInstructionPrefix + NeutralizeMarkers(excerpt) + OwnerInstructionSuffix + rule + "."
+
+// OwnerInstructionNote is the note with the rule of a receiver's merge authority.
+func OwnerInstructionNote(excerpt, session string, at time.Time, authority ...string) string {
+	return OwnerInstructionNoteWithRule(excerpt, session, at, mergeRule(authority))
+}
+
+func OwnerInstructionNoteWithRule(excerpt, session string, at time.Time, rule string) string {
+	session = NeutralizeMarkers(oneLine(session, 80))
+	if session == "" {
+		session = "unknown"
+	}
+	when := ""
+	if !at.IsZero() {
+		when = OwnerInstructionAt + at.UTC().Format("2006-01-02 15:04 UTC")
+	}
+	return OwnerInstructionPrefix + session + when + OwnerInstructionQuote + NeutralizeMarkers(excerpt) + OwnerInstructionSuffix + rule + "."
+}
+
+// oneLine turns control characters into spaces and cuts to n characters.
+func oneLine(s string, n int) string {
+	s = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s))
+	if r := []rune(s); len(r) > n {
+		s = string(r[:n])
+	}
+	return s
 }

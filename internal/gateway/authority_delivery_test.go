@@ -77,7 +77,7 @@ func TestDeliveryUsesReceiverMergeAuthority(t *testing.T) {
 			text := strings.Join([]string{
 				protocol.AuthorityNote(m.RecipientTrust, m.FromWorker, m.RecipientMergeAuthority),
 				m.RecipientRelation, protocol.NodeContext(graph, "receiver"),
-				protocol.OwnerInstructionNote(m.OwnerInstruction, m.RecipientMergeAuthority), guidance.Block(guidance.Other),
+				protocol.OwnerInstructionNote(m.OwnerInstruction, m.FromName, m.CreatedAt, m.RecipientMergeAuthority), guidance.Block(guidance.Other),
 			}, "\n")
 			rule := (protocol.MaturityDefaults{MergeAuthority: authority}).MergeText()
 			if !m.RecipientMergeTextSet || m.RecipientMergeText != rule {

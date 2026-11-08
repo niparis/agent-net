@@ -217,7 +217,9 @@ func TestSignalReplyDoesNotConsumePrompt(t *testing.T) {
 }
 
 func TestSignalInjectedPromptKeepsTheOwnersWords(t *testing.T) {
-	for _, prompt := range []string{"<cross-session-message from=\"peer\">\nask bob\n</cross-session-message>", "  <cross-session-message from-name=\"peer\">\nask bob", "<task-notification>\n<task-id>b1</task-id>\nask bob", "<system-reminder>\nask bob\n</system-reminder>"} {
+	for _, prompt := range []string{"<cross-session-message from=\"peer\">\nask bob\n</cross-session-message>", "  <cross-session-message from-name=\"peer\">\nask bob", "<task-notification>\n<task-id>b1</task-id>\nask bob", "<system-reminder>\nask bob\n</system-reminder>",
+		// Turns the daemon's prompt hook also knows as not typed by the owner.
+		"Another Claude session sent a message:\n<cross-session-message from=\"peer\">ask bob", "<agent-message from=\"peer\">ask bob", "[SYSTEM NOTIFICATION - NOT USER INPUT]\nask bob", "<scheduled-wakeup>ask bob</scheduled-wakeup>", "<<autonomous-loop-dynamic>>", "  note first: <task-notification>ask bob"} {
 		t.Run(prompt, func(t *testing.T) {
 			s, _ := newTestStore(t)
 			a, b := twoSessions(t, s)

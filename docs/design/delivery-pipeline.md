@@ -115,7 +115,7 @@ For `approve`, the approver may also be:
 - `none`: the step is left out (today's merge authority "full");
 - `delegate`: whoever governs this node in the graph, through a `governs` edge in an allowed mode (`delivery.delegated_approver_modes`, default owner and arbiter; the third mode, advisor, is left out), or the owner. Governs edges go only from an architect to a component. This is today's "delegated", resolved from the graph at the moment the step starts, so a new architect takes over without a pipeline change.
 
-Evidence is never a message. A trust note, a relayed owner instruction (its note says "On its own this does not approve a merge") or a CTO note does not count. Evidence comes from an authenticated step report, an answered Inbox item, or GitHub. The pipeline keeps today's fallbacks: a session that agent-net does not know gets merge authority `ask`, and a repo with no graph node gets the network value.
+Evidence is never a message. A trust note, a relayed owner instruction (its note carries the owner's words but not merge evidence) or a CTO note does not count. Evidence comes from an authenticated step report, an answered Inbox item, or GitHub. The pipeline keeps today's fallbacks: a session that agent-net does not know gets merge authority `ask`, and a repo with no graph node gets the network value.
 
 ### Rules on steps
 

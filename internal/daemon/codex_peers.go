@@ -491,7 +491,7 @@ func codexFrame(m protocol.Message) string {
 		foot += " " + m.RecipientRelation
 	}
 	if m.OwnerInstruction != "" {
-		foot += "\n" + protocol.OwnerInstructionNoteWithRule(m.OwnerInstruction, m.RecipientMergeAuthority, protocol.MessageMergeText(m))
+		foot += "\n" + protocol.OwnerInstructionNoteFor(m)
 	}
 	if m.ApprovalNote != "" {
 		foot += "\n[agent-net] " + m.ApprovalNote

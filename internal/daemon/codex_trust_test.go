@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -88,8 +89,8 @@ func TestCodexApprovedRequestGetsApprovalNote(t *testing.T) {
 }
 
 func TestCodexOwnerInstruction(t *testing.T) {
-	m := protocol.Message{Type: protocol.TypeRequest, Body: "work", OwnerInstruction: "ask bob"}
-	if got := codexFrame(m); !strings.Contains(got, "sent on the owner's instruction: «ask bob»") {
+	m := protocol.Message{Type: protocol.TypeRequest, Body: "work", FromName: "alice", CreatedAt: time.Date(2026, 11, 8, 9, 52, 0, 0, time.UTC), OwnerInstruction: "ask bob"}
+	if got := codexFrame(m); !strings.Contains(got, "The owner's own words, typed in session alice at about 2026-11-08 09:52 UTC: «ask bob»") || !strings.Contains(got, "do not ask the owner again for what the words name") {
 		t.Fatal(got)
 	}
 }

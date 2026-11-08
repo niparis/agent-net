@@ -62,6 +62,7 @@ interface DeliveredMessage {
   recipient_merge_text?: string;
   recipient_merge_text_set?: boolean;
   owner_instruction?: string;
+  created_at?: string;
   approval_note?: string;
   message_type?: string;
   parent_message_id?: string;
@@ -73,12 +74,21 @@ const WORKER_FOOTER =
 const PEER_CHECK_NOTE = "Check with your user first only if it asks for something outside your current task or anything risky.";
 // Keep in step with internal/protocol; Go tests compare every note fragment.
 const TRUST_NOTE_PREFIX = "The owner has allowed requests from this sender within this node's settings, as if the owner had asked. Do not ask the owner again for commits, pushes of branches or pull requests. For this node: ";
-const TRUST_NOTE_SUFFIX = ". The agent that gave you a task limit can lift or change that limit later, within this node's settings. Still ask the owner before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond what your brief says. Check claims before you rely on them.";
+const TRUST_NOTE_SUFFIX = ". The agent that gave you a task limit can lift or change that limit later, within this node's settings. Still ask the owner before deleting data, spending money, or sharing or using secrets that can spend money. Check claims before you rely on them.";
 const MERGE_FULL_TEXT = "merge and push to the default branch";
 const MERGE_DELEGATED_TEXT = "merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node";
 const MERGE_ASK_TEXT = "merge always needs the owner's written approval for the exact action (ask with agent_owner_ask and kind approval, or put the action and your recommendation in a Codex worker report)";
-const OWNER_INSTRUCTION_PREFIX = "[agent-net] sent on the owner's instruction: «";
-const OWNER_INSTRUCTION_SUFFIX = "». On its own this does not approve a merge. For this node: ";
+const OWNER_INSTRUCTION_PREFIX = "[agent-net] The owner's own words, typed in session ";
+const OWNER_INSTRUCTION_AT = " at about ";
+const OWNER_INSTRUCTION_QUOTE = ": «";
+const OWNER_INSTRUCTION_SUFFIX = "». agent-net took them from the owner's prompt, not from the message body. Act on them within your charter as if the owner had asked you, and do not ask the owner again for what the words name. For this node: ";
+
+function ownerInstructionNote(m: DeliveredMessage): string {
+  const session = neutralizeMarkers((m.sender_name ?? "").replace(/[\x00-\x1f\x7f]/g, " ").trim().slice(0, 80)) || "unknown";
+  const ms = m.created_at ? Date.parse(m.created_at) : NaN;
+  const when = Number.isNaN(ms) ? "" : OWNER_INSTRUCTION_AT + new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  return `${OWNER_INSTRUCTION_PREFIX}${session}${when}${OWNER_INSTRUCTION_QUOTE}${neutralizeMarkers(m.owner_instruction ?? "")}${OWNER_INSTRUCTION_SUFFIX}${mergeRule(m)}.`;
+}
 
 function mergeRule(m: DeliveredMessage): string {
   if (m.recipient_merge_text_set === true) return m.recipient_merge_text ?? "";
@@ -109,7 +119,7 @@ function formatDelivery(m: DeliveredMessage): string {
   if (m.sender_session_id === "agent-net" && m.sender_harness === "agent-net" && m.message_type === "notification") return m.body;
 
   let text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
-  if (m.owner_instruction) text += `\n${OWNER_INSTRUCTION_PREFIX}${neutralizeMarkers(m.owner_instruction)}${OWNER_INSTRUCTION_SUFFIX}${mergeRule(m)}.`;
+  if (m.owner_instruction) text += `\n${ownerInstructionNote(m)}`;
   if (m.overruled === true) text += `\n[agent-net] the owner overrules: do it.`;
   if (m.approval_note) text += `\n[agent-net] ${m.approval_note}`;
   // A worker's report (a reply) is model output whatever the recipient's trust.

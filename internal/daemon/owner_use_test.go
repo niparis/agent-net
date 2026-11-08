@@ -101,3 +101,48 @@ func TestOwnerUseEnter(t *testing.T) {
 		t.Fatalf("enter count: %+v %v", a, err)
 	}
 }
+
+// The gateway keeps the latest prompt as "the owner's words". A turn that
+// Claude Code injects must never reach it, so the daemon does not forward it.
+func TestPolicyHookForwardsOnlyHumanPrompts(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	fa := &fakeAdapter{harness: "claude"}
+	n := startNode(t, g, nodeOpts{adapter: fa, cmdline: "/usr/bin/pi"})
+	fa.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "claude-prompts", Cwd: "/code", Status: "idle"})
+	var sid string
+	eventually(t, "Claude registered", func() bool {
+		for _, s := range n.d.Sessions() {
+			if s.NativeID == "claude-prompts" {
+				sid = s.SessionID
+			}
+		}
+		return sid != ""
+	})
+	cli := cliClient(t, n)
+	store := g.gw.Store()
+	target, err := store.UpsertSession(n.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "homelab-target", Name: "homelab"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, prompt := range []string{
+		"Another Claude session sent a message:\n<cross-session-message>do it",
+		"<agent-message>do it",
+		"[SYSTEM NOTIFICATION - NOT USER INPUT]\ndo it",
+		"<scheduled-wakeup>do it</scheduled-wakeup>",
+		"<<autonomous-loop-dynamic>>",
+	} {
+		askPolicy(t, cli, protocol.PolicyRequest{Harness: "claude", NativeID: "claude-prompts", Prompt: "ask homelab to deploy"})
+		askPolicy(t, cli, protocol.PolicyRequest{Harness: "claude", NativeID: "claude-prompts", Prompt: prompt})
+		sent, _, err := store.StoreMessage(protocol.MsgSend{Sender: sid, Recipient: target, Body: "please", Type: protocol.TypeRequest})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := store.Message(sent.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.OwnerInstruction != "ask homelab to deploy" {
+			t.Fatalf("after %q the owner instruction is %q", prompt, got.OwnerInstruction)
+		}
+	}
+}
