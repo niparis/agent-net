@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/providererr"
 )
 
 // modeOfKind maps the "kind" field of ~/.claude/sessions/<pid>.json to a mode.
@@ -51,6 +52,7 @@ type modelEntry struct {
 	mtime  time.Time
 	model  string
 	exited bool
+	limit  providererr.Limited
 }
 
 // modelReader finds the model and final exit command of a Claude Code session.
@@ -115,7 +117,7 @@ func (r *modelReader) Model(sessionID, cwd string) string {
 		model = prev.model
 	}
 	r.mu.Lock()
-	r.cache[sessionID] = modelEntry{path: path, size: fi.Size(), mtime: fi.ModTime(), model: model, exited: transcriptExited(path, fi.Size())}
+	r.cache[sessionID] = modelEntry{path: path, size: fi.Size(), mtime: fi.ModTime(), model: model, exited: transcriptExited(path, fi.Size()), limit: transcriptLimit(path, fi.Size())}
 	r.mu.Unlock()
 	return model
 }
@@ -127,6 +129,16 @@ func (r *modelReader) Exited(sessionID, cwd string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.cache[sessionID].exited
+}
+
+// Limit returns the provider usage limit the session's newest answer reported,
+// or the zero value. It shares the cache of Model, so an unchanged transcript
+// is not read again.
+func (r *modelReader) Limit(sessionID, cwd string) providererr.Limited {
+	r.Model(sessionID, cwd)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.cache[sessionID].limit
 }
 
 // LastWrite returns when the session's transcript was last written, or the
@@ -246,6 +258,42 @@ func modelOfLine(line []byte) (string, bool) {
 		return "", false
 	}
 	return protocol.CleanModel(m), true
+}
+
+// transcriptLimit reads the newest main-conversation assistant entry. When it
+// is an API error that names a usage or rate limit, the limit ends at the
+// reset the error text gives, counted from the entry's own time.
+func transcriptLimit(path string, size int64) providererr.Limited {
+	var out providererr.Limited
+	lastTranscriptMatch(path, size, func(line []byte) (string, bool) {
+		if !bytes.Contains(line, assistantMark) {
+			return "", false
+		}
+		var e struct {
+			Type        string    `json:"type"`
+			IsSidechain bool      `json:"isSidechain"`
+			IsAPIError  bool      `json:"isApiErrorMessage"`
+			Timestamp   time.Time `json:"timestamp"`
+			Message     struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(line, &e) != nil || e.Type != "assistant" || e.IsSidechain {
+			return "", false
+		}
+		if e.IsAPIError {
+			text := contentText(e.Message.Content)
+			at := e.Timestamp
+			if at.IsZero() {
+				at = time.Now()
+			}
+			if l, ok := providererr.Limit(text, at); ok {
+				out = l
+			}
+		}
+		return "", true
+	})
+	return out
 }
 
 // transcriptExited ignores bookkeeping and local command output after /exit.

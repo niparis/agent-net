@@ -271,6 +271,11 @@ type localSession struct {
 	lastActive      time.Time         // when the session last did something, not when it was seen
 	harnessActivity time.Time         // harness output, state change or acknowledgement
 	ownerStopped    bool              // owner explicitly asked the harness to end
+	// limitUntil and limitReason are the provider usage limit the session hit
+	// (limits.go), protected by d.mu. turnErrored says the current turn failed.
+	limitUntil  int64
+	limitReason string
+	turnErrored bool
 	// owned is set for a session the daemon registered itself (a Codex worker
 	// in its private server). Discovery of a harness never removes it.
 	owned bool
@@ -935,6 +940,9 @@ func (d *Daemon) infoLocked(ls *localSession) protocol.SessionInfo {
 	info := ls.info
 	if ls.sessionID != "" {
 		info.SessionID = ls.sessionID
+	}
+	if ls.limitUntil != 0 {
+		info.LimitedUntil, info.LimitedReason = ls.limitUntil, ls.limitReason
 	}
 	if !ls.harnessActivity.IsZero() {
 		info.HarnessActivity = ls.harnessActivity.Unix()

@@ -560,6 +560,22 @@ await test("a busy session never goes dormant, and goes dormant after its turn",
   });
 });
 
+await test("a failed run reports its error text as turn_error", async () => {
+  freshHub();
+  const sessions = new Map([["ses_fail", session("ses_fail", "/work/f")]]);
+  const f = makeContext("/work/f", sessions);
+  const stop = await plugin.setup(f.ctx);
+  await until("hello for ses_fail", () => registered("ses_fail"));
+  const text = "You have hit your ChatGPT usage limit (plus plan). Try again in ~102 min.";
+  f.emit({ type: "session.execution.started", data: { sessionID: "ses_fail" } });
+  f.emit({ type: "session.execution.failed", data: { sessionID: "ses_fail", error: { type: "provider.rate", message: text } } });
+  await until("turn_error", () => calls.some(([m, p]) => m === "turn_error" && p.text === text));
+  f.emit({ type: "session.execution.succeeded", data: { sessionID: "ses_fail" } });
+  await until("idle", () => lastStatus("ses_fail") === "idle");
+  if (calls.filter(([m]) => m === "turn_error").length !== 1) throw new Error("a good run reported an error");
+  stop();
+});
+
 await test("a permission request and a form show as waiting until they are settled", async () => {
   freshHub();
   const sessions = new Map([["ses_wait", session("ses_wait", "/work/n")]]);

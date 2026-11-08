@@ -804,6 +804,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			if p.Status == "busy" {
 				// Working again: the user answered, or the session moved on.
 				ls.info.Waiting = nil
+				ls.turnStartedLocked()
+			} else if p.Status == "idle" && previousStatus == "busy" {
+				ls.turnIdleLocked()
 			}
 		}
 		if p.Mode != nil && ls.info.Worker == nil { // a worker is always background
@@ -840,6 +843,25 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		ls.info.Repo = repo
 		d.mu.Unlock()
 		d.pushSession(ls)
+		return nil, nil
+
+	case "turn_error", "turn_ok":
+		// A plugin tells how a turn went. A usage limit in the error text
+		// limits the session until it resets (limits.go).
+		if ls == nil || ls.conn != lc {
+			return nil, errors.New("only plugin clients report turn results")
+		}
+		if method == "turn_ok" {
+			d.turnSucceeded(ls)
+			return nil, nil
+		}
+		var p struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad turn_error")
+		}
+		d.turnFailed(ls, p.Text)
 		return nil, nil
 
 	case "harness_end":

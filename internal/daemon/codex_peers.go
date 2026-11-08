@@ -149,8 +149,14 @@ func (a *codexAdapter) onNote(method string, raw json.RawMessage) {
 			a.d.mu.Unlock()
 			if ls != nil {
 				a.d.setWaiting(ls, nil)
+				a.d.mu.Lock()
+				ls.turnStartedLocked()
+				a.d.mu.Unlock()
 			}
 		}
+	}
+	if method == "turn/completed" {
+		a.turnCompleted(raw)
 	}
 	if method == "thread/archived" {
 		var p struct {
@@ -169,6 +175,35 @@ func (a *codexAdapter) onNote(method string, raw json.RawMessage) {
 		case a.kick <- struct{}{}:
 		default:
 		}
+	}
+}
+
+// turnCompleted reads how a turn ended. A failed turn with a usage limit
+// limits the thread; a completed one clears the limit (limits.go).
+func (a *codexAdapter) turnCompleted(raw json.RawMessage) {
+	var p struct {
+		ThreadID string `json:"threadId"`
+		Turn     struct {
+			Status string `json:"status"`
+			Error  *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"turn"`
+	}
+	if json.Unmarshal(raw, &p) != nil || p.ThreadID == "" {
+		return
+	}
+	a.d.mu.Lock()
+	ls := a.d.sessions[key("codex", p.ThreadID)]
+	a.d.mu.Unlock()
+	if ls == nil {
+		return
+	}
+	switch {
+	case p.Turn.Error != nil:
+		a.d.turnFailed(ls, p.Turn.Error.Message)
+	case p.Turn.Status == "completed":
+		a.d.turnSucceeded(ls)
 	}
 }
 

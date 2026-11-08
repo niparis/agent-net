@@ -216,3 +216,58 @@ func TestModelNeverLeavesTheTranscriptText(t *testing.T) {
 		t.Fatalf("transcript text in %s", s)
 	}
 }
+
+func apiError(at, text string) string {
+	return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"error":"rate_limit","isApiErrorMessage":true,"message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":%q}]}}`, at, text)
+}
+
+// The newest main-conversation assistant entry decides: an API error that
+// says "usage limit" limits the session until its reset, counted from the
+// entry's own time; a later normal answer ends the limit.
+func TestModelReaderReadsAUsageLimit(t *testing.T) {
+	projects := t.TempDir()
+	r := newModelReader(projects)
+	path := filepath.Join(projects, transcriptDir("/work/x"), "sess-1.jsonl")
+	if l := r.Limit("sess-1", "/work/x"); !l.Until.IsZero() {
+		t.Fatalf("no transcript: %+v", l)
+	}
+	writeLines(t, path, assistant("claude-opus-5-5", ""), apiError("2026-11-08T10:00:00Z", "You've hit your session limit · try again in 45 minutes"))
+	l := r.Limit("sess-1", "/work/x")
+	if want := time.Date(2026, 11, 8, 10, 45, 0, 0, time.UTC); !l.Until.Equal(want) || l.Reason != "session limit" {
+		t.Fatalf("limit = %+v, want until %v", l, want)
+	}
+	// The sub-agent's entries do not count, and a normal answer ends the limit.
+	time.Sleep(10 * time.Millisecond)
+	writeLines(t, path, assistant("claude-opus-5-5", ""), apiError("2026-11-08T10:00:00Z", "You've hit your session limit · try again in 45 minutes"), assistant("claude-opus-5-5", ""))
+	if l := r.Limit("sess-1", "/work/x"); !l.Until.IsZero() {
+		t.Fatalf("limit after a normal answer: %+v", l)
+	}
+	// Other API errors are no limit.
+	time.Sleep(10 * time.Millisecond)
+	writeLines(t, path, apiError("2026-11-08T10:00:00Z", "API Error: Connection lost"))
+	if l := r.Limit("sess-1", "/work/x"); !l.Until.IsZero() {
+		t.Fatalf("connection error read as a limit: %+v", l)
+	}
+}
+
+func TestAdapterReportsAUsageLimitWhileItLasts(t *testing.T) {
+	r := newRig(t)
+	projects := filepath.Join(filepath.Dir(r.sessions), "projects")
+	at := time.Now().UTC().Format(time.RFC3339)
+	writeLines(t, filepath.Join(projects, transcriptDir("/work/x"), "sess-1.jsonl"), apiError(at, "You've hit your usage limit. Try again in 30 minutes."))
+	body := fmt.Sprintf(`{"pid":%d,"sessionId":"sess-1","cwd":"/work/x","name":"claude-x","status":"idle","kind":"interactive","messagingSocketPath":%q}`, os.Getpid(), r.inboxPath)
+	os.WriteFile(filepath.Join(r.sessions, fmt.Sprintf("%d.json", os.Getpid())), []byte(body), 0o600)
+	eventually(t, "limit reported", func() bool {
+		c := r.host.current()
+		if len(c) != 1 || c[0].LimitedUntil == 0 {
+			return false
+		}
+		d := time.Until(time.Unix(c[0].LimitedUntil, 0))
+		return d > 28*time.Minute && d < 31*time.Minute && c[0].LimitedReason == "usage limit"
+	})
+	// A limit in the past is over.
+	old := time.Now().Add(-3 * time.Hour).UTC().Format(time.RFC3339)
+	time.Sleep(10 * time.Millisecond)
+	writeLines(t, filepath.Join(projects, transcriptDir("/work/x"), "sess-1.jsonl"), apiError(old, "You've hit your usage limit. Try again in 30 minutes."))
+	eventually(t, "limit cleared", func() bool { c := r.host.current(); return len(c) == 1 && c[0].LimitedUntil == 0 })
+}

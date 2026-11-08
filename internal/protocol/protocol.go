@@ -167,6 +167,12 @@ type SessionInfo struct {
 	PinnedAt        int64 `json:"pinned_at,omitempty"`
 	// HarnessActivity is the last observed output, state change or delivery acknowledgement.
 	HarnessActivity int64 `json:"harness_activity,omitempty"`
+	// LimitedUntil is when the session's provider usage limit ends, in Unix
+	// seconds, and LimitedReason says which limit ("ChatGPT usage limit").
+	// Both are empty when the session is not limited. The daemon clears them
+	// when the session completes a turn. Empty from an older daemon.
+	LimitedUntil  int64  `json:"limited_until,omitempty"`
+	LimitedReason string `json:"limited_reason,omitempty"`
 }
 
 // StatusDormant is the status of a session that is reachable but has had no
@@ -323,6 +329,10 @@ type AgentView struct {
 	OwnerUsedAt     int64 `json:"owner_used_at,omitempty"`
 	OwnerUses       int   `json:"owner_uses,omitempty"`
 	PinnedAt        int64 `json:"pinned_at,omitempty"`
+	// LimitedUntil and LimitedReason: see SessionInfo. A past time means the
+	// limit is over. Empty from an older gateway.
+	LimitedUntil  int64  `json:"limited_until,omitempty"`
+	LimitedReason string `json:"limited_reason,omitempty"`
 	// StalledSince is the time of the last observed harness activity during a stall.
 	StalledSince int64 `json:"stalled_since,omitempty"`
 	// TaskStarted is when the announced task last changed, in Unix seconds. It
@@ -798,4 +808,20 @@ func SessionType(harness string, worker *WorkerInfo, explicit string) string {
 		return explicit
 	}
 	return "agent"
+}
+
+// Limited tells whether the session's provider usage limit is still on at now.
+func (a AgentView) Limited(now time.Time) bool {
+	return a.LimitedUntil > now.Unix()
+}
+
+// LimitKind is the kind of limit in a limited_reason ("ChatGPT usage limit"):
+// "usage limit", "rate limit", "session limit" or "quota".
+func LimitKind(reason string) string {
+	for _, k := range []string{"rate limit", "session limit", "quota"} {
+		if strings.HasSuffix(reason, k) {
+			return k
+		}
+	}
+	return "usage limit"
 }

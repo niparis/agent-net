@@ -1068,7 +1068,7 @@ CREATE TABLE IF NOT EXISTS repo_start_reservations (node_id TEXT NOT NULL,ref TE
 `, `SELECT 1 /* session close column */;`, `SELECT 1 /* session idle compaction column */;`, `
 ALTER TABLE repo_leads ADD COLUMN lead_session TEXT;
 ALTER TABLE teams ADD COLUMN lead_session TEXT;
-`, `SELECT 1 /* idle check task hash column */;`}
+`, `SELECT 1 /* idle check task hash column */;`, `SELECT 1 /* session provider limit columns */;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1303,6 +1303,21 @@ func (s *Store) migrate() error {
 				if _, err := tx.Exec(`ALTER TABLE session_checks ADD COLUMN check_task_hash TEXT NOT NULL DEFAULT ''`); err != nil {
 					tx.Rollback()
 					return err
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "session provider limit columns") {
+			for _, col := range []struct{ name, def string }{{"limited_until", "INTEGER NOT NULL DEFAULT 0"}, {"limited_reason", "TEXT NOT NULL DEFAULT ''"}} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN ` + col.name + ` ` + col.def); err != nil {
+						tx.Rollback()
+						return err
+					}
 				}
 			}
 		}
@@ -2035,8 +2050,8 @@ func (s *Store) upsertSession(q interface {
 	lastActive := in.LastActive * int64(time.Second)
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, worker_title, repo_description, worker_started,
-		tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at, limited_until, limited_reason)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid,
 		-- A worker whose run is over stays ended. A late session sync from its
@@ -2060,6 +2075,7 @@ func (s *Store) upsertSession(q interface {
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded,
 		no_project=excluded.no_project, idle_compacted_at=excluded.idle_compacted_at,
+		limited_until=excluded.limited_until, limited_reason=excluded.limited_reason,
 		worker_run_active=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
 			THEN 0 WHEN sessions.online=0 THEN 1 ELSE sessions.worker_run_active END`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive,
@@ -2067,7 +2083,7 @@ func (s *Store) upsertSession(q interface {
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
 		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject),
 		max(in.HarnessActivity*int64(time.Second), busyInitialActivity(in.Status, now)),
-		in.IdleCompactedAt, in.HarnessActivity*int64(time.Second))
+		in.IdleCompactedAt, in.LimitedUntil, protocol.CleanModel(in.LimitedReason), in.HarnessActivity*int64(time.Second))
 	if err != nil {
 		return "", false, err
 	}
@@ -2688,7 +2704,8 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),
  (SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)),
  s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at,
- COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0)
+ COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0),
+ s.limited_until, s.limited_reason
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -2703,7 +2720,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.IdleCompactedAt, &a.StalledSince)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.IdleCompactedAt, &a.StalledSince, &a.LimitedUntil, &a.LimitedReason)
 	if err != nil {
 		return a, err
 	}
@@ -3127,14 +3144,26 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		return msg, false, reject("unknown message_type %q", m.Type)
 	}
 	if route != nil && p.LeadAddress != "" {
-		if err = validateLeadAddress(tx, p.LeadAddress, m.To); err != nil {
+		if err = validateLeadAddress(tx, p.LeadAddress, m.To, s.now()); err != nil {
 			return msg, false, err
 		}
 	}
 	if route != nil && p.LeadAddress == "" {
-		*route, err = routeLead(tx, &m)
+		*route, err = routeLead(tx, &m, s.now())
 		if err != nil {
 			return msg, false, err
+		}
+	}
+	if route != nil {
+		note, err := limitedNote(tx, m.To, s.now())
+		if err != nil {
+			return msg, false, err
+		}
+		if note != "" {
+			if *route != "" {
+				*route += "\n"
+			}
+			*route += note
 		}
 	}
 	// Apply this after lead and legacy routing, against the actual recipient.

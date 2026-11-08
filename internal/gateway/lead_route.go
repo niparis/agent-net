@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -24,17 +25,21 @@ func repoLeadRows(db leadDB, where string, args ...any) (*sql.Rows, error) {
 func teamLeadRows(db leadDB, name string) (*sql.Rows, error) {
 	return db.Query(`SELECT id,owner_agent_id,lead_session FROM teams WHERE (id=? OR name=? COLLATE NOCASE) AND active=1`, name, name)
 }
-func liveLeadSession(db leadDB, agent, repo, preferred string, withName bool) *sql.Row {
+
+// liveLeadSession picks the lead's session. A session under a provider usage
+// limit comes last: another live session of the same agent answers sooner. If
+// all of them are limited, the usual order decides and the message is delivered.
+func liveLeadSession(db leadDB, agent, repo, preferred string, withName bool, now time.Time) *sql.Row {
 	selectPart, join := "s.id", ""
 	if withName {
 		selectPart, join = "s.id,a.display_name", " JOIN agents a ON a.id=s.agent_id"
 	}
-	return db.QueryRow(`SELECT `+selectPart+` FROM sessions s`+join+` WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') ORDER BY CASE WHEN s.id=? THEN 0 ELSE 1 END,CASE WHEN s.repo_id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`, agent, preferred, repo)
+	return db.QueryRow(`SELECT `+selectPart+` FROM sessions s`+join+` WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') ORDER BY CASE WHEN s.limited_until>? THEN 1 ELSE 0 END,CASE WHEN s.id=? THEN 0 ELSE 1 END,CASE WHEN s.repo_id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`, agent, now.Unix(), preferred, repo)
 }
 
 // routeLead runs in the message transaction after the original reply has been
 // authorized. The normal request gate then checks the actual recipient.
-func routeLead(tx *sql.Tx, m *protocol.Message) (string, error) {
+func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 	var senderRepo, senderAgent, harness, worker, cto string
 	err := tx.QueryRow(`SELECT COALESCE(repo_id,''),COALESCE(agent_id,''),harness,worker,COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') FROM sessions WHERE id=?`, m.From).Scan(&senderRepo, &senderAgent, &harness, &worker, &cto)
 	if err != nil {
@@ -85,7 +90,7 @@ func routeLead(tx *sql.Tx, m *protocol.Message) (string, error) {
 			return "", false, nil
 		}
 		var id, name string
-		err := liveLeadSession(tx, lead.String, inRepo, preferred.String, true).Scan(&id, &name)
+		err := liveLeadSession(tx, lead.String, inRepo, preferred.String, true, now).Scan(&id, &name)
 		if err == sql.ErrNoRows {
 			return "Lead has no live session; delivered as addressed.", true, nil
 		}
@@ -183,7 +188,7 @@ func (s *Store) ResolveLeadAddress(address string) (string, error) {
 		return "", reject("%s %s has no lead", kind, name)
 	}
 	var session string
-	err = liveLeadSession(s.db, lead.String, id, preferred.String, false).Scan(&session)
+	err = liveLeadSession(s.db, lead.String, id, preferred.String, false, s.now()).Scan(&session)
 	if err == sql.ErrNoRows {
 		return "", reject("%s %s lead has no live session", kind, name)
 	}
@@ -192,7 +197,7 @@ func (s *Store) ResolveLeadAddress(address string) (string, error) {
 
 // validateLeadAddress checks the explicit address again in the send transaction.
 // A sender cannot use a forged address to avoid ordinary lead routing.
-func validateLeadAddress(tx *sql.Tx, address, recipient string) error {
+func validateLeadAddress(tx *sql.Tx, address, recipient string, now time.Time) error {
 	kind, name, ok := strings.Cut(address, ":")
 	name = strings.TrimSpace(name)
 	if !ok || name == "" || (kind != "repo" && kind != "team") {
@@ -230,7 +235,8 @@ func validateLeadAddress(tx *sql.Tx, address, recipient string) error {
 	}
 	var match bool
 	if count == 1 && lead.Valid {
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND agent_id=? AND online=1 AND worker='' AND harness NOT IN ('owner','cto') AND (id=? OR NOT EXISTS(SELECT 1 FROM sessions WHERE id=? AND agent_id=? AND online=1 AND worker='' AND harness NOT IN ('owner','cto'))))`, recipient, lead.String, preferred.String, preferred.String, lead.String).Scan(&match)
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND agent_id=? AND online=1 AND worker='' AND harness NOT IN ('owner','cto') AND (id=? OR NOT EXISTS(SELECT 1 FROM sessions p WHERE p.id=? AND p.agent_id=? AND p.online=1 AND p.worker='' AND p.harness NOT IN ('owner','cto')
+			AND (p.limited_until<=? OR sessions.limited_until>?))))`, recipient, lead.String, preferred.String, preferred.String, lead.String, now.Unix(), now.Unix()).Scan(&match)
 		if err != nil {
 			return err
 		}
@@ -239,4 +245,19 @@ func validateLeadAddress(tx *sql.Tx, address, recipient string) error {
 		return reject("lead for %s changed or went offline; retry the address", address)
 	}
 	return nil
+}
+
+// limitedNote is the extra line in the sender's receipt when the recipient
+// hit its provider usage limit. The message is still delivered.
+func limitedNote(tx *sql.Tx, recipient string, now time.Time) (string, error) {
+	var until int64
+	var reason, name string
+	err := tx.QueryRow(`SELECT s.limited_until,s.limited_reason,COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.id) FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, recipient).Scan(&until, &reason, &name)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil || until <= now.Unix() {
+		return "", err
+	}
+	return fmt.Sprintf("%s hit its %s; it can answer after %s UTC", name, protocol.LimitKind(reason), time.Unix(until, 0).UTC().Format("15:04")), nil
 }

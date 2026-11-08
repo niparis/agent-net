@@ -431,6 +431,16 @@ class SessionLink {
     if (this.connected) this.request("waiting", { clear: true }).catch(() => {});
   }
 
+  /**
+   * A failed turn. The daemon reads a provider usage limit from the text and
+   * limits the session until it resets; the idle event after a turn without
+   * an error ends the limit.
+   */
+  turnError(text: string) {
+    const t = String(text ?? "").slice(0, 2000);
+    if (this.connected) this.request("turn_error", { text: t }).catch(() => {});
+  }
+
   /** Working state from execution events. This is activity too. */
   setStatus(next: "idle" | "busy") {
     const before = this.status;
@@ -1302,6 +1312,14 @@ export default {
       link.setWaiting(kind, text);
     }
 
+    // The message of a failed run; never the whole event, which has IDs.
+    function errorText(data: any): string {
+      const e = data?.error ?? data?.message;
+      if (typeof e === "string") return e;
+      if (e && typeof e === "object") return String(e.message ?? e.data?.message ?? e.name ?? e.type ?? "");
+      return "";
+    }
+
     async function handleEvent(event: any) {
       const sessionID: string | undefined = event?.data?.sessionID ?? event?.data?.form?.sessionID;
       if (!sessionID) return;
@@ -1312,6 +1330,9 @@ export default {
           h.asks.delete(root);
           await h.links.get(sessionID)?.link.request("harness_end", {}).catch(() => {});
           dropLink(sessionID);
+          return;
+        case "session.error": // the v1 name of a failed run
+          (await ensureLink(sessionID))?.turnError(errorText(event.data));
           return;
         case "session.created":
           (await ensureLinkWithRetry(sessionID))?.touch();
@@ -1366,6 +1387,7 @@ export default {
         case "session.execution.failed":
         case "session.execution.interrupted":
           clearAsks(root);
+          if (event.type === "session.execution.failed") (await ensureLink(sessionID))?.turnError(errorText(event.data));
           (await ensureLink(sessionID))?.setStatus("idle");
           return;
         default: {

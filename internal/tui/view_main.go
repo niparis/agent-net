@@ -1503,6 +1503,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			if delivery := m.sessionTaskText(a); delivery != "" {
 				v = delivery
 			}
+			if a.Online && a.Limited(m.now()) {
+				// The provider usage limit ends at this time (UTC in the
+				// receipt line, the owner's zone here).
+				v = strings.TrimSpace("until " + m.displayTime(a.LimitedUntil).Format("15:04") + " " + v)
+			}
 			if mk.summary != "" {
 				room := max(0, c.width-ansi.StringWidth(mk.summary)-1)
 				v = strings.TrimSpace(cellDots(v, room))
@@ -1589,6 +1594,8 @@ func (m Model) sessionStatusCell(a protocol.AgentView) string {
 		return "stalled"
 	case !a.Online:
 		return "offline"
+	case a.Limited(m.now()):
+		return "limited"
 	case a.Status == protocol.StatusDormant:
 		return "dormant"
 	}
