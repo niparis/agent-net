@@ -347,6 +347,7 @@ func TestNewSessionPathTrustGoldens(t *testing.T) {
 		name := func(s string) string { return "view_" + itoa(size.w) + "x" + itoa(size.h) + "_" + s }
 
 		m, src, home := pathModel(t, size.w, size.h)
+		m = quietFixtures(m)
 		dir := gitFolder(t, home, "code/garden")
 		setProjectValue(&m, "~/code/garden")
 		m.sform.in[sHarness].SetValue("claude")

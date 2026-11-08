@@ -656,6 +656,7 @@ func TestCTOModelFormGoldens(t *testing.T) {
 		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		m = refresh(m, src.fakeSource)
 		m.snap = snap
+		m = quietFixtures(m)
 		m.src = src
 		m = send(m, m.ctoPollCmd()())
 		m = keys(m, "C", "m")
@@ -706,6 +707,7 @@ func TestCTOLongErrorGolden(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = refresh(m, src.fakeSource)
+	m = quietFixtures(m)
 	m.src = src
 	m = send(m, m.ctoPollCmd()())
 	m = keys(m, "C")

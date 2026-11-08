@@ -71,6 +71,7 @@ func TestResumeMissingFolderLine(t *testing.T) {
 func TestResumeConfirmGoldens(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		m, _ := workerModel(size.w, size.h)
+		m = quietFixtures(m)
 		m.snap.Agents[0].Online = false
 		m.snap.Agents[0].LastSeen = t0.Add(-3 * time.Hour).Unix()
 		m.snap.Agents[0].Profile.Name = "tenebrae"

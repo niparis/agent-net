@@ -338,7 +338,7 @@ func TestFinderHasMatchColumnHeader(t *testing.T) {
 
 func TestFinderGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}, {160, 40}} {
-		m := newModel(size[0], size[1])
+		m := quietFixtures(newModel(size[0], size[1]))
 		m = send(m, ctrlP())
 		m = typeFinder(m, "st")
 		golden(t, fmt.Sprintf("finder_%dx%d", size[0], size[1]), m.testView())
@@ -347,7 +347,7 @@ func TestFinderGoldens(t *testing.T) {
 
 func TestSessionsViewGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}, {160, 40}} {
-		m := newModel(size[0], size[1])
+		m := quietFixtures(newModel(size[0], size[1]))
 		golden(t, fmt.Sprintf("sessions_view_active_%dx%d", size[0], size[1]), m.testView())
 		m = keys(m, "v")
 		golden(t, fmt.Sprintf("sessions_view_all_%dx%d", size[0], size[1]), m.testView())

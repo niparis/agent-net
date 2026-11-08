@@ -140,7 +140,7 @@ func TestMergerFilterKeepsWholeTree(t *testing.T) {
 func TestMergerTreeGolden(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		name := "tree_merger_" + itoa(size.w) + "x" + itoa(size.h)
-		m := treeModel(size.w, size.h, mergerFixture())
+		m := quietFixtures(treeModel(size.w, size.h, mergerFixture()))
 		m.delivery.changes = []deliveryChange{{ID: "ch_ed5f0000", Repo: "agent-net", Caller: mainID, Step: "test", StepState: protocol.StepStateRunning, OwnerKind: protocol.OwnerCaller, Steps: []deliveryStep{{Name: "test", State: protocol.StepStateRunning, Note: "claimed by " + mainID}}}}
 		golden(t, name, selectID(m, mergerID).testView())
 	}
@@ -159,7 +159,7 @@ func TestMergerIdleWithoutLeadGolden(t *testing.T) {
 		for i := 0; i < 18; i++ {
 			snap.Agents = append(snap.Agents, agent("s_00000000000002"+itoa(10+i), "n_vm", "build-vm", "codex", "idle "+itoa(10+i), nil))
 		}
-		m := treeModel(size.w, size.h, snap)
+		m := quietFixtures(treeModel(size.w, size.h, snap))
 		m.activeOnly, m.showOffline = true, false
 		m.delivery.changes = []deliveryChange{{ID: "ch_ed5f0000", Repo: "agent-net", State: protocol.ChangeOpen, Caller: mainID, Updated: 200}}
 		m = selectID(m, mergerID)

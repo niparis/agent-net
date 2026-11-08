@@ -302,7 +302,7 @@ func TestGoldenFeedSnippets(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
 	m = settle(refresh(m, src))
 	m = drainSnippets(t, m)
-	golden(t, "view_120x34_feed_snippets", m.testView())
+	golden(t, "view_120x34_feed_snippets", quietFixtures(m).testView())
 }
 
 func TestHelpListsTheMessageStates(t *testing.T) {

@@ -5,14 +5,14 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT    MODEL                    STATUS    CPU   RAM TASK
- Working (5)                                                                                              view: all  (v)
+ Working (1)                                                                                              view: all  (v)
 ▸ tenebrae-53        Mac          tenebrae   claude · opus-5-5        busy      38%  1.2G
+ Idle (5)
+  weather-bot                     -          -                        online              last call 14:04
   ◐ strategies       Mac          strategies claude · sonnet-5-5      idle     240%  4.6G backtest v2
   web                Mac          shop       opencode · sonnet-5      idle        ?     ?
   ◐ ci-runner        build-vm     agent-net  pi · gpt-6               idle       5%  300M
   scratch            build-vm     -          pi                       shell     <1%   80M
- Idle (1)
-  weather-bot                     -          -                        online              last call 14:04
 
 
 

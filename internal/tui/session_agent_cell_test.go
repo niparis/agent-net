@@ -29,6 +29,7 @@ func (s *agentCellSource) Call(_ context.Context, method string, p any) (json.Ra
 
 func TestSessionAgentCellAt80AndOwnerChoice(t *testing.T) {
 	m, base := workerModel(80, 24)
+	m = quietFixtures(m)
 	src := &agentCellSource{fakeSource: base}
 	m.src = src
 	m = selectID(m, "s_0000000000000001")

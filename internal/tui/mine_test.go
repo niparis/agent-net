@@ -203,6 +203,11 @@ func TestPinKeyIsListedAndTheKeyLineFits(t *testing.T) {
 func TestMineSectionGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}, {160, 40}} {
 		m, _ := mineModel(size[0], size[1])
+		m = quietFixtures(m)
+		// The quiet fixture's first row is the busy session, as it was before
+		// the grace period.
+		m.selected, m.selIdx = "", 0
+		m.ensureSelection()
 		golden(t, fmt.Sprintf("sessions_mine_active_%dx%d", size[0], size[1]), m.testView())
 		m = keys(m, "v")
 		golden(t, fmt.Sprintf("sessions_mine_all_%dx%d", size[0], size[1]), m.testView())

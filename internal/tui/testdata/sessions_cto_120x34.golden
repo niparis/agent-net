@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT   MODEL                    STATUS    CPU   RAM TASK
- Working (1)                                                                                           view: active  (v)
+ Idle (1)                                                                                              view: active  (v)
 ▸ Atlas cto          Mac          -         cto                      idle        ?     ?
 
 

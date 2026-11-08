@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- Working (4)                                                             all (v)
+ Idle (4)                                                                all (v)
 ▸ ◐ strategies   Mac     strategi… claude · so… idle        ?     ? backtest v2
   ├─ backtest-a  Mac     -         opencode · … idle        ?     ? probe
   ├─ backtest-b  Mac     -         opencode · … idle        ?     ? probe

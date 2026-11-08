@@ -4,14 +4,14 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   no claude · no opencode                │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               MACHINE      PROJECT    MODEL                    STATUS      CPU   RAM TASK
+  NAME               MACHINE      PROJECT   MODEL                    STATUS      CPU   RAM TASK
  Needs you (1)                                                                                        Inbox: 7 to decide
-  ◐ ci-runner        build-vm     agent-net  pi · gpt-6               needs you    5%  300M
- Working (4)
-  tenebrae-53        Mac          tenebrae   claude · opus-5-5        busy        38%  1.2G
-  ◐ strategies       Mac          strategies claude · sonnet-5-5      idle       240%  4.6G backtest v2
-  web                Mac          shop       opencode · sonnet-5      idle          ?     ?
-  scratch            build-vm     -          pi                       shell       <1%   80M
+  ◐ ci-runner        build-vm     agent-net pi · gpt-6               needs you    5%  300M
+ Working (1)
+  tenebrae-53        Mac          tenebrae  claude · opus-5-5        busy        38%  1.2G
+ Idle (3)
+  3 more idle · v to show
+
 
 
 

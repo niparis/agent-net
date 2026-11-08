@@ -38,7 +38,7 @@ func TestSessionsBotsGroupAndKeys(t *testing.T) {
 }
 func TestAppsPublicAndBotsScreens(t *testing.T) {
 	for _, w := range []int{80, 120} {
-		m := botScreenModel(w)
+		m := quietFixtures(botScreenModel(w))
 		golden(t, fmt.Sprintf("sessions_bots_%d", w), m.testView())
 		if w == 120 && !strings.Contains(m.testView(), "last call") {
 			t.Fatal("bot last call missing")

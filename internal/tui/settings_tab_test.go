@@ -206,7 +206,7 @@ func TestSettingsSectionNavigationAndHelp(t *testing.T) {
 func TestSettingsGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		w, h := size[0], size[1]
-		m := newModel(w, h)
+		m := quietFixtures(newModel(w, h))
 		m.tab = settingsTab
 		m.apps.public.On = true
 		m.apps.public.Port = 8443
@@ -218,7 +218,7 @@ func TestSettingsGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("settings_off_%dx%d", w, h), m.testView())
 		m.apps.public.Error = "Tailscale is not installed on research-gateway (the gateway machine). Install it there, or use your own tunnel URL (u)."
 		golden(t, fmt.Sprintf("settings_public_error_%dx%d", w, h), m.testView())
-		s := newModel(w, h)
+		s := quietFixtures(newModel(w, h))
 		s, _ = press(s, tea.KeyPressMsg{Code: tea.KeyRight})
 		golden(t, fmt.Sprintf("sessions_cells_%dx%d", w, h), s.testView())
 		s.activeOnly = true

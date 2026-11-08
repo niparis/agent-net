@@ -7,11 +7,11 @@
   NAME           MACHINE PROJECT MODEL        STATUS      CPU   RAM TASK
  Needs you (1)                                                Inbox: 7 to decide
   ◐ ci-runner    build-… agent-… pi · gpt-6   needs you    5%  300M
- Working (4)
+ Working (1)
   tenebrae-53    Mac     tenebr… claude · op… busy        38%  1.2G
-  ◐ strategies   Mac     strate… claude · so… idle       240%  4.6G backtest v2
-  web            Mac     shop    opencode · … idle          ?     ?
-  scratch        build-… -       pi           shell       <1%   80M
+ Idle (3)
+  3 more idle · v to show
+
 
 
 

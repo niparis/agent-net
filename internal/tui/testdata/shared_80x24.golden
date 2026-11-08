@@ -5,14 +5,14 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- Working (7)                                                          active (v)
+ Working (2)                                                          active (v)
 ▸ api            Mac     -         opencode     busy    shared                 …
   tenebrae-53    Mac     tenebrae  claude · op… busy      38%  1.2G
-  docs           Mac     -         opencode     idle    shared                 …
-  ◐ strategies   Mac     strategi… claude · so… idle     240%  4.6G backtest v2
-  web            Mac     shop      opencode · … idle    shared                 …
-  ◐ ci-runner    build-… agent-net pi · gpt-6   idle       5%  300M
-  scratch        build-… -         pi           shell     <1%   80M
+ Idle (5)
+  5 more idle · v to show
+
+
+
 
 
 

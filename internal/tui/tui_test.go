@@ -465,6 +465,29 @@ func newModel(w, h int) Model {
 	return settle(refresh(m, src))
 }
 
+// quietFixtures moves every fixture's activity over an hour into the past and
+// shifts the stored order by the same amount. A scene about Idle, folding or
+// the active-only view then renders as it did before the Working grace period.
+func quietFixtures(m Model) Model {
+	const shift = 2 * time.Hour
+	// Copy the slice: fixtures share their backing array between models, and
+	// aging it twice would reorder them.
+	agents := append([]protocol.AgentView(nil), m.snap.Agents...)
+	for i := range agents {
+		if agents[i].LastActive > 0 {
+			agents[i].LastActive -= int64(shift / time.Second)
+		}
+	}
+	m.snap.Agents = agents
+	for id, o := range m.sessionOrder {
+		if !o.activity.IsZero() {
+			o.activity = o.activity.Add(-shift)
+			m.sessionOrder[id] = o
+		}
+	}
+	return m
+}
+
 // settle fetches the top processes the detail pane wants, the way the
 // program does after a key or a refresh.
 func settle(m Model) Model {
@@ -549,10 +572,12 @@ func golden(t *testing.T, name, got string) {
 	}
 }
 
-func TestViewGolden120(t *testing.T) { golden(t, "view_120x34", newModel(120, 34).testView()) }
+func TestViewGolden120(t *testing.T) {
+	golden(t, "view_120x34", quietFixtures(newModel(120, 34)).testView())
+}
 
 func TestViewGoldenOfflineAndFilter(t *testing.T) {
-	m := keys(newModel(100, 30), "v", "/", "p", "i", "enter", "down")
+	m := keys(quietFixtures(newModel(100, 30)), "v", "/", "p", "i", "enter", "down")
 	golden(t, "view_100x30_offline_filter", m.testView())
 }
 
@@ -604,12 +629,12 @@ func TestViewFitsEverySize(t *testing.T) {
 }
 
 func TestViewHasEverythingAt80Columns(t *testing.T) {
-	m := keys(newModel(80, 24), "down") // tenebrae-53
+	m := keys(quietFixtures(newModel(80, 24)), "down") // tenebrae-53
 	out := m.testView()
 	for _, want := range []string{
 		"Mac", "old-box", "8 Delivery", "cpu", "mem", "no claude",
 		"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
-		"tenebrae-53", "busy", "CTO",
+		"tenebrae-53", "busy", "Idle", "CTO",
 		"up/down select", "q quit",
 	} {
 		if !strings.Contains(out, want) {
@@ -619,8 +644,8 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	if strings.Contains(out, "old-session") {
 		t.Error("the active view showed an ended session")
 	}
-	if all := keys(m, "v").testView(); !strings.Contains(all, "old-session") || !strings.Contains(all, "Idle") {
-		t.Error("all must show the latest recent ended session in the Idle band")
+	if !strings.Contains(keys(m, "v").testView(), "old-session") {
+		t.Error("all must show the latest recent ended session")
 	}
 }
 
@@ -635,8 +660,8 @@ func names(m Model) []string {
 }
 
 func TestOfflineToggle(t *testing.T) {
-	m := newModel(100, 30)
-	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch" {
+	m := quietFixtures(newModel(100, 30))
+	if got := strings.Join(names(m), ","); got != "tenebrae-53" {
 		t.Fatalf("active sessions: %s", got)
 	}
 	m = keys(m, "v")
@@ -661,7 +686,7 @@ func TestOfflineToggle(t *testing.T) {
 }
 
 func TestFilter(t *testing.T) {
-	m := newModel(100, 30)
+	m := quietFixtures(newModel(100, 30))
 	m = keys(m, "/")
 	if !m.filtering {
 		t.Fatal("/ did not start the filter")
@@ -672,7 +697,7 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("typed keys acted as commands: filter %q quit %v offline %v", m.filter, m.quitting, m.showOffline)
 	}
 	m = keys(m, "esc")
-	if m.filtering || m.filter != "" || len(names(m)) != 5 {
+	if m.filtering || m.filter != "" || len(names(m)) != 1 {
 		t.Fatalf("esc must clear and leave the filter: %q filtering=%v", m.filter, m.filtering)
 	}
 
@@ -695,7 +720,7 @@ func TestFilter(t *testing.T) {
 	}
 	// Esc outside the input clears it too.
 	m = keys(m, "esc")
-	if m.filter != "" || len(names(m)) != 5 {
+	if m.filter != "" || len(names(m)) != 1 {
 		t.Fatalf("esc did not clear the filter: %q", m.filter)
 	}
 
@@ -778,6 +803,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = refresh(m, src)
+	m = quietFixtures(m)
 	m = keys(m, "end")
 	v := m.testView()
 	last := m.visible()[len(m.visible())-1]
@@ -789,7 +815,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	}
 	// Scrolled into the middle of a machine, its heading stays on top.
 	m = keys(m, "g", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
-	if v := lines(m.testView()); !strings.Contains(strings.Join(v, "\n"), "Working (") {
+	if v := lines(m.testView()); !strings.Contains(strings.Join(v, "\n"), "Idle (") {
 		t.Fatalf("no machine heading above the scrolled table:\n%s", strings.Join(v, "\n"))
 	}
 	if !strings.Contains(m.testView(), "▸ ") {
@@ -831,7 +857,7 @@ func TestDaemonDownBanner(t *testing.T) {
 	if m.problem != ProblemNone || strings.Contains(m.testView(), "!") && strings.Contains(m.testView(), "Retrying") {
 		t.Fatalf("the banner stayed:\n%s", m.testView())
 	}
-	golden(t, "view_80x24_daemon_down", keysBanner(t, newModel(80, 24)).testView())
+	golden(t, "view_80x24_daemon_down", keysBanner(t, quietFixtures(newModel(80, 24))).testView())
 }
 
 func keysBanner(t *testing.T, m Model) Model {
@@ -855,7 +881,7 @@ func TestGatewayOfflineBanner(t *testing.T) {
 	if m.problem != ProblemGateway || !strings.Contains(m.testView(), "Gateway offline") {
 		t.Fatalf("problem %v", m.problem)
 	}
-	golden(t, "view_80x24_gateway_offline", refresh(newModel(80, 24), &fakeSource{snap: down}).testView())
+	golden(t, "view_80x24_gateway_offline", refresh(quietFixtures(newModel(80, 24)), &fakeSource{snap: down}).testView())
 }
 
 func TestNoDataYet(t *testing.T) {
@@ -1308,7 +1334,7 @@ func TestLoadingAndPartialSnapshot(t *testing.T) {
 		t.Fatal("first load must show loading")
 	}
 	golden(t, "view_80x24_loading", m.testView())
-	m = newModel(80, 24)
+	m = quietFixtures(newModel(80, 24))
 	m.snap.FailedCalls = []string{protocol.OpNodes}
 	if !strings.Contains(m.testView(), "machines list slow") {
 		t.Fatal("partial snapshot must name the missing data")

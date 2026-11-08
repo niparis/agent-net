@@ -5,8 +5,9 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- Working (8)                                                             all (v)
+ Working (1)                                                             all (v)
   tenebrae-53    Mac     tenebrae  claude · op… busy        ?     ?
+ Idle (8)
   ◐ strategies   Mac     strategi… claude · so… idle        ?     ? backtest v2
   ★ agent-net    Mac     agent-net claude       idle        ?     ? test ch_ed5f
   ├─ fix-login   Mac     agent-net opencode · … idle        ?     ?
@@ -14,7 +15,6 @@
   web            Mac     shop      opencode · … idle        ?     ?
   ◐ ci-runner    build-… agent-net pi · gpt-6   idle        ?     ?
   scratch        build-… -         pi           shell       ?     ?
- Idle (1)
   old-session    old-box old       claude       offline             1d ago
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

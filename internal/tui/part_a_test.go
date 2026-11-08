@@ -190,6 +190,7 @@ func TestNewSessionAppearsAtTopOfItsBand(t *testing.T) {
 		a.FirstSeen, a.LastSeen = t0.Unix(), t0.Unix()
 	}))
 	m = refresh(m, src)
+	m = quietFixtures(m)
 	// The busy session stays first; the new idle session leads its band.
 	m.activeOnly = false
 	var mac []string
