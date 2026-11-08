@@ -136,6 +136,9 @@ func (m Model) statusCell(a protocol.AgentView) string {
 		}
 		return "ended " + age + " ago"
 	}
+	if a.Limited(m.now()) {
+		return "limited"
+	}
 	if s := waitingStatus(a); s != "" {
 		return s
 	}

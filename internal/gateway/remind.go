@@ -27,12 +27,16 @@ const remindableRequest = ` FROM messages q
  WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dp.project,'')
  AND e.target<>'' AND (e.source=COALESCE(NULLIF(src.repo_project,''),sp.project,'') OR e.source='*')
  AND e.kind IN ('depends','governs','deploys')
- ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END,e.kind LIMIT 1),'normal') NOT IN ('never','ask')`
+ ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END,e.kind LIMIT 1),'normal') NOT IN ('never','ask')
+ AND dst.limited_until<=?`
 
 func (s *Store) reminderArgs() []any {
 	now := s.now()
-	return []any{now.Add(-24 * time.Hour).UnixNano(), now.Add(-reminderGrace).UnixNano(), now.UnixNano(), now.Add(-reminderGrace).UnixNano()}
+	return []any{now.Add(-24 * time.Hour).UnixNano(), now.Add(-reminderGrace).UnixNano(), now.UnixNano(), now.Add(-reminderGrace).UnixNano(), now.Unix()}
 }
+
+// The last condition is the provider usage limit: a limited session cannot
+// answer, so the reminder waits until the reset.
 
 // reminderEligible is also checked at dispatch, since a queued notification
 // must not wake a busy session, cross a changed edge, or outlive its request.

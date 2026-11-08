@@ -181,7 +181,7 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 		if a.Status != "idle" || a.LastActive == 0 || now.Sub(time.Unix(a.LastActive, 0)) < idleCheckAfter {
 			continue
 		}
-		if a.Waiting != nil {
+		if a.Waiting != nil || a.Limited(now) {
 			continue
 		}
 		if blocked, err := s.ownerBlocked(a.SessionID); err != nil {

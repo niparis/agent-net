@@ -590,6 +590,19 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_execution_start", async () => progress());
   pi.on("tool_execution_end", async () => progress());
 
+  // How a turn went. A provider error such as "You have hit your ChatGPT usage
+  // limit" ends the assistant message with stopReason "error". The daemon
+  // reads the limit from the text; a message that ends well clears it.
+  pi.on("message_end", async (event: any) => {
+    const m = event?.message;
+    if (!connected || m?.role !== "assistant") return;
+    if (m.stopReason === "error") {
+      request("turn_error", { text: String(m.errorMessage ?? "").slice(0, 2000) }).catch(() => {});
+    } else if (m.stopReason === "stop" || m.stopReason === "toolUse" || m.stopReason === "length") {
+      request("turn_ok", {}).catch(() => {});
+    }
+  });
+
   pi.on("agent_start", async () => {
     if (connected) await request("waiting", { clear: true }).catch(() => {});
     sendStatus("busy");

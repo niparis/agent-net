@@ -840,6 +840,26 @@ await test("standalone non-TUI sessions still register after foreground shutdown
   }
 });
 
+await test("an assistant message that ends in an error reports turn_error, and a good one reports turn_ok", async () => {
+  const p = makePi();
+  extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  await new Promise((r) => setTimeout(r, 100)); // the reply to hello marks the plugin connected
+  const before = requests.length;
+  const text = "Error: You have hit your ChatGPT usage limit (plus plan). Try again in ~102 min.";
+  await p.fire("message_end", { type: "message_end", message: { role: "user", content: "hi" } });
+  await p.fire("message_end", { type: "message_end", message: { role: "assistant", stopReason: "error", errorMessage: text, content: [] } });
+  await until("turn_error", () => requests.slice(before).some((r) => r.method === "turn_error"));
+  const e = requests.slice(before).find((r) => r.method === "turn_error");
+  if (e.params.text !== text) throw new Error("turn_error: " + JSON.stringify(e));
+  if (requests.slice(before).filter((r) => r.method === "turn_ok").length) throw new Error("a user message or an error reported turn_ok");
+  await p.fire("message_end", { type: "message_end", message: { role: "assistant", stopReason: "stop", content: [] } });
+  await until("turn_ok", () => requests.slice(before).some((r) => r.method === "turn_ok"));
+  await p.fire("session_shutdown", {});
+});
+
 server.close();
 rmSync(dir, { recursive: true, force: true });
 if (failures) {

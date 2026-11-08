@@ -18,6 +18,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/providererr"
 )
 
 // The Claude Code worker (decision 0002 W16, decision 0008).
@@ -600,35 +601,7 @@ func claudeExtractError(v any) string {
 // claudeProviderFailure classifies provider errors: model not found or no access,
 // auth (401/403), quota, rate limit or capacity (429, usage limit, rate limit,
 // at capacity, overloaded), or other API errors.
-func claudeProviderFailure(text string) bool {
-	s := strings.ToLower(text)
-	for _, local := range []string{"sqlerror", "sqlite", "database", "tool.error", "tool error"} {
-		if strings.Contains(s, local) {
-			return false
-		}
-	}
-	for _, m := range []string{"not exist", "no access", "not have access", "model not found", "model_not_found", "model unavailable", "model not available", "unknown model", "invalid model", "issue with the selected model"} {
-		if strings.Contains(s, m) {
-			return true
-		}
-	}
-	for _, m := range []string{"401", "403", "unauthorized", "forbidden", "not logged in", "authentication", "invalid api key", "invalid_api_key"} {
-		if strings.Contains(s, m) {
-			return true
-		}
-	}
-	for _, m := range []string{"429", "usage limit", "usage_limit", "rate limit", "rate_limit", "at capacity", "overloaded", "quota", "too many requests", "resource_exhausted", "credit balance"} {
-		if strings.Contains(s, m) {
-			return true
-		}
-	}
-	for _, m := range []string{"500", "502", "503", "504", "529", "api error", "api_error", "internal server error", "bad gateway", "service unavailable", "overloaded_error", "anthropic api"} {
-		if strings.Contains(s, m) {
-			return true
-		}
-	}
-	return false
-}
+func claudeProviderFailure(text string) bool { return providererr.Failure(text) }
 
 // launchClaudeBackground is shared by workers and owner sessions. The caller
 // holds claudeStartMu until the session file is known, before discovery runs.

@@ -207,6 +207,10 @@ func (a *Adapter) poll() {
 		info := protocol.SessionInfo{Harness: "claude", NativeID: sf.SessionID, PID: sf.PID, Cwd: sf.Cwd,
 			Name: title, Status: status, Delivery: "native-claude", Mode: modeOfKind(sf.Kind),
 			Model: a.models.Model(sf.SessionID, sf.Cwd), Waiting: wait, HarnessWaits: wait != nil}
+		// A usage limit in the newest answer lasts until its reset.
+		if l := a.models.Limit(sf.SessionID, sf.Cwd); l.Until.After(time.Now()) {
+			info.LimitedUntil, info.LimitedReason = l.Until.Unix(), l.Reason
+		}
 		// Real activity, from the harness: the transcript or the session file.
 		// Polling the same idle session does not move it.
 		active := time.Time{}
