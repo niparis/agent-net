@@ -584,34 +584,36 @@ func (s *Store) RecordModelAuthFailure(nodeID, harness, model string) error {
 	return err
 }
 
-// RecordQuotaBlock notes that a provider account on a node is out of quota
-// until resetsAt. A later report replaces an earlier one.
-func (s *Store) RecordQuotaBlock(nodeID, provider string, resetsAt time.Time, detail string) error {
+// RecordQuotaBlock notes that a worker run on a node reported a window of a
+// provider out of quota (an empty WindowID means the whole provider) until
+// b.Until. A later report for the same window replaces the earlier one.
+func (s *Store) RecordQuotaBlock(nodeID string, b protocol.QuotaBlock, detail string) error {
 	if len(detail) > 300 {
 		detail = detail[:300]
 	}
-	_, err := s.db.Exec(`INSERT INTO quota_blocks (node_id, provider, resets_at, detail, at) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (node_id, provider) DO UPDATE SET resets_at = excluded.resets_at, detail = excluded.detail, at = excluded.at`,
-		nodeID, provider, resetsAt.Unix(), detail, s.now().Unix())
+	_, err := s.db.Exec(`INSERT INTO quota_blocks (node_id, provider, window_id, window_label, resets_at, detail, at) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (node_id, provider, window_id) DO UPDATE SET window_label = excluded.window_label, resets_at = excluded.resets_at,
+		detail = excluded.detail, at = excluded.at`,
+		nodeID, b.Provider, b.WindowID, b.WindowLabel, b.Until.Unix(), detail, s.now().Unix())
 	return err
 }
 
-// QuotaBlocks returns the providers of a node that are blocked now, and when
-// each block ends.
-func (s *Store) QuotaBlocks(nodeID string) (map[string]time.Time, error) {
-	rows, err := s.db.Query(`SELECT provider, resets_at FROM quota_blocks WHERE node_id = ? AND resets_at > ?`, nodeID, s.now().Unix())
+// QuotaBlocks returns the quota blocks of a node that are in force now.
+func (s *Store) QuotaBlocks(nodeID string) ([]protocol.QuotaBlock, error) {
+	rows, err := s.db.Query(`SELECT provider, window_id, window_label, resets_at, at FROM quota_blocks WHERE node_id = ? AND resets_at > ?`, nodeID, s.now().Unix())
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]time.Time{}
+	var out []protocol.QuotaBlock
 	for rows.Next() {
-		var p string
-		var at int64
-		if err := rows.Scan(&p, &at); err != nil {
+		var b protocol.QuotaBlock
+		var until, at int64
+		if err := rows.Scan(&b.Provider, &b.WindowID, &b.WindowLabel, &until, &at); err != nil {
 			return nil, err
 		}
-		out[p] = time.Unix(at, 0)
+		b.Until, b.Recorded = time.Unix(until, 0), time.Unix(at, 0)
+		out = append(out, b)
 	}
 	return out, rows.Err()
 }

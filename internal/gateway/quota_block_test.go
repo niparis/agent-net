@@ -80,7 +80,11 @@ func TestQuotaBlockSurvivesStoreRestart(t *testing.T) {
 	}
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return now }
-	if err := s.RecordQuotaBlock("node", "agy", now.Add(time.Hour), "Individual quota reached"); err != nil {
+	if err := s.RecordQuotaBlock("node", protocol.QuotaBlock{Provider: "agy", Until: now.Add(time.Hour)}, "Individual quota reached"); err != nil {
+		t.Fatal(err)
+	}
+	// A window of the same provider keeps its own block.
+	if err := s.RecordQuotaBlock("node", protocol.QuotaBlock{Provider: "agy", WindowID: "gemini_argon_weekly", WindowLabel: "Gemini Argon weekly", Until: now.Add(2 * time.Hour)}, "Individual quota reached"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -93,13 +97,27 @@ func TestQuotaBlockSurvivesStoreRestart(t *testing.T) {
 	defer s.Close()
 	s.now = func() time.Time { return now }
 	blocks, err := s.QuotaBlocks("node")
-	if err != nil || !blocks["agy"].Equal(now.Add(time.Hour)) {
+	if err != nil || len(blocks) != 2 {
 		t.Fatalf("blocks %v, %v", blocks, err)
+	}
+	for _, b := range blocks {
+		switch {
+		case b.Provider != "agy":
+			t.Fatalf("block of another provider: %+v", b)
+		case b.WindowID == "" && b.Until.Equal(now.Add(time.Hour)):
+		case b.WindowID == "gemini_argon_weekly" && b.Until.Equal(now.Add(2*time.Hour)) && b.WindowLabel == "Gemini Argon weekly":
+		default:
+			t.Fatalf("block %+v", b)
+		}
 	}
 	if other, err := s.QuotaBlocks("other"); err != nil || len(other) != 0 {
 		t.Fatalf("other node: %v, %v", other, err)
 	}
 	s.now = func() time.Time { return now.Add(time.Hour) }
+	if blocks, err := s.QuotaBlocks("node"); err != nil || len(blocks) != 1 || blocks[0].WindowID != "gemini_argon_weekly" {
+		t.Fatalf("after the provider block ends: %v, %v", blocks, err)
+	}
+	s.now = func() time.Time { return now.Add(2 * time.Hour) }
 	if blocks, err := s.QuotaBlocks("node"); err != nil || len(blocks) != 0 {
 		t.Fatalf("expired block: %v, %v", blocks, err)
 	}
