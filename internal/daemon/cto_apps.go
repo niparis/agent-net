@@ -32,6 +32,18 @@ func (d *Daemon) executeCTOApps(ctx context.Context, method string, raw json.Raw
 	if err := mcpserver.CTOArguments(method, raw); err != nil {
 		return nil, err
 	}
+	if method == "apps.ask" {
+		var args map[string]any
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, err
+		}
+		args["owner"] = d.ownerSessionID()
+		data, err := d.call(ctx, method, args)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"state": "awaiting_owner", "result": map[string]any{"summary": "Consent ask opened for the owner.", "data": data}}, nil
+	}
 	var q struct {
 		ID    string `json:"id"`
 		Name  string `json:"name"`

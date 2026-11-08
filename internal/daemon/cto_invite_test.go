@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -21,12 +22,12 @@ func TestCTOInviteReturnsInstallLineOnGateway(t *testing.T) {
 	}
 }
 
-func TestCTOInviteOnlyWorksOnTheGatewayMachine(t *testing.T) {
+func TestCTOInviteWorksAwayFromGateway(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{}, nil)
-	_, err := n.d.runCTOToolRaw(context.Background(), "settings_change", json.RawMessage(`{"area":"invite"}`))
-	if err == nil || !strings.Contains(err.Error(), "gateway machine") {
-		t.Fatalf("invite outside the gateway: %v", err)
+	result, err := n.d.runCTOToolRaw(context.Background(), "settings_change", json.RawMessage(`{"area":"invite"}`))
+	if err != nil || !strings.Contains(fmt.Sprint(result), "/install/") {
+		t.Fatalf("remote invite: %v %v", result, err)
 	}
 }

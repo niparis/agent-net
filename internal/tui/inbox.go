@@ -1181,6 +1181,15 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	key := keyAction(contextInbox, k.String())
+	if row, ok := m.inboxSelected(rows); ok && (strings.HasPrefix(row.item.SourceRef, "app-consent:") || row.item.SourceRef == "apps-public-consent") {
+		if k.String() == "y" {
+			key = "approve"
+		}
+		if k.String() == "n" {
+			key = "refuse"
+		}
+	}
+
 	switch key {
 	case actQuit:
 		m.quitting = true
@@ -1363,6 +1372,12 @@ func (m Model) inboxDecide(row inboxRow, approve bool) (tea.Model, tea.Cmd) {
 		}
 		return m, m.proposalAnswerCmd(row.proposal, action)
 	case "approval", "question":
+		if row.item.SourceRef == "apps-public-consent" {
+			if approve {
+				return m, openOwnerConsent(row.item.Detail)
+			}
+			return m, m.inboxAnswer(row.item.ID, "dismiss")
+		}
 		if approve && row.item.Delivery != nil && len(row.item.Delivery.ReportFields) != 0 {
 			fields := map[string]string{}
 			for _, field := range row.item.Delivery.ReportFields {
@@ -1481,6 +1496,10 @@ type inboxCaller interface {
 func ctoInboxUndo(item protocol.InboxItem) (string, json.RawMessage, bool) {
 	if item.Node != "cto" || len(item.Options) != 2 {
 		return "", nil, false
+	}
+	if _, ok := protocol.CTOOperatorMethods()[item.Options[0]]; ok {
+		raw := json.RawMessage(item.Options[1])
+		return item.Options[0], raw, json.Valid(raw)
 	}
 	switch item.Options[0] {
 	case "apps.rename", "apps.grant", "apps.ungrant", "apps.public.on", "apps.public.off", "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive", "folder_trust", "standing_orders":

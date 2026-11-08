@@ -144,7 +144,7 @@ func (d *Daemon) ctoTextQuery(ctx context.Context, q protocol.TextQuery) (bool, 
 	id := d.ctoSessionID()
 	if q.SessionID == protocol.CTONodeName {
 		if id == "" {
-			return true, protocol.TextPage{}, errors.New("the CTO session is not registered; start the CTO from the owner interface")
+			return true, protocol.TextPage{}, errors.New("the CTO session is not registered; retry after the gateway reconnects")
 		}
 		q.SessionID = id
 	}
@@ -168,7 +168,7 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 	id := d.ctoSessionID()
 	if q.SessionID == protocol.CTONodeName {
 		if id == "" {
-			return true, protocol.EnterPlan{}, errors.New("the CTO session is not registered; start the CTO from the owner interface")
+			return true, protocol.EnterPlan{}, errors.New("the CTO session is not registered; retry after the gateway reconnects")
 		}
 		q.SessionID = id
 	}

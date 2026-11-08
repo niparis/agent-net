@@ -506,6 +506,9 @@ func (s *Store) reconcileLearnedAsks() error {
 // it changes, so this is the safety net and the only path for time-based
 // changes such as a held request that expires.
 func (s *Store) reconcileAsks() error {
+	if err := s.reconcileAppConsentAsks(); err != nil {
+		return err
+	}
 	if err := s.reconcileHeldAsks(s.db); err != nil {
 		return fmt.Errorf("held asks: %w", err)
 	}

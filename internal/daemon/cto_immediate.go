@@ -16,6 +16,15 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 	if err != nil {
 		return nil, err
 	}
+	if name == "settings_change" {
+		concrete, args, _, e := ctoConcreteCall(name, raw)
+		if e != nil {
+			return nil, e
+		}
+		if concrete == "owner_operation" {
+			return d.executeCTOOperator(ctx, args)
+		}
+	}
 	if name == "mcp_change" {
 		concrete, args, _, e := ctoConcreteCall(name, raw)
 		if e != nil {
