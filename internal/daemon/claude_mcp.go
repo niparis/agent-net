@@ -267,6 +267,9 @@ type claudeMCPApprovalError struct {
 	Path    string
 	Detail  string
 	Servers []protocol.MCPServerInfo
+	// Worker is true for a worker start: its blocked job is stopped, and the
+	// caller retries with worker_start.
+	Worker bool
 }
 
 func (e *claudeMCPApprovalError) Error() string {
@@ -295,6 +298,9 @@ func (e *claudeMCPApprovalError) Error() string {
 		out += ". The Claude job " + e.JobID + " is still running, blocked on that prompt"
 	} else {
 		out += ". The Claude job " + e.JobID + " has stopped"
+	}
+	if e.Worker {
+		return out + ". Retry worker_start with mcp_servers approve or disable, or use session_change action mcp_servers on the project so every later worker copies the choice"
 	}
 	return out + ". Retry session_start with mcp_servers approve or disable, or use session_change action mcp_servers"
 }

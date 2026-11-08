@@ -326,6 +326,17 @@ func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequ
 	if !protocol.ValidIsolation(p.Isolation) {
 		return p, fmt.Errorf("isolation can be %q, %q or empty, not %q", protocol.IsolationWorktree, protocol.IsolationNone, p.Isolation)
 	}
+	if err := claudeStartChoiceValid(p.MCPServers); err != nil {
+		return p, err
+	}
+	if p.MCPServers != "" {
+		if p.Continue != "" {
+			return p, errors.New("mcp_servers cannot be used with continue: a continued worker copies the choice of the main checkout; set it with session_change action mcp_servers")
+		}
+		if p.Harness != "" && p.Harness != "claude" {
+			return p, errors.New("mcp_servers applies to Claude Code workers only")
+		}
+	}
 	if len(protocol.WorkerTaskBody(p.Task, "/x", "b")) > protocol.MaxBodyBytes {
 		return p, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
 	}

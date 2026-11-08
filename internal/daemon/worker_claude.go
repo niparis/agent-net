@@ -106,6 +106,18 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 			return fmt.Errorf("trust Claude worker directory: %w", err)
 		}
 	}
+	// A worktree is a new folder for Claude Code, so the answer to "new MCP
+	// server needs approval" is copied from the main checkout first. Without
+	// it a background job waits on a prompt nobody can answer.
+	d.wmu.Lock()
+	mainPath, mcpChoice := w.mainPath, w.mcpServers
+	d.wmu.Unlock()
+	if worktree == "" {
+		mainPath = ""
+	}
+	if _, err := d.prepareClaudeMCP(mainPath, w.path, mcpChoice); err != nil {
+		return err
+	}
 	// Per worker settings, as a JSON string for --settings. They add to the
 	// settings of the user and the project and replace nothing in them. The
 	// commit trailer settings are also in the process environment; the settings
@@ -160,6 +172,10 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	})
 	if err != nil {
 		claudeLauncher{}.stopID(d, launchedJob)
+		var blocked *claudeMCPApprovalError
+		if errors.As(err, &blocked) {
+			blocked.Worker = true
+		}
 		return err
 	}
 

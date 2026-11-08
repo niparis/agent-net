@@ -391,6 +391,9 @@ type (
 		// AutoContinue turns the daemon's own continues for a worker that
 		// stopped early on or off (default on).
 		AutoContinue *bool `json:"auto_continue,omitempty"`
+		// MCPServers is the worker start's "approve" or "disable" for the
+		// .mcp.json servers of a Claude worker's folder.
+		MCPServers string `json:"mcp_servers,omitempty"`
 	}
 	// WorkerLaunched answers "worker.launch". When the machine queued the
 	// start, Queued is true and SessionID is empty.

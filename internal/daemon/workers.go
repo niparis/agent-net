@@ -202,6 +202,9 @@ type worker struct {
 	logPath      string
 	// Worktree isolation (W13).
 	mainPath, worktree, branch, base string
+	// mcpServers is the start's "approve" or "disable" for a Claude worker. It is
+	// applied at the first launch and not kept: the choice lives in the folder.
+	mcpServers string
 	// taskMsg is the last request from the owner; doneStatus the status of the
 	// last hand-back ("" if none); taskText is the short line of that request;
 	// title is the worker's one-line title, empty when it is derived.
@@ -729,7 +732,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		title:       l.Title,
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
 		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed, touches: strings.Join(l.Touches, ","),
-		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue), changeID: l.ChangeID}
+		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue), changeID: l.ChangeID, mcpServers: l.MCPServers}
 	if l.TaskID != "" {
 		w.taskID = l.TaskID
 		if l.ContinuationPartial {
