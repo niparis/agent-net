@@ -458,6 +458,23 @@ func (lc *localClient) nextPush() protocol.Message {
 	}
 }
 
+// nextPushOrLog waits for the next push like nextPush, but as long as the
+// other waits of a worker start chain (20 s, scaled), not nextPush's 5 s. A
+// start runs a worktree, a harness and several gateway round trips, which
+// each slow down under host load. When nothing arrives it prints what the
+// test was waiting for and the log of the node that did the work, so a rare
+// miss names its cause.
+func (lc *localClient) nextPushOrLog(what string, logs *logBuf) protocol.Message {
+	lc.t.Helper()
+	select {
+	case m := <-lc.Pushes:
+		return m
+	case <-time.After(scaled(20 * time.Second)):
+		lc.t.Fatalf("no push received while waiting for %s; node log:\n%s", what, logs.String())
+		return protocol.Message{}
+	}
+}
+
 // helloPi connects as a Pi plugin and returns the client and its session ID.
 func helloPi(t *testing.T, n *node, nativeID, cwd string, autoAck bool) (*localClient, string) {
 	t.Helper()

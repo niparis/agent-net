@@ -351,7 +351,7 @@ func TestStartIsQueuedWhenTheMachineIsBusyAndStartsInOrder(t *testing.T) {
 	}
 	// The caller gets a "worker started" notice for each, with the session and the wait.
 	var notices, pushes []protocol.Message
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(scaled(20 * time.Second))
 	eventually(t, "both started notices", func() bool {
 		for {
 			select {

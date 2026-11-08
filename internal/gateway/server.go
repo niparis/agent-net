@@ -133,6 +133,7 @@ type Gateway struct {
 	stepTaskBatchCap     int
 	stepBatchesMu        sync.Mutex
 	stepBatches          map[string]*stepTaskBatch
+	stepBatchGen         uint64 // under stepBatchesMu
 	lastReportMu         sync.Mutex
 	lastReportBySession  map[string]time.Time
 	// onStepBatchFlushed is a test hook, called after a batch leaves the map

@@ -269,7 +269,11 @@ func TestCoalesce25ChangesReleaseThenVerifyGiveAtMostTwoMessages(t *testing.T) {
 
 func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testing.T) {
 	r := newDeliveryRig(t)
-	r.g.stepTaskQuietWindow = 800 * time.Millisecond
+	// The first phase never lets a timer fire: it is flushed by hand below.
+	// A timer that came late under host load could otherwise send release
+	// tasks while the verify tasks join the same batch, and the batch cap
+	// would cut the verify tasks in two.
+	r.g.stepTaskQuietWindow = time.Hour
 	r.g.stepTaskBatchCap = 25
 
 	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
@@ -309,8 +313,11 @@ func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testin
 		})
 	}
 
-	// Wait for any prior batches (e.g. release tasks) to flush.
-	time.Sleep(1 * time.Second)
+	// Send the prior batches (e.g. release tasks) now.
+	r.g.flushStepTaskBatches()
+	// The verify burst gets a real quiet window. It is long next to the time
+	// 25 reports take, so a slow scheduler does not open a gap inside the burst.
+	r.g.stepTaskQuietWindow = 1500 * time.Millisecond
 
 	// Now report release for all 25 changes, making verify ready for all of them.
 	for _, cid := range changeIDs {
@@ -320,15 +327,30 @@ func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testin
 	}
 
 	// Wait for the quiet window to flush the verify batch.
-	time.Sleep(1 * time.Second)
+	verifyCount := func() int {
+		var n int
+		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=? AND step='verify'`, r.caller).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for verifyCount() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the quiet window did not send the verify batch")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	verifyMessages := verifyCount()
 
-	var verifyMessages int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=? AND step='verify'`, r.caller).Scan(&verifyMessages); err != nil {
+	// All 25 tasks must be in the first message: a batch cut in two would
+	// show here at once, before its second half is sent.
+	var covered int
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT change_id) FROM delivery_step_messages WHERE session_id=? AND step='verify'`, r.caller).Scan(&covered); err != nil {
 		t.Fatal(err)
 	}
-
-	if verifyMessages != 1 {
-		t.Fatalf("expected 1 batch message for 25 caller verify tasks with caller delivery edge, got %d", verifyMessages)
+	if verifyMessages != 1 || covered != numChanges {
+		t.Fatalf("expected 1 batch message for 25 caller verify tasks with caller delivery edge, got %d messages covering %d changes", verifyMessages, covered)
 	}
 
 	var body string
@@ -337,5 +359,65 @@ func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testin
 	}
 	if !strings.HasPrefix(body, "[agent-net step tasks]\n") {
 		t.Fatalf("expected batch prefix [agent-net step tasks], got %s", body)
+	}
+}
+
+// A quiet-window timer that fired just before a new task re-armed the batch
+// still runs its callback. That stale callback must not send the batch: the
+// task that just joined has not had its quiet window, and sending would cut
+// one burst into two notices.
+func TestCoalesceStaleQuietTimerDoesNotCutTheBurst(t *testing.T) {
+	r := newDeliveryRig(t)
+	r.g.stepTaskQuietWindow = time.Hour // no real timer fires in this test
+	r.g.stepTaskBatchCap = 25
+	defer r.g.flushStepTaskBatches()
+	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "review", Node: "reviewer"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The first notice is sent at once, so the session counts as recent and
+	// the next tasks wait in a batch.
+	ctx := context.Background()
+	r.submit(r.a, r.workerSubmit("feature/stale-0", commitA))
+	r.g.dispatchStepTasks(ctx)
+	r.submit(r.a, r.workerSubmit("feature/stale-1", commitA))
+	r.g.dispatchStepTasks(ctx)
+	armed := func() (gen uint64, waiting int) {
+		r.g.stepBatchesMu.Lock()
+		defer r.g.stepBatchesMu.Unlock()
+		if b := r.g.stepBatches[r.caller]; b != nil {
+			return b.timerGen, len(b.targets)
+		}
+		return 0, 0
+	}
+	stale, waiting := armed()
+	if stale == 0 || waiting == 0 {
+		t.Fatalf("after two submits: timer gen %d, %d waiting; want an armed batch", stale, waiting)
+	}
+	r.submit(r.a, r.workerSubmit("feature/stale-2", commitA))
+	r.g.dispatchStepTasks(ctx)
+	current, grown := armed()
+	if current == stale || grown <= waiting {
+		t.Fatalf("after three submits: timer gen %d (was %d), %d waiting (was %d); want a re-armed, larger batch", current, stale, grown, waiting)
+	}
+	count := func() int {
+		var n int
+		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := count()
+
+	r.g.flushStepTasksArmed(r.caller, stale) // the timer that was re-armed
+	if _, left := armed(); left != grown || count() != before {
+		t.Fatalf("a stale timer sent the batch: %d waiting (was %d), %d messages (was %d)", left, grown, count(), before)
+	}
+	r.g.flushStepTasksArmed(r.caller, current) // the timer that is armed
+	if _, left := armed(); left != 0 || count() != before+1 {
+		t.Fatalf("the armed timer did not send one batch: %d waiting, %d messages (was %d)", left, count(), before)
 	}
 }
