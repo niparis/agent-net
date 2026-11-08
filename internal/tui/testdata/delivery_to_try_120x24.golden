@@ -1,19 +1,19 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
-╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────4 shown─╮
-│   TITLE                                                                   REPO        STEP      STATUS  AGE     DONE │
-│ Needs you · 0                                                                                                        │
-│ Moving · 0                                                                                                           │
-│ To try · 4                                                                                                           │
-│ ▸ Enter resumes offline OpenCode and Codex sessions                       agent-net   verify    try it  3h0m    ○    │
-│   merged: 7c694c9  check: Owner: in Sessions, press v, select an offline OpenCode session, press Enter, and confirm… │
-│   Enter reuses bg attach pane                                             agent-net   verify    try it  3h0m    ○    │
-│   merged: 7c694c9  check: It should focus that pane, not open a second one.                                          │
-│   Stop shows at once in Sessions                                          agent-net   verify    try it  3h0m    ○    │
-│   merged: 7c694c9  check: Owner check: in Sessions, select a session you want gone, press the stop key and confirm.  │
-│   x removes an offline session for good                                   agent-net   verify    try it  3h0m    ○    │
-│   merged: 7c694c9  check: It should ask to remove it and then be gone for good.                                      │
-│ Stuck · 0                                                                                                            │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 sessions, 5 online · 1 busy      updated 00:00:00
+Desk · all clear · log closed (l opens it)
+╭─Needs you · 0───────────────────────────────────────────────────────╮ ╭─Change ch_1e511e8f2a1fa9c8───────────────────╮
+│ Nothing is waiting for you.                                         │ │ Enter resumes offline OpenCode and Codex     │
+╰─────────────────────────────────────────────────────────────────────╯ │ sessions                                     │
+╭─In flight · 4───────────────────────────────────────────────────────╮ │ step verify: try it                          │
+│   TITLE                                 STEP     STATUS AGE    DONE │ │ with tenebrae-53 (online)                    │
+│ ▸ Enter resumes offline OpenCode and C… verify   try it 3h0m   ○    │ │ merged: 7c694c9  check: Owner: in Sessions,  │
+│     merged: 7c694c9  check: Owner: in Sessions, press v, select an… │ │ press v, select an offline OpenCode          │
+│   Enter reuses bg attach pane           verify   try it 3h0m   ○    │ │ session, press Enter, and confirm that it    │
+│     merged: 7c694c9  check: It should focus that pane, not open a … │ │ opens and comes online.                      │
+│   Stop shows at once in Sessions        verify   try it 3h0m   ○    │ │                                              │
+│     merged: 7c694c9  check: Owner check: in Sessions, select a ses… │ │ enter evidence  v all changes  R refresh     │
+│   x removes an offline session for good verify   try it 3h0m   ○    │ │ y it works  n it fails                       │
+│     merged: 7c694c9  check: It should ask to remove it and then be… │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
 
 
 
@@ -21,4 +21,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter evidence  a show all  R refresh  y it works  n it fails  ? help  q quit
+enter evidence  v all changes  R refresh  y it works  n it fails  ↑↓ select  l log  ? help

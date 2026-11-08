@@ -201,7 +201,7 @@ func TestDeliveryOwnerApprovalRoutesNextNodeStep(t *testing.T) {
 	id, commit := submitted.Change.Change.ID, submitted.Change.Change.HeadCommit
 	reportStep(t, caller, protocol.StepReportArgs{Change: id, StepRef: protocol.StepRef{Step: protocol.StepAccept}, Result: protocol.StepResultPass, Commit: commit})
 	reportStep(t, caller, protocol.StepReportArgs{Change: id, StepRef: protocol.StepRef{Step: protocol.StepTest}, Result: protocol.StepResultPass, Commit: commit, Fields: map[string]string{protocol.FieldSuite: protocol.SuiteChanged}})
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, commit) {
 		t.Fatalf("approval: %+v, %v", items, err)
 	}

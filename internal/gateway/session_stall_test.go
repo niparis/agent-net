@@ -264,7 +264,15 @@ func TestSessionStallBusyWhileWaiting(t *testing.T) {
 					t.Fatal(err)
 				}
 				a, _, _ := s.Agent(id)
-				items, _ := s.ListInbox()
+				all, _ := s.ListInbox()
+				// A session that waits also has a waiting ask (decision 0090);
+				// this test is about the stall item.
+				var items []protocol.InboxItem
+				for _, it := range all {
+					if it.Kind == "session_stall" {
+						items = append(items, it)
+					}
+				}
 				if a.StalledSince != 0 || len(items) != 1 || items[0].Status == "open" {
 					t.Fatalf("waiting session retained stall: %+v %+v", a, items)
 				}

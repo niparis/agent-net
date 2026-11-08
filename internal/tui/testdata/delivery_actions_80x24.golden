@@ -1,24 +1,24 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-╭─Delivery─────────────────────────────────────────────────────────────3 shown─╮
-│   TITLE              STEP     STATUS                             AGE    DONE │
-│ Needs you · 1                                                                │
-│ ▸ Resume offline se… verify   waiting for you                    -      ○○   │
-│ Moving · 2                                                                   │
-│   Fix the entry test test     back to tenebrae-53 (fix)          -      ○✗   │
-│   Enter did not resume the offline session                                   │
-│   Repair worker res… test     back to strategies to restart the… -      ○✗   │
-│   Enter did not resume the offline session                                   │
-│ Stuck · 0                                                                    │
-│ 1 done hidden · a shows all                                                  │
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
+Desk · all clear · log closed (l opens it)
+╭─Needs you · 0────────────────────────────────────────────────────────────────╮
+│ Nothing is waiting for you.                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
-
-
-
-
-
+╭─In flight · 3────────────────────────────────────────────────────────────────╮
+│   TITLE                      STEP     STATUS                     AGE    DONE │
+│ ▸ Resume offline sessions    verify   waiting for you            -      ○○   │
+│   Fix the entry test         test     back to tenebrae-53 (fix)  -      ○✗   │
+│     Enter did not resume the offline session                                 │
+│   Repair worker restart      test     back to strategies to res… -      ○✗   │
+│     Enter did not resume the offline session                                 │
+│ 1 done hidden · v shows all                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Change ch_action_0───────────────────────────────────────────────────────────╮
+│ Resume offline sessions                                                      │
+│ step verify: waiting for you                                                 │
+│ with merger                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter evidence  a show all  R refresh  ? help  q quit
+enter evidence  v all changes  R refresh  ↑↓ select  l log  ? help

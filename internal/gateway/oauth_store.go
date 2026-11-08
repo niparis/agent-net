@@ -309,11 +309,7 @@ func (s *Store) ApprovePending(id, kind, name string, now time.Time, ownerSessio
 		}
 		text := fmt.Sprintf("Connected: %s (%s, %s, %s). If this was not you, revoke it in Settings.", safeAppLog(name), kind, safeAppLog(clientName), safeAppLog(u.Hostname()))
 		// A new app is an event for the log, not a question (decision 0090).
-		// The old Inbox row stays for the old screen; it is not an ask.
 		if err = s.deskLog(tx, "apps", "", "", text, "app-approval:"+id, nil); err != nil {
-			return err
-		}
-		if _, err = s.createInboxItem(tx, protocol.InboxItem{Kind: "check", SessionID: ownerSession[0], Node: "apps", FromKind: protocol.AskFromApps, Text: text, MessageID: "app-approval:" + id}); err != nil {
 			return err
 		}
 	}

@@ -116,7 +116,7 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 		}
 		assertCTOImmediate(t, got)
 	}
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 3 {
 		t.Fatalf("inbox: %+v %v", items, err)
 	}

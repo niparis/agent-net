@@ -67,7 +67,7 @@ func TestCTOGraphTeamProposalLifecycle(t *testing.T) {
 		t.Fatalf("team_create: %v", err)
 	}
 	assertCTOImmediate(t, res)
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, "group related work") {
 		t.Fatalf("team_create Inbox reason: %+v %v", items, err)
 	}

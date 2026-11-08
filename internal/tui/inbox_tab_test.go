@@ -64,22 +64,22 @@ func (s *inboxOpsSource) method(name string) *inboxOpsCall {
 // inboxAllKindsModel has one waiting row of each kind the Inbox shows.
 func inboxAllKindsModel(w, h int) (Model, *inboxOpsSource) {
 	snap := fakeSnapshot()
-	snap.Held = []protocol.Message{{
-		ID: "m_held", FromName: "alice", To: "s_0000000000000002",
+	held := protocol.Message{
+		ID: "m_held", From: "s_0000000000000003", FromName: "alice", To: "s_0000000000000002",
 		Body: "please help\nthis second line is hidden", CreatedAt: t0.Add(-5 * time.Minute),
-	}}
-	snap.Outcomes = []protocol.OutcomeInboxEntry{{
+	}
+	outcome := protocol.OutcomeInboxEntry{
 		EdgeOutcome: protocol.EdgeOutcome{
 			From: "ops", To: "app", ReplyID: "r_outcome",
 			ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "not now"},
 			At:           t0.Add(-6 * time.Minute).UnixNano(),
 		},
 		Request: "deploy app",
-	}}
-	snap.Learned = []protocol.LearnedSuggestion{{
+	}
+	learned := protocol.LearnedSuggestion{
 		ID: 7, Node: "ops", Field: "refuses", Kind: "add", Phrase: "deploys",
 		Status: "pending", Severity: "major", CreatedAt: t0.Add(-7 * time.Minute).UnixNano(),
-	}}
+	}
 	src := &inboxOpsSource{fakeSource: fakeSource{snap: snap, events: fakeEvents()}}
 	src.usage, src.counts, src.tops = fakeUsage(), fakeCounts(), fakeTops()
 	m := New(src)
@@ -91,13 +91,17 @@ func inboxAllKindsModel(w, h int) (Model, *inboxOpsSource) {
 		Args:      json.RawMessage(`{"project":"shop","node_id":"n_mac","harness":"pi"}`),
 		CreatedAt: t0.Add(-8 * time.Minute), Status: "open",
 	}}
-	m.inboxItems = []protocol.InboxItem{
+	proposal := askFromProposal(m.proposals[0])
+	proposal.CreatedAt = t0.Add(-8 * time.Minute)
+	heldAsk, outAsk, learnedAsk := askFromHeld(held), askFromOutcome(outcome), askFromLearned(learned)
+	heldAsk.CreatedAt, outAsk.CreatedAt, learnedAsk.CreatedAt = held.CreatedAt, t0.Add(-6*time.Minute), t0.Add(-7*time.Minute)
+	m.asks = append(askItems([]protocol.InboxItem{
 		{ID: "i_app", Kind: "approval", SessionID: "s_0000000000000004", Text: "deploy abc", Status: "open", CreatedAt: t0.Add(-9 * time.Minute)},
 		{ID: "i_question", Kind: "question", SessionID: "s_0000000000000004", Text: "which branch?", Status: "open", CreatedAt: t0.Add(-10 * time.Minute)},
-		{ID: "i_notice", Kind: "check", SessionID: "s_owner", Node: "apps",
-			Text:   "Connected: cursor (bot, Cursor, www.cursor.com). If this was not you, revoke it in Settings.",
+		{ID: "i_notice", Kind: "check", SessionID: "s_owner",
+			Text:   "checker is blocked on the deploy key",
 			Status: "open", CreatedAt: t0.Add(-11 * time.Minute)},
-	}
+	}), heldAsk, outAsk, learnedAsk, proposal)
 	return m, src
 }
 
@@ -117,21 +121,21 @@ func TestInboxTabOpensWithSeven(t *testing.T) {
 	if m.tab != inboxTab {
 		t.Fatalf("7 opened tab %d, want Inbox", m.tab)
 	}
-	if !strings.Contains(ansi.Strip(m.testView()), "Inbox") {
-		t.Fatal("the Inbox view is missing")
+	if !strings.Contains(ansi.Strip(m.testView()), "Desk · ") {
+		t.Fatal("the Desk view is missing")
 	}
 }
 
 func TestInboxTabLabelShowsTheCount(t *testing.T) {
 	m := newModel(120, 34)
 	title := ansi.Strip(m.titleLine(120))
-	if !strings.Contains(title, "7 Inbox") || strings.Contains(title, "7 Inbox (") {
+	if !strings.Contains(title, "7 Desk") || strings.Contains(title, "7 Desk (") {
 		t.Fatalf("zero count label: %q", title)
 	}
 
 	m, _ = inboxAllKindsModel(120, 34)
 	title = ansi.Strip(m.titleLine(120))
-	want := fmt.Sprintf("7 Inbox (%d)", m.waitingCount())
+	want := fmt.Sprintf("7 Desk (%d)", m.waitingCount())
 	if !strings.Contains(title, want) {
 		t.Fatalf("label %q does not hold %q", title, want)
 	}
@@ -143,7 +147,7 @@ func TestInboxTabLabelUsesTheWarningColour(t *testing.T) {
 	defer setTestColorProfile(old)
 	m, _ := inboxAllKindsModel(120, 34)
 	title := m.titleLine(120)
-	want := sNeeds.Render(fmt.Sprintf("7 Inbox (%d)", m.waitingCount()))
+	want := sNeeds.Render(fmt.Sprintf("7 Desk (%d)", m.waitingCount()))
 	if !strings.Contains(title, want) {
 		t.Fatalf("count label is not in the warning colour: %q", ansi.Strip(title))
 	}
@@ -159,7 +163,7 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 		}
 	}
 	view := ansi.Strip(m.testView())
-	for _, heading := range []string{"Needs you · 3", "Proposals · 2", "For your information · 2"} {
+	for _, heading := range []string{"Needs you · 7", "In flight · 0", "log closed"} {
 		if !strings.Contains(view, heading) {
 			t.Errorf("missing box heading %q:\n%s", heading, view)
 		}
@@ -182,7 +186,7 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 		{"learned", []string{"a accept", "r reject"}},
 		{"proposal", []string{"a approve", "r refuse"}},
 		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}},
-		{"question", []string{"t answer", "x dismiss", "enter details"}},
+		{"question", []string{"t type answer", "x dismiss", "enter details"}},
 		{"notice", []string{"x dismiss"}},
 	}
 	for _, tc := range cases {
@@ -207,7 +211,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m.inboxIndex = inboxRowIndex(m, "held")
 		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
-			t.Fatal("a did not answer the held request")
+			t.Fatal("a did not type answer the held request")
 		}
 		send(next, cmd())
 		if src.held.MessageID != "m_held" || src.held.Action != "a" {
@@ -247,7 +251,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m.inboxIndex = inboxRowIndex(m, "proposal")
 		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
-			t.Fatal("a did not answer the proposal")
+			t.Fatal("a did not type answer the proposal")
 		}
 		send(next, cmd())
 		call := src.method(protocol.OpProposalAnswer)
@@ -270,7 +274,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m.inboxIndex = inboxRowIndex(m, "approval")
 		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
-			t.Fatal("a did not answer the inbox item")
+			t.Fatal("a did not type answer the inbox item")
 		}
 		send(next, cmd())
 		call := src.method("inbox_answer")
@@ -321,9 +325,9 @@ func TestInboxDismissesANoticeWithX(t *testing.T) {
 
 func TestInboxOwnerStepAsksForEvidenceFields(t *testing.T) {
 	m, src := inboxAllKindsModel(100, 30)
-	for i := range m.inboxItems {
-		if m.inboxItems[i].ID == "i_app" {
-			m.inboxItems[i].Delivery = &protocol.InboxDelivery{ChangeID: "ch_1", StepRef: protocol.StepRef{Step: protocol.StepMerge}, ReportFields: []string{protocol.FieldMergedCommit}}
+	for i := range m.asks {
+		if m.asks[i].ID == "i_app" {
+			m.asks[i].Delivery = &protocol.InboxDelivery{ChangeID: "ch_1", StepRef: protocol.StepRef{Step: protocol.StepMerge}, ReportFields: []string{protocol.FieldMergedCommit}}
 		}
 	}
 	m = openInbox(m)
@@ -371,7 +375,7 @@ func TestInboxEmptyState(t *testing.T) {
 	if !strings.Contains(view, "Nothing is waiting for you.") {
 		t.Fatalf("empty state missing:\n%s", view)
 	}
-	for _, heading := range []string{"Needs you", "Proposals", "For your information", "Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
+	for _, heading := range []string{"Proposals", "For your information", "Held requests", "Outcomes", "Learned suggestions", "CTO proposals", "Approvals and questions", "Notices"} {
 		if strings.Contains(view, heading) {
 			t.Fatalf("empty state shows box %q", heading)
 		}
@@ -382,7 +386,7 @@ func TestSessionsShowsTheInboxSummaryAndNoNeedsRows(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = keys(m, "1")
 	view := ansi.Strip(m.testView())
-	want := fmt.Sprintf("Inbox: %d to decide", m.waitingCount())
+	want := fmt.Sprintf("Desk: %d to decide", m.waitingCount())
 	if !strings.Contains(view, want) {
 		t.Fatalf("Sessions lacks %q:\n%s", want, view)
 	}
@@ -439,33 +443,19 @@ func TestInboxTabBarGoldens(t *testing.T) {
 	}
 }
 
-// The Inbox puts every item in one of three boxes and moves the selection
-// through all rows, box to box.
-func TestInboxGroupsItemsIntoThreeBoxes(t *testing.T) {
+// Every ask waits in the one Needs you section; what needs an answer comes
+// first, then what proposes a change, then what only informs.
+func TestDeskPutsEveryAskInNeedsYou(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = openInbox(m)
 	rows := m.inboxRows()
 	if len(rows) != 7 {
 		t.Fatalf("%d rows, want 7", len(rows))
 	}
-	want := []struct {
-		box   inboxBox
-		kinds []string
-	}{
-		{inboxBoxAnswer, []string{"question", "approval", "held"}},
-		{inboxBoxProposals, []string{"proposal", "learned"}},
-		{inboxBoxInfo, []string{"outcome", "notice"}},
-	}
-	i := 0
-	for _, b := range want {
-		for _, kind := range b.kinds {
-			if i >= len(rows) {
-				t.Fatalf("row %d is missing (%s)", i, kind)
-			}
-			if rows[i].kind != kind || rows[i].group.box() != b.box {
-				t.Fatalf("row %d is %s in box %d, want %s in box %d", i, rows[i].kind, rows[i].group.box(), kind, b.box)
-			}
-			i++
+	want := []string{"question", "approval", "held", "outcome", "proposal", "learned", "notice"}
+	for i, kind := range want {
+		if rows[i].kind != kind || rows[i].group.box() != inboxBoxAnswer {
+			t.Fatalf("row %d is %s, want %s", i, rows[i].kind, kind)
 		}
 	}
 }
@@ -482,7 +472,7 @@ func TestInboxRowsUsePlainWords(t *testing.T) {
 		"proposal": {"CTO", "start a Pi session in shop, on Mac"},
 		"learned":  {"ops (learned)", `add "deploys" to what it refuses`},
 		"outcome":  {"ops → app", `deploy app refused: "not now"`},
-		"notice":   {"cursor", "connected as a bot (www.cursor.com)"},
+		"notice":   {"Notice", "checker is blocked on the deploy key"},
 	}
 	for _, row := range rows {
 		want, ok := cases[row.kind]
@@ -509,7 +499,7 @@ func TestInboxPanelShowsTheSelectedItem(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = openInbox(m)
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"ci-runner asks", "which branch?", "session ci-runner", "agent-net on", "build-vm", "10 minutes ago", "t answer", "enter details"} {
+	for _, want := range []string{"ci-runner asks", "which branch?", "session ci-runner", "agent-net on", "build-vm", "10 minutes ago", "t type answer", "enter details"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("question panel lacks %q:\n%s", want, view)
 		}
@@ -538,12 +528,12 @@ func TestInboxKeyBarFollowsTheSelection(t *testing.T) {
 		not  []string
 	}{
 		{"held", []string{"enter open session", "a approve", "r refuse"}, []string{"s let stand", "x dismiss"}},
-		{"outcome", []string{"s let stand", "O overrule"}, []string{"a approve", "t answer"}},
+		{"outcome", []string{"s let stand", "O overrule"}, []string{"a approve", "t type answer"}},
 		{"learned", []string{"a accept", "r reject"}, []string{"enter details", "x dismiss"}},
-		{"proposal", []string{"a approve", "r refuse"}, []string{"t answer", "enter details", "A approve all"}},
-		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}, []string{"s let stand", "t answer"}},
-		{"question", []string{"t answer", "x dismiss", "enter details"}, []string{"a approve", "r refuse"}},
-		{"notice", []string{"x dismiss"}, []string{"a approve", "t answer", "enter details"}},
+		{"proposal", []string{"a approve", "r refuse"}, []string{"t type answer", "enter details", "A approve all"}},
+		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}, []string{"s let stand", "t type answer"}},
+		{"question", []string{"t type answer", "x dismiss", "enter details"}, []string{"a approve", "r refuse"}},
+		{"notice", []string{"x dismiss"}, []string{"a approve", "t type answer", "enter details"}},
 	}
 	for _, tc := range cases {
 		m.inboxIndex = inboxRowIndex(m, tc.kind)
@@ -571,16 +561,17 @@ func TestInboxItemKeysPerKind(t *testing.T) {
 	m.snap.Agents[0].Waiting = &protocol.Waiting{
 		Kind: protocol.WaitingQuestion, Text: "which branch?", Since: t0.Add(-4 * time.Minute).Unix(),
 	}
+	m = withWaitingAsks(m)
 	m = openInbox(m)
 	cases := []struct{ kind, item, bar string }{
-		{"held", "enter open session  a approve  r refuse", "enter open session  a approve  r refuse  ↑↓ select  ? help"},
-		{"waiting", "enter open session", "enter open session  ↑↓ select  ? help"},
-		{"question", "t answer  x dismiss  enter details", "t answer  x dismiss  enter details  ↑↓ select  ? help"},
-		{"approval", "a approve  r refuse  x dismiss  enter details", "a approve  r refuse  x dismiss  enter details  ↑↓ select  ? help"},
-		{"proposal", "a approve  r refuse", "a approve  r refuse  ↑↓ select  ? help"},
-		{"learned", "a accept  r reject", "a accept  r reject  ↑↓ select  ? help"},
-		{"outcome", "s let stand  O overrule", "s let stand  O overrule  ↑↓ select  ? help"},
-		{"notice", "x dismiss", "x dismiss  ↑↓ select  ? help"},
+		{"held", "enter open session  a approve  r refuse", "enter open session  a approve  r refuse  ↑↓ select  l log  ? help"},
+		{"waiting", "enter open session", "enter open session  ↑↓ select  l log  ? help"},
+		{"question", "t type answer  x dismiss  enter details", "t type answer  x dismiss  enter details  ↑↓ select  l log  ? help"},
+		{"approval", "a approve  r refuse  x dismiss  enter details", "a approve  r refuse  x dismiss  enter details  ↑↓ select  l log  ? help"},
+		{"proposal", "a approve  r refuse", "a approve  r refuse  ↑↓ select  l log  ? help"},
+		{"learned", "a accept  r reject", "a accept  r reject  ↑↓ select  l log  ? help"},
+		{"outcome", "s let stand  O overrule", "s let stand  O overrule  ↑↓ select  l log  ? help"},
+		{"notice", "x dismiss", "x dismiss  ↑↓ select  l log  ? help"},
 	}
 	for _, tc := range cases {
 		m.inboxIndex = inboxRowIndex(m, tc.kind)
@@ -643,7 +634,7 @@ func TestInboxPanelSitsBelowTheBoxesOnANarrowScreen(t *testing.T) {
 	if lastBox < 0 || panelAt <= lastBox {
 		t.Fatalf("the panel is not under the boxes (box ends %d, panel at %d):\n%s", lastBox, panelAt, view)
 	}
-	if !strings.Contains(view, "which branch?") || !strings.Contains(view, "t answer") {
+	if !strings.Contains(view, "which branch?") || !strings.Contains(view, "t type answer") {
 		t.Fatalf("the narrow panel lacks the item text or keys:\n%s", view)
 	}
 }
@@ -670,7 +661,7 @@ func TestInboxPanelSitsOnTheRightOnAWideScreen(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = openInbox(m)
 	lines := strings.Split(ansi.Strip(m.testView()), "\n")
-	first := lines[1]
+	first := lines[2]
 	box, panel := strings.Index(first, "Needs you"), strings.Index(first, "ci-runner asks")
 	if box < 0 || panel < 0 || panel <= box {
 		t.Fatalf("the panel is not to the right of the boxes: %q", first)
@@ -722,7 +713,7 @@ func TestInboxDismissOfAGoneItemDropsItAndSaysAlreadyGone(t *testing.T) {
 	if got := next.waitingCount(); got != before-1 {
 		t.Fatalf("%d waiting after the gone dismiss, want %d", got, before-1)
 	}
-	for _, item := range next.inboxItems {
+	for _, item := range next.asks {
 		if item.ID == "i_app" {
 			t.Fatal("the gone item is still in the list")
 		}
@@ -738,7 +729,7 @@ func TestInboxAlreadyAnsweredIsNotGone(t *testing.T) {
 func TestInboxNumberedOptions(t *testing.T) {
 	for i, key := range []string{"1", "2", "3", "4"} {
 		m, src := inboxAllKindsModel(120, 34)
-		m.inboxItems[1].Options = []string{"one", "two", "three", "four"}
+		m.asks[1].Options = []string{"one", "two", "three", "four"}
 		m = openInbox(m)
 		m.inboxIndex = inboxRowIndex(m, "question")
 		next, cmd := m.key(tea.KeyPressMsg{Text: key, Code: rune(key[0])})
@@ -754,17 +745,17 @@ func TestInboxNumberedOptions(t *testing.T) {
 			}
 		}
 		c := src.method("inbox_answer")
-		if c == nil || c.params.(map[string]string)["answer"] != m.inboxItems[1].Options[i] {
+		if c == nil || c.params.(map[string]string)["answer"] != m.asks[1].Options[i] {
 			t.Fatalf("%s: %+v msg=%T next=%+v detail=%v edit=%v focus=%v open=%v", key, c, msg, next.(Model).tab, m.inboxDetail, m.inboxEditing, m.focus, m.open != nil)
 		}
 	}
 }
 func TestInboxDetailFields(t *testing.T) {
 	m, _ := inboxAllKindsModel(80, 24)
-	m.inboxItems[1].Options = []string{"main", "next"}
-	m.inboxItems[1].Recommendation = "main is stable"
-	m.inboxItems[1].AskerName = "Build agent"
-	m.inboxItems[1].ChangeTitle = "Fix build"
+	m.asks[1].Options = []string{"main", "next"}
+	m.asks[1].Recommendation = "main is stable"
+	m.asks[1].From = "Build agent"
+	m.asks[1].AboutKind, m.asks[1].AboutTitle = protocol.AskAboutChange, "Fix build"
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "question")
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -779,10 +770,10 @@ func TestInboxDetailFields(t *testing.T) {
 func TestInboxDetailGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := inboxAllKindsModel(size[0], size[1])
-		m.inboxItems[1].Options = []string{"main", "next"}
-		m.inboxItems[1].Recommendation = "Use main"
-		m.inboxItems[1].AskerName = "Build agent"
-		m.inboxItems[1].ChangeTitle = "Fix build"
+		m.asks[1].Options = []string{"main", "next"}
+		m.asks[1].Recommendation = "Use main"
+		m.asks[1].From = "Build agent"
+		m.asks[1].AboutKind, m.asks[1].AboutTitle = protocol.AskAboutChange, "Fix build"
 		m = openInbox(m)
 		m.inboxIndex = inboxRowIndex(m, "question")
 		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -792,8 +783,8 @@ func TestInboxDetailGoldens(t *testing.T) {
 
 func TestInboxLongDetailScrollAndHints(t *testing.T) {
 	m, _ := inboxAllKindsModel(80, 24)
-	m.inboxItems[1].Text = strings.Repeat("long question line words ", 100)
-	m.inboxItems[1].Options = []string{"yes", "no"}
+	m.asks[1].Question = strings.Repeat("long question line words ", 100)
+	m.asks[1].Options = []string{"yes", "no"}
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "question")
 	if !strings.Contains(ansi.Strip(m.testView()), "1-2") {
@@ -819,7 +810,7 @@ func TestInboxDetailScrollUpAfterEnd(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		fmt.Fprintf(&b, "line %02d\n", i)
 	}
-	m.inboxItems[1].Text = b.String()
+	m.asks[1].Question = b.String()
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "question")
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})

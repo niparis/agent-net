@@ -62,6 +62,7 @@ func TestInboxShowsDraftAsADecision(t *testing.T) {
 	m := New(src)
 	m.snap = src.snap
 	m.snap.Learned = []protocol.LearnedSuggestion{draftSuggestion(-9, "purpose", "Generic endpoints for the shop")}
+	m.asks = []protocol.Ask{askFromLearned(m.snap.Learned[0])}
 	m.tab = inboxTab
 	view := m.testView()
 	for _, want := range []string{"cogforge", "Generic endpoints for the shop", "AGENTS.md"} {

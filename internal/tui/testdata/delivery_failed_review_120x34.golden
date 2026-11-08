@@ -1,18 +1,18 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
-╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────6 shown─╮
-│   TITLE                            REPO             STEP      STATUS                                    AGE     DONE │
-│ Needs you · 1                                                                                                        │
-│   Approve the deploy gate          voicemechs       approve   waiting for you                           3h0m    ○    │
-│ Moving · 3                                                                                                           │
-│   Show which provider each quota…  agent-net        review    waiting for merger                        2h14m   ●○●  │
-│   Say what a delivery row waits …  agent-net        test      waiting for ci-runner (online)            6m      ●●○○ │
-│   merged: abcdef1                                                                                                    │
-│ ▸ Fix the deploy gate              voicemechs       review    back to strategies to restart the worker  2h5m    ●✗   │
-│ Stuck · 2                                                                                                            │
-│   wbg-procurement · 2 changes wait for accept by wbg-procurement (exited) · 15h-22h                                  │
-│ 1 done and 1 stale hidden · a shows all                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 sessions, 5 online · 1 busy      updated 00:00:00
+Desk · all clear · log closed (l opens it)
+╭─Needs you · 0───────────────────────────────────────────────────────╮ ╭─Change c_3───────────────────────────────────╮
+│ Nothing is waiting for you.                                         │ │ Fix the deploy gate                          │
+╰─────────────────────────────────────────────────────────────────────╯ │ step review: back to strategies to restart   │
+╭─In flight · 5───────────────────────────────────────────────────────╮ │ the worker                                   │
+│   TITLE                     STEP     STATUS             AGE    DONE │ │ with you                                     │
+│   Approve the deploy gate   approve  waiting for you    3h0m   ○    │ │                                              │
+│   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │ enter evidence  v all changes  R refresh     │
+│   Say what a delivery row … test     waiting for ci-ru… 6m     ●●○○ │ │                                              │
+│     merged: abcdef1                                                 │ │                                              │
+│ ▸ Fix the deploy gate       review   back to strategie… 2h5m   ●✗   │ │                                              │
+│   wbg-procurement · 2 changes: accept by wbg-procurement (exited) … │ │                                              │
+│ 1 done and 1 stale hidden · v shows all                             │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter evidence  a show all  R refresh  ? help  q quit
+enter evidence  v all changes  R refresh  ↑↓ select  l log  ? help

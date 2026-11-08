@@ -84,7 +84,7 @@ func TestApproved07HeldRequestDoesNotAnswerOnShiftKeys(t *testing.T) {
 	src := &heldTestSource{fakeSource: fakeSource{snap: fakeSnapshot()}}
 	m := New(src)
 	m.snap = src.snap
-	m.snap.Held = []protocol.Message{{ID: "m_held", FromName: "peer", To: "s_0000000000000002", Body: "hello"}}
+	m.asks = append(m.asks, askFromHeld(protocol.Message{ID: "m_held", FromName: "peer", To: "s_0000000000000002", Body: "hello"}))
 	m.tab = inboxTab
 	for _, key := range []string{"A", "R"} {
 		_, cmd := press(m, tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
@@ -108,8 +108,7 @@ func TestApproved07HeldRequestDoesNotAnswerOnShiftKeys(t *testing.T) {
 func TestApproved08OutcomeOIsNotOverrule(t *testing.T) {
 	src := &outcomeTestSource{}
 	m := New(src)
-	m.snap = Snapshot{Outcomes: []protocol.OutcomeInboxEntry{{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r"}, Sender: "sender", Recipient: "receiver"}}}
-	m.selected = "outcome:r"
+	m.asks = []protocol.Ask{askFromOutcome(protocol.OutcomeInboxEntry{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r"}, Sender: "sender", Recipient: "receiver"})}
 	next, cmd := press(m, tea.KeyPressMsg{Text: "o", Code: []rune("o")[0]})
 	if cmd != nil || src.action != "" {
 		t.Fatalf("o still overrules: action %q", src.action)
@@ -125,6 +124,7 @@ func TestApproved09ProposalDeclineOnRAndNotX(t *testing.T) {
 	s := &proposalSource{proposals: []protocol.CTOProposal{p}}
 	m := New(s)
 	m.proposals = s.proposals
+	m.asks = openProposalAsks(s.proposals)
 	m.tab = inboxTab
 	if _, cmd := press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]}); cmd != nil || len(s.answers) != 0 {
 		t.Fatal("x still declines a proposal")

@@ -125,6 +125,7 @@ const (
 	deliveryStatusCap = 34
 	deliveryAgeW      = 6
 	deliveryLead      = 2
+	deliveryTitleMin  = 26
 )
 
 // gap is the space between columns: tighter when the screen is narrow.
@@ -166,6 +167,13 @@ func (m Model) deliveryLayout(inner int, changes []deliveryChange) deliveryColum
 	c.status = min(c.status, maxStatus)
 	fixed := deliveryLead + c.repo + deliveryStepW + c.status + deliveryAgeW + c.progress + gaps*c.gap()
 	c.title = max(inner-fixed, 1)
+	// The title says what the change is. Take the room from a long status
+	// before the title is cut to a few letters.
+	if c.title < deliveryTitleMin && c.status > deliveryStatusW {
+		c.status = max(deliveryStatusW, c.status-(deliveryTitleMin-c.title))
+		fixed = deliveryLead + c.repo + deliveryStepW + c.status + deliveryAgeW + c.progress + gaps*c.gap()
+		c.title = max(inner-fixed, 1)
+	}
 	return c
 }
 
@@ -697,7 +705,7 @@ func deliveryHiddenText(done, stale int) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return strings.Join(parts, " and ") + " hidden · a shows all"
+	return strings.Join(parts, " and ") + " hidden · v shows all"
 }
 
 func resultStyle(result string) lipgloss.Style { return stripStyle(normalResult(result)) }

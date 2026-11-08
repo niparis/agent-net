@@ -1176,7 +1176,14 @@ ALTER TABLE inbox_items ADD COLUMN detail TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS standing_orders (
  id TEXT PRIMARY KEY, text TEXT NOT NULL, saved_at INTEGER NOT NULL,
  source TEXT NOT NULL DEFAULT 'owner');
-`, botAgentMigration}
+`, botAgentMigration, `
+-- Notices leave the queue for good (decision 0090, part A2). What the CTO
+-- applied or sent and a new app are lines of desk_log, and the Desk shows them
+-- there. The old Inbox rows of these notices are closed, not deleted. The
+-- statement is safe to replay.
+UPDATE inbox_items SET status='closed', answer='moved_to_log', answered_at=created_at
+ WHERE kind='check' AND status='open' AND from_kind IN ('cto','apps');
+`}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay
 // after its columns exist: the log table, the indexes and the backfill of old

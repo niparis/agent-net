@@ -10,7 +10,7 @@ Keys · all screens ────────────────────
   n                      rename the selected app
   r                      rotate the selected online machine token
 
- Inbox
+ Desk
   pgup/pgdn              page
   home/g, end            first, last row
   a                      approve
@@ -18,9 +18,11 @@ Keys · all screens ────────────────────
   s                      let stand
   O                      overrule
   A                      approve all
-  t                      answer
+  t                      type answer
   x                      dismiss
   u                      undo
+  v                      show or hide the done and stale changes in the In flight section
+  l                      open or close the Log section: what the CTO and the gateway did, with the undo of a CTO change
 
  On a held request row
   a                      approve
@@ -34,7 +36,5 @@ Keys · all screens ────────────────────
   s                      let stand
   O                      overrule
 
- On a CTO proposal row
-  enter                  open the proposal detail
   more below
 up/down scroll  ? this screen  esc close

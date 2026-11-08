@@ -27,8 +27,7 @@ func TestBDoesNotReadTheSession(t *testing.T) {
 // b is unused; R refreshes even on an outcome row.
 func TestOutcomeRemovedKeys(t *testing.T) {
 	m := New(&fakeSource{})
-	m.snap = Snapshot{Outcomes: []protocol.OutcomeInboxEntry{{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r", From: "a", To: "b"}, Sender: "sender", Recipient: "receiver", Request: "deploy?"}}}
-	m.selected = "outcome:r"
+	m.asks = []protocol.Ask{askFromOutcome(protocol.OutcomeInboxEntry{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r", From: "a", To: "b"}, Sender: "sender", Recipient: "receiver", Request: "deploy?"})}
 	next, cmd := press(m, tea.KeyPressMsg{Text: "b", Code: []rune("b")[0]})
 	if cmd != nil {
 		t.Fatal("b started a command")

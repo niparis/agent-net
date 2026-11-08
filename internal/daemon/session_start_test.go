@@ -605,7 +605,7 @@ func TestSessionStartAgentFailureReportsAndNextStarts(t *testing.T) {
 		mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
 		return r.Status == "failed"
 	})
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 {
 		t.Fatalf("failed-start Inbox: %+v %v", items, err)
 	}
@@ -622,7 +622,7 @@ func TestSessionStartAgentFailureReportsAndNextStarts(t *testing.T) {
 	if a := c.agentOf(t, r.SessionID); a == nil || a.AgentID != "chosen" {
 		t.Fatalf("next Agent: %+v", a)
 	}
-	items, err = g.gw.Store().ListInbox()
+	items, err = inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 {
 		t.Fatalf("duplicate Inbox: %+v %v", items, err)
 	}

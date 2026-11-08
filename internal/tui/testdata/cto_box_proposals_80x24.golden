@@ -1,11 +1,11 @@
-1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox (2) 8 Delivery │ 12 online
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G                 │
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G no claude · n… │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- Working (1)                                                  Inbox: 2 to decide
+ Working (1)                                                          active (v)
 ▸ tenebrae-53    Mac     tenebrae  claude · op… busy      38%  1.2G
  Idle (5)
   5 more idle · v to show

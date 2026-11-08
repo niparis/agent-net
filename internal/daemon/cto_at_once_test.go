@@ -55,7 +55,7 @@ func TestCTOAtOnceGraphInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestCTOTeamPurposeInboxUndo(t *testing.T) {
 	if err != nil || len(teams) != 1 || teams[0].Purpose != "New purpose" {
 		t.Fatalf("purpose: %+v %v", teams, err)
 	}
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "graph_undo" {
 		t.Fatalf("want purpose change and undo in inbox: %+v %v", items, err)
 	}
@@ -133,7 +133,7 @@ func TestCTOAsOwnerSendsAtOnce(t *testing.T) {
 	if got := codexFrame(m); !strings.Contains(got, protocol.CTONote) {
 		t.Fatalf("missing owner note: %q", got)
 	}
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, "sent as owner") {
 		t.Fatalf("Inbox: %+v %v", items, err)
 	}
@@ -151,7 +151,7 @@ func TestCTOSettingsAtOnceInboxUndo(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCTOImmediate(t, result)
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "settings_undo" || !strings.Contains(items[0].Recommendation, "workers.auto_continue") {
 		t.Fatalf("missing settings diff and undo: %+v %v", items, err)
 	}
@@ -200,7 +200,7 @@ func TestCTOAtOnceActionsLeaveInbox(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name+tc.undo, func(t *testing.T) {
-			before, err := g.gw.Store().ListInbox()
+			before, err := inboxAndLog(g.gw.Store())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -210,7 +210,7 @@ func TestCTOAtOnceActionsLeaveInbox(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertCTOImmediate(t, result)
-			after, err := g.gw.Store().ListInbox()
+			after, err := inboxAndLog(g.gw.Store())
 			if err != nil || len(after) != len(before)+1 {
 				t.Fatalf("inbox %+v %v", after, err)
 			}
@@ -272,7 +272,7 @@ func TestCTOProfileChangeUndoPreservesExisting(t *testing.T) {
 	if _, err := w.d.runCTOToolRaw(ctx, "settings_change", args); err != nil {
 		t.Fatal(err)
 	}
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "worker_profile_add" {
 		t.Fatalf("undo: %+v %v", items, err)
 	}
@@ -303,7 +303,7 @@ func TestCTOMachineRenameInboxUndo(t *testing.T) {
 	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", args); err != nil {
 		t.Fatal(err)
 	}
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != protocol.OpNodeRename || !strings.Contains(items[0].Recommendation, "old-name -> new-name") {
 		t.Fatalf("missing machine rename diff and undo: %+v %v", items, err)
 	}
@@ -347,7 +347,7 @@ func TestCTOScoreAndIntegrationsInboxUndo(t *testing.T) {
 			if _, err := n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(tc.args)); err != nil {
 				t.Fatal(err)
 			}
-			items, err := g.gw.Store().ListInbox()
+			items, err := inboxAndLog(g.gw.Store())
 			if err != nil || len(items) == 0 {
 				t.Fatalf("Inbox: %+v %v", items, err)
 			}
@@ -381,7 +381,7 @@ func TestCTOPlaybookInboxUndo(t *testing.T) {
 	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(`{"area":"playbook","model":"fixture","note":"new note"}`)); err != nil {
 		t.Fatal(err)
 	}
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != protocol.OpPlaybookSet || !strings.Contains(items[0].Recommendation, "previous note") {
 		t.Fatalf("missing playbook diff and undo: %+v %v", items, err)
 	}

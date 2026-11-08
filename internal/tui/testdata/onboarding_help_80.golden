@@ -11,7 +11,7 @@ Keys · all screens ────────────────────
   n                      rename the selected app
   r                      rotate the selected online machine token
 
- Inbox
+ Desk
   pgup/pgdn              page
   home/g, end            first, last row
   a                      approve
@@ -19,6 +19,6 @@ Keys · all screens ────────────────────
   s                      let stand
   O                      overrule
   A                      approve all
-  t                      answer
+  t                      type answer
   more below
 up/down scroll  ? this screen  esc close

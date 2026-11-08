@@ -42,7 +42,7 @@ func TestKeyLineContentPerTab(t *testing.T) {
 		{"Sessions", "1", "up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit"},
 		{"Messages", "4", "up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit"},
 		{"Quotas", "3", "up/down select  p protect  s show unset  c CTO  ? help  q quit"},
-		{"Graph", "2", "1-8 tabs  c CTO  ? help  q quit"},
+		{"Graph", "2", "1-7 tabs  c CTO  ? help  q quit"},
 	} {
 		m := keys(newModel(120, 34), tc.key)
 		if got := ansi.Strip(m.helpLine(120)); got != tc.want {
@@ -72,8 +72,8 @@ func TestSessionKeyLineShowsTheRelevantRowAction(t *testing.T) {
 	}
 
 	held := newModel(120, 34)
-	held.snap.Held = []protocol.Message{{ID: "m_held"}}
-	held.selected = "m_held"
+	held.tab = inboxTab
+	held.asks = append(held.asks, askFromHeld(protocol.Message{ID: "m_held"}))
 	line := ansi.Strip(held.helpLine(120))
 	for _, want := range []string{"a approve", "r refuse"} {
 		if !strings.Contains(line, want) {

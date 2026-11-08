@@ -134,8 +134,8 @@ func TestApprovedSessionsAndHeldKeys(t *testing.T) {
 		t.Fatalf("v did not return to active: %q", m.sessionViewName())
 	}
 	src := &heldTestSource{fakeSource: fakeSource{snap: fakeSnapshot()}}
-	src.snap.Held = []protocol.Message{{ID: "m_held", FromName: "peer", To: "s_0000000000000002", Body: "hello"}}
 	n := New(src)
+	n.asks = []protocol.Ask{askFromHeld(protocol.Message{ID: "m_held", FromName: "peer", To: "s_0000000000000002", Body: "hello"})}
 	n.snap = src.snap
 	n.selected = "m_held"
 	_, cmd := n.Update(tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})

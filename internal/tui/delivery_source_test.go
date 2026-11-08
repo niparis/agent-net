@@ -115,7 +115,7 @@ func TestDeliveryOwnerLabels(t *testing.T) {
 	}
 }
 
-// listView is a change as change.list answers it: steps and next only.
+// listView is a change as change.list type answers it: steps and next only.
 func listView(now time.Time) protocol.ChangeView {
 	head := hash('a')
 	c := protocol.Change{ID: "ch_5", Project: "agent-net", Branch: "agent-net/w_0123456789abcdef", HeadCommit: head, Revision: 2,
@@ -238,7 +238,7 @@ func TestDeliveryCurrentStepFallbacks(t *testing.T) {
 	}
 }
 
-// fullView is a change as change.get answers it: every revision's evidence,
+// fullView is a change as change.get type answers it: every revision's evidence,
 // the pipeline and the revisions.
 func fullView(now time.Time) protocol.ChangeView {
 	v := listView(now)
@@ -490,8 +490,8 @@ func TestGatewayDeliveryErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "restart the daemon") {
 		t.Errorf("old daemon: %v", err)
 	}
-	f.err = errors.New("the gateway did not answer in time")
-	if _, err = src.Change(context.Background(), "ch_1"); err == nil || err.Error() != "the gateway did not answer in time" {
+	f.err = errors.New("the gateway did not type answer in time")
+	if _, err = src.Change(context.Background(), "ch_1"); err == nil || err.Error() != "the gateway did not type answer in time" {
 		t.Errorf("gateway error changed: %v", err)
 	}
 }
@@ -542,6 +542,7 @@ func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
 	m.delivery.row = visibleRow(m, "c_2")
+	m.inboxIndex = m.askRowCount() + m.delivery.row
 	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.delivery.detail || cmd == nil {
 		t.Fatal("enter should open the detail and fetch the change")
@@ -576,6 +577,7 @@ func TestDeliveryReloadKeepsTheSelectionAndTheFullDetail(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
 	m.delivery.row = visibleRow(m, "c_2")
+	m.inboxIndex = m.askRowCount() + m.delivery.row
 	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	next, _ := m.Update(cmd())
 	m = next.(Model)
@@ -820,7 +822,7 @@ func TestDeliveryRefreshUpdatesSessionsAndDoesNotOverlap(t *testing.T) {
 	if got := m.sessionTaskText(a); got != "" {
 		t.Fatalf("stale task %q", got)
 	}
-	m.tab = deliveryTab
+	m.tab = inboxTab
 	m, cmd = m.startDeliveryLoad()
 	if cmd == nil {
 		t.Fatal("load missing")
@@ -898,7 +900,7 @@ func TestDeliveryStoppedFailureHidden(t *testing.T) {
 	if done, stale := m.deliveryHidden(); done+stale != 1 {
 		t.Errorf("hidden: %d done %d stale", done, stale)
 	}
-	m = keys(m, "a")
+	m = keys(m, "v")
 	if got := m.deliveryVisible(); len(got) != 1 || got[0].Group == groupMoving {
 		t.Errorf("show all: %+v", got)
 	}

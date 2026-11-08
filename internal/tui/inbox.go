@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,51 +31,26 @@ const (
 	inboxNotice
 )
 
-// inboxBox is one of the three boxes the owner sees. Every group belongs to
-// exactly one box.
+// box is the one list the owner answers from. Every ask waits for the owner
+// in the same "Needs you" section (decision 0090); what moves along without
+// them is the In flight section.
+func (g inboxGroup) box() inboxBox { return inboxBoxAnswer }
+
+// inboxBox is a section of asks. After decision 0090 there is only one.
 type inboxBox int
 
-const (
-	inboxBoxAnswer inboxBox = iota
-	inboxBoxProposals
-	inboxBoxInfo
-)
+const inboxBoxAnswer inboxBox = 0
 
-var inboxBoxOrder = []inboxBox{inboxBoxAnswer, inboxBoxProposals, inboxBoxInfo}
+var inboxBoxOrder = []inboxBox{inboxBoxAnswer}
 
-func (b inboxBox) title() string {
-	switch b {
-	case inboxBoxAnswer:
-		return "Needs you"
-	case inboxBoxProposals:
-		return "Proposals"
-	case inboxBoxInfo:
-		return "For your information"
-	}
-	return ""
-}
+func (b inboxBox) title() string { return "Needs you" }
 
-func (b inboxBox) color() color.Color {
-	if b == inboxBoxAnswer {
-		return roleWarning
-	}
-	return roleAccent
-}
+func (b inboxBox) color() color.Color { return roleWarning }
 
-// box is the box a group sits in.
-func (g inboxGroup) box() inboxBox {
-	switch g {
-	case inboxHeld, inboxApproval:
-		return inboxBoxAnswer
-	case inboxLearned, inboxProposal:
-		return inboxBoxProposals
-	}
-	return inboxBoxInfo
-}
-
-// inboxRow is one waiting item. kind names the row's actions, not its group:
-// held, outcome, learned, proposal, approval, question, notice or waiting (a
-// session that reports a wait).
+// inboxRow is one ask. kind names the row's actions, not its group: held,
+// outcome, learned, proposal, approval, question, step, notice or waiting (a
+// session that reports a wait). The older structs are filled from the ask so
+// that the panels and keys that read them keep their words.
 type inboxRow struct {
 	group    inboxGroup
 	key      string
@@ -88,105 +64,157 @@ type inboxRow struct {
 	learned  protocol.LearnedSuggestion
 	proposal protocol.CTOProposal
 	item     protocol.InboxItem
+	ask      protocol.Ask
 }
 
-// inboxRows builds every waiting row, grouped and newest first inside a group.
-func (m Model) inboxRows() []inboxRow {
-	var rows []inboxRow
-	for _, held := range m.snap.Held {
-		recipient := held.To
-		if name := m.inboxSessionName(held.To); name != held.To {
+// askItem is the Inbox item an ask stands for.
+func askItem(a protocol.Ask) protocol.InboxItem {
+	item := protocol.InboxItem{
+		ID: a.ID, Kind: a.Kind, SessionID: a.FromSession, Node: a.Node, Text: a.Question, Options: a.Options,
+		AskerName: a.From, Recommendation: a.Recommendation, MessageID: a.MessageID, ConversationID: a.ConversationID,
+		CreatedAt: a.CreatedAt, Status: "open", Delivery: a.Delivery,
+	}
+	if a.AboutKind == protocol.AskAboutChange {
+		item.ChangeTitle = a.AboutTitle
+	}
+	return item
+}
+
+// askRefID is the part of a source key after its prefix, "learned:12" -> "12".
+func askRefID(ref, prefix string) string { return strings.TrimPrefix(ref, prefix) }
+
+// askRow makes the row of one ask. It is false for an ask that is not the
+// owner's to answer now, and for asks of sessions the owner hides.
+func (m Model) askRow(a protocol.Ask) (inboxRow, bool) {
+	if a.State == protocol.AskWithSomeone {
+		return inboxRow{}, false
+	}
+	since := a.CreatedAt.Unix()
+	item := askItem(a)
+	row := inboxRow{since: since, item: item, ask: a, session: a.FromSession}
+	switch a.Kind {
+	case protocol.AskKindHeld:
+		recipient := a.AboutID
+		if name := m.inboxSessionName(a.AboutID); name != a.AboutID {
 			recipient = name
 		}
-		label := held.FromName
-		if label == "" {
-			label = held.From
+		row.group, row.key, row.kind = inboxHeld, "held:"+a.MessageID, "held"
+		row.name, row.text, row.session = firstNonEmpty(a.From, a.FromSession), "held request → "+recipient, a.AboutID
+		row.held = protocol.Message{ID: a.MessageID, From: a.FromSession, FromName: a.From, To: a.AboutID, Body: a.Detail, CreatedAt: a.CreatedAt}
+	case protocol.AskKindRejection, protocol.AskKindEscalation:
+		outcome := "reject"
+		if a.Kind == protocol.AskKindEscalation {
+			outcome = "escalate"
 		}
-		rows = append(rows, inboxRow{
-			group: inboxHeld, key: "held:" + held.ID, kind: "held",
-			name: label, text: "held request → " + recipient,
-			since: held.CreatedAt.Unix(), session: held.To, held: held,
-		})
-	}
-	for _, e := range m.snap.Outcomes {
-		rows = append(rows, inboxRow{
-			group: inboxOutcome, key: "outcome:" + e.ReplyID, kind: "outcome",
-			name: e.From + " → " + e.To, text: inboxOutcomeSummary(e),
-			since: e.At / 1e9, outcome: e,
-		})
-	}
-	for _, v := range m.snap.Learned {
-		if v.Status != "pending" || v.Severity != "major" {
-			continue
+		request, reason := a.Question, ""
+		if first, rest, ok := strings.Cut(a.Question, "\nReason: "); ok {
+			request, reason = strings.TrimPrefix(first, "Request: "), rest
 		}
-		rows = append(rows, inboxRow{
-			group: inboxLearned, key: fmt.Sprintf("learned:%d", v.ID), kind: "learned",
-			name: v.Node + inboxLearnedSuffix(v), text: inboxLearnedSummary(v),
-			since: v.CreatedAt / 1e9, learned: v,
-		})
-	}
-	for _, p := range m.proposals {
-		if p.Status != "open" {
-			continue
+		row.outcome = protocol.OutcomeInboxEntry{ReplyID: a.MessageID, From: a.From, To: a.Node, Request: request, Outcome: outcome, Reason: reason, Recommendation: a.Recommendation, At: since * 1e9}
+		row.group, row.key, row.kind = inboxOutcome, "outcome:"+a.MessageID, "outcome"
+		row.name, row.text = a.From+" → "+a.Node, inboxOutcomeSummary(row.outcome)
+		if a.Node == "" {
+			row.name = a.From
 		}
-		rows = append(rows, inboxRow{
-			group: inboxProposal, key: proposalKey(p), kind: "proposal",
-			name: "CTO", text: m.inboxProposalSummary(p),
-			since: p.CreatedAt.Unix(), proposal: p,
-		})
-	}
-	for _, item := range m.inboxItems {
-		if item.Status != "open" {
-			continue
+	case protocol.AskKindLearned, protocol.AskKindDraft:
+		id, _ := strconv.ParseInt(askRefID(a.Ref, a.Kind+":"), 10, 64)
+		suffix, origin := " (learned)", ""
+		if a.Kind == protocol.AskKindDraft {
+			id, suffix, origin = -id, " (draft)", "draft"
 		}
-		switch item.Kind {
-		case "check", "session_stall":
-			name, text := inboxNoticeParts(item)
-			if item.Kind == "session_stall" {
-				name = m.inboxSessionName(item.SessionID)
+		row.learned = protocol.LearnedSuggestion{ID: id, Node: a.AboutID, Status: "pending", Severity: "major", Origin: origin}
+		row.group, row.key, row.kind = inboxLearned, fmt.Sprintf("learned:%d", id), "learned"
+		row.name, row.text = a.AboutID+suffix, inboxFirstLine(a.Question)
+	case protocol.AskKindProposal:
+		p := protocol.CTOProposal{ID: a.Ref, Reason: a.Detail, CreatedAt: a.CreatedAt, Status: "open"}
+		if node, id, ok := strings.Cut(strings.TrimPrefix(a.Ref, "proposal:"), ":"); ok {
+			p.NodeID, p.ID = node, id
+		}
+		row.text = inboxFirstLine(a.Question)
+		for _, known := range m.proposals {
+			if known.ID == p.ID && (known.NodeID == p.NodeID || p.NodeID == "") && known.Status == "open" {
+				p = known
+				row.text = m.inboxProposalSummary(p)
 			}
-			rows = append(rows, inboxRow{
-				group: inboxNotice, key: "notice:" + item.ID, kind: "notice",
-				name: name, text: text,
-				since: item.CreatedAt.Unix(), item: item,
-			})
-		case "approval", "question":
-			rows = append(rows, inboxRow{
-				group: inboxApproval, key: "inbox:" + item.ID, kind: item.Kind,
-				name: m.inboxAskerName(item), text: inboxItemSummary(item),
-				since: item.CreatedAt.Unix(), session: item.SessionID, item: item,
-			})
 		}
+		row.group, row.key, row.kind, row.name, row.proposal = inboxProposal, proposalKey(p), "proposal", "CTO", p
+	case protocol.AskKindApproval, protocol.AskKindQuestion:
+		row.group, row.key, row.kind = inboxApproval, "inbox:"+a.ID, a.Kind
+		row.name, row.text = m.inboxAskerName(item), inboxItemSummary(item)
+	case protocol.AskKindStep:
+		row.group, row.key, row.kind = inboxApproval, "step:"+a.ID, "step"
+		row.name, row.text = firstNonEmpty(a.AboutTitle, a.From), inboxFirstLine(a.Question)
+	case protocol.AskKindWaiting:
+		row.group, row.key, row.kind = inboxApproval, "waiting:"+a.FromSession, "waiting"
+		row.name, row.text = m.inboxSessionName(a.FromSession), inboxWaitingText(a)
+	case protocol.AskKindCheck, protocol.AskKindStall:
+		name, text := inboxNoticeParts(item)
+		if a.Kind == protocol.AskKindStall {
+			name = m.inboxSessionName(a.FromSession)
+		}
+		row.group, row.key, row.kind = inboxNotice, "notice:"+a.ID, "notice"
+		row.name, row.text = name, text
+	default:
+		return inboxRow{}, false
 	}
-	for _, a := range m.snap.Agents {
-		if protocol.IsOwner(a.Harness) || a.Worker != nil || a.Waiting == nil {
-			continue
+	if !m.askSessionShown(a) {
+		return inboxRow{}, false
+	}
+	return row, true
+}
+
+// inboxWaitingText says that a session waits for the owner, after its name.
+func inboxWaitingText(a protocol.Ask) string {
+	lead := "waits for you"
+	if a.Detail == protocol.WaitingPermission {
+		lead = "waits for your approval"
+	}
+	if text := inboxFirstLine(a.Question); text != "" {
+		return lead + ": " + text
+	}
+	return lead
+}
+
+// askSessionShown keeps the owner's hide, junk, offline and filter choices for
+// the asks that a session raised. An ask whose session the screen does not know
+// is shown.
+func (m Model) askSessionShown(a protocol.Ask) bool {
+	// Only a wait that the session reports follows these choices, as it did
+	// before the Desk: a question or an approval stays until it is answered.
+	if a.Kind != protocol.AskKindWaiting {
+		return true
+	}
+	if a.FromKind != "" && a.FromKind != protocol.AskFromSession {
+		return true
+	}
+	ag, ok := m.agentByID(a.FromSession)
+	if !ok {
+		return true
+	}
+	if protocol.IsOwner(ag.Harness) {
+		return true
+	}
+	if m.hiddenSessions[ag.SessionID] && !m.showHiddenSessions {
+		return false
+	}
+	if isJunkSession(ag) && !m.showJunk() {
+		return false
+	}
+	if (!ag.Online || ag.Status == protocol.StatusDormant) && !m.showOffline {
+		return false
+	}
+	return matches(ag, m.filter)
+}
+
+// inboxRows builds the Needs you rows from the one list of asks.
+func (m Model) inboxRows() []inboxRow {
+	var rows []inboxRow
+	for _, a := range m.asks {
+		if row, ok := m.askRow(a); ok {
+			rows = append(rows, row)
 		}
-		if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
-			continue
-		}
-		if isJunkSession(a) && !m.showJunk() {
-			continue
-		}
-		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {
-			continue
-		}
-		if a.Worker != nil && !a.Online {
-			continue
-		}
-		if !matches(a, m.filter) {
-			continue
-		}
-		rows = append(rows, inboxRow{
-			group: inboxApproval, key: "waiting:" + a.SessionID, kind: "waiting",
-			name: m.needsName(a), text: inboxWaitingSummary(a.Waiting),
-			since: a.Waiting.Since, session: a.SessionID,
-		})
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].group.box() != rows[j].group.box() {
-			return rows[i].group.box() < rows[j].group.box()
-		}
 		if rankI, rankJ := inboxKindRank(rows[i]), inboxKindRank(rows[j]); rankI != rankJ {
 			return rankI < rankJ
 		}
@@ -198,26 +226,28 @@ func (m Model) inboxRows() []inboxRow {
 	return rows
 }
 
-// inboxKindRank orders the rows inside a box: what needs an answer comes
-// first, then what proposes a change, then what only informs.
+// inboxKindRank orders the rows: what needs an answer comes first, then what
+// proposes a change, then what only informs.
 func inboxKindRank(row inboxRow) int {
 	switch row.kind {
 	case "question":
 		return 0
 	case "approval":
 		return 1
-	case "waiting":
+	case "step":
 		return 2
-	case "held":
+	case "waiting":
 		return 3
-	case "proposal":
-		return 0
-	case "learned":
-		return 1
+	case "held":
+		return 4
 	case "outcome":
-		return 0
+		return 5
+	case "proposal":
+		return 6
+	case "learned":
+		return 7
 	case "notice":
-		return 1
+		return 8
 	}
 	return 9
 }
@@ -255,55 +285,6 @@ func inboxOutcomeSummary(e protocol.OutcomeInboxEntry) string {
 		text += ": \"" + sanitize(e.Reason) + "\""
 	}
 	return text
-}
-
-// inboxLearnedSummary describes a learned suggestion without repeating the
-// machine name the who column already shows.
-func inboxLearnedSummary(v protocol.LearnedSuggestion) string {
-	if v.Origin == "draft" {
-		return fmt.Sprintf("set %s to \"%s\" (drafted from %s)", inboxPlainField(v.Field), sanitize(v.NewValue), sanitize(v.By))
-	}
-	phrase := v.Phrase
-	if v.Origin == "owner" && v.RawPhrase != "" {
-		phrase = v.RawPhrase
-	}
-	phrase = sanitize(phrase)
-	if v.Field == "edge" {
-		verb := "add"
-		if v.Kind == "remove" {
-			verb = "remove"
-		}
-		return fmt.Sprintf("%s a %s edge to %s", verb, sanitize(v.EdgeKind), phrase)
-	}
-	field := inboxPlainField(v.Field)
-	switch v.Kind {
-	case "remove":
-		return fmt.Sprintf("remove \"%s\" from %s", phrase, field)
-	case "narrow":
-		return fmt.Sprintf("change %s to \"%s\"", field, phrase)
-	}
-	return fmt.Sprintf("add \"%s\" to %s", phrase, field)
-}
-
-func inboxLearnedSuffix(v protocol.LearnedSuggestion) string {
-	if v.Origin == "draft" {
-		return " (draft)"
-	}
-	return " (learned)"
-}
-
-func inboxPlainField(field string) string {
-	switch field {
-	case "refuses":
-		return "what it refuses"
-	case "accepts":
-		return "what it accepts"
-	case "feature_requests":
-		return "what it wants"
-	case "":
-		return "its charter"
-	}
-	return "its " + strings.ReplaceAll(field, "_", " ")
 }
 
 // inboxProposalSummary says what the CTO wants to do, with the machine named
@@ -457,21 +438,6 @@ func inboxItemSummary(item protocol.InboxItem) string {
 	return inboxFirstLine(item.Text)
 }
 
-// inboxWaitingSummary says that a session waits for the owner, after its
-// name: "waits for you: <question>" (decision 0057). The words are short so
-// the question keeps most of a narrow row.
-func inboxWaitingSummary(w *protocol.Waiting) string {
-	text := inboxFirstLine(w.Text)
-	lead := "waits for you"
-	if w.Kind == protocol.WaitingPermission {
-		lead = "waits for your approval"
-	}
-	if text == "" {
-		return lead
-	}
-	return lead + ": " + text
-}
-
 func (m Model) inboxAskerName(item protocol.InboxItem) string {
 	if item.AskerName != "" && item.AskerName != item.SessionID && !strings.HasPrefix(item.AskerName, "s_") {
 		return item.AskerName
@@ -496,7 +462,7 @@ func (m Model) inboxSessionName(id string) string {
 }
 
 // waitingCount is the number of items waiting for the owner.
-func (m Model) waitingCount() int { return len(m.inboxRows()) }
+func (m Model) waitingCount() int { return m.askRowCount() }
 
 // anySessionWaiting tells whether a table row reports a wait.
 func (m Model) anySessionWaiting() bool {
@@ -508,11 +474,14 @@ func (m Model) anySessionWaiting() bool {
 	return false
 }
 
+// inboxSelected is the ask under the cursor. It is false when the cursor is on
+// a change or a log line.
 func (m Model) inboxSelected(rows []inboxRow) (inboxRow, bool) {
-	if len(rows) == 0 {
+	idx := min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
+	if idx >= len(rows) {
 		return inboxRow{}, false
 	}
-	return rows[min(max(m.inboxIndex, 0), len(rows)-1)], true
+	return rows[idx], true
 }
 
 func (m Model) inboxQuestionHasExtra(row inboxRow, rows []inboxRow) bool {
@@ -531,137 +500,6 @@ func (m Model) inboxQuestionHasExtra(row inboxRow, rows []inboxRow) bool {
 	room := max(max(width-4, 4)-2-nameW-1-4-1, 4)
 	room = max(room-ansi.StringWidth("["+row.kind+"] "), 0)
 	return cutWords(sanitize(row.text), room) != sanitize(row.text)
-}
-
-// inboxTabView draws the tab: a title, the three boxes, and a panel for the
-// selected item. On a wide screen the panel sits on the right; on a narrow one
-// it sits under the boxes.
-func (m Model) inboxTabView(w, h int) []string {
-	out := []string{m.titleLine(w)}
-	if m.inboxError != "" {
-		out = append(out, sBad.Render(clip("  "+m.inboxError, w)))
-	}
-	if m.inboxNote != "" {
-		out = append(out, sDim.Render(clip("  "+m.inboxNote, w)))
-	}
-	rows := m.inboxRows()
-	if len(rows) == 0 {
-		for len(out) < h {
-			out = append(out, "")
-		}
-		if h > 1 {
-			out[1+max((h-2)/2, 0)] = sDim.Render(centerText("Nothing is waiting for you.", w))
-		}
-		return out[:max(h, 1)]
-	}
-	if m.inboxDetail {
-		out = append(out, section("Inbox detail", w))
-		row, _ := m.inboxSelected(rows)
-		var lines []string
-		for _, line := range m.inboxDetailLines(row) {
-			if line == "" {
-				lines = append(lines, "")
-				continue
-			}
-			for _, wrapped := range wrapText(line, max(w-2, 1)) {
-				lines = append(lines, "  "+wrapped)
-			}
-		}
-		room := max(h-len(out), 0)
-		start := min(max(m.inboxDetailScroll, 0), max(len(lines)-room, 0))
-		more := len(lines)-start > room
-		if more && room > 0 {
-			room--
-		}
-		out = append(out, lines[start:min(start+room, len(lines))]...)
-		if more && len(out) < h {
-			out = append(out, sDim.Render("  more below"))
-		}
-		for len(out) < h {
-			out = append(out, "")
-		}
-		return out[:max(h, 1)]
-	}
-
-	avail := max(h-len(out), 1)
-	if w >= 100 {
-		panelW := min(max(w*2/5, 30), 48)
-		leftW := max(w-panelW-1, 20)
-		panelW = w - leftW - 1
-		display, selected := m.inboxBoxes(leftW)
-		panelH := min(avail, max(len(display), 12))
-		left := windowLines(display, selected, panelH)
-		panel := m.inboxPanel(panelW, panelH)
-		for i := 0; i < panelH; i++ {
-			var l, r string
-			if i < len(left) {
-				l = left[i]
-			}
-			if i < len(panel) {
-				r = panel[i]
-			}
-			out = append(out, padStyled(l, leftW)+" "+padStyled(r, panelW))
-		}
-		for len(out) < h {
-			out = append(out, "")
-		}
-		return out[:max(h, 1)]
-	}
-
-	display, selected := m.inboxBoxes(w)
-	panelH := min(8, max(avail-min(len(display), avail), 0))
-	if panelH < 3 && avail > 6 {
-		panelH = 3
-	}
-	boxRoom := avail - panelH
-	if boxRoom < 3 {
-		boxRoom = avail
-		panelH = 0
-	}
-	out = append(out, windowLines(display, selected, boxRoom)...)
-	if panelH > 0 {
-		out = append(out, m.inboxPanel(w, panelH)...)
-	}
-	for len(out) < h {
-		out = append(out, "")
-	}
-	return out[:max(h, 1)]
-}
-
-// inboxBoxes draws the three boxes at width w and returns the line of the
-// selected row.
-func (m Model) inboxBoxes(w int) ([]string, int) {
-	rows := m.inboxRows()
-	selectedIndex := min(max(m.inboxIndex, 0), max(len(rows)-1, 0))
-	innerW := max(w-4, 4)
-	nameW := 12
-	for _, row := range rows {
-		nameW = max(nameW, ansi.StringWidth(sanitize(row.name)))
-	}
-	nameW = min(nameW, 20)
-	var out []string
-	selected := 0
-	for _, box := range inboxBoxOrder {
-		var index []int
-		for i, row := range rows {
-			if row.group.box() == box {
-				index = append(index, i)
-			}
-		}
-		if len(index) == 0 {
-			continue
-		}
-		body := make([]string, 0, len(index))
-		for _, i := range index {
-			if i == selectedIndex {
-				selected = len(out) + 1 + len(body)
-			}
-			body = append(body, m.inboxRowLine(rows[i], nameW, innerW, i == selectedIndex))
-		}
-		title := fmt.Sprintf("%s · %d", box.title(), len(index))
-		out = append(out, panelWithBorder(title, body, w, box.color(), roleFaint)...)
-	}
-	return out, selected
 }
 
 // windowLines keeps the selected line in view and never returns more than
@@ -816,6 +654,8 @@ func (m Model) inboxPanelTitle(row inboxRow) string {
 		return sanitize(row.name) + " wants approval"
 	case "question":
 		return sanitize(row.name) + " asks"
+	case "step":
+		return sanitize(row.name) + " needs you"
 	case "waiting":
 		return sanitize(row.name) + " waits for you"
 	case "outcome":
@@ -847,11 +687,15 @@ func (m Model) inboxPanelText(row inboxRow) string {
 		}
 		return text
 	case "learned":
-		text := learnedQuestion(row.learned)
-		for i, e := range row.learned.Evidence {
-			if i > 0 && e.Excerpt != "" {
-				text += "\nBecause: " + sanitize(e.Excerpt)
-			}
+		text := sanitize(row.item.Text)
+		if row.ask.Detail != "" {
+			text += "\n" + sanitize(row.ask.Detail)
+		}
+		return text
+	case "step":
+		text := sanitize(row.item.Text)
+		if row.ask.Detail != "" && row.ask.Detail != row.ask.Question {
+			text = sanitizeBody(row.ask.Detail)
 		}
 		return text
 	case "proposal":
@@ -861,11 +705,7 @@ func (m Model) inboxPanelText(row inboxRow) string {
 		}
 		return text
 	case "notice":
-		text := sanitize(row.item.Text)
-		if row.item.Node == "cto" && row.item.Recommendation != "" {
-			text += "\n" + sanitize(row.item.Recommendation)
-		}
-		return text
+		return sanitize(row.item.Text)
 	case "approval", "question":
 		text := sanitize(row.item.Text)
 		if row.item.Recommendation != "" {
@@ -903,16 +743,15 @@ func (m Model) inboxPanelOrigin(row inboxRow, withAge bool) string {
 	case "outcome":
 		add("edge " + sanitize(row.outcome.From) + " → " + sanitize(row.outcome.To))
 	case "learned":
-		add("learned on " + sanitize(row.learned.Node))
+		add(sanitize(strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(row.name, " (learned)"), " (draft)"))) + " charter")
+	case "step":
+		add("change " + sanitize(row.ask.AboutID))
 	case "proposal":
 		add("CTO · " + m.inboxMachineName(row.proposal.NodeID))
 	case "notice":
-		if row.item.Node == "cto" {
-			add("CTO")
-		} else if row.item.Kind != "session_stall" {
-			add("connected app")
-		}
-		if row.item.SessionID != "" {
+		if row.ask.FromKind == protocol.AskFromDisk {
+			add("disk check")
+		} else if row.item.SessionID != "" {
 			add(m.inboxSessionOrigin(row.item.SessionID))
 		}
 	}
@@ -1035,27 +874,24 @@ func (m Model) inboxDetailLines(row inboxRow) []string {
 		}
 	case "learned":
 		out = append(out, "Node: "+sanitize(row.learned.Node), sanitize(row.text))
-		for _, e := range row.learned.Evidence {
-			if e.Excerpt != "" {
-				out = append(out, "Because: "+sanitize(e.Excerpt))
-			}
+		if row.ask.Detail != "" {
+			out = append(out, sanitize(row.ask.Detail))
 		}
 	case "proposal":
 		out = append(out, sanitize(row.text))
+		if row.proposal.Reason != "" {
+			out = append(out, "", "Reason: "+sanitizeBody(row.proposal.Reason))
+		}
+	case "step":
+		out = append(out, "Change: "+sanitize(row.ask.AboutID), "", sanitizeBody(firstNonEmpty(row.ask.Detail, row.ask.Question)))
 	case "notice", "approval", "question":
 		name := m.inboxAskerName(row.item)
 		out = append(out, "From: "+sanitize(name), "", sanitizeBody(row.item.Text))
-		if row.item.Node != "cto" {
-			for i, option := range row.item.Options {
-				out = append(out, fmt.Sprintf("%d. %s", i+1, sanitize(option)))
-			}
+		for i, option := range row.item.Options {
+			out = append(out, fmt.Sprintf("%d. %s", i+1, sanitize(option)))
 		}
 		if row.item.Recommendation != "" {
-			label := "Recommendation: "
-			if row.item.Node == "cto" {
-				label = "Diff: "
-			}
-			out = append(out, "", label+sanitizeBody(row.item.Recommendation))
+			out = append(out, "", "Recommendation: "+sanitizeBody(row.item.Recommendation))
 		}
 		if row.item.ChangeTitle != "" {
 			out = append(out, "", "Related change: "+sanitize(row.item.ChangeTitle))
@@ -1100,14 +936,14 @@ func inboxGone(err error) bool {
 // dropInboxItem removes an item the gateway no longer has open from the local
 // list, so the next draw cannot show a row whose action will never succeed.
 func (m *Model) dropInboxItem(id string) {
-	kept := make([]protocol.InboxItem, 0, len(m.inboxItems))
-	for _, item := range m.inboxItems {
-		if item.ID != id {
-			kept = append(kept, item)
+	kept := make([]protocol.Ask, 0, len(m.asks))
+	for _, a := range m.asks {
+		if a.ID != id {
+			kept = append(kept, a)
 		}
 	}
-	m.inboxItems = kept
-	m.inboxIndex = min(max(m.inboxIndex, 0), max(m.waitingCount()-1, 0))
+	m.asks = kept
+	m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
 }
 
 func (m Model) inboxDetailScrollLimit(rows []inboxRow) int {
@@ -1117,7 +953,7 @@ func (m Model) inboxDetailScrollLimit(rows []inboxRow) int {
 	}
 	width := max(m.width, 40)
 	height := max(m.height, 10) - 1 - m.ctoBoxHeight(m.tab)
-	room := height - 2
+	room := height - 3 // the tab line, the Desk line and the section line
 	if m.inboxError != "" {
 		room--
 	}
@@ -1180,6 +1016,10 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.inboxInput, cmd = m.inboxInput.Update(k)
 		return m, cmd
 	}
+	if m.delivery.detail || m.delivery.reporting {
+		mm, cmd := m.deliveryKey(k)
+		return mm, cmd
+	}
 	key := keyAction(contextInbox, k.String())
 	switch key {
 	case actQuit:
@@ -1188,6 +1028,28 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "help":
 		m.openHelp()
 		return m, nil
+	case "show all":
+		if !m.inboxDetail {
+			m.delivery.showAll = !m.delivery.showAll
+			m.delivery.detail = false
+			m.inboxIndex = m.deskIndex()
+			return m, nil
+		}
+	case "back":
+		if !m.inboxDetail && m.delivery.project != "" {
+			m.delivery.project = ""
+			m.inboxIndex = m.deskIndex()
+			return m, nil
+		}
+	case "log":
+		if !m.inboxDetail {
+			m.deskLogOpen = !m.deskLogOpen
+			m.inboxIndex = m.deskIndex()
+			if m.deskLogOpen {
+				return m, m.deskLogCmd()
+			}
+			return m, nil
+		}
 	}
 	if m.inboxDetail {
 		limit := m.inboxDetailScrollLimit(rows)
@@ -1215,28 +1077,36 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	total := m.deskRowCount()
+	moved := true
 	switch key {
 	case actUp:
-		m.inboxIndex = max(0, m.inboxIndex-1)
-		return m, nil
+		m.inboxIndex = max(0, m.deskIndex()-1)
 	case actDown:
-		m.inboxIndex = min(max(len(rows)-1, 0), m.inboxIndex+1)
-		return m, nil
+		m.inboxIndex = min(max(total-1, 0), m.deskIndex()+1)
 	case actPageUp:
-		m.inboxIndex = max(0, m.inboxIndex-max(len(rows), 1))
-		return m, nil
+		m.inboxIndex = max(0, m.deskIndex()-10)
 	case actPageDown:
-		m.inboxIndex = min(max(len(rows)-1, 0), m.inboxIndex+max(len(rows), 1))
-		return m, nil
+		m.inboxIndex = min(max(total-1, 0), m.deskIndex()+10)
 	case actFirst:
 		m.inboxIndex = 0
-		return m, nil
 	case actLast:
-		m.inboxIndex = max(len(rows)-1, 0)
+		m.inboxIndex = max(total-1, 0)
+	default:
+		moved = false
+	}
+	if moved {
+		if sec, i := m.deskPosition(); sec == deskSecChange {
+			m.delivery.row = i
+		}
 		return m, nil
 	}
 	row, ok := m.inboxSelected(rows)
 	if !ok {
+		mm, cmd, handled := m.deskRowKey(k, key)
+		if handled {
+			return mm, cmd
+		}
 		return m, nil
 	}
 	switch key {
@@ -1253,6 +1123,16 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "proposal":
 			m.proposalDetail = &proposalDetail{proposal: row.proposal, loading: true}
 			return m, m.proposalDetailCmd(row.proposal)
+		case "step":
+			// Go to the change the step is about, when it is in flight.
+			for i, ch := range m.deliveryVisible() {
+				if ch.ID == row.ask.AboutID {
+					m.inboxIndex = len(rows) + i
+					return m, nil
+				}
+			}
+			m.inboxDetailScroll = 0
+			m.inboxDetail = true
 		default:
 			m.inboxDetailScroll = 0
 			m.inboxDetail = true
@@ -1275,33 +1155,6 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.inboxInput.CharLimit = protocol.MaxBodyBytes
 			m.inboxInput.Focus()
 			m.inboxEditing = true
-		}
-	case "undo":
-		if op, args, ok := ctoInboxUndo(row.item); ok && row.kind == "notice" {
-			c, ok := m.src.(inboxCaller)
-			if !ok {
-				return m, nil
-			}
-			return m, func() tea.Msg {
-				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-				defer cancel()
-				result, err := c.Call(ctx, op, args)
-				if err != nil {
-					return actionMsg{err: err}
-				}
-				if op == "mcp_native_remove" {
-					var restored protocol.MCPNativeRemoveResult
-					if json.Unmarshal(result, &restored) != nil || restored.State != protocol.MCPNativeRestored {
-						reason := restored.Reason
-						if reason == "" {
-							reason = "native MCP configuration was not restored"
-						}
-						return actionMsg{err: fmt.Errorf("undo: %s", reason)}
-					}
-				}
-				_, err = c.Call(ctx, "inbox_answer", map[string]any{"id": row.item.ID, "answer": "dismiss"})
-				return inboxAnswerMsg{id: row.item.ID, err: err}
-			}
 		}
 	case "dismiss":
 		if row.kind == "notice" || row.kind == "approval" || row.kind == "question" {
@@ -1418,13 +1271,13 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 	case "question":
 		h := []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
 		if len(row.item.Options) > 0 {
-			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1}}, h...)
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "pick", prio: 1}}, h...)
 		}
 		return h
 	case "approval":
 		h := []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
 		if len(row.item.Options) > 0 {
-			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1}}, h...)
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "pick", prio: 1}}, h...)
 		}
 		return h
 	case "proposal":
@@ -1433,10 +1286,11 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 		return []hint{bindingHint(contextInbox, "let stand"), bindingHint(contextInbox, "overrule")}
 	case "learned":
 		return []hint{{key: "a", label: "accept", prio: 1}, {key: "r", label: "reject", prio: 1}}
+	case "step":
+		open := bindingHint(contextInbox, "details")
+		open.label = "go to change"
+		return []hint{open}
 	case "notice":
-		if _, _, ok := ctoInboxUndo(row.item); ok {
-			return []hint{bindingHint(contextInbox, "undo"), bindingHint(contextInbox, "dismiss")}
-		}
 		return []hint{bindingHint(contextInbox, "dismiss")}
 	}
 	return nil
@@ -1451,7 +1305,7 @@ func (m Model) inboxHints() []hint {
 		var h []hint
 		if ok && (row.kind == "question" || row.kind == "approval") {
 			if len(row.item.Options) > 0 {
-				h = append(h, hint{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1})
+				h = append(h, hint{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "pick", prio: 1})
 			}
 			h = append(h, bindingHint(contextInbox, "answer"))
 			if row.kind == "approval" {
@@ -1461,35 +1315,31 @@ func (m Model) inboxHints() []hint {
 		return append(h, bindingHint(contextInbox, "back"))
 	}
 	move := hint{key: "↑↓", label: "select", prio: 1}
+	logHint := bindingHint(contextInbox, "log")
+	if m.deskOnChange() {
+		if m.delivery.reporting || m.delivery.detail {
+			return m.deliveryHints()
+		}
+		if changes := m.deliveryVisible(); len(changes) > 0 {
+			_, i := m.deskPosition()
+			return append(m.deskChangeHints(changes[min(i, len(changes)-1)]), move, logHint, help)
+		}
+	}
+	if e, ok := m.deskSelectedLog(); ok {
+		return append(m.deskLogHints(e), move, help)
+	}
 	rows := m.inboxRows()
 	row, ok := m.inboxSelected(rows)
 	if !ok {
-		if len(rows) == 0 {
-			return []hint{help, bindingHint(contextInbox, actQuit)}
+		if m.deskRowCount() == 0 {
+			return []hint{logHint, help, bindingHint(contextInbox, actQuit)}
 		}
-		return []hint{bindingPairHint(contextInbox, actUp, actDown), help, bindingHint(contextInbox, actQuit)}
+		return []hint{bindingPairHint(contextInbox, actUp, actDown), logHint, help, bindingHint(contextInbox, actQuit)}
 	}
-	return append(m.inboxItemHints(row), move, help)
+	return append(m.inboxItemHints(row), move, logHint, help)
 }
 
 // inboxCaller is the local call the Inbox and the CTO box need.
 type inboxCaller interface {
 	Call(context.Context, string, any) (json.RawMessage, error)
-}
-
-// ctoInboxUndo accepts only the owner operations emitted by the CTO daemon.
-func ctoInboxUndo(item protocol.InboxItem) (string, json.RawMessage, bool) {
-	if item.Node != "cto" || len(item.Options) != 2 {
-		return "", nil, false
-	}
-	switch item.Options[0] {
-	case "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive", "folder_trust", "standing_orders":
-	default:
-		return "", nil, false
-	}
-	raw := json.RawMessage(item.Options[1])
-	if !json.Valid(raw) {
-		return "", nil, false
-	}
-	return item.Options[0], raw, true
 }

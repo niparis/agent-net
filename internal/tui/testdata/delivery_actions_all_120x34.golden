@@ -1,17 +1,17 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 5 online · 1 busy  00:00:00
-╭─Delivery─────────────────────────────────────────────────────────────────────────────────────────────────────4 shown─╮
-│   TITLE                                 REPO        STEP      STATUS                                    AGE     DONE │
-│ Needs you · 1                                                                                                        │
-│ ▸ Resume offline sessions               demo        verify    waiting for you                           -       ○○   │
-│ Moving · 2                                                                                                           │
-│   Fix the entry test                    demo        test      back to tenebrae-53 (fix)                 -       ○✗   │
-│   Enter did not resume the offline session                                                                           │
-│   Repair worker restart                 demo        test      back to strategies to restart the worker  -       ○✗   │
-│   Enter did not resume the offline session                                                                           │
-│ Stuck · 0                                                                                                            │
-│ Done · 1                                                                                                             │
-│   Stopped entry work                    demo        test      stopped                                   -       ○✗   │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 sessions, 5 online · 1 busy      updated 00:00:00
+Desk · all clear · log closed (l opens it)
+╭─Needs you · 0───────────────────────────────────────────────────────╮ ╭─Change ch_action_0───────────────────────────╮
+│ Nothing is waiting for you.                                         │ │ Resume offline sessions                      │
+╰─────────────────────────────────────────────────────────────────────╯ │ step verify: waiting for you                 │
+╭─In flight · 4───────────────────────────────────────────────────────╮ │ with merger                                  │
+│   TITLE                     STEP     STATUS             AGE    DONE │ │                                              │
+│ ▸ Resume offline sessions   verify   waiting for you    -      ○○   │ │ enter evidence  v all changes  R refresh     │
+│   Fix the entry test        test     back to tenebrae-… -      ○✗   │ │                                              │
+│     Enter did not resume the offline session                        │ │                                              │
+│   Repair worker restart     test     back to strategie… -      ○✗   │ │                                              │
+│     Enter did not resume the offline session                        │ │                                              │
+│   Stopped entry work        test     stopped            -      ○✗   │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter evidence  a show all  R refresh  ? help  q quit
+enter evidence  v all changes  R refresh  ↑↓ select  l log  ? help

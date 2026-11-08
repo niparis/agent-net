@@ -232,6 +232,7 @@ func proposalConfirmModel(t *testing.T) (Model, *proposalSource, protocol.CTOPro
 	s := &proposalSource{proposals: []protocol.CTOProposal{p}}
 	m := New(s)
 	m.proposals = s.proposals
+	m.asks = openProposalAsks(s.proposals)
 	m.selected = proposalKey(p)
 	m.openProposalConfirm()
 	return m, s, p

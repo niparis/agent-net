@@ -122,7 +122,7 @@ func TestWorkerWaitingScreen(t *testing.T) {
 func TestCheckInboxItemAppearsInInbox(t *testing.T) {
 	m := newModel(100, 30)
 	m.snap.Agents = []protocol.AgentView{agent("s_check", "n_mac", "test-host", "pi", "checker", nil)}
-	m.inboxItems = []protocol.InboxItem{{ID: "i_check", Kind: "check", SessionID: "s_check", Text: "checker stopped with work left: write the docs", Status: "open", CreatedAt: t0}}
+	m.asks = askItems([]protocol.InboxItem{{ID: "i_check", Kind: "check", SessionID: "s_check", Text: "checker stopped with work left: write the docs", Status: "open", CreatedAt: t0}})
 	rows := m.inboxRows()
 	if len(rows) != 1 || !strings.Contains(rows[0].text, "stopped with work left") {
 		t.Fatalf("check row = %+v", rows)
@@ -139,6 +139,7 @@ func TestInboxRowsFollowTheFilter(t *testing.T) {
 			waiting(&m.snap.Agents[i], -3*time.Minute, protocol.WaitingPermission, "Bash(git push origin main)")
 		}
 	}
+	m = withWaitingAsks(m)
 	if got := len(m.inboxRows()); got != 2 {
 		t.Fatalf("inbox has %d rows, want 2", got)
 	}
@@ -180,6 +181,7 @@ func TestInboxWaitingRowSaysTheSessionWaitsForYou(t *testing.T) {
 			waiting(&m.snap.Agents[i], -3*time.Minute, protocol.WaitingPermission, "Bash(git push origin main)")
 		}
 	}
+	m = withWaitingAsks(m)
 	texts := map[string]string{}
 	titles := map[string]string{}
 	for _, row := range m.inboxRows() {
@@ -197,12 +199,13 @@ func TestInboxWaitingRowSaysTheSessionWaitsForYou(t *testing.T) {
 	if got := titles["s_0000000000000002"]; got != "strategies waits for you" {
 		t.Errorf("panel title: %q", got)
 	}
-	if got := inboxWaitingSummary(&protocol.Waiting{Kind: protocol.WaitingInput}); got != "waits for you" {
+	if got := inboxWaitingText(protocol.Ask{Detail: protocol.WaitingInput}); got != "waits for you" {
 		t.Errorf("wait without words: %q", got)
 	}
 	for i := range m.snap.Agents {
 		m.snap.Agents[i].Waiting = nil
 	}
+	m.asks = nil
 	for _, row := range m.inboxRows() {
 		if row.kind == "waiting" {
 			t.Fatalf("a row is left after the wait ended: %+v", row)

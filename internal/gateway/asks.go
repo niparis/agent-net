@@ -107,17 +107,11 @@ const askSelect = `SELECT i.id,i.kind,i.session_id,i.node,i.text,i.recommendatio
  FROM inbox_items i LEFT JOIN sessions s ON s.id=i.session_id LEFT JOIN profiles p ON p.session_id=i.session_id
  LEFT JOIN delivery_step_inbox d ON d.item_id=i.id LEFT JOIN delivery_changes c ON c.id=d.change_id`
 
-// askNotices are the Inbox rows that are events, not questions: what the CTO
-// applied or sent and a new app. Until the Desk replaces the Inbox tab they are
-// still written there for the old screen, and they are also lines of the log.
-// They are not asks.
-const askNotices = `(i.kind='check' AND i.from_kind IN ('cto','apps'))`
-
 // ListAsks returns every open ask, oldest first, in one query. The Desk reads
 // this one list instead of building rows from the Inbox, held requests,
 // outcomes, learned suggestions and sessions.
 func (s *Store) ListAsks() ([]protocol.Ask, error) {
-	rows, err := s.db.Query(askSelect + ` WHERE i.status='open' AND NOT ` + askNotices + ` ORDER BY i.created_at,i.id`)
+	rows, err := s.db.Query(askSelect + ` WHERE i.status='open' ORDER BY i.created_at,i.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -467,14 +461,10 @@ func (s *Store) reconcileLearnedAsks() error {
 		if v.Severity != "major" || open[ref] {
 			continue
 		}
-		verb := "add"
-		if v.Kind == "remove" {
-			verb = "remove"
-		}
 		if _, err := s.createInboxItem(s.db, protocol.InboxItem{
 			Kind: protocol.AskKindLearned, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: v.Node, AskerName: "learned",
 			SourceRef: ref, AboutKind: protocol.AskAboutProject, AboutID: v.Node,
-			Text:    fmt.Sprintf("Learned for %s: %s %q in %s?", v.Node, verb, askFirstLine(v.Phrase, 120), v.Field),
+			Text: learnedAskText(v), Detail: learnedAskBecause(v),
 			Options: []string{"accept", "reject"},
 		}); err != nil {
 			return err
@@ -492,7 +482,7 @@ func (s *Store) reconcileLearnedAsks() error {
 		if _, err := s.createInboxItem(s.db, protocol.InboxItem{
 			Kind: protocol.AskKindDraft, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: d.Scope, AskerName: "charter draft",
 			SourceRef: ref, AboutKind: protocol.AskAboutProject, AboutID: d.Scope,
-			Text:    fmt.Sprintf("Charter draft for %s %s: %s?", d.Level, d.Name, askFirstLine(d.Attr+" = "+d.Value, 200)),
+			Text:    fmt.Sprintf("set %s to \"%s\" (drafted from %s)", askPlainField(d.Attr), askFirstLine(d.Value, 200), askFirstLine(d.Source, 60)),
 			Options: []string{"accept", "reject"}, Detail: "Drafted from " + d.Source,
 		}); err != nil {
 			return err
@@ -631,4 +621,62 @@ func (s *Store) SyncExternalAsks(node string, sync protocol.AskSync) error {
 		}
 	}
 	return nil
+}
+
+// SettleDeskLog marks a log line as done once its change was undone: the undo
+// options go, and the text says so. A second call changes nothing.
+func (s *Store) SettleDeskLog(id int64) error {
+	_, err := s.db.Exec(`UPDATE desk_log SET options='[]', text='Undone: '||text WHERE id=? AND options<>'[]'`, id)
+	return err
+}
+
+// askPlainField names a charter field in the owner's words.
+func askPlainField(field string) string {
+	switch field {
+	case "refuses":
+		return "what it refuses"
+	case "accepts":
+		return "what it accepts"
+	case "feature_requests":
+		return "what it wants"
+	case "":
+		return "its charter"
+	}
+	return "its " + strings.ReplaceAll(field, "_", " ")
+}
+
+// learnedAskText says what a learned suggestion would change, without the
+// node name: the ask is about the node already.
+func learnedAskText(v protocol.LearnedSuggestion) string {
+	phrase := v.Phrase
+	if v.Origin == "owner" && v.RawPhrase != "" {
+		phrase = v.RawPhrase
+	}
+	phrase = askFirstLine(phrase, 120)
+	if v.Field == "edge" {
+		verb := "add"
+		if v.Kind == "remove" {
+			verb = "remove"
+		}
+		return fmt.Sprintf("%s a %s edge to %s", verb, askFirstLine(v.EdgeKind, 40), phrase)
+	}
+	field := askPlainField(v.Field)
+	switch v.Kind {
+	case "remove":
+		return fmt.Sprintf("remove \"%s\" from %s", phrase, field)
+	case "narrow":
+		return fmt.Sprintf("change %s to \"%s\"", field, phrase)
+	}
+	return fmt.Sprintf("add \"%s\" to %s", phrase, field)
+}
+
+// learnedAskBecause is the evidence of a learned suggestion, one line each.
+func learnedAskBecause(v protocol.LearnedSuggestion) string {
+	var lines []string
+	for _, e := range v.Evidence {
+		if e.Excerpt != "" {
+			lines = append(lines, "Because: "+askFirstLine(e.Excerpt, 200))
+		}
+	}
+	return strings.Join(lines, "\n")
 }

@@ -1,11 +1,11 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (7) 8 Delivery │ 12 online · 1 busy · 7 needs you
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (7) │ 12 online · 1 busy · 7 needs you       14:05:00
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free                                         │
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   no claude · no opencode                │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT   MODEL                    STATUS      CPU   RAM TASK
- Needs you (1)                                                                                        Inbox: 7 to decide
+ Needs you (1)                                                                                         Desk: 7 to decide
   ◐ ci-runner        build-vm     agent-net pi · gpt-6               needs you    5%  300M
  Working (1)
   tenebrae-53        Mac          tenebrae  claude · opus-5-5        busy        38%  1.2G

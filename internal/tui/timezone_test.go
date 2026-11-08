@@ -164,7 +164,7 @@ func TestRenderingInTheOwnerZoneLeavesStoredTimesAlone(t *testing.T) {
 	m.tab = quotasTab
 	m.workersLog = true
 	m.snap.WorkerLog = []protocol.WorkerLogEntry{{StartedAt: 1700000000, Title: "A run", Model: "m", Status: "done"}}
-	m.snap.Held = []protocol.Message{{ID: "m_1", CreatedAt: time.Unix(1700000000, 0).UTC()}}
+	m.asks = append(m.asks, askFromHeld(protocol.Message{ID: "m_1", CreatedAt: time.Unix(1700000000, 0).UTC()}))
 	m.loc = mustZone(t, "Europe/Paris")
 	line := ansi.Strip(strings.Join(m.workersLogView(120, 40), "\n"))
 	if !strings.Contains(line, "11-14 23:13") {
@@ -174,13 +174,13 @@ func TestRenderingInTheOwnerZoneLeavesStoredTimesAlone(t *testing.T) {
 	// stored Unix time it is drawn from.
 	m.snap.TimeZone = "America/New_York"
 	m.applyTimeZone()
-	if got := m.displayTime(m.snap.Held[0].CreatedAt.Unix()).Format("15:04"); got != "17:13" {
+	if got := m.displayTime(m.asks[0].CreatedAt.Unix()).Format("15:04"); got != "17:13" {
 		t.Fatalf("display time: %s", got)
 	}
 	if got := m.snap.WorkerLog[0].StartedAt; got != 1700000000 {
 		t.Fatalf("worker run start time changed to %d", got)
 	}
-	if got := m.snap.Held[0].CreatedAt.Unix(); got != 1700000000 {
+	if got := m.asks[0].CreatedAt.Unix(); got != 1700000000 {
 		t.Fatalf("stored message time changed to %d", got)
 	}
 }

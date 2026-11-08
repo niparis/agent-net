@@ -230,19 +230,19 @@ type fakeSource struct {
 	queries []protocol.TextQuery
 	topReqs []string
 
-	// What session_enter was asked, and the plan or error it answers with.
+	// What session_enter was asked, and the plan or error it type answers with.
 	enters    []protocol.EnterRequest
 	enterPlan protocol.EnterPlan
 	enterErr  error
 
-	// What session_start was asked, and the start or error it answers with.
+	// What session_start was asked, and the start or error it type answers with.
 	sessionResumes []protocol.SessionResumeRequest
 	sessionStarts  []protocol.SessionStartRequest
 	sessionStart   protocol.StartedSession
 	sessionErr     error
 	sessionGetErr  error
 
-	// The graph the map reads, and the error it answers with.
+	// The graph the map reads, and the error it type answers with.
 	graph    protocol.GraphView
 	graphErr error
 
@@ -632,7 +632,7 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	m := keys(quietFixtures(newModel(80, 24)), "down") // tenebrae-53
 	out := m.testView()
 	for _, want := range []string{
-		"Mac", "old-box", "8 Delivery", "cpu", "mem", "no claude",
+		"Mac", "old-box", "7 Desk", "cpu", "mem", "no claude",
 		"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
 		"tenebrae-53", "busy", "Idle", "CTO",
 		"up/down select", "q quit",

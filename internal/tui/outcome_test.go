@@ -22,7 +22,7 @@ func (s *outcomeTestSource) ResolveOutcome(_ context.Context, id, action string)
 func TestOutcomeKeys(t *testing.T) {
 	src := &outcomeTestSource{}
 	m := New(src)
-	m.snap = Snapshot{Outcomes: []protocol.OutcomeInboxEntry{{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r"}, Sender: "sender", Recipient: "receiver"}}}
+	m.asks = []protocol.Ask{askFromOutcome(protocol.OutcomeInboxEntry{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r"}, Sender: "sender", Recipient: "receiver"})}
 	m.tab = inboxTab
 	for _, tc := range []struct{ key, action string }{{"s", "let_stand"}, {"O", "overrule"}} {
 		key, action := tc.key, tc.action

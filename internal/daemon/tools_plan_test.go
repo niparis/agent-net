@@ -203,7 +203,7 @@ func TestCTOToolsApplyInboxUndo(t *testing.T) {
 	if _, err := n.d.runCTOToolRaw(ctx, "tools_change", args); err != nil {
 		t.Fatal(err)
 	}
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "tools_undo" {
 		t.Fatalf("missing tool apply undo: %+v %v", items, err)
 	}
@@ -226,7 +226,7 @@ func TestCTOToolsApplyInboxUndo(t *testing.T) {
 	if _, err = n.d.runCTOToolRaw(ctx, "tools_change", args); err != nil {
 		t.Fatal(err)
 	}
-	items, err = g.gw.Store().ListInbox()
+	items, err = inboxAndLog(g.gw.Store())
 	if err != nil || len(items) != 2 || len(items[1].Options) != 2 || items[1].Options[0] != "tools_new_projects" {
 		t.Fatalf("missing new-projects undo: %+v %v", items, err)
 	}

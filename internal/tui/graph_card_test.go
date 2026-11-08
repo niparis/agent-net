@@ -28,7 +28,7 @@ func TestGraphCardReturnKeepsSelection(t *testing.T) {
 }
 func TestNetworkTabUsesDigitOnly(t *testing.T) {
 	m := mapModel(120, 34, fakeGraph())
-	if len(tabNames) != 8 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph 3 Quotas") || !strings.Contains(ansi.Strip(m.titleLine(120)), "7 Inbox") {
+	if len(tabNames) != 7 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph 3 Quotas") || !strings.Contains(ansi.Strip(m.titleLine(120)), "7 Desk") {
 		t.Fatalf("wrong tabs: %v", tabNames)
 	}
 	for _, key := range []string{"2"} {
@@ -126,7 +126,7 @@ func TestGraphOpensDeliveryForProject(t *testing.T) {
 	m.tab = graphTab
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
 	m = keys(m, "D")
-	if m.tab != deliveryTab || m.delivery.project != "project-02" {
+	if m.tab != inboxTab || m.delivery.project != "project-02" {
 		t.Fatalf("tab %d project %q", m.tab, m.delivery.project)
 	}
 	m = keys(m, "esc")

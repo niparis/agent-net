@@ -473,7 +473,8 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "delivery":
 		name := m.graphState.Graph.Selected()
 		if node, ok := m.mapNode(name); ok && node.Kind == "component" {
-			m.tab, m.delivery.project, m.delivery.row, m.delivery.detail = deliveryTab, name, 0, false
+			m.tab, m.delivery.project, m.delivery.row, m.delivery.detail = inboxTab, name, 0, false
+			m.inboxIndex = m.askRowCount()
 			return m.startDeliveryLoad()
 		}
 	case "new session":

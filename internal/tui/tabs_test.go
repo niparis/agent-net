@@ -226,11 +226,11 @@ func TestTabStyleAndTitleSeparator(t *testing.T) {
 		t.Fatal("active tab must be bold with a background")
 	}
 	m := newModel(80, 24)
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 	m.tab = 2
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 }
@@ -1249,19 +1249,15 @@ func TestQuotaHarnessProviders(t *testing.T) {
 func TestTabBarKeepsSeparatorWhenInboxHasItemsAt80(t *testing.T) {
 	m := newModel(80, 24)
 	m.usage.counts = &protocol.SessionCounts{Online: 12}
-	m.snap.Held = []protocol.Message{
-		{ID: "h1", To: "s_0000000000000001", CreatedAt: t0},
-		{ID: "h2", To: "s_0000000000000002", CreatedAt: t0},
+	m.asks = []protocol.Ask{
+		askFromHeld(protocol.Message{ID: "h1", To: "s_0000000000000001", CreatedAt: t0}),
+		askFromHeld(protocol.Message{ID: "h2", To: "s_0000000000000002", CreatedAt: t0}),
 	}
 	line := ansi.Strip(m.titleLine(80))
-	for _, want := range []string{"1 Sess", "2 Graph", "3 Quota", "4 Msg", "5 Tools", "6 Set", "7 Inbox (2)", "│ 12 online"} {
+	// Seven tabs fit by their full names at 80 columns, count and all.
+	for _, want := range []string{"1 Sessions", "2 Graph", "3 Quotas", "4 Messages", "5 Tools", "6 Settings", "7 Desk (2)", "│ 12 online"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("80 column tab bar is missing %q: %q", want, line)
-		}
-	}
-	for _, gone := range []string{"Sessions", "Quotas", "Messages", "Settings"} {
-		if strings.Contains(line, gone) {
-			t.Errorf("80 column tab bar still spells %q: %q", gone, line)
 		}
 	}
 	if !strings.Contains(line, "│") {
@@ -1315,7 +1311,7 @@ func TestFullTabNamesFitWithCompactStatus(t *testing.T) {
 	for _, width := range []int{80, 100} {
 		line := ansi.Strip(m.titleLine(width))
 		t.Logf("title %d: %s", width, line)
-		if !strings.Contains(line, "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery") {
+		if !strings.Contains(line, "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk") {
 			t.Errorf("width %d: %s", width, line)
 		}
 		if width > 80 && !strings.Contains(line, "12") {

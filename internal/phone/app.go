@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/operator"
@@ -34,6 +35,8 @@ type app struct {
 }
 type page struct {
 	Snapshot operator.Snapshot
+	Held     []protocol.Message
+	Outcomes []protocol.OutcomeInboxEntry
 	Inbox    []protocol.InboxItem
 	Agent    *protocol.AgentView
 	Text     protocol.TextPage
@@ -70,15 +73,20 @@ func (a *app) data(ctx context.Context) page {
 		p.Error = err.Error()
 		return p
 	}
-	raw, err := a.src.Call(ctx, "inbox_list", nil)
+	// What waits for the owner is one list of asks (decision 0090).
+	raw, err := a.src.Call(ctx, protocol.OpAsksList, nil)
 	if err == nil {
-		var v struct {
-			Items []protocol.InboxItem `json:"items"`
-		}
+		var v protocol.AsksResult
 		if json.Unmarshal(raw, &v) == nil {
-			for _, it := range v.Items {
-				if it.Status == "open" {
-					p.Inbox = append(p.Inbox, it)
+			for _, ask := range v.Asks {
+				switch ask.Kind {
+				case protocol.AskKindHeld:
+					p.Held = append(p.Held, protocol.Message{ID: ask.MessageID, FromName: ask.From, To: ask.AboutID, Body: ask.Detail})
+				case protocol.AskKindRejection, protocol.AskKindEscalation:
+					request, reason, _ := strings.Cut(strings.TrimPrefix(ask.Question, "Request: "), "\nReason: ")
+					p.Outcomes = append(p.Outcomes, protocol.OutcomeInboxEntry{EdgeOutcome: protocol.EdgeOutcome{ReplyID: ask.MessageID, ReplyOutcome: protocol.ReplyOutcome{Outcome: map[string]string{protocol.AskKindRejection: "reject", protocol.AskKindEscalation: "escalate"}[ask.Kind], Reason: reason, Recommendation: ask.Recommendation}}, Request: request})
+				case protocol.AskKindQuestion, protocol.AskKindApproval, protocol.AskKindCheck, protocol.AskKindStall:
+					p.Inbox = append(p.Inbox, protocol.InboxItem{ID: ask.ID, Kind: ask.Kind, Text: ask.Question, Recommendation: ask.Recommendation, Status: "open"})
 				}
 			}
 		}
