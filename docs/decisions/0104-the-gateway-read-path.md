@@ -1,4 +1,4 @@
-# 0094 - The gateway read path
+# 0104 - The gateway read path
 
 Date: 2026-11-08
 Status: Built on the branch of worker w_c16d62ea19502b0f. Not yet released.
