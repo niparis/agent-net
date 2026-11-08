@@ -37,7 +37,7 @@ agent-net mcp remove NAME
 
 `agent-net mcp` with no subcommand is still the stdio MCP server that Claude Code starts. Nothing about that changed.
 
-Only the owner can add or remove a shared server, through the TUI or CLI. A CTO can propose an add or remove with `mcp_change`; the owner must approve it. Agent sessions can list and test servers. The daemon also rejects add or remove requests from native plugins.
+Only the owner can add or remove a shared server, through the TUI or CLI. The CTO can add or remove one with `mcp_change`; it runs at once and leaves an Inbox notice with undo. Agent sessions can list and test servers. The daemon also rejects add or remove requests from native plugins.
 
 `add` connects to the server and lists its tools before it saves anything. If that fails, nothing is saved and the error says why.
 

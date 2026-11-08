@@ -106,7 +106,7 @@ Quotas (tab 3) also shows each subscription's usage and pace. Details: [workers]
 
 The Graph (tab 2) is the map of your agents: each project node has a charter (what it does, what it accepts and refuses), and edges set the rules between them. A `depends` edge says who may ask whom, and whether requests run without asking (`auto`), wait for you (`ask`) or are refused (`never`). A `deploys` edge lets one agent ship another's project.
 
-The CTO is an agent that runs the network for you. Press `c` and ask it in plain words: add a machine, draft a charter, set an edge, start a worker. Small changes apply at once and show an undo key. Changes that widen what agents may do become proposals that wait for you.
+The CTO is an agent that runs the network for you. Press `c` and ask it in plain words: add a machine, draft a charter, set an edge, start a worker. Changes apply at once and leave an Inbox notice with an undo key where one is possible. Only removing a node, repo or machine, and rotating a machine token, wait for you as proposals. Your own login and OAuth consent stay with you: the CTO sends a one-click prompt.
 
 ### Inbox
 
