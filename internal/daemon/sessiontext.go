@@ -47,7 +47,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
-	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
+	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpStandingOrders: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpWorkerRotationGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
@@ -629,6 +629,22 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			res = protocol.SessionTrustResult{SessionID: q.SessionID, On: q.On}
 			d.Logf("session.trust session=%s on=%t", q.SessionID, q.On)
 		}
+	case protocol.OpStandingOrders:
+		// The owner's own words: a save from the TUI is source owner. The
+		// same op restores an order when the owner undoes a removal.
+		var q protocol.StandingOrdersRequest
+		if json.Unmarshal(raw, &q) != nil {
+			return nil, true, errors.New("bad standing orders request")
+		}
+		res, err = d.standingOrdersOp(ctx, q, protocol.StandingSourceOwner)
+	case protocol.OpFolderTrust:
+		// Claude Code trust is a security setting: only the owner at the
+		// keyboard, or the CTO on the owner's instruction, changes it.
+		var q protocol.FolderTrustRequest
+		if json.Unmarshal(raw, &q) != nil {
+			return nil, true, errors.New("folder_trust needs a project or a path")
+		}
+		res, err = d.folderTrust(ctx, q)
 	case protocol.OpSessionAgentList:
 		res, err = d.call(ctx, "session.agent.list", map[string]string{"owner_session": d.ownerSessionID()})
 	case protocol.OpSessionAgentSet:

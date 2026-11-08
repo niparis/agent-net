@@ -129,13 +129,14 @@ func (m Model) settingsItems() []settingsItem {
 		settingsItem{4, "notifications", 0, "Desktop notifications: " + notifications},
 		settingsItem{5, "tips", 0, "Tips: " + tips},
 		settingsItem{5, "restart", 0, "Restart tips"})
+	items = append(items, m.standingItems()...)
 	scope := "network"
 	if m.settingRepo != "" {
 		scope = "repo " + m.settingRepo
 	}
-	items = append(items, settingsItem{6, "setting-repo", 0, "Show settings for: " + scope})
+	items = append(items, settingsItem{7, "setting-repo", 0, "Show settings for: " + scope})
 	if len(m.settingValues) == 0 {
-		items = append(items, settingsItem{6, "settings-empty", 0, "Settings unavailable or loading"})
+		items = append(items, settingsItem{7, "settings-empty", 0, "Settings unavailable or loading"})
 	}
 	for i, v := range m.settingValues {
 		label := v.Key + ": " + sanitize(string(v.Value)) + " (" + settingSource(v) + ")"
@@ -145,7 +146,7 @@ func (m Model) settingsItems() []settingsItem {
 		if !v.Live {
 			label += " [not live yet]"
 		}
-		items = append(items, settingsItem{6, "setting-value", i, label})
+		items = append(items, settingsItem{7, "setting-value", i, label})
 	}
 	return items
 }
@@ -174,7 +175,7 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if keyAction(contextSettings, k.String()) == "previous section" {
 			step = -1
 		}
-		section := (item.section + step + 7) % 7
+		section := (item.section + step + 8) % 8
 		if i, ok := settingsSection(items, section); ok {
 			m.settingsRow = i
 		}
@@ -193,6 +194,9 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "public", "url", "add", "revoke":
 		action := keyAction(contextSettings, k.String())
+		if item.section == 6 {
+			return m.standingKey(string(action), item)
+		}
 		if action == "url" && item.kind == "setting-value" {
 			row := m.settingValues[item.index]
 			if len(row.History) == 0 {
@@ -233,6 +237,10 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "open", "toggle":
 		open := keyAction(contextSettings, k.String()) == "open"
 		switch item.kind {
+		case "standing-add":
+			if open {
+				return m.startStandingAdd()
+			}
 		case "setting-repo":
 			if open {
 				m.mode = modeSettingRepo
@@ -472,8 +480,8 @@ func (m Model) settingsView(w, h int) []string {
 	case modeApps:
 		return append(out, m.appsView(w, max(h-1, 1))...)
 	}
-	names := []string{"Connected apps", "Integrations", "Machines", "Time zone", "Notifications", "Tips", "Working rules and guidance"}
-	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips.", "Change network values and review their history."}
+	names := []string{"Connected apps", "Integrations", "Machines", "Time zone", "Notifications", "Tips", "CTO standing orders", "Working rules and guidance"}
+	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips.", "Your lasting instructions to the CTO. It reads them at the start of every conversation.", "Change network values and review their history."}
 	items := m.settingsItems()
 	selected := min(max(m.settingsRow, 0), len(items)-1)
 	if !settingsSelectable(items[selected]) {
@@ -482,7 +490,7 @@ func (m Model) settingsView(w, h int) []string {
 			selected = settingsStep(items, selected, -1)
 		}
 	}
-	if items[selected].section == 6 {
+	if items[selected].section == 7 {
 		old, unknown := m.settingsSyncMachines()
 		if len(old) > 0 {
 			for _, line := range wrap("Settings updates may not reach old daemons: "+strings.Join(old, ", "), max(w-2, 1)) {

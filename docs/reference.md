@@ -393,7 +393,8 @@ are proposals. The CTO has one action tool per area:
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
 | `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_charter`, `team_archive`, `team_member_add`, `team_member_remove` or `undo` |
 | `sessions_archive` | Propose archiving offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Includes the exact dry run; owner approval required. |
-| `session_change` | `action: rename`, `trust` or `policy` |
+| `session_change` | `action: rename`, `trust`, `policy`, `session_start`, `merger_start` or `merger_stop`. `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `session_start` takes `trust: true` to trust the folder and start in one step. See [CTO folder trust](#cto-folder-trust) |
+| `cto_standing_orders` | `action: save` (with `text`), `read` (with `order_id`), `list` or `remove` (with `order_id`). See [standing orders](#standing-orders) |
 | `worker_change` | `action: start` or `stop` |
 | `answer` | `kind: held`, `inbox` or `outcome` |
 | `tools_change` | `action: plan`, `apply`, `undo`, `import` or `native_remove` |
@@ -611,6 +612,14 @@ the box and Esc skips the current tip. In help, `T` turns tips off or on
 and `R` restarts them from the first step. Progress is shared across machines.
 
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
+
+## Standing orders
+
+Standing orders are the owner's lasting instructions to the CTO. The gateway keeps them in the `standing_orders` table, so they survive CTO restarts and machine changes. Each order has an `id`, `text`, `saved_at` and `source`: `owner` for the owner's own words typed in the TUI, `cto` when the CTO saved it on the owner's instruction.
+
+The CTO tool `cto_standing_orders` has the actions `save` (`text`), `read` (`order_id`), `list` and `remove` (`order_id`). It answers with `orders` (all, oldest first) and `order`. A save or a remove leaves an Inbox notice with an undo (remove for a save, restore for a remove). The CTO reads the orders at the start of every conversation: a Claude CTO gets them after the brief in its system prompt, an OpenCode CTO gets them in front of the first message of a new conversation.
+
+The owner sees and edits them in the TUI, Settings, section "CTO standing orders": enter adds one, `x` removes the selected one and `u` puts the last removed one back. The operator method is `standing_orders` (`action`, `order_id`, `text`, `restore`); a save from the operator method is always source `owner`. The gateway frames are `standing.list`, `standing.save` and `standing.remove`.
 
 ## Commands
 
@@ -2611,6 +2620,14 @@ The daemon service records the login shell's PATH in its environment, so tools
 installed outside the system directories are available to workers. If the shell
 cannot supply it, setup adds common Homebrew and local binary directories to the
 current PATH. A daemon upgrade adds PATH to older service files.
+
+### CTO folder trust
+
+The owner can ask the CTO to trust a folder for Claude Code. The CTO calls `session_change` with action `trust` and one of `project` (a project registered on that machine) or `path` (an existing folder under the owner's home), plus `node_id` when the folder is on another machine. It writes `hasTrustDialogAccepted` for that folder in that machine's `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`), with the same helper the TUI's `needs_trust` answer uses. `session_change` with action `session_start` and `trust: true` trusts the folder and starts in one step; a path that does not exist yet is created and trusted by the start itself, as before.
+
+The request travels to another machine as the owner frames `session.trust_folder` (to the gateway) and `session.owner_trust_folder` (to the machine), like a session start. The machine checks the owner flag again. The operator method is `folder_trust` (`project` or `path`, `node_id`, `remove`); the result has `path`, `trusted` and `added`.
+
+Each use leaves an Inbox notice. `added` is true only when the folder was not trusted before. Only then does the notice carry an undo, and the undo removes that one folder's trust (`folder_trust` with `remove: true`). A folder the owner had already trusted is left alone and has no undo. A CTO proposal still cannot set `trust_claude`, and the proposal relay still drops it: trust the CTO sets goes only through this explicit action or `trust: true`.
 
 ### CTO proposals for a session or project
 

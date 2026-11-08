@@ -37,6 +37,7 @@ var Tools = []Tool{
 	toolEntry("agent_changes_find", "Find delivery changes: their revision, the step each is in, who owns it and the evidence so far. Give change to read one change in full with its revisions and evidence.", []Role{RoleAgent, RoleWorker}, Hints{ReadOnly: true, Idempotent: true}, false, false),
 	toolEntry("agent_project_add", "Register project folders on this machine, or scan a folder for repositories (use dry_run first). Only when the owner asked.", []Role{RoleAgent}, Hints{Idempotent: true}, false, false),
 	toolEntry("agent_mcp_test", "Test that a shared MCP server answers. Does not change it.", []Role{RoleAgent}, Hints{ReadOnly: true, Idempotent: true, OpenWorld: true}, false, false),
+	toolEntry("cto_standing_orders", "Save, read, list or remove the owner's standing orders.", []Role{RoleCTO}, Hints{}, false, false),
 	toolEntry("cto_placement_memory", "Read or save placement answers explicitly given by the owner.", []Role{RoleCTO}, Hints{Idempotent: true}, false, false),
 	toolEntry("cto_ui_show", "Show the owner a TUI tab with an item selected, or a short notice. Fails with no TUI open when no local TUI is connected.", []Role{RoleCTO}, Hints{Idempotent: true}, false, false),
 	toolEntry("cto_proposals_find", "Find your proposals and their state: open, approved, rejected, done or failed, with the result.", []Role{RoleCTO}, Hints{ReadOnly: true, Idempotent: true}, false, false),

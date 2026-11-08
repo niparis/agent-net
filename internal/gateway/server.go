@@ -816,7 +816,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.serveWorker(ctx, nc, h, raw)
 			continue
 		}
-		if isSessionRelay(h.Type) || h.Type == protocol.FrameProjectChange {
+		if isSessionRelay(h.Type) || h.Type == protocol.FrameProjectChange || h.Type == protocol.FrameSessionTrustFolder {
 			// The target machine may ask this gateway a question while it acts,
 			// so the relay must not run in this node's read loop.
 			go g.answer(ctx, nc, h, raw)
@@ -1277,6 +1277,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionProposalClone, protocol.FrameSessionResume, protocol.FrameSessionStop, protocol.FrameSessionGet:
 		return g.handleSessionRelay(ctx, nc, typ, raw)
 
+	case protocol.FrameSessionTrustFolder:
+		return g.handleFolderTrustRelay(ctx, nc, raw)
+
 	case "query.projects":
 		p, err := decode[protocol.QueryProjects](raw)
 		if err != nil {
@@ -1659,6 +1662,30 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return st.GraphForRef(p.Ref)
 		}
 		return st.visibleGraph(p.All)
+	case "standing.list", "standing.save", "standing.remove":
+		q, err := decode[protocol.StandingOrdersRequest](raw)
+		if err != nil {
+			return nil, reject("bad %s", typ)
+		}
+		var res protocol.StandingOrdersResult
+		switch typ {
+		case "standing.save":
+			o, err := st.SaveStandingOrder(q)
+			if err != nil {
+				return nil, reject("%v", err)
+			}
+			res.Order = &o
+		case "standing.remove":
+			o, err := st.RemoveStandingOrder(q.ID)
+			if err != nil {
+				return nil, reject("%v", err)
+			}
+			res.Order = o
+		}
+		if res.Orders, err = st.StandingOrders(); err != nil {
+			return nil, err
+		}
+		return res, nil
 	case "playbook.set":
 		p, err := decode[protocol.PlaybookSetRequest](raw)
 		if err != nil {

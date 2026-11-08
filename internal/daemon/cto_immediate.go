@@ -37,6 +37,21 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 	if concrete != "settings_values_write" && concrete != "protected_providers_set" {
 		delete(fields, "reason")
 	}
+	if concrete == "session_start" {
+		// trust:true trusts the folder as its own audited action, then starts.
+		var on bool
+		if value, ok := fields["trust"]; ok {
+			if json.Unmarshal(value, &on) != nil {
+				return nil, fmt.Errorf("trust must be a boolean")
+			}
+			delete(fields, "trust")
+		}
+		if on {
+			if err := d.ctoTrustBeforeStart(ctx, fields); err != nil {
+				return nil, err
+			}
+		}
+	}
 	args, err = json.Marshal(fields)
 	if err != nil {
 		return nil, err
@@ -227,6 +242,25 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 		q.On = oldTrust
 		undo, _ := json.Marshal(q)
 		options = []string{protocol.OpSessionTrust, string(undo)}
+	case concrete == "folder_trust":
+		var res protocol.FolderTrustResult
+		b, _ := json.Marshal(result)
+		_ = json.Unmarshal(b, &res)
+		where := cleanLine(firstNonEmpty(res.Hostname, res.NodeID))
+		if where == "" {
+			where = "this machine"
+		}
+		if res.Added {
+			text = fmt.Sprintf("CTO trusted %s for Claude Code on %s", cleanLine(res.Path), where)
+			diff = "hasTrustDialogAccepted: false -> true"
+			// Only trust agent-net added is removed. A folder the owner had
+			// trusted already is left alone and has no undo.
+			undo, _ := json.Marshal(protocol.FolderTrustRequest{Path: res.Path, NodeID: res.NodeID, Remove: true})
+			options = []string{protocol.OpFolderTrust, string(undo)}
+		} else {
+			text = fmt.Sprintf("CTO checked Claude Code trust for %s on %s: already trusted, unchanged", cleanLine(res.Path), where)
+			diff = "already trusted before: unchanged"
+		}
 	case concrete == "node_rename":
 		if haveMachine {
 			var q protocol.NodeRenameRequest

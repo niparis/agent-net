@@ -270,3 +270,68 @@ func parseReleaseVersion(v string) ([3]int, bool) {
 	}
 	return out, true
 }
+
+// handleFolderTrustRelay serves "session.trust_folder": the owner's request to
+// trust a folder for Claude Code on another machine. Like a session start, the
+// gateway checks that the caller is the owner session of its machine and asks
+// the machine that holds the folder, which checks the owner flag again.
+func (g *Gateway) handleFolderTrustRelay(ctx context.Context, nc *nodeConn, raw []byte) (any, error) {
+	var relay protocol.SessionFolderTrustRelay
+	if json.Unmarshal(raw, &relay) != nil {
+		return nil, reject("bad %s", protocol.FrameSessionTrustFolder)
+	}
+	if relay.Owner == "" {
+		return nil, reject("a session relay needs the owner session")
+	}
+	owner, ok, err := g.store.Agent(relay.Owner)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || owner.NodeID != nc.id || !protocol.IsOwner(owner.Harness) || owner.Worker != nil {
+		return nil, reject("only the owner session of this machine may trust a folder")
+	}
+	nodeID := strings.TrimSpace(relay.NodeID)
+	if nodeID == "" {
+		return nil, reject("folder trust needs the machine that holds the folder")
+	}
+	if nodeID, err = g.sessionRelayNode(nodeID); err != nil {
+		return nil, err
+	}
+	host := g.store.hostname(nodeID)
+	g.mu.Lock()
+	target := g.conns[nodeID]
+	g.mu.Unlock()
+	if target == nil {
+		return nil, reject("machine %s is offline", firstNonEmpty(host, nodeID))
+	}
+	version, err := g.store.NodeVersion(nodeID)
+	if err != nil {
+		version = ""
+	}
+	if !sessionRelaySupported(version) {
+		return nil, reject("machine %s runs an older agent-net: upgrade it there", firstNonEmpty(host, nodeID))
+	}
+	frame := protocol.SessionOwnerFolderTrust{Owner: relay.Owner, FromNode: nc.id, FolderTrustRequest: relay.FolderTrustRequest}
+	frame.NodeID = nodeID
+	cctx, cancel := context.WithTimeout(ctx, sessionRelayWait)
+	defer cancel()
+	data, err := target.call(cctx, protocol.FrameSessionOwnerTrustFolder, frame)
+	if err != nil {
+		where := firstNonEmpty(host, nodeID)
+		switch {
+		case errors.Is(err, errNodeGone), errors.Is(err, context.DeadlineExceeded):
+			return nil, reject("machine %s did not answer the folder trust: %v", where, err)
+		case strings.Contains(err.Error(), "unknown frame type"):
+			return nil, reject("machine %s runs an older agent-net: upgrade it there", where)
+		}
+		return nil, reject("machine %s refused the folder trust: %v", where, err)
+	}
+	var res protocol.FolderTrustResult
+	if err := json.Unmarshal(data, &res); err != nil {
+		return nil, reject("machine %s answered without a result", firstNonEmpty(host, nodeID))
+	}
+	res.NodeID, res.Hostname = nodeID, firstNonEmpty(host, nodeID)
+	g.logLine("session.folder_trust", "node", nodeID, "host", res.Hostname, "owner", relay.Owner, "from_node", nc.id, "remove", relay.Remove)
+	g.store.Event("session.folder_trust", nodeID, "", "", strings.TrimPrefix(pairs("owner", relay.Owner, "from_node", nc.id), " "))
+	return res, nil
+}

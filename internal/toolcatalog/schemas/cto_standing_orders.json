@@ -1,0 +1,1 @@
+{"input":{"type":"object","properties":{"action":{"type":"string","enum":["save","read","list","remove"]},"text":{"type":"string"},"order_id":{"type":"string"}},"required":["action"],"additionalProperties":false},"output":{"type":"object","properties":{"orders":{"type":"array","items":{"type":"object"}},"order":{"type":"object"}},"required":["orders"]}}

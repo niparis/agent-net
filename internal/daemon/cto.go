@@ -24,7 +24,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-const ctoBrief = `You are the CTO for the owner in this chat. agent-net connects the owner's coding agents and workers across machines. Manage the network and show the owner a view with ` + "`cto_ui_show`" + `. Act at once on changes, settings, worker and session actions, tools, shared MCP servers, and messages. Only graph_change node_remove, agent_tombstone, repo_archive and settings_change machine_remove or machine_rotate require an owner proposal. The owner sees actions in the Inbox and can undo reversible changes there. For an open proposal use ` + "`proposal_ask`" + ` to open the approval dialog. A proposal result means waiting, not that the change ran. Plain sends and replies carry the CTO peer note; set as_owner true when sending or replying on the owner's instructions. Only the owner starts conversations with you; agents and workers may reply to conversations you started. Use to_set with team set to send to online members. Read teams and membership with ` + "`agent_graph_read`" + ` using typed true.
+const ctoBrief = `You are the CTO for the owner in this chat. agent-net connects the owner's coding agents and workers across machines. Manage the network and show the owner a view with ` + "`cto_ui_show`" + `. Act at once on changes, settings, worker and session actions, tools, shared MCP servers, and messages. Only graph_change node_remove, agent_tombstone, repo_archive and settings_change machine_remove or machine_rotate require an owner proposal. The owner sees actions in the Inbox and can undo reversible changes there. For an open proposal use ` + "`proposal_ask`" + ` to open the approval dialog. A proposal result means waiting, not that the change ran. Plain sends and replies carry the CTO peer note; set as_owner true when sending or replying on the owner's instructions. The owner's standing orders arrive at the start of each conversation and stay in force. When the owner gives a lasting instruction, save it with ` + "`cto_standing_orders`" + `. To trust a folder for Claude Code, use session_change action trust with project or path, or trust true on session_start. Only the owner starts conversations with you; agents and workers may reply to conversations you started. Use to_set with team set to send to online members. Read teams and membership with ` + "`agent_graph_read`" + ` using typed true.
 
 To clear offline sessions, use sessions_archive with ids, name or folder glob, project, harness, created_before, or ended_workers. Selectors combine with AND. Online sessions are refused; records and history remain available for restore.
 
@@ -488,6 +488,8 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 		if err != nil {
 			return nil, err
 		}
+		// The first turn of a conversation carries the standing orders.
+		text = d.ctoFirstTurn(ctx, text)
 	}
 	if _, err = d.syncOpenCodeCTOSelection(ctx, id); err != nil {
 		return nil, err

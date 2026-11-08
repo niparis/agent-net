@@ -1170,6 +1170,12 @@ ALTER TABLE inbox_items ADD COLUMN about_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE inbox_items ADD COLUMN next_who TEXT NOT NULL DEFAULT 'owner';
 ALTER TABLE inbox_items ADD COLUMN why_you TEXT NOT NULL DEFAULT '';
 ALTER TABLE inbox_items ADD COLUMN detail TEXT NOT NULL DEFAULT '';
+`, `
+-- Standing orders: the owner's durable instructions to the CTO. They live at
+-- the gateway so they survive CTO restarts and machine changes.
+CREATE TABLE IF NOT EXISTS standing_orders (
+ id TEXT PRIMARY KEY, text TEXT NOT NULL, saved_at INTEGER NOT NULL,
+ source TEXT NOT NULL DEFAULT 'owner');
 `}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay

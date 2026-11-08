@@ -44,20 +44,20 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("team_member_add", "Add a member to a team.", map[string]ctoField{"team": s("Team name or ID."), "member": {typ: "graph_ref", desc: "Member ref (agent or repo)."}, "ref": {typ: "graph_ref", desc: "Member ref (agent or repo)."}})
 	add("team_member_remove", "Remove a member from a team.", map[string]ctoField{"team": s("Team name or ID."), "member": {typ: "graph_ref", desc: "Member ref (agent or repo)."}, "ref": {typ: "graph_ref", desc: "Member ref (agent or repo)."}})
 
-	startFields := map[string]ctoField{"agent_id": s("Lasting Agent; omit for Repo owner."), "project": s("Project."), "path": s("Path."), "node_id": s("Machine."), "harness": harness, "model": model, "folder": en("Folder.", "project", "worktree"), "branch": s("Branch."), "first_message": s("First message."), "create": b("Create.")}
+	startFields := map[string]ctoField{"agent_id": s("Lasting Agent; omit for Repo owner."), "project": s("Project."), "path": s("Path."), "node_id": s("Machine."), "harness": harness, "model": model, "folder": en("Folder.", "project", "worktree"), "branch": s("Branch."), "first_message": s("First message."), "create": b("Create."), "trust": b("Trust the folder for Claude Code, then start.")}
 	add("session_start", "Start an owner session.", startFields)
 	add("merger_start", "Start the project merger.", map[string]ctoField{"project": s("Project."), "node_id": s("Machine."), "model": model})
 	add("merger_stop", "Stop routing to the project merger.", map[string]ctoField{"project": s("Project."), "node_id": s("Machine.")})
 	createFields := map[string]ctoField{}
 	for k, v := range startFields {
-		if k != "project" && k != "create" {
+		if k != "project" && k != "create" && k != "trust" {
 			createFields[k] = v
 		}
 	}
 	createFields["remote"] = s("Optional git@host:owner/repo.git or https://host/owner/repo.git.")
 	add("project_create", "Create a project and start a session.", createFields)
 	add("session_rename", "Rename a session for the owner.", map[string]ctoField{"session_id": sid, "name": s("Name; empty resets.")})
-	add("session_trust", "Set session peer trust.", map[string]ctoField{"session_id": sid, "on": b("Enable.")})
+	add("session_trust", "Set session peer trust, or trust a project or path folder for Claude Code.", map[string]ctoField{"session_id": sid, "on": b("Enable."), "project": s("Registered project to trust for Claude Code."), "path": s("Existing folder to trust for Claude Code."), "node_id": s("Machine; omit for this machine.")})
 	add("session_policy", "Set policy; read get first.", map[string]ctoField{"session_id": sid, "scope": en("Default session.", "session", "project"), "policy": obj("Policy."), "dry_run": b("Preview.")})
 	add("machine_remove", "Remove a machine and revoke its token. Owner approval required.", map[string]ctoField{"node_id": s("Machine ID.")})
 	add("machine_rotate", "Rotate an online machine token. Offline machines can only be removed. Owner approval required.", map[string]ctoField{"node_id": s("Machine ID.")})

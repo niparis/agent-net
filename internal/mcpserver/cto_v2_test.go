@@ -151,7 +151,7 @@ func TestCTOV2EveryActionValidates(t *testing.T) {
 	cases := []struct{ tool, args string }{
 		{"graph_change", `{"action":"charter_set"}`}, {"graph_change", `{"action":"node_add"}`}, {"graph_change", `{"action":"node_remove"}`}, {"graph_change", `{"action":"edge_set"}`}, {"graph_change", `{"action":"edge_remove"}`}, {"graph_change", `{"action":"settings_set"}`}, {"graph_change", `{"action":"undo"}`},
 		{"graph_change", `{"action":"team_create","name":"team"}`}, {"graph_change", `{"action":"team_rename","team":"team","name":"new"}`}, {"graph_change", `{"action":"team_purpose","team":"team","purpose":"new purpose"}`}, {"graph_change", `{"action":"team_archive","team":"team"}`}, {"graph_change", `{"action":"team_member_add","team":"team","member":{"kind":"agent","id":"a"}}`}, {"graph_change", `{"action":"team_member_remove","team":"team","member":{"kind":"agent","id":"a"}}`},
-		{"session_change", `{"action":"rename"}`}, {"session_change", `{"action":"trust"}`}, {"session_change", `{"action":"policy"}`}, {"session_change", `{"action":"session_start","project":"example"}`},
+		{"session_change", `{"action":"rename"}`}, {"session_change", `{"action":"trust","session_id":"s_1","on":true}`}, {"session_change", `{"action":"trust","project":"example","node_id":"n_1"}`}, {"session_change", `{"action":"trust","path":"~/code/example"}`}, {"session_change", `{"action":"session_start","project":"example","trust":true}`}, {"session_change", `{"action":"policy"}`}, {"session_change", `{"action":"session_start","project":"example"}`},
 		{"worker_change", `{"action":"start","project":"example","task":"work","touches":["docs"]}`}, {"worker_change", `{"action":"stop"}`},
 	}
 	for _, tc := range cases {
@@ -385,5 +385,18 @@ func TestCTOProjectCreateRemoteSchema(t *testing.T) {
 	}
 	if err := ValidateCTOActionSchema("session_change", json.RawMessage(`{"action":"session_start","path":"~/repo","remote":"git@git.example:team/repo.git"}`)); err == nil {
 		t.Fatal("remote accepted for session start")
+	}
+}
+
+func TestCTOV2TrustNeedsASessionOrExactlyOneFolder(t *testing.T) {
+	for _, args := range []string{
+		`{"action":"trust"}`,
+		`{"action":"trust","project":"a","path":"/x"}`,
+		`{"action":"trust","session_id":"s_1","on":true,"project":"a"}`,
+		`{"action":"trust","session_id":"s_1"}`,
+	} {
+		if err := ValidateCTOActionSchema("session_change", json.RawMessage(args)); err == nil {
+			t.Errorf("%s should be refused", args)
+		}
 	}
 }

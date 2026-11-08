@@ -1483,7 +1483,7 @@ func ctoInboxUndo(item protocol.InboxItem) (string, json.RawMessage, bool) {
 		return "", nil, false
 	}
 	switch item.Options[0] {
-	case "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive":
+	case "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive", "folder_trust", "standing_orders":
 	default:
 		return "", nil, false
 	}
