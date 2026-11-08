@@ -1925,14 +1925,16 @@ func (m Model) sessionGroups(collapse bool) []group {
 		marks := map[string]treeMark{}
 		band, busy := 2, 0
 		matched, pinned := false, false
+		subagent := false
 		var walk func(protocol.AgentView, string)
 		walk = func(a protocol.AgentView, prefix string) {
 			tree = append(tree, a)
 			matched = matched || matches(a, m.filter)
 			pinned = pinned || a.PinnedAt > 0
+			subagent = subagent || a.Worker != nil || isMerger(a)
 			if m.sessionNeedsOwner(a) {
 				band = 0
-			} else if a.Online && a.Status == "busy" {
+			} else if m.mergerWorking(a) || a.Online && a.Status == "busy" {
 				band = min(band, 1)
 			}
 			if a.Online && a.Status == "busy" {
@@ -1957,7 +1959,9 @@ func (m Model) sessionGroups(collapse bool) []group {
 		}
 		g := &bands[band]
 		g.total += len(tree)
-		if band == 2 && m.activeOnly && m.filter == "" && !pinned {
+		// An idle tree with a subagent stays whole: dropping it would hide the
+		// merger or worker the owner needs to see. Only plain idle agents fold.
+		if band == 2 && m.activeOnly && m.filter == "" && !pinned && !subagent {
 			g.hidden += len(tree)
 			continue
 		}
@@ -2044,16 +2048,22 @@ func projectOf(a protocol.AgentView) string {
 	return firstNonEmpty(a.Repo.Project, a.Profile.Project)
 }
 
-// mergerParent prefers the explicit online repo lead, then the starter.
+// mergerParent prefers the explicit online repo lead, then the online agent of
+// the project that most recently called one of its open changes, then the
+// starter. A merger with none of them stays at the top level.
 func (m Model) mergerParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
+	project := projectOf(a)
 	best := ""
 	for id, c := range shown {
-		if id != a.SessionID && c.Online && c.RepoLeadExplicit && projectOf(a) != "" && projectOf(c) == projectOf(a) && (best == "" || id < best) {
+		if id != a.SessionID && c.Online && c.RepoLeadExplicit && project != "" && projectOf(c) == project && (best == "" || id < best) {
 			best = id
 		}
 	}
 	if best != "" {
 		return best
+	}
+	if caller := m.mergerCaller(project, shown); caller != "" {
+		return caller
 	}
 	if a.Worker != nil {
 		if _, ok := shown[a.Worker.Owner]; ok && a.Worker.Owner != a.SessionID {
@@ -2061,6 +2071,53 @@ func (m Model) mergerParent(a protocol.AgentView, shown map[string]protocol.Agen
 		}
 	}
 	return ""
+}
+
+// mergerCaller is the online agent of a project that most recently called one
+// of its open changes: the caller of the freshest open change that names an
+// eligible session of that project.
+func (m Model) mergerCaller(project string, shown map[string]protocol.AgentView) string {
+	if project == "" {
+		return ""
+	}
+	best, at := "", int64(-1)
+	for _, ch := range m.delivery.changes {
+		if ch.Repo != project || ch.State != protocol.ChangeOpen || ch.Caller == "" || ch.Updated < at {
+			continue
+		}
+		c, ok := shown[ch.Caller]
+		if !ok || !c.Online || c.Worker != nil || isMerger(c) || projectOf(c) != project {
+			continue
+		}
+		if best == "" || ch.Updated > at {
+			best, at = ch.Caller, ch.Updated
+		}
+	}
+	return best
+}
+
+// mergerWorking tells whether a merger holds a ready or running step of one of
+// its project's open changes, even when its harness reports idle or shell.
+func (m Model) mergerWorking(a protocol.AgentView) bool {
+	if !isMerger(a) {
+		return false
+	}
+	project := projectOf(a)
+	for _, ch := range m.delivery.changes {
+		if ch.State != "" && ch.State != protocol.ChangeOpen {
+			continue
+		}
+		if project != "" && ch.Repo != "" && ch.Repo != project {
+			continue
+		}
+		if ch.StepState != protocol.StepStateReady && ch.StepState != protocol.StepStateRunning {
+			continue
+		}
+		if ch.OwnerKind == protocol.OwnerMerger || ch.ClaimedBy != "" && ch.ClaimedBy == a.SessionID {
+			return true
+		}
+	}
+	return false
 }
 
 // visible is the selection order: every table row.

@@ -116,6 +116,87 @@ func TestSessionsPriorityIdleAndInbox(t *testing.T) {
 	}
 }
 
+// groupOf returns the band that holds a session, or the zero group when the
+// session is folded away.
+func groupOf(m Model, id string) group {
+	for _, g := range m.groups() {
+		if indexOfID(agentIDs(g.agents), id) >= 0 {
+			return g
+		}
+	}
+	return group{}
+}
+
+// An idle merger with no explicit repo lead hangs under the online agent of its
+// project that called its open change, not under the session that started it.
+func TestIdleMergerFollowsProjectChangeCaller(t *testing.T) {
+	m := priorityModel()
+	m.snap.Agents[0].RepoLeadExplicit = false
+	m.delivery.changes = []deliveryChange{{ID: "ch_one", Repo: "demo", State: protocol.ChangeOpen, Caller: "lead", Updated: 100}}
+	g := groupOf(m, "merge")
+	if g.host == "" {
+		t.Fatalf("merger is folded: %v", ids(m))
+	}
+	if mk := g.marks["merge"]; mk.root != "lead" {
+		t.Fatalf("merger root %q, want lead: %v", mk.root, ids(m))
+	}
+	if indexOfID(agentIDs(g.agents), "merge") <= indexOfID(agentIDs(g.agents), "lead") {
+		t.Fatalf("merger is not below the caller: %v", ids(m))
+	}
+}
+
+// A subagent is never folded into the idle count: its whole tree is drawn, and
+// the lead stays as context even when it is idle itself.
+func TestIdleSubagentStaysInTree(t *testing.T) {
+	m := priorityModel()
+	m.snap.Agents[0].Status = "busy"
+	m.snap.Agents[1].Status = "idle"
+	if indexOfID(ids(m), "kid") < 0 {
+		t.Fatalf("idle worker under a busy lead folded: %v", ids(m))
+	}
+	m.snap.Agents[0].Status = "idle"
+	got := ids(m)
+	if indexOfID(got, "lead") < 0 || indexOfID(got, "kid") < 0 {
+		t.Fatalf("idle tree with a subagent folded: %v", got)
+	}
+	if g := groupOf(m, "kid"); g.host != "Idle" {
+		t.Fatalf("worker band %q", g.host)
+	}
+}
+
+// A merger holding a ready or running step counts as working, even when its
+// harness reports idle or shell.
+func TestMergerReadyStepMovesTreeToWorking(t *testing.T) {
+	m := priorityModel()
+	m.snap.Agents[0].Status = "idle"
+	m.snap.Agents[1].Status = "idle"
+	m.delivery.changes = []deliveryChange{{ID: "ch_merge", Repo: "demo", State: protocol.ChangeOpen, Step: "merge", StepOwner: "merger", OwnerKind: protocol.OwnerMerger, StepState: protocol.StepStateReady}}
+	g := groupOf(m, "merge")
+	if g.host != "Working" {
+		t.Fatalf("merger band %q, want Working: %+v", g.host, g)
+	}
+	if mk := g.marks["merge"]; mk.root != "lead" {
+		t.Fatalf("merger root %q, want the lead", mk.root)
+	}
+	m.delivery.changes[0].StepState = protocol.StepStateRunning
+	m.delivery.changes[0].ClaimedBy = "merge"
+	if g := groupOf(m, "merge"); g.host != "Working" {
+		t.Fatalf("running merger band %q", g.host)
+	}
+}
+
+// Top-level idle agents that are not subagents still fold.
+func TestTopLevelIdleStillFolds(t *testing.T) {
+	m := priorityModel()
+	m.activeOnly, m.showOffline = true, false
+	if indexOfID(ids(m), "other") >= 0 {
+		t.Fatalf("top-level idle agent shown: %v", ids(m))
+	}
+	if view := ansi.Strip(m.testView()); !strings.Contains(view, "1 more idle · v to show") {
+		t.Fatalf("missing idle fold:\n%s", view)
+	}
+}
+
 func agentIDs(agents []protocol.AgentView) []string {
 	var out []string
 	for _, a := range agents {
@@ -207,11 +288,15 @@ func TestSessionsPriorityKeepsQuietCallerOfBusyWorker(t *testing.T) {
 	m := priorityModel()
 	m.snap.Agents[0].Online = false
 	// The caller remains as context even though v has not exposed ended rows.
-	if got := strings.Join(ids(m), ","); got != "lead,kid,pin" {
+	// The idle merger keeps its starter row visible too.
+	if got := strings.Join(ids(m), ","); got != "lead,kid,pin,other,merge" {
 		t.Fatalf("caller split from busy worker: %s", got)
 	}
 	if m.groups()[0].marks["kid"].prefix != "└─ " {
 		t.Fatal("missing caller tree")
+	}
+	if mk := groupOf(m, "merge").marks["merge"]; mk.root != "other" {
+		t.Fatalf("merger root %q, want starter other", mk.root)
 	}
 }
 
