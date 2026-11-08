@@ -43,7 +43,11 @@ func (s *Store) OwnerLearned() ([]protocol.LearnedSuggestion, error) {
 		}
 		out = append(out, v)
 	}
-	return out, nil
+	drafts, err := s.ownerDrafts()
+	if err != nil {
+		return nil, err
+	}
+	return append(out, drafts...), nil
 }
 func learnedValue(old, phrase, kind string) string {
 	var items []string
@@ -86,6 +90,10 @@ func (s *Store) MarkLearnedViewed(node string, id int64) error {
 func (s *Store) DecideLearned(id int64, action string) error {
 	if action != "accept" && action != "reject" {
 		return reject("action must be accept or reject")
+	}
+	if id < 0 {
+		// A charter draft (decision 0088) shares the owner's learned list.
+		return s.DecideCharterDraft(-id, action, "owner")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {

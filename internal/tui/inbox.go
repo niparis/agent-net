@@ -121,7 +121,7 @@ func (m Model) inboxRows() []inboxRow {
 		}
 		rows = append(rows, inboxRow{
 			group: inboxLearned, key: fmt.Sprintf("learned:%d", v.ID), kind: "learned",
-			name: v.Node + " (learned)", text: inboxLearnedSummary(v),
+			name: v.Node + inboxLearnedSuffix(v), text: inboxLearnedSummary(v),
 			since: v.CreatedAt / 1e9, learned: v,
 		})
 	}
@@ -260,6 +260,9 @@ func inboxOutcomeSummary(e protocol.OutcomeInboxEntry) string {
 // inboxLearnedSummary describes a learned suggestion without repeating the
 // machine name the who column already shows.
 func inboxLearnedSummary(v protocol.LearnedSuggestion) string {
+	if v.Origin == "draft" {
+		return fmt.Sprintf("set %s to \"%s\" (drafted from %s)", inboxPlainField(v.Field), sanitize(v.NewValue), sanitize(v.By))
+	}
 	phrase := v.Phrase
 	if v.Origin == "owner" && v.RawPhrase != "" {
 		phrase = v.RawPhrase
@@ -280,6 +283,13 @@ func inboxLearnedSummary(v protocol.LearnedSuggestion) string {
 		return fmt.Sprintf("change %s to \"%s\"", field, phrase)
 	}
 	return fmt.Sprintf("add \"%s\" to %s", phrase, field)
+}
+
+func inboxLearnedSuffix(v protocol.LearnedSuggestion) string {
+	if v.Origin == "draft" {
+		return " (draft)"
+	}
+	return " (learned)"
 }
 
 func inboxPlainField(field string) string {

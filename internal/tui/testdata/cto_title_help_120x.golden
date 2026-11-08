@@ -65,7 +65,9 @@
   a                      toggle autonomy off or wake
   D                      name this project
   u                      undo the selected one (a learned change)
-  , .                    select a previous or next learned change
+  , .                    select a previous or next learned change or charter draft
+  y                      accept the selected charter draft (drafted from AGENTS.md)
+  x                      reject the selected charter draft
   l                      choose or clear the repo lead
   h                      hide or unhide this project
   H                      show hidden projects

@@ -108,6 +108,10 @@ const (
 	// note. Open to agent sessions, not to the command line.
 	OpLearn = "agent_learn" // takes LearnRequest, answers LearnResult
 
+	// OpCharterDraft proposes one charter value drafted from AGENTS.md
+	// (decision 0088). Open to agent sessions, not to the command line.
+	OpCharterDraft = "agent_charter_draft" // takes CharterDraftRequest, answers CharterDraftResult
+
 	// OpRate records one caller's rating of a finished worker (difficulty
 	// calibration, part 4). Open to agent sessions, not to the command line.
 	OpRate = "agent_rate" // the daemon method behind agent_worker_rate

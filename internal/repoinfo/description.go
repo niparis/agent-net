@@ -1,6 +1,8 @@
 package repoinfo
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
@@ -232,6 +234,28 @@ func cutDescription(s string) string {
 		cut = cut[:i]
 	}
 	return strings.TrimRight(cut, " ,;:-") + "…"
+}
+
+// AgentsHash is a short hash of the project's instruction file (AGENTS.md, else
+// CLAUDE.md) in dir, or "" when there is none. A charter draft is requested
+// once per hash (decision 0088).
+func AgentsHash(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	for _, name := range AgentFiles {
+		f, err := os.Open(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		h := sha256.New()
+		_, err = io.Copy(h, io.LimitReader(f, 1<<20))
+		f.Close()
+		if err == nil {
+			return hex.EncodeToString(h.Sum(nil)[:8])
+		}
+	}
+	return ""
 }
 
 // ReadDescription reads the description of the project in dir from the first

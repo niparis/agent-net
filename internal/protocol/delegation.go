@@ -174,6 +174,13 @@ type SessionPolicy = SessionPolicyRequest
 // session. The answer is PolicyGot.
 type PolicyGet struct {
 	SessionID string `json:"session_id"`
+	// AgentsHash is the hash of the session's AGENTS.md, read by the daemon on
+	// the session's machine. Only the per-turn path sends it; the gateway uses
+	// it to ask for a charter draft once per version of the file (decision 0088).
+	AgentsHash string `json:"agents_hash,omitempty"`
+	// Turn says the answer is for a model turn, so it may carry the one-time
+	// charter draft request. Other callers of policy.get leave it false.
+	Turn bool `json:"turn,omitempty"`
 }
 
 // PolicyGot answers "policy.get". Delegation is nil when the session has no
@@ -187,6 +194,9 @@ type PolicyGot struct {
 	// Charter is the node's per-turn context, filled by the daemon after it
 	// read the graph. Empty when the node has no charter.
 	Charter string `json:"charter,omitempty"`
+	// DraftRequest is the one-time request to draft the charter from AGENTS.md
+	// (decision 0088). It is set once, for a turn, and is never cached.
+	DraftRequest string `json:"draft_request,omitempty"`
 }
 
 // PolicyRequest is MethodPolicy. A plugin is bound to its session and leaves
