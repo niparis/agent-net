@@ -335,7 +335,11 @@ func (s *Store) answerCheck(sessionID, task string) error {
 	}
 	if waiting == 0 {
 		// An announce that does not answer a check is progress: a stalled
-		// session has started something new.
+		// session has started something new. Its "blocked" or "stopped with
+		// work left" ask has lost its reason and closes (decision 0090).
+		if _, err := s.closeAsks(s.db, `session_id=? AND kind='check' AND from_kind IN ('','session')`, []any{sessionID}, protocol.AskReasonResolved); err != nil {
+			return err
+		}
 		if st.more != 0 || st.open != 0 || st.msgs != 0 {
 			return s.resetCheckProgress(sessionID)
 		}

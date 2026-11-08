@@ -592,3 +592,51 @@ func TestExternalAskSyncRepairs(t *testing.T) {
 		t.Fatalf("after sync: %+v", asks)
 	}
 }
+
+// "Blocked on" and "stopped with work left" asks close by themselves when the
+// session starts new work.
+func TestBlockedAskClosesWhenSessionMovesOn(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if _, _, err := send(s, a, b, "req", ""); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("check = %+v", got)
+	}
+	c.t = c.t.Add(time.Minute)
+	node := mustNode(t, s, b)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "blocked on the deploy key"}); err != nil {
+		t.Fatal(err)
+	}
+	asks, _ := s.ListAsks()
+	if chk := askByKind(asks, "check"); len(chk) != 1 || !strings.Contains(chk[0].Question, "the deploy key") {
+		t.Fatalf("blocked ask: %+v", asks)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "fixing the CI config"}); err != nil {
+		t.Fatal(err)
+	}
+	if asks, _ := s.ListAsks(); len(askByKind(asks, "check")) != 0 {
+		t.Fatalf("blocked ask stays after new work: %+v", asks)
+	}
+}
+
+// What the gateway sends by itself is written to the log.
+func TestStepDispatchWritesToTheLog(t *testing.T) {
+	r := setupMergerRig(t)
+	id := r.submit(r.a, r.workerSubmit("feature/logged", commitA)).Change.Change.ID
+	r.g.dispatchStepTasks(context.Background())
+	r.g.flushStepTaskBatches()
+	log, err := r.s.DeskLog(20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range log {
+		if e.Source == "gateway" && e.AboutKind == protocol.AskAboutChange && e.AboutID == id && strings.Contains(e.Text, "Sent step") {
+			return
+		}
+	}
+	t.Fatalf("no dispatch line for %s in the log: %+v", id, log)
+}

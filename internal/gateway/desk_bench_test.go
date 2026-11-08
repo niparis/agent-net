@@ -131,3 +131,19 @@ func BenchmarkOwnerQueueDesk(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkReconcileAsksSteadyState is the cost of the minute tick when
+// nothing changed: the safety net must stay cheap.
+func BenchmarkReconcileAsksSteadyState(b *testing.B) {
+	s := benchStore(b)
+	seedOwnerQueue(b, s)
+	if err := s.reconcileAsks(); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := s.reconcileAsks(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
