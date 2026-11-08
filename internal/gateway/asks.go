@@ -276,13 +276,15 @@ const movedOnCleanupKey = "asks_moved_on_cleanup_v1"
 // as the ask is never that far after it.
 const movedOnGap = 10 * time.Minute
 
-// movedOnCond selects the open asks that a session raised and then left: the
-// session started a task more than movedOnGap after the ask, or it raised a
-// later ask of the same kind (the earlier one is replaced by it).
-const movedOnCond = `from_kind IN ('','session') AND kind IN ('question','approval','check') AND (
-	EXISTS (SELECT 1 FROM profiles p WHERE p.session_id=inbox_items.session_id AND p.task_started > inbox_items.created_at + ?)
-	OR EXISTS (SELECT 1 FROM inbox_items later WHERE later.session_id=inbox_items.session_id AND later.kind=inbox_items.kind
-		AND later.from_kind IN ('','session') AND later.created_at > inbox_items.created_at AND later.id<>inbox_items.id))`
+// movedOnCond selects the open approvals and check items that a session
+// raised and then left: its task started more than movedOnGap after the item.
+// Questions are not part of it: one that the session left may still be a real
+// question to the owner, and questions close by the live rules (a typed
+// prompt, a dismissal, a later announce). A session may hold two different
+// approvals at once, so a newer item never closes an older one; a replaced
+// item already has its own status.
+const movedOnCond = `from_kind IN ('','session') AND kind IN ('approval','check')
+	AND EXISTS (SELECT 1 FROM profiles p WHERE p.session_id=inbox_items.session_id AND p.task_started > inbox_items.created_at + ?)`
 
 // reconcileMovedOnOnce closes the asks that sessions left behind before the
 // close-on-activity rules existed, once. It closes and never deletes. The

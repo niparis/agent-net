@@ -713,53 +713,59 @@ func TestStoppedWithWorkLeftRowClosesOnNewWorkAnnounce(t *testing.T) {
 	}
 }
 
-// The one-time cleanup closes the asks a session left behind: it started a
-// task long after the ask, or raised a later ask of the same kind. An ask of
-// the same turn, a session that stayed on its task, and other sessions' asks
-// stay. It never runs twice.
+// The one-time cleanup closes the approvals and check items a session left
+// behind: it started a task long after the item. An item of the same turn, a
+// session that stayed on its task, a question, a second open approval of the
+// same session and other sessions' items stay. It never runs twice.
 func TestMovedOnCleanupRunsOnceAndIsConservative(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("box", "linux")
 	moved, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "moved"})
 	same, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "same"})
 	check, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "check"})
+	two, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "two"})
 	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key=?`, movedOnCleanupKey); err != nil {
 		t.Fatal(err)
 	}
-	// moved: an approval, then a task announced 11 minutes later.
-	old, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: moved, Text: "Build the grant?"})
+	// moved: an approval and a question, then a task announced 11 minutes later.
+	oldApproval, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: moved, Text: "Build the grant?"})
+	oldQuestion, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: moved, Text: "Which iOS version?"})
 	// same: an approval and a task line 2 minutes later.
 	keep, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: same, Text: "Merge?"})
-	// check: two check rows from one session.
-	first, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: check, Text: "stopped with work left: a"})
+	// check: a check row of a session that moved on.
+	stale, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: check, Text: "stopped with work left: a"})
+	// two: two different approvals open at once, and no later task.
+	first, _ := s.createInboxItem(s.db, protocol.InboxItem{Kind: "approval", SessionID: two, Text: "Create the ops token"})
 	c.t = c.t.Add(2 * time.Minute)
-	second, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: check, Text: "blocked on b"})
+	second, _ := s.createInboxItem(s.db, protocol.InboxItem{Kind: "approval", SessionID: two, Text: "Merge #905"})
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: same, Task: "waiting for the owner"}); err != nil {
 		t.Fatal(err)
 	}
 	c.t = c.t.Add(10 * time.Minute)
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: moved, Task: "next thing"}); err != nil {
-		t.Fatal(err)
+	for _, id := range []string{moved, check} {
+		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "next thing"}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	// The announce rule would already have closed the approval of "moved"; open
-	// it again, as the live gateway has it from before the rule.
-	if _, err := s.db.Exec(`UPDATE inbox_items SET status='open',answer='',answered_at=0 WHERE id=?`, old.ID); err != nil {
+	// The announce rule would already have closed these; open them again, as
+	// the live gateway has them from before the rule.
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='open',answer='',answered_at=0 WHERE id IN (?,?,?)`, oldApproval.ID, oldQuestion.ID, stale.ID); err != nil {
 		t.Fatal(err)
 	}
 	n, err := s.reconcileMovedOnOnce()
 	if err != nil || n != 2 {
 		t.Fatalf("closed %d: %v", n, err)
 	}
-	for id, want := range map[string]string{old.ID: "closed", keep.ID: "open", first.ID: "closed", second.ID: "open"} {
+	for id, want := range map[string]string{oldApproval.ID: "closed", stale.ID: "closed", oldQuestion.ID: "open", keep.ID: "open", first.ID: "open", second.ID: "open"} {
 		if status, _, _ := askRow(t, s, `id=?`, id); status != want {
 			t.Fatalf("ask %s = %s, want %s", id, status, want)
 		}
 	}
-	if _, reason, _ := askRow(t, s, `id=?`, old.ID); reason != protocol.AskReasonMovedOnClean {
+	if _, reason, _ := askRow(t, s, `id=?`, oldApproval.ID); reason != protocol.AskReasonMovedOnClean {
 		t.Fatalf("reason %q", reason)
 	}
 	// Run again: the marker stops it, even for a new match.
-	if _, err := s.db.Exec(`UPDATE inbox_items SET status='open',answer='' WHERE id=?`, old.ID); err != nil {
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='open',answer='' WHERE id=?`, oldApproval.ID); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := s.reconcileMovedOnOnce(); err != nil || n != 0 {
