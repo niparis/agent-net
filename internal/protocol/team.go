@@ -20,8 +20,11 @@ type Team struct {
 	// text the owner sets: what this team may not do (decision 0089).
 	AuthorityMode string `json:"authority_mode"`
 	HeldBack      string `json:"held_back"`
-	CreatedAt     int64  `json:"created_at"`
-	UpdatedAt     int64  `json:"updated_at"`
+	// AsksTo says where a member's agent_owner_ask goes: owner (the default)
+	// or lead (the team lead answers first; decision 0094).
+	AsksTo    string `json:"asks_to"`
+	CreatedAt int64  `json:"created_at"`
+	UpdatedAt int64  `json:"updated_at"`
 }
 
 // TeamWrite is owner-only. Membership ID is the new Team, empty to remove.
@@ -44,6 +47,8 @@ type TeamWrite struct {
 	// (ID is a Repo).
 	Mode     string `json:"mode,omitempty"`
 	HeldBack string `json:"held_back,omitempty"`
+	// AsksTo is the new value for action "asks_to": owner or lead.
+	AsksTo string `json:"asks_to,omitempty"`
 }
 
 // TeamChange retains immutable before/after JSON snapshots or Team IDs for a

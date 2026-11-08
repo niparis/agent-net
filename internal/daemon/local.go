@@ -930,6 +930,17 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if err != nil {
 			return nil, err
 		}
+		// The team lead took the question (asks_to=lead): the session is not
+		// waiting for its user, so it carries on and a wait it had is cleared.
+		var routed struct {
+			Redirected *protocol.AskRedirect `json:"redirected"`
+		}
+		if json.Unmarshal(res, &routed) == nil && routed.Redirected != nil {
+			if ls != nil && p.Replaces != "" {
+				d.setWaiting(ls, nil)
+			}
+			return res, nil
+		}
 		if ls != nil && (kind == "question" || kind == "approval") {
 			if p.Replaces != "" && strings.TrimSpace(text) == "" {
 				d.setWaiting(ls, nil)

@@ -143,6 +143,21 @@ func (lc *localConn) waitingCall(client string, ls *localSession, raw json.RawMe
 		d.setWaiting(ls, nil)
 		return nil, nil
 	}
+	// A plugin asks the owner with an explicit wait. A team that sends its
+	// questions to the lead takes it here; the session then does not wait. An
+	// older gateway has no such call, and the wait goes on as before.
+	if p.Explicit && strings.TrimSpace(p.Text) != "" && ls.sessionID != "" {
+		raw, err := d.call(context.Background(), "ask.redirect", map[string]any{"session_id": ls.sessionID, "kind": "question", "text": p.Text, "options": p.Options})
+		if err == nil {
+			var routed struct {
+				Redirected *protocol.AskRedirect `json:"redirected"`
+			}
+			if json.Unmarshal(raw, &routed) == nil && routed.Redirected != nil {
+				d.setWaiting(ls, nil)
+				return map[string]any{"state": "sent_to_lead", "note": routed.Redirected.Note}, nil
+			}
+		}
+	}
 	w := protocol.CleanWaiting(&protocol.Waiting{Kind: p.Kind, Text: p.Text, Options: p.Options, Urgency: p.Urgency, Explicit: p.Explicit, Blocking: !p.Explicit})
 	if w == nil || isIdlePromptWait(w) {
 		// Nothing to wait for, or only the generic idle_prompt text: clear any

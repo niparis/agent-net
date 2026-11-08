@@ -660,7 +660,7 @@ The daemon shares concurrent identical owner reads for `workers`, `usage`, `usag
 ## Graph operator methods (foundation)
 
 Charters inherit through global defaults, Team, Repo and Agent, in that order.
-The nearest set value wins, except `refuses`: all levels contribute to its union.
+The nearest set value wins, except `refuses` and `rules`: all levels contribute to their union. Each item shows once, split on semicolons and newlines, in level order (global, team, repo, agent), so a team rule still reaches a member whose repo has rules of its own ([decision 0094](decisions/0094-team-questions-go-to-the-lead.md)).
 An effective charter includes `sources`, keyed by field, with each source's
 `level`, `scope` and `value`. A Team supplies "ask the team lead" as its default
 `escalate`. No charter is valid and adds no limit or approval prompt.
@@ -2286,7 +2286,7 @@ search contains text, the first Esc clears it and the second leaves the field.
 | Messages | Up/down selects a thread; left/right selects a message; Enter opens the body; End selects the latest message; `l` cycles the filter (all, without worker threads, with system events). The body closes with Enter or Esc. The states legend stays under the Messages section. |
 | Quotas | `p` protects or unprotects; `s` shows other subscriptions; `R` refreshes. Enter is unused. |
 | Graph | Arrows select; Shift+arrows pan; `,` and `.` select linked nodes; Enter opens the card; `/` finds a node; `t` cycles the Team filter through all nodes and each active Team, and the key line names the Team shown; `T` opens the Team list. The graph fits itself when the tab opens. `o`, Space and `0` do nothing. |
-| Teams | Enter filters the Graph to the selected Team. `c` creates a Team, `r` renames it, Space adds or removes the selected Repo or Agent, and `a` archives a Team with no members. Esc goes back. |
+| Teams | Enter filters the Graph to the selected Team. `c` creates a Team, `r` renames it, Space adds or removes the selected Repo or Agent, and `a` archives a Team with no members, `o` sends the Team's questions for the owner to its lead or back to the owner. Esc goes back. |
 | Agent card | Ctrl+U and Ctrl+D scroll. `,` and `.` select learned changes; `u` undoes the selected change. `!` does nothing; the legend is in the help overlay under Graph. `[` and `]` do not scroll. |
 | Tools | Opens Skills per project. Up/down selects a project, right or Enter moves to skills, and Space or Enter previews a toggle. Esc keeps pending choices for editing; Enter reviews pending choices and confirms in the review. Left returns to projects. Esc asks before discarding pending changes. `/` filters skill names. Tab switches between the two visible views. The information box follows the selected project or skill. In All tools, Enter opens actions; `/` filters, `t` shows skill cost per project, `n` adds a tool and `R` rescans copies. `[` and `]` do nothing. In the compare box, `a` and `b` keep that copy and `v` opens the full diff. The picker ticks with Space only. |
 | Settings | Up/down selects rows; Tab or `[`/`]` jumps between sections; Space toggles and Enter opens the selected row. Connected apps also accepts `p` for internet access, `u` for the tunnel URL, `a` to add and `x` to revoke. Enter on a machine renames it; an empty name resets it. Enter on Time zone asks for `auto` or an IANA name. |
@@ -2493,18 +2493,18 @@ details are advisory; the existing 2 KiB limit applies to each written value.
 | `refuses` | Any level | Work it declines; inherited safety refusals always apply. |
 | `escalate` | Agent; Team default | Optional short line; the Team default is "ask the team lead". |
 | `feature_requests` | Agent | How to raise an idea for new work. |
-| `rules` | Any level | Free text for taste and house rules. Code does not interpret it. |
+| `rules` | Any level | Free text for taste and house rules. Code does not interpret it. Inherited items from all levels are joined, each once. |
 
 Inheritance is global -> Team -> Repo -> Agent. Each level stores only its overrides.
-Every field takes the nearest set value except refuses, which is the union of all levels.
-If an Agent and its Repo belong to different Teams, both Teams' safety refusals apply.
+Every field takes the nearest set value except refuses and rules, which are the union of all levels.
+If an Agent and its Repo belong to different Teams, both Teams' safety refusals and rules apply.
 The effective charter carries a sources map with level, scope and value per field;
-refuses keeps all contributors. A standalone Agent graph row uses its sole owned Repo
+refuses and rules keep all contributors. A standalone Agent graph row uses its sole owned Repo
 when unique; a session view supplies its explicit Repo context.
 
 `graph_change` action `charter_set` takes level, node (the scope), attr and value.
 Global scope is empty. A typed ref can select a Team, Repo or Agent. `team_charter`
-takes team, attr and value. Empty text clears the local override. Legacy unscoped
+takes team, attr and value. Its attr `asks_to` is the Team setting below, not a charter text. Empty text clears the local override. Legacy unscoped
 repo clients can still edit existing work boundaries; the removed consumers, needs
 and notes attributes are rejected. The upgrade preserves them under matching headings
 in rules. It splits maturity at " - ": the first word is the enum, unknown words become
@@ -2992,7 +2992,7 @@ or authority over members. Settings and request rules do not inherit. Leads
 can redirect messages from outside the crew, as described below.
 
 The owner operator methods are `team_write` and `team_history`. `team_write`
-takes `action` (`create`, `rename`, `archive` or `membership`) and `team_id`.
+takes `action` (`create`, `rename`, `archive`, `membership`, `mode`, `held_back` or `asks_to`) and `team_id`.
 Create takes `name`, optional `purpose` and optional typed `owner` Agent ref.
 Rename takes `name` and `expect_name`. Membership takes a typed `member` ref
 and `expect_team` (the old Team ID, empty when unassigned); an empty `team_id`
@@ -3005,6 +3005,15 @@ Read Teams with `agent_graph_read` using `typed: true` or a `ref` with
 `kind: team`. Typed reads include archived Teams with their `active` state,
 direct owner references and `member_of` edges. Legacy reads exclude Teams and
 membership. The CTO can read Teams and propose `lead_set` changes; other Team writes remain owner-only.
+
+**Questions go to the lead** ([decision 0094](decisions/0094-team-questions-go-to-the-lead.md)). A Team has the setting `asks_to`: `owner` (the default) or `lead`. The owner sets it in the Teams list with `o` (`u` undoes it); `team_write` takes `action: asks_to` and `asks_to`. The CTO sets it with `graph_change` `team_charter`, `attr: asks_to`, `value: owner` or `lead` (empty means `owner`), with no proposal; it is recorded in the graph history and `undo` restores it. The Team node and `agent_graph_read` show `asks_to`. When a session in a Team with `asks_to=lead` calls `agent_owner_ask` (any kind), the gateway does not put the ask in front of the owner:
+
+- It sends a request message from the asker to the Team lead's live session (otherwise the lead Agent's latest session), through the normal delivery and wake rules. The message has the question, the recommendation and the options, and says that deleting data, spending money, and using or sharing secrets that can spend money stay with the owner, so the lead asks the owner itself when needed.
+- It opens a Desk ask for the asker with `next` set to the lead's session id, so the Desk shows it as with someone. The old Inbox does not list an open ask that waits on someone but the owner.
+- The tool result has `state: sent_to_lead` and a `note`: `Your team (forge) sends questions to its lead, tenebrae. Sent there; carry on with work that does not need the answer.` The asker's session is not marked as waiting for its user. Pi and OpenCode send the question as an explicit wait; the daemon asks the gateway (`ask.redirect`) first and redirects it the same way.
+- The lead answers with `agent_message_reply`. The answer reaches the asker as a normal reply, and the Desk ask closes as answered with the reply text. The lead can still ask the owner with its own `agent_owner_ask`.
+
+A session that leads the Team (any session of the lead Agent, or only the pinned lead session), a session in no Team, the CTO and the owner are not redirected. The gateway has no classifier for the owner's held back items, so every ask of such a Team goes to its lead. If the lead Agent has no session, the ask goes to the owner.
 
 In the TUI, the Graph tab shows all nodes by default. Press `t` to cycle the
 filter through all nodes, then each active Team in turn; the key line names the
@@ -3035,7 +3044,7 @@ sent the message it answers. Use `repo:<name>` or `team:<name>` to address a
 live lead by name or ID. Typed Graph reads expose `lead`, `max_agents`, `agent_count` and
 `over_max`; session views expose corresponding Repo counts and lead flags.
 
-**Your place.** Every turn, a session that leads a Team, or leads a Repo that other agents work in, gets a block from agent-net that says so. The lead block names the Team or Repo, its members, and that the lead reports to the owner. It says that requests from outside to a member come to the lead, who answers each one or hands it off. For a Team lead, requests to a member Repo that has its own lead go to that Repo lead instead. A Team block ends with the Team purpose, cut to 300 characters. A session in a Team that it does not lead gets two lines: who leads the Team, and to escalate to that lead first, not to the owner. A session in no Team, and not leading a Repo with other agents, gets no block. The block comes from the live Team data on each turn, with the node charter, on every harness.
+**Your place.** Every turn, a session that leads a Team, or leads a Repo that other agents work in, gets a block from agent-net that says so. The lead block names the Team or Repo, its members, and that the lead reports to the owner. It says that requests from outside to a member come to the lead, who answers each one or hands it off. For a Team lead, requests to a member Repo that has its own lead go to that Repo lead instead. A Team block ends with the Team purpose, cut to 300 characters. A session in a Team that it does not lead gets two lines: who leads the Team, and to escalate to that lead first, not to the owner. When the Team has `asks_to=lead`, a third line follows: `Questions for the owner go to your lead, <name>.` A session in no Team, and not leading a Repo with other agents, gets no block. The block comes from the live Team data on each turn, with the node charter, on every harness.
 
 A routed request carries the redirect note and then one line for the lead: `You lead <scope>: answer this or hand it off to <original target> with agent_message_handoff.` The sender's receipt keeps the short note only.
 

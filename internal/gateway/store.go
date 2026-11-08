@@ -1176,7 +1176,14 @@ ALTER TABLE inbox_items ADD COLUMN detail TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS standing_orders (
  id TEXT PRIMARY KEY, text TEXT NOT NULL, saved_at INTEGER NOT NULL,
  source TEXT NOT NULL DEFAULT 'owner');
-`, botAgentMigration}
+`, botAgentMigration, teamAsksToMigration}
+
+// teamAsksToMigration adds the team setting that sends a member's questions
+// for the owner to its team lead (decision 0094).
+const teamAsksToMigration = `
+-- Team asks_to (decision 0094): owner (default) or lead.
+ALTER TABLE teams ADD COLUMN asks_to TEXT NOT NULL DEFAULT 'owner';
+`
 
 // asksMigrationRest is the part of the asks migration that is safe to replay
 // after its columns exist: the log table, the indexes and the backfill of old
@@ -1596,6 +1603,16 @@ func (s *Store) migrate() error {
 			}
 			if err == nil {
 				result, err = tx.Exec(asksMigrationRest)
+			}
+		} else if strings.Contains(migrations[i], "Team asks_to (decision 0094)") {
+			var has int
+			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('teams') WHERE name='asks_to'`).Scan(&has)
+			if err == nil {
+				if has == 0 {
+					result, err = tx.Exec(migrations[i])
+				} else {
+					result, err = tx.Exec(`SELECT 1`)
+				}
 			}
 		} else if strings.Contains(migrations[i], "Message hand-off: the lead who passed") {
 			var has int
@@ -3593,6 +3610,12 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 					return msg, false, err
 				}
 			}
+		}
+	}
+	if m.Type == protocol.TypeReply {
+		// A team lead's answer to a question of its member closes the ask.
+		if err := s.closeLeadAsk(tx, m); err != nil {
+			return msg, false, err
 		}
 	}
 	if m.ParentID != "" {
