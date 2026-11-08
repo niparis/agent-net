@@ -97,7 +97,6 @@ type Model struct {
 	quotaConfirmDisplay string
 	quotaUnprotect      bool
 	quotaShowUnset      bool
-	qualityAgent        int
 	qualityDetail       bool
 	// The picker table of the Quality subtab. It changes only on writes, so it
 	// is read when the subtab opens and on R, not on every tick.
@@ -1164,9 +1163,6 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		m.applyTeamView(false)
 	}
 	m.applyTimeZone()
-	if n := len(m.snap.Calibration.Quality.Agents); m.qualityAgent > n {
-		m.qualityAgent = 0
-	}
 	m.updateSessionOrder(r.events)
 	if r.hiddenErr == nil {
 		m.setHiddenItems(r.hidden)

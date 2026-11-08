@@ -94,6 +94,42 @@ func TestQualityPickerVerdictsMatchProtocol(t *testing.T) {
 	}
 }
 
+// A benchmark ceiling past the last bucket on screen draws no marker: a mark
+// at the window edge reads as a ceiling there, or as a second panel border.
+// A ceiling that ends before a visible bucket still marks its cell.
+func TestQualityPickerCeilingPastTheWindowHasNoMark(t *testing.T) {
+	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+		m := newModel(size[0], size[1])
+		m.picker, m.pickerLoaded = pickerFixture(), true
+		m.defaultPickerSelection()
+		inner := max(size[0]-4, 20)
+		fit := max(1, (inner-pickerModelWidth-2)/pickerCellWidth)
+		start, end := pickerColumnWindow(m.pickerColumns(), m.pickerSelBucket, fit)
+		cols := m.pickerColumns()[start:end]
+		lastLo := m.picker.Buckets[cols[len(cols)-1]].Lo
+		bench := m.pickerBenchmarks()
+		marked := map[string]bool{}
+		for i, row := range m.picker.Models {
+			line := ansi.Strip(m.pickerModelLine(i, -1, pickerModelWidth, cols, inner, bench))
+			b := bench[row.Key]
+			if !b.scored {
+				continue
+			}
+			if b.ceiling > lastLo {
+				if strings.Contains(line, "│") {
+					t.Errorf("%dx%d: %s ceiling %.2f is past the window ending at %.2f but the row has a marker:\n%s",
+						size[0], size[1], row.Key, b.ceiling, lastLo, line)
+				}
+				continue
+			}
+			marked[row.Key] = strings.Contains(line, "│")
+		}
+		if !marked["openai-codex/gpt-6.1-sol:low"] {
+			t.Errorf("%dx%d: the ceiling inside the window is not marked:\n%s", size[0], size[1], strings.Join(m.qualityPickerBody(size[0], 30), "\n"))
+		}
+	}
+}
+
 // The grid needs no horizontal scroll state at 80 columns: it shows the
 // buckets around the selection and says how many are outside the window.
 func TestQualityPickerKeepsTheSelectedBucketVisibleAt80(t *testing.T) {

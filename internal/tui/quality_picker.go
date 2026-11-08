@@ -136,7 +136,9 @@ func pickerGridHeader(labelWidth int, buckets []protocol.PickerBucketRow, cols [
 }
 
 // pickerModelLine draws one model row. The selected row has a marker, and a
-// │ after the last visible bucket the profile's benchmark ceiling covers.
+// │ before the visible bucket after the last bucket the profile's benchmark
+// ceiling covers. A ceiling past the last visible bucket draws nothing: a
+// marker at the window edge would read as a ceiling there.
 func (m Model) pickerModelLine(index, selected, labelWidth int, cols []int, width int, bench map[string]pickerBench) string {
 	row := m.picker.Models[index]
 	b := bench[row.Key]
@@ -154,6 +156,10 @@ func (m Model) pickerModelLine(index, selected, labelWidth int, cols []int, widt
 			}
 		}
 	}
+	// Only a boundary between two shown buckets is drawn. When the ceiling is
+	// at or past the last shown bucket, no mark means it covers them all; when
+	// it is before the first, there is nothing to mark in this window.
+	markCeiling := lastCovered >= 0 && lastCovered < len(cols)-1
 	for i, col := range cols {
 		c := protocol.PickerCell{}
 		if col >= 0 && col < len(row.Cells) {
@@ -164,7 +170,7 @@ func (m Model) pickerModelLine(index, selected, labelWidth int, cols []int, widt
 			mean = m.picker.Buckets[col].Mean
 		}
 		line += pickerCellStyle(c, mean, index == selected && col == m.pickerSelBucket).Render(fmt.Sprintf("%4.2f", c.Score))
-		if i == lastCovered {
+		if markCeiling && i == lastCovered {
 			line += " │"
 		} else {
 			line += "  "
@@ -468,7 +474,8 @@ func pickerSettingsText(s protocol.PickerSettings, width int) string {
 
 func pickerLegend() []string {
 	return []string{
-		"bright = narrow interval · dim = wide or n<3 · │ = benchmark ceiling",
+		"bright = narrow interval · dim = wide or n<3",
+		"│ = ceiling ends before the next bucket · none = outside the shown buckets",
 		"green = interval above the bucket mean · red = below",
 	}
 }
