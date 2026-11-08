@@ -93,6 +93,9 @@ type SessionRow struct {
 	// Waiting is set while the session waits for its user. Status then says
 	// StatusWaitingForUser.
 	Waiting *WaitingRow `json:"waiting,omitempty"`
+	// Tools is "disconnected" when the session has lost its agent-net tools,
+	// so it cannot reply with agent tools. Absent otherwise.
+	Tools string `json:"tools,omitempty"`
 
 	LastSeenAgo  string            `json:"last_seen_ago,omitempty"`
 	Folder       string            `json:"folder,omitempty"`

@@ -18,3 +18,16 @@ func ToolsStaleNote(harness, mine, daemon string) string {
 	return fmt.Sprintf("agent-net: your agent-net tools are %s (this machine runs %s). "+
 		"Ask your user to reconnect agent-net: %s. New tools appear after that.", mine, daemon, how)
 }
+
+// ToolsDisconnected is the ToolsVersion of a live Claude Code session that has
+// had no `agent-net mcp` connection to the daemon for longer than the grace
+// period, for example because Claude Code stopped the process and never
+// restarted it. The session still gets turn text through its hooks, but it has
+// no agent_* tools.
+const ToolsDisconnected = "disconnected"
+
+// ToolsDisconnectedDetail is the owner's detail line for such a session.
+const ToolsDisconnectedDetail = "agent-net tools disconnected: type /mcp in this session and reconnect agent-net, or restart it"
+
+// ToolsDisconnectedNotice is the line the turn text of such a session carries.
+const ToolsDisconnectedNotice = "[agent-net] Your agent-net tools are disconnected. Ask the owner to type /mcp and reconnect agent-net."

@@ -180,6 +180,11 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	if t := toolsText(a); t != "" {
 		out = append(out, clip("  "+sDim.Render(cell("tools", lw))+" "+sBusy.Render(t), w))
 	}
+	if a.ToolsDisconnected() {
+		for _, l := range wrap("  "+protocol.ToolsDisconnectedDetail, w) {
+			out = append(out, sBusy.Render(l))
+		}
+	}
 	if f := functionText(a); f != "" {
 		if f == noAgentsMD {
 			f = "none: add a `# Project: <one line>` line to AGENTS.md"

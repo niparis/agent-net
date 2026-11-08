@@ -241,3 +241,63 @@ func (d *Daemon) mcpHelloResult(ls *localSession, harness, toolsVersion string) 
 	}
 	return res
 }
+
+// toolsLinkInfoLocked sets or clears the tools: disconnected mark in a Claude
+// session's info. The mark is on when the session has no live `agent-net mcp`
+// connection and has had none for MCPLinkGrace, counted from when the daemon
+// first saw the session or lost its last connection. Workers are never marked:
+// agent-net starts and watches their MCP server. The caller holds d.mu and
+// runs this inside the discovery poll, so there is no extra scan.
+func (d *Daemon) toolsLinkInfoLocked(ls *localSession, in protocol.SessionInfo, now time.Time) protocol.SessionInfo {
+	if in.Harness != "claude" || in.Worker != nil {
+		return in
+	}
+	if ls.mcpSince.IsZero() {
+		ls.mcpSince = now
+	}
+	switch {
+	case ls.mcpLinks > 0:
+		if in.ToolsVersion == protocol.ToolsDisconnected {
+			in.ToolsVersion = ""
+		}
+	case now.Sub(ls.mcpSince) >= d.cfg.MCPLinkGrace:
+		in.ToolsVersion, in.ToolsOld = protocol.ToolsDisconnected, false
+	}
+	return in
+}
+
+// linkMCP records the live `agent-net mcp` connection of a Claude session.
+// The connection counts until it closes (unlinkMCP).
+func (lc *localConn) linkMCP(ls *localSession) {
+	lc.mu.Lock()
+	already := lc.mcpLinked != nil
+	if !already {
+		lc.mcpLinked = ls
+	}
+	lc.mu.Unlock()
+	if already {
+		return
+	}
+	lc.d.mu.Lock()
+	ls.mcpLinks++
+	lc.d.mu.Unlock()
+}
+
+// unlinkMCP ends the count of a closed connection and starts the grace period.
+func (lc *localConn) unlinkMCP() {
+	lc.mu.Lock()
+	ls := lc.mcpLinked
+	lc.mcpLinked = nil
+	lc.mu.Unlock()
+	if ls == nil {
+		return
+	}
+	lc.d.mu.Lock()
+	if ls.mcpLinks > 0 {
+		ls.mcpLinks--
+	}
+	if ls.mcpLinks == 0 {
+		ls.mcpSince = time.Now()
+	}
+	lc.d.mu.Unlock()
+}

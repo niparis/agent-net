@@ -120,3 +120,22 @@ func TestPolicyHookCarriesOwnerPrompt(t *testing.T) {
 		t.Fatalf("asked: %+v", asked)
 	}
 }
+
+func TestPolicyHookCarriesTheDisconnectedNoticeAlone(t *testing.T) {
+	in := `{"session_id":"abc","hook_event_name":"UserPromptSubmit"}`
+	out, _ := runPolicyWith(t, in, protocol.PolicyResult{Notice: protocol.ToolsDisconnectedNotice}, nil)
+	var got struct {
+		H map[string]string `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("not JSON: %q", out)
+	}
+	if got.H["additionalContext"] != "[agent-net] Your agent-net tools are disconnected. Ask the owner to type /mcp and reconnect agent-net." {
+		t.Fatalf("context: %q", got.H["additionalContext"])
+	}
+	// With a charter, the notice comes after it.
+	out, _ = runPolicyWith(t, in, protocol.PolicyResult{Charter: "charter text", Notice: "notice line"}, nil)
+	if !strings.Contains(out, `charter text\n\nnotice line`) {
+		t.Fatalf("order: %q", out)
+	}
+}
