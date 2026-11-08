@@ -661,13 +661,24 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, a
 	find := func() (claudeSessionFile, bool) {
 		return findClaudeBg(d.cfg.ClaudeSessionsDir, id)
 	}
-	for {
+	for tick := 0; ; tick++ {
 		if f, ok := find(); ok {
 			sf = f
 			break
 		}
+		// A job blocked on Claude Code's "new MCP server needs approval" prompt
+		// never writes a session file and nobody can answer the prompt. Say so
+		// at once, with the job, instead of waiting for the start deadline.
+		if tick%5 == 4 {
+			if blocked := d.claudeJobMCPBlock(id, path); blocked != nil {
+				return claudeSessionFile{}, blocked
+			}
+		}
 		select {
 		case <-ctx.Done():
+			if blocked := d.claudeJobMCPBlock(id, path); blocked != nil {
+				return claudeSessionFile{}, blocked
+			}
 			if resume != "" {
 				return claudeSessionFile{}, fmt.Errorf("the Claude background session %s wrote no session file in time; retry the message or resume the conversation with `claude --resume %s`", id, resume)
 			}

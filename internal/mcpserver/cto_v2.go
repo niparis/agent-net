@@ -57,7 +57,7 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 				"lead_set": "lead_set", "team_create": "team_create", "team_rename": "team_rename", "team_purpose": "team_purpose", "team_charter": "team_charter", "team_archive": "team_archive",
 				"team_member_add": "team_member_add", "team_member_remove": "team_member_remove",
 			}[action],
-			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"}[action],
+			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "mcp_servers": "folder_mcp", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"}[action],
 			"worker_change":  map[string]string{"start": "worker_start", "stop": "worker_stop"}[action],
 		}[tool]
 	}
@@ -159,6 +159,12 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 	case "session_change":
 		if action == "merger_start" || action == "merger_stop" {
 			required = []string{"project"}
+		}
+		if action == "mcp_servers" {
+			if nonempty(args["project"]) == nonempty(args["path"]) {
+				return fmt.Errorf("mcp_servers needs exactly one of project or path, and approve or disable; example: %s", example)
+			}
+			required = []string{"mcp_servers"}
 		}
 		if action == "trust" {
 			hasSession := nonempty(args["session_id"])

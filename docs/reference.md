@@ -393,7 +393,7 @@ are proposals. The CTO has one action tool per area:
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
 | `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_charter`, `team_archive`, `team_member_add`, `team_member_remove` or `undo` |
 | `sessions_archive` | Propose archiving offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Includes the exact dry run; owner approval required. |
-| `session_change` | `action: rename`, `trust`, `policy`, `session_start`, `merger_start` or `merger_stop`. `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `session_start` takes `trust: true` to trust the folder and start in one step. See [CTO folder trust](#cto-folder-trust) |
+| `session_change` | `action: rename`, `trust`, `mcp_servers`, `policy`, `session_start`, `merger_start` or `merger_stop`. `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `mcp_servers` takes one of `project` or `path`, optional `node_id`, and `mcp_servers: approve` or `disable`, to record the choice for the `.mcp.json` servers Claude Code would load there. `session_start` takes `trust: true` to trust the folder and start in one step, and `mcp_servers` to record that choice first. See [CTO folder trust](#cto-folder-trust) and [Claude MCP server approval](#claude-mcp-server-approval) |
 | `cto_standing_orders` | `action: save` (with `text`), `read` (with `order_id`), `list` or `remove` (with `order_id`). See [standing orders](#standing-orders) |
 | `worker_change` | `action: start` or `stop` |
 | `answer` | `kind: held`, `inbox` or `outcome` |
@@ -2632,6 +2632,72 @@ The request travels to another machine as the owner frames `session.trust_folder
 
 Each use leaves an Inbox notice. `added` is true only when the folder was not trusted before. Only then does the notice carry an undo, and the undo removes that one folder's trust (`folder_trust` with `remove: true`). A folder the owner had already trusted is left alone and has no undo. A CTO proposal still cannot set `trust_claude`, and the proposal relay still drops it: trust the CTO sets goes only through this explicit action or `trust: true`.
 
+### Claude MCP server approval
+
+Claude Code asks the user to approve each MCP server it finds in a `.mcp.json`
+file before it uses it. A background session (`claude --bg`) cannot answer
+that prompt. The job shows state `blocked` with the detail `1 new MCP server
+needs approval` (`N new MCP servers need approval` for more), never writes a
+session file, and waits forever.
+
+**Where Claude Code 2.1.319 stores the answer.** In the launch folder's
+`.claude/settings.local.json`, as two lists of server names:
+`enabledMcpjsonServers` (approved) and `disabledMcpjsonServers` (refused). A
+refusal wins over an approval for the same name. Claude Code reads `.mcp.json`
+from the launch folder and from every folder above it, and a name in a nearer
+file wins. A choice in a parent folder does not cover a session that starts in a
+child folder, so the choice is written in the folder the session starts in.
+The older `projects[<path>].enabledMcpjsonServers` lists in `~/.claude.json` are
+legacy: version 2.1.319 clears them and does not read them for this. agent-net
+never sets `enableAllProjectMcpServers`.
+
+**What agent-net does.**
+
+- While it waits for the session file of a Claude start, it reads the job's
+  `state.json`. When the state is `blocked` with an MCP approval detail, it stops
+  waiting at once. The start fails with the reason code `mcp_approval_needed`.
+  The text names the folder, the servers with the command each runs, the
+  `.mcp.json` files that define them, the Claude job ID and whether that job is
+  still running. The job is left running, because it holds the prompt. In the
+  start record (`session_start_get`) the failure has `error_code`
+  (`mcp_approval_needed`), `job_id`, `job_alive` and `mcp_servers` (`name`,
+  `command`, `file`).
+- Every failure of a start the CTO asked for reaches the CTO. The start call
+  answers `starting` long before it can fail, so the machine that runs the start
+  sends the CTO a notification from the owner session: `[agent-net] Session start
+  failed: <project> on <machine> (start <id>). Reason code: <code>. <error>`. The
+  owner's TUI still shows the same notice, and the log and gateway event are
+  unchanged. For a start on another machine, the owner's machine sends the
+  notification when it sees the failed record.
+- `session_start` takes `mcp_servers: approve` or `disable` (Claude only; other
+  harnesses refuse it). The machine writes that choice for every server in the
+  `.mcp.json` files above the session folder, into the session folder's
+  `.claude/settings.local.json`, before it launches Claude Code. For a new
+  worktree this is the worktree folder. The start result has `mcp_choice`.
+- `session_change` with action `mcp_servers` does the same without starting a
+  session: one of `project` (registered on that machine) or `path` (an existing
+  folder under the owner's home), optional `node_id`, and `mcp_servers`.
+  A folder with no `.mcp.json` server is refused. Approve also takes the name out
+  of `disabledMcpjsonServers`, because a refusal would win; disable leaves
+  `enabledMcpjsonServers` alone, because a refusal already wins. Other keys of
+  the file are written back unchanged.
+
+The request to another machine travels as the owner frames `session.mcp_servers`
+(to the gateway) and `session.owner_mcp_servers` (to the machine). They are not
+the folder trust frames, so an older gateway or machine refuses with `unknown
+frame type` and a choice is never run as a plain trust. The operator method is
+`folder_mcp` (`project` or `path`, `node_id`, `mcp_servers` or `undo`); the result
+has `path`, `settings_file`, `servers` (`name`, `command`, `file`), `added` and
+`restored`.
+
+Each use leaves an Inbox notice that names the servers, the command each runs,
+the `.mcp.json` file and the list written. `added` holds only the names that were
+not in the list before, and `restored` the names an approval took out of the
+refusal list. The notice carries an undo (`folder_mcp` with `undo`) only when
+something changed. The undo removes exactly the `added` names from the list and
+puts the `restored` names back in the refusal list; a choice the owner made
+before stays. A start with `mcp_servers` leaves the same notice and undo.
+
 ### CTO proposals for a session or project
 
 The CTO can propose `session_change` with action `session_start`, using `project` or `path`, `node_id`, `harness`, `model`, `folder`, `branch`, `first_message` and optional `create`. It can propose `project_change` with action `create` and a `path` plus the same start options. The owner approves a pending project creation in the CTO approval dialog. Plain text in chat does not approve a proposal. The Inbox remains available for proposal decisions. Creating a project authorizes the missing folder and a git repository when the owner approves. A session start creates a missing folder only when `create` is true.
@@ -2720,7 +2786,9 @@ discovery and gateway registration finish, the record has `status: "started"`,
 registration has `status: "failed"` and `error`. A failure after the answer
 `starting` is never silent: the machine that runs the start writes one log
 line `event=session.start_failed`, records a `session.start_failed` event in the
-gateway feed, and the owner's TUI shows the error. A start can first answer
+gateway feed, and the owner's TUI shows the error. A start the CTO asked for also
+sends the CTO a notification with the same error (see [Claude MCP server
+approval](#claude-mcp-server-approval)). A failed record can carry `error_code`. A start can first answer
 `needs_create` or `needs_trust`; those are not polled. An unknown id is refused. Records live in
 memory for this daemon run. A daemon restart loses the records; the harness's
 session remains discoverable as a normal session. Cancelling the requesting

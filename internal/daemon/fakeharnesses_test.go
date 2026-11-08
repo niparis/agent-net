@@ -213,6 +213,10 @@ type fakeClaudeInit struct {
 	Env  map[string]string `json:"env"`
 }
 
+// envFakeMCPBlocked makes the fake `claude --bg` leave a job blocked on the MCP
+// approval prompt, as Claude Code 2.1.319 does.
+const envFakeMCPBlocked = "FAKE_CLAUDE_MCP_BLOCKED"
+
 // fakeClaudeCLI is `claude --bg ...` and `claude stop <id>`.
 func fakeClaudeCLI() {
 	dir := os.Getenv(envFakeClaudeSessions)
@@ -260,6 +264,17 @@ func fakeClaudeCLI() {
 	if os.Getenv(envFakeStartFails) != "" {
 		fmt.Println("Workspace not trusted. Run `claude` in this folder once and accept the trust prompt, then retry.")
 		os.Exit(1)
+	}
+	if os.Getenv(envFakeMCPBlocked) != "" {
+		// Claude Code stops on "new MCP server needs approval": the job exists
+		// and is alive, and it never writes a session file.
+		id := "blockedjob"
+		job := filepath.Join(filepath.Dir(dir), "jobs", id)
+		os.MkdirAll(job, 0700)
+		body, _ := json.Marshal(map[string]string{"state": "blocked", "detail": "1 new MCP server needs approval"})
+		os.WriteFile(filepath.Join(job, "state.json"), body, 0600)
+		fmt.Printf("backgrounded · %s · %s\n  claude stop %s      stop this session\n", id, argValue(os.Args, "--name"), id)
+		return
 	}
 	if mode := os.Getenv("FAKE_CLAUDE_RESUME_FAILURE"); mode != "" && argValue(os.Args, "--resume") != "" {
 		if mode == "cli-missing" {
