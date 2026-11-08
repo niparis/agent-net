@@ -465,8 +465,8 @@ func (m Model) mapTeamCardView(node protocol.Node, w, h int) []string {
 	}
 	addField("purpose", purpose)
 	lead := "no lead"
-	if g.lead != "" {
-		lead = teamLeadStar(g.leadKind) + m.graphName(g.lead)
+	if g.leadName != "" {
+		lead = teamLeadStar(g.leadKind) + g.leadName
 	}
 	addField("lead", lead)
 	mode := protocol.NormalAuthorityMode(node.AuthorityMode)

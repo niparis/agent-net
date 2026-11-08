@@ -72,3 +72,30 @@ func graphNodeByRef(t *testing.T, g protocol.Graph, ref protocol.GraphRef) proto
 	t.Fatalf("no node %+v in %+v", ref, g.Nodes)
 	return protocol.Node{}
 }
+
+// A lead pinned to a session with no title still names its Agent. The PLACE
+// block must never fall back to the internal session ID.
+func TestGraphPlaceTeamLeadNeverShowsSessionID(t *testing.T) {
+	r := newPlaceRig(t)
+	if _, err := r.s.db.Exec(`UPDATE sessions SET name='' WHERE id=?`, r.lead); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE teams SET lead_session=? WHERE id='alpha'`, r.lead); err != nil {
+		t.Fatal(err)
+	}
+	team := protocol.GraphRef{Kind: "team", ID: "alpha"}
+	g, err := r.s.GraphForRefWithPlaces(&team, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := graphNodeByRef(t, g, team)
+	if node.Place == nil {
+		t.Fatal("team node has no place")
+	}
+	if node.Place.TeamLead == r.lead {
+		t.Fatalf("team lead is the session ID %q", r.lead)
+	}
+	if node.Place.TeamLead != "other" {
+		t.Fatalf("team lead = %q, want the agent name %q", node.Place.TeamLead, "other")
+	}
+}
