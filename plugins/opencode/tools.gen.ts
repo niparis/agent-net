@@ -1318,7 +1318,7 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "rate"
+    "method": "agent_rate"
   },
   {
     "name": "agent_worker_start",

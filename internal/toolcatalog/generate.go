@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 //go:generate go run ../../cmd/gentools
@@ -31,7 +33,7 @@ var pluginMethods = map[string]string{
 	"agent_message_reply": "reply", "agent_announce": "announce",
 	"agent_owner_ask": "waiting", "agent_learn": "agent_learn",
 	"agent_worker_start": "worker_start", "agent_worker_stop": "worker_stop",
-	"agent_worker_rate": "rate", "agent_handback": "worker_handback",
+	"agent_worker_rate": protocol.OpRate, "agent_handback": "worker_handback",
 	"agent_project_add": "project_add", "agent_mcp_test": "mcp_test",
 	"agent_change_submit": "change_submit", "agent_step_claim": "step_claim", "agent_step_report": "step_report", "agent_changes_find": "changes_find",
 }
