@@ -45,7 +45,7 @@ func storeTemplateBytes() ([]byte, error) {
 }
 
 // seedStore writes a migrated empty store into dir unless one is there.
-func seedStore(t *testing.T, dir, name string) {
+func seedStore(t testing.TB, dir, name string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -67,7 +67,7 @@ func seedStore(t *testing.T, dir, name string) {
 }
 
 // seededStorePath is a path to an empty migrated store in a new directory.
-func seededStorePath(t *testing.T, name string) string {
+func seededStorePath(t testing.TB, name string) string {
 	t.Helper()
 	dir := t.TempDir()
 	seedStore(t, dir, name)
@@ -75,7 +75,7 @@ func seededStorePath(t *testing.T, name string) string {
 }
 
 // seededDataDir is a new data directory holding an empty migrated store.
-func seededDataDir(t *testing.T) string {
+func seededDataDir(t testing.TB) string {
 	t.Helper()
 	dir := t.TempDir()
 	seedStore(t, dir, "gateway.db")

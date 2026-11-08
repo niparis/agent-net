@@ -339,6 +339,10 @@ func (s *Store) graphForRefRecords(ref *protocol.GraphRef, places bool) (protoco
 	}
 	now := s.now()
 	if places {
+		idx, err := s.buildPlaceIndex(repos, agents, now)
+		if err != nil {
+			return g, err
+		}
 		for i := range g.Nodes {
 			n := &g.Nodes[i]
 			if n.Ref == nil {
@@ -351,9 +355,7 @@ func (s *Store) graphForRefRecords(ref *protocol.GraphRef, places bool) (protoco
 			case "agent":
 				agent = n.Ref.ID
 			}
-			if place, ok, err := s.nodePlaceFor(*n.Ref, repo, agent, now); err != nil {
-				return g, err
-			} else if ok {
+			if place, ok := idx.place(*n.Ref, repo, agent); ok {
 				n.Place = &place
 			}
 		}

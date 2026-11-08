@@ -13,7 +13,7 @@ type clock struct{ t time.Time }
 
 func (c *clock) now() time.Time { return c.t }
 
-func newTestStore(t *testing.T) (*Store, *clock) {
+func newTestStore(t testing.TB) (*Store, *clock) {
 	t.Helper()
 	s, err := OpenStore(seededStorePath(t, "gw.db"))
 	if err != nil {

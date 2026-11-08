@@ -126,6 +126,40 @@ func TestTeamCardGolden(t *testing.T) {
 	}
 }
 
+// A team frame keeps member repos that have no session, dimmed with 0
+// sessions, and counts every member project.
+func TestTeamFrameKeepsSessionlessMembers(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := mockTeamsModel(size[0], size[1])
+		v := m.src.(*fakeSource).graph
+		for i := 0; i < 6; i++ {
+			name := fmt.Sprintf("spare-%d", i)
+			v.Nodes = append(v.Nodes, protocol.Node{Name: name, Ref: teamRef("repo", name)})
+			v.Edges = append(v.Edges, protocol.Edge{From: name, To: "forge", Kind: "member_of", FromRef: teamRef("repo", name), ToRef: teamRef("team", "forge")})
+		}
+		m.applyMap(mapMsg{view: v, at: t0})
+		m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: graphRefKey(teamRef("team", "forge"))})
+		m.setTeamFilter("forge")
+		s := m.graphScene(m.graphState, graphview.Size{Width: size[0], Height: size[1]})
+		text := ansi.Strip(strings.Join((graphview.Braille{}).Render(s, graphview.Size{Width: size[0], Height: size[1]}).Lines, "\n"))
+		for _, want := range []string{"8 projects · 4 sessions", "spare-0", "0 sessions"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%dx%d missing %q:\n%s", size[0], size[1], want, text)
+			}
+		}
+		m.setTeamFilter("")
+		m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: graphRefKey(teamRef("team", "forge"))})
+		m = keys(m, "enter")
+		card := ansi.Strip(m.testView())
+		for _, want := range []string{"8 projects · 4 sessions", "spare-0", "0 sessions"} {
+			if !strings.Contains(card, want) {
+				t.Errorf("%dx%d team card missing %q:\n%s", size[0], size[1], want, card)
+			}
+		}
+		golden(t, fmt.Sprintf("team_graph_sessionless_%dx%d", size[0], size[1]), strings.Join((graphview.Braille{}).Render(s, graphview.Size{Width: size[0], Height: size[1]}).Lines, "\n"))
+	}
+}
+
 // Orders are messages, never drawn edges. A team view draws only depends and
 // deploys, and never a governs line.
 func TestTeamViewNeverDrawsOrderOrGovernsEdges(t *testing.T) {

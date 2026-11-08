@@ -161,10 +161,15 @@ func (m Model) graphTeamData() ([]teamGraphData, []teamLink) {
 	index[unassignedTeam] = len(groups)
 	groups = append(groups, teamGraphData{key: unassignedTeam, label: "unassigned", role: "offline", mode: protocol.DefaultAuthorityMode})
 	for _, n := range m.mp.nodes {
-		if n.Ref == nil || n.Ref.Kind != "repo" && n.Ref.Kind != "agent" || m.mp.dormant[n.Name] && !m.mp.showDormant {
+		if n.Ref == nil || n.Ref.Kind != "repo" && n.Ref.Kind != "agent" {
 			continue
 		}
 		team := m.graphTeamOf(n.Name)
+		// A team's members stay in its view even when they have no session.
+		// The unassigned frame keeps the old dormant rule.
+		if m.mp.dormant[n.Name] && !m.mp.showDormant && team == unassignedTeam {
+			continue
+		}
 		i, ok := index[team]
 		if !ok {
 			i = index[unassignedTeam]
@@ -728,7 +733,11 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			text(textX, y+4, textW, g.merger, "busy", g.key)
 		}
 		if h >= 7 && g.heldCount > 0 {
-			text(textX, y+5, textW, fmt.Sprintf("held back: %d", g.heldCount), "labelDim", g.key)
+			row := y + 4
+			if g.merger != "" {
+				row++
+			}
+			text(textX, row, textW, fmt.Sprintf("held back: %d", g.heldCount), "labelDim", g.key)
 		}
 		return nx, ny
 	}
@@ -976,6 +985,9 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		for i := 0; i < w; i++ {
 			labelTaken[[2]int{x + i, y}] = true
 		}
+		if x+w <= ix1 {
+			labelTaken[[2]int{x + w, y}] = true
+		}
 		text(x, y, w, s, role, key)
 		return true
 	}
@@ -1000,9 +1012,6 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			role = "label"
 		}
 		detail := teamCount(n.Card.Sessions, "session", "sessions")
-		if n.Card.Sessions == 0 {
-			detail = "offline"
-		}
 		if n.BusySessions > 0 {
 			detail += fmt.Sprintf(" · %d busy", n.BusySessions)
 		}
@@ -1023,6 +1032,9 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			}
 			for i := 0; i < labelW; i++ {
 				labelTaken[[2]int{x + i, y}] = true
+			}
+			if x+labelW <= ix1 {
+				labelTaken[[2]int{x + labelW, y}] = true
 			}
 			pw := ansi.StringWidth(prefix)
 			text(x, y, pw, prefix, role, key)
