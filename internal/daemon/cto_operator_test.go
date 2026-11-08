@@ -60,7 +60,7 @@ func TestCTOOperatorSettingsUndo(t *testing.T) {
 			if _, err := n.d.runCTOTool(ctx, "settings_change", raw); err != nil {
 				t.Fatal(err)
 			}
-			items, err := g.gw.Store().ListInbox()
+			items, err := inboxAndLog(g.gw.Store())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -191,7 +191,7 @@ func TestCTOOperatorMergerUndo(t *testing.T) {
 			if _, err := n.d.runCTOTool(ctx, "settings_change", raw); err != nil {
 				t.Fatal(err)
 			}
-			items, err := g.gw.Store().ListInbox()
+			items, err := inboxAndLog(g.gw.Store())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -267,6 +267,7 @@ func TestCTOOperatorAllowlistCoversOwnerMethods(t *testing.T) {
 		"proposal_answer":    "proposal_ask and the owner dialog/Inbox answer",
 		"proposal_start_ack": "the TUI acknowledges its actual terminal start",
 		"cto_graph_window":   "the owner declares that they are driving their TUI",
+		"desk_settle":        "the TUI marks a Desk log line undone after its own undo",
 	}
 	for method := range operatorMethods {
 		if _, ok := covered[method]; ok {

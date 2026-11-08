@@ -104,7 +104,7 @@ func TestCTOConnectedApps(t *testing.T) {
 					t.Fatalf("public: %s", status)
 				}
 			}
-			items, err := g.gw.Store().ListInbox()
+			items, err := inboxAndLog(g.gw.Store())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -179,7 +179,7 @@ func TestCTOConnectedAppsReads(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	items, _ := g.gw.Store().ListInbox()
+	items, _ := inboxAndLog(g.gw.Store())
 	if len(items) != 0 {
 		t.Fatalf("reads created notices: %+v", items)
 	}
