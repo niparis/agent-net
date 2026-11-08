@@ -385,3 +385,30 @@ func TestWorkerChoiceNoteForACellPick(t *testing.T) {
 		t.Fatalf("fallback note: %q", got)
 	}
 }
+
+func TestPickerContinuationChain(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	at := c.now().Unix()
+	for i, run := range []struct{ session, task, outcome string }{
+		{"s_root", "", protocol.OutcomePartial},
+		{"s_next", "s_root", protocol.OutcomeComplete},
+	} {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: run.session, TaskID: run.task, Continue: i, Harness: "codex", Model: "gpt-6.1-terra:high", Outcome: run.outcome, StartedAt: at + int64(i)*100, EndedAt: at + int64(i)*100 + 60}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pickerAssessment(t, s, "s_root", 2.5)
+	pickerAssessment(t, s, "s_next", 3.5)
+	got := pickerTasksByKey(t, s)["gpt-6.1-terra:high"]
+	if len(got) != 1 || got[0].D != 2.5 || math.Abs(got[0].Score-1) > 1e-9 {
+		t.Fatalf("chain = %+v, want one task at D 2.5 and score 1", got)
+	}
+	if _, err := s.db.Exec(`INSERT INTO worker_defects(session_id, severity, at) VALUES('s_next', 1, ?)`, at); err != nil {
+		t.Fatal(err)
+	}
+	got = pickerTasksByKey(t, s)["gpt-6.1-terra:high"]
+	if len(got) != 1 || got[0].Score != .5 {
+		t.Fatalf("chain with one defect = %+v, want one task scored .5", got)
+	}
+}

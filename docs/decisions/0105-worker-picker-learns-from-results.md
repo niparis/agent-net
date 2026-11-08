@@ -43,20 +43,11 @@ prefix (`opencode-go/`) stays in the key and is removed only to display it.
 
 ### Task score, 0 to 1
 
-A task is one row of `worker_runs` that has a judge result, joined to its
-session. This is the join the owner's tables were built from. On 2026-11-08 the
-owner corrected two points of the first table: session penalties count once, and
-stopped and infra runs are left out.
-
-- The model key, the outcome and the fix rounds are the run's own.
-- D is the latest valid judge result (D above 0) of the run's session.
-- The defects and the failed delivery steps are the session's. They count once,
-  on the last run of the session that counts. Earlier runs of the session keep
-  their own outcome and fix rounds and carry no defect or failed step.
-- A run that ended `stopped` or `infra` is not a task. It says nothing about the
-  model, so it adds nothing to a score or to n. If a session's last run was
-  stopped, its penalties go to the last run before it that counts.
-- A run that ended `partial`, `failed` or `timed_out` is a task and scores 0.
+Continued runs linked by `task_id` count as one task. Its model and D come
+from the first run, and its outcome comes from the last counted run. Fix
+rounds and session defects and failed delivery steps count once across the
+chain. A continuation has no penalty. A partial run with no continuation
+scores 0. Runs that ended `stopped` or `infra` do not count.
 
 The score of a task:
 
@@ -183,9 +174,7 @@ Settings that the cell rule replaced (`picker.fit_bands`, `picker.max_level_gap`
   the middle of each level's D range, instead of simulating the level rule. The
   Quality subtab shows the same cells the picker reads, with the verdicts of the
   same protocol function.
-- A model that is continued often is not punished on every run: its defects and
-  failed steps land on one run per session. Its earlier runs still show their own
-  partial outcomes and fix rounds.
+- Continued runs count as one task, with no continuation penalty.
 - Runs that were stopped or hit an infrastructure failure are not in the table.
   A model behind an unreliable provider is not judged by those runs. Its timed
   out and failed runs still count as 0.

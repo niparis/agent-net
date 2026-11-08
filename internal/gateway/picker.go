@@ -57,19 +57,10 @@ func (s *Store) pickerSettings() (protocol.PickerSettings, error) {
 	}.Normalized(), nil
 }
 
-// pickerTasks scores one task per worker run (a row of worker_runs) that has a
-// valid judge result. This is the join the owner's tables were built from, with
-// the owner's corrections of 2026-11-08:
-//
-//   - the model key, outcome and fix rounds are the run's own;
-//   - D is the latest valid judge result (D above 0) of the run's session;
-//   - the defects and the failed accept, review and test steps are the session's.
-//     They count once, on the last run of the session that counts, so a session
-//     that ran several times is not punished on every run;
-//   - a run that ended stopped or infra is not a task. It says nothing about the
-//     model, so it adds nothing to the score or to n.
-//
-// The whole data set counts, with no time cut.
+// pickerTasks scores each task once. A continuation's task_id links its run
+// to the root session. Its first model and assessment and last counted outcome
+// describe the task; fixes and session evidence count once across the chain.
+// Stopped and infrastructure runs do not contribute. No time cut is applied.
 func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 	snap, err := s.runsSnapshot()
 	if err != nil {
@@ -146,27 +137,71 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 	counts := func(outcome string) bool {
 		return outcome != protocol.OutcomeStopped && outcome != protocol.OutcomeInfra
 	}
-	// The last run of each session that counts. The rows come oldest first.
-	last := map[string]int{}
-	for i, r := range snap.rows {
-		if r.session != "" && counts(r.outcome) {
-			last[r.session] = i
+	// A continuation records the root session in task_id. Only group roots
+	// that have such a link: unrelated runs of a session remain separate.
+	linked := map[string]bool{}
+	for _, r := range snap.rows {
+		if r.task != "" && r.task != r.session {
+			linked[r.task] = true
 		}
 	}
-	out := make([]protocol.PickerTask, 0, len(snap.rows))
-	for i, r := range snap.rows {
-		d := judged[r.session]
-		key := protocol.PickerModelKey(r.harness, r.model)
-		if r.session == "" || d <= 0 || key == "" || !counts(r.outcome) {
+	type chain struct {
+		key      string
+		d        float64
+		facts    protocol.PickerTaskFacts
+		sessions map[string]bool
+	}
+	groups := map[string]*chain{}
+	var order []*chain
+	for _, r := range snap.rows {
+		if r.session == "" || !counts(r.outcome) {
 			continue
 		}
-		facts := protocol.PickerTaskFacts{Complete: r.outcome == protocol.OutcomeComplete, FixRounds: r.fix}
-		if last[r.session] == i {
-			facts.FailedSteps = failed[r.session]
-			facts.Defects, facts.DefectSeverity = defects[r.session][0], defects[r.session][1]
+		root := r.task
+		if root == "" && linked[r.session] {
+			root = r.session
 		}
-		out = append(out, protocol.PickerTask{Key: key, D: d, Score: protocol.PickerTaskScore(facts)})
+		var c *chain
+		if root != "" {
+			c = groups[root]
+		}
+		if c == nil {
+			c = &chain{key: protocol.PickerModelKey(r.harness, r.model), d: judged[r.session], sessions: map[string]bool{}}
+			if root != "" && judged[root] > 0 {
+				c.d = judged[root]
+			}
+			if root != "" {
+				groups[root] = c
+			}
+			order = append(order, c)
+		}
+		c.facts.Complete = r.outcome == protocol.OutcomeComplete
+		c.facts.FixRounds += r.fix
+		c.sessions[r.session] = true
 	}
+	// Session evidence belongs once to its final counted run, as before.
+	last := map[string]*chain{}
+	for _, c := range order {
+		for session := range c.sessions {
+			last[session] = c
+		}
+	}
+	out := make([]protocol.PickerTask, 0, len(order))
+	for _, c := range order {
+		if c.d <= 0 || c.key == "" {
+			continue
+		}
+		for session := range c.sessions {
+			if last[session] != c {
+				continue
+			}
+			c.facts.FailedSteps += failed[session]
+			c.facts.Defects += defects[session][0]
+			c.facts.DefectSeverity += defects[session][1]
+		}
+		out = append(out, protocol.PickerTask{Key: c.key, D: c.d, Score: protocol.PickerTaskScore(c.facts)})
+	}
+
 	return out, nil
 }
 
