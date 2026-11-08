@@ -315,6 +315,14 @@ func TestTeamMemberGolden(t *testing.T) {
 	}
 }
 
+func TestTeamPurposeFormGolden(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, _ := teamModel(size[0], size[1])
+		m = keys(m, "T", "p")
+		golden(t, fmt.Sprintf("team_purpose_%dx%d", size[0], size[1]), m.testView())
+	}
+}
+
 func TestTeamCreateFormGolden(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := teamModel(size[0], size[1])

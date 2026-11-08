@@ -532,7 +532,7 @@ func (m Model) teamFormView(w, rows int) []string {
 	const labelW = 9
 	labels := [2]string{"Name", "Purpose"}
 	for i := range labels {
-		if (f.rename || f.purposeOnly) && i == 1 || f.purposeOnly && i == 0 {
+		if f.rename && i == 1 || f.purposeOnly && i == 0 {
 			continue
 		}
 		marker := "  "
