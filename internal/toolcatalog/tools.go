@@ -42,7 +42,7 @@ var Tools = []Tool{
 	toolEntry("cto_ui_show", "Show the owner a TUI tab with an item selected, or a short notice. Fails with no TUI open when no local TUI is connected.", []Role{RoleCTO}, Hints{Idempotent: true}, false, false),
 	toolEntry("cto_proposals_find", "Find your proposals and their state: open, approved, rejected, done or failed, with the result.", []Role{RoleCTO}, Hints{ReadOnly: true, Idempotent: true}, false, false),
 	toolEntry("graph_change", "Change graph charters, nodes, edges or settings, or undo. Node removal, agent tombstone and repo archive need owner approval; other actions apply at once.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
-	toolEntry("session_change", "Apply a session change: rename, trust a folder, set delegation policy, start a session, or start or stop a project merger.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
+	toolEntry("session_change", "Change a session: rename, trust, policy, start, stop, resume, restart, or merger start or stop.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("worker_change", "Start or stop a worker with a complete brief.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("answer", "Apply the owner's answer to a held request, an inbox item or a contested outcome (let stand or overrule).", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("tools_change", "Change shared tools and skills: plan, apply, undo, import or remove a native tool.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),

@@ -58,7 +58,7 @@ var ctoChangeActions = map[string]map[string]string{
 		"undo": "graph_undo", "repo_create": "repo_create", "repo_archive": "repo_archive", "agent_create": "agent_create", "agent_tombstone": "agent_tombstone",
 		"lead_set": "lead_set", "team_create": "team_create", "team_rename": "team_rename", "team_purpose": "team_purpose", "team_charter": "team_charter", "team_archive": "team_archive", "team_member_add": "team_member_add", "team_member_remove": "team_member_remove",
 	},
-	"session_change": {"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop"},
+	"session_change": {"rename": "session_rename", "trust": "session_trust", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop", "stop": "session_stop", "resume": "session_resume", "restart": "session_restart"},
 	"worker_change":  {"start": "worker_start", "stop": "worker_stop"},
 	"answer":         {"held": "held_answer", "inbox": "inbox_answer", "outcome": "outcome_overrule"},
 	"tools_change": {
@@ -88,7 +88,7 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 		"team_create": ctoMinor, "team_rename": ctoMinor, "team_purpose": ctoMinor, "team_charter": ctoMinor, "team_archive": ctoMinor,
 		"team_member_add": ctoMinor, "team_member_remove": ctoMinor,
 	},
-	"session_change":  {"rename": ctoMinor, "trust": ctoMinor, "policy": ctoMinor, "session_start": ctoMinor, "merger_start": ctoMinor, "merger_stop": ctoMinor},
+	"session_change":  {"rename": ctoMinor, "trust": ctoMinor, "policy": ctoMinor, "session_start": ctoMinor, "merger_start": ctoMinor, "merger_stop": ctoMinor, "stop": ctoMinor, "resume": ctoMinor, "restart": ctoMinor},
 	"worker_change":   {"start": ctoMinor, "stop": ctoMinor},
 	"answer":          {"held": ctoMinor, "inbox": ctoMinor, "outcome": ctoMinor},
 	"tools_change":    {"toggle": ctoMinor, "new_projects": ctoMinor, "plan": ctoMinor, "apply": ctoMinor, "undo": ctoMinor, "import": ctoMinor, "native_remove": ctoMinor},
@@ -100,7 +100,7 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 var ctoActions = map[string]map[string][]string{
 	"message":         {"action": {"send", "reply"}},
 	"graph_change":    {"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set"}},
-	"session_change":  {"action": {"rename", "trust", "policy", "session_start", "merger_start", "merger_stop"}},
+	"session_change":  {"action": {"rename", "trust", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}},
 	"worker_change":   {"action": {"start", "stop"}},
 	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
 	"tools_change":    {"action": {"toggle", "new_projects", "plan", "apply", "undo", "import", "native_remove"}, "operation": {"repo_remove"}},

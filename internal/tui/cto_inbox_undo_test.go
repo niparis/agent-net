@@ -112,3 +112,10 @@ func TestCTOLogUndoSettings(t *testing.T) {
 		t.Fatal("a line that is not the CTO's offered an undo")
 	}
 }
+
+func TestCTOLogUndoSessionStopResumes(t *testing.T) {
+	method, args, ok := logUndo(logEntry(1, "x", protocol.OpSessionResume, `{"session_id":"s_test"}`))
+	if !ok || method != protocol.OpSessionResume || !strings.Contains(string(args), `"session_id":"s_test"`) {
+		t.Fatalf("undo: %q %s %v", method, args, ok)
+	}
+}
