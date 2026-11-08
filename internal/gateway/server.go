@@ -120,6 +120,11 @@ type Gateway struct {
 	pin              string
 	logger           *log.Logger
 	stepDispatchRuns atomic.Int64
+	// skillScans counts the full reads of all skills by the standing choice.
+	skillScans atomic.Int64
+	// skillSettled is the skill inputs fingerprint at which the standing
+	// choice had nothing left to do. See skillInputsOf.
+	skillSettled atomic.Pointer[skillInputs]
 	// adminToken guards /v1/admin. It is new on every start and is written
 	// to admin.json in the data dir, which only the local user can read.
 	adminToken string
@@ -933,9 +938,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	if strings.HasPrefix(typ, "xfer.") {
 		return g.handleTransfer(nc, typ, raw)
 	}
-	if typ == "session.sync" || typ == "session.upsert" || typ == "project.add" {
+	if (typ == "session.sync" || typ == "session.upsert" || typ == "project.add") && !g.skillInputsSettled() {
 		// Freeze defaults before discovery so existing off cells stay off.
-		// Only a skill without its settings has defaults to freeze.
+		// Only a skill without its settings has defaults to freeze. When no
+		// skill, project or mark changed since the choice last had nothing to
+		// do, there is nothing to freeze and nothing to discover.
 		missing, err := st.skillSettingsMissing()
 		if err != nil {
 			return nil, err
