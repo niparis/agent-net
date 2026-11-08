@@ -328,7 +328,7 @@ var keyBindings = []keyBinding{
 	withLocal(withHelp(bind(contextCard, "enter", "sessions", "sessions", 1), "open Sessions filtered to this agent's project")),
 	withHelp(bind(contextCard, "n", "new session", "new", 1), "start a new session in this project (the same form, filled from here)"),
 	withHelp(bind(contextCard, "t", "node tools", "tools", 1), "open Tools filtered to this node"),
-	withHelp(bind(contextCard, "a", "autonomy", "autonomy", -1), "toggle autonomy off or wake"),
+	withHelp(bind(contextCard, "a", "autonomy", "autonomy", -1), "toggle autonomy off or wake (wakes on messages)"),
 	withHelp(bind(contextCard, "D", "rename project", "name project", -1), "name this project"),
 	withHelp(bind(contextCard, "u", "undo learned", "undo", 1), "undo the selected one (a learned change)"),
 	withHelp(bind(contextCard, ",", "previous learned", "previous change", -1), "select a previous or next learned change or charter draft"),
