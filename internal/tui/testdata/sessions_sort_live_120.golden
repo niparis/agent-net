@@ -1,0 +1,40 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 13 online · 1 busy · 2 workers
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME                 MACHINE      PROJECT   MODEL                    STATUS   CPU   RAM TASK
+ Working (11)                                                                                          view: active  (v)
+▸ homelab-agent        Mac          -         claude                   busy       ?     ?
+  ★ tenebrae           Mac          -         opencode                 idle       ?     ?
+  └─ wbg-flood-wargame Mac          -         opencode                 idle       ?     ?
+  legion-and-legends   Mac          -         opencode                 idle       ?     ?
+  ★ tenebrae-strats    Mac          -         opencode                 idle       ?     ?
+  wbg-worldview        Mac          -         opencode                 idle       ?     ?
+  ai-arch              Mac          -         opencode                 idle       ?     ?
+  wbg-infra-game       Mac          -         opencode                 idle       ?     ?
+  wbg-whatif           Mac          -         opencode                 idle       ?     ?
+  wbg-housing 2        Mac          -         opencode                 idle       ?     ?
+  voicemechs           Mac          -         opencode                 idle       ?     ?
+ Bots (1)
+  cursor               Mac          -         -                        online             last call 16:35
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit

@@ -8,10 +8,10 @@
  Working (1)                                                                                              view: all  (v)
   tenebrae-53         Mac          tenebrae   claude · opus-5-5        busy        ?     ?
  Idle (8)
-  ◐ strategies        Mac          strategies claude · sonnet-5-5      idle        ?     ? backtest v2
   ★ agent-net         Mac          agent-net  claude                   idle        ?     ? test ch_ed5f
   ├─ fix-login        Mac          agent-net  opencode · haiku-4-5     idle        ?     ?
 ▸ └─ agent-net merger Mac          agent-net  claude                   idle        ?     ?
+  ◐ strategies        Mac          strategies claude · sonnet-5-5      idle        ?     ? backtest v2
   web                 Mac          shop       opencode · sonnet-5      idle        ?     ?
   ◐ ci-runner         build-vm     agent-net  pi · gpt-6               idle        ?     ?
   scratch             build-vm     -          pi                       shell       ?     ?
