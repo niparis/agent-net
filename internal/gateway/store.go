@@ -21,6 +21,7 @@ import (
 	"github.com/niparis/agent-net/internal/dbfile"
 	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/sqlitecache"
 	"github.com/niparis/agent-net/internal/temppath"
 	_ "modernc.org/sqlite"
 )
@@ -34,23 +35,26 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
-	graphRefsOn       atomic.Bool
-	settingsHookMu    sync.RWMutex
-	settingsHook      func()
-	qualityMu         sync.Mutex
-	runsMu            sync.Mutex
-	runs              *runsSnapshot
-	quality           protocol.QualityAnalysis
-	qualityFit        qualityFit
-	reworkFit         qualityFit
-	qualityStrong     map[string]int
-	reminderMu        sync.Mutex
-	reminderOffline   map[string]bool
-	checkMu           sync.Mutex
-	pendingMu         sync.Mutex
-	pendingEpisodes   map[string]pendingEpisode
-	pendingStalls     int
-	db                *sql.DB
+	graphRefsOn     atomic.Bool
+	settingsHookMu  sync.RWMutex
+	settingsHook    func()
+	qualityMu       sync.Mutex
+	runsMu          sync.Mutex
+	runs            *runsSnapshot
+	quality         protocol.QualityAnalysis
+	qualityFit      qualityFit
+	reworkFit       qualityFit
+	qualityStrong   map[string]int
+	reminderMu      sync.Mutex
+	reminderOffline map[string]bool
+	checkMu         sync.Mutex
+	pendingMu       sync.Mutex
+	pendingEpisodes map[string]pendingEpisode
+	pendingStalls   int
+	db              *sql.DB
+	// connector opens the database connection. Its write count says when
+	// data read from the database may be out of date.
+	connector         *sqlitecache.Connector
 	graphJunkRemoved  int64
 	graphJunkMigrated bool
 	identityMerges    [][2]string
@@ -1213,6 +1217,10 @@ INSERT INTO desk_log(at,source,about_kind,about_id,text,detail,options)
  AND NOT EXISTS (SELECT 1 FROM desk_log l WHERE l.at=i.created_at AND l.source=i.from_kind AND l.text=i.text);
 `
 
+// stmtCacheSize is how many prepared statements the connection keeps. The
+// gateway runs a few hundred different statements.
+const stmtCacheSize = 1024
+
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
 	// The file is private from the start; SQLite gives -wal and -shm its mode.
@@ -1220,13 +1228,16 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
-	db, err := sql.Open("sqlite", dsn)
+	// The connection keeps the prepared statements of its recent SQL texts, so
+	// the gateway does not parse the same statements again on every call.
+	connector, err := sqlitecache.New(dsn, stmtCacheSize)
 	if err != nil {
 		return nil, err
 	}
+	db := sql.OpenDB(connector)
 	// One connection keeps writes serialized and avoids lock errors.
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
+	s := &Store{db: db, connector: connector, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
