@@ -28,6 +28,7 @@ type deliveryChange struct {
 	State        string // the change state: open, merged, done or stopped
 	Origin       protocol.ChangeOrigin
 	Caller       string // the session that gets the final notice
+	Updated      int64  // when the change last moved, in Unix seconds
 	Step         string // the step the change is in
 	// StepOwner is who owns that step, as text: a node name, "caller",
 	// "owner", "github". OwnerKind is the protocol kind behind it.

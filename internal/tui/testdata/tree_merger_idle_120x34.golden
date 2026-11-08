@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 26 online · 1 busy · 1 worker
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME                MACHINE      PROJECT   MODEL                    STATUS    CPU   RAM TASK
+ Working (1)                                                                                           view: active  (v)
+  tenebrae-53         Mac          tenebrae  claude · opus-5-5        busy        ?     ?
+ Idle (25)
+  agent-net           Mac          agent-net claude                   idle        ?     ?
+  ├─ fix-login        Mac          agent-net opencode · haiku-4-5     idle        ?     ?
+▸ └─ agent-net merger Mac          agent-net claude                   idle        ?     ?
+  22 more idle · v to show
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit

@@ -241,7 +241,7 @@ func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange
 		v.Next = filtered
 	}
 	out := deliveryChange{ID: c.ID, Title: c.Title, Repo: c.Project, Branch: c.Branch, Head: c.HeadCommit, Revision: c.Revision,
-		State: c.State, Caller: c.Caller, Origin: c.Origin, MergedCommit: c.MergedCommit, Marks: deliveryMarks(steps), Full: v.Pipeline != nil}
+		State: c.State, Caller: c.Caller, Updated: max(c.UpdatedAt, c.CreatedAt), Origin: c.Origin, MergedCommit: c.MergedCommit, Marks: deliveryMarks(steps), Full: v.Pipeline != nil}
 	for _, st := range steps {
 		out.Steps = append(out.Steps, deliveryStep{Name: st.StepRef.String(), Owner: deliveryOwnerLabel(st.Owner), State: st.State, Note: st.Note})
 	}
