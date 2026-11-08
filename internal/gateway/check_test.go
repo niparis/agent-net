@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -303,5 +304,176 @@ func TestCheckDailyCap(t *testing.T) {
 	counts, err := s.SessionCounts(24 * time.Hour)
 	if err != nil || counts.ChecksSent != 6 {
 		t.Fatalf("counts = %+v, %v", counts, err)
+	}
+}
+
+// waitOwner puts a session in the waiting-for-its-owner state.
+func waitOwner(t *testing.T, s *Store, id string) {
+	t.Helper()
+	if _, err := s.db.Exec(`UPDATE sessions SET waiting=? WHERE id=?`,
+		`{"kind":"question","text":"which branch?","since":1}`, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckSkipsSessionWaitingOnItsOwner(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if _, _, err := send(s, a, b, "req", ""); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	waitOwner(t, s, b)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("check for a waiting session: %+v", got)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET waiting='' WHERE id=?`, b); err != nil {
+		t.Fatal(err)
+	}
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("check after the wait ended = %+v", got)
+	}
+}
+
+func TestCheckSkipsSessionWithOpenOwnerQuestion(t *testing.T) {
+	for _, kind := range []string{"question", "approval"} {
+		s, c := newTestStore(t)
+		a, b := twoSessions(t, s)
+		if _, _, err := send(s, a, b, "req", ""); err != nil {
+			t.Fatal(err)
+		}
+		idleSince(t, s, c, b, 21*time.Minute)
+		item, err := s.CreateInboxItem(protocol.InboxItem{Kind: kind, SessionID: b, Text: "deploy?"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := checks(t, s); len(got) != 0 {
+			t.Fatalf("%s: check with an open owner item: %+v", kind, got)
+		}
+		if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed' WHERE id=?`, item.ID); err != nil {
+			t.Fatal(err)
+		}
+		if got := checks(t, s); len(got) != 1 {
+			t.Fatalf("%s: check after the item closed = %+v", kind, got)
+		}
+	}
+}
+
+func TestCheckRetiresPendingCheckOfWaitingSession(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if _, _, err := send(s, a, b, "req", ""); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	got := checks(t, s)
+	if len(got) != 1 {
+		t.Fatalf("check = %+v", got)
+	}
+	waitOwner(t, s, b)
+	if err := s.retireObsoleteNotices(); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := s.db.QueryRow(`SELECT state FROM messages WHERE id=?`, got[0].ID).Scan(&state); err != nil || state != "expired" {
+		t.Fatalf("pending check state = %q, %v", state, err)
+	}
+}
+
+// The live bug: a session answered "blocked on X", announced the same task
+// again after every check, and every announce counted as new activity.
+func TestCheckNotRepeatedAfterSameAnswerSameTask(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if _, _, err := send(s, a, b, "req", ""); err != nil {
+		t.Fatal(err)
+	}
+	task := "blocked on Nicolas: cleanup batch"
+	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: task}); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("first check = %+v", got)
+	}
+	for i := 0; i < 5; i++ {
+		c.t = c.t.Add(time.Minute)
+		if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: task}); err != nil {
+			t.Fatal(err)
+		}
+		activity(t, s, b, "pi", "nb")
+		c.t = c.t.Add(21 * time.Minute)
+		if got := checks(t, s); len(got) != 0 {
+			t.Fatalf("round %d: repeated check after the same answer: %+v", i, got)
+		}
+	}
+	counts, err := s.SessionCounts(24 * time.Hour)
+	if err != nil || counts.ChecksSent != 1 {
+		t.Fatalf("counts = %+v, %v", counts, err)
+	}
+}
+
+func TestCheckTaskChangeAllowsNewCheck(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if _, _, err := send(s, a, b, "req", ""); err != nil {
+		t.Fatal(err)
+	}
+	node := mustNode(t, s, b)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "blocked on Nicolas: cleanup"}); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("first check = %+v", got)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "blocked on Nicolas: cleanup"}); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	activity(t, s, b, "pi", "nb")
+	c.t = c.t.Add(21 * time.Minute)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("check with the same task: %+v", got)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "writing the migration"}); err != nil {
+		t.Fatal(err)
+	}
+	activity(t, s, b, "pi", "nb")
+	c.t = c.t.Add(21 * time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("check after the task changed = %+v", got)
+	}
+}
+
+// New conversations per check must not give a new allowance: the cap counts
+// per session and day, and it holds when the task changes every time.
+func TestCheckDailyCapHoldsWhenTaskChanges(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if _, _, err := send(s, a, b, "req", ""); err != nil {
+		t.Fatal(err)
+	}
+	node := mustNode(t, s, b)
+	for i := 0; i < idleCheckDailyCap; i++ {
+		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: fmt.Sprintf("step %d", i)}); err != nil {
+			t.Fatal(err)
+		}
+		activity(t, s, b, "pi", "nb")
+		c.t = c.t.Add(21 * time.Minute)
+		if got := checks(t, s); len(got) != 1 {
+			t.Fatalf("check %d = %+v", i+1, got)
+		}
+		c.t = c.t.Add(time.Minute)
+	}
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "step last"}); err != nil {
+		t.Fatal(err)
+	}
+	activity(t, s, b, "pi", "nb")
+	c.t = c.t.Add(21 * time.Minute)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("check over the daily cap: %+v", got)
 	}
 }

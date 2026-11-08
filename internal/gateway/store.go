@@ -1068,7 +1068,7 @@ CREATE TABLE IF NOT EXISTS repo_start_reservations (node_id TEXT NOT NULL,ref TE
 `, `SELECT 1 /* session close column */;`, `SELECT 1 /* session idle compaction column */;`, `
 ALTER TABLE repo_leads ADD COLUMN lead_session TEXT;
 ALTER TABLE teams ADD COLUMN lead_session TEXT;
-`}
+`, `SELECT 1 /* idle check task hash column */;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1282,6 +1282,19 @@ func (s *Store) migrate() error {
 						tx.Rollback()
 						return err
 					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "idle check task hash column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('session_checks') WHERE name='check_task_hash'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE session_checks ADD COLUMN check_task_hash TEXT NOT NULL DEFAULT ''`); err != nil {
+					tx.Rollback()
+					return err
 				}
 			}
 		}

@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,6 +35,11 @@ type checkState struct {
 	msgs    int
 	day     string
 	count   int
+	// taskHash is a short hash of the task the last check was about, or of
+	// the "blocked" answer to it. The task text itself is never stored. It is
+	// empty after "done" or "more" (the no-progress streak governs those) and
+	// when the session had no task.
+	taskHash string
 	// The wake guard rails: today's count, the no-progress streak and the
 	// progress markers of the last wake.
 	wakeDay    string
@@ -45,11 +52,11 @@ type checkState struct {
 func (s *Store) readCheckState(id string) (checkState, error) {
 	var st checkState
 	var waiting int
-	err := s.db.QueryRow(`SELECT c.check_active,c.check_waiting,c.check_more,c.check_open,c.check_msgs,c.check_day,c.check_day_count,
+	err := s.db.QueryRow(`SELECT c.check_active,c.check_waiting,c.check_more,c.check_open,c.check_msgs,c.check_day,c.check_day_count,c.check_task_hash,
 		COALESCE(w.wake_day,''),COALESCE(w.wake_day_count,0),COALESCE(w.wake_streak,0),
 		COALESCE(w.wake_open,0),COALESCE(w.wake_msgs,0)
 		FROM session_checks c LEFT JOIN session_wakes w ON w.session_id=c.session_id WHERE c.session_id=?`, id).
-		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count,
+		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count, &st.taskHash,
 			&st.wakeDay, &st.wakeCount, &st.wakeStreak, &st.wakeOpen, &st.wakeMsgs)
 	if errors.Is(err, sql.ErrNoRows) {
 		return checkState{}, nil
@@ -71,6 +78,30 @@ func checkOpenWork(a protocol.AgentView, workers int) int {
 		}
 	}
 	return n
+}
+
+// checkTaskHash is the short fingerprint of a task text. An empty task has an
+// empty hash, which never matches.
+func checkTaskHash(task string) string {
+	task = strings.TrimSpace(task)
+	if task == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(task))
+	return hex.EncodeToString(sum[:8])
+}
+
+// ownerBlockedSQL is true for a session that waits for its owner: it has set
+// waiting, or it has an open question or approval in the Inbox. A check asks a
+// question the session cannot act on then, so none is sent and a pending one
+// is retired. The statement takes the session id column as its text.
+const ownerBlockedSQL = `(EXISTS(SELECT 1 FROM sessions w WHERE w.id=%[1]s AND w.waiting<>'')
+	OR EXISTS(SELECT 1 FROM inbox_items i WHERE i.session_id=%[1]s AND i.kind IN ('question','approval') AND i.status='open'))`
+
+func (s *Store) ownerBlocked(id string) (bool, error) {
+	var blocked bool
+	err := s.db.QueryRow(`SELECT `+fmt.Sprintf(ownerBlockedSQL, "?")+``, id, id).Scan(&blocked)
+	return blocked, err
 }
 
 func (s *Store) checkMessageCount(id string) (int, error) {
@@ -150,6 +181,14 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 		if a.Status != "idle" || a.LastActive == 0 || now.Sub(time.Unix(a.LastActive, 0)) < idleCheckAfter {
 			continue
 		}
+		if a.Waiting != nil {
+			continue
+		}
+		if blocked, err := s.ownerBlocked(a.SessionID); err != nil {
+			return nil, err
+		} else if blocked {
+			continue
+		}
 		open := checkOpenWork(a, workers[a.SessionID])
 		st, err := s.readCheckState(a.SessionID)
 		if err != nil {
@@ -180,6 +219,12 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 		count := st.count
 		if st.day != today {
 			count = 0
+		}
+		// A session that was asked about this task today is not asked again
+		// until the task text changes. Announcing the same task after the
+		// answer is not new work. The daily cap below still applies.
+		if hash := checkTaskHash(a.Profile.Task); hash != "" && hash == st.taskHash && st.day == today {
+			continue
 		}
 		if count >= idleCheckDailyCap {
 			continue
@@ -212,11 +257,12 @@ func (s *Store) storeCheck(a protocol.AgentView, day string, count, more int, no
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
 		return protocol.Message{}, err
 	}
-	if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_day,check_day_count)
-		VALUES(?,?,1,?,?,?)
+	if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_day,check_day_count,check_task_hash)
+		VALUES(?,?,1,?,?,?,?)
 		ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=1,
-		check_more=excluded.check_more,check_day=excluded.check_day,check_day_count=excluded.check_day_count`,
-		a.SessionID, now.Add(idleCheckGrace).Unix(), more, day, count); err != nil {
+		check_more=excluded.check_more,check_day=excluded.check_day,check_day_count=excluded.check_day_count,
+		check_task_hash=excluded.check_task_hash`,
+		a.SessionID, now.Add(idleCheckGrace).Unix(), more, day, count, checkTaskHash(a.Profile.Task)); err != nil {
 		return protocol.Message{}, err
 	}
 	s.event(tx, "msg.stored", "", m.From, m.ID, "type=notification by=agent-net check")
@@ -312,7 +358,7 @@ func (s *Store) answerCheck(sessionID, task string) error {
 		if _, err = s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_open,check_msgs)
 			VALUES(?,?,0,0,0,0)
 			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0,
-			check_more=0,check_open=0,check_msgs=0`, sessionID, active); err != nil {
+			check_more=0,check_open=0,check_msgs=0,check_task_hash=''`, sessionID, active); err != nil {
 			return err
 		}
 		if _, err = s.db.Exec(`UPDATE inbox_items SET status='closed',answer='done',answered_at=?
@@ -411,7 +457,8 @@ func (s *Store) answerCheck(sessionID, task string) error {
 		if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_open,check_msgs)
 			VALUES(?,?,0,?,?,?)
 			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0,
-			check_more=excluded.check_more,check_open=excluded.check_open,check_msgs=excluded.check_msgs`,
+			check_more=excluded.check_more,check_open=excluded.check_open,check_msgs=excluded.check_msgs,
+			check_task_hash=''`,
 			sessionID, active, streak, open, msgs); err != nil {
 			return err
 		}
@@ -445,10 +492,11 @@ func (s *Store) answerCheck(sessionID, task string) error {
 			}
 		}
 	case "blocked":
-		if _, err = s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting)
-			VALUES(?,?,0)
-			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0`,
-			sessionID, active); err != nil {
+		if _, err = s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_task_hash)
+			VALUES(?,?,0,?)
+			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0,
+			check_task_hash=excluded.check_task_hash`,
+			sessionID, active, checkTaskHash(task)); err != nil {
 			return err
 		}
 		text := name + " is blocked"
