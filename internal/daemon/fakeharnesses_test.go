@@ -603,6 +603,7 @@ func (a *fsClaudeAdapter) poll(h Host) {
 			SessionID           string `json:"sessionId"`
 			Cwd                 string `json:"cwd"`
 			Name                string `json:"name"`
+			Status              string `json:"status"`
 			Kind                string `json:"kind"`
 			MessagingSocketPath string `json:"messagingSocketPath"`
 		}
@@ -616,8 +617,14 @@ func (a *fsClaudeAdapter) poll(h Host) {
 		if sf.Kind == "bg" {
 			mode = protocol.ModeBackground
 		}
+		status := sf.Status
+		switch status {
+		case "idle", "busy", "shell", "exited":
+		default:
+			status = "unknown"
+		}
 		infos = append(infos, protocol.SessionInfo{NativeID: sf.SessionID, PID: sf.PID, Cwd: sf.Cwd, Name: sf.Name,
-			Status: "idle", Delivery: "native-claude", Mode: mode})
+			Status: status, Delivery: "native-claude", Mode: mode})
 	}
 	h.SetSessions("claude", infos)
 }
@@ -650,6 +657,29 @@ func (a *fsClaudeAdapter) Deliver(ctx context.Context, target protocol.SessionIn
 
 func (a *fsClaudeAdapter) DeliverCTO(ctx context.Context, target protocol.SessionInfo, id, text string) Result {
 	return a.Deliver(ctx, target, protocol.Message{ID: id, Body: text})
+}
+
+// setFakeClaudeStatus records what the fake Claude session file says about a
+// turn, as Claude Code does: busy while the model works and idle when it ends.
+func setFakeClaudeStatus(t *testing.T, sessions string, pid int, status string) {
+	t.Helper()
+	path := filepath.Join(sessions, strconv.Itoa(pid)+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sf map[string]any
+	if err := json.Unmarshal(raw, &sf); err != nil {
+		t.Fatal(err)
+	}
+	sf["status"] = status
+	b, err := json.Marshal(sf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // useFakeClaude points a test at the fake Claude and returns the folders it
