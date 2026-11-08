@@ -49,7 +49,8 @@ four gateway calls and returned the whole history of items, closed ones too.
    - CTO proposals live in the daemon's own database. The gateway has
      `ask.open`, `ask.close` and `ask.sync` for them. `ask.sync` sends the whole
      list of open proposals of a machine and closes the rest, so a call lost
-     while offline cannot leave a stale ask. The daemon side is part A2.
+     while offline cannot leave a stale ask. The daemon sends it after a
+     proposal is made or decided, and every minute when the list changed.
 5. **Notices go to a log, not the queue.** "CTO applied", "CTO sent" and "new
    app approved" are lines in `desk_log`, and are not asks. A CTO line keeps
    the way to undo it in its options. Until the Desk replaces the Inbox tab
@@ -90,7 +91,7 @@ it showed before.
 
 A2: the Desk on the Inbox tab slot (tab 7), the Delivery tab (tab 8) removed, the TUI
 reading `asks_list`, the Sessions "Needs you" band and every count from the
-same list, the daemon mirror of CTO proposals with `ask.sync`, and the log
+same list, and the log
 section with the CTO undo. B: the chief of staff, a separate role that sorts
 asks (`next = chief`, `why_you`) under its own charter.
 

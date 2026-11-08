@@ -132,6 +132,7 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 	}
 	id, err := d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
 	if err == nil {
+		d.syncProposalAsks(ctx)
 		if dest, ok := ctx.Value(dialogProposalKey{}).(*string); ok {
 			*dest = id
 		}
@@ -290,6 +291,8 @@ func (d *Daemon) proposalRunner() proposalRunner {
 func (d *Daemon) proposalOperator(ctx context.Context, method string, q protocol.CTOProposalAnswer) (any, bool, error) {
 	p := d.proposalRunner()
 	if method == protocol.OpProposalAnswer {
+		// The ask closes as soon as the proposal is decided.
+		defer d.syncProposalAsks(ctx)
 		switch q.Action {
 		case "a":
 			return nil, true, p.decide(ctx, q.ID, true)

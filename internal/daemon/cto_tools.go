@@ -122,6 +122,7 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 		return nil, errors.New("bad CTO dialog answer")
 	}
 	item, decided, err := lc.d.proposalRunner().decideForDialog(ctx, q.ID, *q.Approve)
+	defer lc.d.syncProposalAsks(ctx)
 	if err != nil {
 		return nil, err
 	}

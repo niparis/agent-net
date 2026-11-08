@@ -457,6 +457,9 @@ type Daemon struct {
 	inSession func(pid int) bool
 
 	// diskWarnMu protects warning state; gateway calls run without it held.
+	// proposalAsks remembers the last proposal list the gateway accepted.
+	proposalAsks proposalAskState
+
 	diskWarnMu          sync.Mutex
 	diskWarningUpdating bool
 	diskWarningActive   bool
@@ -638,6 +641,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.deliveryReconcileLoop(ctx) }()
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.proposalAskLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.linkLoop(ctx) }()
 	return nil
