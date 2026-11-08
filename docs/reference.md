@@ -2135,7 +2135,7 @@ gpt-6-luna · codex: 3 runs: 2 complete, 1 stopped (median 6 min) · resumes
 
 The owner can write a **playbook note** about a model (and optionally one harness) with `agent-net playbook set`, or the operator methods `playbook_set` and `playbook_get` (owner gate only; the CTO will use the same methods later). The note appears in the `playbooks` list of the start result and in `agent_machines_find`. Automatic notes from findings are built the same way; see [findings and the automatic playbook](#findings-and-the-automatic-playbook). The gateway stores notes in `playbook`, one row per subject and harness, at most 1 KiB for an owner note.
 
-**The operator interface.** The daemon's local socket serves these methods to the command line and the TUI, and the phone app will use the same ones: `info`, `nodes`, `list`, `projects`, `events`, `conversations`, `conversation_messages`, `message_status`, `workers` (reads) and `owner_send`, `worker_start`, `worker_stop` (actions). The owner-only methods include `conversations`, `conversation_messages`, `playbook_get`, `playbook_set` and `changes_owner_find` (see [the playbook](#the-playbook-and-the-track-record) and [the Delivery tab](#the-delivery-tab)). The types are in `internal/protocol/operator.go`; `worker_handback` is the worker's own call. Agent connections may use `worker_start`, `worker_stop`, `worker_handback`, `agent_learn`, `agent_worker_rate` and `workers`. `owner_send` is for the command line only; `agent_learn` and `agent_worker_rate` are for agent sessions only. `worker_defect` is the owner's own call for a defect found later, used by the Messages tab key; it takes a worker, a severity from 1 to 4 and a one-line note, and files the same `defect_found_later` report as `agent_worker_rate`.
+**The operator interface.** The daemon's local socket serves these methods to the command line and the TUI, and the phone app will use the same ones: `info`, `nodes`, `list`, `projects`, `events`, `conversations`, `conversation_messages`, `message_status`, `workers` (reads) and `owner_send`, `worker_start`, `worker_stop` (actions). The owner-only methods include `conversations`, `conversation_messages`, `playbook_get`, `playbook_set`, `changes_owner_find` and `changes_owner_report` (see [the playbook](#the-playbook-and-the-track-record) and [the Delivery tab](#the-delivery-tab)). The types are in `internal/protocol/operator.go`; `worker_handback` is the worker's own call. Agent connections may use `worker_start`, `worker_stop`, `worker_handback`, `agent_learn`, `agent_worker_rate` and `workers`. `owner_send` is for the command line only; `agent_learn` and `agent_worker_rate` are for agent sessions only. `worker_defect` is the owner's own call for a defect found later, used by the Messages tab key; it takes a worker, a severity from 1 to 4 and a one-line note, and files the same `defect_found_later` report as `agent_worker_rate`.
 
 ## The TUI screen
 
@@ -2162,7 +2162,11 @@ Each row shows the title, project on wide screens, current step, status,
 waiting time and evidence. A second line shows the merged commit, CI run link
 and release tag when reported. The status names who must act or whether the
 step is running, failed or done. The waiting time is since the last evidence
-or update.
+or update. The list has five bands, in this order: Needs you (a blocking
+decision, an approval, or an owner step before merge), Moving, To try (a
+released change whose after-merge verify waits for the owner to try it; its
+status is `try it` and its second line says what to check), Stuck and Done. A
+To try change never counts as needing you.
 
 The evidence strip has a mark for each step: `a` accept, `r` review, `t`
 test, `p` approve, `m` merge, `T` test after merge, `l` release, `d` deploy
@@ -2178,7 +2182,10 @@ commit than the change's head shows `old` after its commit. A report on a step
 after merge has the field `after_merge=yes`, and one for `approve` has
 `for=merge` or `for=deploy`. BY is `owner`, `github`, `caller` or the session
 that reported. `Up` / `Down` scroll, `Esc` goes back. The selection stays on the
-same change when the list changes.
+same change when the list changes. On a To try row, `y` reports that the owner
+tried it and it works, and the change moves to Done; `n` asks for one line of
+what is wrong and reports the verify step as failed. Both are the owner's own
+reports on the merged commit, through `changes_owner_report`.
 
 When a step waits for an offline node, the detail shows that note and the
 selected change in the list shows it too. Node-owned ready steps have an

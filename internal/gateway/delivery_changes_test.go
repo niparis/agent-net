@@ -543,6 +543,50 @@ func TestStepReportMovesChangeThroughMerge(t *testing.T) {
 	}
 }
 
+// The owner's try of a released change is a report of the after-merge verify
+// step on the merged commit, by the owner, without being the caller.
+func TestOwnerReportsTheTryOfAMergedVerify(t *testing.T) {
+	r := newDeliveryRig(t)
+	owner, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID, Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
+	pass := func(ref protocol.StepRef, commit string, fields map[string]string) protocol.Change {
+		t.Helper()
+		return r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commit, Fields: fields}).Change.Change
+	}
+	pass(stepAccept, commitA, nil)
+	pass(protocol.StepRef{Step: protocol.StepTest}, commitA, map[string]string{protocol.FieldSuite: protocol.SuiteChanged})
+	pass(protocol.StepRef{Step: protocol.StepMerge}, commitA, map[string]string{protocol.FieldMergedCommit: commitMerged})
+	pass(protocol.StepRef{Step: protocol.StepTest, AfterMerge: true}, commitMerged, map[string]string{protocol.FieldSuite: protocol.SuiteFull})
+	pass(protocol.StepRef{Step: protocol.StepRelease, AfterMerge: true}, commitMerged, map[string]string{protocol.FieldTag: "v1.2.3"})
+	verify := protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true}
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: verify,
+		Result: protocol.StepResultNeedsOwner, Commit: commitMerged, Note: "Owner: press v and try it"})
+
+	// Another session on the same machine cannot report the owner's try.
+	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: id, StepRef: verify,
+		Result: protocol.StepResultPass, Commit: commitMerged, DoneBy: protocol.EvidenceByOwner}); err == nil {
+		t.Fatal("a non-owner reported the owner's try")
+	}
+
+	// The owner's pass is accepted on the merged commit and finishes the
+	// change.
+	res, err := r.report(r.a, protocol.StepReportRequest{SessionID: owner, ChangeID: id, StepRef: verify,
+		Result: protocol.StepResultPass, Commit: commitMerged, DoneBy: protocol.EvidenceByOwner, Note: "checked by the owner in the TUI"})
+	if err != nil {
+		t.Fatalf("owner pass: %v", err)
+	}
+	if res.Evidence.By != protocol.EvidenceByOwner || res.Evidence.Result != protocol.StepResultPass ||
+		res.Evidence.Commit != commitMerged || res.Evidence.Note != "checked by the owner in the TUI" {
+		t.Fatalf("owner evidence %+v", res.Evidence)
+	}
+	if res.Change.Change.State != protocol.ChangeDone {
+		t.Fatalf("after the owner's try the change is %s", res.Change.Change.State)
+	}
+}
+
 func TestStepReportCloseStopsChange(t *testing.T) {
 	r := newDeliveryRig(t)
 	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID

@@ -645,6 +645,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.deliveryLoaded(msg)
 	case deliveryDetailMsg:
 		return m.deliveryDetailLoaded(msg), nil
+	case deliveryReportMsg:
+		if msg.err != nil {
+			m.fail(msg.err.Error())
+			return m, nil
+		}
+		m.say(msg.text)
+		return m.startDeliveryLoad()
 	case ctoPollMsg:
 		if m.cto == nil || m.cto.generation != msg.generation {
 			return m, nil

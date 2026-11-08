@@ -371,6 +371,10 @@ func (m Model) deliveryStatusText(ch deliveryChange) (string, lipgloss.Style) {
 	case protocol.StepStateWaiting:
 		return "blocked", sDim
 	case protocol.StepStateNeedsOwner:
+		if ch.Group == groupToTry {
+			// Released work the owner may try: nothing waits on this step.
+			return "try it", lipgloss.NewStyle().Foreground(roleAccent)
+		}
 		return "waiting for you", lipgloss.NewStyle().Foreground(roleWarning)
 	case protocol.StepStateReady:
 		if ch.ClaimedBy != "" {
@@ -530,12 +534,18 @@ func (m Model) deliveryView(w, h int) []string {
 	listRoom := max(room-len(body)-len(footer)-len(offline), 1)
 	var list []string
 	selLine := 0
-	groups := []deliveryGroup{groupNeedsYou, groupMoving, groupStuck}
+	groups := []deliveryGroup{groupNeedsYou, groupMoving, groupToTry, groupStuck}
 	if d.showAll {
 		groups = append(groups, groupDone)
 	}
 	for _, group := range groups {
-		list = append(list, deliveryGroupHeader(group, deliveryGroupCount(visible, group)))
+		n := deliveryGroupCount(visible, group)
+		if group == groupToTry && n == 0 {
+			// An empty band is noise: only show it when there is something
+			// the owner can try.
+			continue
+		}
+		list = append(list, deliveryGroupHeader(group, n))
 		for i, ch := range visible {
 			if ch.Group != group {
 				continue
@@ -545,6 +555,10 @@ func (m Model) deliveryView(w, h int) []string {
 			}
 			list = append(list, m.deliveryRow(cols, ch, i == sel))
 			if outcome := deliveryRowFinding(ch); outcome != "" {
+				if ch.Group == groupToTry {
+					list = append(list, sDim.Render("  "+clip(sanitize(outcome), max(inner-2, 1))))
+					continue
+				}
 				for _, line := range wrap(outcome, max(inner-2, 1)) {
 					list = append(list, sDim.Render("  "+line))
 				}
@@ -564,12 +578,70 @@ func (m Model) deliveryView(w, h int) []string {
 	return append(out, panelWithRightHeader("Delivery", title, body, w, roleAccent)...)
 }
 
-// deliveryRowFinding keeps the failed step's finding beside its row.
+// deliveryRowFinding keeps the failed step's finding beside its row. On a
+// change the owner may try, it adds what to check from the verify step's note.
 func deliveryRowFinding(ch deliveryChange) string {
 	if ch.StepState == protocol.StepStateFailed && ch.State != protocol.ChangeStopped && ch.Finding != "" {
 		return sanitize(ch.Finding)
 	}
-	return deliveryOutcome(ch)
+	outcome := deliveryOutcome(ch)
+	if ch.Group == groupToTry {
+		if check := deliveryCheckText(ch.Check); check != "" {
+			if outcome != "" {
+				outcome += "  "
+			}
+			outcome += "check: " + check
+		}
+	}
+	return outcome
+}
+
+// deliveryCheckText is what the owner has to check, from the verify step's
+// needs_owner note: the sentence that starts with "Owner:" when there is one,
+// otherwise the note's last sentence.
+func deliveryCheckText(note string) string {
+	note = strings.TrimSpace(sanitize(note))
+	if note == "" {
+		return ""
+	}
+	sentences := deliverySentences(note)
+	for _, sentence := range sentences {
+		if strings.HasPrefix(sentence, "Owner:") {
+			return sentence
+		}
+	}
+	if len(sentences) == 0 {
+		return note
+	}
+	return sentences[len(sentences)-1]
+}
+
+// deliverySentences splits a note into trimmed sentences. A sentence ends at a
+// newline or after . ! or ? that is followed by a space or the end.
+func deliverySentences(note string) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(note); i++ {
+		switch note[i] {
+		case '\n':
+			if s := strings.TrimSpace(note[start:i]); s != "" {
+				out = append(out, s)
+			}
+			start = i + 1
+		case '.', '!', '?':
+			if i+1 < len(note) && note[i+1] != ' ' && note[i+1] != '\t' && note[i+1] != '\n' {
+				continue
+			}
+			if s := strings.TrimSpace(note[start : i+1]); s != "" {
+				out = append(out, s)
+			}
+			start = i + 1
+		}
+	}
+	if s := strings.TrimSpace(note[start:]); s != "" {
+		out = append(out, s)
+	}
+	return out
 }
 
 // deliveryGroupHeader names a band of the list and counts its changes.

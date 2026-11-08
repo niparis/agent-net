@@ -210,6 +210,10 @@ Legend ────────────────────────�
   pgup                   ten changes up
   pgdown                 ten changes down
   a                      show all
+  y                      on a To try row, report that the check passed: the
+                         owner tried it and it works
+  n                      on a To try row, report that the check failed: type one
+                         line of what is wrong
 
  In overlays
  Message body
