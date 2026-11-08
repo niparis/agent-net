@@ -93,51 +93,41 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 }
 
 // TrackRecords counts the worker runs of the last window, per harness and
-// model. A nodeID keeps one machine's runs; empty counts every machine.
+// model. A nodeID keeps one machine's runs; empty counts every machine. It
+// counts the rows of the copy of worker_runs that runsSnapshot keeps, so it
+// does not scan the table.
 func (s *Store) TrackRecords(nodeID string, window time.Duration) ([]protocol.TrackRecord, error) {
 	if window <= 0 {
 		window = protocol.TrackRecordDays * 24 * time.Hour
 	}
 	cut := s.now().Add(-window).Unix()
-	query := `SELECT harness, model, outcome, run_seconds, continue_count, fix_count, auto_continue_count, early_quit FROM worker_runs WHERE ended_at >= ?`
-	args := []any{cut}
-	if nodeID != "" {
-		query += ` AND node_id = ?`
-		args = append(args, nodeID)
-	}
-	query += ` ORDER BY harness, model, ended_at`
-	rows, err := s.db.Query(query, args...)
+	snap, err := s.runsSnapshot()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	type key struct{ harness, model string }
 	order := []key{}
 	byKey := map[key]*protocol.TrackRecord{}
 	durations := map[key][]int64{}
-	for rows.Next() {
-		var harness, model, outcome string
-		var run int64
-		var cont, fix, auto int
-		var early bool
-		if err := rows.Scan(&harness, &model, &outcome, &run, &cont, &fix, &auto, &early); err != nil {
-			return nil, err
+	for _, r := range snap.since(cut) {
+		if nodeID != "" && r.nodeID != nodeID {
+			continue
 		}
-		k := key{harness, model}
+		k := key{r.harness, r.model}
 		tr := byKey[k]
 		if tr == nil {
-			tr = &protocol.TrackRecord{Harness: harness, Model: model, Resumable: protocol.HarnessCanResume(harness)}
+			tr = &protocol.TrackRecord{Harness: r.harness, Model: r.model, Resumable: protocol.HarnessCanResume(r.harness)}
 			byKey[k] = tr
 			order = append(order, k)
 		}
 		tr.Runs++
-		tr.Continue += cont
-		tr.Fix += fix
-		tr.AutoContinue += auto
-		if early {
+		tr.Continue += r.cont
+		tr.Fix += r.fix
+		tr.AutoContinue += r.auto
+		if r.early {
 			tr.EarlyQuits++
 		}
-		switch outcome {
+		switch r.outcome {
 		case protocol.OutcomeComplete:
 			tr.Complete++
 		case protocol.OutcomePartial:
@@ -151,13 +141,18 @@ func (s *Store) TrackRecords(nodeID string, window time.Duration) ([]protocol.Tr
 		case protocol.OutcomeInfra:
 			tr.Infra++
 		}
-		if run > 0 {
-			durations[k] = append(durations[k], run)
+		if r.runSeconds > 0 {
+			durations[k] = append(durations[k], r.runSeconds)
 		}
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	// The records come out by harness and then model, as the old query sorted
+	// them. The text compare is byte by byte, as SQLite's default one.
+	sort.Slice(order, func(i, j int) bool {
+		if order[i].harness != order[j].harness {
+			return order[i].harness < order[j].harness
+		}
+		return order[i].model < order[j].model
+	})
 	out := make([]protocol.TrackRecord, 0, len(order))
 	for _, k := range order {
 		tr := byKey[k]

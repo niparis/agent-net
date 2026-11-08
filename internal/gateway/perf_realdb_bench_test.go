@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -213,6 +214,43 @@ func BenchmarkRealGraphContext(b *testing.B) {
 		c := graph
 		c.Nodes = append([]protocol.Node(nil), graph.Nodes...)
 		if _, err := g.store.graphContext(c); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRealCalibration(b *testing.B) {
+	g := benchRealGateway(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := g.store.Calibration(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRealTrackRecords(b *testing.B) {
+	g := benchRealGateway(b)
+	nodes, err := g.store.Nodes()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, n := range nodes {
+			if _, err := g.store.TrackRecords(n.NodeID, protocol.TrackRecordDays*24*time.Hour); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
+
+// agentsBase is the stored part of Agents, with no graph or settings reads.
+func BenchmarkRealAgentsBase(b *testing.B) {
+	g := benchRealGateway(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := g.store.agentsBase(protocol.QueryAgents{}); err != nil {
 			b.Fatal(err)
 		}
 	}

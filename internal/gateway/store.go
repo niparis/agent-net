@@ -38,6 +38,8 @@ type Store struct {
 	settingsHookMu    sync.RWMutex
 	settingsHook      func()
 	qualityMu         sync.Mutex
+	runsMu            sync.Mutex
+	runs              *runsSnapshot
 	quality           protocol.QualityAnalysis
 	qualityFit        qualityFit
 	reworkFit         qualityFit
@@ -1068,7 +1070,19 @@ CREATE TABLE IF NOT EXISTS repo_start_reservations (node_id TEXT NOT NULL,ref TE
 `, `SELECT 1 /* session close column */;`, `SELECT 1 /* session idle compaction column */;`, `
 ALTER TABLE repo_leads ADD COLUMN lead_session TEXT;
 ALTER TABLE teams ADD COLUMN lead_session TEXT;
-`, `SELECT 1 /* idle check task hash column */;`, `SELECT 1 /* session provider limit columns */;`}
+`, `SELECT 1 /* idle check task hash column */;`, `SELECT 1 /* session provider limit columns */;`, `
+-- A version number per table that readers keep a parsed copy of. SQLite bumps
+-- it on every write to the table, whoever makes it, so a reader reloads its
+-- copy exactly when the table changed and never on a timer.
+CREATE TABLE IF NOT EXISTS table_versions (name TEXT PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0);
+INSERT OR IGNORE INTO table_versions(name, n) VALUES('worker_runs', 0);
+CREATE TRIGGER IF NOT EXISTS worker_runs_version_insert AFTER INSERT ON worker_runs
+ BEGIN UPDATE table_versions SET n = n + 1 WHERE name = 'worker_runs'; END;
+CREATE TRIGGER IF NOT EXISTS worker_runs_version_update AFTER UPDATE ON worker_runs
+ BEGIN UPDATE table_versions SET n = n + 1 WHERE name = 'worker_runs'; END;
+CREATE TRIGGER IF NOT EXISTS worker_runs_version_delete AFTER DELETE ON worker_runs
+ BEGIN UPDATE table_versions SET n = n + 1 WHERE name = 'worker_runs'; END;
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -2689,7 +2703,16 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 	return a.Profile, nil
 }
 
-const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harness, s.cwd, s.native_id, s.status,
+// agentSelectTemplate is the select of an agent row. Three of its values count
+// or look up rows of other tables by the session's repo or id: the Repo
+// max_agents setting, the number of live sessions in the Repo and the stall
+// item. They are written two ways, and the values are the same:
+//   - agentSelect has a subquery for each, which runs for that row. It suits
+//     one session or a few.
+//   - agentListSelect reads each from a join on a table that is worked out
+//     once for the whole query. It suits the list of every session, where the
+//     subqueries ran once per row.
+const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harness, s.cwd, s.native_id, s.status,
 	CASE WHEN s.harness='bot' THEN EXISTS(SELECT 1 FROM apps a WHERE a.id=s.node_id AND a.kind='bot' AND a.revoked_at IS NULL) ELSE s.online END, s.last_seen, s.last_active,
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
@@ -2708,12 +2731,39 @@ const agentSelect = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harnes
  COALESCE((COALESCE((SELECT lead_session FROM repo_leads WHERE repo_id=s.repo_id),s.id)=s.id) AND s.agent_id=(SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=r.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=r.id) ELSE r.owner_agent_id END FROM repos r WHERE r.id=s.repo_id),0),
 	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id AND (rl.lead_session IS NULL OR rl.lead_session=s.id)),
  EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (t.lead_session IS NULL OR t.lead_session=s.id) AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
- COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),
- (SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)),
+ @MAX@
+ @COUNT@
  s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at,
- COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0),
+ @STALL@
  s.limited_until, s.limited_reason
-	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
+	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id@JOINS@`
+
+const (
+	// agentRepoCountWhere is what makes a session count toward its Repo's
+	// agent limit. x is the session.
+	agentRepoCountWhere = `x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)`
+
+	// A Repo has one max_agents row, as the key is unique. The stall item is
+	// the newest of the session, and the later row when two are as new, which
+	// is what the subquery's scan of the index gives.
+	agentListJoins = `
+	LEFT JOIN setting_values mx ON mx.key='max_agents' AND mx.level='repo' AND mx.scope=s.repo_id AND mx.item=''
+	LEFT JOIN (SELECT x.repo_id AS repo_id, COUNT(*) AS n FROM sessions x WHERE ` + agentRepoCountWhere + ` GROUP BY x.repo_id) rc ON rc.repo_id=s.repo_id
+	LEFT JOIN (SELECT session_id, conversation_id, ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at DESC, rowid DESC) AS rn FROM inbox_items WHERE message_id='session-stall' AND status IN ('open','dismissed')) st ON st.session_id=s.id AND st.rn=1`
+)
+
+var (
+	agentSelect = strings.NewReplacer(
+		"@MAX@", `COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),`,
+		"@COUNT@", `(SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND `+agentRepoCountWhere+`),`,
+		"@STALL@", `COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0),`,
+		"@JOINS@", "").Replace(agentSelectTemplate)
+	agentListSelect = strings.NewReplacer(
+		"@MAX@", `COALESCE(CAST(mx.value AS INTEGER),0),`,
+		"@COUNT@", `COALESCE(rc.n,0),`,
+		"@STALL@", `COALESCE(CAST(st.conversation_id AS INTEGER),0),`,
+		"@JOINS@", agentListJoins).Replace(agentSelectTemplate)
+)
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var a protocol.AgentView
@@ -2837,13 +2887,18 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 // caller that reads only the stored fields (id, node, harness, model, worker)
 // uses it, so it does not build the graph and the settings snapshot.
 func (s *Store) agentsBase(f protocol.QueryAgents) ([]protocol.AgentView, error) {
+	return s.agentsBaseWith(agentListSelect, f)
+}
+
+// agentsBaseWith is agentsBase with the select it reads the rows with.
+func (s *Store) agentsBaseWith(selectSQL string, f protocol.QueryAgents) ([]protocol.AgentView, error) {
 	// The harness filter is applied here too, so the select list (a dozen
 	// subqueries per row) is only worked out for the sessions that stay.
 	where, args := ``, []any{}
 	if f.Harness != "" {
 		where, args = ` AND s.harness=?`, append(args, f.Harness)
 	}
-	rows, err := s.db.Query(agentSelect+` WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (`+piChildSQL+`)`+where+` ORDER BY s.last_seen DESC, s.id`, args...)
+	rows, err := s.db.Query(selectSQL+` WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (`+piChildSQL+`)`+where+` ORDER BY s.last_seen DESC, s.id`, args...)
 	if err != nil {
 		return nil, err
 	}
