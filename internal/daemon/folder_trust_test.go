@@ -187,3 +187,22 @@ func TestCTOSessionStartWithTrustTrustsThenStarts(t *testing.T) {
 		return err == nil
 	})
 }
+
+// An undo frame names a path like a trust does, so it gets the same home
+// check. It must not remove the trust of a folder outside home.
+func TestFolderTrustUndoOutsideHomeChangesNothing(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	folderTrustEnv(t)
+	n := startWorkerNode(t, g, shortSet, nil)
+	outside := t.TempDir()
+	if err := claudetrust.Set(outside); err != nil {
+		t.Fatal(err)
+	}
+	undo := protocol.FolderTrustRequest{Path: outside, Remove: true}
+	if _, err := n.cli.call(protocol.OpFolderTrust, undo); err == nil || !strings.Contains(err.Error(), "outside your home folder") {
+		t.Fatalf("undo outside home: want a refusal, got %v", err)
+	}
+	if ok, err := claudetrust.Trusted(outside); err != nil || !ok {
+		t.Fatalf("undo outside home removed the trust: %v %v", ok, err)
+	}
+}
