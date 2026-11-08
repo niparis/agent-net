@@ -350,6 +350,11 @@ func (s *Store) answerCheck(sessionID, task string) error {
 	active := now.Add(idleCheckGrace).Unix()
 	if kind == "" {
 		// The next announce was not an answer. Consume it, keep the state.
+		// It is still new work: the session's "stopped with work left" or
+		// "blocked" row has lost its reason and closes.
+		if _, err = s.closeAsks(s.db, `session_id=? AND kind='check' AND from_kind IN ('','session')`, []any{sessionID}, protocol.AskReasonResolved); err != nil {
+			return err
+		}
 		_, err = s.db.Exec(`UPDATE session_checks SET check_waiting=0 WHERE session_id=?`, sessionID)
 		return err
 	}

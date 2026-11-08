@@ -1466,7 +1466,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			if err != nil {
 				return nil, err
 			}
-			if !ok || a.NodeID != nc.id || (a.Harness != "claude" && a.Harness != "pi") {
+			if !ok || a.NodeID != nc.id || (a.Harness != "claude" && a.Harness != "pi" && a.Harness != "codex") {
 				return nil, reject("session does not belong to this node")
 			}
 		} else if !g.validToolOwner(nc, p.Owner) {
@@ -1474,6 +1474,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		if err := st.RecordOwnerUse(p.SessionID); err != nil {
 			return nil, err
+		}
+		if p.Prompt {
+			// The owner typed in the session: what it asked is answered or
+			// overtaken (the Needs you tag must not outlive its reason).
+			if _, err := st.closeSessionOwnerAsks(st.db, p.SessionID, 0, protocol.AskReasonOwnerReplied); err != nil {
+				return nil, err
+			}
 		}
 		return map[string]bool{"ok": true}, nil
 
@@ -2326,6 +2333,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		node, err := st.SessionNode(item.SessionID)
 		if err == nil {
 			g.dispatchPending(ctx, node, false)
+			// A dismissal sends no message, so the session would keep its
+			// wait. Tell its machine.
+			if item.Status == "dismissed" && (item.Kind == "question" || item.Kind == "approval") {
+				if c := g.conn(node); c != nil {
+					if frame, e := protocol.EncodeRequest(protocol.FrameWaitClear, protocol.NewID("d"), protocol.WaitClear{SessionID: item.SessionID}); e == nil {
+						_ = c.write(ctx, frame)
+					}
+				}
+			}
 		}
 		return map[string]any{"item": item}, nil
 

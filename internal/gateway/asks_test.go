@@ -640,3 +640,171 @@ func TestStepDispatchWritesToTheLog(t *testing.T) {
 	}
 	t.Fatalf("no dispatch line for %s in the log: %+v", id, log)
 }
+
+// A question or an approval the session raised before its earlier announce is
+// overtaken by a later announce without a wait: the Needs you tag goes. An ask
+// of the same turn as the announce stays, and so does one under a new wait.
+func TestAnnounceClosesAskOfEarlierWork(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
+	announce := func(task string, w *protocol.Waiting) {
+		t.Helper()
+		c.t = c.t.Add(time.Minute)
+		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: task, Waiting: w}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	announce("build the grant", nil)
+	c.t = c.t.Add(time.Minute)
+	old, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: sid, Text: "Build the grant?"})
+	announce("waiting for the owner", nil) // same turn as the ask: it stays
+	if status, _, _ := askRow(t, s, `id=?`, old.ID); status != "open" {
+		t.Fatalf("an ask of the same turn closed: %s", status)
+	}
+	announce("waiting for the owner", &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Build the grant?"})
+	if status, _, _ := askRow(t, s, `id=?`, old.ID); status != "open" {
+		t.Fatalf("an announce with a wait closed the ask: %s", status)
+	}
+	announce("doing the next thing", nil)
+	status, reason, _ := askRow(t, s, `id=?`, old.ID)
+	if status != "closed" || reason != protocol.AskReasonMovedOn {
+		t.Fatalf("ask after new work: %s %s", status, reason)
+	}
+}
+
+// closeSessionOwnerAsks closes the asks the session raised, never another
+// session's, never a delivery step, and writes the reason.
+func TestOwnerTypedClosesOnlyThatSessionsAsks(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	a, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "a"})
+	b, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "b"})
+	qa, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: a, Text: "q?"})
+	ka, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: a, Text: "stopped with work left: x"})
+	ia, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "feature_idea", SessionID: a, Text: "an idea"})
+	qb, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: b, Text: "ok?"})
+	if n, err := s.closeSessionOwnerAsks(s.db, a, 0, protocol.AskReasonOwnerReplied); err != nil || n != 2 {
+		t.Fatalf("closed %d: %v", n, err)
+	}
+	for id, want := range map[string]string{qa.ID: "closed", ka.ID: "closed", ia.ID: "open", qb.ID: "open"} {
+		if status, _, _ := askRow(t, s, `id=?`, id); status != want {
+			t.Fatalf("ask %s = %s, want %s", id, status, want)
+		}
+	}
+}
+
+// A "stopped with work left" row stays no longer than the session's next
+// announce, also when that announce does not answer a pending idle check.
+func TestStoppedWithWorkLeftRowClosesOnNewWorkAnnounce(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
+	row, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: sid, Text: "p stopped with work left: x"})
+	if _, err := s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)`, sid, c.t.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: "fixing the CI config"}); err != nil {
+		t.Fatal(err)
+	}
+	if status, _, _ := askRow(t, s, `id=?`, row.ID); status != "closed" {
+		t.Fatalf("row after a new-work announce: %s", status)
+	}
+}
+
+// The one-time cleanup closes the approvals and check items a session left
+// behind: it started a task long after the item. An item of the same turn, a
+// session that stayed on its task, a question, a second open approval of the
+// same session and other sessions' items stay. It never runs twice.
+func TestMovedOnCleanupRunsOnceAndIsConservative(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	moved, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "moved"})
+	same, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "same"})
+	check, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "check"})
+	two, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "two"})
+	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key=?`, movedOnCleanupKey); err != nil {
+		t.Fatal(err)
+	}
+	// moved: an approval and a question, then a task announced 11 minutes later.
+	oldApproval, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: moved, Text: "Build the grant?"})
+	oldQuestion, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: moved, Text: "Which iOS version?"})
+	// same: an approval and a task line 2 minutes later.
+	keep, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: same, Text: "Merge?"})
+	// check: a check row of a session that moved on.
+	stale, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: check, Text: "stopped with work left: a"})
+	// two: two different approvals open at once, and no later task.
+	first, _ := s.createInboxItem(s.db, protocol.InboxItem{Kind: "approval", SessionID: two, Text: "Create the ops token"})
+	c.t = c.t.Add(2 * time.Minute)
+	second, _ := s.createInboxItem(s.db, protocol.InboxItem{Kind: "approval", SessionID: two, Text: "Merge #905"})
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: same, Task: "waiting for the owner"}); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(10 * time.Minute)
+	for _, id := range []string{moved, check} {
+		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "next thing"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The announce rule would already have closed these; open them again, as
+	// the live gateway has them from before the rule.
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='open',answer='',answered_at=0 WHERE id IN (?,?,?)`, oldApproval.ID, oldQuestion.ID, stale.ID); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.reconcileMovedOnOnce()
+	if err != nil || n != 2 {
+		t.Fatalf("closed %d: %v", n, err)
+	}
+	for id, want := range map[string]string{oldApproval.ID: "closed", stale.ID: "closed", oldQuestion.ID: "open", keep.ID: "open", first.ID: "open", second.ID: "open"} {
+		if status, _, _ := askRow(t, s, `id=?`, id); status != want {
+			t.Fatalf("ask %s = %s, want %s", id, status, want)
+		}
+	}
+	if _, reason, _ := askRow(t, s, `id=?`, oldApproval.ID); reason != protocol.AskReasonMovedOnClean {
+		t.Fatalf("reason %q", reason)
+	}
+	// Run again: the marker stops it, even for a new match.
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='open',answer='' WHERE id=?`, oldApproval.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.reconcileMovedOnOnce(); err != nil || n != 0 {
+		t.Fatalf("second run closed %d: %v", n, err)
+	}
+}
+
+// An escalation closes when the session that escalated later answers the
+// request with a plain reply. A later outcome reply does not count.
+func TestEscalationClosesWhenTheRequestIsAnsweredLater(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	req, _, err := send(s, a, b, "req", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "unclear", ParentID: req.ID, ReplyOutcome: protocol.ReplyOutcome{Outcome: "escalate", Reason: "unclear", Recommendation: "ask owner"}}); err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	if err := s.db.QueryRow(`SELECT id FROM inbox_items WHERE kind='escalation'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.reconcileEscalationAsks(s.db); err != nil || n != 0 {
+		t.Fatalf("closed %d before any answer: %v", n, err)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "done after the owner approved", ParentID: req.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.reconcileEscalationAsks(s.db); err != nil || n != 1 {
+		t.Fatalf("closed %d after the answer: %v", n, err)
+	}
+	if status, reason, _ := askRow(t, s, `id=?`, id); status != "closed" || reason != protocol.AskReasonAnswered {
+		t.Fatalf("escalation: %s %s", status, reason)
+	}
+	var resolution string
+	if err := s.db.QueryRow(`SELECT resolution FROM graph_outcomes WHERE message_id=?`, req.ID).Scan(&resolution); err != nil || resolution != "answered" {
+		t.Fatalf("outcome resolution %q: %v", resolution, err)
+	}
+}

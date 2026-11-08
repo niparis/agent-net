@@ -45,6 +45,10 @@ const (
 	AskReasonResolved     = "resolved"
 	AskReasonExpired      = "expired"
 	AskReasonActivity     = "activity_or_end"
+	AskReasonOwnerReplied = "owner_replied"      // the owner typed in the asking session
+	AskReasonMovedOn      = "moved_on"           // the asking session announced new work
+	AskReasonMovedOnClean = "moved_on (cleanup)" // the one-time cleanup of asks the session left behind
+	AskReasonAnswered     = "answered"           // the escalated request was answered later
 )
 
 // Ask kinds name the source and so the owner's actions on a row.

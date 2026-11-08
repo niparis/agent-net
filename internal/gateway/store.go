@@ -2877,6 +2877,11 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 	if p.Task != "" {
 		taskStarted = now
 	}
+	// The time of the session's earlier announce, for the asks it left open.
+	var previousAnnounce int64
+	if err := s.db.QueryRow(`SELECT updated_at FROM profiles WHERE session_id=?`, p.SessionID).Scan(&previousAnnounce); err != nil && err != sql.ErrNoRows {
+		return protocol.Profile{}, err
+	}
 	_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at, expertise, task_started)
 		VALUES (?,'','',?,?,?,?,?,?)
 		ON CONFLICT (session_id) DO UPDATE SET
@@ -2892,6 +2897,14 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 		p.SessionID, p.Project, caps, p.Task, now, p.Expertise, taskStarted, p.Capabilities == nil)
 	if err != nil {
 		return protocol.Profile{}, err
+	}
+	// An announce without a wait says the session went on. A question or an
+	// approval it raised before its earlier announce is overtaken. One raised
+	// since (the ask and the task line of the same turn) stays.
+	if previousAnnounce > 0 && protocol.CleanWaiting(p.Waiting) == nil {
+		if _, err := s.closeSessionOwnerAsks(s.db, p.SessionID, previousAnnounce, protocol.AskReasonMovedOn, protocol.AskKindQuestion, protocol.AskKindApproval); err != nil {
+			return protocol.Profile{}, err
+		}
 	}
 	if err := s.answerCheck(p.SessionID, p.Task); err != nil {
 		return protocol.Profile{}, err

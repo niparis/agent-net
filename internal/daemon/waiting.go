@@ -107,7 +107,7 @@ func sameWaiting(a, b *protocol.Waiting) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	return a.Explicit == b.Explicit && a.Kind == b.Kind && a.Text == b.Text &&
+	return a.Explicit == b.Explicit && a.Blocking == b.Blocking && a.Kind == b.Kind && a.Text == b.Text &&
 		a.Since == b.Since && a.Urgency == b.Urgency && slices.Equal(a.Options, b.Options)
 }
 
@@ -142,7 +142,7 @@ func (lc *localConn) waitingCall(client string, ls *localSession, raw json.RawMe
 		d.setWaiting(ls, nil)
 		return nil, nil
 	}
-	w := protocol.CleanWaiting(&protocol.Waiting{Kind: p.Kind, Text: p.Text, Options: p.Options, Urgency: p.Urgency, Explicit: p.Explicit})
+	w := protocol.CleanWaiting(&protocol.Waiting{Kind: p.Kind, Text: p.Text, Options: p.Options, Urgency: p.Urgency, Explicit: p.Explicit, Blocking: !p.Explicit})
 	if w == nil || isIdlePromptWait(w) {
 		// Nothing to wait for, or only the generic idle_prompt text: clear any
 		// stale state instead of storing it again.
@@ -195,8 +195,30 @@ func keepWaiting(old protocol.SessionInfo, in protocol.SessionInfo) *protocol.Wa
 	if old.Status != "busy" && in.Status == "busy" {
 		return nil
 	}
+	// A turn that ended (busy to idle) with no wait from the harness: a hook
+	// wait (a permission denied, an interrupt) has no later event to clear it.
+	// An explicit ask or an announced wait outlives the turn.
+	if old.Status == "busy" && in.Status == "idle" && old.Waiting != nil && old.Waiting.Blocking {
+		return nil
+	}
 	if isIdlePromptWait(old.Waiting) {
 		return nil
 	}
 	return old.Waiting
+}
+
+// onWaitClear ends the explicit wait of a session whose question or approval
+// the owner dismissed in the Inbox. A wait a harness reported stays: it is
+// about a dialog, not about the item.
+func (d *Daemon) onWaitClear(sessionID string) {
+	ls := d.sessionByID(sessionID)
+	if ls == nil {
+		return
+	}
+	d.mu.Lock()
+	explicit := ls.info.Waiting != nil && ls.info.Waiting.Explicit
+	d.mu.Unlock()
+	if explicit {
+		d.setWaiting(ls, nil)
+	}
 }

@@ -137,6 +137,15 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				continue
 			}
 			d.enqueue(p.Message.To, func() { d.onDeliver(ctx, p.Message) })
+		case protocol.FrameWaitClear:
+			var p protocol.WaitClear
+			if json.Unmarshal(raw, &p) == nil {
+				d.wg.Add(1)
+				go func() {
+					defer d.wg.Done()
+					d.onWaitClear(p.SessionID)
+				}()
+			}
 		case "node.name":
 			var p protocol.NodeName
 			if json.Unmarshal(raw, &p) == nil && p.Hostname != "" {

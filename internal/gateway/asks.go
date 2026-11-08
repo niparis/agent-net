@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -249,6 +250,92 @@ func (s *Store) reconcileEndedSessionAsks(q askDB) (int, error) {
 		AND EXISTS (SELECT 1 FROM sessions x WHERE x.id=inbox_items.session_id AND x.archived_at<>0)`, nil, protocol.AskReasonSessionEnded)
 }
 
+// closeSessionOwnerAsks closes the open questions, approvals and turn-end
+// notes that one session raised itself. The owner typed in that session, or
+// the session went on to new work: the reason of the ask is gone. Nothing is
+// deleted. before limits the close to asks made before that time (UnixNano);
+// zero means all.
+func (s *Store) closeSessionOwnerAsks(q askDB, session string, before int64, reason string, kinds ...string) (int, error) {
+	if len(kinds) == 0 {
+		kinds = []string{protocol.AskKindQuestion, protocol.AskKindApproval, protocol.AskKindCheck}
+	}
+	cond := `session_id=? AND from_kind IN ('','session') AND kind IN ('` + strings.Join(kinds, `','`) + `')`
+	args := []any{session}
+	if before > 0 {
+		cond += ` AND created_at<?`
+		args = append(args, before)
+	}
+	return s.closeAsks(q, cond, args, reason)
+}
+
+// movedOnCleanupKey marks the one-time cleanup in owner_settings.
+const movedOnCleanupKey = "asks_moved_on_cleanup_v1"
+
+// movedOnGap is how long after an ask the session's task must have started
+// for the cleanup to call the ask left behind. A task line of the same turn
+// as the ask is never that far after it.
+const movedOnGap = 10 * time.Minute
+
+// movedOnCond selects the open approvals and check items that a session
+// raised and then left: its task started more than movedOnGap after the item.
+// Questions are not part of it: one that the session left may still be a real
+// question to the owner, and questions close by the live rules (a typed
+// prompt, a dismissal, a later announce). A session may hold two different
+// approvals at once, so a newer item never closes an older one; a replaced
+// item already has its own status.
+const movedOnCond = `from_kind IN ('','session') AND kind IN ('approval','check')
+	AND EXISTS (SELECT 1 FROM profiles p WHERE p.session_id=inbox_items.session_id AND p.task_started > inbox_items.created_at + ?)`
+
+// reconcileMovedOnOnce closes the asks that sessions left behind before the
+// close-on-activity rules existed, once. It closes and never deletes. The
+// marker in owner_settings keeps it from running again.
+func (s *Store) reconcileMovedOnOnce() (int, error) {
+	var done string
+	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, movedOnCleanupKey).Scan(&done)
+	if err == nil {
+		return 0, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	n, err := s.closeAsks(tx, movedOnCond, []any{int64(movedOnGap)}, protocol.AskReasonMovedOnClean)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`, movedOnCleanupKey, strconv.Itoa(n), s.now().UnixNano()); err != nil {
+		return 0, err
+	}
+	return n, tx.Commit()
+}
+
+// escalationAnsweredCond selects the open escalations whose request was
+// answered later: the session that escalated sent a plain reply (not another
+// outcome) in the same conversation after the escalation. The escalation item
+// holds the id of the escalating reply, and graph_outcomes links that reply
+// to the request.
+const escalationAnsweredCond = `kind='escalation' AND from_kind IN ('','session') AND EXISTS (
+	SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id
+	JOIN messages later ON later.conversation_id=req.conversation_id AND later.sender=inbox_items.session_id
+		AND later.type='reply' AND later.created_at > inbox_items.created_at
+	WHERE o.reply_id=inbox_items.message_id
+		AND NOT EXISTS (SELECT 1 FROM graph_outcomes x WHERE x.reply_id=later.id))`
+
+// reconcileEscalationAsks closes the escalations of requests that were
+// answered after the escalation, and marks the outcome answered so the old
+// outcome inbox drops it too.
+func (s *Store) reconcileEscalationAsks(q askDB) (int, error) {
+	if _, err := q.Exec(`UPDATE graph_outcomes SET resolution='answered' WHERE resolution='' AND reply_id IN
+		(SELECT message_id FROM inbox_items WHERE status='open' AND (` + escalationAnsweredCond + `))`); err != nil {
+		return 0, err
+	}
+	return s.closeAsks(q, escalationAnsweredCond, nil, protocol.AskReasonAnswered)
+}
+
 // reconcileChangeAsks closes the asks about a change that is done or stopped.
 func (s *Store) reconcileChangeAsks(q askDB) (int, error) {
 	return s.closeAsks(q, `about_kind='change' AND EXISTS (SELECT 1 FROM delivery_changes c WHERE c.id=inbox_items.about_id AND c.state IN ('done','stopped'))`, nil, protocol.AskReasonChangeDone)
@@ -430,6 +517,12 @@ func (s *Store) reconcileAsks() error {
 	}
 	if _, err := s.reconcileChangeAsks(s.db); err != nil {
 		return fmt.Errorf("change asks: %w", err)
+	}
+	if _, err := s.reconcileEscalationAsks(s.db); err != nil {
+		return fmt.Errorf("escalation asks: %w", err)
+	}
+	if _, err := s.reconcileMovedOnOnce(); err != nil {
+		return fmt.Errorf("moved on cleanup: %w", err)
 	}
 	return nil
 }

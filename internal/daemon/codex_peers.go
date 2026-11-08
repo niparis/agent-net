@@ -139,6 +139,9 @@ func (a *codexAdapter) onNote(method string, raw json.RawMessage) {
 			}
 		}
 	}
+	if method == "item/started" {
+		a.onUserMessage(raw)
+	}
 	if method == "turn/started" {
 		var p struct {
 			ThreadID string `json:"threadId"`
@@ -500,4 +503,42 @@ func codexFrame(m protocol.Message) string {
 		foot += "\n[agent-net] " + m.ApprovalNote
 	}
 	return strings.TrimRight(protocol.NeutralizeMarkers(m.Body), "\n") + "\n\n" + foot
+}
+
+// onUserMessage sees a user message item start in a thread. A prompt the owner
+// types in Codex has a null clientId; a message agent-net queued carries its
+// own ID there (checked against a real app server in codex_real_test.go).
+// A typed prompt answers or overtakes whatever the thread waited for.
+func (a *codexAdapter) onUserMessage(raw json.RawMessage) {
+	var p struct {
+		ThreadID string `json:"threadId"`
+		Item     struct {
+			Type     string  `json:"type"`
+			ClientID *string `json:"clientId"`
+			Content  []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"item"`
+	}
+	if json.Unmarshal(raw, &p) != nil || p.ThreadID == "" || p.Item.Type != "userMessage" || (p.Item.ClientID != nil && *p.Item.ClientID != "") {
+		return
+	}
+	var text strings.Builder
+	for _, c := range p.Item.Content {
+		text.WriteString(c.Text)
+	}
+	if !isHumanClaudePrompt(text.String()) || strings.Contains(text.String(), "[agent-net]") {
+		return
+	}
+	a.d.mu.Lock()
+	ls := a.d.sessions[key("codex", p.ThreadID)]
+	a.d.mu.Unlock()
+	if ls == nil {
+		return
+	}
+	sid := a.d.currentSessionID(ls)
+	if sid == "" || a.d.workerBySession(sid) != nil {
+		return
+	}
+	go a.d.ownerTyped(context.Background(), ls, sid)
 }
