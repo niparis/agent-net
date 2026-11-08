@@ -3,8 +3,10 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,14 +19,37 @@ type wakeProbe struct {
 	node  string
 	from  string
 	wakes chan map[string]string
+	mu    sync.Mutex
+	// refusal is the reason the machine gives for a wake, or empty to accept.
+	refusal string
+}
+
+func (p *wakeProbe) setRefusal(reason string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.refusal = reason
+}
+
+// wakeRefusal is the machine's answer to a wake request.
+func (p *wakeProbe) wakeRefusal() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.refusal
 }
 
 // newWakeProbe has one machine with a fake daemon that records wake frames,
 // and a second machine with the sender.
 func newWakeProbe(t *testing.T) *wakeProbe {
 	t.Helper()
+	return newWakeProbeRefusing(t, "")
+}
+
+// newWakeProbeRefusing is a wake probe whose machine refuses every wake with
+// the given reason. An empty reason accepts every wake.
+func newWakeProbeRefusing(t *testing.T, refusal string) *wakeProbe {
+	t.Helper()
 	s, _ := newTestStore(t)
-	p := &wakeProbe{s: s, g: &Gateway{store: s, logger: log.New(io.Discard, "", 0), conns: map[string]*nodeConn{}}, wakes: make(chan map[string]string, 8)}
+	p := &wakeProbe{s: s, g: &Gateway{store: s, logger: log.New(io.Discard, "", 0), conns: map[string]*nodeConn{}}, wakes: make(chan map[string]string, 8), refusal: refusal}
 	var err error
 	if p.node, _, err = s.CreateNode("ha", "linux"); err != nil {
 		t.Fatal(err)
@@ -43,6 +68,9 @@ func newWakeProbe(t *testing.T) *wakeProbe {
 				return err
 			}
 			p.wakes <- m
+			if reason := p.wakeRefusal(); reason != "" {
+				return errors.New(reason)
+			}
 		}
 		return nil
 	})

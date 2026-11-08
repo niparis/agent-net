@@ -1217,6 +1217,11 @@ CREATE TABLE IF NOT EXISTS quota_blocks (
  window_label TEXT NOT NULL DEFAULT '', resets_at INTEGER NOT NULL,
  detail TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL,
  PRIMARY KEY (node_id, provider, window_id));
+`, `
+-- A wake that the machine refused for a reason. A gateway restart does not
+-- retry it; only a new message asks again (see wake_failure.go).
+CREATE TABLE IF NOT EXISTS session_wake_failures (
+ session_id TEXT PRIMARY KEY, failed_at INTEGER NOT NULL, reason TEXT NOT NULL);
 `}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay
