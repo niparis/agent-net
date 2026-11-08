@@ -345,8 +345,14 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		name += " merger"
 	}
 	args := []string{"--bg", "--name", name}
+	// The MCP choice for the .mcp.json servers of this folder goes in the
+	// launch settings too, so the start does not depend on the settings file.
+	settings := ""
 	if p.Merger {
-		args = append(args, "--settings", mergerClaudeSettings(d.workerGoCacheDir()))
+		settings = mergerClaudeSettings(d.workerGoCacheDir())
+	}
+	if settings = claudeSettingsWithMCPAnswers(settings, r.Path); settings != "" {
+		args = append(args, "--settings", settings)
 	}
 	if p.Model != "" {
 		args = append(args, "--model", p.Model)
@@ -532,8 +538,12 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 		return protocol.StartedSession{}, err
 	}
 	args := []string{"--bg", "--resume", a.NativeID}
+	settings := ""
 	if a.Type == "merger" {
-		args = append(args, "--settings", mergerClaudeSettings(d.workerGoCacheDir()))
+		settings = mergerClaudeSettings(d.workerGoCacheDir())
+	}
+	if settings = claudeSettingsWithMCPAnswers(settings, a.Cwd); settings != "" {
+		args = append(args, "--settings", settings)
 	}
 	return d.launchOwnerClaude(r, bin, args, a.NativeID, socket, pane, false, false, false), nil
 }

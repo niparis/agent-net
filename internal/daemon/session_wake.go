@@ -136,7 +136,12 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 		return errors.New("Claude background record is missing, ambiguous, or not retired")
 	}
 	// This is the same background launcher as owner resume, without any view.
-	sf, err := d.launchClaudeBackground(ctx, bin, a.Cwd, []string{"--bg", "--resume", a.NativeID}, "", a.NativeID, nil, nil)
+	// The MCP choice of the folder goes in the launch settings, as on resume.
+	args := []string{"--bg", "--resume", a.NativeID}
+	if settings := claudeSettingsWithMCPAnswers("", a.Cwd); settings != "" {
+		args = append(args, "--settings", settings)
+	}
+	sf, err := d.launchClaudeBackground(ctx, bin, a.Cwd, args, "", a.NativeID, nil, nil)
 	if err != nil {
 		return err
 	}

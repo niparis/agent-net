@@ -135,9 +135,13 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 		"crossSessionInbound": "accept",
 		"env":                 settingsEnv,
 	})
+	// The MCP choice for the worktree's .mcp.json servers goes in the launch
+	// settings too, not only in the file: a background job that misses the
+	// file stops on the approval prompt (seen on 2026-11-08).
+	launchSettings := claudeSettingsWithMCPAnswers(string(settings), w.path)
 	// No flag that turns permission checks off (decision 0002, W6). The first
 	// prompt is not an argument: the task arrives as a normal message.
-	args := []string{"--bg", "--name", claudeWorkerName(w), "--settings", string(settings)}
+	args := []string{"--bg", "--name", claudeWorkerName(w), "--settings", launchSettings}
 	if resume != "" {
 		args = append(args, "--resume", resume)
 	}
