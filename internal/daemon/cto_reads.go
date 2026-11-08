@@ -9,7 +9,7 @@ import (
 // Each view is derived from ordinary dispatch with the CTO session, or from
 // the CTO's own proposal store and static guidance.
 var ctoReadSources = map[string]string{
-	"cto_proposals_find":  "own proposals",
+	"cto_proposals_find":  "own proposals,asks.list",
 	"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
 	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list,get",
@@ -33,33 +33,32 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 	case "cto_proposals_find":
 		var q struct {
 			ID     string `json:"id"`
+			Kind   string `json:"kind"`
 			Limit  int    `json:"limit"`
 			Offset int    `json:"offset"`
 		}
-		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
 			return nil, errors.New("bad proposals arguments")
 		}
-		items, err := d.proposalRunner().list()
+		if q.ID != "" {
+			items, err := d.proposalRunner().list()
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range items {
+				if q.ID == p.ID {
+					return map[string]any{"id": p.ID, "tool": p.Call.Tool, "action": p.Call.Action, "arguments": p.Call.Args, "reason": p.Reason, "created_at": p.CreatedAt, "status": p.Status, "note": p.Note}, nil
+				}
+			}
+			return nil, errors.New("unknown proposal")
+		}
+		kind, err := ctoOwnerKindFilter(q.Kind)
 		if err != nil {
 			return nil, err
 		}
-		type row struct {
-			ID     string `json:"id"`
-			Tool   string `json:"tool"`
-			Action string `json:"action,omitempty"`
-			Status string `json:"status"`
-			Reason string `json:"reason,omitempty"`
-		}
-		rows := make([]row, 0, len(items))
-		for _, p := range items {
-			r := row{p.ID, p.Call.Tool, p.Call.Action, p.Status, ctoCut(p.Reason, 80)}
-			if q.ID == p.ID {
-				return map[string]any{"id": p.ID, "tool": p.Call.Tool, "action": p.Call.Action, "arguments": p.Call.Args, "reason": p.Reason, "created_at": p.CreatedAt, "status": p.Status, "note": p.Note}, nil
-			}
-			rows = append(rows, r)
-		}
-		if q.ID != "" {
-			return nil, errors.New("unknown proposal")
+		rows, err := d.ctoOwnerItemRows(ctx, kind)
+		if err != nil {
+			return nil, err
 		}
 		return ctoOffsetPage(rows, q.Limit, q.Offset), nil
 	}
