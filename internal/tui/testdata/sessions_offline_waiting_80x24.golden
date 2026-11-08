@@ -1,0 +1,24 @@
+1 Sess 2 Graph 3 Quota 4 Msg 5 Tools 6 Set 7 Inbox (1) 8 Delivery │ 4 online
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ●       cpu ? mem ? disk ?                                                  │
+│  ● build cpu ? mem ? disk ?                                                  │
+│  ○ desk  cpu ? mem ? disk ?                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  NAME           MACHINE PROJECT MODEL        STATUS      CPU   RAM TASK
+ Idle (5)                                                     Inbox: 1 to decide
+  ★ pin          -       -       claude       idle          ?     ?
+  ★ lead         desk    demo    claude       offline               no report
+  └─ worker      build   -       codex        idle          ?     ?
+  other          -       -       claude       idle          ?     ?
+  └─ wor… merger -       demo    claude       idle          ?     ?
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open  m msg  x stop or remove  p pin  q quit
