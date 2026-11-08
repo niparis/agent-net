@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"unicode"
@@ -1254,8 +1255,24 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) erro
 }
 
 // Graph returns explicit and implicit nodes and all edges.
+//
+// The read is kept until the next write to the database, and each caller gets
+// a copy. What else decides the result is in the key: the temporary folders
+// (a project under one is no project), the home folder and the Graph cutover.
 func (s *Store) Graph() (protocol.Graph, error) {
-	return s.graphWith(nil)
+	home, _ := os.UserHomeDir()
+	key := "graph|" + strings.Join(s.tempRoots(), "\x00") + "|" + home + "|" + os.TempDir() + "|" + os.Getenv("TMPDIR")
+	if s.graphRefsOn.Load() {
+		key += "|refs"
+	}
+	v, err := s.readThrough(key, false, func() (any, error) {
+		g, err := s.graphWith(nil)
+		return g, err
+	})
+	if err != nil {
+		return protocol.Graph{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}, err
+	}
+	return copyOf(v.(protocol.Graph)), nil
 }
 
 // graphNodes lists the explicit and implicit nodes, ordered by name, without

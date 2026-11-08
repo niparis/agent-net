@@ -120,6 +120,11 @@ type Gateway struct {
 	pin              string
 	logger           *log.Logger
 	stepDispatchRuns atomic.Int64
+	// skillScans counts the full reads of all skills by the standing choice.
+	skillScans atomic.Int64
+	// skillSettled is the skill inputs fingerprint at which the standing
+	// choice had nothing left to do. See skillInputsOf.
+	skillSettled atomic.Pointer[skillInputs]
 	// adminToken guards /v1/admin. It is new on every start and is written
 	// to admin.json in the data dir, which only the local user can read.
 	adminToken string
@@ -779,6 +784,8 @@ func (g *Gateway) nodeGone(nodeID string, timer *offlineTimer) {
 }
 
 func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
+	lane := newFrameLane()
+	defer lane.stop()
 	for {
 		_, raw, err := nc.health.Read(ctx, nc.ws)
 		if err != nil {
@@ -823,15 +830,37 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
-		if h.Type == "msg.send" && g.msgSendMayResume(raw) {
-			// Starting an ended worker again asks this same node and waits for
-			// its answer, so it must not run in the read loop that reads it.
-			go g.answer(ctx, nc, h, raw)
+		if h.Type == "hello" {
+			// The only frame the loop runs itself: later frames are checked
+			// against what it sets, and the node waits for its answer.
+			if g.answer(ctx, nc, h, raw) != nil {
+				return
+			}
 			continue
 		}
-		if g.answer(ctx, nc, h, raw) != nil {
-			return
+		if parallelFrames[h.Type] {
+			go g.answerOrDrop(ctx, nc, h, raw)
+			continue
 		}
+		lane.submit(func() {
+			if h.Type == "msg.send" && g.msgSendMayResume(raw) {
+				// Starting an ended worker again asks this same node and waits
+				// for its answer. The answer comes to the read loop, which is
+				// free, but the lane must not wait for the worker to start.
+				go g.answerOrDrop(ctx, nc, h, raw)
+				return
+			}
+			g.answerOrDrop(ctx, nc, h, raw)
+		})
+	}
+}
+
+// answerOrDrop is answer for a frame that does not run in the read loop. When
+// the result cannot be written the link is gone, so it ends the connection.
+func (g *Gateway) answerOrDrop(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
+	if g.answer(ctx, nc, h, raw) != nil {
+		nc.cancel()
+		nc.ws.CloseNow()
 	}
 }
 
@@ -910,9 +939,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	if strings.HasPrefix(typ, "xfer.") {
 		return g.handleTransfer(nc, typ, raw)
 	}
-	if typ == "session.sync" || typ == "session.upsert" || typ == "project.add" {
+	if (typ == "session.sync" || typ == "session.upsert" || typ == "project.add") && !g.skillInputsSettled() {
 		// Freeze defaults before discovery so existing off cells stay off.
-		// Only a skill without its settings has defaults to freeze.
+		// Only a skill without its settings has defaults to freeze. When no
+		// skill, project or mark changed since the choice last had nothing to
+		// do, there is nothing to freeze and nothing to discover.
 		missing, err := st.skillSettingsMissing()
 		if err != nil {
 			return nil, err

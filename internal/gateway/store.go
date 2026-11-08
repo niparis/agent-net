@@ -21,6 +21,7 @@ import (
 	"github.com/niparis/agent-net/internal/dbfile"
 	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/sqlitecache"
 	"github.com/niparis/agent-net/internal/temppath"
 	_ "modernc.org/sqlite"
 )
@@ -34,23 +35,28 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
-	graphRefsOn       atomic.Bool
-	settingsHookMu    sync.RWMutex
-	settingsHook      func()
-	qualityMu         sync.Mutex
-	runsMu            sync.Mutex
-	runs              *runsSnapshot
-	quality           protocol.QualityAnalysis
-	qualityFit        qualityFit
-	reworkFit         qualityFit
-	qualityStrong     map[string]int
-	reminderMu        sync.Mutex
-	reminderOffline   map[string]bool
-	checkMu           sync.Mutex
-	pendingMu         sync.Mutex
-	pendingEpisodes   map[string]pendingEpisode
-	pendingStalls     int
-	db                *sql.DB
+	graphRefsOn     atomic.Bool
+	settingsHookMu  sync.RWMutex
+	settingsHook    func()
+	qualityMu       sync.Mutex
+	runsMu          sync.Mutex
+	runs            *runsSnapshot
+	quality         protocol.QualityAnalysis
+	qualityFit      qualityFit
+	reworkFit       qualityFit
+	qualityStrong   map[string]int
+	reminderMu      sync.Mutex
+	reminderOffline map[string]bool
+	checkMu         sync.Mutex
+	pendingMu       sync.Mutex
+	pendingEpisodes map[string]pendingEpisode
+	pendingStalls   int
+	db              *sql.DB
+	// connector opens the database connection. Its write count says when
+	// data read from the database may be out of date.
+	connector *sqlitecache.Connector
+	// rc keeps reads that stay current until the next write. See readThrough.
+	rc                readCache
 	graphJunkRemoved  int64
 	graphJunkMigrated bool
 	identityMerges    [][2]string
@@ -1236,6 +1242,10 @@ INSERT INTO desk_log(at,source,about_kind,about_id,text,detail,options)
  AND NOT EXISTS (SELECT 1 FROM desk_log l WHERE l.at=i.created_at AND l.source=i.from_kind AND l.text=i.text);
 `
 
+// stmtCacheSize is how many prepared statements the connection keeps. The
+// gateway runs a few hundred different statements.
+const stmtCacheSize = 1024
+
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
 	// The file is private from the start; SQLite gives -wal and -shm its mode.
@@ -1243,13 +1253,16 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
-	db, err := sql.Open("sqlite", dsn)
+	// The connection keeps the prepared statements of its recent SQL texts, so
+	// the gateway does not parse the same statements again on every call.
+	connector, err := sqlitecache.New(dsn, stmtCacheSize)
 	if err != nil {
 		return nil, err
 	}
+	db := sql.OpenDB(connector)
 	// One connection keeps writes serialized and avoids lock errors.
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
+	s := &Store{db: db, connector: connector, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -3133,7 +3146,24 @@ const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND
 		AND (parent.online = 1 OR parent.last_seen >= s.created_at)
 		AND (s.online = 1 OR s.last_seen >= parent.created_at))`
 
+// Agents lists the agent views that match f.
+//
+// The read is kept until the next write to the database, but never past the
+// second it was read in: the view holds windows and decays that depend on the
+// time. Each caller gets a copy.
 func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
+	key, err := json.Marshal(f)
+	if err != nil {
+		return s.agentsRead(f)
+	}
+	v, err := s.readThrough("agents|"+string(key), true, func() (any, error) { return s.agentsRead(f) })
+	if err != nil {
+		return nil, err
+	}
+	return copyOf(v.([]protocol.AgentView)), nil
+}
+
+func (s *Store) agentsRead(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 	out, err := s.agentsBase(f)
 	if err != nil {
 		return nil, err

@@ -863,13 +863,22 @@ type toolProbeReply struct {
 	err    error
 }
 
+// toolProbeBatchWait is how long the batch call waits. A daemon that does not
+// know the batch frame stays silent, and the wait ends the call; a daemon that
+// does know it needs time for each probe (about 40 ms each on a busy machine).
+// A wait that is too short for the batch makes the gateway ask again for every
+// probe one at a time, which doubles the work on a machine that is slow.
+func toolProbeBatchWait(probes int) time.Duration {
+	return 750*time.Millisecond + time.Duration(probes)*30*time.Millisecond
+}
+
 // probeToolBatch preserves request order and bounds legacy-node concurrency.
 func (g *Gateway) probeToolBatch(ctx context.Context, host *nodeConn, probes []protocol.ToolPlanProbe) []toolProbeReply {
 	out := make([]toolProbeReply, len(probes))
 	if len(probes) == 0 {
 		return out
 	}
-	raw, err := host.request(ctx, "node.tool_plan_probes", protocol.ToolPlanProbes{Probes: probes}, 750*time.Millisecond)
+	raw, err := host.request(ctx, "node.tool_plan_probes", protocol.ToolPlanProbes{Probes: probes}, toolProbeBatchWait(len(probes)))
 	if err == nil {
 		var results []protocol.ToolPlanProbeResult
 		if json.Unmarshal(raw, &results) == nil && len(results) == len(probes) {

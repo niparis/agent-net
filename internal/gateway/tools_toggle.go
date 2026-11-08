@@ -16,7 +16,9 @@ import (
 )
 
 // Enumerate registered projects and eligible session repositories in one pass.
-func (s *Store) knownToolProjectsTx(tx *sql.Tx) ([]string, error) {
+func (s *Store) knownToolProjectsTx(tx interface {
+	Query(string, ...any) (*sql.Rows, error)
+}) ([]string, error) {
 	rows, err := tx.Query(`SELECT name FROM projects`)
 	if err != nil {
 		return nil, err
@@ -387,6 +389,20 @@ func (g *Gateway) stopStandingChoices() {
 func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 	g.skillProjectsMu.Lock()
 	defer g.skillProjectsMu.Unlock()
+	g.skillScans.Add(1)
+	before, beforeErr := g.store.skillInputsOf()
+	err := g.addNewSkillProjectsLocked(ctx)
+	if err == nil && beforeErr == nil {
+		// Settled only when nothing but the choice's own marks changed while
+		// it ran. Otherwise the next report runs it again.
+		if after, afterErr := g.store.skillInputsOf(); afterErr == nil && after.shape() == before.shape() {
+			g.skillSettled.Store(&after)
+		}
+	}
+	return err
+}
+
+func (g *Gateway) addNewSkillProjectsLocked(ctx context.Context) error {
 	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
 	if err != nil {
 		return err
@@ -496,6 +512,55 @@ func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 		}
 	}
 	return firstErr
+}
+
+// skillInputs is what decides whether the standing choice for new projects has
+// work. Items is the skills it looks at and Projects the projects it knows;
+// the choice has work when a skill has no seen mark for a project, so only a
+// new skill, a new project or a change of the marks can give it work. Marks
+// is the count of seen marks and Settings the count of skill settings, which
+// the choice itself changes.
+type skillInputs struct {
+	Items, Projects string
+	Marks, Settings int
+}
+
+// shape is the part of the inputs that the choice does not change itself.
+func (a skillInputs) shape() [2]string { return [2]string{a.Items, a.Projects} }
+
+// skillInputsOf reads the inputs of the standing choice. It is a few small
+// reads, where the choice itself reads every skill with all its locations.
+func (s *Store) skillInputsOf() (skillInputs, error) {
+	var in skillInputs
+	// The skill items are the identities that have a location, or that the
+	// owner keeps through a version or a revision: what ToolsItems lists.
+	err := s.db.QueryRow(`SELECT COALESCE(group_concat(id, ','), ''),
+		(SELECT COUNT(*) FROM tool_project_seen), (SELECT COUNT(*) FROM tool_project_settings)
+		FROM (SELECT i.id FROM tool_identities i WHERE i.kind=? AND (
+		 EXISTS (SELECT 1 FROM tool_locations l WHERE l.identity_id=i.id)
+		 OR EXISTS (SELECT 1 FROM skill_versions v WHERE v.item=i.id)
+		 OR EXISTS (SELECT 1 FROM tool_revisions r WHERE r.item=i.id)) ORDER BY i.id)`,
+		protocol.InventorySkill).Scan(&in.Items, &in.Marks, &in.Settings)
+	if err != nil {
+		return in, err
+	}
+	names, err := s.knownToolProjectsTx(s.db)
+	if err != nil {
+		return in, err
+	}
+	in.Projects = strings.Join(names, "\x00")
+	return in, nil
+}
+
+// skillInputsSettled says that nothing has changed since the standing choice
+// last found nothing to do. A failed read says no.
+func (g *Gateway) skillInputsSettled() bool {
+	settled := g.skillSettled.Load()
+	if settled == nil {
+		return false
+	}
+	now, err := g.store.skillInputsOf()
+	return err == nil && now == *settled
 }
 
 // skillSettingsMissing tells whether some skill has no project settings yet.

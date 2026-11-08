@@ -220,7 +220,7 @@ func (s *Store) agentViewInputs() (agentViewInputs, error) {
 	if in.snap, err = s.SettingsSnapshot(); err != nil {
 		return in, err
 	}
-	in.graph, err = s.graphWith(&in.snap)
+	in.graph, err = s.Graph()
 	return in, err
 }
 

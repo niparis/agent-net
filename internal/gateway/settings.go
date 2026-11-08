@@ -61,7 +61,18 @@ func bumpSettingsRevision(tx *sql.Tx) error {
 	_, err := tx.Exec(`UPDATE setting_revision SET revision=revision+1 WHERE id=1`)
 	return err
 }
+
+// SettingsSnapshot reads all settings. The read is kept until the next write
+// to the database, and each caller gets a copy.
 func (s *Store) SettingsSnapshot() (settings.Snapshot, error) {
+	v, err := s.readThrough("settings", false, func() (any, error) { return s.settingsSnapshotRead() })
+	if err != nil {
+		return settings.Snapshot{}, err
+	}
+	return copyOf(v.(settings.Snapshot)), nil
+}
+
+func (s *Store) settingsSnapshotRead() (settings.Snapshot, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return settings.Snapshot{}, err
