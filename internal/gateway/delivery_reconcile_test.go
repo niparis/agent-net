@@ -13,8 +13,7 @@ func TestDeliveryReconcile(t *testing.T) {
 		old, report, wrongMachine, stale bool
 		want                             string
 	}{
-		// The default pipeline still has after-merge steps, so the change is merged, not done.
-		{name: "external", kind: "external", want: protocol.ChangeMerged},
+		{name: "external", kind: "external", want: protocol.ChangeDone},
 		{name: "abandoned", kind: "abandoned", old: true, want: protocol.ChangeStopped},
 		{name: "young", kind: "abandoned", want: protocol.ChangeOpen},
 		{name: "reported", kind: "abandoned", old: true, report: true, want: protocol.ChangeOpen},
@@ -51,21 +50,21 @@ func TestDeliveryReconcile(t *testing.T) {
 			if v.Change.State != tc.want {
 				t.Fatalf("state %s, want %s", v.Change.State, tc.want)
 			}
-			if tc.want == protocol.ChangeMerged && (len(v.Evidence) != 1 || v.Evidence[0].Fields["merge_kind"] != "external" || v.Change.MergedCommit != commitMerged) {
+			if tc.want == protocol.ChangeDone && (len(v.Evidence) != 1 || v.Evidence[0].Fields["merge_kind"] != "external" || v.Change.MergedCommit != commitMerged) {
 				t.Fatalf("missing external merge record: %+v", v)
 			}
 		})
 	}
 }
 
-func TestDeliveryReconcileListKeepsExternalMergeEvidence(t *testing.T) {
+func TestDeliveryReconcileListKeepsTerminalEvidence(t *testing.T) {
 	r := newDeliveryRig(t)
 	c := r.submit(r.a, r.workerSubmit("feat/test", commitA)).Change.Change
 	_, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, protocol.ChangeReconcileRequest{ChangeID: c.ID, Revision: c.Revision, HeadCommit: c.HeadCommit, Kind: "external", MergedCommit: commitMerged})
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := r.s.ListChanges(protocol.ChangeListRequest{State: protocol.ChangeMerged})
+	page, err := r.s.ListChanges(protocol.ChangeListRequest{State: protocol.ChangeDone})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,6 +145,34 @@ func latestMergeEvidence(t *testing.T, r *deliveryRig, change string) protocol.E
 	return *out
 }
 
+// recordOldExternalMerge writes the external merge the daemon recorded before
+// the grace window existed: merge evidence at time at, the change done, and no
+// after-merge tasks.
+func recordOldExternalMerge(t *testing.T, r *deliveryRig, c protocol.Change, at int64) {
+	t.Helper()
+	tx, err := r.s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: c.HeadCommit,
+		By: "daemon", At: at, Note: "merged outside agent-net",
+		Fields: map[string]string{"reconcile_kind": "external", "merge_kind": "external", protocol.FieldMergedCommit: commitMerged}}
+	if err := insertEvidence(tx, e); err != nil {
+		t.Fatal(err)
+	}
+	c.State, c.MergedCommit = protocol.ChangeDone, commitMerged
+	if err := writeChange(tx, c, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`DELETE FROM delivery_step_tasks WHERE change_id=? AND after_merge=1`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // The race seen live on 2026-11-08 (change ch_d176): the merger passed its
 // test and fast-forwarded main, and the daemon's git check saw the merge
 // seconds before the merger's own report. The daemon must not record the merge
@@ -168,10 +195,10 @@ func TestDeliveryReconcileWaitsForMergerReport(t *testing.T) {
 	}
 }
 
-// After the grace window the daemon records the merge from git. The merger
-// still reports it: its report for the same merged commit is accepted, it
-// becomes the latest merge report in place of the git observation, and the
-// merger is not told the change was closed.
+// After the grace window the daemon records the merge from git. The change is
+// done and queues no steps. The merger still reports the merge: its report for
+// the same merged commit is accepted, it becomes the latest merge report in
+// place of the git observation, and the merger is not told the change was closed.
 func TestDeliveryMergerConfirmsExternalMerge(t *testing.T) {
 	r := setupMergerRig(t)
 	c := r.submit(r.a, r.workerSubmit("feature/confirm", commitA)).Change.Change
@@ -182,6 +209,9 @@ func TestDeliveryMergerConfirmsExternalMerge(t *testing.T) {
 	r.clk.t = r.clk.t.Add(11 * time.Minute)
 	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, externalReconcile(c)); err != nil {
 		t.Fatalf("external merge after the grace window: %v", err)
+	}
+	if got := r.get(c.ID).Change.State; got != protocol.ChangeDone {
+		t.Fatalf("state %s after a plain external merge, want done", got)
 	}
 	if n := stepClosedNotices(t, r, r.sonnet); n != 0 {
 		t.Fatalf("merger got %d step closed notices for an external merge", n)
@@ -196,10 +226,10 @@ func TestDeliveryMergerConfirmsExternalMerge(t *testing.T) {
 	}
 }
 
-// An external merge leaves the change merged while its after-merge steps are
-// open. The caller can claim and report them, and the change is done only
-// once verify has passed.
-func TestDeliveryExternalMergeDoneOnlyAfterVerify(t *testing.T) {
+// A plain external merge is done and queues no steps. When the merger confirms
+// that merge, the change moves to merged with its after-merge steps open, and it
+// is done only once verify has passed.
+func TestDeliveryMergerConfirmDoneOnlyAfterVerify(t *testing.T) {
 	r := setupMergerRig(t)
 	c := r.submit(r.a, r.workerSubmit("feature/after", commitA)).Change.Change
 	passedToMerge(t, r, c)
@@ -207,8 +237,12 @@ func TestDeliveryExternalMergeDoneOnlyAfterVerify(t *testing.T) {
 	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, externalReconcile(c)); err != nil {
 		t.Fatal(err)
 	}
+	if got := r.get(c.ID).Change.State; got != protocol.ChangeDone {
+		t.Fatalf("state %s after a plain external merge, want done", got)
+	}
+	r.mustReport(r.a, mergeReport(c, r.sonnet))
 	if got := r.get(c.ID).Change.State; got != protocol.ChangeMerged {
-		t.Fatalf("state %s after an external merge with after-merge steps open, want merged", got)
+		t.Fatalf("state %s after the merger's confirmation, want merged", got)
 	}
 
 	// The merger owns the test step, the caller owns release and verify.
@@ -233,50 +267,53 @@ func TestDeliveryExternalMergeDoneOnlyAfterVerify(t *testing.T) {
 	}
 }
 
-// Before this fix an external merge left the change done with its after-merge
-// steps unqueued. Starting the gateway moves such a change back to merged,
-// queues its open steps and keeps all evidence. A done change without an
-// external merge keeps its state.
+// Before the grace window, the daemon recorded an external merge seconds after
+// a merger's test report (change ch_d176 on 2026-11-08). Starting the gateway
+// reopens that change: merged, with its after-merge steps queued. A plain
+// external merge, with no test or merge report near it, stays done and queues
+// no steps. Evidence is kept in both cases.
 func TestDeliveryRepairExternalDone(t *testing.T) {
 	r := setupMergerRig(t)
-	c := r.submit(r.a, r.workerSubmit("feature/repair", commitA)).Change.Change
-	passedToMerge(t, r, c)
-	r.clk.t = r.clk.t.Add(11 * time.Minute)
-	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, externalReconcile(c)); err != nil {
-		t.Fatal(err)
-	}
-	before := r.get(c.ID).Evidence
+	raced := r.submit(r.a, r.workerSubmit("feature/raced", commitA)).Change.Change
+	passedToMerge(t, r, raced)
+	recordOldExternalMerge(t, r, raced, r.clk.now().Add(7*time.Second).Unix())
+	before := r.get(raced.ID).Evidence
 
-	// Recreate what the daemon left before this fix: done, and no after-merge tasks.
-	if _, err := r.s.db.Exec(`UPDATE delivery_changes SET state=? WHERE id=?`, protocol.ChangeDone, c.ID); err != nil {
+	plain := r.submit(r.a, r.workerSubmit("feature/plain", commitB)).Change.Change
+	r.clk.t = r.clk.t.Add(time.Hour)
+	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, protocol.ChangeReconcileRequest{ChangeID: plain.ID, Revision: plain.Revision, HeadCommit: plain.HeadCommit, Kind: "external", MergedCommit: commitMerged}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`DELETE FROM delivery_step_tasks WHERE change_id=? AND after_merge=1`, c.ID); err != nil {
-		t.Fatal(err)
-	}
-	other := r.submit(r.a, r.workerSubmit("feature/other", commitB)).Change.Change
-	if _, err := r.s.db.Exec(`UPDATE delivery_changes SET state=? WHERE id=?`, protocol.ChangeDone, other.ID); err != nil {
-		t.Fatal(err)
+	if got := r.get(plain.ID).Change.State; got != protocol.ChangeDone {
+		t.Fatalf("plain external merge is %s, want done", got)
 	}
 
 	if err := r.s.repairExternalDone(); err != nil {
 		t.Fatal(err)
 	}
-	v := r.get(c.ID)
+	v := r.get(raced.ID)
 	if v.Change.State != protocol.ChangeMerged {
-		t.Fatalf("state %s after repair, want merged", v.Change.State)
+		t.Fatalf("raced change is %s after repair, want merged", v.Change.State)
 	}
 	if len(v.Evidence) != len(before) {
 		t.Fatalf("repair changed evidence: %d reports, had %d", len(v.Evidence), len(before))
 	}
 	var queued int
-	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND after_merge=1 AND completed=0`, c.ID).Scan(&queued); err != nil {
+	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND after_merge=1 AND completed=0`, raced.ID).Scan(&queued); err != nil {
 		t.Fatal(err)
 	}
 	if queued == 0 {
-		t.Fatal("repair queued no after-merge step")
+		t.Fatal("repair queued no after-merge step for the raced change")
 	}
-	if got := r.get(other.ID).Change.State; got != protocol.ChangeDone {
-		t.Fatalf("done change without an external merge moved to %s", got)
+
+	if got := r.get(plain.ID).Change.State; got != protocol.ChangeDone {
+		t.Fatalf("plain external merge moved to %s on repair, want done", got)
+	}
+	var plainTasks int
+	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND after_merge=1`, plain.ID).Scan(&plainTasks); err != nil {
+		t.Fatal(err)
+	}
+	if plainTasks != 0 {
+		t.Fatalf("plain external merge has %d after-merge tasks, want none", plainTasks)
 	}
 }
