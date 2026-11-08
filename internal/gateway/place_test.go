@@ -73,6 +73,24 @@ func TestPlaceTextMember(t *testing.T) {
 	}
 }
 
+// A team that sends questions to its lead says so in the per-turn text of a
+// member, with the lead's name. The lead's own text does not change.
+func TestPlaceTextMemberAsksToLead(t *testing.T) {
+	r := newPlaceRig(t)
+	teamWrite(t, r.s, protocol.TeamWrite{Action: "asks_to", ID: "alpha", AsksTo: protocol.AsksToLead})
+	got, err := r.s.placeText(r.member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(got, "Escalate to your lead first, not to the owner.\nQuestions for the owner go to your lead, forge-lead.") {
+		t.Fatalf("member place:\n%s", got)
+	}
+	lead, err := r.s.placeText(r.lead)
+	if err != nil || strings.Contains(lead, "Questions for the owner") {
+		t.Fatalf("lead place: %q %v", lead, err)
+	}
+}
+
 func TestPlaceTextNoTeam(t *testing.T) {
 	r := newPlaceRig(t)
 	got, err := r.s.placeText(r.outside)

@@ -183,11 +183,11 @@ func (s *Store) placeText(session string) (string, error) {
 	}
 
 	// The team this session belongs to, when it does not lead it.
-	var teamID, teamName, owner, mode, held string
+	var teamID, teamName, owner, mode, held, asksTo string
 	var pinned sql.NullString
-	err = s.db.QueryRow(`SELECT t.id,t.name,COALESCE(t.owner_agent_id,''),t.lead_session,t.authority_mode,t.held_back FROM teams t JOIN team_members tm ON tm.team_id=t.id
+	err = s.db.QueryRow(`SELECT t.id,t.name,COALESCE(t.owner_agent_id,''),t.lead_session,t.authority_mode,t.held_back,t.asks_to FROM teams t JOIN team_members tm ON tm.team_id=t.id
 		WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=? AND tm.member_id<>'') OR (tm.member_kind='agent' AND tm.member_id=?))
-		ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &teamName, &owner, &pinned, &mode, &held)
+		ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &teamName, &owner, &pinned, &mode, &held, &asksTo)
 	if err != nil && err != sql.ErrNoRows {
 		return "", err
 	}
@@ -207,6 +207,9 @@ func (s *Store) placeText(session string) (string, error) {
 			lines = append(lines, "Held back from your team: "+protocol.NeutralizeMarkers(h)+".")
 		}
 		lines = append(lines, "Escalate to your lead first, not to the owner.")
+		if asksTo == protocol.AsksToLead {
+			lines = append(lines, "Questions for the owner go to your lead, "+lead+".")
+		}
 		parts = append(parts, strings.Join(lines, "\n"))
 	}
 	if len(parts) == 0 {

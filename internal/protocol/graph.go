@@ -102,6 +102,9 @@ type Node struct {
 	// authority settings (decision 0089).
 	AuthorityMode string `json:"authority_mode,omitempty"`
 	HeldBack      string `json:"held_back,omitempty"`
+	// AsksTo (a team) says where its members' questions for the owner go:
+	// owner or lead (decision 0100).
+	AsksTo string `json:"asks_to,omitempty"`
 	// Place is the record's position in the authority tree, built by the
 	// gateway from the same data as the turn text (decision 0089).
 	Place     *NodePlace `json:"place,omitempty"`
@@ -283,7 +286,7 @@ func CharterAttributeAtLevel(level, attr string) bool {
 	case "repo":
 		return attr == "purpose" || attr == "maturity" || attr == "maturity_note"
 	case "team":
-		return attr == "purpose" || attr == "escalate"
+		return attr == "purpose" || attr == "escalate" || attr == "asks_to"
 	case "agent":
 		return attr == "accepts" || attr == "escalate" || attr == "feature_requests"
 	}

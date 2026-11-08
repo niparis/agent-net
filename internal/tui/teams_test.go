@@ -385,6 +385,37 @@ func TestTeamModeKeyWritesAndUndoes(t *testing.T) {
 	}
 }
 
+// o sends the questions of the team's members to its lead, and u puts the
+// owner back. The Teams view says where the questions go.
+func TestTeamAsksToKeyWritesAndUndoes(t *testing.T) {
+	m, src := teamModel(120, 34)
+	m = keys(m, "T")
+	if view := ansi.Strip(m.testView()); !strings.Contains(view, "questions for the owner go to: the owner") {
+		t.Fatalf("Teams view:\n%s", view)
+	}
+	m, cmd := press(m, tea.KeyPressMsg{Text: "o", Code: 'o'})
+	if cmd == nil {
+		t.Fatal("o gave no command")
+	}
+	m, _ = press2(m, cmd())
+	q := src.teamWrites[0]
+	if q.Action != "asks_to" || q.ID != "alpha" || q.AsksTo != protocol.AsksToLead {
+		t.Fatalf("asks_to request %+v", q)
+	}
+	if !strings.Contains(m.notice.text, "Questions of team Alpha now go to the lead.") || !strings.Contains(m.notice.text, "u undoes it") {
+		t.Fatalf("result line %+v", m.notice)
+	}
+	m, cmd = press(m, tea.KeyPressMsg{Text: "u", Code: 'u'})
+	if cmd == nil {
+		t.Fatal("u gave no command")
+	}
+	m, _ = press2(m, cmd())
+	q = src.teamWrites[1]
+	if q.Action != "asks_to" || q.ID != "alpha" || q.AsksTo != protocol.AsksToOwner {
+		t.Fatalf("undo request %+v", q)
+	}
+}
+
 func TestTeamHeldBackFormWritesAndUndoes(t *testing.T) {
 	m, src := teamModel(120, 34)
 	m = keys(m, "T", "h")
