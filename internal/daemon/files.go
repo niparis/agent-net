@@ -503,14 +503,14 @@ func looksLikeText(start []byte, size int64) bool {
 	return utf8.Valid(start)
 }
 
-// scanForSecrets runs the existing secret scanner (the one that keeps
-// secrets out of skills) on a text file. The refusal never repeats the text.
+// scanForSecrets runs the file-send secret rule (redact.HoldsSecret) on a text
+// file. The refusal never repeats the text.
 func scanForSecrets(path, name string) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	if s := string(b); redact.Secrets(s) != s {
+	if redact.HoldsSecret(string(b)) {
 		return fmt.Errorf("%s %s; agent-net does not send it. Remove the secret, or the owner sends the file anyway", name, fileSecretRefusal)
 	}
 	return nil

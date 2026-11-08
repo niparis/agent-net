@@ -29,16 +29,19 @@ var (
 	}
 	privateKey = regexp.MustCompile(`(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)`)
 	// Authorization headers and bearer tokens.
-	authHeader = regexp.MustCompile(`(?i)(authorization["']?\s*[:=]\s*["']?)(?:(?:bearer|basic|token)\s+)?[^\s"',;]+`)
-	bearer     = regexp.MustCompile(`(?i)(\bbearer\s+)[A-Za-z0-9._~+/=\-]{8,}`)
+	authHeader = regexp.MustCompile(`(?i)(authorization["']?\s*[:=]\s*["']?)(?:(?:bearer|basic|token)\s+)?([^\s"',;]+)`)
+	bearer     = regexp.MustCompile(`(?i)(\bbearer\s+)([A-Za-z0-9._~+/=\-]{8,})`)
 	// user:password@ inside a URL.
-	urlCreds = regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+.\-]*://[^\s/:@]*:)[^\s/@]+(@)`)
+	urlCreds = regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+.\-]*://[^\s/:@]*:)([^\s/@]+)(@)`)
 	// name=value, name: value and "name": "value" where the name ends in a
 	// word that says "secret". The name may carry a prefix such as MY_APP_.
 	keyValue = regexp.MustCompile(`(?i)(\b[a-z0-9_.\-]*(?:api[_\-]?key|apikey|access[_\-]?key|private[_\-]?key|secret|token|passw(?:or)?d|passwd|pwd|credentials?|auth|key)["']?\s*[=:]\s*)("[^"\n]*"|'[^'\n]*'|[^\s"',;&)}\]]+)`)
 	// A flag whose name says "secret", with its value after = or a space.
 	secretFlag = regexp.MustCompile(`(?i)(\s--?[a-z0-9\-]*(?:password|passwd|token|secret|api-?key|apikey|auth|credential)[a-z0-9\-]*)(=|\s+)(\S+)`)
 )
+
+// The name-based rules above capture the value in a group, so HoldsSecret can
+// test the value (see holds.go). The group numbers are listed there.
 
 // Secrets returns s with the secrets it can recognise replaced by Mask.
 func Secrets(s string) string {
@@ -48,7 +51,7 @@ func Secrets(s string) string {
 	s = privateKey.ReplaceAllString(s, Mask)
 	s = authHeader.ReplaceAllString(s, "${1}"+Mask)
 	s = bearer.ReplaceAllString(s, "${1}"+Mask)
-	s = urlCreds.ReplaceAllString(s, "${1}"+Mask+"${2}")
+	s = urlCreds.ReplaceAllString(s, "${1}"+Mask+"${3}")
 	s = keyValue.ReplaceAllString(s, "${1}"+Mask)
 	s = strings.TrimPrefix(secretFlag.ReplaceAllString(" "+s, "${1}${2}"+Mask), " ")
 	for _, re := range tokenPatterns {
