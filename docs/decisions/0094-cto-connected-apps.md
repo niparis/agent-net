@@ -31,3 +31,7 @@ limits still apply.
 OAuth consent, a Tailscale login and phone pairing remain owner actions.
 One-click asks for those flows and the remaining operator gaps are separate
 work. This decision does not change folder trust or standing orders.
+
+The CTO tool-list schema test budget increases from 32 KiB to 36 KiB. This
+accommodates these actions alongside the parallel trust and standing-orders
+tools without cutting useful descriptions. It does not change tool authority.

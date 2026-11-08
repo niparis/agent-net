@@ -143,7 +143,10 @@ Every CTO app call has a durable local audit line, including reads and failures.
 Successful mutations also create a CTO notice in the Inbox and Desk log. Names,
 grants and the public switch save their previous values for Inbox undo; a
 request for an already-set value preserves that value on undo. Revocation has
-no undo action. No extra approval gate is added.
+no undo action. No extra approval gate is added. The CTO tool-list
+regression test allows 36 KiB of serialized schemas, increased from 32 KiB to
+keep connected-app and trust/standing-orders descriptions readable. This is a
+test budget, not an authority check or a runtime request limit.
 
 The read rule follows decision 0035: a CTO data view calls the same daemon
 function as its matching ordinary agent tool, with the CTO caller identity,
