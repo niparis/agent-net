@@ -367,3 +367,48 @@ func TestWorkerSessionCleanupPassMovesPastFailures(t *testing.T) {
 		t.Fatalf("later workers starved: %d rows: %v", len(rows), err)
 	}
 }
+
+func TestWorkerCleanupAfterWorktreeAndBranchGone(t *testing.T) {
+	root := t.TempDir()
+	st, err := openState(filepath.Join(root, "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	bin := filepath.Join(root, "codex")
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	native := "12345678-1234-1234-1234-123456789abc"
+	target := filepath.Join(home, native)
+	os.WriteFile(target, []byte("worker"), 0600)
+	os.WriteFile(bin, []byte("#!/bin/sh\nrm -- \"$CODEX_HOME/$3\"\n"), 0700)
+	d := &Daemon{st: st, log: log.New(io.Discard, "", 0), cfg: Config{StateDir: root, HarnessPaths: map[string]string{"codex": bin}}}
+	repo := newRepo(t, "shop")
+	gitIn(t, repo, "branch", "worker-keep")
+	r := workerRow{ID: "w_test", SessionID: "s_test", Harness: "codex", NativeID: native, EndedReason: "done", Reported: true, StartedAt: time.Now().Add(-48 * time.Hour), MainPath: repo, Worktree: filepath.Join(root, "gone"), Branch: "worker-keep"}
+	if err := st.saveWorker(r); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := d.retainedWorkerSessionIDs()
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("branch retention: %v %v", ids, err)
+	}
+	d.cleanupWorkerSessions(t.Context())
+	rows, _ := st.workers()
+	if len(rows) != 1 {
+		t.Fatal("branch worker removed")
+	}
+	gitIn(t, repo, "branch", "-D", r.Branch)
+	ids, err = d.retainedWorkerSessionIDs()
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("gone worker retained: %v %v", ids, err)
+	}
+	d.cleanupWorkerSessions(t.Context())
+	rows, _ = st.workers()
+	if len(rows) != 0 {
+		t.Fatal("gone worker row remains")
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("harness session remains: %v", err)
+	}
+}

@@ -474,10 +474,10 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 	}
 	if r.Sessions > 0 {
 		cut := now.Add(-r.Sessions).UnixNano()
-		if err := del(new(int), `DELETE FROM profiles WHERE session_id IN (SELECT id FROM sessions WHERE archived_at=0 AND pinned_at=0 AND owner_used_at < ? AND last_active < ? AND harness <> 'bot' AND online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient)))`, cut, cut, cut); err != nil {
+		if err := del(new(int), `DELETE FROM profiles WHERE session_id IN (SELECT id FROM sessions WHERE archived_at=0 AND pinned_at=0 AND owner_used_at < ? AND last_active < ? AND harness <> 'bot' AND worker_retained = 0 AND online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient)))`, cut, cut, cut); err != nil {
 			return res, err
 		}
-		if err := del(&res.Sessions, `DELETE FROM sessions WHERE archived_at=0 AND pinned_at=0 AND owner_used_at < ? AND last_active < ? AND harness <> 'bot' AND online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, cut, cut, cut); err != nil {
+		if err := del(&res.Sessions, `DELETE FROM sessions WHERE archived_at=0 AND pinned_at=0 AND owner_used_at < ? AND last_active < ? AND harness <> 'bot' AND worker_retained = 0 AND online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, cut, cut, cut); err != nil {
 			return res, err
 		}
 	}

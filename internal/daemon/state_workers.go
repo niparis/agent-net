@@ -87,7 +87,7 @@ func (s *state) saveWorker(w workerRow) error {
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (id) DO UPDATE SET run_generation=excluded.run_generation, native_id=excluded.native_id, session_id=excluded.session_id,
 		owner_name=excluded.owner_name,
-		path=excluded.path, pid=excluded.pid, pgid=excluded.pgid, start_token=excluded.start_token,
+		path=excluded.path, pid=excluded.pid, pgid=excluded.pgid, start_token=excluded.start_token, started_at=excluded.started_at,
 		last_active=excluded.last_active, ended_reason=excluded.ended_reason, resumable=excluded.resumable,
 		reported=excluded.reported, task_msg=excluded.task_msg, task_text=excluded.task_text, title=excluded.title,
 		done_status=excluded.done_status, done_partial=excluded.done_partial, harness_ref=excluded.harness_ref,

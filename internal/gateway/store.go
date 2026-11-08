@@ -1082,7 +1082,7 @@ CREATE TRIGGER IF NOT EXISTS worker_runs_version_update AFTER UPDATE ON worker_r
  BEGIN UPDATE table_versions SET n = n + 1 WHERE name = 'worker_runs'; END;
 CREATE TRIGGER IF NOT EXISTS worker_runs_version_delete AFTER DELETE ON worker_runs
  BEGIN UPDATE table_versions SET n = n + 1 WHERE name = 'worker_runs'; END;
-`}
+`, `SELECT 1 /* session worker retained column */;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1339,6 +1339,19 @@ func (s *Store) migrate() error {
 						tx.Rollback()
 						return err
 					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "session worker retained column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='worker_retained'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN worker_retained INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return err
 				}
 			}
 		}
@@ -2553,6 +2566,15 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string)
 		return 0, err
 	}
 	defer tx.Rollback()
+	// Replace this node's retained set, including releases of deleted branches.
+	if _, err := tx.Exec(`UPDATE sessions SET worker_retained=0 WHERE node_id=? AND worker_retained<>0`, nodeID); err != nil {
+		return 0, err
+	}
+	for _, id := range running {
+		if _, err := tx.Exec(`UPDATE sessions SET worker_retained=1 WHERE node_id=? AND id=? AND worker<>''`, nodeID, id); err != nil {
+			return 0, err
+		}
+	}
 	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND pinned_at=0 AND node_id = ? AND online = 0 AND worker != ''
 		AND (worker_started = 0 OR worker_started < ?)
         AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, nodeID, cut)
@@ -2854,6 +2876,18 @@ func (s *Store) agentBase(sessionID string) (protocol.AgentView, bool, error) {
 	}
 	s.botOnline(&a)
 	a.OwnerUses = decayOwnerUses(a.OwnerUses, a.OwnerUsedAt, s.now().Unix())
+	return a, true, nil
+}
+
+// workerForContinue looks up workers even when their sessions are archived.
+func (s *Store) workerForContinue(ref, owner string) (protocol.AgentView, bool, error) {
+	a, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.worker<>'' AND (s.id=? OR (json_extract(s.worker, '$.id')=? AND json_extract(s.worker, '$.owner')=?)) AND n.id IS NOT NULL ORDER BY (s.id=?) DESC LIMIT 1`, ref, ref, owner, ref))
+	if errors.Is(err, sql.ErrNoRows) {
+		return a, false, nil
+	}
+	if err != nil {
+		return a, false, err
+	}
 	return a, true, nil
 }
 

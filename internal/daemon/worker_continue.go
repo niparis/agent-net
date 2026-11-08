@@ -3,11 +3,55 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
+
+// checkWorkerWorktree refuses a missing checkout only when its branch is gone too.
+func checkWorkerWorktree(r *workerRow) error {
+	if r.Worktree == "" {
+		return nil
+	}
+	info, err := os.Stat(r.Worktree)
+	if os.IsNotExist(err) {
+		if workerBranchExists(r) {
+			return nil
+		}
+		return fmt.Errorf("worker %s worktree is gone: %s", r.SessionID, r.Worktree)
+	}
+	if err != nil {
+		return fmt.Errorf("checking worker worktree: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("worker %s worktree is gone: %s is not a directory", r.SessionID, r.Worktree)
+	}
+	return nil
+}
+
+// workerBranchExists checks local refs only. It never fetches from a remote.
+func workerBranchExists(r *workerRow) bool {
+	if r.Branch == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := gitOut(ctx, first(r.MainPath, r.Path), "rev-parse", "--verify", "refs/heads/"+r.Branch+"^{commit}")
+	return err == nil
+}
+
+// workerWorktreeRetained keeps a continuation while either local resource exists.
+func workerWorktreeRetained(r *workerRow) bool {
+	if r.Worktree == "" {
+		return false
+	}
+	if info, err := os.Stat(r.Worktree); err == nil && info.IsDir() {
+		return true
+	}
+	return workerBranchExists(r)
+}
 
 // continueEndWait is how long a continue waits for a worker that has sent its
 // hand-back notice to finish ending before it is refused.
@@ -94,6 +138,9 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	d.wmu.Unlock()
 	if running || r.EndedReason == "" {
 		return none, fmt.Errorf("worker %s is still running: wait for it to end, or stop it first", p.Session)
+	}
+	if err := checkWorkerWorktree(r); err != nil {
+		return none, err
 	}
 	if r.TaskFull == "" {
 		return none, fmt.Errorf("the record of worker %s has no task (it was made by an older agent-net)", p.Session)
