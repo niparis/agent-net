@@ -33,7 +33,9 @@ func (m Model) openProposals() int {
 			n++
 		}
 	}
-	return n
+	// The Snapshot carries the count even when the full list is not fetched
+	// on this tab, so the box shows a new proposal without the gateway call.
+	return max(n, m.snap.ProposalCount)
 }
 
 func (m Model) ctoView(w, h int) []string {

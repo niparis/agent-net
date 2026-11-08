@@ -266,3 +266,32 @@ func TestGraphTalkClient(t *testing.T) {
 		t.Fatalf("graph talk: %+v %v", got, err)
 	}
 }
+
+func TestSnapshotWithCanSkipTheWorkerLog(t *testing.T) {
+	workerLog := false
+	_, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
+		switch method {
+		case protocol.OpInfo:
+			return protocol.OperatorInfo{Connected: true}, ""
+		case protocol.OpWorkerLog:
+			workerLog = true
+			return []protocol.WorkerLogEntry{{Title: "run"}}, ""
+		case protocol.OpAgents:
+			return protocol.AgentsResult{Agents: []protocol.AgentView{{}}}, ""
+		case protocol.OpNodes:
+			return protocol.NodesInfo{}, ""
+		case protocol.OpProjects:
+			return protocol.ProjectsResult{}, ""
+		}
+		return map[string]any{}, ""
+	})
+	c := New(path)
+	defer c.Close()
+	snap, err := c.SnapshotWith(context.Background(), SnapshotOptions{})
+	if err != nil || len(snap.WorkerLog) != 0 || workerLog {
+		t.Fatalf("snapshot %+v, err %v, worker log asked %t", snap, err, workerLog)
+	}
+	if _, err := c.Snapshot(context.Background()); err != nil || !workerLog {
+		t.Fatalf("Snapshot did not ask for the worker log: %v", err)
+	}
+}

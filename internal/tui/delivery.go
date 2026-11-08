@@ -88,6 +88,10 @@ const deliveryLoadTimeout = 5 * time.Second
 // deliveryRefreshEvery is how often changes load again.
 const deliveryRefreshEvery = 30 * time.Second
 
+// inboxRefreshEvery is how often the Inbox lists are checked on a tab that
+// does not show them, so its count is never stale for long.
+const inboxRefreshEvery = 10 * time.Second
+
 // deliveryState is everything the view keeps. It sits in the Model by value
 // and is replaced, never shared.
 type deliveryState struct {
@@ -156,8 +160,12 @@ func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
 }
 
 // deliveryTick loads again after deliveryRefreshEvery
-// since the last load.
+// since the last load. Only the Sessions table and the Delivery tab show a
+// change state, so other tabs do not ask for it.
 func (m Model) deliveryTick() (Model, tea.Cmd) {
+	if m.tab != sessionsTab && m.tab != deliveryTab {
+		return m, nil
+	}
 	d := m.delivery
 	if d.loading || m.now().Sub(d.loadedAt) < deliveryRefreshEvery {
 		return m, nil

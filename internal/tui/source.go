@@ -24,6 +24,8 @@ type (
 	Source = operator.Operator
 	// DaemonSource is the operator over the local daemon's socket.
 	DaemonSource = operator.Client
+	// SnapshotOptions chooses the optional parts of a Snapshot.
+	SnapshotOptions = operator.SnapshotOptions
 )
 
 // Usage is the answer of the operator's usage method.

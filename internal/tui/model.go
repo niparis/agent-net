@@ -122,6 +122,12 @@ type Model struct {
 	graphLastNode          string
 	feed                   feed
 	fetching               bool
+	// inboxSeen is the Snapshot signature the Inbox and proposals were last
+	// fetched at. A different signature, or the Inbox or CTO pane on screen,
+	// asks for them again. inboxAt is when they were last asked for away from
+	// that screen, so the count cannot stay stale.
+	inboxSeen string
+	inboxAt   time.Time
 
 	// Stored conversations for the Messages tab. The gateway answers a page;
 	// View only reads convs, never calls the source.
@@ -268,6 +274,7 @@ type fetchedMsg struct {
 	proposalsOK bool
 	inboxItems  []protocol.InboxItem
 	inboxOK     bool
+	listsAsked  bool // the Inbox and proposals were asked for this refresh
 	snap        Snapshot
 	err         error
 	events      []protocol.FeedEvent
@@ -324,7 +331,7 @@ func (m Model) Init() tea.Cmd {
 	if m.deliverySrc != nil {
 		cmds = append(cmds, func() tea.Msg { return deliveryStartMsg{} })
 	}
-	if m.cto != nil && m.cto.polling {
+	if m.cto != nil && m.cto.polling && m.showCTOBox(m.tab) {
 		cmds = append(cmds, m.ctoPollCmd())
 	}
 	return tea.Batch(cmds...)
@@ -355,13 +362,23 @@ func (m Model) fetchCmd() tea.Cmd {
 	askUsage := m.usageDue()
 	askCounts := askUsage && !m.usage.noCounts
 	askU := askUsage && m.usage.unavailable == ""
+	askTools := m.onboardingWantsTools()
+	inboxOnScreen := m.tab == inboxTab || m.focus == focusCTO
+	inboxSeen, inboxAt := m.inboxSeen, m.inboxAt
+	wantWorkerLog := m.tab == quotasTab && m.workersLog
 	now := m.now
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
 		var res fetchedMsg
 		res.at = now()
-		res.snap, res.err = src.Snapshot(ctx)
+		if with, ok := src.(interface {
+			SnapshotWith(context.Context, SnapshotOptions) (Snapshot, error)
+		}); ok {
+			res.snap, res.err = with.SnapshotWith(ctx, SnapshotOptions{WorkerLog: wantWorkerLog})
+		} else {
+			res.snap, res.err = src.Snapshot(ctx)
+		}
 		if res.err != nil || !res.snap.Connected {
 			return res
 		}
@@ -377,7 +394,7 @@ func (m Model) fetchCmd() tea.Cmd {
 		}
 		if d, ok := src.(interface {
 			ToolsDifferences(context.Context) (int, error)
-		}); ok && askUsage && len(res.snap.Nodes) > 1 {
+		}); ok && askUsage && askTools && len(res.snap.Nodes) > 1 {
 			count, err := d.ToolsDifferences(ctx)
 			if err == nil {
 				res.onboardingToolsCount, res.onboardingToolsKnown = count, true
@@ -396,7 +413,13 @@ func (m Model) fetchCmd() tea.Cmd {
 				res.countsErr = ErrUsageUnavailable
 			}
 		}
-		if c, ok := src.(inboxCaller); ok {
+		// The list is needed at once on the screen that shows it, or when the
+		// Snapshot says that what waits for the owner changed. Away from that
+		// screen it is still checked now and then, because gateway items and
+		// proposals made on another machine do not change the Snapshot.
+		if c, ok := src.(inboxCaller); ok &&
+			(inboxOnScreen || inboxMarkerOf(res.snap) != inboxSeen || res.at.Sub(inboxAt) >= inboxRefreshEvery) {
+			res.listsAsked = true
 			if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
 				res.proposalsOK = true
 			}
@@ -422,6 +445,36 @@ func (m Model) fetchCmd() tea.Cmd {
 		}
 		return res
 	}
+}
+
+// inboxMarkerOf describes what the Snapshot says waits for the owner. It is a
+// change marker, not the list itself: when it differs the Inbox and proposals
+// are fetched again, even on a tab that does not show them.
+func inboxMarkerOf(s Snapshot) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "p%d;", s.ProposalCount)
+	for _, held := range s.Held {
+		b.WriteString("h")
+		b.WriteString(held.ID)
+		b.WriteByte(';')
+	}
+	for _, out := range s.Outcomes {
+		b.WriteString("o")
+		b.WriteString(out.ReplyID)
+		b.WriteByte(';')
+	}
+	for _, learned := range s.Learned {
+		if learned.Status == "pending" && learned.Severity == "major" {
+			fmt.Fprintf(&b, "l%d;", learned.ID)
+		}
+	}
+	for _, a := range s.Agents {
+		if a.Waiting == nil || a.Worker != nil || protocol.IsOwner(a.Harness) {
+			continue
+		}
+		fmt.Fprintf(&b, "w%s:%d:%s;", a.SessionID, a.Waiting.Since, a.Waiting.Text)
+	}
+	return b.String()
 }
 
 func (m Model) topCmd(id string) tea.Cmd {
@@ -569,7 +622,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mp.loading = true
 			cmds = append(cmds, m.mapCmd())
 		}
-		if _, ok := m.src.(ctoSource); ok && m.cto != nil && !m.cto.polling {
+		if _, ok := m.src.(ctoSource); ok && m.cto != nil && !m.cto.polling && m.showCTOBox(m.tab) {
 			m.cto.polling = true
 			cmds = append(cmds, m.ctoPollCmd())
 		}
@@ -779,6 +832,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.fetching = false
 		m.applyFetch(msg)
+		if msg.err == nil && msg.snap.Connected {
+			m.inboxSeen = inboxMarkerOf(m.snap)
+		}
+		if msg.listsAsked {
+			m.inboxAt = msg.at
+		}
 		if msg.convAsked {
 			m.applyConversationPage(conversationPageMsg{page: msg.convPage, err: msg.convErr, first: true})
 		}

@@ -103,7 +103,21 @@ func (s *Client) action(ctx context.Context, method string, params any) (json.Ra
 	return raw, err
 }
 
+// SnapshotOptions says which optional parts of a Snapshot to read. Snapshot
+// reads them all; the screen uses this to leave out a part its current tab
+// does not show.
+type SnapshotOptions struct {
+	// WorkerLog asks for the worker log, which only the Quotas workers log
+	// shows.
+	WorkerLog bool
+}
+
 func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
+	return s.SnapshotWith(ctx, SnapshotOptions{WorkerLog: true})
+}
+
+// SnapshotWith is Snapshot with the optional parts chosen by the caller.
+func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapshot, error) {
 	var snap Snapshot
 	raw, err := s.Call(ctx, protocol.OpInfo, nil)
 	if err != nil {
@@ -115,6 +129,7 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	}
 	snap.Connected, snap.NodeID, snap.Version = info.Connected, info.NodeID, info.Version
 	snap.Hostname, snap.OwnerSession = info.Hostname, info.OwnerSession
+	snap.ProposalCount = info.ProposalCount
 	// An older daemon does not say; it accepts workers only if it is new enough
 	// to have the field, so "false" there is the safe reading.
 	snap.Launch = info.Launch
@@ -130,13 +145,15 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 		err      error
 	}
 	calls := []request{
-		{method: protocol.OpWorkerLog, params: protocol.WorkerLogQuery{Limit: 200}},
 		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true}, required: true},
 		{method: protocol.OpNodes}, {method: "notification_settings"}, {method: protocol.OpTimeZoneGet}, {method: protocol.OpWorkerProfiles},
 		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet}, {method: protocol.OpWorkerFloorsGet},
 		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: protocol.OpWorkerRotationGet}, {method: "outcome_inbox"}, {method: "learned_list"},
 		{method: protocol.OpHeldList}, {method: protocol.OpGraphGet},
 		{method: protocol.OpProjects, params: protocol.QueryProjects{}},
+	}
+	if opts.WorkerLog {
+		calls = append(calls, request{method: protocol.OpWorkerLog, params: protocol.WorkerLogQuery{Limit: 200}})
 	}
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
