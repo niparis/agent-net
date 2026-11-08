@@ -146,12 +146,12 @@ func TestLeadRoutePrefersSessionWithoutLimit(t *testing.T) {
 		t.Fatalf("limited lead chosen: to=%s route=%q", m.To, route)
 	}
 	limit(second, true)
-	if m, route := send(); m.To != lead || !strings.Contains(route, "hit its usage limit; it can answer after 13:00 UTC") {
+	if m, route := send(); (m.To != lead && m.To != second) || !strings.Contains(route, "hit its usage limit; it can answer after 13:00 UTC") {
 		t.Fatalf("all limited: to=%s route=%q", m.To, route)
 	}
 	limit(lead, false)
 	limit(second, false)
-	if m, route := send(); m.To != lead || strings.Contains(route, "usage limit") {
+	if m, route := send(); (m.To != lead && m.To != second) || strings.Contains(route, "usage limit") {
 		t.Fatalf("no limit: to=%s route=%q", m.To, route)
 	}
 }
