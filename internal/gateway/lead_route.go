@@ -37,6 +37,13 @@ func liveLeadSession(db leadDB, agent, repo, preferred string, withName bool, no
 	return db.QueryRow(`SELECT `+selectPart+` FROM sessions s`+join+` WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') ORDER BY CASE WHEN s.limited_until>? THEN 1 ELSE 0 END,CASE WHEN s.id=? THEN 0 ELSE 1 END,CASE WHEN s.repo_id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`, agent, now.Unix(), preferred, repo)
 }
 
+// isLeadSession says whether a session is its lead's session: any session of the
+// lead Agent, or only the pinned lead session when one is set. Repo and Team
+// routing both use this test.
+func isLeadSession(lead, pinned sql.NullString, agent, session string) bool {
+	return lead.Valid && lead.String == agent && (!pinned.Valid || pinned.String == session)
+}
+
 // routeLead runs in the message transaction after the original reply has been
 // authorized. The normal request gate then checks the actual recipient.
 func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
@@ -86,7 +93,7 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 		}
 	}
 	try := func(lead, preferred sql.NullString, scope, inRepo string) (string, bool, error) {
-		if !lead.Valid || lead.String == "" || (lead.String == agent && (!preferred.Valid || preferred.String == m.To)) {
+		if !lead.Valid || lead.String == "" || isLeadSession(lead, preferred, agent, m.To) {
 			return "", false, nil
 		}
 		var id, name string
@@ -107,7 +114,12 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 		m.Body = note + "\n" + fmt.Sprintf("You lead %s: answer this or hand it off to %s with agent_message_handoff.", scope, targetName) + "\n" + m.Body
 		return note, true, nil
 	}
-	if repo != "" && senderRepo != repo && repoLead.Valid && (repoLead.String != agent || (repoSession.Valid && repoSession.String != m.To)) {
+	if repo != "" && senderRepo != repo && repoLead.Valid {
+		// The target is its Repo's lead, so the message stays with it. The Team
+		// lead is not on this path.
+		if isLeadSession(repoLead, repoSession, agent, m.To) {
+			return "", nil
+		}
 		note, done, e := try(repoLead, repoSession, repoName, repo)
 		if done || e != nil {
 			return note, e

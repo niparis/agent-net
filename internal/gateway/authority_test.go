@@ -262,7 +262,7 @@ func TestPlaceBlockShowsModeAndHeldBack(t *testing.T) {
 	want := "[agent-net] Your place, from agent-net:\n" +
 		"You lead team Alpha (mode: absolute). Members: demo.\n" +
 		"You report to the owner. Held back from your team: deploy to production.\n" +
-		"Requests from outside Alpha to a member come to you. Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly.\n" +
+		"Requests from outside Alpha to a member come to you, except requests to a member repo that has its own lead, which go to that lead. Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly.\n" +
 		"Team purpose: Build the forge and keep it green."
 	if err != nil || got != want {
 		t.Fatalf("lead block:\n%s\nwant:\n%s\n%v", got, want, err)
