@@ -85,3 +85,14 @@ func TestEmptyAnnounceWaitingDoesNotCreateInput(t *testing.T) {
 		t.Fatalf("empty string created a wait: %+v", got)
 	}
 }
+
+func TestWaitingKindTextForPeerNotices(t *testing.T) {
+	if got := WaitingKindText(WaitingPermission); got != "approval" {
+		t.Fatalf("permission: %q", got)
+	}
+	for _, kind := range []string{WaitingQuestion, WaitingInput, ""} {
+		if got := WaitingKindText(kind); got != "answer" {
+			t.Fatalf("%q: %q", kind, got)
+		}
+	}
+}

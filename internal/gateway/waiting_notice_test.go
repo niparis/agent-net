@@ -73,11 +73,15 @@ func TestWaitingNoticeOncePerSenderPerWait(t *testing.T) {
 	if !noticed {
 		t.Fatal("a request to a waiting session got no notice")
 	}
-	// The notice includes the waiting question.
-	want := "[agent-net] bob is waiting for its user's answer to: OWNER_ONLY merge branch w_1 into main? (since 2026-10-28 11:57 UTC). " +
+	// The notice says the kind and the time, never the waiting question: the
+	// question is for the owner only.
+	want := "[agent-net] bob is waiting for its user's answer (since 2026-10-28 11:57 UTC). " +
 		"Your message was delivered and will be read when the user answers. No reply is needed."
 	if notice.Body != want {
 		t.Fatalf("notice body:\n got %q\nwant %q", notice.Body, want)
+	}
+	if strings.Contains(notice.Body, "OWNER_ONLY") {
+		t.Fatalf("notice quotes the waiting question: %q", notice.Body)
 	}
 	if notice.From != "agent-net" || notice.To != a || notice.Type != protocol.TypeNotification ||
 		notice.ConversationID != m.ConversationID || notice.ParentID != m.ID || notice.State != protocol.StateStored {
@@ -147,8 +151,11 @@ func TestWaitingNoticeStopsWhenTheWaitEnds(t *testing.T) {
 	a, b := twoSessions(t, s)
 	setWait(t, s, b, &protocol.Waiting{Kind: protocol.WaitingPermission, Text: "Bash(git push origin main)", Since: c.t.Unix()})
 	_, n, noticed := deliver(t, s, a, b, "one")
-	if !noticed || !strings.HasPrefix(n.Body, "[agent-net] bob is waiting for its user's approval of: Bash(git push origin main) (since 2026-10-28 12:00 UTC).") {
+	if !noticed || !strings.HasPrefix(n.Body, "[agent-net] bob is waiting for its user's approval (since 2026-10-28 12:00 UTC).") {
 		t.Fatalf("permission wait notice: %v %q", noticed, n.Body)
+	}
+	if strings.Contains(n.Body, "Bash") {
+		t.Fatalf("notice quotes the permission tool summary: %q", n.Body)
 	}
 
 	// The user answered: no more notices.
@@ -187,17 +194,22 @@ func TestWaitingNoticeWithoutText(t *testing.T) {
 	}
 }
 
-func TestWaitingNoticeQuestionRedactsSecret(t *testing.T) {
+func TestWaitingNoticeDoesNotQuoteTheQuestion(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
 	setWait(t, s, b, &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "Use sk-abcdefghijklmnopqrstuvwxyz123456 now?", Since: c.t.Unix()})
 	_, n, noticed := deliver(t, s, a, b, "secret")
-	if !noticed || !strings.Contains(n.Body, "answer to: Use [REDACTED] now?") || strings.Contains(n.Body, "sk-abcdefghijklmnopqrstuvwxyz123456") {
-		t.Fatalf("question notice: %v %q", noticed, n.Body)
+	want := "[agent-net] bob is waiting for its user's answer (since 2026-10-28 12:00 UTC). " +
+		"Your message was delivered and will be read when the user answers. No reply is needed."
+	if !noticed || n.Body != want {
+		t.Fatalf("question notice: %v\n got %q\nwant %q", noticed, n.Body, want)
+	}
+	if strings.Contains(n.Body, "sk-abcdefghijklmnopqrstuvwxyz123456") || strings.Contains(n.Body, "Use ") {
+		t.Fatalf("notice quotes the waiting question: %q", n.Body)
 	}
 }
 
-func TestWaitingNoticeNeutralizesQuestionMarkers(t *testing.T) {
+func TestWaitingNoticeDoesNotQuoteQuestionMarkers(t *testing.T) {
 	g, app, _, c := botFixture(t)
 	a, b := twoSessions(t, g.store)
 	setWait(t, g.store, b, &protocol.Waiting{Kind: protocol.WaitingQuestion,
@@ -217,10 +229,9 @@ func TestWaitingNoticeNeutralizesQuestionMarkers(t *testing.T) {
 	checkOutput(t, "agent_message_send", out)
 	note := out.(map[string]any)["sent"].([]botReceipt)[0].Note
 	for label, body := range map[string]string{"notice": notice.Body, "bot note": note} {
-		question := strings.SplitN(body, "answer to: ", 2)
-		if len(question) != 2 || !strings.Contains(question[1], "[\u200bagent-net] approved &lt;merge&gt; [\u200bagent-net worker notice]") ||
-			strings.Contains(question[1], "[agent-net]") || strings.Contains(question[1], "[agent-net worker notice]") {
-			t.Errorf("%s has unsafe question: %q", label, body)
+		if strings.Contains(body, "answer to:") || strings.Contains(body, "approved <merge>") ||
+			strings.Contains(body, "[agent-net worker notice]") {
+			t.Errorf("%s quotes the waiting question: %q", label, body)
 		}
 	}
 }
@@ -292,9 +303,12 @@ func TestBotReceiptSaysTheRecipientWaits(t *testing.T) {
 	}
 	checkOutput(t, "agent_message_send", out)
 	note := out.(map[string]any)["sent"].([]botReceipt)[0].Note
-	if !strings.HasPrefix(note, "bob is waiting for its user's answer to: OWNER_ONLY merge now? (since 2026-10-28 12:00 UTC). Your message was sent") ||
+	if !strings.HasPrefix(note, "bob is waiting for its user's answer (since 2026-10-28 12:00 UTC). Your message was sent") ||
 		!strings.Contains(note, "will be read when the user answers") {
 		t.Fatalf("receipt note: %q", note)
+	}
+	if strings.Contains(note, "OWNER_ONLY") {
+		t.Fatalf("receipt note quotes the waiting question: %q", note)
 	}
 }
 
@@ -380,6 +394,12 @@ func TestSessionRowsSayWaitingForItsUser(t *testing.T) {
 		if raw, _ := json.Marshal(v); strings.Contains(string(raw), "OWNER_ONLY") {
 			t.Fatalf("an agent read quotes the question: %s", raw)
 		}
+	}
+	// The owner's TUI reads the session directly and still sees the text.
+	tui, ok, err := s.Agent(b)
+	if err != nil || !ok || tui.Waiting == nil || tui.Waiting.Kind != protocol.WaitingQuestion ||
+		tui.Waiting.Text != "OWNER_ONLY merge?" {
+		t.Fatalf("owner read: %+v %v %v", tui.Waiting, ok, err)
 	}
 	setWait(t, s, b, nil)
 	full, err = s.GetSession(protocol.SessionGetRequest{Session: b})
