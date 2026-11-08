@@ -117,14 +117,20 @@ func (g *Gateway) triggerGraphCutover(ctx context.Context) {
 		return
 	}
 	g.graphCutoverMu.Lock()
+	if g.graphCutoverClosing {
+		g.graphCutoverMu.Unlock()
+		return
+	}
 	if g.graphCutoverRunning {
 		g.graphCutoverPending = true
 		g.graphCutoverMu.Unlock()
 		return
 	}
 	g.graphCutoverRunning = true
+	g.graphCutoverWG.Add(1)
 	g.graphCutoverMu.Unlock()
 	go func() {
+		defer g.graphCutoverWG.Done()
 		for {
 			g.checkGraphCutover(ctx)
 			g.graphCutoverMu.Lock()
