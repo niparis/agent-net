@@ -70,24 +70,14 @@ func TestWorkerBlockedEndNoticeDoesNotDelayIdleLimit(t *testing.T) {
 		t.Fatal("first end notice did not reach blocked gateway")
 	}
 	rec := expire(second.SessionID)
-	// Poll for the synchronous end decision while the first send stays blocked.
-	deadline := time.NewTimer(time.Second)
-	defer deadline.Stop()
-	tick := time.NewTicker(10 * time.Millisecond)
-	defer tick.Stop()
-	for {
+	// The end decision is made by the worker loop on its tick, and that loop
+	// can be late on a loaded host. The first send stays blocked for the whole
+	// wait, so an end that queued behind it would still fail here.
+	eventually(t, "another worker's idle limit ended it while the end queue was busy", func() bool {
 		w.d.wmu.Lock()
-		stopped := rec.stopping
-		w.d.wmu.Unlock()
-		if stopped {
-			break
-		}
-		select {
-		case <-tick.C:
-		case <-deadline.C:
-			t.Fatal("blocked end notice delayed another worker's idle limit")
-		}
-	}
+		defer w.d.wmu.Unlock()
+		return rec.stopping
+	})
 	unblock()
 	notices := w.waitNotice(t, 2)
 	if len(notices) != 2 || notices[0].From != first.SessionID || notices[1].From != second.SessionID {

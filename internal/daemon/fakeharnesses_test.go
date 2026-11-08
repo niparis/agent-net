@@ -458,7 +458,12 @@ func fakeClaudeMCP() {
 					ID string `json:"id"`
 				}
 				if json.Unmarshal(sc.Bytes(), &response) == nil && response.ID == strconv.Itoa(next) {
-					os.WriteFile(filepath.Join(cwd, "fake-cto-hello.json"), append([]byte(nil), sc.Bytes()...), 0600)
+					// Write then rename: a test that polls this file must never
+					// read a half-written answer.
+					tmp := filepath.Join(cwd, "fake-cto-hello.json.tmp")
+					if os.WriteFile(tmp, append([]byte(nil), sc.Bytes()...), 0600) == nil {
+						os.Rename(tmp, filepath.Join(cwd, "fake-cto-hello.json"))
+					}
 				}
 			}
 		}
