@@ -424,6 +424,23 @@ func (m *Model) graphDisplayView(v protocol.GraphView) protocol.GraphView {
 			out.Nodes = append(out.Nodes, protocol.Node{Name: unassignedTeam, Kind: "team"})
 		}
 	}
+	// Team tags remain selectable while a team is open.
+	if m.teamFilter != "" && m.mp.focusNode == "" && m.mp.teamInside {
+		connected := map[string]bool{}
+		for name, outside := range m.mp.outside {
+			if outside {
+				connected[m.graphTeamOf(name)] = true
+			}
+		}
+		for _, n := range v.Nodes {
+			if n.Ref != nil && n.Ref.Kind == "team" && keep[n.Name] && connected[n.Name] {
+				out.Nodes = append(out.Nodes, n)
+			}
+		}
+		if m.teamFilter != unassignedTeam && connected[unassignedTeam] {
+			out.Nodes = append(out.Nodes, protocol.Node{Name: unassignedTeam, Kind: "team"})
+		}
+	}
 	if len(m.mp.dormant) > 0 {
 		label := fmt.Sprintf("%d dormant · d to show", len(m.mp.dormant))
 		if m.mp.showDormant {
@@ -660,7 +677,7 @@ func (m *Model) selectGraphInterior() {
 		}
 	}
 	for _, n := range m.graphState.Graph.Nodes {
-		if !m.mp.outside[n.Name] && n.Kind != "dormant" {
+		if !m.mp.outside[n.Name] && n.Kind != "dormant" && n.Kind != "team" && (n.Ref == nil || n.Ref.Kind != "team") {
 			m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: n.Name})
 			return
 		}

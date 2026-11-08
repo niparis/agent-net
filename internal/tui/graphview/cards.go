@@ -185,6 +185,9 @@ func PixelLayout(scene Scene, size Size, metrics PixelMetrics) (map[Cell]LabelCe
 }
 
 func pixelLabelsAndHits(scene Scene, size Size, cellMetrics ...PixelMetrics) (map[Cell]LabelCell, map[Cell]string) {
+	if scene.TeamCanvas {
+		return teamText(scene, size)
+	}
 	labels := map[Cell]LabelCell{}
 	hits := map[Cell]string{}
 	metrics := PixelMetrics{CellWidth: 8, CellHeight: 16}

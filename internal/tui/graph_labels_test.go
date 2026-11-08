@@ -97,6 +97,7 @@ func TestGraphIdentityGoldens(t *testing.T) {
 	golden(t, "graph_identity_agent_80x24", m.testView())
 	m.mapOn = false
 	golden(t, "graph_identity_network_80x24", m.testView())
+	m.setTeamFilter(unassignedTeam)
 	scene := m.graphScene(m.graphState, graphview.Size{Width: 80, Height: 20})
 	labels := map[string]bool{}
 	for _, n := range scene.Nodes {

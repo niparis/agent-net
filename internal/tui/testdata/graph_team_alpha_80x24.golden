@@ -1,23 +1,23 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+   Graph · team Alpha
+
+  ╭─ Alpha ──────────────────────────────────────────────────────────────────╮
+  │ no lead · 1 project · 2 sessions                                         │
+  │                                                                          │
+  │                                                                          │
+  │                                                                          │
+  │                                                                          │
+  │       (○) cogforge                                                       │
+  │           2 sessions                                                     │
+  │                                                                          │
+  │                                                                          │
+  │                                                                          │
+  ╰──────────────────────────────────────────────────────────────────────────╯
 
 
-                                                                       shop ○
-                                                                  ⣀⠤⠔⠒⠉⠁
-                                                            ⢀→⠤⠒⠊⠉
-                                                       ⣀⠤⠔⠒⠉⠁
-                                                 ⣀⡠⠤⠒⠊⠉
-                                           ⢀⣀⠤⠔⠒⠉
-                                      ⣀⡠⠤⠒⠊⠁
-                                ⢀⣀⠤⠔⠒⠉
-                           ⣀⡠⠤⠒⠉⠁
-                     ⢀⣀⠤⠔⠊⠉
-                ⣀⡠⠤⠒⠉⠁
-          ⢀⣀⠤⠒⠊⠉
-     ⣀⡠⠔⠒⠉⠁
-   (○) cogforge
-
+   more teams  unassigned
   needs you: highlighted · busy: bright · offline: dim
-  selected: cogforge · repo · 1 edge
+  selected: cogforge · repo · 0 edges
   accept, test, review, merge, release, verify: caller
 
   f focus/zoom  d dormant  esc back  x/X remove  t team: Alpha  ? help

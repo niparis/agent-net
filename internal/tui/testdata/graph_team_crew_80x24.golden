@@ -1,23 +1,23 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
-
-
-                         ○ other-a⡀
-                                  ⠈⠉⠉⠒⠒⠤⠤⢄⣀⣀
-                                            ⠉⠉⠑⠒⠒(○) crew-a
-                                                    ⠉⠒⠤⣀
-                                                        ⠉⠒⠤⣀⡀
-                                                            ⠈⠑⠢⢄⡀
-                                                                →⠑⠢⢄○ crew-b
-                                                                    ⠈⢆
-                                                                      ⠑⡄
-                                                                       ⠈⠢⡀
-                                                                         ⠑↘
-                                                                     crew-c ○
-
-    ○ qa
-
+   Graph · team Crew
+  ╭─ Crew ───────────────────────────────────────────────────────────────────╮
+  │ no lead · 3 projects · 5 sessions                                        │
+  │                                                                          │
+  │                                                                          │
+  │                                     ○  qa                                │
+  │                                        1 session                         │
+  │                                                                          │
+  │         ⣀⣀⣀⡠⠤⠤⠤⠤⠤⠤⣀⣀⣀⡀                             ⣀⣀⣀⣀⠤⠤⠤⠤⠤⠤⣀⣀⣀⡀        │
+  │        ○  crew-c     ⠈⠉⠒⠤⣀⡀                   ⢀⡠⠤⠒⠉      crew-a (○)      │
+  │           2 sessions      ⠈⠑⠒⠤⡀           ⣀⠤⠒⠉⠁          1 session       │
+  │                               ⠈⠑⢄⡀     ⢀⠔⠉                               │
+  │                                  ⠈⠒⢄⢀⠔⠊⠁                                 │
+  │                                     ○  crew-b                            │
+  │                                        1 session                         │
+  │                                                                          │
+  ╰──────────────────────────────────────────────────────────────────────────╯
   needs you: highlighted · busy: bright · offline: dim
-  selected: crew-a · repo · 2 edges
+  selected: crew-a · repo · 0 edges
   accept, test, review, merge, release, verify: caller
 
   f focus/zoom  d dormant  esc back  x/X remove  t team: Crew  ? help

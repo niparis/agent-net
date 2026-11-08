@@ -170,6 +170,9 @@ func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.
 			n.WildcardLabel = mark
 		}
 	}
+	if teamScene, ok := m.teamGraphScene(scene, size); ok {
+		return teamScene
+	}
 	scene.Groups = m.graphGroups(scene)
 	if len(scene.Groups) > 0 {
 		scene = graphview.ArrangeGroups(scene, size)
@@ -199,9 +202,6 @@ func (m *Model) scheduleGraphRender() tea.Cmd {
 	state := m.graphState
 	state.Smooth = g.motion
 	scene := m.graphScene(state, size)
-	if len(scene.Groups) > 0 {
-		return nil
-	}
 	if !g.motion {
 		stillScene(&scene)
 	}
@@ -343,6 +343,17 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if k.String() == "tab" && m.teamFilter != "" {
+		return m.cycleTeamFilter()
+	}
+	if m.mp.teamInside && (k.String() == "pgup" || k.String() == "pgdown") {
+		if k.String() == "pgup" {
+			m.mp.teamCardScroll = max(0, m.mp.teamCardScroll-8)
+		} else {
+			m.mp.teamCardScroll += 8
+		}
+		return m, nil
+	}
 	key := keyAction(contextGraph, k.String())
 	if key == "help" {
 		m.openHelp()
@@ -358,8 +369,18 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var action graphview.Action
 	switch key {
 	case "focus":
+		if m.teamFilter != "" && m.mp.focusNode == "" && !m.mp.teamInside && !m.mp.outside[m.graphState.Graph.Selected()] {
+			m.mp.teamInside = true
+			m.applyTeamView(true)
+			return m, nil
+		}
 		return m.graphFocus()
 	case "back":
+		if m.mp.teamInside {
+			m.mp.teamInside = false
+			m.applyTeamView(true)
+			return m, nil
+		}
 		return m.graphBack()
 	case "dormant":
 		m.mp.showDormant = !m.mp.showDormant
@@ -391,11 +412,11 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			d.DY = 1
 		}
 		scene := m.graphScene(m.graphState, graphview.Size{Width: w, Height: h})
-		if len(scene.Groups) > 0 || len(m.mp.dormant) > 0 {
+		if scene.TeamCanvas || len(scene.Groups) > 0 || len(m.mp.dormant) > 0 {
 			current := m.graphState.Graph.Selected()
 			var from graphview.Point
 			for _, n := range scene.Nodes {
-				if n.Name == current {
+				if n.Name == current || n.Selected {
 					from = n.Position
 				}
 			}
@@ -451,6 +472,22 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "open card":
 		name := m.graphState.Graph.Selected()
+		if m.teamFilter == "" {
+			if team := m.graphTeamOf(name); team != "" && team != name {
+				m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: team})
+				return m.graphFocus()
+			}
+		}
+		if m.teamFilter != "" && m.mp.teamInside {
+			if n, ok := m.mapNode(name); ok && n.Ref != nil && n.Ref.Kind == "team" {
+				m.setTeamFilter(n.Ref.ID)
+				return m, nil
+			}
+			if name == unassignedTeam {
+				m.setTeamFilter(unassignedTeam)
+				return m, nil
+			}
+		}
 		if name == dormantChip {
 			m.mp.showDormant = !m.mp.showDormant
 			m.applyTeamView(true)
@@ -505,7 +542,7 @@ func (m Model) graphView(w, h int) []string {
 	size := graphview.Size{Width: gw, Height: gh}
 	scene := m.graphScene(state, size)
 	renderer := graphview.Braille{Styled: true}
-	if lines, ok := m.pixelLines(gw, gh); ok && len(scene.Groups) == 0 {
+	if lines, ok := m.pixelLines(gw, gh); ok {
 		for _, line := range lines {
 			out = append(out, "  "+line)
 		}
@@ -741,7 +778,7 @@ func (m Model) graphMouse(msg tea.MouseMsg) Model {
 	size := graphview.Size{Width: w, Height: h}
 	scene := m.graphScene(m.graphState, size)
 	hit := ""
-	pixelReady := m.graphPixel.enabled() && m.graphPixel.ready && m.graphPixel.size == size && len(scene.Groups) == 0
+	pixelReady := m.graphPixel.enabled() && m.graphPixel.ready && m.graphPixel.size == size
 	if pixelReady {
 		hit = graphview.PixelHit(scene, size, graphview.PixelMetrics{CellWidth: m.graphPixel.cellW, CellHeight: m.graphPixel.cellH}, graphview.Cell{X: x, Y: y})
 		if hit == "" {

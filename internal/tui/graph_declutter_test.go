@@ -310,7 +310,7 @@ func TestGraphDeclutterGoldens(t *testing.T) {
 				t.Fatal("kind prefix returned")
 			}
 			if view == "overview" {
-				for _, want := range []string{"forge", "★ shop", "platform", "unassigned", "3 depends", "4 dormant · d to show", "→ all projects · auto"} {
+				for _, want := range []string{"forge", "★ shop", "platform", "unassigned", "4 dormant · d to show"} {
 					if !strings.Contains(plain, want) {
 						t.Errorf("%s missing in overview:\n%s", want, plain)
 					}

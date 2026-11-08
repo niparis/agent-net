@@ -32,6 +32,9 @@ type LabelCell struct {
 }
 
 func (b Braille) Render(scene Scene, size Size) Output {
+	if scene.TeamCanvas {
+		return b.renderTeamCanvas(scene, size)
+	}
 	if len(scene.Groups) > 0 && size.Width > 0 && size.Height > 0 {
 		return b.renderGroups(scene, size)
 	}
@@ -197,6 +200,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 	}
 
 	for _, n := range scene.Nodes {
+		if n.Kind == "tag" {
+			continue
+		}
 		x, y := point(n.Position)
 		marker := '○'
 		if n.HasCharter {
