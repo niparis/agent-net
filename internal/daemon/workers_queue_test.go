@@ -662,13 +662,16 @@ func TestAdmissionCountsWorkersStartedInTheLastFiveMinutes(t *testing.T) {
 	}
 }
 
-// The gap: a start within the gap of the last one waits, then goes.
+// The gap: a start within the gap of the last one waits, then goes. The gap is
+// much longer than the round trip of a start: the start reaches admission only
+// after its gateway round trip, which can take seconds under host load. So the
+// test does not time the gap. It holds the gap open, then closes it by hand.
 func TestStartGapQueuesTheSecondStart(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fl := &fakeLoad{l: roomyLoad()}
 	set := queueSet
-	set.StartGap = 700 * time.Millisecond
+	set.StartGap = time.Hour
 	w := startWorkerNode(t, g, set, withLoad(fl))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
@@ -682,6 +685,10 @@ func TestStartGapQueuesTheSecondStart(t *testing.T) {
 	if r.Status != "queued" || !strings.Contains(r.QueueReason, "a worker started") {
 		t.Fatalf("second: %+v", r)
 	}
+	// The last start was two hours ago: the gap is over, and the queued start goes.
+	w.d.qmu.Lock()
+	w.d.lastStart = time.Now().Add(-2 * time.Hour)
+	w.d.qmu.Unlock()
 	eventually(t, "the start went after the gap", func() bool { return w.d.workerCount() == 1 })
 }
 

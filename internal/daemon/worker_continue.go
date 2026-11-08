@@ -53,6 +53,60 @@ func workerWorktreeRetained(r *workerRow) bool {
 	return workerBranchExists(r)
 }
 
+// continueBranch prepares the branch that a continued worker starts from. It
+// saves the old worker's leftover changes, restores the old branch when cleanup
+// removed it, checks that the old checkout or branch is still there, and
+// reserves the branch for the start. It returns the reserved branch, or "" when
+// there is none; the caller releases it.
+//
+// Cleanup takes resumeMu for each branch it removes, so the restore, the check
+// and the reservation cannot interleave with a removal.
+func (d *Daemon) continueBranch(ctx context.Context, path string, r *workerRow, old *worker, subject string, unfinished bool) (string, error) {
+	d.resumeMu.Lock()
+	defer d.resumeMu.Unlock()
+	d.saveWorkerChanges(old, subject, r.EndedReason, unfinished)
+	if err := restoreWorkerBranch(ctx, path, r); err != nil {
+		return "", err
+	}
+	if err := checkWorkerWorktree(r); err != nil {
+		return "", err
+	}
+	if r.Branch == "" {
+		return "", nil
+	}
+	if _, err := gitOut(ctx, path, "rev-parse", "--verify", "refs/heads/"+r.Branch+"^{commit}"); err != nil {
+		return "", nil
+	}
+	d.reserveWorkerBase(r.Branch)
+	return r.Branch, nil
+}
+
+// restoreWorkerBranch makes the old worker's branch again when cleanup removed
+// it. Cleanup removes an unchanged worker branch, even when its starting commit
+// contains work inherited from an earlier worker. Restore it when another worker
+// branch points there, or its commit is outside main HEAD. This also works if
+// main has since incorporated that work.
+func restoreWorkerBranch(ctx context.Context, path string, r *workerRow) error {
+	if r.Branch == "" || r.Base == "" {
+		return nil
+	}
+	if _, err := gitOut(ctx, path, "rev-parse", "--verify", "refs/heads/"+r.Branch+"^{commit}"); err == nil {
+		return nil
+	}
+	parents, err := gitOut(ctx, path, "for-each-ref", "--format=%(refname)", "--points-at", r.Base, "refs/heads/agent-net/")
+	if err != nil {
+		return fmt.Errorf("cannot find worker branches at %s: %w", r.Base, err)
+	}
+	_, ancestorErr := gitOut(ctx, path, "merge-base", "--is-ancestor", r.Base, "HEAD")
+	if parents == "" && ancestorErr == nil {
+		return nil
+	}
+	if _, err := gitOut(ctx, path, "branch", r.Branch, r.Base); err != nil {
+		return fmt.Errorf("cannot restore worker branch %s: %w", r.Branch, err)
+	}
+	return nil
+}
+
 // continueEndWait is how long a continue waits for a worker that has sent its
 // hand-back notice to finish ending before it is refused.
 const continueEndWait = 10 * time.Second
@@ -139,9 +193,6 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	if running || r.EndedReason == "" {
 		return none, fmt.Errorf("worker %s is still running: wait for it to end, or stop it first", p.Session)
 	}
-	if err := checkWorkerWorktree(r); err != nil {
-		return none, err
-	}
 	if r.TaskFull == "" {
 		return none, fmt.Errorf("the record of worker %s has no task (it was made by an older agent-net)", p.Session)
 	}
@@ -183,29 +234,15 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		}
 		old := &worker{id: r.ID, worktree: r.Worktree, branch: r.Branch, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
 			owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}
-		d.saveWorkerChanges(old, subject, r.EndedReason, !complete)
-		// The branch is kept when the old worker left changes. If it is gone,
-		// the new worker starts from the project's current commit.
-		// Cleanup removes an unchanged worker branch, even when its starting
-		// commit contains work inherited from an earlier worker. Restore it
-		// when another worker branch points there, or its commit is outside
-		// main HEAD. This also works if main has since incorporated that work.
-		if r.Branch != "" && r.Base != "" {
-			if _, err := gitOut(ctx, path, "rev-parse", "--verify", "refs/heads/"+r.Branch+"^{commit}"); err != nil {
-				parents, err := gitOut(ctx, path, "for-each-ref", "--format=%(refname)", "--points-at", r.Base, "refs/heads/agent-net/")
-				if err != nil {
-					return none, fmt.Errorf("cannot find worker branches at %s: %w", r.Base, err)
-				}
-				_, ancestorErr := gitOut(ctx, path, "merge-base", "--is-ancestor", r.Base, "HEAD")
-				if parents != "" || ancestorErr != nil {
-					if _, err := gitOut(ctx, path, "branch", r.Branch, r.Base); err != nil {
-						return none, fmt.Errorf("cannot restore worker branch %s: %w", r.Branch, err)
-					}
-				}
-			}
+		base, err := d.continueBranch(ctx, path, r, old, subject, !complete)
+		if err != nil {
+			return none, err
 		}
-		if _, err := gitOut(ctx, path, "rev-parse", "--verify", "refs/heads/"+r.Branch+"^{commit}"); err == nil {
-			l.Base = r.Branch
+		// The start holds the branch until it has its worktree, so cleanup
+		// cannot remove it while the judge runs or the start waits in the queue.
+		defer d.releaseWorkerBase(base)
+		if base != "" {
+			l.Base = base
 			where = "branch"
 		}
 	}

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -446,6 +447,58 @@ func TestContinueChainKeepsEarlierCommits(t *testing.T) {
 	}
 	if strings.Contains(c.Task.Body, "left no changes") {
 		t.Errorf("incorrect brief: %s", c.Task.Body)
+	}
+	if _, err := os.Stat(filepath.Join(c.Worktree, "chain.txt")); err != nil {
+		t.Errorf("missing earlier work: %v", err)
+	}
+}
+
+// Cleanup removes an ended worker's worktree and branch once the branch's
+// commit is in the default branch. A continue after that cleanup must still
+// start from the worker's commit: the branch is restored from its base.
+func TestContinueAfterCleanupRestoresTheBranch(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	a := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "write work", Isolation: protocol.IsolationWorktree})
+	if err := os.WriteFile(filepath.Join(a.Worktree, "chain.txt"), []byte("work\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: a.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	b, err := w.startDefault(protocol.WorkerStartRequest{Continue: a.SessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An untracked file keeps A's worktree out of cleanup. A's branch then
+	// stays, and B's branch can be restored from the commit both started from.
+	if err := os.WriteFile(filepath.Join(a.Worktree, "kept.txt"), []byte("kept\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: b.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	eventually(t, "worker B has ended", func() bool { return w.d.workerCount() == 0 })
+	// Main moves to the commit B started from. B has no work of its own, so
+	// cleanup may remove its worktree and branch.
+	gitOutT(t, repo, "merge", "--ff-only", a.Branch)
+	w.d.cleanupProjects(context.Background())
+	if _, err := os.Stat(a.Worktree); err != nil {
+		t.Fatalf("cleanup removed worker A's worktree, so the restore path is not tested: %v", err)
+	}
+	if _, err := os.Stat(b.Worktree); !os.IsNotExist(err) {
+		t.Fatalf("cleanup kept worker B's worktree (stat: %v), so the restore path is not tested", err)
+	}
+	if _, err := gitOut(context.Background(), repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+b.Branch); err == nil {
+		t.Fatalf("cleanup kept worker B's branch %s, so the restore path is not tested", b.Branch)
+	}
+	c, err := w.startDefault(protocol.WorkerStartRequest{Continue: b.SessionID})
+	if err != nil {
+		t.Fatalf("continue after cleanup: %v", err)
+	}
+	if got, want := gitOutT(t, c.Worktree, "rev-parse", "HEAD"), gitOutT(t, repo, "rev-parse", a.Branch); got != want {
+		t.Errorf("continued from %s, want worker A's commit %s", got, want)
 	}
 	if _, err := os.Stat(filepath.Join(c.Worktree, "chain.txt")); err != nil {
 		t.Errorf("missing earlier work: %v", err)
