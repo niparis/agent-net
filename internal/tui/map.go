@@ -64,7 +64,7 @@ func (m Model) mapCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
 		at := now()
-		view, err := src.GraphView(ctx, protocol.QueryGraph{AutoTyped: true})
+		view, err := src.GraphView(ctx, protocol.QueryGraph{AutoTyped: true, Places: true})
 		return mapMsg{view: view, err: err, at: at}
 	}
 }

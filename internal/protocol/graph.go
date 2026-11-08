@@ -17,6 +17,27 @@ type CharterSource struct {
 }
 type CharterSources map[string][]CharterSource
 
+// PlaceHeldBack is one thing the owner holds back, and the level that set it
+// ("team" or "repo"). The always held back list is not stored here.
+type PlaceHeldBack struct {
+	Text string `json:"text"`
+	From string `json:"from"`
+}
+
+// NodePlace is where one record sits in the authority tree (decision 0089):
+// its team and live lead, the team's mode, the repo lead it reports to and
+// what the owner holds back. The gateway builds it from the same Team and Repo
+// data as the turn text, so the card and the turn text agree.
+type NodePlace struct {
+	Team      string          `json:"team,omitempty"`
+	TeamLead  string          `json:"team_lead,omitempty"`
+	Mode      string          `json:"mode,omitempty"`
+	Repo      string          `json:"repo,omitempty"`
+	RepoLead  string          `json:"repo_lead,omitempty"`
+	ReportsTo string          `json:"reports_to,omitempty"`
+	HeldBack  []PlaceHeldBack `json:"held_back,omitempty"`
+}
+
 // Charter contains the fixed, independently versioned attributes of a node.
 // Deprecated Consumers, Needs and Notes stay empty for older readers.
 type Charter struct {
@@ -66,12 +87,15 @@ type Node struct {
 	Role       string    `json:"role,omitempty"`
 	// AuthorityMode (a team) and HeldBack (a team or a repo) are the owner's
 	// authority settings (decision 0089).
-	AuthorityMode string  `json:"authority_mode,omitempty"`
-	HeldBack      string  `json:"held_back,omitempty"`
-	Name          string  `json:"name"`
-	Kind          string  `json:"kind"`
-	CreatedAt     int64   `json:"created_at,omitempty"`
-	Charter       Charter `json:"charter"`
+	AuthorityMode string `json:"authority_mode,omitempty"`
+	HeldBack      string `json:"held_back,omitempty"`
+	// Place is the record's position in the authority tree, built by the
+	// gateway from the same data as the turn text (decision 0089).
+	Place     *NodePlace `json:"place,omitempty"`
+	Name      string     `json:"name"`
+	Kind      string     `json:"kind"`
+	CreatedAt int64      `json:"created_at,omitempty"`
+	Charter   Charter    `json:"charter"`
 	// Settings are the node's overrides of its maturity defaults (decision
 	// 0022). They sit beside the charter and only the owner changes them.
 	Settings map[string]string `json:"settings,omitempty"`

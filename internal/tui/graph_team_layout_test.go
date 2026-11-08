@@ -27,7 +27,7 @@ func teamSceneNode(t *testing.T, s graphview.Scene, name string) graphview.Scene
 func TestTeamFocusPlacementUsesFrame(t *testing.T) {
 	const w, h = 120, 34
 	m := mockTeamsModel(w, h)
-	m = keys(m, "enter")
+	m = keys(m, "f")
 	s := m.graphScene(m.graphState, graphview.Size{Width: w, Height: h})
 	if len(s.Frames) == 0 {
 		t.Fatal("no frames")
@@ -68,7 +68,7 @@ func graphKeyFor(kind, id string) string {
 func TestTeamEdgesCurveClearOfFrameBorders(t *testing.T) {
 	const w, h = 120, 34
 	m := mockTeamsModel(w, h)
-	m = keys(m, "enter")
+	m = keys(m, "f")
 	s := m.graphScene(m.graphState, graphview.Size{Width: w, Height: h})
 	if len(s.Edges) == 0 {
 		t.Fatal("no edges")
@@ -109,7 +109,7 @@ func TestTeamEdgesCurveClearOfFrameBorders(t *testing.T) {
 func TestFocusNeighbourFramesBesideMainFrame(t *testing.T) {
 	const w, h = 120, 34
 	m := mockTeamsModel(w, h)
-	m = keys(m, "enter")
+	m = keys(m, "f")
 	s := m.graphScene(m.graphState, graphview.Size{Width: w, Height: h})
 	if len(s.Frames) != 2 {
 		t.Fatalf("frames = %d, want main + one connected team", len(s.Frames))
@@ -207,7 +207,7 @@ func TestTenTeamGridFits(t *testing.T) {
 func TestInsideTagsSitOnFrameEdge(t *testing.T) {
 	const w, h = 120, 34
 	m := mockTeamsModel(w, h)
-	m = keys(m, "enter")
+	m = keys(m, "f")
 	m = keys(m, "f")
 	s := m.graphScene(m.graphState, graphview.Size{Width: w, Height: h})
 	if len(s.Frames) == 0 {

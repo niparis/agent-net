@@ -12,7 +12,7 @@ func (g *Gateway) handleGraphView(raw []byte) (any, error) {
 		return nil, reject("bad query.graph")
 	}
 	if p.Typed || p.Ref != nil || (p.AutoTyped && g.store.graphRefsOn.Load()) {
-		graph, err := g.store.GraphForRef(p.Ref)
+		graph, err := g.store.GraphForRefWithPlaces(p.Ref, p.Places)
 		if err != nil {
 			return nil, err
 		}

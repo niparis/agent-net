@@ -102,7 +102,7 @@ func (m Model) mapEdgeEntry(e protocol.Edge, incoming bool) string {
 func (m Model) mapEdgeColumns(node string, w, room int) []string {
 	var in, out []protocol.Edge
 	for _, e := range m.mp.edges {
-		if protocol.DeliveryOwnerFromSource(e.From).Kind != protocol.OwnerNode {
+		if protocol.DeliveryOwnerFromSource(e.From).Kind != protocol.OwnerNode || e.Kind == "governs" {
 			continue
 		}
 		switch {
@@ -187,7 +187,7 @@ func mapCharterFields(c protocol.Charter) []mapCharterField {
 		{"rules", c.Rules},
 	} {
 		if strings.TrimSpace(f.value) != "" {
-			f.value = strings.TrimSpace(sanitize(f.value))
+			f.value = strings.TrimSpace(sanitize(f.value + charterSourceSuffix(c, f.name)))
 			out = append(out, f)
 		}
 	}
@@ -406,6 +406,11 @@ func mapLegendLines(w int) []string {
 // in the help overlay.
 func (m Model) mapCardBody(node protocol.Node, w int) []string {
 	var out []string
+	if p := m.nodePlace(node); hasPlace(p) {
+		out = append(out, section("PLACE", w))
+		out = append(out, placeLines(p, w)...)
+		out = append(out, "")
+	}
 	out = append(out, section("Charter", w))
 	charter := mapCharterBlock(node.Charter, w)
 	if len(charter) == 0 {
@@ -421,7 +426,108 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 	return out
 }
 
-// mapFocusView draws the selected node as a card: name, maturity, the start of
+// mapTeamCardView is the Team's own card: purpose, lead, mode, held back,
+// members and the team rules, with no edge drawing at all.
+func (m Model) mapTeamCardView(node protocol.Node, w, h int) []string {
+	var out []string
+	var g teamGraphData
+	groups, _ := m.graphTeamData()
+	for _, item := range groups {
+		if item.key == node.Name {
+			g = item
+			break
+		}
+	}
+	title := sBold.Render(clip(m.graphName(node.Name), max(w-16, 8)))
+	title += "  " + sDim.Render("team")
+	if g.key != "" {
+		title += "  " + sDim.Render(teamCount(g.projects, "project", "projects")+" · "+teamCount(g.sessions, "session", "sessions"))
+	}
+	out = append(out, clip(title, w))
+	addField := func(label, value string) {
+		if strings.TrimSpace(value) == "" {
+			return
+		}
+		labelW := 10
+		for _, line := range wrap(value, max(w-labelW-3, 8)) {
+			prefix := sDim.Render(cell(label, labelW)) + " "
+			if line != "" {
+				prefix = "  " + prefix
+			}
+			out = append(out, clip(prefix+line, w))
+			label = ""
+		}
+	}
+	purpose := node.Charter.Purpose
+	if purpose == "" {
+		purpose = "no purpose set"
+	}
+	addField("purpose", purpose)
+	lead := "no lead"
+	if g.lead != "" {
+		lead = teamLeadStar(g.leadKind) + m.graphName(g.lead)
+	}
+	addField("lead", lead)
+	mode := protocol.NormalAuthorityMode(node.AuthorityMode)
+	addField("mode", protocol.AuthorityModeLabel(mode)+" - "+protocol.AuthorityModeMeaning(mode))
+	held := heldBackParts(node.HeldBack)
+	if len(held) == 0 {
+		held = []string{"nothing beyond the always list"}
+	}
+	addField("held back", strings.Join(held, "; "))
+	out = append(out, "")
+	out = append(out, section("Members", w))
+	if len(g.members) == 0 {
+		out = append(out, sDim.Render("  no members"))
+	}
+	for _, key := range g.members {
+		member, _ := m.mapNode(key)
+		kind := "agent"
+		if member.Ref != nil {
+			kind = member.Ref.Kind
+		}
+		name := m.graphName(key)
+		if key == g.lead {
+			name = teamLeadStar(g.leadKind) + name
+		}
+		sessions, _, busy := m.graphLastingSessions(member)
+		line := "  " + cell(name, 24) + cell(kind, 7) + teamCount(len(sessions), "session", "sessions")
+		if busy > 0 {
+			line += fmt.Sprintf(" · %d busy", busy)
+		}
+		out = append(out, clip(line, w))
+	}
+	out = append(out, "")
+	out = append(out, section("Team rules", w))
+	var rules []string
+	for _, r := range [][2]string{{"rules", node.Charter.Rules}, {"refuses", node.Charter.Refuses}, {"escalate", node.Charter.Escalate}} {
+		if strings.TrimSpace(r[1]) == "" {
+			continue
+		}
+		label := sDim.Render(cell(r[0], 9)) + " "
+		for i, line := range wrap(sanitize(r[1]), max(w-11, 8)) {
+			if i > 0 {
+				label = "          "
+			}
+			rules = append(rules, "  "+label+line)
+		}
+	}
+	if len(rules) == 0 {
+		rules = append(rules, sDim.Render("  no team rules set"))
+	}
+	out = append(out, rules...)
+	for _, line := range wrap("always held back: "+protocol.AlwaysHeldBack, max(w-2, 8)) {
+		out = append(out, sDim.Render("  "+line))
+	}
+	for len(out) < h-1 {
+		out = append(out, "")
+	}
+	if len(out) > h-1 {
+		out = out[:h-1]
+	}
+	return append(out, "")
+}
+
 // the purpose and the sessions; its edges; and a scrolling body with the
 // charter, the rules and the learned changes. The recent
 // changes stay on the last row.
@@ -437,9 +543,12 @@ func (m Model) mapFocusView(w, h int) []string {
 		return append(head, sDim.Render("  no nodes yet"), sDim.Render("  no node selected"))
 	}
 	node, _ := m.mapNode(m.mp.selected)
+	if node.Ref != nil && node.Ref.Kind == "team" {
+		return m.mapTeamCardView(node, w, h)
+	}
 	title := sBold.Render(clip(m.graphName(node.Name), max(w-24, 8)))
 	if level := maturityLevel(node.Charter.Maturity); level != "-" {
-		title += "  " + mapLevelStyle(level).Render(level)
+		title += "  " + mapLevelStyle(level).Render(level) + charterSourceSuffix(node.Charter, "maturity")
 	}
 	if node.Ref == nil || node.Ref.Kind == "repo" {
 		title += "  " + sDim.Render("autonomy: "+protocol.NodeAutonomy(node.Settings))
@@ -477,7 +586,7 @@ func (m Model) mapFocusView(w, h int) []string {
 	if h < 16 {
 		purposeRows = 2
 	}
-	head = append(head, mapPurposeLines(node.Charter.Purpose, w, purposeRows)...)
+	head = append(head, mapPurposeLines(node.Charter.Purpose+charterSourceSuffix(node.Charter, "purpose"), w, purposeRows)...)
 	dots, busy := m.mapSessionDots(node.Name)
 	if n := len(dots); n == 0 {
 		head = append(head, sDim.Render("○ no live sessions"))

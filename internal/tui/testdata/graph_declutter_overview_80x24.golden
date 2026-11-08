@@ -1,19 +1,19 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
    Graph · all teams
-  ╭─ forge ──────────────╮  ╭─ platform ───────────╮  ╭─ unassigned ─────────╮
-  │     ★ shop           │ 3│     ★ shop           │  │     no lead          │
-  │     3 projects · 3 s…│⠤⢤│     5 projects · 5 s…│  │     10 projects · 8 …│
-  │ (●) needs you        │  │  ●  1 busy           │⠤1│  ○  idle             │
-  │                      │  │                      │↖ │                      │
-  ╰──────────────────────╯  ╰──────────────────────╯  ╰──────────────────────╯
-
-
-
-
-
-
-
-
+    owner   CTO idle   chief of staff · not set up
+  ╭─ forge ───────────────────────────╮  ╭─ platform ────────────────────────╮
+  │     ★ shop · charter 1st          │  │     ★ shop · charter 1st          │
+  │     3 projects · 3 sessions       │  │     5 projects · 5 sessions       │
+  │ (●) needs you                     │⠤3│  ●  1 busy                        │
+  │                                   │ ↗│                                   │
+  ╰───────────────────────────────────╯  ╰───────────────────────────────────╯
+                                        1 ⣀⣀⣀⡠⠤⠤⠔⠒⠊⠉⠉⠁
+  ╭─ unassigned ──────────────────────╮⠉⠉⠉
+  │     answers to owner              │
+  │     10 projects · 8 sessions      │
+  │  ○  idle                          │
+  │                                   │
+  ╰───────────────────────────────────╯
 
    4 dormant · d to show
   needs you: highlighted · busy: bright · offline: dim

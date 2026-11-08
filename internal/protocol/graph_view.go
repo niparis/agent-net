@@ -13,6 +13,9 @@ type QueryGraph struct {
 	Typed     bool   `json:"typed,omitempty"`
 	Project   string `json:"project,omitempty"`
 	All       bool   `json:"all,omitempty"`
+	// Places asks the gateway to attach each record's place in the authority
+	// tree. The TUI's Graph sets it; other readers leave it off.
+	Places bool `json:"places,omitempty"`
 }
 
 // GraphView is a read-only snapshot of the graph: nodes with their charters,

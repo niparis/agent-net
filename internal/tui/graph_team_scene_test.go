@@ -48,10 +48,14 @@ func TestTeamOverviewSchedulesPixelFrame(t *testing.T) {
 func mockTeamsModel(w, h int) Model {
 	ref := func(kind, id string) *protocol.GraphRef { return &protocol.GraphRef{Kind: kind, ID: id} }
 	v := protocol.GraphView{Nodes: []protocol.Node{
-		{Name: "forge", Ref: ref("team", "forge"), Lead: ref("agent", "strategist")},
-		{Name: "ops", Ref: ref("team", "ops"), Lead: ref("repo", "server")},
-		{Name: "media", Ref: ref("team", "media"), Lead: ref("repo", "press")},
-		{Name: "strategist", Ref: ref("agent", "strategist"), Charter: protocol.Charter{Purpose: "Strategy research", Maturity: "growing", Accepts: "studies", Refuses: "live trades"}, Settings: map[string]string{protocol.SettingMergeAuthority: "ask"}},
+		{Name: "forge", Ref: ref("team", "forge"), Lead: ref("agent", "strategist"), AuthorityMode: "charter_first", HeldBack: "deploy to production; schema changes", Charter: protocol.Charter{Purpose: "Shared forge work", Rules: "Keep the API stable.", Escalate: "ask the team lead"}},
+		{Name: "ops", Ref: ref("team", "ops"), Lead: ref("repo", "server"), AuthorityMode: "absolute"},
+		{Name: "media", Ref: ref("team", "media"), Lead: ref("repo", "press"), AuthorityMode: "negotiate"},
+		{Name: "strategist", Ref: ref("agent", "strategist"), Charter: protocol.Charter{Purpose: "Strategy research", Maturity: "growing", Accepts: "studies", Refuses: "live trades"}, Settings: map[string]string{protocol.SettingMergeAuthority: "ask"}, Place: &protocol.NodePlace{
+			Team: "forge", TeamLead: "tenebrae-strats", Mode: "charter_first",
+			Repo: "ingest", RepoLead: "research", ReportsTo: "the forge lead",
+			HeldBack: []protocol.PlaceHeldBack{{Text: "deploy to production", From: "team"}, {Text: "schema changes", From: "team"}},
+		}},
 		{Name: "ingest", Ref: ref("repo", "ingest")}, {Name: "finance", Ref: ref("repo", "finance")}, {Name: "server", Ref: ref("repo", "server")}, {Name: "press", Ref: ref("repo", "press")},
 	}}
 	member := func(k, id, team string) {
@@ -74,6 +78,7 @@ func mockTeamsModel(w, h int) Model {
 		{SessionID: "finance", Repo: protocol.RepoInfo{Project: "finance"}, Online: true, Status: "idle"},
 		{SessionID: "server", Repo: protocol.RepoInfo{Project: "server"}, Online: true, Status: "idle"},
 		{SessionID: "press", Repo: protocol.RepoInfo{Project: "press"}, Online: true, Status: "idle"},
+		{SessionID: "cto-session", Harness: "cto", Online: true, Status: "busy", Profile: protocol.Profile{Name: "CTO"}},
 	}
 	m.applyMap(mapMsg{view: v, at: t0})
 	m.tab = graphTab
@@ -96,7 +101,7 @@ func TestTeamGraphNavigationAndSessions(t *testing.T) {
 	if strings.Contains(rendered, "worker hidden") {
 		t.Fatal("worker visible")
 	}
-	m = keys(m, "enter")
+	m = keys(m, "f")
 	if m.teamFilter != "forge" {
 		t.Fatalf("enter did not focus team: %q", m.teamFilter)
 	}
@@ -136,7 +141,7 @@ func TestGraphFrameGoldens(t *testing.T) {
 			size := graphview.Size{Width: sz[0], Height: sz[1]}
 			m := mockTeamsModel(sz[0], sz[1])
 			if view != "teams" {
-				m = keys(m, "enter")
+				m = keys(m, "f")
 			}
 			if view == "inside" {
 				m = keys(m, "f")

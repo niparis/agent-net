@@ -12,11 +12,12 @@ import (
 )
 
 type teamGraphData struct {
-	key, label, lead         string
-	mode, held               string
-	members                  []string
-	projects, sessions, busy int
-	role, merger             string
+	key, label, lead, leadKind string
+	mode, held                 string
+	heldCount                  int
+	members                    []string
+	projects, sessions, busy   int
+	role, merger               string
 }
 type teamLink struct {
 	a, b, kind string
@@ -133,13 +134,14 @@ func (m Model) graphTeamData() ([]teamGraphData, []teamLink) {
 		if n.Ref == nil || n.Ref.Kind != "team" || n.Active != nil && !*n.Active {
 			continue
 		}
-		g := teamGraphData{key: n.Name, label: m.graphName(n.Name), role: "offline", mode: protocol.NormalAuthorityMode(n.AuthorityMode), held: n.HeldBack}
+		g := teamGraphData{key: n.Name, label: m.graphName(n.Name), role: "offline", mode: protocol.NormalAuthorityMode(n.AuthorityMode), held: n.HeldBack, heldCount: heldBackCount(n.HeldBack)}
 		ref := n.Lead
 		if ref == nil {
 			ref = n.Owner
 		}
 		if ref != nil {
 			g.lead = graphRefKey(ref)
+			g.leadKind = ref.Kind
 			if a, ok := m.mp.aliases[g.lead]; ok {
 				g.lead = a
 			}
@@ -157,12 +159,17 @@ func (m Model) graphTeamData() ([]teamGraphData, []teamLink) {
 		}
 	}
 	index[unassignedTeam] = len(groups)
-	groups = append(groups, teamGraphData{key: unassignedTeam, label: "unassigned", role: "offline"})
+	groups = append(groups, teamGraphData{key: unassignedTeam, label: "unassigned", role: "offline", mode: protocol.DefaultAuthorityMode})
 	for _, n := range m.mp.nodes {
-		if n.Ref == nil || n.Ref.Kind != "repo" && n.Ref.Kind != "agent" || m.mp.dormant[n.Name] && !m.mp.showDormant {
+		if n.Ref == nil || n.Ref.Kind != "repo" && n.Ref.Kind != "agent" {
 			continue
 		}
 		team := m.graphTeamOf(n.Name)
+		// A team's members stay in its view even when they have no session.
+		// The unassigned frame keeps the old dormant rule.
+		if m.mp.dormant[n.Name] && !m.mp.showDormant && team == unassignedTeam {
+			continue
+		}
 		i, ok := index[team]
 		if !ok {
 			i = index[unassignedTeam]
@@ -206,7 +213,7 @@ func (m Model) graphTeamData() ([]teamGraphData, []teamLink) {
 	type pair struct{ a, b, kind string }
 	counts := map[pair]int{}
 	for _, e := range m.mp.edges {
-		if e.Kind == "member_of" || e.From == e.To || m.mp.everything[e.From] != "" || m.mp.everything[e.To] != "" {
+		if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" || e.From == e.To || m.mp.everything[e.From] != "" || m.mp.everything[e.To] != "" {
 			continue
 		}
 		a, b := m.graphTeamOf(e.From), m.graphTeamOf(e.To)
@@ -288,6 +295,17 @@ func teamCount(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
+// teamModeCompact fits the mode beside a lead in a narrow frame.
+func teamModeCompact(mode string) string {
+	switch protocol.NormalAuthorityMode(mode) {
+	case protocol.AuthorityAbsolute:
+		return "absolute"
+	case protocol.AuthorityNegotiate:
+		return "negotiate"
+	}
+	return "charter 1st"
+}
+
 func teamRoleRank(role string) int {
 	switch role {
 	case "needs you":
@@ -339,9 +357,9 @@ func teamCurve(x0, y0, x1, y1 int, bend float64, size graphview.Size) []graphvie
 
 // teamOverviewLink curves through the gutter that separates two rows, so a
 // link never runs over a box or its text.
-func teamOverviewLink(a, b graphview.SceneFrame, gridW, gridH, gap, stride int, size graphview.Size) []graphview.Point {
-	colA, rowA := a.X/(gridW+gap), a.Y/stride
-	colB, rowB := b.X/(gridW+gap), b.Y/stride
+func teamOverviewLink(a, b graphview.SceneFrame, gridW, gridH, gap, stride, top int, size graphview.Size) []graphview.Point {
+	colA, rowA := a.X/(gridW+gap), (a.Y-top)/stride
+	colB, rowB := b.X/(gridW+gap), (b.Y-top)/stride
 	ax, bx := a.X+a.Width/2, b.X+b.Width/2
 	switch {
 	case rowA == rowB && teamAbs(colA-colB) == 1:
@@ -374,7 +392,7 @@ func teamOverviewLink(a, b graphview.SceneFrame, gridW, gridH, gap, stride int, 
 		}
 		return teamCurve(fx, fy, tx, ty, bend, size)
 	}
-	way, direct := teamOverviewRoute(a, b, gridW, gridH, gap, stride, size)
+	way, direct := teamOverviewRoute(a, b, gridW, gridH, gap, stride, top, size)
 	if direct {
 		fx, fy, tx, ty := teamBoxPorts(a, b)
 		bend := math.Min(3.5, math.Max(1.2, math.Hypot(float64(tx-fx), float64(ty-fy))*.35))
@@ -501,17 +519,17 @@ func teamRoundedPath(pts [][2]int, radius float64, size graphview.Size) []graphv
 
 // teamOverviewRoute keeps a link between two boxes in the grid gutters. The
 // direct flag is set when the boxes touch, where a short curve is enough.
-func teamOverviewRoute(a, b graphview.SceneFrame, gridW, gridH, gap, stride int, size graphview.Size) (way [][2]int, direct bool) {
-	colA, rowA := a.X/(gridW+gap), a.Y/stride
-	colB, rowB := b.X/(gridW+gap), b.Y/stride
+func teamOverviewRoute(a, b graphview.SceneFrame, gridW, gridH, gap, stride, top int, size graphview.Size) (way [][2]int, direct bool) {
+	colA, rowA := a.X/(gridW+gap), (a.Y-top)/stride
+	colB, rowB := b.X/(gridW+gap), (b.Y-top)/stride
 	if rowA == rowB {
 		if teamAbs(colA-colB) == 1 {
 			return nil, true
 		}
-		gy := rowA*stride + gridH + gap/2
+		gy := top + rowA*stride + gridH + gap/2
 		above := false
 		if gy >= size.Height {
-			gy = rowA*stride - gap/2
+			gy = top + rowA*stride - gap/2
 			above = true
 		}
 		if gy < 0 || gy >= size.Height {
@@ -530,11 +548,11 @@ func teamOverviewRoute(a, b graphview.SceneFrame, gridW, gridH, gap, stride int,
 	if rowB < rowA {
 		dir = -1
 	}
-	gyA := rowA*stride + gridH + gap/2
-	gyB := rowB*stride - gap/2
+	gyA := top + rowA*stride + gridH + gap/2
+	gyB := top + rowB*stride - gap/2
 	if dir < 0 {
-		gyA = rowA*stride - gap/2
-		gyB = rowB*stride + gridH + gap/2
+		gyA = top + rowA*stride - gap/2
+		gyB = top + rowB*stride + gridH + gap/2
 	}
 	if gyA < 0 || gyA >= size.Height || gyB < 0 || gyB >= size.Height {
 		return nil, true
@@ -686,8 +704,14 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		}
 		scene.Nodes = append(scene.Nodes, n)
 		lead := "no lead"
-		if g.lead != "" {
-			lead = "★ " + m.graphName(g.lead)
+		switch {
+		case g.key == unassignedTeam:
+			lead = "answers to owner"
+		case g.lead != "":
+			lead = teamLeadStar(g.leadKind) + m.graphName(g.lead)
+			if g.mode != "" {
+				lead += " · " + teamModeCompact(g.mode)
+			}
 		}
 		textX := x + 6
 		textW := max(1, w-7)
@@ -700,18 +724,31 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			if g.busy > 0 && state != "needs you" {
 				state = fmt.Sprintf("%d busy", g.busy)
 			}
+			if g.heldCount > 0 && h < 7 {
+				state += fmt.Sprintf(" · held back: %d", g.heldCount)
+			}
 			text(textX, y+3, textW, state, g.role, g.key)
 		}
 		if h > 5 && g.merger != "" {
 			text(textX, y+4, textW, g.merger, "busy", g.key)
+		}
+		if h >= 7 && g.heldCount > 0 {
+			row := y + 4
+			if g.merger != "" {
+				row++
+			}
+			text(textX, row, textW, fmt.Sprintf("held back: %d", g.heldCount), "labelDim", g.key)
 		}
 		return nx, ny
 	}
 	if m.teamFilter == "" {
 		ordered := orderOverviewTeams(groups, selectedTeam, links)
 		cols := 4
-		if size.Width < 100 {
+		if size.Width < 136 {
 			cols = 3
+		}
+		if size.Width < 90 && len(ordered) <= 6 {
+			cols = 2
 		}
 		if len(ordered) < cols {
 			cols = len(ordered)
@@ -726,18 +763,21 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		}
 		w := (size.Width - (cols-1)*gap) / cols
 		rows := (len(ordered) + cols - 1) / cols
-		avail := size.Height - 1 // keep the last row for the footer chip
-		h := 6
+		top := 1 // the staff row sits above the team frames
+		text(1, 0, size.Width-2, m.staffLine(), "label", "")
+		avail := size.Height - 1 - top // keep the last row for the footer chip
+		limit := avail - top
+		h := 7
 		stride := h + 1
 		if rows > 1 {
-			if spread := (avail - h) / (rows - 1); spread > stride {
+			if spread := (limit - h) / (rows - 1); spread > stride {
 				stride = spread
 			}
 		}
-		for h > 3 && rows > 1 && (rows-1)*stride+h > avail {
+		for h > 3 && rows > 1 && (rows-1)*stride+h > limit {
 			h--
 			stride = h + 1
-			if spread := (avail - h) / (rows - 1); spread > stride {
+			if spread := (limit - h) / (rows - 1); spread > stride {
 				stride = spread
 			}
 		}
@@ -750,7 +790,7 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 				col = cols - 1 - col
 			}
 			x := col * (w + gap)
-			y := row * stride
+			y := top + row*stride
 			if y+h > avail {
 				break
 			}
@@ -764,7 +804,7 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			if !ok || !ok2 {
 				continue
 			}
-			path := teamOverviewLink(a, b, w, h, gap, stride, size)
+			path := teamOverviewLink(a, b, w, h, gap, stride, top, size)
 			if len(path) < 2 {
 				continue
 			}
@@ -852,16 +892,36 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 	}
 	frame(mainX, 0, mainW, mainH, g, true)
 	counts := teamCount(g.projects, "project", "projects") + " · " + teamCount(g.sessions, "session", "sessions")
-	header := "no lead · " + counts
-	if g.lead != "" {
-		header = "lead " + m.graphName(g.lead) + " · " + counts
-	}
-	if g.mode != "" {
-		// The mode comes right after the lead, so a narrow frame still shows it.
-		header = strings.Replace(header, " · ", " · "+protocol.AuthorityModeLabel(g.mode)+" · ", 1)
-		if held := strings.Join(strings.Fields(g.held), " "); held != "" {
-			header += " · held back: " + held
+	titleBase := "no lead"
+	if g.key == unassignedTeam {
+		titleBase = "answers to owner"
+		if g.mode != "" {
+			titleBase += " · " + protocol.AuthorityModeLabel(g.mode)
 		}
+	} else {
+		if g.lead != "" {
+			titleBase = teamLeadStar(g.leadKind) + m.graphName(g.lead)
+		}
+		if g.mode != "" {
+			// The mode comes right after the lead, so a narrow frame still shows it.
+			titleBase += " · " + protocol.AuthorityModeLabel(g.mode)
+		}
+	}
+	held := strings.Join(strings.Fields(g.held), " ")
+	heldText, heldCount := "", ""
+	if held != "" {
+		heldText = " · held back: " + held
+		heldCount = fmt.Sprintf(" · held back: %d", g.heldCount)
+	}
+	maxW := mainW - 4
+	header := titleBase
+	switch {
+	case ansi.StringWidth(titleBase+" · "+counts+heldText) <= maxW:
+		header = titleBase + " · " + counts + heldText
+	case ansi.StringWidth(titleBase+" · "+counts+heldCount) <= maxW:
+		header = titleBase + " · " + counts + heldCount
+	case ansi.StringWidth(titleBase+heldCount) <= maxW:
+		header = titleBase + heldCount
 	}
 	text(mainX+2, 1, mainW-4, header, "labelDim", "")
 	cells := map[string][2]int{}
@@ -925,6 +985,9 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		for i := 0; i < w; i++ {
 			labelTaken[[2]int{x + i, y}] = true
 		}
+		if x+w <= ix1 {
+			labelTaken[[2]int{x + w, y}] = true
+		}
 		text(x, y, w, s, role, key)
 		return true
 	}
@@ -949,9 +1012,6 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			role = "label"
 		}
 		detail := teamCount(n.Card.Sessions, "session", "sessions")
-		if n.Card.Sessions == 0 {
-			detail = "offline"
-		}
 		if n.BusySessions > 0 {
 			detail += fmt.Sprintf(" · %d busy", n.BusySessions)
 		}
@@ -972,6 +1032,9 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 			}
 			for i := 0; i < labelW; i++ {
 				labelTaken[[2]int{x + i, y}] = true
+			}
+			if x+labelW <= ix1 {
+				labelTaken[[2]int{x + labelW, y}] = true
 			}
 			pw := ansi.StringWidth(prefix)
 			text(x, y, pw, prefix, role, key)
@@ -1051,7 +1114,7 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		for _, ng := range neighbours {
 			target := ""
 			for _, e := range m.mp.edges {
-				if e.Kind == "member_of" {
+				if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" {
 					continue
 				}
 				if m.graphTeamOf(e.From) == teamKey && m.graphTeamOf(e.To) == ng.key {
@@ -1088,7 +1151,7 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		}
 	}
 	for _, e := range m.mp.edges {
-		if e.Kind == "member_of" {
+		if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" {
 			continue
 		}
 		a, aok := cells[e.From]
@@ -1147,6 +1210,11 @@ func (m Model) graphTeamCard(scene *graphview.Scene, selected string, x, y, w, h
 	add(m.graphName(selected), "selected")
 	add(m.graphLiveRole(n), m.graphLiveRole(n))
 	add("", "label")
+	add("PLACE", "selected")
+	for _, line := range placePanelLines(m.nodePlace(n), w-4) {
+		add(line, "label")
+	}
+	add("", "label")
 	add("SESSIONS", "selected")
 	sessions, offline, _ := m.graphLastingSessions(n)
 	for _, s := range sessions {
@@ -1182,7 +1250,7 @@ func (m Model) graphTeamCard(scene *graphview.Scene, selected string, x, y, w, h
 	add("CHARTER", "selected")
 	for _, v := range graphCharterValues(charter) {
 		if v[1] != "" {
-			add(v[0]+"  "+v[1], "label")
+			add(v[0]+"  "+v[1]+charterSourceSuffix(charter, v[0]), "label")
 		}
 	}
 	add("", "label")
@@ -1199,7 +1267,7 @@ func (m Model) graphTeamCard(scene *graphview.Scene, selected string, x, y, w, h
 	add("ROUTING", "selected")
 	edgeLines := []string{}
 	for _, e := range m.mp.edges {
-		if e.Kind == "member_of" || e.From != selected && e.To != selected {
+		if e.Kind == "member_of" || e.Kind != "depends" && e.Kind != "deploys" || e.From != selected && e.To != selected {
 			continue
 		}
 		peer := e.To

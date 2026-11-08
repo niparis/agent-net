@@ -122,10 +122,26 @@ func (s *Store) GraphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 	if err := s.requireGraphRefs(); err != nil {
 		return protocol.Graph{}, err
 	}
-	return s.graphForRef(ref)
+	return s.graphForRef(ref, false)
 }
 
-func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
+// GraphForRefWithPlaces is GraphForRef with each record's place in the
+// authority tree attached. The owner's Graph asks for it; other readers do not
+// pay for it.
+func (s *Store) GraphForRefWithPlaces(ref *protocol.GraphRef, places bool) (protocol.Graph, error) {
+	if err := s.requireGraphRefs(); err != nil {
+		return protocol.Graph{}, err
+	}
+	return s.graphForRef(ref, places)
+}
+
+// graphForRef skips the cutover gate, so the automatic cutover can validate the
+// typed read before it turns the gate on.
+func (s *Store) graphForRef(ref *protocol.GraphRef, places bool) (protocol.Graph, error) {
+	return s.graphForRefRecords(ref, places)
+}
+
+func (s *Store) graphForRefRecords(ref *protocol.GraphRef, places bool) (protocol.Graph, error) {
 	if ref != nil {
 		if err := ref.Validate(); err != nil {
 			return protocol.Graph{}, err
@@ -318,6 +334,29 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 					name = a.Title
 				}
 				n.Sessions = append(n.Sessions, protocol.GraphSession{ID: a.SessionID, Name: name, Machine: a.Hostname, Status: a.Status})
+			}
+		}
+	}
+	now := s.now()
+	if places {
+		idx, err := s.buildPlaceIndex(repos, agents, now)
+		if err != nil {
+			return g, err
+		}
+		for i := range g.Nodes {
+			n := &g.Nodes[i]
+			if n.Ref == nil {
+				continue
+			}
+			repo, agent := "", ""
+			switch n.Ref.Kind {
+			case "repo":
+				repo = n.Ref.ID
+			case "agent":
+				agent = n.Ref.ID
+			}
+			if place, ok := idx.place(*n.Ref, repo, agent); ok {
+				n.Place = &place
 			}
 		}
 	}

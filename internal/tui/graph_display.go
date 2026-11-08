@@ -170,7 +170,7 @@ func (m *Model) graphProjection() protocol.GraphView {
 			continue
 		}
 		key := e.From + "\x01" + e.To + "\x01" + e.Kind + "\x01" + e.Mode + "\x01" + e.Rule
-		if !seen[key] {
+		if e.Kind != "governs" && !seen[key] {
 			seen[key] = true
 			out.Edges = append(out.Edges, e)
 		}

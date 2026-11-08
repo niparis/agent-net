@@ -11,11 +11,11 @@ test, review, merge, release, verify: caller
 
 IN 1                                     OUT 0
 shop ──▶ accepts
-Card 1-4/9  ctrl+u/d scroll ────────────────────────────────────────────────────
-Charter ────────────────────────────────────────────────────────────────────────
-no charter set
-Rules ──────────────────────────────────────────────────────────────────────────
-tests_before_merge suite                  default
+Card 1-4/14  ctrl+u/d scroll ───────────────────────────────────────────────────
+PLACE ──────────────────────────────────────────────────────────────────────────
+team       answers to owner
+repo lead  ★ shop, reports to the owner
+held back  nothing beyond the always list
 RECENT  no changes yet
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
