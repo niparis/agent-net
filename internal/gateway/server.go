@@ -468,6 +468,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				if len(reminders) > 0 {
 					_ = g.store.deskLog(g.store.db, "gateway", "", "", fmt.Sprintf("Reminded %d sessions about messages they have not answered", len(reminders)), "", nil)
 				}
+				g.loopTick(ctx)
 				checks, err := g.store.checkIdle()
 				if err != nil {
 					g.logLine("error", "where", "idle checks", "err", err)

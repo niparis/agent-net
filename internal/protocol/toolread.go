@@ -106,6 +106,8 @@ type SessionRow struct {
 	Rules        map[string]string `json:"rules,omitempty"`
 	Delegation   string            `json:"delegation,omitempty"`
 	Worker       *SessionWorker    `json:"worker,omitempty"`
+	// Loop is the standing loop of the session's node (decision 0094).
+	Loop *LoopView `json:"loop,omitempty"`
 }
 
 // WaitingRow says that a session waits for its user: the kind (permission,

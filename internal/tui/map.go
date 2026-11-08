@@ -140,6 +140,8 @@ func (m Model) mapKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.startNodeTools(m.mp.selected)
 	case "autonomy":
 		return m.toggleAutonomy()
+	case "loop":
+		return m.cycleLoop()
 	case "rename project":
 		return m.startProjectRename()
 	case "new session":
@@ -383,4 +385,76 @@ func mapError(err error) string {
 		return "the gateway cannot be reached"
 	}
 	return sanitize(err.Error())
+}
+
+// loopSource is optional for compatibility with older sources.
+type loopSource interface {
+	SetNodeLoop(context.Context, string, string) error
+}
+
+// loopSteps are the intervals the L key cycles through. The CTO can set any
+// other interval and a prompt.
+var loopSteps = []string{"", "1h", "4h", "12h", "24h"}
+
+// nextLoopStep is the step after current. An interval that is not a step goes
+// to off.
+func nextLoopStep(current string) string {
+	for i, s := range loopSteps {
+		if s == current {
+			return loopSteps[(i+1)%len(loopSteps)]
+		}
+	}
+	return ""
+}
+
+// cycleLoop moves the selected project's standing loop to its next interval.
+// It is an owner action through the node settings method.
+func (m Model) cycleLoop() (Model, tea.Cmd) {
+	node, ok := m.mapNode(m.mp.selected)
+	if !ok || node.Kind != "component" {
+		m.fail("Pick a project to change its loop.")
+		return m, nil
+	}
+	src, ok := m.src.(loopSource)
+	if !ok {
+		m.fail("The loop is unavailable: the daemon is older than this screen.")
+		return m, nil
+	}
+	current := ""
+	if node.Loop != nil {
+		current = node.Loop.Every
+	}
+	next := nextLoopStep(current)
+	name := node.Name
+	// Show the new interval at once; the next graph refresh confirms it.
+	nodes := append([]protocol.Node(nil), m.mp.nodes...)
+	for i := range nodes {
+		if nodes[i].Name != name {
+			continue
+		}
+		if next == "" {
+			nodes[i].Loop = nil
+		} else {
+			loop := protocol.LoopView{Every: next}
+			if nodes[i].Loop != nil {
+				loop = *nodes[i].Loop
+				loop.Every = next
+			}
+			nodes[i].Loop = &loop
+		}
+	}
+	m.mp.nodes = nodes
+	label := next
+	if label == "" {
+		label = "off"
+	}
+	m.say(fmt.Sprintf("Saving loop %s for %s...", label, name))
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		if err := src.SetNodeLoop(ctx, name, next); err != nil {
+			return actionMsg{err: fmt.Errorf("Loop not changed: %s", explain(err))}
+		}
+		return actionMsg{text: fmt.Sprintf("Loop %s for %s.", label, name)}
+	}
 }

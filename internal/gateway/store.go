@@ -1183,6 +1183,29 @@ CREATE TABLE IF NOT EXISTS standing_orders (
 -- statement is safe to replay.
 UPDATE inbox_items SET status='closed', answer='moved_to_log', answered_at=created_at
  WHERE kind='check' AND status='open' AND from_kind IN ('cto','apps');
+`, `
+-- Standing loops (decision 0094): one row per node that has a loop. The clock,
+-- the day's counts, the no-progress streak and the progress markers of the
+-- last tick. Task text is never stored; last_result is one cleaned announce
+-- line.
+CREATE TABLE IF NOT EXISTS agent_loops (
+ node TEXT PRIMARY KEY,
+ started_at INTEGER NOT NULL DEFAULT 0,
+ last_at INTEGER NOT NULL DEFAULT 0,
+ sent_at INTEGER NOT NULL DEFAULT 0,
+ session_id TEXT NOT NULL DEFAULT '',
+ day TEXT NOT NULL DEFAULT '',
+ day_ticks INTEGER NOT NULL DEFAULT 0,
+ day_progress INTEGER NOT NULL DEFAULT 0,
+ streak INTEGER NOT NULL DEFAULT 0,
+ last_open INTEGER NOT NULL DEFAULT 0,
+ last_msgs INTEGER NOT NULL DEFAULT 0,
+ announced INTEGER NOT NULL DEFAULT 0,
+ awaiting INTEGER NOT NULL DEFAULT 0,
+ counted INTEGER NOT NULL DEFAULT 0,
+ paused INTEGER NOT NULL DEFAULT 0,
+ last_result TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS agent_loops_session ON agent_loops(session_id);
 `}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay
@@ -2922,6 +2945,9 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 	if err := s.answerCheck(p.SessionID, p.Task); err != nil {
 		return protocol.Profile{}, err
 	}
+	if err := s.loopAnnounce(p.SessionID, p.Task); err != nil {
+		return protocol.Profile{}, err
+	}
 	a, ok, err := s.Agent(p.SessionID)
 	if err != nil || !ok {
 		return protocol.Profile{}, err
@@ -3064,6 +3090,9 @@ func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
 	if err := s.applyAgentChartersWith(one, false, in); err != nil {
 		return a, false, err
 	}
+	if err := s.applyLoops(one); err != nil {
+		return a, false, err
+	}
 	return one[0], true, nil
 }
 
@@ -3116,6 +3145,9 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 		return nil, err
 	}
 	if err := s.applyPending(out); err != nil {
+		return nil, err
+	}
+	if err := s.applyLoops(out); err != nil {
 		return nil, err
 	}
 	return out, nil

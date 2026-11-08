@@ -331,6 +331,7 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextCard, "n", "new session", "new", 1), "start a new session in this project (the same form, filled from here)"),
 	withHelp(bind(contextCard, "t", "node tools", "tools", 1), "open Tools filtered to this node"),
 	withHelp(bind(contextCard, "a", "autonomy", "autonomy", -1), "toggle autonomy off or wake (wakes on messages)"),
+	withHelp(bind(contextCard, "L", "loop", "loop", -1), "cycle the standing loop: off, 1h, 4h, 12h, 24h (wakes the lead on a clock)"),
 	withHelp(bind(contextCard, "D", "rename project", "name project", -1), "name this project"),
 	withHelp(bind(contextCard, "u", "undo learned", "undo", 1), "undo the selected one (a learned change)"),
 	withHelp(bind(contextCard, ",", "previous learned", "previous change", -1), "select a previous or next learned change or charter draft"),

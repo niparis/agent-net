@@ -1682,6 +1682,16 @@ func (m Model) nameText(a protocol.AgentView, mk treeMark, w int) string {
 
 // sessionNameCell applies role colour after sanitizing and fitting plain text.
 func (m Model) sessionNameCell(a protocol.AgentView, mk treeMark, w int) string {
+	if a.Loop != nil && a.Worker == nil && w > 6 {
+		// A small mark after the name says the agent has a standing loop.
+		inner := strings.TrimRight(m.sessionNameCellPlain(a, mk, w-2), " ")
+		fitted := inner + sDim.Render(" ↻")
+		return fitted + strings.Repeat(" ", max(0, w-ansi.StringWidth(fitted)))
+	}
+	return m.sessionNameCellPlain(a, mk, w)
+}
+
+func (m Model) sessionNameCellPlain(a protocol.AgentView, mk treeMark, w int) string {
 	name := m.nameText(a, mk, 1<<20)
 	tag := ""
 	if a.Harness == "cto" {

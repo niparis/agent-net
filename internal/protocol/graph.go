@@ -111,6 +111,8 @@ type Node struct {
 	// Settings are the node's overrides of its maturity defaults (decision
 	// 0022). They sit beside the charter and only the owner changes them.
 	Settings map[string]string `json:"settings,omitempty"`
+	// Loop is the node's standing loop, nil when it has none (decision 0094).
+	Loop *LoopView `json:"loop,omitempty"`
 	// Delegation holds the delegation policies the owner set for this node's
 	// project on each machine that has one (decision 0014). Only the owner
 	// changes them; they are public read-only.

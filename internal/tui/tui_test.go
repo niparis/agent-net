@@ -248,6 +248,7 @@ type fakeSource struct {
 
 	// The autonomy setting changes the Graph card asked for.
 	autonomyCalls []autonomyCall
+	loopCalls     []autonomyCall
 	// Stored conversations: the first page, later pages by cursor, and the
 	// messages of one conversation when it is opened.
 	convFirst    protocol.ConversationPage
@@ -271,6 +272,11 @@ func (f *fakeSource) SetNodeAutonomy(_ context.Context, node, value string) erro
 			f.graph.Nodes[i].Settings[protocol.SettingAutonomy] = value
 		}
 	}
+	return nil
+}
+
+func (f *fakeSource) SetNodeLoop(_ context.Context, node, every string) error {
+	f.loopCalls = append(f.loopCalls, autonomyCall{node: node, value: every})
 	return nil
 }
 

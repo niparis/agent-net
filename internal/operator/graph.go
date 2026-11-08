@@ -37,6 +37,15 @@ func (s *Client) SetNodeAutonomy(ctx context.Context, node, value string) error 
 	return err
 }
 
+// SetNodeLoop sets the node's standing loop interval, such as 4h. An empty
+// value turns the loop off.
+func (s *Client) SetNodeLoop(ctx context.Context, node, every string) error {
+	_, err := s.action(ctx, protocol.OpNodeSettingsSet, protocol.NodeSettingsSetRequest{
+		Node: node, Setting: protocol.SettingLoopEvery, Value: every,
+	})
+	return err
+}
+
 // ArchiveGraphNode removes a lasting graph identity through the existing
 // owner-only lifecycle calls. Records and their history remain archived.
 func (s *Client) ArchiveGraphNode(ctx context.Context, ref protocol.GraphRef) error {

@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+tenebrae  mature  autonomy: off  component
+Tools: 0 skills, 0 MCP servers · t open
+Research library for the trading desk.
+● 1 session, 1 busy
+accept, test, review, merge, release, verify: caller
+
+IN 1                                     OUT 1
+wbg-architect ──▶ deploys                ──▶ cogforge depends ask
+Card 1-8/12  ctrl+u/d scroll ───────────────────────────────────────────────────
+Charter ────────────────────────────────────────────────────────────────────────
+no charter set
+Loop ───────────────────────────────────────────────────────────────────────────
+loop every 4h · last 14:00 · next 18:00 · today 3 ticks, 2 made progress
+last result: parser: wrote the lexer tests, parser next
+Rules ──────────────────────────────────────────────────────────────────────────
+tests_before_merge suite-new-tests        maturity default
+merge_authority    delegated              maturity default
+RECENT  3h ago maturity by trading-architect
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  ? help  q quit

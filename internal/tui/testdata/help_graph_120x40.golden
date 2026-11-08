@@ -29,12 +29,12 @@ Keys · Graph ──────────────────────
   n                      start a new session in this project (the same form, filled from here)
   t                      open Tools filtered to this node
   a                      toggle autonomy off or wake (wakes on messages)
+  L                      cycle the standing loop: off, 1h, 4h, 12h, 24h (wakes the lead on a clock)
   D                      name this project
   u                      undo the selected one (a learned change)
   , .                    select a previous or next learned change or charter draft
   y                      accept the selected charter draft (drafted from AGENTS.md)
   x                      reject the selected charter draft
-  l                      choose or clear the repo lead
   more below
 
 up/down scroll  ? all screens  esc close
