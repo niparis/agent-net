@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -754,13 +755,25 @@ func fakeAttachClient(t *testing.T, job string) int {
 	if err := os.WriteFile(script, []byte("#!/bin/sh\nread line\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(script, "attach", job)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
+	// A parallel test may fork while the script is still open for writing, and
+	// the exec then fails with "text file busy" until that fork execs. Retry that
+	// case with a new command, since a failed Start closes its stdin pipe.
+	var cmd *exec.Cmd
+	var stdin io.WriteCloser
+	for attempt := 1; ; attempt++ {
+		cmd = exec.Command(script, "attach", job)
+		var err error
+		if stdin, err = cmd.StdinPipe(); err != nil {
+			t.Fatal(err)
+		}
+		err = cmd.Start()
+		if err == nil {
+			break
+		}
+		if !strings.Contains(err.Error(), "text file busy") || attempt == 50 {
+			t.Fatal(err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	t.Cleanup(func() { stdin.Close(); cmd.Process.Kill(); cmd.Wait() })
 	eventually(t, "attach client command line", func() bool {

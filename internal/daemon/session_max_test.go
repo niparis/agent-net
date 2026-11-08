@@ -185,10 +185,13 @@ func TestMaxCTOStartOffersSettingChange(t *testing.T) {
 }
 
 func TestMaxFailedClaudeStartReleasesPlace(t *testing.T) {
+	// The trust answer is written to Claude's config, so keep it in a temp folder.
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"claude": "/bin/false"} })
 	repo := newRepo(t, "demo")
 	n.register(t, repo)
+	trustClaudeFolder(t, repo)
 	if _, err := g.gw.Store().UpsertSession(n.d.NodeID(), protocol.SessionInfo{Harness: "pi", NativeID: "terminal", Repo: protocol.RepoInfo{Project: "demo", Root: repo}}); err != nil {
 		t.Fatal(err)
 	}
@@ -216,6 +219,7 @@ func TestMaxSuccessfulClaudeStartConsumesPlace(t *testing.T) {
 	n := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "demo")
 	n.register(t, repo)
+	trustClaudeFolder(t, repo)
 	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", n.sessions)
 	if _, err := g.gw.Store().UpsertSession(n.d.NodeID(), protocol.SessionInfo{Harness: "pi", NativeID: "terminal", Repo: protocol.RepoInfo{Project: "demo", Root: repo}}); err != nil {
 		t.Fatal(err)
