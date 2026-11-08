@@ -318,13 +318,17 @@ func (r *charterResolver) resolve(repo, agent, team string) (protocol.Charter, e
 		src := protocol.CharterSource{Level: level, Scope: scope, Value: value}
 		if attr == "refuses" {
 			sources[attr] = append(sources[attr], src)
-			// Union by complete refusal. Do not split prose or interpret rules.
-			if !refused[value] {
-				if c.Refuses != "" {
-					c.Refuses += "\n"
+			// Union by refusal item, split the same way every reader splits, so
+			// a value written with semicolons or newlines inherits as clean items.
+			for _, item := range protocol.SplitCharterList(value) {
+				if refused[item] {
+					continue
 				}
-				c.Refuses += value
-				refused[value] = true
+				if c.Refuses != "" {
+					c.Refuses += "; "
+				}
+				c.Refuses += item
+				refused[item] = true
 			}
 			return nil
 		}

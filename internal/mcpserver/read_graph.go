@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -173,17 +172,7 @@ func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
 }
 
 func roCharterList(value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	items := strings.Split(value, ";")
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if item = strings.TrimSpace(item); item != "" {
-			out = append(out, item)
-		}
-	}
-	return out
+	return protocol.SplitCharterList(value)
 }
 
 func roGraphEdges(edges []protocol.PublicGraphEdge) []roGraphEdge {
