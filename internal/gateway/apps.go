@@ -297,6 +297,57 @@ func (s *Store) RenameApp(id, name string) error {
 	return nil
 }
 
+// SetAppGrant adds or removes one grant of an active bot. A grant is "mcp
+// server <name>": the bot may then use the allowed tools of that shared MCP
+// server. Adding needs a registered server. Removing never checks, so a grant
+// for a server that is gone can still be taken away.
+func (s *Store) SetAppGrant(id, grant string, on bool) error {
+	if on {
+		name, ok := protocol.ParseMCPServerGrant(grant)
+		if !ok {
+			return reject("unknown grant %q: the only grant is %q", grant, protocol.MCPServerGrant("<server>"))
+		}
+		if _, found, err := s.MCPServer(name); err != nil {
+			return err
+		} else if !found {
+			return reject("no MCP server named %q", name)
+		}
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var kind, raw string
+	if err = tx.QueryRow("SELECT kind, grants FROM apps WHERE id=? AND revoked_at IS NULL", id).Scan(&kind, &raw); err != nil {
+		return err
+	}
+	if kind != "bot" {
+		return reject("only a bot can be granted a right; %s is an owner app", id)
+	}
+	var grants []string
+	if err = json.Unmarshal([]byte(raw), &grants); err != nil {
+		return err
+	}
+	next := make([]string, 0, len(grants)+1)
+	for _, g := range grants {
+		if g != grant {
+			next = append(next, g)
+		}
+	}
+	if on {
+		next = append(next, grant)
+	}
+	out, err := json.Marshal(next)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec("UPDATE apps SET grants=? WHERE id=?", string(out), id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // ListApps includes revoked apps, ordered by creation time and ID.
 func (s *Store) ListApps() ([]App, error) {
 	rows, err := s.db.Query("SELECT " + appColumns + " FROM apps ORDER BY created_at, id")

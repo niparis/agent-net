@@ -36,7 +36,7 @@ var operatorMethods = map[string]bool{
 	"sessions_archive": true, "sessions_archived": true, "session_pin": true,
 	protocol.OpWorkerLog: true,
 	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
-	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true,
+	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true, protocol.OpAppsGrant: true, protocol.OpAppsUngrant: true,
 	"tools_keep_copy": true, "tools_import_folder": true, "tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
 	protocol.OpCTOGraphWindow: true,
 	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true, protocol.OpProposalStartAck: true,
@@ -496,12 +496,13 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
 		res, err = d.call(ctx, method, json.RawMessage(raw))
-	case "apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", protocol.OpAppsRename:
+	case "apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", protocol.OpAppsRename, protocol.OpAppsGrant, protocol.OpAppsUngrant:
 		var p struct {
-			ID   string `json:"id"`
-			Code string `json:"code"`
-			Kind string `json:"kind"`
-			Name string `json:"name"`
+			ID    string `json:"id"`
+			Code  string `json:"code"`
+			Kind  string `json:"kind"`
+			Name  string `json:"name"`
+			Grant string `json:"grant"`
 		}
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad apps request")
@@ -511,7 +512,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			Code  string `json:"code"`
 			Kind  string `json:"kind"`
 			Name  string `json:"name"`
-		}{p.ID, p.Code, p.Kind, p.Name}
+			Grant string `json:"grant,omitempty"`
+		}{p.ID, p.Code, p.Kind, p.Name, p.Grant}
 		res, err = d.call(ctx, method, frame)
 
 	case "inbox_list":

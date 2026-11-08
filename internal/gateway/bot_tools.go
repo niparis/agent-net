@@ -24,6 +24,7 @@ func (g *Gateway) botMCPServer() *mcp.Server {
 		version = "dev"
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "agent-net", Version: version}, nil)
+	server.AddReceivingMiddleware(g.botGrantTools())
 	for _, entry := range toolcatalog.ForRole(toolcatalog.RoleBot) {
 		var schema jsonschema.Schema
 		if err := json.Unmarshal(entry.InputSchema, &schema); err != nil {
@@ -41,15 +42,8 @@ func (g *Gateway) botMCPServer() *mcp.Server {
 				if info == nil || info.UserID == "" {
 					return botToolError(fmt.Errorf("missing app identity"))
 				}
-				for _, kind := range []string{"call", "message"} {
-					if kind == "message" && entry.Name != "agent_message_send" && entry.Name != "agent_message_reply" {
-						continue
-					}
-					if ok, retry := g.limiter.AllowApp(info.UserID, kind); !ok {
-						seconds := int64((retry-1)/time.Second) + 1
-						g.logLine("apps.rate_limit", "app", info.UserID, "kind", kind)
-						return botToolError(fmt.Errorf("Rate limit: try again in %d seconds", seconds))
-					}
+				if err := g.botAllow(info.UserID, entry.Name); err != nil {
+					return botToolError(err)
 				}
 				var in map[string]any
 				if req.Params == nil || len(req.Params.Arguments) == 0 {
@@ -76,6 +70,23 @@ func (g *Gateway) botMCPServer() *mcp.Server {
 			})
 	}
 	return server
+}
+
+// botAllow counts one tool call against the app's limits: every call counts as
+// a call, and sending a message also counts as a message.
+func (g *Gateway) botAllow(appID, tool string) error {
+	kinds := []string{"call"}
+	if tool == "agent_message_send" || tool == "agent_message_reply" {
+		kinds = append(kinds, "message")
+	}
+	for _, kind := range kinds {
+		if ok, retry := g.limiter.AllowApp(appID, kind); !ok {
+			seconds := int64((retry-1)/time.Second) + 1
+			g.logLine("apps.rate_limit", "app", appID, "kind", kind)
+			return fmt.Errorf("Rate limit: try again in %d seconds", seconds)
+		}
+	}
+	return nil
 }
 
 func botToolError(err error) (*mcp.CallToolResult, error) {

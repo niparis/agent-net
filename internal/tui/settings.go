@@ -149,7 +149,7 @@ func (m Model) settingsItems() []settingsItem {
 }
 
 func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if m.apps.stage == "rename" {
+	if m.apps.stage == "rename" || m.apps.stage == "grant" {
 		next, cmd := m.appsKey(k)
 		return next, cmd
 	}
@@ -215,6 +215,12 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if item.kind == "app" {
 			m.apps.index = item.index
 		}
+		return m.settingsAppsKey(k)
+	case "grant":
+		if item.kind != "app" {
+			return m, nil
+		}
+		m.apps.index = item.index
 		return m.settingsAppsKey(k)
 	case "open", "toggle":
 		open := keyAction(contextSettings, k.String()) == "open"
@@ -389,7 +395,7 @@ func (m Model) timeZoneKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) settingsAppsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	next, cmd := m.appsKey(k)
 	m = next.(Model)
-	if m.apps.stage != "" && m.apps.stage != "rename" {
+	if m.apps.stage != "" && m.apps.stage != "rename" && m.apps.stage != "grant" {
 		m.mode = modeApps
 	}
 	return m, cmd
@@ -527,6 +533,14 @@ func (m Model) settingsView(w, h int) []string {
 			}
 			for _, history := range v.History {
 				body = append(body, sDim.Render(clip(fmt.Sprintf("    #%d %s %s %s: %s -> %s (%s)", history.Revision, history.Actor, history.Level, history.Scope, settingHistoryValue(history.Old), settingHistoryValue(history.New), sanitize(history.Reason)), w)))
+			}
+		}
+		if item.kind == "app" && item.index < len(m.apps.apps) {
+			if grants := appGrantsLine(m.apps.apps[item.index], w, "  "); grants != "" {
+				body = append(body, grants)
+			}
+			if m.apps.stage == "grant" && item.index == m.apps.index {
+				body = append(body, m.appsGrantLines(w, "    ")...)
 			}
 		}
 

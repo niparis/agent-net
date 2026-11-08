@@ -6,6 +6,7 @@ Keys · all screens ────────────────────
   u                      set the tunnel URL, or undo the selected setting revision
   a                      add a connected app
   x                      remove the selected machine or revoke the selected app
+  g                      choose the shared MCP servers the selected bot may use
   r                      rotate the selected online machine token
 
  Inbox
@@ -35,6 +36,5 @@ Keys · all screens ────────────────────
  On a CTO proposal row
   enter                  open the proposal detail
   a                      approve
-  r                      decline
   more below
 up/down scroll  ? this screen  esc close

@@ -25,6 +25,8 @@ const (
 	OpProposalAnswer   = "proposal_answer"
 	OpProposalStartAck = "proposal_start_ack"
 	OpAppsRename       = "apps.rename"
+	OpAppsGrant        = "apps.grant"
+	OpAppsUngrant      = "apps.ungrant"
 	// Data. These only read.
 	OpInfo          = "info"          // answers OperatorInfo
 	OpNodes         = "nodes"         // answers NodesInfo

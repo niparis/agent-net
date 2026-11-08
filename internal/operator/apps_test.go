@@ -12,14 +12,14 @@ func TestConnectedAppsCalls(t *testing.T) {
 			return map[string]any{}, ""
 		}
 		switch method {
-		case "apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.rename", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
+		case "apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.rename", "apps.grant", "apps.ungrant", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
 			return map[string]any{"ok": true}, ""
 		}
 		return nil, "unknown"
 	})
 	c := New(path)
 	defer c.Close()
-	for _, op := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.rename", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url"} {
+	for _, op := range []string{"apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", "apps.rename", "apps.grant", "apps.ungrant", "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url"} {
 		raw, err := c.Call(context.Background(), op, map[string]string{"id": "test"})
 		if err != nil || !json.Valid(raw) {
 			t.Fatalf("%s: %s %v", op, raw, err)
