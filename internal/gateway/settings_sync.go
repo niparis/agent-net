@@ -28,7 +28,10 @@ func (g *Gateway) sendSettingsSync(ctx context.Context, nc *nodeConn) {
 	}
 	g.sendSettingsSnapshot(ctx, nc, snap)
 }
-func (g *Gateway) settingsChanged() {
+
+// settingsChanged runs under the gateway's background context, so Close stops
+// it (background.go).
+func (g *Gateway) settingsChanged(ctx context.Context) {
 	snap, err := g.store.SettingsSnapshot()
 	if err != nil {
 		g.logLine("error", "where", "settings sync", "err", err)
@@ -40,7 +43,7 @@ func (g *Gateway) settingsChanged() {
 		conns = append(conns, c)
 	}
 	g.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	for _, c := range conns {
 		g.sendSettingsSnapshot(ctx, c, snap)

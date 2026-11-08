@@ -167,6 +167,13 @@ type Gateway struct {
 	graphCutoverWG sync.WaitGroup
 	// graphCutoverCheckMu serializes the cutover checks themselves.
 	graphCutoverCheckMu sync.Mutex
+	// bg* hold the short background jobs a write starts (the settings and
+	// charter broadcasts). Close stops them and waits for them (background.go).
+	bgMu      sync.Mutex
+	bgStopped bool
+	bgCtx     context.Context
+	bgCancel  context.CancelFunc
+	bgWG      sync.WaitGroup
 	// transferMu keeps the parts of every xfer.* frame in order.
 	transferMu sync.Mutex
 
@@ -247,7 +254,13 @@ func (nc *nodeConn) answer(h protocol.Header) {
 	}
 }
 
+// write sends one frame. A connection with no websocket (a test fake, or one
+// that is not wired up) cannot be written to; every broadcast walks the whole
+// connection table, so this says so with an error and does not crash them.
 func (nc *nodeConn) write(ctx context.Context, b []byte) error {
+	if nc.ws == nil {
+		return errNodeGone
+	}
 	nc.wmu.Lock()
 	defer nc.wmu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -321,8 +334,8 @@ func New(opts Options) (*Gateway, error) {
 		enrollLimit: newEnrollLimiter(opts.Now),
 		stepBatches: make(map[string]*stepTaskBatch), lastReportBySession: make(map[string]time.Time),
 		stepTaskQuietWindow: opts.StepTaskQuietWindow, stepTaskRecentWindow: opts.StepTaskRecentWindow, stepTaskBatchCap: opts.StepTaskBatchCap}
-	store.settingsHook = func() { go g.settingsChanged() }
-	store.charterHook = func() { go g.charterChanged() }
+	store.settingsHook = func() { g.goBackground(g.settingsChanged) }
+	store.charterHook = func() { g.goBackground(g.charterChanged) }
 	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)
 	if err != nil {
@@ -358,6 +371,9 @@ func (g *Gateway) TLSConfig() *tls.Config {
 // Close drops every node connection and closes the database.
 func (g *Gateway) Close() error {
 	g.stopStandingChoices()
+	// The database and the connections are still open here, so a broadcast that
+	// is running finishes or stops on its cancelled context.
+	g.stopBackground()
 	g.publicMu.Lock()
 	g.stopPublicListener()
 	g.closeTailscaleNode()

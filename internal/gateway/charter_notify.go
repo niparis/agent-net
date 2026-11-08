@@ -30,15 +30,16 @@ func (s *Store) charterWrote(err error) error {
 
 // charterChanged sends FrameCharterChanged to every connected daemon. Each one
 // drops its cached policy and graph answers, so the next turn of every session
-// reads the new charter at once and a turn costs no extra call.
-func (g *Gateway) charterChanged() {
+// reads the new charter at once and a turn costs no extra call. It runs under
+// the gateway's background context, so Close stops it (background.go).
+func (g *Gateway) charterChanged(ctx context.Context) {
 	g.mu.Lock()
 	conns := make([]*nodeConn, 0, len(g.conns))
 	for _, c := range g.conns {
 		conns = append(conns, c)
 	}
 	g.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	for _, c := range conns {
 		if frame, err := protocol.EncodeRequest(protocol.FrameCharterChanged, protocol.NewID("d"), nil); err == nil {

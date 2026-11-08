@@ -58,6 +58,11 @@ the effective charter line already holds those rules.
    write or an undo. The daemon counts the frames and uses a cached policy or
    graph answer only from the epoch it was read in. A turn costs no extra
    call, no timer is shortened, and an older gateway keeps the 2-second cache.
+   The broadcast belongs to the gateway: it runs under the gateway's background
+   context, `Close` cancels it and waits for it, and a write after `Close`
+   starts none. The settings broadcast uses the same helper. A connection with
+   no websocket is skipped (`nodeConn.write` returns an error), so a test fake
+   in the connection table cannot crash a broadcast.
 6. No limit and no approval is added. The owner sets the rule where he already
    sets charters. The charter, the TUI and `agent_graph_read` do not change.
 
@@ -78,4 +83,8 @@ have to write Codex config on the owner's machine. That is a separate decision.
   stopped (so only `charter.changed` can bring the new rule); the MCP
   instructions of a new session; the Codex MCP process; the Codex
   `developerInstructions` at start and at resume; the worker brief.
+- `internal/gateway/charter_notify_test.go`: a charter, settings or mcp.changed
+  broadcast skips a connection with no websocket and still reaches the live
+  one; the charter broadcast is gone after `Close`; a background job is
+  cancelled and awaited on stop and none starts after it.
 - `internal/mcpserver/start_instructions_test.go`: the fallback and the cap.
