@@ -32,6 +32,7 @@ const (
 	modeRename        // typing a display name for the selected session's machine
 	modeProjectRename // typing the selected project display name
 	modeTimeZone      // typing the owner's display time zone
+	modeStandingAdd   // typing a standing order for the CTO
 	modeSettingValue  // editing a setting as JSON
 	modeSettingRepo   // choosing a repo
 	modeSettingUndo   // confirming an undo

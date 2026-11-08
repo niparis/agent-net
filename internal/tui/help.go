@@ -117,6 +117,9 @@ func (m Model) hints() []hint {
 		if item.kind == "app" {
 			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), bindingHint(contextSettings, "revoke"), bindingHint(contextSettings, "grant"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 		}
+		if item.kind == "standing" || item.kind == "standing-add" {
+			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), {key: "x", label: "remove", prio: 1}, {key: "u", label: "undo remove", prio: 1}, bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
+		}
 		if item.kind == "machine" {
 			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), {key: "x", label: "remove", prio: 1}, bindingHint(contextSettings, "rotate token"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 		}
@@ -286,6 +289,8 @@ func (m Model) helpLine(w int) string {
 		return clip(m.rename.View()+sDim.Render("   enter saves JSON, esc cancels"), w)
 	case modeTimeZone:
 		return clip(m.rename.View()+sDim.Render("   enter saves, auto follows your machine, esc cancels"), w)
+	case modeStandingAdd:
+		return clip(m.rename.View()+sDim.Render("   enter saves, esc cancels"), w)
 	case modeRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty resets, esc cancels"), w)
 	case modeTrust:

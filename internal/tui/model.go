@@ -162,6 +162,8 @@ type Model struct {
 	showHiddenNodes           bool
 	settingsRow               int
 	settingValues             []protocol.SettingView
+	standing                  []protocol.StandingOrder
+	standingRemoved           *protocol.StandingOrder
 	settingEdit               int
 	settingRepo               string
 	settingUndoRevision       int64
@@ -998,6 +1000,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case policySavedMsg:
 		return m.onPolicySaved(msg)
 
+	case standingMsg:
+		return m.onStanding(msg)
 	case settingValuesMsg:
 		if msg.err != nil {
 			m.fail("Settings: " + explain(msg.err))
@@ -1019,7 +1023,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		next, cmd := m.onAppsResult(msg)
 		if next.tab == settingsTab && msg.op == "apps.list" {
-			cmd = tea.Batch(cmd, next.loadSettingValues())
+			cmd = tea.Batch(cmd, next.loadSettingValues(), next.loadStandingOrders())
 		}
 		if next.tab == settingsTab {
 			items := next.settingsItems()
@@ -1282,6 +1286,8 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.projectRenameKey(k)
 	case modeTimeZone:
 		return m.timeZoneKey(k)
+	case modeStandingAdd:
+		return m.standingAddKey(k)
 	case modeSettingValue:
 		return m.settingValueKey(k)
 	case modeSettingRepo:

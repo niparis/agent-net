@@ -236,7 +236,7 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
 	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "1"}})
-	args := []string{"--bg", "--tools", "", "--setting-sources", "", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", ctoBrief}
+	args := []string{"--bg", "--tools", "", "--setting-sources", "", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", d.ctoSystemPrompt(ctx)}
 	if id != "" {
 		args = append(args, "--resume", id)
 	}

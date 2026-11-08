@@ -104,7 +104,7 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"session_change": {
-		desc: "Change a session: rename, trust, policy, session_start, merger_start or merger_stop.",
+		desc: "Change a session: rename, trust (a session, or a project or path folder for Claude Code), policy, session_start, merger_start or merger_stop.",
 		fields: map[string]ctoField{
 			"action":     {typ: "string", enum: []string{"rename", "trust", "policy", "session_start", "merger_start", "merger_stop"}},
 			"session_id": {typ: "string", desc: "Session ID."},
@@ -114,6 +114,7 @@ var ctoTools = map[string]ctoToolDef{
 			"branch": {typ: "string"}, "first_message": {typ: "string"}, "create": {typ: "boolean"},
 			"name":    {typ: "string", desc: "Name; empty resets."},
 			"on":      {typ: "boolean", desc: "Enable trust."},
+			"trust":   {typ: "boolean", desc: "With session_start: trust the folder for Claude Code first."},
 			"scope":   {typ: "string", desc: "Default session.", enum: []string{"session", "project"}},
 			"policy":  {typ: "object", desc: "Policy."},
 			"dry_run": {typ: "boolean", desc: "Preview."},
