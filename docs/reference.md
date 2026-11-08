@@ -2937,8 +2937,7 @@ with `graph_change`; approval is required. A Repo defaults to its owner Agent
 until explicitly set or cleared. A Repo lead must own the Repo or have a
 session recorded there. A Team lead can be an Agent or a session.
 
-For messages to a non-lead session from outside its Repo or Team crew, the
-gateway redirects to the selected session when online, otherwise to a live session of its Agent, and adds a note to the message and receipt.
+For messages from outside the recipient's Repo or Team crew, the gateway picks a lead in this order. First the Repo lead: a message to the Repo lead's own session stays with that session, and a message to any other session of a Repo that has a Repo lead goes to that Repo lead. Otherwise the Team lead, which does not take a message addressed to a Repo lead. The gateway redirects to the selected lead session when online, otherwise to a live session of its Agent, and adds a note to the message and receipt.
 When the lead Agent has several live sessions, a session under a provider usage limit comes last, so another live session of the same Agent gets the message; if all are limited the usual order applies. The owner and CTO are exempt, as are workers messaging their caller. If there is
 no lead or no live lead session, the original target receives the message and
 the receipt says why. A reply is never redirected: it goes to the session that
@@ -2946,7 +2945,7 @@ sent the message it answers. Use `repo:<name>` or `team:<name>` to address a
 live lead by name or ID. Typed Graph reads expose `lead`, `max_agents`, `agent_count` and
 `over_max`; session views expose corresponding Repo counts and lead flags.
 
-**Your place.** Every turn, a session that leads a Team, or leads a Repo that other agents work in, gets a block from agent-net that says so. The lead block names the Team or Repo, its members, and that the lead reports to the owner. It says that requests from outside to a member come to the lead, who answers each one or hands it off. A Team block ends with the Team purpose, cut to 300 characters. A session in a Team that it does not lead gets two lines: who leads the Team, and to escalate to that lead first, not to the owner. A session in no Team, and not leading a Repo with other agents, gets no block. The block comes from the live Team data on each turn, with the node charter, on every harness.
+**Your place.** Every turn, a session that leads a Team, or leads a Repo that other agents work in, gets a block from agent-net that says so. The lead block names the Team or Repo, its members, and that the lead reports to the owner. It says that requests from outside to a member come to the lead, who answers each one or hands it off. For a Team lead, requests to a member Repo that has its own lead go to that Repo lead instead. A Team block ends with the Team purpose, cut to 300 characters. A session in a Team that it does not lead gets two lines: who leads the Team, and to escalate to that lead first, not to the owner. A session in no Team, and not leading a Repo with other agents, gets no block. The block comes from the live Team data on each turn, with the node charter, on every harness.
 
 A routed request carries the redirect note and then one line for the lead: `You lead <scope>: answer this or hand it off to <original target> with agent_message_handoff.` The sender's receipt keeps the short note only.
 

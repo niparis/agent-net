@@ -34,6 +34,11 @@ func newPlaceRig(t *testing.T) placeRig {
 	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
 	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Purpose: "Build  the forge\nand keep it green.", Owner: &agent})
 	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &repo})
+	// The Repo has no lead of its own, so requests to its sessions go to the Team
+	// lead. Without this, the member would be the Repo's default lead.
+	if err := s.SetLead(protocol.LeadSetRequest{Ref: repo}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
 	return r
 }
 
@@ -46,7 +51,7 @@ func TestPlaceTextLead(t *testing.T) {
 	want := "[agent-net] Your place, from agent-net:\n" +
 		"You lead team Alpha (mode: charter first). Members: demo.\n" +
 		"You report to the owner.\n" +
-		"Requests from outside Alpha to a member come to you. Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly.\n" +
+		"Requests from outside Alpha to a member come to you, except requests to a member repo that has its own lead, which go to that lead. Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly.\n" +
 		"Team purpose: Build the forge and keep it green."
 	if got != want {
 		t.Fatalf("lead place:\n%s\nwant:\n%s", got, want)

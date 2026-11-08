@@ -17,9 +17,15 @@ import (
 
 const placeHeader = "[agent-net] Your place, from agent-net:"
 
-// handoffInstruction is the sentence a lead gets for requests from outside.
-func handoffInstruction(scope string) string {
-	return fmt.Sprintf("Requests from outside %s to a member come to you. Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly.", scope)
+// handoffInstruction is the sentence a lead gets for requests from outside. A
+// Team lead does not get requests to a member repo that has its own lead: those
+// go to that repo lead.
+func handoffInstruction(scope string, teamLead bool) string {
+	line := fmt.Sprintf("Requests from outside %s to a member come to you", scope)
+	if teamLead {
+		line += ", except requests to a member repo that has its own lead, which go to that lead"
+	}
+	return line + ". Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly."
 }
 
 // reportLine says who a lead reports to and what the owner holds back.
@@ -113,7 +119,7 @@ func (s *Store) placeText(session string) (string, error) {
 		lines := []string{
 			fmt.Sprintf("You lead team %s (mode: %s). Members: %s.", t.name, protocol.AuthorityModeLabel(t.mode), namesLine(names)),
 			reportLine("the owner", t.held, "your team"),
-			handoffInstruction(t.name),
+			handoffInstruction(t.name, true),
 		}
 		if purpose := placePurpose(t.purpose); purpose != "" {
 			lines = append(lines, "Team purpose: "+purpose)
@@ -172,7 +178,7 @@ func (s *Store) placeText(session string) (string, error) {
 		parts = append(parts, strings.Join([]string{
 			fmt.Sprintf("You lead repo %s (mode: %s). Members: %s.", r.name, protocol.AuthorityModeLabel(mode), namesLine(names)),
 			reportLine(above, held, "your repo"),
-			handoffInstruction(r.name),
+			handoffInstruction(r.name, false),
 		}, "\n"))
 	}
 

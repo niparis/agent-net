@@ -233,6 +233,66 @@ func TestRepoLeadRouteReplyReachesParentSender(t *testing.T) {
 	}
 }
 
+// Repo lead before Team lead. A message to a Repo's own lead session from
+// outside stays with that session, even when another agent leads the Team the
+// Repo belongs to.
+func TestRepoLeadSessionKeepsItsMessageUnderOtherTeamLead(t *testing.T) {
+	s := teamStore(t)
+	var repoLead, teamLead string
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='demo'`).Scan(&repoLead); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='other'`).Scan(&teamLead); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := graphSessions(t, s, "outside")
+	outsider := ids["outside"]
+	teamAgent := protocol.GraphRef{Kind: "agent", ID: "other"}
+	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &teamAgent})
+	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &repo})
+	if got, err := s.ResolveLeadAddress("repo:demo"); err != nil || got != repoLead {
+		t.Fatalf("repo lead of demo is %s, want %s: %v", got, repoLead, err)
+	}
+	m, _, note, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: repoLead, Body: "hello"})
+	if err != nil || m.To != repoLead || note != "" {
+		t.Fatalf("repo lead message went to %s instead of %s (team lead %s, note %q): %v", m.To, repoLead, teamLead, note, err)
+	}
+}
+
+// A session in a Repo that has a Repo lead goes to that lead, not to the Team
+// lead, when the sender is outside the Repo.
+func TestNonLeadRepoSessionGoesToRepoLeadNotTeamLead(t *testing.T) {
+	s := teamStore(t)
+	var repoLead, node, teamLead string
+	if err := s.db.QueryRow(`SELECT id,node_id FROM sessions WHERE repo_id='demo'`).Scan(&repoLead, &node); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='other'`).Scan(&teamLead); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := graphSessions(t, s, "outside")
+	outsider := ids["outside"]
+	if err := s.AddArchitect("helper", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	target, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "helper", Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='helper',name='Helper' WHERE id=?`, target); err != nil {
+		t.Fatal(err)
+	}
+	teamAgent := protocol.GraphRef{Kind: "agent", ID: "other"}
+	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &teamAgent})
+	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &repo})
+	m, _, note, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: target, Body: "hello"})
+	if err != nil || m.To != repoLead || !strings.Contains(note, "lead of demo") || strings.Contains(note, "lead of Alpha") {
+		t.Fatalf("non-lead repo session went to %s instead of repo lead %s (team lead %s, note %q): %v", m.To, repoLead, teamLead, note, err)
+	}
+}
+
 func TestLeadAddressResolution(t *testing.T) {
 	s := teamStore(t)
 	var demo string
