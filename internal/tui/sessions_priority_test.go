@@ -42,6 +42,47 @@ func TestSessionsPriorityGroups(t *testing.T) {
 	}
 }
 
+func TestOfflineWaitingSessionIsIdle(t *testing.T) {
+	m := priorityModel()
+	m.activeOnly = false
+	m.snap.Agents[0].Online = false
+	m.snap.Agents[0].Status = "busy"
+	m.snap.Agents[0].Waiting = &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "waiting for owner"}
+	m.snap.Agents[1].Status = "idle"
+	m.snap.Agents[1].Worker = &protocol.WorkerInfo{Owner: "lead"}
+	m.inboxItems = []protocol.InboxItem{{ID: "q", SessionID: "lead", Kind: "question", Status: "open"}}
+
+	if m.sessionNeedsOwner(m.snap.Agents[0]) {
+		t.Fatal("offline session needs owner")
+	}
+	if got := groupOf(m, "lead").host; got != "Idle" {
+		t.Fatalf("offline session group %q, want Idle", got)
+	}
+	if got := groupOf(m, "kid").host; got != "Idle" {
+		t.Fatalf("offline lead tree group %q, want Idle", got)
+	}
+	for _, g := range m.groups() {
+		if g.host == "Needs you" || g.host == "Working" {
+			t.Fatalf("offline session appears in %s: %v", g.host, agentIDs(g.agents))
+		}
+	}
+	idle := groupOf(m, "lead")
+	if idle.total < 2 || indexOfID(agentIDs(idle.agents), "kid") < 0 {
+		t.Fatalf("offline session tree is not counted in Idle: %+v", idle)
+	}
+	if m.waitingCount() != 1 {
+		t.Fatalf("inbox waiting count %d, want 1", m.waitingCount())
+	}
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		view := m
+		view.width, view.height = size[0], size[1]
+		view.haveData = true
+		view.problem = ProblemNone
+		view.snap.Connected = true
+		golden(t, fmt.Sprintf("sessions_offline_waiting_%dx%d", size[0], size[1]), view.testView())
+	}
+}
+
 func TestSessionsPriorityCollapse(t *testing.T) {
 	m := priorityModel()
 	m.selected = "kid"

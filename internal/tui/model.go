@@ -1879,7 +1879,7 @@ func (m Model) sessionGroups(collapse bool) []group {
 			continue
 		}
 		shown[a.SessionID] = a
-		eligible[a.SessionID] = a.Online && a.Status != protocol.StatusDormant || m.showOffline || strings.TrimSpace(m.filter) != "" || a.StalledSince > 0 || m.sessionNeedsOwner(a)
+		eligible[a.SessionID] = a.Online && a.Status != protocol.StatusDormant || m.showOffline || strings.TrimSpace(m.filter) != "" || a.StalledSince > 0 || m.sessionHasOwnerRequest(a)
 	}
 	parents := map[string]string{}
 	for id, a := range shown {
@@ -1991,9 +1991,9 @@ func (m Model) sessionGroups(collapse bool) []group {
 			matched = matched || matches(a, m.filter)
 			pinned = pinned || a.PinnedAt > 0
 			subagent = subagent || a.Worker != nil || isMerger(a)
-			if m.sessionNeedsOwner(a) {
+			if a.Online && m.sessionNeedsOwner(a) {
 				band = 0
-			} else if m.mergerWorking(a) || a.Online && a.Status == "busy" {
+			} else if a.Online && (m.mergerWorking(a) || a.Status == "busy") {
 				band = min(band, 1)
 			}
 			if a.Online && a.Status == "busy" {
@@ -2048,6 +2048,10 @@ func (m Model) sessionGroups(collapse bool) []group {
 }
 
 func (m Model) sessionNeedsOwner(a protocol.AgentView) bool {
+	return a.Online && m.sessionHasOwnerRequest(a)
+}
+
+func (m Model) sessionHasOwnerRequest(a protocol.AgentView) bool {
 	if a.Status == "needs you" || a.Status == "needs_you" || a.Worker == nil && a.Waiting != nil {
 		return true
 	}

@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox (1) 8 Delivery │ 4 online · 0 busy · 1 needs you
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ●       cpu ? mem ? disk ?                                                                                          │
+│  ● build cpu ? mem ? disk ?                                                                                          │
+│  ○ desk  cpu ? mem ? disk ?                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME                          MACHINE      PROJECT   MODEL                  STATUS      CPU   RAM TASK
+ Idle (5)                                                                                             Inbox: 1 to decide
+  ★ pin                         -            -         claude                 idle          ?     ?
+  ★ lead                        desk         demo      claude                 offline               no report
+  └─ worker                     build        -         codex                  idle          ?     ?
+  other                         -            -         claude                 idle          ?     ?
+  └─ worker claude merge merger -            demo      claude                 idle          ?     ?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit
