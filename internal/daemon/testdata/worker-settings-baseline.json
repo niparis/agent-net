@@ -29,6 +29,8 @@
     "Cleanup": 600000000000,
     "DeleteSessions": null,
     "CacheMaxAge": 86400000000000,
+    "CacheMaxBytes": 16106127360,
+    "CacheLowBytes": 10737418240,
     "TmpMaxAge": 21600000000000,
     "OSSandbox": null
   },
@@ -51,6 +53,8 @@
     "Cleanup": 600000000000,
     "DeleteSessions": null,
     "CacheMaxAge": 86400000000000,
+    "CacheMaxBytes": 16106127360,
+    "CacheLowBytes": 10737418240,
     "TmpMaxAge": 21600000000000,
     "OSSandbox": null
   }

@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +14,203 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// writeCacheEntry creates one Go cache entry file of size bytes with an mtime.
+func writeCacheEntry(t *testing.T, dir, name string, size int, mtime time.Time) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), size), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeGoCacheMarkers(t *testing.T, dir string) (string, string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	readme := filepath.Join(dir, "README")
+	trim := filepath.Join(dir, "trim.txt")
+	if err := os.WriteFile(readme, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(trim, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	return readme, trim
+}
+
+func TestCacheSizeCapDefaults(t *testing.T) {
+	s := WorkerSettings{}.filled()
+	if s.CacheMaxBytes != 15<<30 {
+		t.Errorf("cache_max_bytes default = %d, want %d", s.CacheMaxBytes, int64(15)<<30)
+	}
+	if s.CacheLowBytes != 10<<30 {
+		t.Errorf("cache_low_bytes default = %d, want %d", s.CacheLowBytes, int64(10)<<30)
+	}
+}
+
+func TestCacheSizeCapTrimsOldestAcrossCaches(t *testing.T) {
+	isolateDaemonCaches(t)
+	now := time.Now()
+	workerDir := t.TempDir()
+	homeDir := t.TempDir()
+	ownerDir := filepath.Join(homeDir, ".cache", "go-build")
+	workerReadme, workerTrim := writeGoCacheMarkers(t, workerDir)
+	ownerReadme, ownerTrim := writeGoCacheMarkers(t, ownerDir)
+
+	workerOld := writeCacheEntry(t, workerDir, filepath.Join("aa", "old"), 1024, now.Add(-10*time.Hour))
+	workerNew := writeCacheEntry(t, workerDir, filepath.Join("bb", "new"), 1024, now.Add(-1*time.Hour))
+	ownerOld := writeCacheEntry(t, ownerDir, filepath.Join("cc", "old"), 1024, now.Add(-20*time.Hour))
+	ownerMid := writeCacheEntry(t, ownerDir, filepath.Join("dd", "mid"), 1024, now.Add(-5*time.Hour))
+	ownerNew := writeCacheEntry(t, ownerDir, filepath.Join("ee", "new"), 1024, now.Add(-30*time.Minute))
+
+	var logs bytes.Buffer
+	d := &Daemon{
+		cfg: Config{HomeDir: homeDir, WorkerGoCache: workerDir},
+		log: log.New(&logs, "", 0),
+	}
+
+	// 5 KiB total, cap 3 KiB, low mark 2 KiB. The three oldest files across
+	// both caches go, and the two youngest stay.
+	freed := d.trimCacheSize(3*1024, 2*1024)
+	if freed.Worker != 1024 || freed.Owner != 2048 {
+		t.Fatalf("freed worker=%d owner=%d, want worker=1024 owner=2048", freed.Worker, freed.Owner)
+	}
+	for _, gone := range []string{ownerOld, workerOld, ownerMid} {
+		if _, err := os.Stat(gone); !os.IsNotExist(err) {
+			t.Errorf("%s should be removed, stat error: %v", gone, err)
+		}
+	}
+	for _, kept := range []string{workerNew, ownerNew, workerReadme, workerTrim, ownerReadme, ownerTrim} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("%s should be kept: %v", kept, err)
+		}
+	}
+	// Folder layout is kept even when a folder becomes empty.
+	for _, dir := range []string{filepath.Join(workerDir, "aa"), filepath.Join(ownerDir, "cc")} {
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			t.Errorf("cache folder %s should be kept: %v", dir, err)
+		}
+	}
+	line := logs.String()
+	if !strings.Contains(line, "worker 1024 bytes freed") || !strings.Contains(line, "owner 2048 bytes freed") {
+		t.Fatalf("log line %q does not name bytes freed per cache", line)
+	}
+}
+
+func TestCacheSizeCapLeavesCachesUnderTheCap(t *testing.T) {
+	isolateDaemonCaches(t)
+	now := time.Now()
+	workerDir := t.TempDir()
+	homeDir := t.TempDir()
+	ownerDir := filepath.Join(homeDir, ".cache", "go-build")
+	writeGoCacheMarkers(t, workerDir)
+	writeGoCacheMarkers(t, ownerDir)
+	workerFile := writeCacheEntry(t, workerDir, filepath.Join("aa", "entry"), 512, now.Add(-48*time.Hour))
+	ownerFile := writeCacheEntry(t, ownerDir, filepath.Join("bb", "entry"), 512, now.Add(-48*time.Hour))
+
+	d := &Daemon{cfg: Config{HomeDir: homeDir, WorkerGoCache: workerDir}}
+	freed := d.trimCacheSize(4*1024, 2*1024)
+	if freed.Worker != 0 || freed.Owner != 0 {
+		t.Fatalf("trimmed under the cap: %+v", freed)
+	}
+	for _, kept := range []string{workerFile, ownerFile} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("%s should be kept under the cap: %v", kept, err)
+		}
+	}
+}
+
+func TestCacheSizeCapSkipsOwnerFolderWithoutReadme(t *testing.T) {
+	isolateDaemonCaches(t)
+	now := time.Now()
+	workerDir := t.TempDir()
+	homeDir := t.TempDir()
+	ownerDir := filepath.Join(homeDir, ".cache", "go-build")
+	writeGoCacheMarkers(t, workerDir)
+	ownerFile := writeCacheEntry(t, ownerDir, filepath.Join("aa", "not-a-cache"), 1024, now.Add(-48*time.Hour))
+	workerFile := writeCacheEntry(t, workerDir, filepath.Join("bb", "entry"), 1024, now.Add(-1*time.Hour))
+
+	d := &Daemon{cfg: Config{HomeDir: homeDir, WorkerGoCache: workerDir}}
+	freed := d.trimCacheSize(512, 256)
+	if _, err := os.Stat(ownerFile); err != nil {
+		t.Fatalf("owner folder without README was trimmed: %v", err)
+	}
+	if _, err := os.Stat(workerFile); !os.IsNotExist(err) {
+		t.Fatalf("worker entry over the cap should be removed, stat error: %v", err)
+	}
+	if freed.Worker != 1024 || freed.Owner != 0 {
+		t.Fatalf("freed worker=%d owner=%d, want worker=1024 owner=0", freed.Worker, freed.Owner)
+	}
+}
+
+func TestDiskWarningTrimsCachesAndNamesTheirSizes(t *testing.T) {
+	isolateDaemonCaches(t)
+	now := time.Now()
+	workerDir := t.TempDir()
+	homeDir := t.TempDir()
+	ownerDir := filepath.Join(homeDir, ".cache", "go-build")
+	writeGoCacheMarkers(t, workerDir)
+	writeGoCacheMarkers(t, ownerDir)
+	writeCacheEntry(t, workerDir, filepath.Join("aa", "old"), 1024, now.Add(-10*time.Hour))
+	workerNew := writeCacheEntry(t, workerDir, filepath.Join("bb", "new"), 1024, now.Add(-1*time.Hour))
+	ownerOld := writeCacheEntry(t, ownerDir, filepath.Join("cc", "old"), 1024, now.Add(-20*time.Hour))
+
+	var created []map[string]any
+	d := &Daemon{
+		cfg: Config{
+			NodeID:        "n_test",
+			Hostname:      "test-node",
+			HomeDir:       homeDir,
+			WorkerGoCache: workerDir,
+			Workers:       WorkerSettings{CacheMaxBytes: 2048, CacheLowBytes: 1024},
+			testGatewayCall: func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
+				switch typ {
+				case "inbox.create":
+					created = append(created, params.(map[string]any))
+					raw, _ := json.Marshal(map[string]any{"item": protocol.InboxItem{ID: "i_cache", Status: "open"}})
+					return raw, true, nil
+				case "inbox.list":
+					raw, _ := json.Marshal(map[string]any{"items": []protocol.InboxItem{}})
+					return raw, true, nil
+				}
+				return nil, false, nil
+			},
+			testDiskPercent: func(string) (float64, bool) { return 90, true },
+		},
+	}
+
+	if err := d.checkDiskWarning(context.Background(), now); err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 1 {
+		t.Fatalf("expected one warning, got %d", len(created))
+	}
+	text, _ := created[0]["text"].(string)
+	for _, want := range []string{"worker Go cache 1.0 KB", "owner Go cache 0 bytes"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("warning %q does not contain %q", text, want)
+		}
+	}
+	// The warning fires the size trim at once: the oldest file across both
+	// caches goes, whichever cache it is in.
+	if _, err := os.Stat(ownerOld); !os.IsNotExist(err) {
+		t.Errorf("owner cache was not trimmed by the warning: %v", err)
+	}
+	if _, err := os.Stat(workerNew); err != nil {
+		t.Errorf("newest cache entry should be kept: %v", err)
+	}
+}
+
 func TestWorkerCacheCleanupAgeRules(t *testing.T) {
+	isolateDaemonCaches(t)
 	cacheDir := t.TempDir()
 	tmpDir := t.TempDir()
 
@@ -132,6 +330,7 @@ func TestWorkerCacheCleanupAgeRules(t *testing.T) {
 }
 
 func TestWorkerCacheCleanupNeverTouchOwnerGoBuild(t *testing.T) {
+	isolateDaemonCaches(t)
 	homeDir := t.TempDir()
 	ownerCache := filepath.Join(homeDir, ".cache", "go-build")
 	if err := os.MkdirAll(filepath.Join(ownerCache, "01"), 0755); err != nil {
@@ -162,6 +361,7 @@ func TestWorkerCacheCleanupNeverTouchOwnerGoBuild(t *testing.T) {
 }
 
 func TestWorkerCacheCleanupOffSwitch(t *testing.T) {
+	isolateDaemonCaches(t)
 	cacheDir := t.TempDir()
 	tmpDir := t.TempDir()
 
@@ -271,6 +471,7 @@ func TestDiskWarningGatewayNoDeadlock(t *testing.T) {
 }
 
 func TestDiskWarningHysteresis(t *testing.T) {
+	isolateDaemonCaches(t)
 	var createdItems []map[string]any
 	var answeredItems []map[string]string
 	var simPct float64
@@ -404,6 +605,10 @@ func TestWorkerCacheTestDaemonIsolation(t *testing.T) {
 	}
 	if !strings.HasPrefix(tmpDir, tempRoot) {
 		t.Fatalf("workerGoTmpDir %q is not inside temp dir %q", tmpDir, tempRoot)
+	}
+	ownerCache := ownerGoBuildCacheDir(n.d.cfg.HomeDir)
+	if ownerCache == "" || !strings.HasPrefix(ownerCache, tempRoot) {
+		t.Fatalf("owner Go cache %q is not inside temp dir %q", ownerCache, tempRoot)
 	}
 
 	w := startWorkerNode(t, g, shortSet, nil)

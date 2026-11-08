@@ -77,6 +77,13 @@ type WorkerSettings struct {
 	// CacheMaxAge trims the shared worker Go build cache. Default 24 h.
 	// 0 turns it off.
 	CacheMaxAge time.Duration
+	// CacheMaxBytes caps the combined size of the worker Go build cache and
+	// the owner's ~/.cache/go-build. Default 15 GiB. Zero or negative turns
+	// the size trim off.
+	CacheMaxBytes int64
+	// CacheLowBytes is the size the caches are trimmed down to when they are
+	// over the cap. Default 10 GiB.
+	CacheLowBytes int64
 	// TmpMaxAge removes old subfolders from the worker test temp dir. Default 6 h.
 	// 0 turns it off.
 	TmpMaxAge time.Duration
@@ -140,6 +147,12 @@ func (s WorkerSettings) filled() WorkerSettings {
 	}
 	if s.CacheMaxAge == 0 {
 		s.CacheMaxAge = defaults.Duration("workers.cache_max_age", where)
+	}
+	if s.CacheMaxBytes == 0 {
+		number("workers.cache_max_bytes", &s.CacheMaxBytes)
+	}
+	if s.CacheLowBytes == 0 {
+		number("workers.cache_low_bytes", &s.CacheLowBytes)
 	}
 	if s.TmpMaxAge == 0 {
 		s.TmpMaxAge = defaults.Duration("workers.tmp_max_age", where)

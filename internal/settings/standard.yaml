@@ -329,6 +329,14 @@ settings:
     levels: [network]
     default: "12h"
     live: true
+  - key: cleanup.uv_prune
+    rows: [137]
+    description: Run uv cache prune in the hourly housekeeping.
+    kind: rule
+    type: bool
+    levels: [network]
+    default: true
+    live: true
   - key: delivery.save_unfinished
     rows: [135]
     description: Save unfinished worker changes.
@@ -426,6 +434,26 @@ settings:
     stricter: lower
     levels: [network, repo]
     default: 24h
+    live: true
+  - key: workers.cache_max_bytes
+    rows: [53]
+    description: Size cap in bytes for the worker and owner Go build caches together.
+    kind: rule
+    type: int
+    min: 1
+    stricter: lower
+    levels: [network, repo]
+    default: 16106127360
+    live: true
+  - key: workers.cache_low_bytes
+    rows: [53]
+    description: Size in bytes the Go build caches are trimmed down to when over the cap.
+    kind: rule
+    type: int
+    min: 1
+    stricter: lower
+    levels: [network, repo]
+    default: 10737418240
     live: true
   - key: workers.tmp_max_age
     rows: [53]
@@ -984,7 +1012,7 @@ ledger:
   - {row: 50, keys: [relationships.edge_semantics]}
   - {row: 51, keys: [workers.isolation_minimum], step: 7}
   - {row: 52, keys: [workers.sandbox_level], step: 7}
-  - {row: 53, keys: [workers.max_age, workers.cache_max_age, workers.tmp_max_age], step: 7}
+  - {row: 53, keys: [workers.max_age, workers.cache_max_age, workers.cache_max_bytes, workers.cache_low_bytes, workers.tmp_max_age], step: 7}
   - {row: 54, keys: [workers.idle_timeout], step: 7}
   - {row: 55, keys: [workers.caller_gone_grace], step: 7}
   - {row: 56, keys: [workers.queue_timeout], step: 7}
@@ -1068,7 +1096,7 @@ ledger:
   - {row: 134, keys: [delivery.worker_branch_prep, delivery.worker_agy_commit_instruction], step: 6}
   - {row: 135, keys: [delivery.save_unfinished, delivery.trailer_worker, delivery.trailer_model, delivery.trailer_harness, delivery.trailer_difficulty, delivery.trailer_caller], step: 6}
   - {row: 136, code: "worker rules stay in the repository"}
-  - {row: 137, keys: [delivery.cleanup_first_delay, delivery.cleanup_interval, delivery.step_reminder, delivery.step_stuck], step: 6}
+  - {row: 137, keys: [delivery.cleanup_first_delay, delivery.cleanup_interval, delivery.step_reminder, delivery.step_stuck, cleanup.uv_prune], step: 6}
   - {row: 138, keys: [notices.untrusted_peer_framing]}
   - {row: 139, keys: [notices.trusted_request_framing]}
   - {row: 140, keys: [notices.owner_prompt_excerpt]}
