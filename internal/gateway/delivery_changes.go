@@ -290,7 +290,7 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 	} else if c, found, err = queryChange(tx, `project = ? AND branch = ? AND state = 'open'`, q.Project, q.Branch); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
-	bumped := false
+	bumped, defectAdded := false, false
 	if !found {
 		c = protocol.Change{ID: protocol.NewID("ch"), Project: q.Project, Machine: machine, Branch: q.Branch, TargetBranch: q.TargetBranch,
 			BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Uncommitted: q.Uncommitted, Revision: 1, Origin: q.Origin, Caller: q.SessionID,
@@ -303,6 +303,11 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 		}
 		if err := insertRevision(tx, c); err != nil {
 			return protocol.ChangeSubmitResult{}, err
+		}
+		if q.Fixes != "" {
+			if defectAdded, err = s.fixDefectTx(tx, q.Fixes, q.FixesSeverity); err != nil {
+				return protocol.ChangeSubmitResult{}, err
+			}
 		}
 	} else {
 		next, b, err := c.WithHead(q.Branch, q.HeadCommit, q.Uncommitted, now)
@@ -379,6 +384,9 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 	}
 	if err := tx.Commit(); err != nil {
 		return protocol.ChangeSubmitResult{}, err
+	}
+	if defectAdded {
+		s.refreshAfterAutoDefect()
 	}
 	view, err := s.changeView(c, p, false)
 	return protocol.ChangeSubmitResult{Change: view, Bumped: bumped}, err
@@ -563,6 +571,10 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
 	}
+	defectAdded, err := s.autoDefectFromReport(tx, c, e)
+	if err != nil {
+		return protocol.StepReportResult{}, err
+	}
 	if err := s.syncStepAsk(tx, c, e); err != nil {
 		return protocol.StepReportResult{}, err
 	}
@@ -633,6 +645,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	}
 	if err := tx.Commit(); err != nil {
 		return protocol.StepReportResult{}, err
+	}
+	if defectAdded {
+		s.refreshAfterAutoDefect()
 	}
 	for _, notice := range notices {
 		if notice.ID != "" {

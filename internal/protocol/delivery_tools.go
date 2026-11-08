@@ -22,6 +22,10 @@ type ChangeSubmitArgs struct {
 	Project      string `json:"project,omitempty"`
 	Change       string `json:"change,omitempty"`
 	Title        string `json:"title,omitempty"`
+	// Fixes names a shipped change this change fixes; FixesSeverity (1 to 4,
+	// default 2) is the defect agent-net records on that change's worker.
+	Fixes         string `json:"fixes,omitempty"`
+	FixesSeverity int    `json:"fixes_severity,omitempty"`
 }
 
 // StepClaimArgs are the arguments of agent_step_claim.

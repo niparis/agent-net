@@ -14,7 +14,7 @@ import (
 
 // folderTrust trusts a folder for Claude Code on the machine that holds it,
 // or removes the trust agent-net added. The owner at the keyboard (the TUI's
-// undo) and the CTO on the owner's instruction call it (decision 0095). A
+// undo) and the CTO on the owner's instruction call it (decision 0091). A
 // folder on another machine travels as an owner frame, like a session start,
 // and that machine checks the owner flag again.
 func (d *Daemon) folderTrust(ctx context.Context, q protocol.FolderTrustRequest) (protocol.FolderTrustResult, error) {

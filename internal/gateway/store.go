@@ -1222,7 +1222,15 @@ CREATE TABLE IF NOT EXISTS quota_blocks (
 -- retry it; only a new message asks again (see wake_failure.go).
 CREATE TABLE IF NOT EXISTS session_wake_failures (
  session_id TEXT PRIMARY KEY, failed_at INTEGER NOT NULL, reason TEXT NOT NULL);
-`, teamAsksToMigration}
+`, teamAsksToMigration, `
+-- Defects that agent-net records by itself from the delivery steps (decision
+-- 0103). One row per automatic defect, keyed by change, kind and revision, so
+-- the same failure is never recorded twice. defect_id is the worker_defects row.
+CREATE TABLE IF NOT EXISTS worker_defect_auto (
+ defect_id INTEGER PRIMARY KEY, change_id TEXT NOT NULL, kind TEXT NOT NULL,
+ revision INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS worker_defect_auto_key ON worker_defect_auto(change_id, kind, revision);
+`}
 
 // teamAsksToMigration adds the team setting that sends a member's questions
 // for the owner to its team lead (decision 0100).

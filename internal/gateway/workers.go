@@ -104,10 +104,21 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err != nil {
 			return nil, reject("bad worker.start")
 		}
+		if err := protocol.ValidFixes(p.Fixes, p.FixesSeverity); err != nil {
+			return nil, reject("%v", err)
+		}
 		out, err := g.workerStart(ctx, nc, p)
 		var rj Rejection
 		if errors.As(err, &rj) {
 			g.workerRefused(nc, p.Owner, p, string(rj))
+		}
+		if err == nil && p.Fixes != "" {
+			// The start says it fixes a shipped change: agent-net records the
+			// defect on that change's worker. A problem here never fails the
+			// start that already happened.
+			if _, ferr := g.store.RecordFixDefect(p.Fixes, p.FixesSeverity); ferr != nil {
+				g.store.logf("worker.start fixes %s: %v", p.Fixes, ferr)
+			}
 		}
 		return out, err
 
