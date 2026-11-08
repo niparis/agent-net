@@ -41,11 +41,12 @@ func runThreaded(ctx context.Context, socket string, opts Options, harness, meta
 	rt := &threadRouter{socket: socket, cwd: cwd, version: opts.Version, harness: harness, perThread: map[string]*Daemon{}}
 	rt.root = rt.newDaemon("")
 	defer rt.Close()
-	sw := &switcher{opts: opts, conn: conn, logf: logf}
-	rt.root.OnHello = func(v string) { go sw.consider(ctx, v) }
+	sw := newSwitcher(opts, conn, logf)
 	rt.root.conn(ctx)
 	srv := New(rt.Call, opts.Version, rt.takeNote)
-	sw.dropNote = rt.dropNotes
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	defer stopWatch()
+	go sw.watch(watchCtx)
 	srv.AddReceivingMiddleware(metadataThread(metaKey))
 	dyn := NewDynamic(srv, rt.Call)
 	ictx, icancel := context.WithTimeout(ctx, 3*time.Second)
@@ -144,14 +145,4 @@ func (r *threadRouter) takeNote(ctx context.Context) string {
 		return ""
 	}
 	return d.takeNote()
-}
-
-// dropNotes forgets every note: this process is about to become the new binary.
-func (r *threadRouter) dropNotes() {
-	r.root.dropNote()
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, d := range r.perThread {
-		d.dropNote()
-	}
 }

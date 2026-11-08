@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	initReq  = `{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`
-	initDone = `{"jsonrpc":"2.0","method":"notifications/initialized"}`
-	listReq  = `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
+	initReq      = `{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`
+	initSupports = `{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":true}},"clientInfo":{"name":"t","version":"1"}}}`
+	initDone     = `{"jsonrpc":"2.0","method":"notifications/initialized"}`
+	listReq      = `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
 )
 
 // waitMax is how long a test waits for something that must happen. Every wait
@@ -201,7 +202,7 @@ func TestExecWaitsForIdleAndHandsOverUnreadBytes(t *testing.T) {
 }
 
 func TestReplayIntoNewProcess(t *testing.T) {
-	h := &handover{V: 1, Init: []byte(initReq), Initialized: []byte(initDone),
+	h := &handover{V: 1, Init: []byte(initSupports), Initialized: []byte(initDone),
 		Leftover: []byte(listReq + "\n" + `{"jsonrpc":"2.0","id":9,"method":"pi`)}
 	r := newRig(t, h, okCaller)
 	// The client never sees an initialize reply. It sees the tool list change,
@@ -286,50 +287,5 @@ func TestExePath(t *testing.T) {
 	}
 	if got := ExePath("/bin/agent-net"); got != "/bin/agent-net" {
 		t.Fatal(got)
-	}
-}
-
-func TestSwitcherDecisions(t *testing.T) {
-	cases := []struct {
-		name          string
-		mine, daemon  string
-		noAuto        bool
-		wantAsk       bool
-		fakeDiskIsOld bool
-	}{
-		{"newer", "v0.3.1", "v0.3.2", false, true, false},
-		{"same", "v0.3.2", "v0.3.2", false, false, false},
-		{"daemon older", "v0.3.2", "v0.3.1", false, false, false},
-		{"dev build", "dev", "v0.3.2", false, false, false},
-		{"daemon dev", "v0.3.1", "dev", false, false, false},
-		{"old daemon no version", "v0.3.1", "", false, false, false},
-		{"switched off", "v0.3.1", "v0.3.2", true, false, false},
-		{"disk is not the daemon's version", "v0.3.1", "v0.3.2", false, false, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			dir := t.TempDir()
-			disk := c.daemon
-			if c.fakeDiskIsOld {
-				disk = c.mine
-			}
-			exe := dir + "/agent-net"
-			os.WriteFile(exe, []byte("#!/bin/sh\necho "+disk+"\n"), 0o755)
-			r := newRig(t, nil, okCaller)
-			sw := &switcher{opts: Options{Version: c.mine, Exe: exe + " (deleted)", NoAutoUpgrade: c.noAuto},
-				conn: r.conn, logf: func(string, ...any) {}}
-			time.Sleep(30 * time.Millisecond)
-			sw.consider(context.Background(), c.daemon)
-			select {
-			case <-r.execs:
-				if !c.wantAsk {
-					t.Fatal("exec was requested")
-				}
-			case <-time.After(300 * time.Millisecond):
-				if c.wantAsk {
-					t.Fatal("exec was not requested")
-				}
-			}
-		})
 	}
 }

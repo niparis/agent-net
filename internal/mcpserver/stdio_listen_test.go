@@ -86,7 +86,7 @@ func TestReplayedListenIsAnnouncedNotAckedAgain(t *testing.T) {
 }
 
 func TestSecondExecAfterLegacyReplay(t *testing.T) {
-	r := newRig(t, &handover{V: 1, Init: []byte(initReq), Initialized: []byte(initDone)}, okCaller)
+	r := newRig(t, &handover{V: 1, Init: []byte(initSupports), Initialized: []byte(initDone)}, okCaller)
 	r.next() // list_changed
 	r.conn.requestExec("/newer/binary")
 	select {

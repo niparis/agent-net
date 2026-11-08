@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/client"
+	"github.com/niparis/agent-net/internal/executable"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolcatalog"
 	"github.com/niparis/agent-net/internal/upgrade"
@@ -233,14 +234,6 @@ func (d *staleNote) takeNote() string {
 	return d.note
 }
 
-// dropNote forgets the note: this process is about to become the new binary,
-// whose tools are not stale.
-func (d *staleNote) dropNote() {
-	d.noteMu.Lock()
-	d.note, d.noteGiven = "", true
-	d.noteMu.Unlock()
-}
-
 func NewDaemon(socket string, hello map[string]any) *Daemon {
 	return &Daemon{socket: socket, hello: hello, Changed: make(chan struct{}, 1)}
 }
@@ -376,9 +369,8 @@ type Options struct {
 
 // Run serves MCP on stdio as a Claude session, talking to the daemon on socket.
 //
-// When the daemon reports a newer release than this binary, and the binary on
-// disk is that release, Run replaces the process with it (see switcher). The
-// client keeps its connection and is told the tool list changed.
+// When a newer release replaces this binary, Run switches to it while idle.
+// The client keeps its connection and receives any requested tool-list notice.
 func Run(ctx context.Context, socket string, opts Options) error {
 	nativeID := os.Getenv("CLAUDE_CODE_SESSION_ID")
 	if nativeID == "" {
@@ -392,12 +384,13 @@ func Run(ctx context.Context, socket string, opts Options) error {
 		"native_id": nativeID, "cwd": cwd, "status": "idle", "protocol": protocol.LocalProtocol,
 		"version": opts.Version})
 	defer d.Close()
-	sw := &switcher{opts: opts, conn: conn, logf: logf}
-	d.OnHello = func(v string) { go sw.consider(ctx, v) }
+	sw := newSwitcher(opts, conn, logf)
 	// Connect now if the daemon is up; if not, the first tool call tries again.
 	d.conn(ctx)
 	srv := New(d.Call, opts.Version, func(context.Context) string { return d.takeNote() })
-	sw.dropNote = d.dropNote
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	defer stopWatch()
+	go sw.watch(watchCtx)
 	// Registered MCP servers' tools follow the registry while this runs.
 	dyn := NewDynamic(srv, d.Call)
 	// Load them before serving, so the first tools/list already has them.
@@ -405,58 +398,67 @@ func Run(ctx context.Context, socket string, opts Options) error {
 	dyn.Refresh(ictx)
 	icancel()
 	go dyn.Watch(ctx, d.Changed, 15*time.Second)
-	// An idle session still notices a daemon restart, so it can switch binaries.
+	// An idle session reconnects after a daemon restart to refresh its hello.
 	go d.Reconnect(ctx, 2*time.Second)
 	return srv.Run(ctx, stdioTransport{conn})
 }
 
-// switcher decides when this process should become the newer binary.
+// switcher checks the installed file independently of the daemon's version.
 type switcher struct {
-	opts Options
-	conn *stdioConn
-	logf func(string, ...any)
-	// dropNote, if set, is called when the switch is requested.
-	dropNote func()
-
-	mu     sync.Mutex
-	failed map[string]bool // daemon versions already tried and refused
+	opts               Options
+	conn               *stdioConn
+	logf               func(string, ...any)
+	changed            func() bool
+	loggedVersionError bool
 }
 
-// consider is called with the daemon's version after each hello. It asks for
-// the switch only if all of these hold: the daemon runs a release newer than
-// this binary, and the file at Exe reports exactly that version. The second
-// check keeps a half-finished upgrade (new file, old daemon) or a rollback from
-// switching. A new process is never older than the daemon it just met, so this
-// cannot loop.
-func (s *switcher) consider(ctx context.Context, daemonVersion string) {
-	if s.opts.NoAutoUpgrade || s.opts.Exe == "" || !upgrade.IsNewer(daemonVersion, s.opts.Version) {
+func newSwitcher(opts Options, conn *stdioConn, logf func(string, ...any)) *switcher {
+	opts.Exe = ExePath(opts.Exe)
+	return &switcher{opts: opts, conn: conn, logf: logf, changed: executable.Changed(opts.Exe)}
+}
+
+// watch checks at most once per interval. A busy connection is skipped until
+// the next tick, so checking the file cannot interrupt a request.
+func (s *switcher) watch(ctx context.Context) {
+	if s.opts.NoAutoUpgrade || s.opts.Exe == "" {
 		return
 	}
-	s.mu.Lock()
-	if s.failed[daemonVersion] {
-		s.mu.Unlock()
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.checkExecutable(ctx)
+		}
+	}
+}
+
+func (s *switcher) checkExecutable(ctx context.Context) {
+	if s.opts.NoAutoUpgrade || s.opts.Exe == "" {
 		return
 	}
-	s.mu.Unlock()
-	exe := ExePath(s.opts.Exe)
-	disk, err := upgrade.BinaryVersion(ctx, exe)
-	if err != nil || disk != daemonVersion {
-		s.mu.Lock()
-		if s.failed == nil {
-			s.failed = map[string]bool{}
+	// The stat is done while idle and under the connection lock. Version
+	// probing may take longer, so release the lock first; requestExec checks
+	// idle again before replacing the process.
+	s.conn.mu.Lock()
+	changed := !s.conn.execFailed && s.conn.idleLocked() && s.changed()
+	s.conn.mu.Unlock()
+	if !changed {
+		return
+	}
+	disk, err := upgrade.BinaryVersion(ctx, s.opts.Exe)
+	if err != nil {
+		if !s.loggedVersionError {
+			s.logf("cannot check the new binary: %v", err)
+			s.loggedVersionError = true
 		}
-		s.failed[daemonVersion] = true
-		s.mu.Unlock()
-		if err != nil {
-			s.logf("the daemon runs %s but %s does not run: %v", daemonVersion, exe, err)
-		} else {
-			s.logf("the daemon runs %s but %s is %s, staying on %s", daemonVersion, exe, disk, s.opts.Version)
-		}
+		return
+	}
+	if !upgrade.IsNewer(disk, s.opts.Version) {
 		return
 	}
 	s.logf("switching from %s to %s", s.opts.Version, disk)
-	if s.dropNote != nil {
-		s.dropNote()
-	}
-	s.conn.requestExec(exe)
+	s.conn.requestExec(s.opts.Exe)
 }

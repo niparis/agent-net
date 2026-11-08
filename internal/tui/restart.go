@@ -20,17 +20,6 @@ type restartState struct {
 	version, target, attempted string
 }
 
-func executableChanged(path string) func() bool {
-	original, err := os.Stat(path)
-	if err != nil {
-		return func() bool { return false }
-	}
-	return func() bool {
-		current, err := os.Stat(path)
-		return err == nil && (!os.SameFile(original, current) || original.Size() != current.Size() || !original.ModTime().Equal(current.ModTime()))
-	}
-}
-
 func (m *Model) restartTick() bool {
 	r := m.restart
 	if r == nil || r.failed {

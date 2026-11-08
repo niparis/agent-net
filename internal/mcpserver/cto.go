@@ -525,12 +525,13 @@ func RunCTO(ctx context.Context, socket, version string) error {
 	go conn.readLoop()
 	exe, _ := os.Executable()
 	opts := Options{Version: version, Exe: exe, NoAutoUpgrade: os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1"}
-	sw := &switcher{opts: opts, conn: conn, logf: logf}
+	sw := newSwitcher(opts, conn, logf)
 	var note staleNote
-	sw.dropNote = note.dropNote
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	defer stopWatch()
+	go sw.watch(watchCtx)
 	ch, err := dialCTOChannel(ctx, socket, func(v string) {
 		note.observeVersion(version, v)
-		go sw.consider(ctx, v)
 	})
 	if err != nil {
 		return err
