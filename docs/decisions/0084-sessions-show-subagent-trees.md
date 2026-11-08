@@ -1,4 +1,4 @@
-# 0083. Keep subagent trees visible on the Sessions tab
+# 0084. Keep subagent trees visible on the Sessions tab
 
 Date: 2026-11-08
 
