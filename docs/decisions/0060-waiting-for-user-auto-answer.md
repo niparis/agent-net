@@ -69,7 +69,7 @@ No notice is stored for a notification or a reply, for agent-net's own messages 
 
 ### Waiting text in notices
 
-Reversed on 2026-11-08 by [0091](0091-waiting-notices-do-not-quote-the-question.md):
+Reversed on 2026-11-08 by [0093](0093-waiting-notices-do-not-quote-the-question.md):
 notices and bot receipts no longer quote the question or tool summary.
 
 On 2026-11-04, the owner chose to include the question in notices to senders
