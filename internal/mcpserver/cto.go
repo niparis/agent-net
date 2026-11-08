@@ -83,7 +83,7 @@ var ctoTools = map[string]ctoToolDef{
 	"graph_change": {
 		desc: "Change the graph: charters, edges and typed repo or agent lifecycle. Node removal, agent tombstone and repo archive require owner approval; other changes apply at once.",
 		fields: map[string]ctoField{
-			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_archive", "team_member_add", "team_member_remove", "lead_set"}},
+			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_archive", "team_member_add", "team_member_remove", "lead_set"}},
 			"ref":     {typ: "graph_ref", desc: "Typed target."},
 			"lead":    {typ: "graph_ref", desc: "Agent lead; omit to clear."},
 			"member":  {typ: "graph_ref", desc: "Member ref (agent or repo)."},

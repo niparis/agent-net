@@ -311,6 +311,7 @@ Legend ────────────────────────�
   enter                  filter the Graph to this team
   c                      make a team with a name and purpose
   r                      change the team's display name
+  p                      change the team's purpose
   a                      archive a team with no members
   space                  add or remove the selected repo or agent
   l                      choose or clear the team lead

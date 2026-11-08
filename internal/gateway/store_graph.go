@@ -659,7 +659,7 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 			} else if err = json.Unmarshal([]byte(old), &before); err != nil {
 				return err
 			}
-			if _, err = tx.Exec(`UPDATE teams SET name=?,active=?,updated_at=? WHERE id=?`, before.Name, before.Active, now, node); err != nil {
+			if _, err = tx.Exec(`UPDATE teams SET name=?,purpose=?,active=?,updated_at=? WHERE id=?`, before.Name, before.Purpose, before.Active, now, node); err != nil {
 				return err
 			}
 			current, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,created_at,updated_at FROM teams WHERE id=?`, node))

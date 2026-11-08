@@ -74,6 +74,23 @@ func TestResolveTeamAction(t *testing.T) {
 		t.Fatal("expected error on missing name")
 	}
 
+	// 2b. team_purpose
+	tw, err = ResolveTeamAction("team_purpose", json.RawMessage(`{"team":"team-alpha","purpose":"New purpose","reason":"the team grew"}`), look)
+	if err != nil {
+		t.Fatalf("team_purpose: %v", err)
+	}
+	if tw.Action != "purpose" || tw.ID != "t_alpha" || tw.Purpose != "New purpose" {
+		t.Fatalf("unexpected team_purpose: %+v", tw)
+	}
+	// team_purpose unknown team
+	if _, err := ResolveTeamAction("team_purpose", json.RawMessage(`{"team":"unknown","purpose":"New purpose"}`), look); err == nil {
+		t.Fatal("expected error on unknown team")
+	}
+	// team_purpose missing purpose
+	if _, err := ResolveTeamAction("team_purpose", json.RawMessage(`{"team":"team-alpha"}`), look); err == nil {
+		t.Fatal("expected error on missing purpose")
+	}
+
 	// 3. team_archive
 	tw, err = ResolveTeamAction("team_archive", json.RawMessage(`{"team":"team-alpha"}`), look)
 	if err != nil {

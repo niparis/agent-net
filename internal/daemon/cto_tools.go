@@ -451,7 +451,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, tooOldGateway(err)
 		}
 		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, nil
-	case "team_create", "team_rename", "team_archive", "team_member_add", "team_member_remove":
+	case "team_create", "team_rename", "team_purpose", "team_archive", "team_member_add", "team_member_remove":
 		tw, err := d.resolveTeamWrite(ctx, name, raw)
 		if err != nil {
 			return nil, err

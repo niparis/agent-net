@@ -263,6 +263,30 @@ func TestTeamMenuRenameAndArchiveWrite(t *testing.T) {
 	})
 }
 
+func TestTeamPurposeFormWritesPurpose(t *testing.T) {
+	m, src := teamModel(80, 24)
+	m = keys(m, "T", "p")
+	if m.mode != modeTeamForm {
+		t.Fatalf("p opened mode %v", m.mode)
+	}
+	if got := m.teamForm.in[1].Value(); got != "Shared API work" {
+		t.Fatalf("purpose prefilled %q", got)
+	}
+	m.teamForm.in[1].SetValue("New purpose")
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter gave no command")
+	}
+	m, _ = press2(m, cmd())
+	q := src.teamWrites[0]
+	if q.Action != "purpose" || q.ID != "alpha" || q.Purpose != "New purpose" {
+		t.Fatalf("purpose request %+v", q)
+	}
+	if !strings.Contains(m.notice.text, "Updated the purpose of team Alpha.") {
+		t.Fatalf("result line %+v", m.notice)
+	}
+}
+
 func TestTeamGraphGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := teamModel(size[0], size[1])
