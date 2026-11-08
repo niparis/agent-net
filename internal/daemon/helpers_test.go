@@ -290,17 +290,22 @@ func shortDir(t *testing.T) string {
 }
 
 // isolateDaemonCaches keeps a test daemon away from the real Go and uv caches.
-// A temp value a test already chose, such as its own HOME, is kept; anything
-// else goes under a temporary folder.
+// The real worker cache is /tmp/agent-net-gocache, which is under the temp
+// folder, so the cache variables always get fresh test folders. HOME is kept
+// only when the test already chose one under its own temp root.
 func isolateDaemonCaches(t *testing.T) {
 	t.Helper()
-	for _, key := range []string{"AGENT_NET_GOCACHE", "AGENT_NET_GOTMPDIR", "HOME", "UV_CACHE_DIR"} {
-		value := os.Getenv(key)
-		if !pathWithin(os.TempDir(), value) {
-			value = t.TempDir()
-		}
-		t.Setenv(key, value)
+	goCache := t.TempDir()
+	t.Setenv("AGENT_NET_GOCACHE", goCache)
+	t.Setenv("GOCACHE", goCache)
+	t.Setenv("AGENT_NET_GOTMPDIR", t.TempDir())
+	t.Setenv("UV_CACHE_DIR", t.TempDir())
+	root := filepath.Dir(t.TempDir())
+	if home := os.Getenv("HOME"); pathWithin(root, home) {
+		t.Setenv("HOME", home)
+		return
 	}
+	t.Setenv("HOME", t.TempDir())
 }
 
 func pathWithin(base, path string) bool {
@@ -315,23 +320,45 @@ func pathWithin(base, path string) bool {
 }
 
 func TestDaemonTestCacheEnvironmentIsolated(t *testing.T) {
+	root := filepath.Dir(t.TempDir())
 	outside := filepath.Join(string(filepath.Separator), "agent-net-test-not-a-cache")
-	t.Setenv("AGENT_NET_GOCACHE", outside)
-	t.Setenv("AGENT_NET_GOTMPDIR", outside)
+	t.Setenv("AGENT_NET_GOCACHE", "/tmp/agent-net-gocache")
+	t.Setenv("GOCACHE", "/tmp/agent-net-gocache")
+	t.Setenv("AGENT_NET_GOTMPDIR", "/tmp/agent-net-gotmp")
 	t.Setenv("HOME", outside)
 	t.Setenv("UV_CACHE_DIR", outside)
 
 	isolateDaemonCaches(t)
-	for _, key := range []string{"AGENT_NET_GOCACHE", "AGENT_NET_GOTMPDIR", "HOME", "UV_CACHE_DIR"} {
-		if value := os.Getenv(key); !pathWithin(os.TempDir(), value) {
-			t.Errorf("%s = %q, want a folder under %s", key, value, os.TempDir())
+	for _, key := range []string{"AGENT_NET_GOCACHE", "GOCACHE", "AGENT_NET_GOTMPDIR", "UV_CACHE_DIR"} {
+		value := os.Getenv(key)
+		if value == "/tmp/agent-net-gocache" || value == "/tmp/agent-net-gotmp" {
+			t.Errorf("%s kept the real worker cache %q", key, value)
 		}
+		if !pathWithin(root, value) {
+			t.Errorf("%s = %q, want a fresh folder under %s", key, value, root)
+		}
+	}
+	if cache, goCache := os.Getenv("AGENT_NET_GOCACHE"), os.Getenv("GOCACHE"); cache != goCache {
+		t.Errorf("GOCACHE = %q, want the same folder as AGENT_NET_GOCACHE %q", goCache, cache)
+	}
+	if home := os.Getenv("HOME"); !pathWithin(root, home) {
+		t.Errorf("HOME = %q, want a folder under the test root %s", home, root)
+	}
+
+	// A HOME the test chose under its own root is kept.
+	custom := t.TempDir()
+	t.Setenv("HOME", custom)
+	isolateDaemonCaches(t)
+	if home := os.Getenv("HOME"); home != custom {
+		t.Errorf("HOME = %q, want the test's own %s", home, custom)
 	}
 }
 
 func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	t.Helper()
-	isolateDaemonCaches(t)
+	// Many tests call this after t.Parallel, where t.Setenv is refused. The
+	// daemon gets temp cache folders through Config below, and TestMain points
+	// the cache environment at temp folders once for the package.
 	// TestMain enables the fake judge once for the package. Keeping that
 	// environment constant lets isolated node tests run in parallel.
 	cfgDir := t.TempDir()

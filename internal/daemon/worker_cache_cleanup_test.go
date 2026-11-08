@@ -585,7 +585,6 @@ func TestDiskWarningHysteresis(t *testing.T) {
 }
 
 func TestWorkerCacheTestDaemonIsolation(t *testing.T) {
-	isolateDaemonCaches(t)
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
@@ -606,6 +605,10 @@ func TestWorkerCacheTestDaemonIsolation(t *testing.T) {
 	}
 	if !strings.HasPrefix(tmpDir, tempRoot) {
 		t.Fatalf("workerGoTmpDir %q is not inside temp dir %q", tmpDir, tempRoot)
+	}
+	ownerCache := ownerGoBuildCacheDir(n.d.cfg.HomeDir)
+	if ownerCache == "" || !strings.HasPrefix(ownerCache, tempRoot) {
+		t.Fatalf("owner Go cache %q is not inside temp dir %q", ownerCache, tempRoot)
 	}
 
 	w := startWorkerNode(t, g, shortSet, nil)
