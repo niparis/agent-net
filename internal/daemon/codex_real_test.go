@@ -266,4 +266,9 @@ env = { AGENT_NET_SOCKET = %q, AGENT_NET_NO_AUTO_UPGRADE = "1" }
 	waitFor(t, "the tool call completed", 15*time.Second, func() bool {
 		return sawNote("item/completed", `"mcpToolCall"`, `"status":"completed"`)
 	})
+	// A prompt the owner types has no clientId; a message agent-net queued
+	// carries its ID (the daemon tells them apart by it).
+	if !sawNote("item/started", `"userMessage"`, `"clientId":null`, "CALLTOOL agent_message_send") {
+		t.Fatal("a typed turn did not show as a userMessage with a null clientId")
+	}
 }

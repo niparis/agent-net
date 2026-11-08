@@ -1466,7 +1466,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			if err != nil {
 				return nil, err
 			}
-			if !ok || a.NodeID != nc.id || (a.Harness != "claude" && a.Harness != "pi") {
+			if !ok || a.NodeID != nc.id || (a.Harness != "claude" && a.Harness != "pi" && a.Harness != "codex") {
 				return nil, reject("session does not belong to this node")
 			}
 		} else if !g.validToolOwner(nc, p.Owner) {

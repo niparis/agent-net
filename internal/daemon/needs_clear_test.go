@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -197,4 +198,45 @@ func TestInboxDismissAndAnswerClearTheSessionWait(t *testing.T) {
 		c.Close()
 		eventually(t, answer+" clears the wait", func() bool { return waitingOf(t, n, id) == nil })
 	}
+}
+
+// A prompt the owner types in Codex starts a userMessage item with a null
+// clientId (the shape of a real app server, see codex_real_test.go). A message
+// agent-net queued carries its ID there and is not the owner.
+func TestCodexTypedPromptClearsTheWaitAndClosesTheAsk(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	n.d.SetSessions("codex", []protocol.SessionInfo{{Harness: "codex", NativeID: "thread-one", Status: "idle", Cwd: "/work/x"}})
+	eventually(t, "codex session", func() bool { return n.d.SessionID("codex", "thread-one") != "" })
+	id := n.d.SessionID("codex", "thread-one")
+	raw, err := n.d.call(context.Background(), "inbox.create", map[string]any{"session_id": id, "kind": "question", "text": "Which branch?", "recommendation": "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		Item protocol.InboxItem `json:"item"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil || created.Item.ID == "" {
+		t.Fatalf("create: %s %v", raw, err)
+	}
+	cli := dialLocal(t, n.sock)
+	cli.mustCall("hello", map[string]any{"client": "cli"})
+	cli.mustCall("waiting", map[string]any{"harness": "codex", "native_id": "thread-one", "kind": "question", "text": "Which branch?", "explicit": true})
+	eventually(t, "waiting stored", func() bool { return waitingOf(t, n, id) != nil })
+	a := &codexAdapter{d: n.d, kick: make(chan struct{}, 1)}
+
+	injected := `{"item":{"type":"userMessage","id":"u1","clientId":"m_abc","content":[{"type":"text","text":"please check\n\n[agent-net] message m_abc from pi","text_elements":[]}]},"threadId":"thread-one","turnId":"t1"}`
+	a.onNote("item/started", json.RawMessage(injected))
+	typedByAgentNet := `{"item":{"type":"userMessage","id":"u2","clientId":null,"content":[{"type":"text","text":"x\n\n[agent-net] message m_def","text_elements":[]}]},"threadId":"thread-one","turnId":"t1"}`
+	a.onNote("item/started", json.RawMessage(typedByAgentNet))
+	time.Sleep(300 * time.Millisecond)
+	if waitingOf(t, n, id) == nil || inboxStatus(t, n, created.Item.ID) != "open" {
+		t.Fatal("a message from agent-net counted as the owner")
+	}
+
+	typed := `{"item":{"type":"userMessage","id":"u3","clientId":null,"content":[{"type":"text","text":"main","text_elements":[]}]},"threadId":"thread-one","turnId":"t2"}`
+	a.onNote("item/started", json.RawMessage(typed))
+	eventually(t, "typed prompt clears the wait", func() bool { return waitingOf(t, n, id) == nil })
+	eventually(t, "typed prompt closes the ask", func() bool { return inboxStatus(t, n, created.Item.ID) != "open" })
 }
