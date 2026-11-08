@@ -27,14 +27,18 @@ The question stays in the session's waiting state and remains visible in the
 owner's TUI and CLI, the Inbox and the owner asks. Agent reads
 (`agent_sessions_find`, `agent_session_get`) already show only kind and since.
 
-The worker blocked notice to a worker's caller follows the same rule: it names
-the kind and the start time, not the worker's question.
+The worker blocked notice is the exception: it goes to the worker's own
+caller, who started the worker and is responsible for unblocking it. It names
+the kind and the start time and still quotes the question or tool summary, for
+example `worker X is blocked: waiting for its user's approval (since ...):
+Web Search`. The caller is not an outside peer.
 
 ## Tests
 
 - `internal/gateway/waiting_notice_test.go` checks that the notice and the bot
   receipt have no question, that the permission notice has no tool summary,
   and that the owner read still has the text.
-- `internal/daemon/waiting_test.go` and `harness_wait_test.go` check the worker
-  notice and the end-to-end notice.
+- `internal/daemon/waiting_test.go` checks that the worker blocked notice keeps
+  the question text for its caller. `harness_wait_test.go` checks the
+  end-to-end peer notice has no question.
 - `internal/protocol/waiting_test.go` checks the kind wording.

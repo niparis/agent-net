@@ -79,8 +79,8 @@ func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
 			owner := worker.owner
 			d.wmu.Unlock()
 			if owner != "" {
-				body := fmt.Sprintf("worker %s is blocked: waiting for its user's %s (since %s)", sessionID,
-					protocol.WaitingKindText(w.Kind), time.Unix(w.Since, 0).UTC().Format("2006-01-02 15:04 UTC"))
+				body := fmt.Sprintf("worker %s is blocked: waiting for its user's %s (since %s): %s", sessionID,
+					protocol.WaitingKindText(w.Kind), time.Unix(w.Since, 0).UTC().Format("2006-01-02 15:04 UTC"), w.Text)
 				if _, err := d.sendWorkerNoticeBody(context.Background(), worker, body, "", "", ""); err != nil {
 					d.Logf("worker %s: blocked notice: %v", worker.id, err)
 					d.mu.Lock()
