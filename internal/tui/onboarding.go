@@ -124,6 +124,13 @@ func (m Model) onboardingStep() onboardingStep {
 	return onboardingStep{}
 }
 
+// onboardingWantsTools says whether the tool-difference lesson can still
+// appear. Until it is done, the count is worth asking for; after that the
+// question only costs a gateway call on every refresh.
+func (m Model) onboardingWantsTools() bool {
+	return m.onboardingLoaded && !m.onboarding.Disabled && m.onboarding.Steps["tools"] == ""
+}
+
 func (m Model) onboardingLine(w int) string {
 	step := m.onboardingStep()
 	if step.id == "" {

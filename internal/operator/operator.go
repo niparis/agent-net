@@ -136,6 +136,10 @@ type Snapshot struct {
 	// Playbook is what the network learned, for the owner's "Learned" list
 	// (decision 0022).
 	Playbook []protocol.PlaybookNote
+	// ProposalCount is how many CTO proposals wait on this machine. The screen
+	// uses it as a change marker for the Inbox without asking for the full
+	// proposal list on every refresh.
+	ProposalCount int
 }
 
 // Workers lists the workers among the agents, with their owners.

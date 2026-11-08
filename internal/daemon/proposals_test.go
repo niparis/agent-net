@@ -363,3 +363,27 @@ func TestProposalLateTUIAckLogged(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenProposalCountIgnoresExpiredRows(t *testing.T) {
+	s, err := openState(seededStateDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	now := time.Unix(200000, 0)
+	p := proposalRunner{state: s, now: func() time.Time { return now }}
+	for i, at := range []time.Time{now.Add(-time.Hour), now.Add(-25 * time.Hour)} {
+		if _, err := s.db.Exec(`INSERT INTO cto_proposals(tool,action,args,reason,created_at,status) VALUES ('t','a',?,'',?,'open')`, fmt.Sprintf(`{"n":%d}`, i), at.UnixNano()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := p.openProposalCount(); got != 1 {
+		t.Fatalf("openProposalCount = %d, want 1", got)
+	}
+	if _, err := s.db.Exec(`UPDATE cto_proposals SET status='refused'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.openProposalCount(); got != 0 {
+		t.Fatalf("openProposalCount after the decision = %d, want 0", got)
+	}
+}

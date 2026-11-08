@@ -556,7 +556,7 @@ func TestEnterRemoteHerdrWithoutLocalClientKeepsSSH(t *testing.T) {
 	waitSessionOnGateway(t, local, id)
 
 	// What the remote machine plans on its own is the command ssh runs.
-	localEnter, err := remote.d.localEnterBase(context.Background(), protocol.EnterRequest{SessionID: id}, true)
+	localEnter, err := remote.d.localEnterBase(context.Background(), protocol.EnterRequest{SessionID: id}, true, nil)
 	if err != nil || len(localEnter.Argv) == 0 {
 		t.Fatalf("remote plan %+v err %v", localEnter, err)
 	}
@@ -619,8 +619,17 @@ func TestEnterHerdrThroughSessionEnter(t *testing.T) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatal(err)
 	}
-	if !p.OpenedHerdr || p.HerdrPane != "w1:pB" || p.Note != "opened inter in herdr" || !strings.Contains(f.calls(t), "agent focus w1:pB") {
+	calls := f.calls(t)
+	if !p.OpenedHerdr || p.HerdrPane != "w1:pB" || p.Note != "opened inter in herdr" || !strings.Contains(calls, "agent focus w1:pB") {
 		t.Fatalf("plan %+v", p)
+	}
+	// One pane lookup and one focus: the daemon must not walk the same herdr
+	// server twice on the path the owner waits on.
+	if n := strings.Count(calls, "pane list"); n != 1 {
+		t.Errorf("%d pane list calls, want 1: %q", n, calls)
+	}
+	if n := strings.Count(calls, "agent focus w1:pB"); n != 1 {
+		t.Errorf("%d focus calls, want 1: %q", n, calls)
 	}
 }
 

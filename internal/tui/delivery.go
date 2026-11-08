@@ -155,8 +155,12 @@ func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
 }
 
 // deliveryTick loads again after deliveryRefreshEvery
-// since the last load.
+// since the last load. Only the Sessions table and the Delivery tab show a
+// change state, so other tabs do not ask for it.
 func (m Model) deliveryTick() (Model, tea.Cmd) {
+	if m.tab != sessionsTab && m.tab != deliveryTab {
+		return m, nil
+	}
 	d := m.delivery
 	if d.loading || m.now().Sub(d.loadedAt) < deliveryRefreshEvery {
 		return m, nil

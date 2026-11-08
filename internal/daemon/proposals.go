@@ -349,6 +349,25 @@ type proposalRunner struct {
 	run      func(context.Context, proposalCall, string) (json.RawMessage, error)
 }
 
+// openProposalCount is how many proposals wait for the owner. It is cheap
+// enough for the info call the screen makes every refresh, so the screen can
+// notice a new proposal without listing every proposal on every refresh.
+func (p proposalRunner) openProposalCount() int {
+	if p.state == nil || p.state.db == nil {
+		return 0
+	}
+	now := p.now
+	if now == nil {
+		now = time.Now
+	}
+	var count int
+	if err := p.state.db.QueryRow(`SELECT count(*) FROM cto_proposals WHERE status='open' AND created_at>?`,
+		now().Add(-24*time.Hour).UnixNano()).Scan(&count); err != nil {
+		return 0
+	}
+	return count
+}
+
 func (p proposalRunner) expire() error {
 	_, err := p.state.db.Exec(`UPDATE cto_proposals SET status='expired', note='p_' || id || ' expired' WHERE status='open' AND created_at<=?`, p.now().Add(-24*time.Hour).UnixNano())
 	return err

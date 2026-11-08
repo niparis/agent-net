@@ -63,10 +63,15 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	if err := json.Unmarshal(data, &plan); err != nil {
 		return protocol.EnterPlan{}, err
 	}
-	// The machine to ssh to is the one the gateway says holds the session, not
-	// the name in the answer.
+	// The other machine puts its own name in the plan. Only an older one leaves
+	// it empty, so the gateway is asked only then: that round trip is on the
+	// path the owner waits on.
+	host := plan.Host
+	if host == "" {
+		host = d.hostOfSession(ctx, q.SessionID)
+	}
 	name := firstNonEmpty(plan.Name, q.SessionID)
-	remote := d.wrapRemoteEnter(d.hostOfSession(ctx, q.SessionID), plan)
+	remote := d.wrapRemoteEnter(host, plan)
 	return d.openForCaller("remote:"+q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, remote), nil
 }
 
@@ -178,13 +183,35 @@ func remoteCommand(dir string, argv []string) string {
 func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGateway bool) (protocol.EnterPlan, error) {
 	// A remote owner with a Herdr client can open a private worker on the
 	// worker's own machine, without sending its credentials through the gateway.
-	base, err := d.localEnterBase(ctx, q, viaGateway && !q.HerdrClient)
+	insideHerdr := !viaGateway && callerInHerdr(q.HerdrSocket, q.HerdrPaneID)
+	var focused *string
+	if insideHerdr || q.HerdrClient {
+		focused = new(string)
+	}
+	base, err := d.localEnterBase(ctx, q, viaGateway && !q.HerdrClient, focused)
 	if err != nil {
 		return base, err
 	}
 	// A TUI outside herdr cannot see a herdr pane: hand over its terminal.
-	if !viaGateway && !callerInHerdr(q.HerdrSocket, q.HerdrPaneID) {
+	if !viaGateway && !insideHerdr {
 		return base, nil
+	}
+	if focused != nil && *focused != "" {
+		// localEnterBase already found and focused the pane. Do not walk the
+		// same herdr server a second time.
+		ls := d.sessionByID(q.SessionID)
+		info := d.infoOf(ls)
+		name := firstNonEmpty(info.Name, info.NativeID)
+		if info.Worker != nil {
+			if a, err := d.agentView(ctx, q.SessionID); err == nil && a.Profile.Name != "" {
+				name = a.Profile.Name
+			}
+		}
+		base.Name = name
+		if viaGateway {
+			return base, nil
+		}
+		return openedHerdrPlan(base.Host, name, *focused), nil
 	}
 	ls := d.sessionByID(q.SessionID)
 	if ls == nil {
@@ -260,7 +287,14 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 	return opened, nil
 }
 
-func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, viaGateway bool) (protocol.EnterPlan, error) {
+// focused receives the pane when this machine already has a herdr client that
+// can show it. The caller passes nil when the asking terminal cannot see a
+// herdr pane, so no focus command is sent.
+func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, viaGateway bool, focused *string) (protocol.EnterPlan, error) {
+	herdrQuery := q
+	if focused != nil {
+		herdrQuery.HerdrClient = true
+	}
 	ls := d.sessionByID(q.SessionID)
 	if ls == nil {
 		return protocol.EnterPlan{}, errors.New("no such session on this machine")
@@ -293,7 +327,11 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 			d.wmu.Unlock()
 		}
 		if kind != "bg" {
-			return d.terminalPlan(info, q, plan, name, viaGateway)
+			p, err := d.terminalPlan(info, herdrQuery, plan, name, viaGateway)
+			if focused != nil && p.HerdrPane != "" {
+				*focused = p.HerdrPane
+			}
+			return p, err
 		}
 		id := job
 		if id == "" && len(info.NativeID) >= 8 {
@@ -319,7 +357,10 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		}
 		var herdrNote string
 		if w == nil { // a TUI the owner started in a herdr pane is the screen to show
-			if p, ok := d.herdrPlan(info, q, plan, name, viaGateway); ok {
+			if p, ok := d.herdrPlan(info, herdrQuery, plan, name, viaGateway); ok {
+				if focused != nil && p.HerdrPane != "" {
+					*focused = p.HerdrPane
+				}
 				if len(p.Argv) > 0 {
 					if err := reopen(); err != nil {
 						return no("could not reopen session: %v", err)
@@ -414,7 +455,11 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		if w != nil {
 			return no("Pi workers run in RPC mode without a terminal; read this session with agent-net show %s", cleanLine(q.SessionID))
 		}
-		return d.terminalPlan(info, q, plan, name, viaGateway)
+		p, err := d.terminalPlan(info, herdrQuery, plan, name, viaGateway)
+		if focused != nil && p.HerdrPane != "" {
+			*focused = p.HerdrPane
+		}
+		return p, err
 	}
 	return no("entering %s sessions is not supported", info.Harness)
 }

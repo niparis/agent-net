@@ -183,6 +183,10 @@ type OperatorInfo struct {
 	OwnerSession string `json:"owner_session,omitempty"`
 	// Launch is false when this machine refuses workers (setup --no-launch).
 	Launch bool `json:"launch"`
+	// ProposalCount is how many CTO proposals wait for the owner on this
+	// machine. It lets the screen notice a new proposal without listing every
+	// proposal on every refresh. It is 0 from an older daemon.
+	ProposalCount int `json:"proposal_count,omitempty"`
 }
 
 // AgentsResult answers OpAgents.
