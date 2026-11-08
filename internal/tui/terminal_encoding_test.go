@@ -12,8 +12,9 @@ import (
 type encodingTestMsg struct{}
 
 type encodingDriverModel struct {
-	inner  Model
-	events []tea.Msg
+	inner   Model
+	events  []tea.Msg
+	pending int // input messages still to see before the program may stop
 }
 
 func (d encodingDriverModel) Init() tea.Cmd {
@@ -33,6 +34,15 @@ func (d encodingDriverModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if d.inner.quitting {
 		return d, tea.Quit
 	}
+	if isEncodingInputMsg(msg) {
+		d.pending--
+		if d.pending <= 0 {
+			// Run the command this message produced before stopping, so its
+			// side effects (a rule change, for example) are applied. Then ask
+			// the program to stop.
+			return d, tea.Sequence(cmd, func() tea.Msg { return encodingTestMsg{} })
+		}
+	}
 	return d, cmd
 }
 
@@ -40,31 +50,35 @@ func (d encodingDriverModel) View() tea.View {
 	return d.inner.View()
 }
 
-type encodingTrackReader struct {
-	io.Reader
-	eof chan struct{}
-}
-
-func (r *encodingTrackReader) Read(p []byte) (int, error) {
-	n, err := r.Reader.Read(p)
-	if err != nil {
-		select {
-		case <-r.eof:
-		default:
-			close(r.eof)
-		}
+// isEncodingInputMsg reports whether msg was decoded from terminal input. The
+// driver stops only after it has seen every such message the raw input
+// produces, so a slow input reader under -race cannot leave the paste or key
+// unprocessed when the program quits.
+func isEncodingInputMsg(msg tea.Msg) bool {
+	switch msg.(type) {
+	case tea.KeyPressMsg, tea.KeyReleaseMsg,
+		tea.PasteStartMsg, tea.PasteMsg, tea.PasteEndMsg,
+		tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.MouseMotionMsg,
+		tea.FocusMsg, tea.BlurMsg:
+		return true
 	}
-	return n, err
+	return false
 }
 
-func runEncodingProgram(t *testing.T, initial Model, raw string) (Model, []tea.Msg) {
+// runEncodingProgram runs initial with raw terminal input and returns the final
+// model once the program has handled it. inputMsgs is the number of input
+// messages raw decodes into; it defaults to one.
+func runEncodingProgram(t *testing.T, initial Model, raw string, inputMsgs ...int) (Model, []tea.Msg) {
 	t.Helper()
+	expect := 1
+	if len(inputMsgs) > 0 {
+		expect = inputMsgs[0]
+	}
 	pr, pw := io.Pipe()
-	tr := &encodingTrackReader{Reader: pr, eof: make(chan struct{})}
-	d := encodingDriverModel{inner: initial}
+	d := encodingDriverModel{inner: initial, pending: expect}
 	p := tea.NewProgram(
 		d,
-		tea.WithInput(tr),
+		tea.WithInput(pr),
 		tea.WithOutput(io.Discard),
 		tea.WithoutRenderer(),
 		tea.WithoutSignals(),
@@ -86,9 +100,9 @@ func runEncodingProgram(t *testing.T, initial Model, raw string) (Model, []tea.M
 			_, _ = pw.Write([]byte(raw))
 		}
 		_ = pw.Close()
-		<-tr.eof
-		time.Sleep(5 * time.Millisecond)
-		p.Send(encodingTestMsg{})
+		if len(raw) == 0 {
+			p.Send(encodingTestMsg{})
+		}
 	}()
 
 	select {
@@ -96,7 +110,7 @@ func runEncodingProgram(t *testing.T, initial Model, raw string) (Model, []tea.M
 		if err != nil {
 			t.Fatalf("program run error: %v", err)
 		}
-	case <-time.After(1 * time.Second):
+	case <-time.After(2 * time.Second):
 		p.Kill()
 		t.Fatal("program run timed out")
 	}
@@ -290,7 +304,7 @@ func TestBracketedPasteEncodings(t *testing.T) {
 		m.compose = newTextInput()
 		m.compose.Focus()
 
-		res, _ := runEncodingProgram(t, m, pastePayload)
+		res, _ := runEncodingProgram(t, m, pastePayload, 3)
 		if res.quitting {
 			t.Fatal("paste triggered quit hotkey (q)")
 		}
@@ -307,7 +321,7 @@ func TestBracketedPasteEncodings(t *testing.T) {
 		m.sform.cur = sFirstMessage
 		m.sform.in[sFirstMessage].Focus()
 
-		res, _ := runEncodingProgram(t, m, pastePayload)
+		res, _ := runEncodingProgram(t, m, pastePayload, 3)
 		if res.quitting {
 			t.Fatal("paste triggered quit hotkey (q)")
 		}
@@ -385,7 +399,7 @@ func TestMouseEncodings(t *testing.T) {
 		}
 
 		// Send click inside graph: \x1b[<0;20;10M followed by release \x1b[<0;20;10m
-		res2, _ := runEncodingProgram(t, m, "\x1b[<0;20;10M\x1b[<0;20;10m")
+		res2, _ := runEncodingProgram(t, m, "\x1b[<0;20;10M\x1b[<0;20;10m", 2)
 		// The click was delivered and processed without crashing
 		if res2.tab != graphTab {
 			t.Fatal("graph tab changed unexpectedly")
