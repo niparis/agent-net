@@ -196,29 +196,25 @@ func TestGraphRefsAutomaticCutoverBacksUpAndMigratesCharter(t *testing.T) {
 
 func TestGraphRefsTypedEdgesKeepRoutingKeys(t *testing.T) {
 	s, _ := newTestStore(t)
-	ids, node := graphSessions(t, s, "demo")
-	cto, err := s.RegisterCTOSession(node)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := protocol.Edge{From: "cto", To: "demo", Kind: "governs", Mode: "advisor", Rule: "ask", FromRef: &protocol.GraphRef{Kind: "agent", ID: "cto"}, ToRef: &protocol.GraphRef{Kind: "agent", ID: "demo"}}
-	if err = s.SetEdge(e, "owner"); err == nil {
+	ids, _ := graphSessions(t, s, "demo", "other")
+	e := protocol.Edge{From: "demo", To: "other", Kind: "depends", Rule: "ask", FromRef: &protocol.GraphRef{Kind: "repo", ID: "demo"}, ToRef: &protocol.GraphRef{Kind: "repo", ID: "other"}}
+	if err := s.SetEdge(e, "owner"); err == nil {
 		t.Fatal("typed write passed before cutover")
 	}
-	if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.SetEdge(e, "owner"); err != nil {
+	if err := s.SetEdge(e, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	rule, err := s.RequestRule(cto, ids["demo"])
+	rule, err := s.RequestRule(ids["demo"], ids["other"])
 	if err != nil || rule != "ask" {
 		t.Fatalf("routing changed: %q %v", rule, err)
 	}
-	e.FromRef.Kind = "repo"
+	e.FromRef.Kind = "agent"
 	if err = s.SetEdge(e, "owner"); err == nil {
 		t.Fatal("mismatched endpoint accepted")
 	}

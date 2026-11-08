@@ -37,7 +37,7 @@ func TestGraphForAProjectHasItsCharterAndTheEdgesThatTouchIt(t *testing.T) {
 	}
 	for _, e := range []protocol.Edge{
 		{From: "tenebrae", To: "cogforge", Kind: "depends", Rule: "normal"},
-		{From: "wbg-architect", To: "cogforge", Kind: "governs", Mode: "owner", Rule: "normal"},
+		{From: "wbg-architect", To: "cogforge", Kind: "deploys", Rule: "normal"},
 		{From: "other", To: "cogforge", Kind: "depends", Rule: "normal"},
 	} {
 		if err := s.SetEdge(e, "owner"); err != nil {
@@ -77,13 +77,13 @@ func TestGraphForAProjectHasItsCharterAndTheEdgesThatTouchIt(t *testing.T) {
 
 func TestRelationIsComputedFromTheGraph(t *testing.T) {
 	s, _ := newTestStore(t)
-	ids, node := graphSessions(t, s, "cogforge", "tenebrae", "unrelated")
+	ids, _ := graphSessions(t, s, "cogforge", "tenebrae", "unrelated")
 	if err := s.AddArchitect("wb-architect", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range []protocol.Edge{
 		{From: "tenebrae", To: "cogforge", Kind: "depends", Rule: "normal"},
-		{From: "wb-architect", To: "cogforge", Kind: "governs", Mode: "arbiter", Rule: "normal"},
+		{From: "wb-architect", To: "cogforge", Kind: "deploys", Rule: "normal"},
 	} {
 		if err := s.SetEdge(e, "owner"); err != nil {
 			t.Fatal(err)
@@ -95,16 +95,6 @@ func TestRelationIsComputedFromTheGraph(t *testing.T) {
 	}
 	if rel, _ := s.RelationFor(ids["unrelated"], ids["cogforge"]); !strings.Contains(rel, "no graph relation") {
 		t.Fatalf("unrelated: %q", rel)
-	}
-	// An architect has no project row of its own: its session speaks for the
-	// architect node by name.
-	archID, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "n-arch", Name: "arch",
-		Repo: protocol.RepoInfo{Project: "wb-architect"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rel, _ := s.RelationFor(archID, ids["cogforge"]); !strings.Contains(rel, "arbiter") {
-		t.Fatalf("architect relation: %q", rel)
 	}
 	if rel, _ := s.RelationFor(ids["cogforge"], ids["cogforge"]); rel != "" {
 		t.Fatalf("same node got a relation line: %q", rel)

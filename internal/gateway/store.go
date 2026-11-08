@@ -1132,6 +1132,11 @@ ALTER TABLE teams ADD COLUMN authority_mode TEXT NOT NULL DEFAULT 'charter_first
 ALTER TABLE teams ADD COLUMN held_back TEXT NOT NULL DEFAULT '';
 ALTER TABLE messages ADD COLUMN is_order INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS repo_held_back (repo_id TEXT PRIMARY KEY REFERENCES repos(id), held_back TEXT NOT NULL DEFAULT '');
+`, `
+-- Remove governs (decision 0088). The owner had no governs edge in use. Drop any
+-- row left, and the setting that chose which governs modes could approve a merge.
+DELETE FROM graph_edges WHERE kind='governs';
+DELETE FROM setting_values WHERE key='delivery.delegated_approver_modes';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

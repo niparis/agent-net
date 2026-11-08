@@ -30,7 +30,7 @@ func TestSceneFixture(t *testing.T) {
 		}
 		view.Nodes = append(view.Nodes, node)
 	}
-	view.Edges = []protocol.Edge{{From: "architect", To: "project-01", Kind: "governs"}, {From: "project-01", To: "project-02", Kind: "depends"}, {From: "project-02", To: "project-03", Kind: "deploys"}, {From: "*", To: "project-03", Kind: "depends"}, {From: "project-03", To: "project-04", Kind: "depends"}, {From: "project-04", To: "project-05", Kind: "depends"}}
+	view.Edges = []protocol.Edge{{From: "architect", To: "project-01", Kind: "deploys"}, {From: "project-01", To: "project-02", Kind: "depends"}, {From: "project-02", To: "project-03", Kind: "deploys"}, {From: "*", To: "project-03", Kind: "depends"}, {From: "project-03", To: "project-04", Kind: "depends"}, {From: "project-04", To: "project-05", Kind: "depends"}}
 	graph := New(view)
 	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	graph.Message("project-01", "project-02", "request", now)
@@ -69,7 +69,7 @@ func TestSceneFixture(t *testing.T) {
 	if !bytes.Equal(data, want) {
 		t.Fatal("scene differs from snapshot")
 	}
-	if s.Edges[0].Kind != "governs" || !s.Edges[0].Dashed || s.Level != "labels" {
+	if s.Edges[0].Kind != "deploys" || s.Level != "labels" {
 		t.Fatalf("unexpected scene: %+v", s)
 	}
 }

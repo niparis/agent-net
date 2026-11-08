@@ -57,6 +57,28 @@ const (
 	LabelAdvice  = "advice"
 )
 
+// AuthorityModeMeaning says what a mode does, for the owner who picks it.
+func AuthorityModeMeaning(mode string) string {
+	switch NormalAuthorityMode(mode) {
+	case AuthorityAbsolute:
+		return "an order is carried out like the owner's instruction; the member's charter does not override it"
+	case AuthorityNegotiate:
+		return "the member may push back with a reason and a counter-proposal; the lead accepts, changes or overrules"
+	}
+	return "an order is carried out unless the member's charter refuses it; then it goes up one level"
+}
+
+// NextAuthorityMode is the mode after this one, in the order the owner sees.
+func NextAuthorityMode(mode string) string {
+	mode = NormalAuthorityMode(mode)
+	for i, m := range AuthorityModes {
+		if m == mode {
+			return AuthorityModes[(i+1)%len(AuthorityModes)]
+		}
+	}
+	return DefaultAuthorityMode
+}
+
 // OrderTerms says how a lead's order binds a member, in one sentence, from the
 // member's side.
 func OrderTerms(mode string) string {

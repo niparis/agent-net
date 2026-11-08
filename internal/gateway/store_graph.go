@@ -1109,17 +1109,14 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 		return reject("invalid edge rule")
 	}
 	deliveryEdge := deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys"
-	if e.Kind != "depends" && e.Kind != "governs" && e.Kind != "deploys" && !deliveryEdge {
+	if e.Kind != "depends" && e.Kind != "deploys" && !deliveryEdge {
 		return reject("invalid edge kind")
 	}
 	if deliveryEdgeStep(e.Kind) != "" && !actorAllowed(actor, "rule") {
 		return reject("only the owner may change delivery step owners")
 	}
-	if (e.Kind == "depends" || e.Kind == "deploys" || deliveryEdge) && e.Mode != "" {
-		return reject("this edge kind has no mode")
-	}
-	if e.Kind == "governs" && e.Mode != "advisor" && e.Mode != "arbiter" && e.Mode != "owner" {
-		return reject("invalid mode")
+	if e.Mode != "" {
+		return reject("an edge has no mode")
 	}
 	var err error
 	from := "component"
@@ -1138,9 +1135,6 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	} else if e.From != "*" {
 		if typed {
 			from = "component"
-			if e.Kind == "governs" {
-				from = "architect"
-			}
 		} else {
 			from, err = graphKind(tx, e.From)
 		}
@@ -1156,9 +1150,6 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	}
 	if err != nil {
 		return err
-	}
-	if e.Kind == "governs" && (from != "architect" || to != "component") {
-		return reject("governs requires architect to component")
 	}
 	if deliveryEdge {
 		if to != "component" || (from != "component" && from != "architect") {

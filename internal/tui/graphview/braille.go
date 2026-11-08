@@ -517,8 +517,6 @@ func colorRole(role, text string) string {
 		color = talkFaintColor
 	case "depends", "trail":
 		color = palette.Color("#00666b", "#5fc4c9")
-	case "governs":
-		color = palette.Color("#6445a1", "#b49cf5")
 	case "cto":
 		color = palette.Color("#6445a1", "#b49cf5")
 	case "deploys", "selected", "selectedEdge", "flash", "busyPulse":

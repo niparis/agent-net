@@ -142,10 +142,9 @@ const (
 // Kinds of step owner. A step owner is a graph node (OwnerNode, a component or
 // an architect): one of its sessions does the work, never a worker.
 // OwnerPerson is the owner of the network: the step becomes an Inbox item.
-// OwnerDelegate and OwnerNone are only for approve: delegate is whoever governs
-// the node through a governs edge in an allowed mode
-// (delivery.delegated_approver_modes), or the owner, resolved when the step
-// starts; none leaves the approval out.
+// OwnerDelegate and OwnerNone are only for approve: delegate is anyone above
+// the node in the tree who holds merge (its repo lead and team lead), or the
+// owner, resolved when the step starts; none leaves the approval out.
 const (
 	OwnerMerger   = "merger"
 	OwnerCaller   = "caller"

@@ -13,6 +13,7 @@ import (
 
 type teamGraphData struct {
 	key, label, lead         string
+	mode, held               string
 	members                  []string
 	projects, sessions, busy int
 	role, merger             string
@@ -132,7 +133,7 @@ func (m Model) graphTeamData() ([]teamGraphData, []teamLink) {
 		if n.Ref == nil || n.Ref.Kind != "team" || n.Active != nil && !*n.Active {
 			continue
 		}
-		g := teamGraphData{key: n.Name, label: m.graphName(n.Name), role: "offline"}
+		g := teamGraphData{key: n.Name, label: m.graphName(n.Name), role: "offline", mode: protocol.NormalAuthorityMode(n.AuthorityMode), held: n.HeldBack}
 		ref := n.Lead
 		if ref == nil {
 			ref = n.Owner
@@ -850,9 +851,17 @@ func (m Model) teamGraphSceneContent(base graphview.Scene, size graphview.Size) 
 		}
 	}
 	frame(mainX, 0, mainW, mainH, g, true)
-	header := fmt.Sprintf("no lead · %s · %s", teamCount(g.projects, "project", "projects"), teamCount(g.sessions, "session", "sessions"))
+	counts := teamCount(g.projects, "project", "projects") + " · " + teamCount(g.sessions, "session", "sessions")
+	header := "no lead · " + counts
 	if g.lead != "" {
-		header = fmt.Sprintf("lead %s · %s · %s", m.graphName(g.lead), teamCount(g.projects, "project", "projects"), teamCount(g.sessions, "session", "sessions"))
+		header = "lead " + m.graphName(g.lead) + " · " + counts
+	}
+	if g.mode != "" {
+		// The mode comes right after the lead, so a narrow frame still shows it.
+		header = strings.Replace(header, " · ", " · "+protocol.AuthorityModeLabel(g.mode)+" · ", 1)
+		if held := strings.Join(strings.Fields(g.held), " "); held != "" {
+			header += " · held back: " + held
+		}
 	}
 	text(mainX+2, 1, mainW-4, header, "labelDim", "")
 	cells := map[string][2]int{}
@@ -1200,8 +1209,8 @@ func (m Model) graphTeamCard(scene *graphview.Scene, selected string, x, y, w, h
 			direction = "from "
 		}
 		edgeLines = append(edgeLines, direction+m.graphName(peer)+"  "+e.Kind)
-		if e.Mode != "" || e.Rule != "" {
-			add(direction+m.graphName(peer)+"  "+strings.TrimSpace(e.Mode+" "+e.Rule), "label")
+		if e.Rule != "" {
+			add(direction+m.graphName(peer)+"  "+e.Rule, "label")
 		}
 	}
 	add("", "label")

@@ -8,7 +8,7 @@ import (
 )
 
 func fixture() protocol.GraphView {
-	return protocol.GraphView{Nodes: []protocol.Node{{Name: "b"}, {Name: "a"}, {Name: "c"}}, Edges: []protocol.Edge{{From: "a", To: "b", Kind: "depends"}, {From: "*", To: "c", Kind: "governs"}}}
+	return protocol.GraphView{Nodes: []protocol.Node{{Name: "b"}, {Name: "a"}, {Name: "c"}}, Edges: []protocol.Edge{{From: "a", To: "b", Kind: "depends"}, {From: "*", To: "c", Kind: "deploys"}}}
 }
 func TestLayoutDeterministicAndFit(t *testing.T) {
 	a, b := New(fixture()), New(fixture())

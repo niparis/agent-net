@@ -311,34 +311,6 @@ func MergeTextWithSettings(authority string, snap settings.Snapshot) string {
 	return (MaturityDefaults{MergeAuthority: authority, recipe: &snap}).MergeText()
 }
 
-func (d MaturityDefaults) approverModes() []string {
-	snap := settings.Snapshot{}
-	if d.recipe != nil {
-		snap = *d.recipe
-	}
-	modes := snap.Strings("delivery.delegated_approver_modes", settings.Where{})
-	ordered := make([]string, 0, len(modes))
-	for _, preferred := range []string{"owner", "arbiter"} {
-		for _, mode := range modes {
-			if mode == preferred {
-				ordered = append(ordered, mode)
-			}
-		}
-	}
-	for _, mode := range modes {
-		if mode != "owner" && mode != "arbiter" {
-			ordered = append(ordered, mode)
-		}
-	}
-	return ordered
-}
-func (d MaturityDefaults) approverModesText() string {
-	modes := d.approverModes()
-	if len(modes) == 0 {
-		return "none"
-	}
-	return strings.Join(modes, " or ")
-}
 func (d MaturityDefaults) MergeText() string {
 	if d.pipelineMergeText != "" {
 		return d.pipelineMergeText
@@ -350,8 +322,7 @@ func (d MaturityDefaults) MergeText() string {
 	if authority != MergeDelegated && authority != MergeAsk {
 		authority = MergeFull
 	}
-	text := d.settingText("delivery.merge_text_" + authority)
-	return strings.ReplaceAll(text, "{{modes}}", d.approverModesText())
+	return d.settingText("delivery.merge_text_" + authority)
 }
 func (d MaturityDefaults) DeployText() string {
 	if d.pipelineDeployText != "" {
@@ -402,8 +373,8 @@ type MergeApproval struct {
 }
 
 // MergeApprovalFor works out the merge authority of a node from its maturity
-// and overrides. The delegates of a delegated node are the architects with an
-// owner or arbiter edge over it.
+// and overrides. The delegates of a delegated node are the leads above it in
+// the tree and the owner.
 func MergeApprovalFor(g Graph, node string) MergeApproval {
 	return MergeApprovalForWithSettings(g, node, settings.Snapshot{})
 }
@@ -436,25 +407,16 @@ func MergeApprovalForWithSettings(g Graph, node string, snap settings.Snapshot) 
 		out.Written = true
 		out.Approvers = []string{"the owner"}
 	case MergeDelegated:
+		// Anyone above the node in the tree who holds merge may approve, and so
+		// may the owner (decision 0088). The graph names the repo's lead.
 		out.Required = true
 		out.Approvers = []string{"the owner"}
-		modes := d.approverModes()
-		for _, e := range g.Edges {
-			allowed := false
-			for _, mode := range modes {
-				if e.Mode == mode {
-					allowed = true
-				}
-			}
-			if e.Kind == "governs" && e.To == node && allowed {
-				out.Approvers = append(out.Approvers, e.From)
-			}
+		if n != nil && n.Lead != nil && n.Lead.ID != "" {
+			out.Approvers = append(out.Approvers, n.Lead.ID)
 		}
 		out.Text = d.MergeText()
 		if len(out.Approvers) > 1 {
-			out.Text += " (delegates: " + strings.Join(out.Approvers[1:], ", ") + ")"
-		} else {
-			out.Text += " (an architect with mode " + d.approverModesText() + " over the node)"
+			out.Text += " (" + strings.Join(out.Approvers[1:], ", ") + " leads this node)"
 		}
 	case MergeAsk:
 		out.Required = true

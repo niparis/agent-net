@@ -220,7 +220,7 @@ func TestAgentMessageSendDaemonErrorIsAToolError(t *testing.T) {
 	}
 }
 
-var errGroupOnly = &staticError{"group messages are for the CTO and advisor nodes only; send to one session with to"}
+var errGroupOnly = &staticError{"group messages are for the CTO only; send to one session with to"}
 
 type staticError struct{ text string }
 

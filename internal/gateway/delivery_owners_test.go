@@ -359,10 +359,7 @@ func TestDeliveryTightenedApprovalRejectsQueuedNodeReport(t *testing.T) {
 	if err := r.s.SetEdge(protocol.Edge{From: "reviewer", To: "demo", Kind: "approves"}, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	sid, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "reviewer", Repo: protocol.RepoInfo{Project: "reviewer"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	sid := agentSessionOn(t, r, r.b, "reviewer")
 	id := r.submit(r.a, r.workerSubmit("feature/approval", commitA)).Change.Change.ID
 	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "network", Scope: "network", Value: json.RawMessage(`"ask"`)}}, "owner", "tighten"); err != nil {
 		t.Fatal(err)
@@ -438,18 +435,36 @@ func TestDeliveryUndoWrittenApprovalRestoresDelegateTask(t *testing.T) {
 	}
 }
 
-func TestDeliverySettingsChangeDispatchesDelegateTasks(t *testing.T) {
-	r := newDeliveryRig(t)
-	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
+// leadDemoWith makes the architect agent the repo lead of demo, so it sits
+// above the caller in the tree and may approve a delegated merge.
+func leadDemoWith(t *testing.T, r *deliveryRig, agent string) {
+	t.Helper()
+	if err := r.s.AddArchitect(agent, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.s.SetEdge(protocol.Edge{From: "reviewer", To: "demo", Kind: "governs", Mode: "owner"}, "owner"); err != nil {
+	if _, err := r.s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES('demo',?)`, agent); err != nil {
 		t.Fatal(err)
 	}
-	sid, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "reviewer", Repo: protocol.RepoInfo{Project: "reviewer"}})
+}
+
+// agentSessionOn starts a pi session for an agent on node b, in the repo of the
+// same name, and gives it that agent's identity as a real session has.
+func agentSessionOn(t *testing.T, r *deliveryRig, node, agent string) string {
+	t.Helper()
+	sid, err := r.s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: agent, Repo: protocol.RepoInfo{Project: agent}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err = r.s.db.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, agent, sid); err != nil {
+		t.Fatal(err)
+	}
+	return sid
+}
+
+func TestDeliverySettingsChangeDispatchesDelegateTasks(t *testing.T) {
+	r := newDeliveryRig(t)
+	leadDemoWith(t, r, "reviewer")
+	sid := agentSessionOn(t, r, r.b, "reviewer")
 	initial := SettingsChange{Key: "delivery.merge_authority", Level: "network", Scope: "network", Value: json.RawMessage(`"ask"`)}
 	if _, err := r.s.WriteSettings([]SettingsChange{initial}, "owner", "test"); err != nil {
 		t.Fatal(err)
@@ -619,10 +634,7 @@ func TestDeliveryExpiredTaskNoticeCanBeSentAgain(t *testing.T) {
 	if err := r.s.SetEdge(protocol.Edge{From: "reviewer", To: "demo", Kind: "accepts"}, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	sid, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "reviewer", Repo: protocol.RepoInfo{Project: "reviewer"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	sid := agentSessionOn(t, r, r.b, "reviewer")
 	id := r.submit(r.a, r.workerSubmit("feature/retry", commitA)).Change.Change.ID
 	r.g.dispatchStepTasks(context.Background())
 	var old string
@@ -1117,16 +1129,8 @@ func TestDeliveryDelegatedApprovalRoutesAndCanBeClaimed(t *testing.T) {
 	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"delegated"`)}}, "owner", "test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.s.AddArchitect("architect", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.s.SetEdge(protocol.Edge{From: "architect", To: "demo", Kind: "governs", Mode: "arbiter"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	sid, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "architect", Repo: protocol.RepoInfo{Project: "architect"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	leadDemoWith(t, r, "architect")
+	sid := agentSessionOn(t, r, r.b, "architect")
 	id := r.submit(r.a, r.workerSubmit("feature/delegate", commitA)).Change.Change.ID
 	items, err := r.s.ListInbox()
 	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, commitA) {
@@ -1157,16 +1161,8 @@ func TestDeliveryDelegateOwnerCanApproveFirst(t *testing.T) {
 	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"delegated"`)}}, "owner", "test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.s.AddArchitect("architect", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.s.SetEdge(protocol.Edge{From: "architect", To: "demo", Kind: "governs", Mode: "owner"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	sid, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "architect", Repo: protocol.RepoInfo{Project: "architect"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	leadDemoWith(t, r, "architect")
+	sid := agentSessionOn(t, r, r.b, "architect")
 	id := r.submit(r.a, r.workerSubmit("feature/delegate-owner", commitA)).Change.Change.ID
 	claim := protocol.StepClaimRequest{SessionID: sid, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Commit: commitA}
 	if _, err := deliveryCall[protocol.StepClaimResult](r, r.b, "step.claim", claim); err != nil {
@@ -1205,34 +1201,55 @@ func TestDeliveryDelegateDirectOwnerApproval(t *testing.T) {
 	}
 }
 
-func TestDeliveryDelegateModesControlWhoCanClaim(t *testing.T) {
-	for _, allowed := range []bool{false, true} {
-		t.Run(fmt.Sprintf("advisor_allowed_%t", allowed), func(t *testing.T) {
+// Only a lead above the repo may claim a delegated approval. A peer agent that
+// no one placed above the repo may not, and the repo's own lead is above the
+// caller, so it may.
+func TestDeliveryDelegateIsALeadAboveTheRepo(t *testing.T) {
+	for _, lead := range []bool{false, true} {
+		t.Run(fmt.Sprintf("lead_%t", lead), func(t *testing.T) {
 			r := newDeliveryRig(t)
-			changes := []SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"delegated"`)}}
-			if allowed {
-				changes = append(changes, SettingsChange{Key: "delivery.delegated_approver_modes", Level: "network", Scope: "network", Value: json.RawMessage(`["advisor","arbiter","owner"]`)})
-			}
-			if _, err := r.s.WriteSettings(changes, "owner", "test"); err != nil {
+			if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"delegated"`)}}, "owner", "test"); err != nil {
 				t.Fatal(err)
 			}
-			if err := r.s.AddArchitect("advisor", "owner"); err != nil {
+			if lead {
+				leadDemoWith(t, r, "advisor")
+			} else if err := r.s.AddArchitect("advisor", "owner"); err != nil {
 				t.Fatal(err)
 			}
-			if err := r.s.SetEdge(protocol.Edge{From: "advisor", To: "demo", Kind: "governs", Mode: "advisor"}, "owner"); err != nil {
-				t.Fatal(err)
-			}
-			sid, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "pi", NativeID: "advisor", Repo: protocol.RepoInfo{Project: "advisor"}})
-			if err != nil {
-				t.Fatal(err)
-			}
+			sid := agentSessionOn(t, r, r.b, "advisor")
 			id := r.submit(r.a, r.workerSubmit("feature/modes", commitA)).Change.Change.ID
 			claim := protocol.StepClaimRequest{SessionID: sid, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Commit: commitA}
-			_, err = deliveryCall[protocol.StepClaimResult](r, r.b, "step.claim", claim)
-			if (err == nil) != allowed {
-				t.Fatalf("advisor claim = %v, want allowed=%t", err, allowed)
+			_, err := deliveryCall[protocol.StepClaimResult](r, r.b, "step.claim", claim)
+			if (err == nil) != lead {
+				t.Fatalf("claim by a session of the agent = %v, want allowed=%t", err, lead)
 			}
 		})
+	}
+}
+
+// The lead of the repo's team is above the repo too.
+func TestDeliveryDelegateIsTheTeamLead(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"delegated"`)}}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.AddArchitect("boss", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.loadGraphRefs(); err != nil {
+		t.Fatal(err)
+	}
+	owner, repo := protocol.GraphRef{Kind: "agent", ID: "boss"}, protocol.GraphRef{Kind: "repo", ID: "demo"}
+	teamWrite(t, r.s, protocol.TeamWrite{Action: "create", ID: "crew", Name: "Crew", Owner: &owner})
+	teamWrite(t, r.s, protocol.TeamWrite{Action: "membership", ID: "crew", Member: &repo})
+	sid := agentSessionOn(t, r, r.b, "boss")
+	id := r.submit(r.a, r.workerSubmit("feature/team-lead", commitA)).Change.Change.ID
+	claim := protocol.StepClaimRequest{SessionID: sid, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Commit: commitA}
+	if _, err := deliveryCall[protocol.StepClaimResult](r, r.b, "step.claim", claim); err != nil {
+		t.Fatalf("team lead claim: %v", err)
 	}
 }
 

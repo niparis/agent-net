@@ -330,7 +330,7 @@ func (s *Store) teamGraph() (protocol.Graph, error) {
 		if session.Valid {
 			lead = &protocol.GraphRef{Kind: "session", ID: session.String}
 		}
-		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Lead: lead, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, CreatedAt: t.CreatedAt})
+		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Lead: lead, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, AuthorityMode: t.AuthorityMode, HeldBack: t.HeldBack, CreatedAt: t.CreatedAt})
 	}
 	rows, err := s.db.Query(`SELECT member_kind,member_id,team_id FROM team_members ORDER BY member_kind,member_id`)
 	if err != nil {

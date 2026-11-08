@@ -281,3 +281,57 @@ func TestPlaceBlockShowsModeAndHeldBack(t *testing.T) {
 		t.Fatalf("negotiate block: %q", got)
 	}
 }
+
+// The authority migrations replay on a database that already has their columns,
+// and the governs migration drops any governs edge and the approver-modes
+// setting that were left.
+func TestAuthorityMigrationsReplayAndDropGoverns(t *testing.T) {
+	s := teamStore(t)
+	columns := migrationVersion(t, "Team authority mode and held back (decision 0088)")
+	governs := migrationVersion(t, "Remove governs (decision 0088)")
+	if governs != columns+1 {
+		t.Fatalf("migrations %d and %d are not adjacent", columns, governs)
+	}
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "beta", Name: "Beta"})
+	teamWrite(t, s, protocol.TeamWrite{Action: "mode", ID: "beta", Mode: "negotiate"})
+	teamWrite(t, s, protocol.TeamWrite{Action: "held_back", ID: "beta", HeldBack: "spend"})
+	if _, err := s.db.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES('demo','other','governs','owner','normal')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('delivery.delegated_approver_modes','network','network','','["owner"]',1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, columns); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateOldFixture(t, s); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM graph_edges WHERE kind='governs'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("governs edges left: %d %v", n, err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM setting_values WHERE key='delivery.delegated_approver_modes'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("approver modes left: %d %v", n, err)
+	}
+	got := teamField(t, s, "beta")
+	if got.AuthorityMode != "negotiate" || got.HeldBack != "spend" {
+		t.Fatalf("replay changed team values: %+v", got)
+	}
+}
+
+// governs is gone: no edge, no mode, no tool, no group right, no guidance.
+func TestGovernsIsGone(t *testing.T) {
+	s := teamStore(t)
+	for _, e := range []protocol.Edge{
+		{From: "demo", To: "other", Kind: "governs", Mode: "owner"},
+		{From: "demo", To: "other", Kind: "depends", Mode: "owner"},
+	} {
+		if err := s.SetEdge(e, "owner"); err == nil {
+			t.Fatalf("edge %+v accepted", e)
+		}
+	}
+	if err := s.SetEdge(protocol.Edge{From: "demo", To: "other", Kind: "depends", Rule: "normal"}, "owner"); err != nil {
+		t.Fatalf("plain depends edge: %v", err)
+	}
+}

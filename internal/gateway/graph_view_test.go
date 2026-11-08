@@ -40,7 +40,7 @@ func graphTestStore(t *testing.T) *Store {
 		}
 	}
 	for _, e := range []protocol.Edge{
-		{From: "trading-architect", To: "cogforge", Kind: "governs", Mode: "owner", Rule: "normal"},
+		{From: "trading-architect", To: "cogforge", Kind: "deploys", Rule: "normal"},
 		{From: "tenebrae", To: "cogforge", Kind: "depends", Rule: "ask"},
 	} {
 		if err := s.SetEdge(e, "owner"); err != nil {

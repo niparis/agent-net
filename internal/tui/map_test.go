@@ -36,8 +36,8 @@ func fakeGraph() protocol.GraphView {
 			{Name: "wbg-architect", Kind: "architect", Charter: protocol.Charter{Purpose: "WBG data platform.", Maturity: "growing"}},
 		},
 		Edges: []protocol.Edge{
-			{From: "trading-architect", To: "cogforge", Kind: "governs", Mode: "owner", Rule: "normal"},
-			{From: "wbg-architect", To: "tenebrae", Kind: "governs", Mode: "advisor", Rule: "normal"},
+			{From: "trading-architect", To: "cogforge", Kind: "deploys", Rule: "normal"},
+			{From: "wbg-architect", To: "tenebrae", Kind: "deploys", Rule: "normal"},
 			{From: "tenebrae", To: "cogforge", Kind: "depends", Rule: "ask"},
 			{From: "cogforge", To: "shop", Kind: "depends", Rule: "auto"},
 		},

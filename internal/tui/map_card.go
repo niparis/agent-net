@@ -27,8 +27,6 @@ func displayNode(name string) string {
 // edgeKindStyle colors an edge by its kind. The map and the graph share it.
 func edgeKindStyle(kind string) lipgloss.Style {
 	switch kind {
-	case "governs":
-		return lipgloss.NewStyle().Foreground(roleCTO)
 	case "deploys":
 		return lipgloss.NewStyle().Foreground(roleWarning)
 	}
@@ -100,19 +98,15 @@ func (m Model) mapEdgeEntry(e protocol.Edge, incoming bool) string {
 }
 
 // mapEdgeColumns draws the IN and OUT edges side by side, or one above the
-// other when the pane is narrow. A governing edge into the node is not listed:
-// the "governed by" line has it.
+// other when the pane is narrow.
 func (m Model) mapEdgeColumns(node string, w, room int) []string {
 	var in, out []protocol.Edge
 	for _, e := range m.mp.edges {
-		if e.To == node && e.Kind == "governs" {
-			continue
-		}
 		if protocol.DeliveryOwnerFromSource(e.From).Kind != protocol.OwnerNode {
 			continue
 		}
 		switch {
-		case e.To == node && e.Kind != "governs":
+		case e.To == node:
 			in = append(in, e)
 		case e.From == node:
 			out = append(out, e)
@@ -381,7 +375,6 @@ func mapLegendLines(w int) []string {
 	out = append(out, sBold.Render("  Edges"))
 	for _, e := range []struct{ kind, text string }{
 		{"depends", "consumer uses provider"},
-		{"governs", "architect over component; mode advisor, arbiter or owner"},
 		{"deploys", "deployer runs the app's deploys"},
 	} {
 		label := edgeKindStyle(e.kind).Render("──▶") + " " + e.kind
@@ -510,20 +503,6 @@ func (m Model) mapFocusView(w, h int) []string {
 	}
 	for _, line := range m.graphDeliveryOwners(node.Name) {
 		head = append(head, sDim.Render(clip(line, w)))
-	}
-	var gov []string
-	for _, e := range m.mp.edges {
-		if e.Kind == "governs" && e.To == node.Name {
-			from := e.From
-			if e.FromRef != nil {
-				from = graphRefKey(e.FromRef)
-			}
-			gov = append(gov, m.graphName(from)+" ("+dashIfEmpty(sanitize(e.Mode))+")")
-		}
-	}
-	sort.Strings(gov)
-	if len(gov) > 0 {
-		head = append(head, clip(sDim.Render("governed by: ")+strings.Join(gov, ", "), w))
 	}
 	head = append(head, "")
 	// The body gets at least five rows when the pane allows it.

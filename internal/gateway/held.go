@@ -58,9 +58,8 @@ func (s *Store) answerHeld(id, action, actor string, validate ...bool) (protocol
 		}
 		var old protocol.Edge
 		err = tx.QueryRow(`SELECT source,target,kind,mode,rule FROM graph_edges WHERE
-			(kind='governs' AND source=? AND target=? AND source<>'' AND target<>'' AND source<>target) OR
 			(kind IN ('depends','deploys') AND source=? AND target=? AND source<>'' AND target<>'' AND source<>target)
-			ORDER BY kind LIMIT 1`, from.agent, to.agent, from.repo, to.repo).Scan(&old.From, &old.To, &old.Kind, &old.Mode, &old.Rule)
+			ORDER BY kind LIMIT 1`, from.repo, to.repo).Scan(&old.From, &old.To, &old.Kind, &old.Mode, &old.Rule)
 		previous := ""
 		e := old
 		if err == nil {

@@ -29,7 +29,7 @@ func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
 	if err := st.SetCharter("cogforge", "maturity", "early", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetEdge(protocol.Edge{From: "trading-architect", To: "cogforge", Kind: "governs", Mode: "owner"}, "owner"); err != nil {
+	if err := st.SetEdge(protocol.Edge{From: "trading-architect", To: "cogforge", Kind: "deploys"}, "owner"); err != nil {
 		t.Fatal(err)
 	}
 

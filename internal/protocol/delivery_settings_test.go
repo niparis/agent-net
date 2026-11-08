@@ -63,14 +63,17 @@ func TestDeliveryContextUsesSnapshotText(t *testing.T) {
 	}
 }
 
-func TestDeliveryDelegatedTextMatchesApproverModes(t *testing.T) {
-	snap := settings.Snapshot{Values: []settings.Value{{Key: "delivery.delegated_approver_modes", Level: "network", Scope: "network", Value: json.RawMessage(`["advisor"]`)}}}
-	if got := MergeTextWithSettings(MergeDelegated, snap); !strings.Contains(got, "mode advisor") || strings.Contains(got, "owner or arbiter") {
-		t.Fatal(got)
+func TestDeliveryDelegatedTextNamesTheTree(t *testing.T) {
+	got := MergeTextWithSettings(MergeDelegated, settings.Snapshot{})
+	for _, want := range []string{"anyone above you in the tree who holds merge", "repo lead or team lead"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("delegated text lacks %q: %s", want, got)
+		}
 	}
-	g := Graph{Nodes: []Node{{Name: "repo", Charter: Charter{Maturity: "mature"}}}}
-	if got := MergeApprovalForWithSettings(g, "repo", snap).Text; !strings.Contains(got, "mode advisor") || strings.Contains(got, "owner or arbiter") {
-		t.Fatal(got)
+	for _, gone := range []string{"governs", "architect", "arbiter", "{{modes}}"} {
+		if strings.Contains(got, gone) {
+			t.Fatalf("delegated text still has %q: %s", gone, got)
+		}
 	}
 }
 

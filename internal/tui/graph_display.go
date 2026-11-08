@@ -73,7 +73,7 @@ func (m *Model) graphProjection() protocol.GraphView {
 		}
 	}
 	for _, e := range v.Edges {
-		if e.Kind == "governs" || protocol.DeliveryEdgeStep(e.Kind) != "" {
+		if protocol.DeliveryEdgeStep(e.Kind) != "" {
 			pair(e.To, e.From)
 			pair(e.From, e.To)
 		}

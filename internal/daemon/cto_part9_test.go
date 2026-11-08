@@ -92,7 +92,7 @@ func TestCTOGraphGuideExplainsEdges(t *testing.T) {
 	if !strings.HasPrefix(guide, protocol.CharterGuideText()) {
 		t.Errorf("guide does not start with the charter guide")
 	}
-	for _, term := range []string{"depends", "governs", "deploys", "advisor", "arbiter", "owner", "normal", "auto", "ask", "never"} {
+	for _, term := range []string{"depends", "deploys", "owner", "normal", "auto", "ask", "never"} {
 		if !strings.Contains(guide, term) {
 			t.Errorf("guide missing %s", term)
 		}

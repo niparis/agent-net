@@ -1316,31 +1316,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "graph.read":
 		return g.handleGraphRead(raw)
 
-	case "group.authority":
-		p, err := decode[protocol.QueryAgent](raw)
-		if err != nil || p.SessionID == "" {
-			return nil, reject("bad group.authority")
-		}
-		a, ok, err := st.Agent(p.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		if !ok || a.NodeID != nc.id {
-			return nil, reject("session does not belong to this node")
-		}
-		allowed := false
-		if a.Repo.Project != "" {
-			identity, _, err := st.graphIdentity(p.SessionID)
-			if err != nil {
-				return nil, err
-			}
-			err = st.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_edges WHERE source=? AND kind='governs' AND mode='advisor')`, identity.agent).Scan(&allowed)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return map[string]bool{"allowed": allowed}, nil
-
 	case "query.events":
 		p, err := decode[protocol.QueryEvents](raw)
 		if err != nil {

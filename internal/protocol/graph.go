@@ -64,10 +64,14 @@ type Node struct {
 	AgentCount int       `json:"agent_count,omitempty"`
 	OverMax    bool      `json:"over_max,omitempty"`
 	Role       string    `json:"role,omitempty"`
-	Name       string    `json:"name"`
-	Kind       string    `json:"kind"`
-	CreatedAt  int64     `json:"created_at,omitempty"`
-	Charter    Charter   `json:"charter"`
+	// AuthorityMode (a team) and HeldBack (a team or a repo) are the owner's
+	// authority settings (decision 0088).
+	AuthorityMode string  `json:"authority_mode,omitempty"`
+	HeldBack      string  `json:"held_back,omitempty"`
+	Name          string  `json:"name"`
+	Kind          string  `json:"kind"`
+	CreatedAt     int64   `json:"created_at,omitempty"`
+	Charter       Charter `json:"charter"`
 	// Settings are the node's overrides of its maturity defaults (decision
 	// 0022). They sit beside the charter and only the owner changes them.
 	Settings map[string]string `json:"settings,omitempty"`
@@ -92,7 +96,7 @@ type CharterChange struct {
 	By       string    `json:"by"`
 }
 
-// Edge is a directed dependency or governance relationship.
+// Edge is a directed dependency, deploy or delivery owner relationship.
 type Edge struct {
 	FromRef *GraphRef `json:"-"`
 	ToRef   *GraphRef `json:"-"`

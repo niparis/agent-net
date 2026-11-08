@@ -160,7 +160,7 @@ func TestDeclineIsRecordedWithReply(t *testing.T) {
 	t.Fatal("missing decline reply")
 }
 
-func TestAlwaysDecisionPreservesGovernanceEdge(t *testing.T) {
+func TestAlwaysDecisionPreservesDeploysEdge(t *testing.T) {
 	s, _ := newTestStore(t)
 	ids, _ := graphSessions(t, s, "provider")
 	if err := s.AddArchitect("advisor", "owner"); err != nil {
@@ -174,7 +174,7 @@ func TestAlwaysDecisionPreservesGovernanceEdge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := protocol.Edge{From: "advisor", To: "provider", Kind: "governs", Mode: "advisor", Rule: "ask"}
+	e := protocol.Edge{From: "advisor", To: "provider", Kind: "deploys", Rule: "ask"}
 	if err = s.SetEdge(e, "owner"); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestAlwaysDecisionPreservesGovernanceEdge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(g.Edges) != 1 || g.Edges[0].Kind != "governs" || g.Edges[0].Mode != "advisor" || g.Edges[0].Rule != "auto" {
+	if len(g.Edges) != 1 || g.Edges[0].Kind != "deploys" || g.Edges[0].Rule != "auto" {
 		t.Fatalf("edges: %#v", g.Edges)
 	}
 }

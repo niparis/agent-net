@@ -31,7 +31,7 @@ func graphFixture() protocol.GraphView {
 		}
 		v.Nodes = append(v.Nodes, n)
 	}
-	v.Edges = []protocol.Edge{{From: "architect", To: "project-01", Kind: "governs"}, {From: "project-01", To: "project-02", Kind: "depends"}, {From: "project-02", To: "project-03", Kind: "deploys"}, {From: "*", To: "project-03", Kind: "depends"}, {From: "project-03", To: "project-04", Kind: "depends"}, {From: "project-04", To: "project-05", Kind: "depends"}}
+	v.Edges = []protocol.Edge{{From: "architect", To: "project-01", Kind: "deploys"}, {From: "project-01", To: "project-02", Kind: "depends"}, {From: "project-02", To: "project-03", Kind: "deploys"}, {From: "*", To: "project-03", Kind: "depends"}, {From: "project-03", To: "project-04", Kind: "depends"}, {From: "project-04", To: "project-05", Kind: "depends"}}
 	return v
 }
 func graphModel(w, h int) Model {

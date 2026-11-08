@@ -24,8 +24,8 @@ func teamRef(kind, id string) *protocol.GraphRef {
 func teamGraphFixture() protocol.GraphView {
 	return protocol.GraphView{
 		Nodes: []protocol.Node{
-			{Ref: teamRef("team", "alpha"), Name: "Alpha", Kind: "team", Active: teamActive(), Charter: protocol.Charter{Purpose: "Shared API work"}},
-			{Ref: teamRef("team", "beta"), Name: "Beta", Kind: "team", Active: teamActive(), Charter: protocol.Charter{Purpose: "Storefront work"}},
+			{Ref: teamRef("team", "alpha"), Name: "Alpha", Kind: "team", Active: teamActive(), Charter: protocol.Charter{Purpose: "Shared API work"}, AuthorityMode: "charter_first", HeldBack: "deploy to production"},
+			{Ref: teamRef("team", "beta"), Name: "Beta", Kind: "team", Active: teamActive(), Charter: protocol.Charter{Purpose: "Storefront work"}, AuthorityMode: "absolute"},
 			{Ref: teamRef("repo", "cogforge"), Name: "cogforge", Kind: "component"},
 			{Ref: teamRef("repo", "shop"), Name: "shop", Kind: "component"},
 			{Ref: teamRef("repo", "homelab"), Name: "homelab", Kind: "component"},
@@ -35,7 +35,7 @@ func teamGraphFixture() protocol.GraphView {
 			{From: "cogforge", To: "alpha", Kind: "member_of", FromRef: teamRef("repo", "cogforge"), ToRef: teamRef("team", "alpha")},
 			{From: "api-architect", To: "alpha", Kind: "member_of", FromRef: teamRef("agent", "api-architect"), ToRef: teamRef("team", "alpha")},
 			{From: "shop", To: "beta", Kind: "member_of", FromRef: teamRef("repo", "shop"), ToRef: teamRef("team", "beta")},
-			{From: "api-architect", To: "cogforge", Kind: "governs", FromRef: teamRef("agent", "api-architect"), ToRef: teamRef("repo", "cogforge")},
+			{From: "api-architect", To: "cogforge", Kind: "deploys", FromRef: teamRef("agent", "api-architect"), ToRef: teamRef("repo", "cogforge")},
 			{From: "cogforge", To: "shop", Kind: "depends", FromRef: teamRef("repo", "cogforge"), ToRef: teamRef("repo", "shop")},
 		},
 	}
@@ -87,7 +87,7 @@ func teamLargeGraphFixture() protocol.GraphView {
 	}
 	v.Edges = append(v.Edges,
 		protocol.Edge{From: "crew-a", To: "crew-b", Kind: "depends", FromRef: teamRef("repo", "crew-a"), ToRef: teamRef("repo", "crew-b")},
-		protocol.Edge{From: "ops", To: "crew-c", Kind: "governs", FromRef: teamRef("agent", "ops"), ToRef: teamRef("repo", "crew-c")},
+		protocol.Edge{From: "ops", To: "crew-c", Kind: "deploys", FromRef: teamRef("agent", "ops"), ToRef: teamRef("repo", "crew-c")},
 		protocol.Edge{From: "crew-b", To: "crew-c", Kind: "depends", FromRef: teamRef("repo", "crew-b"), ToRef: teamRef("repo", "crew-c")},
 		protocol.Edge{From: "crew-a", To: "other-a", Kind: "depends", FromRef: teamRef("repo", "crew-a"), ToRef: teamRef("repo", "other-a")},
 	)
@@ -331,5 +331,127 @@ func TestTeamCreateFormGolden(t *testing.T) {
 		m = keys(m, "tab")
 		m = typeText(m, "Shared API work")
 		golden(t, fmt.Sprintf("team_create_%dx%d", size[0], size[1]), m.testView())
+	}
+}
+
+// The Teams list shows each team's authority mode, and the selected team's
+// meaning and held back text.
+func TestTeamMenuShowsModeAndHeldBack(t *testing.T) {
+	m, _ := teamModel(120, 34)
+	m = keys(m, "T")
+	view := ansi.Strip(m.testView())
+	for _, want := range []string{"charter first", "absolute", "mode: charter first", "carried out unless the member's charter refuses it", "held back: deploy to production", "deleting data, spending money"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Teams view lacks %q:\n%s", want, view)
+		}
+	}
+	m = keys(m, "down")
+	view = ansi.Strip(m.testView())
+	if !strings.Contains(view, "mode: absolute") || !strings.Contains(view, "held back: nothing beyond the always list") {
+		t.Fatalf("second team:\n%s", view)
+	}
+}
+
+// m moves the mode to the next one and u puts the old one back.
+func TestTeamModeKeyWritesAndUndoes(t *testing.T) {
+	m, src := teamModel(120, 34)
+	m = keys(m, "T")
+	m, cmd := press(m, tea.KeyPressMsg{Text: "m", Code: 'm'})
+	if cmd == nil {
+		t.Fatal("m gave no command")
+	}
+	m, _ = press2(m, cmd())
+	q := src.teamWrites[0]
+	if q.Action != "mode" || q.ID != "alpha" || q.Mode != "negotiate" {
+		t.Fatalf("mode request %+v", q)
+	}
+	if !strings.Contains(m.notice.text, "Set the mode of team Alpha to negotiate.") || !strings.Contains(m.notice.text, "u undoes it") {
+		t.Fatalf("result line %+v", m.notice)
+	}
+	m, cmd = press(m, tea.KeyPressMsg{Text: "u", Code: 'u'})
+	if cmd == nil {
+		t.Fatal("u gave no command")
+	}
+	m, _ = press2(m, cmd())
+	q = src.teamWrites[1]
+	if q.Action != "mode" || q.ID != "alpha" || q.Mode != "charter_first" {
+		t.Fatalf("undo request %+v", q)
+	}
+	if !strings.Contains(m.notice.text, "Put the mode of team Alpha back to charter first.") {
+		t.Fatalf("undo line %+v", m.notice)
+	}
+	if _, cmd = press(m, tea.KeyPressMsg{Text: "u", Code: 'u'}); cmd != nil {
+		t.Fatal("a second u had nothing to undo")
+	}
+}
+
+func TestTeamHeldBackFormWritesAndUndoes(t *testing.T) {
+	m, src := teamModel(120, 34)
+	m = keys(m, "T", "h")
+	if m.mode != modeTeamForm {
+		t.Fatalf("h opened mode %v", m.mode)
+	}
+	if got := m.teamForm.in[1].Value(); got != "deploy to production" {
+		t.Fatalf("held back prefilled %q", got)
+	}
+	m.teamForm.in[1].SetValue("deploy to production; schema changes")
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter gave no command")
+	}
+	m, _ = press2(m, cmd())
+	q := src.teamWrites[0]
+	if q.Action != "held_back" || q.ID != "alpha" || q.HeldBack != "deploy to production; schema changes" {
+		t.Fatalf("held back request %+v", q)
+	}
+	if !strings.Contains(m.notice.text, "Updated what team Alpha may not do.") {
+		t.Fatalf("result line %+v", m.notice)
+	}
+	m, cmd = press(m, tea.KeyPressMsg{Text: "u", Code: 'u'})
+	m, _ = press2(m, cmd())
+	if q = src.teamWrites[1]; q.Action != "held_back" || q.HeldBack != "deploy to production" {
+		t.Fatalf("undo request %+v", q)
+	}
+}
+
+// A failed write leaves nothing to undo.
+func TestTeamModeFailureKeepsNoUndo(t *testing.T) {
+	m, src := teamModel(120, 34)
+	src.teamErr = errors.New("boom")
+	m = keys(m, "T")
+	m, cmd := press(m, tea.KeyPressMsg{Text: "m", Code: 'm'})
+	m, _ = press2(m, cmd())
+	if _, cmd = press(m, tea.KeyPressMsg{Text: "u", Code: 'u'}); cmd != nil {
+		t.Fatal("u undid a write that failed")
+	}
+}
+
+// A repo's held back text is set from the Teams list on the selected repo.
+func TestRepoHeldBackFormWrites(t *testing.T) {
+	m, src := teamModel(120, 34)
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "cogforge"})
+	m = keys(m, "T", "H")
+	if m.mode != modeTeamForm {
+		t.Fatalf("H opened mode %v", m.mode)
+	}
+	m.teamForm.in[1].SetValue("force pushes")
+	m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter gave no command")
+	}
+	m, _ = press2(m, cmd())
+	q := src.teamWrites[0]
+	if q.Action != "repo_held_back" || q.ID != "cogforge" || q.HeldBack != "force pushes" {
+		t.Fatalf("repo held back request %+v", q)
+	}
+}
+
+// The focused team's header names the mode and what is held back.
+func TestTeamGraphHeaderShowsMode(t *testing.T) {
+	m, _ := teamModel(120, 34)
+	m.setTeamFilter("alpha")
+	view := ansi.Strip(m.testView())
+	if !strings.Contains(view, "charter first") || !strings.Contains(view, "held back: deploy to production") {
+		t.Fatalf("header:\n%s", view)
 	}
 }

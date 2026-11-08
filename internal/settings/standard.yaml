@@ -194,8 +194,7 @@ settings:
     kind: rule
     type: text
     levels: [network]
-    slots: [modes]
-    default: "merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode {{modes}} over this node"
+    default: "merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; your repo lead or team lead approves in a message from them"
     live: true
   - key: delivery.merge_text_ask
     rows: [128]
@@ -337,14 +336,6 @@ settings:
     type: bool
     levels: [network]
     default: true
-    live: true
-  - key: delivery.delegated_approver_modes
-    rows: [130]
-    description: Governance modes that may approve delegated merges.
-    kind: rule
-    type: set
-    levels: [network]
-    default: [owner, arbiter]
     live: true
   - key: delivery.trailer_worker
     rows: [135]
@@ -1070,7 +1061,7 @@ ledger:
   - {row: 127, keys: [delivery.tests_before_merge, delivery.test_text_optional, delivery.test_text_suite, delivery.test_text_suite_new_tests, delivery.test_text_suite_new_tests_review], step: 6}
   - {row: 128, keys: [delivery.merge_authority, delivery.merge_text_full, delivery.merge_text_delegated, delivery.merge_text_ask], step: 6}
   - {row: 129, keys: [delivery.merge_authority], step: 6}
-  - {row: 130, keys: [delivery.delegated_approver_modes], step: 6}
+  - {row: 130, code: "delegated approvers are the leads above the node and the owner"}
   - {row: 131, keys: [delivery.caller_review_and_merge], step: 6}
   - {row: 132, keys: [delivery.deploy_rule, delivery.deploy_text_brief, delivery.deploy_text_ask, delivery.deploy_text_owner], step: 6}
   - {row: 133, keys: [delivery.worker_branch_prefix], step: 6}

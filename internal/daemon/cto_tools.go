@@ -580,7 +580,6 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		Attr    string `json:"attr"`
 		From    string `json:"from"`
 		Kind    string `json:"kind"`
-		Mode    string `json:"mode"`
 	}
 	_ = json.Unmarshal(raw, &a)
 	text := auditName
@@ -605,7 +604,7 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		case "charter_set":
 			text = fmt.Sprintf("charter %s: %s updated · u to undo", a.Node, a.Attr)
 		case "edge_set":
-			text = fmt.Sprintf("edge %s → %s set (%s, %s) · u to undo", a.From, a.To, a.Kind, a.Mode)
+			text = fmt.Sprintf("edge %s → %s set (%s) · u to undo", a.From, a.To, a.Kind)
 		case "send":
 			text = fmt.Sprintf("sent to %s", a.To)
 		case "worker_start":

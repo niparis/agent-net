@@ -85,3 +85,47 @@ func TestHandoffRefusals(t *testing.T) {
 		}
 	}
 }
+
+// A lead's order, sent through the daemon, reaches the member with agent-net's
+// order note. The same flag from the member to its lead is dropped and the
+// sender is told.
+func TestOrderFlagEndToEnd(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{adapter: &fakeAdapter{harness: "fake"}, cmdline: "pi"})
+	st := g.gw.Store()
+	if _, err := n.d.call(context.Background(), "hello", map[string]any{"hostname": "fixture", "version": "v0.4.145", "graph_refs": true}); err != nil {
+		t.Fatal(err)
+	}
+	waitGraphCutover(t, g)
+	if _, err := st.AddProjects(n.d.cfg.NodeID, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "lead", Path: "/w/lead"}, {Name: "member", Path: "/w/member"}}}); err != nil {
+		t.Fatal(err)
+	}
+	lead, leadID := helloPi(t, n, "lead", "/w/lead", true)
+	member, memberID := helloPi(t, n, "member", "/w/member", true)
+	owner, repo := protocol.GraphRef{Kind: "agent", ID: "lead"}, protocol.GraphRef{Kind: "repo", ID: "member"}
+	if err := st.WriteTeam(protocol.TeamWrite{Action: "create", ID: "forge", Name: "forge", Owner: &owner}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.WriteTeam(protocol.TeamWrite{Action: "membership", ID: "forge", Member: &repo}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := lead.call("send", map[string]any{"to": memberID, "body": "freeze the schema", "order": true}); err != nil {
+		t.Fatal(err)
+	}
+	got := member.nextPush()
+	if got.From != leadID || got.Body != "freeze the schema" || !got.IsOrder ||
+		!strings.Contains(got.AuthorityNote, "order from your lead lead (team forge, mode charter first)") {
+		t.Fatalf("order as delivered: %+v", got)
+	}
+
+	// A member cannot give its lead an order.
+	if _, err := member.call("send", map[string]any{"to": leadID, "body": "do it now", "order": true}); err != nil {
+		t.Fatal(err)
+	}
+	back := lead.nextPush()
+	if back.From != memberID || back.IsOrder || back.AuthorityNote != "" {
+		t.Fatalf("a member's order flag was kept: %+v", back)
+	}
+}

@@ -191,6 +191,9 @@ func (s *Store) graphForRef(ref *protocol.GraphRef) (protocol.Graph, error) {
 			return g, err
 		}
 		n.MaxAgents, n.AgentCount, n.OverMax = limit.MaxAgents, limit.AgentCount, limit.OverMax
+		if n.HeldBack, err = repoHeldBack(s.db, r.ID); err != nil {
+			return g, err
+		}
 		g.Nodes = append(g.Nodes, n)
 	}
 	for _, a := range agents {

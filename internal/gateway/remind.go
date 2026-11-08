@@ -26,7 +26,7 @@ const remindableRequest = ` FROM messages q
  AND COALESCE((SELECT e.rule FROM graph_edges e
  WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dp.project,'')
  AND e.target<>'' AND (e.source=COALESCE(NULLIF(src.repo_project,''),sp.project,'') OR e.source='*')
- AND e.kind IN ('depends','governs','deploys')
+ AND e.kind IN ('depends','deploys')
  ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END,e.kind LIMIT 1),'normal') NOT IN ('never','ask')
  AND dst.limited_until<=?`
 

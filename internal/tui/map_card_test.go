@@ -57,16 +57,14 @@ func TestMapCardShowsWildcardAsAllProjectsAndRuleOnlyWhenNotNormal(t *testing.T)
 	}
 }
 
-func TestMapCardGovernedByAppearsOnlyWithAnArchitect(t *testing.T) {
+// A card never shows a "governed by" line: governs is gone (decision 0088).
+func TestMapCardHasNoGovernedByLine(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, richGraph()))
-	m.mp.selected = "tenebrae"
-	if v := ansi.Strip(m.testView()); !strings.Contains(v, "governed by: wbg-architect (advisor)") {
-		t.Fatal(v)
-	}
-	m.mp.selected = "homelab"
-	v := ansi.Strip(m.testView())
-	if strings.Contains(v, "governed by") || strings.Contains(strings.ToLower(v), "add architect") {
-		t.Fatal(v)
+	for _, node := range []string{"tenebrae", "homelab"} {
+		m.mp.selected = node
+		if v := ansi.Strip(m.testView()); strings.Contains(v, "governed by") || strings.Contains(v, "governs") {
+			t.Fatal(v)
+		}
 	}
 }
 
@@ -166,7 +164,7 @@ func TestMapCardLegendLivesInHelp(t *testing.T) {
 	m.helpAll = true
 	shown := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
 	for _, want := range []string{
-		"Legend", "consumer uses provider", "advisor, arbiter or owner",
+		"Legend", "consumer uses provider",
 		"deployer runs the app's deploys", "delivered; B judges it",
 		"delivered with a trust note", "inside B's merge authority and refusals",
 		"held in the Inbox", "refused", "specific edge beats", "all projects",

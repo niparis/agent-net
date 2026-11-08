@@ -36,8 +36,6 @@ func NeighborCharters(g Graph, name string) string {
 		}
 		p := 4
 		switch e.Kind {
-		case "governs":
-			p = 1
 		case "deploys":
 			p = 2
 		case "depends":

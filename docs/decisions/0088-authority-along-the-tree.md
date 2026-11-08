@@ -97,6 +97,7 @@ Rules text never grants or removes authority.
 ## Storage
 
 Migration 143 adds `teams.authority_mode`, `teams.held_back`,
-`messages.is_order` and the table `repo_held_back`. The column checks make the
+`messages.is_order` and the table `repo_held_back`. Migration 144 deletes any
+`governs` edge and the setting `delivery.delegated_approver_modes`. The column checks make the
 migration safe to replay. Team history snapshots keep both new fields. An older
 snapshot has neither key, so an undo leaves those two fields alone.

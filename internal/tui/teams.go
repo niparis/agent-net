@@ -14,15 +14,18 @@ import (
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
-// Teams are labels. They change no request rule, setting, authority or
-// delivery behavior. The Graph can show one Team at a time, and the owner can
-// create, rename, fill and archive Teams from the Graph tab.
+// A Team has an authority mode and a held back text (decision 0088). The Graph
+// can show one Team at a time, and the owner can create, rename, fill, archive
+// and set the mode and held back text of Teams from the Graph tab. The owner
+// can undo the last mode or held back change with u.
 
 // teamEntry is one active Team as the Graph reads it.
 type teamEntry struct {
 	ID          string
 	Name        string
 	Purpose     string
+	Mode        string
+	HeldBack    string
 	MemberCount int
 }
 
@@ -39,7 +42,7 @@ func teamsOf(v protocol.GraphView) []teamEntry {
 			continue
 		}
 		index[n.Ref.ID] = len(out)
-		out = append(out, teamEntry{ID: n.Ref.ID, Name: n.Name, Purpose: n.Charter.Purpose})
+		out = append(out, teamEntry{ID: n.Ref.ID, Name: n.Name, Purpose: n.Charter.Purpose, Mode: protocol.NormalAuthorityMode(n.AuthorityMode), HeldBack: n.HeldBack})
 	}
 	for _, e := range v.Edges {
 		if e.Kind != "member_of" || e.ToRef == nil || e.ToRef.Kind != "team" {
@@ -204,6 +207,7 @@ func (m Model) teamWriteCmd(q protocol.TeamWrite, done string) tea.Cmd {
 
 func (m Model) onTeamWrite(r teamWriteMsg) (Model, tea.Cmd) {
 	if r.err != nil {
+		m.teamUndo = nil
 		m.fail(teamWriteError(r.err))
 	} else {
 		m.say(r.done)
@@ -318,8 +322,54 @@ func (m Model) teamMenuKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.toggleTeamMember(team)
+	case "authority mode":
+		if !ok {
+			m.fail("No team yet. Press c to make one.")
+			return m, nil
+		}
+		next := protocol.NextAuthorityMode(team.Mode)
+		m.teamUndo = &teamUndoStep{q: protocol.TeamWrite{Action: "mode", ID: team.ID, Mode: team.Mode},
+			done: "Put the mode of team " + sanitize(team.Name) + " back to " + protocol.AuthorityModeLabel(team.Mode) + "."}
+		return m, m.teamWriteCmd(protocol.TeamWrite{Action: "mode", ID: team.ID, Mode: next},
+			"Set the mode of team "+sanitize(team.Name)+" to "+protocol.AuthorityModeLabel(next)+". u undoes it.")
+	case "edit held back":
+		if !ok {
+			m.fail("No team yet. Press c to make one.")
+			return m, nil
+		}
+		m.teamForm = newTeamHeldBackForm(team.ID, team.Name, team.HeldBack, false)
+		m.mode = modeTeamForm
+		return m, m.teamForm.in[1].Focus()
+	case "repo held back":
+		ref := m.selectedRef()
+		if ref == nil || ref.Kind != "repo" {
+			m.fail("Select a repo on the Graph first.")
+			return m, nil
+		}
+		name := m.graphName(graphRefKey(ref))
+		held := ""
+		if n, found := m.mapNode(graphRefKey(ref)); found {
+			held = n.HeldBack
+		}
+		m.teamForm = newTeamHeldBackForm(ref.ID, name, held, true)
+		m.mode = modeTeamForm
+		return m, m.teamForm.in[1].Focus()
+	case "undo team setting":
+		if m.teamUndo == nil {
+			m.fail("Nothing to undo.")
+			return m, nil
+		}
+		step := *m.teamUndo
+		m.teamUndo = nil
+		return m, m.teamWriteCmd(step.q, step.done)
 	}
 	return m, nil
+}
+
+// teamUndoStep is the write that puts the last mode or held back change back.
+type teamUndoStep struct {
+	q    protocol.TeamWrite
+	done string
 }
 
 func (m Model) toggleTeamMember(team teamEntry) (Model, tea.Cmd) {
@@ -348,13 +398,13 @@ func (m Model) toggleTeamMember(team teamEntry) (Model, tea.Cmd) {
 func (m Model) teamsView(w, rows int) []string {
 	teams := m.activeTeams()
 	out := []string{section("Teams", w)}
-	const nameW, memberW = 18, 9
+	const nameW, memberW, modeW = 18, 9, 15
 	if len(teams) == 0 {
 		out = append(out, sDim.Render(clip("  No teams yet. c creates one. Team writes wait for all machines to upgrade.", w)))
 	} else {
-		out = append(out, sDim.Render(clip("  "+cell("name", nameW)+cell("members", memberW)+"purpose", w)))
+		out = append(out, sDim.Render(clip("  "+cell("name", nameW)+cell("members", memberW)+cell("mode", modeW)+"purpose", w)))
 		i := min(max(m.teamIndex, 0), len(teams)-1)
-		visible := max(rows-7, 1)
+		visible := max(rows-9, 1)
 		start := 0
 		if i >= visible {
 			start = i - visible + 1
@@ -365,12 +415,20 @@ func (m Model) teamsView(w, rows int) []string {
 			if j == i {
 				marker = "> "
 			}
-			line := marker + cell(t.Name, nameW) + cell(fmt.Sprintf("%d", t.MemberCount), memberW) + sanitize(t.Purpose)
+			line := marker + cell(t.Name, nameW) + cell(fmt.Sprintf("%d", t.MemberCount), memberW) + cell(protocol.AuthorityModeLabel(t.Mode), modeW) + sanitize(t.Purpose)
 			if j == i {
 				line = graphSelectionStyle.Render(line)
 			}
 			out = append(out, clip(line, w))
 		}
+	}
+	if team, ok := m.currentTeam(); ok {
+		out = append(out, sDim.Render(clip("  mode: "+protocol.AuthorityModeLabel(team.Mode)+" - "+protocol.AuthorityModeMeaning(team.Mode), w)))
+		held := "nothing beyond the always list"
+		if h := strings.TrimSpace(team.HeldBack); h != "" {
+			held = sanitize(h)
+		}
+		out = append(out, sDim.Render(clip("  held back: "+held+" (always: "+protocol.AlwaysHeldBack+")", w)))
 	}
 	out = append(out, "")
 	filter := "  graph: all"
@@ -424,6 +482,9 @@ func (m Model) teamMemberAction(label, old string) string {
 type teamForm struct {
 	rename      bool
 	purposeOnly bool
+	heldOnly    bool // sets held back text; repo says id is a Repo, not a Team
+	repo        bool
+	old         string // the held back text when the form opened
 	id          string
 	expectName  string
 	in          [2]textinput.Model
@@ -439,6 +500,18 @@ func newTeamPurposeForm(id, name, purpose string) teamForm {
 	f.in[0].SetValue(name)
 	f.in[0].CursorEnd()
 	f.in[1].SetValue(purpose)
+	f.in[1].CursorEnd()
+	f.cur = 1
+	return f
+}
+
+func newTeamHeldBackForm(id, name, held string, repo bool) teamForm {
+	f := newTeamForm(false, "", "")
+	f.heldOnly, f.repo, f.old = true, repo, held
+	f.id = id
+	f.expectName = name
+	f.in[0].SetValue(name)
+	f.in[1].SetValue(held)
 	f.in[1].CursorEnd()
 	f.cur = 1
 	return f
@@ -476,17 +549,17 @@ func (m Model) teamFormKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.say("Team change cancelled.")
 		return m, nil
 	case "tab field", "next field":
-		if !f.rename && !f.purposeOnly && f.cur == 0 {
+		if !f.rename && !f.purposeOnly && !f.heldOnly && f.cur == 0 {
 			return m, f.focus(1)
 		}
 		return m, nil
 	case "previous field":
-		if !f.purposeOnly && f.cur > 0 {
+		if !f.purposeOnly && !f.heldOnly && f.cur > 0 {
 			return m, f.focus(0)
 		}
 		return m, nil
 	case "submit":
-		if !f.rename && !f.purposeOnly && f.cur == 0 {
+		if !f.rename && !f.purposeOnly && !f.heldOnly && f.cur == 0 {
 			return m, f.focus(1)
 		}
 		return m.submitTeamForm()
@@ -499,6 +572,19 @@ func (m Model) teamFormKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) submitTeamForm() (tea.Model, tea.Cmd) {
 	f := &m.teamForm
+	if f.heldOnly {
+		held := sanitize(strings.TrimSpace(f.in[1].Value()))
+		q := protocol.TeamWrite{Action: "held_back", ID: f.id, HeldBack: held}
+		done := "Updated what team " + sanitize(f.expectName) + " may not do."
+		if f.repo {
+			q.Action = "repo_held_back"
+			done = "Updated what repo " + sanitize(f.expectName) + " may not do."
+		}
+		m.teamUndo = &teamUndoStep{q: protocol.TeamWrite{Action: q.Action, ID: f.id, HeldBack: f.old},
+			done: "Put back what " + sanitize(f.expectName) + " may not do."}
+		m.mode = modeTeams
+		return m, m.teamWriteCmd(q, done)
+	}
 	if f.purposeOnly {
 		q := protocol.TeamWrite{Action: "purpose", ID: f.id, Purpose: sanitize(strings.TrimSpace(f.in[1].Value()))}
 		done := "Updated the purpose of team " + sanitize(f.expectName) + "."
@@ -532,11 +618,18 @@ func (m Model) teamFormView(w, rows int) []string {
 		title = "Purpose of " + sanitize(f.expectName)
 		note = "  The Team ID, name and history stay the same."
 	}
+	if f.heldOnly {
+		title = "Held back from " + sanitize(f.expectName)
+		note = "  Free text. The owner always holds back " + protocol.AlwaysHeldBack + "."
+	}
 	out := []string{section(title, w)}
 	const labelW = 9
 	labels := [2]string{"Name", "Purpose"}
+	if f.heldOnly {
+		labels[1] = "Held back"
+	}
 	for i := range labels {
-		if f.rename && i == 1 || f.purposeOnly && i == 0 {
+		if f.rename && i == 1 || (f.purposeOnly || f.heldOnly) && i == 0 {
 			continue
 		}
 		marker := "  "

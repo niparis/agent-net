@@ -44,7 +44,7 @@ func TestGroupSendRefusedForNormalAgent(t *testing.T) {
 	pi, _ := helloPi(t, n, "sender", "/w/sender", true)
 
 	_, err := pi.call("send", map[string]any{"to_set": map[string]any{"harness": "fake"}, "body": "hello group"})
-	if err == nil || err.Error() != "group messages are for the CTO and advisor nodes only; send to one session with to" {
+	if err == nil || err.Error() != "group messages are for the CTO only; send to one session with to" {
 		t.Fatalf("group send from a normal agent: %v", err)
 	}
 	if len(fa.delivered()) != 0 {
@@ -116,8 +116,9 @@ func TestCTOGroupSendReachesEveryRecipientOnce(t *testing.T) {
 	}
 }
 
-// An advisor node is the source of a governs edge in mode advisor.
-func TestAdvisorGroupSendReachesEveryRecipientOnce(t *testing.T) {
+// An architect node has no group right: only the CTO may send to a group
+// (decision 0088).
+func TestArchitectGroupSendIsRefused(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
@@ -133,20 +134,14 @@ func TestAdvisorGroupSendReachesEveryRecipientOnce(t *testing.T) {
 	if err := st.AddArchitect("architect", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetEdge(protocol.Edge{From: "architect", To: "shop", Kind: "governs", Mode: "advisor"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-
 	advisor, _ := helloPi(t, n, "advisor", "/w/architect", true)
-	raw, err := advisor.call("send", map[string]any{"to_set": map[string]any{"harness": "fake"}, "body": "advice"})
-	if err != nil {
-		t.Fatalf("advisor group send: %v", err)
+	_, err := advisor.call("send", map[string]any{"to_set": map[string]any{"harness": "fake"}, "body": "advice"})
+	if err == nil || err.Error() != "group messages are for the CTO only; send to one session with to" {
+		t.Fatalf("architect group send: %v", err)
 	}
-	got := groupReceipts(t, raw)
-	if len(got.Sent) != 2 {
-		t.Fatalf("receipts: %+v", got.Sent)
+	if len(fa.delivered()) != 0 {
+		t.Fatalf("refused group send delivered %d messages", len(fa.delivered()))
 	}
-	eventually(t, "both recipients got the message", func() bool { return len(fa.delivered()) == 2 })
 }
 
 // as_owner is CTO only.

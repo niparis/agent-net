@@ -1,14 +1,14 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
 Teams ──────────────────────────────────────────────────────────────────────────
-  name              members  purpose
-  Alpha             2        Shared API work
-> Beta              1        Storefront work
+  name              members  mode           purpose
+  Alpha             2        charter first  Shared API work
+> Beta              1        absolute       Storefront work
+  mode: absolute - an order is carried out like the owner's instruction; the me…
+  held back: nothing beyond the always list (always: deleting data, spending mo…
 
   graph: all
   member: homelab (no team)
   space adds homelab to Beta
-
-
 
 
 
