@@ -169,7 +169,7 @@ func Load(data []byte) (*Recipe, error) {
 			}
 		}
 		for m, v := range d.ByMaturity {
-			if !contains([]string{"early", "growing", "mature", "critical"}, m) {
+			if !contains([]string{"experimental", "early", "growing", "mature", "critical"}, m) {
 				return nil, fmt.Errorf("invalid maturity %s", m)
 			}
 			if _, err := d.yamlValue(&v); err != nil {

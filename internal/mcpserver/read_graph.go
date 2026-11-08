@@ -155,6 +155,8 @@ func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
 				maturity = node.Charter.Maturity
 			}
 			charter = &protocol.ReadCharter{
+				Maturity: node.Charter.Maturity, MaturityNote: node.Charter.MaturityNote,
+				Escalate: node.Charter.Escalate, Rules: node.Charter.Rules, Sources: node.Charter.Sources,
 				Purpose:         node.Charter.Purpose,
 				Accepts:         roCharterList(node.Charter.Accepts),
 				Refuses:         roCharterList(node.Charter.Refuses),

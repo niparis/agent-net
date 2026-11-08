@@ -15,12 +15,16 @@ Keys · Graph ──────────────────────
   m                      toggle all message and owner lines
   t                      show all nodes, then each active team in turn
   T                      create, rename, fill or archive a team
+  e                      charter
+  E                      global charter
 
  Graph find
   enter                  select the first match
   backspace, ctrl+h      delete
 
  Agent card
+  e                      charter
+  E                      global charter
   enter                  open Sessions filtered to this agent's project
   n                      start a new session in this project (the same form, filled from here)
   t                      open Tools filtered to this node
@@ -31,10 +35,6 @@ Keys · Graph ──────────────────────
   l                      choose or clear the repo lead
   h                      hide or unhide this project
   H                      show hidden projects
-  ctrl+u/d, pgup/pgdn    scroll the card: charter, rules and learned changes
-
-  live state             needs you: highlighted; busy: bright; idle: normal; offline: dim
-  ★                      team lead; each box lists the team members
   more below
 
 up/down scroll  ? all screens  esc close

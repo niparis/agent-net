@@ -8,14 +8,14 @@ governed by: trading-architect (owner)
 
 IN 1                                     OUT 1
 tenebrae ──▶ depends ask                 ──▶ shop depends auto
-Card 1-7/14  ctrl+u/d scroll ───────────────────────────────────────────────────
+Card 1-7/11  ctrl+u/d scroll ───────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 accepts          Generic endpoints and bug fixes.
 refuses          Client-specific endpoints.
-consumers        tenebrae, shop
 escalate         Breaking API changes.
-needs            MCP: tenebrae-library
-notes            Deploy through homelab.
+Rules ──────────────────────────────────────────────────────────────────────────
+tests_before_merge optional               maturity default
+merge_authority    full                   maturity default
 RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

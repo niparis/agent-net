@@ -39,7 +39,8 @@ const (
 	modeIntegrations // the setup integrations of the whole network (integrations.go)
 	modeTeams        // the Graph tab's Team list (teams.go)
 	modeLeadPicker   // select a repo or team lead
-	modeTeamForm     // new or renamed Team (teams.go)
+	modeCharterForm
+	modeTeamForm // new or renamed Team (teams.go)
 )
 
 // A result is shown in the key line at full brightness for its hold, then

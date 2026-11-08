@@ -1082,7 +1082,46 @@ CREATE TRIGGER IF NOT EXISTS worker_runs_version_update AFTER UPDATE ON worker_r
  BEGIN UPDATE table_versions SET n = n + 1 WHERE name = 'worker_runs'; END;
 CREATE TRIGGER IF NOT EXISTS worker_runs_version_delete AFTER DELETE ON worker_runs
  BEGIN UPDATE table_versions SET n = n + 1 WHERE name = 'worker_runs'; END;
-`, `SELECT 1 /* session worker retained column */;`}
+`, `SELECT 1 /* session worker retained column */;`, `
+-- Charter levels and enum cutover. All statements are safe to replay.
+CREATE TABLE IF NOT EXISTS charter_values (
+ level TEXT NOT NULL CHECK(level IN ('global','team')),
+ scope TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL,
+ updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL,
+ PRIMARY KEY(level,scope,attr), CHECK(level<>'global' OR scope=''));
+
+INSERT INTO graph_charter(node,attr,value,updated_at,updated_by)
+ SELECT node,'maturity_note',substr(value,instr(value,' - ')+3),updated_at,updated_by
+ FROM graph_charter WHERE attr='maturity' AND instr(value,' - ')>0
+ ON CONFLICT(node,attr) DO NOTHING;
+UPDATE graph_charter SET value=CASE lower(substr(trim(value),1,instr(trim(value)||' ',' ')-1))
+ WHEN 'experimental' THEN 'experimental' WHEN 'early' THEN 'early'
+ WHEN 'growing' THEN 'growing' WHEN 'mature' THEN 'mature' ELSE 'early' END
+ WHERE attr='maturity' AND value<>'';
+INSERT INTO graph_charter(node,attr,value,updated_at,updated_by)
+ SELECT node,'rules',group_concat(label || char(10) || value,char(10)||char(10)),max(updated_at),'migration'
+ FROM (SELECT *,CASE attr WHEN 'consumers' THEN 'Consumers:' WHEN 'needs' THEN 'Needs:' ELSE 'Notes:' END AS label
+ FROM graph_charter WHERE attr IN ('consumers','needs','notes') AND value<>'' ORDER BY node,attr)
+ GROUP BY node
+ ON CONFLICT(node,attr) DO UPDATE SET value=CASE WHEN graph_charter.value='' THEN excluded.value ELSE graph_charter.value||char(10)||char(10)||excluded.value END;
+DELETE FROM graph_charter WHERE attr IN ('consumers','needs','notes');
+
+INSERT INTO agent_charter(agent_id,attr,value,updated_at,updated_by)
+ SELECT agent_id,'maturity_note',substr(value,instr(value,' - ')+3),updated_at,updated_by
+ FROM agent_charter WHERE attr='maturity' AND instr(value,' - ')>0
+ ON CONFLICT(agent_id,attr) DO NOTHING;
+UPDATE agent_charter SET value=CASE lower(substr(trim(value),1,instr(trim(value)||' ',' ')-1))
+ WHEN 'experimental' THEN 'experimental' WHEN 'early' THEN 'early'
+ WHEN 'growing' THEN 'growing' WHEN 'mature' THEN 'mature' ELSE 'early' END
+ WHERE attr='maturity' AND value<>'';
+INSERT INTO agent_charter(agent_id,attr,value,updated_at,updated_by)
+ SELECT agent_id,'rules',group_concat(label || char(10) || value,char(10)||char(10)),max(updated_at),'migration'
+ FROM (SELECT *,CASE attr WHEN 'consumers' THEN 'Consumers:' WHEN 'needs' THEN 'Needs:' ELSE 'Notes:' END AS label
+ FROM agent_charter WHERE attr IN ('consumers','needs','notes') AND value<>'' ORDER BY agent_id,attr)
+ GROUP BY agent_id
+ ON CONFLICT(agent_id,attr) DO UPDATE SET value=CASE WHEN agent_charter.value='' THEN excluded.value ELSE agent_charter.value||char(10)||char(10)||excluded.value END;
+DELETE FROM agent_charter WHERE attr IN ('consumers','needs','notes');
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {

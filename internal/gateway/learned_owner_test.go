@@ -44,8 +44,8 @@ func TestLearnedOwnerReviewAndUndo(t *testing.T) {
 }
 func TestLearnedViewedIsPerNodeAndMonotonic(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
-	a := insertLearned(t, s, "app", "needs", "", "add", "ops backups", "owner")
-	insertLearned(t, s, "ops", "needs", "", "add", "app docs", "owner")
+	a := insertLearned(t, s, "app", "rules", "", "add", "ops backups", "owner")
+	insertLearned(t, s, "ops", "rules", "", "add", "app docs", "owner")
 	if err := s.ProcessLearned(); err != nil {
 		t.Fatal(err)
 	}
@@ -78,11 +78,11 @@ func TestLearnedGatewayRequiresOwner(t *testing.T) {
 
 func TestLearnedViewedTracksApplicationOrder(t *testing.T) {
 	s, c, _, _ := learnedProjects(t)
-	early := insertLearned(t, s, "app", "needs", "", "add", "later item", "owner")
+	early := insertLearned(t, s, "app", "rules", "", "add", "later item", "owner")
 	if _, err := s.db.Exec(`UPDATE learned_suggestions SET ready_at=? WHERE id=?`, c.t.Add(time.Minute).UnixNano(), early); err != nil {
 		t.Fatal(err)
 	}
-	later := insertLearned(t, s, "app", "needs", "", "add", "first item", "owner")
+	later := insertLearned(t, s, "app", "rules", "", "add", "first item", "owner")
 	if err := s.ProcessLearned(); err != nil {
 		t.Fatal(err)
 	}

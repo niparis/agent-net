@@ -43,7 +43,7 @@ func TestWorkerBaseAndProjectRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.register(t, repo)
-	if err := g.gw.Store().SetCharter("shop", "maturity", "mature - run the suite.", "owner"); err != nil {
+	if err := g.gw.Store().SetCharter("shop", "maturity", "mature", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	res, err := w.startDefault(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "do work", Base: "feature"})
@@ -56,7 +56,7 @@ func TestWorkerBaseAndProjectRules(t *testing.T) {
 	if !strings.Contains(res.Task.Body, "Project rules for workers\n\nUse the project rules.") {
 		t.Fatalf("missing project rules: %s", res.Task.Body)
 	}
-	charter := strings.Index(res.Task.Body, "Charter of shop\nmaturity: mature - run the suite.")
+	charter := strings.Index(res.Task.Body, "Charter of shop\nmaturity: mature")
 	rules := strings.Index(res.Task.Body, "Project rules for workers")
 	task := strings.Index(res.Task.Body, "\n\nTask:\ndo work")
 	if charter < 0 || !(rules < charter && charter < task) {

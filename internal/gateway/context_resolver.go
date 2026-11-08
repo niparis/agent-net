@@ -86,6 +86,9 @@ func (s *Store) resolveContext(session, callerOverride string, isRun bool) (reso
 	if err != nil {
 		return resolvedContext{}, err
 	}
+	if harness == "cto" {
+		project = ""
+	}
 	c, err := s.resolveRepoContext(project)
 	if err != nil {
 		return c, err
@@ -109,43 +112,13 @@ func (s *Store) resolveContext(session, callerOverride string, isRun bool) (reso
 		return c, nil
 	}
 
-	rows, err := s.db.Query(`SELECT attr,value FROM agent_charter WHERE agent_id=? ORDER BY attr`, c.Agent)
-	if err != nil {
-		return c, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			return c, err
-		}
-		switch key {
-		case "purpose":
-			c.AgentCharter.Purpose = value
-		case "maturity":
-			c.AgentCharter.Maturity = value
-		case "accepts":
-			c.AgentCharter.Accepts = value
-		case "refuses":
-			c.AgentCharter.Refuses = value
-		case "feature_requests":
-			c.AgentCharter.FeatureRequests = value
-		case "consumers":
-			c.AgentCharter.Consumers = value
-		case "escalate":
-			c.AgentCharter.Escalate = value
-		case "needs":
-			c.AgentCharter.Needs = value
-		case "notes":
-			c.AgentCharter.Notes = value
-		}
-	}
-	return c, rows.Err()
+	c.AgentCharter, err = s.EffectiveCharter(c.Repo, c.Agent, "")
+	return c, err
 }
 
 func (c resolvedContext) agentText() string {
 	var b strings.Builder
-	for _, a := range []struct{ key, value string }{{"purpose", c.AgentCharter.Purpose}, {"maturity", c.AgentCharter.Maturity}, {"accepts", c.AgentCharter.Accepts}, {"refuses", c.AgentCharter.Refuses}, {"feature_requests", c.AgentCharter.FeatureRequests}, {"consumers", c.AgentCharter.Consumers}, {"escalate", c.AgentCharter.Escalate}, {"needs", c.AgentCharter.Needs}, {"notes", c.AgentCharter.Notes}} {
+	for _, a := range []struct{ key, value string }{{"purpose", c.AgentCharter.Purpose}, {"maturity", c.AgentCharter.Maturity}, {"accepts", c.AgentCharter.Accepts}, {"refuses", c.AgentCharter.Refuses}, {"feature_requests", c.AgentCharter.FeatureRequests}, {"escalate", c.AgentCharter.Escalate}, {"maturity_note", c.AgentCharter.MaturityNote}, {"rules", c.AgentCharter.Rules}} {
 		if a.value != "" {
 			fmt.Fprintf(&b, "%s: %s\n", a.key, a.value)
 		}

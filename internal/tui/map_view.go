@@ -106,10 +106,9 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 		{"autonomy", protocol.NodeAutonomy(node.Settings)},
 		{"accepts", node.Charter.Accepts},
 		{"refuses", node.Charter.Refuses},
-		{"consumers", node.Charter.Consumers},
+		{"maturity_note", node.Charter.MaturityNote},
 		{"escalate", node.Charter.Escalate},
-		{"needs", node.Charter.Needs},
-		{"notes", node.Charter.Notes},
+		{"rules", node.Charter.Rules},
 	} {
 		add(mapCharterLines(a.name, a.value, width)...)
 	}

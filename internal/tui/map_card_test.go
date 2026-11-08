@@ -18,14 +18,15 @@ func richGraph() protocol.GraphView {
 		if g.Nodes[i].Name == "tenebrae" {
 			g.Nodes[i].Charter = protocol.Charter{
 				Purpose:         "Research platform that turns papers, figures and strategies into a searchable library for the trading desk, with citations kept for every claim.",
-				Maturity:        "mature - stable since spring",
+				Maturity:        "mature",
+				MaturityNote:    "stable since spring",
 				Accepts:         "New document sources, retrieval fixes, and schema changes that keep old ids working.",
 				Refuses:         "Anything that writes to the trading accounts; one-off client reports.",
 				FeatureRequests: "Open an issue in the repo; the architect triages them every Monday.",
-				Consumers:       "cogforge, shop, the nightly report job",
-				Escalate:        "Data loss, or a change of the public ids.",
-				Needs:           "MCP: tenebrae-library; a GPU box for embeddings.",
-				Notes:           "Deploys go through homelab. Keep the library read only on laptops.",
+
+				Escalate: "Data loss, or a change of the public ids.",
+
+				Rules: "Consumers: cogforge, shop, the nightly report job. Needs: MCP: tenebrae-library; a GPU box for embeddings. Notes: Deploys go through homelab. Keep the library read only on laptops.",
 			}
 			g.Nodes[i].Settings = map[string]string{
 				protocol.SettingAutonomy:   protocol.AutonomyWake,
@@ -70,10 +71,10 @@ func TestMapCardGovernedByAppearsOnlyWithAnArchitect(t *testing.T) {
 }
 
 func TestMapCardCharterShowsBlockFieldsWrappedAndNeverCut(t *testing.T) {
-	m := openMap(t, mapModel(120, 40, richGraph()))
+	m := openMap(t, mapModel(120, 55, richGraph()))
 	m.mp.selected = "tenebrae"
 	v := ansi.Strip(m.testView())
-	for _, want := range []string{"accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes", "New document sources", "one-off client reports.", "triages them every Monday.", "nightly report job", "public ids.", "tenebrae-library", "read only on laptops."} {
+	for _, want := range []string{"accepts", "refuses", "feature_requests", "maturity_note", "escalate", "rules", "New document sources", "one-off client reports.", "triages them every Monday.", "nightly report job", "public ids.", "tenebrae-library", "read only on laptops."} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
 		}
@@ -126,11 +127,15 @@ func TestMapCardCharterScrolls(t *testing.T) {
 	if !strings.Contains(before, "ctrl+u/ctrl+d scroll") || strings.Contains(before, "embeddings.") {
 		t.Fatal(before)
 	}
-	for i := 0; i < 3; i++ {
+	seen := false
+	for i := 0; i < 8; i++ {
 		m = keys(m, "ctrl+d")
+		if strings.Contains(ansi.Strip(m.testView()), "embeddings.") {
+			seen = true
+		}
 	}
-	if after := ansi.Strip(m.testView()); !strings.Contains(after, "embeddings.") {
-		t.Fatal(after)
+	if !seen {
+		t.Fatal(ansi.Strip(m.testView()))
 	}
 	// Another node starts at the top again.
 	m.mp.selected = "cogforge"
@@ -146,7 +151,7 @@ func cardText(m Model, w, h int) string {
 }
 
 func TestMapCardLegendLivesInHelp(t *testing.T) {
-	m := openMap(t, mapModel(120, 40, richGraph()))
+	m := openMap(t, mapModel(120, 55, richGraph()))
 	m.mp.selected = "tenebrae"
 	if strings.Contains(cardText(m, 120, 60), "Legend") {
 		t.Fatal("the card still carries the legend")
@@ -167,7 +172,7 @@ func TestMapCardLegendLivesInHelp(t *testing.T) {
 		"held in the Inbox", "refused", "specific edge beats", "all projects",
 		"never grants deploy or merge permission", "deploy_rule and merge_authority",
 		"only charter field with an enforced effect", "every turn",
-		"first 40 characters", "Tools tab", "another agent looks this node up",
+		"first 40 characters", "another agent looks this node up",
 	} {
 		if !strings.Contains(shown, want) {
 			t.Errorf("help legend lacks %q:\n%s", want, shown)
@@ -188,7 +193,7 @@ func TestMapCardLegendLivesInHelp(t *testing.T) {
 }
 
 func TestMapCardRulesShowEffectiveValuesAndOverrides(t *testing.T) {
-	m := openMap(t, mapModel(120, 40, richGraph()))
+	m := openMap(t, mapModel(120, 55, richGraph()))
 	m.mp.selected = "tenebrae"
 	view := cardText(m, 120, 60)
 	if !strings.Contains(view, "Rules") {
@@ -233,7 +238,7 @@ func TestMapCardRulesWithoutMaturityAreDefaults(t *testing.T) {
 }
 
 func TestMapCardLearnedIsItsOwnSectionAfterCharterAndRules(t *testing.T) {
-	m := openMap(t, mapModel(120, 40, richGraph()))
+	m := openMap(t, mapModel(120, 55, richGraph()))
 	m.mp.selected = "tenebrae"
 	m.snap.Learned = []protocol.LearnedSuggestion{{
 		ID: 11, Node: "tenebrae", Field: "needs", Phrase: "a backup box", NewValue: "a backup box",
@@ -260,7 +265,7 @@ func TestMapCardLearnedIsItsOwnSectionAfterCharterAndRules(t *testing.T) {
 
 func TestMapCardLearnedWhyWrapsAtAWordWithAnEllipsis(t *testing.T) {
 	excerpt := strings.Repeat("the owner asked for a quieter card and the queue was slow, so the change waited for the next quiet window before it applied to the node. ", 3)
-	m := openMap(t, mapModel(120, 40, richGraph()))
+	m := openMap(t, mapModel(120, 55, richGraph()))
 	m.mp.selected = "tenebrae"
 	m.snap.Learned = []protocol.LearnedSuggestion{{
 		ID: 11, Node: "tenebrae", Field: "needs", Phrase: "a backup box", NewValue: "a backup box",

@@ -17,8 +17,8 @@ Keys · Graph ──────────────────────
   m                      toggle all message and owner lines
   t                      show all nodes, then each active team in turn
   T                      create, rename, fill or archive a team
-
- Graph find
+  e                      charter
+  E                      global charter
   more below
 
 up/down scroll  ? all screens  esc close

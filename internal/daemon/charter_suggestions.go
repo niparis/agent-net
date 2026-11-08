@@ -144,7 +144,7 @@ func charterSuggestions(g protocol.Graph, signals []protocol.CharterSignal) char
 			add(target, "accepts", targetNode.Charter.Accepts, task)
 		}
 		if sourceOK {
-			add(v.From, "needs", sourceNode.Charter.Needs, target+" for "+task)
+			add(v.From, "rules", sourceNode.Charter.Rules, target+" for "+task)
 		}
 	}
 	sort.SliceStable(result.Suggestions, func(i, j int) bool { return result.Suggestions[i].Node < result.Suggestions[j].Node })

@@ -348,7 +348,7 @@ func (r *runner) mapPoint(summary setupSummary) setupPoint {
 }
 
 func hasCharter(c protocol.Charter) bool {
-	return strings.TrimSpace(c.Purpose+c.Maturity+c.Accepts+c.Refuses+c.FeatureRequests+c.Consumers+c.Escalate+c.Needs+c.Notes) != ""
+	return strings.TrimSpace(c.Purpose+c.Maturity+c.Accepts+c.Refuses+c.FeatureRequests+c.Escalate+c.MaturityNote+c.Rules) != ""
 }
 
 func (r *runner) workPoint(summary setupSummary) (setupPoint, bool) {

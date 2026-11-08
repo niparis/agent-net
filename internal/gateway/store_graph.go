@@ -558,6 +558,30 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 	}
 	now := s.now().UnixNano()
 	switch typ {
+	case "level_charter":
+		if !actorAllowed(actor, "rule") {
+			return reject("only the owner or CTO may undo inherited charters")
+		}
+		level, key, ok := strings.Cut(attr, ":")
+		if !ok {
+			return reject("invalid charter history")
+		}
+		if _, err = protocol.CleanCharterValue(key, old); err != nil {
+			return err
+		}
+		var current string
+		err = tx.QueryRow(`SELECT value FROM charter_values WHERE level=? AND scope=? AND attr=?`, level, node, key).Scan(&current)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if current != value {
+			return reject("value changed since that history entry")
+		}
+		if old == "" {
+			_, err = tx.Exec(`DELETE FROM charter_values WHERE level=? AND scope=? AND attr=?`, level, node, key)
+		} else {
+			_, err = tx.Exec(`INSERT INTO charter_values VALUES(?,?,?,?,?,?) ON CONFLICT(level,scope,attr) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, level, node, key, old, now, actor)
+		}
 	case "lead":
 		if !actorAllowed(actor, "rule") {
 			return reject("only the owner or CTO may set a lead")
@@ -710,6 +734,9 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 		}
 		return tx.Commit()
 	case "charter":
+		if _, err = protocol.CleanCharterValue(attr, old); err != nil {
+			return err
+		}
 		var current string
 		err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&current)
 		if err != nil && err != sql.ErrNoRows {
@@ -1277,14 +1304,8 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 			n.Charter.Refuses = value
 		case "feature_requests":
 			n.Charter.FeatureRequests = value
-		case "consumers":
-			n.Charter.Consumers = value
 		case "escalate":
 			n.Charter.Escalate = value
-		case "needs":
-			n.Charter.Needs = value
-		case "notes":
-			n.Charter.Notes = value
 		}
 	}
 	err = rows.Err()
@@ -1292,6 +1313,10 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 	if err != nil {
 		return g, err
 	}
+	if err = s.applyEffectiveCharters(&g); err != nil {
+		return g, err
+	}
+
 	var snap settings.Snapshot
 	if snapshot != nil {
 		snap = *snapshot

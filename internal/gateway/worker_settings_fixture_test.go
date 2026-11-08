@@ -16,7 +16,7 @@ func TestWorkerSandboxBaseline(t *testing.T) {
 	}
 	out := map[string]string{}
 	for _, maturity := range []string{"early", "growing", "mature", "critical"} {
-		if err := s.SetCharter("shop", "maturity", maturity, "owner"); err != nil {
+		if err := s.seedLegacyCharter("shop", "maturity", maturity, "owner"); err != nil {
 			t.Fatal(err)
 		}
 		for _, override := range []string{"", protocol.WorkersSandboxed, protocol.WorkersNoNetwork, protocol.WorkersReadOnly} {

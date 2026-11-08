@@ -152,7 +152,7 @@ func TestWorkerSandboxCutoverPreservesMachineFallback(t *testing.T) {
 			if err := s.AddArchitect("shop", "owner"); err != nil {
 				t.Fatal(err)
 			}
-			if err := s.SetCharter("shop", "maturity", tc.maturity, "owner"); err != nil {
+			if err := s.seedLegacyCharter("shop", "maturity", tc.maturity, "owner"); err != nil {
 				t.Fatal(err)
 			}
 			if tc.override != "" {
@@ -209,7 +209,7 @@ func TestWorkerSandboxCutoverTightensUnsafeExistingValue(t *testing.T) {
 	if err := s.AddArchitect("shop", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("shop", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("shop", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.WriteSettings([]SettingsChange{{Key: workerSandboxKey, Level: "repo", Scope: "shop", Value: json.RawMessage(`"sandboxed"`)}}, "owner", "existing"); err != nil {
@@ -250,7 +250,7 @@ func TestWorkerSandboxCutoverNoticesMachineWithoutPolicy(t *testing.T) {
 	if err := s.AddArchitect("shop", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("shop", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("shop", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	a, _, err := s.CreateNode("host-a", "linux")
@@ -295,7 +295,7 @@ func TestWorkerSandboxCutoverPreservesExistingWhenNetworkEnforcesFloor(t *testin
 	if err := s.AddArchitect("shop", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("shop", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("shop", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES
@@ -468,7 +468,7 @@ func TestWorkerSandboxCutoverNoticeUsesActualProjectCase(t *testing.T) {
 	if err := s.AddArchitect("Shop", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("Shop", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("Shop", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	id, _, err := s.CreateNode("host-a", "linux")
@@ -489,7 +489,7 @@ func TestWorkerSandboxCutoverNoticeUsesActualProjectCase(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions(id, "Shop")
-	if err != nil || got != protocol.WorkersNoNetwork {
+	if err != nil || got != protocol.WorkersSandboxed {
 		t.Fatalf("effective: %q %v", got, err)
 	}
 	inbox, err := s.ListInbox()
@@ -503,7 +503,7 @@ func TestWorkerSandboxCutoverNoticesSessionInferredProject(t *testing.T) {
 	if err := s.AddArchitect("shop", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("shop", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("shop", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	a, _, err := s.CreateNode("host-a", "linux")
@@ -545,7 +545,7 @@ func TestWorkerSandboxCutoverNoticesSeenProjectWithDifferentRegistrationName(t *
 	if err := s.AddArchitect("other", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("other", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("other", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	a, _, err := s.CreateNode("host-a", "linux")

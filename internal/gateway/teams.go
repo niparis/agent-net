@@ -50,6 +50,9 @@ func (s *Store) ValidateTeam(q protocol.TeamWrite, actor string) error {
 }
 
 func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error {
+	if q.Action == "charter" {
+		return s.SetLevelCharter(protocol.CharterSetRequest{Level: "team", Node: q.ID, Attr: q.Attr, Value: q.Value}, actor, dryRun)
+	}
 	if err := s.requireGraphRefs(); err != nil {
 		return err
 	}

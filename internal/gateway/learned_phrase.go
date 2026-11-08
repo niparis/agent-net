@@ -52,7 +52,7 @@ func (s *Store) phraseReady(ctx context.Context) error {
 	if inWindow != 0 {
 		return nil
 	}
-	rows, err := s.db.Query(`SELECT l.id,l.field,l.phrase FROM learned_suggestions l JOIN learned_suggestion_details d ON d.suggestion_id=l.id LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.status='pending' AND l.ready_at<=? AND d.origin='owner' AND l.field IN ('accepts','needs','consumers') AND p.suggestion_id IS NULL ORDER BY l.id`, s.now().UnixNano())
+	rows, err := s.db.Query(`SELECT l.id,l.field,l.phrase FROM learned_suggestions l JOIN learned_suggestion_details d ON d.suggestion_id=l.id LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.status='pending' AND l.ready_at<=? AND d.origin='owner' AND l.field IN ('accepts','rules') AND p.suggestion_id IS NULL ORDER BY l.id`, s.now().UnixNano())
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (s *Store) phraseReady(ctx context.Context) error {
 			value = p.raw
 		}
 		// A needs item names its dependency before "for". Preserve that name.
-		if p.field == "needs" {
+		if p.field == "rules" {
 			if target, _, ok := strings.Cut(p.raw, " for "); ok && !strings.HasPrefix(value, target+" for ") {
 				value = p.raw
 			}

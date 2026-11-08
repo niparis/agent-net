@@ -318,7 +318,7 @@ func (g *Gateway) botGraph(sid string, in map[string]any) (any, error) {
 			if c.Maturity != "" {
 				row["maturity"] = c.Maturity
 			}
-			row["charter"] = protocol.ReadCharter{Purpose: c.Purpose, Accepts: charterList(c.Accepts), Refuses: charterList(c.Refuses), FeatureRequests: c.FeatureRequests}
+			row["charter"] = protocol.ReadCharter{Maturity: c.Maturity, MaturityNote: c.MaturityNote, Rules: c.Rules, Escalate: c.Escalate, Sources: c.Sources, Purpose: c.Purpose, Accepts: charterList(c.Accepts), Refuses: charterList(c.Refuses), FeatureRequests: c.FeatureRequests}
 		}
 		nodes = append(nodes, row)
 	}

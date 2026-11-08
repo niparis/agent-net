@@ -26,7 +26,7 @@ func learnedClass(v LearnedSuggestion) string {
 		if v.Origin == "owner" {
 			return "minor"
 		}
-	case "needs", "consumers":
+	case "rules":
 		return "minor"
 	case "edge":
 		if v.EdgeKind == "depends" {
@@ -78,7 +78,7 @@ func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 	now := s.now().UnixNano()
 	query := `SELECT l.id,l.node,l.field,l.edge_kind,l.kind,l.phrase,l.severity,COALESCE(d.origin,''),COALESCE(p.raw_phrase,l.phrase) FROM learned_suggestions l LEFT JOIN learned_suggestion_details d ON d.suggestion_id=l.id LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.status='pending' AND l.ready_at<=?`
 	if s.phraseCleaner != nil {
-		query += ` AND NOT (COALESCE(d.origin,'')='owner' AND l.field IN ('accepts','needs','consumers') AND p.suggestion_id IS NULL)`
+		query += ` AND NOT (COALESCE(d.origin,'')='owner' AND l.field IN ('accepts','rules') AND p.suggestion_id IS NULL)`
 	}
 	rows, err := tx.Query(query+` ORDER BY l.id`, now)
 	if err != nil {

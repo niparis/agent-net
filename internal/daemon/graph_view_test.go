@@ -26,7 +26,7 @@ func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
 	if err := st.AddArchitect("trading-architect", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetCharter("cogforge", "maturity", "early - prototype", "owner"); err != nil {
+	if err := st.SetCharter("cogforge", "maturity", "early", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetEdge(protocol.Edge{From: "trading-architect", To: "cogforge", Kind: "governs", Mode: "owner"}, "owner"); err != nil {
@@ -47,7 +47,7 @@ func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
 	}
 	found := false
 	for _, node := range view.Nodes {
-		if node.Name == "cogforge" && node.Charter.Maturity == "early - prototype" && len(node.Locations) == 1 && node.Locations[0].Path == "/w/cogforge" {
+		if node.Name == "cogforge" && node.Charter.Maturity == "early" && len(node.Locations) == 1 && node.Locations[0].Path == "/w/cogforge" {
 			found = true
 		}
 	}

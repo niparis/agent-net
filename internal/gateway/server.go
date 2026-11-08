@@ -1110,17 +1110,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return g.undoTool(ctx, p.Item, p.Actor)
 	case "query.tools_needs":
-		graph, err := st.Graph()
-		if err != nil {
-			return nil, err
-		}
-		needs := []protocol.ToolNeed{}
-		for _, node := range graph.Nodes {
-			if node.Charter.Needs != "" {
-				needs = append(needs, protocol.ToolNeed{Node: node.Name, Text: node.Charter.Needs, State: "unverified"})
-			}
-		}
-		return needs, nil
+		// Retain the old read method for clients predating the removed needs field.
+		return []protocol.ToolNeed{}, nil
 	case "query.tools_accepted":
 		keys, err := st.ToolsAccepted()
 		if err != nil {
@@ -1687,27 +1678,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad charter.set")
 		}
-		if p.Ref != nil {
-			return map[string]bool{"ok": true}, st.SetRefCharter(*p.Ref, p.Attr, p.Value, "owner", true)
-		}
-		tx, err := st.db.BeginTx(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
-		defer tx.Rollback()
-		if err := setCharterTx(tx, p.Node, p.Attr, p.Value, "owner", st.now().UnixNano()); err != nil {
-			return nil, err
-		}
-		return map[string]bool{"ok": true}, nil
+		return map[string]bool{"ok": true}, st.SetLevelCharter(p, "owner", true)
 	case "charter.set":
 		p, err := decode[protocol.CharterSetRequest](raw)
 		if err != nil {
 			return nil, reject("bad charter.set")
 		}
-		if p.Ref != nil {
-			return protocol.CharterSetResult{OK: true}, st.SetRefCharter(*p.Ref, p.Attr, p.Value, graphActor(raw), false)
-		}
-		if err := st.SetCharter(p.Node, p.Attr, p.Value, graphActor(raw)); err != nil {
+		if err := st.SetLevelCharter(p, graphActor(raw), false); err != nil {
 			return nil, err
 		}
 		g.dispatchStepTasks(ctx)

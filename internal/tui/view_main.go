@@ -210,6 +210,9 @@ func (m Model) renderView() string {
 		case m.mode == modeTeams:
 			out = append(out, m.titleLine(w))
 			out = append(out, m.teamsView(w, contentHeight-1)...)
+		case m.mode == modeCharterForm:
+			out = append(out, m.titleLine(w))
+			out = append(out, m.charterFormView(w, contentHeight-1)...)
 		case m.mode == modeTeamForm:
 			out = append(out, m.titleLine(w))
 			out = append(out, m.teamFormView(w, contentHeight-1)...)

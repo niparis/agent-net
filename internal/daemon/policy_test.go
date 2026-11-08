@@ -209,7 +209,7 @@ func TestCharterReachesTheSessionEveryTurnAndNothingWithoutOne(t *testing.T) {
 	plain, _ := helloPi(t, n, "p2", "/w/plain", true)
 	st := g.gw.Store()
 	for attr, value := range map[string]string{
-		"maturity": "mature - careful with breaking changes.",
+		"maturity": "mature",
 		"accepts":  "Generic endpoints.",
 		"refuses":  "Client-specific endpoints.",
 		"escalate": "Breaking API changes: ask the owner.",
@@ -226,7 +226,7 @@ func TestCharterReachesTheSessionEveryTurnAndNothingWithoutOne(t *testing.T) {
 	}
 
 	r := askPolicy(t, p, protocol.PolicyRequest{})
-	for _, want := range []string{"mature - careful with breaking changes.", "Generic endpoints.", "Client-specific endpoints.",
+	for _, want := range []string{"mature", "Generic endpoints.", "Client-specific endpoints.",
 		"Breaking API changes: ask the owner.", "wb-architect governs your node as owner", "Decide, do not defer",
 		"maturity mature: run the suite and add tests for new behavior; merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node; ask before deploying",
 		"judge requests from consumers strictly"} {

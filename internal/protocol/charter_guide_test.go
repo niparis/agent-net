@@ -7,7 +7,7 @@ import (
 
 func TestCharterGuideCoversEveryAttribute(t *testing.T) {
 	guide := CharterGuide()
-	want := []string{"purpose", "maturity", "accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes"}
+	want := []string{"purpose", "maturity", "accepts", "refuses", "feature_requests", "escalate", "maturity_note", "rules"}
 	if len(guide) != len(want) {
 		t.Fatalf("guide has %d attributes, want %d", len(guide), len(want))
 	}
@@ -35,9 +35,9 @@ func TestCharterGuideCoversEveryAttribute(t *testing.T) {
 }
 
 func TestCharterValueWarningForTooDetailedValues(t *testing.T) {
-	guide, ok := CharterGuideFor("needs")
+	guide, ok := CharterGuideFor("rules")
 	if !ok {
-		t.Fatal("needs guide missing")
+		t.Fatal("rules guide missing")
 	}
 	for _, value := range []string{
 		"Reach 192.168.50.65 for the service",
@@ -47,13 +47,13 @@ func TestCharterValueWarningForTooDetailedValues(t *testing.T) {
 		"Read /private",
 		"AGENT_NET_CONFIG_DIR=/private",
 	} {
-		warning := CharterValueWarning("needs", value)
+		warning := CharterValueWarning("rules", value)
 		if !strings.Contains(warning, "too long/too detailed for a charter") || !strings.Contains(warning, "keep it to "+guide.Size) || !strings.Contains(warning, "put detail in AGENTS.md") {
 			t.Errorf("warning for %q = %q", value, warning)
 		}
 	}
 	for _, value := range []string{"quota-axi, gateway and cogforge", "Read the service's setup guide"} {
-		if warning := CharterValueWarning("needs", value); warning != "" {
+		if warning := CharterValueWarning("rules", value); warning != "" {
 			t.Errorf("unexpected warning for %q: %q", value, warning)
 		}
 	}
@@ -68,7 +68,7 @@ func TestCharterBudgetWarnings(t *testing.T) {
 		charter Charter
 		want    string
 	}{
-		{"total", Charter{Needs: strings.Repeat("é", 1201)}, "the whole charter exceeds 1200 characters: the project's agent reads it every turn"},
+		{"total", Charter{Rules: strings.Repeat("é", 1201)}, "the whole charter exceeds 1200 characters: the project's agent reads it every turn"},
 		{"purpose", Charter{Purpose: strings.Repeat("a", 161)}, "purpose exceeds 160 characters: the owner reads it on the Graph card"},
 		{"items", Charter{Escalate: "a;b;c;d;e;f\ng"}, "escalate has more than 6 items: use short categories so the agent can scan them"},
 		{"first", Charter{Accepts: strings.Repeat("a", 41) + "; b"}, "neighbors see only the first 40 characters of accepts: put the main item first"},
@@ -80,14 +80,14 @@ func TestCharterBudgetWarnings(t *testing.T) {
 			}
 		})
 	}
-	if got := CharterWarnings(Charter{Purpose: strings.Repeat("a", 160), Refuses: "a;b;c;d;e;f", Needs: strings.Repeat("n", 201)}); len(got) != 0 {
+	if got := CharterWarnings(Charter{Purpose: strings.Repeat("a", 160), Refuses: "a;b;c;d;e;f", Rules: strings.Repeat("n", 201)}); len(got) != 0 {
 		t.Fatalf("unexpected warnings: %v", got)
 	}
 }
 
 func TestCharterGuideExplainsReadersAndBudget(t *testing.T) {
 	text := CharterGuideText()
-	for _, want := range []string{"1200 characters", "first 40 characters", "6 items", "first", "names and pointers", "rules nothing else covers"} {
+	for _, want := range []string{"1200 characters", "first 40 characters", "6 items", "first", "names and pointers", "house rules"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("guide misses %q", want)
 		}

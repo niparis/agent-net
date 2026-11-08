@@ -14,7 +14,7 @@ func contextGraph() Graph {
 				Accepts:  "Generic endpoints and bug fixes from any consumer.",
 				Refuses:  "Client-specific endpoints for one consumer.",
 				Escalate: "Breaking API changes: ask the owner.",
-				Notes:    "Deploys go through homelab.",
+				Rules:    "Deploys go through homelab.",
 			}},
 			{Name: "tenebrae", Kind: "component", Charter: Charter{Maturity: "early - speed over safety."}},
 			{Name: "wbg-architect", Kind: "architect", Charter: Charter{Purpose: "Look after WBG."}},
@@ -46,9 +46,8 @@ func TestNodeContextIsShortAndSaysTheEdgesThatMatter(t *testing.T) {
 			t.Errorf("context lacks %q:\n%s", want, got)
 		}
 	}
-	// Purpose and notes are for the worker brief, not the short per-turn text.
-	if strings.Contains(got, "Generic document and evidence API.") || strings.Contains(got, "Deploys go through homelab.") {
-		t.Errorf("per-turn context is not short:\n%s", got)
+	if !strings.Contains(got, "rules: Deploys go through homelab.") {
+		t.Fatalf("missing house rules: %s", got)
 	}
 	if !strings.Contains(got, "Decide, do not defer") {
 		t.Errorf("context lacks the decide rule:\n%s", got)
@@ -119,7 +118,7 @@ func TestCharterBriefHasTheWholeCharter(t *testing.T) {
 		"accepts: Generic endpoints and bug fixes from any consumer.",
 		"refuses: Client-specific endpoints for one consumer.",
 		"escalate: Breaking API changes: ask the owner.",
-		"notes: Deploys go through homelab.",
+		"rules: Deploys go through homelab.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("brief lacks %q:\n%s", want, got)

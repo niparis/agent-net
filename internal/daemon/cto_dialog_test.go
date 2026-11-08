@@ -69,11 +69,11 @@ func TestCTODialogApprovalAppliesProposal(t *testing.T) {
 	cli := cliClient(t, n)
 	cli.mustCall("node_add", map[string]string{"name": "dialog-node"})
 	ctx := context.Background()
-	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "critical - production"})
+	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "mature"})
 	n.d.cto.pid.Store(int64(os.Getpid()))
 	defer n.d.cto.pid.Store(0)
 	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
-	response, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"dialog purpose"}}`))
+	response, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"refuses","value":"dialog purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestCTOProposalAsk(t *testing.T) {
 	cli := cliClient(t, n)
 	cli.mustCall("node_add", map[string]string{"name": "dialog-node"})
 	ctx := context.Background()
-	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "critical - production"})
+	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "mature"})
 	n.d.cto.pid.Store(int64(os.Getpid()))
 	defer n.d.cto.pid.Store(0)
 
@@ -123,7 +123,7 @@ func TestCTOProposalAsk(t *testing.T) {
 		}
 	}
 
-	created, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"waiting purpose"}}`))
+	created, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"refuses","value":"waiting purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestCTOProposalAsk(t *testing.T) {
 		t.Fatalf("applied proposal reopened: %v", err)
 	}
 
-	second, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"declined purpose"}}`))
+	second, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"refuses","value":"declined purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,12 +218,12 @@ func TestCTODialogApprovalDoesNotRepeatOutcomeNote(t *testing.T) {
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
 	cli.mustCall("node_add", map[string]string{"name": "dialog-node"})
-	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "critical - production"})
+	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "mature"})
 	n.d.cto.pid.Store(int64(os.Getpid()))
 	defer n.d.cto.pid.Store(0)
 	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
 	ctx := context.Background()
-	created, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"dialog purpose"}}`))
+	created, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"refuses","value":"dialog purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,12 +254,12 @@ func TestProposalOperatorApprovalStillDeliversNote(t *testing.T) {
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
 	cli.mustCall("node_add", map[string]string{"name": "dialog-node"})
-	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "critical - production"})
+	cli.mustCall("charter_set", map[string]string{"node": "dialog-node", "attr": "maturity", "value": "mature"})
 	n.d.cto.pid.Store(int64(os.Getpid()))
 	defer n.d.cto.pid.Store(0)
 	cto := &localConn{d: n.d, client: "cto-mcp", peerPID: os.Getpid()}
 	ctx := context.Background()
-	created, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"purpose","value":"tui purpose"}}`))
+	created, err := legacyCTODialog(t, n.d, cto, json.RawMessage(`{"name":"graph_change","arguments":{"action":"charter_set","node":"dialog-node","attr":"refuses","value":"tui purpose"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}

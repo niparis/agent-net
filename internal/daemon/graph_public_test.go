@@ -42,7 +42,7 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	cli := cliClient(t, n)
-	graphFixtureNode(t, n, cli, "shop", "Sells things", "mature - stable")
+	graphFixtureNode(t, n, cli, "shop", "Sells things", "mature")
 	graphFixtureNode(t, n, cli, "billing", "Takes money", "growing")
 	cli.mustCall("node_add", map[string]any{"name": "architect"})
 	cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "purpose", "value": "Owns the design"})
@@ -71,7 +71,7 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 			t.Fatalf("node %s missing from %+v", name, page.Nodes)
 		}
 	}
-	if byName["shop"].Maturity != "mature - stable" || !strings.Contains(byName["shop"].Line, "Sells things") {
+	if byName["shop"].Maturity != "mature" || !strings.Contains(byName["shop"].Line, "Sells things") {
 		t.Fatalf("shop line: %+v", byName["shop"])
 	}
 	rules := map[string]string{}
@@ -110,7 +110,7 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 	if len(detail.Nodes) != 1 || detail.Nodes[0].Charter == nil {
 		t.Fatalf("detail: %+v", detail)
 	}
-	if detail.Nodes[0].Charter.Purpose != "Sells things" || detail.Nodes[0].Charter.Maturity != "mature - stable" {
+	if detail.Nodes[0].Charter.Purpose != "Sells things" || detail.Nodes[0].Charter.Maturity != "mature" {
 		t.Fatalf("detail charter: %+v", detail.Nodes[0].Charter)
 	}
 	detailRules := map[string]string{}
@@ -162,7 +162,7 @@ func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
 	if err := w.d.registerCTOSession(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	graphFixtureNode(t, w.node, w.cli, "shop", "Sells things", "mature - stable")
+	graphFixtureNode(t, w.node, w.cli, "shop", "Sells things", "mature")
 	graphFixtureNode(t, w.node, w.cli, "billing", "Takes money", "growing")
 	w.cli.mustCall("edge_set", map[string]any{"from": "shop", "to": "billing", "kind": "depends", "rule": "ask"})
 	w.cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
@@ -282,7 +282,7 @@ func TestAgentGetShowsSessionNodeRules(t *testing.T) {
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	cli := cliClient(t, n)
 	cli.mustCall("node_add", map[string]any{"name": "shop"})
-	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "mature - stable"})
+	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "mature"})
 	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
 	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersNoNetwork})
 	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingJudgeConsumers, "value": protocol.JudgeStrict})

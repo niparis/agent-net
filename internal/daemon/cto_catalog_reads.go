@@ -626,7 +626,10 @@ func ctoCatalogCharter(c *protocol.Charter) map[string]any {
 		return nil
 	}
 	out := map[string]any{}
-	for key, value := range map[string]string{"purpose": c.Purpose, "feature_requests": c.FeatureRequests, "consumers": c.Consumers, "escalate": c.Escalate, "needs": c.Needs, "notes": c.Notes} {
+	if c.Sources != nil {
+		out["sources"] = c.Sources
+	}
+	for key, value := range map[string]string{"purpose": c.Purpose, "feature_requests": c.FeatureRequests, "maturity": c.Maturity, "maturity_note": c.MaturityNote, "escalate": c.Escalate, "rules": c.Rules} {
 		if strings.TrimSpace(value) != "" {
 			out[key] = value
 		}

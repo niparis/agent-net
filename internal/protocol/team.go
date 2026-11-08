@@ -22,6 +22,8 @@ type Team struct {
 // ExpectTeam is the old Team ID, empty for an unassigned member. Moves are
 // atomic. Rename requires ExpectName. LeadSetRequest changes ownership later.
 type TeamWrite struct {
+	Attr         string    `json:"attr,omitempty"`
+	Value        string    `json:"value,omitempty"`
 	Action       string    `json:"action"`
 	ID           string    `json:"team_id"`
 	Name         string    `json:"name,omitempty"`
@@ -82,6 +84,15 @@ func ResolveTeamAction(action string, raw json.RawMessage, look TeamLookup) (Tea
 	}
 
 	switch action {
+	case "team_charter":
+		if look == nil {
+			return TeamWrite{}, errors.New("team lookup required")
+		}
+		id, _, err := look.Team(str("team"))
+		if err != nil {
+			return TeamWrite{}, err
+		}
+		return TeamWrite{Action: "charter", ID: id, Attr: str("attr"), Value: str("value")}, nil
 	case "team_create":
 		name := str("name")
 		if name == "" {

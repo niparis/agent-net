@@ -82,6 +82,10 @@ func TestResolverPolicyDeliveryCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(got.Charter, "Repo purpose") {
+		t.Fatalf("missing inherited charter: %s", got.Charter)
+	}
+	got.Charter = ""
 	before, _ := json.Marshal(want)
 	after, _ := json.Marshal(got)
 	if string(before) != string(after) {

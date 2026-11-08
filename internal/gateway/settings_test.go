@@ -85,7 +85,7 @@ func TestSettingsMaturityRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ := s.SettingsSnapshot()
-	if err := s.SetCharter("alpha", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("alpha", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	after, err := s.SettingsSnapshot()
@@ -94,7 +94,7 @@ func TestSettingsMaturityRevision(t *testing.T) {
 	}
 	pushes := 0
 	s.settingsHook = func() { pushes++ }
-	if err := s.SetCharter("alpha", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("alpha", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if pushes != 0 {
@@ -149,7 +149,7 @@ func TestSettingsSnapshotSyncLink(t *testing.T) {
 	if err = g.store.AddArchitect("alpha", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err = g.store.SetCharter("alpha", "maturity", "critical", "owner"); err != nil {
+	if err = g.store.seedLegacyCharter("alpha", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	next = readSync()
@@ -213,7 +213,7 @@ func TestSettingsMaturityUndoRemove(t *testing.T) {
 	if err := s.AddArchitect("alpha", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCharter("alpha", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("alpha", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	var id int64
@@ -277,7 +277,7 @@ func TestSettingsReportsMaturityChanges(t *testing.T) {
 		if err := s.AddArchitect(node, "owner"); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.SetCharter(node, "maturity", node, "owner"); err != nil {
+		if err := s.seedLegacyCharter(node, "maturity", node, "owner"); err != nil {
 			t.Fatal(err)
 		}
 	}

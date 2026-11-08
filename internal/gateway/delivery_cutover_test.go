@@ -220,7 +220,7 @@ func TestDeliveryAdaptersMatchMaturityFixtures(t *testing.T) {
 		protocol.SettingAutonomy:         {"off", "wake"},
 	}
 	for _, maturity := range []string{"", "early", "growing", "mature", "critical"} {
-		if err = s.SetCharter("repo", "maturity", maturity, "owner"); err != nil {
+		if err = s.seedLegacyCharter("repo", "maturity", maturity, "owner"); err != nil {
 			t.Fatal(err)
 		}
 		for key, values := range choices {

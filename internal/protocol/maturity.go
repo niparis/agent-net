@@ -15,10 +15,11 @@ import (
 // from its consumers, and the deploy rule. A node may override any one default
 // with a node setting stored beside its charter.
 const (
-	MaturityEarly    = "early"
-	MaturityGrowing  = "growing"
-	MaturityMature   = "mature"
-	MaturityCritical = "critical"
+	MaturityExperimental = "experimental"
+	MaturityEarly        = "early"
+	MaturityGrowing      = "growing"
+	MaturityMature       = "mature"
+	MaturityCritical     = "critical"
 )
 
 // Values of the maturity defaults. They are stable names, not display text.

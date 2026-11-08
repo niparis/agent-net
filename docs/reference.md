@@ -103,12 +103,12 @@ and their old values. Repeating the cutover changes no values. The old node rows
 ## CTO settings and conversation
 
 Minor CTO graph changes apply immediately with actor `CTO (minor)`: charter
-wording, `accepts`, `needs` and `consumers` items, new architect nodes and
+wording, `accepts` and `rules` text, new architect nodes and
 `depends` edges with the normal request rule. The gateway reuses the learned
 change classifier, including its restrictive-wording check. Restrictive or
 narrowing phrases, `refuses`, `escalate`, maturity, deploy and request rules
 (`auto`, `ask`, `never`), `governs` and `deploys` edges, node removal, any node
-settings, and any change touching a critical node are major. Clearing a charter field or removing an accepts, needs or consumers item is
+settings, and any change touching a critical node are major. Clearing a charter field or removing an accepts or rules item is
 major. Undo is classified
 by the change it would make. Removing an edge with a permission rule is major
 too, as is replacing that rule with `normal`.
@@ -391,7 +391,7 @@ are proposals. The CTO has one action tool per area:
 | `agent_learn` | one finding, under the daily limit |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
-| `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_archive`, `team_member_add`, `team_member_remove` or `undo` |
+| `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_charter`, `team_archive`, `team_member_add`, `team_member_remove` or `undo` |
 | `sessions_archive` | Propose archiving offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Includes the exact dry run; owner approval required. |
 | `session_change` | `action: rename`, `trust` or `policy` |
 | `worker_change` | `action: start` or `stop` |
@@ -449,7 +449,8 @@ The retained references include `projects`, `sessions`, `profiles`,
 `charter_signals`, `findings`, `playbook` and `repos.owner_agent_id`.
 No ownership, edge, delivery, charter or session is silently moved or deleted.
 
-`graph_change` with `action: charter_set` takes the nine charter attributes.
+`graph_change` with `action: charter_set` takes the charter attributes described below, plus an optional `level` (`global`, `team`, `repo`, `agent`). `node` identifies the scope; a global write has no scope. A typed `ref` may select a team, repo or agent instead. An empty value clears the local override.
+`action: team_charter` takes `team`, `attr` and `value` for inherited Team fields.
 Node settings use `action: settings_set` with `node`, `setting` and `value`.
 The tool schemas describe the other fields and fixed values.
 
@@ -639,13 +640,33 @@ The daemon shares concurrent identical owner reads for `workers`, `usage`, `usag
 
 ## Graph operator methods (foundation)
 
-The gateway stores explicit nodes, repo charter attributes, edges and graph history in `graph_nodes`, `graph_charter`, `graph_edges` and `graph_history`. Agent charter attributes and their history are stored separately in `agent_charter` and `agent_charter_history`. Node settings, including the worker sandbox, use the settings layer and its history. Old node and project-policy worker values remain as a downgrade backup. Git working trees reported by sessions and registered projects also appear as implicit component nodes, except roots in temporary folders or the home folder itself. Registrations are checked for Git by the reporting daemon. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
+Charters inherit through global defaults, Team, Repo and Agent, in that order.
+The nearest set value wins, except `refuses`: all levels contribute to its union.
+An effective charter includes `sources`, keyed by field, with each source's
+`level`, `scope` and `value`. A Team supplies "ask the team lead" as its default
+`escalate`. No charter is valid and adds no limit or approval prompt.
+
+`purpose` describes the Repo or Team. `maturity` is the Repo enum `experimental`,
+`early`, `growing` or `mature`; `maturity_note` is its optional explanation.
+`accepts`, `refuses`, `escalate` and `feature_requests` describe Agent work.
+Safety refusals on a Repo or Team always apply to its agents. `rules` holds taste
+and house rules at any level; code never interprets this free text. The upgrade
+moves old `consumers`, `needs` and `notes` into `rules` under matching headings,
+and splits old maturity text into the enum and note. Unknown maturity words map
+to `early`. The removed attributes read empty and are refused on writes.
+
+On a Graph node or card, `e` opens the charter form at that node's level; `E`
+opens global defaults. The form names the level, shows field sources, and saves
+one selected field with Enter. Empty text clears the local override. Inherited
+text is not copied into a local override when opening the form.
+
+The gateway stores explicit nodes, repo charter attributes, edges and graph history in `graph_nodes`, `graph_charter`, `graph_edges` and `graph_history`. Global and Team fields use `charter_values`; Team purpose remains in `teams.purpose`. Agent charter attributes and their history are stored separately in `agent_charter` and `agent_charter_history`. Node settings, including the worker sandbox, use the settings layer and its history. Old node and project-policy worker values remain as a downgrade backup. Git working trees reported by sessions and registered projects also appear as implicit component nodes, except roots in temporary folders or the home folder itself. Registrations are checked for Git by the reporting daemon. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
 
 The gateway stores one repo context and an agent identity for each lasting session. It defaults the agent to the repo owner. In Sessions, select a running session and press right until the AGENT cell appears; Space cycles through the available agents. The agent's charter and governance edges follow that selection, while the session keeps its repo and any merger assignment. The owner can change this field; sessions cannot. The gateway records each change, including the old agent, new agent and owner session, in `session_agent_history`. The owner-only daemon methods `session_agent_list {}` and `session_agent_set {session_id, agent}` list choices and set the agent by its ID.
 
 A worker session belongs to its run instead; the gateway records the caller's agent when the worker starts and keeps it on the completed run. Owner pseudo-sessions have no agent, and the CTO uses the CTO agent. The legacy project strings remain available to older daemons.
 
-The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <text...>` (omit text to clear), `charter history <node>`, `graph`, `graph undo [history-id]`, `node add-architect <name>`, `node remove <name>`, `node settings <name> [setting value...]`, `edge set <from> <kind> <to> [mode] [rule]` and `edge remove <from> <kind> <to>`. Charter attributes are `purpose`, `maturity`, `accepts`, `refuses`, `feature_requests`, `consumers`, `escalate`, `needs` and `notes`. Edge kinds are `depends` (consumer to provider), `governs` (architect to component, with mode `advisor`, `arbiter` or `owner`) and `deploys` (deployer to each app it deploys). Delivery assignments also use `accepts`, `reviews`, `approves` and `approves_deploy` edges. The owner can assign steps with `delivery_owner_set`.
+The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <text...>` (omit text to clear), `charter history <node>`, `graph`, `graph undo [history-id]`, `node add-architect <name>`, `node remove <name>`, `node settings <name> [setting value...]`, `edge set <from> <kind> <to> [mode] [rule]` and `edge remove <from> <kind> <to>`. Charter attributes are `purpose`, `maturity`, `maturity_note`, `accepts`, `refuses`, `feature_requests`, `escalate` and `rules`. Edge kinds are `depends` (consumer to provider), `governs` (architect to component, with mode `advisor`, `arbiter` or `owner`) and `deploys` (deployer to each app it deploys). Delivery assignments also use `accepts`, `reviews`, `approves` and `approves_deploy` edges. The owner can assign steps with `delivery_owner_set`.
 
 Agent list and get include the public charter fields purpose, maturity, accepts, refuses and feature_requests. List values are limited to 300 characters each. When purpose is empty, the project's AGENTS.md description is used, marked with `purpose_fallback`. `agent_session_get` also carries the session's node rules in `charter.rules`, the same name/value pairs `agent_graph_read` returns, so a session can check its own rules directly, including its autonomy (`off` or `wake`). The list stays compact and does not carry them.
 
@@ -2416,23 +2437,42 @@ With both, the policy text comes first and the charter second, separated by a bl
 
 ## Charters and component relationships
 
-Decisions: [0022](decisions/0022-component-graph-and-cto.md) and [0030](decisions/0030-graph-learns-from-instructions.md). The graph includes owner-managed edges and request rules. This section also covers the maturity defaults and merge authority (step 4).
+Decision [0086](decisions/0086-charter-levels.md) defines charter fields and inheritance.
+The graph separates Teams, Repos and lasting Agents. A session resolves its charter
+with its current Repo and Agent. Charters and graph edges are public to enrolled machines.
 
-Today the gateway stores a graph of components and architects: a node keyed by project (and a node for an architect that owns no code), a charter for each node, and directed edges (`depends`: consumer to provider; `governs`: architect to component, with mode `advisor`, `arbiter` or `owner`; `deploys`: deployer to each app it deploys). The project-keyed node represents the agent; the project is its home. A session speaks for that node as the PROJECT column resolves it. The graph is visible to every enrolled machine.
+**Writing a charter.** Budget about 1200 characters for the effective charter.
+Neighbors read the first 40 characters of accepts and refuses; put the main category
+first. Put detailed project instructions in AGENTS.md. Warnings about size and sensitive
+details are advisory; the existing 2 KiB limit applies to each written value.
 
-**Writing a charter.** The project's own agent reads its charter on every turn, so budget about 1200 characters (roughly 300 tokens) for the whole charter. Neighbors read only the first 40 characters of `accepts` and `refuses`, so put the most important item first, in a few words. The owner reads `purpose` on the Graph card: use one sentence up to 160 characters, or 2-3 lines at 80 columns. For `accepts`, `refuses` and `escalate`, use at most 6 categories, each a short phrase separated by semicolons or newlines. Use names and pointers for `feature_requests`, `consumers` and `needs`; use `notes` only for rules nothing else covers. Never put secrets, IP addresses, tokens or paths in a charter. `graph_change` with action `charter_set` and `agent-net charter set` return advisory warnings about the budget and sensitive details; those warnings do not stop a write. The existing 2 KiB value limit still applies. Put detail in the project's `AGENTS.md`. The shared source for the guidance is `internal/protocol/charter_guide.go`.
+| Attribute | Set at | Meaning |
+|---|---|---|
+| `purpose` | Repo, Team | A sentence describing the project or team. |
+| `maturity` | Repo | Enum: experimental, early, growing or mature. |
+| `maturity_note` | Repo | Optional one-line explanation, separate from the enum. |
+| `accepts` | Agent | Work it takes from other agents. |
+| `refuses` | Any level | Work it declines; inherited safety refusals always apply. |
+| `escalate` | Agent; Team default | Optional short line; the Team default is "ask the team lead". |
+| `feature_requests` | Agent | How to raise an idea for new work. |
+| `rules` | Any level | Free text for taste and house rules. Code does not interpret it. |
 
-| Attribute | Answers | Size | Good example | Bad example |
-|---|---|---|---|---|
-| `purpose` | What the project is | 1 sentence, up to 160 characters | Generic document and evidence API for any client. | Every endpoint, dependency, host and access rule in one charter. |
-| `maturity` | `early`, `growing`, `mature` or `critical`, then why in a few words | 1 line | `growing - core API is stable; integrations are changing.` | `critical` followed by a long operational inventory. |
-| `accepts` | What work this project's agent takes on when other agents ask | At most 6 short items | Bug fixes in retrieval; new generic endpoints; questions about the API | Bearer-authenticated requests from 192.168.50.65 on /v1/search |
-| `refuses` | What the agent declines and where to redirect it | At most 6 short items | Client-specific endpoints; deploy changes (ask homelab) | Lists of bearer tokens or allowed IPs. |
-| `feature_requests` | How to ask for something new | Names and pointers | Propose generic additions with a reason; send client-specific ideas to the client project. | A multi-step feature backlog with implementation detail. |
-| `consumers` | Projects that depend on this one | Names and pointers | tenebrae, wbg-housing | An IP address, user ID and repository path. |
-| `escalate` | What the agent must bring to the owner or architect | At most 6 short items | Breaking API changes: bring options and a recommendation to the owner. | Escalate every question without a recommendation. |
-| `needs` | Projects, MCP servers and services it depends on | Names and pointers | quota-axi, tenebrae-library, PostgreSQL | IP addresses, user IDs and absolute config paths. |
-| `notes` | Rules nothing else covers that every agent working here must know | 1-2 lines | Deploys go through homelab; never deploy by hand. | A deploy runbook with credentials and machine paths. |
+Inheritance is global -> Team -> Repo -> Agent. Each level stores only its overrides.
+Every field takes the nearest set value except refuses, which is the union of all levels.
+If an Agent and its Repo belong to different Teams, both Teams' safety refusals apply.
+The effective charter carries a sources map with level, scope and value per field;
+refuses keeps all contributors. A standalone Agent graph row uses its sole owned Repo
+when unique; a session view supplies its explicit Repo context.
+
+`graph_change` action `charter_set` takes level, node (the scope), attr and value.
+Global scope is empty. A typed ref can select a Team, Repo or Agent. `team_charter`
+takes team, attr and value. Empty text clears the local override. Legacy unscoped
+repo clients can still edit existing work boundaries; the removed consumers, needs
+and notes attributes are rejected. The upgrade preserves them under matching headings
+in rules. It splits maturity at " - ": the first word is the enum, unknown words become
+early, and the explanation becomes maturity_note. No charter is valid and adds no limit,
+deploy approval or charter prompt. The Graph's e key edits the selected level; E edits
+global defaults. The form shows sources and never copies inherited text into an override.
 
 **Reading it.** The daemon frame `graph.read` takes `{"project": "cogforge"}` and answers `{"graph": {"nodes": [...], "edges": [...]}}`. A project name returns that node, its charter, the nodes its edges name, and the edges that touch it; an empty name returns the whole graph. An eligible project with no stored charter is still an implicit node, with empty charter attributes. Owner-facing graph reads hide inactive empty implicit nodes after seven days; `graph_get {"all":true}` includes them. Nodes with a charter, an edge or stored owner history are retained. No session or peer identity is needed: this is a read, not a change.
 
@@ -2440,13 +2480,13 @@ The owner made charters and edges public to every agent. `agent_graph_read` retu
 
 **Maturity and its defaults.** A node's `maturity` level sets five controls. A node may override any one of them in a node setting; the owner sets it with `node_settings_set`, and the override is stored beside the charter.
 
-| | `early` | `growing` | `mature` | `critical` |
+| | `experimental` | `early` | `growing` | `mature` |
 |---|---|---|---|---|
-| Tests before merge (`tests_before_merge`) | `optional` | `suite` | `suite-new-tests` | `suite-new-tests-review` |
-| Merge authority (`merge_authority`) | `full` | `full` | `delegated` | `ask` |
-| Worker sandbox (`worker_sandbox`, decision 0020) | `sandboxed` | `sandboxed` | `sandboxed` | `no-network` |
-| Requests from consumers (`judge_consumers`) | `free` | `charter` | `strict` | `escalate` |
-| Deploy rule (`deploy_rule`) | `brief` | `brief` | `ask` | `owner` |
+| Tests before merge (`tests_before_merge`) | `optional` | `optional` | `suite` | `suite-new-tests` |
+| Merge authority (`merge_authority`) | `full` | `full` | `full` | `delegated` |
+| Worker sandbox (`worker_sandbox`, decision 0020) | `sandboxed` | `sandboxed` | `sandboxed` | `sandboxed` |
+| Requests from consumers (`judge_consumers`) | `free` | `free` | `charter` | `strict` |
+| Deploy rule (`deploy_rule`) | `brief` | `brief` | `brief` | `ask` |
 
 An empty or missing maturity uses the `growing` controls. Approval overrides still appear in the node's rules text. The text the session and its workers get is plain words, for example `maturity mature: run the suite and add tests for new behavior; merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node; ask before deploying`, followed by the consumer rule. A node with no maturity gets rules text when a merge or deploy approval override requires it.
 
@@ -2473,7 +2513,7 @@ Signal records are kept for 90 days, independently of the message retention sett
 
 **Reactive charter learning.** The gateway runs rules on owner instructions, reply outcomes and deliveries between projects. An owner assignment proposes the work for the destination's `accepts` and `<destination> for <work>` for the sender's `needs`. Two matching redirects to the same destination in seven days propose that `needs` item and a `depends` edge. Three matching refusals in seven days propose a `refuses` item. Five messages between projects in seven days, when they have no edge, propose a `depends` edge. The rules do not understand every wording. Evidence includes message or signal IDs and excerpts. Related pending proposals merge, and a node must be quiet for two minutes before its proposals are ready.
 
-Minor additions apply automatically: an owner-derived `accepts` item, an item in `needs` or `consumers`, or a `depends` edge. A restrictive or narrowing phrase, removal, `refuses`, `escalate`, maturity, deploy or request rules, a `governs` or `deploys` edge, or any change on a critical node needs the owner. An edge touching a critical node needs the owner too. At most three changes per node apply automatically in a rolling 24 hours; further proposals become major. A rejected phrase is not offered again for that node and field. Automatic changes use the graph's normal history with actor `learned` and can be undone with `graph_undo` or the Graph card's `,`, `.` and `u` keys.
+Minor additions apply automatically: an owner-derived `accepts` item, free text in `rules`, or a `depends` edge. A restrictive or narrowing phrase, removal, `refuses`, `escalate`, maturity, deploy or request rules, a `governs` or `deploys` edge, or any change on a critical node needs the owner. An edge touching a critical node needs the owner too. At most three changes per node apply automatically in a rolling 24 hours; further proposals become major. A rejected phrase is not offered again for that node and field. Automatic changes use the graph's normal history with actor `learned` and can be undone with `graph_undo` or the Graph card's `,`, `.` and `u` keys.
 
 Ready major proposals appear in the Inbox tab, with the evidence and `a` to accept or `r` to reject. These actions use the owner gate. The CTO cannot read pending major proposals or charter suggestions; the owner can share them.
 
@@ -2483,7 +2523,7 @@ The decide rule is also in the [guidance block](#what-setup-changes-on-your-mach
 
 **The relation line on a delivered request.** The gateway computes it from the graph, not from anything the sender wrote. It looks at the sender's node and the recipient's node: when the sender depends on the recipient, the line says the sender is a consumer of the recipient's node; when the sender governs the recipient's node, it says so with the mode (`advisor`, `arbiter` or `owner`); otherwise, for two known and different nodes, it says there is no graph relation. The gateway puts the line in `recipient_relation` on the message it delivers, like `recipient_peer_trust`, and the Claude Code adapter, the Codex adapter, the Pi extension and the OpenCode plugin write it after the body and after agent-net's authority note. Only a request gets a line: a reply is information and a notification is not a request. Two sessions of the same node, or a message from the owner, get none. The line starts with `[agent-net]`, so the marker rule of [0013](decisions/0013-peer-trust-and-hints.md) applies.
 
-**Worker briefs.** A worker's task body carries the whole charter of its project's node after the project rules for workers and before the task: `purpose`, `maturity`, `accepts`, `refuses`, `consumers`, `escalate`, `needs` and `notes` (only the attributes that are set), then the maturity rules and consumer rule, and the `permissions:` line of the level in force. A node with no charter can still get connected-charter lines or deploy approval rules. The owner's machine reads the graph when it sends the task, so a queued start and a continued worker get the same section.
+**Worker briefs.** A worker's task body carries the whole charter of its project's node after the project rules for workers and before the task: `purpose`, `maturity`, `maturity_note`, `accepts`, `refuses`, `feature_requests`, `escalate` and `rules` (only the attributes that are set), then the maturity rules and consumer rule, and the `permissions:` line of the level in force. A node with no charter can still get connected-charter lines or deploy approval rules. The owner's machine reads the graph when it sends the task, so a queued start and a continued worker get the same section.
 
 ## What setup changes on your machine
 

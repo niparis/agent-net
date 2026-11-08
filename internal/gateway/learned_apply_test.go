@@ -14,9 +14,9 @@ import (
 func TestLearnedClassify(t *testing.T) {
 	cases := []struct{ field, kind, edge, origin, want string }{
 		{"accepts", "add", "", "owner", "minor"}, {"accepts", "add", "", "peer", "major"},
-		{"needs", "add", "", "peer", "minor"}, {"consumers", "add", "", "peer", "minor"},
+		{"rules", "add", "", "peer", "minor"}, {"rules", "add", "", "peer", "minor"},
 		{"edge", "add", "depends", "peer", "minor"}, {"edge", "add", "governs", "peer", "major"}, {"edge", "add", "deploys", "peer", "major"},
-		{"needs", "remove", "", "owner", "major"}, {"needs", "narrow", "", "owner", "major"},
+		{"rules", "remove", "", "owner", "major"}, {"rules", "narrow", "", "owner", "major"},
 		{"refuses", "add", "", "owner", "major"}, {"escalate", "add", "", "owner", "major"}, {"maturity", "add", "", "owner", "major"},
 		{"deploy_rules", "add", "", "owner", "major"}, {"request_rules", "add", "", "owner", "major"}, {"unknown", "add", "", "owner", "major"},
 	}
@@ -46,7 +46,7 @@ func insertLearned(t *testing.T, s *Store, node, field, edge, kind, phrase, orig
 }
 func TestLearnedApplyHistoryAndUndo(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
-	id := insertLearned(t, s, "app", "needs", "", "add", "ops for backups", "owner")
+	id := insertLearned(t, s, "app", "rules", "", "add", "ops for backups", "owner")
 	edgeID := insertLearned(t, s, "app", "edge", "depends", "add", "ops", "flow")
 	if err := s.ProcessLearned(); err != nil {
 		t.Fatal(err)
@@ -81,12 +81,12 @@ func TestLearnedApplyHistoryAndUndo(t *testing.T) {
 }
 func TestLearnedCriticalAndCap(t *testing.T) {
 	s, c, _, _ := learnedProjects(t)
-	if err := s.SetCharter("ops", "maturity", "critical - production", "owner"); err != nil {
+	if err := s.seedLegacyCharter("ops", "maturity", "critical - production", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	critical := insertLearned(t, s, "ops", "needs", "", "add", "help", "owner")
+	critical := insertLearned(t, s, "ops", "rules", "", "add", "help", "owner")
 	for i := 0; i < 4; i++ {
-		insertLearned(t, s, "app", "needs", "", "add", fmt.Sprintf("item %d", i), "owner")
+		insertLearned(t, s, "app", "rules", "", "add", fmt.Sprintf("item %d", i), "owner")
 	}
 	if err := s.ProcessLearned(); err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestLearnedCriticalAndCap(t *testing.T) {
 	if v[4].Status != "pending" {
 		t.Fatalf("promoted suggestion applied: %+v", v)
 	}
-	insertLearned(t, s, "app", "consumers", "", "add", "new client", "owner")
+	insertLearned(t, s, "app", "rules", "", "add", "new client", "owner")
 	if err := s.ProcessLearned(); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestLearnedRejectedNeverOfferedAgain(t *testing.T) {
 }
 func TestLearnedApplyRollback(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
-	insertLearned(t, s, "app", "needs", "", "add", "ops for backups", "owner")
+	insertLearned(t, s, "app", "rules", "", "add", "ops for backups", "owner")
 	if _, err := s.db.Exec(`CREATE TRIGGER fail_learned BEFORE UPDATE OF status ON learned_suggestions WHEN NEW.status='applied' BEGIN SELECT RAISE(FAIL,'test'); END`); err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestLearnedApplyRollback(t *testing.T) {
 
 func TestLearnedEdgeCriticalTargetAndExistingRule(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
-	if err := s.SetCharter("ops", "maturity", "critical", "owner"); err != nil {
+	if err := s.seedLegacyCharter("ops", "maturity", "critical", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	insertLearned(t, s, "app", "edge", "depends", "add", "ops", "flow")
@@ -233,14 +233,14 @@ func TestLearnedOwnerAndMajorApply(t *testing.T) {
 		if x.Field == "refuses" && (x.Status != "pending" || x.Severity != "major") {
 			t.Fatalf("major: %+v", x)
 		}
-		if (x.Field == "needs" || x.Field == "accepts") && x.Status != "applied" {
+		if (x.Field == "rules" || x.Field == "accepts") && x.Status != "applied" {
 			t.Fatalf("owner additions: %+v", x)
 		}
 	}
 }
 func TestLearnedRunLearningProcessesOnStartup(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
-	insertLearned(t, s, "app", "needs", "", "add", "ops for backups", "owner")
+	insertLearned(t, s, "app", "rules", "", "add", "ops for backups", "owner")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0)}
@@ -254,7 +254,7 @@ func TestLearnedRunLearningProcessesOnStartup(t *testing.T) {
 func TestLearnedInvalidCandidateDoesNotBlockOthers(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
 	insertLearned(t, s, "app", "edge", "depends", "add", "missing", "flow")
-	insertLearned(t, s, "app", "needs", "", "add", "ops", "owner")
+	insertLearned(t, s, "app", "rules", "", "add", "ops", "owner")
 	if err := s.ProcessLearned(); err != nil {
 		t.Fatal(err)
 	}

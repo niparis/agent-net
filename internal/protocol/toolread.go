@@ -119,11 +119,16 @@ type WaitingRow struct {
 // ReadCharter is the agent-facing charter subset carried by full read rows.
 // Accepts and refuses are lists split on the charter's semicolon separators.
 type ReadCharter struct {
-	Purpose         string   `json:"purpose,omitempty"`
-	PurposeFallback bool     `json:"purpose_fallback,omitempty"`
-	Accepts         []string `json:"accepts,omitempty"`
-	Refuses         []string `json:"refuses,omitempty"`
-	FeatureRequests string   `json:"feature_requests,omitempty"`
+	Maturity        string          `json:"maturity,omitempty"`
+	MaturityNote    string          `json:"maturity_note,omitempty"`
+	Escalate        string          `json:"escalate,omitempty"`
+	Rules           string          `json:"rules,omitempty"`
+	Sources         *CharterSources `json:"sources,omitempty"`
+	Purpose         string          `json:"purpose,omitempty"`
+	PurposeFallback bool            `json:"purpose_fallback,omitempty"`
+	Accepts         []string        `json:"accepts,omitempty"`
+	Refuses         []string        `json:"refuses,omitempty"`
+	FeatureRequests string          `json:"feature_requests,omitempty"`
 }
 
 // SessionWorker is the worker part of a full session row.

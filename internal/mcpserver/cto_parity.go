@@ -18,7 +18,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	model := s("Empty uses default.")
 	harness := en("Omit for default.", "opencode", "claude", "pi", "codex")
 
-	add("charter_set", "Set a charter attribute.", map[string]ctoField{"ref": {typ: "graph_ref"}, "node": s("Node."), "attr": en("Attribute.", ctoCharterAttrs...), "value": s("2 KiB max; empty clears.")})
+	add("charter_set", "Set a charter attribute.", map[string]ctoField{"ref": {typ: "graph_ref"}, "level": en("Charter level.", "global", "team", "repo", "agent"), "node": s("Node or scope ID."), "attr": en("Attribute.", ctoCharterAttrs...), "value": s("2 KiB max; empty clears.")})
 	for _, name := range []string{"repo_create", "agent_create"} {
 		add(name, "Create a typed identity; owner approval required.", map[string]ctoField{"name": s("Display name."), "role": s("Agent role; optional.")})
 	}
@@ -39,6 +39,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("node_settings_set", "Set an override.", map[string]ctoField{"node": s("Node."), "setting": en("Setting.", ctoNodeSettings...), "value": s("Empty clears.")})
 	add("team_create", "Create a team.", map[string]ctoField{"name": s("Team name."), "purpose": s("Team purpose.")})
 	add("team_rename", "Rename a team.", map[string]ctoField{"team": s("Team name or ID."), "name": s("New team name.")})
+	add("team_charter", "Set an inherited Team charter field.", map[string]ctoField{"team": s("Team name or ID."), "attr": en("Attribute.", "purpose", "refuses", "escalate", "rules"), "value": s("Empty inherits.")})
 	add("team_purpose", "Change a team purpose.", map[string]ctoField{"team": s("Team name or ID."), "purpose": s("Team purpose.")})
 	add("team_archive", "Archive a team.", map[string]ctoField{"team": s("Team name or ID.")})
 	add("team_member_add", "Add a member to a team.", map[string]ctoField{"team": s("Team name or ID."), "member": {typ: "graph_ref", desc: "Member ref (agent or repo)."}, "ref": {typ: "graph_ref", desc: "Member ref (agent or repo)."}})

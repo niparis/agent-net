@@ -14,6 +14,9 @@ func (m Model) paste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 		m.compose, cmd = m.compose.Update(msg)
 	case modeSessionForm:
 		return m.sessionFormInput(msg)
+	case modeCharterForm:
+		m.charterForm.input, cmd = m.charterForm.input.Update(msg)
+		return m, cmd
 	case modeTeamForm:
 		f := &m.teamForm
 		f.in[f.cur], cmd = f.in[f.cur].Update(msg)

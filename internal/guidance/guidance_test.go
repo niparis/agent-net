@@ -198,7 +198,7 @@ func TestDecideDoNotDeferRule(t *testing.T) {
 		b := Block(v)
 		for _, want := range []string{
 			"Decide, do not defer.",
-			"judge it against your node's charter",
+			"read your effective charter",
 			"Escalate only when the charter says so, or when it does not cover the request",
 			"Every escalation carries a recommendation",
 		} {
