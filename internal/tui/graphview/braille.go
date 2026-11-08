@@ -378,10 +378,18 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			if !free {
 				continue
 			}
+			suffixStart := len([]rune(n.Label)) - len([]rune(n.LabelSuffix))
+			if scene.Level == "cards" {
+				suffixStart++
+			}
 			for i, r := range rs {
-				if put(pos[0]+i, pos[1], r, labelRole) {
+				role := labelRole
+				if n.LabelSuffix != "" && i >= suffixStart && i < suffixStart+len([]rune(n.LabelSuffix)) {
+					role = "labelDim"
+				}
+				if put(pos[0]+i, pos[1], r, role) {
 					hits[Cell{pos[0] + i, pos[1]}] = n.Name
-					labels[Cell{pos[0] + i, pos[1]}] = LabelCell{Rune: r, Role: labelRole}
+					labels[Cell{pos[0] + i, pos[1]}] = LabelCell{Rune: r, Role: role}
 				}
 			}
 			// Keep the cell between a marker and a label on its row blank,

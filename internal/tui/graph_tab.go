@@ -125,6 +125,12 @@ func (m *Model) smoothCamera() {
 // cheap and never touches pixels.
 func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.Scene {
 	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(size.Width), Height: float64(size.Height)})
+	duplicates := map[string]int{}
+	for _, n := range m.mp.nodes {
+		if n.Ref != nil && (n.Ref.Kind == "repo" || n.Ref.Kind == "agent") {
+			duplicates[strings.ToLower(m.graphName(n.Name))]++
+		}
+	}
 	scene.Hints = nil
 	for _, binding := range keyBindings {
 		if binding.context == contextGraph {
@@ -139,6 +145,10 @@ func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.
 		scene.Nodes[i].Card.Name = m.graphName(scene.Nodes[i].Name)
 		if node, ok := m.mapNode(scene.Nodes[i].Name); ok && node.Ref != nil {
 			scene.Nodes[i].Kind = node.Ref.Kind
+			if (node.Ref.Kind == "repo" || node.Ref.Kind == "agent") && duplicates[strings.ToLower(m.graphName(node.Name))] > 1 {
+				scene.Nodes[i].LabelSuffix = " · " + node.Ref.Kind
+				scene.Nodes[i].Label += scene.Nodes[i].LabelSuffix
+			}
 		}
 	}
 	for i := range scene.Nodes {
@@ -584,7 +594,11 @@ func graphStatusLine(w int, scene graphview.Scene) string {
 		edges := n.Card.Incoming + n.Card.Outgoing
 		prefix := "  selected: "
 		line := prefix + ansi.Truncate(name, max(w-ansi.StringWidth(prefix), 1), "…")
-		for _, extra := range []string{" · " + kind, edgeCount(edges)} {
+		extras := []string{edgeCount(edges)}
+		if n.LabelSuffix == "" {
+			extras = append([]string{" · " + kind}, extras...)
+		}
+		for _, extra := range extras {
 			if ansi.StringWidth(line+extra) <= w {
 				line += extra
 			}

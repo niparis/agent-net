@@ -327,7 +327,14 @@ func (b Braille) renderGroups(scene Scene, size Size) Output {
 			if n.Selected {
 				labelRole = "selectedLabel"
 			}
-			put(x, y, ansi.Truncate(marker+n.Label, max(width, 1), "…"), labelRole, name)
+			text := ansi.Truncate(marker+n.Label, max(width, 1), "…")
+			put(x, y, text, labelRole, name)
+			if n.LabelSuffix != "" {
+				start := ansi.StringWidth(marker+n.Label) - ansi.StringWidth(n.LabelSuffix)
+				if start < ansi.StringWidth(text) {
+					put(x+start, y, ansi.Cut(text, start, ansi.StringWidth(text)), "labelDim", name)
+				}
+			}
 			if n.Wildcard {
 				put(x, y+1, ansi.Truncate(n.WildcardLabel, max(g.Width-4, 1), "…"), "offline", name)
 			}

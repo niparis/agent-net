@@ -9,10 +9,13 @@ line and a count by relationship kind. Box widths follow their content and the
 terminal size. The selected member stays in view when the overview is taller
 than the terminal.
 
-A repo and agent share one display node only when their ownership, graph links
-and session associations establish a one-to-one pair. Their records remain
-separate on the gateway. Cards retain the agent identity and the full set of
-relationships. Shared agents and repos with several agents stay separate.
+A repo and its same-name owner or lead share one display node, including when
+that agent also serves other repos. Other merges require a one-to-one pair
+from ownership, graph links and session associations. Their records remain
+separate on the gateway. Cards retain the agent identity and relationships.
+A merged node uses the repo's team, or the agent's team if only the agent is a
+member. It appears in one box. Unrelated namesakes have dim repo or agent
+suffixes so their labels remain distinct.
 
 Dormant identities fold into one selectable chip. Dormant means no online
 session and no session activity within 30 days, an archived record, or a

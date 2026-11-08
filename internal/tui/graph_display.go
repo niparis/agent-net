@@ -26,9 +26,9 @@ type graphRemovedMsg struct {
 	failed []string
 }
 
-// graphProjection merges identities only when the repo-agent relationship is
-// unambiguous in both directions. Ownership, explicit links and live sessions
-// all contribute; names alone never establish identity.
+// graphProjection gives a same-name owner or lead its home repo even when
+// it also serves other repos. Other pairs still require an unambiguous
+// relationship in both directions. Names alone never establish identity.
 func (m *Model) graphProjection() protocol.GraphView {
 	v := m.mp.full
 	v.Nodes = append([]protocol.Node(nil), v.Nodes...)
@@ -43,7 +43,9 @@ func (m *Model) graphProjection() protocol.GraphView {
 	m.mp.aliases = map[string]string{}
 	repos, agents := map[string]map[string]bool{}, map[string]map[string]bool{}
 	kinds := map[string]string{}
+	records := map[string]protocol.Node{}
 	for _, n := range v.Nodes {
+		records[n.Name] = n
 		if n.Ref != nil {
 			kinds[n.Name] = n.Ref.Kind
 		}
@@ -81,11 +83,36 @@ func (m *Model) graphProjection() protocol.GraphView {
 			pair(firstNonEmpty(a.Repo.Project, a.Profile.Project), graphRefKey(&protocol.GraphRef{Kind: "agent", ID: a.AgentID}))
 		}
 	}
+	// Prefer the owning agent, then the lead, when either shares the repo's
+	// display name. A shared agent has one canonical home, chosen by stable ID
+	// if more than one owning repo happens to have that same name.
+	homes := map[string]string{}
+	for _, n := range v.Nodes {
+		if kinds[n.Name] != "repo" {
+			continue
+		}
+		for _, ref := range []*protocol.GraphRef{n.Owner, n.Lead} {
+			if ref == nil {
+				continue
+			}
+			key := graphRefKey(ref)
+			if kinds[key] != "agent" || !strings.EqualFold(m.graphName(n.Name), m.graphName(key)) {
+				continue
+			}
+			if previous, ok := homes[key]; !ok || n.Name < previous {
+				homes[key] = n.Name
+			}
+			break
+		}
+	}
 	for r, as := range repos {
 		if len(as) != 1 {
 			continue
 		}
 		for a := range as {
+			if home, ok := homes[a]; ok && home != r {
+				continue
+			}
 			if len(agents[a]) == 1 {
 				m.mp.aliases[a] = r
 				for _, n := range v.Nodes {
@@ -96,6 +123,10 @@ func (m *Model) graphProjection() protocol.GraphView {
 				}
 			}
 		}
+	}
+	for agent, repo := range homes {
+		m.mp.aliases[agent] = repo
+		m.mp.merged[repo] = records[agent]
 	}
 	alias := func(key string) string {
 		if a, ok := m.mp.aliases[key]; ok {
@@ -124,13 +155,35 @@ func (m *Model) graphProjection() protocol.GraphView {
 		out.Nodes = append(out.Nodes, n)
 	}
 	seen := map[string]bool{}
+	memberships := map[string]protocol.Edge{}
+	nativeMembership := map[string]bool{}
 	for _, e := range v.Edges {
+		originalFrom := e.From
 		e.From, e.To = alias(e.From), alias(e.To)
+		if e.Kind == "member_of" {
+			native := originalFrom == e.From
+			previous, exists := memberships[e.From]
+			if !exists || native && !nativeMembership[e.From] || native == nativeMembership[e.From] && e.To < previous.To {
+				memberships[e.From] = e
+				nativeMembership[e.From] = native
+			}
+			continue
+		}
 		key := e.From + "\x01" + e.To + "\x01" + e.Kind + "\x01" + e.Mode + "\x01" + e.Rule
 		if !seen[key] {
 			seen[key] = true
 			out.Edges = append(out.Edges, e)
 		}
+	}
+	// A merged project belongs to one box. Its repo membership wins over
+	// its agent membership; either is used when only one side has a team.
+	members := make([]string, 0, len(memberships))
+	for key := range memberships {
+		members = append(members, key)
+	}
+	sort.Strings(members)
+	for _, key := range members {
+		out.Edges = append(out.Edges, memberships[key])
 	}
 	return out
 }
@@ -444,6 +497,9 @@ func (m Model) startGraphRemoval(all bool) (Model, tea.Cmd) {
 	if all {
 		question = fmt.Sprintf("Remove all %d dormant for good?", len(m.mp.dormant))
 	}
+	// A home agent may own other repos in the batch. Archive every repo
+	// before tombstoning agents so their remaining ownership cannot block it.
+	sort.SliceStable(nodes, func(i, j int) bool { return nodes[i].Ref.Kind == "repo" && nodes[j].Ref.Kind != "repo" })
 	m.mp.removal = &graphRemoval{question, nodes}
 	return m, nil
 }

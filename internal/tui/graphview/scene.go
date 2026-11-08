@@ -9,6 +9,7 @@ import (
 // Viewport describes the shape of a view in abstract units.
 type Viewport struct{ Width, Height float64 }
 type SceneNode struct {
+	LabelSuffix                               string `json:",omitempty"`
 	Activity                                  int
 	BusySessions                              int
 	WildcardLabel                             string

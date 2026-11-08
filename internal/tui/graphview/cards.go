@@ -204,6 +204,10 @@ func pixelLabelsAndHits(scene Scene, size Size, cellMetrics ...PixelMetrics) (ma
 			}
 		}
 	}
+	suffixes := map[string]int{}
+	for _, n := range scene.Nodes {
+		suffixes[n.Name] = len([]rune(n.LabelSuffix))
+	}
 	place := func(text, role, name string, candidates []Cell) {
 		runes := []rune(text)
 		if len(runes) == 0 || len(runes) > size.Width {
@@ -230,7 +234,11 @@ func pixelLabelsAndHits(scene Scene, size Size, cellMetrics ...PixelMetrics) (ma
 			}
 			for i, r := range runes {
 				p := Cell{c.X + i, c.Y}
-				labels[p] = LabelCell{Rune: r, Role: role}
+				cellRole := role
+				if suffixes[name] > 0 && i >= len(runes)-suffixes[name] {
+					cellRole = "labelDim"
+				}
+				labels[p] = LabelCell{Rune: r, Role: cellRole}
 				if name != "" {
 					hits[p] = name
 				}
