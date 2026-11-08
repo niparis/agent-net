@@ -104,9 +104,9 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"session_change": {
-		desc: "Change a session: rename, trust (a session, or a project or path folder for Claude Code), policy, session_start, merger_start or merger_stop.",
+		desc: "Change a session: rename, trust (a session, or a project or path folder for Claude Code), policy, session_start, merger_start, merger_stop, or stop, resume and restart an agent session.",
 		fields: map[string]ctoField{
-			"action":     {typ: "string", enum: []string{"rename", "trust", "policy", "session_start", "merger_start", "merger_stop"}},
+			"action":     {typ: "string", enum: []string{"rename", "trust", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}},
 			"session_id": {typ: "string", desc: "Session ID."},
 			"agent_id":   {typ: "string", desc: "Lasting Agent; omit for Repo owner."},
 			"project":    {typ: "string"}, "path": {typ: "string"}, "node_id": {typ: "string"},

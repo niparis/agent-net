@@ -121,6 +121,18 @@ and machine token rotation are proposals. The CTO runs other changes at once;
 the owner sees Inbox notices and can undo supported changes. A proposal still
 requires a dialog or Inbox approval.
 
+The CTO can stop, resume and restart an owner or agent session with
+`session_change` (actions `stop`, `resume`, `restart`). These are immediate
+changes with an Inbox notice and an audit line. They add no new way to signal a
+process: `stop` and the stop inside `restart` use the owner's guarded stop, which
+signals only the registered harness process and rechecks its identity before it
+escalates. For a session on another machine they use the owner session frames,
+which the receiving machine checks against the gateway. They refuse workers
+(which have `worker_change`), the CTO's own session, and Pi for resume and
+restart. A resume never opens a view and carries no herdr location. A CTO can
+therefore interrupt a running turn of any agent session, as the owner can; the
+conversation is kept, and the Inbox notice for a stop can resume it.
+
 The read rule follows decision 0035: a CTO data view calls the same daemon
 function as its matching ordinary agent tool, with the CTO caller identity,
 never a CLI or owner identity. The parity table in [reference.md](reference.md)

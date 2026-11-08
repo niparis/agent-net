@@ -235,6 +235,18 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 		q.Name = oldName
 		b, _ := json.Marshal(q)
 		options = []string{"session_rename", string(b)}
+	case concrete == "session_stop" || concrete == "session_resume" || concrete == "session_restart":
+		done, _ := result.(*ctoSessionControlResult)
+		if done != nil {
+			text = fmt.Sprintf("CTO %s %s (%s)", map[string]string{"stop": "stopped", "resume": "resumed", "restart": "restarted"}[done.Action], done.Name, done.SessionID)
+			if done.Action == "stop" {
+				// The conversation is kept, so resume is the undo. Resume and
+				// restart have none: the session is already running again.
+				undo, _ := json.Marshal(protocol.SessionResumeRequest{SessionID: done.SessionID})
+				options = []string{protocol.OpSessionResume, string(undo)}
+			}
+			diff = done.Note
+		}
 	case concrete == "session_trust":
 		var q protocol.SessionTrustRequest
 		_ = json.Unmarshal(args, &q)
