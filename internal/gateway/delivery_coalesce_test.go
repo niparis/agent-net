@@ -269,10 +269,10 @@ func TestCoalesce25ChangesReleaseThenVerifyGiveAtMostTwoMessages(t *testing.T) {
 
 func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testing.T) {
 	r := newDeliveryRig(t)
-	// The first phase never lets a timer fire: it is flushed by hand below.
-	// A timer that came late under host load could otherwise send release
-	// tasks while the verify tasks join the same batch, and the batch cap
-	// would cut the verify tasks in two.
+	// No timer fires in this test: both bursts are flushed by hand. A timer
+	// that fires inside a burst sends the tasks it has and puts the rest in a
+	// second batch, and on a loaded host a report can be more than a quiet
+	// window apart. The batching itself is what this test checks.
 	r.g.stepTaskQuietWindow = time.Hour
 	r.g.stepTaskBatchCap = 25
 
@@ -315,9 +315,6 @@ func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testin
 
 	// Send the prior batches (e.g. release tasks) now.
 	r.g.flushStepTaskBatches()
-	// The verify burst gets a real quiet window. It is long next to the time
-	// 25 reports take, so a slow scheduler does not open a gap inside the burst.
-	r.g.stepTaskQuietWindow = 1500 * time.Millisecond
 
 	// Now report release for all 25 changes, making verify ready for all of them.
 	for _, cid := range changeIDs {
@@ -326,22 +323,14 @@ func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testin
 		})
 	}
 
-	// Wait for the quiet window to flush the verify batch.
-	verifyCount := func() int {
-		var n int
-		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=? AND step='verify'`, r.caller).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		return n
+	// The 25th task reaches the batch cap and is sent at once. Flush by hand in
+	// case anything is still waiting, so no wall-clock wait decides the result.
+	r.g.flushStepTaskBatches()
+
+	var verifyMessages int
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=? AND step='verify'`, r.caller).Scan(&verifyMessages); err != nil {
+		t.Fatal(err)
 	}
-	deadline := time.Now().Add(20 * time.Second)
-	for verifyCount() == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("the quiet window did not send the verify batch")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	verifyMessages := verifyCount()
 
 	// All 25 tasks must be in the first message: a batch cut in two would
 	// show here at once, before its second half is sent.

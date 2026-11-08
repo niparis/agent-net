@@ -798,17 +798,32 @@ func TestClaudeCTOAdoptionRestartHello(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			eventually(t, "reconnected CTO hello", func() bool { _, err := os.Stat(marker); return err == nil })
-			response, err := os.ReadFile(marker)
-			if err != nil {
-				t.Fatal(err)
-			}
+			// The fake CTO records every hello answer. In late mode the MCP
+			// child can reconnect before the session file is back, so its first
+			// answer is the rejection; the retry after adoption succeeds. Wait
+			// for the answer this mode expects, not just for a file to appear.
+			var response []byte
 			var reply struct {
 				Error json.RawMessage `json:"error"`
 			}
-			if err := json.Unmarshal(response, &reply); err != nil {
-				t.Fatal(err)
-			}
+			eventually(t, "reconnected CTO hello", func() bool {
+				raw, err := os.ReadFile(marker)
+				if err != nil {
+					return false
+				}
+				var r struct {
+					Error json.RawMessage `json:"error"`
+				}
+				if json.Unmarshal(raw, &r) != nil {
+					return false
+				}
+				rejected := len(r.Error) != 0 && string(r.Error) != "null"
+				if (mode == "ended") != rejected {
+					return false
+				}
+				response, reply = raw, r
+				return true
+			})
 			if mode == "ended" {
 				if len(reply.Error) == 0 || string(reply.Error) == "null" || d.claudeCTO.root.Load() != nil {
 					t.Fatalf("ended job adopted: %s", response)
