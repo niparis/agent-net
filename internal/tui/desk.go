@@ -185,10 +185,10 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 			}
 			flight.body = append(flight.body, m.deliveryRow(cols, ch, sec == deskSecChange && i == at))
 			if finding := deliveryRowFinding(ch); finding != "" {
-				flight.body = append(flight.body, sDim.Render("  "+clip(sanitize(finding), max(innerW-2, 1))))
+				flight.body = append(flight.body, sDim.Render("    "+clip(sanitize(finding), max(innerW-4, 1))))
 			}
 			for _, a := range m.deskAsksAbout(ch.ID) {
-				flight.body = append(flight.body, sNeeds.Render("  asks you: "+clip(sanitize(inboxFirstLine(a.Question)), max(innerW-13, 1))))
+				flight.body = append(flight.body, sNeeds.Render("    asks you: "+clip(sanitize(inboxFirstLine(a.Question)), max(innerW-15, 1))))
 			}
 		}
 		if done, stale := m.deliveryHidden(); !d.showAll && done+stale > 0 {

@@ -186,7 +186,7 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 		{"learned", []string{"a accept", "r reject"}},
 		{"proposal", []string{"a approve", "r refuse"}},
 		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}},
-		{"question", []string{"t answer", "x dismiss", "enter details"}},
+		{"question", []string{"t type answer", "x dismiss", "enter details"}},
 		{"notice", []string{"x dismiss"}},
 	}
 	for _, tc := range cases {
@@ -211,7 +211,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m.inboxIndex = inboxRowIndex(m, "held")
 		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
-			t.Fatal("a did not answer the held request")
+			t.Fatal("a did not type answer the held request")
 		}
 		send(next, cmd())
 		if src.held.MessageID != "m_held" || src.held.Action != "a" {
@@ -251,7 +251,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m.inboxIndex = inboxRowIndex(m, "proposal")
 		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
-			t.Fatal("a did not answer the proposal")
+			t.Fatal("a did not type answer the proposal")
 		}
 		send(next, cmd())
 		call := src.method(protocol.OpProposalAnswer)
@@ -274,7 +274,7 @@ func TestInboxActionsCallTheSameOperations(t *testing.T) {
 		m.inboxIndex = inboxRowIndex(m, "approval")
 		next, cmd := press(m, tea.KeyPressMsg{Text: "a", Code: []rune("a")[0]})
 		if cmd == nil {
-			t.Fatal("a did not answer the inbox item")
+			t.Fatal("a did not type answer the inbox item")
 		}
 		send(next, cmd())
 		call := src.method("inbox_answer")
@@ -499,7 +499,7 @@ func TestInboxPanelShowsTheSelectedItem(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = openInbox(m)
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"ci-runner asks", "which branch?", "session ci-runner", "agent-net on", "build-vm", "10 minutes ago", "t answer", "enter details"} {
+	for _, want := range []string{"ci-runner asks", "which branch?", "session ci-runner", "agent-net on", "build-vm", "10 minutes ago", "t type answer", "enter details"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("question panel lacks %q:\n%s", want, view)
 		}
@@ -528,12 +528,12 @@ func TestInboxKeyBarFollowsTheSelection(t *testing.T) {
 		not  []string
 	}{
 		{"held", []string{"enter open session", "a approve", "r refuse"}, []string{"s let stand", "x dismiss"}},
-		{"outcome", []string{"s let stand", "O overrule"}, []string{"a approve", "t answer"}},
+		{"outcome", []string{"s let stand", "O overrule"}, []string{"a approve", "t type answer"}},
 		{"learned", []string{"a accept", "r reject"}, []string{"enter details", "x dismiss"}},
-		{"proposal", []string{"a approve", "r refuse"}, []string{"t answer", "enter details", "A approve all"}},
-		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}, []string{"s let stand", "t answer"}},
-		{"question", []string{"t answer", "x dismiss", "enter details"}, []string{"a approve", "r refuse"}},
-		{"notice", []string{"x dismiss"}, []string{"a approve", "t answer", "enter details"}},
+		{"proposal", []string{"a approve", "r refuse"}, []string{"t type answer", "enter details", "A approve all"}},
+		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}, []string{"s let stand", "t type answer"}},
+		{"question", []string{"t type answer", "x dismiss", "enter details"}, []string{"a approve", "r refuse"}},
+		{"notice", []string{"x dismiss"}, []string{"a approve", "t type answer", "enter details"}},
 	}
 	for _, tc := range cases {
 		m.inboxIndex = inboxRowIndex(m, tc.kind)
@@ -566,7 +566,7 @@ func TestInboxItemKeysPerKind(t *testing.T) {
 	cases := []struct{ kind, item, bar string }{
 		{"held", "enter open session  a approve  r refuse", "enter open session  a approve  r refuse  ↑↓ select  l log  ? help"},
 		{"waiting", "enter open session", "enter open session  ↑↓ select  l log  ? help"},
-		{"question", "t answer  x dismiss  enter details", "t answer  x dismiss  enter details  ↑↓ select  l log  ? help"},
+		{"question", "t type answer  x dismiss  enter details", "t type answer  x dismiss  enter details  ↑↓ select  l log  ? help"},
 		{"approval", "a approve  r refuse  x dismiss  enter details", "a approve  r refuse  x dismiss  enter details  ↑↓ select  l log  ? help"},
 		{"proposal", "a approve  r refuse", "a approve  r refuse  ↑↓ select  l log  ? help"},
 		{"learned", "a accept  r reject", "a accept  r reject  ↑↓ select  l log  ? help"},
@@ -634,7 +634,7 @@ func TestInboxPanelSitsBelowTheBoxesOnANarrowScreen(t *testing.T) {
 	if lastBox < 0 || panelAt <= lastBox {
 		t.Fatalf("the panel is not under the boxes (box ends %d, panel at %d):\n%s", lastBox, panelAt, view)
 	}
-	if !strings.Contains(view, "which branch?") || !strings.Contains(view, "t answer") {
+	if !strings.Contains(view, "which branch?") || !strings.Contains(view, "t type answer") {
 		t.Fatalf("the narrow panel lacks the item text or keys:\n%s", view)
 	}
 }

@@ -1,15 +1,15 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (2) │ 7 sessions, 5 online · 1 busy · 2 needs you
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (2) │ 8 sessions, 6 online · 1 busy · 2 needs you
 Desk · 2 need you
 ╭─Needs you · 2───────────────────────────────────────────────────────╮ ╭─ingest-forge asks────────────────────────────╮
 │ ▸ ingest-forge [question] Merge PR #3? CI green.                 2h │ │ Merge PR #3? CI green.                       │
 │   strategies   [approval] Release v1.2.3 to the machines        30m │ │ Recommendation: yes                          │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
-╭─In flight · 5───────────────────────────────────────────────────────╮ │ session strategies · strategies on Mac       │
+╭─In flight · 5───────────────────────────────────────────────────────╮ │ session ingest-forge · on Mac                │
 │   TITLE                     STEP     STATUS             AGE    DONE │ │ 2 hours ago                                  │
 │   Approve the deploy gate   approve  waiting for you    3h0m   ○    │ │                                              │
-│   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │ 1-2 answer  t answer  x dismiss              │
+│   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │ 1-2 pick  t type answer  x dismiss           │
 │   Say what a delivery row … test     waiting for ci-ru… 6m     ●●○○ │ │ enter details                                │
-│   merged: abcdef1                                                   │ │                                              │
+│     merged: abcdef1                                                 │ │                                              │
 │   Fix the deploy gate       review   back to strategie… 2h5m   ●✗   │ │                                              │
 │   wbg-procurement · 2 changes: accept by wbg-procurement (exited) … │ │                                              │
 │ 1 done and 1 stale hidden · v shows all                             │ │                                              │
@@ -31,4 +31,4 @@ Desk · 2 need you
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-1-2 answer  t answer  x dismiss  enter details  ↑↓ select  l log  ? help
+1-2 pick  t type answer  x dismiss  enter details  ↑↓ select  l log  ? help

@@ -927,7 +927,7 @@ func TestDeliveryGoldens(t *testing.T) {
 	}
 	for _, s := range []scene{
 		{"delivery_empty", &fakeDelivery{}, "", false, false},
-		{"delivery_error", &fakeDelivery{err: errors.New("the gateway did not answer in time")}, "", false, false},
+		{"delivery_error", &fakeDelivery{err: errors.New("the gateway did not type answer in time")}, "", false, false},
 		{"delivery_list", &fakeDelivery{changes: scenes}, "", false, false},
 		{"delivery_to_try", &fakeDelivery{changes: deliveryToTryScenes()}, "", false, false},
 		{"delivery_actions", &fakeDelivery{changes: deliveryActionScenes()}, "", false, false},

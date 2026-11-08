@@ -230,19 +230,19 @@ type fakeSource struct {
 	queries []protocol.TextQuery
 	topReqs []string
 
-	// What session_enter was asked, and the plan or error it answers with.
+	// What session_enter was asked, and the plan or error it type answers with.
 	enters    []protocol.EnterRequest
 	enterPlan protocol.EnterPlan
 	enterErr  error
 
-	// What session_start was asked, and the start or error it answers with.
+	// What session_start was asked, and the start or error it type answers with.
 	sessionResumes []protocol.SessionResumeRequest
 	sessionStarts  []protocol.SessionStartRequest
 	sessionStart   protocol.StartedSession
 	sessionErr     error
 	sessionGetErr  error
 
-	// The graph the map reads, and the error it answers with.
+	// The graph the map reads, and the error it type answers with.
 	graph    protocol.GraphView
 	graphErr error
 

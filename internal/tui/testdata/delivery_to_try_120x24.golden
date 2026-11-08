@@ -6,13 +6,13 @@ Desk · all clear · log closed (l opens it)
 ╭─In flight · 4───────────────────────────────────────────────────────╮ │ step verify: try it                          │
 │   TITLE                                 STEP     STATUS AGE    DONE │ │ with tenebrae-53 (online)                    │
 │ ▸ Enter resumes offline OpenCode and C… verify   try it 3h0m   ○    │ │ merged: 7c694c9  check: Owner: in Sessions,  │
-│   merged: 7c694c9  check: Owner: in Sessions, press v, select an o… │ │ press v, select an offline OpenCode          │
+│     merged: 7c694c9  check: Owner: in Sessions, press v, select an… │ │ press v, select an offline OpenCode          │
 │   Enter reuses bg attach pane           verify   try it 3h0m   ○    │ │ session, press Enter, and confirm that it    │
-│   merged: 7c694c9  check: It should focus that pane, not open a se… │ │ opens and comes online.                      │
+│     merged: 7c694c9  check: It should focus that pane, not open a … │ │ opens and comes online.                      │
 │   Stop shows at once in Sessions        verify   try it 3h0m   ○    │ │                                              │
-│   merged: 7c694c9  check: Owner check: in Sessions, select a sessi… │ │ enter evidence  v all changes  R refresh     │
+│     merged: 7c694c9  check: Owner check: in Sessions, select a ses… │ │ enter evidence  v all changes  R refresh     │
 │   x removes an offline session for good verify   try it 3h0m   ○    │ │ y it works  n it fails                       │
-│   merged: 7c694c9  check: It should ask to remove it and then be g… │ │                                              │
+│     merged: 7c694c9  check: It should ask to remove it and then be… │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
 
 

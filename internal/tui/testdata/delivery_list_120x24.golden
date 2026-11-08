@@ -8,7 +8,7 @@ Desk · all clear · log closed (l opens it)
 │ ▸ Approve the deploy gate   approve  waiting for you    3h0m   ○    │ │ enter evidence  v all changes  R refresh     │
 │   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │                                              │
 │   Say what a delivery row … test     waiting for ci-ru… 6m     ●●○○ │ │                                              │
-│   merged: abcdef1                                                   │ │                                              │
+│     merged: abcdef1                                                 │ │                                              │
 │   Fix the deploy gate       review   back to strategie… 2h5m   ●✗   │ │                                              │
 │   wbg-procurement · 2 changes: accept by wbg-procurement (exited) … │ │                                              │
 │ 1 done and 1 stale hidden · v shows all                             │ │                                              │

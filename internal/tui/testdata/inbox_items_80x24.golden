@@ -15,10 +15,10 @@ Desk · 7 need you · log closed (l opens it)
 ╭─ci-runner asks───────────────────────────────────────────────────────────────╮
 │ which branch?                                                                │
 │ session ci-runner · agent-net on build-vm · 10 minutes ago                   │
-│ t answer  x dismiss  enter details                                           │
+│ t type answer  x dismiss  enter details                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO · 1 open proposal────────────────────────────────────────────────────────╮
 │                                                                              │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-t answer  x dismiss  enter details  ↑↓ select  l log  ? help
+t type answer  x dismiss  enter details  ↑↓ select  l log  ? help

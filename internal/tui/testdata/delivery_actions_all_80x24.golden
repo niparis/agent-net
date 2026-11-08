@@ -7,9 +7,9 @@ Desk · all clear · log closed (l opens it)
 │   TITLE                      STEP     STATUS                     AGE    DONE │
 │ ▸ Resume offline sessions    verify   waiting for you            -      ○○   │
 │   Fix the entry test         test     back to tenebrae-53 (fix)  -      ○✗   │
-│   Enter did not resume the offline session                                   │
+│     Enter did not resume the offline session                                 │
 │   Repair worker restart      test     back to strategies to res… -      ○✗   │
-│   Enter did not resume the offline session                                   │
+│     Enter did not resume the offline session                                 │
 │   Stopped entry work         test     stopped                    -      ○✗   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Change ch_action_0───────────────────────────────────────────────────────────╮

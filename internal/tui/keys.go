@@ -241,7 +241,7 @@ var keyBindings = []keyBinding{
 	bind(contextInbox, "s", "let stand", "let stand", 1),
 	bind(contextInbox, "O", "overrule", "overrule", 1),
 	bind(contextInbox, "A", "approve all", "approve all", 1),
-	bind(contextInbox, "t", "answer", "answer", 1),
+	bind(contextInbox, "t", "answer", "type answer", 1),
 	bind(contextInbox, "x", "dismiss", "dismiss", 1),
 	bind(contextInbox, "u", "undo", "undo", 1),
 	withHelp(bind(contextInbox, "v", "show all", "all changes", 2), "show or hide the done and stale changes in the In flight section"),

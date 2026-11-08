@@ -16,14 +16,15 @@ import (
 func deskModel(t *testing.T, w, h int) Model {
 	t.Helper()
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, w, h))
+	m.snap.Agents = append(m.snap.Agents, agent("s_00000000000000f1", "n_mac", "Mac", "claude", "ingest-forge", nil))
 	m.asks = askItems([]protocol.InboxItem{
-		{ID: "i_q", Kind: "question", SessionID: "s_0000000000000002", AskerName: "ingest-forge", Text: "Merge PR #3? CI green.", Recommendation: "yes", Options: []string{"yes", "no"}, Status: "open", CreatedAt: t0.Add(-2 * time.Hour)},
+		{ID: "i_q", Kind: "question", SessionID: "s_00000000000000f1", AskerName: "ingest-forge", Text: "Merge PR #3? CI green.", Recommendation: "yes", Options: []string{"yes", "no"}, Status: "open", CreatedAt: t0.Add(-2 * time.Hour)},
 		{ID: "i_a", Kind: "approval", SessionID: "s_0000000000000004", AskerName: "strategies", Text: "Release v1.2.3 to the machines", Status: "open", CreatedAt: t0.Add(-30 * time.Minute)},
 	})
 	m.deskLogOpen = true
 	m.deskLog = []protocol.DeskLogEntry{
 		{ID: 3, At: t0.Add(-5 * time.Minute), Source: "cto", Text: "CTO applied graph edge set app -> ops", Options: []string{"graph_undo", `{"id":42}`}},
-		{ID: 2, At: t0.Add(-20 * time.Minute), Source: "gateway", Text: "Reminded 2 sessions about messages they have not answered"},
+		{ID: 2, At: t0.Add(-20 * time.Minute), Source: "gateway", Text: "Reminded 2 sessions about messages they have not type answered"},
 		{ID: 1, At: t0.Add(-3 * time.Hour), Source: "apps", Text: "Connected: phone (owner_app, Phone, example.test)"},
 	}
 	return m

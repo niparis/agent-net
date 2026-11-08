@@ -8,7 +8,7 @@ Desk · all clear · log closed (l opens it)
 │   Approve the deploy gate    approve  waiting for you            3h0m   ○    │
 │   Show which provider each … review   waiting for merger         2h14m  ●○●  │
 │   Say what a delivery row w… test     waiting for ci-runner (on… 6m     ●●○○ │
-│   merged: abcdef1                                                            │
+│     merged: abcdef1                                                          │
 │ ▸ Fix the deploy gate        review   back to strategies to res… 2h5m   ●✗   │
 │ … 2 more                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯

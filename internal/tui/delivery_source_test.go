@@ -115,7 +115,7 @@ func TestDeliveryOwnerLabels(t *testing.T) {
 	}
 }
 
-// listView is a change as change.list answers it: steps and next only.
+// listView is a change as change.list type answers it: steps and next only.
 func listView(now time.Time) protocol.ChangeView {
 	head := hash('a')
 	c := protocol.Change{ID: "ch_5", Project: "agent-net", Branch: "agent-net/w_0123456789abcdef", HeadCommit: head, Revision: 2,
@@ -238,7 +238,7 @@ func TestDeliveryCurrentStepFallbacks(t *testing.T) {
 	}
 }
 
-// fullView is a change as change.get answers it: every revision's evidence,
+// fullView is a change as change.get type answers it: every revision's evidence,
 // the pipeline and the revisions.
 func fullView(now time.Time) protocol.ChangeView {
 	v := listView(now)
@@ -490,8 +490,8 @@ func TestGatewayDeliveryErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "restart the daemon") {
 		t.Errorf("old daemon: %v", err)
 	}
-	f.err = errors.New("the gateway did not answer in time")
-	if _, err = src.Change(context.Background(), "ch_1"); err == nil || err.Error() != "the gateway did not answer in time" {
+	f.err = errors.New("the gateway did not type answer in time")
+	if _, err = src.Change(context.Background(), "ch_1"); err == nil || err.Error() != "the gateway did not type answer in time" {
 		t.Errorf("gateway error changed: %v", err)
 	}
 }

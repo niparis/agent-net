@@ -1271,13 +1271,13 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 	case "question":
 		h := []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
 		if len(row.item.Options) > 0 {
-			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1}}, h...)
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "pick", prio: 1}}, h...)
 		}
 		return h
 	case "approval":
 		h := []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
 		if len(row.item.Options) > 0 {
-			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1}}, h...)
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "pick", prio: 1}}, h...)
 		}
 		return h
 	case "proposal":
@@ -1305,7 +1305,7 @@ func (m Model) inboxHints() []hint {
 		var h []hint
 		if ok && (row.kind == "question" || row.kind == "approval") {
 			if len(row.item.Options) > 0 {
-				h = append(h, hint{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "answer", prio: 1})
+				h = append(h, hint{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "pick", prio: 1})
 			}
 			h = append(h, bindingHint(contextInbox, "answer"))
 			if row.kind == "approval" {

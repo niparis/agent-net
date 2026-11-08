@@ -6,9 +6,9 @@ Desk · all clear · log closed (l opens it)
 ╭─In flight · 4────────────────────────────────────────────────────────────────╮
 │   TITLE                                          STEP     STATUS AGE    DONE │
 │ ▸ Enter resumes offline OpenCode and Codex sess… verify   try it 3h0m   ○    │
-│   merged: 7c694c9  check: Owner: in Sessions, press v, select an offline Op… │
+│     merged: 7c694c9  check: Owner: in Sessions, press v, select an offline … │
 │   Enter reuses bg attach pane                    verify   try it 3h0m   ○    │
-│   merged: 7c694c9  check: It should focus that pane, not open a second one.  │
+│     merged: 7c694c9  check: It should focus that pane, not open a second on… │
 │   Stop shows at once in Sessions                 verify   try it 3h0m   ○    │
 │ … 3 more                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
