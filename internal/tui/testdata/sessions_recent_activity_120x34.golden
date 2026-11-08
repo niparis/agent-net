@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 2 sessions, 2 online · 0 busy  14:05:00
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● build cpu ? mem ? disk ?                                                                                          │
+│  ● desk  cpu ? mem ? disk ?                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME               MACHINE      PROJECT   MODEL                    STATUS   CPU   RAM TASK
+ Working (1)                                                                                           view: active  (v)
+▸ recent             desk         -         claude · gpt-6.1-sol     idle       ?     ? just finished a turn
+ Idle (1)
+  1 more idle · v to show
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit

@@ -5,12 +5,12 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- Working (1)                                                          active (v)
-▸ tenebrae-53    Mac     tenebrae  claude · op… busy      38%  1.2G
- Idle (4)
-  ★ ◐ strategies Mac     strategi… claude · so… idle     240%  4.6G backtest v2
+ Working (5)                                                          active (v)
+▸ ★ ◐ strategies Mac     strategi… claude · so… idle     240%  4.6G backtest v2
   ★ web          Mac     shop      opencode · … idle        ?     ?
-  2 more idle · v to show
+  tenebrae-53    Mac     tenebrae  claude · op… busy      38%  1.2G
+  ◐ ci-runner    build-… agent-net pi · gpt-6   idle       5%  300M
+  scratch        build-… -         pi           shell     <1%   80M
 
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop or remove  p pin  q quit
+up/down select  enter open  m msg  x stop or remove  p unpin  q quit

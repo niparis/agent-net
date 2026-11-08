@@ -1997,7 +1997,7 @@ func (m Model) sessionGroups(collapse bool) []group {
 			subagent = subagent || a.Worker != nil || isMerger(a)
 			if a.Online && m.sessionNeedsOwner(a) {
 				band = 0
-			} else if a.Online && (m.mergerWorking(a) || a.Status == "busy") {
+			} else if a.Online && (m.mergerWorking(a) || a.Status == "busy" || m.activeWithin(a, workingGrace)) {
 				band = min(band, 1)
 			}
 			if a.Online && a.Status == "busy" {

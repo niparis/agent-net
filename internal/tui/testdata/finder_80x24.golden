@@ -7,10 +7,10 @@
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
  Working╭─Find session──────────────────────────────────────4 matches─╮ctive (v)
 ▸ tenebr│ › st▌                                                       │
- Idle (4│   NAME        PROJECT    MACHINE    HARNESS   STATE     AGE │
-  4 more│ › strategies  strategies Mac        claude    idle       1m │
-        │   tenebrae-53 tenebrae   Mac        claude    busy       2m │
-        │   ci-runner   agent-net  build-vm   pi        idle       4m │
+  ◐ stra│   NAME        PROJECT    MACHINE    HARNESS   STATE     AGE │ktest v2
+  web   │ › strategies  strategies Mac        claude    idle       1m │
+  ◐ ci-r│   tenebrae-53 tenebrae   Mac        claude    busy       2m │
+  scratc│   ci-runner   agent-net  build-vm   pi        idle       4m │
         │   scratch     -          build-vm   pi        shell      5m │
         │ enter open  up/down select  esc close                       │
         ╰─────────────────────────────────────────────────────────────╯

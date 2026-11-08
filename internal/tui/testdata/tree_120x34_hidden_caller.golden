@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME                            MACHINE      PROJECT    MODEL                 STATUS    CPU   RAM TASK
- Idle (4)                                                                                                 view: all  (v)
+ Working (4)                                                                                              view: all  (v)
 ▸ ◐ strategies                    Mac          strategies claude · sonnet-5-5   idle        ?     ? backtest v2
   ├─ backtest-a                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe
   ├─ backtest-b                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe

@@ -4,27 +4,27 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                MACHINE      PROJECT   MODEL                    STATUS    CPU   RAM TASK
- Working (1)                                                                                           view: active  (v)
-  tenebrae-53         Mac          tenebrae  claude · opus-5-5        busy        ?     ?
- Idle (25)
-  agent-net           Mac          agent-net claude                   idle        ?     ?
-  ├─ fix-login        Mac          agent-net opencode · haiku-4-5     idle        ?     ?
-▸ └─ agent-net merger Mac          agent-net claude                   idle        ?     ?
-  22 more idle · v to show
-
-
-
-
-
-
-
-
-
-
-
-
-
+  NAME                MACHINE      PROJECT    MODEL                    STATUS    CPU   RAM TASK
+ Working (26)
+  idle 13             build-vm     -          codex                    idle        ?     ?
+  idle 14             build-vm     -          codex                    idle        ?     ?
+  idle 15             build-vm     -          codex                    idle        ?     ?
+  idle 16             build-vm     -          codex                    idle        ?     ?
+  idle 17             build-vm     -          codex                    idle        ?     ?
+  idle 18             build-vm     -          codex                    idle        ?     ?
+  idle 19             build-vm     -          codex                    idle        ?     ?
+  idle 20             build-vm     -          codex                    idle        ?     ?
+  idle 21             build-vm     -          codex                    idle        ?     ?
+  idle 22             build-vm     -          codex                    idle        ?     ?
+  idle 23             build-vm     -          codex                    idle        ?     ?
+  idle 24             build-vm     -          codex                    idle        ?     ?
+  idle 25             build-vm     -          codex                    idle        ?     ?
+  idle 26             build-vm     -          codex                    idle        ?     ?
+  idle 27             build-vm     -          codex                    idle        ?     ?
+  ◐ strategies        Mac          strategies claude · sonnet-5-5      idle        ?     ? backtest v2
+  agent-net           Mac          agent-net  claude                   idle        ?     ?
+  ├─ fix-login        Mac          agent-net  opencode · haiku-4-5     idle        ?     ?
+▸ └─ agent-net merger Mac          agent-net  claude                   idle        ?     ?
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

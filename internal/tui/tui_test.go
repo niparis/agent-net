@@ -609,7 +609,7 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	for _, want := range []string{
 		"Mac", "old-box", "8 Delivery", "cpu", "mem", "no claude",
 		"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
-		"tenebrae-53", "busy", "Idle", "CTO",
+		"tenebrae-53", "busy", "CTO",
 		"up/down select", "q quit",
 	} {
 		if !strings.Contains(out, want) {
@@ -619,8 +619,8 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	if strings.Contains(out, "old-session") {
 		t.Error("the active view showed an ended session")
 	}
-	if !strings.Contains(keys(m, "v").testView(), "old-session") {
-		t.Error("all must show the latest recent ended session")
+	if all := keys(m, "v").testView(); !strings.Contains(all, "old-session") || !strings.Contains(all, "Idle") {
+		t.Error("all must show the latest recent ended session in the Idle band")
 	}
 }
 
@@ -636,7 +636,7 @@ func names(m Model) []string {
 
 func TestOfflineToggle(t *testing.T) {
 	m := newModel(100, 30)
-	if got := strings.Join(names(m), ","); got != "tenebrae-53" {
+	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch" {
 		t.Fatalf("active sessions: %s", got)
 	}
 	m = keys(m, "v")
@@ -672,7 +672,7 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("typed keys acted as commands: filter %q quit %v offline %v", m.filter, m.quitting, m.showOffline)
 	}
 	m = keys(m, "esc")
-	if m.filtering || m.filter != "" || len(names(m)) != 1 {
+	if m.filtering || m.filter != "" || len(names(m)) != 5 {
 		t.Fatalf("esc must clear and leave the filter: %q filtering=%v", m.filter, m.filtering)
 	}
 
@@ -695,7 +695,7 @@ func TestFilter(t *testing.T) {
 	}
 	// Esc outside the input clears it too.
 	m = keys(m, "esc")
-	if m.filter != "" || len(names(m)) != 1 {
+	if m.filter != "" || len(names(m)) != 5 {
 		t.Fatalf("esc did not clear the filter: %q", m.filter)
 	}
 
@@ -789,7 +789,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	}
 	// Scrolled into the middle of a machine, its heading stays on top.
 	m = keys(m, "g", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
-	if v := lines(m.testView()); !strings.Contains(strings.Join(v, "\n"), "Idle (") {
+	if v := lines(m.testView()); !strings.Contains(strings.Join(v, "\n"), "Working (") {
 		t.Fatalf("no machine heading above the scrolled table:\n%s", strings.Join(v, "\n"))
 	}
 	if !strings.Contains(m.testView(), "▸ ") {
