@@ -147,6 +147,73 @@ func TestCTOV2OutputsMatchCatalogSchemas(t *testing.T) {
 	}
 }
 
+func TestCTOProposalsFindOwnerItemsOutput(t *testing.T) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	srv := NewCTO(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		if method != "cto_proposals_find" {
+			return json.RawMessage(`{}`), nil
+		}
+		return json.RawMessage(`{"items":[{"id":"i_1","tool":"answer","action":"accept","status":"open","reason":"Charter draft","created":"2026-01-01T00:00:00Z","kind":"draft","from":"charter draft","summary":"Charter draft","options":["accept","reject"],"answer":"answer {\"kind\":\"inbox\",\"id\":\"i_1\",\"answer\":\"accept\"}"}],"total":1}`), nil
+	}, "test")
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "cto_proposals_find", Arguments: map[string]any{"kind": "all"}})
+	if err != nil || result.IsError {
+		t.Fatalf("cto_proposals_find kind all: %+v %v", result, err)
+	}
+}
+
+// A stored proposal may predate the action and reason fields. One such row
+// must not fail the whole list against the catalog schema.
+func TestCTOProposalsFindFillsMissingFields(t *testing.T) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	srv := NewCTO(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		if method != "cto_proposals_find" {
+			return json.RawMessage(`{}`), nil
+		}
+		return json.RawMessage(`{"items":[{"id":"p_1","tool":"cto_new","status":"open"},{"id":"p_2","tool":"graph_change","action":"charter_set","status":"open","reason":"why","created":"2026-01-01T00:00:00Z"}],"total":2}`), nil
+	}, "test")
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "cto_proposals_find", Arguments: map[string]any{}})
+	if err != nil || result.IsError {
+		t.Fatalf("cto_proposals_find: %+v %v", result, err)
+	}
+	items, _ := result.StructuredContent.(map[string]any)["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("items: %+v", result.StructuredContent)
+	}
+	for _, raw := range items {
+		item, _ := raw.(map[string]any)
+		for _, field := range []string{"id", "tool", "action", "status", "reason", "created", "kind", "from", "summary", "answer"} {
+			if _, ok := item[field].(string); !ok {
+				t.Errorf("row missing string %s: %+v", field, item)
+			}
+		}
+		if _, ok := item["options"].([]any); !ok {
+			t.Errorf("row missing options: %+v", item)
+		}
+	}
+}
+
 func TestCTOV2EveryActionValidates(t *testing.T) {
 	cases := []struct{ tool, args string }{
 		{"graph_change", `{"action":"charter_set"}`}, {"graph_change", `{"action":"node_add"}`}, {"graph_change", `{"action":"node_remove"}`}, {"graph_change", `{"action":"edge_set"}`}, {"graph_change", `{"action":"edge_remove"}`}, {"graph_change", `{"action":"settings_set"}`}, {"graph_change", `{"action":"undo"}`},

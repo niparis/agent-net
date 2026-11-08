@@ -585,7 +585,16 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" || p.Answer == "" {
 			return nil, true, errors.New("inbox_answer needs id and answer")
 		}
-		res, err = d.call(ctx, "inbox.answer", map[string]any{"item_id": p.ID, "answer": p.Answer, "from_cto": lc.cto || proposalActor(ctx) != ""})
+		// from_cto keeps the CTO from approving an app consent ask.
+		fromCTO := lc.cto || proposalActor(ctx) != ""
+		actor := proposalActor(ctx)
+		if actor == "" {
+			actor = "owner"
+			if lc.cto {
+				actor = "cto"
+			}
+		}
+		res, err = d.call(ctx, "inbox.answer", map[string]any{"item_id": p.ID, "answer": p.Answer, "actor": actor, "from_cto": fromCTO})
 	case "outcome_overrule":
 		var p protocol.OutcomeResolution
 		if json.Unmarshal(raw, &p) != nil || p.ReplyID == "" {

@@ -2488,6 +2488,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			ID      string `json:"item_id"`
 			Answer  string `json:"answer"`
 			FromCTO bool   `json:"from_cto"`
+			Actor   string `json:"actor"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", "bad inbox.answer")
@@ -2500,7 +2501,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if handled, err := st.answerAppConsent(p.ID, p.Answer, owner, p.FromCTO); handled {
 			return map[string]bool{"answered": err == nil}, err
 		}
-		item, err := st.AnswerInbox(p.ID, p.Answer)
+		item, err := st.AnswerInboxAs(p.ID, p.Answer, p.Actor)
 		if err != nil {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
 			return nil, err

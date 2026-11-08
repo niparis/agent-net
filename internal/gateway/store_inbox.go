@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -123,6 +124,14 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	return item, err
 }
 
+// sourceRefID reads the numeric ID from a source key such as draft:12.
+func sourceRefID(ref, prefix string) (int64, error) {
+	if !strings.HasPrefix(ref, prefix) {
+		return 0, reject("unknown source key")
+	}
+	return strconv.ParseInt(strings.TrimPrefix(ref, prefix), 10, 64)
+}
+
 type inboxScanner interface{ Scan(...any) error }
 
 func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
@@ -236,8 +245,20 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 	return items, nil
 }
 
-// AnswerInbox records an answer and queues its delivery in one transaction.
+// AnswerInbox records the owner's answer.
 func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.InboxItem, error) {
+	return s.AnswerInboxAs(id, answer, "owner", validate...)
+}
+
+// AnswerInboxAs records an answer from the owner or the CTO and queues its
+// delivery in one transaction.
+func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (protocol.InboxItem, error) {
+	if actor == "" {
+		actor = "owner"
+	}
+	if actor != "owner" && actor != "cto" {
+		return protocol.InboxItem{}, reject("unknown answer actor")
+	}
 	if item, handled, err := s.answerDeliveryApproval(id, answer, validate...); handled || err != nil {
 		return item, err
 	}
@@ -281,6 +302,48 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 		}
 		return item, nil
 	}
+	// A charter draft is an ask for the gateway, not for a live session. Its
+	// answer applies the drafted value exactly as the owner's TUI accept does,
+	// then closes the Inbox row. Nothing is delivered to a session.
+	if item.Kind == protocol.AskKindDraft {
+		if answer != "accept" && answer != "reject" {
+			return item, reject("a charter draft answer must be accept or reject")
+		}
+		var ref string
+		if err = tx.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=?`, id).Scan(&ref); err != nil {
+			return item, err
+		}
+		draftID, parseErr := sourceRefID(ref, "draft:")
+		if parseErr != nil {
+			return item, reject("charter draft ask has no draft")
+		}
+		item.Status = "answered"
+		item.Answer = answer
+		item.AnsweredAt = s.now().UTC()
+		if len(validate) > 0 && validate[0] {
+			var status string
+			if err = tx.QueryRow(`SELECT status FROM charter_drafts WHERE id=?`, draftID).Scan(&status); err != nil {
+				if err == sql.ErrNoRows {
+					return item, reject("charter draft is not pending")
+				}
+				return item, err
+			}
+			if status != "pending" {
+				return item, reject("charter draft is not pending")
+			}
+			return item, nil
+		}
+		// DecideCharterDraft opens its own transaction, so release this one
+		// first: the store has a single connection.
+		_ = tx.Rollback()
+		if err = s.DecideCharterDraft(draftID, answer, actor); err != nil {
+			return item, err
+		}
+		if _, err = s.db.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
+			return item, err
+		}
+		return item, nil
+	}
 	switch answer {
 	case "approve":
 		item.Status = "approved"
@@ -297,7 +360,13 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 	var sender string
 	err = tx.QueryRow(`SELECT o.id FROM sessions o JOIN sessions r ON r.node_id=o.node_id WHERE r.id=? AND o.harness=? LIMIT 1`, item.SessionID, protocol.OwnerHarness).Scan(&sender)
 	if err == sql.ErrNoRows {
-		return item, reject("recipient or owner session not found")
+		// The owner session may be on another machine, or gone, while the
+		// asking session is offline. The answer still waits for it: fall back
+		// to any owner session, then to the reserved gateway sender.
+		err = tx.QueryRow(`SELECT id FROM sessions WHERE harness=? LIMIT 1`, protocol.OwnerHarness).Scan(&sender)
+		if err == sql.ErrNoRows {
+			sender, err = gatewayAsker, nil
+		}
 	}
 	if err != nil {
 		return item, err
