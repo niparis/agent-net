@@ -57,6 +57,7 @@ type PublicGraphNode struct {
 	Rules      []PublicRule     `json:"rules,omitempty"`
 	Delegation []NodeDelegation `json:"delegation,omitempty"`
 	Charter    *Charter         `json:"charter,omitempty"`
+	Loop       *LoopView        `json:"loop,omitempty"`
 }
 
 // PublicGraphEdge is the public part of an edge: who, what kind, and the request
@@ -165,6 +166,7 @@ func publicNode(n Node) PublicGraphNode {
 		Line:       publicNodeLine(n),
 		Rules:      publicRules(n),
 		Delegation: publicDelegation(n.Delegation),
+		Loop:       n.Loop,
 	}
 }
 

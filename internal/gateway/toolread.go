@@ -299,6 +299,7 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		}
 	}
 	row.Delegation = delegationText(a.Delegation)
+	row.Loop = a.Loop
 	if a.Worker != nil {
 		state := "ended"
 		if a.Online {

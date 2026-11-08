@@ -241,6 +241,9 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 	if item, handled, err := s.answerDeliveryApproval(id, answer, validate...); handled || err != nil {
 		return item, err
 	}
+	if item, handled, err := s.answerLoopAsk(id, answer, validate...); handled || err != nil {
+		return item, err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.InboxItem{}, err

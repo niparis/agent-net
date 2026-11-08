@@ -1246,6 +1246,16 @@ notification is stored through the normal message queue, so its delivery and
 retries use the same checks as any other notification. The operator counts
 call includes `wake_ups_today`.
 
+A node's standing loop (`loop_every`, decision 0093) wakes the node's lead on a
+clock, so it spends tokens on a schedule. The owner or the CTO sets it, with no
+approval step. Its stops reuse the wake rules: the same 6 wakes a day per
+session, shared with the idle-check wakes, and a pause after two ticks in a row
+with no progress. A pause or the cap opens one Desk ask (`resume` or `stop`).
+A tick only goes to an existing session and never starts one, a busy session
+is skipped, and Pi is skipped because it cannot be woken. The gateway stores
+the clock, the day's counts, the streak, the progress markers and one cleaned
+announce line, never task content.
+
 The gateway stores the activity time it has checked, the small stopping
 counters for "more", the daily check and wake caps and counts of answer kinds.
 It does not store the announced task or the answer line as check state. The

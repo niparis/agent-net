@@ -298,7 +298,10 @@ func setCharterKindTx(tx *sql.Tx, node, attr, value, actor string, now int64, re
 // (decision 0022). The value is checked against its setting. An empty value
 // clears the override.
 func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...bool) error {
-	value = strings.ToLower(strings.TrimSpace(value))
+	// The loop prompt is free text; every other setting is a lower-case word.
+	if value = strings.TrimSpace(value); setting != protocol.SettingLoopPrompt && setting != protocol.SettingLoopPlan {
+		value = strings.ToLower(value)
+	}
 	if err := protocol.ValidateNodeSetting(setting, value); err != nil {
 		return reject("%v", err)
 	}
@@ -1387,6 +1390,9 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 		if len(n.Settings) == 0 {
 			n.Settings = nil
 		}
+	}
+	if err = s.applyLoopsToGraph(&g); err != nil {
+		return g, err
 	}
 	// The owner's delegation policies are rules agents follow, so the public
 	// read shows them read-only. They are stored per machine and project.

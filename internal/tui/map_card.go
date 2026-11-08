@@ -420,6 +420,10 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 	out = append(out, charter...)
 	out = append(out, m.mapDraftLines(node, w)...)
 	out = append(out, m.mapLearnedLines(node.Name, w)...)
+	if node.Loop != nil {
+		out = append(out, section("Loop", w))
+		out = append(out, m.mapLoopLines(node.Loop, w)...)
+	}
 	if node.Ref == nil || node.Ref.Kind == "repo" {
 		out = append(out, section("Rules", w))
 		out = append(out, mapRulesLines(node, w)...)
@@ -663,4 +667,47 @@ func (m *Model) mapScrollCharter(delta int) {
 		m.mp.charterFor, m.mp.charterScroll = m.mp.selected, 0
 	}
 	m.mp.charterScroll = max(m.mp.charterScroll+delta, 0)
+}
+
+// mapLoopLines is the card's loop block: the interval, the last and next tick,
+// the day's ticks and progress, the tokens when they are known, and the last
+// result line.
+func (m Model) mapLoopLines(l *protocol.LoopView, w int) []string {
+	at := func(unix int64) string {
+		if unix <= 0 {
+			return "-"
+		}
+		return time.Unix(unix, 0).In(m.loc).Format("15:04")
+	}
+	every := "loop every " + sanitize(l.Every)
+	if l.Mode == protocol.LoopModeOnChange {
+		every += " on change"
+	}
+	parts := []string{every, "last " + at(l.LastTick)}
+	if l.Paused {
+		parts = append(parts, "paused")
+	} else {
+		parts = append(parts, "next "+at(l.NextTick))
+	}
+	today := fmt.Sprintf("today %d ticks, %d made progress", l.TicksToday, l.ProgressToday)
+	if l.TicksToday == 1 {
+		today = fmt.Sprintf("today 1 tick, %d made progress", l.ProgressToday)
+	}
+	parts = append(parts, today)
+	if l.Tokens > 0 {
+		parts = append(parts, "~"+protocol.CompactTokens(l.Tokens)+" tokens today")
+	}
+	var out []string
+	for _, line := range wrap(strings.Join(parts, " · "), w) {
+		out = append(out, clip(line, w))
+	}
+	if l.LastResult != "" {
+		for i, line := range wrap("last result: "+sanitize(l.LastResult), w) {
+			if i >= 2 {
+				break
+			}
+			out = append(out, sDim.Render(clip(line, w)))
+		}
+	}
+	return out
 }

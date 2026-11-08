@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -85,19 +86,32 @@ func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m pr
 			return
 		}
 	}
-	g.wakeSession(ctx, a)
+	g.wakeSessionAs(ctx, a, isLoopMessage(m))
+}
+
+// isLoopMessage tells whether the reserved sender's message is a standing
+// loop tick. The owner set the loop, so it may wake a session the way an
+// autonomy wake does.
+func isLoopMessage(m protocol.Message) bool {
+	return m.From == "agent-net" && strings.HasPrefix(m.IdempotencyKey, "loop:")
 }
 
 // wakeSession is shared by queued messages and explicitly assigned ready step
 // tasks. The receiving daemon makes the final retired-session safety checks.
 func (g *Gateway) wakeSession(ctx context.Context, a protocol.AgentView) {
+	g.wakeSessionAs(ctx, a, false)
+}
+
+// wakeSessionAs is wakeSession. loop says the wake is a standing loop tick,
+// which does not need the autonomy rule.
+func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop bool) {
 	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online {
 		return
 	}
 	// The Claude background wake does not depend on autonomy. Every other
 	// wake does: an interactive Claude session, Codex and OpenCode. The daemon
 	// still makes the final safety checks.
-	autonomy := g.autonomyWake(a)
+	autonomy := loop || g.autonomyWake(a)
 	if !autonomy && (a.Harness != "claude" || a.Mode == protocol.ModeForeground) {
 		return
 	}

@@ -376,6 +376,8 @@ type AgentView struct {
 	// Waiting is what the session is waiting to hear from its user (decision
 	// 0016), nil when it is not waiting.
 	Waiting *Waiting `json:"waiting,omitempty"`
+	// Loop is the standing loop of the session's node, nil when it has none.
+	Loop *LoopView `json:"loop,omitempty"`
 }
 
 // Header is shared by every gateway <-> daemon frame.

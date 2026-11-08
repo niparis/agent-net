@@ -50,7 +50,7 @@ func settingsChangesField() ctoField {
 	return ctoField{typ: "array", desc: "Setting changes with key, level, scope, value or delete, and expect.", items: map[string]any{"type": "object", "additionalProperties": false, "required": []string{"key", "level", "scope"}, "properties": map[string]any{"key": map[string]any{"type": "string"}, "level": map[string]any{"type": "string"}, "scope": map[string]any{"type": "string"}, "value": map[string]any{}, "delete": map[string]any{"type": "boolean"}, "expect": map[string]any{}}}}
 }
 
-var ctoNodeSettings = []string{"tests_before_merge", "merge_authority", "worker_sandbox", "judge_consumers", "deploy_rule", "autonomy"}
+var ctoNodeSettings = []string{"tests_before_merge", "merge_authority", "worker_sandbox", "judge_consumers", "deploy_rule", "autonomy", "loop_every", "loop_prompt", "loop_mode", "loop_plan"}
 
 // ctoRoutingField is the field that selects the concrete operation of a merged
 // tool. The daemon keeps the authoritative action table.

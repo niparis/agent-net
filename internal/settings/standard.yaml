@@ -148,6 +148,40 @@ settings:
     levels: [network, repo]
     default: "off"
     live: true
+  - key: loop.every
+    rows: [46]
+    description: How often agent-net wakes the repo's lead agent to keep working toward its purpose; 0s means no loop.
+    kind: advice
+    type: duration
+    min: "0s"
+    levels: [repo]
+    default: "0s"
+    live: true
+  - key: loop.prompt
+    rows: [46]
+    description: The text a loop tick sends after "your purpose is ...", instead of the default sentence; empty means the default.
+    kind: advice
+    type: text
+    levels: [repo]
+    default: ""
+    live: true
+  - key: loop.mode
+    rows: [46]
+    description: Whether every loop tick is sent (always) or a tick with nothing new is skipped (on_change).
+    kind: advice
+    type: enum
+    values: [always, on_change]
+    levels: [repo]
+    default: always
+    live: true
+  - key: loop.plan
+    rows: [46]
+    description: A plan file, relative to the session's folder, that each loop tick names; empty means none.
+    kind: advice
+    type: text
+    levels: [repo]
+    default: ""
+    live: true
   - key: delivery.test_text_optional
     rows: [127]
     description: Tests optional text.
@@ -977,7 +1011,7 @@ ledger:
   - {row: 43, code: "maturity stays a charter fact"}
   - {row: 44, keys: [delivery.tests_before_merge, delivery.merge_authority, workers.sandbox_level, charter.judge_consumers, delivery.deploy_rule], step: 6}
   - {row: 45, keys: [charter.judge_consumers, charter.consumer_text_free, charter.consumer_text_charter, charter.consumer_text_strict, charter.consumer_text_escalate], step: 6}
-  - {row: 46, keys: [charter.autonomy_mode], step: 6}
+  - {row: 46, keys: [charter.autonomy_mode, loop.every, loop.prompt, loop.mode, loop.plan], step: 6}
   - {row: 47, keys: [charter.size_budgets]}
   - {row: 48, keys: [charter.context_template]}
   - {row: 49, keys: [charter.neighbor_summary_limits]}

@@ -55,6 +55,17 @@ const (
 	// has work (decision 0036). Unlike the maturity overrides it is a public
 	// rule, so every agent can read it. The default is off.
 	SettingAutonomy = "autonomy"
+	// SettingLoopEvery and SettingLoopPrompt are the standing loop (decision
+	// 0105): how often agent-net wakes the node's agent to keep working toward
+	// its purpose, and the text it sends. Both are empty by default, and an
+	// empty every means no loop.
+	SettingLoopEvery  = "loop_every"
+	SettingLoopPrompt = "loop_prompt"
+	// SettingLoopMode is always (the default: every tick is sent) or
+	// on_change (a tick with nothing new is skipped). SettingLoopPlan is a
+	// path, relative to the session's folder, of a plan file the tick names.
+	SettingLoopMode = "loop_mode"
+	SettingLoopPlan = "loop_plan"
 )
 
 // Autonomy values. They are rules, not display text.
@@ -264,6 +275,35 @@ func NodeAutonomy(settings map[string]string) string {
 // ValidateNodeSetting checks a setting name and value. An empty value is valid:
 // it clears the override.
 func ValidateNodeSetting(setting, value string) error {
+	switch setting {
+	case SettingLoopEvery:
+		if value == "" {
+			return nil
+		}
+		if d, err := time.ParseDuration(value); err != nil || d <= 0 {
+			return fmt.Errorf("%s must be a duration above zero, such as 4h", setting)
+		}
+		return nil
+	case SettingLoopPrompt:
+		if len(value) > MaxBodyBytes {
+			return fmt.Errorf("%s is too long", setting)
+		}
+		return nil
+	case SettingLoopMode:
+		if value != "" && value != LoopModeAlways && value != LoopModeOnChange {
+			return fmt.Errorf("%s must be one of %s, %s", setting, LoopModeAlways, LoopModeOnChange)
+		}
+		return nil
+	case SettingLoopPlan:
+		if value == "" {
+			return nil
+		}
+		if strings.ContainsAny(value, "\n\r\x00") || strings.HasPrefix(value, "/") || strings.HasPrefix(value, "~") ||
+			strings.Contains(value, "..") || len(value) > 200 {
+			return fmt.Errorf("%s must be a path inside the session's folder, such as PLAN.md", setting)
+		}
+		return nil
+	}
 	var allowed []string
 	keys := map[string]string{SettingTestsBeforeMerge: "delivery.tests_before_merge", SettingMergeAuthority: "delivery.merge_authority", SettingJudgeConsumers: "charter.judge_consumers", SettingDeployRule: "delivery.deploy_rule", SettingAutonomy: "charter.autonomy_mode"}
 	if setting == SettingWorkerSandbox {

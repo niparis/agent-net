@@ -144,6 +144,10 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 			value = ""
 		}
 	case "node_settings_set":
+		// The standing loop is advice: the CTO sets it without a proposal.
+		if strings.HasPrefix(q.Setting, "loop_") {
+			return "major", nil
+		}
 		if _, moved := deliveryNodeKeys[q.Setting]; moved {
 			return "rule", nil
 		}
