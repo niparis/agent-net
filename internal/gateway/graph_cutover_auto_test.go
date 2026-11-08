@@ -69,9 +69,12 @@ func reportGraphNode(t *testing.T, g *Gateway, host, version string, supported b
 	return id
 }
 
+// waitGraphCutoverOn polls until the cutover is on. The cutover takes a backup
+// and runs a transaction in the background, which a busy host can stretch past
+// a few seconds, so the limit is only a stop for a cutover that never comes.
 func waitGraphCutoverOn(t *testing.T, g *Gateway) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		on, err := g.store.graphRefsEnabled()
 		if err != nil {

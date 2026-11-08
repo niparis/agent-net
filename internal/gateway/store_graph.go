@@ -1285,9 +1285,20 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) erro
 	return nil
 }
 
+// graphNodesTables are the tables graphNodes reads. Keep it equal to the query
+// there (see readThrough).
+var graphNodesTables = []string{"graph_nodes", "projects", "sessions", "graph_edges"}
+
+// graphTables are the tables graphWith reads, through every function it calls:
+// the nodes, the charters and their levels (charterTables), the settings
+// snapshot, the loops (loopTables), the delegation policies and the edges.
+// Keep it equal to those queries (see readThrough).
+var graphTables = tableUnion(graphNodesTables, charterTables, settingsTables, loopTables,
+	[]string{"graph_charter", "agent_charter", "project_policies", "graph_edges"})
+
 // Graph returns explicit and implicit nodes and all edges.
 //
-// The read is kept until the next write to the database, and each caller gets
+// The read is kept until one of graphTables is written, and each caller gets
 // a copy. What else decides the result is in the key: the temporary folders
 // (a project under one is no project), the home folder and the Graph cutover.
 func (s *Store) Graph() (protocol.Graph, error) {
@@ -1296,7 +1307,7 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	if s.graphRefsOn.Load() {
 		key += "|refs"
 	}
-	v, err := s.readThrough(key, false, func() (any, error) {
+	v, err := s.readThrough(key, graphTables, false, func() (any, error) {
 		g, err := s.graphWith(nil)
 		return g, err
 	})

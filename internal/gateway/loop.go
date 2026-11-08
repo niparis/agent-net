@@ -66,6 +66,10 @@ func loopRef(node string) string { return "loop:" + node }
 
 // loadLoops reads every node with a loop setting, and every stored loop whose
 // setting is gone, in one statement. Both halves read primary keys.
+// loopTables are the tables loadLoops reads. Keep it equal to the query there
+// (see readThrough).
+var loopTables = []string{"setting_values", "agent_loops"}
+
 func (s *Store) loadLoops() ([]loopRow, error) {
 	rows, err := s.db.Query(`SELECT v.scope,v.value,
 		COALESCE((SELECT p.value FROM setting_values p WHERE p.key='loop.prompt' AND p.level='repo' AND p.scope=v.scope AND p.item=''),''),

@@ -5,6 +5,13 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// shortAgentChartersTables are the tables applyAgentChartersWith reads for a
+// short view, which is the one the agent list uses: the node charters and the
+// charter levels (charterTables). A long view also reads the graph and the
+// settings snapshot. Keep it equal to the queries there and in the resolver
+// (see readThrough).
+var shortAgentChartersTables = tableUnion([]string{"graph_charter"}, charterTables)
+
 // applyAgentCharters adds only the public charter fields to agent views.
 func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) error {
 	var in agentViewInputs

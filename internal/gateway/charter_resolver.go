@@ -40,6 +40,11 @@ type charterResolver struct {
 	agentValuesReady bool
 }
 
+// charterTables are the tables the resolver reads: the charter values of each
+// level, the teams a node belongs to, and the repo and agent charters. Keep it
+// equal to the queries in this file (see readThrough).
+var charterTables = []string{"charter_values", "teams", "team_members", "graph_charter", "agent_charter"}
+
 func (s *Store) newCharterResolver() *charterResolver {
 	return &charterResolver{
 		store:       s,

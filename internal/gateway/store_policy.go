@@ -187,6 +187,14 @@ func (s *Store) projectPolicies() (map[string]protocol.DelegationPolicy, error) 
 	return out, rows.Err()
 }
 
+// delegationTables are the tables applyDelegation reads: the settings snapshot,
+// the names of the graph nodes, the project policies, the machines, the models
+// they ran lately (sessions) and the models that failed or worked. The last
+// ones are read only for a session with a policy. Keep it equal to those
+// queries (see readThrough).
+var delegationTables = tableUnion(settingsTables, graphNodesTables, nodesTables,
+	[]string{"project_policies", "sessions", "model_failures", "model_successes"})
+
 // applyDelegation fills Delegation of each agent: its own policy, else its
 // project's default, with the models resolved against its machine. It also
 // clears the policy of an owner pseudo-session.
