@@ -29,7 +29,7 @@ func TestWorkerRecipeDefinitions(t *testing.T) {
 			t.Errorf("%s = %s, want %s (%v)", key, got.Value, want, err)
 		}
 	}
-	for _, key := range []string{"workers.brief_preamble", "workers.brief_task", "workers.brief_no_delegation", "workers.brief_handback", "workers.brief_handback_partial", "workers.brief_blocked", "workers.brief_approval", "workers.brief_codex_tools", "workers.brief_codex_final", "workers.brief_codex_complete", "workers.brief_codex_blocked", "workers.brief_claude", "workers.continue_prompt_text", "workers.continue_intro", "workers.continue_intro_branch", "workers.continue_intro_folder", "workers.continue_intro_empty"} {
+	for _, key := range []string{"workers.brief_preamble", "workers.brief_task", "workers.brief_no_delegation", "workers.brief_tests", "workers.brief_handback", "workers.brief_handback_partial", "workers.brief_blocked", "workers.brief_approval", "workers.brief_codex_tools", "workers.brief_codex_final", "workers.brief_codex_complete", "workers.brief_codex_blocked", "workers.brief_claude", "workers.continue_prompt_text", "workers.continue_intro", "workers.continue_intro_branch", "workers.continue_intro_folder", "workers.continue_intro_empty"} {
 		def, ok := recipe.Definition(key)
 		if !ok || !def.Live || snap.String(key, Where{}) == "" {
 			t.Errorf("%s missing, empty or not live", key)

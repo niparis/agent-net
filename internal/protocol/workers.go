@@ -555,6 +555,9 @@ func workerPreamble(harness string, snap settings.Snapshot, repo string) string 
 	for _, key := range []string{"workers.brief_task", "workers.brief_no_delegation"} {
 		b += "\n- " + line(key)
 	}
+	if testStepElsewhere(snap, repo) {
+		b += "\n- " + line("workers.brief_tests")
+	}
 	keys := []string{"workers.brief_handback", "workers.brief_handback_partial", "workers.brief_blocked", "workers.brief_approval"}
 	if harness == "codex" {
 		keys = []string{"workers.brief_codex_tools", "workers.brief_codex_final", "workers.brief_codex_complete", "workers.brief_codex_blocked", "workers.brief_approval"}
@@ -566,6 +569,24 @@ func workerPreamble(harness string, snap settings.Snapshot, repo string) string 
 		b += "\n- " + line("workers.brief_claude")
 	}
 	return b
+}
+
+// testStepElsewhere tells whether the project's test step belongs to someone
+// other than the worker's caller: the merger, a node or GitHub. It reads the
+// same pipeline as the step tasks, and only the test step's owner decides it.
+// tests_before_merge does not: the test step is in the pipeline either way.
+// Then the brief says to run only the worker's own tests, because that owner
+// runs the suites. A caller-owned step, or no project, gets no line.
+func testStepElsewhere(snap settings.Snapshot, repo string) bool {
+	if repo == "" {
+		return false
+	}
+	p, err := PipelineFromSettings(snap, repo)
+	if err != nil {
+		return false
+	}
+	test, ok := p.Find(StepRef{Step: StepTest})
+	return ok && test.Owner.Kind != OwnerCaller
 }
 
 // WorkerTaskBody builds the body of the task message for an OpenCode worker.
