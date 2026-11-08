@@ -487,3 +487,47 @@ func TestArchivedOldHandbackResumesByMessage(t *testing.T) {
 		t.Fatalf("reply: %+v", reply)
 	}
 }
+
+func TestResumeRecreatesCleanEndedWorktree(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:handback clean task", Isolation: protocol.IsolationWorktree})
+	w.workerStopped(t, g, protocol.StopHandback)
+	w.waitNotice(t, 1)
+	before := gitOutT(t, repo, "rev-parse", res.Branch)
+
+	// The cleanup removes the folder and leaves the branch.
+	if err := os.RemoveAll(res.Worktree); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "worktree", "prune")
+	if _, err := os.Stat(res.Worktree); err == nil {
+		t.Fatal("the worktree folder is still there")
+	}
+	if gitOutT(t, repo, "rev-parse", "--verify", "refs/heads/"+res.Branch+"^{commit}") != before {
+		t.Fatal("the branch did not survive the cleanup")
+	}
+
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"}), &sent)
+	if r := w.replyTo(t, w.ownerID(), sent.Message.ID); !strings.HasPrefix(r.Body, "ok from worker") {
+		t.Errorf("follow-up: %+v", r)
+	}
+	if fi, err := os.Stat(res.Worktree); err != nil || !fi.IsDir() {
+		t.Fatalf("the worktree was not made again: %v", err)
+	}
+	if got := gitOutT(t, res.Worktree, "rev-parse", "--abbrev-ref", "HEAD"); got != res.Branch {
+		t.Errorf("the new worktree is on %q, want %q", got, res.Branch)
+	}
+
+	if got := gitOutT(t, res.Worktree, "rev-parse", res.Branch); got != before {
+		t.Errorf("the branch moved from %s to %s", before, got)
+	}
+	if len(w.logs.lines("worker.resumed", "session="+res.SessionID)) != 1 {
+		t.Errorf("no worker.resumed line: %v", w.logs.lines("worker.resumed"))
+	}
+}

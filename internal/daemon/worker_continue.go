@@ -10,13 +10,16 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// checkWorkerWorktree refuses to resume a worker whose checkout is gone.
+// checkWorkerWorktree refuses a missing checkout only when its branch is gone too.
 func checkWorkerWorktree(r *workerRow) error {
 	if r.Worktree == "" {
 		return nil
 	}
 	info, err := os.Stat(r.Worktree)
 	if os.IsNotExist(err) {
+		if workerBranchExists(r) {
+			return nil
+		}
 		return fmt.Errorf("worker %s worktree is gone: %s", r.SessionID, r.Worktree)
 	}
 	if err != nil {
@@ -26,6 +29,28 @@ func checkWorkerWorktree(r *workerRow) error {
 		return fmt.Errorf("worker %s worktree is gone: %s is not a directory", r.SessionID, r.Worktree)
 	}
 	return nil
+}
+
+// workerBranchExists checks local refs only. It never fetches from a remote.
+func workerBranchExists(r *workerRow) bool {
+	if r.Branch == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := gitOut(ctx, first(r.MainPath, r.Path), "rev-parse", "--verify", "refs/heads/"+r.Branch+"^{commit}")
+	return err == nil
+}
+
+// workerWorktreeRetained keeps a continuation while either local resource exists.
+func workerWorktreeRetained(r *workerRow) bool {
+	if r.Worktree == "" {
+		return false
+	}
+	if info, err := os.Stat(r.Worktree); err == nil && info.IsDir() {
+		return true
+	}
+	return workerBranchExists(r)
 }
 
 // continueEndWait is how long a continue waits for a worker that has sent its

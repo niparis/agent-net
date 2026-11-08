@@ -1357,6 +1357,17 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 			d.st.saveWorker(r)
 		}
 	}()
+	// An ended worker may have lost its clean checkout. The branch check above
+	// ensures createWorktree reuses its local branch and preserves its commits.
+	if w.worktree != "" {
+		if _, err := os.Stat(w.worktree); os.IsNotExist(err) {
+			w.path = w.mainPath
+			w.worktree = ""
+			if err := d.createWorktree(cctx, w); err != nil {
+				return err
+			}
+		}
+	}
 	if err := os.MkdirAll(w.dir, 0o700); err != nil {
 		return err
 	}
@@ -1777,8 +1788,7 @@ func (d *Daemon) adoptWorkers() {
 	}
 }
 
-// Retain gateway records while their local worktree records exist, including
-// missing worktrees so callers get a useful explanation instead of an unknown ID.
+// Retain gateway records while a local checkout or branch can be continued.
 func (d *Daemon) retainedWorkerSessionIDs() ([]string, error) {
 	ids := d.runningSessionIDs()
 	rows, err := d.st.workers()
@@ -1786,7 +1796,7 @@ func (d *Daemon) retainedWorkerSessionIDs() ([]string, error) {
 		return nil, err
 	}
 	for _, r := range rows {
-		if r.Worktree != "" && r.SessionID != "" {
+		if r.SessionID != "" && workerWorktreeRetained(&r) {
 			ids = append(ids, r.SessionID)
 		}
 	}

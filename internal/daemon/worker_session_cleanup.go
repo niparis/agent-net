@@ -267,7 +267,7 @@ func (d *Daemon) cleanupWorkerSessions(ctx context.Context) {
 	attempted := 0
 	for i := 0; i < len(rows) && attempted < 10 && ctx.Err() == nil; i++ {
 		r := rows[(start+i)%len(rows)]
-		if r.Worktree != "" || r.EndedReason == "" || !r.Reported || r.StartedAt.Add(set.MaxAge).After(time.Now()) {
+		if workerWorktreeRetained(&r) || r.EndedReason == "" || !r.Reported || r.StartedAt.Add(set.MaxAge).After(time.Now()) {
 			continue
 		}
 		attempted++

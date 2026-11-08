@@ -497,6 +497,8 @@ func TestContinueWorkerMissingWorktree(t *testing.T) {
 	if err := os.RemoveAll(old.Worktree); err != nil {
 		t.Fatal(err)
 	}
+	gitIn(t, repo, "worktree", "prune")
+	gitIn(t, repo, "branch", "-D", old.Branch)
 	_, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID})
 	if err == nil || !strings.Contains(err.Error(), "worktree") || !strings.Contains(err.Error(), "gone") {
 		t.Fatalf("missing worktree error: %v", err)

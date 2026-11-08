@@ -2957,7 +2957,11 @@ Session retention also preserves pins and sessions with use or activity newer
 than its cutoff.
 
 Ended OpenCode and Codex worker sessions without a worktree are deleted when their retained worker
-record is dropped. Worktree worker records and their harness sessions are retained. A dedicated background loop runs at daemon startup and on the
+record is dropped. Worktree worker records and their harness sessions are retained
+while the local worktree directory or its branch exists. When both are gone,
+the same cleanup removes them. The daemon reports the retained session IDs to
+the gateway; session pruning preserves only those workers. A dedicated
+background loop runs at daemon startup and on the
 worker cleanup interval, independently of link setup and worker health checks.
 Only one deletion pass runs at a time. Each pass attempts at most ten eligible
 rows within a two-minute budget, continuing after the last attempted row on the

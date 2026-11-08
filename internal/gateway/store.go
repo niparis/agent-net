@@ -1068,7 +1068,7 @@ CREATE TABLE IF NOT EXISTS repo_start_reservations (node_id TEXT NOT NULL,ref TE
 `, `SELECT 1 /* session close column */;`, `SELECT 1 /* session idle compaction column */;`, `
 ALTER TABLE repo_leads ADD COLUMN lead_session TEXT;
 ALTER TABLE teams ADD COLUMN lead_session TEXT;
-`, `SELECT 1 /* idle check task hash column */;`, `SELECT 1 /* session provider limit columns */;`}
+`, `SELECT 1 /* idle check task hash column */;`, `SELECT 1 /* session provider limit columns */;`, `ALTER TABLE sessions ADD COLUMN worker_retained INTEGER NOT NULL DEFAULT 0;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -2539,6 +2539,15 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string)
 		return 0, err
 	}
 	defer tx.Rollback()
+	// Replace this node's retained set, including releases of deleted branches.
+	if _, err := tx.Exec(`UPDATE sessions SET worker_retained=0 WHERE node_id=? AND worker_retained<>0`, nodeID); err != nil {
+		return 0, err
+	}
+	for _, id := range running {
+		if _, err := tx.Exec(`UPDATE sessions SET worker_retained=1 WHERE node_id=? AND id=? AND worker<>''`, nodeID, id); err != nil {
+			return 0, err
+		}
+	}
 	rows, err := tx.Query(`SELECT id FROM sessions WHERE archived_at=0 AND pinned_at=0 AND node_id = ? AND online = 0 AND worker != ''
 		AND (worker_started = 0 OR worker_started < ?)
         AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, nodeID, cut)

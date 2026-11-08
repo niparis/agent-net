@@ -148,3 +148,52 @@ func TestCleanWorkersRecentOwnerUseAndPinned(t *testing.T) {
 		}
 	}
 }
+
+func TestPruneOnlyRetainsReportedWorkers(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("h1", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, native := range []string{"kept", "gone"} {
+		id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: native, Worker: &protocol.WorkerInfo{ID: "w_" + native, StartedAt: s.now().Unix()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetSessionOffline(node, id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	// Report retention before aging the rows, so CleanWorkers does not remove them.
+	if _, err := s.CleanWorkers(node, 4*time.Hour, ids[:1]); err != nil {
+		t.Fatal(err)
+	}
+	old := s.now().Add(-100 * time.Hour).UnixNano()
+	if _, err := s.db.Exec(`UPDATE sessions SET last_active=?, last_seen=?, owner_used_at=0`, old, old); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.Prune(Retention{Sessions: 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Sessions != 1 {
+		t.Fatalf("pruned %d, want 1", result.Sessions)
+	}
+	for i, id := range ids {
+		if _, ok, _ := s.Agent(id); ok != (i == 0) {
+			t.Fatalf("session %s kept=%v", id, ok)
+		}
+	}
+	// Replacing the daemon's report releases the last retained session.
+	if _, err := s.CleanWorkers(node, 4*time.Hour, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Prune(Retention{Sessions: 24 * time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := s.Agent(ids[0]); ok {
+		t.Fatal("released worker remains")
+	}
+}
