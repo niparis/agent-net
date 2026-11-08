@@ -113,10 +113,7 @@ func placeHeld(text, from string) []protocol.PlaceHeldBack {
 }
 
 func (m Model) refName(ref *protocol.GraphRef) string {
-	if ref == nil {
-		return ""
-	}
-	return m.graphName(graphRefKey(ref))
+	return m.graphLeadLabel(ref)
 }
 
 // teamLeadStar marks a team lead with the full star and a repo lead with a
