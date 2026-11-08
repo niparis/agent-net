@@ -45,14 +45,19 @@ func (s *Store) SetLevelCharter(q protocol.CharterSetRequest, actor string, vali
 	if level != "global" && level != "team" {
 		return reject("invalid charter level")
 	}
-	if !actorAllowed(actor, "rule") {
+	// Work mode is advice: the CTO sets it without a proposal.
+	kind := "rule"
+	if q.Attr == protocol.AttrWorkMode {
+		kind = "advice"
+	}
+	if !actorAllowed(actor, kind) {
 		return reject("only the owner or CTO may change inherited charters")
 	}
 	value, err := protocol.CleanCharterValue(q.Attr, q.Value)
 	if err != nil {
 		return reject("%v", err)
 	}
-	if q.Attr != "purpose" && q.Attr != "refuses" && q.Attr != "rules" && q.Attr != "escalate" {
+	if q.Attr != "purpose" && q.Attr != "refuses" && q.Attr != "rules" && q.Attr != "escalate" && q.Attr != protocol.AttrWorkMode {
 		return reject("attribute is not allowed at %s level", level)
 	}
 	if level == "global" {

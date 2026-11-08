@@ -134,6 +134,9 @@ type ReadCharter struct {
 	Accepts         []string        `json:"accepts,omitempty"`
 	Refuses         []string        `json:"refuses,omitempty"`
 	FeatureRequests string          `json:"feature_requests,omitempty"`
+	// WorkMode is the effective work mode when a level sets one: workers_code
+	// or on_request. Sources["work_mode"] says which level set it.
+	WorkMode string `json:"work_mode,omitempty"`
 }
 
 // SessionWorker is the worker part of a full session row.
