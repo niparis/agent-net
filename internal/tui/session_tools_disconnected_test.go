@@ -53,9 +53,10 @@ func TestDetailPaneSaysHowToReconnectDisconnectedTools(t *testing.T) {
 	if s := flat(set("v0.5.0")); strings.Contains(s, "tools disconnected") {
 		t.Errorf("connected tools show the warning:\n%s", s)
 	}
-	// The pane is two columns, so the line wraps between words.
-	s := flat(set(protocol.ToolsDisconnected))
-	for _, want := range []string{"agent-net tools disconnected: type /mcp in this session and reconnect", "agent-net, or restart it"} {
+	// The pane is two columns, so the line wraps between words and the column
+	// border (a "│" in the flattened text) can fall inside it.
+	s := strings.ReplaceAll(flat(set(protocol.ToolsDisconnected)), " │ ", " ")
+	for _, want := range []string{"agent-net tools disconnected; the CTO can restart it (session_change restart), or type /mcp to reconnect"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("detail lacks %q:\n%s", want, s)
 		}

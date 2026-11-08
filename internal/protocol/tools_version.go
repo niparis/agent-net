@@ -27,7 +27,7 @@ func ToolsStaleNote(harness, mine, daemon string) string {
 const ToolsDisconnected = "disconnected"
 
 // ToolsDisconnectedDetail is the owner's detail line for such a session.
-const ToolsDisconnectedDetail = "agent-net tools disconnected: type /mcp in this session and reconnect agent-net, or restart it"
+const ToolsDisconnectedDetail = "agent-net tools disconnected; the CTO can restart it (session_change restart), or type /mcp to reconnect"
 
 // ToolsDisconnectedNotice is the line the turn text of such a session carries.
-const ToolsDisconnectedNotice = "[agent-net] Your agent-net tools are disconnected. Ask the owner to type /mcp and reconnect agent-net."
+const ToolsDisconnectedNotice = "[agent-net] Your agent-net tools are disconnected. Tell the CTO or agent-net; the CTO can restart this session (session_change restart). Until then you cannot message other agents."

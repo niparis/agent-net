@@ -130,7 +130,7 @@ func TestPolicyHookCarriesTheDisconnectedNoticeAlone(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("not JSON: %q", out)
 	}
-	if got.H["additionalContext"] != "[agent-net] Your agent-net tools are disconnected. Ask the owner to type /mcp and reconnect agent-net." {
+	if got.H["additionalContext"] != "[agent-net] Your agent-net tools are disconnected. Tell the CTO or agent-net; the CTO can restart this session (session_change restart). Until then you cannot message other agents." {
 		t.Fatalf("context: %q", got.H["additionalContext"])
 	}
 	// With a charter, the notice comes after it.
