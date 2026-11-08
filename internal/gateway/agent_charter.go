@@ -7,6 +7,19 @@ import (
 
 // applyAgentCharters adds only the public charter fields to agent views.
 func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) error {
+	var in agentViewInputs
+	if !short {
+		var err error
+		if in, err = s.agentViewInputs(); err != nil {
+			return err
+		}
+	}
+	return s.applyAgentChartersWith(agents, short, in)
+}
+
+// applyAgentChartersWith takes the graph and snapshot the caller already read.
+// A short view does not use them.
+func (s *Store) applyAgentChartersWith(agents []protocol.AgentView, short bool, in agentViewInputs) error {
 	rows, err := s.db.Query(`SELECT node,attr,value FROM graph_charter WHERE attr IN ('purpose','maturity','accepts','refuses','feature_requests')`)
 	if err != nil {
 		return err
@@ -39,10 +52,7 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 	rows.Close()
 	settingsByNode := map[string]map[string]string{}
 	if !short {
-		snap, err := s.SettingsSnapshot()
-		if err != nil {
-			return err
-		}
+		snap := in.snap
 		for _, v := range snap.Values {
 			if v.Level != "repo" || v.Item != "" {
 				continue
@@ -63,11 +73,7 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 		}
 		for _, a := range agents {
 			project := projectOfSession(a)
-			ctx, err := s.resolveRepoContext(project)
-			if err != nil {
-				return err
-			}
-			charted := ctx.Repo
+			charted := chartedProject(in.graph, project)
 			if charted == "" {
 				settingsByNode[project] = nodeEffectiveSettings(snap, "", "", nil)
 			} else {

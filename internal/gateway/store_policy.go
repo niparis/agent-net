@@ -172,18 +172,37 @@ func (s *Store) projectPolicies() (map[string]protocol.DelegationPolicy, error) 
 // project's default, with the models resolved against its machine. It also
 // clears the policy of an owner pseudo-session.
 func (s *Store) applyDelegation(as []protocol.AgentView) error {
+	in, err := s.agentViewInputs()
+	if err != nil {
+		return err
+	}
+	return s.applyDelegationWith(as, in)
+}
+
+// agentViewInputs is the graph and the settings snapshot an agent view is
+// built from. A request reads them once and passes them down, so a view does
+// not rebuild the graph for each step. Callers must not change them.
+type agentViewInputs struct {
+	graph protocol.Graph
+	snap  settings.Snapshot
+}
+
+func (s *Store) agentViewInputs() (agentViewInputs, error) {
+	var in agentViewInputs
+	var err error
+	if in.snap, err = s.SettingsSnapshot(); err != nil {
+		return in, err
+	}
+	in.graph, err = s.Graph()
+	return in, err
+}
+
+func (s *Store) applyDelegationWith(as []protocol.AgentView, in agentViewInputs) error {
 	pp, err := s.projectPolicies()
 	if err != nil {
 		return err
 	}
-	snap, err := s.SettingsSnapshot()
-	if err != nil {
-		return err
-	}
-	graph, err := s.Graph()
-	if err != nil {
-		return err
-	}
+	snap, graph := in.snap, in.graph
 	byLower := map[string][]string{}
 	for _, n := range graph.Nodes {
 		k := strings.ToLower(n.Name)

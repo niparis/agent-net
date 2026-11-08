@@ -1751,6 +1751,12 @@ func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []prot
 
 // chooseAutomaticWorker applies the same weights and rotation for a start or a preview.
 func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
+	return g.chooseAutomaticWorkerWith(g.store.ModelHealth, candidates, difficulty, scores, minimums, quotas, running, protected, persist)
+}
+
+// chooseAutomaticWorkerWith takes the model health lookup, so a caller that
+// picks for many levels in a row can read each model's health once.
+func (g *Gateway) chooseAutomaticWorkerWith(modelHealth func(harness, model string) (ModelHealth, error), candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
 	if err := g.store.applyQualityWeights(candidates, difficulty); err != nil {
 		return protocol.WorkerModelChoice{}, "", err
 	}
@@ -1763,7 +1769,7 @@ func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandida
 	var healthy []protocol.WorkerModelCandidate
 	var cooling []string
 	for _, c := range candidates {
-		h, err := g.store.ModelHealth(c.Harness, c.Model)
+		h, err := modelHealth(c.Harness, c.Model)
 		if err != nil {
 			return protocol.WorkerModelChoice{}, "", err
 		}

@@ -149,16 +149,17 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	var askers map[string]string
 	for i := range items {
 		if items[i].AskerName != "" {
 			continue
 		}
-		if agent, ok, err := s.Agent(items[i].SessionID); err == nil && ok {
-			items[i].AskerName = agent.Profile.Name
-			if items[i].AskerName == "" {
-				items[i].AskerName = agent.Title
+		if askers == nil {
+			if askers, err = s.agentNames(); err != nil {
+				askers = map[string]string{}
 			}
 		}
+		items[i].AskerName = askers[items[i].SessionID]
 		if items[i].AskerName == "" || strings.HasPrefix(items[i].AskerName, "s_") {
 			items[i].AskerName = "an agent"
 		}
@@ -305,4 +306,29 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 func (s *Store) CloseArchivedSessionInbox(node, session string) error {
 	_, err := s.db.Exec(`UPDATE inbox_items SET status='closed',answer='session_archived',answered_at=? WHERE session_id=? AND kind IN ('question','approval') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=?)`, s.now().UnixNano(), session, session, node)
 	return err
+}
+
+// agentNames reads the display name of every agent Store.Agent would find, in
+// one query: the profile name, else the session name, else the title. It does
+// not build the graph or the settings snapshot.
+func (s *Store) agentNames() (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT s.id, COALESCE(NULLIF(p.name,''), s.name), s.title
+		FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id
+		WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := map[string]string{}
+	for rows.Next() {
+		var id, name, title string
+		if err := rows.Scan(&id, &name, &title); err != nil {
+			return nil, err
+		}
+		if name == "" {
+			name = title
+		}
+		names[id] = name
+	}
+	return names, rows.Err()
 }
