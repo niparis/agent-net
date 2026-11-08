@@ -59,26 +59,9 @@ func (d *Daemon) folderTrustLocal(ctx context.Context, q protocol.FolderTrustReq
 	var err error
 	switch {
 	case q.Project != "":
-		raw, e := d.call(ctx, "query.projects", protocol.QueryProjects{})
+		found, e := d.registeredLocalProject(ctx, q.Project)
 		if e != nil {
 			return res, e
-		}
-		var projects protocol.ProjectsResult
-		if e = json.Unmarshal(raw, &projects); e != nil {
-			return res, e
-		}
-		var found *protocol.ProjectView
-		for _, p := range projects.Projects {
-			if p.NodeID == d.cfg.NodeID && (p.Name == q.Project || p.Path == q.Project) {
-				if found != nil {
-					return res, errors.New("project is ambiguous: use its local path")
-				}
-				cp := p
-				found = &cp
-			}
-		}
-		if found == nil {
-			return res, fmt.Errorf("project %q is not registered on this machine", q.Project)
 		}
 		res.Path, res.Project = found.Path, found.Name
 	case q.Remove:
@@ -165,4 +148,31 @@ func (d *Daemon) ctoTrustBeforeStart(ctx context.Context, fields map[string]json
 	raw, _ := json.Marshal(args)
 	_, err := d.executeImmediateCTOTool(ctx, "session_change", raw)
 	return err
+}
+
+// registeredLocalProject finds a project registered on this machine by name or
+// by path.
+func (d *Daemon) registeredLocalProject(ctx context.Context, ref string) (*protocol.ProjectView, error) {
+	raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
+	if err != nil {
+		return nil, err
+	}
+	var projects protocol.ProjectsResult
+	if err = json.Unmarshal(raw, &projects); err != nil {
+		return nil, err
+	}
+	var found *protocol.ProjectView
+	for _, p := range projects.Projects {
+		if p.NodeID == d.cfg.NodeID && (p.Name == ref || p.Path == ref) {
+			if found != nil {
+				return nil, errors.New("project is ambiguous: use its local path")
+			}
+			cp := p
+			found = &cp
+		}
+	}
+	if found == nil {
+		return nil, fmt.Errorf("project %q is not registered on this machine", ref)
+	}
+	return found, nil
 }

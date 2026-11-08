@@ -175,6 +175,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onSessionOwnerFrame(ctx, l, h, raw)
 			}()
+		case protocol.FrameSessionOwnerMCPServers:
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.onFolderMCPFrame(ctx, l, h, raw)
+			}()
 		case protocol.FrameSessionOwnerTrustFolder:
 			d.wg.Add(1)
 			go func() {

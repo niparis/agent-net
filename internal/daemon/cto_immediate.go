@@ -273,6 +273,25 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 			text = fmt.Sprintf("CTO checked Claude Code trust for %s on %s: already trusted, unchanged", cleanLine(res.Path), where)
 			diff = "already trusted before: unchanged"
 		}
+	case concrete == "folder_mcp":
+		var res protocol.FolderMCPResult
+		b, _ := json.Marshal(result)
+		_ = json.Unmarshal(b, &res)
+		where := cleanLine(firstNonEmpty(res.Hostname, res.NodeID))
+		if where == "" {
+			where = "this machine"
+		}
+		verb := map[string]string{protocol.MCPApprove: "approved", protocol.MCPDisable: "disabled"}[res.Choice]
+		text = fmt.Sprintf("CTO %s the .mcp.json servers for Claude Code in %s on %s", verb, cleanLine(res.Path), where)
+		diff, options = mcpChoiceAudit(res.MCPChoiceResult, res.NodeID)
+	case concrete == "session_start":
+		var res protocol.StartedSession
+		b, _ := json.Marshal(result)
+		if json.Unmarshal(b, &res) == nil && res.MCPChoice != nil {
+			// The choice made for the start is audited like a separate one.
+			diff, options = mcpChoiceAudit(*res.MCPChoice, res.NodeID)
+			text += " (" + res.MCPChoice.Choice + " .mcp.json servers)"
+		}
 	case concrete == "node_rename":
 		if haveMachine {
 			var q protocol.NodeRenameRequest
@@ -509,4 +528,30 @@ func (d *Daemon) ctoGraphHistory(ctx context.Context, after int64) ([]protocol.C
 	var history []protocol.CTOGraphChange
 	err = json.Unmarshal(raw, &history)
 	return history, err
+}
+
+// mcpChoiceAudit describes a recorded MCP server choice for the Inbox: the
+// servers with what they run, the file written, and, when the choice changed
+// anything, an undo that takes back exactly the names it added.
+func mcpChoiceAudit(res protocol.MCPChoiceResult, node string) (string, []string) {
+	var lines []string
+	for _, s := range res.Servers {
+		line := "server " + cleanLine(s.Name)
+		if s.Command != "" {
+			line += ": " + cleanLine(s.Command)
+		}
+		lines = append(lines, line+" (from "+cleanLine(s.File)+")")
+	}
+	list := map[string]string{protocol.MCPApprove: claudeMCPEnabledKey, protocol.MCPDisable: claudeMCPDisabledKey}[res.Choice]
+	if len(res.Added) == 0 && len(res.Restored) == 0 {
+		lines = append(lines, "already recorded before: unchanged")
+		return strings.Join(lines, "\n"), nil
+	}
+	lines = append(lines, fmt.Sprintf("%s: added %s in %s", list, strings.Join(res.Added, ", "), cleanLine(res.File)))
+	if len(res.Restored) > 0 {
+		lines = append(lines, fmt.Sprintf("%s: removed %s (a refusal would win)", claudeMCPDisabledKey, strings.Join(res.Restored, ", ")))
+	}
+	undo, _ := json.Marshal(protocol.FolderMCPRequest{Path: res.Path, NodeID: node,
+		Undo: &protocol.MCPUndo{Choice: res.Choice, Added: res.Added, Restored: res.Restored}})
+	return strings.Join(lines, "\n"), []string{protocol.OpFolderMCP, string(undo)}
 }
