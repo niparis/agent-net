@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/niparis/agent-net/internal/protocol"
+import (
+	"strings"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
 
 // Typed keys are private to the graph UI. Names remain presentation, so two
 // records with the same display name remain independently selectable.
@@ -54,6 +58,58 @@ func (m Model) graphName(key string) string {
 		return name
 	}
 	return m.projectName(key)
+}
+
+// agentDisplayName is the readable name the Sessions tab and the team card use
+// for an agent: its project display name, then the agent name, then the
+// session's title or project. It never falls back to an ID.
+func (m Model) agentDisplayName(a protocol.AgentView) string {
+	name := firstNonEmpty(a.ProjectDisplayName, firstNonEmpty(a.AgentName, firstNonEmpty(a.Title, a.Profile.Name)))
+	if name == "" {
+		name = firstNonEmpty(a.Repo.Project, a.Profile.Project)
+	}
+	return sanitize(name)
+}
+
+// graphLeadLabel names a lead for display. A lead may be pinned to one
+// session; that session's internal key is not a name, so it resolves through
+// the snapshot to the agent's display name. A ref without a readable name
+// returns "", so callers can say "no lead" instead of showing a key.
+func (m Model) graphLeadLabel(ref *protocol.GraphRef) string {
+	if ref == nil {
+		return ""
+	}
+	key := graphRefKey(ref)
+	if alias, ok := m.mp.aliases[key]; ok {
+		key = alias
+	}
+	if name, ok := m.mp.labels[key]; ok && strings.TrimSpace(name) != "" {
+		return name
+	}
+	switch ref.Kind {
+	case "session":
+		if a, ok := m.agentByID(ref.ID); ok {
+			if name := m.agentDisplayName(a); name != "" {
+				return name
+			}
+		}
+		for _, n := range m.mp.full.Nodes {
+			for _, s := range n.Sessions {
+				if s.ID == ref.ID && strings.TrimSpace(s.Name) != "" {
+					return sanitize(s.Name)
+				}
+			}
+		}
+	case "agent":
+		for _, a := range m.snap.Agents {
+			if a.AgentID == ref.ID {
+				return m.agentDisplayName(a)
+			}
+		}
+	case "repo":
+		return m.projectName(ref.ID)
+	}
+	return ""
 }
 
 func graphRecordID(n protocol.Node) string {

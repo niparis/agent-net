@@ -278,3 +278,64 @@ func drawPreviewGlyph(img *image.RGBA, x, y int, r rune, col color.RGBA) {
 	d := font.Drawer{Dst: img, Src: image.NewUniform(col), Face: basicfont.Face7x13, Dot: fixed.P(x, y+15)}
 	d.DrawString(string(r))
 }
+
+// A Team lead is often pinned to one session. The frame must name that lead by
+// its agent or project, never by the internal session key (which reads as
+// "sessions_<id>" after sanitizing).
+func TestTeamLeadPinnedToSessionShowsReadableName(t *testing.T) {
+	ref := func(kind, id string) *protocol.GraphRef { return &protocol.GraphRef{Kind: kind, ID: id} }
+	session := "s_a355929c10182e88"
+	team := ref("team", "homelab")
+	v := protocol.GraphView{Nodes: []protocol.Node{
+		{Name: "homelab", Ref: team, Lead: ref("session", session), AuthorityMode: "charter_first"},
+		{Name: "homelab-agent", Ref: ref("agent", "homelab-agent")},
+		{Name: "homelab", Ref: ref("repo", "homelab")},
+	}, Edges: []protocol.Edge{
+		{From: "homelab-agent", To: "homelab", Kind: "member_of", FromRef: ref("agent", "homelab-agent"), ToRef: team},
+		{From: "homelab", To: "homelab", Kind: "member_of", FromRef: ref("repo", "homelab"), ToRef: team},
+	}}
+	m := mapModel(140, 40, v)
+	m.snap.Agents = []protocol.AgentView{{
+		SessionID: session, AgentID: "homelab-agent", AgentName: "homelab-agent",
+		ProjectDisplayName: "homelab", Repo: protocol.RepoInfo{Project: "homelab"},
+		Online: true, Status: "busy", TeamLead: true,
+	}}
+	m.applyMap(mapMsg{view: v, at: t0})
+	m.tab = graphTab
+
+	var g teamGraphData
+	groups, _ := m.graphTeamData()
+	for _, item := range groups {
+		if item.key == graphRefKey(team) {
+			g = item
+		}
+	}
+	if g.leadName != "homelab" {
+		t.Fatalf("team lead name = %q, want %q", g.leadName, "homelab")
+	}
+
+	size := graphview.Size{Width: 140, Height: 40}
+	scene := m.graphScene(m.graphState, size)
+	rendered := strings.Join((graphview.Braille{}).Render(scene, size).Lines, "\n")
+	if !strings.Contains(rendered, "★ homelab") {
+		t.Errorf("frame header does not name the lead:\n%s", rendered)
+	}
+	for _, id := range []string{"sessions_a355", "s_a355"} {
+		if strings.Contains(rendered, id) {
+			t.Errorf("frame header shows internal id %q:\n%s", id, rendered)
+		}
+	}
+
+	node, _ := m.mapNode(graphRefKey(team))
+	card := strings.Join(m.mapTeamCardView(node, 90, 30), "\n")
+	if !strings.Contains(card, "★ homelab") || strings.Contains(card, "s_a355") {
+		t.Errorf("team card lead is not readable:\n%s", card)
+	}
+
+	m.startLeadPicker(*team, "homelab")
+	for _, c := range m.leadPicker.choices {
+		if strings.Contains(c.name, session) {
+			t.Errorf("lead picker shows the session key: %q", c.name)
+		}
+	}
+}

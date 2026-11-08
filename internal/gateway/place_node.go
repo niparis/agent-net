@@ -178,7 +178,7 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 	rows.Close()
 
 	rows, err = s.db.Query(`SELECT s.id,COALESCE(s.agent_id,''),COALESCE(s.repo_id,''),s.online,s.worker,s.harness,COALESCE(s.limited_until,0),s.last_seen,
-		COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.id)
+		COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),NULLIF(p.project,''),'')
 		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
 		ORDER BY s.last_seen DESC,s.id`)
 	if err != nil {
@@ -231,7 +231,8 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 }
 
 // leadName mirrors leadNameQ: a live session of the agent, preferring the
-// pinned one, else the agent's display name.
+// pinned one, else the agent's display name, then the agent's project. It
+// never returns an internal ID.
 func (idx *placeIndex) leadName(agent, pinned string) string {
 	if agent == "" {
 		return ""
@@ -249,12 +250,16 @@ func (idx *placeIndex) leadName(agent, pinned string) string {
 		if label := idx.sessionLabel[id]; label != "" {
 			return label
 		}
-		return id
 	}
 	if name := idx.agentName[agent]; name != "" {
 		return name
 	}
-	return agent
+	if repo := idx.repoForAgent(agent); repo != "" {
+		if name := idx.repoName[repo]; name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 func (idx *placeIndex) repoLead(repo string) string {
@@ -262,7 +267,6 @@ func (idx *placeIndex) repoLead(repo string) string {
 		if label := idx.sessionLabel[session]; label != "" {
 			return label
 		}
-		return session
 	}
 	return idx.leadName(idx.repoLeadAgent[repo], "")
 }
