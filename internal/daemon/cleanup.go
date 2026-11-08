@@ -360,16 +360,18 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 			if _, err := gitOut(ctx, w.Project, "merge-base", "--is-ancestor", w.MergedCommit, defaultRef); err != nil {
 				return nil
 			}
+			// Disregard deadlines saved by an older cleanup pass.
+			retainUntil = time.Time{}
 		case protocol.ChangeStopped:
 			if w.ChangeEndedAt.IsZero() || now.Sub(w.ChangeEndedAt) <= 3*24*time.Hour {
 				return nil
 			}
 			reason = "closed"
+			if deadline := w.ChangeEndedAt.Add(30 * 24 * time.Hour); deadline.After(retainUntil) {
+				retainUntil = deadline
+			}
 		default:
 			return nil
-		}
-		if deadline := w.ChangeEndedAt.Add(30 * 24 * time.Hour); deadline.After(retainUntil) {
-			retainUntil = deadline
 		}
 	} else if retainUntil.IsZero() && unique != "" {
 		// The merged-elsewhere proof was computed outside the cleanup locks.
@@ -464,7 +466,7 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	if !missing && d.log != nil {
 		d.Logf("worker.worktree_cleanup path=%q branch=%q reason=%s freed=%d", w.Path, w.Branch, reason, size)
 	}
-	if !retainUntil.IsZero() && now.Before(retainUntil) {
+	if w.ChangeState == protocol.ChangeStopped || (!retainUntil.IsZero() && now.Before(retainUntil)) {
 		return nil
 	}
 	if _, err := gitOut(ctx, w.Project, "update-ref", "-d", branchRef, head); err != nil {

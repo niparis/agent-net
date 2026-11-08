@@ -650,8 +650,8 @@ func TestCleanupWorktreeDeliveryRetention(t *testing.T) {
 	if err := d.cleanupWorktree(context.Background(), rows[0], now.Add(26*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/"+w.Branch); err == nil {
-		t.Fatal("expired branch remains")
+	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/"+w.Branch); err != nil {
+		t.Fatal("stopped branch was deleted")
 	}
 }
 
@@ -1059,5 +1059,75 @@ func TestCleanupWorktreeErrorRateLimited(t *testing.T) {
 	out3 := logs.String()
 	if !strings.Contains(out3, `worker.worktree_cleanup path="`+dir+`" error=`) {
 		t.Fatalf("pass 3 expected error log for worktree after 24h: %s", out3)
+	}
+}
+
+func TestCleanupStoppedChangeKeepsBranch(t *testing.T) {
+	project := newRepo(t, "project")
+	state := t.TempDir()
+	dir := filepath.Join(state, "worktrees", "w_stopped")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_stopped", dir)
+	d := &Daemon{cfg: Config{StateDir: state}, workers: map[string]*worker{}}
+	old := time.Now().Add(-60 * 24 * time.Hour)
+	candidate := cleanupWorktree{ID: "w_stopped", Project: project, Path: dir, Branch: "agent-net/w_stopped", EndedAt: old, ChangeState: protocol.ChangeStopped, ChangeEndedAt: old}
+	if err := d.cleanupWorktree(context.Background(), candidate, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/agent-net/w_stopped"); err != nil {
+		t.Fatal("stopped change branch was deleted")
+	}
+}
+
+func TestCleanupMergedBranchImmediately(t *testing.T) {
+	for _, tc := range []struct {
+		name, state string
+		missing     bool
+	}{
+		{"merged worktree", protocol.ChangeMerged, false},
+		{"done worktree already removed", protocol.ChangeDone, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			project := newRepo(t, "project")
+			stateDir := t.TempDir()
+			dir := filepath.Join(stateDir, "worktrees", "w_merged")
+			if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+				t.Fatal(err)
+			}
+			gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_merged", dir)
+			if tc.missing {
+				gitIn(t, project, "worktree", "remove", dir)
+			}
+			st, err := openState(stateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.close()
+			now := time.Now()
+			w := cleanupWorktree{ID: "w_merged", Project: project, Path: dir, Branch: "agent-net/w_merged", EndedAt: now.Add(-time.Hour), ChangeState: tc.state, ChangeEndedAt: now, MergedCommit: gitOutT(t, project, "rev-parse", "HEAD")}
+			if tc.missing {
+				w.RetainUntil = now.Add(29 * 24 * time.Hour)
+				w.RetainHead = w.MergedCommit
+			}
+			if _, err := st.db.Exec(`INSERT INTO cleanup_worktrees(worker_id,project,path,branch,ended_at,retain_until,retain_head) VALUES(?,?,?,?,?,?,?)`, w.ID, w.Project, w.Path, w.Branch, w.EndedAt.UnixNano(), w.RetainUntil.UnixNano(), w.RetainHead); err != nil {
+				t.Fatal(err)
+			}
+			d := &Daemon{cfg: Config{StateDir: stateDir}, st: st, workers: map[string]*worker{}}
+			if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Fatalf("worktree remains: %v", err)
+			}
+			if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/"+w.Branch); err == nil {
+				t.Fatal("merged branch remains")
+			}
+			rows, err := st.cleanupWorktrees(project)
+			if err != nil || len(rows) != 0 {
+				t.Fatalf("cleanup row remains: %+v %v", rows, err)
+			}
+		})
 	}
 }
