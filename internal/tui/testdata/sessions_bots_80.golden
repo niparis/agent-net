@@ -7,13 +7,13 @@
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
  Working (1)                                                             all (v)
 ▸ tenebrae-53    Mac     tenebrae  claude · op… busy      38%  1.2G
- Idle (5)
-  weather-bot            -         -            online              last call 1…
+ Idle (4)
   ◐ strategies   Mac     strategi… claude · so… idle     240%  4.6G backtest v2
   web            Mac     shop      opencode · … idle        ?     ?
   ◐ ci-runner    build-… agent-net pi · gpt-6   idle       5%  300M
   scratch        build-… -         pi           shell     <1%   80M
-
+ Bots (1)
+  weather-bot            -         -            online              last call 1…
 
 
 

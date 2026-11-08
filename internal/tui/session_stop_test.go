@@ -151,6 +151,8 @@ func TestStopOwnerSessionCancelAndRefusal(t *testing.T) {
 
 func TestStopExitedClaudeConfirmation(t *testing.T) {
 	m, _ := workerModel(80, 24)
+	// An exited session is ended: it shows in the all view, not in Working.
+	m.activeOnly, m.showOffline = false, true
 	id := "s_0000000000000001"
 	for i := range m.snap.Agents {
 		if m.snap.Agents[i].SessionID == id {
