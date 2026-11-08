@@ -103,9 +103,10 @@ type localConn struct {
 	acks   map[string]chan ack
 	// peerPID is the process ID of the other end, read in hello.
 	peerPID     int
-	agyNativeID string // untrusted until session discovery verifies it
-	tui         bool   // an owner-gated TUI subscribed to interface pushes
-	cto         bool   // private CTO process-tree gate
+	agyNativeID string        // untrusted until session discovery verifies it
+	mcpLinked   *localSession // the Claude session this MCP connection counts for (upgrade.go)
+	tui         bool          // an owner-gated TUI subscribed to interface pushes
+	cto         bool          // private CTO process-tree gate
 	// tx holds the session_text requests sent to this plugin (sessiontext.go).
 	tx textState
 }
@@ -291,6 +292,7 @@ func (lc *localConn) cleanup() {
 	lc.srv.mu.Lock()
 	delete(lc.srv.conns, lc)
 	lc.srv.mu.Unlock()
+	lc.unlinkMCP()
 	lc.mu.Lock()
 	ls, ended := lc.ls, lc.ended
 	lc.mu.Unlock()
@@ -460,6 +462,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			return nil, errors.New("the daemon has not discovered this Claude session")
 		}
 		lc.bind("mcp", ls)
+		lc.linkMCP(ls)
 		d.noteMCPHello(p.NativeID)
 		// One line per hello. After an upgrade, a session's `agent-net mcp` says
 		// hello on the old version (and is told to switch), then on the new one.
