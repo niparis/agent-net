@@ -7,6 +7,7 @@ Keys · all screens ────────────────────
   a                      add a connected app
   x                      remove the selected machine or revoke the selected app
   g                      choose the shared MCP servers the selected bot may use
+  n                      rename the selected app
   r                      rotate the selected online machine token
 
  Inbox
@@ -35,6 +36,5 @@ Keys · all screens ────────────────────
 
  On a CTO proposal row
   enter                  open the proposal detail
-  a                      approve
   more below
 up/down scroll  ? this screen  esc close

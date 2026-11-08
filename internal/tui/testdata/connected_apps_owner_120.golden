@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 12 online · 1 busy     updated 14:05:00
+Connected apps
+  Control internet access and the apps connected to your network.
+▸ Internet access: off
+  Use your own tunnel URL
+  Add an app
+  NAME              KIND       CLIENT          RETURN HOST           CONNECTED     LAST USED
+  cursor            bot        Cursor          www.cursor.com        Nov 02        today 22:14
+    can call: ingest-forge, tenebrae-library
+  grok-bot          bot        Grok Bot        grok.example          Nov 02        never
+    can call: agent-net tools only
+  phone             owner app  iPhone Safari   phone.example         Nov 02        never
+
+Integrations
+  Choose integrations for every machine in your network.
+  Configure integrations
+
+Machines
+  The name every machine in your network shows for each machine.
+  NAME                  HOST NAME             VERSION       ONLINE
+  Mac                   Mac                   v0.4.0        yes
+  build-vm              build-vm              v0.4.0        yes
+  old-box               old-box               v0.3.2        no
+
+Time zone
+  The clock every time on this screen uses, wherever you run it.
+  Time zone: auto
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down row  tab/[ ] section  enter open  space toggle  p internet  u URL  a add  x revoke  ? help  q quit

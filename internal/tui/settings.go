@@ -25,14 +25,16 @@ type settingsItem struct {
 
 func settingsAppRow(width int, fields []string) string {
 	headers := []string{"NAME", "KIND", "CLIENT", "RETURN HOST", "CONNECTED", "LAST USED"}
-	widths := []int{16, 9, 12, 20, 12, 9}
+	// The date columns keep their width, so a time such as "today 22:14" is
+	// never cut. Only the text columns shrink, down to their header.
+	widths := []int{16, 9, 14, 20, 12, 11}
 	total := 2 + 2*(len(widths)-1)
 	for _, n := range widths {
 		total += n
 	}
 	for total > width {
 		largest := -1
-		for i, n := range widths {
+		for i, n := range widths[:4] {
 			if n > len(headers[i]) && (largest < 0 || n > widths[largest]) {
 				largest = i
 			}
@@ -217,6 +219,12 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.settingsAppsKey(k)
 	case "grant":
+		if item.kind != "app" {
+			return m, nil
+		}
+		m.apps.index = item.index
+		return m.settingsAppsKey(k)
+	case "name":
 		if item.kind != "app" {
 			return m, nil
 		}

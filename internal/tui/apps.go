@@ -48,8 +48,16 @@ type appsForm struct {
 	pick    int
 }
 
-// grantServer is one row of the grant picker.
-type grantServer struct{ name, host string }
+// grantServer is one row of the grant picker. tools is how many of the
+// server's tools the bot may call; it is shown only when the server has
+// reported its tools (reported). gone marks a grant whose server is no longer
+// added: it can still be removed.
+type grantServer struct {
+	name, host string
+	tools      int
+	reported   bool
+	gone       bool
+}
 type appsResult struct {
 	op  string
 	raw json.RawMessage
@@ -123,7 +131,7 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 		return m, m.appsCall("apps.public.status", struct{}{})
 	case "tools_mcp_list":
 		var v struct {
-			Servers []struct{ Name, Hostname string } `json:"servers"`
+			Servers []protocol.MCPServer `json:"servers"`
 		}
 		if err := json.Unmarshal(r.raw, &v); err != nil {
 			f.err = err.Error()
@@ -134,13 +142,13 @@ func (m Model) onAppsResult(r appsResult) (Model, tea.Cmd) {
 		known := map[string]bool{}
 		for _, s := range v.Servers {
 			known[s.Name] = true
-			f.servers = append(f.servers, grantServer{s.Name, s.Hostname})
+			f.servers = append(f.servers, grantServer{name: s.Name, host: s.Hostname, tools: allowedToolCount(s), reported: len(s.Tools) > 0})
 		}
 		// A grant for a server that is gone stays on the list, so it can be removed.
 		if f.index < len(f.apps) {
 			for _, g := range f.apps[f.index].Grants {
 				if name, ok := protocol.ParseMCPServerGrant(g); ok && !known[name] {
-					f.servers = append(f.servers, grantServer{name, "removed"})
+					f.servers = append(f.servers, grantServer{name: name, gone: true})
 				}
 			}
 		}
@@ -353,18 +361,29 @@ func (m Model) appsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		f.stage, f.err, f.pick, f.servers = "grant", "", 0, nil
 		f.loading = true
 		return m, m.appsCall("tools_mcp_list", struct{}{})
+	case "name":
+		if len(f.apps) > 0 {
+			f.startRename()
+		}
+		return m, nil
 	}
 	if k.Code == tea.KeyEnter && len(f.apps) > 0 {
-		f.stage = "rename"
-		f.input = newTextInput()
-		f.input.CharLimit = protocol.MaxNodeName
-		f.input.Prompt = "name for " + sanitize(f.apps[f.index].Name) + "> "
-		f.input.SetValue(f.apps[f.index].Name)
-		f.input.CursorEnd()
-		f.input.Focus()
-		f.err = ""
+		f.startRename()
 	}
 	return m, nil
+}
+
+// startRename opens the one-line name field of the selected app. The name is
+// the label the owner gives the app; the client name stays in CLIENT.
+func (f *appsForm) startRename() {
+	f.stage = "rename"
+	f.input = newTextInput()
+	f.input.CharLimit = protocol.MaxNodeName
+	f.input.Prompt = "name for " + sanitize(f.apps[f.index].Name) + "> "
+	f.input.SetValue(f.apps[f.index].Name)
+	f.input.CursorEnd()
+	f.input.Focus()
+	f.err = ""
 }
 func (m Model) appsDate(t time.Time) string {
 	t = m.displayTime(t.Unix())
@@ -547,28 +566,65 @@ func (m Model) appsView(w, rows int) []string {
 	return out
 }
 
-// appGrantsLine is the dim line under an app row that lists its grants. It is
-// empty when the app has none.
+// appGrantsLine is the dim line under a bot's row: the shared MCP servers the
+// bot can call, by name. A bot with no grant can call only the agent-net
+// tools. An owner app acts as the owner, so it has no line.
 func appGrantsLine(a connectedApp, w int, indent string) string {
-	if len(a.Grants) == 0 {
+	if a.Kind != "bot" {
 		return ""
 	}
-	clean := make([]string, len(a.Grants))
-	for i, g := range a.Grants {
-		clean[i] = sanitize(g)
+	var names []string
+	for _, g := range a.Grants {
+		if name, ok := protocol.ParseMCPServerGrant(g); ok {
+			names = append(names, sanitize(name))
+		}
 	}
-	return sDim.Render(clip(indent+"  grants: "+strings.Join(clean, ", "), w))
+	text := "can call: agent-net tools only"
+	if len(names) > 0 {
+		slices.Sort(names)
+		text = "can call: " + strings.Join(names, ", ")
+	}
+	return sDim.Render(clip(indent+"  "+text, w))
+}
+
+// allowedToolCount is how many of a server's tools the gateway lets through.
+func allowedToolCount(s protocol.MCPServer) int {
+	n := 0
+	for _, t := range s.Tools {
+		if s.ToolAllowed(t.Name) {
+			n++
+		}
+	}
+	return n
+}
+
+// botsByServer maps each shared MCP server to the labels of the active bots
+// granted it. An owner app and a revoked app are left out.
+func botsByServer(apps []connectedApp) map[string][]string {
+	out := map[string][]string{}
+	for _, a := range apps {
+		if a.Kind != "bot" || a.RevokedAt != nil {
+			continue
+		}
+		for _, g := range a.Grants {
+			if name, ok := protocol.ParseMCPServerGrant(g); ok {
+				out[name] = append(out[name], a.Name)
+			}
+		}
+	}
+	return out
 }
 
 // appsGrantLines draws the grant picker of the selected bot: the shared MCP
-// servers, each marked when the bot may use it.
+// servers, each marked when the bot may use it, with its host and the number
+// of tools the bot may call through it.
 func (m Model) appsGrantLines(w int, indent string) []string {
 	f := m.apps
 	if f.index >= len(f.apps) {
 		return nil
 	}
 	app := f.apps[f.index]
-	out := []string{clip(indent+"Shared MCP servers "+sanitize(app.Name)+" may use (enter: grant or remove, esc: close)", w)}
+	out := []string{clip(indent+"MCP servers "+sanitize(app.Name)+" can call. Enter adds or removes, esc closes.", w)}
 	if f.loading && len(f.servers) == 0 {
 		return append(out, indent+"  Loading...")
 	}
@@ -581,8 +637,19 @@ func (m Model) appsGrantLines(w int, indent string) []string {
 			mark = "[x]"
 		}
 		line := indent + "  " + mark + " " + sanitize(s.name)
-		if s.host != "" {
-			line += "  " + sDim.Render("on "+sanitize(s.host))
+		var facts []string
+		if s.gone {
+			facts = append(facts, "no longer added")
+		} else {
+			if s.host != "" {
+				facts = append(facts, "on "+sanitize(s.host))
+			}
+			if s.reported {
+				facts = append(facts, nounCount(s.tools, "tool", "tools"))
+			}
+		}
+		if len(facts) > 0 {
+			line += "  " + sDim.Render(strings.Join(facts, " · "))
 		}
 		if i == f.pick {
 			line = selectedRow(clip(line, w))

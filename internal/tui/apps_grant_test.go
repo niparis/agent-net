@@ -25,7 +25,7 @@ func TestConnectedAppGrantFlow(t *testing.T) {
 		t.Fatalf("picker: op %s %+v", f.op, m.apps)
 	}
 	view := ansi.Strip(strings.Join(m.appsView(120, 20), "\n"))
-	for _, want := range []string{"trade-bot may use", "[ ] another", "[ ] ingest-forge", "on research"} {
+	for _, want := range []string{"MCP servers trade-bot can call. Enter adds or removes, esc closes.", "[ ] another  on nas", "[ ] ingest-forge  on research", "on research"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("picker missing %q:\n%s", want, view)
 		}
@@ -65,7 +65,7 @@ func TestConnectedAppGrantFlow(t *testing.T) {
 		t.Fatal("esc did not close the picker")
 	}
 	m.apps.apps[0].Grants = []string{"mcp server ingest-forge"}
-	if view = ansi.Strip(strings.Join(m.appsView(120, 20), "\n")); !strings.Contains(view, "grants: mcp server ingest-forge") {
+	if view = ansi.Strip(strings.Join(m.appsView(120, 20), "\n")); !strings.Contains(view, "can call: ingest-forge") {
 		t.Errorf("grant not on the row:\n%s", view)
 	}
 }
@@ -105,7 +105,7 @@ func TestConnectedAppGrantSettingsGoldens(t *testing.T) {
 		}
 		golden(t, fmt.Sprintf("connected_apps_grants_%d", sz[0]), m.testView())
 		m.apps.stage = "grant"
-		m.apps.servers = []grantServer{{"ingest-forge", "research"}, {"notes", "nas"}}
+		m.apps.servers = []grantServer{{name: "ingest-forge", host: "research", tools: 1, reported: true}, {name: "notes", host: "nas"}}
 		golden(t, fmt.Sprintf("connected_apps_grant_picker_%d", sz[0]), m.testView())
 	}
 }

@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+Connected apps
+  Control internet access and the apps connected to your network.
+▸ Internet access: off
+  Use your own tunnel URL
+  Add an app
+  NAME          KIND       CLIENT        RETURN HOST   CONNECTED     LAST USED
+  cursor        bot        Cursor        www.cursor.…  Nov 02        today 22:14
+    can call: ingest-forge, tenebrae-library
+    MCP servers cursor can call. Enter adds or removes, esc closes.
+      [x] ingest-forge  on research · 1 tool
+      [x] tenebrae-library  on research · 2 tools
+      [ ] notes  on nas
+  grok-bot      bot        Grok Bot      grok.example  Nov 02        never
+    can call: agent-net tools only
+  phone         owner app  iPhone Safa…  phone.examp…  Nov 02        never
+
+Integrations
+  Choose integrations for every machine in your network. (more below)
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down server  enter add or remove  esc close

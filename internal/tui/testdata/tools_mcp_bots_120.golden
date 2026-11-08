@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery │ 7 sessions, 6 online · 1 busy  14:05:00
+  Skills per project    [ All tools ]
+╭─Tools · 40 tools───────────────────────────────────────────────╮╭─tenebrae-library───────────────────────────────────╮
+│   NAME                    STATUS                      COST     ││ scope: global                                      │
+│   found-skill-11          outside agent-net           ~0       ││ host: research                                     │
+│   found-skill-12          outside agent-net           ~0       ││ bots: cursor                                       │
+│   found-skill-13          outside agent-net           ~0       ││                                                    │
+│   found-skill-14          outside agent-net           ~0       ││                                                    │
+│   found-skill-15          outside agent-net           ~0       ││                                                    │
+│   found-skill-16          outside agent-net           ~0       ││                                                    │
+│   found-skill-17          outside agent-net           ~0       ││                                                    │
+│   found-skill-18          outside agent-net           ~0       ││                                                    │
+│   found-skill-19          outside agent-net           ~0       ││                                                    │
+│   found-skill-20          outside agent-net           ~0       ││                                                    │
+│   found-skill-21          outside agent-net           ~0       ││                                                    │
+│   found-skill-22          outside agent-net           ~0       ││                                                    │
+│   found-skill-23          outside agent-net           ~0       ││                                                    │
+│   found-skill-24          outside agent-net           ~0       ││                                                    │
+│   found-skill-25          outside agent-net           ~0       ││                                                    │
+│   mastering-postgresql    on for cogforge, tenebrae   ~0       ││                                                    │
+│   react-best-practices    on for wbg-housing,…        ~0       ││                                                    │
+│   research                on everywhere               ~0       ││                                                    │
+│   scratch-notes           outside agent-net           ~0       ││                                                    │
+│   using-git-worktrees     on everywhere               ~0       ││                                                    │
+│   ◆ tenebrae-library      on research, healthy        -        ││                                                    │
+│ 40 tools · ! needs attention · enter opens actions             ││                                                    │
+╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+tab switches  q quit  ? help  ↑↓ move  / filter  t costs  esc clear  n add  enter actions  R rescan

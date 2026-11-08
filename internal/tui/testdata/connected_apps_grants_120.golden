@@ -4,10 +4,11 @@ Connected apps
 ▸ Internet access: off
   Use your own tunnel URL
   Add an app
-  NAME              KIND       CLIENT        RETURN HOST           CONNECTED     LAST USED
-  trade-bot         bot        Trade         -                     Jan 02        never
-    grants: mcp server ingest-forge
-  grok-bot          bot        Grok Bot      -                     Jan 02        never
+  NAME              KIND       CLIENT          RETURN HOST           CONNECTED     LAST USED
+  trade-bot         bot        Trade           -                     Jan 02        never
+    can call: ingest-forge
+  grok-bot          bot        Grok Bot        -                     Jan 02        never
+    can call: agent-net tools only
 
 Integrations
   Choose integrations for every machine in your network.
@@ -24,7 +25,6 @@ Time zone
   The clock every time on this screen uses, wherever you run it.
   Time zone: auto
 
-Notifications (more below)
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

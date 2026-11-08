@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -45,6 +46,7 @@ type toolsMsg struct {
 	items    []protocol.ToolItem
 	accepted []string
 	needs    []protocol.ToolNeed
+	bots     map[string][]string
 	err      error
 	at       time.Time
 }
@@ -59,6 +61,8 @@ type toolsState struct {
 	accepted        map[string]bool
 	needs           []protocol.ToolNeed
 	cat             toolsdiff.Catalog
+	// bots maps an MCP server name to the labels of the bots granted it.
+	bots map[string][]string
 
 	allTools                     bool
 	agentRow, skillRow           int
@@ -121,6 +125,7 @@ func (m Model) loadTools() (tea.Model, tea.Cmd) {
 	}
 	m.tl.loading = true
 	now := m.now
+	caller, _ := m.src.(inboxCaller)
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*Timeout)
 		defer cancel()
@@ -130,9 +135,29 @@ func (m Model) loadTools() (tea.Model, tea.Cmd) {
 			r.states, _ = ts.ToolsProjects(ctx)
 			r.accepted, _ = ts.ToolsAccepted(ctx)
 			r.needs, _ = ts.ToolsNeeds(ctx)
+			r.bots = toolsBots(ctx, caller)
 		}
 		return r
 	}
+}
+
+// toolsBots reads which bots are granted each shared MCP server. A daemon that
+// cannot list the apps leaves the bot lines out; the tools still load.
+func toolsBots(ctx context.Context, c inboxCaller) map[string][]string {
+	if c == nil {
+		return nil
+	}
+	raw, err := c.Call(ctx, "apps.list", struct{}{})
+	if err != nil {
+		return nil
+	}
+	var v struct {
+		Apps []connectedApp `json:"apps"`
+	}
+	if json.Unmarshal(raw, &v) != nil {
+		return nil
+	}
+	return botsByServer(v.Apps)
 }
 
 func (m *Model) applyTools(r toolsMsg) {
@@ -146,6 +171,7 @@ func (m *Model) applyTools(r toolsMsg) {
 	}
 	m.tl.err, m.tl.loaded, m.tl.at = "", true, r.at
 	m.tl.items, m.tl.needs, m.tl.states = r.items, r.needs, r.states
+	m.tl.bots = r.bots
 	m.tl.accepted = map[string]bool{}
 	for _, k := range r.accepted {
 		m.tl.accepted[k] = true
@@ -339,6 +365,7 @@ func (m Model) toolsRescan() (tea.Model, tea.Cmd) {
 	}
 	m.tl.loading = true
 	now := m.now
+	caller, _ := m.src.(inboxCaller)
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*Timeout)
 		defer cancel()
@@ -349,6 +376,7 @@ func (m Model) toolsRescan() (tea.Model, tea.Cmd) {
 			r.states, _ = ts.ToolsProjects(ctx)
 			r.accepted, _ = ts.ToolsAccepted(ctx)
 			r.needs, _ = ts.ToolsNeeds(ctx)
+			r.bots = toolsBots(ctx, caller)
 		}
 		return r
 	}

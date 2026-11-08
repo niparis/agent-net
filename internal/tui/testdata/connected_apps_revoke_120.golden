@@ -9,9 +9,9 @@ Connected apps ─────────────────────�
 
   NAME    KIND       CLIENT         RETURN HOST     CONNECTED  LAST USED
 ▸ cursor  bot        Cursor         www.cursor.com  Jan 02     never
+    can call: agent-net tools only
   iphone  owner app  iPhone Safari  phone.example   Jan 02     Feb 03
   Revoke cursor? Its tokens stop working at once. (y/n)
-
 
 
 

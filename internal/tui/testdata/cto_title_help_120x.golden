@@ -160,6 +160,7 @@ Legend ────────────────────────�
   a                      add a connected app
   x                      remove the selected machine or revoke the selected app
   g                      choose the shared MCP servers the selected bot may use
+  n                      rename the selected app
   r                      rotate the selected online machine token
 
  Inbox
@@ -214,10 +215,10 @@ Legend ────────────────────────�
   a                      add
   x                      revoke
   g                      grant
-  enter                  approve
+  enter                  approve a pending app; on an app row, rename it (same as n)
   r                      refuse
   left, right            change kind
-  tab                    edit name
+  n                      rename the selected app
 
  Quality details
   tab, shift+tab         sub tab

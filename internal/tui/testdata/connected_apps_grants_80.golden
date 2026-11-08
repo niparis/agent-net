@@ -4,10 +4,11 @@ Connected apps
 ▸ Internet access: off
   Use your own tunnel URL
   Add an app
-  NAME           KIND       CLIENT        RETURN HOST    CONNECTED     LAST USED
-  trade-bot      bot        Trade         -              Jan 02        never
-    grants: mcp server ingest-forge
-  grok-bot       bot        Grok Bot      -              Jan 02        never
+  NAME          KIND       CLIENT        RETURN HOST   CONNECTED     LAST USED
+  trade-bot     bot        Trade         -             Jan 02        never
+    can call: ingest-forge
+  grok-bot      bot        Grok Bot      -             Jan 02        never
+    can call: agent-net tools only
 
 Integrations
   Choose integrations for every machine in your network.
@@ -16,7 +17,6 @@ Integrations
 Machines
   The name every machine in your network shows for each machine.
   NAME                  HOST NAME             VERSION       ONLINE
-  Mac                   Mac                   v0.4.0        yes
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
