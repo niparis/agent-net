@@ -1176,7 +1176,18 @@ ALTER TABLE inbox_items ADD COLUMN detail TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS standing_orders (
  id TEXT PRIMARY KEY, text TEXT NOT NULL, saved_at INTEGER NOT NULL,
  source TEXT NOT NULL DEFAULT 'owner');
-`, botAgentMigration}
+`, botAgentMigration, `
+-- Quota blocks per window. A block names the window of a provider that a
+-- worker run reported out of quota (window_id), or every model of the provider
+-- when window_id is empty. The old table is dropped once: its rows name no
+-- window, so they would block every agy model until their reset.
+DROP TABLE IF EXISTS quota_blocks;
+CREATE TABLE IF NOT EXISTS quota_blocks (
+ node_id TEXT NOT NULL, provider TEXT NOT NULL, window_id TEXT NOT NULL DEFAULT '',
+ window_label TEXT NOT NULL DEFAULT '', resets_at INTEGER NOT NULL,
+ detail TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL,
+ PRIMARY KEY (node_id, provider, window_id));
+`}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay
 // after its columns exist: the log table, the indexes and the backfill of old

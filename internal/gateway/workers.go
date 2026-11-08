@@ -194,15 +194,20 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 				return nil, err
 			}
 		}
-		// A run that reports its provider account out of quota blocks that
-		// account on this machine until the reset the provider named, so the
-		// next start does not fail the same way minutes later.
+		// A run that reports its provider account out of quota blocks the window
+		// its model draws on, on this machine, until the reset the provider named,
+		// so the next start does not fail the same way minutes later. A model that
+		// no window serves blocks the whole provider.
 		if provider, wait, ok := protocol.AccountQuotaBlock(p.Harness, p.Failure); ok {
 			until := g.store.now().Add(wait)
-			if err := g.store.RecordQuotaBlock(nc.id, provider, until, p.Failure); err != nil {
+			block := protocol.QuotaBlock{Provider: provider, Until: until}
+			if w, ok := protocol.QuotaBlockWindowFor(g.lastQuotas(nc.id), provider, p.Model, until); ok {
+				block.WindowID, block.WindowLabel = w.ID, w.Label
+			}
+			if err := g.store.RecordQuotaBlock(nc.id, block, p.Failure); err != nil {
 				return nil, err
 			}
-			g.logLine("quota.blocked", "node", nc.id, "provider", provider, "until", until.UTC().Format(time.RFC3339), "session", p.SessionID)
+			g.logLine("quota.blocked", "node", nc.id, "provider", provider, "window", block.WindowID, "until", until.UTC().Format(time.RFC3339), "session", p.SessionID)
 		}
 		if p.StartedAt == 0 {
 			p.StartedAt = started
