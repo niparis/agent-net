@@ -169,7 +169,7 @@ func nodeDefaults(maturity string, overrides map[string]string, snap settings.Sn
 		from := snap.String("delivery.pipeline.review.required_from", where)
 		independent := snap.String("delivery.pipeline.review.independent", where)
 		requires := snap.Strings("delivery.pipeline.review.requires", where)
-		if from != "hard" || independent != IndependentFamily || len(requires) != 0 {
+		if from != "hard" || independent != IndependentNone || len(requires) != 0 {
 			d.pipelineReviewText = "review from " + from + ", independent " + independent
 			if len(requires) != 0 {
 				d.pipelineReviewText += ", requires " + strings.Join(requires, ", ")
