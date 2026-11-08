@@ -33,7 +33,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"sessions_archive": true, "sessions_archived": true, "session_pin": true,
+	"worker_floors_reset": true, "operator_undo": true, "merger_get": true, "merger_restore": true, "apps.public.restore": true, "sessions_archive": true, "sessions_archived": true, "session_pin": true,
 	protocol.OpWorkerLog: true,
 	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
 	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true, protocol.OpAppsGrant: true, protocol.OpAppsUngrant: true,
@@ -211,6 +211,29 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.RawMessage) (res any, ok bool, err error) {
 	d := lc.d
 	switch method {
+	case "worker_floors_reset":
+		result, err := d.call(ctx, "owner.worker_floors.reset", map[string]string{"owner": d.ownerSessionID()})
+		return result, true, err
+	case "operator_undo":
+		result, err := lc.operatorUndo(ctx, raw)
+		return result, true, err
+	case "merger_restore":
+		var p map[string]any
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad merger_restore arguments")
+		}
+		p["owner_session"] = d.ownerSessionID()
+		p["by"] = proposalActor(ctx)
+		result, err := d.call(ctx, "merger.restore", p)
+		return result, true, err
+	case "merger_get":
+		var p map[string]any
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad merger_get arguments")
+		}
+		p["owner_session"] = d.ownerSessionID()
+		result, err := d.call(ctx, "merger.get", p)
+		return result, true, err
 	case protocol.OpCTOGraphWindow:
 		v, err := lc.ctoGraphWindow(raw)
 		return v, true, err
@@ -494,7 +517,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if err == nil {
 			res = d.withLocalBackups(res, p.Item)
 		}
-	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url":
+	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url", "apps.public.restore":
 		res, err = d.call(ctx, method, json.RawMessage(raw))
 	case "apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", protocol.OpAppsRename, protocol.OpAppsGrant, protocol.OpAppsUngrant:
 		var p struct {
@@ -562,7 +585,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" || p.Answer == "" {
 			return nil, true, errors.New("inbox_answer needs id and answer")
 		}
-		res, err = d.call(ctx, "inbox.answer", map[string]string{"item_id": p.ID, "answer": p.Answer})
+		res, err = d.call(ctx, "inbox.answer", map[string]any{"item_id": p.ID, "answer": p.Answer, "from_cto": lc.cto || proposalActor(ctx) != ""})
 	case "outcome_overrule":
 		var p protocol.OutcomeResolution
 		if json.Unmarshal(raw, &p) != nil || p.ReplyID == "" {
@@ -1242,6 +1265,13 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 	var data any
 	var err error
 	switch typ {
+	case "node.owner_ui.request":
+		var q protocol.UIRequest
+		if json.Unmarshal(raw, &q) != nil {
+			err = errors.New("bad owner UI request")
+		} else {
+			data = map[string]bool{"shown": d.showLocalOwnerEnter(q)}
+		}
 	case "node.machine_log":
 		var q protocol.MachineLogRequest
 		if json.Unmarshal(raw, &q) != nil {

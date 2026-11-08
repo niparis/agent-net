@@ -1,5 +1,10 @@
 package mcpserver
 
+import (
+	"github.com/niparis/agent-net/internal/protocol"
+	"strings"
+)
+
 // ctoConcreteTools holds the internal argument schemas of the change calls that
 // the merged action tools front. They are not exposed in the MCP tool list;
 // they validate a stored call and keep proposals stored before part 10 working.
@@ -20,12 +25,12 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 
 	add("charter_set", "Set a charter attribute.", map[string]ctoField{"ref": {typ: "graph_ref"}, "level": en("Charter level.", "global", "team", "repo", "agent"), "node": s("Node or scope ID."), "attr": en("Attribute.", ctoCharterAttrs...), "value": s("2 KiB max; empty clears.")})
 	for _, name := range []string{"repo_create", "agent_create"} {
-		add(name, "Create a typed identity; owner approval required.", map[string]ctoField{"name": s("Display name."), "role": s("Agent role; optional.")})
+		add(name, "Create a typed identity.", map[string]ctoField{"name": s("Display name."), "role": s("Agent role; optional.")})
 	}
 	for _, name := range []string{"repo_archive", "agent_tombstone"} {
 		add(name, "Deactivate a typed identity; owner approval required.", map[string]ctoField{"ref": {typ: "graph_ref"}})
 	}
-	add("lead_set", "Set a Repo or Team lead; owner approval required.", map[string]ctoField{"ref": {typ: "graph_ref"}, "lead": {typ: "graph_ref"}})
+	add("lead_set", "Set a Repo or Team lead.", map[string]ctoField{"ref": {typ: "graph_ref"}, "lead": {typ: "graph_ref"}})
 	add("node_add", "Add an architect node.", map[string]ctoField{"name": s("Name.")})
 	add("node_remove", "Remove an edgeless architect.", map[string]ctoField{"name": s("Name.")})
 	add("edge_set", "Set a directed edge.", map[string]ctoField{
@@ -81,9 +86,9 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("inbox_answer", "Answer inbox item.", map[string]ctoField{"id": s("Inbox ID."), "answer": s("Answer.")})
 	add("outcome_overrule", "Resolve an outcome.", map[string]ctoField{"reply_id": s("Reply ID."), "action": en("Action.", "let_stand", "overrule")})
 
-	add("tools_toggle", "Propose switching a skill on or off for one project.", map[string]ctoField{"item": s("Item ID."), "project": s("Project."), "on": b("On or off.")})
-	add("tools_new_projects", "Propose the standing choice for future projects.", map[string]ctoField{"item": s("Item ID."), "on": b("On or off.")})
-	add("tools_plan", "Propose assignments; repo removal on a local branch.", map[string]ctoField{
+	add("tools_toggle", "Switch a skill on or off for one project.", map[string]ctoField{"item": s("Item ID."), "project": s("Project."), "on": b("On or off.")})
+	add("tools_new_projects", "Set the choice for future projects.", map[string]ctoField{"item": s("Item ID."), "on": b("On or off.")})
+	add("tools_plan", "Plan assignments; repo removal on a local branch.", map[string]ctoField{
 		"item": s("Item ID."), "target": obj("Assignment."),
 		"operation": en("Operation.", "repo_remove"),
 		"project":   s("Project."),
@@ -92,23 +97,32 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 			"checkout": map[string]any{"type": "string", "description": "Path."},
 		}}},
 	})
-	add("tools_apply", "Propose apply.", map[string]ctoField{"plan_id": s("Plan ID.")})
+	add("tools_apply", "Apply the plan.", map[string]ctoField{"plan_id": s("Plan ID.")})
 	add("tools_undo", "Undo assignment.", map[string]ctoField{"item": s("Item ID.")})
-	add("mcp_import", "Propose import.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID.")})
-	add("mcp_native_remove", "Propose native removal.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID."), "undo_plan_id": s("Removal ID.")})
+	add("mcp_import", "Import a native MCP server.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID.")})
+	add("mcp_native_remove", "Remove native MCP configuration.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID."), "undo_plan_id": s("Removal ID.")})
 
 	add("mcp_add", "Add MCP server; no secrets.", map[string]ctoField{"server": obj("Configuration."), "on": s("Host; local default.")})
 	add("mcp_remove", "Remove MCP server.", map[string]ctoField{"name": s("Server name.")})
 	add("mcp_test", "Test MCP server.", map[string]ctoField{"name": s("Server name.")})
 	add("mcp_enable", "Enable or disable server.", map[string]ctoField{"name": s("Server name."), "enabled": b("Enable.")})
+	for _, name := range []string{"apps.list", "apps.public.status", "apps.public.on", "apps.public.off"} {
+		add(name, "Read connected apps or control their internet access.", nil)
+	}
+	add("apps.ask", "Ask the owner to approve an app or phone pairing.", map[string]ctoField{"code": s("Code shown by the app."), "kind": en("App type.", "bot", "owner_app"), "name": s("App name.")})
+	add("apps.grant", "Grant a shared MCP server to a bot.", map[string]ctoField{"id": s("App ID."), "grant": s("mcp server <name>.")})
+	add("apps.ungrant", "Remove a bot grant.", map[string]ctoField{"id": s("App ID."), "grant": s("mcp server <name>.")})
+	add("apps.rename", "Rename an active app.", map[string]ctoField{"id": s("App ID."), "name": s("New app name.")})
+	add("apps.revoke", "Revoke an app and its credentials; cannot be undone.", map[string]ctoField{"id": s("App ID.")})
 	add("mcp_call", "Call an MCP tool.", map[string]ctoField{"server": s("Server name."), "tool": s("Tool."), "arguments": obj("Arguments.")})
 
+	add("owner_operation", "Run an owner operation.", map[string]ctoField{"method": en("Owner method.", strings.Fields(protocol.CTOOperatorReads+" "+protocol.CTOOperatorChanges)...), "arguments": obj("Owner method arguments.")})
 	add("settings_values_write", "Write setting values.", map[string]ctoField{"changes": settingsChangesField(), "reason": s("Reason.")})
 	add("settings_values_undo", "Undo a settings revision.", map[string]ctoField{"revision": n("Revision.")})
 	add("integrations_set", "Set integrations.", map[string]ctoField{"peer_messages": b("Messages."), "codex_tools": b("Codex."), "hint_hook": b("Hints."), "policy_hook": b("Policy."), "needs_hook": b("Needs you."), "workers_mod": b("Workers."), "quota_axi": b("Quotas.")})
-	add("notification_settings", "Propose notifications.", map[string]ctoField{"disabled": b("Off if true.")})
-	add("cto_settings", "Propose settings.", map[string]ctoField{"title": s("Name on screens."), "harness": en("Harness.", "opencode", "claude"), "model": model, "compaction": obj("Compaction.")})
-	add("protected_providers_set", "Set providers; ask the owner.", map[string]ctoField{"protected_providers": arr("Provider IDs."), "reason": s("Reason.")})
+	add("notification_settings", "Set notifications.", map[string]ctoField{"disabled": b("Off if true.")})
+	add("cto_settings", "Set CTO settings.", map[string]ctoField{"title": s("Name on screens."), "harness": en("Harness.", "opencode", "claude"), "model": model, "compaction": obj("Compaction.")})
+	add("protected_providers_set", "Set protected providers.", map[string]ctoField{"protected_providers": arr("Provider IDs."), "reason": s("Reason.")})
 	add("worker_providers_set", "Set worker providers.", map[string]ctoField{"providers": arr("IDs; omit for defaults.")})
 	add("score_set", "Set a model score.", map[string]ctoField{"model": s("Model or pattern."), "score": {typ: "number", desc: "0-100; omit to clear."}})
 	add("worker_profile_add", "Set a worker profile.", map[string]ctoField{"name": s("Replaces an existing name."), "harness": s("Harness."), "model": s("Model ID or name."), "effort": s("Effort.")})

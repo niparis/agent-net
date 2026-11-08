@@ -46,7 +46,7 @@ var Tools = []Tool{
 	toolEntry("worker_change", "Start or stop a worker with a complete brief.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("answer", "Apply the owner's answer to a held request, an inbox item or a contested outcome (let stand or overrule).", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("tools_change", "Change shared tools and skills: plan, apply, undo, import or remove a native tool.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
-	toolEntry("mcp_change", "Add, remove, test or enable a shared MCP server at once.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
+	toolEntry("mcp_change", "Manage shared MCP servers and connected apps. apps_list lists IDs; app_grant/ungrant take id and grant (mcp server <name>); app_rename takes id and name; app_revoke permanently invalidates credentials. public_status/on/off control internet access.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("settings_change", "Change settings values or undo a revision at once. Machine removal and token rotation require approval.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("sessions_archive", "Archive offline sessions. Records can be restored by the owner.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: false}, false, false),
 	toolEntry("project_change", "Add, remove, rename or create a project at once.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),

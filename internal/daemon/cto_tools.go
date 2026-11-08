@@ -12,10 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolcatalog"
+	"net/url"
 )
+
+type privateCTOToolKey struct{}
 
 // ctoTool is the only entry to the private CTO channel. Check the process
 // tree on every call, including after a server restart.
@@ -34,8 +36,9 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 	if json.Unmarshal(raw, &q) != nil {
 		return nil, errors.New("bad CTO tool request")
 	}
+
 	var id string
-	result, err := lc.d.runCTOTool(context.WithValue(ctx, dialogProposalKey{}, &id), q.Name, q.Arguments)
+	result, err := lc.d.runCTOTool(context.WithValue(context.WithValue(ctx, privateCTOToolKey{}, true), dialogProposalKey{}, &id), q.Name, q.Arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +196,14 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 	// internal stored "message" call, is refused on the channel.
 	if err := toolcatalog.RenamedError(name); err != nil {
 		return nil, err
+	}
+	if private, _ := ctx.Value(privateCTOToolKey{}).(bool); private && d.ctoSessionID() == "" {
+		if _, err := ctoClass(name, raw); err != nil {
+			return nil, err
+		}
+		if err := d.restoreCTOSession(ctx); err != nil {
+			return nil, fmt.Errorf("restore CTO network identity: %w", err)
+		}
 	}
 	if name == "session_change" {
 		if _, err := ctoClass(name, raw); err != nil {
@@ -355,7 +366,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		}
 		sid := d.ctoSessionID()
 		if sid == "" {
-			return nil, errors.New("CTO network session is not registered; start the CTO from the owner interface")
+			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
 		}
 		if p.Kind == "" && p.Replaces != "" {
 			p.Kind = "question"
@@ -526,22 +537,31 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		}
 		return d.workerStartCall(ctx, sid, p, false, "", true)
 	case "invite":
-		if d.cfg.GatewayData == "" {
-			return nil, errors.New("invite runs on the gateway machine")
+		target, err := url.Parse(d.cfg.GatewayURL)
+		if err != nil || target.Hostname() == "" {
+			return nil, errors.New("gateway address is unavailable")
 		}
-		lines, err := gateway.Invite(gateway.InviteOptions{Port: "7420", Data: d.cfg.GatewayData})
+		port := target.Port()
+		if port == "" {
+			port = "443"
+		}
+		data, err := d.call(ctx, "owner.invite", map[string]string{"owner": d.ownerSessionID(), "host": target.Hostname(), "port": port})
 		if err != nil {
-			return nil, fmt.Errorf("invite runs on the gateway machine: %w", err)
+			return nil, err
+		}
+		var lines [][2]string
+		if err := json.Unmarshal(data, &lines); err != nil {
+			return nil, err
 		}
 		var b strings.Builder
-		for _, l := range lines {
-			if l[0] != "" {
-				fmt.Fprintf(&b, "%s: ", l[0])
+		for _, line := range lines {
+			if line[0] != "" {
+				fmt.Fprintf(&b, "%s: ", line[0])
 			}
-			b.WriteString(l[1])
+			b.WriteString(line[1])
 			b.WriteByte('\n')
 		}
-		b.WriteString("Valid for 10 minutes, works for one machine. Paste it in a shell on the machine to add.")
+		b.WriteString("Valid for 10 minutes, works for one machine. Ask an agent with access to the new machine to run this installer.")
 		return b.String(), nil
 	}
 	return nil, errors.New("unknown CTO tool")

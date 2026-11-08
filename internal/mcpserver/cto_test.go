@@ -97,7 +97,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 		"answer":         {"kind": {"held", "inbox", "outcome"}},
 		"tools_change":   {"action": {"plan", "apply", "undo", "import", "native_remove", "toggle", "new_projects"}},
 		"settings_change": {
-			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"},
+			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "operator"},
 		},
 		"project_change": {"action": {"add", "remove", "display", "create"}},
 		"cto_ui_show":    {"tab": {"sessions", "messages", "quotas", "graph", "tools"}},
@@ -367,9 +367,12 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("total schema: %d bytes, %d bytes left of the %d byte budget", len(schema), 32*1024-len(schema), 32*1024)
-	if len(schema) >= 32*1024 {
-		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), 32*1024)
+	// Leave room for connected-app actions and the parallel trust/standing-orders
+	// tools without removing the descriptions callers need.
+	const schemaBudget = 36 * 1024
+	t.Logf("total schema: %d bytes, %d bytes left of the %d byte budget", len(schema), schemaBudget-len(schema), schemaBudget)
+	if len(schema) >= schemaBudget {
+		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), schemaBudget)
 	}
 	for _, tool := range list.Tools {
 		data, err := json.Marshal(tool)

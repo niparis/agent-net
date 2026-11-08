@@ -72,7 +72,7 @@ func askItem(a protocol.Ask) protocol.InboxItem {
 	item := protocol.InboxItem{
 		ID: a.ID, Kind: a.Kind, SessionID: a.FromSession, Node: a.Node, Text: a.Question, Options: a.Options,
 		AskerName: a.From, Recommendation: a.Recommendation, MessageID: a.MessageID, ConversationID: a.ConversationID,
-		CreatedAt: a.CreatedAt, Status: "open", Delivery: a.Delivery,
+		CreatedAt: a.CreatedAt, Status: "open", Delivery: a.Delivery, SourceRef: a.Ref, Detail: a.Detail,
 	}
 	if a.AboutKind == protocol.AskAboutChange {
 		item.ChangeTitle = a.AboutTitle
@@ -1021,6 +1021,15 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return mm, cmd
 	}
 	key := keyAction(contextInbox, k.String())
+	if row, ok := m.inboxSelected(rows); ok && (strings.HasPrefix(row.item.SourceRef, "app-consent:") || row.item.SourceRef == "apps-public-consent") {
+		if k.String() == "y" {
+			key = "approve"
+		}
+		if k.String() == "n" {
+			key = "refuse"
+		}
+	}
+
 	switch key {
 	case actQuit:
 		m.quitting = true
@@ -1216,6 +1225,12 @@ func (m Model) inboxDecide(row inboxRow, approve bool) (tea.Model, tea.Cmd) {
 		}
 		return m, m.proposalAnswerCmd(row.proposal, action)
 	case "approval", "question":
+		if row.item.SourceRef == "apps-public-consent" {
+			if approve {
+				return m, openOwnerConsent(row.item.Detail)
+			}
+			return m, m.inboxAnswer(row.item.ID, "dismiss")
+		}
 		if approve && row.item.Delivery != nil && len(row.item.Delivery.ReportFields) != 0 {
 			fields := map[string]string{}
 			for _, field := range row.item.Delivery.ReportFields {

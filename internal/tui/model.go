@@ -2348,6 +2348,19 @@ func (m *Model) fixScroll() {
 
 // applyCTOUI applies a CTO request or a daemon notice from the local channel.
 func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
+	if q.EnterSession != "" {
+		if q.EnterCTO {
+			return m.openCTO(q.EnterSession)
+		}
+		if agent, ok := m.agentByID(q.EnterSession); ok {
+			if !agent.Online {
+				return m.resumeOwnerSession(agent)
+			}
+			return m.startEnterID(q.EnterSession)
+		}
+		return m, m.enterCmd(q.EnterSession, q.EnterSession)
+	}
+
 	if q.StartPlan != nil {
 		m.sessionNoticeSerial++
 		return m.onEnter(enterMsg{name: sanitize(q.StartName), plan: *q.StartPlan, proposalID: q.StartProposalID})

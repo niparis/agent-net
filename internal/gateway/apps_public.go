@@ -225,7 +225,32 @@ func (g *Gateway) publicOperation(ctx context.Context, op string, raw []byte) (a
 	g.publicMu.Lock()
 	defer g.publicMu.Unlock()
 	var err error
+	if op == "apps.public.status" && g.hasPublicConsent() {
+		err = g.enablePublic(ctx, "", false)
+	}
 	switch op {
+	case "apps.public.restore":
+		var before protocol.AppsPublicStatus
+		if json.Unmarshal(raw, &before) != nil {
+			return nil, reject("bad public snapshot")
+		}
+		if before.URL != "" {
+			u, e := url.Parse(before.URL)
+			if e != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+				return nil, reject("invalid saved public URL")
+			}
+		}
+		err = g.disablePublic(ctx)
+		if err == nil {
+			g.public = before
+			g.public.Error = ""
+			g.setPublicBase(before.URL)
+			if before.On {
+				err = g.enablePublic(ctx, "", true)
+			} else {
+				err = g.savePublic()
+			}
+		}
 	case "apps.public.on":
 		err = g.enablePublic(ctx, "", false)
 	case "apps.public.off":
@@ -249,10 +274,32 @@ func (g *Gateway) publicOperation(ctx context.Context, op string, raw []byte) (a
 		err = g.enablePublic(ctx, strings.TrimRight(u.String(), "/"), false)
 	}
 	if err != nil {
+		var login *tsnode.NeedsLoginError
+		var denied *funnel.FunnelNotAllowedError
+		var askErr error
+		if errors.As(err, &login) {
+			askErr = g.openPublicConsent(login.URL, "Approve Tailscale login for connected apps")
+		} else if errors.As(err, &denied) {
+			askErr = g.openPublicConsent(denied.Link, "Approve Funnel for connected apps")
+		} else if errors.Is(err, funnel.ErrFunnelNotAllowed) {
+			askErr = g.openPublicConsent("https://tailscale.com/s/no-funnel", "Approve Funnel for connected apps")
+		}
+		if askErr != nil {
+			return nil, fmt.Errorf("%v; could not open consent ask: %w", err, askErr)
+		}
 		err = g.ownerFunnelError(err)
 		g.public.Error = err.Error()
 	} else if op != "apps.public.status" {
 		g.public.Error = ""
+	}
+	if err == nil && (g.public.On || op == "apps.public.off") {
+		reason := protocol.AskReasonResolved
+		if op == "apps.public.off" {
+			reason = protocol.AskReasonWithdrawn
+		}
+		if e := g.store.closeAskRef(g.store.db, publicConsentRef, reason); e != nil {
+			return nil, e
+		}
 	}
 	if op == "apps.public.status" {
 		return g.publicStatus(ctx), err
@@ -278,7 +325,7 @@ func (g *Gateway) ownerFunnelError(err error) error {
 	var login *tsnode.NeedsLoginError
 	switch {
 	case errors.As(err, &login):
-		return ownerFacingError{message: "Add agent-net's own Tailscale node to your tailnet: open " + login.URL + " and log in, then press p again.", cause: err}
+		return ownerFacingError{message: "Approve the Tailscale login in the Inbox: " + login.URL + ". Internet access resumes after login.", cause: err}
 	case errors.Is(err, funnel.ErrNeedsOperator):
 		return ownerFacingError{message: fmt.Sprintf("On %s (the gateway machine, where internet access runs), run once in a terminal: sudo tailscale set --operator=$USER. Then press p again.", machine), cause: err}
 	case errors.Is(err, funnel.ErrNotInstalled):
@@ -291,7 +338,7 @@ func (g *Gateway) ownerFunnelError(err error) error {
 		if errors.As(err, &denied) {
 			link = denied.Link
 		}
-		return ownerFacingError{message: "Allow Funnel for your tailnet: open " + link + ", then press p again.", cause: err}
+		return ownerFacingError{message: "Approve Funnel in the Inbox: " + link + ". Internet access resumes after approval.", cause: err}
 	}
 	return err
 }

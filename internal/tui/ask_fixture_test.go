@@ -16,6 +16,7 @@ func askFromItem(it protocol.InboxItem) protocol.Ask {
 		ID: it.ID, Kind: it.Kind, State: protocol.AskStateOpen, FromKind: protocol.AskFromSession, From: it.AskerName, FromSession: it.SessionID,
 		Node: it.Node, Question: it.Text, Options: it.Options, Recommendation: it.Recommendation, Next: protocol.AskNextOwner,
 		MessageID: it.MessageID, ConversationID: it.ConversationID, CreatedAt: it.CreatedAt, Delivery: it.Delivery,
+		Ref: it.SourceRef, Detail: it.Detail,
 	}
 	if it.Delivery != nil {
 		a.AboutKind, a.AboutID = protocol.AskAboutChange, it.Delivery.ChangeID

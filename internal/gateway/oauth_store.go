@@ -313,12 +313,20 @@ func (s *Store) ApprovePending(id, kind, name string, now time.Time, ownerSessio
 			return err
 		}
 	}
+	if err := s.closeAskRef(tx, "app-consent:"+id, protocol.AskReasonResolved); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
 // RefusePending refuses a live request without creating an app.
 func (s *Store) RefusePending(id string) error {
-	result, err := s.db.Exec("UPDATE oauth_pending SET status='refused' WHERE id=? AND status='pending' AND expires_at>?", id, s.now().UnixNano())
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec("UPDATE oauth_pending SET status='refused' WHERE id=? AND status='pending' AND expires_at>?", id, s.now().UnixNano())
 	if err != nil {
 		return err
 	}
@@ -329,7 +337,10 @@ func (s *Store) RefusePending(id string) error {
 	if n == 0 {
 		return sql.ErrNoRows
 	}
-	return nil
+	if err := s.closeAskRef(tx, "app-consent:"+id, protocol.AskReasonResolved); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) oauthStatus(id string, now time.Time) (string, string, error) {

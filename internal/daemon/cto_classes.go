@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/niparis/agent-net/internal/mcpserver"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 type ctoToolClass string
@@ -65,9 +66,9 @@ var ctoChangeActions = map[string]map[string]string{
 		"toggle": "tools_toggle", "new_projects": "tools_new_projects", "plan": "tools_plan", "apply": "tools_apply", "undo": "tools_undo",
 		"import": "mcp_import", "native_remove": "mcp_native_remove",
 	},
-	"mcp_change": {"add": "mcp_add", "remove": "mcp_remove", "test": "mcp_test", "enable": "mcp_enable"},
+	"mcp_change": {"add": "mcp_add", "remove": "mcp_remove", "test": "mcp_test", "enable": "mcp_enable", "app_ask": "apps.ask", "apps_list": "apps.list", "app_grant": "apps.grant", "app_ungrant": "apps.ungrant", "app_rename": "apps.rename", "app_revoke": "apps.revoke", "public_status": "apps.public.status", "public_on": "apps.public.on", "public_off": "apps.public.off"},
 	"settings_change": {
-		"values_write": "settings_values_write", "values_undo": "settings_values_undo",
+		"values_write": "settings_values_write", "values_undo": "settings_values_undo", "operator": "owner_operation",
 		"worker_profile_add": "worker_profile_add", "worker_profile_remove": "worker_profile_remove",
 		"worker_providers": "worker_providers_set", "protected_providers": "protected_providers_set",
 		"score": "score_set", "integrations": "integrations_set", "notifications": "notification_settings",
@@ -92,8 +93,8 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 	"worker_change":   {"start": ctoMinor, "stop": ctoMinor},
 	"answer":          {"held": ctoMinor, "inbox": ctoMinor, "outcome": ctoMinor},
 	"tools_change":    {"toggle": ctoMinor, "new_projects": ctoMinor, "plan": ctoMinor, "apply": ctoMinor, "undo": ctoMinor, "import": ctoMinor, "native_remove": ctoMinor},
-	"mcp_change":      {"add": ctoMinor, "remove": ctoMinor, "test": ctoMinor, "enable": ctoMinor},
-	"settings_change": {"values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ctoProposal, "machine_rotate": ctoProposal, "invite": ctoMinor, "onboarding": ctoMinor},
+	"mcp_change":      {"add": ctoMinor, "remove": ctoMinor, "test": ctoMinor, "enable": ctoMinor, "app_ask": ctoMinor, "apps_list": ctoRead, "app_grant": ctoMinor, "app_ungrant": ctoMinor, "app_rename": ctoMinor, "app_revoke": ctoMinor, "public_status": ctoRead, "public_on": ctoMinor, "public_off": ctoMinor},
+	"settings_change": {"operator": ctoMinor, "values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ctoProposal, "machine_rotate": ctoProposal, "invite": ctoMinor, "onboarding": ctoMinor},
 	"project_change":  {"add": ctoMinor, "remove": ctoMinor, "display": ctoMinor, "create": ctoMinor},
 }
 
@@ -104,8 +105,8 @@ var ctoActions = map[string]map[string][]string{
 	"worker_change":   {"action": {"start", "stop"}},
 	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
 	"tools_change":    {"action": {"toggle", "new_projects", "plan", "apply", "undo", "import", "native_remove"}, "operation": {"repo_remove"}},
-	"mcp_change":      {"action": {"add", "remove", "test", "enable"}},
-	"settings_change": {"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
+	"mcp_change":      {"action": {"add", "remove", "test", "enable", "app_ask", "apps_list", "app_grant", "app_ungrant", "app_rename", "app_revoke", "public_status", "public_on", "public_off"}},
+	"settings_change": {"area": {"operator", "values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
 	"project_change":  {"action": {"add", "remove", "display", "create"}},
 }
 
@@ -194,6 +195,21 @@ func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {
 		class, ok = actions[action]
 		if !ok {
 			return "", fmt.Errorf("unclassified %s %s %q", name, field, action)
+		}
+	}
+	if name == "settings_change" && string(fields["area"]) == `"operator"` {
+		var method string
+		if json.Unmarshal(fields["method"], &method) != nil {
+			return "", errors.New("operator needs method")
+		}
+		read, ok := protocol.CTOOperatorMethods()[method]
+		if !ok {
+			return "", fmt.Errorf("unclassified owner operation %q", method)
+		}
+		if read {
+			class = ctoRead
+		} else {
+			class = ctoMinor
 		}
 	}
 	return class, nil

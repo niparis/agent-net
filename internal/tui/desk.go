@@ -476,8 +476,12 @@ func logUndo(e protocol.DeskLogEntry) (string, json.RawMessage, bool) {
 	if e.Source != "cto" || len(e.Options) != 2 {
 		return "", nil, false
 	}
+	if _, ok := protocol.CTOOperatorMethods()[e.Options[0]]; ok {
+		raw := json.RawMessage(e.Options[1])
+		return e.Options[0], raw, json.Valid(raw)
+	}
 	switch e.Options[0] {
-	case "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive", "folder_trust", "folder_mcp", "standing_orders", "session_resume":
+	case "apps.rename", "apps.grant", "apps.ungrant", "apps.public.on", "apps.public.off", "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive", "folder_trust", "folder_mcp", "standing_orders", "session_resume":
 	default:
 		return "", nil, false
 	}
