@@ -367,6 +367,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | `agent_messages_find`, `agent_message_get` | The CTO's own conversations, and one message body in chunks |
 | `agent_graph_read` | The public graph: nodes with their full charters, maturity and rules (name and value), and edges with kind, mode and request rule. `node` reads one node. `view: "guide"` returns the charter guide in `note`. |
 | `agent_mcp_servers_find` | Shared MCP servers |
+| `mcp_change` actions `apps_list`, `public_status` | Owner-authorized connected-app metadata and internet-access status; no credentials |
 | `agent_settings_read`, `agent_worker_profiles_find` | Public settings values and history, and public worker profiles |
 | `projects_layout` | Read-only project layout of online machines (roots, groups, remotes, newest commits). Cached for 10 minutes. |
 | `cto_proposals_find` | The CTO's own proposals; `id` selects one. Owner-only results are omitted. |
@@ -380,35 +381,51 @@ method is owner-gated, so the CTO cannot read that setting. The Inbox, other
 sessions' text, owner inboxes, tool inventory and owner settings remain outside
 the CTO's read tools.
 
-Major graph changes outside the owner window and every non-graph owner change
-are proposals. The CTO has one action tool per area:
+The CTO acts at once on changes. Node removal, agent tombstone, repo archive,
+machine removal and machine token rotation remain proposals. The CTO has one
+action tool per area:
 
 | CTO change tool | Actions or area |
 |---|---|
-| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` proposes a send as the owner |
-| `agent_message_reply` | a reply with an outcome; `as_owner: true` proposes a plain reply as the owner |
+| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions |
+| `agent_message_reply` | a reply with an outcome; `as_owner: true` replies on the owner's instructions |
 | `agent_owner_ask` | a question, approval or idea with a recommendation and up to four answers, into the Inbox |
 | `agent_learn` | one finding, under the daily limit |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
 | `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_charter`, `team_archive`, `team_member_add`, `team_member_remove` or `undo` |
-| `sessions_archive` | Propose archiving offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Includes the exact dry run; owner approval required. |
+| `sessions_archive` | Archive offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Reversible through Inbox undo. |
 | `session_change` | `action: rename`, `trust`, `policy`, `session_start`, `merger_start` or `merger_stop`. `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `session_start` takes `trust: true` to trust the folder and start in one step. See [CTO folder trust](#cto-folder-trust) |
 | `cto_standing_orders` | `action: save` (with `text`), `read` (with `order_id`), `list` or `remove` (with `order_id`). See [standing orders](#standing-orders) |
 | `worker_change` | `action: start` or `stop` |
 | `answer` | `kind: held`, `inbox` or `outcome` |
 | `tools_change` | `action: plan`, `apply`, `undo`, `import` or `native_remove` |
-| `mcp_change` | `action: add`, `remove`, `test` or `enable` |
+| `mcp_change` | `action: add`, `remove`, `test`, `enable`, `apps_list`, `app_grant`, `app_ungrant`, `app_rename`, `app_revoke`, `public_status`, `public_on` or `public_off` |
 | `mcp_call` | one call on a shared MCP server |
 | `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite` or `onboarding` |
 | `project_change` | `action: add`, `remove`, `display` or `create`; `add`, `remove` and `create` accept optional `node_id` (machine name or node ID); `remove` takes `name` or `path` |
 | `cto_new` | a new conversation for the active harness |
 
-For team delivery, use `to_set: {"team": "finance"}` with the team name or ID. Only the CTO can send to a group: online sessions of member agents and the linked agents of member repos. The result lists recipients and members missed because they have no online session or a repo has no linked agent. Additional `to_set` filters narrow the recipients. `as_owner: true` creates an owner approval proposal for each recipient. A Team has an authority mode and held back text (see Authority along the tree). The CTO can list teams and membership with `agent_graph_read` using `typed: true`.
+Connected apps use `mcp_change`. Call `{"action":"apps_list"}` to find app
+IDs, names, kinds, grants and revocation status. This list contains no access or
+refresh tokens. `{"action":"public_status"}` reads internet access and its
+setup errors. These two reads do not create notices.
 
-Minor graph changes apply at once. Major graph changes become proposals unless
-the owner opened the window with `w`. All non-graph changes are proposals, even
-during the window. `agent_message_send`, `agent_message_reply`, `agent_owner_ask`,
+Grant a bot access with `{"action":"app_grant","id":"app-id","grant":"mcp server example"}`.
+Use `app_ungrant` with the same fields to remove it. `app_rename` takes `id`
+and `name`. `app_revoke` takes `id`: it invalidates credentials and cannot be
+undone; the app must connect again. `public_on` and `public_off` switch internet
+access on the gateway. No extra approval is required for these CTO actions.
+Each mutation has a CTO audit line and a notice in the Inbox and Desk log.
+Grants, names and the public switch include undo using their previous values,
+including when the requested value was already set. An optional `reason` is
+included in the notice. Ordinary agent and worker tools cannot run these actions.
+OAuth consent, a new Tailscale login and phone pairing still need the owner.
+
+For team delivery, use `to_set: {"team": "finance"}` with the team name or ID. Only the CTO can send to a group: online sessions of member agents and the linked agents of member repos. The result lists recipients and members missed because they have no online session or a repo has no linked agent. Additional `to_set` filters narrow the recipients. `as_owner: true` sends to each recipient on the owner's instructions. A Team has an authority mode and held back text (see Authority along the tree). The CTO can list teams and membership with `agent_graph_read` using `typed: true`.
+
+Changes other than the five proposal actions above apply at once. Reversible
+changes include an undo action in the Inbox and Desk log. `agent_message_send`, `agent_message_reply`, `agent_owner_ask`,
 `agent_learn`, `cto_ui_show` and `proposal_ask` are talk.
 Every proposal tool takes an optional `reason`. The daemon validates the stored
 call and keeps the concrete implementation, its authority checks and its audit
@@ -422,8 +439,8 @@ An edge has no mode.
 After typed Graph cutover, the owner can use `repo_create` and `agent_create`
 with `name`, or `repo_archive` and `agent_tombstone` with a typed `ref`.
 A Repo may have no checkout or owner; an Agent may have a free-text `role`.
-The CTO can propose these actions, and undoing them, for owner approval even
-when the owner window is open. Peers cannot run them. `node_add` and
+The CTO creates identities and applies undo at once. Archive and tombstone
+require an owner proposal. Peers cannot run them. `node_add` and
 `node_remove` follow the same Agent lifecycle rules after cutover.
 
 Archive and tombstone do not delete data. Active graph edges and delivery
@@ -2532,7 +2549,7 @@ An empty or missing maturity uses the `growing` controls. Approval overrides sti
 
 The worker sandbox level from decision 0020 follows the node. The project policy form and `node_settings_set worker_sandbox` both change the repo setting. When it is unset, the node's maturity default applies. A node with no maturity and no override keeps `sandboxed`.
 
-**Autonomy.** A node's `autonomy` setting is `off` (the default) or `wake`. With `wake`, an idle check's `more` answer wakes the existing online session with one short continue notification instead of leaving an Inbox row, and a message queued for an offline session of the agent wakes that session (see message delivery below: Claude interactive, Codex and OpenCode; not Pi). It never starts a new session or a clone: that stays with the owner, or with the CTO as a proposal. `blocked on X` always leaves an Inbox row. Wake-ups have their own daily cap of 6 per agent and stop after two in a row with no new message and no change in open work; the second leaves one row, `<name> was woken twice with no progress`, and a later change allows waking again. The gateway stores only the daily count, the no-progress streak and the progress markers it needs, never task content. Only the owner changes autonomy: on the Graph agent card press `a`, or with `node_settings_set`; the CTO proposes it with `node_settings_set` and the owner approves, like every node setting. The owner's answer to the session-start conflict in decision 0036 is that agent-net may wake an existing agent, but creating a new agent or a clone stays with the owner or the CTO.
+**Autonomy.** A node's `autonomy` setting is `off` (the default) or `wake`. With `wake`, an idle check's `more` answer wakes the existing online session with one short continue notification instead of leaving an Inbox row, and a message queued for an offline session of the agent wakes that session (see message delivery below: Claude interactive, Codex and OpenCode; not Pi). It never starts a new session or a clone: that stays with the owner, or with the CTO as a proposal. `blocked on X` always leaves an Inbox row. Wake-ups have their own daily cap of 6 per agent and stop after two in a row with no new message and no change in open work; the second leaves one row, `<name> was woken twice with no progress`, and a later change allows waking again. The gateway stores only the daily count, the no-progress streak and the progress markers it needs, never task content. The owner changes autonomy on the Graph agent card with `a`, or with `node_settings_set`. The CTO sets it at once with `graph_change` action `settings_set`, `setting: "autonomy"` and `value: "off"` or `"wake"`. The owner's answer to the session-start conflict in decision 0036 is that agent-net may wake an existing agent, but creating a new agent or a clone stays with the owner or the CTO.
 
 **Merge authority.** `full` lets the agent merge and push to the default branch. `delegated` needs an approval from the owner or from anyone above the node in the tree who holds merge: its repo lead or team lead. `ask` needs the owner's written approval. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text. For the exact merge, the owner approves directly or through an agent-net approval note from `agent_owner_ask` with kind `approval`; the repo lead or team lead approves in a message from them. On `ask`, always request the owner's written approval. An owner-instruction excerpt on its own does not approve a merge. The trust and owner-instruction notes use `recipient_merge_authority`, computed by the gateway for the receiving node at delivery. A sender cannot supply that field. The guidance block defers merges to this rule. Uninstall removes the guidance block as a whole.
 

@@ -16,6 +16,15 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 	if err != nil {
 		return nil, err
 	}
+	if name == "mcp_change" {
+		concrete, args, _, e := ctoConcreteCall(name, raw)
+		if e != nil {
+			return nil, e
+		}
+		if strings.HasPrefix(concrete, "apps.") {
+			return d.executeCTOApps(ctx, concrete, args)
+		}
+	}
 	if class != ctoMinor {
 		return d.executeCTOTool(ctx, name, raw)
 	}

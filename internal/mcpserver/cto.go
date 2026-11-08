@@ -165,12 +165,14 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"mcp_change": {
-		desc: "Change shared MCP servers: add, remove, test or enable.",
+		desc: "Manage shared MCP servers, connected apps and internet access.",
 		fields: map[string]ctoField{
-			"action":  {typ: "string", enum: []string{"add", "remove", "test", "enable"}},
+			"action":  {typ: "string", enum: []string{"add", "remove", "test", "enable", "apps_list", "app_grant", "app_ungrant", "app_rename", "app_revoke", "public_status", "public_on", "public_off"}},
 			"server":  {typ: "object", desc: "Configuration."},
 			"name":    {typ: "string", desc: "Server name."},
 			"enabled": {typ: "boolean", desc: "Enable."},
+			"id":      {typ: "string", desc: "App ID from apps_list."},
+			"grant":   {typ: "string", desc: "mcp server <name>."},
 			"on":      {typ: "string", desc: "Host; local default."},
 		},
 	},

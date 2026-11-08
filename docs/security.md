@@ -121,13 +121,38 @@ and machine token rotation are proposals. The CTO runs other changes at once;
 the owner sees Inbox notices and can undo supported changes. A proposal still
 requires a dialog or Inbox approval.
 
+**Connected apps.** The private CTO may list connected apps and public-access
+status, grant or remove a bot's shared MCP server access, rename an app, revoke
+it, and switch internet access on or off through `mcp_change`. These calls use
+the existing owner handlers after the CTO process-tree check and explicit
+classification. Ordinary agent and worker access stays refused. The app list
+includes names, client metadata, grants and revocation state, never credentials.
+This is an explicit exception to the public-read rule below, authorized by the
+owner's request for CTO operator access on 2026-11-08.
+
+A grant is still only `mcp server <name>`, only for an active bot and a registered
+server. The server's allowed-tool filter and per-app call limit still apply.
+Removing a grant takes effect on the next request. Rename still requires a
+unique active name and updates the bot session. Revocation invalidates app
+credentials and may switch access off when no active apps remain. It cannot
+restore credentials through undo; reconnecting needs owner consent. Public
+access uses the gateway's existing listener and Tailscale or tunnel setup.
+A new Tailscale login or OAuth consent still requires the owner.
+
+Every CTO app call has a durable local audit line, including reads and failures.
+Successful mutations also create a CTO notice in the Inbox and Desk log. Names,
+grants and the public switch save their previous values for Inbox undo; a
+request for an already-set value preserves that value on undo. Revocation has
+no undo action. No extra approval gate is added.
+
 The read rule follows decision 0035: a CTO data view calls the same daemon
 function as its matching ordinary agent tool, with the CTO caller identity,
 never a CLI or owner identity. The parity table in [reference.md](reference.md)
 lists every source. Views with no ordinary tool are removed, including charter
 history and the owner-only parts of the graph, the Inbox (tab 7), inboxes, settings,
 tools inventory, session text, the network feed and worker lists. Static
-charter guidance and the CTO's own timeline are the only exceptions. A protected-provider read schema exists
+charter guidance, the CTO's own timeline and connected-app administration
+above are exceptions. A protected-provider read schema exists
 for ordinary agents, but its daemon method is owner-gated, so it is removed
 from the CTO too. Caller-scoped reads use the registered CTO session ID, never
 the owner's ID. Before registration they fail closed.

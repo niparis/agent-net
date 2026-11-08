@@ -97,6 +97,13 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("mcp_remove", "Remove MCP server.", map[string]ctoField{"name": s("Server name.")})
 	add("mcp_test", "Test MCP server.", map[string]ctoField{"name": s("Server name.")})
 	add("mcp_enable", "Enable or disable server.", map[string]ctoField{"name": s("Server name."), "enabled": b("Enable.")})
+	for _, name := range []string{"apps.list", "apps.public.status", "apps.public.on", "apps.public.off"} {
+		add(name, "Read connected apps or control their internet access.", nil)
+	}
+	add("apps.grant", "Grant a shared MCP server to a bot.", map[string]ctoField{"id": s("App ID."), "grant": s("mcp server <name>.")})
+	add("apps.ungrant", "Remove a bot grant.", map[string]ctoField{"id": s("App ID."), "grant": s("mcp server <name>.")})
+	add("apps.rename", "Rename an active app.", map[string]ctoField{"id": s("App ID."), "name": s("New app name.")})
+	add("apps.revoke", "Revoke an app and its credentials; cannot be undone.", map[string]ctoField{"id": s("App ID.")})
 	add("mcp_call", "Call an MCP tool.", map[string]ctoField{"server": s("Server name."), "tool": s("Tool."), "arguments": obj("Arguments.")})
 
 	add("settings_values_write", "Write setting values.", map[string]ctoField{"changes": settingsChangesField(), "reason": s("Reason.")})

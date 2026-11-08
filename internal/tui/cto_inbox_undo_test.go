@@ -100,3 +100,13 @@ func TestCTOInboxUndoSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestCTOInboxUndoApps(t *testing.T) {
+	for _, method := range []string{"apps.rename", "apps.grant", "apps.ungrant", "apps.public.on", "apps.public.off"} {
+		item := protocol.InboxItem{Node: "cto", Options: []string{method, `{"id":"app_fixture"}`}}
+		got, _, ok := ctoInboxUndo(item)
+		if !ok || got != method {
+			t.Fatalf("%s undo not available", method)
+		}
+	}
+}
