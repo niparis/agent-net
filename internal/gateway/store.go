@@ -1249,6 +1249,10 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("task rework backfill: %w", err)
 	}
+	if err := s.repairExternalDone(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("external merge repair: %w", err)
+	}
 	if err := s.backfillDeliveryTasks(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("delivery task backfill: %w", err)

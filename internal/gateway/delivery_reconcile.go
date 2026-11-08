@@ -6,9 +6,20 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// externalMergeGrace is how long the gateway waits after the last test or
+// merge report on a change before it records a merge that only git shows.
+// The merger reports its own merge right after its push, and that report
+// should be the one on record.
+const externalMergeGrace = 10 * time.Minute
+
+// daemonEvidenceBy is the author of evidence the daemon writes from git.
+const daemonEvidenceBy = "daemon"
+
 // ReconcileChange accepts git observations only from the machine holding the
 // change. It bypasses pipeline steps without inventing test or release passes.
-// The transaction rejects observations made obsolete by a new revision/report.
+// An external merge makes the change done and queues no steps: a merger that
+// confirms the merge reopens its after-merge steps (see ReportStep). The
+// transaction rejects observations made obsolete by a new revision/report.
 func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileRequest) (protocol.ChangeView, error) {
 	if q.Kind != "external" && q.Kind != "abandoned" {
 		return protocol.ChangeView{}, reject("unknown reconciliation kind")
@@ -29,10 +40,17 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 		return protocol.ChangeView{}, reject("change no longer matches reconciliation")
 	}
 	now := s.now().Unix()
-	e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, Commit: c.HeadCommit, By: "daemon", At: now, Fields: map[string]string{"reconcile_kind": q.Kind}}
+	e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, Commit: c.HeadCommit, By: daemonEvidenceBy, At: now, Fields: map[string]string{"reconcile_kind": q.Kind}}
 	if q.Kind == "external" {
 		if c.HeadCommit == c.BaseCommit {
 			return protocol.ChangeView{}, reject("change has no commits beyond its base")
+		}
+		evidence, err := changeEvidence(tx, c.ID)
+		if err != nil {
+			return protocol.ChangeView{}, err
+		}
+		if last, ok := lastMergeActivity(evidence, c); ok && s.now().Sub(time.Unix(last, 0)) < externalMergeGrace {
+			return protocol.ChangeView{}, reject("%s: the merger may still report this merge; reconcile waits %s after the last test or merge report", c.ID, externalMergeGrace)
 		}
 		c.State, c.MergedCommit = protocol.ChangeDone, q.MergedCommit
 		e.Step, e.Result, e.Note = protocol.StepMerge, protocol.StepResultPass, "merged outside agent-net"
@@ -71,13 +89,17 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 	if err := retireStepMessages(tx, c.ID); err != nil {
 		return protocol.ChangeView{}, err
 	}
+	// Only an abandoned change is closed for the sessions that claimed its
+	// steps. An external merge is not a close: the merger's report confirms it.
 	var notices []protocol.Message
-	for _, session := range sessions {
-		notice, err := s.stepClosedNoticeTx(tx, c, session)
-		if err != nil {
-			return protocol.ChangeView{}, err
+	if q.Kind == "abandoned" {
+		for _, session := range sessions {
+			notice, err := s.stepClosedNoticeTx(tx, c, session)
+			if err != nil {
+				return protocol.ChangeView{}, err
+			}
+			notices = append(notices, notice)
 		}
-		notices = append(notices, notice)
 	}
 	if err := tx.Commit(); err != nil {
 		return protocol.ChangeView{}, err
@@ -88,4 +110,136 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 		}
 	}
 	return s.GetChange(c.ID)
+}
+
+// lastMergeActivity is the time of the newest test or merge report on the
+// current revision of change c. A report of any result counts.
+func lastMergeActivity(evidence []protocol.Evidence, c protocol.Change) (int64, bool) {
+	var last int64
+	found := false
+	for _, e := range evidence {
+		if e.ChangeID != c.ID || e.Revision != c.Revision {
+			continue
+		}
+		if e.Step != protocol.StepTest && e.Step != protocol.StepMerge {
+			continue
+		}
+		if !found || e.At > last {
+			last, found = e.At, true
+		}
+	}
+	return last, found
+}
+
+// latestMergeReport returns the newest merge report on the current revision of c.
+func latestMergeReport(evidence []protocol.Evidence, c protocol.Change) (protocol.Evidence, bool) {
+	var last protocol.Evidence
+	found := false
+	for _, e := range evidence {
+		if e.ChangeID == c.ID && e.Revision == c.Revision && e.StepRef == (protocol.StepRef{Step: protocol.StepMerge}) {
+			last, found = e, true
+		}
+	}
+	return last, found
+}
+
+// externalMergeRecorded reports whether the newest merge report on the current
+// revision of change c is the daemon's git observation of c's merged commit.
+func externalMergeRecorded(evidence []protocol.Evidence, c protocol.Change) bool {
+	last, ok := latestMergeReport(evidence, c)
+	return ok && last.Fields["reconcile_kind"] == "external" && last.Fields[protocol.FieldMergedCommit] == c.MergedCommit
+}
+
+// racedWithReport reports whether the external merge ext on the current
+// revision of c was recorded within externalMergeGrace after a test or merge
+// report by a session other than the daemon: the merger was still merging.
+func racedWithReport(evidence []protocol.Evidence, c protocol.Change, ext protocol.Evidence) bool {
+	for _, e := range evidence {
+		if e.ChangeID != c.ID || e.Revision != c.Revision || e.By == daemonEvidenceBy {
+			continue
+		}
+		if e.Step != protocol.StepTest && e.Step != protocol.StepMerge {
+			continue
+		}
+		if e.At <= ext.At && time.Duration(ext.At-e.At)*time.Second < externalMergeGrace {
+			return true
+		}
+	}
+	return false
+}
+
+// repairExternalDone reopens a done change whose external merge raced a
+// merger's report (see racedWithReport) and left an after-merge step open: the
+// change goes back to merged and its steps are queued. Only the state and the
+// step tasks change; evidence is kept. Every other done change stays as it is.
+// It runs at start, before the step tasks are backfilled.
+func (s *Store) repairExternalDone() error {
+	rows, err := s.db.Query(`SELECT `+changeColumns+` FROM delivery_changes WHERE state=?`, protocol.ChangeDone)
+	if err != nil {
+		return err
+	}
+	var done []protocol.Change
+	for rows.Next() {
+		c, err := scanChange(rows)
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		done = append(done, c)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, c := range done {
+		evidence, err := changeEvidence(s.db, c.ID)
+		if err != nil {
+			return err
+		}
+		if !externalMergeRecorded(evidence, c) {
+			continue
+		}
+		ext, _ := latestMergeReport(evidence, c)
+		if !racedWithReport(evidence, c, ext) {
+			continue
+		}
+		p, err := s.deliveryPipeline(c.Project)
+		if err != nil {
+			return err
+		}
+		c.State = protocol.ChangeMerged
+		if afterMergeDone(p, c, evidence) {
+			continue
+		}
+		if err := s.reopenMerged(c, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reopenMerged writes change c as merged and queues the after-merge steps
+// that are ready on it.
+func (s *Store) reopenMerged(c protocol.Change, p protocol.Pipeline) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := s.now().Unix()
+	c.UpdatedAt = now
+	if err := writeChange(tx, c, false); err != nil {
+		return err
+	}
+	if p, err = taskOwners(tx, c, p); err != nil {
+		return err
+	}
+	if err := s.queueSteps(tx, c, p, now); err != nil {
+		return err
+	}
+	if err := retireStepMessages(tx, c.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

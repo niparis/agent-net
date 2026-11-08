@@ -390,7 +390,8 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 // revision, who did the work with its model, and the independent field, then
 // checks the evidence with Pipeline.Accepts. A merge pass marks the change
 // merged, and done once every step after merge has passed; a close stops it.
-// Stored evidence never changes.
+// Stored evidence never changes: a merger's pass that confirms a merge the
+// daemon saw from git is a newer report, and the pipeline reads that one.
 func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protocol.StepReportResult, error) {
 	if err := q.Validate(); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
@@ -490,7 +491,22 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	fields[protocol.FieldIndependent] = protocol.IndependenceOf(c.Origin, by, family)
 	e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, StepRef: q.StepRef, Result: q.Result, Commit: q.Commit, Fields: fields,
 		By: by, ReportedBy: reportedBy, ByModel: doer.model, ByModelFamily: family, Note: q.Note, At: now}
-	if err := p.Accepts(c, e); err != nil {
+	// The daemon may have recorded this merge from git already. A merge pass
+	// for the same merged commit confirms it: the report is checked as the
+	// merge of the open change, and the change keeps its merged commit.
+	confirm := false
+	if q.Step == protocol.StepMerge && q.Result == protocol.StepResultPass && (c.State == protocol.ChangeMerged || c.State == protocol.ChangeDone) {
+		evidence, err := changeEvidence(tx, c.ID)
+		if err != nil {
+			return protocol.StepReportResult{}, err
+		}
+		confirm = externalMergeRecorded(evidence, c) && q.Fields[protocol.FieldMergedCommit] == c.MergedCommit
+	}
+	beforeMerge := c
+	if confirm {
+		beforeMerge.State, beforeMerge.MergedCommit = protocol.ChangeOpen, ""
+	}
+	if err := p.Accepts(beforeMerge, e); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
 	}
 	if q.Step == protocol.StepMerge && q.Result == protocol.StepResultPass {
@@ -527,6 +543,14 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		case directOwner:
 			found, err = claimDirectOwnerApproval(tx, c, q.StepRef, q.SessionID, machine)
 		default:
+			if confirm {
+				// The daemon closed this merge task when it saw the merge.
+				// The merger that confirms it takes the task back.
+				if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=0, claimed_by='' WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=1`,
+					c.ID, c.Revision, q.StepRef.Step, q.StepRef.For, boolInt(q.StepRef.AfterMerge)); err != nil {
+					return protocol.StepReportResult{}, err
+				}
+			}
 			found, err = claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, true)
 		}
 		if err != nil {
