@@ -44,6 +44,7 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
+	restart                             *restartState
 	archive                             *sessionsArchiveForm
 	removeIDs                           []string
 	removeAll                           bool
@@ -558,6 +559,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
+		if m.restartTick() {
+			return m, tea.Quit
+		}
 		m.expirePendingStops()
 		cmds := []tea.Cmd{m.nextTick()}
 		if m.tab == graphTab && !m.mapOn && !m.graphTalkLoading && (m.graphTalkAt.IsZero() || m.now().Sub(m.graphTalkAt) >= time.Minute) {
