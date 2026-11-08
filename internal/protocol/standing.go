@@ -66,11 +66,6 @@ const (
 	StandingActionRead   = "read"
 	StandingActionList   = "list"
 	StandingActionRemove = "remove"
-
-	// StandingOrderMaxBytes bounds one order and StandingOrdersMax their
-	// number, because the CTO reads all of them at the start of a conversation.
-	StandingOrderMaxBytes = 2000
-	StandingOrdersMax     = 50
 )
 
 // StandingOrder is one durable instruction. Source says who saved it: the
@@ -100,14 +95,11 @@ type StandingOrdersResult struct {
 	Order  *StandingOrder  `json:"order,omitempty"`
 }
 
-// CleanStandingText trims an order and checks its size.
+// CleanStandingText trims an order and checks it is not empty.
 func CleanStandingText(text string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", errors.New("a standing order needs text")
-	}
-	if len(text) > StandingOrderMaxBytes {
-		return "", errors.New("a standing order is at most 2000 bytes")
 	}
 	return text, nil
 }

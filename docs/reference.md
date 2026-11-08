@@ -605,7 +605,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 
 ## Standing orders
 
-Standing orders are the owner's lasting instructions to the CTO. The gateway keeps them in the `standing_orders` table, so they survive CTO restarts and machine changes. Each order has an `id`, `text` (at most 2000 bytes), `saved_at` and `source`: `owner` for the owner's own words typed in the TUI, `cto` when the CTO saved it on the owner's instruction. There can be at most 50.
+Standing orders are the owner's lasting instructions to the CTO. The gateway keeps them in the `standing_orders` table, so they survive CTO restarts and machine changes. Each order has an `id`, `text`, `saved_at` and `source`: `owner` for the owner's own words typed in the TUI, `cto` when the CTO saved it on the owner's instruction.
 
 The CTO tool `cto_standing_orders` has the actions `save` (`text`), `read` (`order_id`), `list` and `remove` (`order_id`). It answers with `orders` (all, oldest first) and `order`. A save or a remove leaves an Inbox notice with an undo (remove for a save, restore for a remove). The CTO reads the orders at the start of every conversation: a Claude CTO gets them after the brief in its system prompt, an OpenCode CTO gets them in front of the first message of a new conversation.
 

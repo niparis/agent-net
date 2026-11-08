@@ -88,7 +88,6 @@ func (m Model) startStandingAdd() (Model, tea.Cmd) {
 	m.mode = modeStandingAdd
 	m.rename = newTextInput()
 	m.rename.Prompt = "standing order> "
-	m.rename.CharLimit = protocol.StandingOrderMaxBytes
 	m.rename.SetVirtualCursor(false)
 	m.notice = notice{}
 	return m, m.rename.Focus()

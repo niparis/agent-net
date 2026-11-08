@@ -40,13 +40,6 @@ func (s *Store) SaveStandingOrder(q protocol.StandingOrdersRequest) (protocol.St
 	if o.Source != protocol.StandingSourceCTO {
 		o.Source = protocol.StandingSourceOwner
 	}
-	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM standing_orders WHERE id<>?`, o.ID).Scan(&n); err != nil {
-		return o, err
-	}
-	if n >= protocol.StandingOrdersMax {
-		return o, errors.New("there are 50 standing orders already: remove one first")
-	}
 	_, err = s.db.Exec(`INSERT INTO standing_orders(id,text,saved_at,source) VALUES(?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET text=excluded.text,saved_at=excluded.saved_at,source=excluded.source`,
 		o.ID, o.Text, o.SavedAt, o.Source)

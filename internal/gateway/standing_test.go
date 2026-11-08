@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -34,8 +33,5 @@ func TestStandingOrdersStore(t *testing.T) {
 	}
 	if _, err := s.SaveStandingOrder(protocol.StandingOrdersRequest{Text: " "}); err == nil {
 		t.Fatal("empty text must fail")
-	}
-	if _, err := s.SaveStandingOrder(protocol.StandingOrdersRequest{Text: strings.Repeat("x", 2001)}); err == nil {
-		t.Fatal("long text must fail")
 	}
 }
