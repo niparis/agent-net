@@ -43,7 +43,8 @@ func runThreaded(ctx context.Context, socket string, opts Options, harness, meta
 	defer rt.Close()
 	sw := newSwitcher(opts, conn, logf)
 	rt.root.conn(ctx)
-	srv := New(rt.Call, opts.Version, rt.takeNote)
+	// This connection has no thread, so its instructions carry the global level.
+	srv := NewWithInstructions(rt.Call, opts.Version, StartInstructions(ctx, rt.root.Call), rt.takeNote)
 	watchCtx, stopWatch := context.WithCancel(ctx)
 	defer stopWatch()
 	go sw.watch(watchCtx)

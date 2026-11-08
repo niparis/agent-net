@@ -291,6 +291,11 @@ func (s *Store) contextText(session string) (string, error) {
 		return "", err
 	}
 	text := protocol.NodeContextWithSettings(graph, c.Project, c.Settings)
+	// A node's effective charter already joins the global rules and refuses. A
+	// session no node covers gets the global level alone.
+	if text, err = s.withGlobalLevel(text); err != nil {
+		return "", err
+	}
 	place, err := s.placeText(session)
 	if err != nil {
 		return "", err

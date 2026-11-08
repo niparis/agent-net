@@ -322,6 +322,7 @@ func New(opts Options) (*Gateway, error) {
 		stepBatches: make(map[string]*stepTaskBatch), lastReportBySession: make(map[string]time.Time),
 		stepTaskQuietWindow: opts.StepTaskQuietWindow, stepTaskRecentWindow: opts.StepTaskRecentWindow, stepTaskBatchCap: opts.StepTaskBatchCap}
 	store.settingsHook = func() { go g.settingsChanged() }
+	store.charterHook = func() { go g.charterChanged() }
 	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)
 	if err != nil {
@@ -2196,6 +2197,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return protocol.PolicyGot{Charter: text}, nil
+
+	case "charter.global":
+		// The owner's global level, for a connection that has no session yet.
+		// Charters and rules are public, so any node may read it.
+		global, err := st.GlobalCharter()
+		if err != nil {
+			return nil, err
+		}
+		return protocol.GlobalCharterGot{Global: global}, nil
 
 	case "policy.get":
 		p, err := decode[protocol.PolicyGet](raw)

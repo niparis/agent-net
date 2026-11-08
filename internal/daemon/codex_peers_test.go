@@ -37,8 +37,10 @@ func fakeCodexShim() {
 
 type fakeThread struct {
 	ID, Cwd, Name, Model, Status, Source string
-	Ephemeral                            bool
-	Parent                               string
+	// DeveloperInstructions is what thread/start or thread/resume carried.
+	DeveloperInstructions string
+	Ephemeral             bool
+	Parent                string
 	// Flags are the activeFlags of an active thread, for example
 	// "waitingOnApproval".
 	Flags []string
@@ -141,6 +143,7 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 		var p struct {
 			Cwd                 string `json:"cwd"`
 			Model               string `json:"model"`
+			DevInstr            string `json:"developerInstructions"`
 			ThreadID            string `json:"threadId"`
 			ClientUserMessageID string `json:"clientUserMessageId"`
 			Input               []struct {
@@ -156,14 +159,14 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 			continue
 		case "thread/resume":
 			id := p.ThreadID
-			f.threads[id] = &fakeThread{ID: id, Cwd: p.Cwd, Status: "idle", Source: "appServer"}
+			f.threads[id] = &fakeThread{ID: id, Cwd: p.Cwd, Status: "idle", Source: "appServer", DeveloperInstructions: p.DevInstr}
 			f.mu.Unlock()
 			reply(map[string]any{"thread": map[string]any{"id": id}}, "")
 			f.notify("thread/started")
 			continue
 		case "thread/start":
 			id := protocol.NewID("thread")
-			f.threads[id] = &fakeThread{ID: id, Cwd: p.Cwd, Model: p.Model, Status: "idle", Source: "appServer"}
+			f.threads[id] = &fakeThread{ID: id, Cwd: p.Cwd, Model: p.Model, Status: "idle", Source: "appServer", DeveloperInstructions: p.DevInstr}
 			f.mu.Unlock()
 			reply(map[string]any{"thread": map[string]any{"id": id}}, "")
 			f.notify("thread/started")
@@ -488,6 +491,8 @@ type codexShim struct {
 	in  *json.Encoder
 	out *bufio.Scanner
 	id  int
+	// initialized is the shim's answer to initialize.
+	initialized json.RawMessage
 }
 
 func startCodexShim(t *testing.T, n *node) *codexShim {
@@ -507,7 +512,7 @@ func startCodexShim(t *testing.T, n *node) *codexShim {
 	t.Cleanup(func() { stdin.Close(); cmd.Process.Kill(); cmd.Wait() })
 	s := &codexShim{t: t, cmd: cmd, in: json.NewEncoder(stdin), out: bufio.NewScanner(stdout)}
 	s.out.Buffer(make([]byte, 0, 1<<16), 1<<20)
-	s.call("initialize", map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
+	s.initialized, _ = s.call("initialize", map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
 		"clientInfo": map[string]any{"name": "codex", "version": "0"}})
 	s.in.Encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
 	return s

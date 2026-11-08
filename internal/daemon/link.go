@@ -237,6 +237,10 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 		case "node.skill_bundle":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onSkillBundle(ctx, l, h, raw) }()
+		case protocol.FrameCharterChanged:
+			// A charter value or a team changed. The next turn of every session
+			// reads the charter again (policy.go, graphread.go).
+			d.charterEpoch.Add(1)
 		case "settings.sync":
 			if err := d.acceptSettingsSnapshot(raw, firstSettings); err == nil {
 				firstSettings = false

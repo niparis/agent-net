@@ -415,6 +415,10 @@ type Daemon struct {
 	policy policyState
 	// graph caches the graph of each node for its charter (graphread.go).
 	graph graphState
+	// charterEpoch counts the charter changes the gateway announced. The policy
+	// and graph caches use an answer only from the epoch it was read in
+	// (charter_text.go).
+	charterEpoch atomic.Uint64
 	// integrations holds the last network answers this daemon applied
 	// (integrations.go).
 	intgMu             sync.Mutex

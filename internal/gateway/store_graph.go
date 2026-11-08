@@ -209,6 +209,10 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 
 // SetCharter sets or clears one charter attribute, preserving its history.
 func (s *Store) SetCharter(node, attr, value, actor string) error {
+	return s.charterWrote(s.setCharter(node, attr, value, actor))
+}
+
+func (s *Store) setCharter(node, attr, value, actor string) error {
 	if on, err := s.graphRefsEnabled(); err != nil {
 		return err
 	} else if on {
@@ -531,6 +535,14 @@ func (s *Store) edgeHistory(node string, ref *protocol.GraphRef, limit int) ([]p
 // GraphUndo checks and reverses a history row in one transaction. The reversal
 // is itself recorded, so it can be undone. A stale row cannot overwrite changes.
 func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
+	err := s.graphUndo(id, actor, validate...)
+	if len(validate) > 0 && validate[0] {
+		return err
+	}
+	return s.charterWrote(err)
+}
+
+func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
