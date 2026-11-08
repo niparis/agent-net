@@ -73,6 +73,7 @@ var ctoChangeActions = map[string]map[string]string{
 		"score": "score_set", "integrations": "integrations_set", "notifications": "notification_settings",
 		"cto": "cto_settings", "playbook": "playbook_set", "machine_name": "node_rename", "machine_remove": "machine_remove", "machine_rotate": "machine_rotate",
 		"invite": "invite", "onboarding": "onboarding_restart",
+		"process_stop": "process_stop",
 	},
 	"project_change": {"add": "project_add", "remove": "project_remove", "display": "project_display_set", "create": "project_create"},
 }
@@ -93,7 +94,7 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 	"answer":          {"held": ctoMinor, "inbox": ctoMinor, "outcome": ctoMinor},
 	"tools_change":    {"toggle": ctoMinor, "new_projects": ctoMinor, "plan": ctoMinor, "apply": ctoMinor, "undo": ctoMinor, "import": ctoMinor, "native_remove": ctoMinor},
 	"mcp_change":      {"add": ctoMinor, "remove": ctoMinor, "test": ctoMinor, "enable": ctoMinor},
-	"settings_change": {"values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ctoProposal, "machine_rotate": ctoProposal, "invite": ctoMinor, "onboarding": ctoMinor},
+	"settings_change": {"values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ctoProposal, "machine_rotate": ctoProposal, "invite": ctoMinor, "onboarding": ctoMinor, "process_stop": ctoMinor},
 	"project_change":  {"add": ctoMinor, "remove": ctoMinor, "display": ctoMinor, "create": ctoMinor},
 }
 
@@ -105,7 +106,7 @@ var ctoActions = map[string]map[string][]string{
 	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
 	"tools_change":    {"action": {"toggle", "new_projects", "plan", "apply", "undo", "import", "native_remove"}, "operation": {"repo_remove"}},
 	"mcp_change":      {"action": {"add", "remove", "test", "enable"}},
-	"settings_change": {"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"}},
+	"settings_change": {"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"}},
 	"project_change":  {"action": {"add", "remove", "display", "create"}},
 }
 

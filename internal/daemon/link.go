@@ -181,6 +181,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onFolderTrustFrame(ctx, l, h, raw)
 			}()
+		case protocol.FrameSessionOwnerStopProcess:
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.onProcessStopFrame(ctx, l, h, raw)
+			}()
 		case protocol.FrameProjectOwnerChange:
 			d.wg.Add(1)
 			go func() {

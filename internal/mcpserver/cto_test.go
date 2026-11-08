@@ -97,7 +97,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 		"answer":         {"kind": {"held", "inbox", "outcome"}},
 		"tools_change":   {"action": {"plan", "apply", "undo", "import", "native_remove", "toggle", "new_projects"}},
 		"settings_change": {
-			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding"},
+			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"},
 		},
 		"project_change": {"action": {"add", "remove", "display", "create"}},
 		"cto_ui_show":    {"tab": {"sessions", "messages", "quotas", "graph", "tools"}},

@@ -400,3 +400,27 @@ func TestCTOV2TrustNeedsASessionOrExactlyOneFolder(t *testing.T) {
 		}
 	}
 }
+
+func TestCTOV2ProcessStopNeedsAMachineAndPids(t *testing.T) {
+	for _, args := range []string{
+		`{"area":"process_stop","node_id":"n_1","pids":[1234,5678]}`,
+		`{"area":"process_stop","node_id":"n_1","pids":[42],"reason":"orphans after a restart"}`,
+	} {
+		if err := ValidateCTOActionSchema("settings_change", json.RawMessage(args)); err != nil {
+			t.Errorf("%s: %v", args, err)
+		}
+	}
+	for _, args := range []string{
+		`{"area":"process_stop","pids":[42]}`,
+		`{"area":"process_stop","node_id":"","pids":[42]}`,
+		`{"area":"process_stop","node_id":"n_1"}`,
+		`{"area":"process_stop","node_id":"n_1","pids":[]}`,
+		`{"area":"process_stop","node_id":"n_1","pids":["42"]}`,
+		`{"area":"process_stop","node_id":"n_1","pids":[1.5]}`,
+		`{"area":"process_stop","node_id":"n_1","pids":[42],"signal":"KILL"}`,
+	} {
+		if err := ValidateCTOActionSchema("settings_change", json.RawMessage(args)); err == nil {
+			t.Errorf("%s should be refused", args)
+		}
+	}
+}
