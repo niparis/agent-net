@@ -39,3 +39,18 @@ func osProcessArgs(pid int) []string {
 	}
 	return out
 }
+
+// osProcessList lists the process IDs in /proc.
+func osProcessList() []int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var out []int
+	for _, e := range entries {
+		if pid, err := strconv.Atoi(e.Name()); err == nil && pid > 1 {
+			out = append(out, pid)
+		}
+	}
+	return out
+}

@@ -11,6 +11,9 @@ var processEnviron = osProcessEnviron
 var processArgs = osProcessArgs
 var processParentPID = parentPID
 
+// processList lists the processes that can be looked at.
+var processList = osProcessList
+
 // processEnvVar reads one variable of a process's environment. It returns ""
 // when the process is not ours or the variable is not set.
 func processEnvVar(pid int, key string) string {
