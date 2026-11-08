@@ -53,6 +53,14 @@ func (s *Store) ValidateTeam(q protocol.TeamWrite, actor string) error {
 }
 
 func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error {
+	err := s.writeTeamTx(q, actor, dryRun)
+	if dryRun {
+		return err
+	}
+	return s.charterWrote(err)
+}
+
+func (s *Store) writeTeamTx(q protocol.TeamWrite, actor string, dryRun bool) error {
 	if q.Action == "charter" {
 		return s.SetLevelCharter(protocol.CharterSetRequest{Level: "team", Node: q.ID, Attr: q.Attr, Value: q.Value}, actor, dryRun)
 	}

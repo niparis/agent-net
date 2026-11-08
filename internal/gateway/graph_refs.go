@@ -411,6 +411,14 @@ func validateEdgeRefs(e protocol.Edge) error {
 // SetRefCharter preserves classification and owner approval in the mutation
 // transaction. Role text cannot grant authority.
 func (s *Store) SetRefCharter(ref protocol.GraphRef, attr, value, actor string, validate bool) error {
+	err := s.setRefCharter(ref, attr, value, actor, validate)
+	if validate {
+		return err
+	}
+	return s.charterWrote(err)
+}
+
+func (s *Store) setRefCharter(ref protocol.GraphRef, attr, value, actor string, validate bool) error {
 	if err := s.requireGraphRefs(); err != nil {
 		return err
 	}

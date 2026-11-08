@@ -10,6 +10,14 @@ import (
 // Global and Team charters share a table. Repo and Agent values retain their
 // existing tables, keys and history. Empty values mean inherit.
 func (s *Store) SetLevelCharter(q protocol.CharterSetRequest, actor string, validate bool) error {
+	err := s.setLevelCharter(q, actor, validate)
+	if validate {
+		return err
+	}
+	return s.charterWrote(err)
+}
+
+func (s *Store) setLevelCharter(q protocol.CharterSetRequest, actor string, validate bool) error {
 	level, scope := q.Level, q.Node
 	if q.Level != "" && !protocol.CharterAttributeAtLevel(q.Level, q.Attr) {
 		return reject("attribute %s is not allowed at %s level", q.Attr, q.Level)

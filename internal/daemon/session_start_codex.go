@@ -30,6 +30,13 @@ func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.Started
 		}
 	}
 	params := map[string]any{"cwd": r.Path}
+	// The app server takes no text per turn. A thread that agent-net starts or
+	// resumes gets the charter, with the owner's global rules, as developer
+	// instructions, so the rules reach it even when it does not read the MCP
+	// server instructions.
+	if text := d.codexThreadInstructions(ctx, r.Project); text != "" {
+		params["developerInstructions"] = text
+	}
 	if r.Model != "" {
 		model, effort := splitCodexModel(r.Model)
 		params["model"] = model
@@ -76,6 +83,11 @@ func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.Started
 		case <-ticker.C:
 		}
 	}
+}
+
+// codexThreadInstructions is the charter text for a Codex thread of a project.
+func (d *Daemon) codexThreadInstructions(ctx context.Context, project string) string {
+	return d.orGlobalCharter(ctx, d.charterContext(ctx, project))
 }
 
 func (d *Daemon) resumeOwnerCodex(ctx context.Context, r protocol.StartedSession, socket, pane string) (protocol.StartedSession, error) {

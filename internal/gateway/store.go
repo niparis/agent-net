@@ -38,6 +38,8 @@ type Store struct {
 	graphRefsOn     atomic.Bool
 	settingsHookMu  sync.RWMutex
 	settingsHook    func()
+	charterHookMu   sync.RWMutex
+	charterHook     func()
 	qualityMu       sync.Mutex
 	picker          pickerState
 	runsMu          sync.Mutex

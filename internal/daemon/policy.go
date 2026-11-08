@@ -25,11 +25,14 @@ const (
 	// policyStale is how long the last good answer is used when the gateway
 	// cannot be reached, so a gateway restart does not drop the policy.
 	policyStale = 10 * time.Minute
+	// policyCallTimeout bounds one call to the gateway on the per-turn path.
+	policyCallTimeout = 2 * time.Second
 )
 
 type policyEntry struct {
-	at  time.Time
-	got protocol.PolicyGot
+	at    time.Time
+	epoch uint64
+	got   protocol.PolicyGot
 }
 
 type policyState struct {
@@ -73,13 +76,16 @@ func (d *Daemon) agentsHashOf(ls *localSession) string {
 func (d *Daemon) policyOf(ctx context.Context, sid, agentsHash string) (protocol.PolicyGot, bool) {
 	p := &d.policy
 	now := p.clock()
+	// An answer is used only in the charter epoch it was read in, so a charter
+	// change the gateway announced is read again on the next turn.
+	epoch := d.charterEpoch.Load()
 	p.mu.Lock()
 	e, have := p.cache[sid]
 	p.mu.Unlock()
-	if have && now.Sub(e.at) < policyTTL {
+	if have && e.epoch == epoch && now.Sub(e.at) < policyTTL {
 		return e.got, true
 	}
-	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, policyCallTimeout)
 	defer cancel()
 	raw, err := d.call(cctx, "policy.get", protocol.PolicyGet{SessionID: sid, AgentsHash: agentsHash, Turn: true})
 	var got protocol.PolicyGot
@@ -93,12 +99,7 @@ func (d *Daemon) policyOf(ctx context.Context, sid, agentsHash string) (protocol
 	if err == nil {
 		// The node's charter travels with the policy answer, so a harness hook
 		// asks once per turn (decision 0022).
-		repo := d.sessionCharterContext(ctx, sid, got.Project)
-		if got.Charter != "" && repo != "" {
-			got.Charter = repo + "\n" + got.Charter
-		} else if got.Charter == "" {
-			got.Charter = repo
-		}
+		got.Charter = joinCharter(d.sessionCharterContext(ctx, sid, got.Project), got.Charter)
 	}
 	if err != nil {
 		if have && now.Sub(e.at) < policyStale {
@@ -110,7 +111,7 @@ func (d *Daemon) policyOf(ctx context.Context, sid, agentsHash string) (protocol
 	if p.cache == nil {
 		p.cache = map[string]policyEntry{}
 	}
-	p.cache[sid] = policyEntry{at: now, got: got}
+	p.cache[sid] = policyEntry{at: now, epoch: epoch, got: got}
 	p.mu.Unlock()
 	if draft != "" {
 		if got.Charter != "" {

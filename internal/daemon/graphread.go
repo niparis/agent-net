@@ -22,6 +22,7 @@ const (
 
 type graphEntry struct {
 	at    time.Time
+	epoch uint64
 	graph protocol.Graph
 }
 
@@ -47,10 +48,12 @@ func (d *Daemon) graphOf(ctx context.Context, project string) (protocol.Graph, b
 	}
 	g := &d.graph
 	now := g.clock()
+	// The same epoch rule as the policy cache (policy.go).
+	epoch := d.charterEpoch.Load()
 	g.mu.Lock()
 	e, have := g.cache[project]
 	g.mu.Unlock()
-	if have && now.Sub(e.at) < graphTTL {
+	if have && e.epoch == epoch && now.Sub(e.at) < graphTTL {
 		return e.graph, true
 	}
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -70,7 +73,7 @@ func (d *Daemon) graphOf(ctx context.Context, project string) (protocol.Graph, b
 	if g.cache == nil {
 		g.cache = map[string]graphEntry{}
 	}
-	g.cache[project] = graphEntry{at: now, graph: got.Graph}
+	g.cache[project] = graphEntry{at: now, epoch: epoch, graph: got.Graph}
 	g.mu.Unlock()
 	return got.Graph, true
 }
@@ -101,7 +104,7 @@ func (d *Daemon) sessionCharterContext(ctx context.Context, sid, project string)
 func (d *Daemon) charterBrief(ctx context.Context, project string) string {
 	g, ok := d.graphOf(ctx, project)
 	if !ok {
-		return ""
+		return d.orGlobalCharter(ctx, "")
 	}
 	var charter string
 	for _, n := range g.Nodes {
@@ -110,5 +113,8 @@ func (d *Daemon) charterBrief(ctx context.Context, project string) string {
 			break
 		}
 	}
-	return strings.TrimSpace(charter + "\n" + protocol.DeliveryProjectOwners(g, project) + "\n" + protocol.WorkerDeployApprovalRulesWithSettings(g, project, d.SettingsSnapshot()) + "\n" + protocol.NeighborCharters(g, project))
+	brief := strings.TrimSpace(charter + "\n" + protocol.DeliveryProjectOwners(g, project) + "\n" + protocol.WorkerDeployApprovalRulesWithSettings(g, project, d.SettingsSnapshot()) + "\n" + protocol.NeighborCharters(g, project))
+	// A node's charter holds the global rules; a project no node covers gets the
+	// global level alone.
+	return d.orGlobalCharter(ctx, brief)
 }

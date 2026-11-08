@@ -32,8 +32,35 @@ const AnnounceRule = "At the start of every session, before other work, call age
 	"When you end a turn waiting for your user's decision or input, call agent_owner_ask with the question in one line. " +
 	"Your project description is taken from the project's AGENTS.md automatically."
 
-// Instructions are the MCP server instructions.
+// Instructions are the MCP server instructions. They are the fallback: a new
+// session adds its charter text to them when the daemon can give it
+// (StartInstructions).
 const Instructions = "agent-net connects this session with agent sessions on the user's other machines. " + AnnounceRule
+
+// charterTextBudget is how long a starting MCP server waits for the daemon's
+// charter text. The session waits for the server to start, so this is short;
+// without the text the fixed instructions are used.
+var charterTextBudget = 1500 * time.Millisecond
+
+// StartInstructions are the MCP server instructions for a session that is
+// starting: the fixed text, then the charter text of the session (the global
+// level, its team, repo and agent) when the daemon can resolve it. Every
+// harness reads the server instructions once at session start, so this is how
+// a rule the owner set once reaches harnesses with no per-turn hook. Any
+// failure gives the fixed text.
+func StartInstructions(ctx context.Context, call Caller) string {
+	cctx, cancel := context.WithTimeout(ctx, charterTextBudget)
+	defer cancel()
+	raw, err := call(cctx, protocol.MethodCharterText, struct{}{})
+	if err != nil {
+		return Instructions
+	}
+	var res protocol.CharterTextResult
+	if json.Unmarshal(raw, &res) != nil {
+		return Instructions
+	}
+	return protocol.InstructionsWith(res.Text, Instructions)
+}
 
 // AnnounceReminder ends the result of every agent-net tool until the session
 // has announced its task.
@@ -67,10 +94,16 @@ type announceIn struct {
 // New builds the server. Each tool forwards to the daemon.
 // version is the agent-net version reported to the MCP client ("dev" when empty).
 func New(call Caller, version string, note ...func(ctx context.Context) string) *mcp.Server {
+	return NewWithInstructions(call, version, Instructions, note...)
+}
+
+// NewWithInstructions is New with the instructions the client reads at session
+// start (see StartInstructions).
+func NewWithInstructions(call Caller, version, instructions string, note ...func(ctx context.Context) string) *mcp.Server {
 	if version == "" {
 		version = "dev"
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net", Version: version}, &mcp.ServerOptions{Instructions: Instructions,
+	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net", Version: version}, &mcp.ServerOptions{Instructions: instructions,
 		Capabilities: featureCapabilities()})
 	s.AddReceivingMiddleware(announceReminder(), featureProxy(call))
 	s.AddReceivingMiddleware(renamedTools())
@@ -387,7 +420,7 @@ func Run(ctx context.Context, socket string, opts Options) error {
 	sw := newSwitcher(opts, conn, logf)
 	// Connect now if the daemon is up; if not, the first tool call tries again.
 	d.conn(ctx)
-	srv := New(d.Call, opts.Version, func(context.Context) string { return d.takeNote() })
+	srv := NewWithInstructions(d.Call, opts.Version, StartInstructions(ctx, d.Call), func(context.Context) string { return d.takeNote() })
 	watchCtx, stopWatch := context.WithCancel(ctx)
 	defer stopWatch()
 	go sw.watch(watchCtx)

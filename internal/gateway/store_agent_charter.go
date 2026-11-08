@@ -17,7 +17,7 @@ func (s *Store) SetAgentCharter(agent, attr, value, actor string) error {
 	if err := setAgentCharterTx(tx, agent, attr, value, actor, s.now().UnixNano()); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.charterWrote(tx.Commit())
 }
 
 func setAgentCharterTx(tx *sql.Tx, agent, attr, value, actor string, now int64) error {
