@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
@@ -89,6 +90,12 @@ type Config struct {
 	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
 	// leave fake processes behind. A real daemon leaves it running.
 	testStopCTOOnExit bool
+	// testProcessSignal replaces the kill call of a process stop, so a test
+	// can send a signal only to the throwaway children it started.
+	testProcessSignal func(pid int, sig syscall.Signal) error
+	// testProcessStopGrace replaces processStopGrace, the wait between SIGTERM
+	// and SIGKILL.
+	testProcessStopGrace time.Duration
 	// testNoDifficulty skips the difficulty judge at worker start. Test
 	// daemons set it, because their fake harnesses cannot answer the judge;
 	// the assessment tests turn it off again.

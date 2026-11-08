@@ -366,7 +366,7 @@ action tool per area:
 | `tools_change` | `action: plan`, `apply`, `undo`, `import` or `native_remove` |
 | `mcp_change` | `action: add`, `remove`, `test`, `enable`, `apps_list`, `app_grant`, `app_ungrant`, `app_rename`, `app_revoke`, `app_ask`, `public_status`, `public_on` or `public_off` |
 | `mcp_call` | one call on a shared MCP server |
-| `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite`, `onboarding` or `operator` |
+| `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite`, `onboarding`, `operator` or `process_stop`. `process_stop` takes `node_id` and `pids` and cannot be undone. See [CTO process stop](#cto-process-stop)  |
 | `project_change` | `action: add`, `remove`, `display` or `create`; `add`, `remove` and `create` accept optional `node_id` (machine name or node ID); `remove` takes `name` or `path` |
 | `cto_new` | a new conversation for the active harness |
 
@@ -2684,6 +2684,22 @@ The owner can ask the CTO to trust a folder for Claude Code. The CTO calls `sess
 The request travels to another machine as the owner frames `session.trust_folder` (to the gateway) and `session.owner_trust_folder` (to the machine), like a session start. The machine checks the owner flag again. The operator method is `folder_trust` (`project` or `path`, `node_id`, `remove`); the result has `path`, `trusted` and `added`.
 
 Each use leaves an Inbox notice. `added` is true only when the folder was not trusted before. Only then does the notice carry an undo, and the undo removes that one folder's trust (`folder_trust` with `remove: true`). A folder the owner had already trusted is left alone and has no undo. A CTO proposal still cannot set `trust_claude`, and the proposal relay still drops it: trust the CTO sets goes only through this explicit action or `trust: true`.
+
+### CTO process stop
+
+The owner can ask the CTO to stop orphan processes on a machine, for example an MCP server that a restart left behind. The CTO calls `settings_change` with `area: process_stop`, `node_id` and `pids`. It acts at once, like folder trust. It is not a proposal. The CTO decides when to use it. `node_id` is required and never means "this machine": name the machine that runs the processes (its node ID or host name). An empty `pids` list is an error. A repeated pid is stopped once.
+
+The machine does this for each pid, in this order:
+
+1. It refuses a pid that must not be stopped: a number below 1, pid 1, the agent-net daemon itself, a process whose command line is `agent-net daemon` or `agent-net gateway`, a live agent-net session or worker that this daemon knows (the process ID it registered), and any process that does not belong to the daemon's own user. The reason is in the result.
+2. It reads the command line, the parent pid and the start time of each pid, before any signal. They are in the result for a refused pid too, when the machine can read them. The command line is cut at 400 characters.
+3. It sends SIGTERM to every allowed pid, waits up to 5 seconds, then sends SIGKILL to any that is still the same process and still alive. Before SIGKILL it checks the process start time again, so a reused process number is never killed. It waits up to 2 more seconds for the process to end.
+
+Each pid ends in one `outcome`: `refused` (with `reason`), `stopped_term`, `stopped_kill`, `not_found` (no such process, or a zombie that only its parent can remove) or `failed` (the signal failed, or the process was still there after SIGKILL; `reason` says why). The result is `{"node_id", "hostname", "processes": [{"pid", "outcome", "reason", "command", "parent_pid", "started"}]}`. `started` is RFC 3339 in UTC. The processes come back in the order asked.
+
+The request travels to another machine as the owner frames `session.stop_process` (to the gateway) and `session.owner_stop_process` (to the machine), like a folder trust. The machine checks the owner flag again and applies its own refusals. The operator method is `process_stop` (`node_id`, `pids`). It is served only to the owner's command line or TUI, and to the CTO. It is refused for an agent client. No MCP, Pi or OpenCode tool for ordinary agents calls it.
+
+Each use leaves an Inbox notice with a line per pid: outcome, command line, parent pid and start time. The notice says there is no undo, because a stopped process cannot be brought back. The daemon log has one `process.stop` line per pid with the same facts. The gateway keeps an event `session.process_stop` with the pids and outcomes, not the command lines. See [decision 0102](decisions/0102-cto-process-stop.md).
 
 ### Claude MCP server approval
 
