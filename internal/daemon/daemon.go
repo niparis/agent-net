@@ -826,7 +826,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 				if harness == "claude" && in.Worker != nil && ls.info.PID != in.PID {
 					ls.sessionID = "" // wait for this process to be registered
 				}
-				if ls.info.PID != in.PID {
+				if ls.info.PID != in.PID || ls.stopToken == "" {
 					ls.stopToken, _ = procToken(in.PID)
 				}
 				ls.info = in

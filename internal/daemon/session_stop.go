@@ -78,16 +78,13 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 	}
 	result := protocol.SessionStopResult{Note: "Stopped " + name + ". The conversation is kept."}
 	terminalStop := func() (protocol.SessionStopResult, error) {
-		d.mu.Lock()
-		token := ls.stopToken
-		d.mu.Unlock()
-		current, live := procToken(info.PID)
-		if info.PID <= 1 || token == "" || !live || current != token {
-			return no(errors.New("session process no longer matches its registered process"))
+		pid, token, err := d.stopTarget(ls, info)
+		if err != nil {
+			return no(err)
 		}
 		d.markOwnerStop(ls, true)
 		fail := func(err error) (protocol.SessionStopResult, error) { d.markOwnerStop(ls, false); return no(err) }
-		if h, found := findHerdrPane(info.PID); found {
+		if h, found := findHerdrPane(pid); found {
 			bin := d.herdrBinary(h.bin)
 			if bin != "" {
 				panes, err := d.herdrPanes(bin, h.socket)
@@ -95,7 +92,7 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 					return fail(err)
 				}
 				for _, pane := range panes {
-					if herdrIDRe.MatchString(pane.PaneID) && d.herdrHolds(bin, h.socket, pane.PaneID, pidChain(info.PID)) {
+					if herdrIDRe.MatchString(pane.PaneID) && d.herdrHolds(bin, h.socket, pane.PaneID, pidChain(pid)) {
 						if _, err := d.herdrRun(bin, h.socket, "pane", "close", pane.PaneID); err != nil {
 							return fail(err)
 						}
@@ -104,7 +101,7 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 				}
 			}
 		}
-		if err := stopSessionProcess(ctx, info.PID, token, 5*time.Second); err != nil {
+		if err := stopSessionProcess(ctx, pid, token, 5*time.Second); err != nil {
 			return fail(err)
 		}
 		return result, nil
