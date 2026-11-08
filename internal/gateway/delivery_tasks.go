@@ -364,6 +364,11 @@ type stepTaskBatch struct {
 	session string
 	targets []nodeTaskTarget
 	timer   *time.Timer
+	// timerGen names the quiet-window timer that is armed now. A timer that
+	// had already fired when a newer task re-armed it still runs its callback;
+	// the callback sees an old generation and does nothing, so a task that
+	// just joined the batch waits a full quiet window.
+	timerGen uint64
 }
 
 func (g *Gateway) quietWindow() time.Duration {
@@ -459,13 +464,26 @@ func (s *Store) clearTaskUrgent(t nodeTaskTarget) error {
 	return err
 }
 
+// flushStepTasks sends the session's waiting batch now.
 func (g *Gateway) flushStepTasks(session string) {
+	g.flushStepTasksArmed(session, 0)
+}
+
+// flushStepTasksArmed is flushStepTasks for a quiet-window timer. It sends
+// the batch only while that timer is the one armed on it (gen 0 sends
+// always). A timer that fired just before a new task re-armed the batch is
+// stale: sending then would cut the burst in two.
+func (g *Gateway) flushStepTasksArmed(session string, gen uint64) {
 	g.stepBatchesMu.Lock()
 	if g.stepBatches == nil {
 		g.stepBatchesMu.Unlock()
 		return
 	}
 	b, ok := g.stepBatches[session]
+	if ok && gen != 0 && b.timerGen != gen {
+		g.stepBatchesMu.Unlock()
+		return
+	}
 	if !ok || len(b.targets) == 0 {
 		delete(g.stepBatches, session)
 		g.stepBatchesMu.Unlock()
@@ -662,8 +680,11 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 			if b.timer != nil {
 				b.timer.Stop()
 			}
+			g.stepBatchGen++
+			gen := g.stepBatchGen
+			b.timerGen = gen
 			b.timer = time.AfterFunc(quiet, func() {
-				g.flushStepTasks(sess)
+				g.flushStepTasksArmed(sess, gen)
 			})
 		}
 	}

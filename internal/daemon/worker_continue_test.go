@@ -280,7 +280,7 @@ func TestContinueIsQueuedWhenTheMachineIsBusy(t *testing.T) {
 	}
 	if old.Status == "starting" {
 		for {
-			m := pi.nextPush()
+			m := pi.nextPushOrLog("the first worker's started notice", w.logs)
 			if m.From == old.SessionID && strings.Contains(m.Body, "status: started") {
 				break
 			}
@@ -309,7 +309,7 @@ func TestContinueIsQueuedWhenTheMachineIsBusy(t *testing.T) {
 	fl.set(roomyLoad())
 	var started protocol.Message
 	for {
-		started = pi.nextPush()
+		started = pi.nextPushOrLog("the continued worker's started notice", w.logs)
 		if strings.Contains(started.Body, "status: started") {
 			break
 		}

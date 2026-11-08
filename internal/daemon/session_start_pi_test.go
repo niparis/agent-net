@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestSessionStartPiFirstMessageIsAnOwnerMessage(t *testing.T) {
@@ -127,26 +126,11 @@ func TestSessionStartPiRemoteAgent(t *testing.T) {
 	var r protocol.StartedSession
 	mustJSON(t, a.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "remote-repo", NodeID: b.d.NodeID(), Harness: "pi", AgentID: "chosen", FirstMessage: "Inspect remote"}), &r)
 	lc, id := helloPi(t, b.node, r.NativeID, r.Path, true)
-	push := nextPushOrLog(t, lc, b.logs)
+	push := lc.nextPushOrLog("the first message to the remote Pi session", b.logs)
 	if push.Body != "Inspect remote" {
 		t.Fatalf("message: %+v", push)
 	}
 	if agent := b.agentOf(t, id); agent == nil || agent.AgentID != "chosen" {
 		t.Fatalf("remote first identity: %+v", agent)
-	}
-}
-
-// nextPushOrLog waits for the first message to a remote Pi session. The wait
-// matches the other waits on this path (20 s, scaled), not nextPush's 5 s: the
-// start chain runs several gateway round trips under host load. On a timeout it
-// prints the remote node's log, so a message that never arrives says why.
-func nextPushOrLog(t *testing.T, lc *localClient, logs *logBuf) protocol.Message {
-	t.Helper()
-	select {
-	case m := <-lc.Pushes:
-		return m
-	case <-time.After(scaled(20 * time.Second)):
-		t.Fatalf("no first message for the remote Pi session; remote node log:\n%s", logs.String())
-		return protocol.Message{}
 	}
 }
