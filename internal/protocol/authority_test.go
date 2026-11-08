@@ -27,7 +27,7 @@ func TestOrderNoteSaysLeadTeamAndMode(t *testing.T) {
 				t.Errorf("mode %q: note has %q:\n%s", c.mode, n, got)
 			}
 		}
-		if !strings.Contains(got, "Never carry out "+AlwaysHeldBack) {
+		if !strings.Contains(got, "An order never covers "+AlwaysHeldBack) {
 			t.Errorf("mode %q: no always held back list:\n%s", c.mode, got)
 		}
 	}

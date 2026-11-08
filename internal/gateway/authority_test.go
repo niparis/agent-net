@@ -103,7 +103,7 @@ func TestOrderFromLeadIsLabelledWithMode(t *testing.T) {
 		"Carry it out unless your charter refuses it.",
 		"quote the charter line",
 		"the owner",
-		"Never carry out " + protocol.AlwaysHeldBack,
+		"An order never covers " + protocol.AlwaysHeldBack,
 	} {
 		if !strings.Contains(note, want) {
 			t.Fatalf("note lacks %q:\n%s", want, note)

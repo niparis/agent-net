@@ -117,9 +117,9 @@ func OrderNote(o OrderInfo) string {
 	case AuthorityNegotiate:
 		fmt.Fprintf(&b, " If your charter refuses it and your lead overrules you, the decision goes up to %s.", above)
 	}
-	b.WriteString(" Never carry out ")
+	b.WriteString(" An order never covers ")
 	b.WriteString(AlwaysHeldBack)
-	b.WriteString(" on an order: those stay with the owner.")
+	b.WriteString(": those stay with the owner.")
 	if held := strings.Join(strings.Fields(o.HeldBack), " "); held != "" {
 		fmt.Fprintf(&b, " The owner also holds back from this %s: %s.", o.Scope, NeutralizeMarkers(held))
 	}
