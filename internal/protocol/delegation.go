@@ -221,6 +221,9 @@ type PolicyResult struct {
 	// It is set even when the session has no delegation policy. Empty when the
 	// node has no charter.
 	Charter string `json:"charter,omitempty"`
+	// Notice is one line for the turn text when the session's agent-net tools
+	// are disconnected (ToolsDisconnectedNotice). Empty otherwise.
+	Notice string `json:"notice,omitempty"`
 }
 
 // PolicySupport says what a harness does with a policy.

@@ -261,6 +261,9 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 	if a.Harness == "cto" && a.Online {
 		row.Availability = "wakes on message"
 	}
+	if a.ToolsDisconnected() {
+		row.Tools = protocol.ToolsDisconnected
+	}
 	if a.TaskStarted > 0 {
 		started := rfc3339(a.TaskStarted)
 		row.TaskStarted = &started

@@ -213,6 +213,10 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	if sid == "" {
 		return protocol.PolicyResult{}, nil
 	}
+	notice := ""
+	if d.infoOf(ls).ToolsVersion == protocol.ToolsDisconnected {
+		notice = protocol.ToolsDisconnectedNotice
+	}
 	if client == "cli" && p.Harness == "claude" {
 		if isHumanClaudePrompt(p.Prompt) {
 			_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
@@ -221,9 +225,11 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	}
 	got, ok := d.policyOf(ctx, sid, d.agentsHashOf(ls))
 	if !ok {
-		return protocol.PolicyResult{}, nil
+		return protocol.PolicyResult{Notice: notice}, nil
 	}
-	return d.policyResult(d.infoOf(ls).Harness, got), nil
+	res := d.policyResult(d.infoOf(ls).Harness, got)
+	res.Notice = notice
+	return res, nil
 }
 
 // isHumanClaudePrompt is true for text the owner typed. Claude delivers peer
