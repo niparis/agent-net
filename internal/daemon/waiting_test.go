@@ -216,7 +216,8 @@ func TestWorkerWaitingNotice(t *testing.T) {
 	}
 	send("permission", "shell(git status)")
 	eventually(t, "worker blocked notice", func() bool { return len(blocked()) == 1 })
-	if got := blocked()[0].Body; !strings.Contains(got, "worker "+res.SessionID+" is blocked: shell(git status)") {
+	if got := blocked()[0].Body; !strings.Contains(got, "worker "+res.SessionID+" is blocked:") ||
+		!strings.Contains(got, "approval") || !strings.Contains(got, "since ") || !strings.Contains(got, "shell(git status)") {
 		t.Fatalf("notice: %s", got)
 	}
 	if got := waitingOf(t, w.node, res.SessionID); got != nil {
@@ -229,8 +230,8 @@ func TestWorkerWaitingNotice(t *testing.T) {
 	w.cli.mustCall("waiting", map[string]any{"harness": "opencode", "native_id": rec.SessionID, "clear": true})
 	send("question", "Which branch?")
 	eventually(t, "second blocked notice", func() bool { return len(blocked()) == 2 })
-	if !strings.Contains(blocked()[0].Body+blocked()[1].Body, "Which branch?") {
-		t.Fatal("question missing")
+	if got := blocked()[0].Body + blocked()[1].Body; !strings.Contains(got, "Which branch?") || !strings.Contains(got, "answer") {
+		t.Fatalf("question text or kind missing: %s", got)
 	}
 	w.cli.mustCall("waiting", map[string]any{"harness": "opencode", "native_id": rec.SessionID, "clear": true})
 	send("input", "")

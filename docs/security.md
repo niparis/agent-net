@@ -134,8 +134,8 @@ the owner's ID. Before registration they fail closed.
 
 Ordinary agent list/detail reads omit waiting-question contents. Owner CLI/TUI
 reads retain them. Senders of requests to a waiting session and bots receive
-the cleaned question or tool summary in the waiting notice or send receipt.
-It is limited to one line and 200 characters, with secrets redacted. Agent
+only the waiting kind and start time in the waiting notice or send receipt,
+never the question or tool summary. Agent
 message lists force the bound caller's session ID;
 message status requires that caller to be a sender or recipient and never
 uses the owner-only body relay. The CTO uses those same checks. Public model

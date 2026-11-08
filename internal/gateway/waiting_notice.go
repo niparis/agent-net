@@ -51,19 +51,13 @@ func sessionWait(q queryer, id string) (string, *protocol.Waiting, error) {
 }
 
 // waitingText says that a session waits for its user, for a peer that wrote to
-// it. The waiting text has already been cleaned by sessionWait. The name comes
-// from the session's machine, so it is cleaned and cannot forge the framing.
+// it. It gives only the kind and the start of the wait: the question itself is
+// for the owner only. The name comes from the session's machine, so it is
+// cleaned and cannot forge the framing.
 func waitingText(name string, w *protocol.Waiting, outcome string) string {
 	name = protocol.NeutralizeMarkers(html.EscapeString(protocol.CleanWaitingText(name)))
-	what, preposition := "answer", "to"
-	if w.Kind == protocol.WaitingPermission {
-		what, preposition = "approval", "of"
-	}
-	if w.Text != "" {
-		what += " " + preposition + ": " + protocol.NeutralizeMarkers(html.EscapeString(w.Text))
-	}
 	return fmt.Sprintf("%s is waiting for its user's %s (since %s). Your message %s and will be read when the user answers. No reply is needed.",
-		name, what, time.Unix(w.Since, 0).UTC().Format("2006-01-02 15:04 UTC"), outcome)
+		name, protocol.WaitingKindText(w.Kind), time.Unix(w.Since, 0).UTC().Format("2006-01-02 15:04 UTC"), outcome)
 }
 
 // waitingNotice stores one notice to the sender of a request that was just
