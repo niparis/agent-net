@@ -413,6 +413,9 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 		}
 		return d.sessionStart(ctx, p)
 	}
+	if name == "session_stop" || name == "session_resume" || name == "session_restart" {
+		return d.ctoSessionControl(ctx, name, raw)
+	}
 	if name == "session_start" || name == "project_create" {
 		if proposalActor(ctx) == "" {
 			return nil, errors.New("session start requires an approved proposal")

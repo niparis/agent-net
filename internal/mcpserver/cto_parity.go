@@ -56,6 +56,9 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	}
 	createFields["remote"] = s("Optional git@host:owner/repo.git or https://host/owner/repo.git.")
 	add("project_create", "Create a project and start a session.", createFields)
+	add("session_stop", "Stop an agent session; the conversation is kept.", map[string]ctoField{"session_id": sid})
+	add("session_resume", "Resume an offline agent session in the background.", map[string]ctoField{"session_id": sid})
+	add("session_restart", "Stop an agent session, then resume it.", map[string]ctoField{"session_id": sid})
 	add("session_rename", "Rename a session for the owner.", map[string]ctoField{"session_id": sid, "name": s("Name; empty resets.")})
 	add("session_trust", "Set session peer trust, or trust a project or path folder for Claude Code.", map[string]ctoField{"session_id": sid, "on": b("Enable."), "project": s("Registered project to trust for Claude Code."), "path": s("Existing folder to trust for Claude Code."), "node_id": s("Machine; omit for this machine.")})
 	add("session_policy", "Set policy; read get first.", map[string]ctoField{"session_id": sid, "scope": en("Default session.", "session", "project"), "policy": obj("Policy."), "dry_run": b("Preview.")})

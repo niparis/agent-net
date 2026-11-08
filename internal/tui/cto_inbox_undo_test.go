@@ -100,3 +100,11 @@ func TestCTOInboxUndoSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestCTOInboxUndoSessionStopResumes(t *testing.T) {
+	item := protocol.InboxItem{Node: "cto", Options: []string{protocol.OpSessionResume, `{"session_id":"s_test"}`}}
+	method, args, ok := ctoInboxUndo(item)
+	if !ok || method != protocol.OpSessionResume || !strings.Contains(string(args), `"session_id":"s_test"`) {
+		t.Fatalf("undo: %q %s %v", method, args, ok)
+	}
+}
