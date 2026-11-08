@@ -200,3 +200,20 @@ func BenchmarkRealAgentsCTO(b *testing.B) {
 		}
 	}
 }
+
+// graphContext runs for each session's charter text.
+func BenchmarkRealGraphContext(b *testing.B) {
+	g := benchRealGateway(b)
+	graph, err := g.store.Graph()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c := graph
+		c.Nodes = append([]protocol.Node(nil), graph.Nodes...)
+		if _, err := g.store.graphContext(c); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

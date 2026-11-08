@@ -80,6 +80,8 @@ type Options struct {
 }
 
 type Gateway struct {
+	// previewMemo keeps the worker-choice preview of each node (NodesInfo).
+	previewMemo previewMemo
 	// relayWait overrides defaultRelayWait, for tests.
 	relayWait    time.Duration
 	publicMu     sync.Mutex

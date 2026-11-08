@@ -355,8 +355,17 @@ func (s *Store) QualityAnalysis() protocol.QualityAnalysis {
 }
 func (s *Store) applyQualityWeights(candidates []protocol.WorkerModelCandidate, difficulty string) error {
 	settings, err := s.qualitySettings()
-	if err != nil || !settings.Enabled {
+	if err != nil {
 		return err
+	}
+	return s.applyQualityWeightsWith(settings, candidates, difficulty)
+}
+
+// applyQualityWeightsWith is applyQualityWeights with the settings the caller
+// has already read.
+func (s *Store) applyQualityWeightsWith(settings protocol.QualitySettings, candidates []protocol.WorkerModelCandidate, difficulty string) error {
+	if !settings.Enabled {
+		return nil
 	}
 	s.qualityMu.Lock()
 	defer s.qualityMu.Unlock()

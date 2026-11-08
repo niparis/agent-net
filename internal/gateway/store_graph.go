@@ -1189,15 +1189,21 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) erro
 
 // Graph returns explicit and implicit nodes and all edges.
 func (s *Store) Graph() (protocol.Graph, error) {
-	g := protocol.Graph{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}
+	return s.graphWith(nil)
+}
+
+// graphNodes lists the explicit and implicit nodes, ordered by name, without
+// their charters and edges.
+func (s *Store) graphNodes() ([]protocol.Node, error) {
 	rows, err := s.db.Query(`SELECT name,kind,created_at,1,'',2 FROM graph_nodes
  UNION ALL SELECT name,'component',0,0,path,graph_excluded FROM projects WHERE graph_excluded<>1 AND name NOT IN (SELECT name FROM graph_nodes)
  UNION ALL SELECT repo_project,'component',0,0,repo_root,graph_excluded FROM sessions WHERE archived_at=0 AND graph_excluded<>1 AND repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes)
  UNION ALL SELECT source,'component',0,1,'',2 FROM graph_edges WHERE source<>'*' AND source NOT LIKE '/delivery/%' AND source NOT IN (SELECT name FROM graph_nodes)
  UNION ALL SELECT target,'component',0,1,'',2 FROM graph_edges WHERE target NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
 	if err != nil {
-		return g, err
+		return nil, err
 	}
+	out := []protocol.Node{}
 	seen := map[string]bool{}
 	for rows.Next() {
 		var n protocol.Node
@@ -1205,7 +1211,7 @@ func (s *Store) Graph() (protocol.Graph, error) {
 		var explicit, checked int
 		if err = rows.Scan(&n.Name, &n.Kind, &n.CreatedAt, &explicit, &root, &checked); err != nil {
 			rows.Close()
-			return g, err
+			return nil, err
 		}
 		if explicit == 0 && (root == "" || (checked == 0 && !graphProjectRoot(root))) {
 			continue
@@ -1214,20 +1220,32 @@ func (s *Store) Graph() (protocol.Graph, error) {
 			continue
 		}
 		seen[n.Name] = true
-		g.Nodes = append(g.Nodes, n)
+		out = append(out, n)
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// graphWith is Graph with the settings snapshot the caller has already read.
+// A nil snapshot is read here.
+func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
+	g := protocol.Graph{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}
+	nodes, err := s.graphNodes()
+	if err != nil {
 		return g, err
 	}
+	g.Nodes = nodes
 	charterQuery := `SELECT node,attr,value FROM graph_charter`
 	if on, err := s.graphRefsEnabled(); err != nil {
 		return g, err
 	} else if on {
 		charterQuery = `SELECT node,attr,value FROM graph_charter WHERE node NOT IN (SELECT name FROM graph_nodes WHERE kind='architect') UNION ALL SELECT a.agent_id,a.attr,a.value FROM agent_charter a JOIN graph_nodes n ON n.name=a.agent_id AND n.kind='architect'`
 	}
-	rows, err = s.db.Query(charterQuery)
+	rows, err := s.db.Query(charterQuery)
 	if err != nil {
 		return g, err
 	}
@@ -1274,8 +1292,10 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	if err != nil {
 		return g, err
 	}
-	snap, err := s.SettingsSnapshot()
-	if err != nil {
+	var snap settings.Snapshot
+	if snapshot != nil {
+		snap = *snapshot
+	} else if snap, err = s.SettingsSnapshot(); err != nil {
 		return g, err
 	}
 	for _, v := range snap.Values {
