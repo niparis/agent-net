@@ -348,6 +348,14 @@ func (m Model) deliveryWho(ch deliveryChange) string {
 // deliveryStatusText says what is true of the current step: waiting for its
 // owner, running only when a task is claimed, or how it ended.
 func (m Model) deliveryStatusText(ch deliveryChange) (string, lipgloss.Style) {
+	for _, e := range ch.Evidence {
+		if ch.State == protocol.ChangeDone && e.Fields["reconcile_kind"] == "external" {
+			return "merged outside agent-net", sDim
+		}
+		if ch.State == protocol.ChangeStopped && e.Fields["reconcile_kind"] == "abandoned" {
+			return "abandoned: branch gone", sDim
+		}
+	}
 	if ch.State == protocol.ChangeDone {
 		return "done", sDim
 	}

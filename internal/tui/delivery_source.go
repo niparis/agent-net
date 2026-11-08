@@ -271,12 +271,10 @@ func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange
 		}
 	}
 
-	var raw []protocol.Evidence
-	if out.Full {
-		raw = v.Evidence
-	} else {
+	raw := v.Evidence
+	if !out.Full {
 		for _, st := range steps {
-			if st.Evidence != nil {
+			if st.Evidence != nil && st.Evidence.Fields["reconcile_kind"] == "" {
 				raw = append(raw, *st.Evidence)
 			}
 		}

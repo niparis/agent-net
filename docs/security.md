@@ -440,6 +440,8 @@ A critical repository should also have branch protection on its default branch: 
 
 ### Delivery steps and evidence
 
+A daemon may close its own machine's open change after observing an external merge or an abandoned branch; `change.reconcile` is not an agent or owner socket method. The gateway binds this observation to the current head and revision, and requires an age over seven days and no evidence for abandonment.
+
 The delivery pipeline (decision [0057](decisions/0057-delivery-pipeline.md)) records each step's result as evidence. The gateway stores changes, their revisions and evidence in `gateway.db`, and routes ready node-owned steps to that node's sessions. The tools `agent_change_submit`, `agent_step_claim`, `agent_step_report` and `agent_changes_find` go through the daemon to the gateway. The pipeline settings cutover and owner controls are available. No merge is refused in git. A worker's complete hand-back submits its change from the worker's machine, with the worker's caller as the change's session; the gateway accepts it only when that session is on the machine, or the worker's session is on the machine and that session started it. A change ID passed on by a continue comes only from the machine's own worker record, never from a frame.
 
 Review is required for hard or very_complex changes, a judge risk of at least

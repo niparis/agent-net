@@ -36,6 +36,12 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 		err  error
 	)
 	switch typ {
+	case protocol.FrameChangeReconcile:
+		q, derr := decode[protocol.ChangeReconcileRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.ReconcileChange(nc.id, q)
 	case protocol.FrameChangeSubmit:
 		q, derr := decode[protocol.ChangeSubmitRequest](raw)
 		if derr != nil {
@@ -849,6 +855,13 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		v.Next = next
 	}
 	if !full {
+		// Keep the terminal observation even if its step was removed from
+		// the current pipeline or configured to be skipped.
+		for _, e := range evidence {
+			if e.Fields["reconcile_kind"] != "" {
+				v.Evidence = append(v.Evidence, e)
+			}
+		}
 		return v, nil
 	}
 	v.Pipeline, v.Evidence = &p, evidence
