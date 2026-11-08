@@ -124,10 +124,26 @@ func TestDifficultyJudgePickerChecksMachineAvailabilityAndLevel(t *testing.T) {
 	if got := pick(); got.Model != "gemini-test" {
 		t.Fatalf("available model not selected: %+v", got)
 	}
-	if _, err := s.db.Exec(`UPDATE owner_settings SET value=? WHERE key=?`, `[{"match":"gemini-test","score":52}]`, scoresKey); err != nil {
+	// Decision 0094 replaced the max-or-one-level-below band with the cell rule.
+	// A strong model that is the only one available is still used for normal
+	// work: it is left out only when a weaker allowed model exists.
+	if _, err := s.db.Exec(`UPDATE owner_settings SET value=? WHERE key=?`, `[{"match":"claude-test","score":32},{"match":"gemini-test","score":52}]`, scoresKey); err != nil {
 		t.Fatal(err)
 	}
-	if got := pick(); got.Model != "" {
-		t.Fatalf("model above normal's max gap selected: %+v", got)
+	if got := pick(); got.Model != "gemini-test" {
+		t.Fatalf("a lone strong model must still be used: %+v", got)
+	}
+	// With a weaker model signed in and in quota, the untried strong one stays
+	// off normal work, on every pick of the rotation.
+	if _, err := s.SetNodeHarnesses(node, []protocol.HarnessInfo{
+		{Name: "claude", SignedIn: "yes", Models: []string{"claude-test"}},
+		{Name: "agy", SignedIn: "yes", Models: []string{"gemini-test"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		if got := pick(); got.Model != "claude-test" {
+			t.Fatalf("pick %d: want the weaker claude-test, the untried strong model is overqualified for normal work: %+v", i, got)
+		}
 	}
 }
