@@ -103,6 +103,8 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 		_, nodes[i].Online = g.conns[nodes[i].NodeID]
 	}
 	g.mu.Unlock()
+	var preview qualityPreviewInputs
+	previewRead := false
 	for i := range nodes {
 		tracks, err := g.store.TrackRecords(nodes[i].NodeID, protocol.TrackRecordDays*24*time.Hour)
 		if err != nil {
@@ -132,7 +134,13 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 			}
 		}
 		nodes[i].Quotas = g.nodeQuotas(nodes[i].NodeID)
-		nodes[i].QualityPicks, nodes[i].QualityPickReasons, nodes[i].QualityPickModels, err = g.qualityPreview(nodes[i])
+		if nodes[i].Online && nodes[i].Launch != nil && *nodes[i].Launch && !previewRead {
+			if preview, err = g.qualityPreviewInputs(); err != nil {
+				return protocol.NodesInfo{}, err
+			}
+			previewRead = true
+		}
+		nodes[i].QualityPicks, nodes[i].QualityPickReasons, nodes[i].QualityPickModels, err = g.qualityPreviewWith(preview, nodes[i])
 		if err != nil {
 			return protocol.NodesInfo{}, err
 		}

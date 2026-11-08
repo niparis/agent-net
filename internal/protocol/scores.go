@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 // ModelScore is a capability score for a model or a loose model name.
@@ -19,20 +21,75 @@ type ModelScore struct {
 //go:embed scores.json
 var scoreTableJSON []byte
 
-// EmbeddedModelScores returns the bundled model scores.
+var (
+	embeddedScoresOnce sync.Once
+	embeddedScores     []ModelScore
+)
+
+// embeddedScoreTable decodes the bundled scores once. Callers must not change
+// the result.
+func embeddedScoreTable() []ModelScore {
+	embeddedScoresOnce.Do(func() {
+		if err := json.Unmarshal(scoreTableJSON, &embeddedScores); err != nil {
+			panic(err)
+		}
+	})
+	return embeddedScores
+}
+
+// EmbeddedModelScores returns the bundled model scores. The caller owns the
+// returned slice.
 func EmbeddedModelScores() []ModelScore {
-	var scores []ModelScore
-	if err := json.Unmarshal(scoreTableJSON, &scores); err != nil {
-		panic(err)
-	}
-	return scores
+	return append([]ModelScore(nil), embeddedScoreTable()...)
 }
 
 // scoreName normalizes provider prefixes, effort, free and snapshot suffixes.
 var scoreSnapshot = regexp.MustCompile(`(?:[-:]\d{4,})$`)
 var scoreVersionDot = regexp.MustCompile(`(\d)\.(\d)`)
 
+// nameCache remembers a pure function of a model name. Model names come from
+// a small set (the bundled table, advertised models, profiles), so the cache
+// is capped only as a guard against a flood of distinct inputs.
+type nameCache[V any] struct {
+	m    sync.Map
+	size atomic.Int64
+}
+
+const nameCacheMax = 8192
+
+func (c *nameCache[V]) get(key string, compute func(string) V) V {
+	if v, ok := c.m.Load(key); ok {
+		return v.(V)
+	}
+	v := compute(key)
+	if c.size.Load() < nameCacheMax {
+		if _, loaded := c.m.LoadOrStore(key, v); !loaded {
+			c.size.Add(1)
+		}
+	}
+	return v
+}
+
+var (
+	scoreNames nameCache[string]
+	// scoreWords holds the token sets looseScoreMatch compares. Callers must
+	// not change them.
+	scoreWords nameCache[map[string]bool]
+)
+
 func scoreName(model string) string {
+	return scoreNames.get(model, scoreNameCompute)
+}
+
+func scoreTokenSet(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range modelTokens(s) {
+		out[w] = true
+	}
+	return out
+}
+
+func scoreNameCompute(model string) string {
 	model = strings.ToLower(strings.TrimSpace(model))
 	if i := strings.LastIndexByte(model, '/'); i >= 0 {
 		model = model[i+1:]
@@ -58,14 +115,7 @@ func looseScoreMatch(pattern, model string) bool {
 		return false
 	}
 	variants := []string{"fast", "pro", "ultrafast", "flash", "lite"}
-	words := func(s string) map[string]bool {
-		out := map[string]bool{}
-		for _, w := range modelTokens(s) {
-			out[w] = true
-		}
-		return out
-	}
-	p, m := words(pattern), words(model)
+	p, m := scoreWords.get(pattern, scoreTokenSet), scoreWords.get(model, scoreTokenSet)
 	for _, v := range variants {
 		if p[v] != m[v] {
 			return false
@@ -159,7 +209,7 @@ func LookupModelScoreWithDefaultEffort(model, defaultEffort string, overrides []
 	if result, ok := lookup(overrides); ok {
 		return result, true
 	}
-	scores := EmbeddedModelScores()
+	scores := embeddedScoreTable()
 	if result, ok := lookup(scores); ok {
 		return result, true
 	}

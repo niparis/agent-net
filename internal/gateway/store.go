@@ -1088,6 +1088,14 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// agentSelect looks up the stall item of a session for every session row.
+	// Without this index each row scans all inbox items. It is created here
+	// and not as a versioned migration, so an older release can still open
+	// the file.
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS inbox_items_session ON inbox_items (session_id, message_id, created_at)`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("inbox session index: %w", err)
+	}
 	if err := s.loadGraphRefs(); err != nil {
 		db.Close()
 		return nil, err
@@ -2741,6 +2749,28 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 }
 
 func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
+	a, ok, err := s.agentBase(sessionID)
+	if err != nil || !ok {
+		return a, false, err
+	}
+	one := []protocol.AgentView{a}
+	in, err := s.agentViewInputs()
+	if err != nil {
+		return a, false, err
+	}
+	if err := s.applyDelegationWith(one, in); err != nil {
+		return a, false, err
+	}
+	if err := s.applyAgentChartersWith(one, false, in); err != nil {
+		return a, false, err
+	}
+	return one[0], true, nil
+}
+
+// agentBase reads one agent row without delegation, charter or rules. Callers
+// that need only the stored fields (name, title, node) use it so they do not
+// build the graph and the settings snapshot.
+func (s *Store) agentBase(sessionID string) (protocol.AgentView, bool, error) {
 	a, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.archived_at=0 AND s.id = ? AND (n.id IS NOT NULL OR s.harness='bot')`, sessionID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, false, nil
@@ -2750,14 +2780,7 @@ func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
 	}
 	s.botOnline(&a)
 	a.OwnerUses = decayOwnerUses(a.OwnerUses, a.OwnerUsedAt, s.now().Unix())
-	one := []protocol.AgentView{a}
-	if err := s.applyDelegation(one); err != nil {
-		return a, false, err
-	}
-	if err := s.applyAgentCharters(one, false); err != nil {
-		return a, false, err
-	}
-	return one[0], true, nil
+	return a, true, nil
 }
 
 // Older Pi extensions registered SDK helpers as independent sessions. Match
