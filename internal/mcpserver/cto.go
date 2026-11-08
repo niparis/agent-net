@@ -44,6 +44,10 @@ var ctoCharterAttrs = func() []string {
 	return attrs
 }()
 
+// ctoGraphAttrs are the attributes graph_change accepts: the charter fields,
+// and asks_to, a Team setting that team_charter writes (decision 0100).
+var ctoGraphAttrs = append(append([]string{}, ctoCharterAttrs...), "asks_to")
+
 var ctoEdgeKinds = []string{"depends", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies"}
 
 func settingsChangesField() ctoField {
@@ -90,7 +94,7 @@ var ctoTools = map[string]ctoToolDef{
 			"team":    {typ: "string", desc: "Team name or ID."},
 			"purpose": {typ: "string", desc: "Team purpose."},
 			"node":    {typ: "string", desc: "Node."},
-			"attr":    {typ: "string", desc: "Attribute.", enum: ctoCharterAttrs},
+			"attr":    {typ: "string", desc: "Attribute. asks_to (team_charter only): owner or lead.", enum: ctoGraphAttrs},
 			"level":   {typ: "string", desc: "Charter level; defaults to repo or ref kind.", enum: []string{"global", "team", "repo", "agent"}},
 			"value":   {typ: "string", desc: "Value; empty clears."},
 			"name":    {typ: "string", desc: "Display name."},

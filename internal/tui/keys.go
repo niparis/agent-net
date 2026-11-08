@@ -442,6 +442,7 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextTeams, "space", "member", "add/remove", 3), "add or remove the selected repo or agent"),
 	withHelp(bind(contextTeams, "l", "lead", "lead", 2), "choose or clear the team lead"),
 	withHelp(bind(contextTeams, "m", "authority mode", "mode", 2), "move the team to the next authority mode: absolute, charter first, negotiate"),
+	withHelp(bind(contextTeams, "o", "asks to", "asks to", 2), "send the questions of the team's members to its lead, or back to the owner"),
 	withHelp(bind(contextTeams, "h", "edit held back", "held back", 2), "change what the owner holds back from the team"),
 	withHelp(bind(contextTeams, "H", "repo held back", "repo held back", 3), "change what the owner holds back from the selected repo"),
 	withHelp(bind(contextTeams, "u", "undo team setting", "undo", 2), "put back the last mode or held back change"),

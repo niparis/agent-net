@@ -146,7 +146,9 @@ func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at,options,asker_name,change_title`
 
 func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
-	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items ORDER BY created_at,id`)
+	// An open ask that waits on someone other than the owner (a team lead) is
+	// not the owner's Inbox item.
+	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items WHERE NOT (status='open' AND next_who NOT IN ('owner','')) ORDER BY created_at,id`)
 	if err != nil {
 		return nil, err
 	}

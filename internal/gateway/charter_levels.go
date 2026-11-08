@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -52,6 +53,19 @@ func (s *Store) SetLevelCharter(q protocol.CharterSetRequest, actor string, vali
 	}
 	if !actorAllowed(actor, kind) {
 		return reject("only the owner or CTO may change inherited charters")
+	}
+	// asks_to is a Team setting with its own column, not a charter text. The
+	// CTO sets it here like the Team purpose; an empty value means the default.
+	if level == "team" && q.Attr == "asks_to" {
+		value := strings.TrimSpace(q.Value)
+		if value == "" {
+			value = protocol.AsksToOwner
+		}
+		tw := protocol.TeamWrite{Action: "asks_to", ID: scope, AsksTo: value}
+		if validate {
+			return s.ValidateTeam(tw, actor)
+		}
+		return s.WriteTeam(tw, actor)
 	}
 	value, err := protocol.CleanCharterValue(q.Attr, q.Value)
 	if err != nil {

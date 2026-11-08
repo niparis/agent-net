@@ -9,10 +9,13 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// teamColumns is the column list scanTeam reads, in its order.
+const teamColumns = "id,name,purpose,owner_agent_id,active,authority_mode,held_back,asks_to,created_at,updated_at"
+
 func scanTeam(row interface{ Scan(...any) error }) (protocol.Team, error) {
 	var t protocol.Team
 	var owner *string
-	err := row.Scan(&t.ID, &t.Name, &t.Purpose, &owner, &t.Active, &t.AuthorityMode, &t.HeldBack, &t.CreatedAt, &t.UpdatedAt)
+	err := row.Scan(&t.ID, &t.Name, &t.Purpose, &owner, &t.Active, &t.AuthorityMode, &t.HeldBack, &t.AsksTo, &t.CreatedAt, &t.UpdatedAt)
 	if owner != nil {
 		t.Owner = &protocol.GraphRef{Kind: "agent", ID: *owner}
 	}
@@ -21,7 +24,7 @@ func scanTeam(row interface{ Scan(...any) error }) (protocol.Team, error) {
 
 // Teams includes archived identities so their history and owner remain visible.
 func (s *Store) Teams() ([]protocol.Team, error) {
-	rows, err := s.db.Query(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams ORDER BY id`)
+	rows, err := s.db.Query(`SELECT ` + teamColumns + ` FROM teams ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -108,9 +111,9 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 				owner = q.Owner.ID
 			}
 			_, err = tx.Exec(`INSERT INTO teams(id,name,purpose,owner_agent_id,created_at,updated_at) VALUES(?,?,?,?,?,?)`, q.ID, q.Name, q.Purpose, owner, now, now)
-		case "rename", "purpose", "archive", "mode", "held_back":
+		case "rename", "purpose", "archive", "mode", "held_back", "asks_to":
 			var t protocol.Team
-			t, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams WHERE id=?`, q.ID))
+			t, err = scanTeam(tx.QueryRow(`SELECT `+teamColumns+` FROM teams WHERE id=?`, q.ID))
 			if err == sql.ErrNoRows {
 				return reject("unknown Team")
 			}
@@ -142,6 +145,14 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 					return nil
 				}
 				_, err = tx.Exec(`UPDATE teams SET authority_mode=?,updated_at=? WHERE id=?`, q.Mode, now, q.ID)
+			case "asks_to":
+				if !protocol.ValidAsksTo(q.AsksTo) {
+					return reject("asks_to is owner or lead")
+				}
+				if t.AsksTo == q.AsksTo {
+					return nil
+				}
+				_, err = tx.Exec(`UPDATE teams SET asks_to=?,updated_at=? WHERE id=?`, q.AsksTo, now, q.ID)
 			case "held_back":
 				if !validHeldBack(q.HeldBack) {
 					return reject("invalid held back text")
@@ -174,7 +185,7 @@ func (s *Store) writeTeam(q protocol.TeamWrite, actor string, dryRun bool) error
 		}
 		if err == nil {
 			var t protocol.Team
-			t, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams WHERE id=?`, q.ID))
+			t, err = scanTeam(tx.QueryRow(`SELECT `+teamColumns+` FROM teams WHERE id=?`, q.ID))
 			b, _ := json.Marshal(t)
 			newValue = string(b)
 		}
@@ -333,7 +344,7 @@ func (s *Store) teamGraph() (protocol.Graph, error) {
 		if session.Valid {
 			lead = &protocol.GraphRef{Kind: "session", ID: session.String}
 		}
-		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Lead: lead, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, AuthorityMode: t.AuthorityMode, HeldBack: t.HeldBack, CreatedAt: t.CreatedAt})
+		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Lead: lead, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, AuthorityMode: t.AuthorityMode, HeldBack: t.HeldBack, AsksTo: t.AsksTo, CreatedAt: t.CreatedAt})
 	}
 	rows, err := s.db.Query(`SELECT member_kind,member_id,team_id FROM team_members ORDER BY member_kind,member_id`)
 	if err != nil {

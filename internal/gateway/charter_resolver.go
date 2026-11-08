@@ -307,7 +307,11 @@ func queryIn(db *sql.DB, format string, values []string) (*sql.Rows, error) {
 func (r *charterResolver) resolve(repo, agent, team string) (protocol.Charter, error) {
 	var c protocol.Charter
 	sources := protocol.CharterSources{}
-	refused := map[string]bool{}
+	// refuses and rules are united across levels by item, so a rule set at the
+	// team still reaches a member whose repo or agent has rules of its own.
+	// Items are split the same way every reader splits them, each shows once,
+	// and the lower level comes after the higher one (team before repo).
+	united := map[string]map[string]bool{"refuses": {}, "rules": {}}
 	apply := func(level, scope, attr, value string) error {
 		if value == "" {
 			return nil
@@ -316,19 +320,21 @@ func (r *charterResolver) resolve(repo, agent, team string) (protocol.Charter, e
 			return nil
 		}
 		src := protocol.CharterSource{Level: level, Scope: scope, Value: value}
-		if attr == "refuses" {
+		if seen, ok := united[attr]; ok {
 			sources[attr] = append(sources[attr], src)
-			// Union by refusal item, split the same way every reader splits, so
-			// a value written with semicolons or newlines inherits as clean items.
+			field := &c.Refuses
+			if attr == "rules" {
+				field = &c.Rules
+			}
 			for _, item := range protocol.SplitCharterList(value) {
-				if refused[item] {
+				if seen[item] {
 					continue
 				}
-				if c.Refuses != "" {
-					c.Refuses += "; "
+				if *field != "" {
+					*field += "; "
 				}
-				c.Refuses += item
-				refused[item] = true
+				*field += item
+				seen[item] = true
 			}
 			return nil
 		}
@@ -392,8 +398,8 @@ func (r *charterResolver) resolve(repo, agent, team string) (protocol.Charter, e
 			return c, err
 		}
 	}
-	// A directly assigned Agent Team retains its safety refusals even when
-	// the current Repo belongs to a different Team.
+	// A directly assigned Agent Team retains its safety refusals and its rules
+	// even when the current Repo belongs to a different Team.
 	if agent != "" {
 		ownTeam, err := r.memberTeam("agent", agent)
 		if err != nil {
@@ -405,7 +411,7 @@ func (r *charterResolver) resolve(repo, agent, team string) (protocol.Charter, e
 				return c, err
 			}
 			for _, v := range values {
-				if v.attr != "refuses" {
+				if v.attr != "refuses" && v.attr != "rules" {
 					continue
 				}
 				if err = apply("team", ownTeam, v.attr, v.value); err != nil {

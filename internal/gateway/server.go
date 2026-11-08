@@ -2289,30 +2289,23 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if p.Kind != "approval" && p.Kind != "feature_idea" && p.Kind != "question" {
 			return nil, reject("invalid inbox kind")
 		}
-		agent, ok, err := st.Agent(p.SessionID)
+		agent, project, name, err := st.askingSession(nc.id, p.SessionID)
 		if err != nil {
 			return nil, err
 		}
-		if !ok || agent.NodeID != nc.id || agent.Harness == protocol.OwnerHarness {
-			return nil, reject("session does not belong to this node")
-		}
-		identity, err := st.resolveSessionContext(agent.SessionID)
+		ask := protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name, Replaces: p.Replaces}
+		// A team that sends questions to its lead keeps this one from the owner.
+		redirect, m, err := st.RedirectOwnerAsk(ask)
 		if err != nil {
 			return nil, err
 		}
-		// Preserve the old Inbox node for sessions an old daemon reported
-		// without verified repository metadata.
-		if agent.Repo.Project == "" {
-			identity.Project = ""
+		if redirect != nil {
+			if m.State != protocol.StateHeld {
+				g.dispatch(ctx, m)
+			}
+			return map[string]any{"item": protocol.InboxItem{ID: redirect.ItemID, Kind: p.Kind, Status: "open", SessionID: agent.SessionID}, "redirected": redirect}, nil
 		}
-		name := agent.Profile.Name
-		if name == "" {
-			name = agent.Title
-		}
-		if name == "" || strings.HasPrefix(name, "s_") {
-			name = "an agent"
-		}
-		item, err := st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: identity.Project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name, Replaces: p.Replaces})
+		item, err := st.CreateInboxItem(ask)
 		return map[string]any{"item": item}, err
 
 	case "apps.ask":
@@ -2326,6 +2319,38 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return st.OpenAppConsent(p.Code, p.Kind, p.Name)
+	case "ask.redirect":
+		// The explicit wait of a plugin asks through the daemon's waiting
+		// method. The daemon asks here first whether the team lead takes it.
+		var p struct {
+			SessionID      string   `json:"session_id"`
+			Kind           string   `json:"kind"`
+			Text           string   `json:"text"`
+			Recommendation string   `json:"recommendation"`
+			Options        []string `json:"options"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad ask.redirect")
+		}
+		if p.Kind != "approval" && p.Kind != "feature_idea" && p.Kind != "question" {
+			return nil, reject("invalid inbox kind")
+		}
+		agent, project, name, err := st.askingSession(nc.id, p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		redirect, m, err := st.RedirectOwnerAsk(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name})
+		if err != nil {
+			return nil, err
+		}
+		if redirect == nil {
+			return map[string]any{}, nil
+		}
+		if m.State != protocol.StateHeld {
+			g.dispatch(ctx, m)
+		}
+		return map[string]any{"redirected": redirect}, nil
+
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url", "apps.public.restore":
 		return g.publicOperation(ctx, typ, raw)
 	case "apps.list":

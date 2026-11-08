@@ -43,7 +43,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("node_settings_set", "Set an override.", map[string]ctoField{"node": s("Node."), "setting": en("Setting.", ctoNodeSettings...), "value": s("Empty clears.")})
 	add("team_create", "Create a team.", map[string]ctoField{"name": s("Team name."), "purpose": s("Team purpose.")})
 	add("team_rename", "Rename a team.", map[string]ctoField{"team": s("Team name or ID."), "name": s("New team name.")})
-	add("team_charter", "Set an inherited Team charter field.", map[string]ctoField{"team": s("Team name or ID."), "attr": en("Attribute.", "purpose", "refuses", "escalate", "rules"), "value": s("Empty inherits.")})
+	add("team_charter", "Set an inherited Team charter field.", map[string]ctoField{"team": s("Team name or ID."), "attr": en("Attribute. asks_to sends questions for the owner to the team lead.", "purpose", "refuses", "escalate", "rules", "asks_to"), "value": s("Empty inherits. asks_to: owner or lead.")})
 	add("team_purpose", "Change a team purpose.", map[string]ctoField{"team": s("Team name or ID."), "purpose": s("Team purpose.")})
 	add("team_archive", "Archive a team.", map[string]ctoField{"team": s("Team name or ID.")})
 	add("team_member_add", "Add a member to a team.", map[string]ctoField{"team": s("Team name or ID."), "member": {typ: "graph_ref", desc: "Member ref (agent or repo)."}, "ref": {typ: "graph_ref", desc: "Member ref (agent or repo)."}})

@@ -682,7 +682,7 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 			}
 		} else {
 			var current, after, before protocol.Team
-			current, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams WHERE id=?`, node))
+			current, err = scanTeam(tx.QueryRow(`SELECT `+teamColumns+` FROM teams WHERE id=?`, node))
 			if err != nil {
 				return err
 			}
@@ -693,7 +693,7 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 			// fields are then neither compared nor restored.
 			afterKeys, beforeKeys := snapshotKeys(value), snapshotKeys(old)
 			if current.Name != after.Name || current.Active != after.Active || current.Purpose != after.Purpose ||
-				(afterKeys["authority_mode"] && current.AuthorityMode != after.AuthorityMode) || (afterKeys["held_back"] && current.HeldBack != after.HeldBack) {
+				(afterKeys["authority_mode"] && current.AuthorityMode != after.AuthorityMode) || (afterKeys["held_back"] && current.HeldBack != after.HeldBack) || (afterKeys["asks_to"] && current.AsksTo != after.AsksTo) {
 				return reject("Team changed since that history entry")
 			}
 			if old == "" {
@@ -715,10 +715,13 @@ func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 			if !beforeKeys["held_back"] {
 				before.HeldBack = current.HeldBack
 			}
-			if _, err = tx.Exec(`UPDATE teams SET name=?,purpose=?,active=?,authority_mode=?,held_back=?,updated_at=? WHERE id=?`, before.Name, before.Purpose, before.Active, before.AuthorityMode, before.HeldBack, now, node); err != nil {
+			if !beforeKeys["asks_to"] {
+				before.AsksTo = current.AsksTo
+			}
+			if _, err = tx.Exec(`UPDATE teams SET name=?,purpose=?,active=?,authority_mode=?,held_back=?,asks_to=?,updated_at=? WHERE id=?`, before.Name, before.Purpose, before.Active, before.AuthorityMode, before.HeldBack, before.AsksTo, now, node); err != nil {
 				return err
 			}
-			current, err = scanTeam(tx.QueryRow(`SELECT id,name,purpose,owner_agent_id,active,authority_mode,held_back,created_at,updated_at FROM teams WHERE id=?`, node))
+			current, err = scanTeam(tx.QueryRow(`SELECT `+teamColumns+` FROM teams WHERE id=?`, node))
 			if err != nil {
 				return err
 			}
