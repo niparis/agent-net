@@ -16,6 +16,9 @@ import (
 // sessions it would report in a session.sync.
 func benchOnlineNode(b *testing.B, g *Gateway) (string, []protocol.AgentView, []protocol.SessionInfo) {
 	b.Helper()
+	// The nodes have no websocket here. Treat them as offline, so a handler
+	// that would send a frame to one only stores it.
+	g.conns = map[string]*nodeConn{}
 	all, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
 	if err != nil || len(all) == 0 {
 		b.Skip("no online agents")
@@ -52,7 +55,7 @@ func BenchmarkRealHandlePolicyGet(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	nc := g.conns[node]
+	nc := &nodeConn{id: node}
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -69,7 +72,7 @@ func BenchmarkRealHandleQueryAgents(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	nc := g.conns[node]
+	nc := &nodeConn{id: node}
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -87,7 +90,7 @@ func BenchmarkRealHandleSessionSync(b *testing.B) {
 		b.Fatal(err)
 	}
 	b.Logf("sessions in the sync: %d", len(infos))
-	nc := g.conns[node]
+	nc := &nodeConn{id: node}
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -105,7 +108,7 @@ func BenchmarkRealHandleSessionUpsert(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	nc := g.conns[node]
+	nc := &nodeConn{id: node}
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -120,7 +123,7 @@ func BenchmarkRealHandleQueryProjects(b *testing.B) {
 	g := benchRealGateway(b)
 	node, _, _ := benchOnlineNode(b, g)
 	raw, _ := json.Marshal(protocol.QueryProjects{})
-	nc := g.conns[node]
+	nc := &nodeConn{id: node}
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
