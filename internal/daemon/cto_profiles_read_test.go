@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -18,14 +17,42 @@ func TestCTOReadsWorkerProfiles(t *testing.T) {
 	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra:high", AddedBy: w.ownerID()}); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ name, args string }{{"agent_worker_profiles_find", `{}`}} {
-		v, err := w.d.runCTOToolRaw(context.Background(), tc.name, json.RawMessage(tc.args))
-		raw, _ := json.Marshal(v)
-		if err != nil || !strings.Contains(string(raw), "gpt-6.1-terra:high") {
-			t.Errorf("%s: %s, %v", tc.name, raw, err)
-		}
-		if !strings.Contains(string(raw), `"score":42.3`) || !strings.Contains(string(raw), `"score_source":"artificialanalysis"`) {
-			t.Errorf("%s lost the profile score: %s", tc.name, raw)
-		}
+	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "unknown", Harness: "codex", Model: "unscored-model", AddedBy: w.ownerID()}); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range []string{`{}`, `{"detail":"concise"}`} {
+		t.Run(args, func(t *testing.T) {
+			v, err := w.d.runCTOToolRaw(context.Background(), "agent_worker_profiles_find", json.RawMessage(args))
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(v)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out struct {
+				Items []map[string]any `json:"items"`
+			}
+			if err := json.Unmarshal(raw, &out); err != nil {
+				t.Fatal(err)
+			}
+			rows := make(map[string]map[string]any)
+			for _, row := range out.Items {
+				rows[row["name"].(string)] = row
+			}
+			if row := rows["terra"]; row["score"] != 42.3 || row["score_source"] != "artificialanalysis" {
+				t.Errorf("scored profile: %v", row)
+			}
+			row, ok := rows["unknown"]
+			if !ok {
+				t.Fatal("unscored profile missing")
+			}
+			if _, ok := row["score"]; ok {
+				t.Errorf("unexpected score: %v", row)
+			}
+			if _, ok := row["score_source"]; ok {
+				t.Errorf("unexpected score source: %v", row)
+			}
+		})
 	}
 }
