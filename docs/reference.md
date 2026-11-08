@@ -345,7 +345,7 @@ operator methods after approval for proposal calls. The brief treats material
 it reads as data. The Inbox tab shows each proposed change for the owner's decision;
 the daemon, rather than the CTO model, executes the stored call.
 
-The CTO has 32 tools: 15 reads, 7 talk tools and 10 proposal tools. They are
+The CTO has 34 tools: 15 reads, 8 talk tools and 11 proposal tools. They are
 the catalog tools of the CTO role. List reads return `items` or rows, `total`
 and, when another page exists, `next_cursor`; pass it as `cursor`. The default
 page is 25 rows and the maximum is 100.
@@ -369,16 +369,18 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | `agent_mcp_servers_find` | Shared MCP servers |
 | `agent_settings_read`, `agent_worker_profiles_find` | Public settings values and history, and public worker profiles |
 | `projects_layout` | Read-only project layout of online machines (roots, groups, remotes, newest commits). Cached for 10 minutes. |
-| `cto_proposals_find` | The CTO's own proposals; `id` selects one. Owner-only results are omitted. |
+| `cto_proposals_find` | The CTO's own proposals; `id` selects one. `kind` filters the list: `proposal` is the default, `all` lists every pending owner item, and `draft`, `held`, `inbox`, `approval`, `question`, `escalation` and `rejection` narrow it. Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
 The parity and canary tests cover the views. Session reads omit waiting-question
 contents. Message reads use the registered CTO caller and cannot access another
 conversation. Message lists require a gateway that supports pagination; older
 gateways return an upgrade error. `protected_providers_get` has an ordinary MCP schema but its daemon
-method is owner-gated, so the CTO cannot read that setting. The Inbox, other
-sessions' text, owner inboxes, tool inventory and owner settings remain outside
-the CTO's read tools.
+method is owner-gated, so the CTO cannot read that setting. Other sessions'
+text, tool inventory and owner settings remain outside the CTO's read tools.
+The items that wait for the owner are readable through
+`cto_proposals_find` with `kind: "all"`, so the CTO can answer them when the
+owner does not want to act by hand.
 
 Major graph changes outside the owner window and every non-graph owner change
 are proposals. The CTO has one action tool per area:
@@ -416,7 +418,14 @@ records, so a rename does not change what a call is allowed to do.
 
 `answer` with `kind: held` takes `action` `a` (approve once), `A` (approve and
 set auto), `r` (decline once) or `R` (decline and set never). `kind: outcome`
-takes `action` `let_stand` or `overrule`. `graph_change` with `action: edge_set`
+takes `action` `let_stand` or `overrule`. `kind: inbox` takes `id` and `answer`.
+For a charter draft ask (`kind: draft`), the answer is `accept` or `reject`:
+accept writes the drafted value at its level exactly as the owner's TUI accept
+does, records the CTO as the decider, and closes the Inbox row. No message is
+sent, because a draft has no live asking session. For an approval, question,
+escalation or rejection, the answer becomes a message to the asking session;
+when that session is offline the answer is stored and delivered when it wakes.
+`graph_change` with `action: edge_set`
 takes kind `depends` or `deploys` and request rule `normal`, `auto`, `ask` or `never`.
 An edge has no mode.
 After typed Graph cutover, the owner can use `repo_create` and `agent_create`
@@ -706,7 +715,7 @@ The owner's notes about models are behind the owner gate: only the owner's comma
 - `playbook_set {model, harness, note, pin}` writes an owner note. An empty `harness` applies the note to every harness of that model. An empty `note` removes the entry. `pin` keeps automatic learning from changing it.
 - `playbook_get {model, harness}` answers `{note}` with the note for that harness, or the model-wide note when there is none for the harness; `note` is absent when nothing is stored.
 - `agent_learn {subject_kind, subject, finding, evidence}` records one finding from an agent session. It is not an owner method and the command line is refused. See [findings and the automatic playbook](#findings-and-the-automatic-playbook).
-- `agent_charter_draft {level, attr, value, team}` proposes one charter value drafted from AGENTS.md ([decision 0088](decisions/0088-charter-drafts.md)). It is open to agent sessions and refused for the command line. `level` is `repo` (purpose, maturity, refuses), `agent` (accepts, refuses, escalate, feature_requests, rules) or `team` (purpose, refuses; the caller must lead the team, and `team` names it only when it leads several). The scope is always the caller's own, never a parameter. The draft is stored as pending and changes no charter. The owner accepts or rejects it in the Inbox (`learned_answer` with the negative draft ID) or on the charter card (`y`, `x`); accept writes the value at its level with the normal charter write. The daemon frame is `charter.draft`; the gateway asks for a draft with `draft_request` in the `policy.get` answer, once per AGENTS.md hash.
+- `agent_charter_draft {level, attr, value, team}` proposes one charter value drafted from AGENTS.md ([decision 0088](decisions/0088-charter-drafts.md)). It is open to agent sessions and refused for the command line. `level` is `repo` (purpose, maturity, refuses), `agent` (accepts, refuses, escalate, feature_requests, rules) or `team` (purpose, refuses; the caller must lead the team, and `team` names it only when it leads several). The scope is always the caller's own, never a parameter. The draft is stored as pending and changes no charter. The owner accepts or rejects it in the Inbox (`learned_answer` with the negative draft ID) or on the charter card (`y`, `x`); the CTO accepts or rejects the Inbox ask with `answer` `kind: inbox` and `answer: accept` or `reject`. Accept writes the value at its level with the normal charter write. The daemon frame is `charter.draft`; the gateway asks for a draft with `draft_request` in the `policy.get` answer, once per AGENTS.md hash.
 - `agent_worker_rate {worker, score, note, kind}` records the caller's rating of one finished worker: `score` is 1 to 5 and `note` is one optional line on why. `kind` is `rating` (the default when empty) or `defect_found_later`. A defect report takes no score, a required `severity` from 1 to 4 (1 cosmetic or test-only, caught before release; 2 a visible annoyance or a latent performance problem that had not hit the owner yet; 3 a broken feature or a real performance regression in a release; 4 an outage, data loss or a security problem), and one line about the defect; each report is one defect, it may come any time after the worker's hand-back (also after a rating), and it adds its severity in points of rework to that worker's task. It is not an owner method and the command line is refused, but the owner has the separate `worker_defect` operator call below. Only the session that started the worker may rate it or report a defect on it; the owner may also report a defect. Each worker takes one rating. The record is stored with the run's model, harness, effort, difficulty and caller, never with the task text beyond the note. See [workers](#workers).
 
 The model is required, and the note is at most 1024 bytes after cleaning (control characters other than newline and tab are removed). Gateway frames use `playbook.set`, `playbook.get` and `learn.add`. The CLI is `agent-net playbook set|get|pin|unpin`.

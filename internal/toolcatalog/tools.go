@@ -40,7 +40,7 @@ var Tools = []Tool{
 	toolEntry("cto_standing_orders", "Save, read, list or remove the owner's standing orders.", []Role{RoleCTO}, Hints{}, false, false),
 	toolEntry("cto_placement_memory", "Read or save placement answers explicitly given by the owner.", []Role{RoleCTO}, Hints{Idempotent: true}, false, false),
 	toolEntry("cto_ui_show", "Show the owner a TUI tab with an item selected, or a short notice. Fails with no TUI open when no local TUI is connected.", []Role{RoleCTO}, Hints{Idempotent: true}, false, false),
-	toolEntry("cto_proposals_find", "Find your proposals and their state: open, approved, rejected, done or failed, with the result.", []Role{RoleCTO}, Hints{ReadOnly: true, Idempotent: true}, false, false),
+	toolEntry("cto_proposals_find", "Find your proposals, or all pending owner items with kind, each with its answer call.", []Role{RoleCTO}, Hints{ReadOnly: true, Idempotent: true}, false, false),
 	toolEntry("graph_change", "Change graph charters, nodes, edges or settings, or undo. Node removal, agent tombstone and repo archive need owner approval; other actions apply at once.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("session_change", "Apply a session change: rename, trust a folder, set delegation policy, start a session, or start or stop a project merger.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("worker_change", "Start or stop a worker with a complete brief.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),

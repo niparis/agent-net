@@ -341,7 +341,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 					return v2Error(fmt.Errorf("arguments must be an object")), nil
 				}
 				// The daemon pages proposals by offset; the cursor is that offset.
-				legacy := map[string]any{"id": q["id"], "limit": q["limit"]}
+				legacy := map[string]any{"id": q["id"], "kind": q["kind"], "limit": q["limit"]}
 				if cursor := stringValue(q["cursor"]); cursor != "" {
 					off, err := strconv.Atoi(cursor)
 					if err != nil || off < 0 {
@@ -428,20 +428,18 @@ func normalizeProposalOutput(value any) any {
 		return map[string]any{"items": []any{}, "total": 0}
 	}
 	if id, ok := m["id"].(string); ok {
-		item := map[string]any{"id": id, "tool": m["tool"], "status": m["status"], "reason": m["reason"], "created": m["created_at"]}
-		if action, ok := m["action"]; ok {
-			item["action"] = action
-		}
+		item := map[string]any{"id": id, "tool": proposalText(m["tool"]), "action": proposalText(m["action"]),
+			"status": proposalText(m["status"]), "reason": proposalText(m["reason"]), "created": proposalText(m["created_at"])}
+		normalizeOwnerItem(item)
 		return map[string]any{"items": []any{item}, "total": 1, "note": m["note"]}
 	}
 	if items, ok := m["items"].([]any); ok {
 		for _, item := range items {
 			row, _ := item.(map[string]any)
-			if row != nil {
-				if _, ok := row["created"]; !ok {
-					row["created"] = ""
-				}
+			if row == nil {
+				continue
 			}
+			normalizeOwnerItem(row)
 		}
 		result := map[string]any{"items": items, "total": m["total"]}
 		if next, ok := m["next"].(float64); ok {
@@ -453,4 +451,41 @@ func normalizeProposalOutput(value any) any {
 		return result
 	}
 	return map[string]any{"items": []any{}, "total": 0}
+}
+
+// normalizeOwnerItem fills every field the catalog schema requires. A row
+// stored before action or reason existed must not fail the whole list.
+func normalizeOwnerItem(row map[string]any) {
+	for _, field := range []string{"id", "tool", "action", "status", "reason", "created", "kind", "from", "summary", "answer"} {
+		row[field] = proposalText(row[field])
+	}
+	if row["kind"] == "" {
+		row["kind"] = "proposal"
+	}
+	if row["from"] == "" {
+		row["from"] = "CTO"
+	}
+	if row["summary"] == "" {
+		row["summary"] = row["reason"]
+	}
+	switch options := row["options"].(type) {
+	case []any:
+	case []string:
+		list := make([]any, len(options))
+		for i, option := range options {
+			list[i] = option
+		}
+		row["options"] = list
+	default:
+		row["options"] = []any{"approve", "decline"}
+	}
+	if row["answer"] == "" && row["kind"] == "proposal" {
+		row["answer"] = "proposal_ask {\"id\":\"" + row["id"].(string) + "\"}"
+	}
+}
+
+// proposalText keeps a proposal field a string even when an old row has none.
+func proposalText(v any) string {
+	s, _ := v.(string)
+	return s
 }

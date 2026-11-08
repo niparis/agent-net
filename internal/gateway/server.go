@@ -2358,12 +2358,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		var p struct {
 			ID     string `json:"item_id"`
 			Answer string `json:"answer"`
+			Actor  string `json:"actor"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", "bad inbox.answer")
 			return nil, reject("bad inbox.answer")
 		}
-		item, err := st.AnswerInbox(p.ID, p.Answer)
+		item, err := st.AnswerInboxAs(p.ID, p.Answer, p.Actor)
 		if err != nil {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
 			return nil, err
