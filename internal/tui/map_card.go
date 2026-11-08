@@ -352,7 +352,25 @@ func mapRulesLines(node protocol.Node, w int) []string {
 		}
 		out = append(out, sDim.Render(cell(r.name, nameW))+" "+cell(r.value, valueW)+" "+mark)
 	}
+	mode, from := mapWorkMode(node.Charter)
+	out = append(out, sDim.Render(cell(protocol.SettingWorkMode, nameW))+" "+cell(mode, valueW)+" "+sDim.Render(cell(from, markW)))
 	return out
+}
+
+// mapWorkMode is the effective work mode of a node and the level that set it.
+// Unset reads as the default, on_request.
+func mapWorkMode(c protocol.Charter) (mode, from string) {
+	mode, from = protocol.WorkModeOnRequest, "default"
+	if c.WorkMode == "" {
+		return mode, from
+	}
+	mode = c.WorkMode
+	if c.Sources != nil {
+		if list := (*c.Sources)[protocol.AttrWorkMode]; len(list) > 0 {
+			from = protocol.WorkModeSourceText(list[len(list)-1])
+		}
+	}
+	return mode, from
 }
 
 // mapLegendEntry wraps one legend line under an aligned label.
@@ -427,6 +445,9 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 	if node.Ref == nil || node.Ref.Kind == "repo" {
 		out = append(out, section("Rules", w))
 		out = append(out, mapRulesLines(node, w)...)
+	} else if node.Charter.WorkMode != "" {
+		mode, from := mapWorkMode(node.Charter)
+		out = append(out, "", sDim.Render("work_mode")+" "+mode+" "+sDim.Render("("+from+")"))
 	}
 	return out
 }

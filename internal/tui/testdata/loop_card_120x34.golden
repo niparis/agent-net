@@ -20,7 +20,7 @@ worker_sandbox     sandboxed              maturity default
 judge_consumers    strict                 maturity default
 deploy_rule        ask                    maturity default
 autonomy           off                    default
-
+work_mode          on_request             default
 
 
 

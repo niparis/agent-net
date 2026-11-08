@@ -49,6 +49,7 @@ type Charter struct {
 	Accepts         string          `json:"accepts,omitempty"`
 	Refuses         string          `json:"refuses,omitempty"`
 	FeatureRequests string          `json:"feature_requests,omitempty"`
+	WorkMode        string          `json:"work_mode,omitempty"`
 	Consumers       string          `json:"consumers,omitempty"`
 	Escalate        string          `json:"escalate,omitempty"`
 	Needs           string          `json:"needs,omitempty"`
@@ -201,6 +202,12 @@ func CleanCharterValue(attr, value string) (string, error) {
 	if len(value) > CharterValueMaxBytes {
 		return "", fmt.Errorf("charter value exceeds %d bytes", CharterValueMaxBytes)
 	}
+	if attr == "work_mode" {
+		value = strings.TrimSpace(value)
+		if err := ValidateWorkMode(value); err != nil {
+			return "", err
+		}
+	}
 	if attr == "maturity" && value != "" {
 		switch value {
 		case "experimental", "early", "growing", "mature":
@@ -269,7 +276,7 @@ type EdgeChange struct {
 // CharterAttributeAtLevel describes new writes. Legacy unscoped calls retain
 // repo-local work fields so older clients can edit an existing charter.
 func CharterAttributeAtLevel(level, attr string) bool {
-	if attr == "rules" || attr == "refuses" {
+	if attr == "rules" || attr == "refuses" || attr == "work_mode" {
 		return level == "global" || level == "team" || level == "repo" || level == "agent"
 	}
 	switch level {
