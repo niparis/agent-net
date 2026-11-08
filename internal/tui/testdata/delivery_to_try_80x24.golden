@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Inbox 8 Delivery
+╭─Delivery─────────────────────────────────────────────────────────────4 shown─╮
+│   TITLE                                          STEP     STATUS AGE    DONE │
+│ Needs you · 0                                                                │
+│ Moving · 0                                                                   │
+│ To try · 4                                                                   │
+│ ▸ Enter resumes offline OpenCode and Codex sess… verify   try it 3h0m   ○    │
+│   merged: 7c694c9  check: Owner: in Sessions, press v, select an offline Op… │
+│   Enter reuses bg attach pane                    verify   try it 3h0m   ○    │
+│   merged: 7c694c9  check: It should focus that pane, not open a second one.  │
+│   Stop shows at once in Sessions                 verify   try it 3h0m   ○    │
+│   merged: 7c694c9  check: Owner check: in Sessions, select a session you wa… │
+│   x removes an offline session for good          verify   try it 3h0m   ○    │
+│   merged: 7c694c9  check: It should ask to remove it and then be gone for g… │
+│ Stuck · 0                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter evidence  a show all  R refresh  y it works  n it fails

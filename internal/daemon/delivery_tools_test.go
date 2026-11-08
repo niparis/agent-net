@@ -519,6 +519,53 @@ func TestChangesFindForTheOwnersTUI(t *testing.T) {
 	}
 }
 
+// The owner's TUI records a To try check through changes_owner_report. The
+// daemon reports it as the owner's own pass or fail on the merged commit, in
+// the after-merge verify step.
+func TestChangesOwnerReportTriesAReleasedChange(t *testing.T) {
+	t.Parallel()
+	n, f := startDeliveryNode(t)
+	merged := strings.Repeat("b", 40)
+	c := protocol.Change{ID: "ch_9", Project: "demo", Branch: "feat/x", HeadCommit: strings.Repeat("a", 40),
+		MergedCommit: merged, Revision: 1, Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: "s_other"},
+		State: protocol.ChangeMerged, CreatedAt: 1}
+	f.answer(protocol.FrameChangeGet, func(json.RawMessage) (any, error) { return deliveryTestView(c), nil })
+	f.answer(protocol.FrameStepReport, func(raw json.RawMessage) (any, error) {
+		var q protocol.StepReportRequest
+		if err := json.Unmarshal(raw, &q); err != nil {
+			return nil, err
+		}
+		return protocol.StepReportResult{Evidence: protocol.Evidence{ChangeID: c.ID, StepRef: q.StepRef, Result: q.Result, Commit: q.Commit, By: q.DoneBy, Note: q.Note},
+			Change: deliveryTestView(c)}, nil
+	})
+	cli := dialLocal(t, n.sock)
+	cli.mustCall("hello", map[string]any{"client": "cli"})
+	cli.mustCall(protocol.OpChangesOwnerReport, protocol.ChangesOwnerReportArgs{Change: c.ID, Result: protocol.StepResultPass, Note: "checked by the owner in the TUI"})
+	sent := f.frames(protocol.FrameStepReport)
+	if len(sent) != 1 {
+		t.Fatalf("step.report sent %d times", len(sent))
+	}
+	var q protocol.StepReportRequest
+	if err := json.Unmarshal(sent[0], &q); err != nil {
+		t.Fatal(err)
+	}
+	want := protocol.StepReportRequest{SessionID: n.d.ownerSessionID(), ChangeID: c.ID,
+		StepRef: protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true},
+		Result:  protocol.StepResultPass, Commit: merged, DoneBy: protocol.EvidenceByOwner, Note: "checked by the owner in the TUI"}
+	if q.SessionID != want.SessionID || q.ChangeID != want.ChangeID || q.StepRef != want.StepRef ||
+		q.Result != want.Result || q.Commit != want.Commit || q.DoneBy != want.DoneBy || q.Note != want.Note {
+		t.Fatalf("step.report %+v, want %+v", q, want)
+	}
+	// A fail needs the owner's line, and an agent session cannot report it.
+	if _, err := cli.call(protocol.OpChangesOwnerReport, protocol.ChangesOwnerReportArgs{Change: c.ID, Result: protocol.StepResultFail}); err == nil || !strings.Contains(err.Error(), "note") {
+		t.Fatalf("a fail with no line: %v", err)
+	}
+	lc, _ := helloDelivery(t, n, "np-owner-report", t.TempDir(), "claude-opus-5-5")
+	if _, err := lc.call(protocol.OpChangesOwnerReport, protocol.ChangesOwnerReportArgs{Change: c.ID, Result: protocol.StepResultPass}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("an agent session reported a try: %v", err)
+	}
+}
+
 func TestDeliverySubmitRejectsRepoContextMismatch(t *testing.T) {
 	n, f := startDeliveryNode(t)
 	_, wt := deliveryWorktree(t)

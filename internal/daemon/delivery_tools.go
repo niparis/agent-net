@@ -379,6 +379,40 @@ func (d *Daemon) changesFind(ctx context.Context, sid string, a protocol.Changes
 	return out, nil
 }
 
+// ownerStepReport reports the owner's try of a released change from the TUI.
+// It is the owner's own report: the owner is not the caller or the step's
+// owner, so the gateway accepts it only for the after-merge verify step, on
+// the merged commit.
+func (d *Daemon) ownerStepReport(ctx context.Context, a protocol.ChangesOwnerReportArgs) (protocol.StepReportResult, error) {
+	var out protocol.StepReportResult
+	session := d.ownerSessionID()
+	if session == "" {
+		return out, errors.New("the owner session is not registered yet (is the gateway reachable?)")
+	}
+	var view protocol.ChangeView
+	if err := d.deliveryCall(ctx, protocol.FrameChangeGet, protocol.ChangeGetRequest{ChangeID: a.Change}, &view); err != nil {
+		return out, err
+	}
+	c := view.Change
+	if c.State != protocol.ChangeMerged {
+		return out, fmt.Errorf("change %s is %s, not merged: only a released change can be tried", c.ID, c.State)
+	}
+	if !protocol.ValidCommit(c.MergedCommit) {
+		return out, fmt.Errorf("change %s has no merged commit to check", c.ID)
+	}
+	q := protocol.StepReportRequest{SessionID: session, ChangeID: c.ID,
+		StepRef: protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true},
+		Result:  a.Result, Commit: c.MergedCommit, DoneBy: protocol.EvidenceByOwner, Note: a.Note}
+	if err := q.Validate(); err != nil {
+		return out, err
+	}
+	if err := d.deliveryCall(ctx, protocol.FrameStepReport, q, &out); err != nil {
+		return out, err
+	}
+	out.Change = fillChangeView(out.Change)
+	return out, nil
+}
+
 // fillChangeView makes the lists the tool schemas require non-nil.
 func fillChangeView(v protocol.ChangeView) protocol.ChangeView {
 	if v.Steps == nil {

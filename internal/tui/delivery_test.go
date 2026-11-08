@@ -23,12 +23,26 @@ type fakeDelivery struct {
 	err     error
 	calls   int
 	repo    string
+
+	tries  []deliveryTry
+	tryErr error
+	onTry  func(id, result, note string)
 }
+
+type deliveryTry struct{ id, result, note string }
 
 func (f *fakeDelivery) Changes(_ context.Context, repo string) ([]deliveryChange, error) {
 	f.calls++
 	f.repo = repo
 	return f.changes, f.err
+}
+
+func (f *fakeDelivery) ReportTry(_ context.Context, id, result, note string) error {
+	f.tries = append(f.tries, deliveryTry{id, result, note})
+	if f.onTry != nil {
+		f.onTry(id, result, note)
+	}
+	return f.tryErr
 }
 
 func dEv(step, result, commit, by, model string, at time.Time, fields map[string]string) deliveryEvidence {
@@ -699,6 +713,206 @@ func deliveryActionScenes() []deliveryChange {
 	return changes
 }
 
+// deliveryToTryScenes are the four changes the owner saw on 2026-11-08: the
+// last step is an after-merge verify that reported needs_owner, and the work
+// is already released. Nothing waits on them.
+func deliveryToTryScenes() []deliveryChange {
+	const merged = "7c694c974548e2bc7187113712bc64e07c5a7418"
+	note := func(text string) deliveryChange {
+		return deliveryChange{
+			ID: "ch_" + fmt.Sprintf("%x", len(text)), Title: "Change to try", Repo: "agent-net",
+			Head: "9121e244a7fb9447f79dfa815864370d92317ac9", MergedCommit: merged, Revision: 1,
+			State: protocol.ChangeMerged, Caller: "s_0000000000000002", Step: protocol.StepVerify,
+			StepOwner: "caller", OwnerKind: protocol.OwnerCaller, StepState: protocol.StepStateNeedsOwner,
+			Check: text, Waiting: 3 * time.Hour,
+			Marks: marks(stripPassed, stripPassed, stripPassed, stripNotNeeded, stripPassed, stripPassed, stripPassed, stripRunning),
+		}
+	}
+	first := note("The live check needs the owner: pressing Enter on one of his offline OpenCode or Codex sessions resumes his real session, which I will not do without him. The tests cover the behavior against fakes. Owner: in Sessions, press v, select an offline OpenCode session, press Enter, and confirm that it opens and comes online.")
+	first.ID, first.Title, first.Caller = "ch_1e511e8f2a1fa9c8", "Enter resumes offline OpenCode and Codex sessions", "s_0000000000000001"
+	second := note("The Enter half needs the owner: on the Mac TUI, press Enter on a background Claude session whose attach pane is already open in herdr. It should focus that pane, not open a second one.")
+	second.ID, second.Title = "ch_92c85a1c97c8a2c3", "Enter reuses bg attach pane"
+	third := note("Live in v0.4.183+. Checking it means stopping a real session, and I have no idle session of my own to stop. Owner check: in Sessions, select a session you want gone, press the stop key and confirm.")
+	third.ID, third.Title = "ch_435e5d277d4ac07b", "Stop shows at once in Sessions"
+	fourth := note("Live since v0.4.181. Checking it means removing a real offline session for good, which deletes data, so the owner should choose one. Owner check: in Sessions, press v to show idle and offline sessions, select an offline one you no longer want, and press x. It should ask to remove it and then be gone for good.")
+	fourth.ID, fourth.Title = "ch_c11297410a46aa78", "x removes an offline session for good"
+	return []deliveryChange{first, second, third, fourth}
+}
+
+func TestDeliveryToTrySpeaksOfTrying(t *testing.T) {
+	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryToTryScenes()}, 120, 34))
+	got := deliveryText(m, 120, 34)
+	if !strings.Contains(got, "To try · 4") {
+		t.Fatalf("the four checks are not under To try:\n%s", got)
+	}
+	if strings.Contains(got, "waiting for you") {
+		t.Fatalf("a released check still says waiting for you:\n%s", got)
+	}
+	if !strings.Contains(got, "try it") {
+		t.Fatalf("a To try row does not say try it:\n%s", got)
+	}
+	// The note says what to check: the Owner sentence when there is one,
+	// otherwise the note's last sentence.
+	for _, want := range []string{
+		"Owner: in Sessions, press v",
+		"Owner check: in Sessions, select a session you want gone",
+		"It should focus that pane, not open a second one.",
+		"It should ask to remove it and then be gone for good.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing what to check %q:\n%s", want, got)
+		}
+	}
+	for _, ch := range m.deliveryVisible() {
+		if ch.Group != groupToTry {
+			t.Errorf("%s is in group %v", ch.ID, ch.Group)
+		}
+	}
+	for _, w := range []int{80, 120} {
+		for _, l := range m.deliveryView(w, 34) {
+			if ansi.StringWidth(l) > w {
+				t.Errorf("width %d overflow (%d): %q", w, ansi.StringWidth(l), ansi.Strip(l))
+			}
+		}
+	}
+}
+
+func TestDeliveryApproveStepStaysNeedsYou(t *testing.T) {
+	beforeMerge := deliveryChange{ID: "ch_approve", State: protocol.ChangeOpen, Step: protocol.StepApprove, StepOwner: "owner", OwnerKind: protocol.OwnerPerson, StepState: protocol.StepStateNeedsOwner}
+	afterMerge := deliveryChange{ID: "ch_deploy", State: protocol.ChangeMerged, MergedCommit: "7c694c974548e2bc7187113712bc64e07c5a7418", Step: protocol.StepApprove, StepOwner: "owner", OwnerKind: protocol.OwnerPerson, StepState: protocol.StepStateNeedsOwner}
+	for _, ch := range []deliveryChange{beforeMerge, afterMerge} {
+		if got := deliveryGroupOf(ch, "s_owner"); got != groupNeedsYou {
+			t.Errorf("%s grouped as %v, want Needs you", ch.ID, got)
+		}
+		m := deliveryModel(nil, 120, 34)
+		if got, _ := m.deliveryStatusText(ch); got != "waiting for you" {
+			t.Errorf("%s status %q, want waiting for you", ch.ID, got)
+		}
+	}
+	// A verify step that is not after a merge is still a blocked decision.
+	open := deliveryChange{ID: "ch_open_verify", State: protocol.ChangeOpen, Step: protocol.StepVerify, StepOwner: "owner", OwnerKind: protocol.OwnerPerson, StepState: protocol.StepStateNeedsOwner}
+	if got := deliveryGroupOf(open, ""); got != groupNeedsYou {
+		t.Errorf("verify before merge grouped as %v, want Needs you", got)
+	}
+	// An open approval for the change blocks work even when its verify
+	// reported needs_owner.
+	m := deliveryModel(nil, 120, 34)
+	ch := deliveryToTryScenes()[0]
+	m.inboxItems = []protocol.InboxItem{{Kind: "approval", Status: "open", Delivery: &protocol.InboxDelivery{ChangeID: ch.ID}}}
+	if got := m.deliveryGroupFor(ch); got != groupNeedsYou {
+		t.Errorf("a change with an open approval is %v, want Needs you", got)
+	}
+}
+
+func TestDeliveryToTryNeverCountsAsNeedingYou(t *testing.T) {
+	// Only To try rows: nothing needs the owner, so the header has no count.
+	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryToTryScenes()}, 120, 34))
+	if n := m.waitingCount(); n != 0 {
+		t.Errorf("waitingCount counts %d To try rows", n)
+	}
+	if got := ansi.Strip(m.testView()); strings.Contains(got, "needs you") {
+		t.Errorf("header counts To try rows as needing the owner:\n%s", got)
+	}
+	got := deliveryText(m, 120, 34)
+	if strings.Contains(got, "Needs you · 4") {
+		t.Errorf("Delivery Needs you counts To try rows:\n%s", got)
+	}
+	// One real approval still counts, beside the four checks.
+	m.inboxItems = []protocol.InboxItem{{Kind: "approval", Status: "open", ID: "i_1", Delivery: &protocol.InboxDelivery{ChangeID: "ch_approve"}}}
+	if n := m.waitingCount(); n != 1 {
+		t.Errorf("waitingCount = %d, want 1", n)
+	}
+	ch := deliveryChange{ID: "ch_approve", Title: "Approve the merge", Repo: "agent-net", State: protocol.ChangeOpen, Step: protocol.StepApprove, StepOwner: "owner", OwnerKind: protocol.OwnerPerson, StepState: protocol.StepStateNeedsOwner}
+	m.delivery.changes = append(m.delivery.changes, ch)
+	got = deliveryText(m, 120, 34)
+	if !strings.Contains(got, "Needs you · 1") {
+		t.Errorf("Delivery Needs you count is not 1:\n%s", got)
+	}
+}
+
+// finishTries runs the report command and the reload it asks for.
+func finishTries(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("no try command")
+	}
+	next, reload := m.Update(cmd())
+	m = next.(Model)
+	if reload == nil {
+		t.Fatal("a try did not reload the list")
+	}
+	next, _ = m.Update(reload())
+	return next.(Model)
+}
+
+func TestDeliveryTryKeysReportAndMoveTheRow(t *testing.T) {
+	// y: the check works. The owner's pass lands on the verify step at the
+	// merged commit and the change moves to Done.
+	src := &fakeDelivery{changes: deliveryToTryScenes()}
+	src.onTry = func(id, result, note string) {
+		for i := range src.changes {
+			if src.changes[i].ID == id {
+				src.changes[i].StepState = result
+				if result == protocol.StepResultPass {
+					src.changes[i].State = protocol.ChangeDone
+				}
+			}
+		}
+	}
+	m := openDelivery(t, deliveryModel(src, 120, 34))
+	const id = "ch_1e511e8f2a1fa9c8"
+	m.delivery.row = visibleRow(m, id)
+	if m.delivery.row < 0 {
+		t.Fatal("the To try row is not in the list")
+	}
+	if hints := m.deliveryHints(); !hasHint(hints, "y") || !hasHint(hints, "n") {
+		t.Fatalf("the To try key line does not offer y and n: %+v", hints)
+	}
+	next, cmd := m.Update(tea.KeyPressMsg{Text: "y", Code: 'y'})
+	m = finishTries(t, next.(Model), cmd)
+	if len(src.tries) != 1 {
+		t.Fatalf("tries %+v", src.tries)
+	}
+	if got := src.tries[0]; got.id != id || got.result != protocol.StepResultPass || got.note != "checked by the owner in the TUI" {
+		t.Fatalf("y recorded %+v", got)
+	}
+	if visibleRow(m, id) >= 0 {
+		t.Fatal("a tried change is still in the list")
+	}
+	m.delivery.showAll = true
+	if got := m.deliveryGroupFor(src.changes[0]); got != groupDone {
+		t.Fatalf("the tried change is %v, want Done", got)
+	}
+
+	// n: it does not work. One line is asked for, then sent as a fail.
+	src = &fakeDelivery{changes: deliveryToTryScenes()}
+	m = openDelivery(t, deliveryModel(src, 120, 34))
+	m.delivery.row = visibleRow(m, id)
+	next, _ = m.Update(tea.KeyPressMsg{Text: "n", Code: 'n'})
+	m = next.(Model)
+	if !m.delivery.reporting {
+		t.Fatal("n did not ask for the problem")
+	}
+	m.delivery.reportInput.SetValue("the Enter key does nothing")
+	next, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = finishTries(t, next.(Model), cmd)
+	if len(src.tries) != 1 {
+		t.Fatalf("tries %+v", src.tries)
+	}
+	if got := src.tries[0]; got.id != id || got.result != protocol.StepResultFail || got.note != "the Enter key does nothing" {
+		t.Fatalf("n recorded %+v", got)
+	}
+}
+
+func hasHint(hints []hint, key string) bool {
+	for _, h := range hints {
+		if h.key == key {
+			return true
+		}
+	}
+	return false
+}
+
 func TestDeliveryGoldens(t *testing.T) {
 	scenes := deliveryScenes()
 	type scene struct {
@@ -712,6 +926,7 @@ func TestDeliveryGoldens(t *testing.T) {
 		{"delivery_empty", &fakeDelivery{}, "", false, false},
 		{"delivery_error", &fakeDelivery{err: errors.New("the gateway did not answer in time")}, "", false, false},
 		{"delivery_list", &fakeDelivery{changes: scenes}, "", false, false},
+		{"delivery_to_try", &fakeDelivery{changes: deliveryToTryScenes()}, "", false, false},
 		{"delivery_actions", &fakeDelivery{changes: deliveryActionScenes()}, "", false, false},
 		{"delivery_actions_all", &fakeDelivery{changes: deliveryActionScenes()}, "", false, true},
 		{"delivery_all", &fakeDelivery{changes: scenes}, "", false, true},

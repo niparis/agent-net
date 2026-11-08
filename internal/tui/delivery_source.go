@@ -88,6 +88,13 @@ func (g *gatewayDelivery) Change(ctx context.Context, id string) (deliveryChange
 	return deliveryChangeFromView(page.Items[0], g.now()), nil
 }
 
+// ReportTry sends the owner's try of a released change: pass when it worked,
+// fail with the owner's line when it did not.
+func (g *gatewayDelivery) ReportTry(ctx context.Context, changeID, result, note string) error {
+	_, err := g.call(ctx, protocol.OpChangesOwnerReport, protocol.ChangesOwnerReportArgs{Change: changeID, Result: result, Note: note})
+	return err
+}
+
 // deliveryOwnerLabel is who owns a step, as the list shows it: the node's
 // name for a node, else the kind (caller, github, owner, delegate, none).
 func deliveryOwnerLabel(o protocol.StepOwner) string {
@@ -251,8 +258,13 @@ func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange
 		for _, st := range steps {
 			if st.StepRef == r {
 				out.ClaimedBy = deliveryClaimedSession(st.Note)
-				if state == protocol.StepStateFailed && st.Evidence != nil {
-					out.Finding = st.Evidence.Note
+				if st.Evidence != nil {
+					switch state {
+					case protocol.StepStateFailed:
+						out.Finding = st.Evidence.Note
+					case protocol.StepStateNeedsOwner:
+						out.Check = st.Evidence.Note
+					}
 				}
 				break
 			}

@@ -441,17 +441,21 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if closeAnyStep {
 		by, doer, reportedBy = q.SessionID, reporter, ""
 	}
+	// A released change's verify step is an owner check: the owner tries it
+	// from the TUI and reports pass or fail as themselves, without being the
+	// caller or the step's owner.
+	ownerVerify := directOwner && reporter.harness == "owner" && c.State == protocol.ChangeMerged && q.StepRef == (protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true})
 	if !closeAnyStep {
 		if err := checkApprovalTaskPolicy(tx, c, p, q.StepRef); err != nil {
 			return protocol.StepReportResult{}, err
 		}
 		if step, ok := p.Find(q.StepRef); ok {
-			if directOwner && (step.Owner.Kind != protocol.OwnerDelegate || step.Step != protocol.StepApprove) {
-				return protocol.StepReportResult{}, reject("direct owner approval is only for a delegated approval step")
+			if directOwner && !ownerVerify && (step.Owner.Kind != protocol.OwnerDelegate || step.Step != protocol.StepApprove) {
+				return protocol.StepReportResult{}, reject("direct owner approval is only for a delegated approval step or an after-merge verify")
 			}
 			switch step.Owner.Kind {
 			case protocol.OwnerCaller:
-				if q.SessionID != c.Caller {
+				if q.SessionID != c.Caller && !ownerVerify {
 					return protocol.StepReportResult{}, reject("%s is owned by the caller", q.StepRef)
 				}
 			case protocol.OwnerPerson:
@@ -505,9 +509,13 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 				return protocol.StepReportResult{}, err
 			}
 		}
-		if directOwner {
+		switch {
+		case ownerVerify:
+			// The owner check is reported on its own, not claimed as a task.
+			found = false
+		case directOwner:
 			found, err = claimDirectOwnerApproval(tx, c, q.StepRef, q.SessionID, machine)
-		} else {
+		default:
 			found, err = claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, true)
 		}
 		if err != nil {

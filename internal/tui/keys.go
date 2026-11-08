@@ -137,6 +137,8 @@ var keyBindings = []keyBinding{
 	bind(contextDelivery, "enter", "open", "evidence", 1),
 	bind(contextDelivery, "esc", "back", "back", 1),
 	bind(contextDelivery, "a", "all", "show all", 2),
+	withHelp(bind(contextDelivery, "y", "try works", "y it works", 3), "on a To try row, report that the check passed: the owner tried it and it works"),
+	withHelp(bind(contextDelivery, "n", "try fails", "n it fails", 3), "on a To try row, report that the check failed: type one line of what is wrong"),
 	bind(contextDelivery, "R", "refresh", "refresh", 2),
 	bind(contextDelivery, "?", "help", "help", 4),
 	bind(contextDelivery, "q|ctrl+c", "quit", "quit", 5),

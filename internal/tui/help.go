@@ -202,6 +202,9 @@ func (m Model) helpLine(w int) string {
 	if m.tab == inboxTab && m.inboxEditing {
 		return clip(m.inboxInput.View()+" enter sends, esc cancels", w)
 	}
+	if m.tab == deliveryTab && m.delivery.reporting {
+		return clip(m.delivery.reportInput.View()+" enter sends, esc cancels", w)
+	}
 
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears and leaves"), w)

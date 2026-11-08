@@ -62,6 +62,8 @@ func (m Model) paste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 		case m.open != nil:
 		case m.tab == inboxTab && m.inboxEditing:
 			m.inboxInput, cmd = m.inboxInput.Update(msg)
+		case m.tab == deliveryTab && m.delivery.reporting:
+			m.delivery.reportInput, cmd = m.delivery.reportInput.Update(msg)
 		case m.tab == settingsTab && m.apps.stage == "rename":
 			return m.pasteApps(msg)
 		}

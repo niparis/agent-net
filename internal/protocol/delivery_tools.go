@@ -1,5 +1,11 @@
 package protocol
 
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
 // The arguments and results of the delivery tools agent_change_submit,
 // agent_step_report and agent_changes_find, as their catalog schemas say. The
 // MCP server and the Pi and OpenCode plugins send the arguments as they are to
@@ -42,6 +48,36 @@ type StepReportArgs struct {
 // network and without a session. Only the owner's command line or TUI may call
 // it; it is read only.
 const OpChangesOwnerFind = "changes_owner_find"
+
+// OpChangesOwnerReport is the owner's report of a To try check from the TUI:
+// it takes ChangesOwnerReportArgs and answers StepReportResult. Only the
+// owner's TUI may call it, and it only reports the verify step after merge.
+const OpChangesOwnerReport = "changes_owner_report"
+
+// ChangesOwnerReportArgs are the arguments of changes_owner_report. Result is
+// pass when the owner saw the change work, fail when it did not.
+type ChangesOwnerReportArgs struct {
+	Change string `json:"change"`
+	Result string `json:"result"`
+	Note   string `json:"note,omitempty"`
+}
+
+// Validate checks a report before the daemon resolves the change.
+func (a ChangesOwnerReportArgs) Validate() error {
+	if err := validChangeID(a.Change); err != nil {
+		return err
+	}
+	if a.Result != StepResultPass && a.Result != StepResultFail {
+		return errors.New("result must be pass or fail")
+	}
+	if a.Result == StepResultFail && strings.TrimSpace(a.Note) == "" {
+		return errors.New("a failed check needs a note: say what is wrong")
+	}
+	if len(a.Note) > MaxEvidenceNoteBytes {
+		return fmt.Errorf("note is longer than %d bytes", MaxEvidenceNoteBytes)
+	}
+	return nil
+}
 
 // Values of ChangesFindArgs.Caller.
 const (
