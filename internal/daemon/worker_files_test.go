@@ -40,6 +40,8 @@ func TestWorkerHandbackFilesAcrossNodes(t *testing.T) {
 		return w.owner == caller && w.taskMsg != "" && w.startDone != nil && isClosed(w.startDone)
 	})
 	inside := writeTestFile(t, filepath.Join(res.Worktree, "result.txt"), []byte("worker result\n"))
+	// Ordinary Go code with a key= in its SQL is sent, not refused as a secret.
+	code := writeTestFile(t, filepath.Join(res.Worktree, "lead_route.go"), []byte("package gateway\n\n"+leadRouteLine+"\n"))
 	outside := writeTestFile(t, filepath.Join(t.TempDir(), "outside.txt"), []byte("outside\n"))
 	link := filepath.Join(res.Worktree, "link.txt")
 	if err := os.Symlink(outside, link); err != nil {
@@ -51,15 +53,16 @@ func TestWorkerHandbackFilesAcrossNodes(t *testing.T) {
 			t.Errorf("handback accepted outside path %s", p)
 		}
 	}
-	out, err := a.d.handback(ctx, res.SessionID, protocol.WorkerHandbackRequest{Report: "the report", Status: protocol.StatusBlocked, Files: []string{inside}})
+	out, err := a.d.handback(ctx, res.SessionID, protocol.WorkerHandbackRequest{Report: "the report", Status: protocol.StatusBlocked, Files: []string{inside, code}})
 	if err != nil {
 		t.Fatalf("handback: %v", err)
 	}
-	if out.Sent == nil || len(out.Sent.Files) != 1 {
+	if out.Sent == nil || len(out.Sent.Files) != 2 {
 		t.Fatalf("handback result: %+v", out)
 	}
 	msgID := out.Sent.ID
 	dest := filepath.Join(b.cfg.StateDir, "inbox", caller, msgID, "result.txt")
+	codeDest := filepath.Join(b.cfg.StateDir, "inbox", caller, msgID, "lead_route.go")
 	eventually(t, "caller receives notice with file", func() bool {
 		for _, m := range remote.delivered() {
 			if m.ID == msgID && strings.Contains(m.Body, "the report") && strings.Contains(m.Body, filepath.Dir(dest)) {
@@ -70,6 +73,9 @@ func TestWorkerHandbackFilesAcrossNodes(t *testing.T) {
 	})
 	if got := string(mustReadFile(t, dest)); got != "worker result\n" {
 		t.Fatalf("file contents = %q", got)
+	}
+	if got := string(mustReadFile(t, codeDest)); got != "package gateway\n\n"+leadRouteLine+"\n" {
+		t.Fatalf("code file contents = %q", got)
 	}
 }
 
