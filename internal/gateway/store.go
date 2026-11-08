@@ -1121,6 +1121,9 @@ INSERT INTO agent_charter(agent_id,attr,value,updated_at,updated_by)
  GROUP BY agent_id
  ON CONFLICT(agent_id,attr) DO UPDATE SET value=CASE WHEN agent_charter.value='' THEN excluded.value ELSE agent_charter.value||char(10)||char(10)||excluded.value END;
 DELETE FROM agent_charter WHERE attr IN ('consumers','needs','notes');
+`, `
+-- Message hand-off: the lead who passed this message on. Empty for others.
+ALTER TABLE messages ADD COLUMN handed_off_by TEXT NOT NULL DEFAULT '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1466,6 +1469,16 @@ func (s *Store) migrate() error {
 			}
 			if err == nil {
 				result, err = tx.Exec(`SELECT 1`)
+			}
+		} else if strings.Contains(migrations[i], "Message hand-off: the lead who passed") {
+			var has int
+			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name='handed_off_by'`).Scan(&has)
+			if err == nil {
+				if has == 0 {
+					result, err = tx.Exec(migrations[i])
+				} else {
+					result, err = tx.Exec(`SELECT 1`)
+				}
 			}
 		} else if strings.Contains(migrations[i], "Worker run generations fence") {
 			var has int
@@ -3421,6 +3434,9 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 	}
 	if m.ParentID != "" {
+		if err := s.storeHandoffCopy(tx, m.ParentID, m); err != nil {
+			return msg, false, err
+		}
 		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,
 			protocol.StateReplied, m.ParentID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
 			return msg, false, err
@@ -3430,6 +3446,18 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 	}
 	if threaded && m.Type == protocol.TypeReply {
+		// A reply to a handed-off request also goes to the lead as a copy.
+		var handed string
+		err := tx.QueryRow(`SELECT id FROM messages WHERE conversation_id=? AND sender=? AND recipient=? AND type=? AND handed_off_by<>'' ORDER BY rowid DESC LIMIT 1`,
+			m.ConversationID, m.To, m.From, protocol.TypeRequest).Scan(&handed)
+		if err != nil && err != sql.ErrNoRows {
+			return msg, false, err
+		}
+		if handed != "" {
+			if err := s.storeHandoffCopy(tx, handed, m); err != nil {
+				return msg, false, err
+			}
+		}
 		// A reply to the conversation answers every open request there from
 		// its recipient, as the reminder check already counts it.
 		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE conversation_id = ? AND sender = ? AND recipient = ? AND type = ? AND state IN (?,?,?)`,

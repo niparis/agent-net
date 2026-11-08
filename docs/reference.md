@@ -2939,6 +2939,12 @@ sent the message it answers. Use `repo:<name>` or `team:<name>` to address a
 live lead by name or ID. Typed Graph reads expose `lead`, `max_agents`, `agent_count` and
 `over_max`; session views expose corresponding Repo counts and lead flags.
 
+**Your place.** Every turn, a session that leads a Team, or leads a Repo that other agents work in, gets a block from agent-net that says so. The lead block names the Team or Repo, its members, and that the lead reports to the owner. It says that requests from outside to a member come to the lead, who answers each one or hands it off. A Team block ends with the Team purpose, cut to 300 characters. A session in a Team that it does not lead gets two lines: who leads the Team, and to escalate to that lead first, not to the owner. A session in no Team, and not leading a Repo with other agents, gets no block. The block comes from the live Team data on each turn, with the node charter, on every harness.
+
+A routed request carries the redirect note and then one line for the lead: `You lead <scope>: answer this or hand it off to <original target> with agent_message_handoff.` The sender's receipt keeps the short note only.
+
+**Handing off.** `agent_message_handoff(message_id, to_session, note)` passes a request or notification you received to another session (ID or exact name). The new message keeps the original sender and conversation, so the member's reply goes to the asker and not to the lead. The body starts with a line that names the lead, then the lead's optional note, then the original text without the redirect note. Your copy of the request counts as answered. When the member replies, the gateway stores a copy of the reply for the lead as a notification from the member. A reply cannot be handed off. The result is a message receipt.
+
 The repo setting `max_agents` is a non-negative integer; zero or unset means no
 limit. The count excludes workers, mergers, the CTO and bots. Manually started
 terminal sessions are included and are never refused. The gateway reserves a

@@ -1485,6 +1485,8 @@ delivering. The gateway admits agent-net session starts against the Repo's `max_
 places for concurrent starts. Terminal sessions and late registrations are
 never refused; they can put a Repo over its configured max.
 
+A hand-off (`agent_message_handoff`) is the one message whose stored sender is not the session that called the tool. It keeps the sender of the message being passed on, so the member's reply reaches the asker. The gateway makes it only for the recipient of that message, records the lead in the message's `handed_off_by` field and in a `msg.handoff` event, and sets no flag a sender could set on a normal send. A handed-off request is checked against the request rule from the asker to the member, as a normal request is: `ask` holds it for the owner, `never` refuses it.
+
 Idle Claude compaction types `/compact` only into an idle background session
 with a job ID after the configured idle time and context threshold. It excludes
 running `claude attach <jobId>` clients using the process list, checks again

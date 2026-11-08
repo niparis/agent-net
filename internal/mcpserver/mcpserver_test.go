@@ -75,7 +75,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 	}
 	want := []string{"agent_announce", "agent_owner_ask", "agent_session_get", "agent_sessions_find", "agent_learn",
 		"agent_graph_read", "agent_machines_find", "agent_machine_get", "agent_messages_find", "agent_message_get",
-		"agent_message_send", "agent_message_reply", "agent_projects_find", "agent_project_add",
+		"agent_message_send", "agent_message_reply", "agent_message_handoff", "agent_projects_find", "agent_project_add",
 		"agent_protected_providers_get", "agent_protected_providers_set", "agent_worker_start", "agent_worker_stop",
 		"agent_worker_rate", "agent_worker_profiles_find", "agent_worker_profile_add", "agent_worker_profile_remove"}
 	for _, name := range want {

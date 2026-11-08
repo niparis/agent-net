@@ -101,8 +101,10 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 			return "", true, nil
 		}
 		note := fmt.Sprintf("Redirected to %s (lead of %s); originally sent to %s.", name, scope, targetName)
+		// The sender's receipt keeps the short note. The lead's copy also says
+		// what to do with the request.
 		m.To = id
-		m.Body = note + "\n" + m.Body
+		m.Body = note + "\n" + fmt.Sprintf("You lead %s: answer this or hand it off to %s with agent_message_handoff.", scope, targetName) + "\n" + m.Body
 		return note, true, nil
 	}
 	if repo != "" && senderRepo != repo && repoLead.Valid && (repoLead.String != agent || (repoSession.Valid && repoSession.String != m.To)) {

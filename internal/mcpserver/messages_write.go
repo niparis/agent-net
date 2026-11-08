@@ -120,6 +120,30 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 		}
 		return catalogResult("agent_message_reply", out)
 	})
+
+	addCatalogTool(s, "agent_message_handoff", func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var in messageHandoffIn
+		if err := decodeCatalogInput("agent_message_handoff", req, &in); err != nil {
+			return toolError(err)
+		}
+		out, err := opResult(run(ctx, "handoff", map[string]any{
+			"message_id":      in.MessageID,
+			"to_session":      in.ToSession,
+			"note":            in.Note,
+			"idempotency_key": protocol.NewID("k"),
+		}))
+		if err != nil {
+			return toolError(err)
+		}
+		return catalogResult("agent_message_handoff", out)
+	})
+}
+
+// messageHandoffIn is the input of agent_message_handoff.
+type messageHandoffIn struct {
+	MessageID string `json:"message_id"`
+	ToSession string `json:"to_session"`
+	Note      string `json:"note,omitempty"`
 }
 
 func checkSendSelectors(in messageSendIn) error {

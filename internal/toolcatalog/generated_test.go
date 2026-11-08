@@ -74,6 +74,22 @@ func TestPluginFileTools(t *testing.T) {
 	}
 }
 
+func TestPluginHandoffTool(t *testing.T) {
+	tools, err := PluginTools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range tools {
+		if tool.Name == "agent_message_handoff" {
+			if tool.Method != "handoff" || !hasRole(tool.Roles, RoleAgent) || !bytes.Contains(tool.InputSchema, []byte(`"to_session"`)) {
+				t.Fatalf("handoff tool: %+v", tool)
+			}
+			return
+		}
+	}
+	t.Fatal("agent_message_handoff missing from the plugin tools")
+}
+
 func hasRole(roles []Role, role Role) bool {
 	for _, got := range roles {
 		if got == role {

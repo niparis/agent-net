@@ -2055,15 +2055,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok || a.NodeID != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
-		c, err := st.resolveSessionContext(p.SessionID)
+		text, err := st.contextText(p.SessionID)
 		if err != nil {
 			return nil, err
 		}
-		graph, err := st.GraphFor(c.Project)
-		if err != nil {
-			return nil, err
-		}
-		return protocol.PolicyGot{Charter: protocol.NodeContextWithSettings(graph, c.Project, c.Settings)}, nil
+		return protocol.PolicyGot{Charter: text}, nil
 
 	case "policy.get":
 		p, err := decode[protocol.PolicyGet](raw)
@@ -2331,7 +2327,41 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if cur, ok, _ := st.Message(m.ID); ok {
 			m = cur
 		}
+		// A reply to a handed-off request also stores the lead's copy.
+		if created && m.Type == protocol.TypeReply {
+			if cp, ok, _ := st.HandoffCopy(m.ID); ok {
+				g.dispatch(ctx, cp)
+			}
+		}
 		return map[string]any{"message": m, "routing": route}, nil
+
+	case "msg.handoff":
+		p, err := decode[protocol.MsgHandoff](raw)
+		if err != nil {
+			return nil, reject("bad msg.handoff")
+		}
+		owner, err := st.SessionNode(p.Sender)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("sender session %q does not belong to this node", p.Sender)
+		}
+		m, err := st.StoreHandoff(p)
+		if err != nil {
+			var rj Rejection
+			if errors.As(err, &rj) {
+				st.Event("msg.refused", nc.id, p.Sender, "", err.Error())
+			}
+			return nil, err
+		}
+		if m.State == protocol.StateStored {
+			g.dispatch(ctx, m)
+		}
+		if cur, ok, _ := st.Message(m.ID); ok {
+			m = cur
+		}
+		return map[string]any{"message": m}, nil
 
 	case "delivery.update":
 		p, err := decode[protocol.DeliveryUpdate](raw)
