@@ -1183,6 +1183,14 @@ CREATE TABLE IF NOT EXISTS standing_orders (
 -- statement is safe to replay.
 UPDATE inbox_items SET status='closed', answer='moved_to_log', answered_at=created_at
  WHERE kind='check' AND status='open' AND from_kind IN ('cto','apps');
+`, `
+-- Defects that agent-net records by itself from the delivery steps (decision
+-- 0095). One row per automatic defect, keyed by change, kind and revision, so
+-- the same failure is never recorded twice. defect_id is the worker_defects row.
+CREATE TABLE IF NOT EXISTS worker_defect_auto (
+ defect_id INTEGER PRIMARY KEY, change_id TEXT NOT NULL, kind TEXT NOT NULL,
+ revision INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS worker_defect_auto_key ON worker_defect_auto(change_id, kind, revision);
 `}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay

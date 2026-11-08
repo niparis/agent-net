@@ -337,6 +337,11 @@ type WorkerStartRequest struct {
 	// Title is one short line naming the worker, at most 60 characters and
 	// with no newlines. Empty means the gateway derives it from Task.
 	Title string `json:"title,omitempty"`
+	// Fixes names a shipped change the new worker fixes. agent-net records a
+	// defect on that change's worker, unless it has one for that change.
+	// FixesSeverity is 1 to 4 (default 2).
+	Fixes         string `json:"fixes,omitempty"`
+	FixesSeverity int    `json:"fixes_severity,omitempty"`
 	// Task is what the worker should do. It is sent as a message from the caller.
 	Task string `json:"task"`
 	// Isolation is "" (the default: a new worktree on the branch

@@ -190,7 +190,7 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 		}
 	}
 	q := protocol.ChangeSubmitRequest{SessionID: sid, ChangeID: a.Change, Project: project, Branch: branch, TargetBranch: a.TargetBranch,
-		HeadCommit: commit, Uncommitted: uncommitted, Title: a.Title,
+		HeadCommit: commit, Uncommitted: uncommitted, Title: a.Title, Fixes: a.Fixes, FixesSeverity: a.FixesSeverity,
 		Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: sid, Model: info.Model, ModelFamily: protocol.ModelFamily(info.Harness, info.Model)}}
 	if err := q.Validate(); err != nil {
 		return out, err

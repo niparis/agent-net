@@ -72,6 +72,16 @@ export const TOOL_CATALOG = [
           "type": "string",
           "maxLength": 200,
           "description": "One line on what the change does."
+        },
+        "fixes": {
+          "type": "string",
+          "description": "Change ID (ch_...) of a shipped change this new change fixes. agent-net records a defect on the worker that made that change, so do not file it yourself."
+        },
+        "fixes_severity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "description": "Severity of that defect, 1 to 4. Default 2."
         }
       },
       "required": [
@@ -1509,6 +1519,16 @@ export const TOOL_CATALOG = [
             "type": "string"
           },
           "description": "Exclude model families from automatic selection, for example [\"openai\"]."
+        },
+        "fixes": {
+          "type": "string",
+          "description": "Change ID (ch_...) of a shipped change this worker fixes. agent-net records a defect on the worker that made that change, so do not file it yourself."
+        },
+        "fixes_severity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "description": "Severity of that defect, 1 to 4. Default 2."
         }
       },
       "required": [],
