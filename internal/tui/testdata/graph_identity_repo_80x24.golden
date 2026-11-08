@@ -11,7 +11,7 @@ test, review, merge, release, verify: caller
 
 IN 1                                     OUT 0
 shop ──▶ accepts
-Card 1-4/14  ctrl+u/d scroll ───────────────────────────────────────────────────
+Card 1-4/15  ctrl+u/d scroll ───────────────────────────────────────────────────
 PLACE ──────────────────────────────────────────────────────────────────────────
 team       answers to owner
 repo lead  ★ shop, reports to the owner

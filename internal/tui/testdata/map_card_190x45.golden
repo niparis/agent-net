@@ -25,7 +25,7 @@ worker_sandbox     sandboxed              maturity default
 judge_consumers    strict                 maturity default
 deploy_rule        owner                  owner override
 autonomy           wake                   owner override
-
+work_mode          on_request             default
 
 
 

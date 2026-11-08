@@ -28,6 +28,7 @@ var charterGuide = []CharterAttributeGuide{
 	{Name: "escalate", Meaning: "What the agent must bring to the owner or its architect.", Reader: "The project agent deciding when and how to ask for a decision.", Size: "at most 6 items, short phrases separated by semicolons or newlines", Good: "Breaking API changes: bring options and a recommendation to the owner.", Bad: "Owner is nicolas on 192.168.1.7; call this token before asking."},
 	{Name: "maturity_note", Meaning: "Optional one-line explanation of repo maturity.", Reader: "Agents choosing care and review.", Size: "one line", Good: "Core API is stable; integrations change.", Bad: "Full release history."},
 	{Name: "rules", Meaning: "Taste and house rules, at any level. The code never interprets them.", Reader: "Agents working here.", Size: "short free text", Good: "Use plain English.", Bad: "A full runbook."},
+	{Name: "work_mode", Meaning: "Who writes code: workers_code (the session designs and reviews, agent-net workers write all code, no owner ask per task) or on_request (the default: hand a task to a worker only when the owner asks).", Reader: "The session of this project, read in its per-turn charter only when it is not the default.", Size: "one value", Good: "workers_code", Bad: "Use workers for the big tasks."},
 }
 
 var (

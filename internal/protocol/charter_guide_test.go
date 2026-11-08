@@ -7,7 +7,7 @@ import (
 
 func TestCharterGuideCoversEveryAttribute(t *testing.T) {
 	guide := CharterGuide()
-	want := []string{"purpose", "maturity", "accepts", "refuses", "feature_requests", "escalate", "maturity_note", "rules"}
+	want := []string{"purpose", "maturity", "accepts", "refuses", "feature_requests", "escalate", "maturity_note", "rules", "work_mode"}
 	if len(guide) != len(want) {
 		t.Fatalf("guide has %d attributes, want %d", len(guide), len(want))
 	}

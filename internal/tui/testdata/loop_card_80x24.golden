@@ -7,7 +7,7 @@ accept, test, review, merge, release, verify: caller
 
 IN 1                                     OUT 1
 wbg-architect ──▶ deploys                ──▶ cogforge depends ask
-Card 1-8/12  ctrl+u/d scroll ───────────────────────────────────────────────────
+Card 1-8/13  ctrl+u/d scroll ───────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 no charter set
 Loop ───────────────────────────────────────────────────────────────────────────
