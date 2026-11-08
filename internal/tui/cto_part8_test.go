@@ -40,7 +40,7 @@ func ctoPart8Model(w, h int, title string, proposals int) Model {
 		m.proposals = append(m.proposals, protocol.CTOProposal{ID: fmt.Sprintf("p_%d", i), NodeID: "n_mac", Status: "open",
 			Tool: "edge_set", Action: "edge_set", Args: json.RawMessage(fmt.Sprintf(`{"from":"tenebrae","to":"cogforge","kind":"depends","rule":"auto","n":%d}`, i))})
 	}
-	return m
+	return quietFixtures(m)
 }
 
 func TestCTOSessionsRowShowsTheOwnersTitle(t *testing.T) {

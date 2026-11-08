@@ -20,6 +20,7 @@ func (f *fakeSource) SessionStop(_ context.Context, id string) (string, error) {
 func TestStopOwnerSessionConfirm(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		m, src := workerModel(size.w, size.h)
+		m = quietFixtures(m)
 		m = selectID(m, "s_0000000000000001")
 		before := lines(ansi.Strip(m.testView()))
 		m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
@@ -58,6 +59,7 @@ func TestStopOwnerSessionConfirm(t *testing.T) {
 func TestStopShowsPendingRowBeforeReply(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		m, _ := workerModel(size.w, size.h)
+		m = quietFixtures(m)
 		id := "s_0000000000000001"
 		for i := range m.snap.Agents {
 			if m.snap.Agents[i].SessionID == id {

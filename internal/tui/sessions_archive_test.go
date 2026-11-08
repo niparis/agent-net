@@ -219,6 +219,7 @@ func TestRemoveConfirmationScreens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		for _, bulk := range []bool{false, true} {
 			m, _ := workerModel(size[0], size[1])
+			m = quietFixtures(m)
 			m.showOffline = true
 			m.snap.Agents[0].Online = false
 			m.snap.Agents[0].Worker = nil

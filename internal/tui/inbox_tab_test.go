@@ -428,14 +428,14 @@ func TestSessionsSummaryGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := inboxAllKindsModel(size[0], size[1])
 		m = keys(m, "1")
-		golden(t, fmt.Sprintf("sessions_inbox_summary_%dx%d", size[0], size[1]), m.testView())
+		golden(t, fmt.Sprintf("sessions_inbox_summary_%dx%d", size[0], size[1]), quietFixtures(m).testView())
 	}
 }
 
 func TestInboxTabBarGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := inboxAllKindsModel(size[0], size[1])
-		golden(t, fmt.Sprintf("inbox_tab_bar_%dx%d", size[0], size[1]), m.testView())
+		golden(t, fmt.Sprintf("inbox_tab_bar_%dx%d", size[0], size[1]), quietFixtures(m).testView())
 	}
 }
 

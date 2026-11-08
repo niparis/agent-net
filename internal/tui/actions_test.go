@@ -260,6 +260,7 @@ func TestActionScreensGolden(t *testing.T) {
 		name := func(s string) string { return "view_" + itoa(size.w) + "x" + itoa(size.h) + "_" + s }
 
 		m, _ := workerModel(size.w, size.h)
+		m = quietFixtures(m)
 		golden(t, name("worker"), selectID(m, workerID).testView())
 
 		compose, _ := press(selectID(m, workerID), tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
@@ -303,6 +304,7 @@ func TestTitledWorkerScreenGolden(t *testing.T) {
 		}
 	}
 	m = refresh(m, src)
+	m = quietFixtures(m)
 	golden(t, "view_120x34_worker_title", selectID(m, workerID).testView())
 }
 

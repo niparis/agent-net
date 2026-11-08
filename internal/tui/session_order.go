@@ -8,6 +8,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// workingGrace is how long after its last activity a session stays in the
+// Working band. Once an hour passes with nothing done, it moves to Idle.
+const workingGrace = time.Hour
+
 // activityBand keeps a session in its old band until the idle margin expires.
 func activityBand(now, activity time.Time, previous int, online, urgent bool) int {
 	if !online {
@@ -49,6 +53,13 @@ func sessionActive(a protocol.AgentView) time.Time {
 		return time.Unix(a.LastActive, 0)
 	}
 	return time.Time{}
+}
+
+// activeWithin tells whether the session did something within d. It uses the
+// same activity time as the order, never the last report from its daemon.
+func (m Model) activeWithin(a protocol.AgentView, d time.Duration) bool {
+	active := sessionActive(a)
+	return !active.IsZero() && m.now().Sub(active) <= d
 }
 
 func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {

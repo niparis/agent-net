@@ -36,7 +36,7 @@ func TestLeadAndRepoLimitDisplay(t *testing.T) {
 }
 
 func TestOwnerDefaultLeadHasNoMarkOrWidthCost(t *testing.T) {
-	m := newModel(120, 34)
+	m := quietFixtures(newModel(120, 34))
 	for i := range m.snap.Agents {
 		m.snap.Agents[i].RepoLead = true
 		m.snap.Agents[i].RepoLeadExplicit = false
@@ -106,6 +106,7 @@ func (s *leadTestSource) Call(_ context.Context, method string, arg any) (json.R
 func TestLeadLimitGoldens(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}, {160, 40}} {
 		m, base := workerModel(size.w, size.h)
+		m = quietFixtures(m)
 		m.src = &settingsValuesTestSource{fakeSource: base}
 		for i := range m.snap.Agents {
 			if m.snap.Agents[i].SessionID == "s_0000000000000002" {
@@ -166,6 +167,7 @@ func TestRepoLimitCardLabel(t *testing.T) {
 
 func TestRepoLimitsTruncateAt80Golden(t *testing.T) {
 	m, _ := workerModel(80, 24)
+	m = quietFixtures(m)
 	for i := range m.snap.Agents {
 		if i < 4 {
 			m.snap.Agents[i].RepoMaxAgents = 3

@@ -109,5 +109,5 @@ func TestEndedScene(t *testing.T) {
 	m := newModel(120, 34)
 	m.activeOnly, m.showOffline = false, true // all shows the ended session
 	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "ended-worktree", NodeID: "n_mac", Hostname: "Mac", Harness: "claude", Cwd: "/repo/.claude/worktrees/topic", Profile: protocol.Profile{Name: "office-politics"}, LastSeen: m.now().Add(-12 * time.Minute).Unix()})
-	golden(t, "sessions_ended_120x34", m.testView())
+	golden(t, "sessions_ended_120x34", quietFixtures(m).testView())
 }

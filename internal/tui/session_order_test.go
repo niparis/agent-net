@@ -41,7 +41,7 @@ func TestOrderFreezeAndSelection(t *testing.T) {
 	for i, name := range []string{"first", "second"} {
 		snap.Agents = append(snap.Agents, agent(name, "n_mac", "Mac", "claude", name, func(a *protocol.AgentView) {
 			a.FirstSeen = t0.Add(time.Duration(i) * time.Second).Unix()
-			a.LastSeen = t0.Add(-time.Hour).Unix()
+			a.LastSeen = t0.Add(-2 * time.Hour).Unix()
 		}))
 	}
 	now := t0
@@ -95,7 +95,9 @@ func TestNewSessionEntersTopOfBand(t *testing.T) {
 
 func TestNewBusySessionDoesNotMoveRowsDuringFreeze(t *testing.T) {
 	snap := fakeSnapshot()
-	snap.Agents = []protocol.AgentView{agent("first", "n_mac", "Mac", "claude", "first", nil)}
+	snap.Agents = []protocol.AgentView{agent("first", "n_mac", "Mac", "claude", "first", func(a *protocol.AgentView) {
+		a.LastActive = t0.Add(-2 * time.Hour).Unix()
+	})}
 	m := treeModel(80, 24, snap)
 	m = send(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	snap.Agents = append(snap.Agents, agent("second", "n_mac", "Mac", "claude", "second", func(a *protocol.AgentView) { a.Status = "busy" }))

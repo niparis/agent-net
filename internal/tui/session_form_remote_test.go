@@ -92,6 +92,7 @@ func TestNewSessionRemoteGoldens(t *testing.T) {
 		name := func(s string) string { return "view_" + itoa(size.w) + "x" + itoa(size.h) + "_" + s }
 
 		m, src := workerModel(size.w, size.h)
+		m = quietFixtures(m)
 		m = selectID(m, "s_0000000000000004")
 		m, _ = press(m, sessionKey())
 		golden(t, name("new_session_remote"), m.testView())

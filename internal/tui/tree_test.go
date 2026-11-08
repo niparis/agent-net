@@ -86,7 +86,7 @@ func TestTreeOrder(t *testing.T) {
 func TestTreeGolden(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		name := "tree_" + itoa(size.w) + "x" + itoa(size.h)
-		m := treeModel(size.w, size.h, treeFixture())
+		m := quietFixtures(treeModel(size.w, size.h, treeFixture()))
 		golden(t, name, selectID(m, kidB).testView())
 		// The caller hides: the filter matches the workers only.
 		f := m

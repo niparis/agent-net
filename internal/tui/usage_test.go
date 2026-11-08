@@ -104,8 +104,8 @@ func modelWith(snap Snapshot, u *Usage, w, h int) Model {
 // ---- golden files ----
 
 func TestGoldenMainWithUsage(t *testing.T) {
-	golden(t, "usage_80x24", newModel(80, 24).testView())
-	golden(t, "usage_120x40", newModel(120, 40).testView())
+	golden(t, "usage_80x24", quietFixtures(newModel(80, 24)).testView())
+	golden(t, "usage_120x40", quietFixtures(newModel(120, 40)).testView())
 }
 
 func TestGoldenDetailWithTopProcesses(t *testing.T) {
@@ -114,18 +114,18 @@ func TestGoldenDetailWithTopProcesses(t *testing.T) {
 }
 
 func TestGoldenStaleUsage(t *testing.T) {
-	m := newModel(80, 24)
+	m := quietFixtures(newModel(80, 24))
 	m.now = func() time.Time { return t0.Add(2 * time.Minute) }
 	golden(t, "stale_80x24", m.testView())
-	m = newModel(120, 40)
+	m = quietFixtures(newModel(120, 40))
 	m.now = func() time.Time { return t0.Add(2 * time.Minute) }
 	golden(t, "stale_120x40", m.testView())
 }
 
 func TestGoldenOpenCodeSharedTree(t *testing.T) {
 	snap, u := openCodeSnapshot()
-	golden(t, "shared_80x24", modelWith(snap, u, 80, 24).testView())
-	m := modelWith(snap, u, 120, 40)
+	golden(t, "shared_80x24", quietFixtures(modelWith(snap, u, 80, 24)).testView())
+	m := quietFixtures(modelWith(snap, u, 120, 40))
 	m.selected = "s_0000000000000003" // web, on the shared tree
 	m.ensureSelection()
 	m = settle(m)

@@ -7,7 +7,7 @@ import (
 )
 
 func TestSessionStallScene(t *testing.T) {
-	m := newModel(120, 34)
+	m := quietFixtures(newModel(120, 34))
 	a := &m.snap.Agents[0]
 	a.Status = "busy"
 	a.StalledSince = t0.Add(-12 * time.Minute).Unix()

@@ -8,10 +8,10 @@
  Working╭─Find session──────────────────────────────────────4 matches─╮ctive (v)
 ▸ tenebr│ › st▌                                                       │
  Idle (4│   NAME        PROJECT    MACHINE    HARNESS   STATE     AGE │
-  4 more│ › strategies  strategies Mac        claude    idle       1m │
-        │   tenebrae-53 tenebrae   Mac        claude    busy       2m │
-        │   ci-runner   agent-net  build-vm   pi        idle       4m │
-        │   scratch     -          build-vm   pi        shell      5m │
+  4 more│ › strategies  strategies Mac        claude    idle       2h │
+        │   tenebrae-53 tenebrae   Mac        claude    busy       2h │
+        │   ci-runner   agent-net  build-vm   pi        idle       2h │
+        │   scratch     -          build-vm   pi        shell      2h │
         │ enter open  up/down select  esc close                       │
         ╰─────────────────────────────────────────────────────────────╯
 

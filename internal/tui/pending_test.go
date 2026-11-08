@@ -30,7 +30,7 @@ func TestPendingStatusOnlyIdle(t *testing.T) {
 
 func TestPendingGolden(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
-		m := newModel(size.w, size.h)
+		m := quietFixtures(newModel(size.w, size.h))
 		found := 0
 		for i := range m.snap.Agents {
 			if m.snap.Agents[i].Status == "idle" && m.snap.Agents[i].Online {
