@@ -45,6 +45,8 @@ const (
 	AskReasonResolved     = "resolved"
 	AskReasonExpired      = "expired"
 	AskReasonActivity     = "activity_or_end"
+	AskReasonOwnerReplied = "owner_replied" // the owner typed in the asking session
+	AskReasonMovedOn      = "moved_on"      // the asking session announced new work
 )
 
 // Ask kinds name the source and so the owner's actions on a row.

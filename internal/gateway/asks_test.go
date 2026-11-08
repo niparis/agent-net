@@ -640,3 +640,56 @@ func TestStepDispatchWritesToTheLog(t *testing.T) {
 	}
 	t.Fatalf("no dispatch line for %s in the log: %+v", id, log)
 }
+
+// A question or an approval the session raised before its earlier announce is
+// overtaken by a later announce without a wait: the Needs you tag goes. An ask
+// of the same turn as the announce stays, and so does one under a new wait.
+func TestAnnounceClosesAskOfEarlierWork(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
+	announce := func(task string, w *protocol.Waiting) {
+		t.Helper()
+		c.t = c.t.Add(time.Minute)
+		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: task, Waiting: w}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	announce("build the grant", nil)
+	c.t = c.t.Add(time.Minute)
+	old, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: sid, Text: "Build the grant?"})
+	announce("waiting for the owner", nil) // same turn as the ask: it stays
+	if status, _, _ := askRow(t, s, `id=?`, old.ID); status != "open" {
+		t.Fatalf("an ask of the same turn closed: %s", status)
+	}
+	announce("waiting for the owner", &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Build the grant?"})
+	if status, _, _ := askRow(t, s, `id=?`, old.ID); status != "open" {
+		t.Fatalf("an announce with a wait closed the ask: %s", status)
+	}
+	announce("doing the next thing", nil)
+	status, reason, _ := askRow(t, s, `id=?`, old.ID)
+	if status != "closed" || reason != protocol.AskReasonMovedOn {
+		t.Fatalf("ask after new work: %s %s", status, reason)
+	}
+}
+
+// closeSessionOwnerAsks closes the asks the session raised, never another
+// session's, never a delivery step, and writes the reason.
+func TestOwnerTypedClosesOnlyThatSessionsAsks(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	a, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "a"})
+	b, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "b"})
+	qa, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: a, Text: "q?"})
+	ka, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: a, Text: "stopped with work left: x"})
+	ia, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "feature_idea", SessionID: a, Text: "an idea"})
+	qb, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: b, Text: "ok?"})
+	if n, err := s.closeSessionOwnerAsks(s.db, a, 0, protocol.AskReasonOwnerReplied); err != nil || n != 2 {
+		t.Fatalf("closed %d: %v", n, err)
+	}
+	for id, want := range map[string]string{qa.ID: "closed", ka.ID: "closed", ia.ID: "open", qb.ID: "open"} {
+		if status, _, _ := askRow(t, s, `id=?`, id); status != want {
+			t.Fatalf("ask %s = %s, want %s", id, status, want)
+		}
+	}
+}

@@ -216,7 +216,7 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	if client == "cli" && p.Harness == "claude" {
 		if isHumanClaudePrompt(p.Prompt) {
 			_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
-			_, _ = d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true})
+			d.ownerTyped(ctx, ls, sid)
 		}
 	}
 	got, ok := d.policyOf(ctx, sid, d.agentsHashOf(ls))
@@ -235,4 +235,13 @@ func isHumanClaudePrompt(prompt string) bool {
 
 func (d *Daemon) recordOwnerOpen(ctx context.Context, id string) {
 	_, _ = d.call(ctx, "session.owner_use", map[string]any{"owner": d.ownerSessionID(), "session_id": id})
+}
+
+// ownerTyped is the owner's own prompt in a session (a typed line, not a peer
+// message). Whatever the session waited for is answered or overtaken: the
+// wait ends here, whichever harness reported it, and the gateway closes the
+// session's open question and approval items.
+func (d *Daemon) ownerTyped(ctx context.Context, ls *localSession, sid string) {
+	d.setWaiting(ls, nil)
+	_, _ = d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true})
 }

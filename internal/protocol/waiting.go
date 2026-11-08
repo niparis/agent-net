@@ -33,6 +33,16 @@ const MaxWaitingTextLen = 200
 // owner-only method: like a hint, a hook may call it for its own session.
 const MethodWaiting = "waiting"
 
+// FrameWaitClear is the gateway telling a node that the owner closed a
+// session's question or approval without a message (a dismissal): the
+// session's explicit wait ends. Its params are WaitClear.
+const FrameWaitClear = "node.wait_clear"
+
+// WaitClear is FrameWaitClear.
+type WaitClear struct {
+	SessionID string `json:"session_id"`
+}
+
 // WaitingRequest is MethodWaiting. A plugin is bound to its session and leaves
 // Harness and NativeID empty. A command line hook names the session it runs
 // for, as it does for MethodHint.
@@ -51,7 +61,11 @@ type WaitingRequest struct {
 // Waiting is what a session asks its user. Since is the Unix time in seconds
 // when the wait began.
 type Waiting struct {
-	Explicit bool     `json:"explicit,omitempty"`
+	Explicit bool `json:"explicit,omitempty"`
+	// Blocking marks a wait that a harness event reported (a permission, a
+	// form, a dialog): it blocks the running turn, so it ends with the turn.
+	// An explicit ask and an announced wait outlive the turn.
+	Blocking bool     `json:"blocking,omitempty"`
 	Kind     string   `json:"kind"`
 	Text     string   `json:"text"`
 	Since    int64    `json:"since,omitempty"`
@@ -113,7 +127,7 @@ func CleanWaiting(w *Waiting) *Waiting {
 	if w.Urgency == "high" {
 		urgency = "high"
 	}
-	return &Waiting{Kind: kind, Text: text, Since: w.Since, Options: options, Urgency: urgency, Explicit: w.Explicit}
+	return &Waiting{Kind: kind, Text: text, Since: w.Since, Options: options, Urgency: urgency, Explicit: w.Explicit, Blocking: w.Blocking}
 }
 
 // UnmarshalJSON accepts the object form and the short string form that the

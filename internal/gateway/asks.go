@@ -249,6 +249,24 @@ func (s *Store) reconcileEndedSessionAsks(q askDB) (int, error) {
 		AND EXISTS (SELECT 1 FROM sessions x WHERE x.id=inbox_items.session_id AND x.archived_at<>0)`, nil, protocol.AskReasonSessionEnded)
 }
 
+// closeSessionOwnerAsks closes the open questions, approvals and turn-end
+// notes that one session raised itself. The owner typed in that session, or
+// the session went on to new work: the reason of the ask is gone. Nothing is
+// deleted. before limits the close to asks made before that time (UnixNano);
+// zero means all.
+func (s *Store) closeSessionOwnerAsks(q askDB, session string, before int64, reason string, kinds ...string) (int, error) {
+	if len(kinds) == 0 {
+		kinds = []string{protocol.AskKindQuestion, protocol.AskKindApproval, protocol.AskKindCheck}
+	}
+	cond := `session_id=? AND from_kind IN ('','session') AND kind IN ('` + strings.Join(kinds, `','`) + `')`
+	args := []any{session}
+	if before > 0 {
+		cond += ` AND created_at<?`
+		args = append(args, before)
+	}
+	return s.closeAsks(q, cond, args, reason)
+}
+
 // reconcileChangeAsks closes the asks about a change that is done or stopped.
 func (s *Store) reconcileChangeAsks(q askDB) (int, error) {
 	return s.closeAsks(q, `about_kind='change' AND EXISTS (SELECT 1 FROM delivery_changes c WHERE c.id=inbox_items.about_id AND c.state IN ('done','stopped'))`, nil, protocol.AskReasonChangeDone)

@@ -551,6 +551,11 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			// clear a wait: the state lives in the daemon, and a session that
 			// is really working again sends status busy.
 			ls.info.Waiting = old.info.Waiting
+			if status == "busy" {
+				// The new process says it works: the wait belongs to the
+				// process before and its reason is solved.
+				ls.info.Waiting = nil
+			}
 			ls.workerWaiting = old.workerWaiting
 			ls.harnessActivity = old.harnessActivity
 			if old.lastActive.After(ls.lastActive) {
@@ -807,6 +812,12 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 				ls.turnStartedLocked()
 			} else if p.Status == "idle" && previousStatus == "busy" {
 				ls.turnIdleLocked()
+				// The turn ended. A permission or form that blocked it is
+				// over (denied or interrupted). Only an explicit ask, which
+				// the session raised to wait for its owner, outlives the turn.
+				if w := ls.info.Waiting; w != nil && w.Blocking {
+					ls.info.Waiting = nil
+				}
 			}
 		}
 		if p.Mode != nil && ls.info.Worker == nil { // a worker is always background
@@ -881,7 +892,8 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if sid == "" {
 			return nil, nil
 		}
-		return d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true})
+		d.ownerTyped(ctx, ls, sid)
+		return nil, nil
 
 	case "harness_activity":
 		if ls == nil || ls.conn != lc {
