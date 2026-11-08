@@ -222,6 +222,24 @@ func TestChangeSubmitFromWorktreeSession(t *testing.T) {
 	}
 }
 
+// fixes and fixes_severity reach the gateway's change.submit frame, which
+// records the defect on the worker that made the fixed change.
+func TestChangeSubmitCarriesFixes(t *testing.T) {
+	t.Parallel()
+	n, f := startDeliveryNode(t)
+	_, wt := deliveryWorktree(t)
+	lc, _ := helloDelivery(t, n, "np-fixes", wt, "claude-opus-5-5")
+	lc.mustCall(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Branch: "feat/x", Fixes: "ch_shipped", FixesSeverity: 3})
+	sent := f.frames(protocol.FrameChangeSubmit)
+	var q protocol.ChangeSubmitRequest
+	if len(sent) != 1 || json.Unmarshal(sent[0], &q) != nil || q.Fixes != "ch_shipped" || q.FixesSeverity != 3 {
+		t.Fatalf("change.submit frames: %s", sent)
+	}
+	if _, err := lc.call(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Branch: "feat/x", Fixes: "bad"}); err == nil {
+		t.Fatal("a fixes that is not a change ID was sent")
+	}
+}
+
 // A submit for a branch checked out in another worktree takes that branch's
 // head, and the changes of that worktree, not of the session's folder.
 func TestChangeSubmitOtherBranchOfTheRepository(t *testing.T) {

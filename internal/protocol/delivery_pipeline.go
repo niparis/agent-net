@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -184,6 +185,8 @@ const (
 	FieldMergedCommit = "merged_commit" // merge: the merged commit on the target branch
 	FieldTag          = "tag"           // release: the tag
 	FieldTarget       = "target"        // deploy: where it was deployed
+	FieldFlake        = "flake"         // test fail: yes when the merger marks the failure as a known flake
+	FieldSeverity     = "severity"      // verify fail: 1 to 4, the severity of the defect agent-net records
 )
 
 // Field values. FieldAny is for requirements only: the field must be set, to
@@ -700,6 +703,14 @@ func validField(name, value string, condition bool) error {
 		if value == "" || strings.Trim(value, "0123456789") != "" {
 			return errors.New("findings_open must be a count: 0 or more")
 		}
+	case FieldFlake:
+		if value != FieldYes && value != FieldNo {
+			return errors.New("flake must be yes or no")
+		}
+	case FieldSeverity:
+		if n, err := strconv.Atoi(value); err != nil || !ValidRateSeverity(n) {
+			return fmt.Errorf("severity must be %d to %d", RateSeverityMin, RateSeverityMax)
+		}
 	case FieldIndependent:
 		if value != IndependentNone && value != IndependentSession && value != IndependentFamily {
 			return errors.New("independent must be none, session or family")
@@ -730,6 +741,25 @@ func validResult(r string) error {
 		return nil
 	}
 	return fmt.Errorf("result must be pass, fail, needs_owner or close, not %q", r)
+}
+
+// ValidFixes checks the optional fixes fields of a worker start or a change
+// submit: the change the new work fixes, and the severity of the defect
+// agent-net records on that change's worker (0 means the default of 2).
+func ValidFixes(change string, severity int) error {
+	if change == "" {
+		if severity != 0 {
+			return errors.New("fixes_severity needs fixes: name the change the work fixes")
+		}
+		return nil
+	}
+	if err := validChangeID(change); err != nil {
+		return fmt.Errorf("fixes: %w", err)
+	}
+	if severity != 0 && !ValidRateSeverity(severity) {
+		return fmt.Errorf("fixes_severity must be %d to %d", RateSeverityMin, RateSeverityMax)
+	}
+	return nil
 }
 
 func validChangeID(id string) error {
@@ -1489,6 +1519,11 @@ type ChangeSubmitRequest struct {
 	SensitivePath string       `json:"sensitive_path,omitempty"`
 	Title         string       `json:"title,omitempty"`
 	DiffStat      string       `json:"diff_stat,omitempty"`
+	// Fixes names a shipped change this new change fixes, and FixesSeverity
+	// (1 to 4, default 2) is the defect agent-net records on that change's
+	// worker. They count only when the submit creates the change.
+	Fixes         string `json:"fixes,omitempty"`
+	FixesSeverity int    `json:"fixes_severity,omitempty"`
 }
 
 // Validate checks a submit before it is sent.
@@ -1500,6 +1535,9 @@ func (q ChangeSubmitRequest) Validate() error {
 		if err := validChangeID(q.ChangeID); err != nil {
 			return err
 		}
+	}
+	if err := ValidFixes(q.Fixes, q.FixesSeverity); err != nil {
+		return err
 	}
 	if len(q.DiffStat) > MaxDiffStatBytes {
 		return fmt.Errorf("diff stat is longer than %d bytes", MaxDiffStatBytes)
