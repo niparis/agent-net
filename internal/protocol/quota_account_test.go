@@ -41,7 +41,7 @@ func TestAccountQuotaBlockFailureCountsAsInfra(t *testing.T) {
 func TestWithQuotaBlocksRefusesEveryAgyModel(t *testing.T) {
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	reset := now.Add(160 * time.Hour)
-	blocks := map[string]time.Time{"agy": reset}
+	blocks := []QuotaBlock{{Provider: "agy", Until: reset, Recorded: now}}
 	reading := &Quotas{Providers: []QuotaProvider{{Provider: "agy", Windows: []QuotaWindow{{ID: "gemini_argon_weekly", PercentUsed: 10}, {ID: "claude_gpt_weekly", PercentUsed: 10}}}}}
 	for name, q := range map[string]*Quotas{
 		"with a reading":     reading,

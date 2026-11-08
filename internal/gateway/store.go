@@ -1206,6 +1206,17 @@ CREATE TABLE IF NOT EXISTS agent_loops (
  paused INTEGER NOT NULL DEFAULT 0,
  last_result TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS agent_loops_session ON agent_loops(session_id);
+`, `
+-- Quota blocks per window. A block names the window of a provider that a
+-- worker run reported out of quota (window_id), or every model of the provider
+-- when window_id is empty. The old table is dropped once: its rows name no
+-- window, so they would block every agy model until their reset.
+DROP TABLE IF EXISTS quota_blocks;
+CREATE TABLE IF NOT EXISTS quota_blocks (
+ node_id TEXT NOT NULL, provider TEXT NOT NULL, window_id TEXT NOT NULL DEFAULT '',
+ window_label TEXT NOT NULL DEFAULT '', resets_at INTEGER NOT NULL,
+ detail TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL,
+ PRIMARY KEY (node_id, provider, window_id));
 `}
 
 // asksMigrationRest is the part of the asks migration that is safe to replay

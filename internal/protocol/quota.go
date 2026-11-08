@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -211,23 +212,39 @@ func QuotaProviderForHarness(harness string) string {
 	return ""
 }
 
-// QuotaWindowServes tells whether a window limits a model. agy reads one
-// provider with windows per model family, named by id: "gemini_argon_*" for
-// Argon, "gemini_*" for every Gemini model, "claude_gpt_*" for Claude and GPT
-// models. A window without a family prefix limits every model.
+// quotaWindowFamilies are the model families a window id can name, most
+// specific first. agy reads one provider with windows per family: "gemini_argon_*"
+// for Argon, "gemini_*" for every Gemini model, "claude_gpt_*" for Claude and GPT
+// models. A window id with none of these prefixes limits every model.
+var quotaWindowFamilies = []string{"gemini_argon_", "gemini_", "claude_gpt_"}
+
+// quotaWindowFamily returns the family prefix of a window id, or "".
+func quotaWindowFamily(id string) string {
+	id = strings.ToLower(id)
+	for _, f := range quotaWindowFamilies {
+		if strings.HasPrefix(id, f) {
+			return f
+		}
+	}
+	return ""
+}
+
+// QuotaWindowServes tells whether a window limits a model (see
+// quotaWindowFamilies).
 func QuotaWindowServes(w QuotaWindow, model string) bool {
-	id, m := strings.ToLower(w.ID), strings.ToLower(model)
+	m := strings.ToLower(model)
 	if i := strings.LastIndexByte(m, '/'); i >= 0 {
 		m = m[i+1:]
 	}
-	switch {
-	case m == "":
+	if m == "" {
 		return true
-	case strings.HasPrefix(id, "gemini_argon_"):
+	}
+	switch quotaWindowFamily(w.ID) {
+	case "gemini_argon_":
 		return strings.Contains(m, "argon")
-	case strings.HasPrefix(id, "gemini_"):
+	case "gemini_":
 		return strings.HasPrefix(m, "gemini")
-	case strings.HasPrefix(id, "claude_gpt_"):
+	case "claude_gpt_":
 		return strings.HasPrefix(m, "claude") || strings.HasPrefix(m, "gpt")
 	}
 	return true
@@ -300,13 +317,18 @@ func QuotaRefusal(quotas *Quotas, harness, model string) string {
 	return quotaExhaustedText(qp, w)
 }
 
-// quotaExhaustedText says that a provider window has no allowance left. The
-// account window, learned from a failed run, blocks every model of the
-// provider, so the sentence says to use another harness.
+// quotaExhaustedText says that a provider window has no allowance left. A
+// window that a worker run reported (kind quotaAccountKind) says so and until
+// when. The account window blocks every model of the provider, so the sentence
+// says to use another harness; any other reported window leaves the models it
+// does not serve.
 func quotaExhaustedText(provider string, w QuotaWindow) string {
-	if w.ID == QuotaAccountWindowID {
-		return fmt.Sprintf("%s quota used up until %s (a worker run reported it); pick another harness",
-			provider, time.Unix(w.ResetsAt, 0).UTC().Format("2006-01-02 15:04 UTC"))
+	if w.Kind == quotaAccountKind {
+		until := time.Unix(w.ResetsAt, 0).UTC().Format("2006-01-02 15:04 UTC")
+		if w.ID == QuotaAccountWindowID {
+			return fmt.Sprintf("%s quota used up until %s (a worker run reported it); pick another harness", provider, until)
+		}
+		return fmt.Sprintf("%s %s used up until %s; other %s models may still be used", provider, QuotaWindowName(w), until, provider)
 	}
 	return fmt.Sprintf("%s is exhausted (%s; %s)", provider, QuotaWindowName(w), QuotaResetText(w))
 }
@@ -383,10 +405,15 @@ func QuotaSummary(q *Quotas) string {
 	return strings.Join(parts, " · ")
 }
 
-// QuotaAccountWindowID names the window the gateway adds when a worker's run
-// shows that a whole provider account is out of quota (see AccountQuotaBlock).
-// It has no family prefix, so it limits every model of the provider.
+// QuotaAccountWindowID names the window of a block that covers a whole provider:
+// a worker's run shows the account is out of quota and no window of the
+// provider serves the run's model (see AccountQuotaBlock). It has no family
+// prefix, so it limits every model of the provider.
 const QuotaAccountWindowID = "account"
+
+// quotaAccountKind marks a window the gateway adds from a worker run's report,
+// not from quota-axi.
+const quotaAccountKind = "account"
 
 // accountQuotaMarkers are the phrases of an account-level quota refusal. A
 // rate limit or an overload is short and does not block the account.
@@ -452,45 +479,89 @@ func parseResetDelay(s string) (time.Duration, bool) {
 	return total, parts > 0 && total > 0
 }
 
-// WithQuotaBlocks returns the reading q with an exhausted account window for
-// every provider blocked until a time after now. It does not change q. A
-// blocked provider whose reading is stale or failed is replaced by the block,
-// so the block still refuses starts.
-func WithQuotaBlocks(q *Quotas, blocks map[string]time.Time, now time.Time) *Quotas {
-	var names []string
-	for name, until := range blocks {
-		if until.After(now) {
-			names = append(names, name)
+// QuotaBlock is an out-of-quota block that a worker run reported on one
+// machine. WindowID is the window it blocks, so it refuses only the models that
+// window serves. An empty WindowID blocks every model of the provider.
+type QuotaBlock struct {
+	Provider    string
+	WindowID    string
+	WindowLabel string
+	// Until is the reset the provider named. The block ends then.
+	Until time.Time
+	// Recorded is when the gateway recorded the run's report.
+	Recorded time.Time
+}
+
+// clearedBy tells whether a fresher usable reading shows the block's window
+// with allowance left. The measured reading then wins over the run's report. A
+// provider block is never cleared, because quota-axi does not see the account
+// limit.
+func (b QuotaBlock) clearedBy(q *Quotas) bool {
+	if b.WindowID == "" || b.Recorded.IsZero() || q == nil || q.GeneratedAt <= b.Recorded.Unix() {
+		return false
+	}
+	p, ok := q.Provider(b.Provider)
+	if !ok || !p.usable() {
+		return false
+	}
+	for _, w := range p.Windows {
+		if w.ID == b.WindowID {
+			return !w.Exhausted && w.PercentUsed < 100
 		}
 	}
-	if len(names) == 0 {
+	return false
+}
+
+// window is the exhausted window that stands for the block in a reading.
+func (b QuotaBlock) window() QuotaWindow {
+	w := QuotaWindow{ID: b.WindowID, Label: b.WindowLabel, Kind: quotaAccountKind, PercentUsed: 100,
+		ResetsAt: b.Until.Unix(), Exhausted: true}
+	if b.WindowID == "" {
+		w.ID, w.Label = QuotaAccountWindowID, "account quota"
+	}
+	return w
+}
+
+// WithQuotaBlocks returns the reading q with the blocks still in force at now.
+// Each block adds an exhausted window to its provider, so it refuses the models
+// that window serves. A window block that a fresher usable reading clears is
+// left out. It does not change q. A blocked provider whose reading is stale or
+// failed is replaced by the block, so the block still refuses starts.
+func WithQuotaBlocks(q *Quotas, blocks []QuotaBlock, now time.Time) *Quotas {
+	var active []QuotaBlock
+	for _, b := range blocks {
+		if b.Until.After(now) && !b.clearedBy(q) {
+			active = append(active, b)
+		}
+	}
+	if len(active) == 0 {
 		return q
 	}
-	sort.Strings(names)
+	sort.SliceStable(active, func(i, j int) bool {
+		if active[i].Provider != active[j].Provider {
+			return active[i].Provider < active[j].Provider
+		}
+		return active[i].WindowID < active[j].WindowID
+	})
 	out := &Quotas{}
 	if q != nil {
 		*out = *q
+		out.Providers = append(make([]QuotaProvider, 0, len(q.Providers)+len(active)), q.Providers...)
 	}
-	out.Providers = nil
-	if q != nil {
-		out.Providers = make([]QuotaProvider, 0, len(q.Providers)+len(names))
-		out.Providers = append(out.Providers, q.Providers...)
-	}
-	for _, name := range names {
-		w := QuotaWindow{ID: QuotaAccountWindowID, Label: "account quota", Kind: "account", PercentUsed: 100,
-			ResetsAt: blocks[name].Unix(), Exhausted: true}
+	for _, b := range active {
+		w := b.window()
 		i := -1
 		for j, p := range out.Providers {
-			if p.Provider == name {
+			if p.Provider == b.Provider {
 				i = j
 				break
 			}
 		}
 		switch {
 		case i < 0:
-			out.Providers = append(out.Providers, QuotaProvider{Provider: name, Windows: []QuotaWindow{w}})
+			out.Providers = append(out.Providers, QuotaProvider{Provider: b.Provider, Windows: []QuotaWindow{w}})
 		case !out.Providers[i].usable():
-			out.Providers[i] = QuotaProvider{Provider: name, Plan: out.Providers[i].Plan, Windows: []QuotaWindow{w}}
+			out.Providers[i] = QuotaProvider{Provider: b.Provider, Plan: out.Providers[i].Plan, Windows: []QuotaWindow{w}}
 		default:
 			p := out.Providers[i]
 			p.Windows = append([]QuotaWindow{w}, p.Windows...)
@@ -498,4 +569,51 @@ func WithQuotaBlocks(q *Quotas, blocks map[string]time.Time, now time.Time) *Quo
 		}
 	}
 	return out
+}
+
+// QuotaBlockWindowFor names the window that a worker run's account quota
+// failure blocks: the window of the provider's reading that serves the run's
+// model. When several serve it, the most specific family wins (gemini_argon_*
+// over gemini_*), then the window whose reset is nearest until, the reset the
+// run named. It returns false when the model is empty or no window serves it;
+// the block then covers the whole provider. Only the window ids are read, so a
+// stale reading still names the window.
+func QuotaBlockWindowFor(q *Quotas, provider, model string, until time.Time) (QuotaWindow, bool) {
+	p, ok := q.Provider(provider)
+	if !ok || strings.TrimSpace(model) == "" {
+		return QuotaWindow{}, false
+	}
+	var best QuotaWindow
+	found := false
+	for _, w := range p.Windows {
+		if w.ID == "" || !QuotaWindowServes(w, model) {
+			continue
+		}
+		if !found || quotaWindowNearer(w, best, until) {
+			best, found = w, true
+		}
+	}
+	return best, found
+}
+
+// quotaWindowNearer tells whether window a is a better block than window b for a
+// run that reset at until: a more specific family first, then the nearer reset.
+func quotaWindowNearer(a, b QuotaWindow, until time.Time) bool {
+	if fa, fb := len(quotaWindowFamily(a.ID)), len(quotaWindowFamily(b.ID)); fa != fb {
+		return fa > fb
+	}
+	return quotaResetGap(a, until) < quotaResetGap(b, until)
+}
+
+// quotaResetGap is how far a window's reset is from until, in seconds. A window
+// with no reset time is the furthest away.
+func quotaResetGap(w QuotaWindow, until time.Time) int64 {
+	if w.ResetsAt <= 0 || until.IsZero() {
+		return math.MaxInt64
+	}
+	gap := w.ResetsAt - until.Unix()
+	if gap < 0 {
+		gap = -gap
+	}
+	return gap
 }

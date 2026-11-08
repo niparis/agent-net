@@ -63,9 +63,18 @@ func (u *usageTable) all() map[string]usageEntry {
 	return out
 }
 
+// lastQuotas returns the newest quota reading of a machine however old it is,
+// or nil. A block reads only the window ids of it.
+func (g *Gateway) lastQuotas(nodeID string) *protocol.Quotas {
+	if e, ok := g.usage.all()[nodeID]; ok {
+		return e.rep.Quotas
+	}
+	return nil
+}
+
 // nodeQuotas returns the newest quota reading of a machine, or nil when it
-// reported none, or the report is stale. A provider account that a worker run
-// reported out of quota is added as an exhausted window until its reset.
+// reported none, or the report is stale. The quota blocks that worker runs
+// reported on the machine are added as exhausted windows until their resets.
 func (g *Gateway) nodeQuotas(nodeID string) *protocol.Quotas {
 	now := g.store.now()
 	var q *protocol.Quotas
