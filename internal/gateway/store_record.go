@@ -17,6 +17,48 @@ import (
 // registered ones (see store_projects.go) merged with the project folders of
 // the stored sessions. Source says which of the two a row comes from.
 func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
+	out, err := s.projectsMerged(name)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+	perms, err := s.workerPermissionReader()
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		display, err := s.ProjectDisplayName(out[i].Name)
+		if err != nil {
+			return nil, err
+		}
+		out[i].DisplayName = display.Name
+		out[i].Permissions, err = perms.permissions(out[i].Name)
+		if err != nil {
+			return nil, err
+		}
+	}
+	sortProjects(out)
+	return out, nil
+}
+
+// projectLocations is Projects without the display name and the worker
+// permissions of each project: the same projects in the same order, with
+// their name, machine and folder. The permissions of each project need the
+// settings, which a caller that only places projects does not use.
+func (s *Store) projectLocations(name string) ([]protocol.ProjectView, error) {
+	out, err := s.projectsMerged(name)
+	if err != nil {
+		return nil, err
+	}
+	sortProjects(out)
+	return out, nil
+}
+
+// projectsMerged joins the seen and the registered projects, unsorted and
+// without display names and permissions.
+func (s *Store) projectsMerged(name string) ([]protocol.ProjectView, error) {
 	seen, err := s.seenProjects(name)
 	if err != nil {
 		return nil, err
@@ -46,17 +88,10 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 			p.Remote = r.Remote
 		}
 	}
-	for i := range out {
-		display, err := s.ProjectDisplayName(out[i].Name)
-		if err != nil {
-			return nil, err
-		}
-		out[i].DisplayName = display.Name
-		out[i].Permissions, err = s.WorkerPermissions(out[i].NodeID, out[i].Name)
-		if err != nil {
-			return nil, err
-		}
-	}
+	return out, nil
+}
+
+func sortProjects(out []protocol.ProjectView) {
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i], out[j]
 		if !strings.EqualFold(a.Name, b.Name) {
@@ -67,7 +102,6 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 		}
 		return a.Path < b.Path
 	})
-	return out, nil
 }
 
 // seenProjects lists the project folders of the stored sessions, one row per
@@ -651,31 +685,49 @@ func failedSet(m map[string]time.Time) map[string]bool {
 // ModelAuthBlocked keeps provider auth failures separate from temporary model
 // ranking failures. Only a later success on that harness and provider clears one.
 func (s *Store) ModelAuthBlocked(nodeID, harness, model string) (bool, error) {
-	provider := protocol.ProfileProvider(harness, model)
-	rows, err := s.db.Query(`SELECT model, auth_at, 0 FROM model_failures WHERE node_id=? AND harness=? AND auth_at>0
- UNION ALL SELECT model, at, 1 FROM model_successes WHERE node_id=? AND harness=?`, nodeID, harness, nodeID, harness)
+	idx, err := s.modelAuthIndex(nodeID, harness)
 	if err != nil {
 		return false, err
 	}
+	return idx.blocked(model), nil
+}
+
+// authIndex holds the newest auth failure and the newest success of a
+// machine's harness, per provider. One read answers every model of it.
+type authIndex struct {
+	harness           string
+	failed, succeeded map[string]int64
+}
+
+func (s *Store) modelAuthIndex(nodeID, harness string) (authIndex, error) {
+	idx := authIndex{harness: harness, failed: map[string]int64{}, succeeded: map[string]int64{}}
+	rows, err := s.db.Query(`SELECT model, auth_at, 0 FROM model_failures WHERE node_id=? AND harness=? AND auth_at>0
+ UNION ALL SELECT model, at, 1 FROM model_successes WHERE node_id=? AND harness=?`, nodeID, harness, nodeID, harness)
+	if err != nil {
+		return idx, err
+	}
 	defer rows.Close()
-	var failed, succeeded int64
 	for rows.Next() {
 		var m string
 		var at int64
 		var success int
 		if err := rows.Scan(&m, &at, &success); err != nil {
-			return false, err
+			return idx, err
 		}
-		if protocol.ProfileProvider(harness, m) != provider {
-			continue
-		}
+		provider := protocol.ProfileProvider(harness, m)
 		if success == 1 {
-			if at > succeeded {
-				succeeded = at
+			if at > idx.succeeded[provider] {
+				idx.succeeded[provider] = at
 			}
-		} else if at > failed {
-			failed = at
+		} else if at > idx.failed[provider] {
+			idx.failed[provider] = at
 		}
 	}
-	return failed > 0 && failed >= succeeded, rows.Err()
+	return idx, rows.Err()
+}
+
+func (a authIndex) blocked(model string) bool {
+	provider := protocol.ProfileProvider(a.harness, model)
+	failed := a.failed[provider]
+	return failed > 0 && failed >= a.succeeded[provider]
 }

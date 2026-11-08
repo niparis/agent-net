@@ -1674,7 +1674,80 @@ func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidate
 
 // workerModelCandidates builds the roster shared by starts and read-only previews.
 func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string, readOnly bool, protected protocol.ProtectedProviders) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
-	tracks, err := g.store.TrackRecords(node.NodeID, 0)
+	return g.workerModelCandidatesWith(&candidateFacts{}, node, profiles, providers, quotas, harness, readOnly, protected)
+}
+
+// candidateFacts holds what the roster reads about one machine. A caller that
+// has already read some of it fills those fields in, and the roster does not
+// read them again. What is left empty is read from the store when needed.
+type candidateFacts struct {
+	tracks     []protocol.TrackRecord
+	haveTracks bool
+	failures   map[string]map[string]bool
+	successes  map[string]map[string]time.Time
+	auth       map[string]authIndex
+}
+
+func (f *candidateFacts) trackRecords(s *Store, node string) ([]protocol.TrackRecord, error) {
+	if !f.haveTracks {
+		tracks, err := s.TrackRecords(node, 0)
+		if err != nil {
+			return nil, err
+		}
+		f.tracks, f.haveTracks = tracks, true
+	}
+	return f.tracks, nil
+}
+
+func (f *candidateFacts) recentFailures(s *Store, node, harness string) (map[string]bool, error) {
+	if m, ok := f.failures[harness]; ok {
+		return m, nil
+	}
+	m, err := s.RecentWorkerFailures(node, harness)
+	if err != nil {
+		return nil, err
+	}
+	if f.failures == nil {
+		f.failures = map[string]map[string]bool{}
+	}
+	f.failures[harness] = m
+	return m, nil
+}
+
+func (f *candidateFacts) succeededModels(s *Store, node, harness string) (map[string]time.Time, error) {
+	if m, ok := f.successes[harness]; ok {
+		return m, nil
+	}
+	m, err := s.SucceededModels(node, harness)
+	if err != nil {
+		return nil, err
+	}
+	if f.successes == nil {
+		f.successes = map[string]map[string]time.Time{}
+	}
+	f.successes[harness] = m
+	return m, nil
+}
+
+func (f *candidateFacts) authBlocked(s *Store, node, harness, model string) (bool, error) {
+	idx, ok := f.auth[harness]
+	if !ok {
+		var err error
+		if idx, err = s.modelAuthIndex(node, harness); err != nil {
+			return false, err
+		}
+		if f.auth == nil {
+			f.auth = map[string]authIndex{}
+		}
+		f.auth[harness] = idx
+	}
+	return idx.blocked(model), nil
+}
+
+// workerModelCandidatesWith is workerModelCandidates with the reads the caller
+// already has.
+func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string, readOnly bool, protected protocol.ProtectedProviders) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
+	tracks, err := facts.trackRecords(g.store, node.NodeID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1700,11 +1773,11 @@ func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []prot
 		if readOnly && !protocol.WorkerReadOnlySupported(h.Name) {
 			continue
 		}
-		failures, err := g.store.RecentWorkerFailures(node.NodeID, h.Name)
+		failures, err := facts.recentFailures(g.store, node.NodeID, h.Name)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		successes, err := g.store.SucceededModels(node.NodeID, h.Name)
+		successes, err := facts.succeededModels(g.store, node.NodeID, h.Name)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -1723,7 +1796,7 @@ func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []prot
 				skippedProfiles = append(skippedProfiles, message)
 				continue
 			}
-			blocked, err := g.store.ModelAuthBlocked(node.NodeID, h.Name, resolved)
+			blocked, err := facts.authBlocked(g.store, node.NodeID, h.Name, resolved)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -1757,12 +1830,19 @@ func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandida
 // chooseAutomaticWorkerWith takes the model health lookup, so a caller that
 // picks for many levels in a row can read each model's health once.
 func (g *Gateway) chooseAutomaticWorkerWith(modelHealth func(harness, model string) (ModelHealth, error), candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	if err := g.store.applyQualityWeights(candidates, difficulty); err != nil {
+	return g.chooseAutomaticWorkerCore(modelHealth, g.store.applyQualityWeights, g.store.WorkerRotation, candidates, difficulty, scores, minimums, quotas, running, protected, persist)
+}
+
+// chooseAutomaticWorkerCore is the chooser with its two store reads passed in,
+// so a preview for many levels reads the quality settings and the rotation
+// once.
+func (g *Gateway) chooseAutomaticWorkerCore(modelHealth func(harness, model string) (ModelHealth, error), weigh func([]protocol.WorkerModelCandidate, string) error, readRotation func() (protocol.WorkerRotation, error), candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
+	if err := weigh(candidates, difficulty); err != nil {
 		return protocol.WorkerModelChoice{}, "", err
 	}
 	g.rotationMu.Lock()
 	defer g.rotationMu.Unlock()
-	rotation, err := g.store.WorkerRotation()
+	rotation, err := readRotation()
 	if err != nil {
 		return protocol.WorkerModelChoice{}, "", err
 	}

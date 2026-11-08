@@ -161,11 +161,13 @@ func (s *Store) ensureCTONode(g *protocol.Graph) error {
 
 // graphContext supplies the registered and observed locations and online sessions.
 func (s *Store) graphContext(g protocol.Graph) (protocol.Graph, error) {
-	projects, err := s.Projects("")
+	projects, err := s.projectLocations("")
 	if err != nil {
 		return g, err
 	}
-	agents, err := s.Agents(protocol.QueryAgents{OnlineOnly: true, IncludeOwners: true})
+	// Only stored fields are used here, so the delegation, charter and
+	// pending work of a full agent view is not done.
+	agents, err := s.agentsBase(protocol.QueryAgents{OnlineOnly: true, IncludeOwners: true})
 	if err != nil {
 		return g, err
 	}

@@ -1,26 +1,44 @@
 package gateway
 
 import (
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// pendingScopeMax is the longest agent list for which applyPending narrows
+// its query to the requests of those agents.
+var pendingScopeMax = 32
+
 // applyPending derives current waits from retained messages. Activity clears
 // the sender's wait, but does not discharge the recipient's obligation to reply.
 // Deriving this on read also clears stale waits retained by older versions.
 func (s *Store) applyPending(agents []protocol.AgentView) error {
+	// A request touches the view only when its sender or recipient is in the
+	// list. For a short list the query keeps just those requests, so the
+	// reply checks below are not run for the others.
+	scope, args := ``, []any{s.now().Add(-24 * time.Hour).UnixNano(), s.now().UnixNano()}
+	if len(agents) > 0 && len(agents) <= pendingScopeMax {
+		marks := strings.TrimSuffix(strings.Repeat("?,", len(agents)), ",")
+		scope = ` AND (m.sender IN (` + marks + `) OR m.recipient IN (` + marks + `))`
+		for i := 0; i < 2; i++ {
+			for _, a := range agents {
+				args = append(args, a.SessionID)
+			}
+		}
+	}
 	rows, err := s.db.Query(`SELECT m.id, m.sender, m.recipient, m.created_at,
  COALESCE(NULLIF(sp.name,''), NULLIF(ss.name,''), m.sender), COALESCE(NULLIF(rp.name,''), NULLIF(rs.name,''), m.recipient),
  MAX(ss.last_active, ss.harness_activity) <= m.created_at
  AND NOT EXISTS (SELECT 1 FROM messages sent WHERE sent.sender=m.sender AND sent.rowid>m.rowid)
  FROM messages m JOIN sessions ss ON ss.id=m.sender LEFT JOIN profiles sp ON sp.session_id=m.sender
  JOIN sessions rs ON rs.id=m.recipient LEFT JOIN profiles rp ON rp.session_id=m.recipient
- WHERE m.type='request' AND m.created_at >= ? AND m.expires_at > ?
+ WHERE m.type='request' AND m.created_at >= ? AND m.expires_at > ?`+scope+`
  AND ss.status<>'ended' AND ss.archived_at=0 AND rs.status<>'ended' AND rs.archived_at=0
  AND NOT EXISTS (SELECT 1 FROM messages reply WHERE reply.type='reply' AND reply.rowid>m.rowid
  AND (reply.conversation_id=m.conversation_id OR (reply.sender=m.recipient AND reply.recipient=m.sender)))
- ORDER BY m.created_at, m.id`, s.now().Add(-24*time.Hour).UnixNano(), s.now().UnixNano())
+ ORDER BY m.created_at, m.id`, args...)
 	if err != nil {
 		return err
 	}

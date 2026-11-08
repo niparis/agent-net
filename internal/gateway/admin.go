@@ -123,11 +123,13 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 			return protocol.NodesInfo{}, err
 		}
 		nodes[i].Tracks = tracks
+		facts := &candidateFacts{tracks: tracks, haveTracks: true, failures: map[string]map[string]bool{}, successes: map[string]map[string]time.Time{}}
 		for _, h := range nodes[i].Harnesses {
 			successes, err := g.store.SucceededModels(nodes[i].NodeID, h.Name)
 			if err != nil {
 				return protocol.NodesInfo{}, err
 			}
+			facts.successes[h.Name] = successes
 			if len(successes) > 0 {
 				if nodes[i].RecentModelSuccesses == nil {
 					nodes[i].RecentModelSuccesses = map[string]map[string]bool{}
@@ -138,6 +140,7 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 			if err != nil {
 				return protocol.NodesInfo{}, err
 			}
+			facts.failures[h.Name] = failures
 			if len(failures) > 0 {
 				if nodes[i].RecentModelFailures == nil {
 					nodes[i].RecentModelFailures = map[string]map[string]bool{}
@@ -152,7 +155,7 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 			}
 			previewRead = true
 		}
-		nodes[i].QualityPicks, nodes[i].QualityPickReasons, nodes[i].QualityPickModels, err = g.qualityPreviewWith(preview, nodes[i])
+		nodes[i].QualityPicks, nodes[i].QualityPickReasons, nodes[i].QualityPickModels, err = g.qualityPreviewWith(preview, nodes[i], facts)
 		if err != nil {
 			return protocol.NodesInfo{}, err
 		}

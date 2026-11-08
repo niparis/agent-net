@@ -1096,6 +1096,13 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("inbox session index: %w", err)
 	}
+	// applyPending asks for replies from a recipient to a sender. Without this
+	// index each request scans every message to that recipient. Created here
+	// and not as a versioned migration, like the index above.
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS messages_pair ON messages (sender, recipient, type)`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("messages pair index: %w", err)
+	}
 	if err := s.loadGraphRefs(); err != nil {
 		db.Close()
 		return nil, err

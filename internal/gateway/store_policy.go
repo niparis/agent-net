@@ -118,17 +118,40 @@ func (s *Store) SetDelegation(sessionID, scope string, p protocol.DelegationPoli
 // else the node's worker sandbox default from its maturity (decision 0022).
 // Only the project policy counts: a session's own policy has no workers level.
 func (s *Store) WorkerPermissions(_ string, project string) (string, error) {
-	tx, err := s.db.Begin()
+	r, err := s.workerPermissionReader()
 	if err != nil {
 		return "", err
+	}
+	return r.permissions(project)
+}
+
+// permissionReader answers WorkerPermissions for many projects from one read
+// of the graph names and the settings.
+type permissionReader struct {
+	names map[string][]string
+	snap  settings.Snapshot
+}
+
+func (s *Store) workerPermissionReader() (*permissionReader, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
 	}
 	defer tx.Rollback()
 	names, err := workerProjectNamesTx(tx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	snap, err := settingsSnapshotTx(tx)
+	if err != nil {
+		return nil, err
+	}
+	return &permissionReader{names, snap}, nil
+}
+
+func (r *permissionReader) permissions(project string) (string, error) {
 	key := strings.ToLower(strings.TrimSpace(project))
-	matches := names[key]
+	matches := r.names[key]
 	if len(matches) > 1 {
 		return "", reject("ambiguous project %q: graph names differ only by case", key)
 	}
@@ -137,11 +160,7 @@ func (s *Store) WorkerPermissions(_ string, project string) (string, error) {
 	} else {
 		project = key
 	}
-	snap, err := settingsSnapshotTx(tx)
-	if err != nil {
-		return "", err
-	}
-	return snap.String(workerSandboxKey, settings.Where{Repo: project}), nil
+	return r.snap.String(workerSandboxKey, settings.Where{Repo: project}), nil
 }
 
 // projectPolicies loads every project default, keyed by node and project.
@@ -172,10 +191,18 @@ func (s *Store) projectPolicies() (map[string]protocol.DelegationPolicy, error) 
 // project's default, with the models resolved against its machine. It also
 // clears the policy of an owner pseudo-session.
 func (s *Store) applyDelegation(as []protocol.AgentView) error {
-	in, err := s.agentViewInputs()
+	// Delegation reads only the names of the graph nodes and the settings,
+	// not the charters and edges of the full graph.
+	var in agentViewInputs
+	var err error
+	if in.snap, err = s.SettingsSnapshot(); err != nil {
+		return err
+	}
+	nodes, err := s.graphNodes()
 	if err != nil {
 		return err
 	}
+	in.graph = protocol.Graph{Nodes: nodes}
 	return s.applyDelegationWith(as, in)
 }
 
@@ -193,7 +220,7 @@ func (s *Store) agentViewInputs() (agentViewInputs, error) {
 	if in.snap, err = s.SettingsSnapshot(); err != nil {
 		return in, err
 	}
-	in.graph, err = s.Graph()
+	in.graph, err = s.graphWith(&in.snap)
 	return in, err
 }
 
@@ -219,6 +246,10 @@ func (s *Store) applyDelegationWith(as []protocol.AgentView, in agentViewInputs)
 	}
 	var nodes map[string]protocol.NodeView
 	usage := map[string]map[string]int{}
+	// The failed and succeeded models of a machine's harness are read once
+	// per call and not once per session.
+	type modelOutcomes struct{ failed, succeeded map[string]bool }
+	outcomes := map[string]modelOutcomes{}
 	for i := range as {
 		a := &as[i]
 		if protocol.IsOwner(a.Harness) {
@@ -285,9 +316,14 @@ func (s *Store) applyDelegationWith(as []protocol.AgentView, in agentViewInputs)
 				}
 				usage[ukey] = u
 			}
-			fa, _ := s.FailedModels(a.NodeID, a.Harness)
-			sa, _ := s.SucceededModels(a.NodeID, a.Harness)
-			r, err := protocol.ResolveModelRanked(asked, hi.Models, u, hi.ModelProviders, failedSet(fa), failedSet(sa))
+			fs, ok := outcomes[ukey]
+			if !ok {
+				fa, _ := s.FailedModels(a.NodeID, a.Harness)
+				sa, _ := s.SucceededModels(a.NodeID, a.Harness)
+				fs = modelOutcomes{failedSet(fa), failedSet(sa)}
+				outcomes[ukey] = fs
+			}
+			r, err := protocol.ResolveModelRanked(asked, hi.Models, u, hi.ModelProviders, fs.failed, fs.succeeded)
 			if err != nil {
 				return "", err.Error(), true
 			}
