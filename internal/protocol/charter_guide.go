@@ -102,13 +102,7 @@ func CharterWarnings(c Charter) []string {
 		warnings = append(warnings, "purpose exceeds 160 characters: the owner reads it on the Graph card")
 	}
 	for _, field := range []struct{ name, value string }{{"accepts", c.Accepts}, {"refuses", c.Refuses}, {"escalate", c.Escalate}} {
-		items := strings.FieldsFunc(field.value, func(r rune) bool { return r == ';' || r == '\n' })
-		var nonempty []string
-		for _, item := range items {
-			if item = strings.TrimSpace(item); item != "" {
-				nonempty = append(nonempty, item)
-			}
-		}
+		nonempty := SplitCharterList(field.value)
 		if len(nonempty) > 6 {
 			warnings = append(warnings, field.name+" has more than 6 items: use short categories so the agent can scan them")
 		}

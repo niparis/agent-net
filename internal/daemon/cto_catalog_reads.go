@@ -635,13 +635,7 @@ func ctoCatalogCharter(c *protocol.Charter) map[string]any {
 		}
 	}
 	for key, value := range map[string]string{"accepts": c.Accepts, "refuses": c.Refuses} {
-		var items []string
-		for _, item := range strings.Split(value, ";") {
-			if item = strings.TrimSpace(item); item != "" {
-				items = append(items, item)
-			}
-		}
-		if len(items) > 0 {
+		if items := protocol.SplitCharterList(value); len(items) > 0 {
 			out[key] = items
 		}
 	}

@@ -76,7 +76,7 @@ func TestEffectiveCharterLevelsAndSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Purpose != "Team purpose" || c.Escalate != "ask the team lead" || c.Rules != "global taste" || c.Accepts != "fixes" || c.Refuses != "secrets\ndelete backups\nproduction" {
+	if c.Purpose != "Team purpose" || c.Escalate != "ask the team lead" || c.Rules != "global taste" || c.Accepts != "fixes" || c.Refuses != "secrets; delete backups; production" {
 		t.Fatalf("effective %+v", c)
 	}
 	b, _ := json.Marshal(c)

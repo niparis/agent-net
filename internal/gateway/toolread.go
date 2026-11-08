@@ -325,17 +325,7 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 }
 
 func charterList(value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	items := strings.Split(value, ";")
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if item = strings.TrimSpace(item); item != "" {
-			out = append(out, item)
-		}
-	}
-	return out
+	return protocol.SplitCharterList(value)
 }
 
 // FindSessions answers agent_sessions_find.

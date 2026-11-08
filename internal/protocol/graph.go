@@ -128,6 +128,23 @@ func ParseMaturity(value string) (level, text string, err error) {
 	return level, text, nil
 }
 
+// SplitCharterList splits a list-type charter value (accepts, refuses or
+// escalate) into items on semicolons and newlines. It trims each item and drops
+// empty ones, so every reader sees the same items.
+func SplitCharterList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	items := strings.FieldsFunc(value, func(r rune) bool { return r == ';' || r == '\n' })
+	var out []string
+	for _, item := range items {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 // CleanCharterValue removes control characters other than newlines, then validates the value.
 func CleanCharterValue(attr, value string) (string, error) {
 	if _, ok := CharterGuideFor(attr); !ok {
