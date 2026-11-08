@@ -95,7 +95,7 @@ func (s *Store) writeTeamTx(q protocol.TeamWrite, actor string, dryRun bool) err
 		return tx.Commit()
 	} else {
 		if !validGraphName(q.ID) {
-			return reject("invalid Team ID")
+			return reject("invalid Team ID; team_write takes team_id, or use graph_change team_charter for a charter attribute")
 		}
 		switch q.Action {
 		case "create":
@@ -189,7 +189,7 @@ func (s *Store) writeTeamTx(q protocol.TeamWrite, actor string, dryRun bool) err
 				_, err = tx.Exec(`UPDATE teams SET active=0,updated_at=? WHERE id=?`, now, q.ID)
 			}
 		default:
-			return reject("unknown Team action")
+			return reject("unknown Team action %q; use action charter with attr and value for a charter attribute, or graph_change team_charter", q.Action)
 		}
 		if err == nil {
 			var t protocol.Team

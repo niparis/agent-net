@@ -64,6 +64,9 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 	if concrete == "" {
 		return fmt.Errorf("unknown %s action %q; example: %s", tool, action, actionExample(tool))
 	}
+	if concrete == "node_settings_set" && ctoTeamSettingsTarget(tool, action, args) {
+		concrete = "team_settings_set"
+	}
 	fields := ctoConcreteTools[concrete].fields
 	allowed := map[string]bool{selector: true}
 	for name := range fields {
@@ -103,6 +106,16 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+// ctoTeamSettingsTarget reports whether settings_set names a Team ref.
+func ctoTeamSettingsTarget(tool, action string, args map[string]any) bool {
+	if tool != "graph_change" || action != "settings_set" {
+		return false
+	}
+	ref, _ := args["ref"].(map[string]any)
+	kind, _ := ref["kind"].(string)
+	return kind == "team"
 }
 
 func stringValue(v any) string { s, _ := v.(string); return s }

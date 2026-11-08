@@ -56,6 +56,37 @@ func settingsChangesField() ctoField {
 
 var ctoNodeSettings = []string{"tests_before_merge", "merge_authority", "worker_sandbox", "judge_consumers", "deploy_rule", "autonomy", "loop_every", "loop_prompt", "loop_mode", "loop_plan", "work_mode"}
 
+// ctoGraphSettings are the settings graph_change settings_set accepts. asks_to
+// is a Team setting and has no node form.
+var ctoGraphSettings = append(append([]string{}, ctoNodeSettings...), "asks_to")
+
+// ctoTeamSettings are the settings settings_set accepts for a Team target:
+// asks_to and every node setting that is also a charter attribute at Team level.
+var ctoTeamSettings = func() []string {
+	out := []string{"asks_to"}
+	for _, setting := range ctoNodeSettings {
+		if protocol.CharterAttributeAtLevel("team", setting) {
+			out = append(out, setting)
+		}
+	}
+	return out
+}()
+
+// CTOTeamSettings returns the Team settings that settings_set accepts.
+func CTOTeamSettings() []string {
+	return append([]string(nil), ctoTeamSettings...)
+}
+
+// IsCTOTeamSetting reports whether settings_set accepts name for a Team target.
+func IsCTOTeamSetting(name string) bool {
+	for _, setting := range ctoTeamSettings {
+		if setting == name {
+			return true
+		}
+	}
+	return false
+}
+
 // ctoRoutingField is the field that selects the concrete operation of a merged
 // tool. The daemon keeps the authoritative action table.
 var ctoRoutingField = map[string]string{
@@ -94,7 +125,7 @@ var ctoTools = map[string]ctoToolDef{
 			"team":    {typ: "string", desc: "Team name or ID."},
 			"purpose": {typ: "string", desc: "Team purpose."},
 			"node":    {typ: "string", desc: "Node."},
-			"attr":    {typ: "string", desc: "Attribute. asks_to (team_charter only): owner or lead.", enum: ctoGraphAttrs},
+			"attr":    {typ: "string", desc: "Attribute. asks_to: owner or lead; work_mode: workers_code or on_request.", enum: ctoGraphAttrs},
 			"level":   {typ: "string", desc: "Charter level; defaults to repo or ref kind.", enum: []string{"global", "team", "repo", "agent"}},
 			"value":   {typ: "string", desc: "Value; empty clears."},
 			"name":    {typ: "string", desc: "Display name."},
@@ -104,7 +135,7 @@ var ctoTools = map[string]ctoToolDef{
 			"kind":    {typ: "string", desc: "Dependency, deploy or delivery owner edge.", enum: ctoEdgeKinds},
 			"rule":    {typ: "string", desc: "Deliver, own, hold, refuse.", enum: []string{"normal", "auto", "ask", "never"}},
 			"id":      {typ: "integer", desc: "History ID; omit for latest."},
-			"setting": {typ: "string", desc: "Node setting.", enum: ctoNodeSettings},
+			"setting": {typ: "string", desc: "Node setting, or team asks_to or work_mode.", enum: ctoGraphSettings},
 		},
 	},
 	"session_change": {
@@ -361,7 +392,7 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 		prop := map[string]any{"type": f.typ}
 		if f.typ == "graph_ref" || f.typ == "graph_endpoint" {
 			ref := map[string]any{"type": "object", "properties": map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"repo", "agent", "special"}}, "id": map[string]any{"type": "string", "minLength": 1}}, "required": []string{"kind", "id"}, "additionalProperties": false}
-			if name == "agent_graph_read" || name == "graph_change" || name == "lead_set" {
+			if name == "agent_graph_read" || name == "graph_change" || name == "lead_set" || name == "team_settings_set" {
 				ref["properties"].(map[string]any)["kind"].(map[string]any)["enum"] = []string{"repo", "agent", "team", "special"}
 			}
 			if k == "lead" && (name == "lead_set" || name == "graph_change") {

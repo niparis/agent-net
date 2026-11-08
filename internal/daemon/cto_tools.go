@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolcatalog"
 	"net/url"
@@ -466,7 +467,22 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, tooOldGateway(err)
 		}
 		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, nil
-	case "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove":
+	case "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "team_settings_set":
+		if name == "team_settings_set" {
+			var p struct {
+				Ref     protocol.GraphRef `json:"ref"`
+				Setting string            `json:"setting"`
+				Value   string            `json:"value"`
+			}
+			if json.Unmarshal(raw, &p) != nil || p.Ref.Kind != "team" || strings.TrimSpace(p.Ref.ID) == "" || strings.TrimSpace(p.Setting) == "" {
+				return nil, errors.New("team settings_set needs ref {kind:team,id}, setting and value")
+			}
+			if !mcpserver.IsCTOTeamSetting(p.Setting) {
+				return nil, fmt.Errorf("team settings_set does not accept %q; use %s", p.Setting, strings.Join(mcpserver.CTOTeamSettings(), " or "))
+			}
+			raw, _ = json.Marshal(map[string]string{"team": p.Ref.ID, "attr": p.Setting, "value": p.Value})
+			name = "team_charter"
+		}
 		tw, err := d.resolveTeamWrite(ctx, name, raw)
 		if err != nil {
 			return nil, err

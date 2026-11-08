@@ -244,6 +244,14 @@ func ctoConcreteCall(name string, raw json.RawMessage) (string, json.RawMessage,
 	if !ok {
 		return "", nil, "", fmt.Errorf("unknown %s %q", field, action)
 	}
+	if concrete == "node_settings_set" {
+		var ref struct {
+			Kind string `json:"kind"`
+		}
+		if value, ok := fields["ref"]; ok && json.Unmarshal(value, &ref) == nil && ref.Kind == "team" {
+			concrete = "team_settings_set"
+		}
+	}
 	if name == "session_change" && action == "trust" && fields["session_id"] == nil && (fields["project"] != nil || fields["path"] != nil) {
 		// A folder, not a session: Claude Code trust for a project or path.
 		concrete = "folder_trust"

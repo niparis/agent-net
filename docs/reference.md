@@ -493,8 +493,9 @@ The retained references include `projects`, `sessions`, `profiles`,
 No ownership, edge, delivery, charter or session is silently moved or deleted.
 
 `graph_change` with `action: charter_set` takes the charter attributes described below, plus an optional `level` (`global`, `team`, `repo`, `agent`). `node` identifies the scope; a global write has no scope. A typed `ref` may select a team, repo or agent instead. An empty value clears the local override.
-`action: team_charter` takes `team`, `attr` and `value` for inherited Team fields.
+`action: team_charter` takes `team`, `attr` and `value` for inherited Team fields. `work_mode` takes `workers_code` or `on_request`; `asks_to` takes `owner` or `lead`.
 Node settings use `action: settings_set` with `node`, `setting` and `value`.
+Team settings use `action: settings_set` with `ref` `{"kind":"team","id":"<team name or id>"}`, `setting` and `value`. A Team setting is `asks_to` (`owner` or `lead`) or `work_mode` (`workers_code` or `on_request`); an empty value clears it. Any other setting for a Team is refused with the valid names.
 The tool schemas describe the other fields and fixed values.
 
 `cto_ui_show` with `tab` switches every open local TUI to `sessions`,
@@ -2558,7 +2559,7 @@ details are advisory; the existing 2 KiB limit applies to each written value.
 | `rules` | Any level | Free text for taste and house rules. Code does not interpret it. Inherited items from all levels are joined, each once. |
 | `work_mode` | Any level | `workers_code` or `on_request` (the default). See below. |
 
-**Work mode.** `work_mode` says who writes code in a session ([decision 0098](decisions/0098-work-mode.md)). With `on_request` (also what an unset value means), a session hands a task to a worker only when the owner asks. With `workers_code`, the session designs, architects and reviews, and agent-net workers write all code, with no owner ask per task. It is a charter attribute, so it inherits global -> Team -> Repo -> Agent and the nearest set value wins; the charter `sources` say which level set it. Setting it adds no limit and no gate. The owner sets it on the charter form of any card (Team, Repo or Agent) and the CTO sets it without a proposal with `charter_set` (any level) or `node_settings_set {node, setting: "work_mode", value}` (the repo level; an empty value clears it). The per-turn charter context prints one line only when the effective mode is `workers_code`, for example `Work mode: workers write all code (team forge). Design and review; start agent-net workers for code; no owner ask needed.`; a session in the default mode gets no extra line. The Graph card shows a `work_mode` row after the rules, with the level that set it (`default` when none did). `agent_graph_read` returns it as `charter.work_mode` and `agent_session_get` returns it as `charter.work_mode` too; `charter.sources.work_mode` names the level.
+**Work mode.** `work_mode` says who writes code in a session ([decision 0098](decisions/0098-work-mode.md)). With `on_request` (also what an unset value means), a session hands a task to a worker only when the owner asks. With `workers_code`, the session designs, architects and reviews, and agent-net workers write all code, with no owner ask per task. It is a charter attribute, so it inherits global -> Team -> Repo -> Agent and the nearest set value wins; the charter `sources` say which level set it. Setting it adds no limit and no gate. The owner sets it on the charter form of any card (Team, Repo or Agent) and the CTO sets it without a proposal with `charter_set` (any level), `node_settings_set {node, setting: "work_mode", value}` (the repo level), or `settings_set {ref: {kind: "team", id: "<team>"}, setting: "work_mode", value}` (the team level; an empty value clears it). The per-turn charter context prints one line only when the effective mode is `workers_code`, for example `Work mode: workers write all code (team forge). Design and review; start agent-net workers for code; no owner ask needed.`; a session in the default mode gets no extra line. The Graph card shows a `work_mode` row after the rules, with the level that set it (`default` when none did). `agent_graph_read` returns it as `charter.work_mode` and `agent_session_get` returns it as `charter.work_mode` too; `charter.sources.work_mode` names the level.
 
 Inheritance is global -> Team -> Repo -> Agent. Each level stores only its overrides.
 Every field takes the nearest set value except refuses and rules, which are the union of all levels.
@@ -3227,7 +3228,8 @@ or authority over members. Settings and request rules do not inherit. Leads
 can redirect messages from outside the crew, as described below.
 
 The owner operator methods are `team_write` and `team_history`. `team_write`
-takes `action` (`create`, `rename`, `archive`, `membership`, `mode`, `held_back` or `asks_to`) and `team_id`.
+takes `action` (`create`, `rename`, `archive`, `membership`, `mode`, `held_back`, `asks_to` or `charter`) and `team_id`.
+`charter` takes `attr` and `value` for an inherited Team field, the same shape as `team_charter`; the CTO normally uses `graph_change` `team_charter` or `settings_set` with a Team `ref` instead.
 Create takes `name`, optional `purpose` and optional typed `owner` Agent ref.
 Rename takes `name` and `expect_name`. Membership takes a typed `member` ref
 and `expect_team` (the old Team ID, empty when unassigned); an empty `team_id`
@@ -3239,7 +3241,7 @@ ownership can also be changed with `lead_set`; undo is not available.
 Read Teams with `agent_graph_read` using `typed: true` or a `ref` with
 `kind: team`. Typed reads include archived Teams with their `active` state,
 direct owner references and `member_of` edges. Legacy reads exclude Teams and
-membership. The CTO can read and change Teams through `graph_change` and `settings_change` area `operator`, method `team_write`, including authority modes and held back text. Graph-backed changes offer history undo.
+membership. The CTO can read and change Teams through `graph_change` and `settings_change` area `operator`, method `team_write`, including authority modes and held back text. For `asks_to` and `work_mode` the CTO uses `graph_change` `team_charter`, or `settings_set` with a Team `ref`. Graph-backed changes offer history undo.
 
 **Questions go to the lead** ([decision 0100](decisions/0100-team-questions-go-to-the-lead.md)). A Team has the setting `asks_to`: `owner` (the default) or `lead`. The owner sets it in the Teams list with `o` (`u` undoes it); `team_write` takes `action: asks_to` and `asks_to`. The CTO sets it with `graph_change` `team_charter`, `attr: asks_to`, `value: owner` or `lead` (empty means `owner`), with no proposal; it is recorded in the graph history and `undo` restores it. The Team node and `agent_graph_read` show `asks_to`. When a session in a Team with `asks_to=lead` calls `agent_owner_ask` (any kind), the gateway does not put the ask in front of the owner:
 
