@@ -431,6 +431,8 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 		p.CTOProposal = true
 		loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
 		p.HerdrSocket, p.HerdrPaneID = loc.socket, loc.pane
+		// The CTO asked for this start, so the CTO is told if it fails later.
+		ctx = context.WithValue(ctx, startRequesterKey{}, d.ctoSessionID())
 		return d.sessionStart(ctx, p)
 	}
 	if name == "message" {

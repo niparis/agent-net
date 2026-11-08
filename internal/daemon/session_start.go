@@ -35,6 +35,14 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	if len(p.FirstMessage) > protocol.MaxBodyBytes {
 		return protocol.StartedSession{}, errors.New("first_message is too long")
 	}
+	if p.MCPServers != "" {
+		if p.MCPServers != protocol.MCPApprove && p.MCPServers != protocol.MCPDisable {
+			return protocol.StartedSession{}, fmt.Errorf("mcp_servers must be %q or %q", protocol.MCPApprove, protocol.MCPDisable)
+		}
+		if p.Harness != "claude" {
+			return protocol.StartedSession{}, errors.New("mcp_servers applies to Claude Code sessions only")
+		}
+	}
 	target, err := d.sessionStartMachine(ctx, p)
 	if err != nil {
 		return protocol.StartedSession{}, err
@@ -250,7 +258,18 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 				StartedAt: time.Now().Unix()}, nil
 		}
 	}
-	r := protocol.StartedSession{AgentID: p.AgentID, Background: p.CTOProposal && p.Harness == "claude", ID: startRef, LimitReserved: reserved, Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
+	// The choice for the .mcp.json servers is stored in the launch folder before
+	// Claude Code starts, so its first run does not stop on the approval prompt.
+	var mcpChoice *protocol.MCPChoiceResult
+	if p.Harness == "claude" && p.MCPServers != "" {
+		res, err := claudeMCPChoose(sessionPath, p.MCPServers)
+		if err != nil {
+			return protocol.StartedSession{}, fmt.Errorf("cannot record the MCP server choice: %w", err)
+		}
+		mcpChoice = &res
+	}
+	requester, _ := ctx.Value(startRequesterKey{}).(string)
+	r := protocol.StartedSession{MCPChoice: mcpChoice, Requester: requester, AgentID: p.AgentID, Background: p.CTOProposal && p.Harness == "claude", ID: startRef, LimitReserved: reserved, Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
 	defer func() {
 		if startErr != nil || result.Status == "failed" {
 			d.failStartAgent(r)
@@ -371,6 +390,7 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 // An approved remote start must be opened even when no form is polling it.
 func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) {
 	loc, _ := approval.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
+	requester, _ := approval.Value(startRequesterKey{}).(string)
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
@@ -391,6 +411,7 @@ func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) 
 						d.notifyApprovedSessionStart(ctx, result)
 					} else if err == nil && result.Status == "failed" {
 						d.notifySessionStartFailed(result)
+						d.notifyRequesterStartFailed(requester, result)
 					}
 					return
 				}
@@ -596,6 +617,10 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		if err != nil {
 			r.Status = "failed"
 			r.Error = err.Error()
+			var blocked *claudeMCPApprovalError
+			if errors.As(err, &blocked) {
+				r.ErrorCode, r.JobID, r.JobAlive, r.MCPServers = protocol.StartErrorMCPApprovalNeeded, blocked.JobID, blocked.Alive, blocked.Servers
+			}
 			d.releaseRepoStart(r)
 			d.failStartAgent(r)
 		} else if r.Type == "merger" {
@@ -765,6 +790,35 @@ func (d *Daemon) startFailed(r protocol.StartedSession, notify bool) {
 	}
 	if notify {
 		d.notifySessionStartFailed(r)
+	}
+	d.notifyRequesterStartFailed(r.Requester, r)
+}
+
+// startRequesterKey carries the session that asked for a start (the CTO) to
+// the place where the start fails, which can be long after the call returned.
+type startRequesterKey struct{}
+
+// notifyRequesterStartFailed tells the session that asked for a start that it
+// failed, with the reason code and the words. The start call returned
+// "starting" long before, so a message is the only way the caller learns of it.
+func (d *Daemon) notifyRequesterStartFailed(requester string, r protocol.StartedSession) {
+	owner := d.ownerSessionID()
+	if requester == "" || owner == "" || requester == owner {
+		return
+	}
+	name := cleanLine(r.Project)
+	if host := cleanLine(r.Hostname); host != "" {
+		name += " on " + host
+	}
+	body := "[agent-net] Session start failed: " + name + " (start " + r.ID + "). "
+	if r.ErrorCode != "" {
+		body += "Reason code: " + r.ErrorCode + ". "
+	}
+	body += firstNonEmpty(cleanLine(r.Error), "no reason was reported")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := d.send(ctx, protocol.MsgSend{Sender: owner, Recipient: requester, Type: protocol.TypeNotification, Body: body, IdempotencyKey: "start-failed-" + r.ID}); err != nil {
+		d.Logf("session start %s: the requester %s was not told of the failure: %v", r.ID, requester, err)
 	}
 }
 

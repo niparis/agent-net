@@ -110,6 +110,10 @@ type SessionStartRequest struct {
 	// TrustClaude is the owner's yes to trusting an existing folder for
 	// Claude Code. Without it an untrusted folder answers "needs_trust".
 	TrustClaude bool `json:"trust_claude,omitempty"`
+	// MCPServers is "approve" or "disable". Before a Claude session starts, the
+	// machine records that choice for the .mcp.json servers Claude Code would
+	// load in the session folder (decision 0096). Empty records nothing.
+	MCPServers string `json:"mcp_servers,omitempty"`
 	// CTOProposal asks the destination to enforce proposal-specific folder limits.
 	CTOProposal bool `json:"cto_proposal,omitempty"`
 	// HerdrSocket names the owner's local Herdr server, if the TUI is in one.
@@ -176,6 +180,19 @@ type StartedSession struct {
 	SessionID string     `json:"session_id,omitempty"`
 	Error     string     `json:"error,omitempty"`
 	EnterPlan *EnterPlan `json:"enter_plan,omitempty"`
+	// ErrorCode is a reason code a caller can act on, for example
+	// "mcp_approval_needed". Error holds the words.
+	ErrorCode string `json:"error_code,omitempty"`
+	// JobAlive says the Claude background job of a failed start still runs.
+	// JobID names it.
+	JobAlive bool `json:"job_alive,omitempty"`
+	// MCPServers lists the servers a failed start waits for approval of.
+	MCPServers []MCPServerInfo `json:"mcp_servers,omitempty"`
+	// MCPChoice is the choice recorded before this start, when one was asked for.
+	MCPChoice *MCPChoiceResult `json:"mcp_choice,omitempty"`
+	// Requester is the session that asked for the start and is told when it
+	// fails. It is local bookkeeping and is not sent anywhere.
+	Requester string `json:"-"`
 }
 
 // SessionResumeRequest identifies an offline conversation. NodeID is the

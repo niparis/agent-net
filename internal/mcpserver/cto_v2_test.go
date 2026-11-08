@@ -400,3 +400,25 @@ func TestCTOV2TrustNeedsASessionOrExactlyOneFolder(t *testing.T) {
 		}
 	}
 }
+
+func TestCTOSessionChangeMCPServersAction(t *testing.T) {
+	for _, ok := range []string{
+		`{"action":"mcp_servers","project":"finget","mcp_servers":"disable"}`,
+		`{"action":"mcp_servers","path":"~/code/x","node_id":"n1","mcp_servers":"approve"}`,
+		`{"action":"session_start","project":"finget","mcp_servers":"disable"}`,
+	} {
+		if err := ValidateCTOActionSchema("session_change", json.RawMessage(ok)); err != nil {
+			t.Errorf("%s: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{
+		`{"action":"mcp_servers","project":"finget"}`,
+		`{"action":"mcp_servers","mcp_servers":"approve"}`,
+		`{"action":"mcp_servers","project":"a","path":"/b","mcp_servers":"approve"}`,
+		`{"action":"mcp_servers","project":"finget","mcp_servers":"all"}`,
+	} {
+		if err := ValidateCTOActionSchema("session_change", json.RawMessage(bad)); err == nil {
+			t.Errorf("%s: want an error", bad)
+		}
+	}
+}
