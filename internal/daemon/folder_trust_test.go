@@ -30,7 +30,7 @@ func ctoTrustCall(t *testing.T, d *Daemon, args map[string]any) (any, error) {
 
 func lastInbox(t *testing.T, g *testGateway) protocol.InboxItem {
 	t.Helper()
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil || len(items) == 0 {
 		t.Fatalf("inbox %+v %v", items, err)
 	}
@@ -168,7 +168,7 @@ func TestCTOSessionStartWithTrustTrustsThenStarts(t *testing.T) {
 	if ok, err := claudetrust.Trusted(repo); err != nil || !ok {
 		t.Fatalf("trust:true did not trust the folder: %v %v", ok, err)
 	}
-	items, err := g.gw.Store().ListInbox()
+	items, err := inboxAndLog(g.gw.Store())
 	if err != nil {
 		t.Fatal(err)
 	}
