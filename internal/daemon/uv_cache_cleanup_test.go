@@ -33,6 +33,7 @@ func countLines(text, part string) int {
 }
 
 func TestUVCachePruneSuccessLogsBytes(t *testing.T) {
+	isolateDaemonCaches(t)
 	argsFile := filepath.Join(t.TempDir(), "args")
 	lockFile := filepath.Join(t.TempDir(), "lock-timeout")
 	binDir := fakeUV(t, `printf '%s\n' "$@" > "$UV_ARGS_FILE"
@@ -68,6 +69,7 @@ echo "Removed 2 files (1.5MiB)"`)
 }
 
 func TestUVCachePruneNoUnusedEntries(t *testing.T) {
+	isolateDaemonCaches(t)
 	binDir := fakeUV(t, `echo "Pruning cache at: /tmp/cache"
 echo "No unused entries found"`)
 	t.Setenv("PATH", binDir)
@@ -82,6 +84,7 @@ echo "No unused entries found"`)
 }
 
 func TestUVCachePruneLockTimeoutLoggedOnceADay(t *testing.T) {
+	isolateDaemonCaches(t)
 	binDir := fakeUV(t, `echo "Cache is currently in-use, waiting for other uv processes to finish (use --force to override)" >&2
 echo "error: Timeout (10s) when waiting for lock on /tmp/cache at /tmp/cache/.lock, is another uv process running?" >&2
 exit 2`)
@@ -106,6 +109,7 @@ exit 2`)
 }
 
 func TestUVCachePruneSkipsMissingUv(t *testing.T) {
+	isolateDaemonCaches(t)
 	t.Setenv("PATH", t.TempDir())
 
 	var logs bytes.Buffer

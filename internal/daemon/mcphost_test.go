@@ -144,6 +144,7 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("AGENT_NET_GOCACHE", filepath.Join(cacheTemp, "gocache"))
 	os.Setenv("AGENT_NET_GOTMPDIR", filepath.Join(cacheTemp, "gotmp"))
+	os.Setenv("UV_CACHE_DIR", filepath.Join(cacheTemp, "uv"))
 	code := m.Run()
 	os.RemoveAll(cacheTemp)
 	if leaked := reapFakes(fakes); len(leaked) > 0 && code == 0 {

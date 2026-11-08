@@ -57,6 +57,7 @@ func TestCacheSizeCapDefaults(t *testing.T) {
 }
 
 func TestCacheSizeCapTrimsOldestAcrossCaches(t *testing.T) {
+	isolateDaemonCaches(t)
 	now := time.Now()
 	workerDir := t.TempDir()
 	homeDir := t.TempDir()
@@ -105,6 +106,7 @@ func TestCacheSizeCapTrimsOldestAcrossCaches(t *testing.T) {
 }
 
 func TestCacheSizeCapLeavesCachesUnderTheCap(t *testing.T) {
+	isolateDaemonCaches(t)
 	now := time.Now()
 	workerDir := t.TempDir()
 	homeDir := t.TempDir()
@@ -127,6 +129,7 @@ func TestCacheSizeCapLeavesCachesUnderTheCap(t *testing.T) {
 }
 
 func TestCacheSizeCapSkipsOwnerFolderWithoutReadme(t *testing.T) {
+	isolateDaemonCaches(t)
 	now := time.Now()
 	workerDir := t.TempDir()
 	homeDir := t.TempDir()
@@ -149,6 +152,7 @@ func TestCacheSizeCapSkipsOwnerFolderWithoutReadme(t *testing.T) {
 }
 
 func TestDiskWarningTrimsCachesAndNamesTheirSizes(t *testing.T) {
+	isolateDaemonCaches(t)
 	now := time.Now()
 	workerDir := t.TempDir()
 	homeDir := t.TempDir()
@@ -206,6 +210,7 @@ func TestDiskWarningTrimsCachesAndNamesTheirSizes(t *testing.T) {
 }
 
 func TestWorkerCacheCleanupAgeRules(t *testing.T) {
+	isolateDaemonCaches(t)
 	cacheDir := t.TempDir()
 	tmpDir := t.TempDir()
 
@@ -325,6 +330,7 @@ func TestWorkerCacheCleanupAgeRules(t *testing.T) {
 }
 
 func TestWorkerCacheCleanupNeverTouchOwnerGoBuild(t *testing.T) {
+	isolateDaemonCaches(t)
 	homeDir := t.TempDir()
 	ownerCache := filepath.Join(homeDir, ".cache", "go-build")
 	if err := os.MkdirAll(filepath.Join(ownerCache, "01"), 0755); err != nil {
@@ -355,6 +361,7 @@ func TestWorkerCacheCleanupNeverTouchOwnerGoBuild(t *testing.T) {
 }
 
 func TestWorkerCacheCleanupOffSwitch(t *testing.T) {
+	isolateDaemonCaches(t)
 	cacheDir := t.TempDir()
 	tmpDir := t.TempDir()
 
@@ -464,6 +471,7 @@ func TestDiskWarningGatewayNoDeadlock(t *testing.T) {
 }
 
 func TestDiskWarningHysteresis(t *testing.T) {
+	isolateDaemonCaches(t)
 	var createdItems []map[string]any
 	var answeredItems []map[string]string
 	var simPct float64
@@ -577,6 +585,7 @@ func TestDiskWarningHysteresis(t *testing.T) {
 }
 
 func TestWorkerCacheTestDaemonIsolation(t *testing.T) {
+	isolateDaemonCaches(t)
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
