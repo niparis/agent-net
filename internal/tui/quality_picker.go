@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -10,18 +11,30 @@ import (
 )
 
 // The Quality subtab shows the worker picker exactly as it decides: one row
-// per model key, one column per D bucket that has tasks, and the cell scores
-// with their 90 percent intervals. The verdicts come from
-// protocol.PickerBucketVerdicts, the same function the picker runs, so the
-// screen cannot drift from the rule.
+// per registered worker profile, in the order of the Workers panel (benchmark
+// score, strongest first), one column per D bucket that has tasks, and the
+// cell scores. The verdicts come from protocol.PickerBucketVerdicts, the same
+// function the picker runs, so the screen cannot drift from the rule.
+//
+// A cell with no task shows a dot, not the score the picker would shrink to
+// the bucket mean. A cell with one or two tasks is dim. A cell with three or
+// more is plain, and green or red when its interval is above or below the
+// bucket mean. Cells past the profile's benchmark ceiling are underlined.
 
 // pickerCellWidth is the width of a bucket column: four characters for the
-// number and two for the separator or the benchmark ceiling mark.
+// number and two for the gap.
 const pickerCellWidth = 6
 
 // pickerModelWidth is the label column. It leaves room for the selected-row
-// mark and a model name with its effort at 80 columns.
-const pickerModelWidth = 26
+// mark and a profile name.
+const pickerModelWidth = 20
+
+// pickerScoreWidth is the benchmark score column.
+const pickerScoreWidth = 4
+
+// pickerLeftWidth is everything left of the first bucket column: the label,
+// a space, the benchmark score and a two column gap.
+func pickerLeftWidth(labelWidth int) int { return labelWidth + 1 + pickerScoreWidth + 2 }
 
 // qualityDetailsView is the whole subtab. It includes the title and the
 // subtabs line, and returns exactly h rows.
@@ -58,6 +71,7 @@ func (m Model) qualityDetailsView(w, h int) []string {
 func (m Model) qualityPickerBody(w, height int) []string {
 	selModel, selBucket := m.pickerSelected()
 	cols := m.pickerColumns()
+	rows, _, hidden := m.pickerRowSet()
 	if len(cols) == 0 {
 		body := []string{sDim.Render("no scored tasks yet: the table fills as workers finish")}
 		body = append(body, sDim.Render(pickerSettingsText(m.picker.Settings, w-4)))
@@ -68,20 +82,20 @@ func (m Model) qualityPickerBody(w, height int) []string {
 
 	labelWidth := pickerModelWidth
 	inner := max(w-4, 20)
-	if inner < labelWidth+2+3*pickerCellWidth {
+	if inner < pickerLeftWidth(labelWidth)+3*pickerCellWidth {
 		labelWidth = max(12, inner/3)
 	}
-	fit := max(1, (inner-labelWidth-2)/pickerCellWidth)
+	fit := max(1, (inner-pickerLeftWidth(labelWidth))/pickerCellWidth)
 	start, end := pickerColumnWindow(cols, selBucket, fit)
 
 	body := []string{
-		sDim.Render(clip(pickerGridHeader(labelWidth, m.picker.Buckets, cols[start:end], "MODEL", func(b protocol.PickerBucketRow) string {
+		sDim.Render(clip(pickerGridHeader(labelWidth, "AA", m.picker.Buckets, cols[start:end], "PROFILE", func(b protocol.PickerBucketRow) string {
 			return fmt.Sprintf("%.2f", b.Lo)
 		}), inner)),
-		sDim.Render(clip(pickerGridHeader(labelWidth, m.picker.Buckets, cols[start:end], "mean", func(b protocol.PickerBucketRow) string {
+		sDim.Render(clip(pickerGridHeader(labelWidth, "", m.picker.Buckets, cols[start:end], "bucket mean", func(b protocol.PickerBucketRow) string {
 			return fmt.Sprintf("%.2f", b.Mean)
 		}), inner)),
-		sDim.Render(clip(pickerGridHeader(labelWidth, m.picker.Buckets, cols[start:end], "n", func(b protocol.PickerBucketRow) string {
+		sDim.Render(clip(pickerGridHeader(labelWidth, "", m.picker.Buckets, cols[start:end], "tasks", func(b protocol.PickerBucketRow) string {
 			return fmt.Sprintf("n%d", b.N)
 		}), inner)),
 	}
@@ -93,18 +107,27 @@ func (m Model) qualityPickerBody(w, height int) []string {
 	if m.pickerErr != "" {
 		fixed++
 	}
+	if hidden > 0 {
+		fixed++
+	}
 	room := max(height-len(body)-fixed, 1)
-	scrolling := len(m.picker.Models) > room-1
+	scrolling := len(rows) > room-1
 	if scrolling {
 		room--
 	}
-	bench := m.pickerBenchmarks()
-	rowStart, rowEnd := pickerRowWindow(len(m.picker.Models), selModel, max(room, 1))
+	rowStart, rowEnd := pickerRowWindow(len(rows), selModel, max(room, 1))
 	for i := rowStart; i < rowEnd; i++ {
-		body = append(body, m.pickerModelLine(i, selModel, labelWidth, cols[start:end], inner, bench))
+		body = append(body, m.pickerModelLine(rows[i], i == selModel, labelWidth, cols[start:end], inner))
 	}
 	if scrolling {
-		body = append(body, sDim.Render(clip(fmt.Sprintf("models %d-%d of %d · up/down moves", rowStart+1, rowEnd, len(m.picker.Models)), inner)))
+		body = append(body, sDim.Render(clip(fmt.Sprintf("profiles %d-%d of %d · up/down moves", rowStart+1, rowEnd, len(rows)), inner)))
+	}
+	if hidden > 0 {
+		note := fmt.Sprintf("%d older model keys hidden · o to show", hidden)
+		if m.pickerShowOlder {
+			note = fmt.Sprintf("%d older model keys shown, dim · o to hide", hidden)
+		}
+		body = append(body, sDim.Render(clip(note, inner)))
 	}
 
 	body = append(body, section("Selected cell", inner))
@@ -119,11 +142,13 @@ func (m Model) qualityPickerBody(w, height int) []string {
 	return body
 }
 
-// pickerGridHeader is one header row: the label and one value per visible
-// bucket.
-func pickerGridHeader(labelWidth int, buckets []protocol.PickerBucketRow, cols []int, label string, value func(protocol.PickerBucketRow) string) string {
+// pickerGridHeader is one header row: the label, the benchmark score column
+// and one value per visible bucket.
+func pickerGridHeader(labelWidth int, aa string, buckets []protocol.PickerBucketRow, cols []int, label string, value func(protocol.PickerBucketRow) string) string {
 	var b strings.Builder
 	b.WriteString(cell(label, labelWidth))
+	b.WriteString(" ")
+	b.WriteString(cellR(aa, pickerScoreWidth))
 	b.WriteString("  ")
 	for _, col := range cols {
 		if col < 0 || col >= len(buckets) {
@@ -135,104 +160,207 @@ func pickerGridHeader(labelWidth int, buckets []protocol.PickerBucketRow, cols [
 	return b.String()
 }
 
-// pickerModelLine draws one model row. The selected row has a marker, and a
-// │ before the visible bucket after the last bucket the profile's benchmark
-// ceiling covers. A ceiling past the last visible bucket draws nothing: a
-// marker at the window edge would read as a ceiling there.
-func (m Model) pickerModelLine(index, selected, labelWidth int, cols []int, width int, bench map[string]pickerBench) string {
-	row := m.picker.Models[index]
-	b := bench[row.Key]
+// pickerRow is one line of the grid: a registered worker profile, or an older
+// model key that matches no profile.
+type pickerRow struct {
+	// name is the profile name, or the model key for an older row.
+	name string
+	key  string
+	// score is the Artificial Analysis score the profile is sorted by.
+	score  float64
+	scored bool
+	// ceiling is the top of the benchmark level; ceilinged is false when the
+	// profile has no benchmark score.
+	ceiling   float64
+	ceilinged bool
+	older     bool
+	cells     []protocol.PickerCell
+}
+
+// pickerModelNorm is the form in which a model key and a profile key are
+// compared: the same model with or without its provider prefix is one model.
+func pickerModelNorm(key string) string {
+	return strings.ToLower(protocol.PickerModelDisplay(key))
+}
+
+// pickerRowSet is the rows of the grid, the number of profile rows (they come
+// first) and the number of older model keys that match no profile. The older
+// rows are included only when the owner asked for them. The profile order is
+// the Workers panel's: score first, strongest first, unscored last, then name.
+// Two history keys that are one profile (the same model with and without its
+// provider prefix) are merged: per bucket the cell with more tasks wins, as the
+// cells cannot be added up from their summaries.
+func (m Model) pickerRowSet() ([]pickerRow, int, int) {
+	profiles := append([]protocol.PickerProfileRow(nil), m.picker.Profiles...)
+	sort.SliceStable(profiles, func(i, j int) bool {
+		a, b := profiles[i], profiles[j]
+		if a.Scored != b.Scored {
+			return a.Scored
+		}
+		if a.Scored && a.Score != b.Score {
+			return a.Score > b.Score
+		}
+		return a.Name < b.Name
+	})
+	bench := m.pickerBenchmarks()
+	var rows []pickerRow
+	byNorm := map[string]int{}
+	for _, p := range profiles {
+		if p.Key == "" {
+			continue
+		}
+		norm := pickerModelNorm(p.Key)
+		if _, dup := byNorm[norm]; dup {
+			continue
+		}
+		byNorm[norm] = len(rows)
+		b := bench[p.Key]
+		rows = append(rows, pickerRow{name: p.Name, key: p.Key, score: b.score, scored: b.scored, ceiling: b.ceiling, ceilinged: b.scored})
+	}
+	nProfiles := len(rows)
+	older := map[string]*pickerRow{}
+	var olderOrder []string
+	for _, model := range m.picker.Models {
+		norm := pickerModelNorm(model.Key)
+		if i, ok := byNorm[norm]; ok {
+			rows[i].cells = mergePickerCells(rows[i].cells, model.Cells)
+			continue
+		}
+		if r, ok := older[norm]; ok {
+			r.cells = mergePickerCells(r.cells, model.Cells)
+			continue
+		}
+		older[norm] = &pickerRow{name: model.Display, key: model.Key, older: true, cells: mergePickerCells(nil, model.Cells)}
+		olderOrder = append(olderOrder, norm)
+	}
+	sort.Strings(olderOrder)
+	if m.pickerShowOlder {
+		for _, norm := range olderOrder {
+			rows = append(rows, *older[norm])
+		}
+	}
+	return rows, nProfiles, len(olderOrder)
+}
+
+// mergePickerCells keeps, per bucket, the cell with more tasks.
+func mergePickerCells(a, b []protocol.PickerCell) []protocol.PickerCell {
+	out := make([]protocol.PickerCell, max(len(a), len(b)))
+	for i := range out {
+		var ca, cb protocol.PickerCell
+		if i < len(a) {
+			ca = a[i]
+		}
+		if i < len(b) {
+			cb = b[i]
+		}
+		if cb.N > ca.N {
+			ca = cb
+		}
+		out[i] = ca
+	}
+	return out
+}
+
+func (r pickerRow) cellAt(bucket int) protocol.PickerCell {
+	if bucket >= 0 && bucket < len(r.cells) {
+		return r.cells[bucket]
+	}
+	return protocol.PickerCell{}
+}
+
+// pickerModelLine draws one row: the selected mark, the profile name, its
+// benchmark score and one fixed width cell per visible bucket. Cells past the
+// profile's benchmark ceiling are underlined.
+func (m Model) pickerModelLine(row pickerRow, selected bool, labelWidth int, cols []int, width int) string {
 	mark := "  "
-	if index == selected {
+	if selected {
 		mark = "▸ "
 	}
-	name := pickerModelLabel(row.Display, labelWidth-2)
-	line := cell(mark+name, labelWidth) + "  "
-	lastCovered := -1
-	if b.scored {
-		for i, col := range cols {
-			if col >= 0 && col < len(m.picker.Buckets) && m.picker.Buckets[col].Lo < b.ceiling {
-				lastCovered = i
-			}
-		}
+	score := "-"
+	if row.scored {
+		score = fmt.Sprintf("%g", row.score)
 	}
-	// Only a boundary between two shown buckets is drawn. When the ceiling is
-	// at or past the last shown bucket, no mark means it covers them all; when
-	// it is before the first, there is nothing to mark in this window.
-	markCeiling := lastCovered >= 0 && lastCovered < len(cols)-1
-	for i, col := range cols {
-		c := protocol.PickerCell{}
-		if col >= 0 && col < len(row.Cells) {
-			c = row.Cells[col]
-		}
-		mean := 0.0
+	label := cell(mark+pickerModelLabel(sanitize(row.name), labelWidth-2), labelWidth) + " " + cellR(score, pickerScoreWidth)
+	if row.older {
+		label = sDim.Render(label)
+	}
+	line := label + "  "
+	for _, col := range cols {
+		c := row.cellAt(col)
+		mean, lo := 0.0, 0.0
 		if col >= 0 && col < len(m.picker.Buckets) {
-			mean = m.picker.Buckets[col].Mean
+			mean, lo = m.picker.Buckets[col].Mean, m.picker.Buckets[col].Lo
 		}
-		line += pickerCellStyle(c, mean, index == selected && col == m.pickerSelBucket).Render(fmt.Sprintf("%4.2f", c.Score))
-		if markCeiling && i == lastCovered {
-			line += " │"
-		} else {
-			line += "  "
+		past := row.ceilinged && lo >= row.ceiling
+		text := cellR("·", 4)
+		if c.N > 0 {
+			text = fmt.Sprintf("%4.2f", c.Score)
 		}
+		line += pickerCellStyle(c, mean, selected && col == m.pickerSelBucket, past, row.older).Render(text) + "  "
 	}
 	return clip(line, width)
 }
 
-// pickerCellStyle shades a cell by how certain it is and colours its score
-// against the bucket mean. A wide interval or fewer than three tasks is dim;
-// a narrow one is bold. A cell whose whole interval is above the mean is
-// green; one whose whole interval is below it is red. The selected cell is
-// underlined as well, so the owner can see which column the detail describes.
-func pickerCellStyle(c protocol.PickerCell, mean float64, selected bool) lipgloss.Style {
+// pickerCellStyle shades a cell by how much record it has. No task is dim (the
+// text is a dot). One or two tasks is dim. Three or more is plain, and green or
+// red when the whole interval is above or below the bucket mean. A cell past
+// the benchmark ceiling is underlined. The selected cell has the selection colours, so the
+// owner can see which column the detail describes. A cell of an older model
+// key is dim and has no colour.
+func pickerCellStyle(c protocol.PickerCell, mean float64, selected, pastCeiling, older bool) lipgloss.Style {
 	style := lipgloss.NewStyle()
 	switch {
+	case c.N < 1 || c.N < protocol.PickerMinCellTasks || older:
+		style = style.Faint(true)
 	case c.Lo > mean:
 		style = style.Foreground(roleGood)
 	case c.Hi < mean:
 		style = style.Foreground(roleError)
 	}
+	if pastCeiling {
+		style = style.Underline(true)
+	}
 	if selected {
-		return style.Bold(true).Underline(true)
+		style = style.Foreground(roleBase).Background(roleAccent).Faint(false)
 	}
-	if c.Hi-c.Lo > .35 || c.N < protocol.PickerMinCellTasks {
-		return style.Faint(true)
-	}
-	return style.Bold(true)
+	return style
 }
 
 // pickerDetailLines is the selected-cell pane: the cell, the bucket, the best
-// model there and the verdict of the rule.
+// profile there and the verdict of the rule.
 func (m Model) pickerDetailLines(selModel, selBucket, width int) []string {
-	if selModel < 0 || selModel >= len(m.picker.Models) || selBucket < 0 || selBucket >= len(m.picker.Buckets) {
+	rows, nProfiles, _ := m.pickerRowSet()
+	if selModel < 0 || selModel >= len(rows) || selBucket < 0 || selBucket >= len(m.picker.Buckets) {
 		return []string{sDim.Render("no cell selected")}
 	}
-	row := m.picker.Models[selModel]
+	row := rows[selModel]
 	bucket := m.picker.Buckets[selBucket]
-	cell := protocol.PickerCell{}
-	if selBucket < len(row.Cells) {
-		cell = row.Cells[selBucket]
-	}
+	c := row.cellAt(selBucket)
 	_, verdicts, best := m.pickerVerdicts(selBucket)
-	verdict := protocol.PickerVerdict{}
-	if selModel < len(verdicts) {
-		verdict = verdicts[selModel]
+	title := sanitize(row.name)
+	if row.older {
+		title += " (older model key)"
 	}
-	lines := []string{
-		fmt.Sprintf("%s · bucket %.2f-%.2f · n%d", sanitize(row.Display), bucket.Lo, bucket.Hi, cell.N),
-		fmt.Sprintf("score %.2f [%.2f-%.2f] · mean %.2f", cell.Score, cell.Lo, cell.Hi, bucket.Mean),
-	}
-	if best >= 0 && best < len(m.picker.Models) {
-		bestRow := m.picker.Models[best]
-		bestCell := protocol.PickerCell{}
-		if selBucket < len(bestRow.Cells) {
-			bestCell = bestRow.Cells[selBucket]
-		}
-		lines = append(lines, fmt.Sprintf("best %s %.2f [%.2f-%.2f] n%d", sanitize(bestRow.Display), bestCell.Score, bestCell.Lo, bestCell.Hi, bestCell.N))
+	lines := []string{fmt.Sprintf("%s · bucket %.2f-%.2f · n%d", title, bucket.Lo, bucket.Hi, c.N)}
+	if c.N == 0 {
+		lines = append(lines, fmt.Sprintf("no task yet · bucket mean %.2f", bucket.Mean))
 	} else {
-		lines = append(lines, "best: no model has 3 tasks here")
+		lines = append(lines, fmt.Sprintf("score %.2f [%.2f-%.2f] · mean %.2f", c.Score, c.Lo, c.Hi, bucket.Mean))
 	}
-	lines = append(lines, "verdict: "+pickerVerdictText(verdict))
+	if best >= 0 && best < nProfiles && best < len(rows) {
+		bestCell := rows[best].cellAt(selBucket)
+		lines = append(lines, fmt.Sprintf("best %s %.2f [%.2f-%.2f] n%d", sanitize(rows[best].name), bestCell.Score, bestCell.Lo, bestCell.Hi, bestCell.N))
+	} else {
+		lines = append(lines, "best: no profile has 3 tasks here")
+	}
+	switch {
+	case row.older:
+		lines = append(lines, "verdict: none, this key matches no registered profile")
+	case selModel < len(verdicts):
+		lines = append(lines, "verdict: "+pickerVerdictText(verdicts[selModel]))
+	default:
+		lines = append(lines, "verdict: "+pickerVerdictText(protocol.PickerVerdict{}))
+	}
 	for i := range lines {
 		lines[i] = clip(lines[i], width)
 	}
@@ -282,24 +410,22 @@ func (m Model) pickerBenchmarks() map[string]pickerBench {
 	return out
 }
 
-// pickerFacts is the input of the protocol's cell verdict for one bucket.
+// pickerFacts is the input of the protocol's cell verdict for one bucket. Only
+// registered profiles are candidates, as in the picker: an older model key is
+// not, and showing or hiding it does not change any verdict.
 func (m Model) pickerFacts(bucket int) []protocol.PickerCandidateFacts {
-	bench := m.pickerBenchmarks()
-	facts := make([]protocol.PickerCandidateFacts, len(m.picker.Models))
-	for i, row := range m.picker.Models {
-		var cell protocol.PickerCell
-		if bucket >= 0 && bucket < len(row.Cells) {
-			cell = row.Cells[bucket]
-		}
-		b := bench[row.Key]
-		facts[i] = protocol.PickerCandidateFacts{Key: row.Key, Cell: cell, Scored: b.scored, Benchmark: b.score, Ceiling: b.ceiling}
+	m.pickerShowOlder = false
+	rows, _, _ := m.pickerRowSet()
+	facts := make([]protocol.PickerCandidateFacts, len(rows))
+	for i, row := range rows {
+		facts[i] = protocol.PickerCandidateFacts{Key: row.key, Cell: row.cellAt(bucket), Scored: row.ceilinged, Benchmark: row.score, Ceiling: row.ceiling}
 	}
 	return facts
 }
 
-// pickerVerdicts runs the same protocol function the picker runs. The second
-// result is the index of the best model in the bucket, or -1 when no model has
-// three tasks there.
+// pickerVerdicts runs the same protocol function the picker runs, over the
+// profile rows. The third result is the index of the best profile in the
+// bucket, or -1 when no profile has three tasks there.
 func (m Model) pickerVerdicts(bucket int) ([]protocol.PickerCandidateFacts, []protocol.PickerVerdict, int) {
 	if bucket < 0 || bucket >= len(m.picker.Buckets) {
 		return nil, nil, -1
@@ -321,11 +447,17 @@ func (m Model) pickerColumns() []int {
 	return cols
 }
 
+// pickerRowCount is the number of rows the grid shows.
+func (m Model) pickerRowCount() int {
+	rows, _, _ := m.pickerRowSet()
+	return len(rows)
+}
+
 // pickerSelected clamps the selected cell to a model and a bucket that exist.
 func (m Model) pickerSelected() (int, int) {
 	row := 0
-	if len(m.picker.Models) > 0 {
-		row = min(max(m.pickerSelModel, 0), len(m.picker.Models)-1)
+	if n := m.pickerRowCount(); n > 0 {
+		row = min(max(m.pickerSelModel, 0), n-1)
 	}
 	cols := m.pickerColumns()
 	if len(cols) == 0 {
@@ -353,6 +485,7 @@ func (m *Model) defaultPickerSelection() {
 		return
 	}
 	m.pickerSelBucket = cols[0]
+	m.pickerSelModel = 0
 	if _, _, best := m.pickerVerdicts(cols[0]); best >= 0 {
 		m.pickerSelModel = best
 	}
@@ -363,11 +496,12 @@ func (m *Model) clampPickerSelection() {
 }
 
 func (m *Model) movePickerModel(delta int) {
-	if len(m.picker.Models) == 0 {
+	n := m.pickerRowCount()
+	if n == 0 {
 		return
 	}
 	row, _ := m.pickerSelected()
-	m.pickerSelModel = min(max(row+delta, 0), len(m.picker.Models)-1)
+	m.pickerSelModel = min(max(row+delta, 0), n-1)
 }
 
 func (m *Model) movePickerBucket(delta int) {
@@ -474,8 +608,8 @@ func pickerSettingsText(s protocol.PickerSettings, width int) string {
 
 func pickerLegend() []string {
 	return []string{
-		"bright = narrow interval · dim = wide or n<3",
-		"│ = ceiling ends before the next bucket · none = outside the shown buckets",
-		"green = interval above the bucket mean · red = below",
+		"AA = benchmark score · plain = 3+ tasks · dim = 1-2 · dot = no task yet",
+		"green/red = interval above/below bucket mean · underline = past ceiling",
+		"o = older model keys · R = read again",
 	}
 }

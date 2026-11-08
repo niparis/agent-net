@@ -108,6 +108,7 @@ type Model struct {
 	pickerWanted      bool
 	pickerSelModel    int
 	pickerSelBucket   int
+	pickerShowOlder   bool
 	messageShowEvents bool
 	hideWorkerThreads bool
 
@@ -1413,6 +1414,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.movePickerBucket(1)
 		case "previous bucket":
 			m.movePickerBucket(-1)
+		case "older":
+			m.pickerShowOlder = !m.pickerShowOlder
+			m.clampPickerSelection()
 		case "refresh":
 			m.pickerWanted = true
 			if !m.fetching {

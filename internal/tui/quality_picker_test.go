@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,8 @@ func TestQualityPickerVerdictsMatchProtocol(t *testing.T) {
 	if !reflect.DeepEqual(verdicts, want) || best != wantBest {
 		t.Fatalf("the screen's verdicts differ from protocol's:\n got %+v best %d\nwant %+v best %d", verdicts, best, want, wantBest)
 	}
-	if best < 0 || m.picker.Models[best].Key != "opencode-go/deepseek-v4.1-flash:high" {
+	rows, _, _ := m.pickerRowSet()
+	if best < 0 || rows[best].key != "opencode-go/deepseek-v4.1-flash:high" {
 		t.Fatalf("best = %d, want the deepseek cell with a record", best)
 	}
 
@@ -73,17 +75,17 @@ func TestQualityPickerVerdictsMatchProtocol(t *testing.T) {
 		"openai-codex/gpt-6.1-sol:low":         "verdict: chosen by benchmark (n<3)",
 		"anthropic/claude-opus-5-5":            "verdict: left out (overqualified)",
 	}
-	for i, row := range m.picker.Models {
+	for i, row := range rows {
 		m.pickerSelModel = i
 		body := ansi.Strip(strings.Join(m.qualityPickerBody(120, 30), "\n"))
-		if reason, ok := wantReason[row.Key]; ok && !strings.Contains(body, reason) {
-			t.Errorf("%s: missing %q in\n%s", row.Key, reason, body)
+		if reason, ok := wantReason[row.key]; ok && !strings.Contains(body, reason) {
+			t.Errorf("%s: missing %q in\n%s", row.key, reason, body)
 		}
 	}
 
 	// A bucket where sol's thin record is above its ceiling says so.
-	for i, row := range m.picker.Models {
-		if row.Key == "openai-codex/gpt-6.1-sol:low" {
+	for i, row := range rows {
+		if row.key == "openai-codex/gpt-6.1-sol:low" {
 			m.pickerSelModel = i
 		}
 	}
@@ -94,38 +96,49 @@ func TestQualityPickerVerdictsMatchProtocol(t *testing.T) {
 	}
 }
 
-// A benchmark ceiling past the last bucket on screen draws no marker: a mark
-// at the window edge reads as a ceiling there, or as a second panel border.
-// A ceiling that ends before a visible bucket still marks its cell.
-func TestQualityPickerCeilingPastTheWindowHasNoMark(t *testing.T) {
+// underlinedRunes counts the characters drawn with the underline attribute.
+func underlinedRunes(line string) int {
+	n := 0
+	for _, m := range regexp.MustCompile("\x1b\\[([0-9;]*)m").FindAllStringSubmatch(line, -1) {
+		for _, tok := range strings.Split(m[1], ";") {
+			if tok == "4" {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
+// Cells past a profile's benchmark ceiling are underlined, and nothing else
+// is: the old | mark between cells is gone, so every cell has the same width.
+func TestQualityPickerCeilingUnderlinesCellsPastIt(t *testing.T) {
 	for _, size := range [][2]int{{120, 34}, {80, 24}} {
 		m := newModel(size[0], size[1])
 		m.picker, m.pickerLoaded = pickerFixture(), true
 		m.defaultPickerSelection()
 		inner := max(size[0]-4, 20)
-		fit := max(1, (inner-pickerModelWidth-2)/pickerCellWidth)
+		fit := max(1, (inner-pickerLeftWidth(pickerModelWidth))/pickerCellWidth)
 		start, end := pickerColumnWindow(m.pickerColumns(), m.pickerSelBucket, fit)
 		cols := m.pickerColumns()[start:end]
-		lastLo := m.picker.Buckets[cols[len(cols)-1]].Lo
-		bench := m.pickerBenchmarks()
-		marked := map[string]bool{}
-		for i, row := range m.picker.Models {
-			line := ansi.Strip(m.pickerModelLine(i, -1, pickerModelWidth, cols, inner, bench))
-			b := bench[row.Key]
-			if !b.scored {
-				continue
+		rows, _, _ := m.pickerRowSet()
+		for _, row := range rows {
+			line := m.pickerModelLine(row, false, pickerModelWidth, cols, inner)
+			if strings.Contains(ansi.Strip(line), "│") {
+				t.Errorf("%dx%d: %s still has a ceiling mark: %q", size[0], size[1], row.name, ansi.Strip(line))
 			}
-			if b.ceiling > lastLo {
-				if strings.Contains(line, "│") {
-					t.Errorf("%dx%d: %s ceiling %.2f is past the window ending at %.2f but the row has a marker:\n%s",
-						size[0], size[1], row.Key, b.ceiling, lastLo, line)
+			if w := ansi.StringWidth(line); w != pickerLeftWidth(pickerModelWidth)+len(cols)*pickerCellWidth {
+				t.Errorf("%dx%d: %s is %d columns wide, want %d", size[0], size[1], row.name, w, pickerLeftWidth(pickerModelWidth)+len(cols)*pickerCellWidth)
+			}
+			past := 0
+			for _, col := range cols {
+				if m.picker.Buckets[col].Lo >= row.ceiling {
+					past++
 				}
-				continue
 			}
-			marked[row.Key] = strings.Contains(line, "│")
-		}
-		if !marked["openai-codex/gpt-6.1-sol:low"] {
-			t.Errorf("%dx%d: the ceiling inside the window is not marked:\n%s", size[0], size[1], strings.Join(m.qualityPickerBody(size[0], 30), "\n"))
+			if got := underlinedRunes(line) / 4; got != past {
+				t.Errorf("%dx%d: %s has %d underlined cells, want %d (ceiling %.2f): %q", size[0], size[1], row.name, got, past, row.ceiling, line)
+			}
 		}
 	}
 }
@@ -150,29 +163,164 @@ func TestQualityPickerKeepsTheSelectedBucketVisibleAt80(t *testing.T) {
 }
 
 func TestQualityPickerCellShading(t *testing.T) {
-	wide := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .2, Hi: .8, N: 10}, .5, false)
-	if !wide.GetFaint() {
-		t.Error("a wide interval is not dim")
+	none := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .5, Hi: .5}, .5, false, false, false)
+	if !none.GetFaint() {
+		t.Error("a cell with no task is not dim")
 	}
-	narrow := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .45, Hi: .55, N: 10}, .5, false)
-	if !narrow.GetBold() || narrow.GetFaint() {
-		t.Error("a narrow interval is not bright")
+	thin := pickerCellStyle(protocol.PickerCell{Score: .9, Lo: .8, Hi: .95, N: 2}, .5, false, false, false)
+	if !thin.GetFaint() || thin.GetForeground() == roleGood {
+		t.Error("a cell with fewer than three tasks must be dim and not green")
 	}
-	thin := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .45, Hi: .55, N: 2}, .5, false)
-	if !thin.GetFaint() {
-		t.Error("a cell with fewer than three tasks is not dim")
+	plain := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .2, Hi: .8, N: 3}, .5, false, false, false)
+	if plain.GetFaint() || plain.GetBold() {
+		t.Error("a cell with three tasks is not plain weight, even with a wide interval")
 	}
-	above := pickerCellStyle(protocol.PickerCell{Score: .8, Lo: .7, Hi: .9, N: 10}, .5, false)
+	above := pickerCellStyle(protocol.PickerCell{Score: .8, Lo: .7, Hi: .9, N: 10}, .5, false, false, false)
 	if above.GetForeground() != roleGood {
 		t.Error("a cell whose interval is above the mean is not green")
 	}
-	below := pickerCellStyle(protocol.PickerCell{Score: .2, Lo: .1, Hi: .3, N: 10}, .5, false)
+	below := pickerCellStyle(protocol.PickerCell{Score: .2, Lo: .1, Hi: .3, N: 10}, .5, false, false, false)
 	if below.GetForeground() != roleError {
 		t.Error("a cell whose interval is below the mean is not red")
 	}
-	selected := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .2, Hi: .8, N: 10}, .5, true)
-	if !selected.GetUnderline() {
-		t.Error("the selected cell is not underlined")
+	past := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .45, Hi: .55, N: 10}, .5, false, true, false)
+	if !past.GetUnderline() {
+		t.Error("a cell past the benchmark ceiling is not underlined")
+	}
+	selected := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .2, Hi: .8, N: 10}, .5, true, false, false)
+	if selected.GetBackground() != roleAccent || selected.GetFaint() {
+		t.Error("the selected cell does not have the selection colours")
+	}
+	older := pickerCellStyle(protocol.PickerCell{Score: .8, Lo: .7, Hi: .9, N: 10}, .5, false, false, true)
+	if !older.GetFaint() || older.GetForeground() == roleGood {
+		t.Error("a cell of an older model key must be dim and not coloured")
+	}
+}
+
+// ownerShapedPicker is the table the owner saw on 2026-11-08: profiles whose
+// benchmark order is not alphabetical, one model under two keys, two stale
+// keys, and mostly empty cells.
+func ownerShapedPicker() protocol.PickerAnalysis {
+	var tasks []protocol.PickerTask
+	add := func(key string, bucket, n int, score float64) {
+		for i := 0; i < n; i++ {
+			tasks = append(tasks, protocol.PickerTask{Key: key, D: 1 + (float64(bucket)+.5)/3, Score: score - .02*float64(i)})
+		}
+	}
+	for b := 0; b < 4; b++ {
+		add("claude-sonnet-5-5", b, 6, .85-.04*float64(b))
+		add("opencode-go/deepseek-v4.1-flash:high", b, 4, .8-.03*float64(b))
+	}
+	add("openai-codex/gpt-6.1-sol:medium", 1, 4, .8)
+	add("gpt-6.1-sol:medium", 2, 5, .7) // the same model under a bare key
+	add("claude-opus-5-5-high", 0, 3, .9)
+	add("claude-sonnet-5-5-medium", 3, 3, .6)
+	add("zeta-old", 4, 1, .5)
+	table := protocol.BuildPickerTable(tasks, protocol.DefaultPickerSettings())
+	a := table.Analysis("claude-sonnet-5-5", "opencode-go/deepseek-v4.1-flash:high", "openai-codex/gpt-6.1-sol:medium", "anthropic/claude-opus-5-5:high")
+	a.Profiles = []protocol.PickerProfileRow{
+		{Name: "sonnet claude", Key: "claude-sonnet-5-5", Score: 44, Level: "hard", Ceiling: 4, Scored: true},
+		{Name: "deepseek opencode", Key: "opencode-go/deepseek-v4.1-flash:high", Score: 52, Level: "very_complex", Ceiling: 5, Scored: true},
+		{Name: "sol codex", Key: "openai-codex/gpt-6.1-sol:medium", Score: 33, Level: "simple", Ceiling: 2.25, Scored: true},
+		{Name: "opus claude", Key: "anthropic/claude-opus-5-5:high", Score: 57, Level: "very_complex", Ceiling: 5, Scored: true},
+		{Name: "aardvark unscored", Key: "aardvark", Scored: false},
+	}
+	return a
+}
+
+func TestQualityPickerRowsAreProfilesInBenchmarkOrder(t *testing.T) {
+	m := newModel(120, 34)
+	m.picker, m.pickerLoaded = ownerShapedPicker(), true
+	rows, profiles, hidden := m.pickerRowSet()
+	var names []string
+	for _, r := range rows {
+		names = append(names, r.name)
+	}
+	want := []string{"opus claude", "deepseek opencode", "sonnet claude", "sol codex", "aardvark unscored"}
+	if !reflect.DeepEqual(names, want) || profiles != 5 {
+		t.Fatalf("rows = %v (%d profiles), want %v: highest score first, unscored last", names, profiles, want)
+	}
+	if hidden != 3 {
+		t.Fatalf("hidden older keys = %d, want 3 (opus-5-5-high, sonnet-5-5-medium, zeta-old)", hidden)
+	}
+	seen := map[string]bool{}
+	for _, r := range rows {
+		if seen[pickerModelNorm(r.key)] {
+			t.Fatalf("model %s appears twice", r.key)
+		}
+		seen[pickerModelNorm(r.key)] = true
+	}
+	// The two sol keys are one row, and it keeps the cell with more tasks.
+	var sol pickerRow
+	for _, r := range rows {
+		if r.name == "sol codex" {
+			sol = r
+		}
+	}
+	if sol.cellAt(1).N != 4 || sol.cellAt(2).N != 5 {
+		t.Fatalf("the merged sol row lost a cell: bucket 1 n%d, bucket 2 n%d", sol.cellAt(1).N, sol.cellAt(2).N)
+	}
+	// With the toggle the older keys follow, in the same list.
+	m.pickerShowOlder = true
+	rows, _, _ = m.pickerRowSet()
+	if len(rows) != 8 || !rows[5].older || rows[4].older {
+		t.Fatalf("older rows are not after the profiles: %d rows", len(rows))
+	}
+	// Showing them changes no verdict of a profile.
+	_, shown, _ := m.pickerVerdicts(1)
+	m.pickerShowOlder = false
+	_, hiddenV, _ := m.pickerVerdicts(1)
+	if !reflect.DeepEqual(shown, hiddenV) {
+		t.Fatalf("the older toggle changed the verdicts:\n%+v\n%+v", shown, hiddenV)
+	}
+}
+
+func TestQualityPickerEmptyCellsShowADotNotANumber(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.qualityDetail = true
+	m.picker, m.pickerLoaded = ownerShapedPicker(), true
+	m.defaultPickerSelection()
+	body := ansi.Strip(strings.Join(m.qualityPickerBody(120, 30), "\n"))
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(strings.TrimLeft(line, "│ ▸"), "sol codex") {
+			continue
+		}
+		// sol has tasks in two of the shown buckets and a dot everywhere else.
+		if got := strings.Count(line, "·"); got < 3 {
+			t.Errorf("the sol row shows too few dots: %q", line)
+		}
+		if nums := strings.Count(line, "0."); nums != 2 {
+			t.Errorf("the sol row shows %d decimals, want 2 scores: %q", nums, line)
+		}
+	}
+	if !strings.Contains(body, "3 older model keys hidden · o to show") {
+		t.Errorf("the hidden-keys line is missing:\n%s", body)
+	}
+	if strings.Contains(body, "zeta-old") || strings.Contains(body, "claude-opus-5-5-high") {
+		t.Errorf("an older key shows without the toggle:\n%s", body)
+	}
+	m = keys(m, "o")
+	body = ansi.Strip(strings.Join(m.qualityPickerBody(120, 30), "\n"))
+	if !strings.Contains(body, "zeta-old") || !strings.Contains(body, "3 older model keys shown, dim · o to hide") {
+		t.Errorf("o did not show the older keys:\n%s", body)
+	}
+	m = keys(m, "o")
+	if m.pickerShowOlder {
+		t.Error("a second o did not hide them")
+	}
+}
+
+func TestQualityPickerOwnerShapedGoldens(t *testing.T) {
+	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+		m := newModel(size[0], size[1])
+		m.tab = quotasTab
+		m.qualityDetail = true
+		m.picker, m.pickerLoaded = ownerShapedPicker(), true
+		m.defaultPickerSelection()
+		golden(t, fmt.Sprintf("quality_picker_owner_%dx%d", size[0], size[1]), m.testView())
+		m.pickerShowOlder = true
+		golden(t, fmt.Sprintf("quality_picker_owner_older_%dx%d", size[0], size[1]), m.testView())
 	}
 }
 

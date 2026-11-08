@@ -550,7 +550,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"5 · 100% done",
 		"unused",
 		"T:trivial S:simple N:normal H:hard V:very complex",
-		"T terra high · S terra high · N terra high",
+		"T terra codex · S terra codex · N terra codex",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("missing %q in:\n%s", want, plain)
@@ -579,7 +579,7 @@ func TestWorkersPanelShowsGatewayPreview(t *testing.T) {
 		"trivial": "terra high", "simple": "terra high", "normal": "terra high", "hard": "luna xhigh", "very_complex": "terra high",
 	}
 	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	for _, want := range []string{"terra codex", "luna codex", "▸", "T terra high", "H luna xhigh"} {
+	for _, want := range []string{"terra codex", "luna codex", "▸", "T terra codex", "H luna codex"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q in:\n%s", want, view)
 		}

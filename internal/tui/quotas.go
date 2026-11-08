@@ -275,7 +275,7 @@ func (m Model) quotaWarning() (string, bool) {
 }
 
 type quotaModel struct {
-	name, harness, model, defaultEffort           string
+	name, harness, model, defaultEffort, effort   string
 	notOn                                         []string
 	score                                         protocol.ModelScore
 	used, done, failedRuns, infraRuns             int
@@ -295,7 +295,7 @@ func (m Model) quotaModels() []quotaModel {
 		if p.Effort != "" {
 			model += ":" + p.Effort
 		}
-		row := quotaModel{name: p.Name, harness: p.Harness, model: model, failed: true, stale: p.Available != nil && !*p.Available}
+		row := quotaModel{name: p.Name, harness: p.Harness, model: model, effort: p.Effort, failed: true, stale: p.Available != nil && !*p.Available}
 		trackedModels := map[string]bool{model: true}
 		missingMachines := map[string]bool{}
 		for _, machine := range p.MachineAvailability {
@@ -458,6 +458,33 @@ func pickerPreviewCell(preview map[string]string, level string, r quotaModel) st
 	return sDim.Render(cell("·", 3))
 }
 
+// pickProfileName is the name of the profile a preview pick stands for, as the
+// table shows it. The gateway names a pick by model family and effort, or by
+// the raw model id when it has no family for it. When no row matches, the
+// gateway's own text is all there is.
+func pickProfileName(rows []quotaModel, pick string) string {
+	for _, r := range rows {
+		if pickerPreviewName(r.model) == pick {
+			return r.name
+		}
+	}
+	return pick
+}
+
+// workerScoreEffort is the effort the score of a row stands for, or "" when
+// the score is for an effort the profile does not run. A profile with no effort
+// that finds its only benchmark at "max" runs the harness default, so "max"
+// would be wrong to show.
+func workerScoreEffort(r quotaModel) string {
+	if r.score.Effort == "" {
+		return ""
+	}
+	if strings.EqualFold(r.score.Effort, firstNonEmpty(r.effort, r.defaultEffort)) {
+		return r.score.Effort
+	}
+	return ""
+}
+
 func workerPreviewHeader() string {
 	var cells []string
 	for _, letter := range []string{"T", "S", "N", "H", "V"} {
@@ -495,18 +522,51 @@ func (m Model) quotaModelsView(w int) []string {
 			runningCount++
 		}
 	}
-	nameWidth, harnessWidth, modelWidth, scoreWidth := 18, 8, 25, 12
+	harnessWidth, modelWidth, scoreWidth := 8, 25, 12
 	if w < 110 {
-		nameWidth, harnessWidth, modelWidth, scoreWidth = 15, 8, 17, 0
+		modelWidth, scoreWidth = 17, 0
 	}
 	previewWidth := len(workerPreviewHeader())
-	usedWidth := max(w-4-(nameWidth+1+harnessWidth+1+modelWidth+1+scoreWidth+1+previewWidth+2), 0)
+	// A protected provider is marked with plain text in its own column. An emoji
+	// in a table row is drawn at another width by some terminals, which moves
+	// the cells after it.
+	lockWidth := 0
+	for _, r := range rows {
+		if r.protected {
+			lockWidth = 4
+		}
+	}
+	// The NAME column fits the longest profile name, within what is left once
+	// the other columns and a USED column (on wide screens) have their room.
+	longest := 15
+	if w >= 110 {
+		longest = 18
+	}
+	for _, r := range rows {
+		longest = max(longest, ansi.StringWidth(sanitize(r.name)))
+	}
+	fixed := 1 + harnessWidth + 1 + modelWidth + 1 + previewWidth + 1
+	if lockWidth > 0 {
+		fixed += 1 + lockWidth
+	}
+	if scoreWidth > 0 {
+		fixed += 1 + scoreWidth
+	}
+	usedMin := 0
+	if w >= 110 {
+		usedMin = 2 + 10
+	}
+	nameWidth := min(longest, 32, max(w-4-fixed-usedMin, 10))
+	usedWidth := max(w-4-(nameWidth+fixed+2), 0)
 	showUsed := w >= 110 && usedWidth >= 10
-	header := fmt.Sprintf("%-*s %-*s %-*s", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL")
+	header := cell("NAME", nameWidth) + " " + cell("HARNESS", harnessWidth) + " " + cell("MODEL", modelWidth)
 	if scoreWidth > 0 {
 		header += " " + cell("SCORE", scoreWidth)
 	}
 	header += " " + workerPreviewHeader()
+	if lockWidth > 0 {
+		header += " " + cell("PROT", lockWidth)
+	}
 	if showUsed {
 		header += "  " + cell("USED", usedWidth)
 	}
@@ -525,18 +585,22 @@ func (m Model) quotaModelsView(w int) []string {
 		if r.scored && !r.stale {
 			score = fmt.Sprintf("%g", r.score.Score)
 		}
-		if r.score.Effort != "" && !r.stale {
-			score += "/" + r.score.Effort
+		if effort := workerScoreEffort(r); effort != "" && !r.stale {
+			score += "/" + effort
 		}
 		model := shortWorkerModel(r.model, modelWidth)
+		lock := ""
 		if r.protected {
-			r.name = "🔒 " + r.name
+			lock = "prot"
 		}
 		line := fmt.Sprintf("%s %s %s", cell(sanitize(r.name), nameWidth), cell(r.harness, harnessWidth), cell(sanitize(model), modelWidth))
 		if scoreWidth > 0 {
 			line += " " + cell(score, scoreWidth)
 		}
 		line += " " + strings.Join(cellsOut, " ")
+		if lockWidth > 0 {
+			line += " " + cell(lock, lockWidth)
+		}
 		if showUsed {
 			usage := workerUsage(r)
 			if ansi.StringWidth(usage) > usedWidth {
@@ -585,7 +649,7 @@ func (m Model) quotaModelsView(w int) []string {
 		var picks []string
 		for _, level := range levels {
 			if name := preview[level]; name != "" {
-				picks = append(picks, strings.ToUpper(level[:1])+" "+name)
+				picks = append(picks, strings.ToUpper(level[:1])+" "+sanitize(pickProfileName(rows, name)))
 			}
 		}
 		if len(picks) > 0 {
