@@ -23,10 +23,11 @@ The rules now are:
   autonomy is `wake`. Ready step tasks keep their own rule, unchanged.
 - A session that is not asked gets no attempt and no error. Its sender's
   receipt says `queued; <name> is offline and wake is off for this agent`.
-- The interactive Claude wake refuses a record only when it is live, names
-  another session, has no kind, or is a background record that did not finish
-  or is in another folder. A finished background record in the session's folder
-  does not refuse it.
+- An autonomy wake of a Claude session refuses it only when a record of the
+  session is live, names another session, has no kind (unless the session is
+  recorded as background), or is a background record that did not finish or is
+  in another folder. A finished background record in the session's folder does
+  not refuse it. This holds whatever the session's mode.
 - A wake that the machine answered with an error is recorded with its reason.
   A gateway restart does not retry it. The next message asks again, after the
   10-minute limit. Each sender with a queued message gets one agent-net notice

@@ -39,3 +39,20 @@ func TestMessageWakesClaudeOfUnknownModeWithAutonomy(t *testing.T) {
 		t.Fatal("session was not resumed")
 	}
 }
+
+// A background session that autonomy wakes is resumed in the background when
+// its records are clear, even when Claude also keeps an interactive record of
+// the same session. The retired check alone would refuse two records.
+func TestMessageWakesBackgroundSessionWithAutonomyAndTwoRecords(t *testing.T) {
+	r := newClaudeWakeRig(t, protocol.ModeBackground, protocol.AutonomyWake, []map[string]any{
+		{"id": wakeNative[:8], "kind": "interactive", "state": "done"},
+		{"id": wakeNative[:8], "kind": "background", "state": "done"},
+	})
+	r.send(t, "wake the background session with two records")
+	eventually(t, "background session with two clear records receives message", func() bool {
+		if lines := r.g.logs.lines("session wake", r.id); len(lines) > 0 {
+			t.Fatalf("wake failed: %v", lines)
+		}
+		return len(r.c.adapter.deliveredTo(r.id)) == 1
+	})
+}

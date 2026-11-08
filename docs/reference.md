@@ -2774,13 +2774,14 @@ the sender gets one notice with the same reason. What each harness does:
   folder, through the same launcher as the background wake. The session is not
   running, so it has no `done` record to check. The machine refuses when
   `claude agents --json --all` lists a matching record that is running, names
-  another session, has no kind, or is a background record that is not `done`
-  or is in another folder (a stopped one, for example). A finished background
+  another session, has no kind (unless the session is recorded as background),
+  or is a background record that is not `done` or is in another folder (a
+  stopped one, for example). A finished background
   run of the same session in the session's folder does not refuse it: Claude
-  keeps that record after the run. A session whose
-  mode is not known is resumed the same way, as long as its records allow it.
-  A copy with a new native ID keeps the agent-net session ID and its queued
-  messages, as above.
+  keeps that record after the run. The same rule holds for a session whose mode
+  is background or not known: every record of the session must allow the
+  resume, whatever the mode. A copy with a new native ID keeps the agent-net
+  session ID and its queued messages, as above.
 - Codex: `thread/resume` on the shared Codex app server, with the session's
   folder. Codex lists the thread as loaded, the daemon registers it under the
   same session ID, and the message is queued with `thread/queue/add`, which
