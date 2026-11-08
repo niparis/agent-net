@@ -27,7 +27,7 @@ func (s *Store) WorkerProfiles() ([]protocol.WorkerProfile, error) {
 	return profiles, err
 }
 
-func withWorkerProfileAvailability(profiles []protocol.WorkerProfile, nodes []protocol.NodeView) []protocol.WorkerProfile {
+func withWorkerProfileAvailability(profiles []protocol.WorkerProfile, nodes []protocol.NodeView, scores []protocol.ModelScore) []protocol.WorkerProfile {
 	out := append([]protocol.WorkerProfile(nil), profiles...)
 	for i := range out {
 		var checked []string
@@ -103,6 +103,11 @@ func withWorkerProfileAvailability(profiles []protocol.WorkerProfile, nodes []pr
 				out[i].Closest = closest
 			}
 		}
+		if score, ok := protocol.LookupModelScoreWithDefaultEffort(out[i].Selection().LegacyModel(), out[i].Effort, scores); ok {
+			value := score.Score
+			out[i].Score = &value
+			out[i].ScoreSource = score.Source
+		}
 	}
 	return out
 }
@@ -175,7 +180,11 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 		if err != nil {
 			return nil, err
 		}
-		return withWorkerProfileAvailability(profiles, nodes), nil
+		scores, err := g.store.scores()
+		if err != nil {
+			return nil, err
+		}
+		return withWorkerProfileAvailability(profiles, nodes, scores), nil
 	}
 	agent, ok, err := g.store.agentBase(p.Requester)
 	if err != nil {

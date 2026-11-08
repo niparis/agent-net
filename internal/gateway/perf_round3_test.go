@@ -92,7 +92,7 @@ func TestWorkerProfileListSameAsNodesInfo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := withWorkerProfileAvailability(profiles, info.Nodes)
+	want := withWorkerProfileAvailability(profiles, info.Nodes, nil)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("worker.profile.list changed:\n got %+v\nwant %+v", got, want)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -228,6 +229,93 @@ func LookupModelScoreWithDefaultEffort(model, defaultEffort string, overrides []
 		}
 	}
 	return ModelScore{}, false
+}
+
+// ModelEffortScore is one effort's capability score for a model, as the read
+// tools show it.
+type ModelEffortScore struct {
+	Effort string  `json:"effort"`
+	Score  float64 `json:"score"`
+	Source string  `json:"source"`
+}
+
+// scoreEffortOrder gives the effort list a stable, readable order.
+var scoreEffortOrder = map[string]int{"minimal": 0, "low": 1, "medium": 2, "high": 3, "xhigh": 4, "max": 5, "ultra": 6}
+
+// scoreMatchesModel is the name match of LookupModelScoreWithDefaultEffort
+// without the effort filter: it says whether an entry describes this model.
+func scoreMatchesModel(s ModelScore, model string) bool {
+	match := strings.TrimSpace(s.Match)
+	if match == "" || model == "" {
+		return false
+	}
+	base, _ := splitScoreLevel(model)
+	part := model
+	if i := strings.LastIndexByte(part, '/'); i >= 0 {
+		part = part[i+1:]
+	}
+	switch {
+	case strings.EqualFold(match, model), strings.EqualFold(match, part), strings.EqualFold(match, base):
+		return true
+	}
+	if scoreName(model) == "" {
+		return false
+	}
+	return scoreName(match) == scoreName(model) || looseScoreMatch(scoreName(match), scoreName(model))
+}
+
+// ModelScoresFor returns every score that applies to model, one per effort.
+// Owner overrides win over embedded entries, using the same name match as
+// LookupModelScoreWithDefaultEffort. An override without an effort applies to
+// every effort, so it is the only entry for that model.
+func ModelScoresFor(model string, overrides []ModelScore) []ModelEffortScore {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil
+	}
+	var matched []ModelScore
+	for _, s := range overrides {
+		if scoreMatchesModel(s, model) {
+			matched = append(matched, s)
+		}
+	}
+	chosen := matched
+	coversAll := false
+	for _, s := range matched {
+		if strings.TrimSpace(s.Effort) == "" {
+			coversAll = true
+			break
+		}
+	}
+	if !coversAll {
+		covered := map[string]bool{}
+		for _, s := range matched {
+			covered[strings.ToLower(strings.TrimSpace(s.Effort))] = true
+		}
+		for _, s := range embeddedScoreTable() {
+			if scoreMatchesModel(s, model) && !covered[strings.ToLower(strings.TrimSpace(s.Effort))] {
+				chosen = append(chosen, s)
+			}
+		}
+	}
+	out := make([]ModelEffortScore, 0, len(chosen))
+	for _, s := range chosen {
+		out = append(out, ModelEffortScore{Effort: s.Effort, Score: s.Score, Source: s.Source})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, rj := scoreEffortOrder[strings.ToLower(out[i].Effort)], scoreEffortOrder[strings.ToLower(out[j].Effort)]
+		if out[i].Effort == "" {
+			ri = -1
+		}
+		if out[j].Effort == "" {
+			rj = -1
+		}
+		if ri != rj {
+			return ri < rj
+		}
+		return out[i].Effort < out[j].Effort
+	})
+	return out
 }
 
 // DifficultyMinimums are the default minimum capability scores.

@@ -17,6 +17,10 @@ type WorkerProfile struct {
 	Closest             []string                           `json:"closest,omitempty"`
 	MachinesChecked     []string                           `json:"machines_checked,omitempty"`
 	MachineAvailability []WorkerProfileMachineAvailability `json:"machine_availability,omitempty"`
+	// Score and ScoreSource are set by the profile list read when the profile's
+	// model and effort match a score. They are not stored with the profile.
+	Score       *float64 `json:"score,omitempty"`
+	ScoreSource string   `json:"score_source,omitempty"`
 }
 
 // WorkerProfileMachineAvailability describes how one online machine can run a

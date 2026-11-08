@@ -630,6 +630,10 @@ func (g *Gateway) MachineGet(p protocol.MachineGetRequest) (protocol.MachineGetR
 	}
 	switch category {
 	case "models":
+		scores, err := g.store.scores()
+		if err != nil {
+			return protocol.MachineGetResult{}, err
+		}
 		var rows []protocol.MachineModelRow
 		for _, h := range node.Harnesses {
 			if p.Harness != "" && !strings.EqualFold(h.Name, p.Harness) {
@@ -639,7 +643,7 @@ func (g *Gateway) MachineGet(p protocol.MachineGetRequest) (protocol.MachineGetR
 				if p.ModelFilter != "" && !strings.Contains(strings.ToLower(id), strings.ToLower(p.ModelFilter)) {
 					continue
 				}
-				rows = append(rows, protocol.MachineModelRow{Harness: h.Name, ID: id})
+				rows = append(rows, protocol.MachineModelRow{Harness: h.Name, ID: id, Scores: protocol.ModelScoresFor(id, scores)})
 			}
 		}
 		sort.SliceStable(rows, func(i, j int) bool {
