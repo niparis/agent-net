@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -45,7 +46,7 @@ echo "Removed 2 files (1.5MiB)"`)
 
 	var logs bytes.Buffer
 	d := &Daemon{log: log.New(&logs, "", 0)}
-	d.pruneUVCache(time.Now())
+	d.pruneUVCache(context.Background(), time.Now())
 
 	raw, err := os.ReadFile(argsFile)
 	if err != nil {
@@ -61,8 +62,22 @@ echo "Removed 2 files (1.5MiB)"`)
 	if string(lockTimeout) != "10" {
 		t.Fatalf("UV_LOCK_TIMEOUT = %q, want 10", lockTimeout)
 	}
-	if !strings.Contains(logs.String(), "uv cache prune: 1572864 bytes freed") {
-		t.Fatalf("log = %q, want the bytes freed", logs.String())
+	if !strings.Contains(logs.String(), "uv cache prune: Removed 2 files (1.5MiB)") {
+		t.Fatalf("log = %q, want uv's summary line as given", logs.String())
+	}
+}
+
+func TestUVCachePruneNoUnusedEntries(t *testing.T) {
+	binDir := fakeUV(t, `echo "Pruning cache at: /tmp/cache"
+echo "No unused entries found"`)
+	t.Setenv("PATH", binDir)
+	t.Setenv("UV_CACHE_DIR", t.TempDir())
+
+	var logs bytes.Buffer
+	d := &Daemon{log: log.New(&logs, "", 0)}
+	d.pruneUVCache(context.Background(), time.Now())
+	if !strings.Contains(logs.String(), "uv cache prune: No unused entries found") {
+		t.Fatalf("log = %q, want uv's summary line as given", logs.String())
 	}
 }
 
@@ -76,12 +91,12 @@ exit 2`)
 	var logs bytes.Buffer
 	d := &Daemon{log: log.New(&logs, "", 0)}
 	now := time.Now()
-	d.pruneUVCache(now)
-	d.pruneUVCache(now.Add(time.Hour))
+	d.pruneUVCache(context.Background(), now)
+	d.pruneUVCache(context.Background(), now.Add(time.Hour))
 	if got := countLines(logs.String(), "uv cache prune: lock timeout"); got != 1 {
 		t.Fatalf("lock timeout lines in one day = %d, want 1: %q", got, logs.String())
 	}
-	d.pruneUVCache(now.Add(25 * time.Hour))
+	d.pruneUVCache(context.Background(), now.Add(25*time.Hour))
 	if got := countLines(logs.String(), "uv cache prune: lock timeout"); got != 2 {
 		t.Fatalf("lock timeout lines after a day = %d, want 2: %q", got, logs.String())
 	}
@@ -95,7 +110,7 @@ func TestUVCachePruneSkipsMissingUv(t *testing.T) {
 
 	var logs bytes.Buffer
 	d := &Daemon{log: log.New(&logs, "", 0)}
-	d.pruneUVCache(time.Now())
+	d.pruneUVCache(context.Background(), time.Now())
 	if logs.Len() != 0 {
 		t.Fatalf("missing uv logged %q", logs.String())
 	}

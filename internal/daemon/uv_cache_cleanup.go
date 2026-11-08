@@ -1,27 +1,26 @@
 package daemon
 
 import (
+	"context"
 	"os"
 	"os/exec"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/settings"
 )
 
-// uvLockTimeout is the wait uv gets for another uv process, in seconds.
-const uvLockTimeout = "10"
-
-// uvBytesRE reads the removal summary of uv cache prune, such as
-// "Removed 2 files (1.5MiB)" or "(at least 1.0GiB)".
-var uvBytesRE = regexp.MustCompile(`\((?:(?:at least )?)([0-9]+(?:\.[0-9]+)?)(B|KiB|MiB|GiB|TiB|PiB|EiB)\)`)
+const (
+	// uvLockTimeout is the wait uv gets for another uv process, in seconds.
+	uvLockTimeout = "10"
+	// uvPruneTimeout bounds one uv cache prune; uv is this daemon's child.
+	uvPruneTimeout = 30 * time.Second
+)
 
 // pruneUVCache runs `uv cache prune` when uv is on PATH and the setting is on.
-// uv ends its own lock wait through UV_LOCK_TIMEOUT; the daemon never kills a
-// process and never uses --force or `uv cache clean`.
-func (d *Daemon) pruneUVCache(now time.Time) {
+// uv ends its own lock wait through UV_LOCK_TIMEOUT; the daemon never uses
+// --force or `uv cache clean`.
+func (d *Daemon) pruneUVCache(ctx context.Context, now time.Time) {
 	if !d.SettingsSnapshot().Bool("cleanup.uv_prune", settings.Where{}) {
 		return
 	}
@@ -29,7 +28,9 @@ func (d *Daemon) pruneUVCache(now time.Time) {
 	if err != nil {
 		return
 	}
-	cmd := exec.Command(bin, "cache", "prune")
+	ctx, cancel := context.WithTimeout(ctx, uvPruneTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "cache", "prune")
 	cmd.Env = workerEnv(os.Environ(), map[string]string{"UV_LOCK_TIMEOUT": uvLockTimeout, "LC_ALL": "C"})
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -41,11 +42,11 @@ func (d *Daemon) pruneUVCache(now time.Time) {
 	if d.log == nil {
 		return
 	}
-	if freed, ok := parseUVFreedBytes(string(out)); ok {
-		d.Logf("uv cache prune: %d bytes freed", freed)
+	if line := uvSummaryLine(string(out)); line != "" {
+		d.Logf("uv cache prune: %s", line)
 		return
 	}
-	d.Logf("uv cache prune: done (uv reported no byte count)")
+	d.Logf("uv cache prune: done")
 }
 
 // shouldLogUVTimeout keeps a lock timeout to one log line a day.
@@ -60,32 +61,17 @@ func (d *Daemon) shouldLogUVTimeout(now time.Time) bool {
 }
 
 func uvLockTimedOut(out string) bool {
-	return strings.Contains(strings.ToLower(out), "when waiting for lock")
+	lower := strings.ToLower(out)
+	return strings.Contains(lower, "timeout") && strings.Contains(lower, "lock")
 }
 
-func parseUVFreedBytes(out string) (uint64, bool) {
-	m := uvBytesRE.FindStringSubmatch(out)
-	if m == nil {
-		return 0, false
+// uvSummaryLine returns the removal summary uv prints on success, as given.
+func uvSummaryLine(out string) string {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Removed ") || line == "No unused entries found" {
+			return line
+		}
 	}
-	value, err := strconv.ParseFloat(m[1], 64)
-	if err != nil {
-		return 0, false
-	}
-	mult := uint64(1)
-	switch m[2] {
-	case "KiB":
-		mult = 1 << 10
-	case "MiB":
-		mult = 1 << 20
-	case "GiB":
-		mult = 1 << 30
-	case "TiB":
-		mult = 1 << 40
-	case "PiB":
-		mult = 1 << 50
-	case "EiB":
-		mult = 1 << 60
-	}
-	return uint64(value * float64(mult)), true
+	return ""
 }

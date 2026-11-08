@@ -495,6 +495,6 @@ func (d *Daemon) workerCacheCleanupLoop(ctx context.Context) {
 	runEvery(ctx, first, every, func() {
 		now := time.Now()
 		d.cleanWorkerCachesAndDisk(ctx, now)
-		d.pruneUVCache(now)
+		d.pruneUVCache(ctx, now)
 	})
 }
