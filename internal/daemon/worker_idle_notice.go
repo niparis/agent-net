@@ -56,11 +56,13 @@ func (d *Daemon) noteCodexIdle(w *worker, report string) {
 
 // checkIdleNotice only acts on harnesses with a known end of turn. Codex
 // normally hands back automatically; it can remain idle if that send failed.
+// Claude reports the same idle status in its session file, and keeps it across
+// a daemon restart, so an adopted Claude worker gets the notice too.
 func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, delay time.Duration, stats workerStats) {
 	d.wmu.Lock()
 	harness, native := w.harness, w.nativeID
 	d.wmu.Unlock()
-	if harness != "opencode" && harness != "codex" && harness != "agy" {
+	if harness != "opencode" && harness != "codex" && harness != "agy" && harness != "claude" {
 		return
 	}
 	d.mu.Lock()
@@ -86,6 +88,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 	}
 	eligible := idle && !w.stopping && w.doneStatus == "" && w.taskMsg != "" &&
 		((harness == "opencode" && !w.turnActive && !w.turnAwaitingStart && len(w.turnQueue) == 0) ||
+			harness == "claude" ||
 			((harness == "codex" || harness == "agy") && w.idleNoticeReport != ""))
 	if !eligible {
 		d.wmu.Unlock()
@@ -106,7 +109,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 		return
 	}
 	w.idleNoticePending = true
-	generation, report, base, pass, version, identity, noticeKey := w.idleNoticeGeneration, w.idleNoticeReport, w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.idleNoticeKey
+	generation, report, base, pass, version, identity, noticeKey, cwd := w.idleNoticeGeneration, w.idleNoticeReport, w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.idleNoticeKey, w.path
 	noticeCtx, cancelNotice := context.WithCancel(ctx)
 	w.idleNoticeCancel = cancelNotice
 	d.wmu.Unlock()
@@ -116,6 +119,9 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 			readCtx, cancel := context.WithTimeout(noticeCtx, 3*time.Second)
 			report = d.openCodeLastAssistant(readCtx, base, pass, version, identity, native)
 			cancel()
+		}
+		if harness == "claude" {
+			report = d.claudeWorkerLastAssistant(native, cwd)
 		}
 		if strings.TrimSpace(report) == "" {
 			report = "(No assistant message was available.)"
