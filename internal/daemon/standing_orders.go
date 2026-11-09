@@ -21,6 +21,8 @@ func (d *Daemon) standingOrdersOp(ctx context.Context, q protocol.StandingOrders
 	var res protocol.StandingOrdersResult
 	var frame string
 	switch q.Action {
+	case "search", "history", "update":
+		frame = "standing." + q.Action
 	case protocol.StandingActionSave:
 		frame = "standing.save"
 		q.Source = source

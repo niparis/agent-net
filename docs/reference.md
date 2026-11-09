@@ -3486,3 +3486,18 @@ Gateway background runs use `event=slow loop=<name> ms=<duration>`; their
 ticker waits are excluded. Step-task dispatches are counted each minute.
 When the count exceeds 60, the gateway logs
 `event=step.dispatch_count level=debug count=<count>`.
+
+Standing orders live in the gateway's standing_orders table: id, text,
+saved_at, source, tags (a JSON list), pinned and updated_at. An external-content
+standing_orders_fts FTS5 index follows text and tags through triggers.
+standing_order_history records order_id, text, tags and changed_at before each
+update or removal. Search returns up to 20 matches, ranked by bm25, with a
+snippet; tag, source and saved_since narrow the results. The CTO tool accepts
+save, list, read, update, remove, search and history. Update accepts text, tags
+and pinned independently.
+
+At the start of each CTO conversation, orders enter the system prompt or
+precede the first owner message, depending on the harness. Up to 4096 bytes of
+order text load as before. Above that budget, pinned orders always load, then
+the newest orders that fit. Pins may exceed the budget. Omitted orders add:
+"N more standing orders: search them with cto_standing_orders search".
