@@ -2,12 +2,16 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
+	"math"
 	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 // The Quality subtab shows the worker picker exactly as it decides: one row
@@ -17,12 +21,15 @@ import (
 // function the picker runs, so the screen cannot drift from the rule.
 //
 // A cell with no task shows a dot, not the score the picker would shrink to
-// the bucket mean. A cell with one or two tasks is dim. A cell with three or
-// more is plain, and green or red when its interval is above or below the
-// bucket mean. Cells past the profile's benchmark ceiling are underlined.
+// the bucket mean, and has no colour. A scored cell is a block of the score
+// on a sequential scale: dark red at 0.50 or less, amber in the middle, green
+// at 0.95 or more. The scale is fixed, so one colour means one score on every
+// screen. A cell with one or two tasks is the same colour blended toward the
+// panel, so it reads as less sure. Cells past the profile's benchmark ceiling
+// are underlined, and the selected cell is in brackets.
 
-// pickerCellWidth is the width of a bucket column: four characters for the
-// number and two for the gap.
+// pickerCellWidth is the width of a bucket column: a block of six columns, the
+// four characters of the number and one blank on each side.
 const pickerCellWidth = 6
 
 // pickerModelWidth is the label column: the selected-row mark and a model key.
@@ -107,7 +114,7 @@ func (m Model) qualityPickerBody(w, height int) []string {
 		body = append(body, sDim.Render(clip(hint, inner)))
 	}
 
-	fixed := 1 + 4 + 1 + len(pickerLegend()) // section, detail, settings, legend
+	fixed := 1 + 4 + 1 + 1 + len(pickerLegend()) // section, detail, settings, ramp, legend
 	if m.pickerErr != "" {
 		fixed++
 	}
@@ -133,6 +140,7 @@ func (m Model) qualityPickerBody(w, height int) []string {
 		}
 		body = append(body, sDim.Render(clip(note, inner)))
 	}
+	body = append(body, pickerRampLine())
 
 	body = append(body, section("Selected cell", inner))
 	body = append(body, m.pickerDetailLines(selModel, selBucket, inner)...)
@@ -160,8 +168,7 @@ func pickerGridHeader(labelWidth int, harness, aa string, buckets []protocol.Pic
 		if col < 0 || col >= len(buckets) {
 			continue
 		}
-		b.WriteString(cellR(value(buckets[col]), 4))
-		b.WriteString("  ")
+		b.WriteString(" " + cellR(value(buckets[col]), 4) + " ")
 	}
 	return b.String()
 }
@@ -384,43 +391,190 @@ func (m Model) pickerModelLine(row pickerRow, selected bool, labelWidth int, col
 	line := label + "  "
 	for _, col := range cols {
 		c := row.cellAt(col)
-		mean, lo := 0.0, 0.0
+		lo := 0.0
 		if col >= 0 && col < len(m.picker.Buckets) {
-			mean, lo = m.picker.Buckets[col].Mean, m.picker.Buckets[col].Lo
+			lo = m.picker.Buckets[col].Lo
 		}
 		past := row.ceilinged && lo >= row.ceiling
-		text := cellR("·", 4)
-		if c.N > 0 {
-			text = fmt.Sprintf("%4.2f", c.Score)
-		}
-		line += pickerCellStyle(c, mean, selected && col == m.pickerSelBucket, past, row.older).Render(text) + "  "
+		sel := selected && col == m.pickerSelBucket
+		line += pickerCellStyle(c, sel, past, row.older).Render(pickerCellText(c, sel))
 	}
 	return clip(line, width)
 }
 
-// pickerCellStyle shades a cell by how much record it has. No task is dim (the
-// text is a dot). One or two tasks is dim. Three or more is plain, and green or
-// red when the whole interval is above or below the bucket mean. A cell past
-// the benchmark ceiling is underlined. The selected cell has the selection colours, so the
-// owner can see which column the detail describes. A cell of an older model
-// key is dim and has no colour.
-func pickerCellStyle(c protocol.PickerCell, mean float64, selected, pastCeiling, older bool) lipgloss.Style {
+// pickerCellText is the six column text of a bucket cell: the score with a
+// blank on each side, or a dot for no task. The selected cell is in brackets,
+// so the owner can find it without a background that would clash with the
+// scale.
+func pickerCellText(c protocol.PickerCell, selected bool) string {
+	num := cellR("·", 4)
+	if c.N > 0 {
+		num = fmt.Sprintf("%4.2f", c.Score)
+	}
+	if selected {
+		return "[" + num + "]"
+	}
+	return " " + num + " "
+}
+
+// pickerCellStyle is the look of a bucket cell. A cell with no task, and a cell
+// of an older model key, has no colour and is dim. A scored cell is on the
+// scale; a cell with one or two tasks is faded. A cell past the benchmark
+// ceiling is underlined. The selected cell is bold.
+func pickerCellStyle(c protocol.PickerCell, selected, pastCeiling, older bool) lipgloss.Style {
 	style := lipgloss.NewStyle()
+	thin := c.N < protocol.PickerMinCellTasks
 	switch {
-	case c.N < 1 || c.N < protocol.PickerMinCellTasks || older:
+	case c.N < 1 || older:
 		style = style.Faint(true)
-	case c.Lo > mean:
-		style = style.Foreground(roleGood)
-	case c.Hi < mean:
-		style = style.Foreground(roleError)
+	default:
+		if bg, fg := pickerHeat(c.Score, thin); bg != nil {
+			style = style.Background(bg).Foreground(fg)
+			// Sixteen colours cannot fade a background, so a thin cell is dim too.
+			if thin && palette.Profile() == colorprofile.ANSI {
+				style = style.Faint(true)
+			}
+		} else if thin {
+			style = style.Faint(true)
+		}
 	}
 	if pastCeiling {
 		style = style.Underline(true)
 	}
 	if selected {
-		style = style.Foreground(roleBase).Background(roleAccent).Faint(false)
+		style = style.Bold(true)
 	}
 	return style
+}
+
+// The scale runs from pickerScaleLow to pickerScaleHigh. The colours are fixed
+// hex values, so a background looks the same in a dark and a light terminal.
+const (
+	pickerScaleLow  = 0.50
+	pickerScaleHigh = 0.95
+)
+
+// pickerScaleStops are dark red, amber and green. Each is one end or the middle
+// of the scale.
+var pickerScaleStops = [3]color.RGBA{
+	{R: 0xa1, G: 0x2b, B: 0x35, A: 0xff},
+	{R: 0xf0, G: 0xb3, B: 0x5a, A: 0xff},
+	{R: 0x3a, G: 0x9a, B: 0x4f, A: 0xff},
+}
+
+// pickerScaleT is the place of a score on the scale, from 0 to 1.
+func pickerScaleT(score float64) float64 {
+	return math.Min(math.Max((score-pickerScaleLow)/(pickerScaleHigh-pickerScaleLow), 0), 1)
+}
+
+// pickerScaleRGB is the colour of a score on the scale.
+func pickerScaleRGB(score float64) color.Color {
+	t := pickerScaleT(score)
+	if t <= .5 {
+		return blendRGB(pickerScaleStops[0], pickerScaleStops[1], t*2)
+	}
+	return blendRGB(pickerScaleStops[1], pickerScaleStops[2], (t-.5)*2)
+}
+
+// pickerHeat is the background and the text colour of a scored cell. A faded
+// cell is blended halfway toward the panel. Both are nil when the terminal
+// shows no colour. A sixteen colour terminal gets three steps: red, yellow and
+// green, cut at the thirds of the scale.
+func pickerHeat(score float64, faded bool) (bg, fg color.Color) {
+	switch palette.Profile() {
+	case colorprofile.ANSI:
+		switch t := pickerScaleT(score); {
+		case t < 1.0/3:
+			return lipgloss.Color("1"), lipgloss.Color("15")
+		case t < 2.0/3:
+			return lipgloss.Color("3"), lipgloss.Color("0")
+		default:
+			return lipgloss.Color("2"), lipgloss.Color("0")
+		}
+	case colorprofile.ANSI256, colorprofile.TrueColor:
+		c := pickerScaleRGB(score)
+		if faded {
+			c = blendRGB(c, roleBase, .5)
+		}
+		return c, pickerTextOn(c)
+	default:
+		return nil, nil
+	}
+}
+
+// pickerTextOn is the text colour with more contrast on the background: white
+// or near black.
+func pickerTextOn(bg color.Color) color.Color {
+	white := color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+	ink := color.RGBA{R: 0x11, G: 0x15, B: 0x1c, A: 0xff}
+	if contrastRatio(bg, white) >= contrastRatio(bg, ink) {
+		return white
+	}
+	return ink
+}
+
+// contrastRatio is the WCAG contrast of two colours, from 1 to 21.
+func contrastRatio(a, b color.Color) float64 {
+	la, lb := relativeLuminance(a), relativeLuminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + .05) / (lb + .05)
+}
+
+func relativeLuminance(c color.Color) float64 {
+	r, g, b, _ := c.RGBA()
+	lin := func(v uint32) float64 {
+		x := float64(v>>8) / 255
+		if x <= .03928 {
+			return x / 12.92
+		}
+		return math.Pow((x+.055)/1.055, 2.4)
+	}
+	return .2126*lin(r) + .7152*lin(g) + .0722*lin(b)
+}
+
+// pickerRampLine is the legend under the grid: a ramp of the scale with 0.50,
+// 0.70 and 0.90 written on it, and what a faded cell means.
+func pickerRampLine() string {
+	const cells = 28
+	scoreAt := func(i int) float64 {
+		return pickerScaleLow + (pickerScaleHigh-pickerScaleLow)*float64(i)/(cells-1)
+	}
+	cellAt := func(score float64) int {
+		return int(math.Round((score - pickerScaleLow) / (pickerScaleHigh - pickerScaleLow) * (cells - 1)))
+	}
+	// The marks are written on the ramp, each at the cell of its score.
+	marks := map[int]string{cellAt(pickerScaleLow): "0.50", cellAt(.70): "0.70", cellAt(.90): "0.90"}
+	text := make([]string, cells)
+	for i := range text {
+		text[i] = " "
+	}
+	for at, s := range marks {
+		for k := 0; k < len(s); k++ {
+			text[at+k] = s[k : k+1]
+		}
+	}
+	var b strings.Builder
+	b.WriteString(sDim.Render("score "))
+	for i := range text {
+		style := sDim
+		if bg, fg := pickerHeat(scoreAt(i), false); bg != nil {
+			style = lipgloss.NewStyle().Background(bg).Foreground(fg)
+		} else if text[i] == " " {
+			// No colour: a line stands for the ramp, and the marks stay as text.
+			text[i] = "─"
+		}
+		b.WriteString(style.Render(text[i]))
+	}
+	b.WriteString("  ")
+	faded := sDim
+	if bg, fg := pickerHeat(.725, true); bg != nil {
+		faded = lipgloss.NewStyle().Background(bg).Foreground(fg)
+	}
+	b.WriteString(faded.Render("faded"))
+	b.WriteString(" = 1-2 tasks")
+	return b.String()
 }
 
 // pickerDetailLines is the selected-cell pane: the cell, the bucket, the best
@@ -723,8 +877,7 @@ func pickerSettingsText(s protocol.PickerSettings, width int) string {
 
 func pickerLegend() []string {
 	return []string{
-		"AA = benchmark score · plain = 3+ tasks · dim = 1-2 · dot = no task yet",
-		"green/red = interval above/below bucket mean · underline = past ceiling",
-		"o = older model keys · R = read again",
+		"AA = benchmark score · dot = no task yet · underline = past ceiling",
+		"[0.80] = selected cell · o = older model keys · R = read again",
 	}
 }
