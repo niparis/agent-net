@@ -29,8 +29,14 @@ type memberTeam struct {
 // agent, as lead routing does. ok is false when the session is in no such
 // team, or is the lead itself.
 func (s *Store) memberTeamOf(session string) (t memberTeam, ok bool, err error) {
+	return memberTeamIn(s.db, session)
+}
+
+// memberTeamIn is memberTeamOf on any reader, so a caller inside a transaction
+// reads through it.
+func memberTeamIn(q leadDB, session string) (t memberTeam, ok bool, err error) {
 	var agent, repo, harness, worker string
-	err = s.db.QueryRow(`SELECT COALESCE(agent_id,''),COALESCE(repo_id,''),harness,worker FROM sessions WHERE id=?`, session).Scan(&agent, &repo, &harness, &worker)
+	err = q.QueryRow(`SELECT COALESCE(agent_id,''),COALESCE(repo_id,''),harness,worker FROM sessions WHERE id=?`, session).Scan(&agent, &repo, &harness, &worker)
 	if err == sql.ErrNoRows {
 		return t, false, nil
 	}
@@ -44,7 +50,7 @@ func (s *Store) memberTeamOf(session string) (t memberTeam, ok bool, err error) 
 	}
 	var teamID, asksTo, leadMerges string
 	var lead, pin sql.NullString
-	err = s.db.QueryRow(`SELECT t.id,t.name,t.owner_agent_id,t.lead_session,t.asks_to,t.lead_merges FROM teams t JOIN team_members tm ON tm.team_id=t.id
+	err = q.QueryRow(`SELECT t.id,t.name,t.owner_agent_id,t.lead_session,t.asks_to,t.lead_merges FROM teams t JOIN team_members tm ON tm.team_id=t.id
 		WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=? AND tm.member_id<>'') OR (tm.member_kind='agent' AND tm.member_id=?))
 		ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &t.name, &lead, &pin, &asksTo, &leadMerges)
 	if err == sql.ErrNoRows {

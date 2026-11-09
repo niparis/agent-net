@@ -406,6 +406,9 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 		return res, err
 	}
 	s.event(tx, "msg.stored", "", m.From, m.ID, "type=notification by=agent-net loop")
+	if err := s.recordMemberTold(tx, changes.members.told); err != nil {
+		return res, err
+	}
 	if _, err = tx.Exec(`INSERT INTO session_wakes(session_id,wake_day,wake_day_count) VALUES(?,?,1)
 		ON CONFLICT(session_id) DO UPDATE SET wake_day=excluded.wake_day,
 		wake_day_count=CASE WHEN session_wakes.wake_day=excluded.wake_day THEN session_wakes.wake_day_count+1 ELSE 1 END`,

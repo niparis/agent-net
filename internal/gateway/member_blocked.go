@@ -167,9 +167,22 @@ func (s *Store) namesOwnRunningWorker(member, task string) (bool, error) {
 	return false, rows.Err()
 }
 
+// blockedKey is the fingerprint of a blocked or waiting reading. A wait that
+// has a text is told once for that text, whatever task line stands around it:
+// a session that rewords its task while it waits has not changed what it
+// waits for. Without a wait, the whole reading counts.
+func blockedKey(text string, w *protocol.Waiting) string {
+	if w != nil && strings.TrimSpace(w.Text) != "" {
+		return checkTaskHash("wait: " + w.Text)
+	}
+	return checkTaskHash(text)
+}
+
 // blockedMemberNotice runs after an announce was stored. When the session is a
 // member of a team with asks_to=lead and the announce reads as blocked or
-// waiting, it tells the team lead once: a message from agent-net with who, the
+// waiting, it tells the team lead once. A wait that names the session's own
+// team lead or repo lead is told to that lead in any team (decision 0126). The
+// message is a message from agent-net with who, the
 // announce text and since when. It returns that message, stored and not yet
 // dispatched, or nil when nothing was sent.
 //
@@ -191,17 +204,34 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 	}
 	text, blocked := blockedReading(task, p.Waiting)
 	if !blocked {
+		if _, err := s.db.Exec(`DELETE FROM member_blocked_ticks WHERE session_id=?`, p.SessionID); err != nil {
+			return nil, err
+		}
 		_, err := s.db.Exec(`DELETE FROM member_blocked_notices WHERE session_id=?`, p.SessionID)
 		return nil, err
 	}
 	if own, err := s.waitsOnOwnWorker(p, task); err != nil || own {
 		return nil, err
 	}
+	wait := protocol.CleanWaiting(p.Waiting)
 	team, leadAgent, pinned, ok, err := s.askerTeam(p.SessionID)
-	if err != nil || !ok {
+	if err != nil {
 		return nil, err
 	}
-	key := checkTaskHash(text)
+	scope := "Team " + team
+	if !ok {
+		// A team that asks the owner still tells the lead of a wait that
+		// names it (decision 0126). So does a Repo lead.
+		if wait == nil {
+			return nil, nil
+		}
+		lead, named, err := s.waitNamesLead(s.db, p.SessionID, wait.Text)
+		if err != nil || !named {
+			return nil, err
+		}
+		scope, leadAgent, pinned = lead.scope, lead.agent, lead.pinned
+	}
+	key := blockedKey(text, wait)
 	var seen string
 	err = s.db.QueryRow(`SELECT text_hash FROM member_blocked_notices WHERE session_id=?`, p.SessionID).Scan(&seen)
 	if err != nil && err != sql.ErrNoRows {
@@ -237,7 +267,7 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 			return nil, err
 		}
 		defer tx.Rollback()
-		if err := s.deskLog(tx, "gateway", kind, project, fmt.Sprintf("Team %s: %s is blocked or waiting and the team has no lead session to tell: %s", team, who, line), "", nil); err != nil {
+		if err := s.deskLog(tx, "gateway", kind, project, fmt.Sprintf("%s: %s is blocked or waiting and has no lead session to tell: %s", scope, who, line), "", nil); err != nil {
 			return nil, err
 		}
 		if err := record(tx); err != nil {
@@ -245,9 +275,9 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 		}
 		return nil, tx.Commit()
 	}
-	body := fmt.Sprintf("[agent-net] Team %s: %s (%s) is blocked or waiting, since %s.\n\nIts announce: %s\n\n"+
+	body := fmt.Sprintf("[agent-net] %s: %s (%s) is blocked or waiting, since %s.\n\nIts announce: %s\n\n"+
 		"It asked nothing, so nothing else reached you. Message it if you can unblock it, or ask the owner with agent_owner_ask.",
-		team, who, p.SessionID, clockText(started, now), line)
+		scope, who, p.SessionID, clockText(started, now), line)
 	id := protocol.NewID("m")
 	m := protocol.Message{ID: id, ConversationID: protocol.NewID("c"),
 		From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: leadSession,
@@ -274,3 +304,12 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 	s.logMessage(m)
 	return &m, nil
 }
+
+// memberBlockedTicksMigration keeps what a lead's loop tick last listed for a
+// blocked member (decision 0126): the fingerprint of the wait text, one row per
+// session, so the next tick does not list the same wait again. The text itself
+// is never stored. The row goes when the member is not blocked any more.
+const memberBlockedTicksMigration = `
+CREATE TABLE IF NOT EXISTS member_blocked_ticks (
+ session_id TEXT PRIMARY KEY, text_hash TEXT NOT NULL);
+`
