@@ -95,6 +95,12 @@ with a wildcard deny plus explicit deny rules for bash, edit, write, subagent,
 read, glob, grep, list, webfetch and todowrite. Only the private CTO MCP namespace
 is allowed. The general subagent is disabled and owner plugins are not copied.
 
+The Claude Code CTO's launch settings also allow one tool by name:
+`mcp__agent-net-cto__agent_message_send`. No other tool is allowed by these
+settings. Because the call is allowed, Claude Code's auto-mode check does not
+review the CTO's messages. Each receiving agent's charter and permission checks
+still apply.
+
 Startup checks capabilities instead of a version allowlist. Harness versions
 are logged for diagnosis and do not decide whether the CTO can start.
 Claude's `--help` must list `--tools` and `--strict-mcp-config`; a missing

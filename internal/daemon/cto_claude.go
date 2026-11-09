@@ -264,7 +264,9 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	// starts the job and the attach client are ignored, so "0" here is the only
 	// way to keep the wheel working for a long CTO reply whatever started the
 	// service. See docs/decisions/0128-cto-keeps-mouse-tracking-on.md.
-	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0"}}
+	// The CTO's message tool is allowed, so Claude Code's auto-mode check does not
+	// block it. The name is the cto-mcp server's tool: mcp__<server>__<tool>.
+	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "permissions": map[string]any{"allow": []string{"mcp__agent-net-cto__agent_message_send"}}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0"}}
 	if tui := ownerClaudeRenderer(d.cfg.ClaudeSessionsDir); tui != "" {
 		launch["tui"] = tui
 	}
