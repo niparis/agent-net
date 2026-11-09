@@ -1,6 +1,9 @@
 package protocol
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Each sort result needs what it acts on: a target for merge, a session for
 // send, a priority and a why_you line for owner. A reason is always needed.
@@ -29,6 +32,29 @@ func TestAskSortArgsValidate(t *testing.T) {
 	for _, a := range bad {
 		if err := a.Validate(); err == nil {
 			t.Errorf("accepted %+v", a)
+		}
+	}
+}
+
+// A mark needs an ask and one of the two marks; the why is optional and short.
+func TestAskMarkRequestValidate(t *testing.T) {
+	ok := []AskMarkRequest{
+		{Ask: "i_1", Mark: MarkDidntNeedMe},
+		{Ask: "i_1", Mark: MarkShouldHaveAsked, Why: "the deploy was mine"},
+	}
+	for _, m := range ok {
+		if err := m.Validate(); err != nil {
+			t.Errorf("%+v: %v", m, err)
+		}
+	}
+	bad := []AskMarkRequest{
+		{Mark: MarkDidntNeedMe},
+		{Ask: "i_1", Mark: "maybe"},
+		{Ask: "i_1", Mark: MarkDidntNeedMe, Why: strings.Repeat("x", MaxChiefReasonChars+1)},
+	}
+	for _, m := range bad {
+		if err := m.Validate(); err == nil {
+			t.Errorf("%+v was accepted", m)
 		}
 	}
 }

@@ -437,6 +437,7 @@ A message from the person at a machine is sent from that machine's **owner sessi
 - **Only the live chief sorts asks.** `agent_ask_sort` (gateway `ask.sort`) is refused unless the caller is the session named by `chief_session`, the session is online, and it runs on the machine that sent the frame. The chief can only act on an ask whose next is the chief. It cannot answer an ask for the owner: `send` hands the ask to a session, and `owner` hands it back.
 - **Only the owner or the CTO names the chief.** `chief.set` (operator `chief_set`) needs the owner or CTO actor. The chief must be a live agent session, not a worker, the owner, the CTO or a bot.
 - **Nothing is deleted.** Each sort keeps the ask as it was in `ask_sorts`, so a sort can be undone.
+- **Only the owner or the CTO undoes a sort or marks an ask.** `ask.undo` (operator `ask_undo`) and `ask.mark` (operator `ask_mark`) need the owner or CTO actor, and the daemon gate for both is the owner gate, so no agent tool calls them. An undo is refused when the ask changed since the sort.
 
 See [decision 0111](decisions/0111-chief-of-staff.md) and [reference](reference.md#the-chief-of-staff-decision-0111).
 

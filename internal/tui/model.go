@@ -44,26 +44,35 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
-	restart                             *restartState
-	archive                             *sessionsArchiveForm
-	removeIDs                           []string
-	removeAll                           bool
-	workerLogDetail                     int
-	workerLogDetailsFocus               bool
-	workersLog                          bool
-	workerLogRow                        int
-	delivery                            deliveryState
-	deliverySrc                         deliverySource
-	proposals                           []protocol.CTOProposal
-	proposalDetail                      *proposalDetail
-	proposalConfirm                     bool
-	proposalConfirmItems                []protocol.CTOProposal
-	proposalConfirmScroll               int
-	proposalHistory                     bool
-	proposalHistoryIndex                int
-	asks                                []protocol.Ask
-	deskLog                             []protocol.DeskLogEntry
-	deskLogOpen                         bool
+	restart               *restartState
+	archive               *sessionsArchiveForm
+	removeIDs             []string
+	removeAll             bool
+	workerLogDetail       int
+	workerLogDetailsFocus bool
+	workersLog            bool
+	workerLogRow          int
+	delivery              deliveryState
+	deliverySrc           deliverySource
+	proposals             []protocol.CTOProposal
+	proposalDetail        *proposalDetail
+	proposalConfirm       bool
+	proposalConfirmItems  []protocol.CTOProposal
+	proposalConfirmScroll int
+	proposalHistory       bool
+	proposalHistoryIndex  int
+	asks                  []protocol.Ask
+	deskLog               []protocol.DeskLogEntry
+	deskLogOpen           bool
+	// The chief of staff (decision 0111, part 2): its status, what it handled
+	// in the last day, the digest of the Desk, the owner's last key and the mark
+	// whose why is being typed.
+	chief                               protocol.ChiefStatus
+	chiefLoaded                         bool
+	handled                             []protocol.ChiefSort
+	digest                              *deskDigest
+	lastInput                           time.Time
+	deskPending                         *deskMark
 	inboxDetail, inboxEditing           bool
 	inboxDeliveryID                     string
 	inboxIndex, inboxDetailScroll       int
@@ -287,6 +296,10 @@ type fetchedMsg struct {
 	proposalsOK bool
 	asks        []protocol.Ask
 	inboxOK     bool
+	chief       protocol.ChiefStatus
+	chiefOK     bool
+	handled     []protocol.ChiefSort
+	handledOK   bool
 	deskLog     []protocol.DeskLogEntry
 	deskLogOK   bool
 	listsAsked  bool // the Inbox and proposals were asked for this refresh
@@ -464,6 +477,14 @@ func (m Model) fetchCmd() tea.Cmd {
 			raw, err := c.Call(ctx, protocol.OpAsksList, nil)
 			if err == nil && json.Unmarshal(raw, &data) == nil {
 				res.asks, res.inboxOK = data.Asks, true
+			}
+			var status protocol.ChiefStatus
+			if raw, err := c.Call(ctx, protocol.OpChiefGet, nil); err == nil && json.Unmarshal(raw, &status) == nil {
+				res.chief, res.chiefOK = status, true
+			}
+			var sorts protocol.ChiefSortsResult
+			if raw, err := c.Call(ctx, protocol.OpChiefSorts, nil); err == nil && json.Unmarshal(raw, &sorts) == nil {
+				res.handled, res.handledOK = sorts.Sorts, true
 			}
 			if deskLogOpen {
 				var log protocol.DeskLogResult
@@ -816,6 +837,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case deskDigestMsg:
+		m.onDeskDigest(msg)
+		return m, nil
+	case deskAskMsg:
+		return m.onDeskAsk(msg), nil
 	case deskLogMsg:
 		if msg.err == nil {
 			m.deskLog = msg.entries
@@ -879,6 +905,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		before := m.onboardingStep().id
 		if msg.inboxOK {
 			m.asks = msg.asks
+		}
+		if msg.chiefOK {
+			m.chief, m.chiefLoaded = msg.chief, true
+		}
+		if msg.handledOK {
+			m.handled = msg.handled
+		}
+		if msg.inboxOK {
 			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
 		}
 		if msg.deskLogOK {
@@ -1122,7 +1156,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.frozenOrder[a.SessionID] = i
 		}
 		m.orderFrozenUntil = m.now().Add(3 * time.Second)
+		digest := m.deskDigestStart()
 		next, cmd := m.key(msg)
+		cmd = tea.Batch(cmd, digest)
 		if changed, ok := next.(Model); ok && changed.tab == messagesTab && m.tab != messagesTab && changed.onboardingHasPeerThread() {
 			var save tea.Cmd
 			changed, save = changed.onboardingComplete("talk")

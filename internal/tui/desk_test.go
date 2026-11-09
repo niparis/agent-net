@@ -34,7 +34,7 @@ func deskModel(t *testing.T, w, h int) Model {
 func TestDeskShowsThreeSectionsAndOneCursor(t *testing.T) {
 	m := deskModel(t, 120, 40)
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"Desk · 2 need you", "Needs you · 2", "In flight · ", "Log · 3", "Merge PR #3? CI green.", "CTO applied graph edge set", "Reminded 2 sessions"} {
+	for _, want := range []string{"Desk · chief of staff · sorted 0 asks today", "Needs you · 2", "In flight · ", "Log · 3", "Merge PR #3? CI green.", "CTO applied graph edge set", "Reminded 2 sessions"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q:\n%s", want, view)
 		}
@@ -99,10 +99,10 @@ func TestDeskChangeRowShowsItsAsk(t *testing.T) {
 }
 
 func TestDeskGoldens(t *testing.T) {
-	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		m := deskModel(t, size[0], size[1])
+	for _, size := range [][2]int{{80, 24}, {120, 34}, {160, 40}} {
+		m := deskChiefModel(t, size[0], size[1])
 		golden(t, "desk_all_"+itoa(size[0]), m.testView())
-		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
+		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible()) + len(m.handled)
 		golden(t, "desk_log_selected_"+itoa(size[0]), m.testView())
 	}
 }

@@ -1,29 +1,29 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (2) │ 8 sessions, 6 online · 1 busy · 2 needs you
-Desk · 2 need you
-╭─Needs you · 2───────────────────────────────────────────────────────╮ ╭─Log · cto────────────────────────────────────╮
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (3) │ 8 sessions, 6 online · 1 busy · 3 needs you
+Desk · chief of staff agent-net 2 on · sorted 4 asks today
+While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you                                         x hide
+╭─Needs you · 3───────────────────────────────────────────────────────╮ ╭─Log · cto────────────────────────────────────╮
 │   ingest-forge [question] Merge PR #3? CI green.                 2h │ │ CTO applied graph edge set app -> ops        │
 │   strategies   [approval] Release v1.2.3 to the machines        30m │ │ 5 minutes ago                                │
+│   ingest-forge [approval] Pay for the new model?                40m │ │                                              │
+│     priority 1 · why you: the ingest-forge charter has no rule for… │ │ u undo  l log                                │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
-╭─In flight · 5───────────────────────────────────────────────────────╮ │ u undo  l log                                │
+╭─In flight · 5───────────────────────────────────────────────────────╮ │                                              │
 │   TITLE                     STEP     STATUS             AGE    DONE │ │                                              │
 │   Approve the deploy gate   approve  waiting for you    3h0m   ○    │ │                                              │
 │   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │                                              │
-│   Say what a delivery row … test     waiting for ci-ru… 6m     ●●○○ │ │                                              │
-│     merged: abcdef1                                                 │ │                                              │
-│   Fix the deploy gate       review   back to strategie… 2h5m   ●✗   │ │                                              │
-│   wbg-procurement · 2 changes: accept by wbg-procurement (exited) … │ │                                              │
-│ 1 done and 1 stale hidden · v shows all                             │ │                                              │
+│ … 5 more                                                            │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─Handled for you · 4─────────────────────────────────────────────────╮ │                                              │
+│   closed   CTO applied graph edge…  CTO notice, moved to the log    │ │                                              │
+│   sent     ingest-forge blocked on deploy…  → ingest-forge          │ │                                              │
+│   merged   Release v1.2.3 to the machines again  same release       │ │                                              │
+│   undone   Mac disk 90%  clear caches  → ingest-forge               │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─Log · 3─────────────────────────────────────────────────────────────╮ │                                              │
 │ ▸ cto      CTO applied graph edge set app -> ops                 5m │ │                                              │
 │   gateway  Reminded 2 sessions about messages they have not…    20m │ │                                              │
 │   apps     Connected: phone (owner_app, Phone, example.test)     3h │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
-
-
-
-
-
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

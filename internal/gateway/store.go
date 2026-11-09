@@ -1239,7 +1239,7 @@ CREATE TABLE IF NOT EXISTS worker_defect_auto (
  defect_id INTEGER PRIMARY KEY, change_id TEXT NOT NULL, kind TEXT NOT NULL,
  revision INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS worker_defect_auto_key ON worker_defect_auto(change_id, kind, revision);
-`, chiefMigration}
+`, chiefMigration, chiefCorrectionsMigration}
 
 // teamAsksToMigration adds the team setting that sends a member's questions
 // for the owner to its team lead (decision 0100).

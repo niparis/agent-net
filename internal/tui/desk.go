@@ -20,6 +20,7 @@ import (
 const (
 	deskSecAsk = iota
 	deskSecChange
+	deskSecHandled
 	deskSecLog
 )
 
@@ -37,9 +38,9 @@ func (m Model) deskLogRows() []protocol.DeskLogEntry {
 	return m.deskLog[:min(len(m.deskLog), deskLogShown)]
 }
 
-// deskRowCount is every selectable row of the three sections.
+// deskRowCount is every selectable row of the sections.
 func (m Model) deskRowCount() int {
-	return m.askRowCount() + len(m.deliveryVisible()) + len(m.deskLogRows())
+	return m.askRowCount() + len(m.deliveryVisible()) + len(m.handled) + len(m.deskLogRows())
 }
 
 // deskIndex is the cursor, kept inside the list.
@@ -57,6 +58,11 @@ func (m Model) deskPosition() (section, i int) {
 		return deskSecChange, idx
 	} else {
 		idx -= changes
+	}
+	if handled := len(m.handled); idx < handled {
+		return deskSecHandled, idx
+	} else {
+		idx -= handled
 	}
 	return deskSecLog, idx
 }
@@ -165,6 +171,13 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 			needs.sel = len(needs.body)
 		}
 		needs.body = append(needs.body, m.inboxRowLine(row, nameW, innerW, sec == deskSecAsk && i == at))
+		if row.ask.WhyYou != "" {
+			label := "why you: "
+			if row.ask.Priority > 0 {
+				label = fmt.Sprintf("priority %d · why you: ", row.ask.Priority)
+			}
+			needs.body = append(needs.body, sDim.Render(clip("    "+label+sanitize(row.ask.WhyYou), innerW)))
+		}
 	}
 	sections = append(sections, needs)
 
@@ -204,6 +217,19 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 		flight.body = append(flight.body, sDim.Render("No open changes."))
 	}
 	sections = append(sections, flight)
+
+	handled := deskSection{title: fmt.Sprintf("Handled for you · %d", len(m.handled)), color: roleAccent, sel: -1}
+	if len(m.handled) == 0 {
+		handled.body = []string{sDim.Render("The chief of staff sorted nothing in the last day.")}
+	}
+	for i, h := range m.handled {
+		selected := sec == deskSecHandled && i == at
+		if selected {
+			handled.sel = len(handled.body)
+		}
+		handled.body = append(handled.body, m.deskHandledLine(h, innerW, selected))
+	}
+	sections = append(sections, handled)
 
 	if m.deskLogOpen {
 		logName := 8
@@ -267,19 +293,19 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 	return out, selected
 }
 
-// deskHeaderLine is the Desk's own title line.
+// deskHeaderLine is the Desk's own title line: the chief and how many asks it
+// sorted in the last day. The log hint goes last, and only when it fits.
 func (m Model) deskHeaderLine(w int) string {
-	line := sBold.Render("Desk")
-	if n := m.askRowCount(); n > 0 {
-		line += sDim.Render(" · ") + sNeeds.Render(fmt.Sprintf("%d need you", n))
-	} else {
-		line += sDim.Render(" · all clear")
-	}
+	line := sBold.Render("Desk") + sDim.Render(" · ") + m.deskChiefText()
+	line += sDim.Render(" · sorted " + plural(len(m.handled), "ask") + " today")
 	if m.delivery.project != "" {
 		line += sDim.Render(" · changes of " + sanitize(m.delivery.project) + " (esc shows all)")
 	}
 	if !m.deskLogOpen {
-		line += sDim.Render(" · log closed (l opens it)")
+		hint := sDim.Render(" · log closed (l opens it)")
+		if ansi.StringWidth(line+hint) <= w {
+			line += hint
+		}
 	}
 	return clip(line, w)
 }
@@ -296,6 +322,8 @@ func (m Model) deskPanel(w, h int) []string {
 	switch sec {
 	case deskSecAsk:
 		return m.inboxPanel(w, h)
+	case deskSecHandled:
+		return m.deskHandledPanel(w, h)
 	case deskSecChange:
 		changes := m.deliveryVisible()
 		if i >= len(changes) {
@@ -364,6 +392,7 @@ func (m Model) inboxTabView(w, h int) []string {
 		return m.deliveryView(w, h)
 	}
 	out := []string{m.titleLine(w), m.deskHeaderLine(w)}
+	out = append(out, m.deskDigestLines(w)...)
 	if m.inboxError != "" {
 		out = append(out, sBad.Render(clip("  "+m.inboxError, w)))
 	}
@@ -431,6 +460,12 @@ func (m Model) inboxTabView(w, h int) []string {
 	panelH := 0
 	if avail >= 12 {
 		panelH = min(max(avail/3, 4), 8)
+		// Every section needs three lines (its border and one row). The panel
+		// gives way to them, and a panel under four lines is not shown.
+		panelH = min(panelH, avail-3*m.deskSectionCount())
+		if panelH < 4 {
+			panelH = 0
+		}
 	}
 	boxRoom := avail - panelH
 	display, selected := m.deskBoxes(w, boxRoom)
@@ -536,6 +571,16 @@ func (m Model) deskRowKey(k tea.KeyPressMsg, key actionID) (Model, tea.Cmd, bool
 		mm, cmd := m.deliveryKey(k)
 		mm.inboxIndex = min(max(mm.inboxIndex, 0), max(mm.deskRowCount()-1, 0))
 		return mm, cmd, true
+	case deskSecHandled:
+		h, ok := m.deskSelectedHandled()
+		switch {
+		case !ok:
+		case key == "undo" && !h.Undone:
+			return m, m.deskAskUndo(h.Ask), true
+		case key == "should_have_asked":
+			return m.deskMarkStart(h.Ask, protocol.MarkShouldHaveAsked), nil, true
+		}
+		return m, nil, true
 	case deskSecLog:
 		if e, ok := m.deskSelectedLog(); ok && key == "undo" {
 			return m, m.deskUndo(e), true

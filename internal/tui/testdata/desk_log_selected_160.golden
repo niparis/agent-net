@@ -1,0 +1,40 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (3) │ 8 sessions, 6 online · 1 busy · 3 needs you                            updated 00:00:00
+Desk · chief of staff agent-net 2 on · sorted 4 asks today
+While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you                                                                                 x hide
+╭─Needs you · 3───────────────────────────────────────────────────────────────────────────────────────────────╮ ╭─Log · cto────────────────────────────────────╮
+│   ingest-forge [question] Merge PR #3? CI green.                                                         2h │ │ CTO applied graph edge set app -> ops        │
+│   strategies   [approval] Release v1.2.3 to the machines                                                30m │ │ 5 minutes ago                                │
+│   ingest-forge [approval] Pay for the new model?                                                        40m │ │                                              │
+│     priority 1 · why you: the ingest-forge charter has no rule for spend                                    │ │ u undo  l log                                │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─In flight · 5───────────────────────────────────────────────────────────────────────────────────────────────╮ │                                              │
+│   TITLE                       REPO             STEP      STATUS                                AGE     DONE │ │                                              │
+│   Approve the deploy gate     voicemechs       approve   waiting for you                       3h0m    ○    │ │                                              │
+│   Show which provider each …  agent-net        review    waiting for merger                    2h14m   ●○●  │ │                                              │
+│   Say what a delivery row w…  agent-net        test      waiting for ci-runner (online)        6m      ●●○○ │ │                                              │
+│     merged: abcdef1                                                                                         │ │                                              │
+│   Fix the deploy gate         voicemechs       review    back to strategies to restart the w…  2h5m    ●✗   │ │                                              │
+│   wbg-procurement · 2 changes wait for accept by wbg-procurement (exited) · 15h-22h                         │ │                                              │
+│ 1 done and 1 stale hidden · v shows all                                                                     │ │                                              │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─Handled for you · 4─────────────────────────────────────────────────────────────────────────────────────────╮ │                                              │
+│   closed   CTO applied graph edge set app -> ops  CTO notice, moved to the log                              │ │                                              │
+│   sent     ingest-forge blocked on deploy sha-6a257e2  homelab-agent owns the deploy  → ingest-forge        │ │                                              │
+│   merged   Release v1.2.3 to the machines again  same release                                               │ │                                              │
+│   undone   Mac disk 90%  clear caches  → ingest-forge                                                       │ │                                              │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─Log · 3─────────────────────────────────────────────────────────────────────────────────────────────────────╮ │                                              │
+│ ▸ cto      CTO applied graph edge set app -> ops                                                         5m │ │                                              │
+│   gateway  Reminded 2 sessions about messages they have not type answered                               20m │ │                                              │
+│   apps     Connected: phone (owner_app, Phone, example.test)                                             3h │ │                                              │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│ c: open the CTO                                                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+u undo  l log  ↑↓ select  ? help

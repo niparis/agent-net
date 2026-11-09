@@ -16,6 +16,9 @@ const (
 	AskSortMerge = "merge"
 	AskSortSend  = "send"
 	AskSortOwner = "owner"
+	// AskSortUndo is the result of an undo: a row in the sort history that puts
+	// an ask back the way it was before the newest sort.
+	AskSortUndo = "undo"
 )
 
 // ChiefTimeout is how long the chief has to sort an ask before it goes to the
@@ -38,12 +41,27 @@ const (
 )
 
 // Operator methods of the owner's TUI and the CTO: the chief's status and
-// setting, and the sort history of one ask.
+// setting, the sort history of one ask, the sorts of the last day (the Desk's
+// Handled for you list), and the owner's undo and marks of the Desk.
 const (
 	OpChiefGet   = "chief_get"
 	OpChiefSet   = "chief_set"
 	OpAskHistory = "ask_history"
+	OpChiefSorts = "chief_sorts"
+	OpAskUndo    = "ask_undo"
+	OpAskMark    = "ask_mark"
 )
+
+// The two marks of the Desk (decision 0111, part 2). The owner puts one on an
+// ask that reached him (didnt_need_me) or on a handled ask (should_have_asked).
+// Each mark is stored as a correction the chief reads in its next batch.
+const (
+	MarkDidntNeedMe     = "didnt_need_me"
+	MarkShouldHaveAsked = "should_have_asked"
+)
+
+// ChiefSortsWindow is how far back the Desk's Handled for you list reaches.
+const ChiefSortsWindow = 24 * time.Hour
 
 // OpAskSort is the agent tool agent_ask_sort. FrameAskSort carries it from the
 // daemon to the gateway, with the caller's session in the request.
@@ -156,4 +174,43 @@ type ChiefStatus struct {
 	Name      string `json:"name,omitempty"`
 	Online    bool   `json:"online"`
 	Model     string `json:"model"`
+}
+
+// AskUndoRequest names the ask whose newest sort the owner undoes.
+type AskUndoRequest struct {
+	Ask string `json:"ask"`
+}
+
+// AskMarkRequest is one mark on an ask. Why is optional, one line.
+type AskMarkRequest struct {
+	Ask  string `json:"ask"`
+	Mark string `json:"mark"`
+	Why  string `json:"why,omitempty"`
+}
+
+// Validate checks a mark before the gateway looks at the ask.
+func (m AskMarkRequest) Validate() error {
+	if strings.TrimSpace(m.Ask) == "" {
+		return errors.New("ask is required")
+	}
+	if m.Mark != MarkDidntNeedMe && m.Mark != MarkShouldHaveAsked {
+		return errors.New("mark must be didnt_need_me or should_have_asked")
+	}
+	if len(m.Why) > MaxChiefReasonChars {
+		return errors.New("why is limited to 300 characters")
+	}
+	return nil
+}
+
+// ChiefSort is one sort of the chief in the Desk's Handled for you list. Undone
+// says that the owner put it back since.
+type ChiefSort struct {
+	AskSort
+	Question string `json:"question"`
+	Undone   bool   `json:"undone"`
+}
+
+// ChiefSortsResult is the chief's sorts of the last day, newest first.
+type ChiefSortsResult struct {
+	Sorts []ChiefSort `json:"sorts"`
 }

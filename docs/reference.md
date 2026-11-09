@@ -2533,6 +2533,24 @@ source `chief`. Nothing is deleted.
 
 Asks now carry `priority` (the chief's rank for an ask sent to the owner).
 
+### The chief on the Desk (decision 0111, part 2)
+
+The Desk shows what the chief did and lets the owner correct it. Each method is an operator method; the CTO can run the changing ones too.
+
+- **`chief_sorts`** (gateway `chief.sorts`, read) returns the chief's sorts of the last 24 hours, newest first. Each row has the sort fields, the ask's `question` and `undone`. The Desk's Handled for you list reads it.
+- **`ask_undo` `{ask}`** (gateway `ask.undo`, owner or CTO) puts an ask back the way it was before the newest sort. It restores `next`, `status`, `answer` and `answered_at` from the sort's `prev_*` fields. A `next` of the chief becomes the owner, because the chief got its one batch and is not sent the ask again. `priority` and `why_you` are cleared. It writes an `ask_sorts` row with result `undo` and a log line from the owner (or the CTO). It is refused when the ask changed since the sort (for example, a session answered it), and when the sort is undone already. A merge also removes its `merged: <ask>` line from the ask it merged into.
+- **`ask_mark` `{ask, mark, why}`** (gateway `ask.mark`, owner or CTO) stores a mark. `mark` is `didnt_need_me` (the owner did not need to see the ask) or `should_have_asked` (the chief should have sent it to the owner). `why` is optional, one line, up to 300 characters. The mark is stored as a correction with `area` set to the ask's project and `ref` set to the ask id, in the table `chief_corrections`, and a log line is written. The chief's next batch message lists the newest five corrections under "Owner corrections". The table is a fallback until the judgment store has its operator method `judgment_add`; the TODO in `internal/gateway/chief.go` marks the switch.
+
+The CTO lists have `chief_sorts` (read), and `ask_undo` and `ask_mark` (changes, in the `settings_change` area `operator`).
+
+**The Desk (tab 7).**
+
+- The header reads `Desk · chief of staff <name> on` (or `off`, or `no chief of staff`), then `sorted N asks today`. "Today" is the last 24 hours of sorts.
+- **Needs you** lists only the asks whose `next` is the owner. Each row shows its priority and why_you under it. The tab title (`7 Desk (3)`), the Sessions band and the header count this list.
+- **Handled for you** lists the sorts from `chief_sorts`. A row shows the result (closed, merged, sent, to you, or undone), the question, the reason when it fits, and `→ session` for a send. `u` undoes a sort that is not undone; `m` marks it "should have asked me". The full reason is in the panel.
+- **n** on a Needs you row marks "didn't need me". **m** on a handled row marks "should have asked me". Each asks for one optional line of why; Enter stores it, Esc cancels.
+- **The digest.** When the owner comes back after an hour or more without a key press, the Desk shows "While you were away (N h)" with four counts (closed, sent on, answered, for you). The counts are read once from the newest 500 log lines, and only the lines since the owner's last key press count. `x` hides the digest; while it shows, `x` only hides it, and does not dismiss an ask. The digest reads the log text the gateway writes (`Chief closed ask:`, `Chief sent ask to`, `so it is with you`, and `Closed ... (answered)`): change those lines and the counts change with them.
+
 ## Waiting sessions on the Desk (tab 7)
 
 A session can wait for you: it asks permission for a tool, asks a question, or wants your input. The TUI lists those sessions on the Desk (decision [0016](decisions/0016-needs-you.md)). Every machine's TUI sees them, so one screen answers "what needs me" across the network.

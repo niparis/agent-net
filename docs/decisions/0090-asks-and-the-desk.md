@@ -121,7 +121,7 @@ the Desk, because `a` approves an ask. `l` opens the log.
 
 The chief of staff, a separate role that sorts asks (`next = chief`,
 `why_you`) under its own charter. Part B1, the gateway and daemon side, is built
-(see [0111](0111-chief-of-staff.md)). The Desk screens for it are not.
+(see [0111](0111-chief-of-staff.md)). The Desk screens for it (the header, Handled for you with undo, the digest and the two marks) are built, see [0111](0111-chief-of-staff.md).
 
 ## Cost
 
