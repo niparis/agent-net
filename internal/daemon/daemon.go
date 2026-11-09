@@ -417,6 +417,7 @@ type Daemon struct {
 	cancel          context.CancelFunc
 	workerStreamCtx context.Context
 	topics          topicHub
+	readCache       gatewayReadCache // answers of repeated gateway reads, kept until a topic moves
 	ln              *localServer
 	mcp             *mcpHost
 
