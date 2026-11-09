@@ -23,7 +23,10 @@ import (
 
 //go:embed templates/* static/*
 var files embed.FS
-var shell = template.Must(template.ParseFS(files, "templates/*.html"))
+
+// shell is parsed on first use: a process that links the web console but does
+// not serve it (every command of the binary) should not pay for the parse.
+var shell = sync.OnceValue(func() *template.Template { return template.Must(template.ParseFS(files, "templates/*.html")) })
 
 type source interface {
 	AnswerHeld(context.Context, protocol.HeldAnswer) error
@@ -102,7 +105,7 @@ func (a *app) screen(id string) http.HandlerFunc {
 		defer cancel()
 		p := a.load(ctx, id, queryFrom(r))
 		var b bytes.Buffer
-		if err := shell.ExecuteTemplate(&b, "page", p); err != nil {
+		if err := shell().ExecuteTemplate(&b, "page", p); err != nil {
 			http.Error(w, "page error", http.StatusInternalServerError)
 			return
 		}

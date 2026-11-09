@@ -334,6 +334,8 @@ func (m Model) bannerLine(w int) string {
 		}
 	case ProblemGateway:
 		s = "! Gateway offline: the daemon cannot reach it." + tail
+	case ProblemSlow:
+		s = "! " + slowText + ". Showing last data."
 	default:
 		s = "! " + sanitize(m.problemT) + "." + tail
 	}

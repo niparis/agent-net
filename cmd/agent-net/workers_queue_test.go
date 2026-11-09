@@ -81,3 +81,38 @@ func TestWorkersCommandShowsQueuedStarts(t *testing.T) {
 		t.Errorf("json: %v %s", err, out.String())
 	}
 }
+
+// The Claude Code panel runs `agent-net workers -json -recent -owner-claude ID`
+// for every session every three seconds. It reads the rows of that session
+// only. The machines' queues are not the session's, and reading them costs a
+// usage call to the gateway for the whole network, so this call does not make it.
+func TestWorkersOfOneClaudeSessionDoNotReadMachineUsage(t *testing.T) {
+	f := &fakeOp{workers: []protocol.WorkerView{{SessionID: "s_w1", Name: "w1", Hostname: "research", Status: "busy", Online: true}},
+		usage: protocol.UsageResult{Local: &protocol.UsageReport{Workers: &protocol.WorkerLoad{Queue: []protocol.QueuedWorker{{QueueID: "q_1"}}}}}}
+	var out bytes.Buffer
+	if err := runWorkers(context.Background(), f, &out, []string{"-json", "-recent", "-owner-claude", "abc"}); err != nil {
+		t.Fatal(err)
+	}
+	if f.usageCalls != 0 {
+		t.Fatalf("the panel's call read machine usage %d times", f.usageCalls)
+	}
+	if f.workersQ.OwnerClaude != "abc" || !f.workersQ.Recent {
+		t.Fatalf("query %+v", f.workersQ)
+	}
+	var res struct {
+		Workers      []protocol.WorkerView   `json:"workers"`
+		Queued       []protocol.QueuedWorker `json:"queued"`
+		PanelVersion string                  `json:"panel_version"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil || len(res.Workers) != 1 || res.PanelVersion == "" || len(res.Queued) != 0 {
+		t.Fatalf("json %v: %s", err, out.String())
+	}
+	// Without a session the command still shows the queue of every machine.
+	out.Reset()
+	if err := runWorkers(context.Background(), f, &out, []string{"-json"}); err != nil {
+		t.Fatal(err)
+	}
+	if f.usageCalls != 1 || !strings.Contains(out.String(), "q_1") {
+		t.Fatalf("usage calls %d: %s", f.usageCalls, out.String())
+	}
+}

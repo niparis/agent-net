@@ -395,6 +395,10 @@ type deliveryCaller struct {
 	calls []protocol.ChangesFindArgs
 	ops   []string
 	pages []protocol.ChangesFindResult
+	// byKey, when set, answers by state and cursor ("active|" is the first
+	// page of the active changes), because the states are read together and
+	// their calls do not come in a fixed order.
+	byKey map[string]protocol.ChangesFindResult
 	get   protocol.ChangeView
 	err   error
 }
@@ -411,6 +415,9 @@ func (f *deliveryCaller) Call(_ context.Context, method string, params any) (jso
 	if a.Change != "" {
 		return json.Marshal(protocol.ChangesFindResult{Items: []protocol.ChangeView{f.get}, Total: 1})
 	}
+	if f.byKey != nil {
+		return json.Marshal(f.byKey[a.State+"|"+a.Cursor])
+	}
 	page := f.pages[min(len(f.calls)-1, len(f.pages)-1)]
 	return json.Marshal(page)
 }
@@ -422,11 +429,11 @@ func TestGatewayDeliveryPagesThroughEveryState(t *testing.T) {
 	done.Change.ID, done.Change.State = "ch_3", protocol.ChangeDone
 	stopped := listView(t0)
 	stopped.Change.ID, stopped.Change.State = "ch_2", protocol.ChangeStopped
-	f := &deliveryCaller{pages: []protocol.ChangesFindResult{
-		{Items: []protocol.ChangeView{a}, Total: 1, NextCursor: "ch_5"},
-		{Items: []protocol.ChangeView{b}, Total: 1},
-		{Items: []protocol.ChangeView{done}, Total: 1},
-		{Items: []protocol.ChangeView{stopped}, Total: 1},
+	f := &deliveryCaller{byKey: map[string]protocol.ChangesFindResult{
+		protocol.ChangeListActive + "|":     {Items: []protocol.ChangeView{a}, Total: 1, NextCursor: "ch_5"},
+		protocol.ChangeListActive + "|ch_5": {Items: []protocol.ChangeView{b}, Total: 1},
+		protocol.ChangeDone + "|":           {Items: []protocol.ChangeView{done}, Total: 1},
+		protocol.ChangeStopped + "|":        {Items: []protocol.ChangeView{stopped}, Total: 1},
 	}}
 	src := newGatewayDelivery(f.Call, func() time.Time { return t0 })
 	got, err := src.Changes(context.Background(), "")
@@ -439,17 +446,21 @@ func TestGatewayDeliveryPagesThroughEveryState(t *testing.T) {
 	if len(f.calls) != 4 || f.ops[0] != protocol.OpChangesOwnerFind {
 		t.Fatalf("calls %+v ops %v", f.calls, f.ops)
 	}
-	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize, Lite: true}); f.calls[0] != want {
-		t.Errorf("first call %+v, want %+v", f.calls[0], want)
+	// The first pages are asked together, in any order; the second page of
+	// the active changes follows its first.
+	asked := map[protocol.ChangesFindArgs]bool{}
+	for _, c := range f.calls {
+		asked[c] = true
 	}
-	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize, Cursor: "ch_5", Lite: true}); f.calls[1] != want {
-		t.Errorf("second call %+v, want %+v", f.calls[1], want)
-	}
-	if want := (protocol.ChangesFindArgs{State: protocol.ChangeDone, Limit: deliveryPageSize, Lite: true}); f.calls[2] != want {
-		t.Errorf("done call %+v, want %+v", f.calls[2], want)
-	}
-	if want := (protocol.ChangesFindArgs{State: protocol.ChangeStopped, Limit: deliveryPageSize, Lite: true}); f.calls[3] != want {
-		t.Errorf("stopped call %+v, want %+v", f.calls[3], want)
+	for _, want := range []protocol.ChangesFindArgs{
+		{State: protocol.ChangeListActive, Limit: deliveryPageSize, Lite: true},
+		{State: protocol.ChangeListActive, Limit: deliveryPageSize, Cursor: "ch_5", Lite: true},
+		{State: protocol.ChangeDone, Limit: deliveryPageSize, Lite: true},
+		{State: protocol.ChangeStopped, Limit: deliveryPageSize, Lite: true},
+	} {
+		if !asked[want] {
+			t.Errorf("call %+v was not made: %+v", want, f.calls)
+		}
 	}
 	// A repo filter is the project filter.
 	repo := &deliveryCaller{pages: []protocol.ChangesFindResult{{Items: []protocol.ChangeView{b}, Total: 1}}}
@@ -467,6 +478,7 @@ func TestGatewayDeliveryStopsAtItsCap(t *testing.T) {
 	f := &deliveryCaller{pages: []protocol.ChangesFindResult{{Items: items, NextCursor: "more"}}}
 	src := newGatewayDelivery(f.Call, func() time.Time { return t0 })
 	got, err := src.Changes(context.Background(), "")
+	// The three states are asked together, and the cap stops the later pages.
 	if err != nil || len(got) != deliveryMaxChanges || len(f.calls) != deliveryMaxChanges/deliveryPageSize {
 		t.Fatalf("%d changes after %d calls: %v", len(got), len(f.calls), err)
 	}
@@ -928,7 +940,13 @@ func TestGatewayDeliveryAsksForItsVersionAndStaysOnNotModified(t *testing.T) {
 	if _, err := src.Changes(context.Background(), ""); !errors.Is(err, errDeliveryNotModified) {
 		t.Fatalf("unchanged list: %v", err)
 	}
-	if len(f.calls) != 1 || f.calls[0].IfVersion != 17 || !f.calls[0].Lite {
-		t.Fatalf("call %+v, want if_version 17 and lite", f.calls)
+	// The three states are asked together, so each call carries the version.
+	if len(f.calls) == 0 {
+		t.Fatal("no call was made")
+	}
+	for _, c := range f.calls {
+		if c.IfVersion != 17 || !c.Lite {
+			t.Fatalf("call %+v, want if_version 17 and lite: %+v", c, f.calls)
+		}
 	}
 }

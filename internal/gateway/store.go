@@ -2413,16 +2413,12 @@ func (s *Store) CreateNode(hostname, osName string) (nodeID, token string, err e
 }
 
 func (s *Store) NodeByToken(token string) (nodeID string, ok bool, err error) {
-	// A reconnect proves that the daemon saved the staged token, even if its
-	// acknowledgement was lost. Promotion and lookup share one transaction.
-	tx, err := s.db.Begin()
-	if err != nil {
-		return "", false, err
-	}
-	defer tx.Rollback()
+	// The lookup is a plain read, so it runs on the read pool. It used to run
+	// in a transaction on the writer connection: every request that checks a
+	// token (all the HTTP reads of a daemon) then waited behind each write.
 	hash := hashHex(token)
 	var pending string
-	err = tx.QueryRow(`SELECT id,pending_token_hash FROM nodes WHERE removed=0 AND (token_hash=? OR pending_token_hash=?)`, hash, hash).Scan(&nodeID, &pending)
+	err = s.db.QueryRow(`SELECT id,pending_token_hash FROM nodes WHERE removed=0 AND (token_hash=? OR pending_token_hash=?)`, hash, hash).Scan(&nodeID, &pending)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
@@ -2430,12 +2426,14 @@ func (s *Store) NodeByToken(token string) (nodeID string, ok bool, err error) {
 		return "", false, err
 	}
 	if pending == hash {
-		if _, err = tx.Exec(`UPDATE nodes SET token_hash=pending_token_hash,pending_token_hash='' WHERE id=?`, nodeID); err != nil {
+		// A reconnect proves that the daemon saved the staged token, even if
+		// its acknowledgement was lost. Only this rare step writes. It names
+		// the token it saw, so a change in between is not overwritten.
+		if _, err = s.db.Exec(`UPDATE nodes SET token_hash=pending_token_hash,pending_token_hash='' WHERE id=? AND pending_token_hash=?`, nodeID, hash); err != nil {
 			return "", false, err
 		}
 	}
-	err = tx.Commit()
-	return nodeID, err == nil, err
+	return nodeID, true, nil
 }
 
 // SetNodeHostname stores the host name a daemon reported. The column hostname

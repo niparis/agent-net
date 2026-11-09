@@ -25,15 +25,12 @@ type proposalAskState struct {
 
 // proposalAskLines builds the asks for the open proposals.
 func (d *Daemon) proposalAskLines() ([]protocol.AskOpen, error) {
-	items, err := d.proposalRunner().list()
+	items, err := d.proposalRunner().listOpen()
 	if err != nil {
 		return nil, err
 	}
 	var asks []protocol.AskOpen
 	for _, v := range items {
-		if v.Status != "open" {
-			continue
-		}
 		reason, _, _ := strings.Cut(strings.TrimSpace(v.Reason), "\n")
 		question := "CTO proposes " + strings.ReplaceAll(v.Call.Tool, "_", " ")
 		if v.Call.Action != "" {

@@ -176,3 +176,43 @@ func TestLanePoolReadSeesAWriteOnceItIsAnswered(t *testing.T) {
 		}
 	}
 }
+
+// A node's write waits for the writer connection, and the write lane waits
+// with it. The reads the TUI makes every second must not stand behind it:
+// they only read, so they run on the read pool, whatever the lane is doing.
+// chief.get, chief.sorts and ask.history stood in the lane, and the Desk
+// waited seconds for them behind one slow write.
+func TestDeskReadsDoNotWaitBehindAWriteInTheLane(t *testing.T) {
+	g, url, id, token := newLinkGateway(t, 70*time.Millisecond)
+	p := newServeTestPeer(t, url, token, id, g)
+	p.send(map[string]any{"type": "hello", "id": "h1", "hostname": "test-host"})
+	if !p.waitResult("h1", time.Second) {
+		t.Fatal("no answer to hello")
+	}
+	if g.store.db.r.Load() == nil {
+		t.Skip("the read pool is off")
+	}
+	// The settings come from the read cache once it is warm, as it is on a
+	// running gateway.
+	if _, err := g.store.SettingsSnapshot(); err != nil {
+		t.Fatal(err)
+	}
+	// Hold the writer only: the lane's write waits for it, reads do not.
+	w, err := g.store.db.w.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	p.send(map[string]any{"type": "hidden.set", "id": "w1", "sessions": []string{"s_x"}})
+	for i, typ := range []string{"chief.get", "chief.sorts", "ask.history"} {
+		rid := fmt.Sprintf("r%d", i)
+		p.send(map[string]any{"type": typ, "id": rid, "ask": "i_1"})
+		if !p.waitResult(rid, time.Second) {
+			t.Fatalf("%s waited behind a write in the lane", typ)
+		}
+	}
+	w.Close()
+	if !p.waitResult("w1", 2*time.Second) {
+		t.Fatal("the write was not answered after the writer came back")
+	}
+}

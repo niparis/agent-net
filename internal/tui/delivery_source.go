@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -64,30 +65,71 @@ func (g *gatewayDelivery) find(ctx context.Context, a protocol.ChangesFindArgs) 
 // list; done and stopped follow for the Done band, which is hidden by default.
 // It follows the pages of each state up to deliveryMaxChanges.
 func (g *gatewayDelivery) Changes(ctx context.Context, repo string) ([]deliveryChange, error) {
+	// The first page of each state is read at the same time, so a slow one does
+	// not delay the others and the load takes the time of the slowest page, not
+	// the sum. Later pages are rare and follow in order, until the cap.
+	states := []string{protocol.ChangeListActive, protocol.ChangeDone, protocol.ChangeStopped}
+	type first struct {
+		items  []deliveryChange
+		cursor string
+		err    error
+	}
+	firsts := make([]first, len(states))
+	var wg sync.WaitGroup
+	for i, state := range states {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			firsts[i].items, firsts[i].cursor, firsts[i].err = g.page(ctx, repo, state, "")
+		}()
+	}
+	wg.Wait()
 	var out []deliveryChange
-	for _, state := range []string{protocol.ChangeListActive, protocol.ChangeDone, protocol.ChangeStopped} {
-		cursor := ""
-		for len(out) < deliveryMaxChanges {
-			page, err := g.find(ctx, protocol.ChangesFindArgs{Project: repo, State: state, Limit: deliveryPageSize, Cursor: cursor, IfVersion: g.ifVersion, Lite: true})
+	have := 0 // changes in the first pages of all states
+	for _, f := range firsts {
+		if f.err != nil {
+			return nil, f.err
+		}
+		have += len(f.items)
+	}
+	for i, state := range states {
+		out = append(out, firsts[i].items...)
+		cursor := firsts[i].cursor
+		// More pages only while the cap is not reached by what is already read.
+		for cursor != "" && have < deliveryMaxChanges {
+			items, next, err := g.page(ctx, repo, state, cursor)
 			if err != nil {
 				return nil, err
 			}
-			if page.NotModified {
-				// The version covers every state, so the other states are
-				// unchanged too.
-				return nil, errDeliveryNotModified
-			}
-			now := g.now()
-			for _, v := range page.Items {
-				out = append(out, deliveryChangeFromView(v, now))
-			}
-			if page.NextCursor == "" || len(page.Items) == 0 {
-				break
-			}
-			cursor = page.NextCursor
+			out = append(out, items...)
+			have += len(items)
+			cursor = next
 		}
 	}
 	return out[:min(len(out), deliveryMaxChanges)], nil
+}
+
+// page reads one page of one state. The cursor it returns is empty after the
+// last page.
+func (g *gatewayDelivery) page(ctx context.Context, repo, state, cursor string) ([]deliveryChange, string, error) {
+	page, err := g.find(ctx, protocol.ChangesFindArgs{Project: repo, State: state, Limit: deliveryPageSize, Cursor: cursor, IfVersion: g.ifVersion, Lite: true})
+	if err != nil {
+		return nil, "", err
+	}
+	if page.NotModified {
+		// The version covers every state, so the other states are unchanged
+		// too.
+		return nil, "", errDeliveryNotModified
+	}
+	now := g.now()
+	items := make([]deliveryChange, 0, len(page.Items))
+	for _, v := range page.Items {
+		items = append(items, deliveryChangeFromView(v, now))
+	}
+	if len(page.Items) == 0 {
+		return items, "", nil
+	}
+	return items, page.NextCursor, nil
 }
 
 // Change reads one change in full: every revision's evidence.

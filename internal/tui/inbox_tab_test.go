@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 // method names and parameters the old Needs you rows and inbox overlay used.
 type inboxOpsSource struct {
 	fakeSource
+	mu      sync.Mutex // a refresh asks its reads together
 	calls   []inboxOpsCall
 	held    protocol.HeldAnswer
 	outID   string
@@ -32,7 +34,9 @@ type inboxOpsCall struct {
 }
 
 func (s *inboxOpsSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	s.mu.Lock()
 	s.calls = append(s.calls, inboxOpsCall{method: method, params: params})
+	s.mu.Unlock()
 	if s.callErr != nil {
 		return nil, s.callErr
 	}

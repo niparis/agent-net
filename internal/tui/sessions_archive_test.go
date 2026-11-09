@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 type archiveSource struct {
 	Source
+	mu    sync.Mutex // a refresh asks its reads together
 	calls []protocol.SessionsArchiveRequest
 }
 
@@ -23,7 +25,9 @@ func (s *archiveSource) Call(_ context.Context, method string, args any) (json.R
 	b, _ := json.Marshal(args)
 	var q protocol.SessionsArchiveRequest
 	_ = json.Unmarshal(b, &q)
+	s.mu.Lock()
 	s.calls = append(s.calls, q)
+	s.mu.Unlock()
 	return json.Marshal(protocol.SessionsArchiveResult{Count: 1, Sessions: []protocol.SessionArchiveEntry{{SessionID: "s_junk", Name: "judge-junk", Folder: "/tmp/judge-junk", Harness: "pi"}}})
 }
 

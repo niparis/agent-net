@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -13,10 +14,13 @@ import (
 
 type onboardingGateway struct {
 	*fakeSource
+	mu       sync.Mutex // a refresh asks its reads together
 	progress protocol.Onboarding
 }
 
 func (f *onboardingGateway) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.progress.Steps == nil {
 		f.progress.Steps = map[string]string{}
 	}

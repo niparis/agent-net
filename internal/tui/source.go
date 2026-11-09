@@ -46,6 +46,7 @@ const (
 	ProblemDaemon  = operator.ProblemDaemon
 	ProblemGateway = operator.ProblemGateway
 	ProblemOther   = operator.ProblemOther
+	ProblemSlow    = operator.ProblemSlow
 )
 
 var (
