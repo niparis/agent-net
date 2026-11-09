@@ -54,6 +54,8 @@ type Store struct {
 	pendingMu       sync.Mutex
 	pendingEpisodes map[string]pendingEpisode
 	pendingStalls   int
+	leadOutMu       sync.Mutex
+	leadOut         []protocol.Message
 	db              *storeDB
 	// connector opens the database connection. Its write count says when
 	// data read from the database may be out of date.

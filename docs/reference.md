@@ -452,7 +452,7 @@ records, so a rename does not change what a call is allowed to do.
 `answer` with `kind: held` takes `action` `a` (approve once), `A` (approve and
 set auto), `r` (decline once) or `R` (decline and set never). `kind: outcome`
 takes `action` `let_stand` or `overrule`. `kind: inbox` takes `id` and `answer`.
-For a charter draft ask (`kind: draft`), the answer is `accept` or `reject`:
+A charter draft ask holds all the drafted fields of one node ([decision 0115](decisions/0115-one-draft-ask-per-node.md)); the answer `accept` or `reject` applies to every field, and `accept repo:purpose` (`<level>:<field>`) decides one. For a charter draft ask (`kind: draft`), the answer is `accept` or `reject`:
 accept writes the drafted value at its level exactly as the owner's TUI accept
 does, records the CTO as the decider, and closes the Inbox row. No message is
 sent, because a draft has no live asking session. For an approval, question,

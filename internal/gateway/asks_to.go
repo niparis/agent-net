@@ -146,8 +146,21 @@ func leadAskBody(s *Store, item protocol.InboxItem, team string) string {
 	case "feature_idea":
 		what = "An idea"
 	}
-	fmt.Fprintf(&b, "%s for the owner from %s. Team %s sends questions to its lead, so you answer first.\n\n", what, asker, team)
+	switch item.Kind {
+	case "draft", "learned":
+		// agent-net itself raised these; the member did not ask.
+		what = "A charter draft"
+		if item.Kind == "learned" {
+			what = "A suggestion"
+		}
+		fmt.Fprintf(&b, "%s for the owner, from agent-net about your team member %s. Team %s sends questions to its lead, so you decide first.\n\n", what, item.Node, team)
+	default:
+		fmt.Fprintf(&b, "%s for the owner from %s. Team %s sends questions to its lead, so you answer first.\n\n", what, asker, team)
+	}
 	b.WriteString(strings.TrimSpace(item.Text))
+	if d := strings.TrimSpace(item.Detail); d != "" && (item.Kind == "draft" || item.Kind == "learned") {
+		b.WriteString("\n" + d)
+	}
 	if r := strings.TrimSpace(item.Recommendation); r != "" {
 		b.WriteString("\n\nTheir recommendation: " + r)
 	}

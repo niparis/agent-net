@@ -116,7 +116,16 @@ func (m Model) askRow(a protocol.Ask) (inboxRow, bool) {
 		if a.Node == "" {
 			row.name = a.From
 		}
-	case protocol.AskKindLearned, protocol.AskKindDraft:
+	case protocol.AskKindDraft:
+		// The ask of a node holds all its drafted fields, and an answer applies to every one.
+		if strings.HasPrefix(a.Ref, "drafts:") {
+			row.learned = protocol.LearnedSuggestion{Node: a.AboutID, Status: "pending", Severity: "major", Origin: "draft"}
+			row.group, row.key, row.kind = inboxLearned, "learned:"+a.ID, "learned"
+			row.name, row.text = a.AboutID+" (draft)", inboxFirstLine(a.Question)
+			break
+		}
+		fallthrough
+	case protocol.AskKindLearned:
 		id, _ := strconv.ParseInt(askRefID(a.Ref, a.Kind+":"), 10, 64)
 		suffix, origin := " (learned)", ""
 		if a.Kind == protocol.AskKindDraft {
@@ -875,7 +884,7 @@ func (m Model) inboxDetailLines(row inboxRow) []string {
 	case "learned":
 		out = append(out, "Node: "+sanitize(row.learned.Node), sanitize(row.text))
 		if row.ask.Detail != "" {
-			out = append(out, sanitize(row.ask.Detail))
+			out = append(out, sanitizeBody(row.ask.Detail))
 		}
 	case "proposal":
 		out = append(out, sanitize(row.text))
@@ -1207,6 +1216,9 @@ func (m Model) inboxDecide(row inboxRow, approve bool) (tea.Model, tea.Cmd) {
 		action := "accept"
 		if !approve {
 			action = "reject"
+		}
+		if strings.HasPrefix(row.item.SourceRef, "drafts:") {
+			return m, m.inboxAnswer(row.item.ID, action)
 		}
 		id := row.learned.ID
 		return m, func() tea.Msg {

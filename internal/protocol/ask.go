@@ -50,6 +50,7 @@ const (
 	AskReasonMovedOnClean = "moved_on (cleanup)" // the one-time cleanup of asks the session left behind
 	AskReasonAnswered     = "answered"           // the escalated request was answered later
 	AskReasonMovedToLog   = "moved_to_log"
+	AskReasonGrouped      = "grouped" // a per-field charter draft ask folded into the one ask of its node
 )
 
 // Ask kinds name the source and so the owner's actions on a row.

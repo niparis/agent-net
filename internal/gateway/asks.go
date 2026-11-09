@@ -428,14 +428,21 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 // the CTO decided. It reads the same two lists the owner saw before, so the
 // same suggestions show up.
 func (s *Store) reconcileLearnedAsks() error {
-	if _, err := s.closeAsks(s.db, `kind='learned' AND NOT EXISTS (SELECT 1 FROM learned_suggestions l WHERE l.id=CAST(substr(inbox_items.source_ref,9) AS INTEGER) AND l.status='pending')`, nil, protocol.AskReasonResolved); err != nil {
+	// PendingCharterDrafts first: it marks the drafts that got a value some
+	// other way as superseded.
+	drafts, err := s.PendingCharterDrafts()
+	if err != nil {
 		return err
 	}
-	if _, err := s.closeAsks(s.db, `kind='draft' AND NOT EXISTS (SELECT 1 FROM charter_drafts d WHERE d.id=CAST(substr(inbox_items.source_ref,7) AS INTEGER) AND d.status='pending')`, nil, protocol.AskReasonResolved); err != nil {
+	if _, err := s.closeAsks(s.db, `kind='learned' AND source_ref LIKE 'learned:%' AND NOT EXISTS (SELECT 1 FROM learned_suggestions l WHERE l.id=CAST(substr(inbox_items.source_ref,9) AS INTEGER) AND l.status='pending')`, nil, protocol.AskReasonResolved); err != nil {
+		return err
+	}
+	// An ask that went to a team lead closes when the node has no pending suggestion left.
+	if _, err := s.closeAsks(s.db, `kind='learned' AND source_ref LIKE ? AND NOT EXISTS (SELECT 1 FROM learned_suggestions l WHERE l.node=inbox_items.about_id AND l.status='pending')`, []any{leadAskRefPrefix + "%"}, protocol.AskReasonResolved); err != nil {
 		return err
 	}
 	open := map[string]bool{}
-	rows, err := s.db.Query(`SELECT source_ref FROM inbox_items WHERE status='open' AND kind IN ('learned','draft')`)
+	rows, err := s.db.Query(`SELECT source_ref FROM inbox_items WHERE status='open' AND kind='learned'`)
 	if err != nil {
 		return err
 	}
@@ -461,34 +468,45 @@ func (s *Store) reconcileLearnedAsks() error {
 		if v.Severity != "major" || open[ref] {
 			continue
 		}
-		if _, err := s.createInboxItem(s.db, protocol.InboxItem{
+		item := protocol.InboxItem{
 			Kind: protocol.AskKindLearned, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: v.Node, AskerName: "learned",
 			SourceRef: ref, AboutKind: protocol.AskAboutProject, AboutID: v.Node,
 			Text: learnedAskText(v), Detail: learnedAskBecause(v),
 			Options: []string{"accept", "reject"},
-		}); err != nil {
+		}
+		// An edge suggestion for a team member goes to the team lead, once.
+		if v.Field == "edge" {
+			sent, err := s.sendLearnedToLead(v, item)
+			if err != nil {
+				return err
+			}
+			if sent {
+				continue
+			}
+		}
+		if _, err := s.createInboxItem(s.db, item); err != nil {
 			return err
 		}
 	}
-	drafts, err := s.PendingCharterDrafts()
-	if err != nil {
-		return err
+	return s.reconcileDraftAsks(drafts)
+}
+
+// sendLearnedToLead sends the ask of a learned suggestion to the lead of the
+// node's team when the team asks to the lead. It is false when the ask is the
+// owner's, and also false when the lead was already asked about this
+// suggestion and the ask is still there or was answered: then there is nothing
+// to open for the owner either, so it reports true.
+func (s *Store) sendLearnedToLead(v protocol.LearnedSuggestion, item protocol.InboxItem) (bool, error) {
+	var seen int
+	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE kind='learned' AND about_id=? AND text=? AND status<>'closed' AND source_ref LIKE ?)`,
+		v.Node, item.Text, leadAskRefPrefix+"%").Scan(&seen); err != nil {
+		return false, err
 	}
-	for _, d := range drafts {
-		ref := fmt.Sprintf("draft:%d", d.ID)
-		if open[ref] {
-			continue
-		}
-		if _, err := s.createInboxItem(s.db, protocol.InboxItem{
-			Kind: protocol.AskKindDraft, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: d.Scope, AskerName: "charter draft",
-			SourceRef: ref, AboutKind: protocol.AskAboutProject, AboutID: d.Scope,
-			Text:    fmt.Sprintf("set %s to \"%s\" (drafted from %s)", askPlainField(d.Attr), askFirstLine(d.Value, 200), askFirstLine(d.Source, 60)),
-			Options: []string{"accept", "reject"}, Detail: "Drafted from " + d.Source,
-		}); err != nil {
-			return err
-		}
+	if seen != 0 {
+		return true, nil
 	}
-	return nil
+	item.Options = nil
+	return s.redirectNodeAsk(v.Node, "", item)
 }
 
 // reconcileAsks brings every derived ask in line with its source. The gateway
