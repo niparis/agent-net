@@ -55,9 +55,11 @@ func (g *Gateway) wakeStatusLine(a protocol.AgentView, started bool) string {
 // wakeFailed records a wake that the machine answered with an error, so that a
 // gateway restart does not retry it, and tells each sender with a queued
 // message once. A connection that dropped gave no answer: that is not recorded,
-// so the reconnect asks again as before.
+// so the reconnect asks again as before. A wake that was cancelled (the gateway
+// is stopping) or that hit its deadline gave no answer either, so it is not
+// recorded. Only an error the machine sent is a refusal.
 func (g *Gateway) wakeFailed(ctx context.Context, session, attempt string, err error) {
-	if errors.Is(err, errNodeGone) {
+	if errors.Is(err, errNodeGone) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return
 	}
 	notices, serr := g.store.failWake(session, attempt, err.Error())
