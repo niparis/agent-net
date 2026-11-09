@@ -1225,10 +1225,14 @@ A stored message can cause the gateway to ask the owning machine to wake an
 offline Claude background session. A ready unclaimed step can wake only its
 recorded merger or caller; node-owned steps wait for an online session. The
 receiving daemon checks that the known
-session is local and is not a worker, its folder exists, and exactly one
-matching Claude background record has state `done` and reports no live process.
-If the record omits its kind, the session's saved mode must say background.
-It refuses stopped, removed, ambiguous or unreadable records. The gateway
+session is local and is not a worker, and its folder exists. A matching Claude
+background record must be `done` or `stopped` and report no live process. If
+the record omits its kind, the session's saved mode must say background. A live
+or running record, an unreadable listing, a worker and a folder that is gone
+are refused. When the record is missing, ambiguous or not retired and no
+matching record shows a live process, the wake takes the same resume path as
+`session_change` resume. An interactive session without autonomy is not taken
+by that fallback, and an archived session is never resumed. The gateway
 limits attempts to one per session per 10 minutes, even across gateway restarts, and a wake opens no
 view. A wake the machine refused is not retried on a restart; only a new message
 asks again. A message asks for an interactive Claude session, a session of
@@ -1237,7 +1241,7 @@ it only for the owning machine during that wake, while the old session remains
 offline and the new native ID is not already registered. The resumed session
 keeps its normal permissions and treats peer content according to the existing
 message rules. A peer can cause work and model usage in a retired session by
-sending it a message. A record already marked stopped and workers are refused.
+sending it a message. Workers are refused.
 An agent-net stop is serialized with the check and launch.
 The owner accepts that a stop made directly in Claude between the check and
 the resume may be undone by the wake; the owner can stop the session again.

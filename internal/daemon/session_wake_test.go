@@ -144,63 +144,82 @@ func TestMessageWakeBackoff(t *testing.T) {
 	}
 }
 
+// setClaudeWakeRecords sets one case on a wake rig: what `claude agents` says
+// about the session, or another state of the rig.
+func setClaudeWakeRecords(t *testing.T, r wakeRig, kind string) {
+	t.Helper()
+	switch kind {
+	case "removed":
+		os.WriteFile(r.listing, []byte(`[]`), 0600)
+	case "invalid":
+		os.WriteFile(r.listing, []byte(`not json`), 0600)
+	case "ambiguous":
+		b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": r.repo, "state": "done"}, {"id": wakeNative[:8], "cwd": "/different", "state": "stopped"}})
+		os.WriteFile(r.listing, b, 0600)
+	case "two-stopped":
+		b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": r.repo, "state": "stopped"}, {"id": wakeNative[:8], "cwd": r.repo, "state": "stopped"}})
+		os.WriteFile(r.listing, b, 0600)
+	case "conflicting-id":
+		b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "sessionId": "different-native", "cwd": r.repo, "state": "done"}})
+		os.WriteFile(r.listing, b, 0600)
+	case "foreground":
+		b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "kind": "interactive", "cwd": r.repo, "state": "done"}})
+		os.WriteFile(r.listing, b, 0600)
+	case "live-done":
+		b, _ := json.Marshal(map[string]any{"id": wakeNative[:8], "kind": "background", "cwd": r.repo, "state": "done", "pid": 12345})
+		os.WriteFile(r.listing, append(append([]byte("["), b...), ']'), 0600)
+	case "live-stopped":
+		b, _ := json.Marshal(map[string]any{"id": wakeNative[:8], "kind": "background", "cwd": r.repo, "state": "stopped", "pid": 12345})
+		os.WriteFile(r.listing, append(append([]byte("["), b...), ']'), 0600)
+	case "working":
+		b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": r.repo, "state": "working"}})
+		os.WriteFile(r.listing, b, 0600)
+	case "wrong-folder":
+		b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": "/different", "state": "done"}})
+		os.WriteFile(r.listing, b, 0600)
+	case "missing-folder":
+		os.RemoveAll(r.repo)
+	case "worker":
+		_, err := r.g.gw.Store().UpsertSession(r.c.d.NodeID(), protocol.SessionInfo{Harness: "claude", NativeID: wakeNative, Cwd: r.repo, Worker: &protocol.WorkerInfo{ID: "w_test", Owner: r.c.ownerID()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.g.gw.Store().SetSessionOffline(r.c.d.NodeID(), r.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A live or running Claude process still stops the wake, and so does a record
+// agent-net cannot read, a worker or a folder that is gone.
 func TestWakeRejectsUnsafeClaudeRecords(t *testing.T) {
-	for _, kind := range []string{"removed", "invalid", "ambiguous", "two-stopped", "conflicting-id", "foreground", "foreground-no-kind", "live-done", "live-stopped", "working", "wrong-folder", "missing-folder", "worker"} {
+	for _, kind := range []string{"invalid", "live-done", "live-stopped", "working", "missing-folder", "worker"} {
 		t.Run(kind, func(t *testing.T) {
 			r := newWakeRig(t, "done")
-			switch kind {
-			case "removed":
-				os.WriteFile(r.listing, []byte(`[]`), 0600)
-			case "invalid":
-				os.WriteFile(r.listing, []byte(`not json`), 0600)
-			case "ambiguous":
-				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": r.repo, "state": "done"}, {"id": wakeNative[:8], "cwd": "/different", "state": "stopped"}})
-				os.WriteFile(r.listing, b, 0600)
-			case "two-stopped":
-				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": r.repo, "state": "stopped"}, {"id": wakeNative[:8], "cwd": r.repo, "state": "stopped"}})
-				os.WriteFile(r.listing, b, 0600)
-			case "conflicting-id":
-				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "sessionId": "different-native", "cwd": r.repo, "state": "done"}})
-				os.WriteFile(r.listing, b, 0600)
-			case "foreground":
-				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "kind": "interactive", "cwd": r.repo, "state": "done"}})
-				os.WriteFile(r.listing, b, 0600)
-			case "foreground-no-kind":
-				_, err := r.g.gw.Store().UpsertSession(r.c.d.NodeID(), protocol.SessionInfo{Harness: "claude", NativeID: wakeNative, Cwd: r.repo, Mode: protocol.ModeForeground})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := r.g.gw.Store().SetSessionOffline(r.c.d.NodeID(), r.id); err != nil {
-					t.Fatal(err)
-				}
-			case "live-done":
-				b, _ := json.Marshal(map[string]any{"id": wakeNative[:8], "kind": "background", "cwd": r.repo, "state": "done", "pid": 12345})
-				os.WriteFile(r.listing, append(append([]byte("["), b...), ']'), 0600)
-			case "live-stopped":
-				b, _ := json.Marshal(map[string]any{"id": wakeNative[:8], "kind": "background", "cwd": r.repo, "state": "stopped", "pid": 12345})
-				os.WriteFile(r.listing, append(append([]byte("["), b...), ']'), 0600)
-			case "working":
-				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": r.repo, "state": "working"}})
-				os.WriteFile(r.listing, b, 0600)
-			case "wrong-folder":
-				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": "/different", "state": "done"}})
-				os.WriteFile(r.listing, b, 0600)
-			case "missing-folder":
-				os.RemoveAll(r.repo)
-			case "worker":
-				_, err := r.g.gw.Store().UpsertSession(r.c.d.NodeID(), protocol.SessionInfo{Harness: "claude", NativeID: wakeNative, Cwd: r.repo, Worker: &protocol.WorkerInfo{ID: "w_test", Owner: r.c.ownerID()}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := r.g.gw.Store().SetSessionOffline(r.c.d.NodeID(), r.id); err != nil {
-					t.Fatal(err)
-				}
-			}
+			setClaudeWakeRecords(t, r, kind)
 			if err := r.c.d.wakeRetiredClaude(context.Background(), r.id, ""); err == nil {
 				t.Fatal("unsafe wake accepted")
 			}
 			if _, err := os.Stat(filepath.Join(r.repo, "fake-claude.json")); !os.IsNotExist(err) {
 				t.Fatalf("unsafe session started: %v", err)
+			}
+		})
+	}
+}
+
+// A record that is missing, ambiguous or not retired no longer stops a wake.
+// The wake takes the owner resume path, exactly as session_change resume does.
+func TestWakeResumesUnclearClaudeRecords(t *testing.T) {
+	for _, kind := range []string{"removed", "ambiguous", "two-stopped", "conflicting-id", "foreground", "wrong-folder"} {
+		t.Run(kind, func(t *testing.T) {
+			r := newWakeRig(t, "done")
+			setClaudeWakeRecords(t, r, kind)
+			if err := r.c.d.wakeRetiredClaude(context.Background(), r.id, ""); err != nil {
+				t.Fatalf("wake refused: %v", err)
+			}
+			rec := readClaude(t, r.repo)
+			if argValue(rec.Args, "--resume") != wakeNative {
+				t.Fatalf("resume args %v", rec.Args)
 			}
 		})
 	}
@@ -235,4 +254,59 @@ func TestMessageWakesRetiredClaudeBackgroundKind(t *testing.T) {
 	}
 	r.send(t, "wake background")
 	eventually(t, "background kind receives message", func() bool { return len(r.c.adapter.deliveredTo(r.id)) == 1 })
+}
+
+// A message left queued for a background Claude session whose background
+// record is gone wakes it through the same `claude --bg --resume` that
+// session_change resume runs, and the message is delivered. The message is
+// queued with wake_on_message off, so the wake under test is the background
+// wake a queued message uses, not the message's own wake.
+func TestMessageWakesClaudeWithMissingBackgroundRecord(t *testing.T) {
+	r := newClaudeWakeRig(t, protocol.ModeBackground, protocol.AutonomyOff, []map[string]any{})
+	setWakeOnMessage(t, r.c.cli, "shop", protocol.WakeOnMessageOff)
+	r.send(t, "wake without a background record")
+	if err := r.c.d.wakeRetiredClaude(context.Background(), r.id, ""); err != nil {
+		t.Fatalf("wake refused: %v", err)
+	}
+	eventually(t, "the missing record session receives the queued message", func() bool {
+		return len(r.c.adapter.deliveredTo(r.id)) == 1
+	})
+	rec := readClaude(t, r.repo)
+	if argValue(rec.Args, "--resume") != wakeNative || r.listCalls() != 1 {
+		t.Fatalf("resume args %v, listing calls %d", rec.Args, r.listCalls())
+	}
+}
+
+// A message to an offline background session whose only record is not retired
+// still falls back to the owner resume path and is delivered.
+func TestMessageWakesClaudeWithUnclearBackgroundRecord(t *testing.T) {
+	r := newClaudeWakeRig(t, protocol.ModeBackground, protocol.AutonomyOff, []map[string]any{
+		{"id": wakeNative[:8], "kind": "background", "state": "done", "cwd": "/elsewhere"},
+	})
+	r.send(t, "wake with an unclear record")
+	eventually(t, "the unclear record session receives the message", func() bool {
+		if lines := r.g.logs.lines("session wake", r.id); len(lines) > 0 {
+			t.Fatalf("wake failed: %v", lines)
+		}
+		return len(r.c.adapter.deliveredTo(r.id)) == 1
+	})
+	if argValue(readClaude(t, r.repo).Args, "--resume") != wakeNative {
+		t.Fatal("session was not resumed")
+	}
+}
+
+// An archived session is the owner's permanent stop. The fallback must not
+// reopen it.
+func TestWakeDoesNotResumeArchivedClaudeSession(t *testing.T) {
+	r := newClaudeWakeRig(t, protocol.ModeBackground, protocol.AutonomyOff, []map[string]any{})
+	if _, err := r.g.gw.Store().ArchiveSessions(protocol.SessionsArchiveRequest{IDs: []string{r.id}}); err != nil {
+		t.Fatal(err)
+	}
+	r.send(t, "leave the archived session asleep")
+	if err := r.c.d.wakeRetiredClaude(context.Background(), r.id, ""); err == nil {
+		t.Fatal("archived session was woken")
+	}
+	if _, err := os.Stat(filepath.Join(r.repo, "fake-claude.json")); !os.IsNotExist(err) {
+		t.Fatalf("archived session started: %v", err)
+	}
 }
