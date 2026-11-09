@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -40,8 +42,10 @@ type usageEntry struct {
 
 // usageTable holds the newest report per node.
 type usageTable struct {
-	mu sync.Mutex
-	m  map[string]usageEntry
+	version      atomic.Uint64
+	quotaVersion atomic.Uint64
+	mu           sync.Mutex
+	m            map[string]usageEntry
 }
 
 func (u *usageTable) set(nodeID string, at time.Time, rep protocol.UsageReport) {
@@ -50,7 +54,11 @@ func (u *usageTable) set(nodeID string, at time.Time, rep protocol.UsageReport) 
 	if u.m == nil {
 		u.m = map[string]usageEntry{}
 	}
+	if previous, ok := u.m[nodeID]; !ok || !reflect.DeepEqual(previous.rep.Quotas, rep.Quotas) {
+		u.quotaVersion.Add(1)
+	}
 	u.m[nodeID] = usageEntry{at, rep}
+	u.version.Add(1)
 }
 
 func (u *usageTable) all() map[string]usageEntry {

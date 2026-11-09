@@ -288,6 +288,7 @@ func (lc *localConn) run(ctx context.Context) {
 }
 
 func (lc *localConn) cleanup() {
+	lc.d.topics.remove(lc)
 	lc.close()
 	lc.srv.mu.Lock()
 	delete(lc.srv.conns, lc)
@@ -712,6 +713,9 @@ func (lc *localConn) boundID() (string, error) {
 func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMessage) (any, error) {
 	defer lc.d.slowCall(method, time.Now())
 	d := lc.d
+	if method == protocol.OpTopicsSubscribe {
+		return lc.subscribeTopics(ctx)
+	}
 	lc.mu.Lock()
 	client, ls, agyID := lc.client, lc.ls, lc.agyNativeID
 	lc.mu.Unlock()

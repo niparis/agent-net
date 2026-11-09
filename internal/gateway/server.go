@@ -196,15 +196,16 @@ type offlineTimer struct {
 }
 
 type nodeConn struct {
-	sessionAgents atomic.Bool
-	graphRefs     atomic.Bool
-	id            string
-	tokenHash     string // credential used for this connection
-	ws            *websocket.Conn
-	wmu           sync.Mutex
-	cancel        context.CancelFunc
-	dead          chan struct{} // closed when the connection ends
-	health        *linkkeepalive.Monitor
+	topicSubscribed atomic.Bool
+	sessionAgents   atomic.Bool
+	graphRefs       atomic.Bool
+	id              string
+	tokenHash       string // credential used for this connection
+	ws              *websocket.Conn
+	wmu             sync.Mutex
+	cancel          context.CancelFunc
+	dead            chan struct{} // closed when the connection ends
+	health          *linkkeepalive.Monitor
 
 	pmu     sync.Mutex
 	nextID  int
@@ -964,6 +965,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	}
 	if st.machineRemoved(nc.id) {
 		return nil, reject("this machine was removed from the network; run agent-net setup to join again")
+	}
+	if typ == protocol.FrameTopicsSubscribe {
+		return g.subscribeTopics(ctx, nc), nil
 	}
 	if strings.HasPrefix(typ, "xfer.") {
 		return g.handleTransfer(nc, typ, raw)

@@ -415,6 +415,7 @@ type Daemon struct {
 	worktreeLocks   map[string]*worktreeLock
 	cancel          context.CancelFunc
 	workerStreamCtx context.Context
+	topics          topicHub
 	ln              *localServer
 	mcp             *mcpHost
 

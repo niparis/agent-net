@@ -116,7 +116,9 @@ type deliveryState struct {
 
 	loading       bool      // a list load is out
 	loadedAt      time.Time // when the last load started
-	detailLoading bool      // the full change is out
+	topicVersion  uint64
+	topicSeen     bool
+	detailLoading bool // the full change is out
 	detailErr     string
 	expanded      map[string]bool
 
@@ -171,6 +173,9 @@ func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.delivery.loading, m.delivery.loadedAt = true, m.now()
+	if v, ok := m.topicVersions[protocol.TopicChanges]; ok {
+		m.delivery.topicVersion, m.delivery.topicSeen = v, true
+	}
 	return m, m.deliveryLoad()
 }
 
@@ -182,7 +187,9 @@ func (m Model) deliveryTick() (Model, tea.Cmd) {
 		return m, nil
 	}
 	d := m.delivery
-	if d.loading || m.now().Sub(d.loadedAt) < deliveryRefreshEvery {
+	v, haveVersion := m.topicVersions[protocol.TopicChanges]
+	changed := m.topicActive && haveVersion && (!d.topicSeen || v > d.topicVersion)
+	if d.loading || (!changed && m.now().Sub(d.loadedAt) < deliveryRefreshEvery) {
 		return m, nil
 	}
 	return m.startDeliveryLoad()

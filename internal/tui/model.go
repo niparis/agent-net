@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/client"
+	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 	"github.com/niparis/agent-net/internal/tui/palette"
@@ -140,6 +141,13 @@ type Model struct {
 	graphLastNode          string
 	feed                   feed
 	fetching               bool
+	topicActive            bool
+	topicSubscribing       bool
+	topicRetryAt           time.Time
+	topicLastFull          time.Time
+	topicVersions          map[string]uint64
+	topicDirty             map[string]bool
+	topicView              string
 	// inboxSeen is the Snapshot signature the Inbox and proposals were last
 	// fetched at. A different signature, or the Inbox or CTO pane on screen,
 	// asks for them again. inboxAt is when they were last asked for away from
@@ -270,6 +278,11 @@ func New(src Source) Model {
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
 		convDetail: map[string]convDetail{}, convDetailLoading: map[string]bool{},
 		graphPixel: &graphPixelState{imageID: graphview.ImageID}}
+	if _, ok := src.(interface {
+		SubscribeTopics(context.Context) (*operator.TopicSubscription, error)
+	}); ok {
+		m.topicSubscribing = true
+	}
 	if c, ok := src.(inboxCaller); ok {
 		m.deliverySrc = newGatewayDelivery(c.Call, time.Now)
 	}
@@ -286,28 +299,41 @@ func New(src Source) Model {
 
 type tickMsg struct{}
 
+type topicSubscribedMsg struct {
+	sub *operator.TopicSubscription
+	err error
+}
+type topicsChangedMsg struct {
+	sub      *operator.TopicSubscription
+	versions map[string]uint64
+	ok       bool
+}
+
 type pendingStop struct {
 	verb string
 	at   time.Time
 }
 
 type fetchedMsg struct {
-	proposals   []protocol.CTOProposal
-	proposalsOK bool
-	asks        []protocol.Ask
-	inboxOK     bool
-	chief       protocol.ChiefStatus
-	chiefOK     bool
-	handled     []protocol.ChiefSort
-	handledOK   bool
-	deskLog     []protocol.DeskLogEntry
-	deskLogOK   bool
-	listsAsked  bool // the Inbox and proposals were asked for this refresh
-	snap        Snapshot
-	err         error
-	events      []protocol.FeedEvent
-	eventsErr   error
-	at          time.Time
+	proposals     []protocol.CTOProposal
+	proposalsOK   bool
+	asks          []protocol.Ask
+	inboxOK       bool
+	chief         protocol.ChiefStatus
+	chiefOK       bool
+	handled       []protocol.ChiefSort
+	handledOK     bool
+	deskLog       []protocol.DeskLogEntry
+	deskLogOK     bool
+	listsAsked    bool // the Inbox and proposals were asked for this refresh
+	snap          Snapshot
+	err           error
+	topicVersions map[string]uint64
+	topicFull     bool
+	topicView     string
+	events        []protocol.FeedEvent
+	eventsErr     error
+	at            time.Time
 	// conversations is the first stored page, asked for only on the Messages
 	// tab.
 	convAsked bool
@@ -361,6 +387,11 @@ type bodyMsg struct {
 // New marks a fetch as running, so the first tick does not start a second.
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{tea.RequestBackgroundColor, m.fetchCmd(), tick()}
+	if _, ok := m.src.(interface {
+		SubscribeTopics(context.Context) (*operator.TopicSubscription, error)
+	}); ok {
+		cmds = append(cmds, m.subscribeTopicsCmd())
+	}
 	if m.deliverySrc != nil {
 		cmds = append(cmds, func() tea.Msg { return deliveryStartMsg{} })
 	}
@@ -368,6 +399,33 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, m.ctoPollCmd())
 	}
 	return tea.Batch(cmds...)
+}
+
+func (m Model) subscribeTopicsCmd() tea.Cmd {
+	src := m.src.(interface {
+		SubscribeTopics(context.Context) (*operator.TopicSubscription, error)
+	})
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		sub, err := src.SubscribeTopics(ctx)
+		return topicSubscribedMsg{sub: sub, err: err}
+	}
+}
+
+func waitTopicsCmd(sub *operator.TopicSubscription) tea.Cmd {
+	return func() tea.Msg {
+		versions, ok := sub.Wait()
+		return topicsChangedMsg{sub: sub, versions: versions, ok: ok}
+	}
+}
+
+func (m Model) topicRefreshDue() bool {
+	return !m.topicActive || len(m.topicDirty) != 0 || m.topicLastFull.IsZero() || m.now().Sub(m.topicLastFull) >= 30*time.Second || m.topicView != m.topicViewKey()
+}
+
+func (m Model) topicViewKey() string {
+	return fmt.Sprintf("%d:%d:%t:%t:%t", m.tab, m.focus, m.workersLog, m.deskLogOpen, m.mapOn)
 }
 
 // tickDelay is RefreshEvery; tests shorten it.
@@ -390,9 +448,18 @@ func (m Model) nextTick() tea.Cmd {
 // fetchCmd reads a snapshot and the new events. One runs at a time.
 func (m Model) fetchCmd() tea.Cmd {
 	src, after := m.src, m.feed.lastID
+	full := !m.topicActive || len(m.topicDirty) == 0 || m.topicLastFull.IsZero() || m.now().Sub(m.topicLastFull) >= 30*time.Second || m.topicView != m.topicViewKey()
+	topics := make(map[string]bool, len(m.topicDirty))
+	versions := make(map[string]uint64, len(m.topicDirty))
+	for topic := range m.topicDirty {
+		topics[topic], versions[topic] = true, m.topicVersions[topic]
+	}
+	view := m.topicViewKey()
+	previous := m.snap
+	wants := func(topic string) bool { return full || topics[topic] }
 	onboardingRevision, onboardingPending := m.onboardingRevision, m.onboardingPending
 	skipFeed := m.feed.unavailable != ""
-	askUsage := m.usageDue()
+	askUsage := full && m.usageDue() || topics[protocol.TopicUsage]
 	askCounts := askUsage && !m.usage.noCounts
 	askU := askUsage && m.usage.unavailable == ""
 	askTools := m.onboardingWantsTools()
@@ -406,18 +473,25 @@ func (m Model) fetchCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
 		var res fetchedMsg
-		res.at = now()
+		res.at, res.topicVersions, res.topicFull, res.topicView = now(), versions, full, view
 		if with, ok := src.(interface {
 			SnapshotWith(context.Context, SnapshotOptions) (Snapshot, error)
 		}); ok {
-			res.snap, res.err = with.SnapshotWith(ctx, SnapshotOptions{WorkerLog: wantWorkerLog})
+			opts := SnapshotOptions{WorkerLog: wantWorkerLog}
+			if !full {
+				opts.Topics, opts.Previous = topics, previous
+			}
+			res.snap, res.err = with.SnapshotWith(ctx, opts)
 		} else {
 			res.snap, res.err = src.Snapshot(ctx)
 		}
 		if res.err != nil || !res.snap.Connected {
 			return res
 		}
-		res.hidden, res.hiddenErr = src.HiddenItems(ctx)
+		res.hiddenErr = errors.New("not requested")
+		if wants(protocol.TopicAgents) || wants(protocol.TopicWorkers) {
+			res.hidden, res.hiddenErr = src.HiddenItems(ctx)
+		}
 
 		if wantPicker {
 			res.pickerAsked = true
@@ -434,7 +508,7 @@ func (m Model) fetchCmd() tea.Cmd {
 			}
 		}
 
-		if caller, ok := src.(inboxCaller); ok && !onboardingPending {
+		if caller, ok := src.(inboxCaller); ok && !onboardingPending && (wants(protocol.TopicInbox) || wants(protocol.TopicWorkers)) {
 			res.onboardingAsked, res.onboardingRevision = true, onboardingRevision
 			var raw json.RawMessage
 			raw, res.onboardingErr = caller.Call(ctx, "onboarding_get", nil)
@@ -468,7 +542,8 @@ func (m Model) fetchCmd() tea.Cmd {
 		// screen it is still checked now and then, because gateway items and
 		// proposals made on another machine do not change the Snapshot.
 		if c, ok := src.(inboxCaller); ok &&
-			(inboxOnScreen || inboxMarkerOf(res.snap) != inboxSeen || res.at.Sub(inboxAt) >= inboxRefreshEvery) {
+			(wants(protocol.TopicInbox) || wants(protocol.TopicAgents) || wants(protocol.TopicLearned)) &&
+			(inboxOnScreen || inboxMarkerOf(res.snap) != inboxSeen || res.at.Sub(inboxAt) >= inboxRefreshEvery || topics[protocol.TopicInbox]) {
 			res.listsAsked = true
 			if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
 				res.proposalsOK = true
@@ -494,7 +569,7 @@ func (m Model) fetchCmd() tea.Cmd {
 				}
 			}
 		}
-		if skipFeed {
+		if skipFeed || !wants(protocol.TopicChanges) {
 			return res
 		}
 		limit := 100
@@ -663,18 +738,59 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.graphTalkPending = nil
 		return m, nil
 
+	case topicSubscribedMsg:
+		m.topicSubscribing = false
+		if msg.err != nil || msg.sub == nil {
+			m.topicActive = false
+			m.topicRetryAt = m.now().Add(10 * time.Second)
+			return m, nil
+		}
+		m.topicActive = true
+		m.topicVersions = make(map[string]uint64)
+		m.topicDirty = make(map[string]bool)
+		return m, waitTopicsCmd(msg.sub)
+
+	case topicsChangedMsg:
+		if !msg.ok {
+			m.topicActive = false
+			m.topicRetryAt = m.now()
+			return m, nil
+		}
+		for topic, v := range msg.versions {
+			if old, ok := m.topicVersions[topic]; !ok || v > old {
+				m.topicVersions[topic], m.topicDirty[topic] = v, true
+			}
+		}
+		return m, waitTopicsCmd(msg.sub)
+
 	case tickMsg:
 		if m.restartTick() {
 			return m, tea.Quit
 		}
 		m.expirePendingStops()
 		cmds := []tea.Cmd{m.nextTick()}
+		if !m.topicActive && !m.topicSubscribing && !m.now().Before(m.topicRetryAt) {
+			if _, ok := m.src.(interface {
+				SubscribeTopics(context.Context) (*operator.TopicSubscription, error)
+			}); ok {
+				m.topicSubscribing = true
+				cmds = append(cmds, m.subscribeTopicsCmd())
+			}
+		}
 		if m.tab == graphTab && !m.mapOn && !m.graphTalkLoading && (m.graphTalkAt.IsZero() || m.now().Sub(m.graphTalkAt) >= time.Minute) {
 			m.graphTalkLoading = true
 			m.graphTalkPending = nil
 			cmds = append(cmds, m.graphTalkCmd())
 		}
-		if (m.mapOn || m.tab == graphTab) && !m.mp.loading {
+		mapDue := !m.topicActive || !m.mp.loaded || m.now().Sub(m.topicLastFull) >= 30*time.Second || m.topicView != m.topicViewKey()
+		for _, topic := range []string{protocol.TopicGraph, protocol.TopicAgents, protocol.TopicNodes} {
+			if v, ok := m.topicVersions[topic]; ok {
+				if old, seen := m.mp.topicVersions[topic]; !seen || old != v {
+					mapDue = true
+				}
+			}
+		}
+		if (m.mapOn || m.tab == graphTab) && !m.mp.loading && mapDue {
 			m.mp.loading = true
 			cmds = append(cmds, m.mapCmd())
 		}
@@ -682,7 +798,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cto.polling = true
 			cmds = append(cmds, m.ctoPollCmd())
 		}
-		if !m.fetching {
+		if !m.fetching && m.topicRefreshDue() {
 			m.fetching = true
 			cmds = append(cmds, m.fetchCmd())
 		}
@@ -919,6 +1035,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deskLog = msg.deskLog
 		}
 		m.fetching = false
+		if msg.err == nil && msg.snap.Connected {
+			if msg.topicFull {
+				m.topicLastFull = msg.at
+				m.topicView = msg.topicView
+			}
+			for topic, v := range msg.topicVersions {
+				if m.topicVersions[topic] == v {
+					delete(m.topicDirty, topic)
+				}
+			}
+		}
 		m.applyFetch(msg)
 		if msg.pickerAsked {
 			m.pickerWanted = false
