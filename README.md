@@ -22,6 +22,8 @@
 
 <p align="center">
   <a href="#quickstart">Quickstart</a> ·
+  <a href="#background-sessions-the-swarm-runs-without-you-at-the-terminal">Background sessions</a> ·
+  <a href="#several-machines-one-network">Several machines</a> ·
   <a href="#the-ideas">The ideas</a> ·
   <a href="#why-not-just">Why not just …</a> ·
   <a href="docs/tour.md">Tour</a> ·
@@ -68,6 +70,32 @@ It is not:
 
 **A deploy with a real approval.** The forge lead approves a deploy. A member asks the operator agent to deploy and quotes the approval. agent-net shows the operator the original message, so it deploys without asking again. You see one line in the log.
 
+## Background sessions: the swarm runs without you at the terminal
+
+Every session in the swarm can run in the background. You start it, wake it, steer it and stop it from agent-net, from any machine, without keeping a terminal open for it.
+
+- **Start one anywhere.** Ask the CTO, or press a key in the TUI, to start a session in any project on any machine, with the harness, model, branch and first message you choose. Claude Code sessions run as background jobs of Claude's own service.
+- **It wakes when it is needed.** A message to a session that went offline asks its machine to resume the same conversation, then delivers the message. Claude Code, Codex and OpenCode sessions wake this way; no new session is started.
+- **It keeps working on its own clock.** Give a project a standing loop, for example every 4 hours, and its session is nudged with what changed since the last tick: new messages, finished workers, open asks. It does the next step and reports. Two ticks with no progress pause the loop and leave one question on your Desk.
+- **You look in only when you want to.** Press Enter on any session to open it live, in herdr or your terminal. Stop, resume or restart it from the TUI, the web console or by asking the CTO.
+
+Example. Before bed you tell the CTO: *"Start a Codex session in billing-api on the build box: migrate the invoice job to the new queue, use workers for the code."* The session plans the work, hands the code to two workers, reviews their reports and opens the pull request. At 3 a.m. the frontend session, also in the background, asks it about a renamed field; the billing session wakes, answers and goes back to sleep. In the morning your Desk holds one question: *"Merge PR #212? CI green. Recommended: yes."*
+
+## Several machines, one network
+
+One machine runs the **gateway**. Every machine, the gateway's included, runs a small **daemon** that finds its local sessions, delivers their messages and starts their workers. Sessions on any machine can talk to sessions on any other, and the TUI on any machine shows them all.
+
+Example: a MacBook you work on, plus a Linux box under the desk that runs long jobs.
+
+1. On the Linux box, which stays on, run the install line from [Quickstart](#quickstart). It becomes the gateway.
+2. In `agent-net` on the Linux box, press `c` and ask the CTO: *"Add my MacBook."* It prints one line, valid for 10 minutes and one machine:
+   ```sh
+   curl -fsSL -k --pinnedpubkey 'sha256//...' 'https://192.168.1.10:7420/install/ABCD2345' | sh
+   ```
+3. Paste it in a terminal on the MacBook. It installs agent-net, joins the network and starts the daemon. If the gateway is on Tailscale, the CTO also prints a line for its Tailscale address, so the laptop stays connected away from home.
+
+Now a Claude Code session on the MacBook can ask the OpenCode session on the Linux box which port its dev server uses, and a worker for a laptop project can run on the Linux box. Add a third machine the same way. `agent-net upgrade` on the gateway upgrades every machine, and a machine that was offline catches up when it reconnects. Details: [docs/setup.md](docs/setup.md).
+
 ## Quickstart
 
 ```sh
@@ -88,7 +116,7 @@ Install details and options: [docs/setup.md](docs/setup.md). On a Mac, ask the C
 
 Nine words, in the order you meet them.
 
-- **Session.** An agent you opened yourself, such as Claude Code in a terminal or Codex on a VM. agent-net finds it and gives it tools. *"The Pi session on the build VM."*
+- **Session.** An agent in one of five harnesses, opened by you in a terminal or started by agent-net in the background. agent-net finds it, gives it tools, and can wake it when a message arrives. *"The Pi session on the build VM."*
 - **Message.** One session asks another and gets the answer back in its own conversation. It arrives like a message you typed, labelled with its sender. *"Ask the backend session which port its dev server uses."*
 - **Worker.** A new session started for one task, in its own git worktree. It hands back a report with the diff, the run time and the cost. *"Fix the flaky test with a worker."*
 - **Charter.** A few lines per project: what it does, what it accepts, what it refuses, and when it must ask you. *"homelab-agent refuses to touch the encryption key."*
