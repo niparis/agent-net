@@ -8,9 +8,8 @@
 <h1 align="center">agent-net</h1>
 
 <p align="center">
-  <b>Run all your coding agents, on all your machines, from one place.</b><br>
-  Claude Code, Codex, Pi, OpenCode and Antigravity sessions on your laptop and your VMs talk to each other,<br>
-  hand work to cheaper workers, and wait for your decisions in one terminal view.
+  <b>A supervised swarm for the coding agents you already run.</b><br>
+  Many agents, each owning its piece. One control space. Only real decisions reach you.
 </p>
 
 <p align="center">
@@ -23,36 +22,51 @@
 
 <p align="center">
   <a href="#quickstart">Quickstart</a> ·
-  <a href="#a-tour">Tour</a> ·
-  <a href="#how-it-works">How it works</a> ·
+  <a href="#the-ideas">The ideas</a> ·
+  <a href="#why-not-just">Why not just …</a> ·
+  <a href="docs/tour.md">Tour</a> ·
   <a href="docs/security.md">Security</a> ·
   <a href="docs/README.md">Docs</a>
 </p>
 
 <p align="center">
-  <img alt="The agent-net TUI: machines with CPU and memory, every session on every machine with its agent, project, model and status, and the CTO box" src="docs/img/tui/sessions.png" width="900">
+  <img alt="The agent-net TUI: sessions that ask you a question, and the CTO box with two open proposals" src="docs/img/tui/cto-inbox.png" width="900">
 </p>
 
 ---
 
-- **Talk.** Your agent asks a question to a session that is already open on another machine, in another harness. It arrives there like a message you typed, that agent answers from its own project, and the answer comes back. No copy and paste.
-- **Delegate.** An agent hands a task to a worker: a new session in its own git worktree. A judge scores how hard the task is, and agent-net picks a model that fits, from the subscriptions with quota left. The worker hands back a report with the facts.
-- **Govern.** A map of your agents and the rules between them, a CTO agent that changes them on request, and one Inbox for every decision that needs you.
+agent-net turns the Claude Code, Codex, OpenCode, Pi and Antigravity sessions on your laptop and your servers into one swarm. Each session owns a project. Leads answer for their teams. Workers take single tasks on the cheapest model that fits. Everyone follows the rules you write, and anything that needs you lands on one Desk.
 
-One Go binary with SQLite built in. One line installs the first machine, one line adds each other machine, and `agent-net upgrade` updates them all.
+### Your two supervisors
 
-## Who is this for
+- **The CTO** runs the swarm on your instructions. Ask it in plain words to add a machine, write a charter, set a rule between two projects or start a worker. Every change it makes leaves an undo.
+- **The chief of staff** reads every ask meant for you first. It closes what it can, sends the rest to the agent that should answer, and leaves only real decisions on your Desk.
 
-**One person who runs many coding agents at once**, on a laptop and one or more VMs or servers, across repositories that depend on each other.
+Both are yours to shape. You choose their role, harness, model and rules. For example, run the CTO in Claude Code on Opus with the standing order "never remove a machine without asking me", and the chief of staff in Codex on a small model with the rule "anything that costs money goes to the owner".
 
-It fits when you:
+## What it is, and what it is not
 
-- keep several agent sessions open, each on its own project or machine, and copy text between them by hand today;
-- use more than one harness (Claude Code, Codex, Pi, OpenCode, Antigravity);
-- want agents to hand coding work to cheaper models, and get a checked report back without watching;
-- pay for several AI subscriptions and want them used evenly, not one exhausted while another sits idle.
+It is:
 
-It is not for teams (every machine belongs to one owner), untrusted machines (every enrolled machine is trusted), or a hosted service (you run the gateway yourself).
+- **One network for the agents you already use.** Your own interactive sessions, in five harnesses, on every machine you own.
+- **A swarm with structure.** Charters say what each agent does and refuses. Teams have leads. Every change goes through accept, review, test, merge, release and verify, and each step has an owner.
+- **Cheaper work.** A worker gets each task. A judge rates how hard it is, and agent-net picks a model that is good enough, from the subscriptions that still have quota.
+- **One Go binary, self-hosted,** with SQLite built in. One line installs it.
+
+It is not:
+
+- an SDK or framework for building agents;
+- a hive of agents working on one task;
+- a hosted service;
+- for teams of people or for machines you do not trust. Every machine belongs to one owner.
+
+## Three stories
+
+**A rename across two repos.** The backend session renames `user_id` to `account_id`. It tells the frontend session on your laptop, which updates its calls and replies with the commit. You read both in Messages. You typed nothing.
+
+**A bug fixed while you are away.** Your Mac's daemon hangs after an upgrade. The agent that owns agent-net writes a brief, and a worker on a cheaper model reproduces the hang and fixes it. Review, tests and the release run as steps. The next upgrade comes back by itself in 16 seconds.
+
+**A deploy with a real approval.** The forge lead approves a deploy. A member asks the operator agent to deploy and quotes the approval. agent-net shows the operator the original message, so it deploys without asking again. You see one line in the log.
 
 ## Quickstart
 
@@ -70,75 +84,47 @@ Then open a new agent session and ask: *"Who's on the agent net?"*
 
 Install details and options: [docs/setup.md](docs/setup.md). On a Mac, ask the CTO for the Tailscale install line: [docs/troubleshooting.md](docs/troubleshooting.md).
 
-## A tour
+## The ideas
 
-`agent-net` opens the TUI. It has seven tabs: **1** Sessions, **2** Graph, **3** Quotas, **4** Messages, **5** Tools, **6** Settings, **7** Inbox. `?` lists the keys of the screen you are on.
+Nine words, in the order you meet them.
 
-### Sessions and messages
+- **Session.** An agent you opened yourself, such as Claude Code in a terminal or Codex on a VM. agent-net finds it and gives it tools. *"The Pi session on the build VM."*
+- **Message.** One session asks another and gets the answer back in its own conversation. It arrives like a message you typed, labelled with its sender. *"Ask the backend session which port its dev server uses."*
+- **Worker.** A new session started for one task, in its own git worktree. It hands back a report with the diff, the run time and the cost. *"Fix the flaky test with a worker."*
+- **Charter.** A few lines per project: what it does, what it accepts, what it refuses, and when it must ask you. *"homelab-agent refuses to touch the encryption key."*
+- **Team and lead.** Projects that belong together, with one session as their lead. Members ask the lead first, not you. *"The forge team's lead may merge its members' work."*
+- **Steps.** A change moves through accept, review, test, merge, release and verify. Each step has an owner, and its evidence is recorded. *"The merger owns tests and merges; the caller verifies."*
+- **Desk.** The one place where things wait for you: irreversible actions, money, secrets, and choices only you can make. Everything else is handled and logged. *"Buy 2 TB of backup space? Recommended: yes."*
+- **CTO.** Your agent for running the network. *"Turn on lead merges for forge."*
+- **Chief of staff.** Your agent for sorting what reaches you. *"Handled for you: 22 closed, 4 sent on, 2 for you."*
 
-Every session on every machine, with its agent, project, model, status, CPU and memory. Enter opens a session live: its prompts, replies and tool calls. Messages (tab 4) shows what the agents say to each other.
+A guided tour of every screen is in [docs/tour.md](docs/tour.md).
 
-Ask an agent things like:
+## Why not just …
 
-- "Ask the Pi session on the build VM which port its dev server uses."
-- "Tell the backend session that the API field `user_id` is now `account_id`."
+Other tools solve parts of this, and some of them may be all you need.
 
-The message enters the other session as a new turn, labelled with its sender, and the reply comes back into your conversation. Agents answer each other without waiting for you; they still ask you before risky or out-of-scope work. Per session, the RULE cell sets how requests from other agents are handled (`normal`, `ask` or `auto`), and the DELEGATE cell sets who does the coding: the session itself, a native subagent on a cheaper model, or workers. See [delegation policy](docs/reference.md#delegation-policy).
+| Tool | What it does well | Where agent-net differs |
+|---|---|---|
+| **Claude Code messaging and agent teams** | Claude Code sessions message each other, also across machines, and a lead can run a team of Claude teammates. Built in, no install. | Claude Code only. Cross-machine traffic goes through Anthropic's servers with a claude.ai sign-in. agent-net covers five harnesses through your own gateway, and adds charters, steps and the Desk. |
+| **Claude Squad, Conductor** | Run several coding agents in parallel, each in its own git worktree, from one terminal or one Mac app. Simple and fast to start. | They start new agents on one machine. agent-net joins the sessions you already have on every machine, and lets them talk and follow rules. |
+| **OpenHands** | A self-hosted control center that runs coding agents, including Claude Code and Codex, in its own environments. | OpenHands launches and hosts the agents. agent-net connects the interactive sessions you are already working in, on your own machines. |
+| **Devin, Cursor cloud agents, Factory** | Hosted agents that take a task and return a pull request. | Hosted and vendor-run. agent-net is self-hosted and mixes vendors, with you setting the rules. |
+| **Swarm tools such as Ruflo (claude-flow)** | Many agents coordinate on missions, with a hive and a queen agent. | Many agents on one goal, led by an agent. agent-net is a supervised swarm: one agent per piece, with you as the owner. |
+| **CrewAI, LangGraph, AutoGen, OpenAI Agents SDK, Google ADK** | Frameworks for building agent programs in code. | You write the agents there. agent-net uses agents that already exist and that you also use by hand. |
+| **MCP and A2A** | Protocols: MCP gives an agent tools, and A2A lets agent services call each other. | agent-net uses MCP to give agents their tools. It is not an implementation of A2A. |
 
-### Workers
+If you only use Claude Code on one machine, try its built-in messaging first. If you want many agents on one task in one repo, a parallel-agent tool is simpler. agent-net fits when you run many agents, across harnesses and machines, on projects that depend on each other.
 
-Ask an agent to "do this with a worker". It calls `agent_worker_start` with a brief, and agent-net:
+## Isn't a swarm fragile?
 
-1. **Scores the brief.** A cheap judge rates six things (reasoning, scope, coupling, uncertainty, verification, risk) from 1 to 5. A fixed formula turns them into a level, from `trivial` to `very_complex`. The agent tells you the result in one line, and the Claude workers panel shows it next to the worker.
-2. **Picks a model.** Among the worker profiles you registered, it keeps the ones good enough for that level, prefers providers that are behind their quota pace, keeps the protected ones (your orchestrator's subscription) for last, and rotates so no model takes every task.
-3. **Starts the worker** in its own git worktree by default. Codex workers and Antigravity workers are sandboxed by their own sandboxes. On Linux, Pi and OpenCode workers run in bubblewrap when the project has the OS sandbox on (`workers.os_sandbox` in `node.json`). Otherwise Claude, Pi and OpenCode workers run with the owner's permissions. See the roadmap.
-4. **Sends a notice** when the worker ends: status, run time, tokens, the branch and the diff stat, with the worker's report. The calling agent reviews the diff and runs the tests before it tells you the work is done.
+The common criticism of multi-agent systems is right about one shape: many agents sharing one task, each missing the others' context and making choices that conflict (Cognition, "Don't build multi-agents"). It also costs many times the tokens (Anthropic measured about 15 times for its research system). A supervised swarm is built the other way.
 
-Each task's outcome is recorded: nudges, fixes, and bugs found later. The Quality panel (tab 3, `d` for details) shows how much of the orchestrator's time each model costs per task, by level.
-
-<p align="center">
-  <img alt="Quality analysis: four cards, simple, normal, hard and very complex, each listing the models with the minutes of orchestrator time per task and the number of tasks" src="docs/img/tui/quality.png" width="900">
-</p>
-
-Quotas (tab 3) also shows each subscription's usage and pace. Details: [workers](docs/reference.md#workers), [subscription quotas](docs/reference.md#subscription-quotas).
-
-### The graph and the CTO
-
-The Graph (tab 2) is the map of your agents: each project node has a charter (what it does, what it accepts and refuses), and edges set the rules between them. A `depends` edge says who may ask whom, and whether requests run without asking (`auto`), wait for you (`ask`) or are refused (`never`). A `deploys` edge lets one agent ship another's project.
-
-The CTO is an agent that runs the network for you. Press `c` and ask it in plain words: add a machine, draft a charter, set an edge, start a worker. Changes apply at once and leave an Inbox notice with an undo key where one is possible. Only removing a node, repo or machine, and rotating a machine token, wait for you as proposals. Your own login and OAuth consent stay with you: the CTO sends a one-click prompt.
-
-### Inbox
-
-<p align="center">
-  <img alt="Sessions with the Inbox tab showing 2 waiting, and the CTO box with two open proposals" src="docs/img/tui/cto-inbox.png" width="900">
-</p>
-
-Everything that waits for you, and every change in flight, is on one screen, the Desk (tab 7): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. See [owner inbox](docs/reference.md#owner-inbox-and-written-approvals).
-
-### Connected apps
-
-Cloud agents (for example Grok Bot) and your phone can use agent-net through MCP over OAuth. The app shows a code; you approve it in the TUI (Settings, tab 6), as a **bot** that acts under its own name with a small set of tools, or as an **owner app** that acts as you. Internet access is off until you turn it on; with Tailscale, agent-net sets up the Funnel route for you, and `agent-net setup --gateway --apps-tailscale-name agent-net` gives it a Tailscale name of its own.
-
-<p align="center">
-  <img alt="Connected apps: approve this app? Client Cursor, return host www.cursor.com, kind bot or owner app, name" src="docs/img/tui/connected-apps.png" width="900">
-</p>
-
-See [connected apps](docs/reference.md#connected-apps).
-
-### Skills and MCP servers
-
-Tools (tab 5) lists every skill and MCP server found on every machine, including the ones agent-net did not install. Turn one on for every project, for some projects, or for one machine; compare two copies of a skill and keep one; remove or restore. Filter with `node:`, `project:` or `machine:`, or press `t` on a node in the Graph to see what that agent gets. Every change is a plan you can undo. Details: [decision 0027](docs/decisions/0027-skills-and-mcp-management.md).
-
-Add an MCP server once, and sessions on every machine can use its tools. Tokens stay on the machine that hosts it.
-
-```
-agent-net mcp add homelab --url http://10.0.0.5:8000/mcp \
-  --header-file 'Authorization=~/.secrets/homelab'
-agent-net mcp list
-```
-
-Its tools appear in every session as `homelab__<tool>`, its prompts as `homelab__<prompt>`, and its resources as `agent-net://homelab/<uri>` (in Claude Code: `ListMcpResources`). Details: [docs/mcp-registry.md](docs/mcp-registry.md).
+- **Each agent owns its piece.** One session per project, or one worker per task, with its own context and its own git branch. Two agents do not edit the same thing at once.
+- **Agents talk where their work meets.** When a change crosses projects, one session tells the other, the way two engineers on two services do. A worker gets a written brief and hands back a checked report, not a shared transcript.
+- **Someone other than the author checks every change.** Accept, review, test, merge, release and verify each have an owner.
+- **Cost is chosen.** Each task goes to the cheapest model that is good enough for it, spread across your subscriptions.
+- **You supervise by exception.** Leads answer their members, the chief of staff sorts the rest, and only real decisions reach your Desk.
 
 ## How it works
 
@@ -150,7 +136,7 @@ Its tools appear in every session as `homelab__<tool>`, its prompts as `homelab_
 - **One gateway** runs on one machine. It keeps the directory of sessions, the graph, the worker records and every message until it is delivered.
 - **One daemon** runs on each machine. It finds the local sessions, delivers messages into them, starts workers, runs the difficulty judge, and queues outgoing messages while the gateway is down.
 - **Every session gets the same `agent_*` tools**: to find sessions, machines and projects, send and reply, announce its task, ask you a question, start, find, stop and rate workers, and read the graph. Claude Code and Codex get them from `agent-net mcp`; Pi uses an extension; OpenCode and Antigravity use plugins.
-- **Connected apps** reach the gateway through a separate listener on `127.0.0.1:7422`, which is published on the internet only when you turn it on.
+- **Connected apps** such as a cloud bot or your phone reach the gateway through a separate listener on `127.0.0.1:7422`, which is published on the internet only when you turn it on.
 
 ## Supported agents
 
@@ -188,24 +174,13 @@ A machine that was offline upgrades itself when it reconnects. Running Claude Co
 
 To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to delete its credentials too).
 
-## How it differs
-
-| | What it is | Scope |
-|---|---|---|
-| A2A | A protocol for agent services to call each other | Between agent services |
-| MCP | A protocol for an agent to use tools | Agent to tools |
-| Claude Code `SendMessage` | Built-in messaging between Claude Code sessions | One machine, one harness |
-| agent-net | Messages into running interactive sessions, workers with model choice, and owner control | Your machines, five harnesses |
-
-agent-net uses MCP to give agents their tools. It is not an implementation of A2A.
-
 ## Roadmap
 
+- **The web console.** The Desk, sessions, changes and messages in a browser and on the phone, served by the gateway. Read and answer first; the CTO chat panel next.
 - **Model choice from capability.** Match each model's measured capability to the task's raw difficulty score, corrected by how much review time its past work cost. Plan: [docs/design/model-capability.md](docs/design/model-capability.md).
 - **An optional sandbox for every worker.** Linux is done for Pi and OpenCode workers: bubblewrap, switched on per project with `workers.os_sandbox` in `node.json`. Still to do: macOS (sandbox-exec, designed), and Claude workers, which are refused while the switch is on because `claude --bg` runs outside any wrapper (the plan is Claude Code's own sandbox settings). Codex and Antigravity keep their own sandboxes. Design: [docs/design/worker-os-sandbox.md](docs/design/worker-os-sandbox.md); plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
 - **A modular agent-net:** agent-net keeps the mechanisms, and a way of working (who does what, how work is tested and merged, what agents are told) becomes data at network, team, repo or agent level, which the CTO can propose to change. Plan: [docs/design/modularity.md](docs/design/modularity.md).
 - **Its own Tailscale name for agent-net as the default.** It is built and off by default: `agent-net setup --gateway --apps-tailscale-name agent-net` gives connected apps their own Tailscale node, so they do not share a host name with other services ([decision 0058](docs/decisions/0058-own-tailscale-name.md)). Next: make it the default once it is tested.
-- **The phone app.**
 - **OAuth logins for registry MCP servers.** Resources and prompts already pass through; a server that needs an OAuth login cannot be added yet. What it needs: [docs/mcp-registry.md](docs/mcp-registry.md#oauth-logins-not-built).
 
 ## Development
