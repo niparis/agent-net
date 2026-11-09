@@ -316,6 +316,9 @@ func (claudeLauncher) stopID(d *Daemon, id string) {
 	if id == "" {
 		return
 	}
+	// Take the tree before `claude stop` removes the session file, then check
+	// that it really went away.
+	d.afterClaudeStop(id)
 	bin, err := d.harnessBinary("claude")
 	if err != nil {
 		return

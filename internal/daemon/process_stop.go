@@ -41,6 +41,8 @@ type procView struct {
 	// Token identifies one run of the process: a reused process ID has another.
 	Token  string
 	Zombie bool
+	// RSSKB is the resident set size in kilobytes, or 0 when it cannot be read.
+	RSSKB int64
 }
 
 // processStop stops processes on the machine q.NodeID. The machine is always

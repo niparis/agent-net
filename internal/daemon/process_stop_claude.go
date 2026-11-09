@@ -27,7 +27,8 @@ const (
 	claudeAncestorMax = 64
 )
 
-// claudeRoster is the part of ~/.claude/daemon/roster.json that a stop reads.
+// claudeRoster is the part of ~/.claude/daemon/roster.json that a process
+// stop and the Claude end-of-job check (claudereap.go) read.
 type claudeRoster struct {
 	SupervisorPID int                     `json:"supervisorPid"`
 	UpdatedAt     int64                   `json:"updatedAt"` // Unix milliseconds
@@ -36,9 +37,11 @@ type claudeRoster struct {
 
 // claudeWorker is one live background session in the roster.
 type claudeWorker struct {
-	PID     int    `json:"pid"`     // the background host
-	ReplPID int    `json:"replPid"` // the session process
-	CWD     string `json:"cwd"`
+	PID           int    `json:"pid"` // the background host
+	ProcStart     string `json:"procStart"`
+	ReplPID       int    `json:"replPid"` // the session process
+	ReplProcStart string `json:"replProcStart"`
+	CWD           string `json:"cwd"`
 }
 
 // claudeOwner names the session that a roster process belongs to.

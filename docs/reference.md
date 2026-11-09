@@ -3423,6 +3423,37 @@ once per session in an idle stretch. After success the Sessions
 row says `compacted while idle HH:MM`, in your display time zone, until a new turn.
 The separate CTO compaction loop handles OpenCode, so it does not overlap.
 
+### Ending a stopped background Claude tree
+
+See [decision 0109](decisions/0109-end-stopped-claude-background-trees.md).
+
+`claude stop <id>` asks Claude's supervisor to end a background job. The
+supervisor's process tree can still be there afterwards, so when agent-net stops
+a Claude worker or owner session it records the job's pty host and claimed
+process before the stop, then checks again about ten seconds later.
+
+The supervisor's roster, `~/.claude/daemon/roster.json`, is the first check. It
+is written whenever the supervisor's workers change, and every pid in it is a
+live session or worker, including idle interactive sessions whose
+`~/.claude/jobs/<id>/state.json` says `done`. If the roster is missing, older
+than 60 seconds, or still lists the job or either recorded pid, the check does
+nothing. `daemon.status.json` is never used: it can be hours stale.
+
+Only when a fresh roster no longer lists the tree does the check look at the
+real process tree. It ends what is left only when the job's state is `stopped`,
+`done` or `failed`, the pids carry the recorded start times, the tree belongs to
+the daemon's user (real and effective), and it is not a registered live
+agent-net session or worker. Ending is SIGTERM, then SIGKILL after two seconds,
+with the start time checked again before each signal.
+
+There is no periodic sweep. A read-only survey on research on 2026-11-09 found
+no tree that was absent from a fresh roster and still had a job: every live tree
+was in the roster, and the only other tree was the idle spare, which has no job.
+So agent-net only closes the gap its own stops can create.
+
+Each ended tree writes one line to the daemon log:
+`claude.tree job=<id> pid=<host pid> age=<age> rss=<tree RSS> ended=<term|kill|failed>`.
+
 ### Delivery step contracts
 
 `delivery.contract.accept`, `.review`, `.test`, `.approve`, `.merge`, `.release`,

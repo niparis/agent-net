@@ -99,6 +99,15 @@ type Config struct {
 	// claudeRosterPath replaces the Claude roster file that a process stop
 	// reads (process_stop_claude.go). Empty uses the user's Claude folder.
 	claudeRosterPath string
+	// testClaudeProcs replaces the process table of the Claude end-of-job
+	// check, so its tests never look at a real process.
+	testClaudeProcs func() []claudeBgProc
+	// testClaudeStopCheckAt replaces the delay before a stopped Claude job's
+	// tree is checked.
+	testClaudeStopCheckAt time.Duration
+	// testClaudeNow replaces time.Now for the Claude end-of-job check and its
+	// roster freshness.
+	testClaudeNow func() time.Time
 	// testNoDifficulty skips the difficulty judge at worker start. Test
 	// daemons set it, because their fake harnesses cannot answer the judge;
 	// the assessment tests turn it off again.
