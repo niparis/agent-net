@@ -210,10 +210,26 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 		if target, err := gitBranchHead(ctx, folder, q.TargetBranch); err == nil {
 			if base, err := gitOut(ctx, folder, "merge-base", target, commit); err == nil && protocol.ValidCommit(base) {
 				q.BaseCommit = base
-				if stat, err := gitOut(ctx, folder, "diff", "--stat", base, commit); err == nil {
-					q.DiffStat = deliveryDiffStat(stat)
+			}
+		}
+	}
+	// A continuation already knows the commit its work started from. Use it
+	// when the submit names no target branch, so the diff stat and the
+	// sensitive path are computed instead of "diff unavailable". The stored
+	// base is kept only when it still holds the new head.
+	if q.BaseCommit == "" && a.Change != "" {
+		var view protocol.ChangeView
+		if err := d.deliveryCall(ctx, protocol.FrameChangeGet, protocol.ChangeGetRequest{ChangeID: a.Change}, &view); err == nil && view.Change.Project == q.Project {
+			if base := view.Change.BaseCommit; protocol.ValidCommit(base) {
+				if _, err := gitOut(ctx, folder, "merge-base", "--is-ancestor", base, commit); err == nil {
+					q.BaseCommit = base
 				}
 			}
+		}
+	}
+	if protocol.ValidCommit(q.BaseCommit) {
+		if stat, err := gitOut(ctx, folder, "diff", "--stat", q.BaseCommit, commit); err == nil {
+			q.DiffStat = deliveryDiffStat(stat)
 		}
 	}
 	q.SensitivePath = deliverySensitivePath(ctx, folder, q.BaseCommit, commit)

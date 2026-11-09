@@ -330,6 +330,56 @@ func TestChangeSubmitNewHeadBumpsRevision(t *testing.T) {
 	}
 }
 
+// A caller that submits a new revision of a worker's change on the worker's
+// branch keeps the worker as the change's origin, and the worker's own
+// hand-back of the same head keeps it too. The caller's accept is then judged
+// against the worker, so it is independent by session, never none.
+func TestChangeSubmitKeepsWorkerOrigin(t *testing.T) {
+	r := newDeliveryRig(t)
+	first := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change
+	if first.Origin.Kind != protocol.OriginWorker || first.Origin.SessionID != r.worker || first.Origin.Model != "claude-opus-5-5" {
+		t.Fatalf("worker origin %+v", first.Origin)
+	}
+	// The caller submits the worker's new head on the worker's branch, as its
+	// daemon does after a worker notice.
+	cont := protocol.ChangeSubmitRequest{SessionID: r.caller, ChangeID: first.ID, Project: "demo", Branch: "agent-net/w_1", HeadCommit: commitB,
+		Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: r.caller, Model: "claude-opus-5-5", ModelFamily: "anthropic"}}
+	res := r.submit(r.a, cont)
+	c := res.Change.Change
+	if !res.Bumped || c.Revision != 2 {
+		t.Fatalf("not a new revision: revision %d bumped %v", c.Revision, res.Bumped)
+	}
+	if c.Origin.Kind != protocol.OriginWorker || c.Origin.WorkerID != "w_1" || c.Origin.SessionID != r.worker ||
+		c.Origin.Model != "claude-opus-5-5" || c.Origin.ModelFamily != "anthropic" {
+		t.Fatalf("the caller submit changed the worker origin: %+v", c.Origin)
+	}
+	// The worker's own hand-back of the same head leaves the origin alone.
+	same := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitB)).Change.Change
+	if same.Revision != 2 || same.Origin != c.Origin {
+		t.Fatalf("worker hand-back of the same head: revision %d origin %+v, want %+v", same.Revision, same.Origin, c.Origin)
+	}
+	// The caller's accept is independent of the worker by session.
+	e := r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: first.ID, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitB}).Evidence
+	if e.Fields[protocol.FieldIndependent] != protocol.IndependentSession {
+		t.Fatalf("caller accept on the worker's revision is independent=%q", e.Fields[protocol.FieldIndependent])
+	}
+}
+
+// A worker hand-back for a commit that is already the change's head makes the
+// worker the origin, rather than leaving the session's origin in place.
+func TestWorkerHandbackSameHeadClaimsOrigin(t *testing.T) {
+	r := newDeliveryRig(t)
+	own := r.submit(r.a, protocol.ChangeSubmitRequest{SessionID: r.caller, Project: "demo", Branch: "agent-net/w_1", HeadCommit: commitA,
+		Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: r.caller}}).Change.Change
+	if own.Origin.Kind != protocol.OriginSession {
+		t.Fatalf("session origin %+v", own.Origin)
+	}
+	got := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change
+	if got.Revision != 1 || got.Origin.Kind != protocol.OriginWorker || got.Origin.WorkerID != "w_1" || got.Origin.SessionID != r.worker || got.Origin.Model != "claude-opus-5-5" {
+		t.Fatalf("worker hand-back of the same head: revision %d origin %+v", got.Revision, got.Origin)
+	}
+}
+
 func TestChangeSubmitSameHeadKeepsRevision(t *testing.T) {
 	r := newDeliveryRig(t)
 	first := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change

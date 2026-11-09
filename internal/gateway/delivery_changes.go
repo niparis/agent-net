@@ -335,7 +335,17 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 			}
 		}
 		next.Machine = machine
-		if bumped {
+		// A worker's hand-back names the worker as the author, on a new
+		// revision or on the head the change already has. A session that
+		// continues a worker's change keeps that worker as the origin: the
+		// session did not write the revision. Only a change the session
+		// creates itself gets a session origin.
+		switch {
+		case q.Origin.Kind == protocol.OriginWorker:
+			next.Origin = q.Origin
+		case c.Origin.Kind == protocol.OriginWorker:
+			next.Origin = c.Origin
+		case bumped:
 			next.Origin = q.Origin
 		}
 		if q.TargetBranch != "" {
