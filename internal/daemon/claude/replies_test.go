@@ -214,9 +214,7 @@ func TestClaudeRepliesUnsureMatchThreadsToConversation(t *testing.T) {
 		t.Fatalf("unsure answer = %+v, want a reply in c_1 with no parent", p)
 	}
 	for _, id := range []string{"m_one", "m_two"} {
-		if got := r.book.closedAs(id); got != daemon.ReplyMatchConversation {
-			t.Fatalf("%s closed as %q, want %q", id, got, daemon.ReplyMatchConversation)
-		}
+		eventually(t, id+" closed as conversation", func() bool { return r.book.closedAs(id) == daemon.ReplyMatchConversation })
 	}
 	r.host.mu.Lock()
 	logs := strings.Join(r.host.logs, "\n")
@@ -230,6 +228,9 @@ func TestClaudeRepliesUnsureMatchThreadsToConversation(t *testing.T) {
 	if p := r.answer(addr, "about m_three: done"); p.ParentID != "m_three" {
 		t.Fatalf("answer naming m_three = %+v", p)
 	}
+	// m_three's close comes from the same call as the answer's close, so once
+	// it has landed, m_four's state is final.
+	eventually(t, "m_three closed as exact", func() bool { return r.book.closedAs("m_three") == daemon.ReplyMatchExact })
 	if got := r.book.closedAs("m_four"); got != "" {
 		t.Fatalf("m_four closed as %q by an answer to m_three", got)
 	}
