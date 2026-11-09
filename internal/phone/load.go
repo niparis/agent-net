@@ -321,7 +321,7 @@ func askRank(a protocol.Ask) int {
 	switch a.Kind {
 	case protocol.AskKindQuestion:
 		return 0
-	case protocol.AskKindApproval:
+	case protocol.AskKindApproval, protocol.AskKindPermission:
 		return 1
 	case protocol.AskKindStep:
 		return 2
@@ -436,6 +436,12 @@ func askCard(a protocol.Ask, now time.Time, names map[string]string) askView {
 		if !v.CanText {
 			v.Form, v.Hint = "tui", "Answer from the TUI."
 		}
+	case protocol.AskKindPermission:
+		// The owner's one-click allow of exact Claude Code rules. Nothing is
+		// written until this answer reaches the gateway.
+		v.Form, v.Dismiss, v.Options = "inbox", true, nil
+		v.Approve, v.Refuse = true, true
+		v.Question, v.Detail = firstLine(a.Question), a.Detail
 	case protocol.AskKindApproval, protocol.AskKindQuestion:
 		v.Form, v.Dismiss, v.CanText = "inbox", true, true
 		v.Approve, v.Refuse = true, true

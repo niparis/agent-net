@@ -1739,6 +1739,40 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.flushLeadRequests(ctx)
 		return res, err
 
+	case "permission.propose":
+		p, err := decode[protocol.PermissionProposeFrame](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad permission.propose")
+		}
+		owner, err := st.SessionNode(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("session %q does not belong to this node", p.SessionID)
+		}
+		res, err := st.ProposePermission(p)
+		if err == nil {
+			g.logLine("permission.propose", "node", nc.id, "session", p.SessionID, "proposal", res.ID)
+		}
+		return res, err
+
+	case protocol.FramePermissionTrustAsk:
+		var p protocol.PermissionTrustAsk
+		if json.Unmarshal(raw, &p) != nil || p.Path == "" {
+			return nil, reject("bad permission.trust_ask")
+		}
+		g.raiseTrustAsk(p.Session, nc.id, st.hostname(nc.id), p.Path, p.Project, p.Owner)
+		return map[string]bool{"raised": true}, nil
+
+	case "permission.undo":
+		var p protocol.PermissionUndoFrame
+		if json.Unmarshal(raw, &p) != nil || p.ProposalID == "" || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		res, err := g.undoPermissionProposal(ctx, p.ProposalID)
+		return res, err
+
 	case "rate.offer":
 		p, err := decode[protocol.RateOfferFrame](raw)
 		if err != nil || p.SessionID == "" {
@@ -2725,6 +2759,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
 			return nil, err
 		}
+		// A permission approval is applied only here, after the owner's answer
+		// was stored. It reaches each target machine's daemon as its own frame.
+		var permissionResults []protocol.PermissionApplyResult
+		var permissionErr error
+		if item.Kind == protocol.AskKindPermission && item.Status == "approved" {
+			permissionResults, permissionErr = g.applyPermissionProposal(ctx, item.ID)
+			if permissionErr != nil {
+				g.logLine("permission.apply.refused", "id", p.ID, "reason", permissionErr.Error())
+			}
+		}
 		g.dispatchStepTasks(ctx)
 		node, err := st.SessionNode(item.SessionID)
 		if err == nil {
@@ -2739,7 +2783,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				}
 			}
 		}
-		return map[string]any{"item": item}, nil
+		out := map[string]any{"item": item}
+		if len(permissionResults) > 0 {
+			out["permission_results"] = permissionResults
+		}
+		if permissionErr != nil {
+			out["permission_error"] = permissionErr.Error()
+		}
+		return out, nil
 
 	case "lead.resolve":
 		var p struct {

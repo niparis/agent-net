@@ -402,6 +402,20 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			out["note"] = "Your earlier pending asks are still open. Pass replaces with one of their IDs to retire it."
 		}
 		return out, nil
+	case "agent_permission_propose":
+		var p protocol.PermissionProposeRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad agent_permission_propose params")
+		}
+		sid := d.ctoSessionID()
+		if sid == "" {
+			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
+		}
+		out, err := d.proposePermission(ctx, sid, p)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": out.ID, "status": out.Status}, nil
 	case "agent_learn":
 		var p protocol.LearnRequest
 		if json.Unmarshal(raw, &p) != nil {

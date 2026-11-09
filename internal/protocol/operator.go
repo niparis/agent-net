@@ -114,6 +114,15 @@ const (
 	// (decision 0088). Open to agent sessions, not to the command line.
 	OpCharterDraft = "agent_charter_draft" // takes CharterDraftRequest, answers CharterDraftResult
 
+	// OpPermissionPropose proposes exact Claude Code permission allow rules
+	// for registered repositories (decision 0127). Open to every session,
+	// including the CTO, and refused for the command line. It changes no file:
+	// the owner answers an owner-only ask, and only then does the gateway tell
+	// each target machine to apply.
+	OpPermissionPropose = "agent_permission_propose" // takes PermissionProposeRequest, answers PermissionProposeResult
+	// OpPermissionUndo removes exactly the rules one approval added. Owner only.
+	OpPermissionUndo = "permission_undo" // takes PermissionUndoRequest, answers PermissionUndoResult
+
 	// OpRate records one caller's rating of a finished worker (difficulty
 	// calibration, part 4). Open to agent sessions, not to the command line.
 	OpRate = "agent_rate" // the daemon method behind agent_worker_rate
@@ -159,7 +168,7 @@ var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpChiefSorts, OpAskUndo, OpAskMark, OpDeskLog, OpDeskSettle, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
-	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick, OpJudgmentAdd}
+	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick, OpJudgmentAdd, OpPermissionUndo}
 
 // HiddenItems is the owner's shared TUI visibility preference. Session IDs
 // remain hidden across machines; node names identify graph items on Graph.

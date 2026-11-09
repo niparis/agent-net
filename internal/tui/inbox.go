@@ -148,8 +148,14 @@ func (m Model) askRow(a protocol.Ask) (inboxRow, bool) {
 			}
 		}
 		row.group, row.key, row.kind, row.name, row.proposal = inboxProposal, proposalKey(p), "proposal", "CTO", p
-	case protocol.AskKindApproval, protocol.AskKindQuestion:
-		row.group, row.key, row.kind = inboxApproval, "inbox:"+a.ID, a.Kind
+	case protocol.AskKindApproval, protocol.AskKindQuestion, protocol.AskKindPermission:
+		kind := a.Kind
+		if kind == protocol.AskKindPermission {
+			// A permission ask has the same actions as an approval: the
+			// numbered options below it are Approve and Reject.
+			kind = "approval"
+		}
+		row.group, row.key, row.kind = inboxApproval, "inbox:"+a.ID, kind
 		row.name, row.text = m.inboxAskerName(item), inboxItemSummary(item)
 	case protocol.AskKindStep:
 		row.group, row.key, row.kind = inboxApproval, "step:"+a.ID, "step"

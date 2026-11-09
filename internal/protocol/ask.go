@@ -64,6 +64,9 @@ const (
 	AskKindLearned    = "learned"
 	AskKindDraft      = "draft"
 	AskKindProposal   = "proposal"
+	// AskKindPermission is an owner-only ask to allow exact Claude Code rules
+	// in registered repositories. Only the owner can answer it.
+	AskKindPermission = "permission"
 	AskKindStep       = "step"
 	AskKindWaiting    = "waiting"
 	AskKindStall      = "session_stall"
