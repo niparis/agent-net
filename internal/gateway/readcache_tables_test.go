@@ -343,12 +343,13 @@ func writeKey(t *testing.T, s *Store, key string, n int) {
 // writeRow is how the tests change a table. A table the generic row does not
 // fit has its own statement here.
 var writeRowSQL = map[string]string{
-	"setting_revision": `UPDATE setting_revision SET revision=revision+1`,
-	"setting_values":   `INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('probe','repo','probe','','"x"',1)`,
-	"charter_values":   `INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('global','','probe','x',1,'t')`,
-	"apps":             `INSERT INTO apps(id,name,kind,client_id,client_name,created_at) VALUES('app_probe','probe','owner_app','c','c',1)`,
-	"teams":            `INSERT INTO teams(id,name,created_at,updated_at) VALUES('t_probe','probe',1,1)`,
-	"team_members":     `INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','probe','t_probe')`,
+	"setting_revision":     `UPDATE setting_revision SET revision=revision+1`,
+	"setting_values":       `INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('probe','repo','probe','','"x"',1)`,
+	"charter_values":       `INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('global','','probe','x',1,'t')`,
+	"apps":                 `INSERT INTO apps(id,name,kind,client_id,client_name,created_at) VALUES('app_probe','probe','owner_app','c','c',1)`,
+	"teams":                `INSERT INTO teams(id,name,created_at,updated_at) VALUES('t_probe','probe',1,1)`,
+	"team_members":         `INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','probe','t_probe')`,
+	"worker_brief_defects": `INSERT INTO worker_brief_defects(severity,at) VALUES(1,1)`,
 	// A charter must belong to a node, or the graph does not load.
 	"graph_charter": `INSERT INTO graph_charter(node,attr,value,updated_at,updated_by) VALUES('cogforge','probe','x',1,'t')`,
 }
