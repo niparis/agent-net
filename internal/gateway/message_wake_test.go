@@ -102,6 +102,38 @@ func (p *wakeProbe) message(t *testing.T, to string) protocol.Message {
 	return m
 }
 
+func (p *wakeProbe) stepMessage(t *testing.T, to string) protocol.Message {
+	t.Helper()
+	msgID := protocol.NewID("msg")
+	changeID := protocol.NewID("ch")
+	idemKey := "step_" + msgID
+	now := p.s.now()
+	expires := now.Add(time.Hour)
+	if _, err := p.s.db.Exec(`INSERT INTO delivery_changes(id, project, machine, branch, head_commit, revision, origin, state, created_at)
+		VALUES(?, 'proj', 'node1', 'feature', 'head1', 1, '{}', 'open', ?)`, changeID, now.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_tasks(change_id, revision, step, for_step, after_merge, owner_node, claimed_by, completed, created_at)
+		VALUES(?, 1, 'test', '', 0, 'node1', '', 0, ?)`, changeID, now.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`INSERT INTO messages(id, conversation_id, sender, recipient, type, body, hop, idem_key, created_at, expires_at, state)
+		VALUES(?, 'conv', 'agent-net', ?, 'notification', 'step task', 0, ?, ?, ?, 'stored')`,
+		msgID, to, idemKey, now.UnixNano(), expires.UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_messages(change_id, revision, step, for_step, after_merge, session_id, message_id)
+		VALUES(?, 1, 'test', '', 0, ?, ?)`, changeID, to, msgID); err != nil {
+		t.Fatal(err)
+	}
+	m, ok, err := p.s.Message(msgID)
+	if err != nil || !ok {
+		t.Fatalf("step message: ok=%v err=%v", ok, err)
+	}
+	p.g.dispatch(context.Background(), m)
+	return m
+}
+
 func (p *wakeProbe) expectWake(t *testing.T, session string) map[string]string {
 	t.Helper()
 	select {
@@ -255,4 +287,23 @@ func TestMessageToOfflinePiIsNotWoken(t *testing.T) {
 	if note := cx.g.wakeReceiptNote(cx.message(t, id), ""); note != "" {
 		t.Fatalf("codex note = %q", note)
 	}
+}
+
+// A current step message to an offline interactive Claude session does not wake it
+// when wake_on_message is off and autonomy is off.
+func TestStepMessageDoesNotWakeInteractiveClaudeWhenWakeOnMessageOff(t *testing.T) {
+	p := newWakeProbe(t)
+	id := p.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyOff)
+	setWakeOnMessage(t, p.s, id, protocol.WakeOnMessageOff)
+	p.stepMessage(t, id)
+	p.expectNoWake(t)
+}
+
+// A current step message wakes an offline interactive Claude session by default
+// (wake_on_message unset/default-on).
+func TestStepMessageWakesInteractiveClaudeByDefault(t *testing.T) {
+	p := newWakeProbe(t)
+	id := p.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyOff)
+	p.stepMessage(t, id)
+	p.expectWake(t, id)
 }

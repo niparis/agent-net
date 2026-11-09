@@ -105,7 +105,8 @@ func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m pr
 		// standing loop tick counts as an autonomy wake (the owner set the loop).
 		return
 	}
-	g.wakeSessionAs(ctx, a, isLoopMessage(m), true)
+	fromMessage := g.wakeAllowed(a, isLoopMessage(m) || g.autonomyWake(a))
+	g.wakeSessionAs(ctx, a, isLoopMessage(m), fromMessage)
 }
 
 // isLoopMessage tells whether the reserved sender's message is a standing
