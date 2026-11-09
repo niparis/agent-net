@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -215,8 +216,105 @@ func (m Model) askSessionShown(a protocol.Ask) bool {
 	return matches(ag, m.filter)
 }
 
+type deskCacheState struct {
+	sync.Mutex
+	fingerprint uint64
+	rows        []inboxRow
+	maxNameW    int
+	rowLines    map[inboxRowLineKey]string
+	whyLines    map[inboxWhyLineKey]string
+}
+
+type inboxRowLineKey struct {
+	name  string
+	text  string
+	kind  string
+	nameW int
+	w     int
+	age   string
+}
+
+type inboxWhyLineKey struct {
+	whyYou   string
+	priority int
+	w        int
+}
+
+// deskAsksFingerprint computes a cheap, 0-alloc 64-bit FNV-1a hash over all asks,
+// proposals, filter state, snapshot version, and asksVersion.
+func deskAsksFingerprint(m Model) uint64 {
+	h := uint64(14695981039346656037)
+	const prime = 1099511628211
+	hashStr := func(s string) {
+		for i := 0; i < len(s); i++ {
+			h = (h ^ uint64(s[i])) * prime
+		}
+	}
+	hashInt := func(v int64) {
+		h = (h ^ uint64(v)) * prime
+	}
+	hashBool := func(b bool) {
+		v := uint64(0)
+		if b {
+			v = 1
+		}
+		h = (h ^ v) * prime
+	}
+
+	hashInt(m.asksVersion)
+	hashInt(int64(len(m.asks)))
+	hashInt(int64(len(m.proposals)))
+	hashStr(m.filter)
+	hashBool(m.showHiddenSessions)
+	hashBool(m.showOffline)
+	hashStr(m.snap.Version)
+
+	for _, a := range m.asks {
+		hashStr(a.ID)
+		hashStr(a.State)
+		hashStr(a.Kind)
+		hashStr(a.Question)
+		hashStr(a.WhyYou)
+		hashInt(int64(a.Priority))
+		hashStr(a.From)
+		hashStr(a.FromSession)
+		hashStr(a.AboutID)
+		hashStr(a.AboutTitle)
+		hashStr(a.Node)
+		hashStr(a.Ref)
+		hashStr(a.MessageID)
+		hashStr(a.Detail)
+		hashStr(a.Recommendation)
+		hashInt(a.CreatedAt.UnixNano())
+		if a.Delivery != nil {
+			hashStr(a.Delivery.ChangeID)
+		}
+	}
+
+	for _, p := range m.proposals {
+		hashStr(p.ID)
+		hashStr(p.NodeID)
+		hashStr(p.Status)
+		hashStr(p.Reason)
+	}
+
+	return h
+}
+
 // inboxRows builds the Needs you rows from the one list of asks.
 func (m Model) inboxRows() []inboxRow {
+	fp := deskAsksFingerprint(m)
+	c := m.deskCache
+	if c != nil {
+		c.Lock()
+		if c.rows != nil && c.fingerprint == fp {
+			rows := c.rows
+			c.Unlock()
+			return rows
+		}
+		c.Unlock()
+	}
+
 	var rows []inboxRow
 	for _, a := range m.asks {
 		if row, ok := m.askRow(a); ok {
@@ -232,6 +330,26 @@ func (m Model) inboxRows() []inboxRow {
 		}
 		return rows[i].key < rows[j].key
 	})
+
+	nameW := 12
+	for _, row := range rows {
+		nameW = max(nameW, ansi.StringWidth(sanitize(row.name)))
+	}
+	nameW = min(nameW, 20)
+
+	if c != nil {
+		c.Lock()
+		c.fingerprint = fp
+		c.rows = rows
+		c.maxNameW = nameW
+		if len(c.rowLines) > 500 {
+			c.rowLines = make(map[inboxRowLineKey]string)
+		}
+		if len(c.whyLines) > 500 {
+			c.whyLines = make(map[inboxWhyLineKey]string)
+		}
+		c.Unlock()
+	}
 	return rows
 }
 

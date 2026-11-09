@@ -146,6 +146,99 @@ func fitBody(body []string, sel, room int) ([]string, int) {
 	return append(out, sDim.Render(fmt.Sprintf("… %d more", len(body)-keep))), top
 }
 
+// fitBodyWindow returns the slice range [top, top+keep) of body lines to display
+// for a section with total lines, sel cursor line (-1 if unselected), and room.
+// more is non-empty if a "… %d more" line should be appended.
+func fitBodyWindow(total, sel, room int) (top, keep int, more string, room1More bool) {
+	if room < 1 {
+		room = 1
+	}
+	if total <= room {
+		return 0, total, "", false
+	}
+	if room == 1 {
+		if sel >= 0 {
+			return sel, 1, "", false
+		}
+		return 0, 0, sDim.Render(fmt.Sprintf("… %d more", total)), true
+	}
+	keep = room - 1
+	top = 0
+	if sel >= keep {
+		top = sel - keep + 1
+	}
+	top = min(max(top, 0), total-keep)
+	more = sDim.Render(fmt.Sprintf("… %d more", total-keep))
+	return top, keep, more, false
+}
+
+func (m Model) deskRowLineCached(row inboxRow, nameW, innerW int, selected bool) string {
+	if selected {
+		return m.inboxRowLine(row, nameW, innerW, true)
+	}
+	c := m.deskCache
+	if c == nil {
+		return m.inboxRowLine(row, nameW, innerW, false)
+	}
+	age := cellR(needsAge(m.now(), row.since), 4)
+	key := inboxRowLineKey{
+		name:  row.name,
+		text:  row.text,
+		kind:  row.kind,
+		nameW: nameW,
+		w:     innerW,
+		age:   age,
+	}
+	c.Lock()
+	if c.rowLines == nil {
+		c.rowLines = make(map[inboxRowLineKey]string)
+	}
+	line, ok := c.rowLines[key]
+	c.Unlock()
+	if ok {
+		return line
+	}
+	line = m.inboxRowLine(row, nameW, innerW, false)
+	c.Lock()
+	c.rowLines[key] = line
+	c.Unlock()
+	return line
+}
+
+func (m Model) deskWhyLineCached(row inboxRow, innerW int) string {
+	c := m.deskCache
+	if c == nil {
+		label := "why you: "
+		if row.ask.Priority > 0 {
+			label = fmt.Sprintf("priority %d · why you: ", row.ask.Priority)
+		}
+		return sDim.Render(clip("    "+label+sanitize(row.ask.WhyYou), innerW))
+	}
+	key := inboxWhyLineKey{
+		whyYou:   row.ask.WhyYou,
+		priority: row.ask.Priority,
+		w:        innerW,
+	}
+	c.Lock()
+	if c.whyLines == nil {
+		c.whyLines = make(map[inboxWhyLineKey]string)
+	}
+	line, ok := c.whyLines[key]
+	c.Unlock()
+	if ok {
+		return line
+	}
+	label := "why you: "
+	if row.ask.Priority > 0 {
+		label = fmt.Sprintf("priority %d · why you: ", row.ask.Priority)
+	}
+	line = sDim.Render(clip("    "+label+sanitize(row.ask.WhyYou), innerW))
+	c.Lock()
+	c.whyLines[key] = line
+	c.Unlock()
+	return line
+}
+
 // deskBoxes draws the sections at width w in at most room lines (room <= 0
 // means no limit) and returns the line of the selected row. A section that
 // does not hold the cursor is cut first.
@@ -158,27 +251,31 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 	var sections []deskSection
 
 	nameW := 12
-	for _, row := range rows {
-		nameW = max(nameW, ansi.StringWidth(sanitize(row.name)))
+	if m.deskCache != nil && m.deskCache.maxNameW > 0 {
+		nameW = m.deskCache.maxNameW
+	} else {
+		for _, row := range rows {
+			nameW = max(nameW, ansi.StringWidth(sanitize(row.name)))
+		}
+		nameW = min(nameW, 20)
 	}
-	nameW = min(nameW, 20)
-	needs := deskSection{title: fmt.Sprintf("Needs you · %d", len(rows)), color: roleWarning, sel: -1}
+
+	needsTotal := 0
+	needsSel := -1
 	if len(rows) == 0 {
-		needs.body = []string{sDim.Render("Nothing is waiting for you.")}
-	}
-	for i, row := range rows {
-		if sec == deskSecAsk && i == at {
-			needs.sel = len(needs.body)
-		}
-		needs.body = append(needs.body, m.inboxRowLine(row, nameW, innerW, sec == deskSecAsk && i == at))
-		if row.ask.WhyYou != "" {
-			label := "why you: "
-			if row.ask.Priority > 0 {
-				label = fmt.Sprintf("priority %d · why you: ", row.ask.Priority)
+		needsTotal = 1
+	} else {
+		for i, row := range rows {
+			if sec == deskSecAsk && i == at {
+				needsSel = needsTotal
 			}
-			needs.body = append(needs.body, sDim.Render(clip("    "+label+sanitize(row.ask.WhyYou), innerW)))
+			needsTotal++
+			if row.ask.WhyYou != "" {
+				needsTotal++
+			}
 		}
 	}
+	needs := deskSection{title: fmt.Sprintf("Needs you · %d", len(rows)), color: roleWarning, sel: needsSel}
 	sections = append(sections, needs)
 
 	d := m.delivery
@@ -253,9 +350,10 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 	// Fit the sections to the room. The section with the cursor is cut last:
 	// the others first shrink to a few lines, then to one.
 	limits := make([]int, len(sections))
-	total := 0
-	for i, sc := range sections {
-		limits[i] = len(sc.body)
+	limits[0] = needsTotal
+	total := limits[0] + 2
+	for i := 1; i < len(sections); i++ {
+		limits[i] = len(sections[i].body)
 		total += limits[i] + 2
 	}
 	if room > 0 {
@@ -264,7 +362,11 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 				break
 			}
 			for i, sc := range sections {
-				if sc.sel < 0 && limits[i] > cap {
+				scSel := sc.sel
+				if i == 0 {
+					scSel = needsSel
+				}
+				if scSel < 0 && limits[i] > cap {
 					total -= limits[i] - cap
 					limits[i] = cap
 				}
@@ -274,19 +376,64 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 			if total <= room {
 				break
 			}
-			if sc.sel >= 0 {
+			scSel := sc.sel
+			if i == 0 {
+				scSel = needsSel
+			}
+			if scSel >= 0 {
 				cut := min(total-room, max(limits[i]-1, 0))
 				limits[i] -= cut
 				total -= cut
 			}
 		}
 	}
+
+	top, keep, more, room1More := fitBodyWindow(needsTotal, needsSel, limits[0])
+	var needsBody []string
+	if len(rows) == 0 {
+		needsBody = []string{sDim.Render("Nothing is waiting for you.")}
+	} else if room1More {
+		needsBody = []string{more}
+	} else {
+		curLine := 0
+		for i, row := range rows {
+			line1 := curLine
+			line2 := -1
+			curLine++
+			if row.ask.WhyYou != "" {
+				line2 = curLine
+				curLine++
+			}
+			if line1 >= top+keep {
+				break
+			}
+			if line1 >= top && line1 < top+keep {
+				selected := sec == deskSecAsk && i == at
+				needsBody = append(needsBody, m.deskRowLineCached(row, nameW, innerW, selected))
+			}
+			if line2 >= top && line2 < top+keep {
+				needsBody = append(needsBody, m.deskWhyLineCached(row, innerW))
+			}
+		}
+		if more != "" {
+			needsBody = append(needsBody, more)
+		}
+	}
+	sections[0].body = needsBody
+
 	var out []string
 	selected := 0
 	for i, sc := range sections {
-		body, top := fitBody(sc.body, sc.sel, limits[i])
+		var body []string
+		scTop := 0
+		if i == 0 {
+			body = sc.body
+			scTop = top
+		} else {
+			body, scTop = fitBody(sc.body, sc.sel, limits[i])
+		}
 		if sc.sel >= 0 {
-			selected = len(out) + 1 + sc.sel - top
+			selected = len(out) + 1 + sc.sel - scTop
 		}
 		out = append(out, panelWithBorder(sc.title, body, w, sc.color, roleFaint)...)
 	}

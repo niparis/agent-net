@@ -73,6 +73,8 @@ type Model struct {
 	handled                             []protocol.ChiefSort
 	digest                              *deskDigest
 	lastInput                           time.Time
+	asksVersion                         int64
+	deskCache                           *deskCacheState
 	deskPending                         *deskMark
 	inboxDetail, inboxEditing           bool
 	inboxDeliveryID                     string
@@ -283,7 +285,11 @@ func New(src Source) Model {
 	m := Model{src: src, loc: time.Local, now: time.Now, home: localHomeDir(), width: 80, height: 24, feed: newFeed(), input: ti, fetching: true, activeOnly: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
 		convDetail: map[string]convDetail{}, convDetailLoading: map[string]bool{},
-		graphPixel: &graphPixelState{imageID: graphview.ImageID}}
+		graphPixel: &graphPixelState{imageID: graphview.ImageID},
+		deskCache: &deskCacheState{
+			rowLines: make(map[inboxRowLineKey]string),
+			whyLines: make(map[inboxWhyLineKey]string),
+		}}
 	if _, ok := src.(interface {
 		SubscribeTopics(context.Context) (*operator.TopicSubscription, error)
 	}); ok {
@@ -1062,6 +1068,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		before := m.onboardingStep().id
 		if msg.inboxOK {
 			m.asks = msg.asks
+			m.asksVersion++
 		}
 		if msg.chiefOK {
 			m.chief, m.chiefLoaded = msg.chief, true
