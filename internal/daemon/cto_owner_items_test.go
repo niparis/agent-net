@@ -221,3 +221,81 @@ func TestCTOOwnerItemsFindOpenProposalHasAnswer(t *testing.T) {
 		}
 	}
 }
+
+// The CTO reads a pending major learned proposal and a pending charter
+// suggestion through cto_proposals_find, and gets the exact call that decides
+// each. An ordinary agent session cannot read the list.
+func TestCTOReadsPendingLearnedAndDraft(t *testing.T) {
+	ctx := context.Background()
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	if err := w.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st := g.gw.Store()
+	learned, err := st.CreateInboxItem(protocol.InboxItem{
+		Kind: protocol.AskKindLearned, SessionID: "agent-net", FromKind: protocol.AskFromGateway,
+		AskerName: "learned", SourceRef: "learned:41", AboutKind: protocol.AskAboutProject, AboutID: "demo",
+		Text: "Add to demo accepts: builds widgets", Options: []string{"accept", "reject"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := st.CreateInboxItem(protocol.InboxItem{
+		Kind: protocol.AskKindDraft, SessionID: "agent-net", FromKind: protocol.AskFromGateway,
+		AskerName: "charter draft", SourceRef: "draft:7",
+		Text: "Charter draft for demo purpose: Demo?", Options: []string{"accept", "reject"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type row struct {
+		ID      string   `json:"id"`
+		Kind    string   `json:"kind"`
+		Answer  string   `json:"answer"`
+		Action  string   `json:"action"`
+		Options []string `json:"options"`
+	}
+	read := func(kind string) []row {
+		t.Helper()
+		raw, _ := json.Marshal(map[string]string{"kind": kind})
+		out, err := w.d.runCTOToolRaw(ctx, "cto_proposals_find", raw)
+		if err != nil {
+			t.Fatalf("kind %s: %v", kind, err)
+		}
+		body, _ := json.Marshal(out)
+		var page struct {
+			Items []row `json:"items"`
+			Total int   `json:"total"`
+		}
+		if err := json.Unmarshal(body, &page); err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		return page.Items
+	}
+
+	items := read("all")
+	byID := map[string]row{}
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+	gotLearned, ok := byID[learned.ID]
+	if !ok || gotLearned.Kind != protocol.AskKindLearned {
+		t.Fatalf("learned proposal missing from all: %+v", items)
+	}
+	if gotLearned.Action != "accept" || !strings.Contains(gotLearned.Answer, "learned_answer") || !strings.Contains(gotLearned.Answer, "41") {
+		t.Fatalf("learned answer call = %+v", gotLearned)
+	}
+	gotDraft, ok := byID[draft.ID]
+	if !ok || gotDraft.Kind != protocol.AskKindDraft || !strings.Contains(gotDraft.Answer, `"kind":"inbox"`) {
+		t.Fatalf("charter suggestion row = %+v", gotDraft)
+	}
+	if got := read("learned"); len(got) != 1 || got[0].ID != learned.ID {
+		t.Fatalf("learned filter = %+v", got)
+	}
+
+	agent, _ := helloPi(t, w.node, "not-the-cto", "/w/not-the-cto", true)
+	if _, err := agent.call("cto_proposals_find", map[string]any{"kind": "all"}); err == nil {
+		t.Fatal("an agent read the CTO owner items")
+	}
+}
