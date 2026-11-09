@@ -165,3 +165,70 @@ func TestBlockedAnnounceOutsideALeadTeamSendsNothing(t *testing.T) {
 		t.Fatalf("desk lines = %v", lines)
 	}
 }
+
+// runningWorker starts a worker that member owns and that is still running. It
+// returns the worker's session id.
+func runningWorker(t *testing.T, s *Store, c *clock, member string) string {
+	t.Helper()
+	node := mustNode(t, s, member)
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "rework-worker", Name: "rework",
+		Status: "idle", LastActive: c.t.Unix(),
+		Worker: &protocol.WorkerInfo{ID: "w-rework", Owner: member, StartedAt: c.t.Unix()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// finget's announce named its own running worker by session id, under a
+// "blocked" answer. The worker's end is the only thing that changes the rule.
+func TestMemberBlockedOnANamedRunningWorkerSendsNothingUntilItEnds(t *testing.T) {
+	s, c, member, _ := leadTeamRig(t)
+	worker := runningWorker(t, s, c, member)
+	text := "blocked on worker " + worker + " (PR #79 rework) and on the 06:00 UTC daily-research run"
+	announce(t, s, member, protocol.ProfileAnnounce{Task: text})
+	if got := blockedNotices(t, s); len(got) != 0 {
+		t.Fatalf("notices while its named worker runs = %+v", got)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, worker); err != nil {
+		t.Fatal(err)
+	}
+	announce(t, s, member, protocol.ProfileAnnounce{Task: text})
+	if got := blockedNotices(t, s); len(got) != 1 || !strings.Contains(got[0].Body, worker) {
+		t.Fatalf("notices after its named worker ended = %+v", got)
+	}
+}
+
+// A progress answer that only says it waits on the member's own running worker
+// is normal progress, so the lead hears nothing.
+func TestMemberWaitingOnItsOwnRunningWorkerSendsNothing(t *testing.T) {
+	s, c, member, _ := leadTeamRig(t)
+	runningWorker(t, s, c, member)
+	announce(t, s, member, protocol.ProfileAnnounce{Task: "more: waiting on worker rework of PR #79 ... then merge"})
+	if got := blockedNotices(t, s); len(got) != 0 {
+		t.Fatalf("notices for a wait on its own worker = %+v", got)
+	}
+}
+
+// The waits that still reach the lead with a running worker: an explicit
+// blocked answer, a wait the member set in the waiting field, and a phrase that
+// is not a progress answer.
+func TestMemberWaitingOnSomeoneElseWithARunningWorkerStillNotifies(t *testing.T) {
+	s, c, member, _ := leadTeamRig(t)
+	runningWorker(t, s, c, member)
+	announce(t, s, member, protocol.ProfileAnnounce{Task: "blocked on the owner: PR #79 needs a merge right"})
+	announce(t, s, member, protocol.ProfileAnnounce{Task: "more: rework of PR #79", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "need a decision on the schema"}})
+	announce(t, s, member, protocol.ProfileAnnounce{Task: "waiting on owner to merge PR #79"})
+	if got := blockedNotices(t, s); len(got) != 3 {
+		t.Fatalf("notices = %+v", got)
+	}
+}
+
+// A member with no running worker still tells the lead about a phrase match.
+func TestMemberWaitingOnWorkerWithNoRunningWorkerStillNotifies(t *testing.T) {
+	s, _, member, _ := leadTeamRig(t)
+	announce(t, s, member, protocol.ProfileAnnounce{Task: "more: waiting on worker rework of PR #79 ... then merge"})
+	if got := blockedNotices(t, s); len(got) != 1 {
+		t.Fatalf("notices = %+v", got)
+	}
+}
