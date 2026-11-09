@@ -19,7 +19,7 @@ import (
 func (d *Daemon) verifySkillAbsence(t protocol.ToolTarget) protocol.ToolResult {
 	r := protocol.ToolResult{Item: t.Revision.Item, Revision: t.Revision.Revision, Index: t.Index, State: "pending"}
 	var identity []string
-	if json.Unmarshal([]byte(t.Revision.Item), &identity) != nil || len(identity) != 3 || identity[0] != protocol.InventorySkill {
+	if json.Unmarshal([]byte(t.Revision.Item), &identity) != nil || len(identity) != 3 || !protocol.IsBundleKind(identity[0]) {
 		r.Reason = "absence verification is not supported"
 		return r
 	}
@@ -29,14 +29,14 @@ func (d *Daemon) verifySkillAbsence(t protocol.ToolTarget) protocol.ToolResult {
 	d.toolsMu.Unlock()
 	reason := inventory.PlanReportProblem(report)
 	if reason == "" {
-		reason = inventory.PlanItemProblem(report, protocol.InventorySkill, t.Name)
+		reason = inventory.PlanItemProblem(report, identity[0], t.Name)
 	}
 	if reason != "" {
 		r.Reason = reason
 		return r
 	}
 	for _, obs := range report.Items {
-		if obs.Kind != protocol.InventorySkill || obs.Name != t.Name || obs.Hash != t.Revision.Version {
+		if obs.Kind != identity[0] || obs.Name != t.Name || obs.Hash != t.Revision.Version {
 			continue
 		}
 		_, err := os.Lstat(obs.Location)
@@ -70,14 +70,17 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if reason := d.skillConflict(source); reason != "" {
 		return fail("conflict", reason)
 	}
-	if !filepath.IsAbs(source) || t.Name == "" || filepath.Base(source) != t.Name || t.Name == "." || t.Name == ".." {
+	kind := itemKind(t.Revision.Item)
+	entry := protocol.BundleEntryName(kind, t.Name)
+	fileKind := protocol.IsFileKind(kind)
+	if !filepath.IsAbs(source) || t.Name == "" || filepath.Base(source) != entry || t.Name == "." || t.Name == ".." {
 		return fail("conflict", "invalid source")
 	}
 	d.toolsMu.Lock()
 	var observed *protocol.InventoryItem
 	managed := false
 	for _, v := range d.toolsReport.Items {
-		if v.Kind == protocol.InventorySkill && v.Name == t.Name && v.Location == source {
+		if v.Kind == kind && v.Name == t.Name && v.Location == source {
 			if v.Source != protocol.InventoryNative {
 				managed = true
 			}
@@ -96,7 +99,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 		return fail("conflict", "source path is unsafe")
 	}
 	defer parent.Close()
-	anchored := skillPath{parent, t.Name}
+	anchored := skillPath{parent, entry}
 	info, err := anchored.lstat()
 	if os.IsNotExist(err) {
 		if err = d.forgetSkill(source); err != nil {
@@ -104,8 +107,8 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 		}
 		return fail("applied", "")
 	}
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fail("conflict", "source is not a safe directory")
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || (fileKind && !info.Mode().IsRegular()) || (!fileKind && !info.IsDir()) {
+		return fail("conflict", "source is not a safe "+map[bool]string{true: "file", false: "directory"}[fileKind])
 	}
 	if observed == nil {
 		return fail("conflict", "source is no longer observed")
@@ -131,16 +134,18 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 			return fail("conflict", "not installed by agent-net")
 		}
 	}
-	if err = walkSkillAt(anchored, func(_ string, e fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	if !fileKind {
+		if err = walkSkillAt(anchored, func(_ string, e fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if e.Type()&os.ModeSymlink != 0 {
+				return fs.ErrInvalid
+			}
+			return nil
+		}); err != nil {
+			return fail("conflict", "source contains a symlink or cannot be inspected")
 		}
-		if e.Type()&os.ModeSymlink != 0 {
-			return fs.ErrInvalid
-		}
-		return nil
-	}); err != nil {
-		return fail("conflict", "source contains a symlink or cannot be inspected")
 	}
 	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "remove", Target: source, BeforeHash: t.Revision.Version, Item: t.Revision.Item, Revision: t.Revision.Revision, Step: "prepared"})
 	if err != nil {
@@ -284,6 +289,12 @@ func (d *Daemon) moveAcrossFilesystems(j *skillJournal, source, dest, stamp skil
 		stamp.removeAll()
 		return "failed", "cannot copy source to backup"
 	}
+	// A prompt or an agent is one file: it is staged as a folder of one file
+	// and the file is moved out of it.
+	fileSource := false
+	if info, e := source.lstat(); e == nil && info.Mode().IsRegular() {
+		fileSource = true
+	}
 	stage := stamp.join(skillStagePrefix + filepath.Base(j.path))
 	j.record.Stage = filepath.Join(stableStamp, skillStagePrefix+filepath.Base(j.path))
 	if err = j.advance("copying"); err != nil {
@@ -303,7 +314,15 @@ func (d *Daemon) moveAcrossFilesystems(j *skillJournal, source, dest, stamp skil
 	if err = j.advance("copied"); err != nil {
 		return "interrupted", ""
 	}
-	if err = renameSkillAt(stage, dest, false); err != nil {
+	if fileSource {
+		err = renameSkillAt(stage.join(filepath.Base(source.name)), dest, false)
+		if err == nil {
+			err = stage.removeAll()
+		}
+	} else {
+		err = renameSkillAt(stage, dest, false)
+	}
+	if err != nil {
 		stamp.removeAll()
 		return "failed", "cannot move source to backup"
 	}

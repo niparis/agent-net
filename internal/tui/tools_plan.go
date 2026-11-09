@@ -194,12 +194,14 @@ func (m Model) machineTarget(on bool, machine toolsdiff.Machine) protocol.ToolAs
 type assignJob struct {
 	agentProject string
 	agentOn      bool
-	importOnly   bool
-	choice       *protocol.ToolCopyChoice
-	name         string
-	item         string
-	imp          *toolsdiff.Copy
-	target       protocol.ToolAssignment
+	// agentKey is the row key of a project switch (see rowKey).
+	agentKey   string
+	importOnly bool
+	choice     *protocol.ToolCopyChoice
+	name       string
+	item       string
+	imp        *toolsdiff.Copy
+	target     protocol.ToolAssignment
 	// where names the machine the change is limited to, or "" for every machine.
 	where string
 }

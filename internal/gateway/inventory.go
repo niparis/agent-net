@@ -90,7 +90,7 @@ func (s *Store) SetInventoryItemManifest(nodeID, location string, manifest *prot
 	found := false
 	for i := range report.Items {
 		item := &report.Items[i]
-		if item.Kind != protocol.InventorySkill || item.Location != location {
+		if !protocol.IsBundleKind(item.Kind) || item.Location != location {
 			continue
 		}
 		item.Manifest = manifest
@@ -102,7 +102,7 @@ func (s *Store) SetInventoryItemManifest(nodeID, location string, manifest *prot
 		if e != nil {
 			return e
 		}
-		if _, e = tx.Exec(`UPDATE tool_locations SET observation=? WHERE node_id=? AND json_extract(observation,'$.kind')='skill' AND json_extract(observation,'$.location')=?`, string(b), nodeID, location); e != nil {
+		if _, e = tx.Exec(`UPDATE tool_locations SET observation=? WHERE node_id=? AND json_extract(observation,'$.kind') IN ('skill','prompt','agent') AND json_extract(observation,'$.location')=?`, string(b), nodeID, location); e != nil {
 			return e
 		}
 	}
@@ -229,7 +229,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		if obs.Scope == protocol.InventoryProject {
 			obs.Project = project
 		}
-		if (f.Kind == "" || kind == f.Kind) && (f.Harness == "" || obs.Harness == f.Harness) && (f.Project == "" || obs.Project == f.Project) && (f.State == "" || obs.State == f.State) {
+		if protocol.KindMatches(f.Kind, kind) && (f.Harness == "" || obs.Harness == f.Harness) && (f.Project == "" || obs.Project == f.Project) && (f.State == "" || obs.State == f.State) {
 			matched[id] = true
 		}
 		item := all[id]
@@ -246,10 +246,10 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 			loc.GraphNode = project
 		}
 		// Use the newest scanned copy of this content identity.
-		if kind == protocol.InventorySkill && (len(item.Locations) == 0 || obs.ScannedAt.After(newest[id])) {
+		if protocol.IsBundleKind(kind) && (len(item.Locations) == 0 || obs.ScannedAt.After(newest[id])) {
 			newest[id] = obs.ScannedAt
 			item.Description = obs.Description
-			item.StartTokens, item.FullTokens = protocol.SkillTokenEstimates(name, obs.Description, obs.Manifest)
+			item.StartTokens, item.FullTokens = protocol.ItemTokenEstimates(kind, name, obs.Description, obs.Manifest)
 		}
 		item.Locations = append(item.Locations, loc)
 		if obs.Scope == protocol.InventoryUser {
@@ -295,7 +295,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		variants[key][id] = true
 		all[id] = &protocol.ToolItem{ID: id, Kind: kind, Name: name, Hash: hash, Locations: []protocol.ToolLocation{}, Unassigned: true, State: "unobserved"}
 		order = append(order, id)
-		if (f.Kind == "" || f.Kind == kind) && f.Harness == "" && f.Project == "" && (f.State == "" || f.State == "unobserved") {
+		if protocol.KindMatches(f.Kind, kind) && f.Harness == "" && f.Project == "" && (f.State == "" || f.State == "unobserved") {
 			matched[id] = true
 		}
 	}

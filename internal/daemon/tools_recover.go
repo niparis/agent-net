@@ -87,7 +87,7 @@ func (d *Daemon) recoverSkillJournal() []string {
 }
 
 func skillHashIs(path, want string) bool {
-	h, err := inventory.SkillHash(path)
+	h, err := inventory.EntryHash(path)
 	return err == nil && h == want
 }
 

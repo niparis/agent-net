@@ -65,7 +65,15 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		}
 	}
 	source := ""
-	if kind == protocol.InventorySkill {
+	bundle := protocol.IsBundleKind(kind)
+	// A prompt or an agent is one file: its probes carry the kind and its
+	// destination is <name>.md in a Claude Code folder.
+	probeKind := ""
+	if protocol.IsFileKind(kind) {
+		probeKind = kind
+	}
+	entry := protocol.BundleEntryName(kind, name)
+	if bundle {
 		var commit string
 		err = g.store.db.QueryRow(`SELECT commit_id FROM skill_versions WHERE item=? AND hash=?`, item, hash).Scan(&commit)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -75,9 +83,9 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 			source = filepath.Join(g.opts.DataDir, "skills.git") + "@" + commit + ":" + skillPath(item)
 		}
 	}
-	if kind == protocol.InventorySkill && source == "" {
+	if bundle && source == "" {
 		targets = append(targets, protocol.ToolPlanTarget{Action: "import", State: "conflict", Conflict: "skill version has not been imported"})
-	} else if kind == protocol.InventorySkill {
+	} else if bundle {
 		repo, e := g.skillRepository()
 		if e != nil {
 			return nil, errors.New("skill repository unavailable")
@@ -86,7 +94,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 			targets = append(targets, protocol.ToolPlanTarget{Source: source, Action: "verify", State: "conflict", Conflict: "stored skill version failed verification"})
 		}
 	}
-	if kind != protocol.InventorySkill {
+	if !bundle {
 		targets = append(targets, protocol.ToolPlanTarget{Action: "manual", State: "conflict", Conflict: "MCP assignment requires federation support"})
 	}
 	selected := func(project string) bool {
@@ -112,7 +120,10 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 	// Collect all checks before the rendering pass so each node gets one request.
 	probeLists := map[string][]protocol.ToolPlanProbe{}
 	addProbe := func(node string, p protocol.ToolPlanProbe) { probeLists[node] = append(probeLists[node], p) }
-	if kind == protocol.InventorySkill {
+	copyProbe := func(root, harness string, checkout protocol.ProjectView) protocol.ToolPlanProbe {
+		return protocol.ToolPlanProbe{Kind: probeKind, Name: name, Harness: harness, Root: root, Project: checkout.Name, Checkout: checkout.Path, Worktrees: checkout.Worktrees}
+	}
+	if bundle {
 		for _, node := range nodes {
 			if g.conn(node.NodeID) == nil || (a.Scope != "global" && a.Scope != "projects") {
 				continue
@@ -139,12 +150,9 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				if ctx.Value(skillGroupKey{}) != nil && !g.skillCopyIdentity(item, node.NodeID, checkout.Name) {
 					continue
 				}
-				roots := []struct{ root, harness string }{{".claude/skills", "claude"}, {".agents/skills", "codex"}}
-				if checkout.Path == "" {
-					roots = append(roots, struct{ root, harness string }{".gemini/config/skills", "antigravity"})
-				}
+				roots := copyRoots(kind, checkout.Path == "")
 				for _, h := range roots {
-					addProbe(node.NodeID, protocol.ToolPlanProbe{Name: name, Harness: h.harness, Root: h.root, Project: checkout.Name, Checkout: checkout.Path, Worktrees: checkout.Worktrees})
+					addProbe(node.NodeID, copyProbe(h.root, h.harness, checkout))
 				}
 			}
 		}
@@ -228,13 +236,10 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 					continue
 				}
 				checkoutStart := len(targets)
-				roots := []struct{ root, harness string }{{".claude/skills", "claude"}, {".agents/skills", "codex"}}
-				if checkout.Path == "" {
-					roots = append(roots, struct{ root, harness string }{".gemini/config/skills", "antigravity"})
-				}
+				roots := copyRoots(kind, checkout.Path == "")
 				for _, h := range roots {
 					t := protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Harness: h.harness, Root: h.root, Project: checkout.Name, Checkout: checkout.Path, Source: source, Action: "copy", State: "pending"}
-					if kind != protocol.InventorySkill {
+					if !bundle {
 						t.Action = "manual"
 						t.State = "conflict"
 						t.Conflict = "MCP projection is not supported"
@@ -242,7 +247,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 						t.State = "offline"
 						t.Conflict = "machine offline; destination cannot be inspected"
 					} else {
-						reply, ok := answers[key(node.NodeID, protocol.ToolPlanProbe{Name: name, Harness: h.harness, Root: h.root, Project: checkout.Name, Checkout: checkout.Path, Worktrees: checkout.Worktrees})]
+						reply, ok := answers[key(node.NodeID, copyProbe(h.root, h.harness, checkout))]
 						e := reply.err
 						if !ok {
 							e = errNodeGone
@@ -252,7 +257,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 							t.Conflict = "destination inspection unavailable"
 						} else {
 							r := reply.result
-							if r.Conflict == "" && !r.Skip && checkout.Path != "" && filepath.Clean(r.Destination) != filepath.Join(checkout.Path, h.root, name) {
+							if r.Conflict == "" && !r.Skip && checkout.Path != "" && filepath.Clean(r.Destination) != filepath.Join(checkout.Path, h.root, entry) {
 								r.Conflict = "invalid destination inspection"
 							}
 							{
@@ -324,7 +329,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 				continue
 			}
 			t := protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Harness: obs.Harness, Project: obs.Project, Checkout: obs.ProjectRoot, Source: obs.Location, Action: "remove", State: "pending"}
-			if kind != protocol.InventorySkill {
+			if !bundle {
 				t.Action = "manual"
 				t.State = "conflict"
 				t.Conflict = "native MCP removal is not supported"
@@ -502,7 +507,7 @@ func (g *Gateway) repoRemovalTargets(ctx context.Context, p protocol.ToolPlanReq
 		return nil, errors.New("tool item not found")
 	}
 	if kind != protocol.InventorySkill {
-		return nil, errors.New("repo removal requires a skill")
+		return nil, errors.New("repo removal supports skills only: remove a tracked command or agent in its repository")
 	}
 	if p.Project == "" || len(p.RepoTargets) == 0 || len(p.RepoTargets) > 200 || p.Target.Scope != "projects" || len(p.Target.Projects) != 1 || p.Target.Projects[0] != p.Project {
 		return nil, errors.New("repo removal needs one project checkout")
@@ -517,7 +522,7 @@ func (g *Gateway) repoRemovalTargets(ctx context.Context, p protocol.ToolPlanReq
 			registered[project.NodeID+"\x00"+filepath.Clean(project.Path)] = project
 		}
 	}
-	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventoryBundles}, func(string) bool { return true })
 	if err != nil {
 		return nil, err
 	}
@@ -932,4 +937,23 @@ func (g *Gateway) logToolOperation(event, item, project string, targets, skipped
 		result = redact.Secrets(err.Error())
 	}
 	g.logLine(event, "skill", redact.Secrets(name), "project", redact.Secrets(project), "targets", targets, "skipped", skipped, "duration", time.Since(start), "result", result)
+}
+
+// copyRoots lists where a copy of an item of this kind goes: each folder with
+// the harness that reads it. userLevel is true for a copy in the user's home.
+// A skill goes to the Claude and Codex folders, and to the Antigravity folder
+// at user level. A prompt or an agent goes to its Claude Code folder only.
+func copyRoots(kind string, userLevel bool) []struct{ root, harness string } {
+	if protocol.IsFileKind(kind) {
+		var roots []struct{ root, harness string }
+		for _, r := range protocol.FileKindRoots(kind) {
+			roots = append(roots, struct{ root, harness string }{r, "claude"})
+		}
+		return roots
+	}
+	roots := []struct{ root, harness string }{{".claude/skills", "claude"}, {".agents/skills", "codex"}}
+	if userLevel {
+		roots = append(roots, struct{ root, harness string }{".gemini/config/skills", "antigravity"})
+	}
+	return roots
 }

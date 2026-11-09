@@ -12,7 +12,7 @@ import (
 func (m Model) agentSkillCost(r toolsdiff.Row) int64 {
 	cost := r.Item.StartTokens
 	for _, it := range m.tl.items {
-		if it.Kind == protocol.InventorySkill && it.Name == r.Name {
+		if it.Kind == r.Kind && it.Name == r.Name {
 			cost = max(cost, it.StartTokens)
 		}
 	}
@@ -46,7 +46,7 @@ func (m Model) agentInfoView(w int) []string {
 		body = append(body, desc...)
 		n := 0
 		for _, p := range m.toolsProjects() {
-			if on, _ := m.agentSkillState(r.Name, p); on {
+			if on, _ := m.agentSkillState(rowKey(r.Kind, r.Name), p); on {
 				n++
 			}
 		}
@@ -78,7 +78,7 @@ func (m Model) agentInfoView(w int) []string {
 		sort.Strings(names)
 		hashes := map[string]bool{}
 		for _, it := range m.tl.items {
-			if it.Kind == protocol.InventorySkill && it.Name == r.Name {
+			if it.Kind == r.Kind && it.Name == r.Name {
 				hashes[it.Hash] = true
 			}
 		}

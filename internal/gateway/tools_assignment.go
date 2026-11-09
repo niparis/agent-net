@@ -410,7 +410,7 @@ func (s *Store) applyToolPlanTx(tx *sql.Tx, id, actor string) (protocol.ToolRevi
 		if err = tx.QueryRow(`SELECT kind FROM tool_identities WHERE id=?`, p.Item).Scan(&kind); err != nil {
 			return r, err
 		}
-		if kind == "skill" {
+		if protocol.IsBundleKind(kind) {
 			var imported int
 			if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM skill_versions WHERE item=? AND hash=?)`, p.Item, p.Version).Scan(&imported); err != nil {
 				return r, err

@@ -56,7 +56,7 @@ func tooLargeReason() string {
 // copies. An empty project checks all copies. Offline observations keep their
 // ordinary pending behavior.
 func (m Model) skillScanLockReason(r toolsdiff.Row, project string) string {
-	if r.Kind != protocol.InventorySkill {
+	if !protocol.IsBundleKind(r.Kind) {
 		return ""
 	}
 	nodes := map[string]bool{}
@@ -70,7 +70,7 @@ func (m Model) skillScanLockReason(r toolsdiff.Row, project string) string {
 	items := append([]protocol.ToolItem{r.Item}, r.Variants...)
 	items = append(items, m.tl.items...)
 	for _, item := range items {
-		if item.Kind != protocol.InventorySkill || item.Name != r.Name {
+		if item.Kind != r.Kind || item.Name != r.Name {
 			continue
 		}
 		for _, loc := range item.Locations {

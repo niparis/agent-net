@@ -339,6 +339,9 @@ type ToolSkillDetails struct {
 }
 
 type ToolPlanProbe struct {
+	// Kind is set for a prompt or an agent, which are files. It is empty for a
+	// skill, so a probe of a skill is the same as it was before.
+	Kind    string `json:"kind,omitempty"`
 	Root    string `json:"root,omitempty"`
 	Name    string `json:"name"`
 	Harness string `json:"harness"`
@@ -479,6 +482,16 @@ func SkillTokenEstimates(name, description string, manifest *SkillManifest) (sta
 				break
 			}
 		}
+	}
+	return
+}
+
+// ItemTokenEstimates is SkillTokenEstimates for any bundle kind. A prompt or an
+// agent is one file, so its full estimate uses that file's size.
+func ItemTokenEstimates(kind, name, description string, manifest *SkillManifest) (start, full int64) {
+	start, full = SkillTokenEstimates(name, description, manifest)
+	if IsFileKind(kind) && manifest != nil && len(manifest.Files) == 1 && manifest.Files[0].Size > 0 {
+		full = (manifest.Files[0].Size + 3) / 4
 	}
 	return
 }

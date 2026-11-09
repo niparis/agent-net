@@ -24,11 +24,16 @@ func (m Model) agentSkills() []toolsdiff.Row {
 	m.tl.search = ""
 	var rows []toolsdiff.Row
 	for _, r := range m.shownRows() {
-		if r.Kind == protocol.InventorySkill && strings.Contains(strings.ToLower(r.Name), strings.ToLower(m.tl.agentFilter)) {
+		if protocol.IsBundleKind(r.Kind) && strings.Contains(strings.ToLower(r.Name), strings.ToLower(m.tl.agentFilter)) {
 			rows = append(rows, r)
 		}
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
+	sort.Slice(rows, func(i, j int) bool {
+		if kindRank(rows[i].Kind) != kindRank(rows[j].Kind) {
+			return kindRank(rows[i].Kind) < kindRank(rows[j].Kind)
+		}
+		return rows[i].Name < rows[j].Name
+	})
 	return rows
 }
 
@@ -43,7 +48,7 @@ func (m Model) agentNode(project string) string {
 }
 
 // Match projectCostOn, including observed user copies and tracked repo skills.
-func (m Model) agentSkillState(name, project string) (on bool, repo string) {
+func (m Model) agentSkillState(key, project string) (on bool, repo string) {
 	nodes := map[string]bool{}
 	for _, p := range m.projectRows() {
 		if p.Name == project {
@@ -54,7 +59,7 @@ func (m Model) agentSkillState(name, project string) (on bool, repo string) {
 		nodes[m.agentNode(project)] = true
 	}
 	for _, it := range m.tl.items {
-		if it.Kind != protocol.InventorySkill || it.Name != name {
+		if !protocol.IsBundleKind(it.Kind) || rowKey(it.Kind, it.Name) != key {
 			continue
 		}
 		if it.Desired != nil {
@@ -78,14 +83,14 @@ func (m Model) agentSkillState(name, project string) (on bool, repo string) {
 func (m Model) agentJobs(project string) ([]assignJob, string) {
 	var jobs []assignJob
 	for _, r := range m.agentSkillsUnfiltered() {
-		on, ok := m.tl.agentPending[project][r.Name]
+		on, ok := m.tl.agentPending[project][rowKey(r.Kind, r.Name)]
 		if !ok {
 			continue
 		}
 		if why := m.skillLockReason(r, project); why != "" {
 			return nil, r.Name + ": " + why
 		}
-		job := assignJob{name: r.Name, item: m.agentItemID(r), agentProject: project, agentOn: on}
+		job := assignJob{name: rowLabel(r.Kind, r.Name), agentKey: rowKey(r.Kind, r.Name), item: m.agentItemID(r), agentProject: project, agentOn: on}
 		jobs = append(jobs, job)
 	}
 	return jobs, ""
@@ -193,7 +198,7 @@ func (m Model) agentToolsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.toolsToast(why)
 			break
 		}
-		on, repo := m.agentSkillState(r.Name, project)
+		on, repo := m.agentSkillState(rowKey(r.Kind, r.Name), project)
 		if repo == "" && r.Origin == toolsdiff.OriginRepo {
 			repo = r.Repo
 		}
@@ -207,10 +212,10 @@ func (m Model) agentToolsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.tl.agentPending[project] == nil {
 			m.tl.agentPending[project] = map[string]bool{}
 		}
-		if _, ok := m.tl.agentPending[project][r.Name]; ok {
-			delete(m.tl.agentPending[project], r.Name)
+		if _, ok := m.tl.agentPending[project][rowKey(r.Kind, r.Name)]; ok {
+			delete(m.tl.agentPending[project], rowKey(r.Kind, r.Name))
 		} else {
-			m.tl.agentPending[project][r.Name] = !on
+			m.tl.agentPending[project][rowKey(r.Kind, r.Name)] = !on
 		}
 		if len(m.tl.agentPending[project]) > 0 {
 			return m.reviewAgentChanges(project)
@@ -286,7 +291,7 @@ func (m Model) agentToolsView(w, h int) []string {
 	for i := start; i < len(rows) && len(b) < room; i++ {
 		r := rows[i]
 		scanProblem := m.skillScanLockReason(r, project)
-		on, repo := m.agentSkillState(r.Name, project)
+		on, repo := m.agentSkillState(rowKey(r.Kind, r.Name), project)
 		check := "[ ] "
 		if on {
 			check = "[x] "
@@ -309,8 +314,8 @@ func (m Model) agentToolsView(w, h int) []string {
 			check = "×   "
 			state = why
 		}
-		name := r.Name
-		if pending, ok := m.tl.agentPending[project][r.Name]; ok {
+		name := rowLabel(r.Kind, r.Name)
+		if pending, ok := m.tl.agentPending[project][rowKey(r.Kind, r.Name)]; ok {
 			if pending {
 				name += " → on"
 			} else {

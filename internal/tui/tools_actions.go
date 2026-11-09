@@ -129,7 +129,7 @@ func (m Model) toolStatus(r toolsdiff.Row) string {
 }
 
 func (m Model) toolBaseStatus(r toolsdiff.Row) string {
-	if r.Kind == protocol.InventorySkill && r.Item.Desired == nil && len(r.Item.Locations) == 0 {
+	if protocol.IsBundleKind(r.Kind) && r.Item.Desired == nil && len(r.Item.Locations) == 0 {
 		return "in the store, off everywhere"
 	}
 	for _, d := range m.tl.cat.Diffs {
@@ -231,7 +231,7 @@ func (m Model) toolListView(w, h int) []string {
 		if m.toolAttention(r) {
 			flag = "! "
 		}
-		name, cost := r.Name, formatTokens(r.Item.StartTokens)
+		name, cost := rowLabel(r.Kind, r.Name), formatTokens(r.Item.StartTokens)
 		if r.Kind == protocol.InventoryMCP {
 			name, cost = "◆ "+name, "-"
 		}
@@ -595,7 +595,7 @@ func (m Model) readTool(r toolsdiff.Row) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			text, err = reader.ToolsReadFile(ctx, protocol.SkillTextRequest{Item: itemID, Location: loc, Path: "SKILL.md"})
+			text, err = reader.ToolsReadFile(ctx, protocol.SkillTextRequest{Item: itemID, Location: loc, Path: skillFileOf(r.Kind, r.Name)})
 		} else {
 			err = fmt.Errorf("skill preview unavailable")
 		}

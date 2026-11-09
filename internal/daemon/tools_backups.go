@@ -103,6 +103,7 @@ func (d *Daemon) skillBackups(item string) []protocol.ToolBackup {
 		return out
 	}
 	sort.Slice(stamps, func(i, j int) bool { return stamps[i].Name() > stamps[j].Name() })
+	fileKind := protocol.IsFileKind(itemKind(item))
 	for _, s := range stamps {
 		when, ok := skillBackupTime(s.Name())
 		if !s.IsDir() || !ok {
@@ -122,6 +123,10 @@ func (d *Daemon) skillBackups(item string) []protocol.ToolBackup {
 			if !e.IsDir() {
 				if info, e := e.Info(); e == nil {
 					b.Size += info.Size()
+					// A prompt or an agent backup is the file itself.
+					if fileKind && b.Source == "" {
+						b.Source = string(os.PathSeparator) + strings.TrimPrefix(strings.TrimPrefix(p, filepath.Join(dir, s.Name())), string(os.PathSeparator))
+					}
 				}
 			}
 			return nil

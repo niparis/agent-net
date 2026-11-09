@@ -45,6 +45,9 @@ func (p skillPath) openRoot() (*os.Root, error) {
 	return r, nil
 }
 func skillHashAt(p skillPath) (string, error) {
+	if info, err := p.lstat(); err == nil && info.Mode().IsRegular() {
+		return inventory.FileBundleHashRoot(p.root, p.name)
+	}
 	r, err := p.openRoot()
 	if err != nil {
 		return "", err
@@ -53,6 +56,9 @@ func skillHashAt(p skillPath) (string, error) {
 	return inventory.SkillHashRoot(r)
 }
 func packSkillAt(p skillPath) ([]byte, error) {
+	if info, err := p.lstat(); err == nil && info.Mode().IsRegular() {
+		return inventory.PackFileRoot(p.root, p.name, filepath.Base(p.name))
+	}
 	r, err := p.openRoot()
 	if err != nil {
 		return nil, err

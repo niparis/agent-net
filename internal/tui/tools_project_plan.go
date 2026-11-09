@@ -189,7 +189,7 @@ func (m Model) agentAssignment(r toolsdiff.Row) protocol.ToolAssignment {
 	}
 	var projects []string
 	for _, p := range m.toolsProjects() {
-		if on, _ := m.agentSkillState(r.Name, p); on {
+		if on, _ := m.agentSkillState(rowKey(r.Kind, r.Name), p); on {
 			projects = append(projects, p)
 		}
 	}
@@ -241,7 +241,7 @@ func (m Model) reviewAgentChanges(project string) (tea.Model, tea.Cmd) {
 				}
 				var current protocol.ToolAssignment
 				for _, r := range rows {
-					if r.Name == j.name {
+					if rowKey(r.Kind, r.Name) == j.agentKey {
 						current = m.agentAssignment(r)
 						break
 					}
@@ -252,7 +252,7 @@ func (m Model) reviewAgentChanges(project string) (tea.Model, tea.Cmd) {
 				paths = append(paths, planPaths(plan)...)
 				if planCanApply(plan) {
 					plans = append(plans, plan)
-					names[plan.ID] = j.name
+					names[plan.ID] = j.agentKey
 				}
 			}
 			if i+1 < len(jobs) {

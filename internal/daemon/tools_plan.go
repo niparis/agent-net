@@ -31,7 +31,7 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 		d.toolsMu.Lock()
 		found := false
 		for _, v := range d.toolsReport.Items {
-			if v.Kind == protocol.InventorySkill && v.Name == p.Name && v.Location == p.Source && v.Hash == p.Hash {
+			if protocol.IsBundleKind(v.Kind) && v.Name == p.Name && v.Location == p.Source && v.Hash == p.Hash {
 				found = true
 				break
 			}
@@ -40,7 +40,7 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 		if !found {
 			return bad("source is no longer observed")
 		}
-		hash, err := inventory.SkillHash(p.Source)
+		hash, err := inventory.EntryHash(p.Source)
 		if err != nil || hash != p.Hash {
 			return bad("source changed since scan")
 		}
@@ -60,6 +60,11 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 			return bad(conflict)
 		}
 	}
+	fileKind := protocol.IsFileKind(p.Kind)
+	if fileKind && (p.Harness != "claude" || !fileKindRoot(p.Kind, p.Root)) {
+		return bad("unsupported skill root")
+	}
+	entry := protocol.BundleEntryName(p.Kind, p.Name)
 	var root string
 	switch p.Harness {
 	case "claude":
@@ -83,7 +88,9 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 	default:
 		return bad("unsupported harness")
 	}
-	if p.Root != "" {
+	if fileKind {
+		root = p.Root
+	} else if p.Root != "" {
 		root = p.Root
 		if root != ".claude/skills" && root != ".agents/skills" && !(p.Checkout == "" && root == ".gemini/config/skills") {
 			return bad("unsupported skill root")
@@ -107,7 +114,7 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 			}
 		}
 	}
-	dest := filepath.Join(base, root, p.Name)
+	dest := filepath.Join(base, root, entry)
 	out := protocol.ToolPlanProbeResult{Destination: dest}
 	for cur := base; ; {
 		info, err := os.Lstat(cur)

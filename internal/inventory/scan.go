@@ -253,6 +253,119 @@ func Scan(o Options) protocol.InventoryReport {
 			attachManifest(index, manifest)
 		}
 	}
+	// A prompt or an agent is one Markdown file in a harness folder. Namespace
+	// folders below it are not read.
+	fileItems := func(kind, scope, project, root, base, path string) {
+		if !safe(base, path) {
+			add("claude", kind, scope, project, root, path, "", "", protocol.InventoryError, "source contains a symlink")
+			return
+		}
+		baseRoot, err := os.OpenRoot(base)
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if err != nil {
+			add("claude", kind, scope, project, root, path, "", "", protocol.InventoryError, "cannot open source root")
+			return
+		}
+		defer baseRoot.Close()
+		rel, err := filepath.Rel(base, path)
+		if err != nil {
+			return
+		}
+		sourceRoot, err := baseRoot.OpenRoot(rel)
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if err != nil {
+			add("claude", kind, scope, project, root, path, "", "", protocol.InventoryError, "cannot read source")
+			return
+		}
+		defer sourceRoot.Close()
+		source, err := sourceRoot.Open(".")
+		if err != nil {
+			add("claude", kind, scope, project, root, path, "", "", protocol.InventoryError, "cannot read source")
+			return
+		}
+		entries, err := source.ReadDir(maxFiles + 1)
+		source.Close()
+		if err != nil && !errors.Is(err, io.EOF) {
+			add("claude", kind, scope, project, root, path, "", "", protocol.InventoryError, "cannot read source")
+			return
+		}
+		if len(entries) > maxFiles {
+			add("claude", kind, scope, project, root, path, "", "", protocol.InventoryError, "source exceeds entry limit")
+			return
+		}
+		for _, e := range entries {
+			name := protocol.FileKindName(e.Name())
+			if name == "" {
+				continue
+			}
+			p := filepath.Join(path, e.Name())
+			actual, alias := p, ""
+			readFrom, readRel := sourceRoot, e.Name()
+			var homeRoot *os.Root
+			if e.Type()&os.ModeSymlink != 0 {
+				target, resolveErr := filepath.EvalSymlinks(p)
+				if resolveErr != nil || !safePath(o.Home, target) {
+					link, _ := os.Readlink(p)
+					add("claude", kind, scope, project, root, p, name, "", protocol.InventoryError, "file is a symlink: "+link)
+					continue
+				}
+				info, statErr := os.Lstat(target)
+				if statErr != nil || !info.Mode().IsRegular() {
+					continue
+				}
+				relTarget, relErr := filepath.Rel(o.Home, target)
+				if relErr != nil {
+					continue
+				}
+				if homeRoot, err = os.OpenRoot(o.Home); err != nil {
+					add("claude", kind, scope, project, root, p, name, "", protocol.InventoryError, "cannot open file safely")
+					continue
+				}
+				actual, alias, readFrom, readRel = target, p, homeRoot, relTarget
+			} else if !e.Type().IsRegular() {
+				continue
+			}
+			data, info, readErr := readBundleFile(readFrom, readRel)
+			if homeRoot != nil {
+				homeRoot.Close()
+			}
+			if errors.Is(readErr, errNotRegular) {
+				continue
+			}
+			index := len(report.Items)
+			if readErr != nil {
+				add("claude", kind, scope, project, root, actual, name, "", protocol.InventoryError, readErr.Error())
+			} else {
+				obs := observeFile(name, data, info)
+				add("claude", kind, scope, project, root, actual, name, obs.Hash, protocol.InventoryOK, "")
+				if index < len(report.Items) {
+					if totalFields+len(obs.Fingerprint)+len(obs.Description) > 512<<10 {
+						report.State = protocol.InventoryError
+						report.Reason = "inventory exceeds report limit"
+						return
+					}
+					report.Items[index].Description = obs.Description
+					report.Items[index].ContentFingerprint = obs.Fingerprint
+					totalFields += len(obs.Description) + len(obs.Fingerprint)
+					attachFiles(index, obs.Files)
+					attachManifest(index, obs.Manifest)
+				}
+			}
+			if alias != "" && index < len(report.Items) {
+				if totalFields+len(alias) > 512<<10 {
+					report.State = protocol.InventoryError
+					report.Reason = "inventory exceeds report limit"
+					return
+				}
+				totalFields += len(alias)
+				report.Items[index].Aliases = []string{alias}
+			}
+		}
+	}
 	config := func(h, scope, project, root, base, path, key string, tomlFormat bool) {
 		servers, reason := readServers(base, path, key, tomlFormat, root)
 		if reason != "" {
@@ -441,6 +554,11 @@ func Scan(o Options) protocol.InventoryReport {
 		skills(x[0], protocol.InventoryUser, "", "", home, filepath.Join(home, x[1]))
 	}
 	skills("codex", protocol.InventoryUser, "", "", codex, filepath.Join(codex, "skills"))
+	for _, kind := range []string{protocol.InventoryPrompt, protocol.InventoryAgent} {
+		for _, rel := range protocol.FileKindRoots(kind) {
+			fileItems(kind, protocol.InventoryUser, "", "", home, filepath.Join(home, rel))
+		}
+	}
 	for _, source := range []struct{ base, path string }{{codex, filepath.Join(codex, "skills/.system")}, {home, filepath.Join(home, ".agents/skills/.system")}} {
 		start := len(report.Items)
 		skills("codex", protocol.InventoryUser, "", "", source.base, source.path)
@@ -532,6 +650,11 @@ func Scan(o Options) protocol.InventoryReport {
 				for i := start; i < len(report.Items); i++ {
 					report.Items[i].Source = protocol.InventorySystem
 				}
+			}
+		}
+		for _, kind := range []string{protocol.InventoryPrompt, protocol.InventoryAgent} {
+			for _, rel := range protocol.FileKindRoots(kind) {
+				fileItems(kind, protocol.InventoryProject, p.Name, base, base, filepath.Join(base, rel))
 			}
 		}
 		config("claude", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".mcp.json"), "mcpServers", false)
