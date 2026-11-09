@@ -101,6 +101,10 @@ type Message struct {
 	// above (advice). The gateway fills it on every delivery from the live
 	// tree, and a sender cannot set it (decision 0089).
 	AuthorityNote string `json:"authority_note,omitempty"`
+	// CitedNotes are agent-net's notes on the messages this body cites by ID
+	// (decision 0120). The gateway fills them, only for messages the sender
+	// was part of, and overwrites whatever a sender supplied.
+	CitedNotes []string `json:"cited_notes,omitempty"`
 	// Files is the manifest of the files that come with the message
 	// (decision 0054). The sending daemon builds it; the gateway stores it
 	// and hands it to the receiving daemon, which collects the bytes before

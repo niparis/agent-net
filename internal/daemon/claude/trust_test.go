@@ -183,3 +183,14 @@ func TestClaudeAuthorityNoteIsSeparateFromBody(t *testing.T) {
 		t.Fatalf("label without a note: %s", got)
 	}
 }
+
+func TestBuildFrameShowsCitedNotesAfterTheBody(t *testing.T) {
+	m := msg
+	m.Type = "request"
+	m.Body = "see m_c0f041a063cd1359"
+	m.CitedNotes = []string{"cited m_c0f041a063cd1359: from a (session s_a) to b at 2026-11-09 07:31 UTC, request: \"ok\""}
+	c := frameContent(t, m)
+	if !strings.Contains(c, "\n[agent-net] cited m_c0f041a063cd1359: from a (session s_a) to b") || strings.Index(c, "[agent-net] cited") < strings.Index(c, "see m_c0f041a063cd1359") {
+		t.Fatalf("frame: %q", c)
+	}
+}

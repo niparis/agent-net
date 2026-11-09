@@ -65,6 +65,7 @@ interface DeliveredMessage {
   created_at?: string;
   approval_note?: string;
   authority_note?: string;
+  cited_notes?: string[];
   message_type?: string;
   parent_message_id?: string;
   body: string;
@@ -124,6 +125,7 @@ function formatDelivery(m: DeliveredMessage): string {
   if (m.owner_instruction) text += `\n${ownerInstructionNote(m)}`;
   if (m.overruled === true) text += `\n[agent-net] the owner overrules: do it.`;
   if (m.approval_note) text += `\n[agent-net] ${m.approval_note}`;
+  for (const note of m.cited_notes ?? []) text += `\n[agent-net] ${note}`;
   // A worker's report (a reply) is model output whatever the recipient's trust.
   return m.sender_worker && m.sender_harness !== "owner" && m.message_type === "reply" ? `${text}\n${WORKER_FOOTER}` : text;
 }

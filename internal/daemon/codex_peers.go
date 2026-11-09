@@ -502,6 +502,9 @@ func codexFrame(m protocol.Message) string {
 	if m.ApprovalNote != "" {
 		foot += "\n[agent-net] " + m.ApprovalNote
 	}
+	for _, note := range m.CitedNotes {
+		foot += "\n[agent-net] " + note
+	}
 	return strings.TrimRight(protocol.NeutralizeMarkers(m.Body), "\n") + "\n\n" + foot
 }
 

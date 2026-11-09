@@ -665,3 +665,15 @@ func TestCodexDiscoveryWaitsForServer(t *testing.T) {
 	f.set(fakeThread{ID: "late", Cwd: "/work/late", Status: "idle", Source: "cli"})
 	eventually(t, "late thread found", func() bool { _, ok := codexAgents(t, cli)["/work/late"]; return ok })
 }
+
+func TestCodexFramesShowCitedNotes(t *testing.T) {
+	m := protocol.Message{ID: "m1", From: "s1", FromName: "bob", FromHarness: "claude", Body: "see m_c0f041a063cd1359",
+		CitedNotes: []string{"cited m_c0f041a063cd1359: from a (session s_a) to b at 2026-11-09 07:31 UTC, request: \"ok\""}}
+	want := "\n[agent-net] " + m.CitedNotes[0]
+	if got := codexFrame(m); !strings.Contains(got, want) {
+		t.Fatalf("codexFrame: %q", got)
+	}
+	if got := codexWorkerText(m); !strings.Contains(got, want) {
+		t.Fatalf("codexWorkerText: %q", got)
+	}
+}

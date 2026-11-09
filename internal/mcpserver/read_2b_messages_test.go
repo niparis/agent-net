@@ -158,3 +158,17 @@ func TestBodyCursorBoundToItsMessage(t *testing.T) {
 		t.Fatal("a body cursor from another message was accepted")
 	}
 }
+
+// agent_message_get shows the gateway's cited message notes next to the body.
+func TestMessageGetShowsCitedNotes(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "n_me")
+	f := roReadFixture()
+	f.message = roMessageAt("m_fwd", time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC), "s_peer", "s_me", "see m_c0f041a063cd1359")
+	f.message.CitedNotes = []string{"cited m_c0f041a063cd1359: from a (session s_a) to b at 2026-01-01 10:00 UTC, request: \"ok\""}
+	cs := connect(t, f.call)
+	msg := roCall(t, cs, "agent_message_get", map[string]any{"message": "m_fwd"})["message"].(map[string]any)
+	notes, _ := msg["notes"].([]any)
+	if len(notes) != 1 || notes[0] != f.message.CitedNotes[0] || msg["body"] != "see m_c0f041a063cd1359" {
+		t.Fatalf("message: %v", msg)
+	}
+}
