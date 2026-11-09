@@ -1130,8 +1130,37 @@ The full CTO UI attaches as a client of the private OpenCode server or Claude ba
 
 ### Phone owner identity
 
-The phone app uses the public connected apps listener. An unpaired phone shows
-a code that the owner enters in the TUI. Phone requests share the OAuth
+The phone app uses the public connected apps listener. On Linux, a fresh
+browser reaching it through the machine's Tailscale Serve pairs automatically
+when its `Tailscale-User-Login` matches the user who owns this machine's
+Tailscale node (decision 0123). The gateway reads `tailscale status --json`,
+maps `Self.UserID` through `User` to `LoginName`, and caches a successful read
+for 30 seconds. The command has a 500 ms timeout. A failed read is cached for
+five seconds and uses the code flow; an expired cached identity is never used.
+
+A header alone is never trusted. The gateway matches the request's actual TCP
+peer and listener addresses and ports against `/proc/net/tcp` and
+`/proc/net/tcp6`. The matching established peer socket must have uid 0.
+Forwarded addresses do not participate in this check. The assumption is that
+a local process running as root is trusted as tailscaled; anyone with root on
+the gateway machine already owns it. Agents running as the unprivileged owner
+cannot create a uid-0 socket. This does not inspect root's process file
+descriptors, which the user-service gateway cannot read.
+
+Tailscale Serve removes client-supplied identity headers before adding the
+verified tailnet identity. Funnel requests receive no user identity headers.
+See `addTailscaleIdentityHeaders` in
+[Tailscale's source](https://github.com/tailscale/tailscale/blob/main/ipn/ipnlocal/serve.go).
+A different login, no identity, a non-root peer, a missing socket, a read error,
+or another OS uses the existing code flow. No agent or tool approves access.
+Auto-pairing creates the same owner-app device cookie, a revocable Connected
+apps entry, and one information-only owner Inbox notice. A rejected cookie,
+including a revoked device's cookie, does not trigger auto-pairing again.
+Clearing a cookie makes the browser a fresh device; the owner can authenticate
+again through Tailscale.
+
+An unpaired browser outside that rule shows a code that the owner enters in
+the TUI. Phone requests share the OAuth
 pending request cap of 20 and expire after ten minutes. The TUI defaults phone
 requests to owner app; the owner chooses the kind and name. A phone pairing
 approved as a bot cannot receive a phone token.

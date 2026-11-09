@@ -64,6 +64,10 @@ func phoneRoute(path string) bool {
 	return strings.HasPrefix(path, "/session/") || strings.HasPrefix(path, "/static/")
 }
 func (g *Gateway) phoneAuth(next http.Handler) http.Handler {
+	tailnet := g.phoneTailnet
+	if tailnet == nil {
+		tailnet = &phoneTailnet{peer: procPhonePeer{}, owner: &tailscalePhoneOwner{runner: g.opts.FunnelRunner}}
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !phoneRoute(r.URL.Path) {
 			http.NotFound(w, r)
@@ -89,6 +93,20 @@ func (g *Gateway) phoneAuth(next http.Handler) http.Handler {
 			if r.Method != http.MethodGet || r.URL.Path == "/events" {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
+			}
+			// A rejected or revoked cookie stays rejected, even on the tailnet.
+			// Auto-pair only a fresh browser, after the normal method checks.
+			if cookie == nil {
+				if login := tailnet.login(r); login != "" {
+					token, pairErr := g.store.pairPhoneTailnet(login, r.UserAgent())
+					if pairErr != nil {
+						http.Error(w, "Authentication unavailable", http.StatusInternalServerError)
+						return
+					}
+					setPhoneCookie(w, token, g.store.now())
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 			g.phonePairPage(w, r)
 			return
