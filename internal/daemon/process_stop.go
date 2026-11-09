@@ -300,7 +300,9 @@ func staticProcessRefusal(pid int) string {
 
 // processRefusal says why a process that exists must not be stopped, or returns
 // "". The rules (decision 0102): a process of another user, the agent-net
-// daemon or gateway, and a live agent-net session or worker.
+// daemon or gateway, and a live agent-net session or worker. Also (decision
+// 0102, Claude roster): a live Claude Code background session, the Claude
+// supervisor, and any process inside a live session.
 func (d *Daemon) processRefusal(v procView) string {
 	if reason := staticProcessRefusal(v.PID); reason != "" {
 		return reason
@@ -311,7 +313,10 @@ func (d *Daemon) processRefusal(v procView) string {
 	if isAgentNetService(v.Command) {
 		return "this is the agent-net daemon or gateway"
 	}
-	return d.knownAgentNetProcess(v.PID)
+	if reason := d.knownAgentNetProcess(v.PID); reason != "" {
+		return reason
+	}
+	return d.claudeProcessRefusal(v)
 }
 
 // isAgentNetService tells if a command line is the agent-net daemon or gateway:

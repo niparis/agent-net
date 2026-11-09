@@ -70,7 +70,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("session_policy", "Set policy; read get first.", map[string]ctoField{"session_id": sid, "scope": en("Default session.", "session", "project"), "policy": obj("Policy."), "dry_run": b("Preview.")})
 	add("machine_remove", "Remove a machine and revoke its token. Owner approval required.", map[string]ctoField{"node_id": s("Machine ID.")})
 	add("machine_rotate", "Rotate an online machine token. Offline machines can only be removed. Owner approval required.", map[string]ctoField{"node_id": s("Machine ID.")})
-	add("process_stop", "Stop processes on a machine: SIGTERM, then SIGKILL. No undo.", map[string]ctoField{"node_id": s("Machine; required."), "pids": {typ: "array", desc: "Process IDs.", items: map[string]any{"type": "integer"}}})
+	add("process_stop", "Stop processes on a machine: SIGTERM, then SIGKILL. No undo. Live Claude and agent-net sessions are refused.", map[string]ctoField{"node_id": s("Machine; required."), "pids": {typ: "array", desc: "Process IDs.", items: map[string]any{"type": "integer"}}})
 	add("node_rename", "Set machine name.", map[string]ctoField{"node_id": s("Machine."), "name": s("Empty clears.")})
 
 	add("worker_start", "Start a worker.", map[string]ctoField{
