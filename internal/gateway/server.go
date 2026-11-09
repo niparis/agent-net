@@ -1435,6 +1435,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "query.graph":
 		return g.handleGraphView(raw)
+	case "query.team_lead":
+		p, err := decode[protocol.QueryTeamLead](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad query.team_lead")
+		}
+		return st.TeamLeadFor(p.SessionID)
 	case "graph.read":
 		return g.handleGraphRead(raw)
 

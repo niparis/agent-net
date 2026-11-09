@@ -67,6 +67,26 @@ func (s *Store) leadAskSession(leadAgent, pinned string) (id, name string, err e
 	return id, name, err
 }
 
+// TeamLeadFor returns the team lead of a session whose team sends blocked
+// steps to its lead. It is the read behind query.team_lead: the Claude Code
+// hint hook uses it to name the lead when a tool call was denied. An empty
+// result means the session is outside such a team, or is the lead itself.
+func (s *Store) TeamLeadFor(session string) (protocol.TeamLeadResult, error) {
+	var out protocol.TeamLeadResult
+	team, leadAgent, pinned, ok, err := s.askerTeam(session)
+	if err != nil || !ok {
+		return out, err
+	}
+	leadSession, leadName, err := s.leadAskSession(leadAgent, pinned)
+	if err != nil || leadSession == "" || leadSession == session {
+		return out, err
+	}
+	if leadName == "" {
+		leadName = leadAgent
+	}
+	return protocol.TeamLeadResult{Team: team, Lead: leadName, LeadSession: leadSession}, nil
+}
+
 // RedirectOwnerAsk sends the ask of a session to its team lead when the
 // session's team has asks_to=lead. It returns nil, and does nothing, when the
 // ask belongs to the owner: the team sends questions to the owner, the session

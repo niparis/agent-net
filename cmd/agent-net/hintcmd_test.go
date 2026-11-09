@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,14 +15,38 @@ import (
 
 func runHintWith(t *testing.T, input string, res protocol.HintResult, err error) (string, []protocol.HintRequest) {
 	t.Helper()
-	var asked []protocol.HintRequest
-	var out bytes.Buffer
-	runHint(context.Background(), strings.NewReader(input), &out, func(_ context.Context, r protocol.HintRequest) (protocol.HintResult, error) {
-		asked = append(asked, r)
-		return res, err
-	})
-	return out.String(), asked
+	out, asked, _ := runHintWithLead(t, input, res, err, protocol.TeamLeadResult{}, nil)
+	return out, asked
 }
+
+// runHintWithLead runs the hook with a fake daemon for both its reads. leadRes
+// and leadErr answer the team lead read.
+func runHintWithLead(t *testing.T, input string, res protocol.HintResult, err error,
+	leadRes protocol.TeamLeadResult, leadErr error) (string, []protocol.HintRequest, []protocol.TeamLeadRequest) {
+	t.Helper()
+	var asked []protocol.HintRequest
+	var leads []protocol.TeamLeadRequest
+	var out bytes.Buffer
+	runHint(context.Background(), strings.NewReader(input), &out,
+		func(_ context.Context, r protocol.HintRequest) (protocol.HintResult, error) {
+			asked = append(asked, r)
+			return res, err
+		},
+		func(_ context.Context, r protocol.TeamLeadRequest) (protocol.TeamLeadResult, error) {
+			leads = append(leads, r)
+			return leadRes, leadErr
+		})
+	return out.String(), asked, leads
+}
+
+// deniedMerge is a failed gh pr merge that Claude Code's permission system or
+// GitHub refused.
+func deniedMerge(failure string) string {
+	return `{"session_id":"abc","hook_event_name":"PostToolUseFailure","tool_name":"Bash",` +
+		`"tool_input":{"command":"gh pr merge 12 --squash"},"error":` + strconv.Quote(failure) + `}`
+}
+
+const leadLine = "agent-net: in this team, merges and other blocked steps belong to your lead lead (s_lead) under the owner's team rule (asks_to=lead). If this session cannot run it, hand the change over (the PR link and your review) with agent_message_send for the lead's own merge decision."
 
 var oneHint = protocol.HintResult{Text: "agent-net: ask cogforge (session s_1)."}
 
@@ -155,8 +180,56 @@ func TestHintHookStopsAfterItsBudget(t *testing.T) {
 		func(ctx context.Context, _ protocol.HintRequest) (protocol.HintResult, error) {
 			<-ctx.Done()
 			return protocol.HintResult{}, ctx.Err()
+		},
+		func(context.Context, protocol.TeamLeadRequest) (protocol.TeamLeadResult, error) {
+			return protocol.TeamLeadResult{}, errors.New("no lead")
 		})
 	if d := time.Since(start); d > time.Second || out.Len() != 0 {
 		t.Fatalf("took %v, printed %q", d, out.String())
+	}
+}
+
+func TestHintHookPreToolUseLead(t *testing.T) {
+	for _, command := range []string{"gh pr merge 12 --squash", "gh pr close 12", "gh workflow run deploy.yml"} {
+		input, _ := json.Marshal(map[string]any{"session_id": "abc", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": map[string]string{"command": command}})
+		out, asked, leads := runHintWithLead(t, string(input), oneHint, nil, protocol.TeamLeadResult{Team: "forge", Lead: "lead", LeadSession: "s_lead"}, nil)
+		var got struct {
+			H map[string]string `json:"hookSpecificOutput"`
+		}
+		if json.Unmarshal([]byte(out), &got) != nil || got.H["hookEventName"] != "PreToolUse" || got.H["additionalContext"] != leadLine || len(got.H) != 2 || len(asked) != 0 || len(leads) != 1 {
+			t.Fatalf("%s: output %q, asked %+v, leads %+v", command, out, asked, leads)
+		}
+	}
+}
+
+func TestHintHookPreToolUseSilent(t *testing.T) {
+	for _, command := range []string{"gh pr view 12", "gh pr mergeable", "echo gh pr merge", "gh workflow list"} {
+		in, _ := json.Marshal(map[string]any{"session_id": "abc", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": map[string]string{"command": command}})
+		out, _, leads := runHintWithLead(t, string(in), oneHint, nil, protocol.TeamLeadResult{Lead: "lead", LeadSession: "s_lead"}, nil)
+		if out != "" || len(leads) != 0 {
+			t.Fatalf("%s: %q %+v", command, out, leads)
+		}
+	}
+	in := `{"session_id":"abc","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"gh pr merge 12"}}`
+	for _, tc := range []struct {
+		res protocol.TeamLeadResult
+		err error
+	}{{}, {err: errors.New("offline")}, {res: protocol.TeamLeadResult{Lead: "lead"}}} {
+		out, _, _ := runHintWithLead(t, in, oneHint, nil, tc.res, tc.err)
+		if out != "" {
+			t.Fatal(out)
+		}
+	}
+}
+
+func TestHintHookPreToolUseBudget(t *testing.T) {
+	var out bytes.Buffer
+	start := time.Now()
+	runHint(context.Background(), strings.NewReader(`{"session_id":"abc","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"gh pr merge 12"}}`), &out, nil, func(ctx context.Context, _ protocol.TeamLeadRequest) (protocol.TeamLeadResult, error) {
+		<-ctx.Done()
+		return protocol.TeamLeadResult{}, ctx.Err()
+	})
+	if time.Since(start) > time.Second || out.Len() != 0 {
+		t.Fatalf("took %v, printed %q", time.Since(start), out.String())
 	}
 }

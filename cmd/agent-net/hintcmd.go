@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -147,18 +148,55 @@ func shellCommandWord(raw string) (word string, ended bool) {
 	return strings.Trim(raw, "()"), false
 }
 
-// runHint is `agent-net hint`: a Claude Code hook for PostToolUseFailure and
+// leadDeniedLine tells the member how to hand the change to the lead.
+func leadDeniedLine(res protocol.TeamLeadResult) string {
+	return fmt.Sprintf("agent-net: in this team, merges and other blocked steps belong to your lead %s (%s) under the owner's team rule (asks_to=lead). If this session cannot run it, hand the change over (the PR link and your review) with agent_message_send for the lead's own merge decision.", res.Lead, res.LeadSession)
+}
+
+func leadStepCommand(command string) bool {
+	words := strings.Fields(command)
+	if len(words) < 3 || words[0] != "gh" {
+		return false
+	}
+	return words[1] == "pr" && (words[2] == "merge" || words[2] == "close") || words[1] == "workflow" && words[2] == "run"
+}
+
+func writeHookContext(stdout io.Writer, event, text string) {
+	var out hookOutput
+	out.HookSpecificOutput.HookEventName = event
+	out.HookSpecificOutput.AdditionalContext = text
+	b, err := json.Marshal(out)
+	if err != nil {
+		return
+	}
+	stdout.Write(append(b, '\n'))
+}
+
+// runHint is `agent-net hint`: a Claude Code hook for PreToolUse, PostToolUseFailure and
 // PostToolUse. It reads the hook input on stdin, asks the daemon for a hint and
 // prints the hook output only when there is one. It never fails: on any
 // problem it prints nothing and exits 0, so it can not disturb the session.
 func runHint(ctx context.Context, stdin io.Reader, stdout io.Writer,
-	ask func(ctx context.Context, req protocol.HintRequest) (protocol.HintResult, error)) {
+	ask func(ctx context.Context, req protocol.HintRequest) (protocol.HintResult, error),
+	lead func(ctx context.Context, req protocol.TeamLeadRequest) (protocol.TeamLeadResult, error)) {
 	raw, err := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if err != nil {
 		return
 	}
 	var in hookInput
 	if json.Unmarshal(raw, &in) != nil || in.SessionID == "" || in.IsInterrupt {
+		return
+	}
+	if in.EventName == "PreToolUse" {
+		if in.ToolName != "Bash" || !leadStepCommand(in.ToolInput.Command) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(ctx, hintBudget)
+		defer cancel()
+		res, err := lead(ctx, protocol.TeamLeadRequest{Harness: "claude", NativeID: in.SessionID})
+		if err == nil && res.Lead != "" && res.LeadSession != "" {
+			writeHookContext(stdout, in.EventName, leadDeniedLine(res))
+		}
 		return
 	}
 	var text string
@@ -188,14 +226,7 @@ func runHint(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	if err != nil || res.Text == "" {
 		return
 	}
-	var out hookOutput
-	out.HookSpecificOutput.HookEventName = in.EventName
-	out.HookSpecificOutput.AdditionalContext = res.Text
-	b, err := json.Marshal(out)
-	if err != nil {
-		return
-	}
-	stdout.Write(append(b, '\n'))
+	writeHookContext(stdout, in.EventName, res.Text)
 }
 
 func cmdHint(ctx context.Context, _ []string) error {
@@ -207,6 +238,19 @@ func cmdHint(ctx context.Context, _ []string) error {
 		}
 		defer cl.Close()
 		raw, err := cl.Call(ctx, protocol.MethodHint, req)
+		if err != nil {
+			return res, err
+		}
+		err = json.Unmarshal(raw, &res)
+		return res, err
+	}, func(ctx context.Context, req protocol.TeamLeadRequest) (protocol.TeamLeadResult, error) {
+		var res protocol.TeamLeadResult
+		cl, err := dialCLI(ctx)
+		if err != nil {
+			return res, err
+		}
+		defer cl.Close()
+		raw, err := cl.Call(ctx, protocol.MethodTeamLead, req)
 		if err != nil {
 			return res, err
 		}

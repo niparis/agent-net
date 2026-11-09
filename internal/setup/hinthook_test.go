@@ -14,6 +14,7 @@ type hookGroupOf = struct {
 		Type    string `json:"type"`
 		Command string `json:"command"`
 		Timeout int    `json:"timeout"`
+		If      string `json:"if"`
 	} `json:"hooks"`
 }
 
@@ -35,6 +36,7 @@ func hooksOfFile(t *testing.T, f *fixture) map[string][]struct {
 		Type    string `json:"type"`
 		Command string `json:"command"`
 		Timeout int    `json:"timeout"`
+		If      string `json:"if"`
 	} `json:"hooks"`
 } {
 	t.Helper()
@@ -45,6 +47,7 @@ func hooksOfFile(t *testing.T, f *fixture) map[string][]struct {
 				Type    string `json:"type"`
 				Command string `json:"command"`
 				Timeout int    `json:"timeout"`
+				If      string `json:"if"`
 			} `json:"hooks"`
 		} `json:"hooks"`
 	}
@@ -213,5 +216,33 @@ func TestIsHintCommand(t *testing.T) {
 		if isHintCommand(cmd) != want {
 			t.Errorf("isHintCommand(%q) = %v", cmd, !want)
 		}
+	}
+}
+
+func TestHintHookPreToolUseInstallUninstall(t *testing.T) {
+	f := newFixture(t)
+	fakeClaude(t, f.home)
+	writeSettings(t, f, otherKeys)
+	runAsking(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookYes})
+	groups := withCommand(hooksOfFile(t, f)["PreToolUse"], " hint")
+	if len(groups) != 3 {
+		t.Fatalf("installed: %+v", groups)
+	}
+	for i, condition := range []string{"Bash(gh pr merge*)", "Bash(gh pr close*)", "Bash(gh workflow run*)"} {
+		if groups[i].Matcher != "Bash" || len(groups[i].Hooks) != 1 || groups[i].Hooks[0].If != condition {
+			t.Fatalf("installed: %+v", groups)
+		}
+	}
+	before := readSettingsFile(t, f)
+	runAsking(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookYes})
+	if readSettingsFile(t, f) != before {
+		t.Fatal("second setup changed hooks")
+	}
+	var out strings.Builder
+	if err := Uninstall(Options{Out: &out, NoService: true}); err != nil {
+		t.Fatal(err)
+	}
+	if groups = withCommand(hooksOfFile(t, f)["PreToolUse"], " hint"); len(groups) != 0 {
+		t.Fatalf("uninstall: %+v", groups)
 	}
 }
