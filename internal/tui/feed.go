@@ -31,12 +31,13 @@ const (
 // Message states in the order a message passes through them. A later event
 // never moves a message back (a late "delivered" after "replied" keeps "replied").
 var stateRank = map[string]int{
-	protocol.StateStored:     0,
-	protocol.StateDispatched: 1,
-	protocol.StateDelivered:  2,
-	protocol.StateReplied:    3,
-	protocol.StateFailed:     4,
-	protocol.StateExpired:    4,
+	protocol.StateStored:       0,
+	protocol.StateDispatched:   1,
+	protocol.StateDelivered:    2,
+	protocol.StateReplied:      3,
+	protocol.StateAcknowledged: 3,
+	protocol.StateFailed:       4,
+	protocol.StateExpired:      4,
 }
 
 // feedItem is one line of the message feed. A message is one item whose state
@@ -168,11 +169,16 @@ func (f *feed) applyMessage(e protocol.FeedEvent) {
 			it.Detail = e.Detail
 		}
 	}
-	// A stored reply answers its parent: the parent is "replied", which has no
-	// event of its own.
+	// A stored message answers its parent. A reply leaves it "replied"; an ack
+	// leaves it "acknowledged", since nothing was sent to the sender. Neither
+	// has an event of its own.
 	if e.Kind == "msg.stored" && e.Parent != "" {
-		if p := f.byMsg[e.Parent]; p != nil && stateRank[p.State] < stateRank[protocol.StateReplied] {
-			p.State = protocol.StateReplied
+		answer := protocol.StateReplied
+		if it.Type == protocol.TypeAck {
+			answer = protocol.StateAcknowledged
+		}
+		if p := f.byMsg[e.Parent]; p != nil && stateRank[p.State] < stateRank[answer] {
+			p.State = answer
 		}
 	}
 }

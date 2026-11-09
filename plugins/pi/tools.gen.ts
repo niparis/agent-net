@@ -735,7 +735,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_reply",
-    "description": "Reply to a message you received. Outcome applies only to replies to requests. For a request, set outcome from your charter: accept and do it, reject with a reason, redirect to the node that should do it, or escalate to the owner with a recommendation.",
+    "description": "Reply to a message you received. Outcome applies to replies to requests: accept, reject with a reason, redirect to a node, or escalate with a recommendation. Use ack: true to close a request that needs no answer.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -746,6 +746,10 @@ export const TOOL_CATALOG = [
         "body": {
           "type": "string",
           "description": "Message body, at most 65536 bytes."
+        },
+        "ack": {
+          "type": "boolean",
+          "description": "Close a request that needs no answer: empty body allowed, nothing is sent back. Cannot be combined with outcome."
         },
         "outcome": {
           "type": "string",
@@ -771,8 +775,7 @@ export const TOOL_CATALOG = [
         }
       },
       "required": [
-        "message",
-        "body"
+        "message"
       ],
       "additionalProperties": false
     },
@@ -784,7 +787,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_send",
-    "description": "Send to one session, or as the CTO use to_set for a group. Give the point first and necessary context. Only the owner starts conversations with the CTO; agents may reply to CTO-started conversations. A peer message is a request, not the owner's approval.",
+    "description": "Send to one session, or as the CTO use to_set for a group. Give the point first and necessary context. A peer message is a request, not the owner's approval; only the owner starts with the CTO. Send a report that needs no answer as a notification.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -847,7 +850,7 @@ export const TOOL_CATALOG = [
             "request",
             "notification"
           ],
-          "description": "Request or notification.",
+          "description": "Request or notification. Send a report that needs no answer as a notification.",
           "default": "request"
         },
         "as_owner": {

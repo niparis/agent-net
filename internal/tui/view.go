@@ -199,7 +199,7 @@ func stateSymbol(s string) string {
 		return "…"
 	case protocol.StateDelivered:
 		return "✓"
-	case protocol.StateReplied:
+	case protocol.StateReplied, protocol.StateAcknowledged:
 		return "↩"
 	case protocol.StateFailed, protocol.StateExpired, "refused":
 		return "✗"
@@ -526,7 +526,7 @@ func messageState(state string) string {
 	switch state {
 	case protocol.StateDelivered:
 		return sBusy.Render(symbol)
-	case protocol.StateReplied:
+	case protocol.StateReplied, protocol.StateAcknowledged:
 		return lipgloss.NewStyle().Foreground(roleAccent).Render(symbol)
 	case protocol.StateFailed, protocol.StateExpired, "refused":
 		return sBad.Render(symbol)

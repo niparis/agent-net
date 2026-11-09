@@ -315,7 +315,7 @@ func (s *Store) reconcileMovedOnOnce() (int, error) {
 const escalationAnsweredCond = `kind='escalation' AND from_kind IN ('','session') AND EXISTS (
 	SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id
 	JOIN messages later ON later.conversation_id=req.conversation_id AND later.sender=inbox_items.session_id
-		AND later.type='reply' AND later.created_at > inbox_items.created_at
+		AND later.type IN ` + answeredTypesSQL + ` AND later.created_at > inbox_items.created_at
 	WHERE o.reply_id=inbox_items.message_id
 		AND NOT EXISTS (SELECT 1 FROM graph_outcomes x WHERE x.reply_id=later.id))`
 

@@ -187,6 +187,20 @@ func TestFeedSnippetCleansControlCharacters(t *testing.T) {
 	}
 }
 
+func TestFeedAckMarksItsParentAcknowledged(t *testing.T) {
+	f := &feed{byMsg: map[string]*feedItem{}}
+	f.applyMessage(ev(1, -2*time.Minute, "msg.stored", "m_1", "s_a", "s_b", "request", nil))
+	f.applyMessage(ev(2, -time.Minute, "msg.stored", "m_2", "s_b", "s_a", "ack", func(e *protocol.FeedEvent) { e.Parent = "m_1" }))
+	if got := f.byMsg["m_1"].State; got != protocol.StateAcknowledged {
+		t.Fatalf("parent state = %q, want %q", got, protocol.StateAcknowledged)
+	}
+	// A plain reply still marks its parent replied.
+	f.applyMessage(ev(3, -time.Minute, "msg.stored", "m_3", "s_b", "s_a", "reply", func(e *protocol.FeedEvent) { e.Parent = "m_2" }))
+	if got := f.byMsg["m_2"].State; got != protocol.StateReplied {
+		t.Fatalf("reply parent state = %q, want %q", got, protocol.StateReplied)
+	}
+}
+
 func TestFeedReplySitsUnderItsParent(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
 	lines := m.feedLines(100, 30)

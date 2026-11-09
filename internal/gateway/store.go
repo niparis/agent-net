@@ -3625,6 +3625,17 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	if err != nil {
 		return msg, false, reject("%v", err)
 	}
+	if p.Ack {
+		if p.Outcome != "" {
+			return msg, false, reject("ack cannot be combined with outcome")
+		}
+		if p.ParentID == "" {
+			return msg, false, reject("ack needs the message_id of the request")
+		}
+		p.Type = protocol.TypeAck
+	} else if p.Type == protocol.TypeAck {
+		return msg, false, reject("message_type ack needs ack: true")
+	}
 	if p.Outcome != "" && (p.ParentID == "" || (p.Type != "" && p.Type != protocol.TypeReply)) {
 		return msg, false, reject("outcome requires a reply")
 	}
@@ -3634,7 +3645,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	if p.Sender == "agent-net" {
 		return msg, false, reject("agent-net sender is reserved")
 	}
-	if strings.TrimSpace(p.Body) == "" {
+	if strings.TrimSpace(p.Body) == "" && !p.Ack {
 		return msg, false, reject("body is empty")
 	}
 	if p.Sender == p.Recipient {
@@ -3703,6 +3714,10 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		IdempotencyKey: p.IdempotencyKey, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(),
 		State: protocol.StateStored, FromCTO: p.FromCTO, OwnerApproved: p.OwnerApproved && p.FromCTO, WorkerTask: &workerTask,
 	}
+	if p.Ack {
+		// An ack is history only: it is never queued for delivery.
+		m.State = protocol.StateAcknowledged
+	}
 	threaded := false
 	var parent protocol.Message
 	if p.ParentID != "" {
@@ -3716,6 +3731,9 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 		if parent.To != p.Sender || parent.From != p.Recipient {
 			return msg, false, reject("a reply must come from the parent's recipient and go to its sender")
+		}
+		if p.Ack && parent.Type != protocol.TypeRequest {
+			return msg, false, reject("%s is a %s, not a request: ack needs a request.", parent.ID, parent.Type)
 		}
 		// Before the network CTO existed, its messages came from the owner.
 		// Route replies to those roots to the registered identity for 30 days
@@ -3813,7 +3831,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 	}
 	switch m.Type {
-	case protocol.TypeRequest, protocol.TypeReply, protocol.TypeNotification:
+	case protocol.TypeRequest, protocol.TypeReply, protocol.TypeAck, protocol.TypeNotification:
 	default:
 		return msg, false, reject("unknown message_type %q", m.Type)
 	}
@@ -3860,7 +3878,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			}
 			allowed = workerOwner == ctoID
 		}
-		if !allowed && m.Type == protocol.TypeReply && (p.ParentID != "" || p.ConversationID != "") {
+		if !allowed && (m.Type == protocol.TypeReply || m.Type == protocol.TypeAck) && (p.ParentID != "" || p.ConversationID != "") {
 			var root string
 			var rootCTO bool
 			err = tx.QueryRow(`SELECT sender,sender_cto FROM messages WHERE conversation_id=? AND parent_id='' ORDER BY rowid LIMIT 1`, m.ConversationID).Scan(&root, &rootCTO)
@@ -3983,15 +4001,27 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 	}
 	if m.ParentID != "" {
-		if err := s.storeHandoffCopy(tx, m.ParentID, m); err != nil {
-			return msg, false, err
-		}
-		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,
-			protocol.StateReplied, m.ParentID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
-			return msg, false, err
-		}
-		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, m.ParentID, m.ParentID); err != nil {
-			return msg, false, err
+		if m.Type == protocol.TypeAck {
+			// The ack closes the request with nothing delivered.
+			if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,
+				protocol.StateAcknowledged, m.ParentID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
+				return msg, false, err
+			}
+			if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state=?)`,
+				m.ParentID, m.ParentID, protocol.StateAcknowledged); err != nil {
+				return msg, false, err
+			}
+		} else {
+			if err := s.storeHandoffCopy(tx, m.ParentID, m); err != nil {
+				return msg, false, err
+			}
+			if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,
+				protocol.StateReplied, m.ParentID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
+				return msg, false, err
+			}
+			if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, m.ParentID, m.ParentID); err != nil {
+				return msg, false, err
+			}
 		}
 	}
 	if threaded && m.Type == protocol.TypeReply {

@@ -40,7 +40,7 @@ func (s *Store) applyPending(agents []protocol.AgentView) error {
  JOIN sessions rs ON rs.id=m.recipient LEFT JOIN profiles rp ON rp.session_id=m.recipient
  WHERE m.type='request' AND m.created_at >= ? AND m.expires_at > ?`+scope+`
  AND ss.status<>'ended' AND ss.archived_at=0 AND rs.status<>'ended' AND rs.archived_at=0
- AND NOT EXISTS (SELECT 1 FROM messages reply WHERE reply.type='reply' AND reply.rowid>m.rowid
+ AND NOT EXISTS (SELECT 1 FROM messages reply WHERE reply.type IN `+answeredTypesSQL+` AND reply.rowid>m.rowid
  AND (reply.conversation_id=m.conversation_id OR (reply.sender=m.recipient AND reply.recipient=m.sender)))
  ORDER BY m.created_at, m.id`, args...)
 	if err != nil {

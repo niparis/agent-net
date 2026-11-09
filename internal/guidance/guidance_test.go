@@ -231,6 +231,22 @@ func TestWorkerHandbackGuidanceUsesFixedToolAndKeepsCustomText(t *testing.T) {
 	}
 }
 
+// A report that needs no answer is a notification, and a request that needs no
+// answer is closed with an ack instead of a reply.
+func TestGuidanceSaysReportsAreNotificationsAndAckCloses(t *testing.T) {
+	for _, v := range []string{Claude, Other, Combined} {
+		b := Block(v)
+		for _, want := range []string{
+			`A status report or FYI that needs no answer is sent with type "notification"`,
+			"agent_message_reply with ack: true closes a request that needs no answer",
+		} {
+			if !strings.Contains(b, want) {
+				t.Errorf("%s block lacks %q", v, want)
+			}
+		}
+	}
+}
+
 func TestGuidanceNamesMCPFileSend(t *testing.T) {
 	for _, variant := range []string{Claude, Other, Combined} {
 		b := Block(variant)
