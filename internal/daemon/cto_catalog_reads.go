@@ -528,6 +528,9 @@ func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (
 			return nil, err
 		}
 		out := map[string]any{"nodes": ctoCatalogGraphNodes(page.Nodes), "edges": ctoCatalogGraphEdges(page.Edges)}
+		if page.Note != "" {
+			out["note"] = page.Note
+		}
 		if len(page.Nodes) == 0 {
 			out["note"] = fmt.Sprintf("No graph node is named %q. Read the graph without node to list the names.", q.Node)
 		}

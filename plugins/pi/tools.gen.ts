@@ -324,7 +324,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_graph_read",
-    "description": "Read the graph: nodes with their charters and rules, and the edges between them. Give node to read one node and its edges.",
+    "description": "Read the graph: nodes with their charters and rules, and the edges between them. Give node to read one node and its edges. A shared name returns every node.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -958,7 +958,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_ask",
-    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. A new ask adds to your pending ones; pass replaces to retire one. The result lists your other open asks. Use it when you stop to wait for the owner.",
+    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. A new ask adds to your pending ones; pass replaces to retire one. Use it when you stop to wait for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {

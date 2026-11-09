@@ -101,6 +101,12 @@ func (g *Gateway) handleGraphRead(raw []byte) (any, error) {
 		graph, err = g.store.GraphForRef(p.Ref)
 	} else {
 		graph, err = g.store.GraphFor(p.Project)
+		if err == nil && p.Also && p.Project != "" {
+			var more []protocol.Node
+			if more, err = g.store.sameNameNodes(p.Project, graph); err == nil {
+				graph.Nodes = append(graph.Nodes, more...)
+			}
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -223,4 +229,36 @@ func (s *Store) MergeRuleForSession(session string) (string, string, error) {
 		return authority, protocol.NodeDefaultsWithSettings(snap.Maturity[project], nil, snap, project).MergeText(), nil
 	}
 	return authority, protocol.MergeTextWithSettings(authority, snap), nil
+}
+
+// sameNameNodes returns the typed nodes, other than the one an untyped read
+// already returns, that share the node's name: a repo and an agent or a team
+// can. The untyped read finds only the repo node, so an agent node of the same
+// name would be hidden. It is empty before the typed graph is on.
+func (s *Store) sameNameNodes(name string, legacy protocol.Graph) ([]protocol.Node, error) {
+	if !s.graphRefsOn.Load() {
+		return nil, nil
+	}
+	typed, err := s.graphForRef(nil, false)
+	if err != nil {
+		return nil, err
+	}
+	shown := ""
+	for _, n := range legacy.Nodes {
+		if n.Name == name {
+			shown = n.Kind
+		}
+	}
+	var out []protocol.Node
+	for _, n := range typed.Nodes {
+		if n.Name != name || n.Ref == nil {
+			continue
+		}
+		// The legacy node stands for the repo, or for an architect agent.
+		if n.Kind == "repo" || (n.Kind == "agent" && shown == "architect") {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }
