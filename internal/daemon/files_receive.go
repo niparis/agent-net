@@ -288,7 +288,7 @@ func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir strin
 		ctx, cancel = context.WithDeadline(ctx, deadline)
 		defer cancel()
 	}
-	c := &fileCollector{d: d, m: m, dir: dir, got: map[string]string{}, suspects: map[string]fileStamp{}, gateway: true}
+	c := &fileCollector{d: d, m: m, dir: dir, got: map[string]string{}, suspects: map[string]fileStamp{}, gateway: true, deadline: deadline}
 	interval := fc.Poll
 	reported := ""
 	for {
@@ -338,8 +338,15 @@ type fileCollector struct {
 	got      map[string]string    // file ID -> path it took
 	suspects map[string]fileStamp // file ID -> a copy that failed its hash once
 	gateway  bool                 // false after the gateway did not know xfer.find
-	blocked  string               // why a place cannot be read, such as macOS privacy rules on Downloads
+	blocked  string               // why a place cannot be read
+	deadline time.Time            // bounded when the collector must stop waiting
+	opens    map[string]*fileOpen // source path -> its open helper, kept while it blocks
 }
+
+// fileOpen is one helper goroutine that opens and copies an arrived file. It
+// stays in the collector while a blocked syscall does not return, so a new
+// pass waits on the same call instead of starting another.
+type fileOpen struct{ done chan error }
 
 func (c *fileCollector) missing() []protocol.FileEntry {
 	var out []protocol.FileEntry
@@ -384,26 +391,25 @@ func (c *fileCollector) pass(ctx context.Context) (progress bool, bad []string) 
 	// The local handoff, for a sender on this machine.
 	for _, f := range c.missing() {
 		src := filepath.Join(d.cfg.StateDir, fileLocalFolder, protocol.TaildropName(c.m.ID, f))
-		if c.tryTake(src, f) == nil {
+		if c.tryTake(ctx, src, f) == nil {
 			took(f, FilePathLocal)
 		}
 	}
 	// Taildrop. On Linux the files wait for `tailscale file get`; the owner
-	// may also have collected them into Downloads. The Mac app saves them
-	// straight into Downloads.
+	// may also have collected them into Downloads. A Mac daemon never looks
+	// in Downloads: a privacy check or an iCloud-backed file there can block
+	// an open in the kernel forever (decision 0124). A sender on a machine
+	// with a known OS other than darwin uses the gateway for a Mac receiver.
 	var places []string
-	if len(c.missing()) > 0 {
-		if fc.Layout != "darwin" {
-			d.taildropCollect(ctx)
-			places = append(places, filepath.Join(d.cfg.StateDir, fileTaildropFolder))
-		}
-		places = append(places, fc.Downloads)
+	if len(c.missing()) > 0 && fc.Layout != "darwin" {
+		d.taildropCollect(ctx)
+		places = append(places, filepath.Join(d.cfg.StateDir, fileTaildropFolder), fc.Downloads)
 	}
 	var mismatched []protocol.FileEntry
 	for _, place := range places {
 		for _, f := range c.missing() {
 			src := filepath.Join(place, protocol.TaildropName(c.m.ID, f))
-			err := c.tryTake(src, f)
+			err := c.tryTake(ctx, src, f)
 			switch {
 			case err == nil:
 				took(f, FilePathTaildrop)
@@ -434,12 +440,30 @@ func (c *fileCollector) pass(ctx context.Context) (progress bool, bad []string) 
 
 var errFileMismatch = errors.New("the file does not match its size or sha256")
 
+// errFileOpenTimeout says an open did not return in time. The helper that ran
+// it may still be blocked in the kernel.
+var errFileOpenTimeout = errors.New("the file open did not return in time")
+
+// fileOpenTimeout bounds one open of an arrived file. A blocked open repeats
+// until the collector's deadline, which is usually shorter.
+const fileOpenTimeout = 5 * time.Second
+
+// The stat and open of a file that arrived are variables so a test can make
+// them block, as a macOS privacy check or an iCloud-backed file can.
+var (
+	takeFileLstat = os.Lstat
+	takeFileOpen  = os.Open
+)
+
 // tryTake takes one announced copy into the inbox. A copy that fails its
 // hash is left where it is; it counts as bad only when the same copy (same
 // size and time) fails twice, so a file still being written is not refused.
 // It returns os.ErrNotExist when there is nothing to take.
-func (c *fileCollector) tryTake(src string, f protocol.FileEntry) error {
-	info, err := os.Lstat(src)
+func (c *fileCollector) tryTake(ctx context.Context, src string, f protocol.FileEntry) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := takeFileLstat(src)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			c.blocked = fmt.Sprintf("cannot read %s: %v", filepath.Dir(src), errors.Unwrap(err))
@@ -452,7 +476,7 @@ func (c *fileCollector) tryTake(src string, f protocol.FileEntry) error {
 	if info.Size() < f.Size {
 		return os.ErrNotExist // still arriving
 	}
-	err = takeFile(src, filepath.Join(c.dir, f.Name), f)
+	err = c.takeWithin(ctx, src, f)
 	if !errors.Is(err, errFileMismatch) {
 		return err
 	}
@@ -464,10 +488,47 @@ func (c *fileCollector) tryTake(src string, f protocol.FileEntry) error {
 	return os.ErrNotExist
 }
 
+// takeWithin runs the open and copy in a helper goroutine. A blocked syscall
+// ignores the context, so the collector stops waiting at its deadline or when
+// the daemon stops. The helper is not part of d.wg, so Stop does not wait for
+// a syscall that may never return. A later pass waits on the same helper
+// instead of starting another.
+func (c *fileCollector) takeWithin(ctx context.Context, src string, f protocol.FileEntry) error {
+	timeout := fileOpenTimeout
+	if !c.deadline.IsZero() {
+		if left := time.Until(c.deadline); left < timeout {
+			timeout = left
+		}
+	}
+	if timeout <= 0 {
+		return errFileOpenTimeout
+	}
+	if c.opens == nil {
+		c.opens = map[string]*fileOpen{}
+	}
+	call := c.opens[src]
+	if call == nil {
+		call = &fileOpen{done: make(chan error, 1)}
+		c.opens[src] = call
+		go func() { call.done <- takeFile(src, filepath.Join(c.dir, f.Name), f) }()
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-call.done:
+		delete(c.opens, src)
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return errFileOpenTimeout
+	}
+}
+
 // takeFile copies src into dst while hashing it, keeps the copy only when
 // size and hash match the manifest, then removes src.
 func takeFile(src, dst string, f protocol.FileEntry) error {
-	in, err := os.Open(src)
+	in, err := takeFileOpen(src)
 	if err != nil {
 		return err
 	}

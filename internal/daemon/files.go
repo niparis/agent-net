@@ -38,8 +38,8 @@ type FileConfig struct {
 	// Linux daemon moves the Taildrops it was not told about. Default:
 	// ~/Downloads.
 	Downloads string
-	// Layout is "darwin" (Taildrops land in Downloads) or "linux" (they wait
-	// for `tailscale file get`). Default: this machine's OS.
+	// Layout is "darwin" (the daemon never reads Downloads) or "linux"
+	// (Taildrops wait for `tailscale file get`). Default: this machine's OS.
 	Layout string
 	// TailscaleIP returns this machine's Tailscale address, or "". It goes to
 	// the gateway in hello. Default: the address of a local interface in

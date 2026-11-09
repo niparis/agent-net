@@ -966,17 +966,17 @@ The Pi and OpenCode plugins provide both tools from their generated catalog. Cla
 3. sends the message with the manifest. The gateway stores the manifest with the message and checks it again. Files need a live connection: a message with files is never put in the outbox;
 4. pushes each file under its unique name `agent-net-<message id>-<file id>-<name>`:
    - to a session on the same machine: through `files/local/`;
-   - over Taildrop (`tailscale file cp <file> <address>:`) when the receiving machine reported a Tailscale address and `tailscale status --json` lists it as an online peer;
+   - over Taildrop (`tailscale file cp <file> <address>:`) when the receiving machine reported a Tailscale address, its daemon is not on macOS, and `tailscale status --json` lists it as an online peer;
    - else through the gateway in parts (`xfer.begin`, `xfer.part`, `xfer.finish`), with the unique name as the upload name.
 
-A Taildrop that fails (for example a receiver that is offline) falls back to the gateway, which holds the bytes until the receiver comes online or 7 days pass. A message held for the owner's approval sends its files through the gateway, not over Taildrop. A worker notice also uses the gateway between machines: a successful Taildrop does not establish that the receiving daemon can collect it. An empty file carries no bytes: the receiver writes it from the manifest. The daemon finds `tailscale` on `PATH`, then on macOS at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`. With no Tailscale, files go through the gateway.
+A receiver whose daemon runs on macOS always gets its files through the gateway, for every message: the Mac daemon never reads `~/Downloads`, because an open there can block in the kernel (decision [0124](decisions/0124-worker-file-notice-timeout.md)). The sender reads the receiver's OS from `nodes`; when the OS is unknown, it uses the gateway too. A Taildrop that fails (for example a receiver that is offline) falls back to the gateway, which holds the bytes until the receiver comes online or 7 days pass. A message held for the owner's approval sends its files through the gateway, not over Taildrop. A worker notice also uses the gateway between machines. An empty file carries no bytes: the receiver writes it from the manifest. The daemon finds `tailscale` on `PATH`, then on macOS at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`. With no Tailscale, files go through the gateway.
 
 **Receiving.** When a message with a manifest arrives, the daemon of the receiving session collects its files before delivering it. A worker notice has a shorter bounded wait, described below. The daemon looks, in this order:
 
 - in the inbox folder, for a file already there (after a restart, or when the gateway pushes the message again);
 - in `files/local/`, for a sender on the same machine;
-- on Linux, it runs `tailscale file get files/taildrop/`, and looks in that folder and in `~/Downloads` (in case you collected the file yourself). Files nobody announced go to `~/Downloads` at once, under a free name such as `scan (1).pdf`;
-- on macOS, it looks in `~/Downloads`, where the Tailscale app saves Taildrops. Files nobody announced stay where they are;
+- on Linux, it runs `tailscale file get files/taildrop/`, and looks in that folder and in `~/Downloads` (in case you collected the file yourself). Files nobody announced go to `~/Downloads` at once, under a free name such as `scan (1).pdf`. An open of a file that arrived runs in a helper goroutine with a timeout, so a blocked syscall cannot keep the message or a daemon stop waiting;
+- on macOS, it never stats or opens a file in `~/Downloads`. A Taildrop that an older sender leaves there is not collected;
 - on the gateway, with `xfer.find` for the unique names of the missing files. It downloads a matching upload with `xfer.get`, checks it, and confirms it with `xfer.confirm`, so the gateway frees the space.
 
 A file is taken only when its size and SHA-256 match the manifest. It is copied into `inbox/<session>/<message>/<name>` and then removed from where it arrived. The daemon looks again after 2 seconds, doubling the wait up to 30 seconds while nothing arrives. Until every file is in, the sender sees `waiting for files: <n> of <total> in`. Then the agent gets the message, with a note at the end:

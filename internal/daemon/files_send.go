@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -53,8 +54,10 @@ type FileSendResult struct {
 
 // SendFiles checks the files, sends the message with their manifest and then
 // pushes the bytes: on this machine through the local handoff folder, over
-// Taildrop when the receiver is an online peer on this machine's tailnet,
-// else through the gateway in parts. Worker notices use the gateway between
+// Taildrop when the receiver is an online Linux peer on this machine's
+// tailnet, else through the gateway in parts. The gateway is the only route to
+// a Mac or a machine whose OS is unknown, because a Mac daemon never reads
+// Downloads (decision 0124). Worker notices also use the gateway between
 // machines. A Taildrop that fails falls back to the gateway. The receiving
 // daemon finds each file by its unique name and hash.
 //
@@ -114,9 +117,9 @@ func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *Outgo
 	}
 	path, ip, receiver, note := d.fileRoute(ctx, stored.Message.To)
 	if path == FilePathTaildrop && req.WorkerNotice {
-		// A successful Taildrop does not mean the receiving daemon can read
-		// its inbox. The gateway is readable by the enrolled receiver and
-		// keeps the files while it is offline.
+		// A worker notice is the worker's final report. The gateway keeps its
+		// files while the receiver is offline, so the report is not held up
+		// by a transfer that may never finish.
 		path, note = FilePathGateway, "worker notice files use the gateway"
 	} else if path == FilePathTaildrop && stored.Message.State == protocol.StateHeld {
 		// The owner may refuse the message. Bytes on the gateway expire;
@@ -192,10 +195,20 @@ func (d *Daemon) fileRoute(ctx context.Context, to string) (path, ip, receiver, 
 	if json.Unmarshal(raw, &nodes) != nil {
 		return FilePathGateway, "", receiver, ""
 	}
+	var receiverOS string
 	for _, n := range nodes.Nodes {
 		if n.NodeID == receiver {
 			ip = n.TailscaleIP
+			receiverOS = n.OS
 		}
+	}
+	// A Mac daemon never reads Downloads, so a Taildrop to it would never be
+	// collected (decision 0124). An unknown OS also takes the gateway.
+	if receiverOS == "" {
+		return FilePathGateway, ip, receiver, "the receiver's machine did not report its OS, so the files use the gateway"
+	}
+	if strings.EqualFold(receiverOS, "darwin") {
+		return FilePathGateway, ip, receiver, "the receiver is a Mac, so the files use the gateway"
 	}
 	if ip == "" {
 		return FilePathGateway, "", receiver, ""
