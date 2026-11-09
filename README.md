@@ -30,6 +30,7 @@
   <a href="#the-ideas">The ideas</a> ·
   <a href="#why-not-just-">Why not just …</a> ·
   <a href="docs/tour.md">Tour</a> ·
+  <a href="docs/principles.md">Principles</a> ·
   <a href="docs/security.md">Security</a> ·
   <a href="docs/README.md">Docs</a>
 </p>
