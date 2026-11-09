@@ -396,6 +396,9 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}
 	d.lk = l
 	d.connecting = false
+	// A new link may have missed mcp.changed pushes: the next catalog read
+	// asks the gateway.
+	d.catalog.invalidate()
 	// A session that is new or changed after the snapshot was taken was not
 	// pushed (there was no link yet), so push it now.
 	sent := map[string]protocol.SessionInfo{}

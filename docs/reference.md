@@ -1607,9 +1607,13 @@ What a session sees:
 
 The tool list of a session (the daemon method `mcp_tools`) holds only the
 servers it may use. The gateway reads the project from its own record of the
-session. Applying or undoing an assignment makes the gateway send `mcp.changed`
-to every daemon, and each daemon sends `mcp_changed` to its sessions. Claude
-Code gets `notifications/tools/list_changed` only when its tool list really
+session. The daemon keeps the answer for each project and serves it to every
+session of that project, so repeated reads (the harnesses' safety polls) cost
+the gateway nothing. A `mcp.changed` push, or a new gateway link, drops the
+kept answer, so the next read is fresh. Applying or undoing an assignment
+makes the gateway send `mcp.changed` to every daemon, and each daemon sends
+`mcp_changed` to its sessions. Claude Code gets
+`notifications/tools/list_changed` only when its tool list really
 changed. Pi hides removed tools and updates its list from the next prompt.
 Pi and OpenCode plugin connections are tested end to end: after the push, the
 next `mcp_tools` is filtered for the session's project. The shipped OpenCode

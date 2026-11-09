@@ -45,7 +45,7 @@ Only the owner can add or remove a shared server, through the TUI or CLI. The CT
 
 A registered tool appears as `<server>__<tool>` with the server's own description and input schema. The description starts with `[<server> on <host>]`. Server names are lowercase letters, numbers and single hyphens, at most 24 characters, and unique. (In Claude Code the full tool name also carries its usual prefix, for example `mcp__agent-net__files__read_file`.)
 
-When the registry changes, or a server reports a new tool list, the gateway tells every daemon and each daemon tells its sessions.
+When the registry changes, or a server reports a new tool list, the gateway tells every daemon and each daemon tells its sessions. The daemon keeps the last catalog answer for each project, so a session's periodic safety read does not reach the gateway; a `mcp.changed` push, or a new gateway link, drops the kept answer.
 
 | Harness | What happens | Tested behavior |
 |---|---|---|

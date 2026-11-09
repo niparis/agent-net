@@ -40,7 +40,13 @@ func (d *Daemon) onMCPFrame(ctx context.Context, l *link, h protocol.Header, raw
 		if err = json.Unmarshal(raw, &p); err == nil {
 			d.mcp.reconcile(p.Servers)
 		}
+		// A node hears mcp.sync after every reconnect and whenever the servers
+		// it hosts change: a fresh catalog read must follow.
+		d.catalog.invalidate()
 	case "mcp.changed":
+		// Drop the kept catalog before the sessions hear the push, so their
+		// next read comes from the gateway.
+		d.catalog.invalidate()
 		d.broadcastLocal("mcp_changed")
 		d.wakeTools()
 	case "mcp.probe":
@@ -118,7 +124,7 @@ func (lc *localConn) dispatchMCP(ctx context.Context, client, method string, raw
 		// The one connection of a Codex process that has no thread (it lists
 		// tools for every thread of the app server) is not bound. It has no
 		// project, so it gets the global servers only.
-		var sid string
+		var sid, project string
 		lc.mu.Lock()
 		unboundCodex := lc.ls == nil && lc.client == "mcp"
 		lc.mu.Unlock()
@@ -126,8 +132,9 @@ func (lc *localConn) dispatchMCP(ctx context.Context, client, method string, raw
 			if sid, err = lc.boundID(); err != nil {
 				return
 			}
+			project = lc.sessionProject()
 		}
-		res, err = d.call(ctx, "mcp.catalog", protocol.MCPCatalog{SessionID: sid})
+		res, err = d.mcpTools(ctx, sid, project)
 
 	case "mcp_add":
 		if client != "cli" {
@@ -211,4 +218,38 @@ func (lc *localConn) dispatchMCP(ctx context.Context, client, method string, raw
 		return nil, true, errors.New("unknown method " + method)
 	}
 	return
+}
+
+// sessionProject returns the project of the connection's bound session, as the
+// daemon knows it, or "" for an unbound connection.
+func (lc *localConn) sessionProject() string {
+	lc.mu.Lock()
+	ls := lc.ls
+	lc.mu.Unlock()
+	if ls == nil {
+		return ""
+	}
+	lc.d.mu.Lock()
+	defer lc.d.mu.Unlock()
+	return ls.info.Repo.Project
+}
+
+// mcpTools answers a session's tool-list read from the kept catalog, keyed by
+// the project that decides what the gateway lists. It reads the gateway only
+// when no answer is kept for that project.
+func (d *Daemon) mcpTools(ctx context.Context, sid, project string) (json.RawMessage, error) {
+	key := "global"
+	switch {
+	case sid == "":
+		// An unbound Codex connection: global servers only.
+	case project != "":
+		key = "project:" + project
+	default:
+		// The gateway may still give this session a project from its profile.
+		// Keep the answer to itself, because the daemon cannot know it.
+		key = "session:" + sid
+	}
+	return d.catalog.getOrLoad(ctx, key, func(ctx context.Context) (json.RawMessage, error) {
+		return d.call(ctx, "mcp.catalog", protocol.MCPCatalog{SessionID: sid})
+	})
 }
