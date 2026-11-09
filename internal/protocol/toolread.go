@@ -282,7 +282,10 @@ type MachineGetResult struct {
 	Machine MachineRow    `json:"machine"`
 	Health  MachineHealth `json:"health"`
 	// Usage is set when no category is asked for.
-	Usage       *MachineUsageNow     `json:"usage,omitempty"`
+	Usage *MachineUsageNow `json:"usage,omitempty"`
+	// Requests is set with Usage. It is the gateway's own request counters,
+	// not the machine's.
+	Requests    *GatewayRequests     `json:"requests,omitempty"`
 	Models      *MachineModelPage    `json:"models,omitempty"`
 	Quotas      *MachineQuotaPage    `json:"quotas,omitempty"`
 	TrackRecord *MachineTrackPage    `json:"track_record,omitempty"`

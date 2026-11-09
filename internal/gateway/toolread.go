@@ -622,6 +622,10 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 	out := protocol.MachineGetResult{Machine: machineRow(node, online, counts[node.NodeID], true), Health: health}
 	if category == "" {
 		out.Usage = g.machineUsageNow(ctx, node, online)
+		if g.reqs != nil {
+			snap := g.reqs.snapshot(time.Now())
+			out.Requests = &snap
+		}
 		return out, nil
 	}
 	query := readQueryHash(struct {

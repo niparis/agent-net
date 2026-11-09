@@ -38,7 +38,8 @@ func (g *Gateway) conn(nodeID string) *nodeConn {
 // serveMCP answers one mcp.* frame. It runs in its own goroutine because it
 // may wait for another node while this node's read loop must keep going.
 func (g *Gateway) serveMCP(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
-	defer g.slowRequest(h.Type, nc.id, time.Now())
+	start, sent := time.Now(), 0
+	defer g.finishRequest(h, nc.id, start, &sent)
 	data, err := g.handleMCP(ctx, nc, h.Type, raw)
 	if err != nil {
 		var rj Rejection
@@ -51,6 +52,7 @@ func (g *Gateway) serveMCP(ctx context.Context, nc *nodeConn, h protocol.Header,
 		g.logLine("error", "where", "encode result", "err", eerr)
 		return
 	}
+	sent = len(reply)
 	nc.write(ctx, reply)
 }
 
