@@ -169,11 +169,16 @@ func (f *feed) applyMessage(e protocol.FeedEvent) {
 			it.Detail = e.Detail
 		}
 	}
-	// A stored reply answers its parent: the parent is "replied", which has no
-	// event of its own.
+	// A stored message answers its parent. A reply leaves it "replied"; an ack
+	// leaves it "acknowledged", since nothing was sent to the sender. Neither
+	// has an event of its own.
 	if e.Kind == "msg.stored" && e.Parent != "" {
-		if p := f.byMsg[e.Parent]; p != nil && stateRank[p.State] < stateRank[protocol.StateReplied] {
-			p.State = protocol.StateReplied
+		answer := protocol.StateReplied
+		if it.Type == protocol.TypeAck {
+			answer = protocol.StateAcknowledged
+		}
+		if p := f.byMsg[e.Parent]; p != nil && stateRank[p.State] < stateRank[answer] {
+			p.State = answer
 		}
 	}
 }
