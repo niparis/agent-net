@@ -236,11 +236,33 @@ func attachClients(out []byte, exceptPID int) map[string][]int {
 	return clients
 }
 
+// localCommandPrefixes are the string contents Claude Code writes for a local
+// command such as /compact and its output. They follow the compaction and are
+// not turns.
+var localCommandPrefixes = []string{"<command-name>", "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>"}
+
+// isLocalCommandContent says a user entry carries only local command
+// bookkeeping, not something the owner or the model said.
+func isLocalCommandContent(raw json.RawMessage) bool {
+	var text string
+	if json.Unmarshal(raw, &text) != nil {
+		return false
+	}
+	text = strings.TrimSpace(text)
+	for _, p := range localCommandPrefixes {
+		if strings.HasPrefix(text, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // noTurnSinceCompact says the session's newest user or assistant turn is the
 // compaction Claude Code wrote, so it has done nothing since. It reads the
 // transcript, so the answer survives a daemon restart. Non-turn entries
-// (system, attachment and other bookkeeping) and user entries that only carry
-// command output (isMeta) are skipped.
+// (system, attachment and other bookkeeping), user entries that only carry
+// command output (isMeta) and the entries of a local command such as /compact
+// are skipped.
 func noTurnSinceCompact(path string) bool {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -254,6 +276,9 @@ func noTurnSinceCompact(path string) bool {
 			IsMeta           bool   `json:"isMeta"`
 			IsSidechain      bool   `json:"isSidechain"`
 			IsCompactSummary bool   `json:"isCompactSummary"`
+			Message          struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
 		}
 		if json.Unmarshal(line, &v) != nil || v.IsSidechain {
 			return false
@@ -264,8 +289,11 @@ func noTurnSinceCompact(path string) bool {
 			compacted = true
 			return true
 		}
-		if v.Type == "assistant" || (v.Type == "user" && !v.IsMeta) {
+		if v.Type == "assistant" {
 			return true // a real turn, so there was activity
+		}
+		if v.Type == "user" && !v.IsMeta && !isLocalCommandContent(v.Message.Content) {
+			return true // a real user turn
 		}
 		return false
 	})

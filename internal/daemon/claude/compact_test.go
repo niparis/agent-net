@@ -12,6 +12,19 @@ import (
 	"github.com/niparis/agent-net/internal/settings"
 )
 
+// fakeCompactOutput appends the entries a real /compact writes to a
+// transcript: the compact boundary, the summary, the local command entries
+// (isMeta caveat, /compact command, its stdout) and an attachment. Checked
+// against real transcripts; the JSON here is synthetic.
+const fakeCompactOutput = "printf '%s\\n' " +
+	"'{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"compactMetadata\":{\"trigger\":\"manual\",\"preTokens\":300000,\"postTokens\":20000}}' " +
+	"'{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation.\"}}' " +
+	"'{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a message.</local-command-caveat>\"}}' " +
+	"'{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/compact</command-name> <command-message>compact</command-message> <command-args></command-args>\"}}' " +
+	"'{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>\"}}' " +
+	"'{\"type\":\"attachment\",\"attachment\":{\"type\":\"file\"}}' " +
+	">> \"$COMPACT_TRANSCRIPT\"\n"
+
 func TestIdleCompact(t *testing.T) {
 	for _, tc := range []struct {
 		name, status, kind                             string
@@ -79,7 +92,7 @@ func TestIdleCompact(t *testing.T) {
 			if !tc.noPrompt {
 				script += "printf '❯'\n"
 			}
-			script += "IFS= read -r line\n[ \"$1\" = attach ] && [ \"$2\" = job-test ] && [ \"$line\" = /compact ] || exit 12\nprintf '%s\\n' '{\"type\":\"system\",\"subtype\":\"compact_boundary\"}' >> \"$COMPACT_TRANSCRIPT\"\nIFS= read -r line\n"
+			script += "IFS= read -r line\n[ \"$1\" = attach ] && [ \"$2\" = job-test ] && [ \"$line\" = /compact ] || exit 12\n" + fakeCompactOutput + "IFS= read -r line\n"
 			if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -218,7 +231,13 @@ func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
 		summary     = `{"type":"user","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation."}}` + "\n"
 		attachment  = `{"type":"attachment","attachment":{"type":"file"}}` + "\n"
 		bookkeeping = `{"type":"last-prompt","lastPrompt":"older prompt"}` + "\n"
-		newTurn     = `{"type":"user","message":{"role":"user","content":"a new question"}}` + "\n" + assistant
+		// The exact entries a real /compact writes after the boundary and the
+		// summary (checked against transcripts on this machine, read-only).
+		compactCommand = summary +
+			`{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a message.</local-command-caveat>"}}` + "\n" +
+			`{"type":"user","message":{"role":"user","content":"<command-name>/compact</command-name>             <command-message>compact</command-message>             <command-args></command-args>"}}` + "\n" +
+			`{"type":"user","message":{"role":"user","content":"<local-command-stdout>\u001b[2mCompacted (ctrl+o to see full summary)\u001b[22m</local-command-stdout>"}}` + "\n"
+		newTurn = `{"type":"user","message":{"role":"user","content":"a new question"}}` + "\n" + assistant
 	)
 	skip := "event=idle_compact session=test result=skipped:no_activity_since_compact"
 	for _, tc := range []struct {
@@ -231,6 +250,7 @@ func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
 		{name: "transcript ends at the compact summary", body: assistant + boundary + summary, wantLog: skip, wantTokens: 20000},
 		{name: "transcript ends at the compact boundary", body: assistant + boundary, wantLog: skip, wantTokens: 20000},
 		{name: "bookkeeping after the compaction is not a turn", body: assistant + boundary + summary + attachment + bookkeeping, wantLog: skip, wantTokens: 20000},
+		{name: "the command entries of a daemon /compact are not a turn", body: assistant + boundary + compactCommand + attachment, wantLog: skip, wantTokens: 20000},
 		{name: "a turn after the compaction compacts again", body: assistant + boundary + summary + newTurn, wantLog: "event=idle_compact session=test result=ok", want: 1, wantTokens: 300000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -260,7 +280,7 @@ func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
 				}
 			}
 			bin := filepath.Join(dir, "claude")
-			script := "#!/bin/sh\nstty -echo\nprintf x >> \"$COMPACT_STARTS\"\nprintf '❯'\nIFS= read -r line\n[ \"$1\" = attach ] && [ \"$2\" = job-test ] && [ \"$line\" = /compact ] || exit 12\nprintf '%s\\n' '{\"type\":\"system\",\"subtype\":\"compact_boundary\"}' >> \"$COMPACT_TRANSCRIPT\"\nIFS= read -r line\n"
+			script := "#!/bin/sh\nstty -echo\nprintf x >> \"$COMPACT_STARTS\"\nprintf '❯'\nIFS= read -r line\n[ \"$1\" = attach ] && [ \"$2\" = job-test ] && [ \"$line\" = /compact ] || exit 12\n" + fakeCompactOutput + "IFS= read -r line\n"
 			if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -268,6 +288,9 @@ func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
 			starts := filepath.Join(dir, "starts")
 			t.Setenv("COMPACT_STARTS", starts)
 			h := &compactHost{fakeHost: &fakeHost{}, snap: settings.Snapshot{}}
+			// A low threshold, so the old in-memory code would compact here: this
+			// test is about the activity check, not the token check.
+			h.snap.Values = []settings.Value{{Key: "sessions.idle_compaction_min_tokens", Level: "network", Scope: "network", Value: []byte("1000")}}
 			a := New(Config{SessionsDir: sessions, ProjectsDir: projects}) // empty compactStates: a fresh daemon
 			a.host = h
 			a.compactBinary = bin
