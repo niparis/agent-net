@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime/pprof"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -146,33 +148,74 @@ func (d *Daemon) restart() {
 		d.cfg.Restart()
 		return
 	}
-	RestartSelf(d.cfg.Exe, d.Stop)
+	RestartSelf(d.cfg.Exe, d.Stop, d.Logf)
+}
+
+// restartSelfExit and restartSelfExec are the exit and exec points of
+// RestartSelf. A test replaces them so it never ends the test process.
+var (
+	restartSelfExit = os.Exit
+	restartSelfExec = syscall.Exec
+)
+
+// restartStopTimeout bounds how long a restart waits for the daemon to stop.
+// A stop that has not returned by then must not keep this process alive:
+// launchd KeepAlive and systemd only start the new binary after this one exits.
+// It is a variable so a test can shorten the wait.
+var restartStopTimeout = 15 * time.Second
+
+// stopWithin runs stop and waits at most restartStopTimeout. On a timeout it
+// writes the reason and a full goroutine dump to the daemon log, then returns
+// so the restart can exit or exec anyway. A clean stop logs nothing.
+func stopWithin(stop func(), logf func(string, ...any)) {
+	done := make(chan struct{})
+	go func() {
+		stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return
+	case <-time.After(restartStopTimeout):
+	}
+	if logf == nil {
+		logf = func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "agent-net: "+format+"\n", args...)
+		}
+	}
+	logf("restart: the daemon stop did not return within %s; going on with the restart", restartStopTimeout)
+	var buf bytes.Buffer
+	if p := pprof.Lookup("goroutine"); p != nil {
+		_ = p.WriteTo(&buf, 2)
+	}
+	logf("restart: goroutine dump:\n%s", buf.String())
 }
 
 // RestartSelf restarts this daemon process. With a service manager it asks the
 // manager: systemd gets `systemctl --user restart` (the unit has Restart=),
 // launchd gets an exit and KeepAlive starts it again. Without one (or with
 // AGENT_NET_NO_SERVICE=1) the process stops and runs exe again in place.
-// stop shuts the daemon down cleanly first.
-func RestartSelf(exe string, stop func()) {
+// stop shuts the daemon down cleanly first, but never longer than
+// restartStopTimeout. logf writes to the daemon log.
+func RestartSelf(exe string, stop func(), logf func(string, ...any)) {
+	stopWithin(stop, logf)
 	if os.Getenv("AGENT_NET_NO_SERVICE") != "1" {
 		if os.Getenv("INVOCATION_ID") != "" {
 			if p, err := exec.LookPath("systemctl"); err == nil {
 				if exec.Command(p, "--user", "--no-block", "restart", "agent-net-daemon.service").Run() == nil {
-					return // systemd stops this process and starts the new binary
+					return // systemd starts the new binary
 				}
 			}
 		}
 		if os.Getenv("XPC_SERVICE_NAME") == "com.agent-net.daemon" {
-			stop()
-			os.Exit(0) // launchd KeepAlive starts the new binary
+			restartSelfExit(0) // launchd KeepAlive starts the new binary
+			return
 		}
 	}
-	stop()
 	args := append([]string{exe}, os.Args[1:]...)
-	if err := syscall.Exec(exe, args, os.Environ()); err != nil {
+	if err := restartSelfExec(exe, args, os.Environ()); err != nil {
 		fmt.Fprintln(os.Stderr, "agent-net: cannot restart:", err)
-		os.Exit(1)
+		restartSelfExit(1)
 	}
 }
 

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -245,22 +246,35 @@ func (d *Daemon) afterClaudeStop(job string) {
 		return
 	}
 	before := d.claudeBgPIDsForJob(job)
-	d.goBackground(func() {
+	// This goroutine is deliberately not part of d.bg: Stop must never wait for
+	// a process-table read, and ps has no deadline. The check touches nothing
+	// the shutdown closes. The daemon run context still stops it at the next
+	// step, so a stopping daemon starts no new tree work.
+	ctx := d.ctoCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	go func() {
 		delay := claudeStopCheckDelay
 		if d.cfg.testClaudeStopCheckAt > 0 {
 			delay = d.cfg.testClaudeStopCheckAt
 		}
-		var done <-chan struct{}
-		if d.ctoCtx != nil {
-			done = d.ctoCtx.Done()
-		}
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
 		case <-time.After(delay):
 		}
+		if ctx.Err() != nil {
+			return
+		}
 		d.finishClaudeStop(job, before)
-	})
+	}()
+}
+
+// shuttingDown tells whether the daemon run context has ended. The Claude
+// end-of-job check keeps no state that a shutdown needs, so it gives up then.
+func (d *Daemon) shuttingDown() bool {
+	return d.ctoCtx != nil && d.ctoCtx.Err() != nil
 }
 
 // claudeBgPIDsForJob reads the tree of one job, before the stop removes its
@@ -298,6 +312,9 @@ func (d *Daemon) claudeBgPIDsForJob(job string) map[int]string {
 // finishClaudeStop ends the tree of a stopped job if the supervisor no longer
 // lists it and the real process tree is still there.
 func (d *Daemon) finishClaudeStop(job string, before map[int]string) {
+	if d.shuttingDown() {
+		return
+	}
 	roster, fresh := d.claudeRoster()
 	if !fresh {
 		d.Logf("claude.tree job=%s check=after-stop action=kept reason=roster-stale", job)
@@ -324,6 +341,9 @@ func (d *Daemon) finishClaudeStop(job string, before map[int]string) {
 	}
 	jobs := claudeSessionJobs(d.cfg.ClaudeSessionsDir)
 	for _, tree := range claudeBgTrees(d.claudeBgProcs()) {
+		if d.shuttingDown() {
+			return
+		}
 		match := tree.job(jobs) == job
 		if !match {
 			for _, p := range tree.Procs {
@@ -440,6 +460,9 @@ func (d *Daemon) waitClaudeBgGone(pids []int, tokens map[int]string, max time.Du
 	}
 	deadline := time.Now().Add(max)
 	for time.Now().Before(deadline) {
+		if d.shuttingDown() {
+			return
+		}
 		alive := false
 		for _, pid := range pids {
 			if d.claudeBgSameRun(pid, tokens[pid]) {
