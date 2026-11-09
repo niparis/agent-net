@@ -147,7 +147,10 @@ type Model struct {
 	topicLastFull          time.Time
 	topicVersions          map[string]uint64
 	topicDirty             map[string]bool
-	topicView              string
+	// dataVersions is the topic version each part of snap was read at. A
+	// safety refresh sends it so the gateway can answer NotModified.
+	dataVersions map[string]uint64
+	topicView    string
 	// inboxSeen is the Snapshot signature the Inbox and proposals were last
 	// fetched at. A different signature, or the Inbox or CTO pane on screen,
 	// asks for them again. inboxAt is when they were last asked for away from
@@ -315,25 +318,26 @@ type pendingStop struct {
 }
 
 type fetchedMsg struct {
-	proposals     []protocol.CTOProposal
-	proposalsOK   bool
-	asks          []protocol.Ask
-	inboxOK       bool
-	chief         protocol.ChiefStatus
-	chiefOK       bool
-	handled       []protocol.ChiefSort
-	handledOK     bool
-	deskLog       []protocol.DeskLogEntry
-	deskLogOK     bool
-	listsAsked    bool // the Inbox and proposals were asked for this refresh
-	snap          Snapshot
-	err           error
-	topicVersions map[string]uint64
-	topicFull     bool
-	topicView     string
-	events        []protocol.FeedEvent
-	eventsErr     error
-	at            time.Time
+	proposals       []protocol.CTOProposal
+	proposalsOK     bool
+	asks            []protocol.Ask
+	inboxOK         bool
+	chief           protocol.ChiefStatus
+	chiefOK         bool
+	handled         []protocol.ChiefSort
+	handledOK       bool
+	deskLog         []protocol.DeskLogEntry
+	deskLogOK       bool
+	listsAsked      bool // the Inbox and proposals were asked for this refresh
+	snap            Snapshot
+	err             error
+	topicVersions   map[string]uint64
+	fetchedVersions map[string]uint64
+	topicFull       bool
+	topicView       string
+	events          []protocol.FeedEvent
+	eventsErr       error
+	at              time.Time
 	// conversations is the first stored page, asked for only on the Messages
 	// tab.
 	convAsked bool
@@ -456,6 +460,17 @@ func (m Model) fetchCmd() tea.Cmd {
 	}
 	view := m.topicViewKey()
 	previous := m.snap
+	// Every fetch keeps what it does not ask for, and a part the gateway says
+	// is unchanged. The full safety refresh therefore only pays for parts
+	// whose topic moved since the last read.
+	allVersions := make(map[string]uint64, len(m.topicVersions))
+	for topic, v := range m.topicVersions {
+		allVersions[topic] = v
+	}
+	ifVersions := make(map[string]uint64, len(m.dataVersions))
+	for topic, v := range m.dataVersions {
+		ifVersions[topic] = v
+	}
 	wants := func(topic string) bool { return full || topics[topic] }
 	onboardingRevision, onboardingPending := m.onboardingRevision, m.onboardingPending
 	skipFeed := m.feed.unavailable != ""
@@ -473,13 +488,13 @@ func (m Model) fetchCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
 		var res fetchedMsg
-		res.at, res.topicVersions, res.topicFull, res.topicView = now(), versions, full, view
+		res.at, res.topicVersions, res.fetchedVersions, res.topicFull, res.topicView = now(), versions, allVersions, full, view
 		if with, ok := src.(interface {
 			SnapshotWith(context.Context, SnapshotOptions) (Snapshot, error)
 		}); ok {
-			opts := SnapshotOptions{WorkerLog: wantWorkerLog}
+			opts := SnapshotOptions{WorkerLog: wantWorkerLog, Previous: previous, IfVersions: ifVersions, Lite: true}
 			if !full {
-				opts.Topics, opts.Previous = topics, previous
+				opts.Topics = topics
 			}
 			res.snap, res.err = with.SnapshotWith(ctx, opts)
 		} else {
@@ -748,6 +763,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.topicActive = true
 		m.topicVersions = make(map[string]uint64)
 		m.topicDirty = make(map[string]bool)
+		// Versions belong to one gateway process. A new subscription starts
+		// from new ones, so no read may claim to be at the old version.
+		m.dataVersions = make(map[string]uint64)
 		return m, waitTopicsCmd(msg.sub)
 
 	case topicsChangedMsg:
@@ -1043,6 +1061,22 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for topic, v := range msg.topicVersions {
 				if m.topicVersions[topic] == v {
 					delete(m.topicDirty, topic)
+				}
+			}
+			failed := make(map[string]bool, len(msg.snap.FailedCalls))
+			for _, method := range msg.snap.FailedCalls {
+				failed[operator.SnapshotTopic(method)] = true
+			}
+			read := msg.topicVersions
+			if msg.topicFull {
+				read = msg.fetchedVersions
+			}
+			if m.dataVersions == nil {
+				m.dataVersions = make(map[string]uint64)
+			}
+			for topic, v := range read {
+				if !failed[topic] {
+					m.dataVersions[topic] = v
 				}
 			}
 		}
