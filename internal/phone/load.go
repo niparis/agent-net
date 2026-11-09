@@ -157,11 +157,14 @@ type logRow struct {
 }
 
 type deskView struct {
-	Asks    []askView
-	Changes []changeRow
-	More    int // changes left out of the list
-	Handled []handledRow
-	Log     []logRow
+	// ChiefLine is "chief of staff offline: <reason>" when the chief cannot
+	// work, and empty when it can or none is set.
+	ChiefLine string
+	Asks      []askView
+	Changes   []changeRow
+	More      int // changes left out of the list
+	Handled   []handledRow
+	Log       []logRow
 }
 
 // ---- Sessions ----
@@ -449,6 +452,12 @@ func (a *app) desk(ctx context.Context, asks []protocol.Ask, snap operator.Snaps
 		d.Asks = append(d.Asks, askCard(ask, now, names))
 	}
 	d.Changes, d.More = a.inFlight(ctx, now)
+	if raw, err := a.read(ctx, protocol.OpChiefGet, nil); err == nil {
+		var st protocol.ChiefStatus
+		if json.Unmarshal(raw, &st) == nil && st.Down != "" {
+			d.ChiefLine = firstLine(protocol.ChiefOfflineLine(st.Down))
+		}
+	}
 	if raw, err := a.read(ctx, protocol.OpChiefSorts, nil); err == nil {
 		var v protocol.ChiefSortsResult
 		if json.Unmarshal(raw, &v) == nil {

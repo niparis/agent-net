@@ -40,7 +40,7 @@ func TestLoadReadsOnlyVisibleScreen(t *testing.T) {
 		screen string
 		reads  []string
 	}{
-		{"desk", []string{protocol.OpAsksList, protocol.OpAgents, protocol.OpChangesOwnerFind, protocol.OpChiefSorts, protocol.OpDeskLog}},
+		{"desk", []string{protocol.OpAsksList, protocol.OpAgents, protocol.OpChangesOwnerFind, protocol.OpChiefGet, protocol.OpChiefSorts, protocol.OpDeskLog}},
 		{"sessions", []string{protocol.OpAgents, protocol.OpNodes, protocol.OpUsage, protocol.OpGraphView, protocol.OpConversations}},
 		{"changes", []string{protocol.OpAgents, protocol.OpChangesOwnerFind}},
 		{"messages", []string{protocol.OpAgents, protocol.OpConversations, protocol.OpConversationMessages}},

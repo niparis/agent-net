@@ -31,6 +31,7 @@ a { color: inherit; }
 .nb { white-space: nowrap; }
 .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .error { color: var(--bad); padding: 8px 0; }
+.chiefline { color: var(--bad); background: var(--bad-soft); border: 1px solid var(--bad); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; font-size: 14px; overflow-wrap: anywhere; }
 .spacer { flex: 1; }
 [hidden] { display: none !important; }
 

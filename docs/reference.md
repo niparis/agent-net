@@ -2667,6 +2667,35 @@ the owner. An ask waiting on a chief that is offline goes to the owner at once.
 Each one writes a Desk log line (`The chief of staff did not sort it in 15
 minutes, so it is with you: ...` or `The chief of staff is offline, ...`).
 
+**Chief availability.** A chief whose session is online can still be unable to
+work. The gateway marks it unavailable when any of these holds. The check runs
+once a second with the batch tick, and when an ask is created.
+
+- *No quota.* The chief's provider has an exhausted window in the machine's
+  quota reading, the same data the picker uses (`quota exhausted (weekly window,
+  until 2026-11-15 00:00 UTC)`). A stale reading is ignored. The gateway reads it
+  from memory and the stored quota blocks, never inside a database transaction.
+- *Not running.* The session is offline (`session offline`), the harness was
+  lost (`harness lost`), or the session reports a provider usage limit from its
+  last turn (`harness error: <limit> until <time>`, from `limited_until`).
+- *Silent.* The chief was sent asks and made no sort for three batch waits
+  (`ChiefSilentAfter`, 90 seconds, a constant; `no sorts for 90 seconds`). The
+  mark is kept in the owner setting `chief_silent_at`. It ends after
+  `ChiefRetryAfter` (15 minutes, a constant), when the next ask goes to the chief
+  again as a probe, or when the chief sorts. Naming a new chief clears it.
+
+While the chief is unavailable, an ask that would go to the chief goes to the
+owner path instead (`next = owner`): the Desk's Needs you list, which the CTO
+reads and answers as it did before the chief existed. The asks that already wait
+for the chief move there at once, each with a Desk log line (`The chief of staff
+cannot work (<reason>), so it is with you: ...`). No batch is sent. A chief that
+is online but cannot work is not offered those asks again: they get
+`route_fixed`, so adoption leaves them with the owner path when the chief is
+back, while new asks go to the chief again. An offline chief keeps the earlier
+behavior: its asks may be adopted when it returns. The chief may still sort only
+asks that wait for it. `chief_get` returns the reason in `down` (empty when the
+chief can work). No setting and no approval gate comes with this.
+
 **`agent_ask_sort {ask, result, reason, into, to, priority, why_you, sorter, since, until, from_id, to_id}`**
 (any agent session; only the live chief may call it, others are refused).
 `reason` is required for every sort, up to 300 characters. `result` is one
@@ -2731,7 +2760,7 @@ The CTO lists have `chief_sorts` (read), and `ask_undo` and `ask_mark` (changes,
 
 **The Desk (tab 7).**
 
-- The header reads `Desk · chief of staff <name> on` (or `off`, or `no chief of staff`), then `sorted N asks today`. "Today" is the last 24 hours of sorts.
+- The header reads `Desk · chief of staff <name> on` (or `off`, or `no chief of staff`), then `sorted N asks today`. "Today" is the last 24 hours of sorts. When the chief cannot work (see Chief availability), the first part reads `chief of staff offline: <reason>` in red. The phone and web Desk show the same words as one line above the asks, and show nothing when the chief can work.
 - **Needs you** lists only the asks whose `next` is the owner. Each row shows its priority and why_you under it. The tab title (`7 Desk (3)`), the Sessions band and the header count this list.
 - **Handled for you** lists the sorts from `chief_sorts`. A row shows the result (closed, merged, sent, to you, or undone), the question, the reason when it fits, and `→ session` for a send. `u` undoes a sort that is not undone; `m` marks it "should have asked me". The full reason is in the panel.
 - **n** on a Needs you row marks "didn't need me". **m** on a handled row marks "should have asked me". Each asks for one optional line of why; Enter stores it, Esc cancels.

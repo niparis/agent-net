@@ -82,7 +82,7 @@ func (s *Store) SetChief(q protocol.ChiefSetRequest, actor string) error {
 		return reject("only the owner or the CTO may set the chief of staff")
 	}
 	if q.SessionID == "" {
-		_, err := s.db.Exec(`DELETE FROM owner_settings WHERE key=?`, chiefSessionKey)
+		_, err := s.db.Exec(`DELETE FROM owner_settings WHERE key IN (?,?)`, chiefSessionKey, chiefSilentKey)
 		return err
 	}
 	var harness, worker string
@@ -107,8 +107,19 @@ func (s *Store) SetChief(q protocol.ChiefSetRequest, actor string) error {
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSessionKey, q.SessionID, now); err != nil {
 		return err
 	}
-	if _, err = adoptChiefAsks(tx, q.SessionID, now); err != nil {
+	// A new chief starts with a clean record: an earlier silence was another
+	// session's.
+	if _, err = tx.Exec(`DELETE FROM owner_settings WHERE key=?`, chiefSilentKey); err != nil {
 		return err
+	}
+	h, err := s.availableChief(tx, s.now())
+	if err != nil {
+		return err
+	}
+	if h.id != "" || h.offline {
+		if _, err = adoptChiefAsks(tx, q.SessionID, now); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -135,22 +146,31 @@ func (s *Store) ChiefStatus() (protocol.ChiefStatus, error) {
 	err = s.db.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.title,''), s.online=1 AND s.archived_at=0
 		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, id).Scan(&out.Name, &out.Online)
 	if errors.Is(err, sql.ErrNoRows) {
+		out.Down = "session offline"
 		return out, nil
 	}
+	if err != nil {
+		return out, err
+	}
+	h, err := s.availableChief(s.db, s.now())
+	out.Down = h.down
 	return out, err
 }
 
-// chiefRoute sends a new ask to the chief when one is live. The asker never
+// chiefRoute sends a new ask to the chief when one can work. The asker never
 // routes to itself, and an ask that already names someone else is left alone.
-func chiefRoute(q askDB, item protocol.InboxItem) (string, error) {
+// When a chief is registered and online but cannot work (no quota, a harness
+// error, silent), the ask goes to the owner path, the way it went before the
+// chief existed, and fixed is true so the chief is not offered it later.
+func (s *Store) chiefRoute(q askDB, item protocol.InboxItem) (next string, fixed bool, err error) {
 	if item.NextWho != "" {
-		return item.NextWho, nil
+		return item.NextWho, false, nil
 	}
-	chief, err := liveChief(q)
-	if err != nil || chief == "" || chief == item.SessionID {
-		return protocol.AskNextOwner, err
+	h, err := s.availableChief(q, s.now())
+	if err != nil || h.id == "" || h.id == item.SessionID {
+		return protocol.AskNextOwner, h.id == "" && h.down != "" && !h.offline, err
 	}
-	return protocol.AskNextChief, nil
+	return protocol.AskNextChief, false, nil
 }
 
 // adoptChiefAsks gives the chief every open ask that still waits for the owner
@@ -186,10 +206,11 @@ type chiefBatch struct {
 // waits for a quiet window after its newest ask, and never waits longer than
 // ChiefMaxWait after its oldest one.
 func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
-	chief, err := liveChief(s.db)
-	if err != nil || chief == "" {
+	h, err := s.availableChief(s.db, now)
+	if err != nil || h.id == "" {
 		return nil, err
 	}
+	chief := h.id
 	rows, err := s.db.Query(`SELECT id,kind,session_id,from_kind,about_kind,about_id,text,recommendation,options,created_at
 		FROM inbox_items WHERE status='open' AND next_who=? AND chief_sent_at=0 ORDER BY created_at,id LIMIT ?`, protocol.AskNextChief, protocol.ChiefBatchCap)
 	if err != nil {
@@ -304,6 +325,11 @@ func (s *Store) storeChiefBatch(b chiefBatch, now time.Time) (protocol.Message, 
 // seconds; a batch that is not due changes nothing.
 func (g *Gateway) flushChief(ctx context.Context) {
 	now := g.store.now()
+	// A chief that cannot work loses its asks here, in seconds (chief_health.go).
+	g.refreshChiefQuota()
+	if err := g.store.releaseChiefAsks(now); err != nil {
+		g.logLine("error", "where", "chief release", "err", err)
+	}
 	b, err := g.store.chiefBatchDue(now)
 	if err != nil {
 		g.logLine("error", "where", "chief batch", "err", err)
@@ -320,62 +346,33 @@ func (g *Gateway) flushChief(ctx context.Context) {
 	g.dispatch(ctx, m)
 }
 
-// reconcileChiefAsks gives the asks back to the owner that the chief has held
-// for ChiefTimeout, and every ask waiting on a chief that is not live. It also
-// adopts open owner asks that were never offered to a chief, which is how asks
-// open at gateway start reach a chief that is already set. Each returned ask
-// gets a log line that says why.
+// refreshChiefQuota reads the quota of the chief's provider on the chief's
+// machine, the data the picker uses, and stores whether it is used up.
+func (g *Gateway) refreshChiefQuota() {
+	id, err := chiefSession(g.store.db)
+	if err != nil || id == "" {
+		return
+	}
+	var node, harness, model string
+	if err := g.store.db.QueryRow(`SELECT node_id,harness,model FROM sessions WHERE id=?`, id).Scan(&node, &harness, &model); err != nil {
+		return
+	}
+	g.store.setChiefQuota(id, protocol.ChiefQuotaDown(g.nodeQuotas(node), harness, model))
+}
+
+// reconcileChiefAsks adopts open owner asks that were never offered to a chief,
+// which is how asks open at gateway start reach a chief that is already set,
+// and then gives back the asks the chief cannot or did not handle
+// (releaseChiefAsks).
 func (s *Store) reconcileChiefAsks(now time.Time) error {
-	chief, err := liveChief(s.db)
+	h, err := s.availableChief(s.db, now)
 	if err != nil {
 		return err
 	}
-	if _, err := adoptChiefAsks(s.db, chief, now.UnixNano()); err != nil {
+	if _, err := adoptChiefAsks(s.db, h.id, now.UnixNano()); err != nil {
 		return err
 	}
-	rows, err := s.db.Query(`SELECT id,kind,text,about_kind,about_id,created_at,chief_at FROM inbox_items WHERE status='open' AND next_who=?`, protocol.AskNextChief)
-	if err != nil {
-		return err
-	}
-	type held struct {
-		id, text, aboutKind, aboutID string
-		created, chiefAt             int64
-	}
-	var late []held
-	cutoff := now.Add(-protocol.ChiefTimeout).UnixNano()
-	for rows.Next() {
-		var h held
-		var kind string
-		if err := rows.Scan(&h.id, &kind, &h.text, &h.aboutKind, &h.aboutID, &h.created, &h.chiefAt); err != nil {
-			rows.Close()
-			return err
-		}
-		anchor := h.created
-		if h.chiefAt != 0 {
-			anchor = h.chiefAt
-		}
-		if chief == "" || anchor < cutoff {
-			late = append(late, h)
-		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
-	for _, h := range late {
-		why := "The chief of staff did not sort it in 15 minutes, so it is with you: "
-		if chief == "" {
-			why = "The chief of staff is offline, so it is with you: "
-		}
-		if _, err := s.db.Exec(`UPDATE inbox_items SET next_who=? WHERE id=? AND next_who=?`, protocol.AskNextOwner, h.id, protocol.AskNextChief); err != nil {
-			return err
-		}
-		if err := s.deskLog(s.db, "gateway", h.aboutKind, h.aboutID, why+h.text, "", nil); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.releaseChiefAsks(now)
 }
 
 // askSortRow is the ask a sort reads and changes.

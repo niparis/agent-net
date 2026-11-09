@@ -1,4 +1,4 @@
-{{define "desk"}}<div class="split"><div class="stack">
+{{define "desk"}}{{if .ChiefLine}}<p class="chiefline" role="status">{{.ChiefLine}}</p>{{end}}<div class="split"><div class="stack">
 <section class="box"><header><h2>Needs you</h2><span class="meta">{{len .Asks}} open</span></header>
 {{range .Asks}}<div class="ask" data-ask="{{.ID}}"><span class="stripe"></span><div>
 <div class="head"><b>{{.From}}</b><span class="chip{{if or (eq .Kind "held request") (eq .Kind "approval")}} you{{end}}">{{.Kind}}</span>{{if .Age}}<span>{{.Age}}{{if ne .Age "now"}} ago{{end}}</span>{{end}}{{if .Priority}}<span class="chip">priority {{.Priority}}</span>{{end}}</div>

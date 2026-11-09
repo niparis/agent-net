@@ -35,20 +35,22 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
-	graphRefsOn     atomic.Bool
-	settingsHookMu  sync.RWMutex
-	settingsHook    func()
-	charterHookMu   sync.RWMutex
-	charterHook     func()
-	qualityMu       sync.Mutex
-	picker          pickerState
-	runsMu          sync.Mutex
-	runs            *runsSnapshot
-	quality         protocol.QualityAnalysis
-	qualityFit      qualityFit
-	reworkFit       qualityFit
-	qualityStrong   map[string]int
-	reminderMu      sync.Mutex
+	graphRefsOn    atomic.Bool
+	settingsHookMu sync.RWMutex
+	settingsHook   func()
+	charterHookMu  sync.RWMutex
+	charterHook    func()
+	qualityMu      sync.Mutex
+	picker         pickerState
+	runsMu         sync.Mutex
+	runs           *runsSnapshot
+	quality        protocol.QualityAnalysis
+	qualityFit     qualityFit
+	reworkFit      qualityFit
+	qualityStrong  map[string]int
+	reminderMu     sync.Mutex
+	// chiefQuota is the quota verdict on the chief session (chief_health.go).
+	chiefQuota      atomic.Pointer[chiefQuotaReading]
 	reminderOffline map[string]bool
 	checkMu         sync.Mutex
 	pendingMu       sync.Mutex
