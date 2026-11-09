@@ -2668,8 +2668,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			}
 			return nil, err
 		}
+		started := false
 		if created && m.State != protocol.StateHeld {
-			g.dispatch(ctx, m)
+			started = g.dispatch(ctx, m)
 		}
 		if cur, ok, _ := st.Message(m.ID); ok {
 			m = cur
@@ -2680,7 +2681,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				g.dispatch(ctx, cp)
 			}
 		}
-		return map[string]any{"message": m, "routing": g.wakeReceiptNote(m, route)}, nil
+		return map[string]any{"message": m, "routing": g.wakeReceiptNote(m, route, started)}, nil
 
 	case "msg.handoff":
 		p, err := decode[protocol.MsgHandoff](raw)
@@ -2867,17 +2868,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 }
 
 // dispatch sends a stored message to its recipient's node if that node is
-// connected and the session is online.
-func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) {
+// connected and the session is online. It reports whether it started a wake of
+// an offline recipient.
+func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) bool {
 	a, ok, err := g.store.Agent(m.To)
 	if err != nil || !ok || a.Harness == "bot" {
-		return
+		return false
 	}
 	if !a.Online {
-		g.wakeForMessage(ctx, a, m)
-		return
+		return g.wakeForMessage(ctx, a, m)
 	}
 	g.sendDeliver(ctx, a.NodeID, m)
+	return false
 }
 
 func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Message) {

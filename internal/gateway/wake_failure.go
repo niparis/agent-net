@@ -31,10 +31,11 @@ func (g *Gateway) wakeAllowed(a protocol.AgentView, autonomy bool) bool {
 }
 
 // wakeStatusLine says what a queued message to an offline session of a wakeable
-// harness means for its wake. A wake under way, started by this message or by an
-// earlier one, is reported as a wake, not as the failure of an earlier attempt.
-// It is empty when the session has no reason to report.
-func (g *Gateway) wakeStatusLine(a protocol.AgentView) string {
+// harness means for its wake. A wake under way is reported as a wake, not as the
+// failure of an earlier attempt: started means this message started one, and a
+// wake that an earlier message started may still be under way. It is empty when
+// the session has no reason to report.
+func (g *Gateway) wakeStatusLine(a protocol.AgentView, started bool) string {
 	name, err := wakeNoticeName(g.store.db, a.SessionID)
 	if err != nil {
 		name = a.SessionID
@@ -42,7 +43,7 @@ func (g *Gateway) wakeStatusLine(a protocol.AgentView) string {
 	if !g.wakeAllowed(a, g.autonomyWake(a)) {
 		return "queued; " + name + " is offline and wake is off for this agent"
 	}
-	if g.wakeInFlight(a.SessionID) {
+	if started || g.wakeInFlight(a.SessionID) {
 		return "queued; " + name + " is offline, waking it"
 	}
 	if reason, ok := g.store.wakeFailure(a.SessionID); ok {

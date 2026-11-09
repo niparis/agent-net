@@ -65,10 +65,10 @@ func TestMessageReceiptSaysWakeIsOff(t *testing.T) {
 			p := newWakeProbe(t)
 			id := p.offline(t, tc.harness, tc.mode, protocol.AutonomyOff)
 			setWakeOnMessage(t, p.s, id, protocol.WakeOnMessageOff)
-			m := p.message(t, id)
+			m, started := p.sendMessage(t, id)
 			p.expectNoWake(t)
 			want := "queued; proj is offline and wake is off for this agent"
-			if note := p.g.wakeReceiptNote(m, ""); note != want {
+			if note := p.g.wakeReceiptNote(m, "", started); note != want {
 				t.Fatalf("note = %q, want %q", note, want)
 			}
 			if n := len(p.notices(t, p.from)); n != 0 {
@@ -91,6 +91,8 @@ func TestWakeFailureIsKeptAndSenderIsToldOnce(t *testing.T) {
 	if notes := p.notices(t, p.from); len(notes) != 1 || !strings.Contains(notes[0], reason) {
 		t.Fatalf("sender notices = %q", notes)
 	}
+	// The failed wake is over once its claim is gone.
+	eventually(t, "first wake over", func() bool { return !p.g.wakeInFlight(id) })
 
 	// Inside the ten-minute limit a second message does not ask again, and its
 	// receipt says why the session is still asleep.
@@ -98,9 +100,9 @@ func TestWakeFailureIsKeptAndSenderIsToldOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.g.dispatch(context.Background(), m)
+	started := p.g.dispatch(context.Background(), m)
 	p.expectNoWake(t)
-	if note := p.g.wakeReceiptNote(m, ""); !strings.Contains(note, "last wake failed: "+reason) {
+	if note := p.g.wakeReceiptNote(m, "", started); !strings.Contains(note, "last wake failed: "+reason) {
 		t.Fatalf("receipt = %q", note)
 	}
 
@@ -148,9 +150,9 @@ func TestReceiptSaysWakingWhenMessageStartsAWake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.g.dispatch(context.Background(), m)
+	started := p.g.dispatch(context.Background(), m)
 	p.expectWake(t, id)
-	if note := p.g.wakeReceiptNote(m, ""); note != "queued; proj is offline, waking it" {
+	if note := p.g.wakeReceiptNote(m, "", started); note != "queued; proj is offline, waking it" {
 		t.Fatalf("receipt = %q", note)
 	}
 	release()
