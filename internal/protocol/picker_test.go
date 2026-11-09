@@ -376,10 +376,11 @@ func TestPickKeepsAModelAboveItsBenchmarkOut(t *testing.T) {
 	}
 }
 
-func TestPickUntriedStrongModelsGetTheExploreShareOnEasyWork(t *testing.T) {
+func TestPickUntriedStrongModelsAreNotExploredOnEasyWork(t *testing.T) {
 	// D 1.8 is bucket 2. "cheap" has a record. "strong" benchmarks very_complex
 	// (ceiling D 5.0) and has no record, or only two tasks. It is allowed by its
-	// benchmark and gets the explore share, not a rotation seat.
+	// benchmark, but the explore share is up only: a simple task is a step down
+	// for it, so it gets no pick.
 	scores := pickScores(map[string]float64{"cheap": 29, "strong": 51})
 	cheap := pickTasks("cheap", 1.8, repeat(10, 1, .8, 1)...)
 	for name, tasks := range map[string][]PickerTask{
@@ -387,8 +388,8 @@ func TestPickUntriedStrongModelsGetTheExploreShareOnEasyWork(t *testing.T) {
 		"two tasks": append(append([]PickerTask(nil), cheap...), pickTasks("strong", 1.8, 1, 1)...),
 	} {
 		counts := pickN(t, pickCandidates("cheap", "strong"), "simple", 1.8, tasks, scores, DefaultPickerSettings(), 20)
-		if counts["strong"] != 2 || counts["cheap"] != 18 {
-			t.Fatalf("%s: picks %v, want the 10 percent explore share", name, counts)
+		if counts["strong"] != 0 || counts["cheap"] != 20 {
+			t.Fatalf("%s: picks %v, want none for the strong model", name, counts)
 		}
 	}
 	// With no weaker model allowed, the strong one is used.
@@ -402,6 +403,70 @@ func TestPickUntriedStrongModelsGetTheExploreShareOnEasyWork(t *testing.T) {
 	if counts["s1"] == 0 || counts["s2"] == 0 {
 		t.Fatalf("equal strong models: picks %v", counts)
 	}
+}
+
+// The explore share is up only (decision 0108): it sends a task only to a thin
+// cell for which the task is a step up.
+func TestPickExploreIsUpOnly(t *testing.T) {
+	picks := func(level string, d float64, tasks []PickerTask, scores []ModelScore, names ...string) (map[string]int, string) {
+		t.Helper()
+		counts := pickN(t, pickCandidates(names...), level, d, tasks, scores, DefaultPickerSettings(), 100)
+		choice, err := ChooseWorkerModel(pickCandidates(names...), level, scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: d, Table: BuildPickerTable(tasks, DefaultPickerSettings())})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return counts, choice.PickNote
+	}
+
+	t.Run("opus with no record is not explored on trivial work", func(t *testing.T) {
+		scores := pickScores(map[string]float64{"cheap": 20, "opus": 51.7})
+		counts, note := picks("trivial", 1.0, pickTasks("cheap", 1.0, repeat(10, 1, .8, 1)...), scores, "cheap", "opus")
+		if counts["opus"] != 0 || counts["cheap"] != 100 {
+			t.Fatalf("picks: %v", counts)
+		}
+		if !strings.Contains(note, "opus n0 left out (explore is up only)") {
+			t.Fatalf("note: %q", note)
+		}
+	})
+
+	t.Run("opus with no record is explored at D 4.00", func(t *testing.T) {
+		scores := pickScores(map[string]float64{"weak": 39, "opus": 51.7})
+		counts, _ := picks("very_complex", 4.0, pickTasks("weak", 4.0, repeat(10, 1, .8, 1)...), scores, "weak", "opus")
+		if counts["opus"] != 10 {
+			t.Fatalf("picks: %v, want the 10 percent explore share", counts)
+		}
+	})
+
+	t.Run("a model proven at simple is explored at normal", func(t *testing.T) {
+		// Its benchmark is very_complex, so only a record below the task can
+		// make this a step up.
+		scores := pickScores(map[string]float64{"norm": 39, "stretch": 51})
+		tasks := append(pickTasks("norm", 2.5, repeat(10, 1, .8, 1)...), pickTasks("stretch", 1.8, repeat(10, 1)...)...)
+		counts, _ := picks("normal", 2.5, tasks, scores, "norm", "stretch")
+		if counts["stretch"] != 10 {
+			t.Fatalf("picks: %v, want the 10 percent explore share", counts)
+		}
+	})
+
+	t.Run("a model proven at hard is not explored at simple", func(t *testing.T) {
+		scores := pickScores(map[string]float64{"cheap": 29, "hardpro": 51})
+		tasks := append(pickTasks("cheap", 1.8, repeat(10, 1, .8, 1)...), pickTasks("hardpro", 3.5, repeat(10, 1)...)...)
+		counts, note := picks("simple", 1.8, tasks, scores, "cheap", "hardpro")
+		if counts["hardpro"] != 0 {
+			t.Fatalf("picks: %v", counts)
+		}
+		if !strings.Contains(note, "hardpro n0 left out (explore is up only)") {
+			t.Fatalf("note: %q", note)
+		}
+	})
+
+	t.Run("a new model is explored at its own level", func(t *testing.T) {
+		scores := pickScores(map[string]float64{"cheap": 29, "fresh": 29})
+		counts, _ := picks("simple", 1.8, pickTasks("cheap", 1.8, repeat(10, 1, .8, 1)...), scores, "cheap", "fresh")
+		if counts["fresh"] != 10 {
+			t.Fatalf("picks: %v, want the 10 percent explore share", counts)
+		}
+	})
 }
 
 func TestPickBenchmarkCeilingDecidesWhereACellHasFewerThanThreeTasks(t *testing.T) {
@@ -516,9 +581,9 @@ func TestPickNoteShowsPriorAndChosenNotBest(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The lenient fraction lets "strong" qualify. "fresh" has no record and its
-	// benchmark is above the bucket start, so it is a thin cell open to the
-	// explore share. Nothing is left out as overqualified.
-	for _, want := range []string{"cheap 0.90 [0.86-0.95] n30, best", "strong 0.53 [0.49-0.58] n30 weight", "thin cells (explore share 0.1): fresh n0 (benchmark)"} {
+	// benchmark (very_complex) is above this simple task, so exploring it would
+	// be a step down. Nothing is left out as overqualified.
+	for _, want := range []string{"cheap 0.90 [0.86-0.95] n30, best", "strong 0.53 [0.49-0.58] n30 weight", "fresh n0 left out (explore is up only)"} {
 		if !strings.Contains(choice.PickNote, want) {
 			t.Fatalf("note misses %q: %q", want, choice.PickNote)
 		}
@@ -701,13 +766,13 @@ func TestPickerBPrimeNoteNamesTheQualifyingSetAndWeights(t *testing.T) {
 	tasks := append(pickTasks("a", 2.5, repeat(10, 1)...), pickTasks("b", 2.5, repeat(10, 1)...)...)
 	tasks = append(tasks, pickTasks("c", 2.5, repeat(10, 0)...)...)
 	tasks = append(tasks, pickTasks("thin", 2.5, 1)...)
-	scores := pickScores(map[string]float64{"a": 50, "b": 40, "c": 40, "thin": 40})
+	scores := pickScores(map[string]float64{"a": 50, "b": 40, "c": 40, "thin": 35})
 	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
 	choice, err := ChooseWorkerModel(pickCandidates("a", "b", "c", "thin"), "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"qualifying: ", "a 0.89 [0.75-1.00] n10 weight 1.00", "b 0.89 [0.75-1.00] n10 weight 1.25", "thin cells (explore share 0.1): thin ", "(benchmark) weight 1.25", "c 0.23 [0.09-0.37] n10 left out (below 0.9×best)"} {
+	for _, want := range []string{"qualifying: ", "a 0.89 [0.75-1.00] n10 weight 1.00", "b 0.89 [0.75-1.00] n10 weight 1.25", "thin cells (explore share 0.1): thin ", "(benchmark) weight 1.43", "c 0.23 [0.09-0.37] n10 left out (below 0.9×best)"} {
 		if !strings.Contains(choice.PickNote, want) {
 			t.Errorf("note lacks %q: %s", want, choice.PickNote)
 		}

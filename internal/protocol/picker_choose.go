@@ -92,6 +92,8 @@ type pickerEntry struct {
 	bench   float64
 	scored  bool
 	ceiling float64
+	// benchLevel is the highest level the benchmark score meets.
+	benchLevel string
 	// above is true when the benchmark ceiling is more than one bucket above D:
 	// the model is well above this work.
 	above bool
@@ -143,7 +145,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		if e.name == "" {
 			e.name = PickerModelDisplay(key)
 		}
-		e.bench, _, e.ceiling, e.scored = WorkerBenchmarkCeiling(c, scores, minimums)
+		e.bench, e.benchLevel, e.ceiling, e.scored = WorkerBenchmarkCeiling(c, scores, minimums)
 		e.above = e.scored && table.Bucket(e.ceiling-pickerEdgeTolerance*10)-bucket > 1
 		entries = append(entries, e)
 	}
@@ -169,7 +171,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		e.reason = verdicts[i].Reason
 	}
 
-	var qualified, thin, allowed []*pickerEntry
+	var qualified, thin, thinOut, allowed []*pickerEntry
 	best := table.BucketMean(bucket)
 	if bestEntry != nil {
 		best = bestEntry.cell.Score
@@ -184,7 +186,13 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			bestBench = e.bench
 		}
 		if e.cell.N < PickerMinCellTasks {
-			thin = append(thin, e)
+			// Explore is up only: a thin cell is tried when the task is a step
+			// up for the model, never a step down.
+			if exploreIsUp(table, e, level, bucket) {
+				thin = append(thin, e)
+			} else {
+				thinOut = append(thinOut, e)
+			}
 			continue
 		}
 		if e.cell.Score >= set.AllowedFraction*best {
@@ -192,6 +200,11 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			qualified = append(qualified, e)
 		} else {
 			e.reason = fmt.Sprintf("score below %g×best", set.AllowedFraction)
+		}
+	}
+	if len(qualified) > 0 {
+		for _, e := range thinOut {
+			e.reason = "explore is up only"
 		}
 	}
 	var eligible []rankedChoice
@@ -279,6 +292,18 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 	return picked, ""
 }
 
+// exploreIsUp tells whether the task is a step up for a thin cell (decision
+// 0108). Either the model has a proven record in a lower bucket and none in
+// this bucket or above, or it has no proven record anywhere and its benchmark
+// level is exactly the task's level.
+func exploreIsUp(table *PickerTable, e *pickerEntry, level string, bucket int) bool {
+	below, atOrAbove := table.ProvenRecords(e.key, bucket)
+	if below || atOrAbove {
+		return below && !atOrAbove
+	}
+	return e.scored && e.benchLevel == level
+}
+
 // pickerNote is the explanation of a cell pick: the chosen cell, the best cell
 // and what was left out with its reason. It names at most three allowed and
 // five left out models.
@@ -354,7 +379,7 @@ func pickerNoteQualifying(header string, entries []*pickerEntry, chosen, best *p
 		switch {
 		case e.qualified:
 			qualifying = append(qualifying, fmt.Sprintf("%s weight %.2f", cell(e), e.weight))
-		case e.allowed && e.cell.N < PickerMinCellTasks:
+		case e.allowed && e.cell.N < PickerMinCellTasks && e.reason == "":
 			thin = append(thin, fmt.Sprintf("%s (benchmark) weight %.2f", cell(e), e.weight))
 		case e.reason != "":
 			left = append(left, cell(e)+" left out ("+e.reason+")")

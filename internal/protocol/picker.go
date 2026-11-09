@@ -274,6 +274,35 @@ func (t *PickerTable) Cell(key string, bucket int) PickerCell {
 	return PickerCell{Score: score, Lo: math.Max(0, score-half), Hi: math.Min(1, score+half), N: cs.n}
 }
 
+// provenAt tells whether a key has a proven record in a bucket: at least
+// PickerMinCellTasks tasks and a cell score of at least AllowedFraction times
+// the best cell score there (over every model in the table).
+func (t *PickerTable) provenAt(key string, bucket int) bool {
+	if t.cells[key][bucket].n < PickerMinCellTasks {
+		return false
+	}
+	best := 0.0
+	for k, row := range t.cells {
+		if row[bucket].n >= PickerMinCellTasks {
+			best = math.Max(best, t.Cell(k, bucket).Score)
+		}
+	}
+	return t.Cell(key, bucket).Score >= t.settings.AllowedFraction*best
+}
+
+// ProvenRecords tells whether a key has a proven record in a bucket below the
+// given one, and whether it has one in that bucket or above it.
+func (t *PickerTable) ProvenRecords(key string, bucket int) (below, atOrAbove bool) {
+	for b := range t.cells[key] {
+		if b < bucket && !below {
+			below = t.provenAt(key, b)
+		} else if b >= bucket && !atOrAbove {
+			atOrAbove = t.provenAt(key, b)
+		}
+	}
+	return below, atOrAbove
+}
+
 // PickerBucketRow is one bucket of the read API.
 type PickerBucketRow struct {
 	Index int     `json:"index"`
