@@ -2,7 +2,7 @@
 
 The rules agent-net is built on. When a design choice is unclear, these decide
 it. They are kept up to date; the early brief ([brief.md](brief.md)) is history.
-Each principle names where it shows in the product.
+Where a principle is a goal that the product does not fully meet yet, it says so.
 
 ## The network
 
@@ -28,28 +28,32 @@ Each principle names where it shows in the product.
    - *Out of the loop:* an agent works toward its charter's purpose on a
      schedule and nobody prompts it. Standing loops
      ([decision 0094](decisions/0094-standing-loops.md)) do this today for
-     agents whose charter allows it.
+     any project you give a loop.
    Moving work outward is the goal, one piece at a time, as trust is earned.
 5. **You keep only what is yours.** Data deletion, spending money, secrets that
-   can spend money, access for other people, and choices about how you work.
+   can spend money, approving a new connected app or device, and choices about
+   how you work.
    Everything reversible is decided by the agents and logged, and an agent that
    asks you brings a recommendation.
 6. **Your attention is the scarce resource.** An ask reaches you only when it
    saves you time compared with opening the session yourself. The chief of
    staff sorts asks; the Desk shows what is left.
-7. **Agents can do what you can do.** Every action you can take in the TUI has
-   an equivalent the CTO can take for you, except the decisions in principle 5,
-   which it can prepare but not make.
+7. **Agents can do what you can do.** Every action you can take in the TUI
+   should have an equivalent the CTO can take for you, except the decisions in
+   principle 5, which it can prepare but not make. Most have one today; the
+   gaps are listed in [reference.md](reference.md) and are closed as they are
+   found.
 8. **No limits you did not ask for.** agent-net adds no approval gate, cap or
    refusal unless you asked for it. Agents may propose one; proposing is not
    adding.
 
 ## Trust and evidence
 
-9. **Work leaves evidence.** A change moves through accept, review, test, merge,
-   release and verify. Each step has an owner and records what it checked.
-   A fix starts with a reproduction and a failing test. Review is independent:
-   an author does not review its own work.
+9. **Work leaves evidence.** A change moves through delivery steps (accept,
+   test, merge, release and verify, plus review for riskier changes). Each step
+   has an owner and records what it checked. A fix starts with a reproduction
+   and a failing test. How independent a review must be is your setting; by
+   default any review counts ([decision 0083](decisions/0083-review-independence-default-none.md)).
 10. **Verify in the real setup.** A change is done when it works the way you
     will use it, measured on the real machines, not only in tests.
 11. **The network learns.** Your corrections and decisions go into one memory
@@ -59,7 +63,7 @@ Each principle names where it shows in the product.
 ## Seeing what runs
 
 12. **Measure everything that runs, and watch it.** The gateway counts every
-    call by origin and method. A number nobody reads finds nothing: a sharp
+    protocol request by origin and method. A number nobody reads finds nothing: a sharp
     rise in one origin's load should reach the agent that can fix it, without
     waiting for someone to look.
 13. **Show what agents do in plain words.** A long run of tool calls should
@@ -72,7 +76,7 @@ Each principle names where it shows in the product.
     heavily is not done. Load data for what is on screen, push changes instead
     of polling, and measure before and after.
 15. **Smart defaults, everything changeable.** Every role, model, rule and
-    screen setting has a working default and can be changed by you or by the
-    CTO.
+    screen setting has a working default and can be changed by you, and most
+    of them by the CTO for you.
 16. **Plain words.** Docs, messages and screens use short sentences and
     concrete words.
