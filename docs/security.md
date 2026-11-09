@@ -1149,6 +1149,15 @@ configured public URL's scheme and host. The apps listener must be reached
 over HTTPS through a trusted tunnel. Its loopback HTTP port is not a boundary
 against other local users on the gateway host.
 
+The web console on that listener (decision 0122) is read and answer only. The
+gateway lets a paired phone reach only the console screens (`/`, `/sessions`,
+`/graph`, `/changes`, `/messages`, `/workers`), `/session/{id}` (a redirect),
+`/events`, `/action`, the manifest and the static files. The one write route is
+`POST /action`, with the kinds `held`, `outcome`, `inbox`, `mark` and `send`.
+Any other path is refused with 404, and any other kind with 400. No page shows a
+token, a node ID or a join string, and no page loads a script, style or font
+from another host.
+
 Skill file previews use the owner-only operator gate. The gateway checks the owner session and the current observed skill location; the originating daemon checks that the relative path is in its current manifest and that the file still matches its fingerprint. Previews reject symlinks, non-regular files, invalid UTF-8, NUL bytes and files over 64 KiB. Contents pass through the gateway on request and are not stored by the preview operation. Enrolled daemons remain inside the gateway trust boundary.
 
 The owner-only skill comparison summary sends up to 12,000 bytes of skill text to an automatically chosen read-only worker. The worker is selected through the normal protected-provider rules. Summary requests share the phrasing rate limit.

@@ -1,7 +1,9 @@
-// Package phone serves the embedded owner interface.
+// Package phone serves the embedded owner web console. The same pages serve
+// the desktop browser and the phone (decision 0122).
 package phone
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -23,7 +25,6 @@ var shell = template.Must(template.ParseFS(files, "templates/*.html"))
 
 type source interface {
 	Snapshot(context.Context) (operator.Snapshot, error)
-	SessionText(context.Context, protocol.TextQuery) (protocol.TextPage, error)
 	AnswerHeld(context.Context, protocol.HeldAnswer) error
 	ResolveOutcome(context.Context, string, string) error
 	SendAsOwner(context.Context, string, string) (protocol.MessageSent, error)
@@ -33,16 +34,10 @@ type app struct {
 	src      source
 	interval time.Duration
 }
-type page struct {
-	Snapshot operator.Snapshot
-	Held     []protocol.Message
-	Outcomes []protocol.OutcomeInboxEntry
-	Inbox    []protocol.InboxItem
-	Agent    *protocol.AgentView
-	Text     protocol.TextPage
-	Error    string
-}
 
+// New returns the console handler. Every route here sits behind the gateway's
+// phone pairing (phoneRoute in internal/gateway/phone_auth.go). The console
+// reads and answers: it has no route that starts, stops or changes anything.
 func New(src source) http.Handler {
 	a := &app{src: src}
 	mux := http.NewServeMux()
@@ -52,8 +47,14 @@ func New(src source) http.Handler {
 		w.Header().Set("Content-Type", "application/manifest+json")
 		http.ServeFileFS(w, r, files, "static/manifest.webmanifest")
 	})
-	mux.HandleFunc("GET /{$}", a.home)
-	mux.HandleFunc("GET /session/{id}", a.session)
+	mux.HandleFunc("GET /{$}", a.screen("desk"))
+	for _, s := range screens[1:] {
+		mux.HandleFunc("GET "+s.Path, a.screen(s.ID))
+	}
+	// The phone app of the first version linked to /session/{id}.
+	mux.HandleFunc("GET /session/{id}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/sessions?s="+url.QueryEscape(r.PathValue("id")), http.StatusSeeOther)
+	})
 	mux.HandleFunc("GET /events", a.stream)
 	mux.HandleFunc("POST /action", a.action)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,70 +63,25 @@ func New(src source) http.Handler {
 		mux.ServeHTTP(w, r)
 	})
 }
-func (a *app) data(ctx context.Context) page {
-	var p page
-	if a.src == nil {
-		return p
-	}
-	var err error
-	p.Snapshot, err = a.src.Snapshot(ctx)
-	if err != nil {
-		p.Error = err.Error()
-		return p
-	}
-	// What waits for the owner is one list of asks (decision 0090).
-	raw, err := a.src.Call(ctx, protocol.OpAsksList, nil)
-	if err == nil {
-		var v protocol.AsksResult
-		if json.Unmarshal(raw, &v) == nil {
-			for _, ask := range v.Asks {
-				switch ask.Kind {
-				case protocol.AskKindHeld:
-					p.Held = append(p.Held, protocol.Message{ID: ask.MessageID, FromName: ask.From, To: ask.AboutID, Body: ask.Detail})
-				case protocol.AskKindRejection, protocol.AskKindEscalation:
-					request, reason, _ := strings.Cut(strings.TrimPrefix(ask.Question, "Request: "), "\nReason: ")
-					p.Outcomes = append(p.Outcomes, protocol.OutcomeInboxEntry{EdgeOutcome: protocol.EdgeOutcome{ReplyID: ask.MessageID, ReplyOutcome: protocol.ReplyOutcome{Outcome: map[string]string{protocol.AskKindRejection: "reject", protocol.AskKindEscalation: "escalate"}[ask.Kind], Reason: reason, Recommendation: ask.Recommendation}}, Request: request})
-				case protocol.AskKindQuestion, protocol.AskKindApproval, protocol.AskKindCheck, protocol.AskKindStall:
-					p.Inbox = append(p.Inbox, protocol.InboxItem{ID: ask.ID, Kind: ask.Kind, Text: ask.Question, Recommendation: ask.Recommendation, Status: "open"})
-				}
-			}
+
+// screen serves one full page.
+func (a *app) screen(id string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
+		defer cancel()
+		p := a.load(ctx, id, r.URL.Query().Get("s"))
+		var b bytes.Buffer
+		if err := shell.ExecuteTemplate(&b, "page", p); err != nil {
+			http.Error(w, "page error", http.StatusInternalServerError)
+			return
 		}
-	}
-	return p
-}
-func render(w http.ResponseWriter, name string, p page) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := shell.ExecuteTemplate(w, name, p); err != nil {
-		return
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(b.Bytes())
 	}
 }
-func (a *app) home(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
-	defer cancel()
-	render(w, "home", a.data(ctx))
-}
-func (a *app) session(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
-	defer cancel()
-	p := a.data(ctx)
-	for _, v := range p.Snapshot.Agents {
-		if v.SessionID == r.PathValue("id") {
-			agent := v
-			p.Agent = &agent
-			break
-		}
-	}
-	if p.Agent == nil {
-		http.NotFound(w, r)
-		return
-	}
-	var err error
-	p.Text, err = a.src.SessionText(ctx, protocol.TextQuery{SessionID: p.Agent.SessionID})
-	if err != nil {
-		p.Error = err.Error()
-	}
-	render(w, "detail", p)
-}
+
+// action answers one ask. Only these kinds exist: an answer to something that
+// waits for the owner, never a start, a stop or a change of settings.
 func (a *app) action(w http.ResponseWriter, r *http.Request) {
 	origin, err := url.Parse(r.Header.Get("Origin"))
 	if err != nil || origin.Host != r.Host || (origin.Scheme != "https" && origin.Scheme != "http") {
@@ -141,7 +97,7 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "daemon unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	id, act := r.PostForm.Get("id"), r.PostForm.Get("action")
+	id, act := r.PostForm.Get("id"), strings.TrimSpace(r.PostForm.Get("action"))
 	if id == "" || act == "" {
 		http.Error(w, "missing action", http.StatusBadRequest)
 		return
@@ -163,6 +119,17 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 		}
 	case "inbox":
 		_, err = a.src.Call(ctx, "inbox_answer", map[string]string{"id": id, "answer": act})
+		// The gateway closed the ask meanwhile: it is gone, which is what the
+		// owner wanted.
+		if err != nil && err.Error() == "inbox item not found" {
+			err = nil
+		}
+	case "mark":
+		if act != protocol.MarkDidntNeedMe {
+			err = fmt.Errorf("invalid action")
+		} else {
+			_, err = a.src.Call(ctx, protocol.OpAskMark, protocol.AskMarkRequest{Ask: id, Mark: act})
+		}
 	case "send":
 		_, err = a.src.SendAsOwner(ctx, id, act)
 	default:
@@ -172,9 +139,5 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	target := "/"
-	if r.PostForm.Get("kind") == "send" {
-		target = "/session/" + url.PathEscape(id)
-	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

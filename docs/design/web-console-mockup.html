@@ -1,0 +1,705 @@
+<title>agent-net Web Console</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an operations console. Left rail of screens, a work area with list + detail, the CTO in a side panel that stays one key away. */
+:root {
+  --bg: #eef1f3; --panel: #ffffff; --sunk: #e4e8eb; --line: #d3d9de; --ink: #17202a; --muted: #5b6874;
+  --accent: #0c6f7d; --accent-ink: #ffffff; --accent-soft: #d5ecee;
+  --you: #b45309; --you-soft: #fdecd3; --bad: #b42318; --bad-soft: #fbe2df; --ok: #2f7d3b; --ok-soft: #dcefdc;
+  --cto: #6d3fc0; --cto-soft: #ece4fa; --busy: #0c6f7d;
+  --f-display: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 8px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12171b; --panel: #192026; --sunk: #0e1317; --line: #2a343c; --ink: #e3e9ed; --muted: #92a0ab;
+  --accent: #4fc1cf; --accent-ink: #072226; --accent-soft: #143238;
+  --you: #f0a54a; --you-soft: #3a2a14; --bad: #f2786b; --bad-soft: #3d1d1a; --ok: #7cc68a; --ok-soft: #1b3220;
+  --cto: #b597f2; --cto-soft: #2b2140; --busy: #4fc1cf; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12171b; --panel: #192026; --sunk: #0e1317; --line: #2a343c; --ink: #e3e9ed; --muted: #92a0ab;
+  --accent: #4fc1cf; --accent-ink: #072226; --accent-soft: #143238;
+  --you: #f0a54a; --you-soft: #3a2a14; --bad: #f2786b; --bad-soft: #3d1d1a; --ok: #7cc68a; --ok-soft: #1b3220;
+  --cto: #b597f2; --cto-soft: #2b2140; --busy: #4fc1cf; color-scheme: dark }
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--f-body); }
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--f-mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+
+.app { display: grid; grid-template-columns: 208px minmax(0, 1fr); height: 100%; }
+.app.cto-open { grid-template-columns: 208px minmax(0, 1fr) 380px; }
+.rail { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding-block: 16px; padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: 12px; gap: 4px; overflow-y: auto; }
+.brand { display: flex; align-items: baseline; gap: 8px; padding: 4px 10px 14px; }
+.brand b { font: 700 19px/1 var(--f-display); letter-spacing: -0.01em; }
+.brand span { font: 11px var(--f-mono); color: var(--muted); }
+.nav { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; border: 0; background: none; cursor: pointer; text-align: left; color: var(--muted); }
+.nav:hover { background: var(--sunk); color: var(--ink); }
+.nav[aria-current="page"] { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+.nav .k { margin-left: auto; font: 11px var(--f-mono); color: var(--muted); }
+.nav .count { margin-left: auto; background: var(--you); color: var(--panel); font: 600 11px var(--f-mono); padding: 1px 7px; border-radius: 10px; }
+.nav svg { width: 16px; height: 16px; flex: none; }
+.rail .sep { height: 1px; background: var(--line); margin: 10px 6px; }
+.rail .foot { margin-top: auto; padding: 10px; font-size: 12px; color: var(--muted); display: grid; gap: 4px; }
+
+.main { min-width: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.top { display: flex; align-items: center; gap: 12px; padding-block: 12px; padding-left: 24px; padding-right: max(24px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+.top h1 { font: 700 22px/1.1 var(--f-display); margin: 0; letter-spacing: -0.01em; }
+.top .sub { color: var(--muted); font-size: 13px; }
+.top .spacer { flex: 1; }
+.live { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--f-mono); color: var(--muted); }
+.live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.searchbtn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 6px 10px; color: var(--muted); cursor: pointer; min-width: 200px; }
+.searchbtn kbd, kbd { font: 11px var(--f-mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--panel); color: var(--muted); }
+.ctobtn { border: 1px solid var(--cto); color: var(--cto); background: var(--cto-soft); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-weight: 600; }
+.content { flex: 1; overflow-y: auto; padding-block: 20px 40px; padding-left: 24px; padding-right: max(24px, env(safe-area-inset-right, 0px)); }
+
+.split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); gap: 20px; align-items: start; }
+.stack { display: grid; gap: 20px; min-width: 0; }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.box > header { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.box > header h2 { font: 600 13px var(--f-body); text-transform: uppercase; letter-spacing: 0.06em; margin: 0; }
+.box > header .meta { color: var(--muted); font-size: 12.5px; }
+.box > header .act { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.box .body { padding: 14px 16px; }
+.sticky { position: sticky; top: 0; }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 500 11.5px var(--f-mono); padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.chip.you { color: var(--you); border-color: var(--you); background: var(--you-soft); }
+.chip.bad { color: var(--bad); border-color: var(--bad); background: var(--bad-soft); }
+.chip.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+.chip.cto { color: var(--cto); border-color: var(--cto); background: var(--cto-soft); }
+.chip.busy { color: var(--busy); border-color: var(--busy); background: var(--accent-soft); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: none; padding: 4px 10px; cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 5px 11px; cursor: pointer; font-size: 13px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.quiet { border-color: transparent; color: var(--muted); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Asks */
+.ask { display: grid; grid-template-columns: 4px minmax(0, 1fr); gap: 0 14px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.ask:last-child { border-bottom: 0; }
+.ask .stripe { background: var(--you); border-radius: 2px; grid-row: span 3; }
+.ask .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.ask .head b { color: var(--ink); font-weight: 600; }
+.ask .q { font-size: 15px; margin: 6px 0; font-weight: 500; text-wrap: pretty; }
+.ask .rec { font-size: 13px; color: var(--muted); }
+.ask .rec b { color: var(--ink); font-weight: 600; }
+.ask .actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; grid-column: 2; }
+.ask.done { opacity: .55; }
+.ask.done .stripe { background: var(--ok); }
+.ask textarea { grid-column: 2; margin-top: 8px; }
+
+/* Tables */
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font: 600 11px var(--f-body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: var(--sunk); }
+tbody tr[aria-selected="true"] td { background: var(--accent-soft); }
+tr.group td { background: var(--bg) !important; font: 600 11.5px var(--f-body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); cursor: default; padding-top: 12px; }
+td .task { color: var(--muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: 1px; }
+.dot.busy { background: var(--busy); box-shadow: 0 0 0 3px var(--accent-soft); }
+.dot.idle { background: transparent; border: 1.5px solid var(--muted); }
+.dot.off { background: var(--line); }
+.dot.you { background: var(--you); box-shadow: 0 0 0 3px var(--you-soft); }
+
+/* Pipeline */
+.pipe { display: inline-flex; gap: 3px; align-items: center; }
+.pipe i { width: 18px; height: 6px; border-radius: 3px; background: var(--line); display: block; }
+.pipe i.p { background: var(--ok); }
+.pipe i.r { background: var(--accent); }
+.pipe i.w { background: var(--you); }
+.pipe i.f { background: var(--bad); }
+.pipe i.s { background: repeating-linear-gradient(90deg, var(--line) 0 3px, transparent 3px 5px); }
+.steps { display: grid; gap: 0; }
+.step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; padding-bottom: 14px; position: relative; }
+.step:not(:last-child)::before { content: ""; position: absolute; left: 10px; top: 20px; bottom: 0; width: 2px; background: var(--line); }
+.step .mk { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 600 11px var(--f-mono); background: var(--sunk); color: var(--muted); border: 2px solid var(--line); }
+.step.p .mk { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+.step.f .mk { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
+.step.r .mk { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.step.w .mk { background: var(--you-soft); color: var(--you); border-color: var(--you); }
+.step .t { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.step .t b { text-transform: capitalize; }
+.step .note { color: var(--muted); font-size: 13px; margin-top: 3px; white-space: pre-line; }
+
+/* Machines and meters */
+.machines { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.machine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 8px; }
+.machine .h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.machine .h b { font-weight: 600; }
+.meter { display: grid; grid-template-columns: 40px minmax(0, 1fr) 84px; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.bar { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.bar i.warn { background: var(--you); }
+
+/* Detail */
+dl.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: 13px; }
+dl.kv dt { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; padding-top: 2px; }
+dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.detail h3 { font: 700 20px/1.2 var(--f-display); margin: 0 0 4px; text-wrap: balance; }
+.detail .lede { color: var(--muted); margin-bottom: 14px; }
+.detail .section { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; }
+.detail .section h4 { margin: 0 0 8px; font: 600 11px var(--f-body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+
+/* Messages */
+.thread { display: grid; gap: 12px; }
+.msg { display: grid; gap: 3px; max-width: 88%; }
+.msg .who { font-size: 12px; color: var(--muted); }
+.msg .who b { color: var(--ink); }
+.msg .text { background: var(--sunk); border-radius: 8px; padding: 9px 12px; white-space: pre-line; }
+.msg.me { justify-self: end; }
+.msg.me .text { background: var(--accent-soft); }
+.msg.cto .text { background: var(--cto-soft); }
+.msg.sys .text { background: none; border: 1px dashed var(--line); color: var(--muted); font-size: 12.5px; }
+.composer { display: flex; gap: 8px; margin-top: 14px; }
+textarea, input[type="text"], input[type="search"] { width: 100%; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; resize: vertical; }
+.convo { padding: 10px 16px; border-bottom: 1px solid var(--line); cursor: pointer; display: grid; gap: 2px; }
+.convo:hover { background: var(--sunk); }
+.convo[aria-selected="true"] { background: var(--accent-soft); }
+.convo .line1 { display: flex; gap: 8px; align-items: baseline; }
+.convo .line1 b { font-weight: 600; }
+.convo .line1 .when { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.convo .prev { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Graph */
+.graphwrap { overflow-x: auto; }
+.graph svg { display: block; width: 100%; min-width: 760px; height: auto; }
+.graph .team rect { fill: var(--sunk); stroke: var(--line); }
+.graph .team text { fill: var(--muted); font: 600 11px var(--f-body); letter-spacing: 0.06em; text-transform: uppercase; }
+.graph .node { cursor: pointer; }
+.graph .node circle { fill: var(--panel); stroke: var(--muted); stroke-width: 1.5; }
+.graph .node.busy circle { fill: var(--accent-soft); stroke: var(--busy); stroke-width: 2.5; }
+.graph .node.you circle { fill: var(--you-soft); stroke: var(--you); stroke-width: 2.5; }
+.graph .node.off circle { stroke: var(--line); fill: var(--bg); }
+.graph .node.cto circle { fill: var(--cto-soft); stroke: var(--cto); stroke-width: 2.5; }
+.graph .node.sel circle { stroke: var(--ink); stroke-width: 3; }
+.graph .node text { fill: var(--ink); font: 500 12.5px var(--f-body); }
+.graph .node text.s { fill: var(--muted); font: 11px var(--f-mono); }
+.graph .edge { stroke: var(--line); stroke-width: 1.5; fill: none; }
+.graph .edge.msg { stroke: var(--accent); stroke-dasharray: 5 4; }
+.graph .edge.dep { stroke: var(--muted); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 10px 16px; border-top: 1px solid var(--line); }
+
+/* Quotas */
+.quota { display: grid; grid-template-columns: 150px minmax(0, 1fr) 150px; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.quota:last-child { border-bottom: 0; }
+.quota .bar { height: 10px; }
+.quota .pace { font-size: 12px; color: var(--muted); text-align: right; }
+.lv { text-align: center; color: var(--line); font-family: var(--f-mono); }
+.lv.on { color: var(--accent); font-weight: 600; }
+
+/* CTO panel */
+.cto { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; height: 100%; }
+.cto[hidden] { display: none !important; }
+.cto header { display: flex; align-items: center; gap: 10px; padding-block: 14px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); }
+.cto header b { font: 700 17px var(--f-display); color: var(--cto); }
+.cto .log { flex: 1; overflow-y: auto; padding: 16px; display: grid; gap: 12px; align-content: start; }
+.cto form { padding: 12px 16px; border-top: 1px solid var(--line); display: grid; gap: 8px; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.proposal { border: 1px solid var(--cto); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; background: var(--cto-soft); }
+.proposal .actions { display: flex; gap: 6px; }
+
+/* Palette, toast */
+.scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 35%, transparent); display: grid; place-items: start center; padding-top: 12vh; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); z-index: 20; }
+.palette { width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: 0 20px 50px color-mix(in srgb, var(--ink) 25%, transparent); }
+.palette input { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 16px; font-size: 15px; background: var(--panel); }
+.palette ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow-y: auto; }
+.palette li { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
+.palette li[aria-selected="true"] { background: var(--accent-soft); }
+.palette li .kind { margin-left: auto; font: 11px var(--f-mono); color: var(--muted); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--panel); padding: 10px 16px; border-radius: 8px; font-size: 13.5px; z-index: 30; max-width: calc(100% - 32px); }
+
+/* Notes */
+.notes { max-width: 980px; display: grid; gap: 20px; }
+.notes p, .notes li { max-width: 68ch; }
+.maprow { display: grid; grid-template-columns: 160px minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.maprow:last-child { border-bottom: 0; }
+.maprow.h { font: 600 11px var(--f-body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.banner { font-size: 12px; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; }
+
+.bottomnav { display: none; }
+@media (max-width: 1180px) { .app.cto-open { grid-template-columns: 208px minmax(0, 1fr); } .app.cto-open .cto { position: fixed; right: 0; top: 0; bottom: 0; width: min(380px, 100%); z-index: 15; box-shadow: -10px 0 30px color-mix(in srgb, var(--ink) 18%, transparent); } }
+@media (max-width: 980px) { .split { grid-template-columns: minmax(0, 1fr); } .sticky { position: static; } }
+@media (max-width: 760px) {
+  .app, .app.cto-open { grid-template-columns: minmax(0, 1fr); }
+  .rail { display: none; }
+  .top, .content { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .content { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .searchbtn { min-width: 0; } .searchbtn .lbl, .searchbtn kbd { display: none; }
+  .bottomnav { display: flex; position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); z-index: 12; }
+  .bottomnav button { flex: 1; border: 0; background: none; padding: 9px 2px 7px; font-size: 11px; color: var(--muted); display: grid; justify-items: center; gap: 3px; cursor: pointer; position: relative; }
+  .bottomnav button[aria-current="page"] { color: var(--accent); font-weight: 600; }
+  .bottomnav svg { width: 18px; height: 18px; }
+  .bottomnav .count { position: absolute; top: 4px; left: calc(50% + 6px); background: var(--you); color: var(--panel); font: 600 10px var(--f-mono); padding: 0 5px; border-radius: 8px; }
+  .quota { grid-template-columns: minmax(0, 1fr); gap: 6px; } .quota .pace { text-align: left; }
+  .maprow { grid-template-columns: minmax(0, 1fr); gap: 4px; } .maprow.h { display: none; }
+  .meter { grid-template-columns: 36px minmax(0, 1fr) 76px; }
+  .msg { max-width: 100%; }
+}
+@media (prefers-reduced-motion: no-preference) { .live i { animation: pulse 2.4s ease-in-out infinite; } @keyframes pulse { 50% { box-shadow: 0 0 0 6px transparent; } } }
+</style>
+
+<div class="app" id="app">
+  <nav class="rail" aria-label="Screens">
+    <div class="brand"><b>agent-net</b><span>v0.5.0</span></div>
+    <div id="navlist" style="display:grid;gap:2px"></div>
+    <div class="sep"></div>
+    <button class="nav" type="button" data-go="notes"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2h7l3 3v9H3z"/><path d="M5.5 7h5M5.5 9.5h5M5.5 12h3"/></svg>Design notes</button>
+    <div class="foot">
+      <span><span class="dot busy"></span>gateway on research</span>
+      <span class="mono">example data · mockup</span>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="top">
+      <div><h1 id="title">Desk</h1><div class="sub" id="subtitle"></div></div>
+      <span class="spacer"></span>
+      <span class="live" title="Push updates: the page changes when the gateway does, no polling"><i></i>live · 2 machines · 14 sessions</span>
+      <button class="searchbtn" type="button" id="openPalette"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><span class="lbl">Find a session, change, ask</span><kbd>⌘K</kbd></button>
+      <button class="ctobtn" type="button" id="toggleCTO">CTO</button>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+
+  <aside class="cto" id="cto" hidden aria-label="CTO">
+    <header><b>CTO</b><span class="chip cto">claude · opus-5-5 · Mac</span><span class="spacer" style="flex:1"></span><button class="btn quiet" type="button" id="closeCTO" aria-label="Close the CTO panel">Close</button></header>
+    <div class="log" id="ctolog"></div>
+    <form id="ctoform"><textarea id="ctoinput" rows="2" placeholder="Ask the CTO in plain words"></textarea><div style="display:flex;gap:8px;align-items:center"><span class="muted" style="font-size:12px">The CTO acts within its charter. Proposals wait for you.</span><button class="btn primary" style="margin-left:auto" type="submit">Send</button></div></form>
+  </aside>
+</div>
+<nav class="bottomnav" id="bottomnav" aria-label="Screens"></nav>
+<div id="overlay"></div>
+
+<script>
+const ICON = {
+  desk: '<path d="M2 4h12v8H2z"/><path d="M2 7h12"/>',
+  sessions: '<rect x="2" y="2.5" width="12" height="4" rx="1"/><rect x="2" y="9.5" width="12" height="4" rx="1"/>',
+  graph: '<circle cx="4" cy="4" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="7" cy="12" r="2"/><path d="M5.6 5 6.5 10M6 4.3l4 .5M10.6 6.4 8.4 10.6"/>',
+  changes: '<circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="12" r="1.8"/><circle cx="12" cy="8" r="1.8"/><path d="M4 5.8v4.4M5.6 4.6c4 0 4.6 1.4 4.6 3.4"/>',
+  messages: '<path d="M2 3h12v8H7l-3 2.5V11H2z"/>',
+  workers: '<path d="M2 13V9M6 13V5M10 13V7M14 13V3"/>'
+};
+const SCREENS = [
+  { id: 'desk', name: 'Desk', key: '1', sub: 'What needs you, and what the chief of staff handled' },
+  { id: 'sessions', name: 'Sessions', key: '2', sub: 'Every agent session on every machine' },
+  { id: 'graph', name: 'Graph', key: '3', sub: 'Teams, leads and who talks to whom' },
+  { id: 'changes', name: 'Changes', key: '4', sub: 'Worker changes on their way from brief to verified' },
+  { id: 'messages', name: 'Messages', key: '5', sub: 'Conversations between your agents' },
+  { id: 'workers', name: 'Workers', key: '6', sub: 'Subscriptions, model picks and running workers' }
+];
+
+/* ---------- Example data ---------- */
+const MACHINES = [
+  { name: 'research', here: true, os: 'Linux VM', ver: 'v0.5.0', on: true, cpu: 34, cores: 16, mem: [21, 64], disk: '412G free', sessions: 9 },
+  { name: 'Nicolas-MBP', os: 'macOS', ver: 'v0.5.0', on: true, cpu: 12, cores: 12, mem: [18.4, 36], disk: '220G free', sessions: 5, note: 'upgraded 07:55 · kickstart once' }
+];
+const SESSIONS = [
+  { id: 'tenebrae', name: 'tenebrae', m: 'Nicolas-MBP', p: 'tenebrae', model: 'claude · opus-5-5', st: 'you', cpu: 2, ram: '0.9G', task: 'Waiting for you: allow record and read tools?', team: 'forge', lead: true, ago: '4m',
+    charter: 'Leads the forge team: trading research, the strategy library and the Trade bot.' },
+  { id: 'agent-net-2', name: 'agent-net 2', m: 'research', p: 'agent-net', model: 'claude · opus-5-5', st: 'busy', cpu: 41, ram: '1.4G', task: 'Web UI design mockup, v0.5.x releases', ago: 'now',
+    charter: 'Orchestrates agent-net: briefs workers, accepts, reviews, releases, verifies.' },
+  { id: 'merger', name: 'agent-net merger', m: 'research', p: 'agent-net', model: 'claude · opus-5-5', st: 'busy', cpu: 18, ram: '1.1G', task: 'Testing ch_1aba push updates on CI', ago: 'now', charter: 'Owns test and merge for agent-net.' },
+  { id: 'worker-2', name: 'worker 2', m: 'research', p: 'agent-net', model: 'codex · gpt-6.1-terra:max', st: 'busy', cpu: 63, ram: '2.3G', task: 'Push updates part 2: phone and web endpoints', worker: true, ago: 'now', charter: 'Worker started by agent-net 2.' },
+  { id: 'ingest', name: 'ingest-forge', m: 'Nicolas-MBP', p: 'ingest-forge', model: 'claude · sonnet-5-5', st: 'busy', cpu: 9, ram: '0.7G', task: 'Backfill X posts for October', team: 'forge', ago: 'now', charter: 'Ingests posts and papers into the strategy library.' },
+  { id: 'trade', name: 'Trade', m: 'gateway', p: '-', model: 'bot · Cursor', st: 'idle', cpu: null, ram: '-', task: 'Paper trades on request', team: 'forge', bot: true, ago: '12m', charter: 'Places paper trades. Carries the CTO when the owner is away.' },
+  { id: 'strats', name: 'tenebrae-strats', m: 'research', p: 'tenebrae-strats', model: 'opencode · deepseek-v4.1', st: 'idle', cpu: 0, ram: '0.3G', task: 'Strategy library MCP', team: 'forge', ago: '38m', charter: 'Serves the strategy library over MCP.' },
+  { id: 'subtext', name: 'subtext', m: 'Nicolas-MBP', p: 'office-politics', model: 'claude · opus-5-5', st: 'idle', cpu: 0, ram: '0.6G', task: 'v1 skeleton: scene loader', ago: '41m', charter: 'Builds the office-politics game.' },
+  { id: 'ancient', name: 'ancient-standards', m: 'Nicolas-MBP', p: 'ancient-standards', model: 'claude · opus-5-5', st: 'idle', cpu: 0, ram: '0.8G', task: 'Imperial Roman army portraits', ago: '1h', charter: 'Game work: combat rules, AI, campaigns.' },
+  { id: 'homelab', name: 'homelab-agent', m: 'research', p: 'homelab', model: 'codex · gpt-6.1-sol', st: 'idle', cpu: 0, ram: '0.4G', task: 'Nightly backup check', ago: '2h', charter: 'Operates the estate: hosts, backups, DNS.' },
+  { id: 'chief', name: 'chief of staff', m: 'research', p: 'agent-net', model: 'codex · gpt-6.1-sol:medium', st: 'idle', cpu: 0, ram: '0.3G', task: 'Sorting asks', ago: '6m', charter: 'Sorts asks that would otherwise go to the owner.' },
+  { id: 'site', name: 'nicolasparis', m: 'research', p: 'nicolasparis', model: 'opencode · gemini-3.8-flash', st: 'off', cpu: null, ram: '-', task: 'Personal site: notes section', ago: 'yesterday', charter: 'Personal website.' }
+];
+let ASKS = [
+  { id: 'a1', from: 'tenebrae', kind: 'decision', ago: '4m', q: 'Allow the agent-net record and read tools in Claude settings for every session?',
+    rec: 'Yes, record and read tools only. Leave send and start tools on prompt.', why: 'Permission settings are yours. agent-net 2 agrees with the recommendation.', opts: ['Record and read only', 'All agent-net tools', 'No'] },
+  { id: 'a2', from: 'homelab-agent', kind: 'money', ago: '52m', q: 'Backup volume on the NAS is 91% full. Buy 2 TB more cloud backup space at 9.99 a month?',
+    rec: 'Yes. Pruning would drop the 90-day history you asked for.', why: 'It spends money, which only you approve.', opts: ['Yes, buy it', 'Prune to 60 days', 'No'] }
+];
+const HANDLED = [
+  ['merged', 'ch_91c1 lead redirect in a member’s own thread', 'merger, CI green'],
+  ['sent on', 'ingest-forge asked to merge PR #41', '→ tenebrae, lead of forge'],
+  ['answered', 'worker 3: may the hint name the lead?', 'agent-net 2, from the charter'],
+  ['closed', 'Mac offline after auto-upgrade', 'CTO kickstarted the daemon']
+];
+const LOG = [
+  ['07:55', 'cto', 'Ran launchctl kickstart on Nicolas-MBP once'],
+  ['07:52', 'release', 'v0.5.0 installed on research, signature verified'],
+  ['07:44', 'gateway', 'Database backup gateway-before-v0.5.0.db written'],
+  ['07:26', 'owner', 'Standing rule: reversible choices and CTO-relayed approvals skip the Desk']
+];
+const STEPS = ['accept', 'review', 'test', 'merge', 'release', 'verify'];
+const CHANGES = [
+  { id: 'ch_1aba', title: 'Push updates part 1: gateway change events, TUI subscribes', worker: 'worker 2 · codex gpt-6.1-terra:max', rev: 2, risk: 3, diff: '20 files, +1362 −47', age: '22m', state: ['p', 'p', 'r', 'o', 'o', 'o'], status: 'test running · merger',
+    notes: { accept: 'Idle TUI gateway calls 546 → 24 over 60 refresh intervals. Offline machines now show within 250 ms.', review: 'Revision 2 fixed: node connect and disconnect move the nodes topic; a second subscribe on one connection is refused.', test: 'CI run on the merge commit, shard 3 of 4 running.' } },
+  { id: 'ch_3686', title: 'Named bot identities: one key, many named bots', worker: 'worker · claude sonnet-5-5:high', rev: 1, risk: 2, diff: '14 files, +880 −31', age: '1h', state: ['p', 'p', 'p', 'p', 'w', 'o'], status: 'release waiting for agent-net 2 · v0.5.1',
+    notes: { accept: 'Bots name themselves with "as", a header or the client name. Renames and revocation keep history.', merge: 'main fast-forwarded to 24d0c6b6.', release: 'Ships as v0.5.1.' } },
+  { id: 'ch_5e04', title: 'Lead merge grant as team data members can see', worker: 'worker 3 · claude haiku-5-5:high', rev: 1, risk: 1, diff: '19 files, +369 −52', age: '14m', state: ['p', 'p', 'w', 'o', 'o', 'o'], status: 'test waiting for merger',
+    notes: { accept: 'Team setting lead_merges, off by default. Members are told; nothing is gated.' } },
+  { id: 'ch_4a54', title: 'Daemon restart hangs after auto-upgrade (macOS)', worker: 'worker · deepseek-v4.1-flash', rev: 2, risk: 3, diff: '6 files, +240 −18', age: '2h', state: ['p', 'p', 'p', 'p', 'p', 'w'], status: 'verify on the next upgrade',
+    notes: { release: 'In v0.5.0. The Mac hung one last time in the old binary.', verify: 'Proof comes with v0.5.1: the Mac must return without a kickstart.' } },
+  { id: 'ch_9f7a', title: 'Bot messages: wake dies with the HTTP request', worker: 'worker · claude haiku-5-5:high', rev: 1, risk: 2, diff: '3 files, +96 −9', age: '3h', state: ['p', 's', 'p', 'p', 'p', 'w'], status: 'verify ready · agent-net 2',
+    notes: { release: 'In v0.5.0.' } },
+  { id: 'ch_7c20', title: 'Quality picker shows the provider per row', worker: 'worker · gpt-6.1-sol:medium', rev: 3, risk: 1, diff: '4 files, +120 −40', age: '5h', state: ['p', 's', 'f', 'o', 'o', 'o'], status: 'back to worker · flaky golden',
+    notes: { test: 'TestQualityPickerGolden failed at 120 columns: the provider column wraps.' } }
+];
+const CONVOS = [
+  { id: 'c1', a: 'agent-net 2', b: 'worker 2', title: 'Push updates part 1', ago: '6m', n: 4, msgs: [
+    ['agent-net 2', 'me', 'Revision needed on ch_1aba: a node connect or disconnect moves no topic, so a dropped machine shows online for up to 30 s.'],
+    ['worker 2', '', 'Fixed both findings. connVersion now moves nodes, agents, workers and projects. A second subscribe on one connection is refused.'],
+    ['agent-net', 'sys', 'step tasks: accept and review for ch_1aba at 770f4708'],
+    ['agent-net 2', 'me', 'Accept and review passed. Sent to the merger.'] ] },
+  { id: 'c2', a: 'CTO', b: 'agent-net 2', title: 'v0.5.0 is live', ago: '9m', n: 3, cto: true, msgs: [
+    ['agent-net 2', 'me', 'v0.5.0 is live as of 07:52 UTC. If Nicolas-MBP is not back by 07:55, run the kickstart once.'],
+    ['CTO', 'cto', 'Mac reached v0.5.0 at 07:53. The restart hung as expected. Kickstart ran at 07:55; connected.'],
+    ['agent-net 2', 'me', 'Thanks. I will verify the hang fix on the v0.5.1 upgrade.'] ] },
+  { id: 'c3', a: 'ingest-forge', b: 'tenebrae', title: 'Merge PR #41?', ago: '31m', n: 2, msgs: [
+    ['ingest-forge', '', 'PR #41 (October backfill) is green. I cannot merge in this repo. Can you?'],
+    ['tenebrae', '', 'Merged under the owner’s lead merge grant. Thanks.'] ] },
+  { id: 'c4', a: 'Trade', b: 'tenebrae-strats', title: 'Mean reversion on EUR/USD', ago: '1h', n: 5, msgs: [
+    ['Trade', '', 'Which strategies in the library cover intraday mean reversion on FX majors?'],
+    ['tenebrae-strats', '', 'Three: Bollinger fade (2019), Ornstein-Uhlenbeck pairs, and the session-open fade. The last has the only out-of-sample test.'] ] }
+];
+const QUOTAS = [
+  { prov: 'claude', plan: 'max', win: '5h', left: 38, pace: 'ahead · resets in 2h10', protected: true },
+  { prov: 'claude', plan: 'max', win: 'week', left: 61, pace: 'on pace · resets Thu' },
+  { prov: 'codex', plan: 'pro', win: 'week', left: 74, pace: 'behind · resets in 3d' },
+  { prov: 'google', plan: 'ultra', win: 'day', left: 90, pace: 'unused today' },
+  { prov: 'opencode', plan: 'go', win: 'month', left: 12, pace: 'ahead · 4 days left', warn: true }
+];
+const PICKS = [
+  ['gpt-6.1-sol:medium', 'codex', '46.1', [1, 1, 0, 0, 0], '31 · 90% done'],
+  ['gemini-3.8-flash-medium', 'opencode', '44.0', [1, 1, 1, 0, 0], '18 · 83% done'],
+  ['deepseek-v4.1-flash', 'opencode', '43.2', [0, 1, 1, 1, 0], '22 · 86% done'],
+  ['gpt-6.1-terra:max', 'codex', '49.8', [0, 0, 0, 1, 1], '9 · 89% done'],
+  ['claude-haiku-5-5:high', 'claude', '45.5', [0, 0, 1, 0, 0], '14 · 93% done'],
+  ['claude-opus-5-5:high', 'claude', '51.7', [0, 0, 0, 0, 1], 'protected · Anthropic limits']
+];
+const RUNNING = [
+  ['worker 2', 'gpt-6.1-terra:max', 'Push updates part 2', '11m', '412k', '$0.00 plan'],
+  ['worker 4', 'deepseek-v4.1-flash', 'Codex chief cannot reach the daemon', '26m', '1.9M', '$0.31']
+];
+
+/* ---------- Helpers ---------- */
+const $ = s => document.querySelector(s);
+const st = { screen: 'desk', session: 'tenebrae', change: 'ch_1aba', convo: 'c1', graphSel: 'tenebrae', sessFilter: 'active', changeFilter: 'open', answering: null };
+const dotFor = s => `<span class="dot ${s === 'busy' ? 'busy' : s === 'you' ? 'you' : s === 'off' ? 'off' : 'idle'}"></span>`;
+const statusChip = s => s === 'you' ? '<span class="chip you">needs you</span>' : s === 'busy' ? '<span class="chip busy">busy</span>' : s === 'off' ? '<span class="chip">offline</span>' : '<span class="chip">idle</span>';
+const pipe = state => `<span class="pipe" aria-label="${STEPS.map((s, i) => s + ' ' + ({ p: 'passed', r: 'running', w: 'waiting', f: 'failed', s: 'skipped', o: 'not yet' })[state[i]]).join(', ')}">${state.map(x => `<i class="${x === 'o' ? '' : x}"></i>`).join('')}</span>`;
+function toast(text) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = text; document.body.append(t); setTimeout(() => t.remove(), 2600); }
+function go(id) { if (location.hash !== '#' + id) location.hash = id; else render(); }
+const svg = k => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">${ICON[k]}</svg>`;
+
+function renderNav() {
+  const open = ASKS.filter(a => !a.done).length;
+  $('#navlist').innerHTML = SCREENS.map(s => `<button class="nav" type="button" data-go="${s.id}" ${st.screen === s.id ? 'aria-current="page"' : ''}>${svg(s.id)}${s.name}${s.id === 'desk' && open ? `<span class="count">${open}</span>` : `<span class="k">${s.key}</span>`}</button>`).join('');
+  $('#bottomnav').innerHTML = SCREENS.map(s => `<button type="button" data-go="${s.id}" ${st.screen === s.id ? 'aria-current="page"' : ''}>${svg(s.id)}${s.name}${s.id === 'desk' && open ? `<span class="count">${open}</span>` : ''}</button>`).join('');
+  document.querySelectorAll('.rail > .nav[data-go]').forEach(b => b.toggleAttribute('aria-current', st.screen === b.dataset.go));
+}
+
+/* ---------- Desk ---------- */
+function deskView() {
+  const open = ASKS.filter(a => !a.done);
+  const asks = ASKS.map(a => `
+    <div class="ask ${a.done ? 'done' : ''}" data-ask="${a.id}">
+      <span class="stripe"></span>
+      <div>
+        <div class="head"><b>${a.from}</b><span class="chip ${a.kind === 'money' ? 'you' : ''}">${a.kind}</span><span>${a.ago} ago</span>${a.done ? `<span class="chip ok">answered: ${a.done}</span>` : ''}</div>
+        <div class="q">${a.q}</div>
+        <div class="rec"><b>Recommended:</b> ${a.rec}</div>
+        <div class="rec" style="margin-top:2px">Why you: ${a.why}</div>
+      </div>
+      ${a.done ? '' : `<div class="actions">${a.opts.map((o, i) => `<button class="btn ${i === 0 ? 'primary' : ''}" type="button" data-answer="${a.id}" data-opt="${o}">${o}</button>`).join('')}<button class="btn quiet" type="button" data-write="${a.id}">Write an answer</button><button class="btn quiet" type="button" data-noneed="${a.id}">Didn’t need me</button></div>`}
+      ${st.answering === a.id ? `<textarea id="ans-${a.id}" rows="2" placeholder="Your answer goes to ${a.from}"></textarea><div class="actions"><button class="btn primary" type="button" data-send="${a.id}">Send to ${a.from}</button></div>` : ''}
+    </div>`).join('');
+  const flight = CHANGES.filter(c => c.state.includes('w') || c.state.includes('r') || c.state.includes('f')).map(c => `
+    <tr data-change="${c.id}"><td><b>${c.title}</b><div class="mono muted">${c.id} · rev ${c.rev}</div></td><td>${pipe(c.state)}</td><td class="muted">${c.status}</td><td class="num muted">${c.age}</td></tr>`).join('');
+  return `
+  <div class="split">
+    <div class="stack">
+      <div class="banner">While you were away (6 h): the chief of staff closed 22 asks, sent 4 on to the right agent, answered 2. ${open.length} ${open.length === 1 ? 'needs' : 'need'} you.</div>
+      <section class="box"><header><h2>Needs you</h2><span class="meta">${open.length} open · only what is irreversible, costs money, touches secrets or other people</span></header>
+        ${open.length || ASKS.length ? asks : ''}${!open.length ? '<div class="body muted">Nothing is waiting for you.</div>' : ''}
+      </section>
+      <section class="box"><header><h2>In flight</h2><span class="meta">${CHANGES.length} changes · ${flight ? 'open the Changes screen for all' : ''}</span><span class="act"><button class="btn" type="button" data-go="changes">All changes</button></span></header>
+        <div class="tablewrap"><table><thead><tr><th>Change</th><th>Steps</th><th>Status</th><th>Age</th></tr></thead><tbody>${flight}</tbody></table></div>
+      </section>
+    </div>
+    <div class="stack">
+      <section class="box"><header><h2>Handled for you</h2><span class="meta">today</span></header>
+        <div class="tablewrap"><table><tbody>${HANDLED.map(h => `<tr style="cursor:default"><td><span class="chip ${h[0] === 'merged' ? 'ok' : ''}">${h[0]}</span></td><td>${h[1]}<div class="muted" style="font-size:12.5px">${h[2]}</div></td></tr>`).join('')}</tbody></table></div>
+      </section>
+      <section class="box"><header><h2>Log</h2><span class="meta">CTO, gateway and release notices</span></header>
+        <div class="tablewrap"><table><tbody>${LOG.map(l => `<tr style="cursor:default"><td class="mono muted num">${l[0]}</td><td><span class="chip ${l[1] === 'cto' ? 'cto' : ''}">${l[1]}</span></td><td>${l[2]}</td></tr>`).join('')}</tbody></table></div>
+      </section>
+    </div>
+  </div>`;
+}
+
+/* ---------- Sessions ---------- */
+function sessionsView() {
+  const f = st.sessFilter;
+  const list = SESSIONS.filter(s => f === 'all' || (f === 'active' && s.st !== 'off') || (f === 'bots' && s.bot) || (f === 'workers' && s.worker));
+  const groups = [['you', 'Needs you'], ['busy', 'Working'], ['idle', 'Idle'], ['off', 'Offline']];
+  const rows = groups.map(([k, label]) => {
+    const g = list.filter(s => s.st === k); if (!g.length) return '';
+    return `<tr class="group"><td colspan="6">${label} (${g.length})</td></tr>` + g.map(s => `
+      <tr data-session="${s.id}" aria-selected="${st.session === s.id}"><td>${dotFor(s.st)}<b>${s.name}</b>${s.bot ? ' <span class="chip">bot</span>' : ''}${s.worker ? ' <span class="chip">worker</span>' : ''}${s.lead ? ' <span class="chip">★ lead</span>' : ''}<span class="task">${s.task}</span></td><td>${s.m}</td><td>${s.p}</td><td class="mono">${s.model}</td><td class="num">${s.cpu == null ? '-' : s.cpu + '%'}</td><td class="num muted">${s.ago}</td></tr>`).join('');
+  }).join('');
+  const s = SESSIONS.find(x => x.id === st.session) || SESSIONS[0];
+  const convs = CONVOS.filter(c => c.a === s.name || c.b === s.name);
+  return `
+  <div class="stack">
+    <div class="machines">${MACHINES.map(m => `
+      <div class="machine"><div class="h">${dotFor(m.on ? 'busy' : 'off')}<b>${m.name}</b>${m.here ? '<span class="chip">gateway</span>' : ''}<span class="muted">${m.os}</span><span class="chip ok" style="margin-left:auto">${m.ver}</span></div>
+        <div class="meter"><span>cpu</span><span class="bar"><i style="width:${m.cpu}%"></i></span><span class="num">${m.cpu}% of ${m.cores}</span></div>
+        <div class="meter"><span>mem</span><span class="bar"><i style="width:${Math.round(m.mem[0] / m.mem[1] * 100)}%"></i></span><span class="num">${m.mem[0]}/${m.mem[1]}G</span></div>
+        <div class="muted" style="font-size:12px">${m.sessions} sessions · disk ${m.disk}${m.note ? ' · ' + m.note : ''}</div></div>`).join('')}</div>
+    <div class="split">
+      <section class="box"><header><h2>Sessions</h2><span class="meta">${list.length} shown</span><span class="act"><span class="seg" role="group" aria-label="Filter">${['active', 'all', 'workers', 'bots'].map(x => `<button type="button" data-sfilter="${x}" aria-pressed="${f === x}">${x}</button>`).join('')}</span></span></header>
+        <div class="tablewrap"><table><thead><tr><th>Session</th><th>Machine</th><th>Project</th><th>Model</th><th>CPU</th><th>Active</th></tr></thead><tbody>${rows}</tbody></table></div>
+      </section>
+      <section class="box sticky detail"><div class="body">
+        <h3>${s.name}</h3><div class="lede">${statusChip(s.st)} <span class="mono">${s.model}</span></div>
+        <dl class="kv"><dt>Task</dt><dd>${s.task}</dd><dt>Machine</dt><dd>${s.m}</dd><dt>Project</dt><dd>${s.p}</dd><dt>Place</dt><dd>${s.team ? `team ${s.team}${s.lead ? ' · lead' : ' · lead tenebrae · charter first'}` : 'answers to you'}</dd><dt>Memory</dt><dd>${s.ram}</dd></dl>
+        <div class="section"><h4>Charter</h4><div>${s.charter}</div></div>
+        <div class="section"><h4>Recent conversations</h4>${convs.length ? convs.map(c => `<div class="convo" data-openconvo="${c.id}" style="padding:6px 0;border:0"><div class="line1"><b>${c.title}</b><span class="when">${c.ago}</span></div><div class="prev">${c.msgs[c.msgs.length - 1][2]}</div></div>`).join('') : '<div class="muted">None today.</div>'}</div>
+        <div class="row-actions"><button class="btn primary" type="button" data-toast="Opens ${s.name} in herdr on ${s.m === 'gateway' ? 'the gateway' : s.m}. The web view never attaches a terminal itself.">Open in herdr</button><button class="btn" type="button" data-go="messages">Message</button>${s.st === 'busy' || s.st === 'you' ? `<button class="btn" type="button" data-toast="Asks for confirmation first in the real app.">Stop</button>` : ''}</div>
+      </div></section>
+    </div>
+  </div>`;
+}
+
+/* ---------- Graph ---------- */
+const GNODES = [
+  { id: 'owner', label: 'you', sub: 'owner', x: 90, y: 60, cls: '' },
+  { id: 'cto', label: 'CTO', sub: 'on the Mac', x: 250, y: 60, cls: 'cto' },
+  { id: 'chief', label: 'chief of staff', sub: 'codex sol', x: 420, y: 60, cls: '' },
+  { id: 'tenebrae', label: '★ tenebrae', sub: 'needs you', x: 150, y: 230, cls: 'you' },
+  { id: 'ingest', label: 'ingest-forge', sub: 'busy', x: 330, y: 190, cls: 'busy' },
+  { id: 'trade', label: '⚙ Trade', sub: 'bot · idle', x: 330, y: 290, cls: '' },
+  { id: 'strats', label: 'tenebrae-strats', sub: 'idle', x: 190, y: 350, cls: '' },
+  { id: 'agent-net-2', label: 'agent-net 2', sub: 'busy · 2 workers', x: 640, y: 210, cls: 'busy' },
+  { id: 'merger', label: 'merger', sub: 'busy', x: 820, y: 170, cls: 'busy' },
+  { id: 'homelab', label: 'homelab-agent', sub: 'idle', x: 820, y: 300, cls: '' },
+  { id: 'subtext', label: 'subtext', sub: 'idle', x: 600, y: 360, cls: '' },
+  { id: 'ancient', label: 'ancient-standards', sub: 'idle', x: 760, y: 410, cls: '' },
+  { id: 'site', label: 'nicolasparis', sub: 'offline', x: 950, y: 410, cls: 'off' }
+];
+const GEDGES = [['cto', 'trade', 'msg'], ['trade', 'strats', 'msg'], ['ingest', 'tenebrae', 'msg'], ['agent-net-2', 'merger', 'msg'], ['cto', 'agent-net-2', 'msg'], ['agent-net-2', 'homelab', 'dep'], ['agent-net-2', 'strats', 'dep'], ['tenebrae', 'agent-net-2', 'dep'], ['chief', 'owner', 'dep']];
+function graphView() {
+  const N = id => GNODES.find(n => n.id === id);
+  const edges = GEDGES.map(([a, b, k]) => { const p = N(a), q = N(b); const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2 - 30; return `<path class="edge ${k}" d="M${p.x} ${p.y} Q${mx} ${my} ${q.x} ${q.y}"/>`; }).join('');
+  const nodes = GNODES.map(n => `<g class="node ${n.cls} ${st.graphSel === n.id ? 'sel' : ''}" data-gnode="${n.id}" tabindex="0" role="button" aria-label="${n.label}"><circle cx="${n.x}" cy="${n.y}" r="11"/><text x="${n.x + 18}" y="${n.y - 1}">${n.label}</text><text class="s" x="${n.x + 18}" y="${n.y + 14}">${n.sub}</text></g>`).join('');
+  const sel = SESSIONS.find(s => s.id === st.graphSel);
+  const card = sel ? `<h3>${sel.name}</h3><div class="lede">${statusChip(sel.st)} <span class="mono">${sel.model}</span></div><dl class="kv"><dt>Place</dt><dd>${sel.team ? 'team ' + sel.team + (sel.lead ? ' · lead' : ' · lead tenebrae') : 'answers to you'}</dd><dt>Machine</dt><dd>${sel.m}</dd><dt>Steps</dt><dd>accept, review, release, verify: caller · test, merge: merger</dd></dl><div class="section"><h4>Charter</h4>${sel.charter}</div><div class="row-actions"><button class="btn" type="button" data-opensession="${sel.id}">Open session</button><button class="btn" type="button" data-toast="Edits charter, team and edges. The CTO can make the same change.">Edit place</button></div>`
+    : `<h3>${({ owner: 'You', cto: 'CTO' })[st.graphSel] || st.graphSel}</h3><div class="muted">${st.graphSel === 'owner' ? 'The owner. Everything without a lead answers to you.' : 'Runs the network for you. Sees every charter and rule.'}</div>`;
+  return `
+  <div class="split">
+    <section class="box graph"><header><h2>Network</h2><span class="meta">2 teams view · 12 sessions · 4 messages in the last hour</span><span class="act"><span class="seg" role="group" aria-label="Show"><button type="button" aria-pressed="true">all</button><button type="button" data-toast="Zooms to one team, like t in the TUI.">forge</button><button type="button" data-toast="Shows dormant projects too.">dormant</button></span></span></header>
+      <div class="graphwrap"><svg viewBox="0 0 1100 470" role="img" aria-label="Network graph">
+        <g class="team"><rect x="110" y="150" width="330" height="240" rx="10"/><text x="126" y="172">team forge · lead tenebrae · charter first</text></g>
+        <g class="team"><rect x="560" y="130" width="500" height="320" rx="10"/><text x="576" y="152">no team · answers to you</text></g>
+        ${edges}${nodes}
+      </svg></div>
+      <div class="legend"><span><span class="dot you"></span>needs you</span><span><span class="dot busy"></span>busy</span><span><span class="dot idle"></span>idle</span><span><span class="dot off"></span>offline</span><span>- - - message in the last hour</span><span>—— depends on</span></div>
+    </section>
+    <section class="box sticky detail"><div class="body">${card}</div></section>
+  </div>`;
+}
+
+/* ---------- Changes ---------- */
+function changesView() {
+  const f = st.changeFilter;
+  const list = CHANGES.filter(c => f === 'all' || (f === 'open' && c.state[5] !== 'p') || (f === 'you' && c.status.includes('agent-net 2')));
+  const c = CHANGES.find(x => x.id === st.change) || CHANGES[0];
+  const labels = { p: 'passed', r: 'running', w: 'waiting', f: 'failed', s: 'skipped', o: 'not yet' };
+  const owners = { accept: 'agent-net 2', review: 'agent-net 2', test: 'merger', merge: 'merger', release: 'agent-net 2', verify: 'agent-net 2' };
+  return `
+  <div class="split">
+    <section class="box"><header><h2>Changes</h2><span class="meta">${list.length} shown</span><span class="act"><span class="seg" role="group" aria-label="Filter">${[['open', 'open'], ['you', 'mine to do'], ['all', 'all']].map(([k, l]) => `<button type="button" data-cfilter="${k}" aria-pressed="${f === k}">${l}</button>`).join('')}</span></span></header>
+      <div class="tablewrap"><table><thead><tr><th>Change</th><th>${STEPS.map(s => s[0].toUpperCase()).join(' ')}</th><th>Status</th><th>Age</th></tr></thead><tbody>
+      ${list.map(x => `<tr data-change="${x.id}" aria-selected="${x.id === c.id}"><td><b>${x.title}</b><div class="mono muted">${x.id} · rev ${x.rev} · risk ${x.risk}</div></td><td>${pipe(x.state)}</td><td class="muted">${x.status}</td><td class="num muted">${x.age}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="legend"><span>A accept · R review · T test · M merge · R release · V verify</span></div>
+    </section>
+    <section class="box sticky detail"><div class="body">
+      <h3>${c.title}</h3><div class="lede mono">${c.id} · revision ${c.rev} · ${c.diff}</div>
+      <dl class="kv"><dt>Author</dt><dd>${c.worker}</dd><dt>Caller</dt><dd>agent-net 2</dd><dt>Status</dt><dd>${c.status}</dd></dl>
+      <div class="section"><h4>Steps</h4><div class="steps">${STEPS.map((s, i) => `<div class="step ${c.state[i]}"><span class="mk">${({ p: '✓', f: '✗', r: '…', w: '!', s: '–', o: '' })[c.state[i]]}</span><div><div class="t"><b>${s}</b><span class="muted">${labels[c.state[i]]} · ${owners[s]}</span></div>${c.notes[s] ? `<div class="note">${c.notes[s]}</div>` : ''}</div></div>`).join('')}</div></div>
+      <div class="row-actions"><button class="btn" type="button" data-toast="Opens the diff and the CI run on GitHub in a new tab.">Diff and CI</button><button class="btn" type="button" data-toast="Files a late defect on the worker, with a severity from 1 to 4.">Report a defect</button></div>
+    </div></section>
+  </div>`;
+}
+
+/* ---------- Messages ---------- */
+function messagesView() {
+  const c = CONVOS.find(x => x.id === st.convo) || CONVOS[0];
+  return `
+  <div class="split">
+    <section class="box"><header><h2>Conversations</h2><span class="meta">today</span></header>
+      ${CONVOS.map(x => `<div class="convo" data-convo="${x.id}" aria-selected="${x.id === c.id}" tabindex="0" role="button"><div class="line1"><b>${x.a} ↔ ${x.b}</b>${x.cto ? '<span class="chip cto">CTO</span>' : ''}<span class="when">${x.ago} · ${x.n} msgs</span></div><div class="prev">${x.title}: ${x.msgs[x.msgs.length - 1][2]}</div></div>`).join('')}
+    </section>
+    <section class="box sticky"><header><h2>${c.title}</h2><span class="meta">${c.a} ↔ ${c.b}</span></header><div class="body">
+      <div class="thread" id="thread">${c.msgs.map(m => `<div class="msg ${m[1]}"><div class="who"><b>${m[0]}</b></div><div class="text">${m[2]}</div></div>`).join('')}</div>
+      <form class="composer" id="composer"><input type="text" id="composeText" placeholder="Write as you to ${c.b === 'agent-net 2' ? c.a : c.b}"><button class="btn primary" type="submit">Send</button></form>
+    </div></section>
+  </div>`;
+}
+
+/* ---------- Workers ---------- */
+function workersView() {
+  return `
+  <div class="stack">
+    <section class="box"><header><h2>Subscriptions</h2><span class="meta">left in each window · read 40 s ago</span><span class="act"><button class="btn" type="button" data-toast="Protected providers are kept for the orchestrators. Workers use them last.">Protect a provider</button></span></header>
+      ${QUOTAS.map(q => `<div class="quota"><div><b>${q.prov}</b> <span class="muted">${q.plan} · ${q.win}</span>${q.protected ? ' <span class="chip">protected</span>' : ''}</div><div style="display:flex;gap:10px;align-items:center"><span class="bar" style="flex:1"><i class="${q.warn ? 'warn' : ''}" style="width:${q.left}%"></i></span><span class="num" style="width:40px;text-align:right">${q.left}%</span></div><div class="pace">${q.pace}</div></div>`).join('')}
+    </section>
+    <div class="split">
+      <section class="box"><header><h2>Model picks</h2><span class="meta">which model the picker chooses for each difficulty</span></header>
+        <div class="tablewrap"><table><thead><tr><th>Model</th><th>Harness</th><th>Score</th><th>T</th><th>S</th><th>N</th><th>H</th><th>V</th><th>Used</th></tr></thead><tbody>
+        ${PICKS.map(p => `<tr style="cursor:default"><td class="mono">${p[0]}</td><td>${p[1]}</td><td class="num">${p[2]}</td>${p[3].map(x => `<td class="lv ${x ? 'on' : ''}">${x ? '▸' : '·'}</td>`).join('')}<td class="muted">${p[4]}</td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="legend"><span>T trivial · S simple · N normal · H hard · V very complex · ▸ in rotation</span></div>
+      </section>
+      <section class="box"><header><h2>Running now</h2><span class="meta">${RUNNING.length} workers</span></header>
+        <div class="tablewrap"><table><thead><tr><th>Worker</th><th>Task</th><th>Time</th><th>Tokens</th><th>Cost</th></tr></thead><tbody>
+        ${RUNNING.map(r => `<tr style="cursor:default"><td><b>${r[0]}</b><div class="mono muted">${r[1]}</div></td><td>${r[2]}</td><td class="num">${r[3]}</td><td class="num">${r[4]}</td><td class="num">${r[5]}</td></tr>`).join('')}
+        </tbody></table></div>
+      </section>
+    </div>
+  </div>`;
+}
+
+/* ---------- Notes ---------- */
+function notesView() {
+  const map = [
+    ['Desk', 'Desk tab: Needs you, In flight, Handled for you, Log', 'Home screen. Answers with one click, a written answer, or "didn’t need me". Badge count in the tab title and a browser notification for new asks.'],
+    ['Sessions', 'Sessions tab: machines strip, grouped session list', 'Detail panel with charter, place and recent conversations. "Open in herdr" hands off to the terminal; the web never attaches one.'],
+    ['Graph', 'Graph tab: braille node graph, team zoom', 'Real vector graph: pan, zoom and click. Message edges from the last hour. Same team boxes and legend.'],
+    ['Changes', 'Desk In flight + change detail', 'Its own screen: every step with owner and evidence, links out to the diff and CI.'],
+    ['Messages', 'Messages tab', 'Threads read like a chat. You can write as yourself in any thread.'],
+    ['Workers', 'Quotas tab: subscriptions, workers, quality', 'Same data with wider bars, and the running workers with time, tokens and cost.'],
+    ['CTO', 'CTO pane (c)', 'Side panel, open on any screen. Proposals show as cards with Apply and Decline.'],
+    ['Find', '-', '⌘K finds any session, change, conversation or screen.']
+  ];
+  return `
+  <div class="notes">
+    <section class="box"><header><h2>What this mockup is</h2></header><div class="body">
+      <p>A clickable design for an agent-net web console. All data on these pages is example data shaped like this morning’s real state (v0.5.0, the Mac upgrade, the open workers). Nothing here calls the gateway.</p>
+      <p>The web view follows the TUI’s screens so you never learn two products, and it adds what a browser does better: wider tables, a real graph, links you can share with an agent, and access from the phone. Tools and Settings stay in the TUI for the first version.</p>
+    </div></section>
+    <section class="box"><header><h2>Screens</h2><span class="meta">TUI today → web</span></header>
+      <div class="maprow h"><span>Screen</span><span>From the TUI</span><span>What the web adds</span></div>
+      ${map.map(r => `<div class="maprow"><b>${r[0]}</b><span class="muted">${r[1]}</span><span>${r[2]}</span></div>`).join('')}
+    </section>
+    <section class="box"><header><h2>How it stays live</h2></header><div class="body">
+      <p>The page subscribes to the same topic events as the TUI (push updates part 1, now in review). When the gateway’s data changes, the open screen reloads only the topics that moved. Part 2 adds the endpoint the browser and the phone app use.</p>
+      <p>Owner actions need the owner. The web view signs in through the same pairing as the phone app and never shows a join string, token or node ID.</p>
+    </div></section>
+    <section class="box"><header><h2>Open questions for you</h2></header><div class="body">
+      <ul><li>Should the web view stay read and answer only (Desk, messages, CTO) at first, or also start workers and change charters?</li><li>Phone layout: the same screens with a bottom bar, as here, or a Desk-only phone view?</li><li>Where it runs: served by the gateway on research over Tailscale, like the phone pairing.</li></ul>
+    </div></section>
+  </div>`;
+}
+
+/* ---------- CTO panel ---------- */
+const CTOLOG = [
+  { who: 'CTO', cls: 'cto', text: 'Good morning. v0.5.0 is on both machines. The Mac needed one kickstart, as expected. Two things need you on the Desk.' },
+  { who: 'you', cls: 'me', text: 'Turn on lead merges for forge.' },
+  { who: 'CTO', cls: 'cto', proposal: true, text: 'I can set it now:', change: 'team forge · lead_merges: off → on', after: 'Members will read that tenebrae may merge their work. Nothing is blocked.' }
+];
+function renderCTO() {
+  $('#ctolog').innerHTML = CTOLOG.map((m, i) => m.proposal ? `<div class="msg cto"><div class="who"><b>${m.who}</b></div><div class="proposal"><div>${m.text}</div><div class="mono">${m.change}</div><div class="muted" style="font-size:12.5px">${m.after}</div>${m.applied ? `<span class="chip ok">${m.applied}</span>` : `<div class="actions"><button class="btn primary" type="button" data-apply="${i}">Apply</button><button class="btn" type="button" data-decline="${i}">Decline</button></div>`}</div></div>`
+    : `<div class="msg ${m.cls}"><div class="who"><b>${m.who}</b></div><div class="text">${m.text}</div></div>`).join('');
+  $('#ctolog').scrollTop = 1e6;
+}
+function setCTO(open) {
+  $('#cto').hidden = !open; $('#app').classList.toggle('cto-open', open);
+  try { localStorage.setItem('anw-cto', open ? '1' : '0'); } catch (e) {}
+  if (open) { renderCTO(); }
+}
+
+/* ---------- Palette ---------- */
+function openPalette() {
+  const items = [
+    ...SCREENS.map(s => ({ label: s.name, kind: 'screen', act: () => go(s.id) })),
+    ...SESSIONS.map(s => ({ label: s.name, kind: 'session · ' + s.m, act: () => { st.session = s.id; go('sessions'); } })),
+    ...CHANGES.map(c => ({ label: c.title, kind: c.id, act: () => { st.change = c.id; st.changeFilter = 'all'; go('changes'); } })),
+    ...CONVOS.map(c => ({ label: c.title, kind: 'conversation', act: () => { st.convo = c.id; go('messages'); } })),
+    { label: 'Ask the CTO', kind: 'action', act: () => setCTO(true) }
+  ];
+  $('#overlay').innerHTML = `<div class="scrim" id="scrim"><div class="palette" role="dialog" aria-label="Find"><input type="search" id="pq" placeholder="Find a session, change, conversation or screen" autocomplete="off"><ul id="pl"></ul></div></div>`;
+  let sel = 0, shown = items;
+  const draw = () => { $('#pl').innerHTML = shown.slice(0, 12).map((it, i) => `<li data-i="${i}" aria-selected="${i === sel}"><span>${it.label}</span><span class="kind">${it.kind}</span></li>`).join('') || '<li class="muted">No match</li>'; };
+  const close = () => { $('#overlay').innerHTML = ''; };
+  const pick = i => { const it = shown[i]; close(); if (it) it.act(); };
+  draw(); $('#pq').focus();
+  $('#pq').addEventListener('input', e => { const q = e.target.value.toLowerCase(); shown = items.filter(it => (it.label + ' ' + it.kind).toLowerCase().includes(q)); sel = 0; draw(); });
+  $('#pq').addEventListener('keydown', e => { if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, Math.min(shown.length, 12) - 1); draw(); e.preventDefault(); } else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); draw(); e.preventDefault(); } else if (e.key === 'Enter') pick(sel); else if (e.key === 'Escape') close(); });
+  $('#pl').addEventListener('click', e => { const li = e.target.closest('li[data-i]'); if (li) pick(+li.dataset.i); });
+  $('#scrim').addEventListener('click', e => { if (e.target.id === 'scrim') close(); });
+}
+
+/* ---------- Render and events ---------- */
+const VIEWS = { desk: deskView, sessions: sessionsView, graph: graphView, changes: changesView, messages: messagesView, workers: workersView, notes: notesView };
+function render() {
+  const id = (location.hash || '#desk').slice(1);
+  st.screen = VIEWS[id] ? id : 'desk';
+  const meta = SCREENS.find(s => s.id === st.screen) || { name: 'Design notes', sub: 'What this mockup shows and what the web adds' };
+  $('#title').textContent = meta.name; $('#subtitle').textContent = meta.sub;
+  $('#content').innerHTML = VIEWS[st.screen]();
+  renderNav();
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-go],[data-session],[data-change],[data-convo],[data-openconvo],[data-gnode],[data-opensession],[data-sfilter],[data-cfilter],[data-answer],[data-write],[data-send],[data-noneed],[data-toast],[data-apply],[data-decline]');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.go) return go(d.go);
+  if (d.session) { st.session = d.session; return render(); }
+  if (d.opensession) { st.session = d.opensession; return go('sessions'); }
+  if (d.change) { st.change = d.change; if (st.screen !== 'changes') { st.changeFilter = 'all'; return go('changes'); } return render(); }
+  if (d.convo || d.openconvo) { st.convo = d.convo || d.openconvo; return st.screen === 'messages' ? render() : go('messages'); }
+  if (d.gnode) { st.graphSel = d.gnode; return render(); }
+  if (d.sfilter) { st.sessFilter = d.sfilter; return render(); }
+  if (d.cfilter) { st.changeFilter = d.cfilter; return render(); }
+  if (d.answer) { const a = ASKS.find(x => x.id === d.answer); a.done = d.opt; st.answering = null; render(); return toast(`Sent to ${a.from}: ${d.opt}`); }
+  if (d.write) { st.answering = d.write; render(); const ta = $('#ans-' + d.write); if (ta) ta.focus(); return; }
+  if (d.send) { const a = ASKS.find(x => x.id === d.send); const v = ($('#ans-' + d.send).value || '').trim(); if (!v) return toast('Write an answer first.'); a.done = 'written'; st.answering = null; render(); return toast(`Sent to ${a.from}`); }
+  if (d.noneed) { const a = ASKS.find(x => x.id === d.noneed); a.done = 'not needed'; render(); return toast('Recorded. The chief of staff will handle asks like this one.'); }
+  if (d.toast) return toast(d.toast);
+  if (d.apply) { CTOLOG[+d.apply].applied = 'applied · undo in the Log'; LOG.unshift(['now', 'cto', 'team forge: lead_merges on']); renderCTO(); if (st.screen === 'desk') render(); return toast('Applied. tenebrae’s members now see the grant.'); }
+  if (d.decline) { CTOLOG[+d.decline].applied = 'declined'; return renderCTO(); }
+});
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return openPalette(); }
+  if (e.target.matches('input,textarea')) return;
+  if (e.key === 'Enter' && e.target.matches('[data-gnode],[data-convo]')) { e.target.click(); return; }
+  const s = SCREENS.find(x => x.key === e.key); if (s) go(s.id);
+  if (e.key === 'c') setCTO($('#cto').hidden);
+});
+document.addEventListener('submit', e => {
+  e.preventDefault();
+  if (e.target.id === 'composer') { const v = $('#composeText').value.trim(); if (!v) return; const c = CONVOS.find(x => x.id === st.convo); c.msgs.push(['you', 'me', v]); c.n++; render(); toast('Sent as you'); }
+  if (e.target.id === 'ctoform') { const v = $('#ctoinput').value.trim(); if (!v) return; CTOLOG.push({ who: 'you', cls: 'me', text: v }); CTOLOG.push({ who: 'CTO', cls: 'cto', text: 'In the real console I would answer here. This mockup only shows the layout.' }); $('#ctoinput').value = ''; renderCTO(); }
+});
+$('#openPalette').addEventListener('click', openPalette);
+$('#toggleCTO').addEventListener('click', () => setCTO($('#cto').hidden));
+$('#closeCTO').addEventListener('click', () => setCTO(false));
+window.addEventListener('hashchange', render);
+render();
+try { if (localStorage.getItem('anw-cto') === '1') setCTO(true); } catch (e) {}
+</script>

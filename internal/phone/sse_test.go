@@ -21,7 +21,7 @@ func TestStreamSendsSections(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w := cancelFlusher{httptest.NewRecorder(), cancel}
-	New(&fakeOperator{}).ServeHTTP(w, httptest.NewRequest("GET", "/events", nil).WithContext(ctx))
+	New(&fakeOperator{}).ServeHTTP(w, httptest.NewRequest("GET", "/events?screen=sessions", nil).WithContext(ctx))
 	if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), "text/event-stream") || !strings.Contains(w.Body.String(), "event: update") || !strings.Contains(w.Body.String(), "test-machine") {
 		t.Fatalf("stream: %d %v %s", w.Code, w.Header(), w.Body.String())
 	}
@@ -55,7 +55,7 @@ func TestStreamSendsChangedSnapshot(t *testing.T) {
 	defer cancel()
 	w := &twoFlushes{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
 	a := &app{src: &changingOperator{}, interval: time.Millisecond}
-	a.stream(w, httptest.NewRequest("GET", "/events", nil).WithContext(ctx))
+	a.stream(w, httptest.NewRequest("GET", "/events?screen=sessions", nil).WithContext(ctx))
 	if !strings.Contains(w.Body.String(), "machine-1") || !strings.Contains(w.Body.String(), "machine-2") {
 		t.Fatal(w.Body.String())
 	}
