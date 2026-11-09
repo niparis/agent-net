@@ -39,6 +39,23 @@ func setBriefTime(t *testing.T, s *Store, hhmm string) {
 	}
 }
 
+// addZoneNode registers a machine that reported an IANA zone, as the owner's
+// Mac does in its hello.
+func addZoneNode(t *testing.T, s *Store, hostname, osName, zone string) string {
+	t.Helper()
+	id, _, err := s.CreateNode(hostname, osName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeHello(id, hostname, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeTimeZone(id, zone); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
 // briefMessages returns the bodies of the timer's messages to the chief.
 func briefMessages(t *testing.T, s *Store, to string) []string {
 	t.Helper()
@@ -125,11 +142,11 @@ func TestDailyBriefTimerSendsOncePerLocalDateAcrossRestart(t *testing.T) {
 	}
 }
 
-// Without the owner's time zone the timer does not run, and the status says
-// what it waits for.
+// Without a machine reporting a usable zone the timer does not run, and the
+// status says what it waits for. It never falls back to the gateway's UTC.
 func TestDailyBriefDoesNotRunWithoutTimeZone(t *testing.T) {
 	s, c, chief, _ := briefRig(t)
-	// The default is auto, which is not a zone the timer can use.
+	// The default is auto, and neither test machine reported a zone.
 	now := c.t
 	if _, sent, err := s.checkDailyBrief(now); err != nil || sent {
 		t.Fatalf("without a zone: sent=%v err=%v", sent, err)
@@ -144,8 +161,131 @@ func TestDailyBriefDoesNotRunWithoutTimeZone(t *testing.T) {
 	if status.Status != protocol.BriefStatusWaitingZone {
 		t.Fatalf("status = %q, want %q", status.Status, protocol.BriefStatusWaitingZone)
 	}
+	if status.TimeZone == "UTC" || status.TimeZone == "Etc/UTC" {
+		t.Fatalf("the timer fell back to UTC: %+v", status)
+	}
 	if status.NextRunLocal != "" || status.NextRunUTC != "" {
 		t.Fatalf("a waiting timer has no next run: %+v", status)
+	}
+}
+
+// With auto, the owner's Mac supplies the zone: a server zone, even a Linux
+// machine, does not win over it.
+func TestDailyBriefAutoZoneComesFromOwnerMac(t *testing.T) {
+	s, c, chief, _ := briefRig(t)
+	addZoneNode(t, s, "build-server", "linux", "Europe/Berlin")
+	addZoneNode(t, s, "Nicolas-MBP", "darwin", "Asia/Kolkata")
+	setBriefTime(t, s, "08:15")
+
+	c.t = time.Date(2026, 11, 9, 2, 0, 0, 0, time.UTC) // 07:30 in Kolkata
+	status, err := s.dailyBriefStatus(c.t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.TimeZone != "Asia/Kolkata" {
+		t.Fatalf("auto resolved to %q, want the Mac's Asia/Kolkata", status.TimeZone)
+	}
+	if status.Status != protocol.BriefStatusActive || status.NextRunLocal != "2026-11-09 08:15" || status.NextRunUTC != "2026-11-09T02:45:00Z" {
+		t.Fatalf("status = %+v", status)
+	}
+	if _, sent, err := s.checkDailyBrief(time.Date(2026, 11, 9, 2, 44, 0, 0, time.UTC)); err != nil || sent {
+		t.Fatalf("before 08:15 Kolkata: sent=%v err=%v", sent, err)
+	}
+	if _, sent, err := s.checkDailyBrief(time.Date(2026, 11, 9, 2, 45, 0, 0, time.UTC)); err != nil || !sent {
+		t.Fatalf("at 08:15 Kolkata: sent=%v err=%v", sent, err)
+	}
+	if got := briefMessages(t, s, chief); len(got) != 1 || !strings.Contains(got[0], "2026-11-09") {
+		t.Fatalf("messages = %v", got)
+	}
+}
+
+// A named setting wins over the machine's own zone.
+func TestDailyBriefNamedZoneWinsOverAuto(t *testing.T) {
+	s, c, _, _ := briefRig(t)
+	addZoneNode(t, s, "Nicolas-MBP", "darwin", "Asia/Kolkata")
+	setBriefZone(t, s, "Europe/Paris")
+	status, err := s.dailyBriefStatus(c.t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.TimeZone != "Europe/Paris" {
+		t.Fatalf("named zone resolved to %q", status.TimeZone)
+	}
+}
+
+// The schedule follows the local clock across DST. 09:00 Paris is 08:00 UTC in
+// winter and 07:00 UTC in summer, and the timer still sends once per date.
+func TestDailyBriefHandlesDST(t *testing.T) {
+	s, _, chief, _ := briefRig(t)
+	setBriefZone(t, s, "Europe/Paris")
+	setBriefTime(t, s, "09:00")
+
+	// Send on 28 March, the last winter date: 09:00 CET is 08:00 UTC.
+	if _, sent, err := s.checkDailyBrief(time.Date(2026, 3, 28, 8, 0, 0, 0, time.UTC)); err != nil || !sent {
+		t.Fatalf("28 March: sent=%v err=%v", sent, err)
+	}
+	// Spring forward: 2026-03-29 02:00 CET becomes 03:00 CEST, so the next
+	// 09:00 is 07:00 UTC.
+	status, err := s.dailyBriefStatus(time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.NextRunLocal != "2026-03-29 09:00" || status.NextRunUTC != "2026-03-29T07:00:00Z" {
+		t.Fatalf("spring next run = %q / %q", status.NextRunLocal, status.NextRunUTC)
+	}
+	if _, sent, err := s.checkDailyBrief(time.Date(2026, 3, 29, 6, 59, 0, 0, time.UTC)); err != nil || sent {
+		t.Fatalf("before 09:00 CEST: sent=%v err=%v", sent, err)
+	}
+	if _, sent, err := s.checkDailyBrief(time.Date(2026, 3, 29, 7, 0, 0, 0, time.UTC)); err != nil || !sent {
+		t.Fatalf("at 09:00 CEST: sent=%v err=%v", sent, err)
+	}
+	if _, sent, err := s.checkDailyBrief(time.Date(2026, 3, 29, 8, 0, 0, 0, time.UTC)); err != nil || sent {
+		t.Fatalf("a second send the same local date: sent=%v err=%v", sent, err)
+	}
+	status, err = s.dailyBriefStatus(time.Date(2026, 3, 29, 8, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastDateSent != "2026-03-29" || status.NextRunLocal != "2026-03-30 09:00" || status.NextRunUTC != "2026-03-30T07:00:00Z" {
+		t.Fatalf("after the spring send = %+v", status)
+	}
+
+	// Fall back: 2026-10-25 03:00 CEST becomes 02:00 CET.
+	if _, sent, err := s.checkDailyBrief(time.Date(2026, 10, 25, 7, 59, 0, 0, time.UTC)); err != nil || sent {
+		t.Fatalf("before 09:00 CET: sent=%v err=%v", sent, err)
+	}
+	if _, sent, err := s.checkDailyBrief(time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC)); err != nil || !sent {
+		t.Fatalf("at 09:00 CET: sent=%v err=%v", sent, err)
+	}
+	status, err = s.dailyBriefStatus(time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastDateSent != "2026-10-25" || status.NextRunUTC != "2026-10-26T08:00:00Z" {
+		t.Fatalf("after the fall send = %+v", status)
+	}
+	if got := briefMessages(t, s, chief); len(got) != 3 {
+		t.Fatalf("messages over both DST dates = %v", got)
+	}
+}
+
+// A gateway that missed the tick sends once later that day, not once per tick.
+func TestDailyBriefSendsOnceWhenTheTickWasMissed(t *testing.T) {
+	s, c, chief, _ := briefRig(t)
+	setBriefZone(t, s, "Europe/Paris")
+	setBriefTime(t, s, "09:00")
+
+	// The gateway starts at 15:00 local, long after 09:00.
+	late := time.Date(2026, 11, 9, 14, 0, 0, 0, time.UTC)
+	if _, sent, err := s.checkDailyBrief(late); err != nil || !sent {
+		t.Fatalf("a missed tick: sent=%v err=%v", sent, err)
+	}
+	c.t = late.Add(time.Minute)
+	if _, sent, err := s.checkDailyBrief(c.t); err != nil || sent {
+		t.Fatalf("the next tick: sent=%v err=%v", sent, err)
+	}
+	if got := briefMessages(t, s, chief); len(got) != 1 || !strings.Contains(got[0], "2026-11-09") {
+		t.Fatalf("messages = %v", got)
 	}
 }
 

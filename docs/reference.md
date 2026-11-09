@@ -2716,9 +2716,13 @@ source `chief`. Nothing is deleted.
 
 **The daily brief.** The owner can give the chief one morning prompt without a
 new ask. The setting `chief.brief_time` is a local time `HH:MM` (default
-`09:00`) read in the owner's time zone (operator `timezone_get`). Until the
-owner has named a zone, the timer does not run and `agent_owner_brief` reports
-`waiting for the owner's time zone`. The gateway checks on its minute tick and
+`09:00`) read in the owner's time zone (operator `timezone_get`). A named zone
+wins. When the setting is `auto`, the gateway resolves it from the zone a
+machine reported, preferring the owner's Mac; a server zone does not win over
+it. If no machine reported a usable zone, the timer does not run,
+`agent_owner_brief` reports `waiting for the owner's time zone`, and the
+gateway never stands in UTC. The zone is resolved again on each tick, so a
+machine that reports its zone later starts the timer. The gateway checks on its minute tick and
 sends the chief one message from `agent-net` on the first tick of each
 owner-local date at or after that time: `Daily brief due for <local date>.
 Write it and deliver it with agent_owner_brief.` The date is stored in
@@ -2739,10 +2743,11 @@ agent_owner_brief {"body":"Handled the deploy fix and two reviews.\nDecisions wa
 ```
 
 **`agent_owner_brief {}`** reads the schedule instead. It returns `brief_time`,
-`time_zone`, `next_run_local`, `next_run_utc`, `last_date_sent`, `last_item_id`
-and `status` (`active`, `waiting for the owner's time zone` or `no chief of
-staff`). The last brief id is also stored in `owner_settings`
-(`chief.brief_last_item`).
+the resolved IANA `time_zone`, `next_run_local`, `next_run_utc`,
+`last_date_sent`, `last_item_id` and `status` (`active`, `waiting for the
+owner's time zone` or `no chief of staff`). The next run follows the local
+clock across daylight saving time. The last brief id is also stored in
+`owner_settings` (`chief.brief_last_item`).
 
 **`ask_history` `{ask}`** (operator `ask_history`, gateway `ask.history`) returns
 `{"sorts": [...]}`, oldest first. Each sort has `at`, `sorter`, `result`,

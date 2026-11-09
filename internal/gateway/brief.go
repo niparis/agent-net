@@ -46,15 +46,18 @@ func parseBriefClock(text string) (hour, minute int, ok bool) {
 
 func (s *Store) briefSchedule() (briefSchedule, error) {
 	out := briefSchedule{}
-	tz, err := s.timeZoneSetting()
+	zone, ok, err := s.ownerTimeZone()
 	if err != nil {
 		return out, err
 	}
-	out.zoneName = tz.Name
-	if tz.Name != "" && tz.Name != protocol.TimeZoneAuto {
-		out.loc, err = time.LoadLocation(tz.Name)
+	if ok {
+		out.zoneName = zone
+		out.loc, err = time.LoadLocation(zone)
 		if err == nil {
 			out.zoneSet = true
+		} else {
+			// A stored name that no longer loads is not a zone to wait on.
+			out.zoneName = ""
 		}
 	}
 	snap, err := s.SettingsSnapshot()
