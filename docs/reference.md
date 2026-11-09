@@ -3211,6 +3211,25 @@ Worker cleanup and daemon shutdown leave it running. When herdr is available, st
 
 ### Connected apps
 
+**Pair a tailnet browser.** On Linux, open the console through the machine's
+Tailscale Serve while signed in to Tailscale as the user who owns that
+machine's node. A fresh browser pairs automatically, with no code or TUI
+approval. There is no login setting: the gateway reads the node owner's login
+from local Tailscale status. Connected apps lists the device as
+`Tailscale sign-in: <login>, <device and browser>`. Each browser has its own
+entry, with a number added when names match. The owner Inbox receives one
+information notice: `Paired <device> by Tailscale sign-in`.
+
+Revoke that entry to block the device's cookie. It will show the pairing page
+on its next visit, even from the tailnet. A browser whose cookie was cleared
+can sign in through Tailscale as a fresh device. Cookies last 90 days and renew
+on use with less than 30 days left, just like devices paired with a code.
+
+Public internet requests through Funnel still need a code approved by the
+owner in the TUI. Other Tailscale users, other OSes, the separate in-process
+Tailscale node, and requests where the root-owned proxy or local node owner
+cannot be verified also use the code flow. No agent or tool can approve it.
+
 Press `6` for Settings and select a row in Connected apps. The status line shows whether internet access is on and the public MCP URL. A warning lists other routes on the same Tailscale name when the gateway reports them: those services receive the phone sign-in cookie. Press `p` to switch it. With Tailscale, the gateway chooses a free Funnel port (443, 8443, then 10000). Errors identify the gateway machine where Tailscale runs and show the command or link to use. Without Tailscale, press `u` and paste an HTTPS origin from your own tunnel to `127.0.0.1:7422`.
 
 **Its own Tailscale name.** By default the Funnel runs on the gateway machine's own Tailscale node, so the public name is the machine's name and other services on that machine share it. To give connected apps a name of their own, run on the gateway machine:

@@ -81,6 +81,7 @@ type Options struct {
 }
 
 type Gateway struct {
+	phoneTailnet *phoneTailnet
 	// previewMemo keeps the worker-choice preview of each node (NodesInfo).
 	previewMemo previewMemo
 	// relayWait overrides defaultRelayWait, for tests.
