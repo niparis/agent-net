@@ -361,7 +361,7 @@ func TestDeliveryToolRoles(t *testing.T) {
 				t.Errorf("%s hints = %+v", name, tool.Hints)
 			}
 			props := decodeObject(t, name, tool.InputSchema)["properties"].(map[string]any)
-			for _, field := range map[string][]string{"agent_ask_sort": {"ask", "detail", "result", "into", "to", "reason", "priority", "why_you"}, "agent_change_submit": {"branch", "commit", "change"}, "agent_step_claim": {"change", "step", "for", "after_merge", "commit"}, "agent_step_report": {"change", "step", "for", "after_merge", "result", "commit", "fields", "done_by", "note"}, "agent_changes_find": {"change", "project", "state", "caller", "limit", "cursor"}}[name] {
+			for _, field := range map[string][]string{"agent_ask_sort": {"ask", "detail", "result", "into", "to", "reason", "priority", "why_you", "sorter", "since", "until", "from_id", "to_id"}, "agent_change_submit": {"branch", "commit", "change"}, "agent_step_claim": {"change", "step", "for", "after_merge", "commit"}, "agent_step_report": {"change", "step", "for", "after_merge", "result", "commit", "fields", "done_by", "note"}, "agent_changes_find": {"change", "project", "state", "caller", "limit", "cursor"}}[name] {
 				if props[field] == nil {
 					t.Errorf("%s has no %s", name, field)
 				}

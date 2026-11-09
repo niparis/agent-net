@@ -172,6 +172,7 @@ func TestDeliveryOutputSchemasMatchProtocol(t *testing.T) {
 		"agent_step_report":   protocol.StepReportResult{Evidence: ev, Change: view},
 		"agent_changes_find":  map[string]any{"items": []protocol.ChangeView{view, {Change: c, Steps: steps}}, "total": 2, "next_cursor": "x"},
 		"agent_ask_sort": protocol.AskSortResult{Ask: "i_1", Result: "read", Next: "owner", State: "open",
+			Stats: &protocol.AskSortStats{Sorter: "chief", Counts: map[string]int{protocol.AskSortClose: 2}, FirstID: 1, LastID: 2},
 			Full: &protocol.AskFull{ID: "i_1", Kind: protocol.AskKindDraft, Status: "open", State: "open",
 				Question: "q", Detail: "d", Options: []string{"accept"}, Recommendation: "r", FromSession: "s_1",
 				FromName: "asker", FromKind: "session", Node: "demo", AboutKind: "project", AboutID: "demo",
@@ -218,6 +219,35 @@ func TestAskSortFullReadTool(t *testing.T) {
 	}
 	if text := deliveryText(res); !strings.Contains(text, `"question":"Charter draft for demo: 3 fields"`) {
 		t.Fatalf("full read text: %s", text)
+	}
+}
+
+// The chief's list carries the sorter's counts, and the caller may narrow them
+// with a sorter and a time range. The field reaches the tool result as it is.
+func TestAskSortListStatsTool(t *testing.T) {
+	list := protocol.AskSortResult{Result: protocol.AskSortList,
+		Stats: &protocol.AskSortStats{Sorter: "s_1", Counts: map[string]int{protocol.AskSortClose: 2, protocol.AskSortOwner: 1}, FirstID: 1, LastID: 9}}
+	var sent map[string]any
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		raw, _ := json.Marshal(params)
+		_ = json.Unmarshal(raw, &sent)
+		if method != protocol.OpAskSort {
+			t.Errorf("method = %q, want %q", method, protocol.OpAskSort)
+		}
+		return json.Marshal(list)
+	})
+	res := deliveryCall(t, cs, "agent_ask_sort", `{"result":"list","sorter":"owner","since":100,"until":200}`)
+	if res.IsError {
+		t.Fatalf("list with stats: %s", deliveryText(res))
+	}
+	if sent["result"] != "list" || sent["sorter"] != "owner" || sent["since"] != float64(100) || sent["until"] != float64(200) {
+		t.Fatalf("arguments sent: %v", sent)
+	}
+	text := deliveryText(res)
+	for _, want := range []string{`"stats"`, `"sorter":"s_1"`, `"close":2`, `"owner":1`, `"first_id":1`, `"last_id":9`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("list result %s does not contain %s", text, want)
+		}
 	}
 }
 

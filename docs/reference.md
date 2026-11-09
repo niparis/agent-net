@@ -2650,9 +2650,10 @@ the owner. An ask waiting on a chief that is offline goes to the owner at once.
 Each one writes a Desk log line (`The chief of staff did not sort it in 15
 minutes, so it is with you: ...` or `The chief of staff is offline, ...`).
 
-**`agent_ask_sort {ask, result, reason, into, to, priority, why_you}`** (any
-agent session; only the live chief may call it, others are refused). `reason` is
-required for every sort, up to 300 characters. `result` is one of:
+**`agent_ask_sort {ask, result, reason, into, to, priority, why_you, sorter, since, until, from_id, to_id}`**
+(any agent session; only the live chief may call it, others are refused).
+`reason` is required for every sort, up to 300 characters. `result` is one
+of:
 
 - `close`: the ask closes; its answer is `chief: <reason>`.
 - `merge`: the ask closes; `into` is another open ask, which gets the line
@@ -2664,7 +2665,17 @@ required for every sort, up to 300 characters. `result` is one of:
 - `list`: reads only. It returns the open asks that wait for the chief, oldest
   first, in `asks`: `ask`, `kind`, `from`, `text`, `recommendation` and `age`
   (such as `12m` or `3h05m`). `ask` and `reason` are not needed. It changes no
-  ask.
+  ask. It also returns `stats`, the counts described below.
+
+**`stats` of a list.** Every `list` answer carries `stats`: the successful sorts
+of one sorter by result, counted in one grouped query. `sorter` defaults to the
+caller (the chief); `since` and `until` are Unix seconds (both inclusive), and
+`from_id` and `to_id` are sort ids (both inclusive). The shape is
+`{"sorter":"s_...","counts":{"close":736,"merge":1,"owner":8,"send":16},"first_id":1,"last_id":761}`.
+`counts` holds only the results that occurred, `undo` included when it did, and
+`first_id` and `last_id` are the smallest and largest sort id that matched (zero
+when none did). The chief uses it to audit its own sorts without reading every
+row.
 
 **`agent_ask_sort {ask, detail: "full"}`** reads one ask in full for the chief. It
 sorts nothing, and it takes only `ask`. The answer has `result` `read`, `next`,
