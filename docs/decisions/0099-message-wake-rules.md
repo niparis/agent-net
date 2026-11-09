@@ -39,3 +39,20 @@ Why: a sender needs a plain answer to "why is my message still queued", and an
 automatic retry of a refused wake only repeats the error. The owner's own resume
 never checks records; the autonomy wake keeps the checks that stop a live
 session from being started twice.
+
+## Amendment: 2026-11-09 - Wake on message by default
+
+The owner expects sleeping sessions to wake on a message by default: an offline
+session of a wakeable harness (Claude in terminal or background mode, Codex,
+OpenCode; not Pi; never workers) is woken by a message unless the new node
+setting `wake_on_message` is explicitly set to `off`.
+
+- `wake_on_message`: `on` (default) or `off`. Stored in the settings store,
+  inheriting global, team, repo, agent. Minor class for CTO `settings_set`.
+- When `wake_on_message` is `on`, a queued message to a wakeable offline session
+  resumes it (Claude in background with `--bg --resume`, Codex, OpenCode).
+- When `wake_on_message` is `off`, the session stays offline and the receipt says
+  `queued; <name> is offline and wake is off for this agent`, unless autonomy
+  is `wake` (which still allows it for backward compatibility).
+- All safety limits remain: 10-minute rate limit per session, recorded failure,
+  resume only (never a new session), daily wake cap, and never opening a view.

@@ -148,7 +148,7 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 		if strings.HasPrefix(q.Setting, "loop_") {
 			return "major", nil
 		}
-		if q.Setting == protocol.SettingWorkMode {
+		if q.Setting == protocol.SettingWorkMode || q.Setting == protocol.SettingWakeOnMessage {
 			return "minor", nil
 		}
 		if _, moved := deliveryNodeKeys[q.Setting]; moved {
@@ -174,7 +174,9 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 
 func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, error) {
 	// Work mode is advice at every level: the CTO sets it without a proposal.
-	if attr == protocol.AttrWorkMode || strings.HasSuffix(attr, ":"+protocol.AttrWorkMode) {
+	if attr == protocol.AttrWorkMode || strings.HasSuffix(attr, ":"+protocol.AttrWorkMode) ||
+		attr == protocol.SettingWakeOnMessage || strings.HasSuffix(attr, ":"+protocol.SettingWakeOnMessage) ||
+		strings.HasPrefix(attr, protocol.SettingWakeOnMessage+"@") {
 		return "minor", nil
 	}
 	if typ == "lifecycle" || typ == "level_charter" {

@@ -59,6 +59,10 @@ func (g *Gateway) autonomyWake(a protocol.AgentView) bool {
 	return err == nil && mode == protocol.AutonomyWake
 }
 
+func (g *Gateway) wakeOnMessage(a protocol.AgentView) bool {
+	return g.store.agentWakeOnMessage(a)
+}
+
 // wakeReceiptNote adds to the sender's routing note when a message waits for an
 // offline session that is not woken: a Pi session that autonomy would wake, or
 // any wakeable session when wake is off or the last wake failed.
@@ -101,7 +105,8 @@ func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m pr
 		// standing loop tick counts as an autonomy wake (the owner set the loop).
 		return
 	}
-	g.wakeSessionAs(ctx, a, isLoopMessage(m))
+	fromMessage := g.wakeAllowed(a, isLoopMessage(m) || g.autonomyWake(a))
+	g.wakeSessionAs(ctx, a, isLoopMessage(m), fromMessage)
 }
 
 // isLoopMessage tells whether the reserved sender's message is a standing
@@ -116,18 +121,21 @@ func isLoopMessage(m protocol.Message) bool {
 // other wake does: an interactive Claude session, Codex and OpenCode. The
 // receiving daemon makes the final safety checks.
 func (g *Gateway) wakeSession(ctx context.Context, a protocol.AgentView) {
-	g.wakeSessionAs(ctx, a, false)
+	g.wakeSessionAs(ctx, a, false, false)
 }
 
 // wakeSessionAs is wakeSession. loop says the wake is a standing loop tick,
-// which does not need the autonomy rule.
-func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop bool) {
+// which does not need the autonomy rule. fromMessage says the wake was
+// permitted by wakeForMessage (e.g. by wake_on_message).
+func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop bool, fromMessage bool) {
 	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online {
 		return
 	}
 	autonomy := loop || g.autonomyWake(a)
-	if !autonomy && (a.Harness != "claude" || a.Mode == protocol.ModeForeground) {
-		return
+	if !fromMessage {
+		if !autonomy && (a.Harness != "claude" || a.Mode == protocol.ModeForeground) {
+			return
+		}
 	}
 	g.mu.Lock()
 	target := g.conns[a.NodeID]
@@ -161,7 +169,7 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 		cctx, cancel := context.WithTimeout(ctx, wakeTimeout)
 		defer cancel()
 		frame := map[string]string{"session_id": a.SessionID, "token": token}
-		if autonomy {
+		if autonomy || fromMessage {
 			frame["autonomy"] = protocol.AutonomyWake
 		}
 		_, err := target.call(cctx, protocol.FrameSessionWake, frame)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -101,6 +102,38 @@ func (p *wakeProbe) message(t *testing.T, to string) protocol.Message {
 	return m
 }
 
+func (p *wakeProbe) stepMessage(t *testing.T, to string) protocol.Message {
+	t.Helper()
+	msgID := protocol.NewID("msg")
+	changeID := protocol.NewID("ch")
+	idemKey := "step_" + msgID
+	now := p.s.now()
+	expires := now.Add(time.Hour)
+	if _, err := p.s.db.Exec(`INSERT INTO delivery_changes(id, project, machine, branch, head_commit, revision, origin, state, created_at)
+		VALUES(?, 'proj', 'node1', 'feature', 'head1', 1, '{}', 'open', ?)`, changeID, now.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_tasks(change_id, revision, step, for_step, after_merge, owner_node, claimed_by, completed, created_at)
+		VALUES(?, 1, 'test', '', 0, 'node1', '', 0, ?)`, changeID, now.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`INSERT INTO messages(id, conversation_id, sender, recipient, type, body, hop, idem_key, created_at, expires_at, state)
+		VALUES(?, 'conv', 'agent-net', ?, 'notification', 'step task', 0, ?, ?, ?, 'stored')`,
+		msgID, to, idemKey, now.UnixNano(), expires.UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_messages(change_id, revision, step, for_step, after_merge, session_id, message_id)
+		VALUES(?, 1, 'test', '', 0, ?, ?)`, changeID, to, msgID); err != nil {
+		t.Fatal(err)
+	}
+	m, ok, err := p.s.Message(msgID)
+	if err != nil || !ok {
+		t.Fatalf("step message: ok=%v err=%v", ok, err)
+	}
+	p.g.dispatch(context.Background(), m)
+	return m
+}
+
 func (p *wakeProbe) expectWake(t *testing.T, session string) map[string]string {
 	t.Helper()
 	select {
@@ -124,22 +157,59 @@ func (p *wakeProbe) expectNoWake(t *testing.T) {
 	}
 }
 
-// With autonomy wake, a message to an offline interactive Claude session asks
-// its machine to resume it. With autonomy off nothing is asked.
-func TestMessageWakesInteractiveClaudeOnlyWithAutonomy(t *testing.T) {
+func setWakeOnMessage(t *testing.T, s *Store, session, value string) {
+	t.Helper()
+	if err := s.SetNodeSetting("proj", protocol.SettingWakeOnMessage, value, "owner"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// With autonomy off and wake_on_message unset (the default), a message to an
+// offline interactive Claude session wakes it.
+func TestMessageWakesInteractiveClaudeWithAutonomyOffByDefault(t *testing.T) {
+	p := newWakeProbe(t)
+	id := p.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyOff)
+	p.message(t, id)
+	p.expectWake(t, id)
+}
+
+// With wake_on_message off and autonomy off, an interactive Claude session stays asleep
+// and the receipt note says wake is off for this agent.
+func TestMessageDoesNotWakeInteractiveClaudeWhenWakeOnMessageOff(t *testing.T) {
+	p := newWakeProbe(t)
+	id := p.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyOff)
+	setWakeOnMessage(t, p.s, id, protocol.WakeOnMessageOff)
+	m := p.message(t, id)
+	p.expectNoWake(t)
+	if note := p.g.wakeReceiptNote(m, ""); !strings.Contains(note, "wake is off for this agent") {
+		t.Fatalf("receipt note = %q, want 'wake is off for this agent'", note)
+	}
+}
+
+// With wake_on_message off but autonomy wake, an interactive Claude session is woken
+// for backward compatibility.
+func TestMessageWakesInteractiveClaudeWithWakeOnMessageOffAndAutonomyWake(t *testing.T) {
 	p := newWakeProbe(t)
 	id := p.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyWake)
+	setWakeOnMessage(t, p.s, id, protocol.WakeOnMessageOff)
 	p.message(t, id)
 	w := p.expectWake(t, id)
 	if w["autonomy"] != protocol.AutonomyWake || w["token"] == "" {
 		t.Fatalf("wake frame = %v", w)
 	}
-	p.expectNoWake(t)
+}
 
-	off := newWakeProbe(t)
-	id = off.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyOff)
-	off.message(t, id)
-	off.expectNoWake(t)
+// With autonomy wake, a message to an offline interactive Claude session asks
+// its machine to resume it.
+func TestMessageWakesInteractiveClaudeWithAutonomyWake(t *testing.T) {
+	p := newWakeProbe(t)
+	id := p.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyWake)
+	p.message(t, id)
+	w := p.expectWake(t, id)
+	if w["token"] == "" {
+		t.Fatalf("wake frame = %v", w)
+	}
+	p.expectNoWake(t)
 }
 
 // The Claude background wake does not depend on autonomy.
@@ -148,24 +218,28 @@ func TestMessageWakesBackgroundClaudeWithAutonomyOff(t *testing.T) {
 	id := p.offline(t, "claude", protocol.ModeBackground, protocol.AutonomyOff)
 	p.message(t, id)
 	w := p.expectWake(t, id)
-	if w["autonomy"] != "" {
-		t.Fatalf("autonomy off must not ask for more: %v", w)
+	if w["token"] == "" {
+		t.Fatalf("wake frame = %v", w)
 	}
 }
 
-func TestMessageWakesCodexAndOpenCodeOnlyWithAutonomy(t *testing.T) {
+func TestMessageWakesCodexAndOpenCodeByDefault(t *testing.T) {
 	for _, harness := range []string{"codex", "opencode"} {
 		t.Run(harness, func(t *testing.T) {
 			p := newWakeProbe(t)
-			id := p.offline(t, harness, "", protocol.AutonomyWake)
+			id := p.offline(t, harness, "", protocol.AutonomyOff)
 			p.message(t, id)
 			p.expectWake(t, id)
 			p.expectNoWake(t)
 
 			off := newWakeProbe(t)
 			id = off.offline(t, harness, "", protocol.AutonomyOff)
-			off.message(t, id)
+			setWakeOnMessage(t, off.s, id, protocol.WakeOnMessageOff)
+			m := off.message(t, id)
 			off.expectNoWake(t)
+			if note := off.g.wakeReceiptNote(m, ""); !strings.Contains(note, "wake is off for this agent") {
+				t.Fatalf("receipt note = %q, want 'wake is off for this agent'", note)
+			}
 		})
 	}
 }
@@ -213,4 +287,23 @@ func TestMessageToOfflinePiIsNotWoken(t *testing.T) {
 	if note := cx.g.wakeReceiptNote(cx.message(t, id), ""); note != "" {
 		t.Fatalf("codex note = %q", note)
 	}
+}
+
+// A current step message to an offline interactive Claude session does not wake it
+// when wake_on_message is off and autonomy is off.
+func TestStepMessageDoesNotWakeInteractiveClaudeWhenWakeOnMessageOff(t *testing.T) {
+	p := newWakeProbe(t)
+	id := p.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyOff)
+	setWakeOnMessage(t, p.s, id, protocol.WakeOnMessageOff)
+	p.stepMessage(t, id)
+	p.expectNoWake(t)
+}
+
+// A current step message wakes an offline interactive Claude session by default
+// (wake_on_message unset/default-on).
+func TestStepMessageWakesInteractiveClaudeByDefault(t *testing.T) {
+	p := newWakeProbe(t)
+	id := p.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyOff)
+	p.stepMessage(t, id)
+	p.expectWake(t, id)
 }

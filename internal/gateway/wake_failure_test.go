@@ -52,9 +52,8 @@ func (p *wakeProbe) notices(t *testing.T, to string) []string {
 	return out
 }
 
-// With autonomy off, a message to an offline session asks no machine to wake
-// it, and the sender's receipt says that wake is off. A Claude background
-// session is still woken without autonomy, so it gets no such line.
+// With wake_on_message off and autonomy off, a message to an offline session asks
+// no machine to wake it, and the sender's receipt says that wake is off.
 func TestMessageReceiptSaysWakeIsOff(t *testing.T) {
 	for _, tc := range []struct{ name, harness, mode string }{
 		{"interactive claude", "claude", protocol.ModeForeground},
@@ -65,6 +64,7 @@ func TestMessageReceiptSaysWakeIsOff(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newWakeProbe(t)
 			id := p.offline(t, tc.harness, tc.mode, protocol.AutonomyOff)
+			setWakeOnMessage(t, p.s, id, protocol.WakeOnMessageOff)
 			m := p.message(t, id)
 			p.expectNoWake(t)
 			want := "queued; proj is offline and wake is off for this agent"
