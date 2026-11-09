@@ -2662,6 +2662,20 @@ required for every sort, up to 300 characters. `result` is one of:
   (such as `12m` or `3h05m`). `ask` and `reason` are not needed. It changes no
   ask.
 
+**`agent_ask_sort {ask, detail: "full"}`** reads one ask in full for the chief. It
+sorts nothing, and it takes only `ask`. The answer has `result` `read`, `next`,
+`state` and `full` with the whole question and detail, the recommendation and
+each option, the asking session (`from_session`, `from_name`, `from_kind`), the
+kind, the stored `status` and the Desk `state`, the route (`next`, `next_name`,
+`priority`, `why_you`), the ask's `routing` sort history, and the owner's
+`answer` and `answered_at` when there is one. A draft-charter ask adds `charter`,
+one row for each field with its level, scope, attribute and exact proposed
+value. A learned ask adds `learned`, the proposal with its node, field, phrase,
+kind, severity, evidence, and the old and new value. Secret values are masked,
+but a token's scope and destination stay readable; the token itself never
+leaves the gateway. This is the read the chief uses when a batch summary does
+not say enough.
+
 Every sort writes one `ask_sorts` row with the ask as it was (`prev_next`,
 `prev_status`, `prev_answer`, `prev_answered_at`) and one Desk log line with
 source `chief`. Nothing is deleted.
@@ -2678,7 +2692,8 @@ The Desk shows what the chief did and lets the owner correct it. Each method is 
 
 - **`chief_sorts`** (gateway `chief.sorts`, read) returns the chief's sorts of the last 24 hours, newest first. Each row has the sort fields, the ask's `question` and `undone`. The Desk's Handled for you list reads it.
 - **`ask_undo` `{ask}`** (gateway `ask.undo`, owner or CTO) puts an ask back the way it was before the newest sort. It restores `next`, `status`, `answer` and `answered_at` from the sort's `prev_*` fields. A `next` of the chief becomes the owner, because the chief got its one batch and is not sent the ask again. `priority` and `why_you` are cleared. It writes an `ask_sorts` row with result `undo` and a log line from the owner (or the CTO). It is refused when the ask changed since the sort (for example, a session answered it), and when the sort is undone already. A merge also removes its `merged: <ask>` line from the ask it merged into.
-- **`ask_mark` `{ask, mark, why}`** (gateway `ask.mark`, owner or CTO) stores a mark. `mark` is `didnt_need_me` (the owner did not need to see the ask) or `should_have_asked` (the chief should have sent it to the owner). `why` is optional, one line, up to 300 characters. The mark is stored in the owner judgment store (the standing orders memory) as a judgment with `kind` `correction`, `area` `chief` and `ref` set to the ask id. Its text says what the owner marked, gives the ask's first line and the `why`. A log line is written. Find the marks with `agent_owner_judgments_find` (kind `correction`, area `chief`). The chief's next batch message lists the newest five of them under "Owner corrections". The old table `chief_corrections` is no longer written or read; a migration copied its rows into the judgment store, and the table is kept.
+- **`ask_mark` `{ask, mark, why}`** (gateway `ask.mark`, owner or CTO) stores a mark. `mark` is `didnt_need_me` (the owner did not need to see the ask) or `should_have_asked` (the chief should have sent it to the owner). `why` is optional, one line, up to 300 characters. The mark is stored in the owner judgment store (the standing orders memory) as a judgment with `kind` `correction`, `area` `chief` and `ref` set to the ask id. Its text says what the owner marked, gives the ask's first line and the `why`. A log line is written. The chief's next batch message lists the newest five of them under "Owner corrections". The old table `chief_corrections` is no longer written or read; a migration copied its rows into the judgment store, and the table is kept.
+- **Finding the marks.** `agent_owner_judgments_find {marks: true, limit, offset}` returns the owner's marks, newest first, with a page at a time. Each row keeps the judgment fields and adds `ask` (and `ref`), the ask's whole `question`, the chief's latest `disposition` (closed, merged, sent to a session, or sent to the owner with priority and why), `mark` (`didnt_need_me` or `should_have_asked`), `mark_text` in the owner's words, and `saved_at`, the mark's time. A `query` searches the mark text, which carries the ask's first line. The same call without `marks` searches every judgment as before.
 
 The CTO lists have `chief_sorts` (read), and `ask_undo` and `ask_mark` (changes, in the `settings_change` area `operator`).
 
@@ -3742,8 +3757,9 @@ CTO resolutions and chief actions do not record answer rows. The operator method
 judgment_add records corrections or rules with kind, text, area and ref.
 
 All agents can search the owner's past decisions with agent_owner_judgments_find
-(query, area, kind, limit). Judgments are queried on demand rather than injected
-into every prompt.
+(query, area, kind, limit, offset). `marks: true` returns only the owner's Desk
+marks, with the ask, its whole question, the chief's disposition and the time.
+Judgments are queried on demand rather than injected into every prompt.
 
 At the start of each CTO conversation, orders enter the system prompt or
 precede the first owner message, depending on the harness. Only orders and rules

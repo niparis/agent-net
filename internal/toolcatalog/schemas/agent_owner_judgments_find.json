@@ -12,8 +12,17 @@
       },
       "kind": {
         "type": "string",
-        "enum": ["order", "rule", "answer", "correction"],
+        "enum": [
+          "order",
+          "rule",
+          "answer",
+          "correction"
+        ],
         "description": "Optional judgment kind: order, rule, answer, correction."
+      },
+      "marks": {
+        "type": "boolean",
+        "description": "Only the owner's Desk marks (didn't need me, should have asked me), each with its ask, the whole question and the chief's disposition."
       },
       "limit": {
         "type": "integer",
@@ -21,6 +30,12 @@
         "maximum": 100,
         "default": 20,
         "description": "Maximum rows in this page, up to 100."
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 0,
+        "description": "Rows to skip, for the next page."
       }
     },
     "required": [],
@@ -83,6 +98,21 @@
             "items": {
               "type": "string"
             }
+          },
+          "ask": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "mark": {
+            "type": "string"
+          },
+          "mark_text": {
+            "type": "string"
           }
         },
         "required": [
@@ -95,5 +125,37 @@
         "additionalProperties": false
       }
     }
+  },
+  "cto_input": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Text or keywords to search across owner judgments."
+      },
+      "area": {
+        "type": "string",
+        "description": "Optional project, repo or team name to filter by."
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "order",
+          "rule",
+          "answer",
+          "correction"
+        ],
+        "description": "Optional judgment kind: order, rule, answer, correction."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 20,
+        "description": "Maximum rows in this page, up to 100."
+      }
+    },
+    "required": [],
+    "additionalProperties": false
   }
 }

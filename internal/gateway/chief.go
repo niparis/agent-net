@@ -3,12 +3,14 @@ package gateway
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/redact"
 	"github.com/niparis/agent-net/internal/settings"
 )
 
@@ -437,6 +439,9 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 	if err := q.Validate(); err != nil {
 		return out, none, reject("%v", err)
 	}
+	if q.Detail == "full" {
+		return s.readAskFull(node, q.SessionID, q.Ask)
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return out, none, err
@@ -767,6 +772,258 @@ func markWords(mark string) string {
 		return "didn't need me"
 	}
 	return "should have asked me"
+}
+
+// readAskFull reads one ask for the live chief. It changes nothing. Only the
+// chief on this machine may read, as with a sort, because an ask can hold what
+// a session told the owner.
+func (s *Store) readAskFull(node, session, ask string) (protocol.AskSortResult, protocol.Message, error) {
+	var out protocol.AskSortResult
+	var none protocol.Message
+	chief, err := liveChief(s.db)
+	if err != nil {
+		return out, none, err
+	}
+	if chief == "" || chief != session {
+		return out, none, reject("only the chief of staff may read asks")
+	}
+	var chiefNode string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil || chiefNode != node {
+		return out, none, reject("the chief of staff is not on this machine")
+	}
+	full, err := s.askFull(ask)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, none, reject("unknown ask %q", ask)
+	}
+	if err != nil {
+		return out, none, err
+	}
+	out = protocol.AskSortResult{Ask: ask, Result: "read", Next: full.Next, State: full.State, Full: &full}
+	return out, none, nil
+}
+
+// askFull reads the one ask and its payloads.
+func (s *Store) askFull(id string) (protocol.AskFull, error) {
+	var f protocol.AskFull
+	var created, answered int64
+	var options string
+	err := s.db.QueryRow(`SELECT id,kind,session_id,node,text,recommendation,created_at,status,answer,answered_at,options,from_kind,source_ref,about_kind,about_id,next_who,why_you,detail,priority,change_title
+		FROM inbox_items WHERE id=?`, id).
+		Scan(&f.ID, &f.Kind, &f.FromSession, &f.Node, &f.Question, &f.Recommendation, &created, &f.Status, &f.Answer, &answered, &options,
+			&f.FromKind, &f.SourceRef, &f.AboutKind, &f.AboutID, &f.Next, &f.WhyYou, &f.Detail, &f.Priority, &f.AboutTitle)
+	if err != nil {
+		return f, err
+	}
+	if err := json.Unmarshal([]byte(options), &f.Options); err != nil {
+		return f, err
+	}
+	f.CreatedAt = time.Unix(0, created).UTC()
+	if answered != 0 {
+		f.AnsweredAt = time.Unix(0, answered).UTC()
+	}
+	f.State = askFullState(f.Status, f.Next)
+	f.FromName = sessionLabel(s.db, f.FromSession)
+	f.NextName = nextName(s.db, f.Next)
+	f.Question = redact.SecretValues(f.Question)
+	f.Detail = redact.SecretValues(f.Detail)
+	f.Recommendation = redact.SecretValues(f.Recommendation)
+	f.Answer = redact.SecretValues(f.Answer)
+	f.AboutTitle = redact.SecretValues(f.AboutTitle)
+	f.WhyYou = redact.SecretValues(f.WhyYou)
+	for i := range f.Options {
+		f.Options[i] = redact.SecretValues(f.Options[i])
+	}
+	sorts, err := s.AskSortHistory(id)
+	if err != nil {
+		return f, err
+	}
+	if len(sorts) > 0 {
+		for i := range sorts {
+			sorts[i].Reason = redact.SecretValues(sorts[i].Reason)
+			sorts[i].WhyYou = redact.SecretValues(sorts[i].WhyYou)
+		}
+		f.Routing = sorts
+	}
+	if f.Charter, err = s.askFullCharter(f.SourceRef); err != nil {
+		return f, err
+	}
+	if f.Learned, err = s.askFullLearned(f.SourceRef); err != nil {
+		return f, err
+	}
+	return f, nil
+}
+
+// askFullState maps an ask's stored status to the Desk state.
+func askFullState(status, next string) string {
+	switch status {
+	case "open":
+		if next != "" && next != protocol.AskNextOwner {
+			return protocol.AskWithSomeone
+		}
+		return protocol.AskStateOpen
+	case "answered", "approved", "refused":
+		return protocol.AskAnswered
+	default:
+		return protocol.AskClosed
+	}
+}
+
+// nextName names who acts on the ask now.
+func nextName(q interface{ QueryRow(string, ...any) *sql.Row }, next string) string {
+	switch next {
+	case "":
+		return ""
+	case protocol.AskNextOwner:
+		return "owner"
+	case protocol.AskNextChief:
+		return "chief of staff"
+	default:
+		return sessionLabel(q, next)
+	}
+}
+
+// askFullCharter returns the proposed fields of a draft-charter ask. It reads
+// the drafts themselves, so each value is exact and not cut by a detail line.
+func (s *Store) askFullCharter(ref string) ([]protocol.CharterDraftField, error) {
+	const columns = `SELECT id,level,scope,attr,value,source,status,drafted_by,created_at FROM charter_drafts`
+	var rows *sql.Rows
+	var err error
+	switch {
+	case strings.HasPrefix(ref, legacyDraftRefPrefix):
+		id, parseErr := sourceRefID(ref, legacyDraftRefPrefix)
+		if parseErr != nil {
+			return nil, nil
+		}
+		rows, err = s.db.Query(columns+` WHERE id=?`, id)
+	case strings.HasPrefix(ref, draftGroupRefPrefix):
+		key := strings.TrimPrefix(ref, draftGroupRefPrefix)
+		level, scope, ok := strings.Cut(key, ":")
+		if !ok || scope == "" {
+			return nil, nil
+		}
+		cond := `(level='repo' OR level='agent')`
+		if level == "team" {
+			cond = `level='team'`
+		}
+		out, err := s.charterRows(columns+` WHERE scope=? AND `+cond+` AND status='pending' ORDER BY id`, scope)
+		if err != nil || len(out) > 0 {
+			return out, err
+		}
+		return s.charterRows(columns+` WHERE scope=? AND `+cond+` ORDER BY id`, scope)
+	default:
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.CharterDraftField{}
+	for rows.Next() {
+		var d protocol.CharterDraftField
+		var created int64
+		if err := rows.Scan(&d.ID, &d.Level, &d.Scope, &d.Attr, &d.Value, &d.Source, &d.Status, &d.DraftedBy, &created); err != nil {
+			return nil, err
+		}
+		d.CreatedAt = time.Unix(0, created).UTC()
+		maskDraftField(&d)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// charterRows reads charter draft fields with a query of the same shape.
+func (s *Store) charterRows(query, scope string) ([]protocol.CharterDraftField, error) {
+	rows, err := s.db.Query(query, scope)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.CharterDraftField{}
+	for rows.Next() {
+		var d protocol.CharterDraftField
+		var created int64
+		if err := rows.Scan(&d.ID, &d.Level, &d.Scope, &d.Attr, &d.Value, &d.Source, &d.Status, &d.DraftedBy, &created); err != nil {
+			return nil, err
+		}
+		d.CreatedAt = time.Unix(0, created).UTC()
+		maskDraftField(&d)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// askFullLearned returns the learned proposal behind a learned ask.
+func (s *Store) askFullLearned(ref string) (*protocol.LearnedSuggestion, error) {
+	if !strings.HasPrefix(ref, "learned:") {
+		return nil, nil
+	}
+	id, err := sourceRefID(ref, "learned:")
+	if err != nil {
+		return nil, nil
+	}
+	var v protocol.LearnedSuggestion
+	var evidence string
+	err = s.db.QueryRow(`SELECT id,node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,decided_at,
+		COALESCE((SELECT origin FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),''),
+		COALESCE((SELECT history_id FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),0),
+		COALESCE((SELECT raw_phrase FROM learned_phrase_state p WHERE p.suggestion_id=learned_suggestions.id),'')
+		FROM learned_suggestions WHERE id=?`, id).
+		Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase, &evidence, &v.Status, &v.Severity, &v.CreatedAt, &v.ReadyAt, &v.DecidedAt, &v.Origin, &v.HistoryID, &v.RawPhrase)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(evidence), &v.Evidence); err != nil {
+		return nil, err
+	}
+	if v.Status == "pending" && v.Field != "edge" {
+		var old string
+		if err := s.db.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, v.Node, v.Field).Scan(&old); err == nil {
+			v.OldValue = old
+		}
+		v.NewValue = learnedValue(v.OldValue, v.Phrase, v.Kind)
+	} else if v.Status == "pending" {
+		v.NewValue = v.EdgeKind + " -> " + v.Phrase
+	}
+	maskLearned(&v)
+	return &v, nil
+}
+
+// maskDraftField masks every text field of a charter draft field. A draft can
+// quote a token in any of them, such as its source line, not only in its value.
+func maskDraftField(d *protocol.CharterDraftField) {
+	d.Level = redact.SecretValues(d.Level)
+	d.Scope = redact.SecretValues(d.Scope)
+	d.Attr = redact.SecretValues(d.Attr)
+	d.Value = redact.SecretValues(d.Value)
+	d.Source = redact.SecretValues(d.Source)
+	d.Status = redact.SecretValues(d.Status)
+	d.DraftedBy = redact.SecretValues(d.DraftedBy)
+}
+
+// maskLearned masks every text field of a learned proposal, its evidence
+// included, before the proposal leaves the gateway.
+func maskLearned(v *protocol.LearnedSuggestion) {
+	v.Node = redact.SecretValues(v.Node)
+	v.Field = redact.SecretValues(v.Field)
+	v.EdgeKind = redact.SecretValues(v.EdgeKind)
+	v.Kind = redact.SecretValues(v.Kind)
+	v.Phrase = redact.SecretValues(v.Phrase)
+	v.Status = redact.SecretValues(v.Status)
+	v.Severity = redact.SecretValues(v.Severity)
+	v.Origin = redact.SecretValues(v.Origin)
+	v.RawPhrase = redact.SecretValues(v.RawPhrase)
+	v.OldValue = redact.SecretValues(v.OldValue)
+	v.NewValue = redact.SecretValues(v.NewValue)
+	v.Level = redact.SecretValues(v.Level)
+	v.Scope = redact.SecretValues(v.Scope)
+	v.By = redact.SecretValues(v.By)
+	for i := range v.Evidence {
+		v.Evidence[i].ID = redact.SecretValues(v.Evidence[i].ID)
+		v.Evidence[i].Excerpt = redact.SecretValues(v.Evidence[i].Excerpt)
+	}
 }
 
 // recentCorrections is the text of the newest marks, one line each, for the
