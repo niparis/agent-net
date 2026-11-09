@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -27,6 +29,19 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 	if !protocol.ValidCommit(q.HeadCommit) || (q.Kind == "external" && !protocol.ValidCommit(q.MergedCommit)) {
 		return protocol.ChangeView{}, reject("invalid reconciliation commit")
 	}
+	// Read the pipeline before the transaction. A PR merge needs it to leave
+	// the after-merge steps (verify among them) for the caller.
+	pre, found, err := queryChange(s.db, `id = ?`, q.ChangeID)
+	if err != nil {
+		return protocol.ChangeView{}, err
+	}
+	var p protocol.Pipeline
+	if found {
+		p, err = s.deliveryPipeline(pre.Project)
+		if err != nil {
+			return protocol.ChangeView{}, err
+		}
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.ChangeView{}, err
@@ -41,6 +56,7 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 	}
 	now := s.now().Unix()
 	e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, Commit: c.HeadCommit, By: daemonEvidenceBy, At: now, Fields: map[string]string{"reconcile_kind": q.Kind}}
+	externalPR := false
 	if q.Kind == "external" {
 		if c.HeadCommit == c.BaseCommit {
 			return protocol.ChangeView{}, reject("change has no commits beyond its base")
@@ -52,9 +68,18 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 		if last, ok := lastMergeActivity(evidence, c); ok && s.now().Sub(time.Unix(last, 0)) < externalMergeGrace {
 			return protocol.ChangeView{}, reject("%s: the merger may still report this merge; reconcile waits %s after the last test or merge report", c.ID, externalMergeGrace)
 		}
+		externalPR = q.PRNumber > 0
 		c.State, c.MergedCommit = protocol.ChangeDone, q.MergedCommit
 		e.Step, e.Result, e.Note = protocol.StepMerge, protocol.StepResultPass, "merged outside agent-net"
 		e.Fields["merge_kind"], e.Fields[protocol.FieldMergedCommit] = "external", q.MergedCommit
+		if externalPR {
+			// A merged PR is the lead's review on GitHub. The change stays
+			// merged so verify still runs for the caller; accept, and test
+			// when every check passed, are recorded from that review.
+			c.State = protocol.ChangeMerged
+			e.Note = externalPRNote(q)
+			e.Fields["pr_url"] = q.PRURL
+		}
 	} else {
 		if s.now().Sub(time.Unix(c.CreatedAt, 0)) <= 7*24*time.Hour {
 			return protocol.ChangeView{}, reject("change is not older than seven days")
@@ -73,6 +98,22 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.ChangeView{}, err
 	}
+	if externalPR {
+		evidence, err := changeEvidence(tx, c.ID)
+		if err != nil {
+			return protocol.ChangeView{}, err
+		}
+		if err := insertExternalPRSteps(tx, c, q, evidence, now); err != nil {
+			return protocol.ChangeView{}, err
+		}
+		evidence, err = changeEvidence(tx, c.ID)
+		if err != nil {
+			return protocol.ChangeView{}, err
+		}
+		if afterMergeDone(p, c, evidence) {
+			c.State = protocol.ChangeDone
+		}
+	}
 	if err := writeChange(tx, c, false); err != nil {
 		return protocol.ChangeView{}, err
 	}
@@ -80,14 +121,22 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 	if err != nil {
 		return protocol.ChangeView{}, err
 	}
-	if err := s.closeChangeAsks(tx, c.ID, protocol.AskReasonChangeDone); err != nil {
-		return protocol.ChangeView{}, err
+	if c.State == protocol.ChangeDone || c.State == protocol.ChangeStopped {
+		if err := s.closeChangeAsks(tx, c.ID, protocol.AskReasonChangeDone); err != nil {
+			return protocol.ChangeView{}, err
+		}
 	}
 	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=?)`, s.now().UnixNano(), c.ID); err != nil {
 		return protocol.ChangeView{}, err
 	}
 	if err := retireStepMessages(tx, c.ID); err != nil {
 		return protocol.ChangeView{}, err
+	}
+	if externalPR && c.State == protocol.ChangeMerged {
+		// The caller still runs the after-merge steps, verify last.
+		if err := s.queueSteps(tx, c, p, now); err != nil {
+			return protocol.ChangeView{}, err
+		}
 	}
 	// Only an abandoned change is closed for the sessions that claimed its
 	// steps. An external merge is not a close: the merger's report confirms it.
@@ -110,6 +159,44 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 		}
 	}
 	return s.GetChange(c.ID)
+}
+
+// externalPRNote is the evidence the lead's GitHub review leaves on accept and
+// test. It names the PR so the record says where the review happened.
+func externalPRNote(q protocol.ChangeReconcileRequest) string {
+	return fmt.Sprintf("merged on GitHub by PR #%d (%s); the lead's review there", q.PRNumber, q.PRURL)
+}
+
+// insertExternalPRSteps records accept, and the before-merge test when every
+// check passed, from the merged pull request. It never records a test pass
+// without that evidence and never overwrites a pass already on this revision.
+func insertExternalPRSteps(tx *sql.Tx, c protocol.Change, q protocol.ChangeReconcileRequest, evidence []protocol.Evidence, now int64) error {
+	note := externalPRNote(q)
+	for _, ref := range []protocol.StepRef{{Step: protocol.StepAccept}, {Step: protocol.StepTest}} {
+		if ref.Step == protocol.StepTest && !q.PRChecksPassed {
+			continue
+		}
+		if stepPassedOn(evidence, c, ref) {
+			continue
+		}
+		e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, StepRef: ref, Result: protocol.StepResultPass,
+			Commit: c.HeadCommit, By: daemonEvidenceBy, At: now, Note: note}
+		if err := insertEvidence(tx, e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// stepPassedOn reports whether evidence already holds a pass for ref on the
+// change's head and current revision.
+func stepPassedOn(evidence []protocol.Evidence, c protocol.Change, ref protocol.StepRef) bool {
+	for _, e := range evidence {
+		if e.ChangeID == c.ID && e.Revision == c.Revision && e.StepRef == ref && e.Result == protocol.StepResultPass && e.Commit == c.HeadCommit {
+			return true
+		}
+	}
+	return false
 }
 
 // lastMergeActivity is the time of the newest test or merge report on the

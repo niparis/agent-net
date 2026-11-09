@@ -370,6 +370,8 @@ type Daemon struct {
 
 	cleanupLogMu        sync.Mutex
 	cleanupProjectLogs  map[string]time.Time
+	reconcileLogMu      sync.Mutex
+	reconcileLogs       map[string]bool // repo paths already logged as not GitHub
 	uvTimeoutMu         sync.Mutex
 	uvTimeoutLogged     time.Time
 	cleanupWorktreeLogs map[worktreeErrKey]time.Time

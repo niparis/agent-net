@@ -317,3 +317,89 @@ func TestDeliveryRepairExternalDone(t *testing.T) {
 		t.Fatalf("plain external merge has %d after-merge tasks, want none", plainTasks)
 	}
 }
+
+// externalPRReconcile is the daemon's observation that a GitHub PR merged c's
+// branch. The PR head is c's exact head; the merge commit is on main.
+func externalPRReconcile(c protocol.Change, checks bool) protocol.ChangeReconcileRequest {
+	return protocol.ChangeReconcileRequest{ChangeID: c.ID, Revision: c.Revision, HeadCommit: c.HeadCommit, Kind: "external",
+		MergedCommit: commitMerged, PRNumber: 101, PRURL: "https://github.com/example/demo/pull/101", PRChecksPassed: checks}
+}
+
+func stepStatus(t *testing.T, v protocol.ChangeView, ref protocol.StepRef) protocol.StepStatus {
+	t.Helper()
+	for _, st := range v.Steps {
+		if st.StepRef == ref {
+			return st
+		}
+	}
+	t.Fatalf("change has no step %s: %+v", ref, v.Steps)
+	return protocol.StepStatus{}
+}
+
+func TestDeliveryReconcileExternalPRRecordsAcceptAndTest(t *testing.T) {
+	r := newDeliveryRig(t)
+	c := r.submit(r.a, r.workerSubmit("feature/pr", commitA)).Change.Change
+	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, externalPRReconcile(c, true)); err != nil {
+		t.Fatal(err)
+	}
+	v := r.get(c.ID)
+	if v.Change.State != protocol.ChangeMerged || v.Change.MergedCommit != commitMerged {
+		t.Fatalf("external PR merge left the change %+v", v.Change)
+	}
+	note := "merged on GitHub by PR #101 (https://github.com/example/demo/pull/101); the lead's review there"
+	accept := stepStatus(t, v, protocol.StepRef{Step: protocol.StepAccept})
+	if accept.State != protocol.StepStatePassed || accept.Evidence == nil || accept.Evidence.Note != note {
+		t.Fatalf("accept after external PR merge: %+v", accept)
+	}
+	test := stepStatus(t, v, protocol.StepRef{Step: protocol.StepTest})
+	if test.State != protocol.StepStatePassed || test.Evidence == nil || test.Evidence.Note != note {
+		t.Fatalf("test after external PR merge with passing checks: %+v", test)
+	}
+	merge := stepStatus(t, v, protocol.StepRef{Step: protocol.StepMerge})
+	if merge.State != protocol.StepStatePassed || merge.Evidence == nil || merge.Evidence.Fields[protocol.FieldMergedCommit] != commitMerged {
+		t.Fatalf("merge after external PR merge: %+v", merge)
+	}
+	// Verify runs after merge and stays for the caller.
+	verify := stepStatus(t, v, protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true})
+	if verify.State == protocol.StepStatePassed {
+		t.Fatalf("external PR merge passed verify: %+v", verify)
+	}
+	foundVerify := false
+	for _, ref := range v.Next {
+		if ref == (protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true}) {
+			foundVerify = true
+		}
+	}
+	if foundVerify {
+		t.Fatal("verify is next before its after-merge requirements passed")
+	}
+}
+
+func TestDeliveryReconcileExternalPRWithoutChecksLeavesTestOpen(t *testing.T) {
+	r := newDeliveryRig(t)
+	c := r.submit(r.a, r.workerSubmit("feature/nochecks", commitA)).Change.Change
+	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, externalPRReconcile(c, false)); err != nil {
+		t.Fatal(err)
+	}
+	v := r.get(c.ID)
+	if v.Change.State != protocol.ChangeMerged {
+		t.Fatalf("state %s, want merged", v.Change.State)
+	}
+	if accept := stepStatus(t, v, protocol.StepRef{Step: protocol.StepAccept}); accept.State != protocol.StepStatePassed {
+		t.Fatalf("accept after external PR merge: %+v", accept)
+	}
+	test := stepStatus(t, v, protocol.StepRef{Step: protocol.StepTest})
+	if test.State == protocol.StepStatePassed || test.Evidence != nil {
+		t.Fatalf("test passed without checks: %+v", test)
+	}
+	// No test evidence was invented for the change.
+	evidence, err := changeEvidence(r.s.db, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evidence {
+		if e.StepRef == (protocol.StepRef{Step: protocol.StepTest}) {
+			t.Fatalf("test evidence without passing checks: %+v", e)
+		}
+	}
+}
