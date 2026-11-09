@@ -816,7 +816,7 @@ func (s *Store) askFullCharter(ref string) ([]protocol.CharterDraftField, error)
 			return nil, err
 		}
 		d.CreatedAt = time.Unix(0, created).UTC()
-		d.Value = redact.SecretValues(d.Value)
+		maskDraftField(&d)
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -837,7 +837,7 @@ func (s *Store) charterRows(query, scope string) ([]protocol.CharterDraftField, 
 			return nil, err
 		}
 		d.CreatedAt = time.Unix(0, created).UTC()
-		d.Value = redact.SecretValues(d.Value)
+		maskDraftField(&d)
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -878,15 +878,43 @@ func (s *Store) askFullLearned(ref string) (*protocol.LearnedSuggestion, error) 
 	} else if v.Status == "pending" {
 		v.NewValue = v.EdgeKind + " -> " + v.Phrase
 	}
+	maskLearned(&v)
+	return &v, nil
+}
+
+// maskDraftField masks every text field of a charter draft field. A draft can
+// quote a token in any of them, such as its source line, not only in its value.
+func maskDraftField(d *protocol.CharterDraftField) {
+	d.Level = redact.SecretValues(d.Level)
+	d.Scope = redact.SecretValues(d.Scope)
+	d.Attr = redact.SecretValues(d.Attr)
+	d.Value = redact.SecretValues(d.Value)
+	d.Source = redact.SecretValues(d.Source)
+	d.Status = redact.SecretValues(d.Status)
+	d.DraftedBy = redact.SecretValues(d.DraftedBy)
+}
+
+// maskLearned masks every text field of a learned proposal, its evidence
+// included, before the proposal leaves the gateway.
+func maskLearned(v *protocol.LearnedSuggestion) {
+	v.Node = redact.SecretValues(v.Node)
+	v.Field = redact.SecretValues(v.Field)
+	v.EdgeKind = redact.SecretValues(v.EdgeKind)
+	v.Kind = redact.SecretValues(v.Kind)
 	v.Phrase = redact.SecretValues(v.Phrase)
+	v.Status = redact.SecretValues(v.Status)
+	v.Severity = redact.SecretValues(v.Severity)
+	v.Origin = redact.SecretValues(v.Origin)
 	v.RawPhrase = redact.SecretValues(v.RawPhrase)
 	v.OldValue = redact.SecretValues(v.OldValue)
 	v.NewValue = redact.SecretValues(v.NewValue)
-	v.Origin = redact.SecretValues(v.Origin)
+	v.Level = redact.SecretValues(v.Level)
+	v.Scope = redact.SecretValues(v.Scope)
+	v.By = redact.SecretValues(v.By)
 	for i := range v.Evidence {
+		v.Evidence[i].ID = redact.SecretValues(v.Evidence[i].ID)
 		v.Evidence[i].Excerpt = redact.SecretValues(v.Evidence[i].Excerpt)
 	}
-	return &v, nil
 }
 
 // recentCorrections is the text of the newest marks, one line each, for the

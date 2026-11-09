@@ -146,4 +146,60 @@ func TestAskFullReadHidesSecretValues(t *testing.T) {
 	if !strings.Contains(out, "Scope: nodes") || !strings.Contains(out, "Destination: ops") {
 		t.Fatalf("the scope and destination were lost: %s", out)
 	}
+
+	// A draft charter field and a learned evidence string can quote a token.
+	// Both come back masked, and the ordinary text around the token stays.
+	now := s.now().UnixNano()
+	if _, err := s.db.Exec(`INSERT INTO charter_drafts(level,scope,attr,value,source,source_hash,drafted_by,created_at) VALUES('repo','demo','purpose',?,?,'h',?,?)`,
+		"Scope: nodes. Destination: ops. Deploy with "+gh, "AGENTS.md from "+gh, asker, now); err != nil {
+		t.Fatal(err)
+	}
+	draft, err := s.createInboxItem(s.db, protocol.InboxItem{
+		Kind: protocol.AskKindDraft, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: "demo",
+		AskerName: "charter draft", SourceRef: "drafts:node:demo", AboutKind: protocol.AskAboutProject, AboutID: "demo",
+		Text: "Charter draft for demo: 1 field", Recommendation: "accept the drafts", Options: []string{"accept", "reject"},
+		Detail: "Drafted from AGENTS.md",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full = readingAsk(t, s, chief, node, draft.ID)
+	raw, err = json.Marshal(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out = string(raw)
+	if strings.Contains(out, gh) {
+		t.Fatalf("the full read of a draft returned a token: %s", out)
+	}
+	if len(full.Charter) != 1 || !strings.Contains(full.Charter[0].Value, "Scope: nodes") {
+		t.Fatalf("the draft value lost its ordinary text: %+v", full.Charter)
+	}
+
+	res, err := s.db.Exec(`INSERT INTO learned_suggestions(node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at) VALUES('demo','accepts','','add','billing',?,'pending','major',?,?)`,
+		`[{"id":"m2","excerpt":"Scope: nodes. Destination: ops. Key: `+gh+`"}]`, now, now-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	learnedID, _ := res.LastInsertId()
+	learned, err := s.createInboxItem(s.db, protocol.InboxItem{
+		Kind: protocol.AskKindLearned, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: "demo",
+		AskerName: "learned", SourceRef: "learned:" + strconv.FormatInt(learnedID, 10), AboutKind: protocol.AskAboutProject, AboutID: "demo",
+		Text: "Add billing to accepts", Recommendation: "accept", Options: []string{"accept", "reject"}, Detail: "said in a message",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full = readingAsk(t, s, chief, node, learned.ID)
+	raw, err = json.Marshal(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out = string(raw)
+	if strings.Contains(out, gh) {
+		t.Fatalf("the full read of a learned proposal returned a token: %s", out)
+	}
+	if full.Learned == nil || len(full.Learned.Evidence) != 1 || !strings.Contains(full.Learned.Evidence[0].Excerpt, "Destination: ops") {
+		t.Fatalf("the evidence lost its ordinary text: %+v", full.Learned)
+	}
 }
