@@ -1,0 +1,40 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online · 1 busy                                                         updated 14:05:00
+[ Quotas ]    Workers log      Quality
+╭─Subscriptions────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ protected: anthropic, openai                                                                                                                                 │
+│ No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota).                                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─Workers · 🔒 protected · 6 registered · 0 running · scores: Artificial Analysis──────────────────────────────────────────────────────────────────────────────╮
+│ MODEL                      HARNESS  SCORE        T   S   N   H   V   PROT  USED                                                                              │
+│ gpt-6.1-terra:max          codex    55/max       ·   ·   ·   ·   ▸         unused                                                                            │
+│ claude-sonnet-5-5:xhigh    claude   52.1/xhigh   ·   ·   ·   ▸   ·   prot  unused                                                                            │
+│ gpt-6.1-sol:medium         codex    40/medium    ·   ·   ·   ·   ·         unused                                                                            │
+│ claude-haiku-5-5:xhigh     claude   34.3/xhigh   ·   ·   ▸   ·   ·   prot  unused                                                                            │
+│ claude-haiku-5-5:high      claude   29.6/high    ▸   ▸   ·   ·   ·   prot  unused                                                                            │
+│ deepseek-v4-pro            opencode 23.1         ·   ·   ·   ·   ·         unused                                                                            │
+│   (not a worker provider)                                                                                                                                    │
+│ T claude-haiku-5-5:high · S claude-haiku-5-5:high · N claude-haiku-5-5:xhigh · H claude-sonnet-5-5:xhigh · V gpt-6.1-terra:max                               │
+│ T:trivial S:simple N:normal H:hard V:very complex · ▸ = chosen                                                                                               │
+│ the gateway's picker preview at the middle of each level, not simulated                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│ c: open the CTO                                                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  p protect  s show unset  c CTO  ? help  q quit

@@ -275,15 +275,15 @@ func (m Model) quotaWarning() (string, bool) {
 }
 
 type quotaModel struct {
-	name, harness, model, defaultEffort, effort   string
-	notOn                                         []string
-	score                                         protocol.ModelScore
-	used, done, failedRuns, infraRuns             int
-	last                                          int64
-	failed, allowed, scored, succeeded, available bool
-	stale, protected                              bool
-	provider                                      string
-	track                                         protocol.TrackRecord
+	name, harness, model, key, defaultEffort, effort string
+	notOn                                            []string
+	score                                            protocol.ModelScore
+	used, done, failedRuns, infraRuns                int
+	last                                             int64
+	failed, allowed, scored, succeeded, available    bool
+	stale, protected                                 bool
+	provider                                         string
+	track                                            protocol.TrackRecord
 }
 
 // quotaModels lists only registered profiles, including unavailable profiles.
@@ -295,7 +295,7 @@ func (m Model) quotaModels() []quotaModel {
 		if p.Effort != "" {
 			model += ":" + p.Effort
 		}
-		row := quotaModel{name: p.Name, harness: p.Harness, model: model, effort: p.Effort, failed: true, stale: p.Available != nil && !*p.Available}
+		row := quotaModel{name: p.Name, harness: p.Harness, model: model, key: pickerModelLabelForKey(protocol.PickerModelKey(p.Harness, p.Selection().LegacyModel())), effort: p.Effort, failed: true, stale: p.Available != nil && !*p.Available}
 		trackedModels := map[string]bool{model: true}
 		missingMachines := map[string]bool{}
 		for _, machine := range p.MachineAvailability {
@@ -458,14 +458,14 @@ func pickerPreviewCell(preview map[string]string, level string, r quotaModel) st
 	return sDim.Render(cell("·", 3))
 }
 
-// pickProfileName is the name of the profile a preview pick stands for, as the
-// table shows it. The gateway names a pick by model family and effort, or by
-// the raw model id when it has no family for it. When no row matches, the
-// gateway's own text is all there is.
+// pickProfileName is the model key a preview pick stands for, as the table
+// shows it. The gateway names a pick by model family and effort, or by the raw
+// model id when it has no family for it. When no row matches, the gateway's own
+// text is all there is.
 func pickProfileName(rows []quotaModel, pick string) string {
 	for _, r := range rows {
 		if pickerPreviewName(r.model) == pick {
-			return r.name
+			return r.key
 		}
 	}
 	return pick
@@ -522,9 +522,10 @@ func (m Model) quotaModelsView(w int) []string {
 			runningCount++
 		}
 	}
-	harnessWidth, modelWidth, scoreWidth := 8, 25, 12
+	harnessWidth := pickerHarnessWidth
+	modelWidth, scoreWidth := 26, 12
 	if w < 110 {
-		modelWidth, scoreWidth = 17, 0
+		modelWidth, scoreWidth = 24, 0
 	}
 	previewWidth := len(workerPreviewHeader())
 	// A protected provider is marked with plain text in its own column. An emoji
@@ -536,16 +537,10 @@ func (m Model) quotaModelsView(w int) []string {
 			lockWidth = 4
 		}
 	}
-	// The NAME column fits the longest profile name, within what is left once
-	// the other columns and a USED column (on wide screens) have their room.
-	longest := 15
-	if w >= 110 {
-		longest = 18
-	}
-	for _, r := range rows {
-		longest = max(longest, ansi.StringWidth(sanitize(r.name)))
-	}
-	fixed := 1 + harnessWidth + 1 + modelWidth + 1 + previewWidth + 1
+	// The MODEL column takes what is left once the other columns and a USED
+	// column (on wide screens) have their room. A long key is cut in the
+	// middle, never at its effort end.
+	fixed := 1 + harnessWidth + 1 + 1 + previewWidth + 1
 	if lockWidth > 0 {
 		fixed += 1 + lockWidth
 	}
@@ -556,10 +551,10 @@ func (m Model) quotaModelsView(w int) []string {
 	if w >= 110 {
 		usedMin = 2 + 10
 	}
-	nameWidth := min(longest, 32, max(w-4-fixed-usedMin, 10))
-	usedWidth := max(w-4-(nameWidth+fixed+2), 0)
+	modelWidth = min(modelWidth, max(w-4-fixed-usedMin, 12))
+	usedWidth := max(w-4-(modelWidth+fixed+2), 0)
 	showUsed := w >= 110 && usedWidth >= 10
-	header := cell("NAME", nameWidth) + " " + cell("HARNESS", harnessWidth) + " " + cell("MODEL", modelWidth)
+	header := cell("MODEL", modelWidth) + " " + cell("HARNESS", harnessWidth)
 	if scoreWidth > 0 {
 		header += " " + cell("SCORE", scoreWidth)
 	}
@@ -588,12 +583,12 @@ func (m Model) quotaModelsView(w int) []string {
 		if effort := workerScoreEffort(r); effort != "" && !r.stale {
 			score += "/" + effort
 		}
-		model := shortWorkerModel(r.model, modelWidth)
+		model := pickerModelLabel(sanitize(r.key), modelWidth)
 		lock := ""
 		if r.protected {
 			lock = "prot"
 		}
-		line := fmt.Sprintf("%s %s %s", cell(sanitize(r.name), nameWidth), cell(r.harness, harnessWidth), cell(sanitize(model), modelWidth))
+		line := cell(model, modelWidth) + " " + cell(r.harness, harnessWidth)
 		if scoreWidth > 0 {
 			line += " " + cell(score, scoreWidth)
 		}

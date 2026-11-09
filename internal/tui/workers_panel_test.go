@@ -66,7 +66,7 @@ func TestWorkersPanelMarksSitUnderTheirLetters(t *testing.T) {
 		var header string
 		for _, line := range view {
 			plain := ansi.Strip(line)
-			if strings.Contains(plain, "NAME") && strings.Contains(plain, "HARNESS") {
+			if strings.Contains(plain, "MODEL") && strings.Contains(plain, "HARNESS") {
 				header = plain
 			}
 		}
@@ -117,7 +117,7 @@ func TestWorkersPanelProtectedMarkIsPlainTextRightOfTheMarks(t *testing.T) {
 		var vCol int
 		for _, line := range m.quotaModelsView(width) {
 			plain := ansi.Strip(line)
-			if strings.Contains(plain, "NAME") {
+			if strings.Contains(plain, "MODEL") {
 				vCol = columnOf(plain, " V ") + 1
 			}
 			if strings.Contains(plain, "protected") {
@@ -139,14 +139,18 @@ func TestWorkersPanelProtectedMarkIsPlainTextRightOfTheMarks(t *testing.T) {
 	}
 }
 
-// The NAME column fits the longest profile name, so no real name is cut.
-func TestWorkersPanelNameColumnFitsTheLongestName(t *testing.T) {
+// The MODEL column fits every model key, so no key is cut at these widths.
+func TestWorkersPanelModelColumnFitsTheModelKeys(t *testing.T) {
 	for _, width := range []int{80, 100, 120, 160} {
 		m := workersOwnerModel(width)
 		view := ansi.Strip(strings.Join(m.quotaModelsView(width), "\n"))
 		for _, p := range m.snap.WorkerProfiles {
-			if !strings.Contains(view, p.Name+" ") {
-				t.Errorf("width %d: the profile name %q is cut or missing:\n%s", width, p.Name, view)
+			key := pickerModelLabelForKey(protocol.PickerModelKey(p.Harness, p.Selection().LegacyModel()))
+			if !strings.Contains(view, key+" ") {
+				t.Errorf("width %d: the model key %q is cut or missing:\n%s", width, key, view)
+			}
+			if strings.Contains(view, p.Name) {
+				t.Errorf("width %d: the profile name %q is in the table:\n%s", width, p.Name, view)
 			}
 		}
 		for _, line := range strings.Split(view, "\n") {
@@ -157,20 +161,11 @@ func TestWorkersPanelNameColumnFitsTheLongestName(t *testing.T) {
 	}
 }
 
-// The pick line names the profiles the table shows, never raw model ids.
-func TestWorkersPanelPickLineUsesProfileNames(t *testing.T) {
-	m := workersOwnerModel(120)
-	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	want := "T haiku high claude · S haiku high claude · N haiku xhigh claude · H sonnet xhigh claude · V terra max codex"
-	if !strings.Contains(view, want) {
-		t.Fatalf("pick line is not %q:\n%s", want, view)
-	}
-	if strings.Contains(view, "T claude-haiku-5-5") {
-		t.Fatalf("the pick line still has raw model ids:\n%s", view)
-	}
-	// A pick that no row stands for keeps the gateway's text.
+// A pick that no row stands for keeps the gateway's text.
+func TestWorkersPanelPickLineKeepsUnmatchedText(t *testing.T) {
+	m := workersOwnerModel(160)
 	m.snap.Nodes[0].QualityPickModels["trivial"] = "gone high"
-	if view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n")); !strings.Contains(view, "T gone high") {
+	if view := ansi.Strip(strings.Join(m.quotaModelsView(160), "\n")); !strings.Contains(view, "T gone high") {
 		t.Fatalf("an unmatched pick lost its text:\n%s", view)
 	}
 }
@@ -182,11 +177,11 @@ func TestWorkersPanelScoreEffortIsTheProfilesOwn(t *testing.T) {
 	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
 	for _, line := range strings.Split(view, "\n") {
 		switch {
-		case strings.HasPrefix(strings.TrimLeft(line, "│ "), "deepseek opencode"):
+		case strings.HasPrefix(strings.TrimLeft(line, "│ "), "deepseek-v4-pro") && strings.Contains(line, "opencode"):
 			if strings.Contains(line, "/max") {
 				t.Errorf("the deepseek score shows a made-up effort: %q", line)
 			}
-		case strings.HasPrefix(strings.TrimLeft(line, "│ "), "terra max codex"):
+		case strings.HasPrefix(strings.TrimLeft(line, "│ "), "gpt-6.1-terra:max") && strings.Contains(line, "codex"):
 			if !strings.Contains(line, "55/max") {
 				t.Errorf("the terra score lost its effort: %q", line)
 			}
@@ -201,9 +196,60 @@ func TestWorkersPanelScoreEffortIsTheProfilesOwn(t *testing.T) {
 }
 
 func TestWorkersPanelOwnerGoldens(t *testing.T) {
-	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+	for _, size := range [][2]int{{160, 40}, {120, 34}, {80, 24}} {
 		m := workersOwnerModel(size[0])
 		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		golden(t, fmt.Sprintf("workers_panel_owner_%dx%d", size[0], size[1]), m.testView())
+	}
+}
+
+// Every row is named by its model key, with the harness in its own column.
+// The free-text profile name stays out of the table.
+func TestWorkersPanelRowsShowModelKeyAndHarness(t *testing.T) {
+	m := workersOwnerModel(120)
+	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	for _, p := range m.snap.WorkerProfiles {
+		if strings.Contains(view, p.Name) {
+			t.Errorf("the profile name %q is in the table:\n%s", p.Name, view)
+		}
+	}
+	for _, want := range []string{"claude-sonnet-5-5:xhigh", "gpt-6.1-terra:max", "gpt-6.1-sol:medium", "claude-haiku-5-5:xhigh", "deepseek-v4-pro"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("missing model key %q:\n%s", want, view)
+		}
+	}
+	for _, harness := range []string{"claude", "codex", "opencode"} {
+		if !strings.Contains(view, harness) {
+			t.Errorf("missing harness %q:\n%s", harness, view)
+		}
+	}
+}
+
+// The pick line names the same keys as the rows, never the profile name.
+func TestWorkersPanelPickLineUsesModelKeys(t *testing.T) {
+	m := workersOwnerModel(160)
+	view := ansi.Strip(strings.Join(m.quotaModelsView(160), "\n"))
+	want := "T claude-haiku-5-5:high · S claude-haiku-5-5:high · N claude-haiku-5-5:xhigh · H claude-sonnet-5-5:xhigh · V gpt-6.1-terra:max"
+	if !strings.Contains(view, want) {
+		t.Fatalf("pick line is not %q:\n%s", want, view)
+	}
+}
+
+// At 80 columns a long model key keeps its effort suffix.
+func TestWorkersPanelLongKeyKeepsItsEffortAt80(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 2
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"openai-codex/gpt-6.1-terra-coder-preview"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra coder", Harness: "codex", Model: "openai-codex/gpt-6.1-terra-coder-preview", Effort: "medium"}}
+	m.snap.WorkerProviders = []string{"codex"}
+	view := ansi.Strip(strings.Join(m.quotaModelsView(80), "\n"))
+	row := rowContaining(view, "…:medium", "codex")
+	if row == "" {
+		t.Fatalf("the long key lost its effort or was not cut:\n%s", view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if w := ansi.StringWidth(line); w > 80 {
+			t.Errorf("a row at 80 columns is %d wide: %q", w, line)
+		}
 	}
 }

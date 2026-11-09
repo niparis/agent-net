@@ -8,14 +8,14 @@
 │ 1 other subscription · s to show                                             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 6 registered · 0 running · scores: Artificial Analysis─────────────╮
-│ NAME            HARNESS  MODEL             T   S   N   H   V                 │
-│ renamed         pi       gpt-6.1-zed       ·   ·   ·   ·   ·                 │
+│ MODEL                    HARNESS  T   S   N   H   V                          │
+│ gpt-6.1-zed              pi       ·   ·   ·   ·   ·                          │
 │   model gone - ask the CTO to fix                                            │
-│ opus            claude   opus-5-5:high     ·   ·   ·   ·   ▸                 │
-│ router          opencode opus-5.5:high     ·   ·   ·   ·   ▸                 │
+│ claude-opus-5-5:high     claude   ·   ·   ·   ·   ▸                          │
+│ claude-opus-5.5:high     opencode ·   ·   ·   ·   ▸                          │
 │   (not a worker provider)                                                    │
-│ sol             codex    gpt-6.1-sol       ▸   ▸   ·   ·   ·                 │
-│ terra           codex    gpt-6.1-terra     ·   ·   ▸   ▸   ·                 │
+│ gpt-6.1-sol:medium       codex    ▸   ▸   ·   ·   ·                          │
+│ gpt-6.1-terra:high       codex    ·   ·   ▸   ▸   ·                          │
 │ more below · up/down to scroll                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

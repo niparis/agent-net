@@ -48,7 +48,7 @@ func TestWorkerPanelAgyClaudeProfileIsNotProtected(t *testing.T) {
 	m.snap.ProtectedProviders = protocol.ProtectedProviders{Providers: []string{"anthropic"}}
 	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
 	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, "sonnet agy") && strings.Contains(line, "🔒") {
+		if strings.Contains(line, "claude-sonnet-5-5-medium") && strings.Contains(line, "🔒") {
 			t.Fatalf("agy Claude profile is locked: %s", line)
 		}
 	}

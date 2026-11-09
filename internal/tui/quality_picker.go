@@ -25,16 +25,20 @@ import (
 // number and two for the gap.
 const pickerCellWidth = 6
 
-// pickerModelWidth is the label column. It leaves room for the selected-row
-// mark and a profile name.
-const pickerModelWidth = 20
+// pickerModelWidth is the label column: the selected-row mark and a model key.
+const pickerModelWidth = 28
+
+// pickerHarnessWidth is the harness column. It fits "opencode".
+const pickerHarnessWidth = 8
 
 // pickerScoreWidth is the benchmark score column.
 const pickerScoreWidth = 4
 
-// pickerLeftWidth is everything left of the first bucket column: the label,
-// a space, the benchmark score and a two column gap.
-func pickerLeftWidth(labelWidth int) int { return labelWidth + 1 + pickerScoreWidth + 2 }
+// pickerLeftWidth is everything left of the first bucket column: the model key,
+// a space, the harness, a space, the benchmark score and a two column gap.
+func pickerLeftWidth(labelWidth int) int {
+	return labelWidth + 1 + pickerHarnessWidth + 1 + pickerScoreWidth + 2
+}
 
 // qualityDetailsView is the whole subtab. It includes the title and the
 // subtabs line, and returns exactly h rows.
@@ -89,13 +93,13 @@ func (m Model) qualityPickerBody(w, height int) []string {
 	start, end := pickerColumnWindow(cols, selBucket, fit)
 
 	body := []string{
-		sDim.Render(clip(pickerGridHeader(labelWidth, "AA", m.picker.Buckets, cols[start:end], "PROFILE", func(b protocol.PickerBucketRow) string {
+		sDim.Render(clip(pickerGridHeader(labelWidth, "HARNESS", "AA", m.picker.Buckets, cols[start:end], "MODEL", func(b protocol.PickerBucketRow) string {
 			return fmt.Sprintf("%.2f", b.Lo)
 		}), inner)),
-		sDim.Render(clip(pickerGridHeader(labelWidth, "", m.picker.Buckets, cols[start:end], "bucket mean", func(b protocol.PickerBucketRow) string {
+		sDim.Render(clip(pickerGridHeader(labelWidth, "", "", m.picker.Buckets, cols[start:end], "bucket mean", func(b protocol.PickerBucketRow) string {
 			return fmt.Sprintf("%.2f", b.Mean)
 		}), inner)),
-		sDim.Render(clip(pickerGridHeader(labelWidth, "", m.picker.Buckets, cols[start:end], "tasks", func(b protocol.PickerBucketRow) string {
+		sDim.Render(clip(pickerGridHeader(labelWidth, "", "", m.picker.Buckets, cols[start:end], "tasks", func(b protocol.PickerBucketRow) string {
 			return fmt.Sprintf("n%d", b.N)
 		}), inner)),
 	}
@@ -142,11 +146,13 @@ func (m Model) qualityPickerBody(w, height int) []string {
 	return body
 }
 
-// pickerGridHeader is one header row: the label, the benchmark score column
-// and one value per visible bucket.
-func pickerGridHeader(labelWidth int, aa string, buckets []protocol.PickerBucketRow, cols []int, label string, value func(protocol.PickerBucketRow) string) string {
+// pickerGridHeader is one header row: the model key, the harness, the
+// benchmark score column and one value per visible bucket.
+func pickerGridHeader(labelWidth int, harness, aa string, buckets []protocol.PickerBucketRow, cols []int, label string, value func(protocol.PickerBucketRow) string) string {
 	var b strings.Builder
 	b.WriteString(cell(label, labelWidth))
+	b.WriteString(" ")
+	b.WriteString(cell(harness, pickerHarnessWidth))
 	b.WriteString(" ")
 	b.WriteString(cellR(aa, pickerScoreWidth))
 	b.WriteString("  ")
@@ -163,9 +169,12 @@ func pickerGridHeader(labelWidth int, aa string, buckets []protocol.PickerBucket
 // pickerRow is one line of the grid: a registered worker profile, or an older
 // model key that matches no profile.
 type pickerRow struct {
-	// name is the profile name, or the model key for an older row.
+	// name is the profile name, kept for the order and the picker rule, never
+	// drawn in the grid. key is the model key the worker log shows.
 	name string
 	key  string
+	// harness is the harness that runs the profile, in its own column.
+	harness string
 	// score is the Artificial Analysis score the profile is sorted by.
 	score  float64
 	scored bool
@@ -189,7 +198,8 @@ func pickerModelNorm(key string) string {
 // the Workers panel's: score first, strongest first, unscored last, then name.
 // Two history keys that are one profile (the same model with and without its
 // provider prefix) are merged: per bucket the cell with more tasks wins, as the
-// cells cannot be added up from their summaries.
+// cells cannot be added up from their summaries. The same model under two
+// harnesses is two rows, because the harness is part of what the owner reads.
 func (m Model) pickerRowSet() ([]pickerRow, int, int) {
 	profiles := append([]protocol.PickerProfileRow(nil), m.picker.Profiles...)
 	sort.SliceStable(profiles, func(i, j int) bool {
@@ -204,33 +214,39 @@ func (m Model) pickerRowSet() ([]pickerRow, int, int) {
 	})
 	bench := m.pickerBenchmarks()
 	var rows []pickerRow
-	byNorm := map[string]int{}
+	byNorm := map[string][]int{}
+	seenProfile := map[string]bool{}
 	for _, p := range profiles {
 		if p.Key == "" {
 			continue
 		}
+		harness := firstNonEmpty(m.pickerProfileHarness(p.Name), m.pickerHarnessByKey(p.Key))
 		norm := pickerModelNorm(p.Key)
-		if _, dup := byNorm[norm]; dup {
+		rowKey := harness + "\x00" + norm
+		if seenProfile[rowKey] {
 			continue
 		}
-		byNorm[norm] = len(rows)
+		seenProfile[rowKey] = true
+		byNorm[norm] = append(byNorm[norm], len(rows))
 		b := bench[p.Key]
-		rows = append(rows, pickerRow{name: p.Name, key: p.Key, score: b.score, scored: b.scored, ceiling: b.ceiling, ceilinged: b.scored})
+		rows = append(rows, pickerRow{name: p.Name, key: p.Key, harness: harness, score: b.score, scored: b.scored, ceiling: b.ceiling, ceilinged: b.scored})
 	}
 	nProfiles := len(rows)
 	older := map[string]*pickerRow{}
 	var olderOrder []string
 	for _, model := range m.picker.Models {
 		norm := pickerModelNorm(model.Key)
-		if i, ok := byNorm[norm]; ok {
-			rows[i].cells = mergePickerCells(rows[i].cells, model.Cells)
+		if idxs, ok := byNorm[norm]; ok {
+			for _, i := range idxs {
+				rows[i].cells = mergePickerCells(rows[i].cells, model.Cells)
+			}
 			continue
 		}
 		if r, ok := older[norm]; ok {
 			r.cells = mergePickerCells(r.cells, model.Cells)
 			continue
 		}
-		older[norm] = &pickerRow{name: model.Display, key: model.Key, older: true, cells: mergePickerCells(nil, model.Cells)}
+		older[norm] = &pickerRow{name: model.Display, key: model.Key, harness: m.pickerHarnessByKey(model.Key), older: true, cells: mergePickerCells(nil, model.Cells)}
 		olderOrder = append(olderOrder, norm)
 	}
 	sort.Strings(olderOrder)
@@ -240,6 +256,62 @@ func (m Model) pickerRowSet() ([]pickerRow, int, int) {
 		}
 	}
 	return rows, nProfiles, len(olderOrder)
+}
+
+// pickerProfileHarness is the harness of a registered profile, matched by its
+// name, which the picker and the snapshot both keep.
+func (m Model) pickerProfileHarness(name string) string {
+	for _, p := range m.snap.WorkerProfiles {
+		if p.Name == name {
+			return p.Harness
+		}
+	}
+	return ""
+}
+
+// pickerHarnessByKey finds the harness that runs a model key: a registered
+// profile first, then a recorded run, then the shape of the key itself.
+func (m Model) pickerHarnessByKey(key string) string {
+	norm := strings.ToLower(key)
+	for _, p := range m.snap.WorkerProfiles {
+		if p.Harness != "" && strings.ToLower(protocol.PickerModelKey(p.Harness, p.Selection().LegacyModel())) == norm {
+			return p.Harness
+		}
+	}
+	for _, n := range m.snap.Nodes {
+		for _, t := range n.Tracks {
+			if t.Harness != "" && strings.ToLower(protocol.PickerModelKey(t.Harness, t.Model)) == norm {
+				return t.Harness
+			}
+		}
+	}
+	return pickerHarnessFromKey(key)
+}
+
+// pickerHarnessFromKey reads the harness a key can only come from. A provider
+// prefix names it; a dash effort is how agy writes the effort into the id.
+func pickerHarnessFromKey(key string) string {
+	key = strings.ToLower(key)
+	display := protocol.PickerModelDisplay(key)
+	dashEffort := ""
+	if _, effort := protocol.SplitModelLevel(display); effort == "" {
+		dashEffort = protocol.ParseModelSelection("agy", "", display, "").Effort
+	}
+	if prefix, _, ok := strings.Cut(key, "/"); ok {
+		switch prefix {
+		case "openai-codex", "openai":
+			return "codex"
+		case "opencode-go", "openrouter":
+			return "opencode"
+		case "anthropic":
+			return "claude"
+		}
+		return ""
+	}
+	if dashEffort != "" {
+		return "agy"
+	}
+	return ""
 }
 
 // mergePickerCells keeps, per bucket, the cell with more tasks.
@@ -268,9 +340,21 @@ func (r pickerRow) cellAt(bucket int) protocol.PickerCell {
 	return protocol.PickerCell{}
 }
 
-// pickerModelLine draws one row: the selected mark, the profile name, its
-// benchmark score and one fixed width cell per visible bucket. Cells past the
-// profile's benchmark ceiling are underlined.
+// pickerModelLabelForKey is a model key without its provider prefix and
+// without the ":default" the picker adds for a Codex run with no effort. It is
+// the name the worker log shows.
+func pickerModelLabelForKey(key string) string {
+	return strings.TrimSuffix(protocol.PickerModelDisplay(key), ":default")
+}
+
+// pickerRowLabel is the row's model key, exactly as the worker log names it.
+func pickerRowLabel(row pickerRow) string {
+	return pickerModelLabelForKey(row.key)
+}
+
+// pickerModelLine draws one row: the selected mark, the model key, the harness,
+// its benchmark score and one fixed width cell per visible bucket. Cells past
+// the profile's benchmark ceiling are underlined.
 func (m Model) pickerModelLine(row pickerRow, selected bool, labelWidth int, cols []int, width int) string {
 	mark := "  "
 	if selected {
@@ -280,7 +364,8 @@ func (m Model) pickerModelLine(row pickerRow, selected bool, labelWidth int, col
 	if row.scored {
 		score = fmt.Sprintf("%g", row.score)
 	}
-	label := cell(mark+pickerModelLabel(sanitize(row.name), labelWidth-2), labelWidth) + " " + cellR(score, pickerScoreWidth)
+	label := cell(mark+pickerModelLabel(sanitize(pickerRowLabel(row)), labelWidth-2), labelWidth) + " " +
+		cell(sanitize(firstNonEmpty(row.harness, "-")), pickerHarnessWidth) + " " + cellR(score, pickerScoreWidth)
 	if row.older {
 		label = sDim.Render(label)
 	}
@@ -337,7 +422,10 @@ func (m Model) pickerDetailLines(selModel, selBucket, width int) []string {
 	bucket := m.picker.Buckets[selBucket]
 	c := row.cellAt(selBucket)
 	_, verdicts, best := m.pickerVerdicts(selBucket)
-	title := sanitize(row.name)
+	title := sanitize(pickerRowLabel(row))
+	if row.harness != "" {
+		title += " · " + row.harness
+	}
 	if row.older {
 		title += " (older model key)"
 	}
@@ -349,7 +437,11 @@ func (m Model) pickerDetailLines(selModel, selBucket, width int) []string {
 	}
 	if best >= 0 && best < nProfiles && best < len(rows) {
 		bestCell := rows[best].cellAt(selBucket)
-		lines = append(lines, fmt.Sprintf("best %s %.2f [%.2f-%.2f] n%d", sanitize(rows[best].name), bestCell.Score, bestCell.Lo, bestCell.Hi, bestCell.N))
+		bestLabel := sanitize(pickerRowLabel(rows[best]))
+		if rows[best].harness != "" {
+			bestLabel += " · " + rows[best].harness
+		}
+		lines = append(lines, fmt.Sprintf("best %s %.2f [%.2f-%.2f] n%d", bestLabel, bestCell.Score, bestCell.Lo, bestCell.Hi, bestCell.N))
 	} else {
 		lines = append(lines, "best: no profile has 3 tasks here")
 	}
@@ -574,22 +666,33 @@ func pickerColumnsHint(start, end, total int) string {
 	return strings.Join(parts, " · ") + " · left/right moves buckets"
 }
 
-// pickerModelLabel keeps a model name within w columns, but keeps the effort
-// suffix when the name has one.
+// pickerModelLabel keeps a model key within w columns, but keeps the effort
+// suffix when the key has one. It cuts the model name, never the effort.
 func pickerModelLabel(name string, w int) string {
 	if ansi.StringWidth(name) <= w {
 		return name
 	}
 	base, effort := protocol.SplitModelLevel(name)
+	sep := ":"
+	if effort == "" {
+		// agy writes the effort into the id, as in "claude-sonnet-5-5-medium".
+		if sel := protocol.ParseModelSelection("agy", "", name, ""); sel.Effort != "" && sel.Model != name {
+			base, effort, sep = sel.Model, sel.Effort, "-"
+		}
+	}
 	suffix := ""
 	if effort != "" {
-		suffix = ":" + effort
+		suffix = sep + effort
 	}
 	room := w - ansi.StringWidth(suffix)
-	if room < 3 {
-		return cell(name, w)
+	if room < 1 {
+		return ansi.Truncate(suffix, w, "")
 	}
-	return ansi.Truncate(base, room, "…") + suffix
+	tail := "…"
+	if room < 3 {
+		tail = ""
+	}
+	return ansi.Truncate(base, room, tail) + suffix
 }
 
 // pickerSettingsText is the picker rule in one line. The full wording gives

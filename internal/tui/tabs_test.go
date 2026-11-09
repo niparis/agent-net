@@ -170,7 +170,7 @@ func TestQuotaViewClosesPanelAtCTOWhenRowsOverflow(t *testing.T) {
 			}
 		}
 		m.quotaScroll = 100
-		if !strings.Contains(ansi.Strip(m.testView()), "profile-29") {
+		if !strings.Contains(ansi.Strip(m.testView()), "model-29") {
 			t.Errorf("%dx%d: scrolling cannot reach the last profile", size[0], size[1])
 		}
 	}
@@ -441,7 +441,7 @@ func TestQuotaModelsSection(t *testing.T) {
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "unknown-model"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}, {Name: "unscored", Harness: "codex", Model: "unknown-model"}}
 	v := ansi.Strip(m.testView())
-	for _, want := range []string{"Workers · 2 registered", "gpt-6.1-terra:high", "42.3/high", "USED", "scores: Artificial Analysis", "unscored"} {
+	for _, want := range []string{"Workers · 2 registered", "gpt-6.1-terra:high", "42.3/high", "USED", "scores: Artificial Analysis", "unknown-model"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in:\n%s", want, v)
 		}
@@ -454,7 +454,7 @@ func TestQuotaShowsExcludedRegisteredWorker(t *testing.T) {
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "opencode", Models: []string{"openrouter/anthropic/claude-opus-5.5"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "router", Harness: "opencode", Model: "openrouter/anthropic/claude-opus-5.5", Effort: "high"}}
 	v := ansi.Strip(m.testView())
-	if !strings.Contains(v, "router") || !strings.Contains(v, "not a worker provider") {
+	if !strings.Contains(v, "claude-opus-5.5:high") || !strings.Contains(v, "not a worker provider") {
 		t.Fatalf("profile missing: %s", v)
 	}
 }
@@ -465,7 +465,7 @@ func TestQuotaShowsOnlyWorkerProfiles(t *testing.T) {
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "gpt-6.1-sol"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "my worker", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
 	v := ansi.Strip(m.testView())
-	for _, want := range []string{"my worker", "gpt-6.1-terra:high", "1 registered"} {
+	for _, want := range []string{"gpt-6.1-terra:high", "1 registered"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q: %s", want, v)
 		}
@@ -550,7 +550,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"5 · 100% done",
 		"unused",
 		"T:trivial S:simple N:normal H:hard V:very complex",
-		"T terra codex · S terra codex · N terra codex",
+		"T gpt-6.1-terra:high · S gpt-6.1-terra:high · N gpt-6.1-terra:high",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("missing %q in:\n%s", want, plain)
@@ -579,7 +579,7 @@ func TestWorkersPanelShowsGatewayPreview(t *testing.T) {
 		"trivial": "terra high", "simple": "terra high", "normal": "terra high", "hard": "luna xhigh", "very_complex": "terra high",
 	}
 	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	for _, want := range []string{"terra codex", "luna codex", "▸", "T terra codex", "H luna codex"} {
+	for _, want := range []string{"gpt-6.1-terra:high", "gpt-6-luna:xhigh", "▸", "T gpt-6.1-terra:high", "H gpt-6-luna:xhigh"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q in:\n%s", want, view)
 		}
@@ -843,11 +843,11 @@ func TestQuotaReadingPreventsProviderFromFoldingAsNotSetUp(t *testing.T) {
 	}
 }
 
-func TestWorkerColumnsKeepNamesAndModels(t *testing.T) {
+func TestWorkerColumnsShowTheModelKeyNotTheProfileName(t *testing.T) {
 	m := newModel(120, 34)
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "eighteen-char-name", Harness: "codex", Model: "12345678901234567890", Effort: "high"}}
 	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	if !strings.Contains(v, "eighteen-char-name") || !strings.Contains(v, "12345678901234567890:high") || strings.Contains(v, " · 12345678901234567890") {
+	if !strings.Contains(v, "12345678901234567890:high") || strings.Contains(v, "eighteen-char-name") {
 		t.Fatal(v)
 	}
 }
