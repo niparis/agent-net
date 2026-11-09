@@ -219,3 +219,32 @@ func TestAnnounceNoticeFollowsTheWaitTextNotTheTask(t *testing.T) {
 		t.Fatalf("notices after a changed wait = %d", len(got))
 	}
 }
+
+// Names share prefixes: the lead "tenebrae" and the repo "tenebrae-strats". A
+// hyphen joins a word, so a wait on the repo is not a wait on the lead. Dots,
+// commas, colons and spaces still end a word.
+func TestWaitNamesLeadOnlyAsAWholeHyphenatedName(t *testing.T) {
+	s, c, member, lead := leadTeamRig(t)
+	if _, err := s.db.Exec(`UPDATE agents SET display_name='tenebrae' WHERE id=(SELECT agent_id FROM sessions WHERE id=?)`, lead); err != nil {
+		t.Fatal(err)
+	}
+	for text, want := range map[string]bool{
+		"waiting: tenebrae-strats deploy":          false,
+		"waiting: ingest-tenebrae deploy":          false,
+		"waiting: tenebrae to confirm.":            true,
+		"waiting: tenebrae, then the deploy":       true,
+		"waiting: tenebrae: confirm the schema":    true,
+		"waiting: for tenebrae":                    true,
+		"waiting: (tenebrae) to confirm":           true,
+		"waiting: tenebrae-strats and tenebrae ok": true,
+	} {
+		_, got, err := s.waitNamesLead(s.db, member, text)
+		if err != nil || got != want {
+			t.Errorf("waitNamesLead(%q) = %v %v, want %v", text, got, err, want)
+		}
+	}
+	reportWait(t, s, member, "tenebrae-strats deploy of X", c.t)
+	if n := openWaitingAsks(t, s); n != 1 {
+		t.Fatalf("a wait on a repo with the lead's prefix closed the owner ask: %d asks", n)
+	}
+}

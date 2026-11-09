@@ -21,7 +21,9 @@ type waitLead struct {
 }
 
 // wordIn tells whether word stands in text as a whole word, ignoring case.
-// Letters and digits join a word; a hyphen or a dot does not.
+// Letters, digits, underscores and hyphens join a word, so the lead "tenebrae"
+// is not found in "tenebrae-strats" (names here share prefixes: tenebrae and
+// tenebrae-strats, forge and ingest-forge). Whitespace and . , : ; ( ) break it.
 func wordIn(text, word string) bool {
 	text, word = strings.ToLower(text), strings.ToLower(strings.TrimSpace(word))
 	if word == "" {
@@ -50,7 +52,9 @@ func wordIn(text, word string) bool {
 	return false
 }
 
-func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' }
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-'
+}
 
 // leadsOfSession lists the leads a session has: its team lead and its repo
 // lead, as lead routing finds them. The session's own agent is never its lead.
