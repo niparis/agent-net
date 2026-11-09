@@ -13,4 +13,9 @@ type ChangeReconcileRequest struct {
 	HeadCommit   string `json:"head_commit"`
 	Kind         string `json:"kind"`
 	MergedCommit string `json:"merged_commit,omitempty"`
+	// PRNumber, PRURL and PRChecksPassed accompany an external merge made
+	// through a GitHub pull request. A zero PRNumber is a plain git merge.
+	PRNumber       int    `json:"pr_number,omitempty"`
+	PRURL          string `json:"pr_url,omitempty"`
+	PRChecksPassed bool   `json:"pr_checks_passed,omitempty"`
 }
