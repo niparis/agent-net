@@ -62,8 +62,49 @@ hands that sorts the queue, and never answers for him.
 - The chief session is started by hand, or by the CTO, with `session_start` and
   the model that `chief_get` returns. The daemon does not start it by itself.
 - The charter and the first message of the chief are written by the orchestrator.
-- The Desk shows sorts and undo; `send` asks that never move are shown as "with
-  someone" until their session answers (no timeout yet).
+- `send` asks that never move are shown as "with someone" until their session
+  answers (no timeout yet).
+
+## Part 2: the Desk
+
+The owner sees what the chief sent him, can see and undo what the chief
+handled, gets a digest when he comes back, and can correct the chief with two
+keys. The reference is in [reference](../reference.md#the-chief-on-the-desk-decision-0114-part-2).
+
+1. **Undo.** `ask.undo` (owner or CTO) restores the ask from its newest sort's
+   `prev_*` fields. It refuses an ask that changed since the sort, and a sort
+   that is undone already. A `next` of the chief becomes the owner: the chief's
+   one batch is not sent again, so putting the ask back with the chief would
+   leave it waiting until the 15 minutes end. Priority and why_you are cleared.
+   The undo is a new `ask_sorts` row (result `undo`) and a log line. Nothing is
+   deleted.
+2. **Marks.** `ask.mark` (owner or CTO) stores `didnt_need_me` or
+   `should_have_asked`, with one optional line of why. The mark is a correction
+   with the ask's project as area and the ask id as ref. The next batch message
+   lists the newest five, so the chief reads them with each batch. The judgment
+   store (`judgment_add`) is not on this base, so the marks go to the table
+   `chief_corrections` for now. The TODO in `internal/gateway/chief.go` marks
+   the switch to `judgment_add` when it lands.
+3. **The Desk.** The header names the chief and whether it is online, and counts
+   the sorts of the last 24 hours. Needs you is the next=owner list, and every
+   count of "needs you" reads it. Each row shows priority and why_you. Handled
+   for you lists the sorts of the last 24 hours with undo (`u`) and the mark
+   `m`. `n` marks an ask on Needs you.
+4. **The digest.** It opens when the owner's first key comes after an hour
+   without a key (the TUI keeps the time of the last key). Its four counts come
+   from the newest 500 log lines, read once, so later lines do not change it.
+   The counts read the log text that the gateway writes. `x` hides it.
+5. **CTO.** `chief_sorts` is a CTO read. `ask_undo` and `ask_mark` are CTO
+   changes, so the CTO can act for the owner.
+
+Choices made here, not in the brief:
+
+- The digest counts the newest 500 lines, not all of them. A longer absence
+  is counted up to that number.
+- "Sorted N asks today" counts the sorts of the last 24 hours, not the local
+  day.
+- The reason and the session of a handled sort are on its row when they fit;
+  the panel always shows them.
 
 ## Why this shape
 

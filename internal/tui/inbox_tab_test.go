@@ -564,14 +564,14 @@ func TestInboxItemKeysPerKind(t *testing.T) {
 	m = withWaitingAsks(m)
 	m = openInbox(m)
 	cases := []struct{ kind, item, bar string }{
-		{"held", "enter open session  a approve  r refuse", "enter open session  a approve  r refuse  ↑↓ select  l log  ? help"},
-		{"waiting", "enter open session", "enter open session  ↑↓ select  l log  ? help"},
-		{"question", "t type answer  x dismiss  enter details", "t type answer  x dismiss  enter details  ↑↓ select  l log  ? help"},
-		{"approval", "a approve  r refuse  x dismiss  enter details", "a approve  r refuse  x dismiss  enter details  ↑↓ select  l log  ? help"},
-		{"proposal", "a approve  r refuse", "a approve  r refuse  ↑↓ select  l log  ? help"},
-		{"learned", "a accept  r reject", "a accept  r reject  ↑↓ select  l log  ? help"},
-		{"outcome", "s let stand  O overrule", "s let stand  O overrule  ↑↓ select  l log  ? help"},
-		{"notice", "x dismiss", "x dismiss  ↑↓ select  l log  ? help"},
+		{"held", "enter open session  a approve  r refuse", "enter open session  a approve  r refuse  n didn't need me  ↑↓ select  l log  ? help"},
+		{"waiting", "enter open session", "enter open session  n didn't need me  ↑↓ select  l log  ? help"},
+		{"question", "t type answer  x dismiss  enter details", "t type answer  x dismiss  enter details  n didn't need me  ↑↓ select  l log  ? help"},
+		{"approval", "a approve  r refuse  x dismiss  enter details", "a approve  r refuse  x dismiss  enter details  n didn't need me  ↑↓ select  l log  ? help"},
+		{"proposal", "a approve  r refuse", "a approve  r refuse  n didn't need me  ↑↓ select  l log  ? help"},
+		{"learned", "a accept  r reject", "a accept  r reject  n didn't need me  ↑↓ select  l log  ? help"},
+		{"outcome", "s let stand  O overrule", "s let stand  O overrule  n didn't need me  ↑↓ select  l log  ? help"},
+		{"notice", "x dismiss", "x dismiss  n didn't need me  ↑↓ select  l log  ? help"},
 	}
 	for _, tc := range cases {
 		m.inboxIndex = inboxRowIndex(m, tc.kind)

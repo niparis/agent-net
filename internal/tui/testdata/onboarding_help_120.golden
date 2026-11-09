@@ -21,6 +21,10 @@ Keys · all screens ────────────────────
   t                      type answer
   x                      dismiss
   u                      undo
+  n                      on an ask that reached you: the chief did not need to send it. Type one optional line of why;
+                         the chief reads it in its next batch.
+  m                      on a handled ask: the chief should have asked you. Type one optional line of why; the chief
+                         reads it in its next batch.
   v                      show or hide the done and stale changes in the In flight section
   l                      open or close the Log section: what the CTO and the gateway did, with the undo of a CTO change
 
@@ -31,10 +35,6 @@ Keys · all screens ────────────────────
  On a learned suggestion row
   a                      accept
   r                      reject
-
- On an outcome row
-  s                      let stand
-  O                      overrule
 
   more below
 up/down scroll  ? this screen  esc close

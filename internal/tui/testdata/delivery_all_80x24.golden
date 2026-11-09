@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
-Desk · all clear · log closed (l opens it)
+Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 ╭─Needs you · 0────────────────────────────────────────────────────────────────╮
 │ Nothing is waiting for you.                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -7,10 +7,10 @@ Desk · all clear · log closed (l opens it)
 │   TITLE                      STEP     STATUS                     AGE    DONE │
 │ ▸ Approve the deploy gate    approve  waiting for you            3h0m   ○    │
 │   Show which provider each … review   waiting for merger         2h14m  ●○●  │
-│   Say what a delivery row w… test     waiting for ci-runner (on… 6m     ●●○○ │
-│     merged: abcdef1                                                          │
-│   Fix the deploy gate        review   back to strategies to res… 2h5m   ●✗   │
-│ … 3 more                                                                     │
+│ … 6 more                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Handled for you · 0──────────────────────────────────────────────────────────╮
+│ The chief of staff sorted nothing in the last day.                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Change c_8───────────────────────────────────────────────────────────────────╮
 │ Approve the deploy gate                                                      │

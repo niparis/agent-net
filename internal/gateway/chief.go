@@ -194,6 +194,9 @@ func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 		}
 		b.WriteString("\n")
 	}
+	if marks := s.recentCorrections(); marks != "" {
+		fmt.Fprintf(&b, "\nOwner corrections, newest first (follow them in every sort):\n%s", marks)
+	}
 	batch.body = strings.TrimRight(b.String(), "\n")
 	return batch, nil
 }
@@ -413,7 +416,7 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		}
 		out.Next, out.State = q.To, protocol.AskWithSomeone
 		logText = fmt.Sprintf("Chief sent ask to %s: %s", sessionLabel(s.db, q.To), text)
-		if err := s.commitSort(tx, rec, now, logText, a); err != nil {
+		if err := s.commitSort(tx, rec, now, logText, a, "chief"); err != nil {
 			return out, none, err
 		}
 		return out, m, tx.Commit()
@@ -423,14 +426,14 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		}
 		logText = fmt.Sprintf("Chief sent ask to you (priority %d): %s", q.Priority, text)
 	}
-	if err := s.commitSort(tx, rec, now, logText, a); err != nil {
+	if err := s.commitSort(tx, rec, now, logText, a, "chief"); err != nil {
 		return out, none, err
 	}
 	return out, none, tx.Commit()
 }
 
 // commitSort writes the history row and the log line of one sort.
-func (s *Store) commitSort(tx *sql.Tx, rec protocol.AskSort, now time.Time, logText string, a askSortRow) error {
+func (s *Store) commitSort(tx *sql.Tx, rec protocol.AskSort, now time.Time, logText string, a askSortRow, source string) error {
 	var answered int64
 	if !rec.PrevAnsweredAt.IsZero() {
 		answered = rec.PrevAnsweredAt.UnixNano()
@@ -440,7 +443,7 @@ func (s *Store) commitSort(tx *sql.Tx, rec protocol.AskSort, now time.Time, logT
 		rec.PrevNext, rec.PrevStatus, rec.PrevAnswer, answered); err != nil {
 		return err
 	}
-	return s.deskLog(tx, "chief", a.aboutKind, a.aboutID, logText, rec.Reason, nil)
+	return s.deskLog(tx, source, a.aboutKind, a.aboutID, logText, rec.Reason, nil)
 }
 
 // AskSortHistory returns the sorts of one ask, oldest first.
@@ -463,6 +466,223 @@ func (s *Store) AskSortHistory(askID string) ([]protocol.AskSort, error) {
 			r.PrevAnsweredAt = time.Unix(0, answered).UTC()
 		}
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// chiefCorrectionsMigration keeps the owner's marks of the Desk (decision 0114,
+// part 2). A mark is a correction the chief reads in its next batch.
+// TODO(judgment_add): when the judgment store lands, write each mark there
+// with judgment_add (kind correction, area, ref) and read the batch from it.
+// Until then this table is the store.
+const chiefCorrectionsMigration = `-- The owner's marks on asks (decision 0114, part 2): didnt_need_me or
+-- should_have_asked. area is the ask's project, ref the ask id.
+CREATE TABLE IF NOT EXISTS chief_corrections (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, mark TEXT NOT NULL,
+ text TEXT NOT NULL, area TEXT NOT NULL DEFAULT '', ref TEXT NOT NULL DEFAULT '');
+`
+
+// chiefCorrectionsInBatch is how many of the newest marks a batch carries.
+const chiefCorrectionsInBatch = 5
+
+// UndoAsk puts an ask back the way it was before the newest sort of the chief
+// (decision 0114, part 2). It refuses when the ask changed since that sort, or
+// when the newest sort is already undone. The chief's hold is not put back: the
+// chief got its one batch, so the ask goes to the owner. Priority and why_you
+// are cleared, because only a sort sets them. Nothing is deleted.
+func (s *Store) UndoAsk(id, actor string) (protocol.AskSortResult, error) {
+	var out protocol.AskSortResult
+	if !actorAllowed(actor, "rule") {
+		return out, reject("only the owner or the CTO may undo a sort")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	var last protocol.AskSort
+	var at, answered int64
+	err = tx.QueryRow(`SELECT id,at,sorter,result,into_id,to_id,reason,priority,why_you,prev_next,prev_status,prev_answer,prev_answered_at
+		FROM ask_sorts WHERE ask_id=? ORDER BY id DESC LIMIT 1`, id).
+		Scan(&last.ID, &at, &last.Sorter, &last.Result, &last.Into, &last.To, &last.Reason, &last.Priority, &last.WhyYou,
+			&last.PrevNext, &last.PrevStatus, &last.PrevAnswer, &answered)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, reject("ask %s has no chief sort to undo", id)
+	}
+	if err != nil {
+		return out, err
+	}
+	if last.Result == protocol.AskSortUndo {
+		return out, reject("the sort of ask %s is already undone", id)
+	}
+	var next, status, answer, text, aboutKind, aboutID string
+	var nowAnswered int64
+	var priority int
+	var whyYou string
+	err = tx.QueryRow(`SELECT next_who,status,answer,answered_at,priority,why_you,text,about_kind,about_id FROM inbox_items WHERE id=?`, id).
+		Scan(&next, &status, &answer, &nowAnswered, &priority, &whyYou, &text, &aboutKind, &aboutID)
+	if err != nil {
+		return out, err
+	}
+	// The state the sort left behind. Any other state means the ask moved on.
+	changed := false
+	switch last.Result {
+	case protocol.AskSortClose, protocol.AskSortMerge:
+		changed = status != "closed" || nowAnswered != at || answer != "chief: "+last.Reason
+	case protocol.AskSortSend:
+		changed = next != last.To || status != "open"
+	case protocol.AskSortOwner:
+		changed = next != protocol.AskNextOwner || priority != last.Priority || whyYou != last.WhyYou
+	}
+	if changed {
+		return out, reject("ask %s changed since the chief sorted it, so it cannot be undone", id)
+	}
+	now := s.now()
+	restored := last.PrevNext
+	if restored == "" || restored == protocol.AskNextChief {
+		restored = protocol.AskNextOwner
+	}
+	if _, err := tx.Exec(`UPDATE inbox_items SET next_who=?, status=?, answer=?, answered_at=?, priority=0, why_you='' WHERE id=?`,
+		restored, last.PrevStatus, last.PrevAnswer, answered, id); err != nil {
+		return out, err
+	}
+	if last.Result == protocol.AskSortMerge && last.Into != "" {
+		if err := removeMergedNote(tx, last.Into, id); err != nil {
+			return out, err
+		}
+	}
+	rec := protocol.AskSort{Ask: id, At: now, Sorter: actor, Result: protocol.AskSortUndo, PrevNext: next, PrevStatus: status, PrevAnswer: answer}
+	if nowAnswered != 0 {
+		rec.PrevAnsweredAt = time.Unix(0, nowAnswered).UTC()
+	}
+	logText := "Undone chief sort of ask " + id + ": " + askFirstLine(text, 120)
+	if err := s.commitSort(tx, rec, now, logText, askSortRow{text: text, aboutKind: aboutKind, aboutID: aboutID}, deskSource(actor)); err != nil {
+		return out, err
+	}
+	out = protocol.AskSortResult{Ask: id, Result: protocol.AskSortUndo, Next: restored, State: protocol.AskStateOpen}
+	return out, tx.Commit()
+}
+
+// removeMergedNote takes the "merged: <ask>" line that a merge wrote into the
+// ask it merged into.
+func removeMergedNote(tx *sql.Tx, into, ask string) error {
+	var detail string
+	if err := tx.QueryRow(`SELECT detail FROM inbox_items WHERE id=?`, into).Scan(&detail); err != nil {
+		return err
+	}
+	var keep []string
+	for _, line := range strings.Split(detail, "\n") {
+		if line != "merged: "+ask {
+			keep = append(keep, line)
+		}
+	}
+	_, err := tx.Exec(`UPDATE inbox_items SET detail=? WHERE id=?`, strings.Join(keep, "\n"), into)
+	return err
+}
+
+// MarkAsk stores the owner's mark on one ask as a correction that the chief
+// reads in its next batch (decision 0114, part 2). The mark names the ask's
+// project as area and the ask id as ref.
+func (s *Store) MarkAsk(q protocol.AskMarkRequest, actor string) error {
+	if !actorAllowed(actor, "rule") {
+		return reject("only the owner or the CTO may mark an ask")
+	}
+	if err := q.Validate(); err != nil {
+		return reject("%v", err)
+	}
+	var text, node, aboutKind, aboutID string
+	err := s.db.QueryRow(`SELECT text,node,about_kind,about_id FROM inbox_items WHERE id=?`, q.Ask).Scan(&text, &node, &aboutKind, &aboutID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return reject("unknown ask %q", q.Ask)
+	}
+	if err != nil {
+		return err
+	}
+	why := strings.TrimSpace(q.Why)
+	var sentence string
+	if q.Mark == protocol.MarkDidntNeedMe {
+		sentence = fmt.Sprintf("The owner did not need ask %s (%s). Sort asks like it yourself.", q.Ask, askFirstLine(text, 120))
+	} else {
+		sentence = fmt.Sprintf("The owner should have been asked about ask %s (%s). Send asks like it to him.", q.Ask, askFirstLine(text, 120))
+	}
+	if why != "" {
+		sentence += " Why: " + why
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO chief_corrections(at,mark,text,area,ref) VALUES(?,?,?,?,?)`,
+		s.now().UnixNano(), q.Mark, sentence, node, q.Ask); err != nil {
+		return err
+	}
+	logText := "Owner marked ask " + q.Ask + ": " + markWords(q.Mark) + ". " + askFirstLine(text, 120)
+	if err := s.deskLog(tx, deskSource(actor), aboutKind, aboutID, logText, why, nil); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// deskSource is the log source of an owner action: the CTO acts for the owner
+// and its lines say so.
+func deskSource(actor string) string {
+	if actor == "cto" {
+		return "cto"
+	}
+	return "owner"
+}
+
+// markWords names a mark in the owner's words.
+func markWords(mark string) string {
+	if mark == protocol.MarkDidntNeedMe {
+		return "didn't need me"
+	}
+	return "should have asked me"
+}
+
+// recentCorrections is the text of the newest marks, one line each, for the
+// chief's batch. It is empty when there are none.
+func (s *Store) recentCorrections() string {
+	rows, err := s.db.Query(`SELECT text FROM chief_corrections ORDER BY id DESC LIMIT ?`, chiefCorrectionsInBatch)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close()
+	var b strings.Builder
+	for rows.Next() {
+		var text string
+		if rows.Scan(&text) == nil {
+			fmt.Fprintf(&b, "- %s\n", text)
+		}
+	}
+	return b.String()
+}
+
+// ChiefSorts returns the sorts of the chief since a time, newest first. An undo
+// row is not a row of its own: a sort that the owner undid is marked Undone.
+func (s *Store) ChiefSorts(since time.Time) ([]protocol.ChiefSort, error) {
+	rows, err := s.db.Query(`SELECT r.id,r.ask_id,r.at,r.sorter,r.result,r.into_id,r.to_id,r.reason,r.priority,r.why_you,
+		COALESCE(i.text,''),
+		EXISTS (SELECT 1 FROM ask_sorts u WHERE u.ask_id=r.ask_id AND u.id>r.id AND u.result=?)
+		FROM ask_sorts r LEFT JOIN inbox_items i ON i.id=r.ask_id
+		WHERE r.at>=? AND r.result<>? ORDER BY r.id DESC LIMIT 100`, protocol.AskSortUndo, since.UnixNano(), protocol.AskSortUndo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.ChiefSort{}
+	for rows.Next() {
+		var c protocol.ChiefSort
+		var at int64
+		var undone bool
+		if err := rows.Scan(&c.ID, &c.Ask, &at, &c.Sorter, &c.Result, &c.Into, &c.To, &c.Reason, &c.Priority, &c.WhyYou, &c.Question, &undone); err != nil {
+			return nil, err
+		}
+		c.At = time.Unix(0, at).UTC()
+		c.Question = askFirstLine(c.Question, 200)
+		c.Undone = undone
+		out = append(out, c)
 	}
 	return out, rows.Err()
 }

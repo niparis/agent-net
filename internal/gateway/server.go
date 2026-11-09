@@ -2595,6 +2595,24 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		sorts, err := st.AskSortHistory(p.Ask)
 		return protocol.AskHistoryResult{Sorts: sorts}, err
 
+	case "ask.undo":
+		p, err := decode[protocol.AskUndoRequest](raw)
+		if err != nil {
+			return nil, reject("bad ask.undo")
+		}
+		return st.UndoAsk(p.Ask, graphActor(raw))
+
+	case "ask.mark":
+		p, err := decode[protocol.AskMarkRequest](raw)
+		if err != nil {
+			return nil, reject("bad ask.mark")
+		}
+		return map[string]bool{"ok": true}, st.MarkAsk(p, graphActor(raw))
+
+	case "chief.sorts":
+		sorts, err := st.ChiefSorts(st.now().Add(-protocol.ChiefSortsWindow))
+		return protocol.ChiefSortsResult{Sorts: sorts}, err
+
 	case "inbox.answer":
 		var p struct {
 			ID      string `json:"item_id"`

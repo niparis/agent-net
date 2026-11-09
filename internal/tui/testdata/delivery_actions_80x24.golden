@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
-Desk · all clear · log closed (l opens it)
+Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 ╭─Needs you · 0────────────────────────────────────────────────────────────────╮
 │ Nothing is waiting for you.                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -7,10 +7,10 @@ Desk · all clear · log closed (l opens it)
 │   TITLE                      STEP     STATUS                     AGE    DONE │
 │ ▸ Resume offline sessions    verify   waiting for you            -      ○○   │
 │   Fix the entry test         test     back to tenebrae-53 (fix)  -      ○✗   │
-│     Enter did not resume the offline session                                 │
-│   Repair worker restart      test     back to strategies to res… -      ○✗   │
-│     Enter did not resume the offline session                                 │
-│ 1 done hidden · v shows all                                                  │
+│ … 4 more                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Handled for you · 0──────────────────────────────────────────────────────────╮
+│ The chief of staff sorted nothing in the last day.                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Change ch_action_0───────────────────────────────────────────────────────────╮
 │ Resume offline sessions                                                      │

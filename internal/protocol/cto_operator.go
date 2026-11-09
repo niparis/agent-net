@@ -16,7 +16,7 @@ const (
 const CTOOperatorReads = `info nodes list projects events message_status workers project_display_get sessions_archived worker_log apps.pending inventory_get inventory_scan
 mcp_import_candidates tools_items tools_item tools_projects tools_history tools_accepted tools_needs
  tools_read_file tools_summary tools_skill_details tools_versions tools_differences
-merger_get session_start_get inbox_list asks_list chief_get ask_history desk_log outcome_inbox learned_list learned_view
+merger_get session_start_get inbox_list asks_list chief_get chief_sorts ask_history desk_log outcome_inbox learned_list learned_view
 usage usage_top session_text counts conversations conversation_messages graph_view graph_talk
 session_agent_list integrations_get hidden_get onboarding_get quality_get timezone_get
 protected_providers_get worker_floors_get worker_providers_get difficulty_get scores_get
@@ -26,7 +26,7 @@ graph_get charter_history edge_history node_settings_get settings_owner_read cha
 const CTOOperatorChanges = `operator_undo sessions_archive cto_enter cto_send session_enter apps.public.restore session_pin apps.refuse apps.public.url tools_keep_copy tools_import_folder
 mcp_coverage_plan mcp_coverage_apply mcp_coverage_undo tools_accept tools_import tools_export gateway_backup
 session_stop session_resume session_agent_set learned_answer hidden_set onboarding_set quality_set timezone_set
-worker_floors_set worker_floors_reset difficulty_set team_write delivery_owner_set merger_set merger_restore chief_set changes_owner_report worker_defect`
+worker_floors_set worker_floors_reset difficulty_set team_write delivery_owner_set merger_set merger_restore chief_set ask_undo ask_mark changes_owner_report worker_defect`
 
 // CTOOperatorMethods is an explicit allowlist, shared by schema generation and
 // daemon dispatch. It never accepts arbitrary daemon methods or consent approval.

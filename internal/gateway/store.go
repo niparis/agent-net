@@ -1279,7 +1279,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration}
+`, chiefMigration, chiefCorrectionsMigration}
 
 // teamAsksToMigration adds the team setting that sends a member's questions
 // for the owner to its team lead (decision 0100).

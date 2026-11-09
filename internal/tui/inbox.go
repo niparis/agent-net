@@ -984,6 +984,9 @@ func (m Model) inboxDetailScrollLimit(rows []inboxRow) int {
 func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	rows := m.inboxRows()
 	if m.inboxEditing {
+		if m.deskPending != nil {
+			return m.deskMarkKey(k)
+		}
 		switch k.Code {
 		case tea.KeyEsc:
 			m.inboxEditing = false
@@ -1028,6 +1031,11 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.delivery.detail || m.delivery.reporting {
 		mm, cmd := m.deliveryKey(k)
 		return mm, cmd
+	}
+	// x hides the digest while it is shown; it does not dismiss an ask then.
+	if m.digest != nil && !m.digest.hidden && !m.inboxDetail && k.String() == "x" {
+		m.digest.hidden = true
+		return m, nil
 	}
 	key := keyAction(contextInbox, k.String())
 	if row, ok := m.inboxSelected(rows); ok && (strings.HasPrefix(row.item.SourceRef, "app-consent:") || row.item.SourceRef == "apps-public-consent") {
@@ -1154,6 +1162,10 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		default:
 			m.inboxDetailScroll = 0
 			m.inboxDetail = true
+		}
+	case "didnt_need":
+		if row.ask.ID != "" {
+			return m.deskMarkStart(row.ask.ID, protocol.MarkDidntNeedMe), nil
 		}
 	case "approve", "refuse":
 		return m.inboxDecide(row, key == "approve")
@@ -1355,6 +1367,9 @@ func (m Model) inboxHints() []hint {
 	if e, ok := m.deskSelectedLog(); ok {
 		return append(m.deskLogHints(e), move, help)
 	}
+	if h, ok := m.deskSelectedHandled(); ok {
+		return append(m.deskHandledHints(h), move, logHint, help)
+	}
 	rows := m.inboxRows()
 	row, ok := m.inboxSelected(rows)
 	if !ok {
@@ -1363,7 +1378,7 @@ func (m Model) inboxHints() []hint {
 		}
 		return []hint{bindingPairHint(contextInbox, actUp, actDown), logHint, help, bindingHint(contextInbox, actQuit)}
 	}
-	return append(m.inboxItemHints(row), move, logHint, help)
+	return append(append(m.inboxItemHints(row), bindingHint(contextInbox, "didnt_need")), move, logHint, help)
 }
 
 // inboxCaller is the local call the Inbox and the CTO box need.
