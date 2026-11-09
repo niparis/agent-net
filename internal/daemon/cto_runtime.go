@@ -276,8 +276,9 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 		if d.claudeCTO.restarted {
 			plan.Note = claudeCTORestartNotice
 		}
+		// No mouse variable here: the session's own environment decides mouse
+		// tracking (see startClaudeCTOOnce), and the CTO must keep the wheel.
 		plan.Argv = []string{bin, "attach", d.claudeCTO.ref}
-		plan.Env = map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"}
 	} else {
 		d.cto.mu.Lock()
 		defer d.cto.mu.Unlock()
