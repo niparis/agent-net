@@ -1,0 +1,99 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Text or keywords to search across owner judgments."
+      },
+      "area": {
+        "type": "string",
+        "description": "Optional project, repo or team name to filter by."
+      },
+      "kind": {
+        "type": "string",
+        "enum": ["order", "rule", "answer", "correction"],
+        "description": "Optional judgment kind: order, rule, answer, correction."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 20,
+        "description": "Maximum rows in this page, up to 100."
+      }
+    },
+    "required": [],
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/Judgment"
+        }
+      },
+      "total": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "items",
+      "total"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+      "Judgment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "saved_at": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "text",
+          "saved_at",
+          "source"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

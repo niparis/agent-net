@@ -13,12 +13,13 @@ import (
 // new tool and its old-name alias both call readToolCall, so an alias adds no
 // second path.
 var readToolMethods = map[string]string{
-	"agent_sessions_find": "sessions_find",
-	"agent_session_get":   "session_get",
-	"agent_machines_find": "machines_find",
-	"agent_machine_get":   "machine_get",
-	"agent_machine_log":   "machine_log",
-	"agent_projects_find": "projects_find",
+	"agent_sessions_find":        "sessions_find",
+	"agent_session_get":          "session_get",
+	"agent_machines_find":        "machines_find",
+	"agent_machine_get":          "machine_get",
+	"agent_machine_log":          "machine_log",
+	"agent_projects_find":        "projects_find",
+	"agent_owner_judgments_find": "judgments_find",
 }
 
 // readToolCall runs the daemon call behind one read tool.
@@ -34,7 +35,7 @@ func readToolCall(ctx context.Context, run func(context.Context, string, any) (a
 // the tool redesign. Their names, descriptions and schemas come from
 // internal/toolcatalog. The daemon does the filtering and the paging.
 func addReadSessionTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
-	for _, name := range []string{"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find"} {
+	for _, name := range []string{"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find", "agent_owner_judgments_find"} {
 		addCatalogReadTool(s, run, name)
 	}
 }

@@ -132,3 +132,15 @@ func (d *Daemon) ctoFirstTurn(ctx context.Context, text string) string {
 	}
 	return text
 }
+
+func (d *Daemon) judgmentsFind(ctx context.Context, q protocol.JudgmentsFindRequest) (any, error) {
+	raw, err := d.call(ctx, "judgment.find", q)
+	if err != nil {
+		return nil, oldGateway(err)
+	}
+	var res map[string]any
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, err
+	}
+	return res, nil
+}

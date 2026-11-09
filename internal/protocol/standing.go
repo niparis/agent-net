@@ -68,6 +68,13 @@ const (
 	StandingActionRead   = "read"
 	StandingActionList   = "list"
 	StandingActionRemove = "remove"
+
+	StandingKindOrder      = "order"
+	StandingKindRule       = "rule"
+	StandingKindAnswer     = "answer"
+	StandingKindCorrection = "correction"
+
+	OpJudgmentAdd = "judgment_add"
 )
 
 // StandingOrder is one durable instruction. Source says who saved it: the
@@ -81,6 +88,26 @@ type StandingOrder struct {
 	Text      string   `json:"text"`
 	SavedAt   int64    `json:"saved_at"`
 	Source    string   `json:"source"`
+	Kind      string   `json:"kind,omitempty"`
+	Area      string   `json:"area,omitempty"`
+	Ref       string   `json:"ref,omitempty"`
+}
+
+// JudgmentAddRequest is the operator method judgment_add request.
+type JudgmentAddRequest struct {
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+	Area string `json:"area,omitempty"`
+	Ref  string `json:"ref,omitempty"`
+}
+
+// JudgmentsFindRequest is the agent read tool agent_owner_judgments_find request.
+type JudgmentsFindRequest struct {
+	Query string `json:"query,omitempty"`
+	Area  string `json:"area,omitempty"`
+	Kind  string `json:"kind,omitempty"`
+	Ref   string `json:"ref,omitempty"`
+	Limit int    `json:"limit,omitempty"`
 }
 
 // StandingOrdersRequest is OpStandingOrders and the gateway frames
@@ -96,6 +123,9 @@ type StandingOrdersRequest struct {
 	ID         string         `json:"order_id,omitempty"`
 	Text       string         `json:"text,omitempty"`
 	Source     string         `json:"source,omitempty"`
+	Kind       string         `json:"kind,omitempty"`
+	Area       string         `json:"area,omitempty"`
+	Ref        string         `json:"ref,omitempty"`
 	Restore    *StandingOrder `json:"restore,omitempty"`
 }
 

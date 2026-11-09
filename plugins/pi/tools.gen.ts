@@ -984,6 +984,47 @@ export const TOOL_CATALOG = [
     "method": "waiting"
   },
   {
+    "name": "agent_owner_judgments_find",
+    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections. Returns ranked matches with snippets when given a query, or the newest first.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Text or keywords to search across owner judgments."
+        },
+        "area": {
+          "type": "string",
+          "description": "Optional project, repo or team name to filter by."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "order",
+            "rule",
+            "answer",
+            "correction"
+          ],
+          "description": "Optional judgment kind: order, rule, answer, correction."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20,
+          "description": "Maximum rows in this page, up to 100."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "judgments_find"
+  },
+  {
     "name": "agent_project_add",
     "description": "Register project folders on this machine, or scan a folder for repositories (use dry_run first). Only when the owner asked.",
     "inputSchema": {
