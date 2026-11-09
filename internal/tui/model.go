@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
@@ -74,9 +73,7 @@ type Model struct {
 	handled                             []protocol.ChiefSort
 	digest                              *deskDigest
 	lastInput                           time.Time
-	keyQueue                            chan tea.Msg
-	keyPending                          []tea.Msg
-	inRender                            *atomic.Bool
+	asksVersion                         int64
 	deskCache                           *deskCacheState
 	deskPending                         *deskMark
 	inboxDetail, inboxEditing           bool
@@ -305,8 +302,6 @@ func New(src Source) Model {
 }
 
 // ---- messages ----
-
-type deskFlushMsg struct{}
 
 type tickMsg struct{}
 
@@ -669,26 +664,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if len(m.keyPending) > 0 {
-		pending := m.keyPending[0]
-		m.keyPending = m.keyPending[1:]
-		next, cmd1 := m.update(pending)
-		nextM, cmd2 := next.(Model).update(msg)
-		return nextM, tea.Batch(cmd1, cmd2)
-	}
 	switch msg := msg.(type) {
-	case deskFlushMsg:
-		if m.tab == inboxTab && m.keyQueue != nil {
-			select {
-			case firstMsg := <-m.keyQueue:
-				if k, ok := firstMsg.(tea.KeyPressMsg); ok {
-					return m.inboxTabKey(k)
-				}
-				return m.Update(firstMsg)
-			default:
-			}
-		}
-		return m, nil
 	case removeSessionsMsg:
 		return m.removeSessionsResult(msg)
 	case graphRemovedMsg:
@@ -1051,6 +1027,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		before := m.onboardingStep().id
 		if msg.inboxOK {
 			m.asks = msg.asks
+			m.asksVersion++
 		}
 		if msg.chiefOK {
 			m.chief, m.chiefLoaded = msg.chief, true

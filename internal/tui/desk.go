@@ -181,7 +181,14 @@ func (m Model) deskRowLineCached(row inboxRow, nameW, innerW int, selected bool)
 		return m.inboxRowLine(row, nameW, innerW, false)
 	}
 	age := cellR(needsAge(m.now(), row.since), 4)
-	key := inboxRowLineKey{key: row.key, nameW: nameW, w: innerW, age: age}
+	key := inboxRowLineKey{
+		name:  row.name,
+		text:  row.text,
+		kind:  row.kind,
+		nameW: nameW,
+		w:     innerW,
+		age:   age,
+	}
 	c.Lock()
 	if c.rowLines == nil {
 		c.rowLines = make(map[inboxRowLineKey]string)
@@ -207,7 +214,11 @@ func (m Model) deskWhyLineCached(row inboxRow, innerW int) string {
 		}
 		return sDim.Render(clip("    "+label+sanitize(row.ask.WhyYou), innerW))
 	}
-	key := inboxWhyLineKey{key: row.key, w: innerW}
+	key := inboxWhyLineKey{
+		whyYou:   row.ask.WhyYou,
+		priority: row.ask.Priority,
+		w:        innerW,
+	}
 	c.Lock()
 	if c.whyLines == nil {
 		c.whyLines = make(map[inboxWhyLineKey]string)

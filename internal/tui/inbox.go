@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -219,59 +218,96 @@ func (m Model) askSessionShown(a protocol.Ask) bool {
 
 type deskCacheState struct {
 	sync.Mutex
-	asksPtr       uintptr
-	asksLen       int
-	firstAskID    string
-	firstAskState string
-	lastAskID     string
-	lastAskState  string
-	proposalsLen  int
-	filter        string
-	showHidden    bool
-	showOffline   bool
-	snapVer       string
-	rows          []inboxRow
-	maxNameW      int
-	rowLines      map[inboxRowLineKey]string
-	whyLines      map[inboxWhyLineKey]string
+	fingerprint uint64
+	rows        []inboxRow
+	maxNameW    int
+	rowLines    map[inboxRowLineKey]string
+	whyLines    map[inboxWhyLineKey]string
 }
 
 type inboxRowLineKey struct {
-	key   string
+	name  string
+	text  string
+	kind  string
 	nameW int
 	w     int
 	age   string
 }
 
 type inboxWhyLineKey struct {
-	key string
-	w   int
+	whyYou   string
+	priority int
+	w        int
+}
+
+// deskAsksFingerprint computes a cheap, 0-alloc 64-bit FNV-1a hash over all asks,
+// proposals, filter state, snapshot version, and asksVersion.
+func deskAsksFingerprint(m Model) uint64 {
+	h := uint64(14695981039346656037)
+	const prime = 1099511628211
+	hashStr := func(s string) {
+		for i := 0; i < len(s); i++ {
+			h = (h ^ uint64(s[i])) * prime
+		}
+	}
+	hashInt := func(v int64) {
+		h = (h ^ uint64(v)) * prime
+	}
+	hashBool := func(b bool) {
+		v := uint64(0)
+		if b {
+			v = 1
+		}
+		h = (h ^ v) * prime
+	}
+
+	hashInt(m.asksVersion)
+	hashInt(int64(len(m.asks)))
+	hashInt(int64(len(m.proposals)))
+	hashStr(m.filter)
+	hashBool(m.showHiddenSessions)
+	hashBool(m.showOffline)
+	hashStr(m.snap.Version)
+
+	for _, a := range m.asks {
+		hashStr(a.ID)
+		hashStr(a.State)
+		hashStr(a.Kind)
+		hashStr(a.Question)
+		hashStr(a.WhyYou)
+		hashInt(int64(a.Priority))
+		hashStr(a.From)
+		hashStr(a.FromSession)
+		hashStr(a.AboutID)
+		hashStr(a.AboutTitle)
+		hashStr(a.Node)
+		hashStr(a.Ref)
+		hashStr(a.MessageID)
+		hashStr(a.Detail)
+		hashStr(a.Recommendation)
+		hashInt(a.CreatedAt.UnixNano())
+		if a.Delivery != nil {
+			hashStr(a.Delivery.ChangeID)
+		}
+	}
+
+	for _, p := range m.proposals {
+		hashStr(p.ID)
+		hashStr(p.NodeID)
+		hashStr(p.Status)
+		hashStr(p.Reason)
+	}
+
+	return h
 }
 
 // inboxRows builds the Needs you rows from the one list of asks.
 func (m Model) inboxRows() []inboxRow {
-	var ptr uintptr
-	firstID, firstState, lastID, lastState := "", "", "", ""
-	if len(m.asks) > 0 {
-		ptr = uintptr(unsafe.Pointer(&m.asks[0]))
-		firstID, firstState = m.asks[0].ID, m.asks[0].State
-		lastID, lastState = m.asks[len(m.asks)-1].ID, m.asks[len(m.asks)-1].State
-	}
+	fp := deskAsksFingerprint(m)
 	c := m.deskCache
 	if c != nil {
 		c.Lock()
-		if c.rows != nil &&
-			c.asksPtr == ptr &&
-			c.asksLen == len(m.asks) &&
-			c.firstAskID == firstID &&
-			c.firstAskState == firstState &&
-			c.lastAskID == lastID &&
-			c.lastAskState == lastState &&
-			c.proposalsLen == len(m.proposals) &&
-			c.filter == m.filter &&
-			c.showHidden == m.showHiddenSessions &&
-			c.showOffline == m.showOffline &&
-			c.snapVer == m.snap.Version {
+		if c.rows != nil && c.fingerprint == fp {
 			rows := c.rows
 			c.Unlock()
 			return rows
@@ -303,21 +339,15 @@ func (m Model) inboxRows() []inboxRow {
 
 	if c != nil {
 		c.Lock()
-		c.asksPtr = ptr
-		c.asksLen = len(m.asks)
-		c.firstAskID = firstID
-		c.firstAskState = firstState
-		c.lastAskID = lastID
-		c.lastAskState = lastState
-		c.proposalsLen = len(m.proposals)
-		c.filter = m.filter
-		c.showHidden = m.showHiddenSessions
-		c.showOffline = m.showOffline
-		c.snapVer = m.snap.Version
+		c.fingerprint = fp
 		c.rows = rows
 		c.maxNameW = nameW
-		c.rowLines = make(map[inboxRowLineKey]string)
-		c.whyLines = make(map[inboxWhyLineKey]string)
+		if len(c.rowLines) > 500 {
+			c.rowLines = make(map[inboxRowLineKey]string)
+		}
+		if len(c.whyLines) > 500 {
+			c.whyLines = make(map[inboxWhyLineKey]string)
+		}
 		c.Unlock()
 	}
 	return rows
@@ -1173,51 +1203,17 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.inboxDetail = false
 			m.inboxDetailScroll = 0
 			return m, nil
-		case actUp, actDown, actPageUp, actPageDown:
-			delta := 0
-			switch key {
-			case actUp:
-				delta = -1
-			case actDown:
-				delta = 1
-			case actPageUp:
-				delta = -max(m.height-8, 1)
-			case actPageDown:
-				delta = max(m.height-8, 1)
-			}
-			if m.keyQueue != nil {
-				for {
-					select {
-					case nextMsg, ok := <-m.keyQueue:
-						if !ok {
-							break
-						}
-						nextKey, isKey := nextMsg.(tea.KeyPressMsg)
-						if !isKey {
-							m.keyPending = append(m.keyPending, nextMsg)
-							break
-						}
-						switch keyAction(contextInbox, nextKey.String()) {
-						case actUp:
-							delta--
-						case actDown:
-							delta++
-						case actPageUp:
-							delta -= max(m.height-8, 1)
-						case actPageDown:
-							delta += max(m.height-8, 1)
-						default:
-							m.keyPending = append(m.keyPending, nextMsg)
-							break
-						}
-						continue
-					default:
-						break
-					}
-					break
-				}
-			}
-			m.inboxDetailScroll = min(max(m.inboxDetailScroll+delta, 0), limit)
+		case actUp:
+			m.inboxDetailScroll = max(m.inboxDetailScroll-1, 0)
+			return m, nil
+		case actDown:
+			m.inboxDetailScroll = min(m.inboxDetailScroll+1, limit)
+			return m, nil
+		case actPageUp:
+			m.inboxDetailScroll = max(m.inboxDetailScroll-max(m.height-8, 1), 0)
+			return m, nil
+		case actPageDown:
+			m.inboxDetailScroll = min(m.inboxDetailScroll+max(m.height-8, 1), limit)
 			return m, nil
 		case "answer", "approve", "refuse", "dismiss":
 		default:
@@ -1244,42 +1240,6 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		moved = false
 	}
 	if moved {
-		if m.keyQueue != nil {
-			for {
-				select {
-				case nextMsg, ok := <-m.keyQueue:
-					if !ok {
-						break
-					}
-					nextKey, isKey := nextMsg.(tea.KeyPressMsg)
-					if !isKey {
-						m.keyPending = append(m.keyPending, nextMsg)
-						break
-					}
-					switch keyAction(contextInbox, nextKey.String()) {
-					case actUp:
-						m.inboxIndex = max(0, m.deskIndex()-1)
-					case actDown:
-						m.inboxIndex = min(max(total-1, 0), m.deskIndex()+1)
-					case actPageUp:
-						m.inboxIndex = max(0, m.deskIndex()-10)
-					case actPageDown:
-						m.inboxIndex = min(max(total-1, 0), m.deskIndex()+10)
-					case actFirst:
-						m.inboxIndex = 0
-					case actLast:
-						m.inboxIndex = max(total-1, 0)
-					default:
-						m.keyPending = append(m.keyPending, nextMsg)
-						break
-					}
-					continue
-				default:
-					break
-				}
-				break
-			}
-		}
 		if sec, i := m.deskPosition(); sec == deskSecChange {
 			m.delivery.row = i
 		}

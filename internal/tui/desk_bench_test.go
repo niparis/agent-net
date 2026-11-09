@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,60 +176,83 @@ func BenchmarkDeskFiftyKeyUpPresses(b *testing.B) {
 	}
 }
 
-// BenchmarkDeskFiftyKeyUpBurst measures handling a burst of 50 KeyUp presses with coalescing.
-func BenchmarkDeskFiftyKeyUpBurst(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		m := deskBenchModel(120, 34)
-		total := m.deskRowCount()
-		m.inboxIndex = min(50, total-1)
-		queue := make(chan tea.Msg, 50)
-		for j := 0; j < 50; j++ {
-			queue <- tea.KeyPressMsg{Code: tea.KeyUp}
+// TestDeskMiddleAskStateChange verifies that mutating a middle ask's state
+// immediately invalidates the row cache and is reflected on the very next frame.
+func TestDeskMiddleAskStateChange(t *testing.T) {
+	m := deskBenchModel(120, 34)
+	rowsBefore := m.inboxRows()
+	if len(rowsBefore) < 50 {
+		t.Fatalf("expected at least 50 rows, got %d", len(rowsBefore))
+	}
+	midIndex := len(rowsBefore) / 2
+	midRow := rowsBefore[midIndex]
+	targetID := midRow.ask.ID
+
+	// Position selection at the middle row so it is within the visible window.
+	m.inboxIndex = midIndex
+	frame1 := m.View().Content
+	if !strings.Contains(frame1, fmt.Sprintf("Needs you · %d", len(rowsBefore))) {
+		t.Fatalf("frame1 missing initial header: Needs you · %d", len(rowsBefore))
+	}
+	markerText := fmt.Sprintf("step %d", 38)
+	if !strings.Contains(frame1, markerText) {
+		t.Fatalf("frame1 missing target middle ask marker %q in visible window\nframe:\n%s", markerText, frame1)
+	}
+
+	// Change middle ask's state to AskWithSomeone (which makes askRow return false, removing it).
+	askIdx := -1
+	for i := range m.asks {
+		if m.asks[i].ID == targetID {
+			askIdx = i
+			break
 		}
-		m.keyQueue = queue
-		for len(queue) > 0 {
-			msg := <-queue
-			next, _ := m.Update(msg)
-			m = next.(Model)
-			_ = m.View()
-		}
+	}
+	if askIdx < 0 {
+		t.Fatalf("target ask ID %s not found in m.asks", targetID)
+	}
+	m.asks[askIdx].State = protocol.AskWithSomeone
+
+	// Next frame must show the updated count immediately and no longer show the removed row.
+	rowsAfter := m.inboxRows()
+	if len(rowsAfter) != len(rowsBefore)-1 {
+		t.Fatalf("rows count after state change: got %d, want %d", len(rowsAfter), len(rowsBefore)-1)
+	}
+	frame2 := m.View().Content
+	wantHeader := fmt.Sprintf("Needs you · %d", len(rowsBefore)-1)
+	if !strings.Contains(frame2, wantHeader) {
+		t.Fatalf("frame2 does not show updated count header, want %q", wantHeader)
+	}
+	if strings.Contains(frame2, markerText) {
+		t.Fatalf("frame2 still shows target middle ask %q after state change to with_someone", markerText)
+	}
+
+	// Re-open the ask: next frame must show count restored and target ask present again.
+	m.asks[askIdx].State = protocol.AskStateOpen
+	frame3 := m.View().Content
+	if !strings.Contains(frame3, fmt.Sprintf("Needs you · %d", len(rowsBefore))) {
+		t.Fatalf("frame3 did not restore count header: Needs you · %d", len(rowsBefore))
+	}
+	if !strings.Contains(frame3, markerText) {
+		t.Fatalf("frame3 did not restore target ask %q in visible window", markerText)
 	}
 }
 
-// TestDeskBurstKeyUp feeds 50 KeyUp messages in a burst and verifies that they
-// coalesce so that the number of View calls is bounded (< 50) and reaches the
-// right selection.
-func TestDeskBurstKeyUp(t *testing.T) {
+// TestDeskFiftyKeyUp verifies that handling 50 sequential KeyUp presses executes
+// quickly and ends at selection 0 without backlog.
+func TestDeskFiftyKeyUp(t *testing.T) {
 	m := deskBenchModel(120, 34)
 	total := m.deskRowCount()
 	if total < 50 {
 		t.Fatalf("total rows %d < 50", total)
 	}
 	m.inboxIndex = 50
-	if m.deskIndex() != 50 {
-		t.Fatalf("deskIndex = %d, want 50", m.deskIndex())
-	}
-
-	queue := make(chan tea.Msg, 50)
+	key := tea.KeyPressMsg{Code: tea.KeyUp}
 	for i := 0; i < 50; i++ {
-		queue <- tea.KeyPressMsg{Code: tea.KeyUp}
-	}
-	m.keyQueue = queue
-
-	viewCalls := 0
-	for len(queue) > 0 {
-		msg := <-queue
-		next, _ := m.Update(msg)
+		next, _ := m.Update(key)
 		m = next.(Model)
 		_ = m.View()
-		viewCalls++
 	}
-
 	if m.deskIndex() != 0 {
 		t.Fatalf("deskIndex = %d, want 0", m.deskIndex())
-	}
-	if viewCalls >= 50 {
-		t.Fatalf("burst did not coalesce: %d View calls, want fewer than 50", viewCalls)
 	}
 }
