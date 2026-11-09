@@ -75,7 +75,7 @@ func TestSessionKeyLineShowsTheRelevantRowAction(t *testing.T) {
 	held.tab = inboxTab
 	held.asks = append(held.asks, askFromHeld(protocol.Message{ID: "m_held"}))
 	line := ansi.Strip(held.helpLine(120))
-	for _, want := range []string{"a approve", "r refuse"} {
+	for _, want := range []string{"a send it to the other agent", "r keep it held"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("held row: %q missing %q", line, want)
 		}
@@ -87,7 +87,7 @@ func TestSessionKeyLineShowsTheRelevantRowAction(t *testing.T) {
 	learned := newModel(120, 34)
 	learned.selected = "learned:1"
 	line = ansi.Strip(learned.helpLine(120))
-	for _, want := range []string{"a accept", "r reject"} {
+	for _, want := range []string{"a accept it", "r reject it"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("learned row: %q missing %q", line, want)
 		}
