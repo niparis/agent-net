@@ -201,6 +201,9 @@ type OperatorInfo struct {
 // AgentsResult answers OpAgents.
 type AgentsResult struct {
 	Agents []AgentView `json:"agents"`
+	// NotModified means the caller's IfVersion already matches the agents
+	// topic, so Agents holds no rows and the caller keeps its copy.
+	NotModified bool `json:"not_modified,omitempty"`
 }
 
 // ProjectsResult answers OpProjects.

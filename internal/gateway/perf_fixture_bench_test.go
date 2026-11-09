@@ -24,7 +24,7 @@ type benchFixture struct {
 	idNode   map[string]string
 }
 
-func newBenchFixture(b *testing.B) *benchFixture {
+func newBenchFixture(b testing.TB) *benchFixture {
 	b.Helper()
 	s, err := OpenStore(filepath.Join(b.TempDir(), "gw.db"))
 	if err != nil {

@@ -1585,6 +1585,12 @@ type ChangeListRequest struct {
 	Caller  string `json:"caller_session_id,omitempty"`
 	Limit   int    `json:"limit,omitempty"`
 	After   string `json:"after,omitempty"`
+	// IfVersion is the changes topic version the caller already holds. An
+	// unchanged topic answers NotModified and no rows.
+	IfVersion uint64 `json:"if_version,omitempty"`
+	// Lite leaves out evidence notes and fields the list does not show. The
+	// owner's TUI sets it and reads a change in full when it is opened.
+	Lite bool `json:"lite,omitempty"`
 }
 
 // ChangeListResult answers change.list, newest change first. Next is the
@@ -1593,6 +1599,9 @@ type ChangeListResult struct {
 	Branch  string       `json:"branch,omitempty"`
 	Changes []ChangeView `json:"changes"`
 	Next    string       `json:"next,omitempty"`
+	// NotModified means the caller's IfVersion already matches the changes
+	// topic, so Changes holds no rows and the caller keeps its copy.
+	NotModified bool `json:"not_modified,omitempty"`
 }
 
 // StepClaimRequest is step.claim: one session takes a ready node-owned step.

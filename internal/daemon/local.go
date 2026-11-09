@@ -850,7 +850,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			ProposalCount: d.proposalRunner().openProposalCount()}, nil
 
 	case "nodes", "restart":
-		return d.dispatchUpgrade(ctx, method, client)
+		return d.dispatchUpgrade(ctx, method, client, raw)
 
 	case "status":
 		// Status, mode and model are all optional; the ones present change.

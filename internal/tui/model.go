@@ -147,7 +147,13 @@ type Model struct {
 	topicLastFull          time.Time
 	topicVersions          map[string]uint64
 	topicDirty             map[string]bool
-	topicView              string
+	// dataVersions is the topic version each part of snap was read at, and
+	// dataVersionsAt is when that read happened. A safety refresh sends the
+	// version only while the read is younger than the worker window, because
+	// some rows change with time even when their table does not.
+	dataVersions   map[string]uint64
+	dataVersionsAt map[string]time.Time
+	topicView      string
 	// inboxSeen is the Snapshot signature the Inbox and proposals were last
 	// fetched at. A different signature, or the Inbox or CTO pane on screen,
 	// asks for them again. inboxAt is when they were last asked for away from
@@ -315,25 +321,26 @@ type pendingStop struct {
 }
 
 type fetchedMsg struct {
-	proposals     []protocol.CTOProposal
-	proposalsOK   bool
-	asks          []protocol.Ask
-	inboxOK       bool
-	chief         protocol.ChiefStatus
-	chiefOK       bool
-	handled       []protocol.ChiefSort
-	handledOK     bool
-	deskLog       []protocol.DeskLogEntry
-	deskLogOK     bool
-	listsAsked    bool // the Inbox and proposals were asked for this refresh
-	snap          Snapshot
-	err           error
-	topicVersions map[string]uint64
-	topicFull     bool
-	topicView     string
-	events        []protocol.FeedEvent
-	eventsErr     error
-	at            time.Time
+	proposals       []protocol.CTOProposal
+	proposalsOK     bool
+	asks            []protocol.Ask
+	inboxOK         bool
+	chief           protocol.ChiefStatus
+	chiefOK         bool
+	handled         []protocol.ChiefSort
+	handledOK       bool
+	deskLog         []protocol.DeskLogEntry
+	deskLogOK       bool
+	listsAsked      bool // the Inbox and proposals were asked for this refresh
+	snap            Snapshot
+	err             error
+	topicVersions   map[string]uint64
+	fetchedVersions map[string]uint64
+	topicFull       bool
+	topicView       string
+	events          []protocol.FeedEvent
+	eventsErr       error
+	at              time.Time
 	// conversations is the first stored page, asked for only on the Messages
 	// tab.
 	convAsked bool
@@ -420,6 +427,17 @@ func waitTopicsCmd(sub *operator.TopicSubscription) tea.Cmd {
 	}
 }
 
+// forgetReadVersions drops the held topic versions and read times. Versions
+// are counters in the gateway process, so a new subscription, or a lost one,
+// cannot trust the old values.
+func (m Model) forgetReadVersions() Model {
+	m.dataVersions = nil
+	m.dataVersionsAt = nil
+	m.delivery.dataVersion = 0
+	m.delivery.dataAt = time.Time{}
+	return m
+}
+
 func (m Model) topicRefreshDue() bool {
 	return !m.topicActive || len(m.topicDirty) != 0 || m.topicLastFull.IsZero() || m.now().Sub(m.topicLastFull) >= 30*time.Second || m.topicView != m.topicViewKey()
 }
@@ -456,6 +474,24 @@ func (m Model) fetchCmd() tea.Cmd {
 	}
 	view := m.topicViewKey()
 	previous := m.snap
+	// Every fetch keeps what it does not ask for, and a part the gateway says
+	// is unchanged. The full safety refresh therefore only pays for parts
+	// whose topic moved since the last read.
+	allVersions := make(map[string]uint64, len(m.topicVersions))
+	for topic, v := range m.topicVersions {
+		allVersions[topic] = v
+	}
+	// A held version is only good while the part was read inside the worker
+	// window. OwnerUses decays and ended workers leave the list with time,
+	// though no table write moves the topic.
+	readAtNow := m.now()
+	ifVersions := make(map[string]uint64, len(m.dataVersions))
+	for topic, v := range m.dataVersions {
+		at, ok := m.dataVersionsAt[topic]
+		if ok && readAtNow.Sub(at) < protocol.RecentWorkerWindow {
+			ifVersions[topic] = v
+		}
+	}
 	wants := func(topic string) bool { return full || topics[topic] }
 	onboardingRevision, onboardingPending := m.onboardingRevision, m.onboardingPending
 	skipFeed := m.feed.unavailable != ""
@@ -473,13 +509,13 @@ func (m Model) fetchCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
 		var res fetchedMsg
-		res.at, res.topicVersions, res.topicFull, res.topicView = now(), versions, full, view
+		res.at, res.topicVersions, res.fetchedVersions, res.topicFull, res.topicView = now(), versions, allVersions, full, view
 		if with, ok := src.(interface {
 			SnapshotWith(context.Context, SnapshotOptions) (Snapshot, error)
 		}); ok {
-			opts := SnapshotOptions{WorkerLog: wantWorkerLog}
+			opts := SnapshotOptions{WorkerLog: wantWorkerLog, Previous: previous, IfVersions: ifVersions, Lite: true}
 			if !full {
-				opts.Topics, opts.Previous = topics, previous
+				opts.Topics = topics
 			}
 			res.snap, res.err = with.SnapshotWith(ctx, opts)
 		} else {
@@ -743,17 +779,22 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil || msg.sub == nil {
 			m.topicActive = false
 			m.topicRetryAt = m.now().Add(10 * time.Second)
+			m = m.forgetReadVersions()
 			return m, nil
 		}
 		m.topicActive = true
 		m.topicVersions = make(map[string]uint64)
 		m.topicDirty = make(map[string]bool)
+		// Versions belong to one gateway process. A new subscription starts
+		// from new ones, so no read may claim to be at the old version.
+		m = m.forgetReadVersions()
 		return m, waitTopicsCmd(msg.sub)
 
 	case topicsChangedMsg:
 		if !msg.ok {
 			m.topicActive = false
 			m.topicRetryAt = m.now()
+			m = m.forgetReadVersions()
 			return m, nil
 		}
 		for topic, v := range msg.versions {
@@ -1043,6 +1084,35 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for topic, v := range msg.topicVersions {
 				if m.topicVersions[topic] == v {
 					delete(m.topicDirty, topic)
+				}
+			}
+			failed := make(map[string]bool, len(msg.snap.FailedCalls))
+			for _, method := range msg.snap.FailedCalls {
+				failed[operator.SnapshotTopic(method)] = true
+			}
+			unchanged := make(map[string]bool, len(msg.snap.Unchanged))
+			for _, method := range msg.snap.Unchanged {
+				unchanged[operator.SnapshotTopic(method)] = true
+			}
+			read := msg.topicVersions
+			if msg.topicFull {
+				read = msg.fetchedVersions
+			}
+			if m.dataVersions == nil {
+				m.dataVersions = make(map[string]uint64)
+			}
+			if m.dataVersionsAt == nil {
+				m.dataVersionsAt = make(map[string]time.Time)
+			}
+			for topic, v := range read {
+				if failed[topic] {
+					continue
+				}
+				m.dataVersions[topic] = v
+				// A NotModified part is still current, but its rows were not
+				// read again, so its read time must not move.
+				if !unchanged[topic] {
+					m.dataVersionsAt[topic] = msg.at
 				}
 			}
 		}

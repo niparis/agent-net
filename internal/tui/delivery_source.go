@@ -24,11 +24,20 @@ const (
 	deliveryMaxChanges = 300
 )
 
+// errDeliveryNotModified means the gateway's changes topic has not moved since
+// the list was read, so the view keeps its copy.
+var errDeliveryNotModified = errors.New("delivery list unchanged")
+
 // gatewayDelivery is the deliverySource that reads from the daemon.
 type gatewayDelivery struct {
 	call func(context.Context, string, any) (json.RawMessage, error)
 	now  func() time.Time
+	// ifVersion is the changes topic version the held list was read at.
+	ifVersion uint64
 }
+
+// SetIfVersion is how the view says which changes version it already holds.
+func (g *gatewayDelivery) SetIfVersion(v uint64) { g.ifVersion = v }
 
 func newGatewayDelivery(call func(context.Context, string, any) (json.RawMessage, error), now func() time.Time) *gatewayDelivery {
 	return &gatewayDelivery{call: call, now: now}
@@ -59,9 +68,14 @@ func (g *gatewayDelivery) Changes(ctx context.Context, repo string) ([]deliveryC
 	for _, state := range []string{protocol.ChangeListActive, protocol.ChangeDone, protocol.ChangeStopped} {
 		cursor := ""
 		for len(out) < deliveryMaxChanges {
-			page, err := g.find(ctx, protocol.ChangesFindArgs{Project: repo, State: state, Limit: deliveryPageSize, Cursor: cursor})
+			page, err := g.find(ctx, protocol.ChangesFindArgs{Project: repo, State: state, Limit: deliveryPageSize, Cursor: cursor, IfVersion: g.ifVersion, Lite: true})
 			if err != nil {
 				return nil, err
+			}
+			if page.NotModified {
+				// The version covers every state, so the other states are
+				// unchanged too.
+				return nil, errDeliveryNotModified
 			}
 			now := g.now()
 			for _, v := range page.Items {

@@ -98,6 +98,12 @@ type ChangesFindArgs struct {
 	Caller  string `json:"caller,omitempty"`
 	Limit   int    `json:"limit,omitempty"`
 	Cursor  string `json:"cursor,omitempty"`
+	// IfVersion is the changes topic version the caller already holds. An
+	// unchanged topic answers NotModified and no rows.
+	IfVersion uint64 `json:"if_version,omitempty"`
+	// Lite asks for list rows only: long evidence notes and fields are left
+	// out, and the item is read in full when it is opened. The TUI sets it.
+	Lite bool `json:"lite,omitempty"`
 }
 
 // ChangesFindResult is the result of agent_changes_find. Total counts the
@@ -107,4 +113,7 @@ type ChangesFindResult struct {
 	Total      int          `json:"total"`
 	NextCursor string       `json:"next_cursor,omitempty"`
 	Note       string       `json:"note,omitempty"`
+	// NotModified means the caller's IfVersion already matches the changes
+	// topic, so Items holds no rows and the caller keeps its copy.
+	NotModified bool `json:"not_modified,omitempty"`
 }

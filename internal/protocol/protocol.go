@@ -612,6 +612,17 @@ type (
 		// that session itself (so a reader can name the owner). A gateway
 		// from before this field ignores it and sends every agent.
 		WorkersOwnedBy string `json:"workers_owned_by,omitempty"`
+		// IfVersion is the agents topic version the caller already holds. The
+		// gateway answers NotModified and no rows when the topic has not moved,
+		// so a safety refresh costs almost nothing.
+		IfVersion uint64 `json:"if_version,omitempty"`
+		// Lite leaves out fields no list screen shows. The TUI sets it.
+		Lite bool `json:"lite,omitempty"`
+	}
+	// QueryNodes asks for NodesInfo. IfVersion is the nodes topic version the
+	// caller already holds; an unchanged topic answers NotModified.
+	QueryNodes struct {
+		IfVersion uint64 `json:"if_version,omitempty"`
 	}
 	QueryAgent struct {
 		SessionID string `json:"session_id"`
@@ -819,6 +830,9 @@ type ProjectView struct {
 type NodesInfo struct {
 	GatewayVersion string     `json:"gateway_version"`
 	Nodes          []NodeView `json:"nodes"`
+	// NotModified means the caller's IfVersion already matches the nodes
+	// topic, so Nodes holds no rows and the caller keeps its copy.
+	NotModified bool `json:"not_modified,omitempty"`
 	// Playbook is the fresh notes of the network, for agent_machines_find and the
 	// owner's "Learned" list (decision 0022).
 	Playbook []PlaybookNote `json:"playbook,omitempty"`

@@ -392,9 +392,13 @@ func (d *Daemon) changesFind(ctx context.Context, sid string, a protocol.Changes
 		return out, nil
 	}
 	var page protocol.ChangeListResult
-	q := protocol.ChangeListRequest{Project: a.Project, State: a.State, Caller: caller, Limit: a.Limit, After: a.Cursor}
+	q := protocol.ChangeListRequest{Project: a.Project, State: a.State, Caller: caller, Limit: a.Limit, After: a.Cursor, IfVersion: a.IfVersion, Lite: a.Lite}
 	if err := d.deliveryCall(ctx, protocol.FrameChangeList, q, &page); err != nil {
 		return out, err
+	}
+	if page.NotModified {
+		out.NotModified = true
+		return out, nil
 	}
 	for _, v := range page.Changes {
 		out.Items = append(out.Items, fillChangeView(v))

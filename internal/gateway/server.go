@@ -1463,6 +1463,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return map[string]any{"removed": removed}, nil
 
 	case "query.nodes":
+		var p protocol.QueryNodes
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad query.nodes")
+		}
+		if p.IfVersion != 0 && p.IfVersion == g.topicVersions()[protocol.TopicNodes] {
+			return protocol.NodesInfo{NotModified: true}, nil
+		}
 		return g.NodesInfo()
 
 	case "query.graph_talk":
@@ -2289,13 +2296,21 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			ID     int64  `json:"suggestion_id"`
 			Node   string `json:"node"`
 			Action string `json:"action"`
+			Lite   bool   `json:"lite,omitempty"`
 		}
 		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		switch typ {
 		case "learned.list":
-			return st.OwnerLearned()
+			rows, err := st.OwnerLearned()
+			if err != nil {
+				return nil, err
+			}
+			if p.Lite {
+				rows = liteLearnedRows(rows)
+			}
+			return rows, nil
 		case "learned.answer":
 			if err := st.DecideLearned(p.ID, p.Action); err != nil {
 				return map[string]bool{"ok": true}, err
@@ -2874,11 +2889,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad query.agents")
 		}
+		if p.IfVersion != 0 && p.IfVersion == g.topicVersions()[protocol.TopicAgents] {
+			return protocol.AgentsResult{NotModified: true}, nil
+		}
+		// The version is a request hint only; it must not split the read cache.
+		p.IfVersion = 0
 		agents, err := st.Agents(p)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"agents": agents}, nil
+		if p.Lite {
+			liteAgentViews(agents)
+		}
+		return protocol.AgentsResult{Agents: agents}, nil
 
 	case protocol.FrameSessionWakeRebind:
 		var p wakeRebind

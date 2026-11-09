@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -239,10 +240,14 @@ func (d *Daemon) checkClientProtocol(clientProto int, clientVersion string) erro
 }
 
 // dispatchUpgrade serves the local "nodes" and "restart" methods.
-func (d *Daemon) dispatchUpgrade(ctx context.Context, method, client string) (any, error) {
+func (d *Daemon) dispatchUpgrade(ctx context.Context, method, client string, raw json.RawMessage) (any, error) {
 	switch method {
 	case "nodes":
-		return d.call(ctx, "query.nodes", nil)
+		var p protocol.QueryNodes
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad nodes request")
+		}
+		return d.call(ctx, "query.nodes", p)
 	case "restart":
 		if client != "cli" {
 			return nil, errors.New("only the agent-net command line can restart the daemon")

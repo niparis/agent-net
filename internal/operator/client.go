@@ -118,6 +118,13 @@ type SnapshotOptions struct {
 	// Topics nil loads everything. Otherwise Previous supplies unchanged data.
 	Topics   map[string]bool
 	Previous Snapshot
+	// IfVersions carries the topic version each part of Previous was read at.
+	// A part whose topic has not moved is answered NotModified, so the caller
+	// keeps its copy and the gateway sends no rows.
+	IfVersions map[string]uint64
+	// Lite leaves out fields no TUI list screen shows. The screen sets it; the
+	// phone and the command line keep the full rows.
+	Lite bool
 }
 
 func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
@@ -126,11 +133,10 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 
 // SnapshotWith is Snapshot with the optional parts chosen by the caller.
 func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapshot, error) {
-	var snap Snapshot
-	if opts.Topics != nil {
-		snap = opts.Previous
-		snap.FailedCalls = nil
-	}
+	// A part the gateway reports unchanged, or one that fails, keeps the
+	// caller's copy. This is what makes a safety refresh cheap.
+	snap := opts.Previous
+	snap.FailedCalls, snap.Unchanged = nil, nil
 	raw, err := s.Call(ctx, protocol.OpInfo, nil)
 	if err != nil {
 		return snap, err
@@ -157,10 +163,12 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 		err      error
 	}
 	calls := []request{
-		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true}, required: true},
-		{method: protocol.OpNodes}, {method: "notification_settings"}, {method: protocol.OpTimeZoneGet}, {method: protocol.OpWorkerProfiles},
+		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true, IfVersion: opts.IfVersions[protocol.TopicAgents], Lite: opts.Lite}, required: true},
+		{method: protocol.OpNodes, params: protocol.QueryNodes{IfVersion: opts.IfVersions[protocol.TopicNodes]}},
+		{method: "notification_settings"}, {method: protocol.OpTimeZoneGet}, {method: protocol.OpWorkerProfiles},
 		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet}, {method: protocol.OpWorkerFloorsGet},
-		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: protocol.OpWorkerRotationGet}, {method: "learned_list"},
+		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: protocol.OpWorkerRotationGet},
+		{method: "learned_list", params: protocol.LearnedListQuery{IfVersion: opts.IfVersions[protocol.TopicLearned], Lite: opts.Lite}},
 		{method: protocol.OpGraphGet},
 		{method: protocol.OpProjects, params: protocol.QueryProjects{}},
 	}
@@ -170,7 +178,7 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 	if opts.Topics != nil {
 		selected := calls[:0]
 		for _, call := range calls {
-			if opts.Topics[snapshotTopic(call.method)] {
+			if opts.Topics[SnapshotTopic(call.method)] {
 				selected = append(selected, call)
 			}
 		}
@@ -208,7 +216,11 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 			case protocol.OpAgents:
 				var v protocol.AgentsResult
 				err = json.Unmarshal(c.raw, &v)
-				snap.Agents = v.Agents
+				if v.NotModified {
+					snap.Unchanged = append(snap.Unchanged, c.method)
+				} else {
+					snap.Agents = v.Agents
+				}
 			case "notification_settings":
 				var v struct {
 					Disabled bool `json:"disabled"`
@@ -222,9 +234,13 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 			case protocol.OpNodes:
 				var v protocol.NodesInfo
 				err = json.Unmarshal(c.raw, &v)
-				snap.Nodes = v.Nodes
-				snap.Calibration = v.Calibration
-				snap.GatewayWarnings = v.GatewayWarnings
+				if v.NotModified {
+					snap.Unchanged = append(snap.Unchanged, c.method)
+				} else {
+					snap.Nodes = v.Nodes
+					snap.Calibration = v.Calibration
+					snap.GatewayWarnings = v.GatewayWarnings
+				}
 			case protocol.OpWorkerProfiles:
 				err = json.Unmarshal(c.raw, &snap.WorkerProfiles)
 			case protocol.OpWorkerProvidersGet:
@@ -264,9 +280,10 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 	return snap, nil
 }
 
-// snapshotTopic maps each snapshot read to the dependency versions that make
+// SnapshotTopic maps each snapshot read to the dependency versions that make
 // it stale. Local settings are refreshed with workers on a safety refresh too.
-func snapshotTopic(method string) string {
+// A caller keeps the version of a part from the fetch that read it.
+func SnapshotTopic(method string) string {
 	switch method {
 	case protocol.OpAgents:
 		return protocol.TopicAgents
