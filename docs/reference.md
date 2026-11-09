@@ -280,7 +280,13 @@ state. The daemon passes a private MCP configuration with `--mcp-config` and
 `--strict-mcp-config`; the only MCP server in it is `agent-net cto-mcp`. The
 ordinary agent-net MCP tools are not registered for this session.
 Claude starts with `--tools ""` and `--setting-sources ""`. Private settings
-disable all hooks and enable no plugins.
+disable all hooks and enable no plugins. Because no user settings load, the
+daemon copies one value from the owner's `~/.claude/settings.json` (or
+`$CLAUDE_CONFIG_DIR/settings.json`) into those private settings: `tui`, when it
+is `fullscreen` or `default`. Without it the CTO would use the classic renderer
+while the owner's other sessions use the fullscreen one, and a long reply (a
+table) would run off the screen with no scrollback. A running CTO keeps the
+renderer it started with; it takes the new value at its next start.
 At daemon start, on cto-mcp hello, and before starting Claude, the daemon adopts a live `agent-net-cto` background job
 in that private directory if one exists. When Claude resumes a conversation as
 a copy, the daemon saves the copy's session ID and moves its action lines to

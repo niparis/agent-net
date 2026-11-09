@@ -883,3 +883,50 @@ func TestClaudeCTOStartupAdoptsWithoutGatewayOrHello(t *testing.T) {
 		t.Fatal("missing startup adoption log")
 	}
 }
+
+// The CTO starts with --setting-sources "", so the owner's user settings do not
+// reach it. The renderer is one of them: "tui": "fullscreen" gives the owner
+// scrollback in every other session, and the CTO fell back to the classic
+// renderer, where a long reply (a table) runs off the screen. The CTO gets the
+// owner's renderer choice in its own launch settings, and nothing else.
+func TestClaudeCTOKeepsOwnerRenderer(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	user := `{"tui":"fullscreen","model":"sonnet","hooks":{"Stop":[]},"enabledPlugins":{"x@y":true}}`
+	if err := os.WriteFile(filepath.Join(filepath.Dir(n.sessions), "settings.json"), []byte(user), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
+	defer cancel()
+	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+	if rec.Settings["tui"] != "fullscreen" {
+		t.Errorf("CTO tui setting = %v, want the owner's fullscreen renderer", rec.Settings["tui"])
+	}
+	if _, ok := rec.Settings["model"]; ok {
+		t.Error("CTO took the owner's model from user settings")
+	}
+	if plugins, ok := rec.Settings["enabledPlugins"].(map[string]any); !ok || len(plugins) != 0 || rec.Settings["disableAllHooks"] != true {
+		t.Error("CTO took owner plugins or hooks")
+	}
+}
+
+// An owner with no renderer setting gets the Claude Code default, as the other
+// sessions do, so no "tui" key is written.
+func TestClaudeCTOWithoutOwnerRenderer(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
+	defer cancel()
+	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+	if v, ok := rec.Settings["tui"]; ok {
+		t.Errorf("CTO tui setting = %v with no owner setting", v)
+	}
+}
