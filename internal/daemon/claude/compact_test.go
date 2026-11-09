@@ -152,6 +152,17 @@ func TestIdleCompact(t *testing.T) {
 						t.Fatalf("note timestamp=%d", got)
 					}
 					// A real busy observation starts a new stretch; polling idle alone did not.
+					// A busy turn writes to the transcript, so write one too: the
+					// transcript, not memory, is what survives a restart.
+					if f, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0600); err != nil {
+						t.Fatal(err)
+					} else {
+						_, err = f.WriteString(fmt.Sprintf("{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"again\"}}\n{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":20,\"cache_read_input_tokens\":%d}}}\n", tc.tokens-30))
+						f.Close()
+						if err != nil {
+							t.Fatal(err)
+						}
+					}
 					a.mu.Lock()
 					f := a.byNative["test"]
 					f.info.Status = "busy"
@@ -194,6 +205,103 @@ func (h *compactHost) AttachClientsViewing(pids []int) map[int]bool {
 }
 
 func (h *compactHost) SettingsSnapshot() settings.Snapshot { return h.snap }
+
+// A fresh daemon (an empty compactStates) must read the "already compacted,
+// nothing since" answer from the transcript, so a restart does not compact a
+// session that has had no turn since its last compaction. These transcripts are
+// synthetic copies of the shapes Claude Code writes (type=system
+// subtype=compact_boundary, then a type=user entry with isCompactSummary).
+func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
+	const (
+		assistant   = `{"type":"assistant","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":299970}}}` + "\n"
+		boundary    = `{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"manual","preTokens":300000,"postTokens":20000}}` + "\n"
+		summary     = `{"type":"user","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation."}}` + "\n"
+		attachment  = `{"type":"attachment","attachment":{"type":"file"}}` + "\n"
+		bookkeeping = `{"type":"last-prompt","lastPrompt":"older prompt"}` + "\n"
+		newTurn     = `{"type":"user","message":{"role":"user","content":"a new question"}}` + "\n" + assistant
+	)
+	skip := "event=idle_compact session=test result=skipped:no_activity_since_compact"
+	for _, tc := range []struct {
+		name       string
+		body       string
+		wantLog    string
+		want       int   // new boundaries written by the fake claude
+		wantTokens int64 // contextTokens before compaction
+	}{
+		{name: "transcript ends at the compact summary", body: assistant + boundary + summary, wantLog: skip, wantTokens: 20000},
+		{name: "transcript ends at the compact boundary", body: assistant + boundary, wantLog: skip, wantTokens: 20000},
+		{name: "bookkeeping after the compaction is not a turn", body: assistant + boundary + summary + attachment + bookkeeping, wantLog: skip, wantTokens: 20000},
+		{name: "a turn after the compaction compacts again", body: assistant + boundary + summary + newTurn, wantLog: "event=idle_compact session=test result=ok", want: 1, wantTokens: 300000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			sessions := filepath.Join(dir, "sessions")
+			t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", sessions)
+			projects := filepath.Join(dir, "projects")
+			td := filepath.Join(projects, transcriptDir(dir))
+			if err := os.MkdirAll(sessions, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(td, 0700); err != nil {
+				t.Fatal(err)
+			}
+			transcript := filepath.Join(td, "test.jsonl")
+			if err := os.WriteFile(transcript, []byte(tc.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			sf := filepath.Join(sessions, fmt.Sprintf("%d.json", os.Getpid()))
+			if err := os.WriteFile(sf, []byte(fmt.Sprintf(`{"pid":%d,"sessionId":"test","cwd":%q,"kind":"bg","jobId":"job-test","status":"idle"}`, os.Getpid(), dir)), 0600); err != nil {
+				t.Fatal(err)
+			}
+			old := time.Now().Add(-2 * time.Hour)
+			for _, p := range []string{sf, transcript} {
+				if err := os.Chtimes(p, old, old); err != nil {
+					t.Fatal(err)
+				}
+			}
+			bin := filepath.Join(dir, "claude")
+			script := "#!/bin/sh\nstty -echo\nprintf x >> \"$COMPACT_STARTS\"\nprintf '❯'\nIFS= read -r line\n[ \"$1\" = attach ] && [ \"$2\" = job-test ] && [ \"$line\" = /compact ] || exit 12\nprintf '%s\\n' '{\"type\":\"system\",\"subtype\":\"compact_boundary\"}' >> \"$COMPACT_TRANSCRIPT\"\nIFS= read -r line\n"
+			if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("COMPACT_TRANSCRIPT", transcript)
+			starts := filepath.Join(dir, "starts")
+			t.Setenv("COMPACT_STARTS", starts)
+			h := &compactHost{fakeHost: &fakeHost{}, snap: settings.Snapshot{}}
+			a := New(Config{SessionsDir: sessions, ProjectsDir: projects}) // empty compactStates: a fresh daemon
+			a.host = h
+			a.compactBinary = bin
+			a.compactPromptTimeout = 100 * time.Millisecond
+			a.compactTimeout = time.Second
+			a.compactAttached = func(context.Context) (map[string]bool, error) { return map[string]bool{}, nil }
+			if got := contextTokens(transcript); got != tc.wantTokens {
+				t.Fatalf("contextTokens=%d, want %d", got, tc.wantTokens)
+			}
+			a.poll()
+			a.compactOnce(context.Background())
+			data, err := os.ReadFile(transcript)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Count(string(data), `"compact_boundary"`) - strings.Count(tc.body, `"compact_boundary"`); got != tc.want {
+				t.Fatalf("new boundaries=%d, want %d; logs=%v", got, tc.want, h.logs)
+			}
+			startBytes, _ := os.ReadFile(starts)
+			if len(startBytes) != tc.want {
+				t.Fatalf("attach attempts=%d, want %d", len(startBytes), tc.want)
+			}
+			found := false
+			for _, l := range h.logs {
+				if strings.Contains(l, tc.wantLog) {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("missing log %q; logs=%v", tc.wantLog, h.logs)
+			}
+		})
+	}
+}
 
 func TestCompactAttachProcess(t *testing.T) {
 	if attachedJobsExcept([]byte("42 claude attach job-test"), 42)["job-test"] {
