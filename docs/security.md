@@ -1462,6 +1462,17 @@ edge per granted server. Those were already visible to the owner only; share
 them knowingly. The `calls` edge is derived on read from the grants and cannot
 be written, so the Graph edit methods cannot grant a bot anything.
 
+**A bot may act under a name** ([decision 0118](decisions/0118-bot-names.md)).
+The name (`as` on a bot tool, the `X-Agent-Net-As` header, or an `as:` client
+name) is a label, not a security boundary. All the names of an app share its
+token, grants and call and message limits, and a caller that holds the token can
+send as, and read the mail of, any name of that app. The name is checked only
+for its format (1 to 32 characters: letters, digits, space, `-`, `_`) and a
+revoked app cannot get a named session. The number of names is not limited
+beyond the app's call limit. To keep two bots apart for real, connect them as
+two apps. Revoking an app archives its named nodes; no named session or message
+is deleted.
+
 **Its own Tailscale node.** With `agent-net setup --gateway
 --apps-tailscale-name NAME` ([decision 0058](decisions/0058-own-tailscale-name.md)),
 the gateway runs its own Tailscale node in its process (tsnet) and serves the

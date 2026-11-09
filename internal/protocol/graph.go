@@ -84,6 +84,9 @@ type NodeBot struct {
 	ConnectedAt int64    `json:"connected_at,omitempty"`
 	LastUsedAt  int64    `json:"last_used_at,omitempty"`
 	CanCall     []string `json:"can_call,omitempty"`
+	// Parent is the app node ID on the node of a name the bot acts under
+	// (decision 0118). It is empty on the app's own node.
+	Parent string `json:"parent,omitempty"`
 }
 
 // Node is a component or an architect. Components can be implicit projects.

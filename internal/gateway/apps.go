@@ -24,6 +24,8 @@ type App struct {
 	LastUsedAt   *time.Time
 	RevokedAt    *time.Time
 	Grants       []string
+	// Names are the names a bot has acted under (decision 0118); ListApps fills them.
+	Names []string
 }
 
 const appColumns = "id, name, kind, client_id, client_name, redirect_uris, created_at, last_used_at, revoked_at, grants"
@@ -363,7 +365,17 @@ func (s *Store) ListApps() ([]App, error) {
 		}
 		apps = append(apps, app)
 	}
-	return apps, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	names, err := s.botNames()
+	if err != nil {
+		return nil, err
+	}
+	for i := range apps {
+		apps[i].Names = names[apps[i].ID]
+	}
+	return apps, nil
 }
 
 // DeleteExpiredTokens removes expired tokens and refresh hashes used 90 days ago.

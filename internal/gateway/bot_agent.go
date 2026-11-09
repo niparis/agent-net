@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -77,8 +78,9 @@ func (s *Store) addBotGraph(g *protocol.Graph, byRef map[protocol.GraphRef]*prot
 		return err
 	}
 	type bot struct {
-		id     string
-		grants []string
+		id       string
+		grants   []string
+		children []*protocol.NodeBot
 	}
 	var bots []bot
 	for rows.Next() {
@@ -99,7 +101,16 @@ func (s *Store) addBotGraph(g *protocol.Graph, byRef map[protocol.GraphRef]*prot
 			continue
 		}
 		n.Bot = &protocol.NodeBot{Client: client, ConnectedAt: created, LastUsedAt: used.Int64}
-		bots = append(bots, bot{id, grants})
+		b := bot{id: id, grants: grants}
+		// A name of the bot (decision 0118) is a child node with the app's
+		// details. It draws no calls edge of its own: the app's node has them.
+		for ref, child := range byRef {
+			if ref.Kind == "agent" && strings.HasPrefix(ref.ID, id+"/") && child.Role == "bot" {
+				child.Bot = &protocol.NodeBot{Client: client, ConnectedAt: created, LastUsedAt: used.Int64, Parent: id}
+				b.children = append(b.children, child.Bot)
+			}
+		}
+		bots = append(bots, b)
 	}
 	err = rows.Err()
 	rows.Close()
@@ -144,6 +155,9 @@ func (s *Store) addBotGraph(g *protocol.Graph, byRef map[protocol.GraphRef]*prot
 			}
 			from, to := protocol.GraphRef{Kind: "agent", ID: b.id}, protocol.GraphRef{Kind: "repo", ID: repo}
 			g.Edges = append(g.Edges, protocol.Edge{From: from.ID, To: to.ID, Kind: protocol.EdgeCalls, FromRef: &from, ToRef: &to})
+		}
+		for _, c := range b.children {
+			c.CanCall = n.Bot.CanCall
 		}
 	}
 	return nil

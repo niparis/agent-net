@@ -24,6 +24,8 @@ type connectedApp struct {
 	CreatedAt                  time.Time
 	LastUsedAt, RevokedAt      *time.Time
 	Grants                     []string
+	// Names are the names the bot has acted under (decision 0118).
+	Names []string
 }
 type pendingApp struct{ ID, ClientName, RedirectHost, DefaultKind string }
 type appsPublicStatus struct {
@@ -548,6 +550,9 @@ func (m Model) appsView(w, rows int) []string {
 				if grants := appGrantsLine(f.apps[i], w, "  "); grants != "" {
 					out = append(out, grants)
 				}
+				if names := appNamesLine(f.apps[i], w, "  "); names != "" {
+					out = append(out, names)
+				}
 			}
 		}
 		if f.stage == "confirm" && len(f.apps) > 0 {
@@ -585,6 +590,20 @@ func appGrantsLine(a connectedApp, w int, indent string) string {
 		text = "can call: " + strings.Join(names, ", ")
 	}
 	return sDim.Render(clip(indent+"  "+text, w))
+}
+
+// appNamesLine is the dim line under a bot's grants: the names the bot has
+// acted under, each with its own identity (decision 0118). A bot that never
+// used a name has no line.
+func appNamesLine(a connectedApp, w int, indent string) string {
+	if a.Kind != "bot" || len(a.Names) == 0 {
+		return ""
+	}
+	names := make([]string, len(a.Names))
+	for i, n := range a.Names {
+		names[i] = sanitize(n)
+	}
+	return sDim.Render(clip(indent+"  names: "+strings.Join(names, ", "), w))
 }
 
 // allowedToolCount is how many of a server's tools the gateway lets through.

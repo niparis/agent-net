@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -172,5 +173,24 @@ func TestToolsMCPServerShowsBots(t *testing.T) {
 	detail = ansi.Strip(strings.Join(m.toolDetailView(60, 12), "\n"))
 	if strings.Contains(detail, "bots:") {
 		t.Fatalf("bots line without grants:\n%s", detail)
+	}
+}
+
+// A bot that acts under names lists them under its row. A bot with no name has
+// no line, and the list reads the gateway's "Names" field.
+func TestConnectedAppNamesLine(t *testing.T) {
+	m := newModel(120, 34)
+	m.mode = modeApps
+	var apps struct{ Apps []connectedApp }
+	if err := json.Unmarshal([]byte(`{"apps":[{"ID":"a","Name":"Trade","Kind":"bot","Names":["CTO","Shopping"]},{"ID":"b","Name":"grok","Kind":"bot"},{"ID":"p","Name":"phone","Kind":"owner_app"}]}`), &apps); err != nil {
+		t.Fatal(err)
+	}
+	m.apps.apps = apps.Apps
+	view := ansi.Strip(strings.Join(m.appsView(120, 30), "\n"))
+	if !strings.Contains(view, "names: CTO, Shopping") {
+		t.Errorf("names line missing:\n%s", view)
+	}
+	if strings.Count(view, "names:") != 1 {
+		t.Errorf("only the bot with names has the line:\n%s", view)
 	}
 }
