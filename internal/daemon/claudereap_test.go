@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log"
 	"os"
@@ -293,4 +294,52 @@ func TestClaudeStopCheckRunsAfterTheDelay(t *testing.T) {
 	eventually(t, "the stopped job's tree was ended", func() bool {
 		return !f.alive(4100) && !f.alive(4101)
 	})
+}
+
+// A daemon that is stopping must not wait for the Claude end-of-job check. Its
+// process-table read can block (ps has no deadline), and with many Claude
+// sessions several of these checks run at once. Stop cancels the run context;
+// the check must give up, and the shutdown wait must not be held by one that is
+// still inside a read.
+func TestClaudeStopReapDoesNotHoldTheShutdownWait(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now()
+	d, f, _ := treeTestDaemon(t, root, now)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.ctoCtx = ctx
+	writeClaudeStopRoster(t, root, now.Add(-5*time.Second), nil)
+	writeClaudeJobState(t, root, "abcd1234", "stopped")
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	f.onRead = func(read int) {
+		if read < 2 { // the snapshot before `claude stop` reads first
+			return
+		}
+		once.Do(func() { close(entered) })
+		<-release
+	}
+	t.Cleanup(func() { close(release) })
+
+	d.afterClaudeStop("abcd1234")
+	select {
+	case <-entered:
+	case <-time.After(scaled(2 * time.Second)):
+		t.Fatal("the end-of-job check never read the process table")
+	}
+
+	// What Stop does: cancel the run context, then wait for background work.
+	cancel()
+	waited := make(chan struct{})
+	go func() {
+		d.bg.Wait()
+		close(waited)
+	}()
+	select {
+	case <-waited:
+	case <-time.After(scaled(2 * time.Second)):
+		t.Fatal("the shutdown wait is held by the blocked Claude end-of-job check")
+	}
 }
