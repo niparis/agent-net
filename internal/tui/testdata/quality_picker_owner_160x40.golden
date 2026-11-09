@@ -1,24 +1,24 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online · 1 busy                                                         updated 14:05:00
   Quotas      Workers log    [ Quality ]
 ╭─Quality · worker picker──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ MODEL                        HARNESS    AA  1.00  1.33  1.67  2.00  2.33                                                                                     │
-│ bucket mean                                 0.81  0.76  0.70  0.66  0.50                                                                                     │
-│ tasks                                        n13   n14   n15   n13    n1                                                                                     │
-│   claude-opus-5-5:high       claude     57     ·     ·     ·     ·     ·                                                                                     │
-│   deepseek-v4.1-flash:high   opencode   52  0.79  0.75  0.70  0.67     ·                                                                                     │
-│ ▸ claude-sonnet-5-5          claude     44  0.80  0.76  0.71  0.67     ·                                                                                     │
-│   gpt-6.1-sol:medium         codex      33     ·  0.76  0.68     ·     ·                                                                                     │
-│   aardvark                   codex       -     ·     ·     ·     ·     ·                                                                                     │
+│ MODEL                        HARNESS    AA   1.00  1.33  1.67  2.00  2.33                                                                                    │
+│ bucket mean                                  0.81  0.76  0.70  0.66  0.50                                                                                    │
+│ tasks                                         n13   n14   n15   n13    n1                                                                                    │
+│   claude-opus-5-5:high       claude     57      ·     ·     ·     ·     ·                                                                                    │
+│   deepseek-v4.1-flash:high   opencode   52   0.79  0.75  0.70  0.67     ·                                                                                    │
+│ ▸ claude-sonnet-5-5          claude     44  [0.80] 0.76  0.71  0.67     ·                                                                                    │
+│   gpt-6.1-sol:medium         codex      33      ·  0.76  0.68     ·     ·                                                                                    │
+│   aardvark                   codex       -      ·     ·     ·     ·     ·                                                                                    │
 │ 3 older model keys hidden · o to show                                                                                                                        │
+│ score 0.50        0.70        0.90  faded = 1-2 tasks                                                                                                        │
 │ Selected cell ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
 │ claude-sonnet-5-5 · claude · bucket 1.00-1.33 · n6                                                                                                           │
 │ score 0.80 [0.78-0.83] · mean 0.81                                                                                                                           │
 │ best claude-sonnet-5-5 · claude 0.80 [0.78-0.83] n6                                                                                                          │
 │ verdict: allowed                                                                                                                                             │
 │ settings: bucket width 0.33 · k 5 · allowed fraction 0.90 · margin 0.25 · boost 1.5 · uncertain n 5                                                          │
-│ AA = benchmark score · plain = 3+ tasks · dim = 1-2 · dot = no task yet                                                                                      │
-│ green/red = interval above/below bucket mean · underline = past ceiling                                                                                      │
-│ o = older model keys · R = read again                                                                                                                        │
+│ AA = benchmark score · dot = no task yet · underline = past ceiling                                                                                          │
+│ [0.80] = selected cell · o = older model keys · R = read again                                                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 

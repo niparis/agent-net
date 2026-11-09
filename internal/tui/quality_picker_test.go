@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image/color"
+	"math"
 	"reflect"
 	"regexp"
 	"strings"
@@ -11,8 +13,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 // pickerFixture is one picker table with a record, a thin record and a model
@@ -136,7 +141,7 @@ func TestQualityPickerCeilingUnderlinesCellsPastIt(t *testing.T) {
 					past++
 				}
 			}
-			if got := underlinedRunes(line) / 4; got != past {
+			if got := underlinedRunes(line) / pickerCellWidth; got != past {
 				t.Errorf("%dx%d: %s has %d underlined cells, want %d (ceiling %.2f): %q", size[0], size[1], row.name, got, past, row.ceiling, line)
 			}
 		}
@@ -162,38 +167,211 @@ func TestQualityPickerKeepsTheSelectedBucketVisibleAt80(t *testing.T) {
 	}
 }
 
-func TestQualityPickerCellShading(t *testing.T) {
-	none := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .5, Hi: .5}, .5, false, false, false)
-	if !none.GetFaint() {
-		t.Error("a cell with no task is not dim")
+// withPaletteProfile sets the colour depth the picker reads, and restores it.
+func withPaletteProfile(t *testing.T, p colorprofile.Profile) {
+	t.Helper()
+	prev := palette.Profile()
+	palette.SetProfile(p)
+	t.Cleanup(func() { palette.SetProfile(prev) })
+}
+
+// withPaletteTheme sets the light or dark theme, and restores it.
+func withPaletteTheme(t *testing.T, dark bool) {
+	t.Helper()
+	prev := palette.IsDark()
+	palette.SetDark(dark)
+	t.Cleanup(func() { palette.SetDark(prev) })
+}
+
+// rgbOf is the colour as 8-bit channels, for comparisons.
+func rgbOf(c color.Color) [3]int {
+	r, g, b, _ := c.RGBA()
+	return [3]int{int(r >> 8), int(g >> 8), int(b >> 8)}
+}
+
+// A scored cell takes its colour from the score, with fixed thresholds: 0.50
+// or less is the low end, 0.95 or more is the top, and the same score gets the
+// same colour in any grid.
+func TestQualityScoreCellsGetTheScaleByScore(t *testing.T) {
+	withPaletteProfile(t, colorprofile.TrueColor)
+	withPaletteTheme(t, true)
+	bg := func(score float64) [3]int {
+		c, _ := pickerHeat(score, false)
+		if c == nil {
+			t.Fatalf("score %.2f has no background in truecolour", score)
+		}
+		return rgbOf(c)
 	}
-	thin := pickerCellStyle(protocol.PickerCell{Score: .9, Lo: .8, Hi: .95, N: 2}, .5, false, false, false)
-	if !thin.GetFaint() || thin.GetForeground() == roleGood {
-		t.Error("a cell with fewer than three tasks must be dim and not green")
+	if bg(0.30) != bg(0.50) || bg(1.00) != bg(0.95) {
+		t.Fatalf("scores outside the scale do not clamp: 0.30 %v 0.50 %v, 1.00 %v 0.95 %v", bg(0.30), bg(0.50), bg(1.00), bg(0.95))
 	}
-	plain := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .2, Hi: .8, N: 3}, .5, false, false, false)
-	if plain.GetFaint() || plain.GetBold() {
-		t.Error("a cell with three tasks is not plain weight, even with a wide interval")
+	low, mid, top := bg(0.50), bg(0.725), bg(0.95)
+	if !(low[0] > low[1] && low[0] > low[2]) {
+		t.Errorf("the low end is not red: %v", low)
 	}
-	above := pickerCellStyle(protocol.PickerCell{Score: .8, Lo: .7, Hi: .9, N: 10}, .5, false, false, false)
-	if above.GetForeground() != roleGood {
-		t.Error("a cell whose interval is above the mean is not green")
+	if !(mid[0] > 200 && mid[1] > 150 && mid[2] < 120) {
+		t.Errorf("the middle is not amber: %v", mid)
 	}
-	below := pickerCellStyle(protocol.PickerCell{Score: .2, Lo: .1, Hi: .3, N: 10}, .5, false, false, false)
-	if below.GetForeground() != roleError {
-		t.Error("a cell whose interval is below the mean is not red")
+	if !(top[1] > top[0] && top[1] > top[2]) {
+		t.Errorf("the top is not green: %v", top)
 	}
-	past := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .45, Hi: .55, N: 10}, .5, false, true, false)
-	if !past.GetUnderline() {
-		t.Error("a cell past the benchmark ceiling is not underlined")
+	// The same score gets the same colour, whatever the cell's record.
+	a := pickerCellStyle(protocol.PickerCell{Score: .80, Lo: .78, Hi: .82, N: 9}, false, false, false)
+	b := pickerCellStyle(protocol.PickerCell{Score: .80, Lo: .70, Hi: .90, N: 40}, false, false, false)
+	if a.GetBackground() != b.GetBackground() {
+		t.Errorf("the same score gets two colours: %v and %v", a.GetBackground(), b.GetBackground())
 	}
-	selected := pickerCellStyle(protocol.PickerCell{Score: .5, Lo: .2, Hi: .8, N: 10}, .5, true, false, false)
-	if selected.GetBackground() != roleAccent || selected.GetFaint() {
-		t.Error("the selected cell does not have the selection colours")
+}
+
+// The text on a cell is dark on a light cell and light on a dark one, so every
+// score and every fade reads with at least 4.5 to 1 contrast, in both themes.
+func TestQualityScoreCellsHaveReadableText(t *testing.T) {
+	withPaletteProfile(t, colorprofile.TrueColor)
+	for _, dark := range []bool{false, true} {
+		withPaletteTheme(t, dark)
+		for score := 0.50; score <= 0.951; score += 0.025 {
+			for _, faded := range []bool{false, true} {
+				bg, fg := pickerHeat(score, faded)
+				if got := contrastRatio(bg, fg); got < 4.5 {
+					t.Errorf("dark=%v score %.3f faded=%v: contrast %.2f, want 4.5", dark, score, faded, got)
+				}
+			}
+		}
 	}
-	older := pickerCellStyle(protocol.PickerCell{Score: .8, Lo: .7, Hi: .9, N: 10}, .5, false, false, true)
-	if !older.GetFaint() || older.GetForeground() == roleGood {
-		t.Error("a cell of an older model key must be dim and not coloured")
+}
+
+// A cell with one or two tasks is the same hue at reduced strength: blended
+// toward the panel, so it sits between the full colour and the panel.
+func TestQualityThinCellIsFaded(t *testing.T) {
+	withPaletteProfile(t, colorprofile.TrueColor)
+	withPaletteTheme(t, true)
+	full, _ := pickerHeat(.90, false)
+	faded, _ := pickerHeat(.90, true)
+	panel := rgbOf(roleBase)
+	dist := func(c color.Color) float64 {
+		v := rgbOf(c)
+		d := 0.0
+		for i := range v {
+			d += math.Abs(float64(v[i] - panel[i]))
+		}
+		return d
+	}
+	if rgbOf(full) == rgbOf(faded) || dist(faded) >= dist(full) || dist(faded) == 0 {
+		t.Fatalf("a faded cell is not between the colour and the panel: full %v faded %v panel %v", rgbOf(full), rgbOf(faded), panel)
+	}
+	thin := pickerCellStyle(protocol.PickerCell{Score: .90, Lo: .8, Hi: .95, N: 2}, false, false, false)
+	solid := pickerCellStyle(protocol.PickerCell{Score: .90, Lo: .8, Hi: .95, N: 9}, false, false, false)
+	if thin.GetBackground() != faded || solid.GetBackground() != full {
+		t.Fatalf("a 1-2 task cell is not faded: thin %v solid %v", thin.GetBackground(), solid.GetBackground())
+	}
+}
+
+// An empty cell and a cell of an older key have no background: a dim dot, or
+// dim numbers.
+func TestQualityEmptyCellHasNoBackground(t *testing.T) {
+	withPaletteProfile(t, colorprofile.TrueColor)
+	empty := pickerCellStyle(protocol.PickerCell{}, false, false, false)
+	if _, none := empty.GetBackground().(lipgloss.NoColor); !none || !empty.GetFaint() {
+		t.Errorf("an empty cell has a background or is not dim: %v", empty.GetBackground())
+	}
+	older := pickerCellStyle(protocol.PickerCell{Score: .9, Lo: .8, Hi: .95, N: 9}, false, false, true)
+	if _, none := older.GetBackground().(lipgloss.NoColor); !none {
+		t.Errorf("an older key has a background: %v", older.GetBackground())
+	}
+	if got := pickerCellText(protocol.PickerCell{}, false); got != "    · " {
+		t.Errorf("an empty cell is %q, want the dot in a six column block", got)
+	}
+}
+
+// The legend is one line under the grid: the ramp with 0.50, 0.70 and 0.90 on
+// it, and what faded means.
+func TestQualityLegendLineIsUnderTheGrid(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.qualityDetail = true
+	m.picker, m.pickerLoaded = pickerFixture(), true
+	m.defaultPickerSelection()
+	body := ansi.Strip(strings.Join(m.qualityPickerBody(120, 30), "\n"))
+	ramp := regexp.MustCompile(`score 0\.50 {8}0\.70 {8}0\.90 {2}faded = 1-2 tasks`)
+	lines := strings.Split(body, "\n")
+	at := -1
+	for i, line := range lines {
+		if ramp.MatchString(line) {
+			at = i
+		}
+	}
+	if at < 0 {
+		t.Fatalf("the legend line is missing:\n%s", body)
+	}
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimLeft(line, "│ ▸"), "Selected cell") && i < at {
+			t.Fatalf("the legend line is not under the grid, it is at %d and the section at %d", at, i)
+		}
+	}
+}
+
+// The selected cell keeps its heat colour and gets brackets, not the old
+// accent background that clashed with the scale.
+func TestQualitySelectedCellIsBracketedNotAccented(t *testing.T) {
+	withPaletteProfile(t, colorprofile.TrueColor)
+	if got := pickerCellText(protocol.PickerCell{Score: .8, N: 6}, true); got != "[0.80]" {
+		t.Errorf("selected text = %q, want [0.80]", got)
+	}
+	if got := pickerCellText(protocol.PickerCell{Score: .8, N: 6}, false); got != " 0.80 " {
+		t.Errorf("unselected text = %q, want a six column block", got)
+	}
+	if got := pickerCellText(protocol.PickerCell{}, true); got != "[   ·]" {
+		t.Errorf("selected empty text = %q", got)
+	}
+	sel := pickerCellStyle(protocol.PickerCell{Score: .8, Lo: .7, Hi: .9, N: 6}, true, false, false)
+	full, _ := pickerHeat(.8, false)
+	if sel.GetBackground() != full || sel.GetBackground() == roleAccent || !sel.GetBold() {
+		t.Errorf("the selected cell is not the heat colour with bold: bg %v bold %v", sel.GetBackground(), sel.GetBold())
+	}
+}
+
+// A 16-colour terminal gets three steps. A terminal with no colour gets none.
+func TestQualityScaleDegradesInSixteenColoursAndNoColour(t *testing.T) {
+	withPaletteProfile(t, colorprofile.ANSI)
+	steps := map[any]bool{}
+	for score := 0.50; score <= 0.951; score += 0.025 {
+		bg, fg := pickerHeat(score, false)
+		if bg == nil || fg == nil {
+			t.Fatalf("score %.3f has no colour in 16 colours", score)
+		}
+		steps[bg] = true
+	}
+	if len(steps) != 3 {
+		t.Errorf("16 colours show %d steps, want 3", len(steps))
+	}
+	withPaletteProfile(t, colorprofile.ASCII)
+	if bg, _ := pickerHeat(.9, false); bg != nil {
+		t.Errorf("a terminal with no colour has a background: %v", bg)
+	}
+	if sty := pickerCellStyle(protocol.PickerCell{Score: .9, Lo: .8, Hi: .95, N: 9}, true, false, false); !sty.GetBold() {
+		t.Error("the selected cell has no mark without colour")
+	}
+	thin := pickerCellStyle(protocol.PickerCell{Score: .9, Lo: .8, Hi: .95, N: 2}, false, false, false)
+	if !thin.GetFaint() {
+		t.Error("a thin cell is not dim without colour")
+	}
+}
+
+// Cells keep their width with the background on: every bucket is six columns.
+func TestQualityCellsKeepTheirWidthWithColour(t *testing.T) {
+	withPaletteProfile(t, colorprofile.TrueColor)
+	m := newModel(120, 34)
+	m.picker, m.pickerLoaded = pickerFixture(), true
+	m.defaultPickerSelection()
+	cols := m.pickerColumns()
+	rows, _, _ := m.pickerRowSet()
+	for _, row := range rows {
+		for _, sel := range []bool{false, true} {
+			line := m.pickerModelLine(row, sel, pickerModelWidth, cols, 200)
+			if w := ansi.StringWidth(line); w != pickerLeftWidth(pickerModelWidth)+len(cols)*pickerCellWidth {
+				t.Errorf("%s (selected %v) is %d columns wide, want %d", row.name, sel, w, pickerLeftWidth(pickerModelWidth)+len(cols)*pickerCellWidth)
+			}
+		}
 	}
 }
 
