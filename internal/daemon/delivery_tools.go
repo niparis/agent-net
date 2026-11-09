@@ -473,6 +473,8 @@ func deliveryDiffStat(stat string) string {
 	return stat[:end] + tail
 }
 
+const handbackUncommittedPushProblem = "the branch was not pushed for the remote step owner because the worktree has uncommitted changes"
+
 // recordHandbackChange submits the change of a worker's complete hand-back
 // (origin worker), after commitAtHandback made the head hold the work. The
 // caller is the worker's owner. A continued worker carries the change of the
@@ -548,7 +550,7 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 		}
 	} else if plan.NeedsPush {
 		if uncommitted {
-			pushProblem = "the branch was not pushed for the remote step owner because the worktree has uncommitted changes"
+			pushProblem = handbackUncommittedPushProblem
 		} else {
 			pushCtx, stopPush := context.WithTimeout(ctx, timeout/2)
 			_, pushErr := gitOut(pushCtx, dir, "push", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
@@ -567,10 +569,14 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 		err = d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out)
 	}
 	if errors.Is(err, errNoDeliveryGateway) {
-		return "", ""
+		return "", pushProblem
 	}
 	if err != nil {
-		return fail(err)
+		_, problem := fail(err)
+		if pushProblem != "" {
+			problem = pushProblem + "; " + problem
+		}
+		return "", problem
 	}
 	id := out.Change.Change.ID
 	d.wmu.Lock()

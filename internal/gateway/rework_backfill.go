@@ -148,11 +148,10 @@ func (s *Store) backfillRework() error {
 // storedReworkNotice reads only the daemon's notice header and the explicit
 // completion line of its report. Started and queued notices do not hand back.
 func storedReworkNotice(body string) (handback, partial, idle, ok bool) {
-	const prefix = "[agent-net worker notice]\nstatus: "
-	if !strings.HasPrefix(body, prefix) {
+	status, found := workerNoticeStatus(body)
+	if !found {
 		return
 	}
-	status, _, _ := strings.Cut(strings.TrimPrefix(body, prefix), "\n")
 	switch status {
 	case "idle without hand-back":
 		return false, false, true, true
@@ -167,4 +166,21 @@ func storedReworkNotice(body string) (handback, partial, idle, ok bool) {
 		return true, partial, false, true
 	}
 	return
+}
+
+// workerNoticeStatus keeps the completion status separate from the push
+// warning on the same line. Older notices contain the status alone.
+func workerNoticeStatus(body string) (string, bool) {
+	const prefix = "[agent-net worker notice]\nstatus: "
+	if !strings.HasPrefix(body, prefix) {
+		return "", false
+	}
+	status, _, _ := strings.Cut(strings.TrimPrefix(body, prefix), "\n")
+	status = strings.TrimSuffix(status, ", NOT PUSHED: uncommitted changes in the worktree")
+	return status, true
+}
+
+func workerNoticeDone(body string) bool {
+	status, ok := workerNoticeStatus(body)
+	return ok && status == protocol.StatusDone
 }

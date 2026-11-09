@@ -362,11 +362,11 @@ A peer may send you up to 10 files of 100 MB each with a message. A peer control
 
 What the receiving daemon does:
 
-- **Inbox.** Each file goes to `~/.local/state/agent-net/daemon/inbox/<session>/<message>/<name>`, folders 0700, files 0600. Only the receiving session's folder gets the files. The message is delivered to the agent only when every file is in; its text then says where the files are.
-- **Hash mismatch.** A file that fails its size or hash is not taken. When the same copy fails twice in a row (so a file still being written is not refused), the message fails with the file's name, and nothing reaches the agent.
+- **Inbox.** Each file goes to `~/.local/state/agent-net/daemon/inbox/<session>/<message>/<name>`, folders 0700, files 0600. Only the receiving session's folder gets the files. An ordinary message reaches the agent only when every file is in; its text then says where the files are. A worker notice is delivered after at most 2 minutes while the receiving daemon is online, even if files are missing, and identifies any missing names.
+- **Hash mismatch.** A file that fails its size or hash is not taken. When the same copy fails twice in a row (so a file still being written is not refused), an ordinary message fails with the file's name. A worker notice still reaches its caller, without the bad file, and lists it as missing.
 - **Files nobody announced are not taken.** On macOS the Tailscale app saves Taildrops straight into `~/Downloads`; the daemon picks up only announced names there and leaves everything else, including a bad copy. On Linux the daemon runs `tailscale file get` into `<state>/files/taildrop/` only while it collects files, and moves every file nobody announced (and a bad copy) to `~/Downloads` under a free name, never over an existing file, so the owner's own Taildrops still arrive.
 - **Retention.** The daemon deletes a message's inbox folder 7 days after its last file arrived.
-- **What the log holds.** The daemon logs the message ID, file IDs, sizes and paths. It never logs file contents.
+- **What the log holds.** The daemon logs the message ID, file IDs, sizes and paths. It also logs missing file names when it delivers a worker notice without them. It never logs file contents.
 
 The gateway transfer in parts:
 

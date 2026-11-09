@@ -53,9 +53,9 @@ func (d *Daemon) tailscale() tailscaleCLI {
 }
 
 // receiveFiles starts collecting the files of a message that carries a
-// manifest. The message is delivered to its session only when every file is
-// in the inbox. A second push of the same message while a collector runs is
-// ignored: the collector delivers once.
+// manifest. A worker notice has a shorter wait and can be delivered with
+// missing files; other messages wait for every file. A second push while a
+// collector runs is ignored: the collector delivers once.
 func (d *Daemon) receiveFiles(m protocol.Message) {
 	fs := &d.files
 	fs.mu.Lock()
@@ -105,19 +105,37 @@ func (d *Daemon) collectThenDeliver(ctx context.Context, m protocol.Message) {
 	if ctx.Err() != nil {
 		return // the daemon stops; the gateway pushes the message again later
 	}
-	if err != nil {
+	if err != nil && !isWorkerFileNotice(m) {
 		d.Logf("files: message=%s not delivered: %v", m.ID, err)
 		d.sendUpdate(ctx, m.ID, protocol.StateFailed, err.Error())
 		return
 	}
-	d.Logf("files: message=%s all %d files in %s (%s)", m.ID, len(m.Files), dir, fileRouteDetail(got))
-	m.Body += fileNote(dir, m.Files)
-	d.files.mu.Lock()
-	if d.files.routes == nil {
-		d.files.routes = map[string]string{}
+	var arrived []protocol.FileEntry
+	var missing []string
+	for _, f := range m.Files {
+		if _, ok := got[f.ID]; ok {
+			arrived = append(arrived, f)
+		} else {
+			missing = append(missing, f.Name)
+		}
 	}
-	d.files.routes[m.ID] = fileRouteDetail(got)
-	d.files.mu.Unlock()
+	if err != nil {
+		d.Logf("files: worker notice message=%s delivering without files %q: %v", m.ID, strings.Join(missing, ", "), err)
+		m.Body += "\n\nfiles missing: " + strings.Join(missing, ", ") + ", transfer did not finish"
+	} else {
+		d.Logf("files: message=%s all %d files in %s (%s)", m.ID, len(m.Files), dir, fileRouteDetail(got))
+	}
+	if len(arrived) > 0 {
+		m.Body += fileNote(dir, arrived)
+	}
+	if len(arrived) > 0 {
+		d.files.mu.Lock()
+		if d.files.routes == nil {
+			d.files.routes = map[string]string{}
+		}
+		d.files.routes[m.ID] = fileRouteDetail(got)
+		d.files.mu.Unlock()
+	}
 	d.enqueue(m.To, func() { d.onDeliver(ctx, m) })
 }
 
@@ -205,6 +223,36 @@ type fileStamp struct {
 	mtime time.Time
 }
 
+// A worker's final report must reach its caller even if its files do not.
+// The stored timestamp also bounds notices replayed after a daemon restart.
+const workerNoticeFileWait = 2 * time.Minute
+
+func isWorkerFileNotice(m protocol.Message) bool {
+	return m.FromWorker && strings.HasPrefix(m.Body, "[agent-net worker notice]\nstatus: ")
+}
+
+// fileWaitDeadline takes the clock as an argument so old and replayed notices
+// can be checked without sleeping in tests.
+func fileWaitDeadline(m protocol.Message, fc FileConfig, now time.Time) time.Time {
+	deadline := m.ExpiresAt
+	if deadline.IsZero() {
+		deadline = now.Add(defaultFileWaitCap)
+	}
+	if fc.Wait > 0 && now.Add(fc.Wait).Before(deadline) {
+		deadline = now.Add(fc.Wait)
+	}
+	if isWorkerFileNotice(m) {
+		stored := m.CreatedAt
+		if stored.IsZero() {
+			stored = now
+		}
+		if limit := stored.Add(workerNoticeFileWait); limit.Before(deadline) {
+			deadline = limit
+		}
+	}
+	return deadline
+}
+
 // collectFiles waits until every file of the message is in dir, a file
 // fails its hash, or the wait ends. It returns the path each file took.
 func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir string) (map[string]string, error) {
@@ -228,12 +276,12 @@ func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir strin
 		d.files.mu.Unlock()
 	}()
 
-	deadline := m.ExpiresAt
-	if deadline.IsZero() {
-		deadline = time.Now().Add(defaultFileWaitCap)
-	}
-	if fc.Wait > 0 && time.Now().Add(fc.Wait).Before(deadline) {
-		deadline = time.Now().Add(fc.Wait)
+	deadline := fileWaitDeadline(m, fc, time.Now())
+	if isWorkerFileNotice(m) {
+		// Bound a stalled gateway or Taildrop call too, not just the polling.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
 	}
 	c := &fileCollector{d: d, m: m, dir: dir, got: map[string]string{}, suspects: map[string]fileStamp{}, gateway: true}
 	interval := fc.Poll
@@ -252,7 +300,9 @@ func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir strin
 		}
 		if detail != reported {
 			reported = detail
-			d.sendUpdate(ctx, m.ID, protocol.StateDispatched, detail)
+			if ctx.Err() == nil {
+				d.sendUpdate(ctx, m.ID, protocol.StateDispatched, detail)
+			}
 			if c.blocked != "" {
 				d.Logf("files: message=%s %s", m.ID, c.blocked)
 			}
@@ -268,7 +318,7 @@ func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir strin
 		wait := min(interval, time.Until(deadline))
 		select {
 		case <-ctx.Done():
-			return c.got, ctx.Err()
+			return c.got, fmt.Errorf("file wait ended with %s missing: %w", strings.Join(c.missingNames(), ", "), ctx.Err())
 		case <-time.After(max(wait, 0)):
 		}
 	}

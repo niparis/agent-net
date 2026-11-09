@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -105,6 +106,11 @@ func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *Outgo
 	if len(stored.Message.Files) != len(out.Files) {
 		return res, fmt.Errorf("message %s was stored without its file list: the gateway is older than this daemon; upgrade the gateway and send again", stored.Message.ID)
 	}
+	// A replay can return an earlier message. Never offer new bytes under its
+	// old manifest, even if the number of files happens to match.
+	if !slices.Equal(stored.Message.Files, out.Manifest()) {
+		return res, errors.New("the stored file list differs from the checked snapshots")
+	}
 	path, ip, receiver, note := d.fileRoute(ctx, stored.Message.To)
 	if path == FilePathTaildrop && stored.Message.State == protocol.StateHeld {
 		// The owner may refuse the message. Bytes on the gateway expire;
@@ -117,10 +123,10 @@ func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *Outgo
 		res.Files = append(res.Files, sent)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", f.Entry.Name, err))
+			d.Logf("files: message=%s file=%s path=%s transfer failed: %v (route: %s)", stored.Message.ID, f.Entry.ID, sent.Path, err, sent.Note)
+		} else {
+			d.Logf("files sent: message=%s file=%s bytes=%d path=%s note=%q", stored.Message.ID, sent.Entry.ID, sent.Entry.Size, sent.Path, sent.Note)
 		}
-	}
-	for _, s := range res.Files {
-		d.Logf("files sent: message=%s file=%s bytes=%d path=%s note=%q", stored.Message.ID, s.Entry.ID, s.Entry.Size, s.Path, s.Note)
 	}
 	return res, errors.Join(errs...)
 }
@@ -217,7 +223,14 @@ func (d *Daemon) pushFile(ctx context.Context, msgID string, f OutgoingFile, pat
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return sent, err
 		}
-		return sent, os.Rename(f.Copy, filepath.Join(dir, unique))
+		dst := filepath.Join(dir, unique)
+		if err := copyNew(f.Copy, dst); err != nil {
+			// A previous attempt may already have put this snapshot there.
+			if !errors.Is(err, os.ErrExist) || verifyFile(dst, f.Entry) != nil {
+				return sent, err
+			}
+		}
+		return sent, nil
 	case FilePathTaildrop:
 		named := filepath.Join(filepath.Dir(f.Copy), unique)
 		err := os.Rename(f.Copy, named)

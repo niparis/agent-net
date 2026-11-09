@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -960,5 +961,83 @@ func TestAgyFailureAfterResultAtExit(t *testing.T) {
 	}, nil)
 	if failed {
 		t.Fatal("successful result was reported as a failed exit")
+	}
+}
+
+func TestAgyWorkerHandbackFilesAcrossNodes(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "agy")
+	script := "#!/bin/sh\nFAKE_AGY_RECORDS=" + shellQuote(dir) + " FAKE_AGY_PROCESS=1 exec " + shellQuote(os.Args[0]) + " -test.run '^TestAgyProcess$' -- \"$@\"\n"
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	var failRoute atomic.Bool
+	var routeTarget atomic.Value
+	var routeCalls atomic.Int32
+	w := startWorkerNodeWithDetect(t, g, shortSet, agyInventory, func(c *Config) {
+		c.testGatewayCall = func(_ context.Context, typ string, p any) (json.RawMessage, bool, error) {
+			if msg, ok := p.(protocol.MsgSend); typ == "msg.send" && ok && msg.WorkerNotice && len(msg.Files) > 0 {
+				routeTarget.Store(msg.Recipient)
+				failRoute.Store(true)
+			}
+			if q, ok := p.(protocol.QueryAgent); typ == "query.agent" && ok && failRoute.Load() && q.SessionID == routeTarget.Load().(string) {
+				if routeCalls.Add(1) == 1 {
+					return nil, true, fmt.Errorf("temporary route lookup failure")
+				}
+			}
+			return nil, false, nil
+		}
+		c.HarnessPaths = map[string]string{"agy": bin}
+		c.Files.TailscalePATH = t.TempDir()
+		c.Files.TailscaleFallback = []string{}
+	})
+	w.register(t, newRepo(t, "shop"))
+	remote := &fakeAdapter{harness: "fake"}
+	b := startNode(t, g, nodeOpts{adapter: remote, cfg: func(c *Config) {
+		c.Files.Home = t.TempDir()
+		c.Files.TailscalePATH = t.TempDir()
+		c.Files.TailscaleFallback = []string{}
+		c.Files.Poll, c.Files.PollMax = 20*time.Millisecond, 50*time.Millisecond
+	}})
+	remote.setSessions(protocol.SessionInfo{Harness: "fake", NativeID: "caller", PID: 1, Cwd: t.TempDir(), Status: "idle"})
+	var caller string
+	eventually(t, "remote caller", func() bool { caller = remote.host.SessionID("fake", "caller"); return caller != "" })
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(30*time.Second))
+	defer cancel()
+	res, err := b.d.workerStartCall(ctx, caller, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback FAKE:filehandback FAKE:result-gate", Isolation: protocol.IsolationWorktree}, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "agy handback acknowledged", func() bool {
+		wk := w.d.workerBySession(res.SessionID)
+		if wk == nil {
+			return false
+		}
+		w.d.wmu.Lock()
+		c := wk.agy
+		w.d.wmu.Unlock()
+		if c == nil {
+			return false
+		}
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.handback != nil
+	})
+	if err := os.WriteFile(filepath.Join(dir, "result-release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "remote caller receives agy file notice", func() bool {
+		for _, m := range remote.delivered() {
+			if m.From == res.SessionID && strings.Contains(m.Body, "finished agy task") {
+				path := filepath.Join(b.cfg.StateDir, "inbox", caller, m.ID, "agy-result.txt")
+				data, err := os.ReadFile(path)
+				return err == nil && string(data) == "agy file\n"
+			}
+		}
+		return false
+	})
+	if got := routeCalls.Load(); got < 2 {
+		t.Fatalf("route lookup calls = %d, want a retry", got)
 	}
 }
