@@ -16,9 +16,9 @@
 │   (not a worker provider)                                                                                            │
 │ sol                codex    gpt-6.1-sol:medium        46.1/medium  ▸   ▸   ·   ·   ·    unused                       │
 │ terra              codex    gpt-6.1-terra:high        42.3/high    ·   ·   ▸   ▸   ·    unused                       │
-│ terra pi           pi       gpt-6.1-terra             38.1/medium  ·   ·   ·   ·   ·    unused                       │
+│ terra pi           pi       gpt-6.1-terra             38.1         ·   ·   ·   ·   ·    unused                       │
 │   not on research                                                                                                    │
-│ T sol medium · S sol medium · N terra high · H terra high · V opus high                                              │
+│ T sol · S sol · N terra · H terra · V opus                                                                           │
 │ T:trivial S:simple N:normal H:hard V:very complex · ▸ = chosen                                                       │
 │ the gateway's picker preview at the middle of each level, not simulated                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

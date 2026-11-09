@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online
+[ Quotas ]    Workers log      Quality
+╭─Subscriptions────────────────────────────────────────────────────────────────╮
+│ protected: anthropic, openai                                                 │
+│ No machine reads quotas yet: quota-axi is not installed on any machine (see  │
+│ docs/setup.md, Quota).                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Workers · 🔒 protected · 6 registered · 0 running · scores: Artificial Anal…─╮
+│ NAME                HARNESS  MODEL             T   S   N   H   V   PROT      │
+│ terra max codex     codex    gpt-6.1-terra:max ·   ·   ·   ·   ▸             │
+│ sonnet xhigh claude claude   sonnet-5-5:xhigh  ·   ·   ·   ▸   ·   prot      │
+│ sol medium codex    codex    gpt-6.1-sol       ·   ·   ·   ·   ·             │
+│ haiku xhigh claude  claude   haiku-5-5:xhigh   ·   ·   ▸   ·   ·   prot      │
+│ haiku high claude   claude   haiku-5-5:high    ▸   ▸   ·   ·   ·   prot      │
+│ deepseek opencode   opencode deepseek-v4-pro   ·   ·   ·   ·   ·             │
+│   (not a worker provider)                                                    │
+│ T haiku high claude · S haiku high claude · N haiku xhigh claude · H sonnet  │
+│ xhigh claude · V terra max codex                                             │
+│ more below · up/down to scroll                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+up/down select  p protect  s show unset  c CTO  ? help  q quit
