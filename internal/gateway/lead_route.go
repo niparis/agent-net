@@ -164,9 +164,11 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 }
 
 // resolveLeadSession picks the session of a lead that gets a message: a live
-// session first, otherwise the newest non-archived, non-worker session, which
-// waits in the queue and the wake on message resumes. It returns sql.ErrNoRows
-// when the lead has no session at all.
+// session first, then the pinned session, then the newest non-archived,
+// non-worker session in the Repo (for a repo address), then the newest such
+// session anywhere. The chosen session waits in the queue and the wake on
+// message resumes it. It returns sql.ErrNoRows when the lead has no session at
+// all.
 func resolveLeadSession(db leadDB, agent, repo, preferred string, now time.Time) (string, error) {
 	var id string
 	err := liveLeadSession(db, agent, repo, preferred, false, now).Scan(&id)
@@ -175,6 +177,28 @@ func resolveLeadSession(db leadDB, agent, repo, preferred string, now time.Time)
 	}
 	if err != sql.ErrNoRows {
 		return "", err
+	}
+	// The pinned lead session comes next, even when it is offline.
+	if preferred != "" {
+		err = db.QueryRow(`SELECT id FROM sessions WHERE id=? AND archived_at=0`, preferred).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if err != sql.ErrNoRows {
+			return "", err
+		}
+	}
+	// A message to a Repo waits for the lead in that Repo before its sessions
+	// anywhere else.
+	if repo != "" {
+		err = db.QueryRow(`SELECT s.id FROM sessions s WHERE s.agent_id=? AND s.repo_id=? AND s.worker='' AND s.archived_at=0
+			AND s.harness NOT IN ('owner','cto') ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent, repo).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if err != sql.ErrNoRows {
+			return "", err
+		}
 	}
 	err = db.QueryRow(`SELECT s.id FROM sessions s WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0
 		AND s.harness NOT IN ('owner','cto') ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent).Scan(&id)
@@ -189,18 +213,19 @@ func resolveLeadSession(db leadDB, agent, repo, preferred string, now time.Time)
 // non-archived, non-worker session of the same Agent. That session waits in the
 // queue and the wake on message resumes it, like a send to its ID.
 func (s *Store) resolveSessionName(name string) (string, error) {
-	rows, err := s.db.Query(`SELECT s.id,COALESCE(s.agent_id,''),s.online,s.worker,s.harness
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+	rows, err := s.db.Query(`SELECT s.id,COALESCE(s.agent_id,''),s.online,s.worker,s.harness,COALESCE(n.hostname,'-'),s.cwd
+		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id LEFT JOIN nodes n ON n.id=s.node_id
 		WHERE COALESCE(NULLIF(p.name,''),s.name)=? AND s.archived_at=0`, name)
 	if err != nil {
 		return "", err
 	}
-	var live []string
+	type liveSession struct{ id, harness, host, cwd string }
+	var live []liveSession
 	agents := map[string]bool{}
 	for rows.Next() {
-		var id, agent, worker, harness string
+		var id, agent, worker, harness, host, cwd string
 		var online int
-		if err := rows.Scan(&id, &agent, &online, &worker, &harness); err != nil {
+		if err := rows.Scan(&id, &agent, &online, &worker, &harness, &host, &cwd); err != nil {
 			rows.Close()
 			return "", err
 		}
@@ -208,7 +233,7 @@ func (s *Store) resolveSessionName(name string) (string, error) {
 			continue
 		}
 		if online != 0 {
-			live = append(live, id)
+			live = append(live, liveSession{id, harness, host, cwd})
 			continue
 		}
 		if worker == "" && agent != "" && harness != "cto" {
@@ -222,9 +247,13 @@ func (s *Store) resolveSessionName(name string) (string, error) {
 	}
 	switch {
 	case len(live) == 1:
-		return live[0], nil
+		return live[0].id, nil
 	case len(live) > 1:
-		return "", reject("%d sessions are named %q; use a session ID", len(live), name)
+		lines := make([]string, 0, len(live))
+		for _, s := range live {
+			lines = append(lines, fmt.Sprintf("%s (%s on %s, %s)", s.id, s.harness, s.host, s.cwd))
+		}
+		return "", reject("%d sessions are named %q; use a session ID: %s", len(live), name, strings.Join(lines, "; "))
 	}
 	if len(agents) == 0 {
 		return "", reject("no session is named %q; use agent_sessions_find to find a session_id", name)

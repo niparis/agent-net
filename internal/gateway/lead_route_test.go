@@ -446,6 +446,52 @@ func TestLiveLeadSessionIsChosenFirst(t *testing.T) {
 	}
 }
 
+// A pinned lead session is chosen even when it is offline and another session
+// of the lead was active more recently.
+func TestPinnedOfflineLeadSessionIsChosenFirst(t *testing.T) {
+	p := newWakeProbe(t)
+	older, _ := twoRepoLeadSessions(t, p)
+	var agent string
+	if err := p.s.db.QueryRow(`SELECT agent_id FROM sessions WHERE id=?`, older).Scan(&agent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id,lead_session) VALUES('demo',?,?)
+		ON CONFLICT(repo_id) DO UPDATE SET lead_session=excluded.lead_session`, agent, older); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.s.ResolveLeadAddress("repo:demo")
+	if err != nil || got != older {
+		t.Fatalf("resolve repo:demo = %s, want pinned session %s: %v", got, older, err)
+	}
+}
+
+// Several live sessions with the same name are refused, and the error names
+// each one so the sender can pick a session ID.
+func TestLeadAddressNameListsEveryLiveSession(t *testing.T) {
+	p := newWakeProbe(t)
+	var ids []string
+	for i, cwd := range []string{"/w/twin-a", "/w/twin-b"} {
+		id, err := p.s.UpsertSession(p.node, protocol.SessionInfo{Harness: "claude", NativeID: "twin-" + []string{"a", "b"}[i], Cwd: cwd})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.s.db.Exec(`UPDATE sessions SET name='Twin' WHERE id=?`, id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	_, err := p.s.ResolveLeadAddress("Twin")
+	if err == nil {
+		t.Fatal("two live sessions with one name were accepted")
+	}
+	for i, id := range ids {
+		want := id + " (claude on ha, /w/twin-" + []string{"a", "b"}[i] + ")"
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not name %q", err, want)
+		}
+	}
+}
+
 // A name that has no session at all still fails clearly.
 func TestLeadAddressNameWithoutSessionErrors(t *testing.T) {
 	p := newWakeProbe(t)
