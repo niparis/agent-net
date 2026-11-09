@@ -40,6 +40,7 @@ func (l *link) write(ctx context.Context, b []byte) error {
 }
 
 func (l *link) call(ctx context.Context, typ string, params any) (json.RawMessage, error) {
+	via := viaFrom(ctx)
 	l.mu.Lock()
 	l.nextID++
 	id := strconv.Itoa(l.nextID)
@@ -51,7 +52,7 @@ func (l *link) call(ctx context.Context, typ string, params any) (json.RawMessag
 		delete(l.pending, id)
 		l.mu.Unlock()
 	}()
-	frame, err := protocol.EncodeRequest(typ, id, params)
+	frame, err := protocol.EncodeRequestVia(typ, id, via, params)
 	if err != nil {
 		return nil, err
 	}

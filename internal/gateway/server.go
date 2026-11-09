@@ -133,6 +133,10 @@ type Gateway struct {
 	// usage holds the newest CPU and memory report of each node (usage.go).
 	usage usageTable
 
+	// reqs counts the request frames by method and origin (request_stats.go).
+	// It is nil in a Gateway not made by New.
+	reqs *requestStats
+
 	// Step task batching and coalescing.
 	stepTaskQuietWindow  time.Duration
 	stepTaskRecentWindow time.Duration
@@ -334,7 +338,7 @@ func New(opts Options) (*Gateway, error) {
 		store.Close()
 		return nil, err
 	}
-	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger, autoCutover: true,
+	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger, autoCutover: true, reqs: newRequestStats(time.Now()),
 		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*offlineTimer{},
 		enrollLimit: newEnrollLimiter(opts.Now),
 		stepBatches: make(map[string]*stepTaskBatch), lastReportBySession: make(map[string]time.Time),
@@ -900,7 +904,8 @@ func (g *Gateway) msgSendMayResume(raw []byte) bool {
 
 // answer handles one frame and writes its result. A link error ends the loop.
 func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) error {
-	defer g.slowRequest(h.Type, nc.id, time.Now())
+	start, sent := time.Now(), 0
+	defer g.finishRequest(h, nc.id, start, &sent)
 	data, err := g.handle(ctx, nc, h.Type, raw)
 	var reply []byte
 	var eerr error
@@ -917,6 +922,7 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 		g.logLine("error", "where", "encode result", "err", eerr)
 		return nil
 	}
+	sent = len(reply)
 	if nc.write(ctx, reply) != nil {
 		return errNodeGone
 	}

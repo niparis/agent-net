@@ -22,7 +22,8 @@ import (
 const launchWait = 75 * time.Second
 
 func (g *Gateway) serveWorker(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
-	defer g.slowRequest(h.Type, nc.id, time.Now())
+	start, sent := time.Now(), 0
+	defer g.finishRequest(h, nc.id, start, &sent)
 	data, err := g.handleWorker(ctx, nc, h.Type, raw)
 	if err != nil {
 		var rj Rejection
@@ -35,6 +36,7 @@ func (g *Gateway) serveWorker(ctx context.Context, nc *nodeConn, h protocol.Head
 		g.logLine("error", "where", "encode result", "err", eerr)
 		return
 	}
+	sent = len(reply)
 	nc.write(ctx, reply)
 }
 

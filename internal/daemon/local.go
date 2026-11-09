@@ -248,7 +248,7 @@ func (lc *localConn) run(ctx context.Context) {
 			if req.Method == protocol.OpWorkerStart {
 				timeout = lc.d.workerSettings("").StartTimeout + 60*time.Second // the machine starts a harness
 			}
-			cctx, cancel := context.WithTimeout(ctx, timeout)
+			cctx, cancel := context.WithTimeout(withVia(ctx, lc.via()), timeout)
 			defer cancel()
 			lc.mu.Lock()
 			operator := lc.client == "cli"

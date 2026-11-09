@@ -391,8 +391,12 @@ type Header struct {
 	// Retry is set only by the gateway, on a result that failed for a fault of
 	// its own (a storage error): the same call may work later. A refusal never
 	// carries it, and a result from a node is never passed on with it.
-	Retry bool            `json:"retry,omitempty"`
-	Data  json.RawMessage `json:"data,omitempty"`
+	Retry bool `json:"retry,omitempty"`
+	// Via is set by a daemon on a request: the kind of caller behind it (see
+	// the Via constants). It only labels the gateway's request counters. An
+	// older daemon sends none.
+	Via  string          `json:"via,omitempty"`
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 // RetryableError is a gateway fault that the caller may try again. Only
@@ -404,6 +408,12 @@ func (e RetryableError) Unwrap() error { return e.Err }
 
 // EncodeRequest builds a flat frame: the params' fields sit next to type and id.
 func EncodeRequest(typ, id string, params any) ([]byte, error) {
+	return EncodeRequestVia(typ, id, "", params)
+}
+
+// EncodeRequestVia is EncodeRequest with the origin tag of the caller (the
+// Via constants). An empty via adds no field.
+func EncodeRequestVia(typ, id, via string, params any) ([]byte, error) {
 	m := map[string]json.RawMessage{}
 	if params != nil {
 		raw, err := json.Marshal(params)
@@ -420,6 +430,12 @@ func EncodeRequest(typ, id string, params any) ([]byte, error) {
 		if _, ok := m[k]; ok {
 			return nil, fmt.Errorf("request %s: parameter %q clashes with the frame field", typ, k)
 		}
+	}
+	if via != "" {
+		if _, ok := m["via"]; ok {
+			return nil, fmt.Errorf("request %s: parameter %q clashes with the frame field", typ, "via")
+		}
+		m["via"], _ = json.Marshal(via)
 	}
 	m["type"], _ = json.Marshal(typ)
 	m["id"], _ = json.Marshal(id)
