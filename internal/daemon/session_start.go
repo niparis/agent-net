@@ -252,6 +252,9 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 			return protocol.StartedSession{}, err
 		}
 		if needTrust {
+			// The gateway raises the owner's one-click trust ask, even when the
+			// start runs on this machine and never crosses the gateway relay.
+			go d.reportTrustNeed(context.Background(), sessionPath, found.Name, d.ownerSessionID())
 			return protocol.StartedSession{ID: protocol.NewID("start"), Status: "needs_trust",
 				NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness,
 				Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model,

@@ -204,6 +204,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onProcessStopFrame(ctx, l, h, raw)
 			}()
+		case protocol.FramePermissionApply, protocol.FramePermissionRevoke:
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.onPermissionFrame(ctx, l, h, raw)
+			}()
 		case protocol.FrameProjectOwnerChange:
 			d.wg.Add(1)
 			go func() {

@@ -661,7 +661,15 @@ type deskLogMsg struct {
 // logUndo accepts only the owner operations that the CTO daemon wrote into a
 // log line.
 func logUndo(e protocol.DeskLogEntry) (string, json.RawMessage, bool) {
-	if e.Source != "cto" || len(e.Options) != 2 {
+	if len(e.Options) != 2 {
+		return "", nil, false
+	}
+	// The gateway's own permission approval log is undoable by the owner too.
+	if e.Options[0] == protocol.OpPermissionUndo {
+		raw := json.RawMessage(e.Options[1])
+		return e.Options[0], raw, json.Valid(raw)
+	}
+	if e.Source != "cto" {
 		return "", nil, false
 	}
 	if _, ok := protocol.CTOOperatorMethods()[e.Options[0]]; ok {

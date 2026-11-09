@@ -1281,7 +1281,34 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration}
+
+// permissionProposalMigration stores proposals for Claude Code permission
+// rules and folder trust (decision 0127). An agent or the gateway proposes, the
+// owner answers one owner-only ask, and only then does the gateway tell the
+// daemons to write. Results name what each approval added, so an undo removes
+// only those entries. dedupe_key keeps one open automatic trust ask per machine
+// and folder.
+const permissionProposalMigration = `
+CREATE TABLE IF NOT EXISTS permission_proposals (
+ id TEXT PRIMARY KEY,
+ kind TEXT NOT NULL DEFAULT 'permissions',
+ rules TEXT NOT NULL DEFAULT '[]',
+ targets TEXT NOT NULL,
+ reason TEXT NOT NULL,
+ proposed_by TEXT NOT NULL,
+ proposed_name TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL DEFAULT 'pending',
+ created_at INTEGER NOT NULL,
+ decided_at INTEGER NOT NULL DEFAULT 0,
+ decided_by TEXT NOT NULL DEFAULT '',
+ results TEXT NOT NULL DEFAULT '[]',
+ desk_log_id INTEGER NOT NULL DEFAULT 0,
+ dedupe_key TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS permission_proposals_status ON permission_proposals(status, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS permission_proposals_open_dedupe ON permission_proposals(dedupe_key)
+ WHERE dedupe_key<>'' AND status IN ('pending','approved');
+`
 
 // briefDefectMoveMigration records that a late defect was reclassified as a
 // brief defect. The worker_defects row stays; these columns name who moved it,

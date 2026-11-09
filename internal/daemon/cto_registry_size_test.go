@@ -93,7 +93,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 
 	// mcp_call and mcp_test can execute arbitrary external operations. Mutation
 	// tools are classified explicitly and are never invoked here.
-	mutations := strings.Fields("cto_placement_memory cto_standing_orders cto_ui_show proposal_ask graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change sessions_archive cto_new agent_message_send agent_message_reply agent_owner_ask agent_learn")
+	mutations := strings.Fields("cto_placement_memory cto_standing_orders cto_ui_show proposal_ask graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change sessions_archive cto_new agent_message_send agent_message_reply agent_owner_ask agent_learn agent_permission_propose")
 	actions := map[string]bool{}
 	for _, name := range mutations {
 		actions[name] = true

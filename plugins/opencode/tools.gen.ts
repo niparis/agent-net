@@ -1119,6 +1119,56 @@ export const TOOL_CATALOG = [
     "method": "judgments_find"
   },
   {
+    "name": "agent_permission_propose",
+    "description": "Propose Claude Code permission rules or folder trust for the owner to approve.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "permissions",
+            "trust"
+          ],
+          "description": "permissions or trust"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "allow rules for permissions"
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "repo names, or folder paths for trust"
+        },
+        "machine": {
+          "type": "string",
+          "description": "machine for trust"
+        },
+        "reason": {
+          "type": "string",
+          "description": "why"
+        }
+      },
+      "required": [
+        "targets",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "agent_permission_propose"
+  },
+  {
     "name": "agent_project_add",
     "description": "Register project folders on this machine, or scan a folder for repositories (use dry_run first). Only when the owner asked.",
     "inputSchema": {
