@@ -97,7 +97,10 @@ func (g *Gateway) machineAction(ctx context.Context, nc *nodeConn, typ string, r
 		g.mu.Lock()
 		target := g.conns[p.NodeID]
 		if err == nil {
-			delete(g.conns, p.NodeID)
+			if target != nil {
+				delete(g.conns, p.NodeID)
+				g.connVersion.Add(1)
+			}
 			if t := g.timers[p.NodeID]; t != nil {
 				t.timer.Stop()
 				delete(g.timers, p.NodeID)

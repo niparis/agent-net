@@ -18,9 +18,10 @@ import (
 type Client struct {
 	path string
 
-	mu     sync.Mutex
-	cl     *client.Client
-	uiPush func(protocol.UIRequest)
+	mu        sync.Mutex
+	cl        *client.Client
+	uiPush    func(protocol.UIRequest)
+	topicSubs map[*TopicSubscription]bool
 }
 
 var _ Operator = (*Client)(nil)
@@ -110,6 +111,9 @@ type SnapshotOptions struct {
 	// WorkerLog asks for the worker log, which only the Quotas workers log
 	// shows.
 	WorkerLog bool
+	// Topics nil loads everything. Otherwise Previous supplies unchanged data.
+	Topics   map[string]bool
+	Previous Snapshot
 }
 
 func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
@@ -119,6 +123,10 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 // SnapshotWith is Snapshot with the optional parts chosen by the caller.
 func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapshot, error) {
 	var snap Snapshot
+	if opts.Topics != nil {
+		snap = opts.Previous
+		snap.FailedCalls = nil
+	}
 	raw, err := s.Call(ctx, protocol.OpInfo, nil)
 	if err != nil {
 		return snap, err
@@ -154,6 +162,15 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 	}
 	if opts.WorkerLog {
 		calls = append(calls, request{method: protocol.OpWorkerLog, params: protocol.WorkerLogQuery{Limit: 200}})
+	}
+	if opts.Topics != nil {
+		selected := calls[:0]
+		for _, call := range calls {
+			if opts.Topics[snapshotTopic(call.method)] {
+				selected = append(selected, call)
+			}
+		}
+		calls = selected
 	}
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
@@ -241,6 +258,28 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 	}
 
 	return snap, nil
+}
+
+// snapshotTopic maps each snapshot read to the dependency versions that make
+// it stale. Local settings are refreshed with workers on a safety refresh too.
+func snapshotTopic(method string) string {
+	switch method {
+	case protocol.OpAgents:
+		return protocol.TopicAgents
+	case protocol.OpNodes:
+		return protocol.TopicNodes
+	case protocol.OpWorkerLog, protocol.OpWorkerProfiles, protocol.OpWorkerProvidersGet,
+		protocol.OpProtectedProvidersGet, protocol.OpWorkerFloorsGet, protocol.OpScoresGet,
+		"difficulty_get", protocol.OpWorkerRotationGet, "notification_settings", protocol.OpTimeZoneGet:
+		return protocol.TopicWorkers
+	case "learned_list":
+		return protocol.TopicLearned
+	case protocol.OpGraphGet:
+		return protocol.TopicGraph
+	case protocol.OpProjects:
+		return protocol.TopicProjects
+	}
+	return ""
 }
 
 func (s *Client) Events(ctx context.Context, afterID int64, limit int) ([]protocol.FeedEvent, error) {
@@ -492,6 +531,9 @@ func (s *Client) Counts(ctx context.Context) (protocol.SessionCounts, error) {
 func (s *Client) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for sub := range s.topicSubs {
+		sub.Close()
+	}
 	if s.cl != nil {
 		s.cl.Close()
 		s.cl = nil

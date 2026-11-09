@@ -16,9 +16,10 @@ import (
 // The selected agent card shares graph data with the network screen.
 
 type mapMsg struct {
-	view protocol.GraphView
-	err  error
-	at   time.Time
+	view          protocol.GraphView
+	err           error
+	at            time.Time
+	topicVersions map[string]uint64
 }
 
 // mapState holds shared network data and the selected card state.
@@ -44,6 +45,7 @@ type mapState struct {
 	teams            []teamEntry
 	at               time.Time
 	loaded           bool
+	topicVersions    map[string]uint64
 	loading          bool
 	err              string
 	selected         string
@@ -60,12 +62,18 @@ type mapState struct {
 
 func (m Model) mapCmd() tea.Cmd {
 	src, now := m.src, m.now
+	versions := make(map[string]uint64)
+	for _, topic := range []string{protocol.TopicGraph, protocol.TopicAgents, protocol.TopicNodes} {
+		if v, ok := m.topicVersions[topic]; ok {
+			versions[topic] = v
+		}
+	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
 		at := now()
 		view, err := src.GraphView(ctx, protocol.QueryGraph{AutoTyped: true, Places: true})
-		return mapMsg{view: view, err: err, at: at}
+		return mapMsg{view: view, err: err, at: at, topicVersions: versions}
 	}
 }
 
@@ -85,7 +93,7 @@ func (m *Model) applyMap(r mapMsg) {
 		}
 	}
 	m.mp.changes = m.mp.full.Changes
-	m.mp.at, m.mp.loaded, m.mp.err = r.at, true, ""
+	m.mp.at, m.mp.loaded, m.mp.err, m.mp.topicVersions = r.at, true, "", r.topicVersions
 	m.applyTeamView(false)
 	if m.mp.pendingSelection != "" {
 		name := m.mp.selected

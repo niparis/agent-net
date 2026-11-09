@@ -153,6 +153,7 @@ type Gateway struct {
 
 	mu                sync.Mutex
 	conns             map[string]*nodeConn
+	connVersion       atomic.Uint64
 	wakeMu            sync.Mutex
 	wakeClaims        map[string]wakeClaim
 	timers            map[string]*offlineTimer
@@ -196,15 +197,16 @@ type offlineTimer struct {
 }
 
 type nodeConn struct {
-	sessionAgents atomic.Bool
-	graphRefs     atomic.Bool
-	id            string
-	tokenHash     string // credential used for this connection
-	ws            *websocket.Conn
-	wmu           sync.Mutex
-	cancel        context.CancelFunc
-	dead          chan struct{} // closed when the connection ends
-	health        *linkkeepalive.Monitor
+	topicSubscribed atomic.Bool
+	sessionAgents   atomic.Bool
+	graphRefs       atomic.Bool
+	id              string
+	tokenHash       string // credential used for this connection
+	ws              *websocket.Conn
+	wmu             sync.Mutex
+	cancel          context.CancelFunc
+	dead            chan struct{} // closed when the connection ends
+	health          *linkkeepalive.Monitor
 
 	pmu     sync.Mutex
 	nextID  int
@@ -762,6 +764,9 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	}
 	old := g.conns[nodeID]
 	g.conns[nodeID] = nc
+	if old == nil {
+		g.connVersion.Add(1)
+	}
 	if t := g.timers[nodeID]; t != nil {
 		t.timer.Stop()
 		delete(g.timers, nodeID)
@@ -784,6 +789,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	g.mu.Lock()
 	if g.conns[nodeID] == nc && !g.closed {
 		delete(g.conns, nodeID)
+		g.connVersion.Add(1)
 		t := &offlineTimer{}
 		t.timer = time.AfterFunc(g.opts.OfflineGrace, func() { g.nodeGone(nodeID, t) })
 		g.timers[nodeID] = t
@@ -964,6 +970,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	}
 	if st.machineRemoved(nc.id) {
 		return nil, reject("this machine was removed from the network; run agent-net setup to join again")
+	}
+	if typ == protocol.FrameTopicsSubscribe {
+		return g.subscribeTopics(ctx, nc), nil
 	}
 	if strings.HasPrefix(typ, "xfer.") {
 		return g.handleTransfer(nc, typ, raw)

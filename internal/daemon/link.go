@@ -97,6 +97,11 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if ch != nil {
 				ch <- h
 			}
+		case protocol.FrameTopicChanged:
+			var event protocol.TopicEvent
+			if json.Unmarshal(raw, &event) == nil {
+				d.topics.publish(l, event)
+			}
 		case "node.token":
 			var p struct {
 				Token string `json:"token"`
@@ -427,6 +432,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	case <-l.dead:
 	case <-ctx.Done():
 	}
+	d.topics.disconnected(l)
 	d.mu.Lock()
 	if d.lk == l {
 		d.lk = nil

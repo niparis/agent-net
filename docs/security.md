@@ -1701,3 +1701,8 @@ The removed consumers, needs and notes attributes cannot be written.
 ## Standing orders
 
 The CTO reads the owner's standing orders as instructions at the start of every conversation. The gateway stores them. The CTO can save and remove them on the owner's instruction, and every save or removal leaves an Inbox notice with an undo. The notice and the TUI list show the source, `owner` or `cto`. A machine that is enrolled can send the frames, so the gateway trusts the daemons of your machines, as it does for every other frame. A prompt-injected CTO could save a false order: the list in Settings shows each order and its source, and the owner can remove one at any time.
+
+Topic subscriptions on the daemon socket use the owner gate: agent clients and
+commands in an agent session's process tree are refused. The gateway accepts
+the subscription from an enrolled daemon, like other node frames. Events carry
+only topic names and version numbers, not the data in the corresponding reads.
