@@ -43,6 +43,10 @@ type Client struct {
 	dead chan struct{}
 	// onPush gets the daemon's pushes (frames without an id).
 	onPush func(method string, params json.RawMessage)
+	// beforeWait, when set by a test, runs after the request is written and
+	// before Call waits for the reply. It lets the test order the reply and
+	// the close deterministically.
+	beforeWait func()
 }
 
 func Dial(path string) (*Client, error) { return DialPush(path, nil) }
@@ -128,13 +132,27 @@ func (c *Client) Call(ctx context.Context, method string, params any) (json.RawM
 	if err != nil {
 		return nil, err
 	}
-	select {
-	case r := <-ch:
+	if c.beforeWait != nil {
+		c.beforeWait()
+	}
+	// A reply already read from the connection wins over the close. A daemon
+	// that refuses a request and hangs up at once (a refused hello, for
+	// example) must reach the caller as the refusal, not as an outage.
+	reply := func(r response) (json.RawMessage, error) {
 		if r.Error != "" {
 			return nil, RemoteError(r.Error)
 		}
 		return r.Result, nil
+	}
+	select {
+	case r := <-ch:
+		return reply(r)
 	case <-c.dead:
+		select {
+		case r := <-ch:
+			return reply(r)
+		default:
+		}
 		return nil, errors.New("daemon connection closed")
 	case <-ctx.Done():
 		return nil, ctx.Err()
