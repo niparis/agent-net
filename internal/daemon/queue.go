@@ -52,6 +52,57 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 	return &protocol.WorkerLaunched{Queued: true, QueueID: q.ID, Position: ahead + 1, Reason: reason}
 }
 
+// admitOrQueueResume lets a resume through, or queues it. It returns nil, nil
+// when the resume may go on now (the start time is reserved), else the answer
+// to give (with Queued=true).
+func (d *Daemon) admitOrQueueResume(row *workerRow) (*protocol.WorkerResumeResult, error) {
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	ahead, err := d.st.queueLen()
+	if err != nil {
+		ahead = 0
+	}
+	dec := d.admission(row.Harness, row.Model)
+	if ahead == 0 && dec.OK {
+		d.lastStart = time.Now()
+		d.reserveWorkerBaseLocked(row.Base)
+		return nil, nil
+	}
+	q := queuedStart{
+		ID:              protocol.NewID("q"),
+		ResumeSession:   row.SessionID,
+		Owner:           row.Owner,
+		OwnerName:       row.OwnerName,
+		Project:         row.Project,
+		Path:            row.Path,
+		Harness:         row.Harness,
+		Model:           row.Model,
+		Title:           row.Title,
+		Base:            row.Base,
+		Permissions:     row.Permissions,
+		DifficultyAsked: row.DifficultyAsked,
+		DifficultyUsed:  row.DifficultyUsed,
+		Touches:         row.Touches,
+		QueuedAt:        time.Now(),
+		Assessment:      nil,
+		AutoContinue:    row.AutoContinue,
+		TaskID:          row.TaskID,
+		ChangeID:        row.ChangeID,
+		Fixes:           row.Fixes,
+	}
+	if err := d.st.addQueued(q); err != nil {
+		return nil, fmt.Errorf("cannot queue: %w", err)
+	}
+	why := dec.Reason
+	if dec.OK {
+		why = fmt.Sprintf("%d start(s) are waiting ahead of it", ahead)
+	}
+	reason := fmt.Sprintf("queued #%d on %s: %s", ahead+1, d.hostName(), why)
+	d.Logf("worker.queued queue=%s session=%s position=%d project=%s harness=%s owner=%s room=%s reason=%q",
+		q.ID, row.SessionID, ahead+1, row.Project, row.Harness, row.Owner, dec.Room, why)
+	return &protocol.WorkerResumeResult{Queued: true, QueueID: q.ID, Position: ahead + 1, Reason: reason}, nil
+}
+
 // queueIDFor is the queue ID of a start: the reference the gateway tracks it
 // under, when it gave one, so a report of the start names what the gateway has.
 func queueIDFor(l protocol.WorkerLaunch) string {
@@ -87,6 +138,21 @@ func (d *Daemon) processQueue(ctx context.Context) {
 	var live []queuedStart
 	for _, e := range entries {
 		set := d.workerSettingsWith(snap, e.Project)
+		if e.ResumeSession != "" {
+			row, ok, err := d.st.workerBySession(e.ResumeSession)
+			if !ok || err != nil || row.EndedReason != protocol.StopHandback || !row.Resumable || checkWorkerWorktree(&row) != nil || (row.Worktree == "" && row.StartedAt.Add(set.MaxAge).Before(now)) {
+				d.qmu.Lock()
+				gone := !d.st.removeQueued(e.ID)
+				d.qmu.Unlock()
+				if gone {
+					continue
+				}
+				d.Logf("worker.queue_dropped queue=%s session=%s project=%s harness=%s owner=%s reason=%q",
+					e.ID, e.ResumeSession, e.Project, e.Harness, e.Owner, "the worker's restart window ended")
+				d.notStarted(ctx, e, fmt.Sprintf("worker %s is no longer waiting to be started again", e.ResumeSession))
+				continue
+			}
+		}
 		if now.Sub(e.QueuedAt) >= set.QueueTimeout {
 			d.qmu.Lock()
 			dec := d.admission(e.Harness, e.Model)
@@ -160,6 +226,10 @@ func (d *Daemon) processQueue(ctx context.Context) {
 // startQueued starts the worker for a queue entry that has room. The owner's
 // machine sends the task; this machine tells the owner it started.
 func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
+	if e.ResumeSession != "" {
+		d.startQueuedResume(ctx, e)
+		return
+	}
 	l := protocol.WorkerLaunch{StartRef: e.ID, Project: e.Project, Path: e.Path, Harness: e.Harness, Model: e.Model, Owner: e.Owner, OwnerName: e.OwnerName,
 		Task: e.Task, Title: e.Title, Isolation: e.Isolation, Base: e.Base, RecordTask: e.RecordTask, Permissions: e.Permissions,
 		DifficultyAsked: e.DifficultyAsked, DifficultyUsed: e.DifficultyUsed, Touches: splitTouches(e.Touches), Assessment: e.Assessment,
@@ -207,6 +277,79 @@ func (d *Daemon) finishQueuedStart(ctx context.Context, e queuedStart, out proto
 	if w != nil {
 		body := protocol.WorkerStartedText(out.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited, e.Title) + protocol.WorkerPermissionsLine(e.Permissions, e.Harness, out.OSSandbox) + "\n"
 		if _, err := d.send(ctx, protocol.MsgSend{Sender: out.SessionID, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
+			d.Logf("worker %s: started notice: %v", w.id, err)
+		}
+	}
+}
+
+// startQueuedResume restarts the worker for a queued resume that has room.
+func (d *Daemon) startQueuedResume(ctx context.Context, e queuedStart) {
+	defer d.releaseWorkerBase(e.Base)
+	d.resumeMu.Lock()
+	row, ok, err := d.st.workerBySession(e.ResumeSession)
+	if !ok || err != nil {
+		d.resumeMu.Unlock()
+		d.clearStartReservation()
+		d.Logf("worker.not_started queue=%s session=%s reason=%q", e.ID, e.ResumeSession, "worker row not found")
+		d.notStarted(ctx, e, fmt.Sprintf("worker %s could not be found to restart", e.ResumeSession))
+		return
+	}
+	set := d.workerSettings("")
+	if row.EndedReason != protocol.StopHandback || !row.Resumable || checkWorkerWorktree(&row) != nil || (row.Worktree == "" && row.StartedAt.Add(set.MaxAge).Before(time.Now())) {
+		d.resumeMu.Unlock()
+		d.clearStartReservation()
+		d.Logf("worker.not_started queue=%s session=%s reason=%q", e.ID, e.ResumeSession, "worker no longer resumable")
+		d.notStarted(ctx, e, fmt.Sprintf("worker %s is no longer waiting to be started again", e.ResumeSession))
+		return
+	}
+	w, err := d.runWorkerResume(ctx, row, set)
+	d.resumeMu.Unlock()
+	if err != nil {
+		d.clearStartReservation()
+		d.Logf("worker.not_started queue=%s session=%s harness=%s owner=%s reason=%q", e.ID, e.ResumeSession, e.Harness, e.Owner, err.Error())
+		d.notStarted(ctx, e, "the machine had room, but the restart failed: "+err.Error())
+		return
+	}
+	waited := time.Since(e.QueuedAt)
+	d.Logf("worker.dequeued queue=%s session=%s project=%s harness=%s owner=%s waited=%s", e.ID, row.SessionID, e.Project, e.Harness, e.Owner, waited.Round(time.Second))
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		d.finishQueuedResume(ctx, e, row, w, waited)
+	}()
+}
+
+// finishQueuedResume tells the gateway a resumed worker started and sends the started notice.
+func (d *Daemon) finishQueuedResume(ctx context.Context, e queuedStart, row workerRow, w *worker, waited time.Duration) {
+	err := d.sendQueuedStart(ctx, w, protocol.WorkerQueuedStart{
+		Ref:          e.ID,
+		Owner:        e.Owner,
+		SessionID:    row.SessionID,
+		Harness:      row.Harness,
+		Project:      row.Project,
+		Task:         "",
+		Title:        row.Title,
+		Worktree:     w.worktree,
+		Branch:       w.branch,
+		ProjectRules: projectWorkerRules(w.mainPath),
+		Permissions:  w.permissions,
+		OSSandbox:    w.osSandbox,
+		FromCTO:      e.FromCTO,
+	})
+	if errors.Is(err, errWorkerEnded) {
+		d.notStarted(ctx, e, "the worker ended before its restart was confirmed")
+		return
+	}
+	if err != nil {
+		if w != nil {
+			d.endWorker(w, protocol.StopStartFails)
+		}
+		d.notStarted(ctx, e, "the worker restarted, but the gateway could not be told: "+err.Error())
+		return
+	}
+	if w != nil {
+		body := protocol.WorkerStartedText(row.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited, e.Title) + protocol.WorkerPermissionsLine(e.Permissions, e.Harness, w.osSandbox) + "\n"
+		if _, err := d.send(ctx, protocol.MsgSend{Sender: row.SessionID, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 			d.Logf("worker %s: started notice: %v", w.id, err)
 		}
 	}
@@ -312,7 +455,7 @@ func (d *Daemon) cancelQueued(id, requester string, asOwner bool, validate ...bo
 		return err
 	}
 	for _, e := range entries {
-		if e.ID != id {
+		if e.ID != id && e.ResumeSession != id {
 			continue
 		}
 		if !asOwner && requester != e.Owner {
@@ -321,10 +464,10 @@ func (d *Daemon) cancelQueued(id, requester string, asOwner bool, validate ...bo
 		if len(validate) > 0 && validate[0] {
 			return nil
 		}
-		if !d.st.removeQueued(id) {
+		if !d.st.removeQueued(e.ID) {
 			break
 		}
-		d.Logf("worker.queue_cancelled queue=%s project=%s owner=%s by=%s", id, e.Project, e.Owner, requester)
+		d.Logf("worker.queue_cancelled queue=%s project=%s owner=%s by=%s", e.ID, e.Project, e.Owner, requester)
 		return nil
 	}
 	return fmt.Errorf("no worker with session %s runs on this machine (no queued start has that ID)", id)

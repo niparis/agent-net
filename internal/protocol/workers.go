@@ -100,6 +100,15 @@ type WorkerResume struct {
 	Requester string `json:"requester_session"`
 }
 
+// WorkerResumeResult answers "worker.resume". When the machine queued the
+// restart, Queued is true and Position and Reason give its place in the queue.
+type WorkerResumeResult struct {
+	Queued   bool   `json:"queued,omitempty"`
+	QueueID  string `json:"queue_id,omitempty"`
+	Position int    `json:"position,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
 // WorkerContinue is "worker.continue", gateway to the machine: start a new
 // worker from an ended one. Only the owner of the old worker may ask.
 type WorkerContinue struct {

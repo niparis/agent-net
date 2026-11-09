@@ -1451,20 +1451,22 @@ func (g *Gateway) relayQueuedTask(ctx context.Context, nc *nodeConn, p protocol.
 	if err := g.store.startSession(nc.id, p.Ref, p.SessionID); err != nil {
 		return err
 	}
-	ownerNode, err := g.store.SessionNode(p.Owner)
-	if err != nil {
-		return err
-	}
-	g.mu.Lock()
-	target := g.conns[ownerNode]
-	g.mu.Unlock()
-	if target == nil {
-		return reject("the machine of the owner is offline")
-	}
-	cctx, cancel := context.WithTimeout(ctx, g.relayDeadline())
-	defer cancel()
-	if _, err := target.call(cctx, "worker.task", p); err != nil {
-		return reject("the owner's machine did not send the task: %v", err)
+	if p.Task != "" {
+		ownerNode, err := g.store.SessionNode(p.Owner)
+		if err != nil {
+			return err
+		}
+		g.mu.Lock()
+		target := g.conns[ownerNode]
+		g.mu.Unlock()
+		if target == nil {
+			return reject("the machine of the owner is offline")
+		}
+		cctx, cancel := context.WithTimeout(ctx, g.relayDeadline())
+		defer cancel()
+		if _, err := target.call(cctx, "worker.task", p); err != nil {
+			return reject("the owner's machine did not send the task: %v", err)
+		}
 	}
 	if syntheticRef {
 		return g.store.closeStart(nc.id, p.Ref, p.SessionID)
@@ -1495,6 +1497,21 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 		return nil, reject("only the worker's owner or the person at the command line can stop it")
 	}
 	if !w.Online {
+		g.mu.Lock()
+		target := g.conns[w.NodeID]
+		g.mu.Unlock()
+		if target != nil {
+			method := "worker.kill"
+			if len(validate) > 0 && validate[0] {
+				method = "worker.validate_stop"
+			}
+			cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_, err := target.call(cctx, method, protocol.WorkerKill{Session: p.Session, Requester: p.Requester, AsOwner: protocol.IsOwner(req.Harness)})
+			cancel()
+			if err == nil {
+				return map[string]any{"stopped": true}, nil
+			}
+		}
 		return nil, reject("worker %s has already ended", p.Session)
 	}
 	g.mu.Lock()
@@ -1561,39 +1578,58 @@ func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView,
 // owner sends it a message. An ended worker is offline and still flagged as a
 // worker; its record names the owner. Anyone else gets a clear refusal, as for
 // an offline session. The machine decides whether its harness can resume.
-func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protocol.MsgSend) error {
+// When the machine is at its worker cap, the restart is queued and returns
+// the queue reason with no error.
+func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protocol.MsgSend) (string, error) {
 	a, ok, err := g.store.workerForContinue(p.Recipient, p.Sender)
 	if err != nil || !ok || a.Worker == nil || a.SessionID != p.Recipient {
-		return err
+		return "", err
 	}
 	if a.Online && a.Worker.Owner != p.Sender {
-		return nil
+		return "", nil
 	}
 	if a.Worker.Owner != p.Sender {
-		return reject("worker %s has ended, and only the session that started it can start it again", p.Recipient)
+		return "", reject("worker %s has ended, and only the session that started it can start it again", p.Recipient)
 	}
 	g.mu.Lock()
 	target := g.conns[a.NodeID]
 	g.mu.Unlock()
 	if target == nil {
-		return reject("machine %s is offline, so worker %s cannot be started again", a.Hostname, p.Recipient)
+		return "", reject("machine %s is offline, so worker %s cannot be started again", a.Hostname, p.Recipient)
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	// Keep the activation for older daemons, which cannot announce a run.
 	// New daemons fence the old run before registering the resumed harness.
 	if err := g.store.SetWorkerRunActive(a.NodeID, p.Recipient); err != nil {
-		return err
+		return "", err
 	}
-	if _, err := target.call(cctx, "worker.resume", protocol.WorkerResume{Session: p.Recipient, Requester: p.Sender}); err != nil {
+	raw, err := target.call(cctx, "worker.resume", protocol.WorkerResume{Session: p.Recipient, Requester: p.Sender})
+	if err != nil {
 		g.store.SetWorkerSessionEnded(a.NodeID, p.Recipient, a.Worker.RunGeneration)
 		// The machine does not have a record it can resume. Do not keep showing
 		// it as a worker that could start again.
 		g.logLine("worker.resume_failed", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "reason", err)
-		return reject("worker %s cannot be started again: %v", p.Recipient, err)
+		return "", reject("worker %s cannot be started again: %v", p.Recipient, err)
+	}
+	var res protocol.WorkerResumeResult
+	if json.Unmarshal(raw, &res) == nil && res.Queued {
+		startRef := res.QueueID
+		if startRef == "" {
+			startRef = protocol.NewID("q")
+		}
+		_ = g.store.trackWorkerStart(startRef, a.NodeID, p.Sender, a.Worker.Project, a.Harness, a.Worker.Permissions)
+		_ = g.store.startSession(a.NodeID, startRef, p.Recipient)
+		g.store.Event("worker.queued", a.NodeID, p.Sender, "",
+			strings.TrimPrefix(pairs("project", a.Worker.Project, "harness", a.Harness, "owner", p.Sender,
+				"queue", res.QueueID, "position", fmt.Sprint(res.Position)), " "))
+		g.logLine("worker.queued", "node", a.NodeID, "host", a.Hostname, "queue", res.QueueID,
+			"project", a.Worker.Project, "harness", a.Harness, "session", p.Recipient, "owner", p.Sender, "position", res.Position,
+			"reason", res.Reason)
+		return res.Reason, nil
 	}
 	g.logLine("worker.resumed", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "owner", p.Sender)
-	return nil
+	return "", nil
 }
 
 // notifyResumeRefusal reports a failed restart even when the original send

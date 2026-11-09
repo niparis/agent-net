@@ -531,3 +531,123 @@ func TestResumeRecreatesCleanEndedWorktree(t *testing.T) {
 		t.Errorf("no worker.resumed line: %v", w.logs.lines("worker.resumed"))
 	}
 }
+
+func TestWorkerResumeQueuedAtCapAndRestartsWhenSlotFrees(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.Max = 1
+	w := startWorkerNode(t, g, set, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	owner := w.ownerID()
+
+	// Start worker 1 and let it hand back and end.
+	res1 := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:handback first", Isolation: protocol.IsolationNone})
+	firstNotice := w.waitNotice(t, 1)[0]
+	if !strings.Contains(firstNotice.Body, "status: done") {
+		t.Fatalf("first worker notice: %s", firstNotice.Body)
+	}
+	eventually(t, "first worker ends after hand-back", func() bool {
+		return w.d.workerCount() == 0
+	})
+
+	// Start worker 2 to occupy the only slot (cap is 1).
+	res2 := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "occupy slot", Isolation: protocol.IsolationNone})
+	if w.d.workerCount() != 1 {
+		t.Fatalf("worker count = %d, want 1", w.d.workerCount())
+	}
+
+	// Message to ended worker 1 while at cap: must NOT error, must be queued.
+	raw, err := w.cli.call("owner_send", protocol.OwnerSendRequest{To: res1.SessionID, Body: "fix round task"})
+	if err != nil {
+		t.Fatalf("send at cap failed: %v", err)
+	}
+	var sendResult struct {
+		Message *protocol.Message `json:"message"`
+		Routing string            `json:"routing"`
+	}
+	mustJSON(t, raw, &sendResult)
+	if !strings.Contains(sendResult.Routing, "queued #1") {
+		t.Fatalf("routing note %q, want queued #1", sendResult.Routing)
+	}
+	if w.d.workerCount() != 1 {
+		t.Fatalf("worker count = %d, worker 1 should not have started yet", w.d.workerCount())
+	}
+
+	// Slot frees: stop worker 2.
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res2.SessionID})
+	eventually(t, "worker 2 stopped", func() bool {
+		return w.d.workerBySession(res2.SessionID) == nil
+	})
+
+	// Worker 1 restarts with the message when slot frees.
+	eventually(t, "worker 1 resumed", func() bool {
+		return len(w.logs.lines("worker.resumed", "session="+res1.SessionID)) == 1
+	})
+
+	// Caller gets the normal "started" notice for worker 1.
+	eventually(t, "started notice for worker 1", func() bool {
+		for _, m := range w.messagesOf(t, owner) {
+			if m.Type == protocol.TypeNotification && strings.Contains(m.Body, "status: started") && strings.Contains(m.Body, res1.SessionID) {
+				return true
+			}
+		}
+		return false
+	})
+
+	// Worker 1 received the message and replies.
+	r := w.replyTo(t, owner, sendResult.Message.ID)
+	if !strings.HasPrefix(r.Body, "ok from worker") {
+		t.Fatalf("worker 1 reply: %+v", r)
+	}
+}
+
+func TestWorkerResumeQueuedCancelledByStop(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.Max = 1
+	w := startWorkerNode(t, g, set, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+
+	// Start worker 1 and let it hand back and end.
+	res1 := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:handback first", Isolation: protocol.IsolationNone})
+	w.waitNotice(t, 1)
+	eventually(t, "first worker ends after hand-back", func() bool {
+		return w.d.workerCount() == 0
+	})
+
+	// Start worker 2 to occupy the slot.
+	res2 := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "occupy slot", Isolation: protocol.IsolationNone})
+
+	// Message to ended worker 1 queues restart.
+	raw := w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res1.SessionID, Body: "fix round task"})
+	var sendResult struct {
+		Routing string `json:"routing"`
+	}
+	mustJSON(t, raw, &sendResult)
+	if !strings.Contains(sendResult.Routing, "queued #1") {
+		t.Fatalf("routing note %q, want queued #1", sendResult.Routing)
+	}
+
+	// Stop worker 1 while its restart is queued: must remove from queue.
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res1.SessionID})
+
+	// Free slot by stopping worker 2.
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res2.SessionID})
+	eventually(t, "worker 2 stopped", func() bool {
+		return w.d.workerBySession(res2.SessionID) == nil
+	})
+
+	// Worker 1 should NOT be resumed because its queued restart was cancelled.
+	time.Sleep(200 * time.Millisecond)
+	if len(w.logs.lines("worker.resumed", "session="+res1.SessionID)) > 0 {
+		t.Errorf("worker 1 should not have resumed")
+	}
+}

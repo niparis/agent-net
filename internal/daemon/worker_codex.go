@@ -509,7 +509,7 @@ func (c *codexAdapter) deliverWorker(w *worker, m protocol.Message) Result {
 			continue
 		}
 		<-ending
-		if err := c.d.resumeWorkerSession(context.Background(), m.To, owner); err != nil {
+		if _, err := c.d.resumeWorkerSession(context.Background(), m.To, owner); err != nil {
 			return Result{Detail: err.Error()}
 		}
 		w = c.d.workerBySession(m.To)

@@ -1404,8 +1404,12 @@ retryWorker:
 		if w == nil {
 			row, ok, _ := d.st.workerBySession(m.To)
 			if ok && row.EndedReason == protocol.StopHandback && (m.From == row.Owner || m.FromHarness == protocol.OwnerHarness) {
-				if err := d.resumeWorkerSession(ctx, m.To, row.Owner); err != nil {
+				res, err := d.resumeWorkerSession(ctx, m.To, row.Owner)
+				if err != nil {
 					d.finishDelivery(ctx, m, Result{Detail: err.Error()})
+					return
+				}
+				if res != nil && res.Queued {
 					return
 				}
 				continue
@@ -1420,8 +1424,12 @@ retryWorker:
 				d.finishDelivery(ctx, m, Result{Detail: "only the worker's owner can start it again"})
 				return
 			}
-			if err := d.resumeWorkerSession(ctx, m.To, owner); err != nil {
+			res, err := d.resumeWorkerSession(ctx, m.To, owner)
+			if err != nil {
 				d.finishDelivery(ctx, m, Result{Detail: err.Error()})
+				return
+			}
+			if res != nil && res.Queued {
 				return
 			}
 			continue

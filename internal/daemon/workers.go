@@ -1258,14 +1258,20 @@ func (d *Daemon) releaseWorkerReport(id string) {
 
 // stopWorkerSession handles "worker.kill" from the gateway. A queued start
 // (a q_ ID) is cancelled instead.
-func (d *Daemon) stopWorkerSession(k protocol.WorkerKill) error {
+func (d *Daemon) stopWorkerSession(k protocol.WorkerKill, validate ...bool) error {
 	sessionID := k.Session
 	if protocol.IsQueueID(sessionID) {
-		return d.cancelQueued(sessionID, k.Requester, k.AsOwner)
+		return d.cancelQueued(sessionID, k.Requester, k.AsOwner, validate...)
 	}
 	w := d.workerBySession(sessionID)
 	if w == nil {
+		if err := d.cancelQueued(sessionID, k.Requester, k.AsOwner, validate...); err == nil {
+			return nil
+		}
 		return fmt.Errorf("no worker with session %s runs on this machine", sessionID)
+	}
+	if len(validate) > 0 && validate[0] {
+		return nil
 	}
 	d.endWorker(w, protocol.StopRequested)
 	return nil
@@ -1275,7 +1281,7 @@ func (d *Daemon) stopWorkerSession(k protocol.WorkerKill) error {
 // an ended worker sent it a message, so the worker's own harness session is
 // started again (W10). Only the owner may ask; the gateway checks it and so
 // does this function.
-func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester string) error {
+func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester string) (*protocol.WorkerResumeResult, error) {
 	d.resumeMu.Lock()
 	defer d.resumeMu.Unlock()
 	// A hand-back ends the worker right after its notice, and the owner's next
@@ -1290,60 +1296,80 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		owner, stopping, done := w.owner, w.stopping, w.doneStatus != ""
 		d.wmu.Unlock()
 		if owner != requester {
-			return fmt.Errorf("only the session that started worker %s can start it again", sessionID)
+			return nil, fmt.Errorf("only the session that started worker %s can start it again", sessionID)
 		}
 		// A running worker with no hand-back just gets the message. A worker
 		// that handed back is ending now, even if its end has not started yet:
 		// wait for it, then start the session again.
 		if !stopping && !done {
-			return nil
+			return &protocol.WorkerResumeResult{}, nil
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
 	row, ok, err := d.st.workerBySession(sessionID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !ok {
-		return fmt.Errorf("no worker with session %s is waiting to be started again on this machine", sessionID)
+		return nil, fmt.Errorf("no worker with session %s is waiting to be started again on this machine", sessionID)
 	}
 	if row.EndedReason != protocol.StopHandback || !row.Resumable {
-		return fmt.Errorf("worker %s ended with reason %s, so it cannot be started again: only a worker that ended after its hand-back can", sessionID, row.EndedReason)
+		return nil, fmt.Errorf("worker %s ended with reason %s, so it cannot be started again: only a worker that ended after its hand-back can", sessionID, row.EndedReason)
 	}
 	if requester != row.Owner {
-		return fmt.Errorf("only the session that started worker %s can start it again", sessionID)
+		return nil, fmt.Errorf("only the session that started worker %s can start it again", sessionID)
 	}
 	if err := checkWorkerWorktree(&row); err != nil {
-		return err
+		return nil, err
 	}
 	set := d.workerSettings("")
 	if row.Worktree == "" && row.StartedAt.Add(set.MaxAge).Before(time.Now()) {
 		// Retention cleanup owns deletion and retries failed harness calls.
-		return fmt.Errorf("worker %s started more than %s ago (the longest run time), so it cannot be started again", sessionID, set.MaxAge)
+		return nil, fmt.Errorf("worker %s started more than %s ago (the longest run time), so it cannot be started again", sessionID, set.MaxAge)
 	}
 	ln := d.launchers[row.Harness]
 	if ln == nil {
-		return fmt.Errorf("this daemon cannot start %q workers", row.Harness)
+		return nil, fmt.Errorf("this daemon cannot start %q workers", row.Harness)
+	}
+	if _, ok := ln.(resumer); !ok {
+		return nil, fmt.Errorf("a %s worker cannot be started again: %s", row.Harness, cannotResumeReason(row.Harness))
+	}
+
+	qres, err := d.admitOrQueueResume(&row)
+	if err != nil {
+		return nil, err
+	}
+	if qres != nil {
+		return qres, nil
+	}
+	defer d.releaseWorkerBase(row.Base)
+
+	if _, err := d.runWorkerResume(ctx, row, set); err != nil {
+		return nil, err
+	}
+	return &protocol.WorkerResumeResult{}, nil
+}
+
+// runWorkerResume starts the worker process for an ended worker.
+// The caller holds d.resumeMu and has already reserved the base.
+func (d *Daemon) runWorkerResume(ctx context.Context, row workerRow, set WorkerSettings) (*worker, error) {
+	ln := d.launchers[row.Harness]
+	if ln == nil {
+		return nil, fmt.Errorf("this daemon cannot start %q workers", row.Harness)
 	}
 	rs, ok := ln.(resumer)
 	if !ok {
-		return fmt.Errorf("a %s worker cannot be started again: %s", row.Harness, cannotResumeReason(row.Harness))
+		return nil, fmt.Errorf("a %s worker cannot be started again: %s", row.Harness, cannotResumeReason(row.Harness))
 	}
 	// A follow-up stays in the OS sandbox the worker started in, and goes in
 	// it when the switch is on now.
 	sandbox, err := d.osSandboxChoice(row.Project, row.Harness, row.Permissions, readOSSandboxMarker(filepath.Join(d.cfg.StateDir, "workers", row.ID)) != "")
 	if err != nil {
-		return err
-	}
-	d.wmu.Lock()
-	if len(d.workers) >= set.Max {
-		n := len(d.workers)
-		d.wmu.Unlock()
-		return fmt.Errorf("this machine already runs %d workers, which is the limit", n)
+		return nil, err
 	}
 	w := &worker{runGeneration: row.RunGeneration + 1, id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner, ownerName: row.OwnerName,
 		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: time.Now(), lastActive: time.Now(),
@@ -1354,6 +1380,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		autoContinue: row.AutoContinue, autoContinueCount: row.AutoContinueCount,
 		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, changeID: row.ChangeID, fixes: row.Fixes, ready: make(chan struct{}), osSandbox: sandbox}
 	w.logPath = filepath.Join(w.dir, "worker.log")
+	d.wmu.Lock()
 	d.workers[w.id] = w
 	row.EndedReason, row.Reported, row.Resumable = "", false, false
 	d.saveWorkerLocked(w)
@@ -1383,20 +1410,20 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 			w.path = w.mainPath
 			w.worktree = ""
 			if err := d.createWorktree(cctx, w); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 	if err := os.MkdirAll(w.dir, 0o700); err != nil {
-		return err
+		return nil, err
 	}
 	// Both resume paths announce the new generation before the harness can
 	// register. A delayed report from the previous process cannot end it.
 	runStateSupported := true
-	if _, err := d.call(cctx, "worker.run_state", protocol.WorkerRunState{Session: sessionID, RunGeneration: w.runGeneration}); err != nil {
+	if _, err := d.call(cctx, "worker.run_state", protocol.WorkerRunState{Session: row.SessionID, RunGeneration: w.runGeneration}); err != nil {
 		var refusal RemoteError
 		if !errors.As(err, &refusal) || string(refusal) != `unknown frame type "worker.run_state"` {
-			return err
+			return nil, err
 		}
 		// An older gateway activates the worker before asking us to resume it.
 		// Only its explicit unknown-method refusal permits this legacy path.
@@ -1406,20 +1433,20 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		if !okStart && runStateSupported {
 			rollbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			d.call(rollbackCtx, "worker.run_state", protocol.WorkerRunState{Session: sessionID, RunGeneration: w.runGeneration, Ended: true})
+			d.call(rollbackCtx, "worker.run_state", protocol.WorkerRunState{Session: row.SessionID, RunGeneration: w.runGeneration, Ended: true})
 		}
 	}()
 	if err := rs.resume(cctx, d, w); err != nil {
-		d.Logf("worker.resume_failed worker=%s session=%s harness=%s reason=%q", w.id, sessionID, w.harness, err.Error())
-		return err
+		d.Logf("worker.resume_failed worker=%s session=%s harness=%s reason=%q", w.id, row.SessionID, w.harness, err.Error())
+		return nil, err
 	}
 	okStart = true
 	d.startWorkerAssessment(w, w.path, w.taskFull)
 	// A resumed worker starts a new run: its next end must be reported again.
 	d.releaseWorkerReport(w.id)
 	d.Logf("worker.resumed worker=%s session=%s project=%s harness=%s model=%s owner=%s pid=%d",
-		w.id, sessionID, w.project, w.harness, w.model, w.owner, w.pid)
-	return nil
+		w.id, row.SessionID, w.project, w.harness, w.model, w.owner, w.pid)
+	return w, nil
 }
 
 // cannotResumeReason says why a harness cannot open an ended session again.
@@ -1434,6 +1461,7 @@ func cannotResumeReason(harness string) string {
 // dropWorkerRow forgets an ended worker: its row and its folder. The gateway
 // drops its copy of the worker at the next worker.cleanup.
 func (d *Daemon) dropWorkerRow(r workerRow) bool {
+	d.st.removeQueuedForSession(r.SessionID)
 	set := d.workerSettings("")
 	if set.DeleteSessions != nil && !*set.DeleteSessions && r.Harness == "opencode" {
 		// Preserve the only copy of the conversation when deletion is disabled.
