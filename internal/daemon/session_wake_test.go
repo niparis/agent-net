@@ -72,12 +72,26 @@ func TestMessageWakesRetiredClaude(t *testing.T) {
 		t.Fatalf("resume args %v, listing calls %d", rec.Args, r.listCalls())
 	}
 }
-func TestMessageDoesNotWakeStoppedClaude(t *testing.T) {
+func TestMessageWakesStoppedClaude(t *testing.T) {
 	r := newWakeRig(t, "stopped")
-	r.send(t, "leave stopped")
-	eventually(t, "stopped wake refused", func() bool { return r.listCalls() == 1 && len(r.g.logs.lines("session wake", r.id)) == 1 })
+	r.send(t, "wake stopped session")
+	eventually(t, "stopped session receives message", func() bool {
+		if lines := r.g.logs.lines("session wake", r.id); len(lines) > 0 {
+			t.Fatalf("wake failed: %v", lines)
+		}
+		return len(r.c.adapter.deliveredTo(r.id)) == 1
+	})
+	rec := readClaude(t, r.repo)
+	if argValue(rec.Args, "--resume") != wakeNative || r.listCalls() != 1 {
+		t.Fatalf("resume args %v, listing calls %d", rec.Args, r.listCalls())
+	}
+}
+func TestMessageDoesNotWakeWorkingClaude(t *testing.T) {
+	r := newWakeRig(t, "working")
+	r.send(t, "leave working")
+	eventually(t, "working wake refused", func() bool { return r.listCalls() == 1 && len(r.g.logs.lines("session wake", r.id)) == 1 })
 	if _, err := os.Stat(filepath.Join(r.repo, "fake-claude.json")); !os.IsNotExist(err) {
-		t.Fatalf("stopped session was started: %v", err)
+		t.Fatalf("working session was started: %v", err)
 	}
 }
 func TestMessageWakeBackoff(t *testing.T) {
@@ -93,7 +107,7 @@ func TestMessageWakeBackoff(t *testing.T) {
 }
 
 func TestWakeRejectsUnsafeClaudeRecords(t *testing.T) {
-	for _, kind := range []string{"removed", "invalid", "ambiguous", "conflicting-id", "foreground", "foreground-no-kind", "live-done", "wrong-folder", "missing-folder", "worker"} {
+	for _, kind := range []string{"removed", "invalid", "ambiguous", "two-stopped", "conflicting-id", "foreground", "foreground-no-kind", "live-done", "live-stopped", "working", "wrong-folder", "missing-folder", "worker"} {
 		t.Run(kind, func(t *testing.T) {
 			r := newWakeRig(t, "done")
 			switch kind {
@@ -103,6 +117,9 @@ func TestWakeRejectsUnsafeClaudeRecords(t *testing.T) {
 				os.WriteFile(r.listing, []byte(`not json`), 0600)
 			case "ambiguous":
 				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": r.repo, "state": "done"}, {"id": wakeNative[:8], "cwd": "/different", "state": "stopped"}})
+				os.WriteFile(r.listing, b, 0600)
+			case "two-stopped":
+				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": r.repo, "state": "stopped"}, {"id": wakeNative[:8], "cwd": r.repo, "state": "stopped"}})
 				os.WriteFile(r.listing, b, 0600)
 			case "conflicting-id":
 				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "sessionId": "different-native", "cwd": r.repo, "state": "done"}})
@@ -121,6 +138,12 @@ func TestWakeRejectsUnsafeClaudeRecords(t *testing.T) {
 			case "live-done":
 				b, _ := json.Marshal(map[string]any{"id": wakeNative[:8], "kind": "background", "cwd": r.repo, "state": "done", "pid": 12345})
 				os.WriteFile(r.listing, append(append([]byte("["), b...), ']'), 0600)
+			case "live-stopped":
+				b, _ := json.Marshal(map[string]any{"id": wakeNative[:8], "kind": "background", "cwd": r.repo, "state": "stopped", "pid": 12345})
+				os.WriteFile(r.listing, append(append([]byte("["), b...), ']'), 0600)
+			case "working":
+				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": r.repo, "state": "working"}})
+				os.WriteFile(r.listing, b, 0600)
 			case "wrong-folder":
 				b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": "/different", "state": "done"}})
 				os.WriteFile(r.listing, b, 0600)
