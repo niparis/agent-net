@@ -53,9 +53,9 @@ func (d *Daemon) tailscale() tailscaleCLI {
 }
 
 // receiveFiles starts collecting the files of a message that carries a
-// manifest. The message is delivered to its session only when every file is
-// in the inbox. A second push of the same message while a collector runs is
-// ignored: the collector delivers once.
+// manifest. A worker notice has a shorter wait and can be delivered with
+// missing files; other messages wait for every file. A second push while a
+// collector runs is ignored: the collector delivers once.
 func (d *Daemon) receiveFiles(m protocol.Message) {
 	fs := &d.files
 	fs.mu.Lock()
@@ -105,19 +105,37 @@ func (d *Daemon) collectThenDeliver(ctx context.Context, m protocol.Message) {
 	if ctx.Err() != nil {
 		return // the daemon stops; the gateway pushes the message again later
 	}
-	if err != nil {
+	if err != nil && !isWorkerFileNotice(m) {
 		d.Logf("files: message=%s not delivered: %v", m.ID, err)
 		d.sendUpdate(ctx, m.ID, protocol.StateFailed, err.Error())
 		return
 	}
-	d.Logf("files: message=%s all %d files in %s (%s)", m.ID, len(m.Files), dir, fileRouteDetail(got))
-	m.Body += fileNote(dir, m.Files)
-	d.files.mu.Lock()
-	if d.files.routes == nil {
-		d.files.routes = map[string]string{}
+	var arrived []protocol.FileEntry
+	var missing []string
+	for _, f := range m.Files {
+		if _, ok := got[f.ID]; ok {
+			arrived = append(arrived, f)
+		} else {
+			missing = append(missing, f.Name)
+		}
 	}
-	d.files.routes[m.ID] = fileRouteDetail(got)
-	d.files.mu.Unlock()
+	if err != nil {
+		d.Logf("files: worker notice message=%s delivering without files %q: %v", m.ID, strings.Join(missing, ", "), err)
+		m.Body += "\n\nfiles missing: " + strings.Join(missing, ", ") + ", transfer did not finish"
+	} else {
+		d.Logf("files: message=%s all %d files in %s (%s)", m.ID, len(m.Files), dir, fileRouteDetail(got))
+	}
+	if len(arrived) > 0 {
+		m.Body += fileNote(dir, arrived)
+	}
+	if len(arrived) > 0 {
+		d.files.mu.Lock()
+		if d.files.routes == nil {
+			d.files.routes = map[string]string{}
+		}
+		d.files.routes[m.ID] = fileRouteDetail(got)
+		d.files.mu.Unlock()
+	}
 	d.enqueue(m.To, func() { d.onDeliver(ctx, m) })
 }
 
@@ -205,6 +223,41 @@ type fileStamp struct {
 	mtime time.Time
 }
 
+// A worker's final report must reach its caller even if its files do not.
+// The stored timestamp also bounds notices replayed after a daemon restart.
+const workerNoticeFileWait = 2 * time.Minute
+
+func isWorkerFileNotice(m protocol.Message) bool {
+	if !strings.HasPrefix(m.Body, "[agent-net worker notice]\nstatus: ") {
+		return false
+	}
+	// The gateway keeps messages longer than it keeps ended worker sessions.
+	// Once that session is deleted, its sender fields are all empty on replay.
+	return m.FromWorker || (m.FromHarness == "" && m.FromName == "")
+}
+
+// fileWaitDeadline takes the clock as an argument so old and replayed notices
+// can be checked without sleeping in tests.
+func fileWaitDeadline(m protocol.Message, fc FileConfig, now time.Time) time.Time {
+	deadline := m.ExpiresAt
+	if deadline.IsZero() {
+		deadline = now.Add(defaultFileWaitCap)
+	}
+	if fc.Wait > 0 && now.Add(fc.Wait).Before(deadline) {
+		deadline = now.Add(fc.Wait)
+	}
+	if isWorkerFileNotice(m) {
+		stored := m.CreatedAt
+		if stored.IsZero() {
+			stored = now
+		}
+		if limit := stored.Add(workerNoticeFileWait); limit.Before(deadline) {
+			deadline = limit
+		}
+	}
+	return deadline
+}
+
 // collectFiles waits until every file of the message is in dir, a file
 // fails its hash, or the wait ends. It returns the path each file took.
 func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir string) (map[string]string, error) {
@@ -228,14 +281,14 @@ func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir strin
 		d.files.mu.Unlock()
 	}()
 
-	deadline := m.ExpiresAt
-	if deadline.IsZero() {
-		deadline = time.Now().Add(defaultFileWaitCap)
+	deadline := fileWaitDeadline(m, fc, time.Now())
+	if isWorkerFileNotice(m) {
+		// Bound a stalled gateway or Taildrop call too, not just the polling.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
 	}
-	if fc.Wait > 0 && time.Now().Add(fc.Wait).Before(deadline) {
-		deadline = time.Now().Add(fc.Wait)
-	}
-	c := &fileCollector{d: d, m: m, dir: dir, got: map[string]string{}, suspects: map[string]fileStamp{}, gateway: true}
+	c := &fileCollector{d: d, m: m, dir: dir, got: map[string]string{}, suspects: map[string]fileStamp{}, gateway: true, deadline: deadline}
 	interval := fc.Poll
 	reported := ""
 	for {
@@ -252,7 +305,9 @@ func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir strin
 		}
 		if detail != reported {
 			reported = detail
-			d.sendUpdate(ctx, m.ID, protocol.StateDispatched, detail)
+			if ctx.Err() == nil {
+				d.sendUpdate(ctx, m.ID, protocol.StateDispatched, detail)
+			}
 			if c.blocked != "" {
 				d.Logf("files: message=%s %s", m.ID, c.blocked)
 			}
@@ -268,7 +323,7 @@ func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir strin
 		wait := min(interval, time.Until(deadline))
 		select {
 		case <-ctx.Done():
-			return c.got, ctx.Err()
+			return c.got, fmt.Errorf("file wait ended with %s missing: %w", strings.Join(c.missingNames(), ", "), ctx.Err())
 		case <-time.After(max(wait, 0)):
 		}
 	}
@@ -283,8 +338,15 @@ type fileCollector struct {
 	got      map[string]string    // file ID -> path it took
 	suspects map[string]fileStamp // file ID -> a copy that failed its hash once
 	gateway  bool                 // false after the gateway did not know xfer.find
-	blocked  string               // why a place cannot be read, such as macOS privacy rules on Downloads
+	blocked  string               // why a place cannot be read
+	deadline time.Time            // bounded when the collector must stop waiting
+	opens    map[string]*fileOpen // source path -> its open helper, kept while it blocks
 }
+
+// fileOpen is one helper goroutine that opens and copies an arrived file. It
+// stays in the collector while a blocked syscall does not return, so a new
+// pass waits on the same call instead of starting another.
+type fileOpen struct{ done chan error }
 
 func (c *fileCollector) missing() []protocol.FileEntry {
 	var out []protocol.FileEntry
@@ -329,26 +391,25 @@ func (c *fileCollector) pass(ctx context.Context) (progress bool, bad []string) 
 	// The local handoff, for a sender on this machine.
 	for _, f := range c.missing() {
 		src := filepath.Join(d.cfg.StateDir, fileLocalFolder, protocol.TaildropName(c.m.ID, f))
-		if c.tryTake(src, f) == nil {
+		if c.tryTake(ctx, src, f) == nil {
 			took(f, FilePathLocal)
 		}
 	}
 	// Taildrop. On Linux the files wait for `tailscale file get`; the owner
-	// may also have collected them into Downloads. The Mac app saves them
-	// straight into Downloads.
+	// may also have collected them into Downloads. A Mac daemon never looks
+	// in Downloads: a privacy check or an iCloud-backed file there can block
+	// an open in the kernel forever (decision 0125). A sender on a machine
+	// with a known OS other than darwin uses the gateway for a Mac receiver.
 	var places []string
-	if len(c.missing()) > 0 {
-		if fc.Layout != "darwin" {
-			d.taildropCollect(ctx)
-			places = append(places, filepath.Join(d.cfg.StateDir, fileTaildropFolder))
-		}
-		places = append(places, fc.Downloads)
+	if len(c.missing()) > 0 && fc.Layout != "darwin" {
+		d.taildropCollect(ctx)
+		places = append(places, filepath.Join(d.cfg.StateDir, fileTaildropFolder), fc.Downloads)
 	}
 	var mismatched []protocol.FileEntry
 	for _, place := range places {
 		for _, f := range c.missing() {
 			src := filepath.Join(place, protocol.TaildropName(c.m.ID, f))
-			err := c.tryTake(src, f)
+			err := c.tryTake(ctx, src, f)
 			switch {
 			case err == nil:
 				took(f, FilePathTaildrop)
@@ -379,12 +440,30 @@ func (c *fileCollector) pass(ctx context.Context) (progress bool, bad []string) 
 
 var errFileMismatch = errors.New("the file does not match its size or sha256")
 
+// errFileOpenTimeout says an open did not return in time. The helper that ran
+// it may still be blocked in the kernel.
+var errFileOpenTimeout = errors.New("the file open did not return in time")
+
+// fileOpenTimeout bounds one open of an arrived file. A blocked open repeats
+// until the collector's deadline, which is usually shorter.
+const fileOpenTimeout = 5 * time.Second
+
+// The stat and open of a file that arrived are variables so a test can make
+// them block, as a macOS privacy check or an iCloud-backed file can.
+var (
+	takeFileLstat = os.Lstat
+	takeFileOpen  = os.Open
+)
+
 // tryTake takes one announced copy into the inbox. A copy that fails its
 // hash is left where it is; it counts as bad only when the same copy (same
 // size and time) fails twice, so a file still being written is not refused.
 // It returns os.ErrNotExist when there is nothing to take.
-func (c *fileCollector) tryTake(src string, f protocol.FileEntry) error {
-	info, err := os.Lstat(src)
+func (c *fileCollector) tryTake(ctx context.Context, src string, f protocol.FileEntry) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := takeFileLstat(src)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			c.blocked = fmt.Sprintf("cannot read %s: %v", filepath.Dir(src), errors.Unwrap(err))
@@ -397,7 +476,7 @@ func (c *fileCollector) tryTake(src string, f protocol.FileEntry) error {
 	if info.Size() < f.Size {
 		return os.ErrNotExist // still arriving
 	}
-	err = takeFile(src, filepath.Join(c.dir, f.Name), f)
+	err = c.takeWithin(ctx, src, f)
 	if !errors.Is(err, errFileMismatch) {
 		return err
 	}
@@ -409,10 +488,47 @@ func (c *fileCollector) tryTake(src string, f protocol.FileEntry) error {
 	return os.ErrNotExist
 }
 
+// takeWithin runs the open and copy in a helper goroutine. A blocked syscall
+// ignores the context, so the collector stops waiting at its deadline or when
+// the daemon stops. The helper is not part of d.wg, so Stop does not wait for
+// a syscall that may never return. A later pass waits on the same helper
+// instead of starting another.
+func (c *fileCollector) takeWithin(ctx context.Context, src string, f protocol.FileEntry) error {
+	timeout := fileOpenTimeout
+	if !c.deadline.IsZero() {
+		if left := time.Until(c.deadline); left < timeout {
+			timeout = left
+		}
+	}
+	if timeout <= 0 {
+		return errFileOpenTimeout
+	}
+	if c.opens == nil {
+		c.opens = map[string]*fileOpen{}
+	}
+	call := c.opens[src]
+	if call == nil {
+		call = &fileOpen{done: make(chan error, 1)}
+		c.opens[src] = call
+		go func() { call.done <- takeFile(src, filepath.Join(c.dir, f.Name), f) }()
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-call.done:
+		delete(c.opens, src)
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return errFileOpenTimeout
+	}
+}
+
 // takeFile copies src into dst while hashing it, keeps the copy only when
 // size and hash match the manifest, then removes src.
 func takeFile(src, dst string, f protocol.FileEntry) error {
-	in, err := os.Open(src)
+	in, err := takeFileOpen(src)
 	if err != nil {
 		return err
 	}

@@ -354,7 +354,7 @@ What the sending daemon checks, before the message is stored:
 How the bytes travel:
 
 - **Unique names.** Every file travels as `agent-net-<message id>-<file id>-<name>`, over Taildrop and through the gateway. The receiving daemon takes a file only when its name is announced by a message it is collecting and its size and SHA-256 match the manifest. It never follows a symlink left under an announced name.
-- **Taildrop** is used only when the receiving machine reported a Tailscale address that this machine's `tailscale status` lists as an online peer, so both machines are on one tailnet. A Taildrop that fails falls back to the gateway. A message held for the owner's approval keeps its files on the gateway, which deletes them after 7 days if nobody approves.
+- **Taildrop** is used only when the receiving machine reported a Tailscale address that this machine's `tailscale status` lists as an online peer, so both machines are on one tailnet, and the receiver's daemon does not run on macOS. A receiver on macOS, or one whose OS is unknown, gets files through the gateway: a Mac daemon never reads `~/Downloads`, where an open can block in the kernel (decision [0125](decisions/0125-worker-file-notice-timeout.md)). A Taildrop that fails falls back to the gateway. Worker notices use the gateway between machines. A message held for the owner's approval keeps its files on the gateway, which deletes them after 7 days if nobody approves.
 - **The gateway** stores the parts (below). The receiver finds an upload by its unique name with `xfer.find`, which lists only finished uploads addressed to the calling machine.
 - **Same machine.** Between two sessions of one machine the copy moves through `<state>/files/local/`, never through the network.
 
@@ -362,11 +362,11 @@ A peer may send you up to 10 files of 100 MB each with a message. A peer control
 
 What the receiving daemon does:
 
-- **Inbox.** Each file goes to `~/.local/state/agent-net/daemon/inbox/<session>/<message>/<name>`, folders 0700, files 0600. Only the receiving session's folder gets the files. The message is delivered to the agent only when every file is in; its text then says where the files are.
-- **Hash mismatch.** A file that fails its size or hash is not taken. When the same copy fails twice in a row (so a file still being written is not refused), the message fails with the file's name, and nothing reaches the agent.
+- **Inbox.** Each file goes to `~/.local/state/agent-net/daemon/inbox/<session>/<message>/<name>`, folders 0700, files 0600. Only the receiving session's folder gets the files. An ordinary message reaches the agent only when every file is in; its text then says where the files are. A worker notice is delivered after at most 2 minutes while the receiving daemon is online, even if files are missing, and identifies any missing names.
+- **Hash mismatch.** A file that fails its size or hash is not taken. When the same copy fails twice in a row (so a file still being written is not refused), an ordinary message fails with the file's name. A worker notice still reaches its caller, without the bad file, and lists it as missing.
 - **Files nobody announced are not taken.** On macOS the Tailscale app saves Taildrops straight into `~/Downloads`; the daemon picks up only announced names there and leaves everything else, including a bad copy. On Linux the daemon runs `tailscale file get` into `<state>/files/taildrop/` only while it collects files, and moves every file nobody announced (and a bad copy) to `~/Downloads` under a free name, never over an existing file, so the owner's own Taildrops still arrive.
 - **Retention.** The daemon deletes a message's inbox folder 7 days after its last file arrived.
-- **What the log holds.** The daemon logs the message ID, file IDs, sizes and paths. It never logs file contents.
+- **What the log holds.** The daemon logs the message ID, file IDs, sizes and paths. It also logs missing file names when it delivers a worker notice without them. It never logs file contents.
 
 The gateway transfer in parts:
 

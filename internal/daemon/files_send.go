@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -52,9 +54,12 @@ type FileSendResult struct {
 
 // SendFiles checks the files, sends the message with their manifest and then
 // pushes the bytes: on this machine through the local handoff folder, over
-// Taildrop when the receiver is an online peer on this machine's tailnet,
-// else through the gateway in parts. A Taildrop that fails falls back to the
-// gateway. The receiving daemon finds each file by its unique name and hash.
+// Taildrop when the receiver is an online Linux peer on this machine's
+// tailnet, else through the gateway in parts. The gateway is the only route to
+// a Mac or a machine whose OS is unknown, because a Mac daemon never reads
+// Downloads (decision 0125). Worker notices also use the gateway between
+// machines. A Taildrop that fails falls back to the gateway. The receiving
+// daemon finds each file by its unique name and hash.
 //
 // The message is not queued while the gateway is unreachable: its ID names
 // the files, so it must be stored first. An error after the message was
@@ -105,8 +110,18 @@ func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *Outgo
 	if len(stored.Message.Files) != len(out.Files) {
 		return res, fmt.Errorf("message %s was stored without its file list: the gateway is older than this daemon; upgrade the gateway and send again", stored.Message.ID)
 	}
+	// A replay can return an earlier message. Never offer new bytes under its
+	// old manifest, even if the number of files happens to match.
+	if !slices.Equal(stored.Message.Files, out.Manifest()) {
+		return res, errors.New("the stored file list differs from the checked snapshots")
+	}
 	path, ip, receiver, note := d.fileRoute(ctx, stored.Message.To)
-	if path == FilePathTaildrop && stored.Message.State == protocol.StateHeld {
+	if path == FilePathTaildrop && req.WorkerNotice {
+		// A worker notice is the worker's final report. The gateway keeps its
+		// files while the receiver is offline, so the report is not held up
+		// by a transfer that may never finish.
+		path, note = FilePathGateway, "worker notice files use the gateway"
+	} else if path == FilePathTaildrop && stored.Message.State == protocol.StateHeld {
 		// The owner may refuse the message. Bytes on the gateway expire;
 		// a Taildrop would sit in the receiver's Downloads for good.
 		path, note = FilePathGateway, "the message waits for the owner's approval, so the files wait on the gateway"
@@ -117,10 +132,10 @@ func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *Outgo
 		res.Files = append(res.Files, sent)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", f.Entry.Name, err))
+			d.Logf("files: message=%s file=%s path=%s transfer failed: %v (route: %s)", stored.Message.ID, f.Entry.ID, sent.Path, err, sent.Note)
+		} else {
+			d.Logf("files sent: message=%s file=%s bytes=%d path=%s note=%q", stored.Message.ID, sent.Entry.ID, sent.Entry.Size, sent.Path, sent.Note)
 		}
-	}
-	for _, s := range res.Files {
-		d.Logf("files sent: message=%s file=%s bytes=%d path=%s note=%q", stored.Message.ID, s.Entry.ID, s.Entry.Size, s.Path, s.Note)
 	}
 	return res, errors.Join(errs...)
 }
@@ -180,10 +195,20 @@ func (d *Daemon) fileRoute(ctx context.Context, to string) (path, ip, receiver, 
 	if json.Unmarshal(raw, &nodes) != nil {
 		return FilePathGateway, "", receiver, ""
 	}
+	var receiverOS string
 	for _, n := range nodes.Nodes {
 		if n.NodeID == receiver {
 			ip = n.TailscaleIP
+			receiverOS = n.OS
 		}
+	}
+	// A Mac daemon never reads Downloads, so a Taildrop to it would never be
+	// collected (decision 0125). An unknown OS also takes the gateway.
+	if receiverOS == "" {
+		return FilePathGateway, ip, receiver, "the receiver's machine did not report its OS, so the files use the gateway"
+	}
+	if strings.EqualFold(receiverOS, "darwin") {
+		return FilePathGateway, ip, receiver, "the receiver is a Mac, so the files use the gateway"
 	}
 	if ip == "" {
 		return FilePathGateway, "", receiver, ""
@@ -217,7 +242,14 @@ func (d *Daemon) pushFile(ctx context.Context, msgID string, f OutgoingFile, pat
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return sent, err
 		}
-		return sent, os.Rename(f.Copy, filepath.Join(dir, unique))
+		dst := filepath.Join(dir, unique)
+		if err := copyNew(f.Copy, dst); err != nil {
+			// A previous attempt may already have put this snapshot there.
+			if !errors.Is(err, os.ErrExist) || verifyFile(dst, f.Entry) != nil {
+				return sent, err
+			}
+		}
+		return sent, nil
 	case FilePathTaildrop:
 		named := filepath.Join(filepath.Dir(f.Copy), unique)
 		err := os.Rename(f.Copy, named)

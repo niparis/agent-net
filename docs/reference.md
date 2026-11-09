@@ -970,17 +970,17 @@ The Pi and OpenCode plugins provide both tools from their generated catalog. Cla
 3. sends the message with the manifest. The gateway stores the manifest with the message and checks it again. Files need a live connection: a message with files is never put in the outbox;
 4. pushes each file under its unique name `agent-net-<message id>-<file id>-<name>`:
    - to a session on the same machine: through `files/local/`;
-   - over Taildrop (`tailscale file cp <file> <address>:`) when the receiving machine reported a Tailscale address and `tailscale status --json` lists it as an online peer;
+   - over Taildrop (`tailscale file cp <file> <address>:`) when the receiving machine reported a Tailscale address, its daemon is not on macOS, and `tailscale status --json` lists it as an online peer;
    - else through the gateway in parts (`xfer.begin`, `xfer.part`, `xfer.finish`), with the unique name as the upload name.
 
-A Taildrop that fails (for example a receiver that is offline) falls back to the gateway, which holds the bytes until the receiver comes online or 7 days pass. A message held for the owner's approval sends its files through the gateway, not over Taildrop. An empty file carries no bytes: the receiver writes it from the manifest. The daemon finds `tailscale` on `PATH`, then on macOS at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`. With no Tailscale, files go through the gateway.
+A receiver whose daemon runs on macOS always gets its files through the gateway, for every message: the Mac daemon never reads `~/Downloads`, because an open there can block in the kernel (decision [0125](decisions/0125-worker-file-notice-timeout.md)). The sender reads the receiver's OS from `nodes`; when the OS is unknown, it uses the gateway too. A Taildrop that fails (for example a receiver that is offline) falls back to the gateway, which holds the bytes until the receiver comes online or 7 days pass. A message held for the owner's approval sends its files through the gateway, not over Taildrop. A worker notice also uses the gateway between machines. An empty file carries no bytes: the receiver writes it from the manifest. The daemon finds `tailscale` on `PATH`, then on macOS at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`. With no Tailscale, files go through the gateway.
 
-**Receiving.** When a message with a manifest arrives, the daemon of the receiving session collects every file before it delivers the message. It looks, in this order:
+**Receiving.** When a message with a manifest arrives, the daemon of the receiving session collects its files before delivering it. A worker notice has a shorter bounded wait, described below. The daemon looks, in this order:
 
 - in the inbox folder, for a file already there (after a restart, or when the gateway pushes the message again);
 - in `files/local/`, for a sender on the same machine;
-- on Linux, it runs `tailscale file get files/taildrop/`, and looks in that folder and in `~/Downloads` (in case you collected the file yourself). Files nobody announced go to `~/Downloads` at once, under a free name such as `scan (1).pdf`;
-- on macOS, it looks in `~/Downloads`, where the Tailscale app saves Taildrops. Files nobody announced stay where they are;
+- on Linux, it runs `tailscale file get files/taildrop/`, and looks in that folder and in `~/Downloads` (in case you collected the file yourself). Files nobody announced go to `~/Downloads` at once, under a free name such as `scan (1).pdf`. An open of a file that arrived runs in a helper goroutine with a timeout, so a blocked syscall cannot keep the message or a daemon stop waiting;
+- on macOS, it never stats or opens a file in `~/Downloads`. A Taildrop that an older sender leaves there is not collected;
 - on the gateway, with `xfer.find` for the unique names of the missing files. It downloads a matching upload with `xfer.get`, checks it, and confirms it with `xfer.confirm`, so the gateway frees the space.
 
 A file is taken only when its size and SHA-256 match the manifest. It is copied into `inbox/<session>/<message>/<name>` and then removed from where it arrived. The daemon looks again after 2 seconds, doubling the wait up to 30 seconds while nothing arrives. Until every file is in, the sender sees `waiting for files: <n> of <total> in`. Then the agent gets the message, with a note at the end:
@@ -992,7 +992,7 @@ A file is taken only when its size and SHA-256 match the manifest. It is copied 
 agent-net deletes them after 7 days.
 ```
 
-The delivery detail ends with the path: `files via Taildrop`, `files via the gateway`, `files via the local handoff on this machine`, or several joined with `and`. A file whose copy fails its hash twice in a row fails the message (`... arrived, but its sha256 does not match the file list`). Files that have not arrived when the message expires (24 hours) fail it with their names. A message delivered to the agent earlier is not collected again.
+The delivery detail ends with the path: `files via Taildrop`, `files via the gateway`, `files via the local handoff on this machine`, or several joined with `and`. For an ordinary message, a file whose copy fails its hash twice in a row fails the message (`... arrived, but its sha256 does not match the file list`). Files that have not arrived when the message expires (24 hours) fail it with their names. A worker notice is different: the sender retries a failed file offer, and the receiving daemon delivers the report after at most 2 minutes from storage while it is online, or sooner if collection fails. The notice lists missing names in a `files missing: ..., transfer did not finish` line and names any files that arrived. On a reconnect the deadline still runs from when the gateway stored the notice. A message delivered to the agent earlier is not collected again.
 
 **Frames.** `msg.send` and `msg.deliver` carry `files` on the message. `xfer.find` takes `names` (1 to 10) and returns `uploads`: the finished uploads addressed to the calling machine with one of those names, each with `upload_id`, `name`, `size`, `sha256` and its part layout. Every transfer state now also carries the upload `name`.
 
@@ -1118,12 +1118,12 @@ operator call `owner_send` takes the same optional `conversation_id`, and a send
 without it opens a new conversation as before. The web console's Messages
 composer uses it, so a reply stays in its thread.
 
-A message with files stays `dispatched` until every file is in the receiving
-machine's inbox, with the detail `waiting for files: <n> of <total> in`. Then
-it is delivered as usual, and the detail ends with the path the files took,
-for example `files via Taildrop` or `files via the gateway`. A file that fails
-its hash, or files that do not arrive before the message expires, fail the
-message with the file names (see [Files between machines](#files-between-machines)).
+A message with files stays `dispatched` while the receiver collects them, with
+the detail `waiting for files: <n> of <total> in`. The delivery detail names
+the paths the files took, for example `files via Taildrop`. An ordinary message
+fails if a file fails its hash or does not arrive before expiry. A worker
+notice is delivered with the names of missing files after at most 2 minutes
+while the receiving daemon is online (see [Files between machines](#files-between-machines)).
 
 ## Housekeeping
 

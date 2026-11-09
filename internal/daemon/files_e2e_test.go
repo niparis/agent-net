@@ -51,6 +51,10 @@ case "$1 $2" in
 	fi
 	;;
 "file get")
+	if [ -f "$d/refuse-get" ]; then
+		echo "file access denied" >&2
+		exit 1
+	fi
 	for f in "$d"/waiting/*; do
 		[ -e "$f" ] && mv "$f" "$3/"
 	done
@@ -233,13 +237,14 @@ func assertMissing(t *testing.T, path string) {
 	}
 }
 
-// The Mac app saves incoming files straight into Downloads. The receiving
-// daemon takes only the announced ones, by unique name and hash, and leaves
-// the owner's own files there.
+// A Mac receiver never reads Downloads, where a privacy check or an iCloud
+// file can block an open forever. A sender that knows the receiver is a Mac
+// uses the gateway, so the file arrives there and the owner's own files stay
+// untouched.
 func TestFilesTaildropMacLayout(t *testing.T) {
 	n := startFilesNet(t, filesNetOpts{layout: "darwin", tailnet: true})
+	setGatewayNodeOS(t, n.g, n.b.cfg.NodeID, "darwin")
 	holiday := writeTestFile(t, filepath.Join(n.downloads, "holiday.jpg"), []byte("owner's photo"))
-	stranger := writeTestFile(t, filepath.Join(n.downloads, "agent-net-m_0000000000000000-f1-x.txt"), []byte("not announced"))
 	report := []byte("<html>the report</html>")
 	src := writeTestFile(t, filepath.Join(n.project, "out", "report final.html"), report)
 
@@ -247,11 +252,11 @@ func TestFilesTaildropMacLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendFiles: %v", err)
 	}
-	if len(res.Files) != 1 || res.Files[0].Path != FilePathTaildrop {
-		t.Fatalf("result = %+v, want one file over Taildrop", res.Files)
+	if len(res.Files) != 1 || res.Files[0].Path != FilePathGateway {
+		t.Fatalf("result = %+v, want one file over the gateway", res.Files)
 	}
 	m := n.waitDelivered(res.Message.ID)
-	if !strings.Contains(m.DeliveryDetail, "Taildrop") {
+	if !strings.Contains(m.DeliveryDetail, "gateway") {
 		t.Fatalf("delivery detail %q does not name the path", m.DeliveryDetail)
 	}
 	dir := n.inbox(res.Message.ID)
@@ -262,13 +267,11 @@ func TestFilesTaildropMacLayout(t *testing.T) {
 	if len(got) != 1 || !strings.Contains(got[0].Body, "here are the files") || !strings.Contains(got[0].Body, dir) || !strings.Contains(got[0].Body, "report final.html") {
 		t.Fatalf("the agent's message does not say where the files are: %+v", got)
 	}
-	assertMissing(t, filepath.Join(n.downloads, protocol.TaildropName(res.Message.ID, res.Files[0].Entry)))
 	if b := mustReadFile(t, holiday); string(b) != "owner's photo" {
 		t.Fatal("the owner's own file changed")
 	}
-	assertExists(t, stranger)
-	if strings.Contains(n.calls(), "file get") {
-		t.Fatal("the Mac layout ran tailscale file get")
+	if strings.Contains(n.calls(), "file cp") {
+		t.Fatal("a file went over Taildrop to a Mac receiver")
 	}
 }
 
@@ -319,7 +322,7 @@ func TestFilesTaildropLinuxLayout(t *testing.T) {
 // A file whose bytes do not match the manifest is refused: it never reaches
 // the inbox and the message is not delivered.
 func TestFilesHashMismatchRejected(t *testing.T) {
-	n := startFilesNet(t, filesNetOpts{layout: "darwin", tailnet: true})
+	n := startFilesNet(t, filesNetOpts{layout: "linux", tailnet: true})
 	n.flag("corrupt")
 	src := writeTestFile(t, filepath.Join(n.project, "report.html"), []byte("<p>exact bytes</p>"))
 	res, err := n.send(src)
@@ -338,7 +341,7 @@ func TestFilesHashMismatchRejected(t *testing.T) {
 		t.Fatal("the agent got a message whose file failed its hash")
 	}
 	assertMissing(t, filepath.Join(n.inbox(res.Message.ID), "report.html"))
-	// On the Mac the bad file is left where Taildrop put it.
+	// A bad copy the daemon does not take goes to Downloads.
 	assertExists(t, filepath.Join(n.downloads, protocol.TaildropName(res.Message.ID, res.Files[0].Entry)))
 }
 
@@ -399,7 +402,7 @@ func TestFilesGatewayWithoutTailnet(t *testing.T) {
 // The message is delivered only when every file is in. Until then the sender
 // sees how many have arrived.
 func TestFilesDeliveredOnlyWhenAllIn(t *testing.T) {
-	n := startFilesNet(t, filesNetOpts{layout: "darwin", tailnet: true})
+	n := startFilesNet(t, filesNetOpts{layout: "linux", tailnet: true})
 	n.flag("hold-second.txt")
 	first := writeTestFile(t, filepath.Join(n.project, "first.txt"), []byte("one"))
 	second := writeTestFile(t, filepath.Join(n.project, "second.txt"), []byte("two"))
@@ -420,7 +423,7 @@ func TestFilesDeliveredOnlyWhenAllIn(t *testing.T) {
 	}
 	// The held file arrives late.
 	name := protocol.TaildropName(res.Message.ID, res.Files[1].Entry)
-	if err := os.Rename(filepath.Join(n.ts, "held", name), filepath.Join(n.downloads, name)); err != nil {
+	if err := os.Rename(filepath.Join(n.ts, "held", name), filepath.Join(n.ts, "waiting", name)); err != nil {
 		t.Fatal(err)
 	}
 	n.waitDelivered(res.Message.ID)
@@ -435,7 +438,7 @@ func TestFilesDeliveredOnlyWhenAllIn(t *testing.T) {
 // Files that never arrive fail the message with the names of the missing
 // files, and nothing reaches the agent.
 func TestFilesThatNeverArriveFail(t *testing.T) {
-	n := startFilesNet(t, filesNetOpts{layout: "darwin", tailnet: true, wait: 300 * time.Millisecond})
+	n := startFilesNet(t, filesNetOpts{layout: "linux", tailnet: true, wait: 300 * time.Millisecond})
 	n.flag("hold-lost.txt")
 	src := writeTestFile(t, filepath.Join(n.project, "lost.txt"), []byte("lost"))
 	res, err := n.send(src)
@@ -537,26 +540,48 @@ func TestFilesHeldMessageWaitsOnGateway(t *testing.T) {
 	}
 }
 
-// When the receiver cannot read Downloads (macOS privacy rules can block a
-// background daemon), the sender's waiting detail says so instead of waiting
-// in silence.
-func TestFilesUnreadableDownloadsShowsInDetail(t *testing.T) {
+// A Mac whose Downloads cannot be read (macOS privacy rules can block a
+// background daemon) still receives its files over the gateway, which does
+// not depend on that folder.
+func TestFilesMacUnreadableDownloadsUsesGateway(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root reads any folder")
 	}
 	n := startFilesNet(t, filesNetOpts{layout: "darwin", tailnet: true})
-	n.flag("hold-blocked.txt")
+	setGatewayNodeOS(t, n.g, n.b.cfg.NodeID, "darwin")
 	if err := os.Chmod(n.downloads, 0); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(n.downloads, 0o700) })
-	src := writeTestFile(t, filepath.Join(n.project, "blocked.txt"), []byte("x"))
+	src := writeTestFile(t, filepath.Join(n.project, "notes.md"), []byte("# notes\n"))
 	res, err := n.send(src)
 	if err != nil {
 		t.Fatalf("SendFiles: %v", err)
 	}
-	eventually(t, "the detail names the unreadable folder", func() bool {
-		d := n.message(res.Message.ID).DeliveryDetail
-		return strings.Contains(d, "cannot read") && strings.Contains(d, "Downloads")
-	})
+	n.waitDelivered(res.Message.ID)
+	if got := string(mustReadFile(t, filepath.Join(n.inbox(res.Message.ID), "notes.md"))); got != "# notes\n" {
+		t.Fatalf("file = %q", got)
+	}
+}
+
+// A successful Taildrop does not prove that the receiver can collect it.
+// Linux may deny its daemon access to the Tailscale inbox. Worker notices
+// must still get their files through the gateway in this case.
+func TestWorkerNoticeFilesWhenTaildropCannotBeCollected(t *testing.T) {
+	n := startFilesNet(t, filesNetOpts{layout: "linux", tailnet: true})
+	n.flag("refuse-get")
+	src := writeTestFile(t, filepath.Join(n.project, "result.txt"), []byte("result"))
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(20*time.Second))
+	defer cancel()
+	res, err := n.a.d.SendFiles(ctx, FileSend{From: n.alice, To: n.bob, Body: "[agent-net worker notice]\nstatus: done\nreport", WorkerNotice: true, Paths: []string{src}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 1 || res.Files[0].Path != FilePathGateway {
+		t.Fatalf("file route = %+v, want gateway when Taildrop collection can fail", res.Files)
+	}
+	n.waitDelivered(res.Message.ID)
+	if got := string(mustReadFile(t, filepath.Join(n.inbox(res.Message.ID), "result.txt"))); got != "result" {
+		t.Fatalf("file = %q", got)
+	}
 }

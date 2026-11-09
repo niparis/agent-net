@@ -108,7 +108,7 @@ func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) 
 		}
 		if err == nil {
 			completed = true
-			if !strings.HasPrefix(text, "[agent-net worker notice]\nstatus: done\n") {
+			if !workerNoticeDone(text) {
 				return "", errors.New("phrasing worker failed")
 			}
 			_, report, ok := strings.Cut(text, protocol.ReportMarker)

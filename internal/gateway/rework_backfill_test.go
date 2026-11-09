@@ -265,3 +265,14 @@ func TestReworkNoticeParsesWithCustomChecklist(t *testing.T) {
 		t.Fatalf("completion misread: %t %t %t %t\n%s", handback, partial, idle, ok, notice)
 	}
 }
+
+func TestReworkNoticeParsesNotPushedStatus(t *testing.T) {
+	notice := "[agent-net worker notice]\nstatus: done, NOT PUSHED: uncommitted changes in the worktree\n" + protocol.ReportMarker + "\ncomplete: yes\n"
+	handback, partial, idle, ok := storedReworkNotice(notice)
+	if !ok || !handback || partial || idle {
+		t.Fatalf("completion misread: %t %t %t %t", handback, partial, idle, ok)
+	}
+	if !workerNoticeDone(notice) {
+		t.Fatal("completed worker notice was treated as failed")
+	}
+}

@@ -810,6 +810,9 @@ func (d *Daemon) sendNoticeToKeyWithFiles(ctx context.Context, w *worker, n prot
 		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
 	}
 	body := d.workerToolchainPermissions(w, protocol.FormatWorkerNoticeWithSettings(n, report, d.SettingsSnapshot()))
+	if strings.Contains(n.DeliveryError, handbackUncommittedPushProblem) {
+		body = strings.Replace(body, "\nstatus: "+n.Status+"\n", "\nstatus: "+n.Status+", NOT PUSHED: uncommitted changes in the worktree\n", 1)
+	}
 	raw, err := d.sendWorkerNoticeBodyWithFiles(ctx, w, body, to, replyTo, noticeKey, files, n.Status == "idle without hand-back")
 	if err == nil {
 		switch n.Status {
@@ -850,16 +853,44 @@ func (d *Daemon) sendWorkerNoticeBodyWithFiles(ctx context.Context, w *worker, b
 		p.Type, p.ParentID = protocol.TypeReply, parent
 	}
 	if files != nil {
-		sent, err := d.sendPreparedFiles(ctx, FileSend{From: sid, To: owner, Body: body, Type: p.Type, ParentID: p.ParentID, IdempotencyKey: noticeKey, WorkerIdleNotice: idleNotice, WorkerNotice: true}, files)
-		if err != nil {
-			if sent.Message.ID != "" {
-				return nil, fmt.Errorf("handback message %s was stored but file transfer failed: %w", sent.Message.ID, err)
-			}
-			return nil, err
-		}
-		return json.Marshal(protocol.MessageSent{Message: &sent.Message})
+		return d.sendWorkerNoticeFiles(ctx, FileSend{From: sid, To: owner, Body: body, Type: p.Type, ParentID: p.ParentID, IdempotencyKey: noticeKey, WorkerIdleNotice: idleNotice, WorkerNotice: true}, files)
 	}
 	return d.send(ctx, p)
+}
+
+// A stored notice must not be abandoned when the route lookup or a transfer
+// fails. Reuse its key and checked snapshots; the receiver has its own bound
+// and will deliver the report even if these attempts cannot finish.
+func (d *Daemon) sendWorkerNoticeFiles(ctx context.Context, req FileSend, files *OutgoingFiles) (json.RawMessage, error) {
+	transferCtx, cancel := context.WithTimeout(ctx, workerNoticeFileWait)
+	defer cancel()
+	var stored protocol.Message
+	delay := 100 * time.Millisecond
+	for {
+		sent, err := d.sendPreparedFiles(transferCtx, req, files)
+		if sent.Message.ID != "" {
+			stored = sent.Message
+		}
+		if err == nil {
+			return json.Marshal(protocol.MessageSent{Message: &sent.Message})
+		}
+		if stored.ID == "" {
+			return nil, err
+		}
+		d.Logf("worker notice files: message=%s transfer failed, retrying: %v", stored.ID, err)
+		timer := time.NewTimer(delay)
+		select {
+		case <-transferCtx.Done():
+			timer.Stop()
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			d.Logf("worker notice files: message=%s transfer did not finish: %v", stored.ID, err)
+			return json.Marshal(protocol.MessageSent{Message: &stored})
+		case <-timer.C:
+		}
+		delay = min(delay*2, 5*time.Second)
+	}
 }
 
 // prepareHandbackFiles limits workers to their own worktree, even when the
@@ -940,9 +971,6 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 // An Antigravity handback carries its already checked snapshot until its
 // result event. A recovered stream without one prepares it again.
 func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string, end bool, files *OutgoingFiles) (*protocol.WorkerHandbackResult, error) {
-	if files != nil {
-		defer files.Remove()
-	}
 	d.wmu.Lock()
 	sessionID, stopping := w.sessionID, w.stopping
 	d.wmu.Unlock()
