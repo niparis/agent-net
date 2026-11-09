@@ -828,8 +828,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		k := key(harness, in.NativeID)
 		seen[k] = true
 		// A harness may know real activity that the daemon does not: Claude
-		// Code's transcript time. LastActive lives on localSession, so the
-		// compared info keeps zero and a poll does not look like a change.
+		// Code's transcript time, or a Codex thread file. LastActive lives on
+		// localSession, so the compared info keeps zero and a poll does not
+		// look like a change.
 		harnessActivity := time.Time{}
 		if in.HarnessActivity > 0 {
 			harnessActivity = time.Unix(in.HarnessActivity, 0)
@@ -842,6 +843,13 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		in.LastActive = 0
 		if p := d.activity[k]; p.After(candidate) {
 			candidate = p
+		}
+		// The harness's own last write is real activity, not a report. A turn
+		// whose start or end the adapter missed must not leave a session that
+		// just worked looking unused. A repeated poll reports the same time and
+		// does not move it.
+		if harnessActivity.After(candidate) {
+			candidate = harnessActivity
 		}
 		ls := d.sessions[k]
 		if ls != nil {
@@ -1054,7 +1062,10 @@ func (d *Daemon) touchSession(ls *localSession, at time.Time) {
 	d.pushSession(ls)
 }
 
-// touchHarness records a sign of progress, never a discovery poll or message attempt.
+// touchHarness records a sign of progress: harness output, not a discovery
+// poll or a message attempt. Output is real activity too. A plugin can miss a
+// turn boundary after a reload, and this is then the only sign that the
+// session did something; without it an idle session leaves Working too soon.
 func (d *Daemon) touchHarness(ls *localSession, at time.Time) {
 	if ls == nil {
 		return
@@ -1065,7 +1076,12 @@ func (d *Daemon) touchHarness(ls *localSession, at time.Time) {
 		return
 	}
 	ls.harnessActivity = at
+	changed := d.recordActivityLocked(ls, at)
+	harness, native := ls.info.Harness, ls.info.NativeID
 	d.mu.Unlock()
+	if changed {
+		d.saveActivity(harness, native, at)
+	}
 	d.goBackground(func() { d.pushSession(ls) })
 }
 

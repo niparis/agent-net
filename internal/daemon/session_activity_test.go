@@ -178,6 +178,49 @@ func TestRestartWithoutATurnKeepsActivity(t *testing.T) {
 	}
 }
 
+// A harness's own output is real activity, even when no turn boundary was
+// seen. A Pi or OpenCode plugin can miss the busy status after a reload, and
+// then its idle status is a change from idle to idle, which records nothing.
+// The session did work, so it must not leave the TUI Working band early.
+func TestHarnessOutputIsSessionActivity(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{adapter: &fakeAdapter{harness: "pi"}})
+	n.d.SetSessions("pi", []protocol.SessionInfo{{NativeID: "out", Status: "idle", Cwd: "/work/x"}})
+	ls := testSession(t, n, "out")
+	stale := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
+	n.d.touchSession(ls, stale)
+
+	// The plugin reports output, but never said busy for this turn.
+	at := time.Now().Add(-time.Minute).Truncate(time.Second)
+	n.d.touchHarness(ls, at)
+	if got := n.d.infoOf(ls).LastActive; got != at.Unix() {
+		t.Fatalf("harness output did not count as activity: %d, want %d", got, at.Unix())
+	}
+}
+
+// A harness that reports its own last activity at discovery, such as Codex's
+// thread file, keeps that time as the session's activity. Without it a daemon
+// restart makes an idle session that just worked look unused, and it leaves
+// Working at once.
+func TestDiscoveredHarnessActivityIsSessionActivity(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{adapter: &fakeAdapter{harness: "codex"}})
+	at := time.Now().Add(-20 * time.Minute).Truncate(time.Second)
+	in := protocol.SessionInfo{NativeID: "thread", Status: "idle", Cwd: "/work/x", HarnessActivity: at.Unix()}
+	n.d.SetSessions("codex", []protocol.SessionInfo{in})
+	if got := n.d.infoOf(testSessionOf(t, n, "codex", "thread")).LastActive; got != at.Unix() {
+		t.Fatalf("discovered activity is not the session's activity: %d, want %d", got, at.Unix())
+	}
+
+	// A new poll with the same thread time must not move it.
+	n.d.SetSessions("codex", []protocol.SessionInfo{in})
+	if got := n.d.infoOf(testSessionOf(t, n, "codex", "thread")).LastActive; got != at.Unix() {
+		t.Fatalf("a repeated poll moved activity to %d, want %d", got, at.Unix())
+	}
+}
+
 // The OpenCode plugin says hello with idle or busy and then reports dormant
 // for a session that has been quiet. That second status must not look like
 // activity, on a fresh daemon or after a restart.
