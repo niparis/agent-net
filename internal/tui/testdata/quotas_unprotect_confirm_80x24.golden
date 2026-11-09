@@ -7,8 +7,8 @@
 │ > 🔒 claude (Mac) max  week   ██████──  70%      -         -                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 🔒 protected · 1 registered · 0 running · scores: Artificial Anal…─╮
-│ MODEL                    HARNESS  T   S   N   H   V   PROT                   │
-│ claude-sonnet-4          claude   -   -   -   -   -   prot                   │
+│ MODEL                    HARNESS  T      S      N      H      V      PROT    │
+│ claude-sonnet-4          claude   ·      ·      ·      ·      ·      prot    │
 │ the gateway sent no picker preview                                           │
 │ T:trivial S:simple N:normal H:hard V:very complex · ▸ = chosen               │
 │ the gateway's picker preview at the middle of each level, not simulated      │

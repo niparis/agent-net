@@ -5,19 +5,19 @@
 │ No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota).                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 🔒 protected · 6 registered · 0 running · scores: Artificial Analysis──────────────────────────────────────╮
-│ MODEL                      HARNESS  SCORE        T   S   N   H   V   PROT  USED                                      │
-│ gpt-6.1-terra:max          codex    55/max       ·   ·   ·   ·   ▸         unused                                    │
-│ claude-sonnet-5-5:xhigh    claude   52.1/xhigh   ·   ·   ·   ▸   ·   prot  unused                                    │
-│ gpt-6.1-sol:medium         codex    40/medium    ·   ·   ·   ·   ·         unused                                    │
-│ claude-haiku-5-5:xhigh     claude   34.3/xhigh   ·   ·   ▸   ·   ·   prot  unused                                    │
-│ claude-haiku-5-5:high      claude   29.6/high    ▸   ▸   ·   ·   ·   prot  unused                                    │
-│ deepseek-v4-pro            opencode 23.1         ·   ·   ·   ·   ·         unused                                    │
+│ MODEL                      HARNESS  SCORE        T       S       N       H       V       PROT  USED                  │
+│ gpt-6.1-terra:max          codex    55/max       0.72·5  0.73·5  0.74·5  0.75·5  ▸0.76·5       unused                │
+│ claude-sonnet-5-5:xhigh    claude   52.1/xhigh   0.70·4  0.71·4  0.72·4  ▸0.73·4 0.74·4  prot  unused                │
+│ gpt-6.1-sol:medium         codex    40/medium    0.78·8  0.79·8  0.80·8  0.81·8  0.82·8        unused                │
+│ claude-haiku-5-5:xhigh     claude   34.3/xhigh   0.76·7  0.77·7  ▸0.78·7 0.79·7  0.80·7  prot  unused                │
+│ claude-haiku-5-5:high      claude   29.6/high    ▸0.74·6 ▸0.75·6 0.76·6  0.77·6  0.78·6  prot  unused                │
+│ deepseek-v4-pro            opencode 23.1         0.80·9  0.81·9  0.82·9  0.83·9  0.84·9        unused                │
 │   (not a worker provider)                                                                                            │
-│ T claude-haiku-5-5:high · S claude-haiku-5-5:high · N claude-haiku-5-5:xhigh · H claude-sonnet-5-5:xhigh · V         │
-│ gpt-6.1-terra:max                                                                                                    │
+│ T haiku high claude · S haiku high claude · N haiku xhigh claude · H sonnet xhigh claude · V terra max codex         │
 │ T:trivial S:simple N:normal H:hard V:very complex · ▸ = chosen                                                       │
 │ the gateway's picker preview at the middle of each level, not simulated                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
 
 
 

@@ -9,8 +9,8 @@
 │ ▸ claude-sonnet-5-5          claude     44  0.80  0.76  0.71  0.67     ·                                                                                     │
 │   gpt-6.1-sol:medium         codex      33     ·  0.76  0.68     ·     ·                                                                                     │
 │   aardvark                   codex       -     ·     ·     ·     ·     ·                                                                                     │
-│   claude-opus-5-5-high       agy         -  0.84     ·     ·     ·     ·                                                                                     │
-│   claude-sonnet-5-5-medium   agy         -     ·     ·     ·  0.63     ·                                                                                     │
+│   claude-opus-5-5:high       agy         -  0.84     ·     ·     ·     ·                                                                                     │
+│   claude-sonnet-5-5:medium   agy         -     ·     ·     ·  0.63     ·                                                                                     │
 │   zeta-old                   -           -     ·     ·     ·     ·  0.50                                                                                     │
 │ 3 older model keys shown, dim · o to hide                                                                                                                    │
 │ Selected cell ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │

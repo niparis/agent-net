@@ -8,13 +8,13 @@
 │ 1 other subscription · s to show                                             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────╮
-│ MODEL                    HARNESS  T   S   N   H   V                          │
-│ gpt-6.1-zed              pi       ·   ·   ·   ·   ·                          │
+│ MODEL                    HARNESS  T      S      N      H      V              │
+│ gpt-6.1-zed              pi       ·      ·      ·      ·      ·              │
 │   model gone - ask the CTO to fix                                            │
-│ claude-opus-5-5:high     claude   ·   ·   ·   ·   ▸                          │
-│ gpt-6.1-sol:medium       codex    ▸   ▸   ·   ·   ·                          │
-│ gpt-6.1-terra:high       codex    ·   ·   ▸   ▸   ·                          │
-│ gpt-6.1-terra            pi       ·   ·   ·   ·   ·                          │
+│ claude-opus-5-5:high     claude   ·      ·      ·      ·      ▸              │
+│ gpt-6.1-sol:medium       codex    ▸      ▸      ·      ·      ·              │
+│ gpt-6.1-terra:high       codex    ·      ·      ▸      ▸      ·              │
+│ gpt-6.1-terra            pi       ·      ·      ·      ·      ·              │
 │   not on research                                                            │
 │ more below · up/down to scroll                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯

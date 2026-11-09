@@ -6,8 +6,8 @@
 │ > 🔒 claude max  live       week   ███████───  70%      -         -                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 🔒 protected · 1 registered · 0 running · scores: Artificial Analysis──────────────────────────────────────╮
-│ MODEL                      HARNESS  SCORE        T   S   N   H   V   PROT  USED                                      │
-│ claude-sonnet-4            claude   -            -   -   -   -   -   prot  unused                                    │
+│ MODEL                      HARNESS  SCORE        T       S       N       H       V       PROT  USED                  │
+│ claude-sonnet-4            claude   -            ·       ·       ·       ·       ·       prot  unused                │
 │ the gateway sent no picker preview                                                                                   │
 │ T:trivial S:simple N:normal H:hard V:very complex · ▸ = chosen                                                       │
 │ the gateway's picker preview at the middle of each level, not simulated                                              │

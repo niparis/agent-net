@@ -45,7 +45,28 @@ func workersOwnerModel(width int) Model {
 		"trivial": "claude-haiku-5-5 high", "simple": "claude-haiku-5-5 high", "normal": "claude-haiku-5-5 xhigh",
 		"hard": "sonnet xhigh", "very_complex": "terra max",
 	}
+	m.picker = workersOwnerPicker(m.snap.WorkerProfiles)
 	return m
+}
+
+// workersOwnerPicker is one bucket per level with a score for every profile, so
+// the owner-shaped screens show the T S N H V cells filled.
+func workersOwnerPicker(profiles []protocol.WorkerProfile) protocol.PickerAnalysis {
+	var buckets []protocol.PickerBucketRow
+	for i, level := range protocol.DifficultyLevels {
+		lo, hi, _ := protocol.LevelDRange(level)
+		buckets = append(buckets, protocol.PickerBucketRow{Index: i, Lo: lo, Hi: hi, Mean: .5, N: 10})
+	}
+	models := make([]protocol.PickerModelRow, 0, len(profiles))
+	for i, p := range profiles {
+		key := workerModelLabel(p.Selection())
+		cells := make([]protocol.PickerCell, 0, len(protocol.DifficultyLevels))
+		for level := range protocol.DifficultyLevels {
+			cells = append(cells, protocol.PickerCell{Score: .70 + .02*float64(i) + .01*float64(level), Lo: .6, Hi: .8, N: 4 + i})
+		}
+		models = append(models, protocol.PickerModelRow{Key: key, Display: key, Cells: cells})
+	}
+	return protocol.PickerAnalysis{Buckets: buckets, Models: models}
 }
 
 // columnOf is the display column of the first occurrence of sub in line.
@@ -149,9 +170,6 @@ func TestWorkersPanelModelColumnFitsTheModelKeys(t *testing.T) {
 			if !strings.Contains(view, key+" ") {
 				t.Errorf("width %d: the model key %q is cut or missing:\n%s", width, key, view)
 			}
-			if strings.Contains(view, p.Name) {
-				t.Errorf("width %d: the profile name %q is in the table:\n%s", width, p.Name, view)
-			}
 		}
 		for _, line := range strings.Split(view, "\n") {
 			if strings.Contains(line, "…") && !strings.Contains(line, "Workers ·") {
@@ -209,13 +227,14 @@ func TestWorkersPanelRowsShowModelKeyAndHarness(t *testing.T) {
 	m := workersOwnerModel(120)
 	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
 	for _, p := range m.snap.WorkerProfiles {
-		if strings.Contains(view, p.Name) {
-			t.Errorf("the profile name %q is in the table:\n%s", p.Name, view)
+		key := pickerModelLabelForKey(protocol.PickerModelKey(p.Harness, p.Selection().LegacyModel()))
+		row := rowContaining(view, key)
+		if row == "" {
+			t.Errorf("missing model key %q:\n%s", key, view)
+			continue
 		}
-	}
-	for _, want := range []string{"claude-sonnet-5-5:xhigh", "gpt-6.1-terra:max", "gpt-6.1-sol:medium", "claude-haiku-5-5:xhigh", "deepseek-v4-pro"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("missing model key %q:\n%s", want, view)
+		if strings.Contains(row, p.Name) {
+			t.Errorf("the profile name %q is in its row: %q", p.Name, row)
 		}
 	}
 	for _, harness := range []string{"claude", "codex", "opencode"} {
@@ -225,11 +244,12 @@ func TestWorkersPanelRowsShowModelKeyAndHarness(t *testing.T) {
 	}
 }
 
-// The pick line names the same keys as the rows, never the profile name.
-func TestWorkersPanelPickLineUsesModelKeys(t *testing.T) {
+// The pick line keeps the profile names, as the owner asked: the rows carry
+// the model keys, the legend explains the picks in the owner's words.
+func TestWorkersPanelPickLineUsesProfileNames(t *testing.T) {
 	m := workersOwnerModel(160)
 	view := ansi.Strip(strings.Join(m.quotaModelsView(160), "\n"))
-	want := "T claude-haiku-5-5:high · S claude-haiku-5-5:high · N claude-haiku-5-5:xhigh · H claude-sonnet-5-5:xhigh · V gpt-6.1-terra:max"
+	want := "T haiku high claude · S haiku high claude · N haiku xhigh claude · H sonnet xhigh claude · V terra max codex"
 	if !strings.Contains(view, want) {
 		t.Fatalf("pick line is not %q:\n%s", want, view)
 	}
@@ -251,5 +271,88 @@ func TestWorkersPanelLongKeyKeepsItsEffortAt80(t *testing.T) {
 		if w := ansi.StringWidth(line); w > 80 {
 			t.Errorf("a row at 80 columns is %d wide: %q", w, line)
 		}
+	}
+}
+
+// A worker row shows its quality score in each level cell, from the same
+// picker cells the Quality grid shows, summed into the level's D range. The
+// pick marker sits on top of the score.
+func TestWorkersPanelLevelCellsShowQualityScores(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sol codex", Harness: "codex", Model: "gpt-6.1-sol", Effort: "medium"}}
+	m.snap.WorkerProviders = []string{"codex"}
+	m.snap.Nodes[0].QualityPickModels = map[string]string{"normal": pickerPreviewName("gpt-6.1-sol:medium")}
+
+	var buckets []protocol.PickerBucketRow
+	var cells []protocol.PickerCell
+	for i, level := range protocol.DifficultyLevels {
+		lo, hi, ok := protocol.LevelDRange(level)
+		if !ok {
+			t.Fatalf("no D range for %s", level)
+		}
+		buckets = append(buckets, protocol.PickerBucketRow{Index: i, Lo: lo, Hi: hi, Mean: .5, N: 7})
+		cells = append(cells, protocol.PickerCell{Score: .86 - .02*float64(i), Lo: .8, Hi: .9, N: 7})
+	}
+	m.picker = protocol.PickerAnalysis{
+		Buckets: buckets,
+		Models:  []protocol.PickerModelRow{{Key: "gpt-6.1-sol:medium", Display: "gpt-6.1-sol:medium", Cells: cells}},
+	}
+
+	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	row := rowContaining(view, "gpt-6.1-sol:medium")
+	if row == "" {
+		t.Fatalf("no row for gpt-6.1-sol:medium:\n%s", view)
+	}
+	for i := range protocol.DifficultyLevels {
+		want := fmt.Sprintf("%.2f", .86-.02*float64(i))
+		if !strings.Contains(row, want) {
+			t.Errorf("level %d: the row has no score %s: %q", i, want, row)
+		}
+	}
+	if !strings.Contains(row, "▸0.82·7") {
+		t.Errorf("the normal pick does not sit on its score: %q", row)
+	}
+}
+
+// Every harness names the effort with a colon, the way the owner reads it,
+// even agy whose stored model id writes the effort after a dash.
+func TestWorkersPanelAgyKeyUsesColonEffort(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sonnet agy", Harness: "agy", Model: "claude-sonnet-5-5", Effort: "medium"}}
+	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	if !strings.Contains(view, "claude-sonnet-5-5:medium") {
+		t.Fatalf("agy row does not use the colon key:\n%s", view)
+	}
+	if strings.Contains(view, "claude-sonnet-5-5-medium") {
+		t.Fatalf("agy row still uses the dash key:\n%s", view)
+	}
+}
+
+// agy's picker rows keep the effort after a dash, while the row label shows a
+// colon. The level scores still find that row.
+func TestWorkersPanelAgyLevelScoresUseTheStoredDashKey(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sonnet agy", Harness: "agy", Model: "claude-sonnet-5-5", Effort: "medium"}}
+	var buckets []protocol.PickerBucketRow
+	var cells []protocol.PickerCell
+	for i, level := range protocol.DifficultyLevels {
+		lo, hi, _ := protocol.LevelDRange(level)
+		buckets = append(buckets, protocol.PickerBucketRow{Index: i, Lo: lo, Hi: hi, Mean: .5, N: 8})
+		cells = append(cells, protocol.PickerCell{Score: .91, Lo: .8, Hi: .95, N: 8})
+	}
+	m.picker = protocol.PickerAnalysis{
+		Buckets: buckets,
+		Models:  []protocol.PickerModelRow{{Key: "claude-sonnet-5-5-medium", Display: "claude-sonnet-5-5-medium", Cells: cells}},
+	}
+	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	row := rowContaining(view, "claude-sonnet-5-5:medium")
+	if row == "" {
+		t.Fatalf("no colon row for the agy profile:\n%s", view)
+	}
+	if !strings.Contains(row, "0.91") {
+		t.Fatalf("the agy level scores did not find the stored dash key: %q", row)
 	}
 }

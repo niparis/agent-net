@@ -494,3 +494,39 @@ func TestQualityLongKeyKeepsItsEffortAt80(t *testing.T) {
 		}
 	}
 }
+
+// The Quotas subtab draws level scores, so it reads the picker table too.
+func TestQuotasTabAsksForPickerScores(t *testing.T) {
+	src := &pickerFetchSource{
+		fetchCountSource: &fetchCountSource{fakeSource: &fakeSource{snap: fakeSnapshot(), usage: fakeUsage(), counts: fakeCounts()}},
+		picker:           pickerFixture(),
+	}
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
+	m = keys(m, "3")
+	m = refresh(m, src)
+	if src.pickerCalls != 1 || !m.pickerLoaded {
+		t.Fatalf("picker_get calls on the Quotas tab = %d, loaded %v; want 1, true", src.pickerCalls, m.pickerLoaded)
+	}
+}
+
+// The Quality row names an agy effort with a colon too, while the harness
+// column still says agy.
+func TestQualityAgyRowUsesColonEffort(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.qualityDetail = true
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "opus agy", Harness: "agy", Model: "claude-opus-5-5", Effort: "high"}}
+	a := pickerFixture()
+	a.Profiles = []protocol.PickerProfileRow{{Name: "opus agy", Key: "claude-opus-5-5-high", Model: "claude-opus-5-5-high", Score: 60, Level: "very_complex", Ceiling: 5, Scored: true}}
+	m.picker, m.pickerLoaded = a, true
+	m.defaultPickerSelection()
+	body := ansi.Strip(strings.Join(m.qualityPickerBody(120, 30), "\n"))
+	if !strings.Contains(body, "claude-opus-5-5:high") {
+		t.Fatalf("agy row does not use the colon key:\n%s", body)
+	}
+	if strings.Contains(body, "claude-opus-5-5-high") {
+		t.Fatalf("agy row still uses the dash key:\n%s", body)
+	}
+}

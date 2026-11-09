@@ -347,9 +347,21 @@ func pickerModelLabelForKey(key string) string {
 	return strings.TrimSuffix(protocol.PickerModelDisplay(key), ":default")
 }
 
-// pickerRowLabel is the row's model key, exactly as the worker log names it.
+// pickerRowLabel is the row's model key, exactly as the owner reads it: the
+// model without its provider prefix and the effort after a colon. agy stores
+// the effort after a dash, so its rows are converted to the same form.
 func pickerRowLabel(row pickerRow) string {
-	return pickerModelLabelForKey(row.key)
+	label := pickerModelLabelForKey(row.key)
+	if row.harness != "agy" {
+		return label
+	}
+	if _, effort := protocol.SplitModelLevel(label); effort != "" {
+		return label
+	}
+	if sel := protocol.ParseModelSelection("agy", "", label, ""); sel.Effort != "" {
+		return protocol.PickerModelDisplay(sel.Model) + ":" + sel.Effort
+	}
+	return label
 }
 
 // pickerModelLine draws one row: the selected mark, the model key, the harness,
