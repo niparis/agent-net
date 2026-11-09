@@ -302,6 +302,18 @@ func (s *Client) SendAsOwner(ctx context.Context, to, body string) (protocol.Mes
 	return out, err
 }
 
+// ReplyAsOwner sends a message from the owner into a stored conversation. The
+// gateway keeps it in that conversation when To is one of its sides.
+func (s *Client) ReplyAsOwner(ctx context.Context, conversationID, to, body string) (protocol.MessageSent, error) {
+	var out protocol.MessageSent
+	raw, err := s.action(ctx, protocol.OpSend, protocol.OwnerSendRequest{To: to, Body: body, ConversationID: conversationID, IdempotencyKey: protocol.NewID("k")})
+	if err != nil {
+		return out, err
+	}
+	err = json.Unmarshal(raw, &out)
+	return out, err
+}
+
 func (s *Client) StartWorker(ctx context.Context, req protocol.WorkerStartRequest) (protocol.WorkerStartResult, error) {
 	var out protocol.WorkerStartResult
 	raw, err := s.action(ctx, protocol.OpWorkerStart, req)

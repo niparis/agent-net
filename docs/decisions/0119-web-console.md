@@ -80,13 +80,15 @@ Tailscale to start. Go ahead and build it."
     uses, so the message arrives marked as the owner in person. `reply` is the
     only new action kind. It takes the conversation id, the recipient session
     and the text. The recipient must be a side of that conversation, so a reply
-    cannot be a message to any other session. The owner send has no field for a
-    conversation, and the gateway opens a new conversation for each message of
-    the owner, as it does for the TUI. So the page goes to the conversation the
-    send created, where the thread shows the reply as the owner's. If the
-    daemon only queued the message, the page stays on the conversation. Adding
-    a conversation field to `owner_send` is a change to the protocol and the
-    gateway rules, and is not decided here.
+    cannot be a message to any other session. **Decided: replies stay in the
+    thread.** `owner_send` takes an optional `conversation_id`, which the daemon
+    carries unchanged in `msg.send`. When an owner send has one, the gateway
+    stores the message as a reply in that conversation, with no parent, only if
+    the conversation exists and the recipient is one of its sides. Otherwise it
+    refuses with the reason. A send without the field opens a new conversation as
+    before. The page goes back to the same conversation. A worker row groups
+    conversations, so the reply goes to the newest conversation of that group
+    that has the chosen session as a side.
 12. **Live.** `/events` carries the row (`s`) and, for Changes, the filter (`f`).
     Each screen reads only what it shows: Changes reads the change list and the
     selected change, Messages the conversation list and the selected thread. A

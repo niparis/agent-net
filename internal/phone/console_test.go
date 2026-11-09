@@ -25,9 +25,8 @@ type consoleOperator struct {
 	sent  []string
 	// reads counts the read calls by method; threads holds the messages of a
 	// conversation, newest first.
-	reads      map[string]int
-	queueSends bool
-	threads    map[string][]protocol.Message
+	reads   map[string]int
+	threads map[string][]protocol.Message
 }
 
 func (f *consoleOperator) Snapshot(context.Context) (operator.Snapshot, error) {
@@ -69,14 +68,22 @@ func (f *consoleOperator) ResolveOutcome(_ context.Context, id, action string) e
 }
 func (f *consoleOperator) SendAsOwner(_ context.Context, to, body string) (protocol.MessageSent, error) {
 	f.record("send:" + to + ":" + body)
+	return protocol.MessageSent{}, nil
+}
+
+// ReplyAsOwner keeps the message in the conversation, as the gateway does for
+// an owner send with a conversation id. The thread of a worker row holds the
+// messages of its conversation.
+func (f *consoleOperator) ReplyAsOwner(_ context.Context, conversation, to, body string) (protocol.MessageSent, error) {
+	f.record("reply:" + conversation + ":" + to + ":" + body)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.queueSends {
-		return protocol.MessageSent{Queued: true}, nil
+	msg := protocol.Message{ID: "m_new", ConversationID: conversation, From: "s_owner", To: to, FromName: "you (on alpha-box)", FromHarness: protocol.OwnerHarness, Body: body, CreatedAt: time.Now()}
+	for key := range f.threads {
+		if key == conversation || (conversation == "c_w" && key == "worker:s_w1") {
+			f.threads[key] = append([]protocol.Message{msg}, f.threads[key]...)
+		}
 	}
-	// The gateway opens a conversation for a message of the owner.
-	msg := protocol.Message{ID: "m_new", ConversationID: "c_new", From: "s_owner", To: to, FromName: "you (on alpha-box)", FromHarness: protocol.OwnerHarness, Body: body, CreatedAt: time.Now()}
-	f.threads["c_new"] = append([]protocol.Message{msg}, f.threads["c_new"]...)
 	return protocol.MessageSent{Message: &msg}, nil
 }
 func (f *consoleOperator) record(s string) {
@@ -118,20 +125,13 @@ func (f *consoleOperator) Call(_ context.Context, method string, params any) (js
 	case protocol.OpGraphView:
 		return json.Marshal(protocol.GraphView{Nodes: []protocol.Node{{Ref: &protocol.GraphRef{Kind: "agent", ID: "a_busy"}, Name: "busy-agent", Place: &protocol.NodePlace{Team: "forge-team", TeamLead: "lead-agent"}}}})
 	case protocol.OpConversations:
-		f.mu.Lock()
-		_, sentNew := f.threads["c_new"]
-		f.mu.Unlock()
-		page := protocol.ConversationPage{Total: 6, Conversations: []protocol.ConversationView{
+		return json.Marshal(protocol.ConversationPage{Total: 6, Conversations: []protocol.ConversationView{
 			{ID: "c_1", From: "s_busy", To: "s_wait", FromName: "busy-agent", ToName: "waiting-agent", Count: 3, LastLine: "recent conversation line", At: now},
 			{ID: "c_3", From: "s_owner", To: "s_wait", FromName: "you (on alpha-box)", ToName: "waiting-agent", Count: 2, LastLine: "allow the tools?", At: now.Add(-time.Minute), OwnerInstruction: true},
 			{ID: "c_cto", From: "s_cto", To: "s_busy", FromName: "the CTO", ToName: "busy-agent", Count: 1, LastLine: "cto line about the plan", At: now.Add(-2 * time.Minute), FromCTO: true},
 			{ID: "worker:s_w1", From: "s_wait", To: "s_w1", FromName: "waiting-agent", ToName: "worker-one", Count: 4, LastLine: "worker last line", At: now.Add(-3 * time.Minute), WorkerSession: "s_w1", WorkerOwner: "s_wait", Task: "Fix the flaky test"},
 			{ID: "c_2", From: "s_x", To: "s_y", FromName: "x", ToName: "y", LastLine: "unrelated line", At: now.Add(-time.Hour)},
-		}}
-		if sentNew {
-			page.Conversations = append([]protocol.ConversationView{{ID: "c_new", From: "s_owner", To: "s_wait", FromName: "you (on alpha-box)", ToName: "waiting-agent", Count: 1, LastLine: "new reply line", At: now.Add(time.Second)}}, page.Conversations...)
-		}
-		return json.Marshal(page)
+		}})
 	case protocol.OpConversationMessages:
 		q, _ := params.(protocol.QueryConversationMessages)
 		f.mu.Lock()

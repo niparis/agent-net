@@ -137,9 +137,8 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 	case "reply":
 		// A written reply of the owner into a conversation of the Messages
 		// screen (conversation id, recipient session, text).
-		var conversation string
-		conversation, err = a.reply(ctx, id, r.PostForm.Get("to"), act)
-		back = "/messages?s=" + url.QueryEscape(conversation)
+		err = a.reply(ctx, id, r.PostForm.Get("to"), act)
+		back = "/messages?s=" + url.QueryEscape(id)
 	default:
 		err = fmt.Errorf("invalid action")
 	}

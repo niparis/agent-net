@@ -164,32 +164,40 @@ func TestMessagesComposerOffersBothSidesOfAnAgentToAgentThread(t *testing.T) {
 	mustContain(t, "select", body, `<select name="to"`, `value="s_busy"`, `value="s_wait"`, "Send")
 }
 
-func TestReplyPostsThroughOwnerSendAndAppearsInThread(t *testing.T) {
+func TestReplyStaysInTheConversationAndAppearsInThread(t *testing.T) {
 	f := newConsoleOperator()
 	if strings.Contains(page1(t, f, "/messages?s=c_3"), "yes, run it") {
 		t.Fatal("reply present before it was sent")
 	}
 	w := serve(f, replyRequest(url.Values{"kind": {"reply"}, "id": {"c_3"}, "to": {"s_wait"}, "action": {" yes, run it "}}))
-	// The owner send opens a conversation: the page goes to it, and the thread shows the reply as the owner's.
-	if w.Code != 303 || w.Header().Get("Location") != "/messages?s=c_new" {
+	// The owner send carries the conversation id, and the page goes back to the same conversation.
+	if w.Code != 303 || w.Header().Get("Location") != "/messages?s=c_3" {
 		t.Fatalf("reply: %d %q", w.Code, w.Header().Get("Location"))
 	}
-	if !f.has("send:s_wait:yes, run it") {
-		t.Fatalf("owner send not called: %v", f.calls)
+	if !f.has("reply:c_3:s_wait:yes, run it") || f.has("send:s_wait:yes, run it") {
+		t.Fatalf("the reply did not go with its conversation: %v", f.calls)
 	}
-	body := page1(t, f, "/messages?s=c_new")
+	body := page1(t, f, "/messages?s=c_3")
 	i := strings.Index(body, `id="thread"`)
 	mustContain(t, "thread after reply", body[i:], "yes, run it", `class="msg me"`, "<b>you</b>")
-	mustContain(t, "list after reply", body[:i], "you ↔ waiting-agent", "new reply line")
+	if strings.Index(body[i:], "yes, run it") < strings.Index(body[i:], "allow the tools?") {
+		t.Error("the new reply should be last")
+	}
 }
 
-func TestReplyQueuedStaysOnTheConversation(t *testing.T) {
+// The thread of a worker row groups conversations: the reply goes to a real
+// conversation of that group, and the page stays on the worker row.
+func TestReplyInAWorkerThreadUsesARealConversation(t *testing.T) {
 	f := newConsoleOperator()
-	f.queueSends = true
-	w := serve(f, replyRequest(url.Values{"kind": {"reply"}, "id": {"c_3"}, "to": {"s_wait"}, "action": {"later"}}))
-	if w.Code != 303 || w.Header().Get("Location") != "/messages?s=c_3" {
-		t.Fatalf("queued reply: %d %q", w.Code, w.Header().Get("Location"))
+	w := serve(f, replyRequest(url.Values{"kind": {"reply"}, "id": {"worker:s_w1"}, "to": {"s_w1"}, "action": {"keep going"}}))
+	if w.Code != 303 || w.Header().Get("Location") != "/messages?s=worker%3As_w1" {
+		t.Fatalf("worker reply: %d %q", w.Code, w.Header().Get("Location"))
 	}
+	if !f.has("reply:c_w:s_w1:keep going") {
+		t.Fatalf("calls: %v", f.calls)
+	}
+	body := page1(t, f, "/messages?s=worker:s_w1")
+	mustContain(t, "worker thread", body[strings.Index(body, `id="thread"`):], "keep going", `class="msg me"`)
 }
 
 func TestReplyIsRefusedWhenItDoesNotBelongToTheConversation(t *testing.T) {

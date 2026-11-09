@@ -799,8 +799,9 @@ update", and the CTO panel says that chat arrives later.
   messages (`conversation_messages`, up to 200, oldest first). Worker notices
   and system lines are dimmed. The composer sends the owner's words to a
   session of that conversation with the same owner send as the TUI, so the
-  message arrives marked as the owner. The gateway opens a new conversation
-  for that message, and the page then shows it.
+  message arrives marked as the owner, with the conversation id, so it stays in
+  that thread. A worker row groups several conversations, so a reply there goes
+  to the newest one that has the chosen session as a side.
 - The console is read and answer only. Its one write route is `POST /action`
   with the kinds `held`, `outcome`, `inbox`, `mark`, `send` and `reply`. A
   `reply` takes the conversation id (`id`), the recipient session (`to`) and the
@@ -1063,6 +1064,14 @@ The gateway accepts a `msg.send` with `conversation_id` and no
 that conversation. An older gateway ignores the field and starts a new
 conversation. If the gateway refuses it, the daemon sends the answer again
 as a notification in a new conversation, so it is not lost.
+
+A `msg.send` whose sender is the owner session is the exception: with a
+`conversation_id` and no parent it is stored as a reply in that conversation
+when the conversation exists and the recipient is one of its sides (the owner
+need not be a side). Otherwise the gateway refuses it with the reason. The
+operator call `owner_send` takes the same optional `conversation_id`, and a send
+without it opens a new conversation as before. The web console's Messages
+composer uses it, so a reply stays in its thread.
 
 A message with files stays `dispatched` until every file is in the receiving
 machine's inbox, with the detail `waiting for files: <n> of <total> in`. Then

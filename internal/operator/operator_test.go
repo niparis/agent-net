@@ -118,6 +118,14 @@ func TestActionsUseTheOperatorMethodsAndTypes(t *testing.T) {
 		}
 	}
 
+	if _, err = c.ReplyAsOwner(ctx, "c_9", "s_x", "in the thread"); err != nil {
+		t.Fatal(err)
+	}
+	json.Unmarshal(d.params[protocol.OpSend], &sreq)
+	if sreq["to"] != "s_x" || sreq["body"] != "in the thread" || sreq["conversation_id"] != "c_9" || sreq["idempotency_key"] == "" {
+		t.Errorf("reply params: %v", sreq)
+	}
+
 	res, err := c.StartWorker(ctx, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "a/b", Task: "t", Isolation: "worktree"})
 	if err != nil || res.SessionID != "s_w" {
 		t.Fatalf("start: %+v %v", res, err)

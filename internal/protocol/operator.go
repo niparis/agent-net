@@ -313,6 +313,10 @@ type OwnerSendRequest struct {
 	// IdempotencyKey is optional. A client that may retry sets one, so the
 	// gateway stores the message once.
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	// ConversationID is optional. When set, the message is a reply in that
+	// conversation instead of opening a new one. The conversation must exist
+	// and To must be one of its sides, or the gateway refuses the send.
+	ConversationID string `json:"conversation_id,omitempty"`
 }
 
 // WorkerStartRequest is OpWorkerStart.

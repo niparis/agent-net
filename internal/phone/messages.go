@@ -208,38 +208,45 @@ func (a *app) thread(ctx context.Context, c protocol.ConversationView, names map
 	return t
 }
 
+// replier is the owner send into a conversation. The daemon client has it. A
+// source without it sends a plain owner message, which opens a conversation.
+type replier interface {
+	ReplyAsOwner(ctx context.Context, conversationID, to, body string) (protocol.MessageSent, error)
+}
+
 // reply sends the owner's text to one session of a conversation, with the owner
-// send path of the TUI. The session must have written or received a message in
-// that conversation, so a reply cannot be a message to anyone else. It returns
-// the conversation the gateway put the message in. The owner send has no
-// conversation field: the gateway opens a conversation for it, which the
-// Messages screen then shows at the top. conversation is the one the reply was
-// written in, kept when the daemon only queued the message.
-func (a *app) reply(ctx context.Context, conversation, to, text string) (string, error) {
+// send of the TUI and the conversation id, so the gateway keeps the message in
+// that conversation. The session must have written or received a message in the
+// thread the owner sees, so a reply cannot be a message to anyone else. The
+// thread of a worker row is a group of conversations: the reply goes to the
+// newest one that has that session as a side.
+func (a *app) reply(ctx context.Context, conversation, to, text string) error {
 	text = strings.TrimSpace(text)
 	switch {
 	case to == "":
-		return "", fmt.Errorf("no recipient")
+		return fmt.Errorf("no recipient")
 	case text == "":
-		return "", fmt.Errorf("the message is empty")
+		return fmt.Errorf("the message is empty")
 	case len(text) > protocol.MaxBodyBytes:
-		return "", fmt.Errorf("the message is longer than %d bytes", protocol.MaxBodyBytes)
+		return fmt.Errorf("the message is longer than %d bytes", protocol.MaxBodyBytes)
 	}
 	msgs, err := a.threadMessages(ctx, conversation)
 	if err != nil {
-		return "", fmt.Errorf("conversation not found")
+		return fmt.Errorf("conversation not found")
 	}
+	target := ""
 	for _, m := range msgs {
-		if m.From == to || m.To == to {
-			sent, err := a.src.SendAsOwner(ctx, to, text)
-			if err != nil {
-				return "", err
-			}
-			if sent.Message != nil && sent.Message.ConversationID != "" {
-				return sent.Message.ConversationID, nil
-			}
-			return conversation, nil
+		if (m.From == to || m.To == to) && m.ConversationID != "" {
+			target = m.ConversationID
 		}
 	}
-	return "", fmt.Errorf("that session is not part of the conversation")
+	if target == "" {
+		return fmt.Errorf("that session is not part of the conversation")
+	}
+	if r, ok := a.src.(replier); ok {
+		_, err = r.ReplyAsOwner(ctx, target, to, text)
+	} else {
+		_, err = a.src.SendAsOwner(ctx, to, text)
+	}
+	return err
 }
