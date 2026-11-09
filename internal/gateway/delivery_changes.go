@@ -724,6 +724,9 @@ func (s *Store) ListChanges(q protocol.ChangeListRequest) (protocol.ChangeListRe
 	default:
 		return protocol.ChangeListResult{}, reject("state must be active, open, merged, done, stopped or any, not %q", q.State)
 	}
+	if q.IfVersion != 0 && q.IfVersion == s.readStamp(topicTables[protocol.TopicChanges]) {
+		return protocol.ChangeListResult{NotModified: true}, nil
+	}
 	if q.Project != "" {
 		where += ` AND project = ?`
 		args = append(args, q.Project)
@@ -790,6 +793,9 @@ func (s *Store) ListChanges(q protocol.ChangeListRequest) (protocol.ChangeListRe
 		v, err := s.changeView(c, p, false)
 		if err != nil {
 			return protocol.ChangeListResult{}, err
+		}
+		if q.Lite {
+			liteChangeView(&v)
 		}
 		out.Changes = append(out.Changes, v)
 	}
