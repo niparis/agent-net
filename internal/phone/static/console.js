@@ -37,6 +37,22 @@
     if (row && !e.target.closest('a')) location.href = row.getAttribute('data-href');
   });
 
+  // The thread of a conversation reads like a chat: it opens at the newest
+  // message, and a live update keeps the place the owner scrolled to.
+  var threadFromBottom = null;
+  function toBottom(offset) {
+    var th = document.getElementById('thread');
+    if (th) th.scrollTop = th.scrollHeight - th.clientHeight - (offset || 0);
+  }
+  toBottom(0);
+  document.addEventListener('htmx:sseBeforeMessage', function () {
+    var th = document.getElementById('thread');
+    threadFromBottom = th ? th.scrollHeight - th.clientHeight - th.scrollTop : null;
+  });
+  document.addEventListener('htmx:afterSwap', function () {
+    if (threadFromBottom !== null) toBottom(threadFromBottom);
+  });
+
   // A live update must not wipe what the owner is writing: skip it while a
   // field has focus, holds text, or an answer form is open.
   document.addEventListener('htmx:sseBeforeMessage', function (e) {

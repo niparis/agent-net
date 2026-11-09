@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -58,6 +59,24 @@ type page struct {
 	EventsURL string
 	Desk      *deskView
 	Sessions  *sessionsView
+	Changes   *changesView
+	Messages  *messagesView
+}
+
+// query is what a page names beyond its screen: the selected row and, for the
+// Changes screen, the filter.
+type query struct{ Selected, Filter string }
+
+// events is the stream address of a screen with its query.
+func (q query) events(screen string) string {
+	v := url.Values{"screen": {screen}}
+	if q.Selected != "" {
+		v.Set("s", q.Selected)
+	}
+	if q.Filter != "" {
+		v.Set("f", q.Filter)
+	}
+	return "/events?" + v.Encode()
 }
 
 // ---- Desk ----
@@ -77,10 +96,10 @@ type askView struct {
 
 type changeRow struct {
 	ID, Title, Project, Status, Age string
-	Revision                        int
+	Revision, Risk                  int
 	Marks                           []string
 	Aria                            string
-	NeedsYou                        bool
+	NeedsYou, Selected              bool
 }
 
 type handledRow struct {
@@ -143,12 +162,14 @@ type sessionsView struct {
 }
 
 // load reads what one screen shows. It never writes.
-func (a *app) load(ctx context.Context, screen, selected string) page {
+func (a *app) load(ctx context.Context, screen string, q query) page {
 	p := page{Screen: screenByID(screen), Screens: screens}
-	p.EventsURL = "/events?screen=" + p.Screen.ID
-	if selected != "" && p.Screen.ID == "sessions" {
-		p.EventsURL += "&s=" + escapeQuery(selected)
+	if p.Screen.ID == "changes" {
+		q.Filter = changeFilterID(q.Filter)
+	} else {
+		q.Filter = ""
 	}
+	p.EventsURL = q.events(p.Screen.ID)
 	if a.src == nil {
 		p.Error = "Daemon not connected."
 		return p
@@ -182,7 +203,11 @@ func (a *app) load(ctx context.Context, screen, selected string) page {
 	case "desk":
 		p.Desk = a.desk(ctx, asks, snap)
 	case "sessions":
-		p.Sessions = a.sessions(ctx, snap, selected)
+		p.Sessions = a.sessions(ctx, snap, q.Selected)
+	case "changes":
+		p.Changes = a.changes(ctx, snap, q)
+	case "messages":
+		p.Messages = a.messages(ctx, snap, q.Selected)
 	}
 	return p
 }
@@ -192,10 +217,6 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return fmt.Sprintf("%d %ss", n, word)
-}
-
-func escapeQuery(s string) string {
-	return strings.NewReplacer("&", "%26", "#", "%23", "+", "%2B", " ", "%20", "%", "%25").Replace(s)
 }
 
 // ago is a short age: now, 4m, 3h, 2d.
@@ -444,9 +465,33 @@ func changeMarks(steps []protocol.StepStatus) (marks []string, aria string) {
 	return marks, strings.Join(words, ", ")
 }
 
-// currentStep is the step a change is in: one that needs the owner or failed
+// stepUnrecorded is the state of a step before merge that a merged change has
+// no passing result for, as the TUI Delivery tab shows it.
+const stepUnrecorded = "unrecorded"
+
+// changeSteps is the steps of a change as the TUI Delivery tab reads them. Once
+// a change is merged or done, a step before merge that never passed is not
+// recorded: it is not a step the change still waits for.
+func changeSteps(v protocol.ChangeView) []protocol.StepStatus {
+	steps := append([]protocol.StepStatus(nil), v.Steps...)
+	c := v.Change
+	if c.State != protocol.ChangeDone && c.State != protocol.ChangeMerged && c.MergedCommit == "" {
+		return steps
+	}
+	for i, st := range steps {
+		switch st.Step {
+		case "accept", "review", "test", "approve":
+			if !st.AfterMerge && st.State != protocol.StepStatePassed && st.State != protocol.StepStateSkipped {
+				steps[i].State, steps[i].Note = stepUnrecorded, "not recorded"
+			}
+		}
+	}
+	return steps
+}
+
+// currentStatus is the step a change is in: one that needs the owner or failed
 // first, then the next ready one, then a running or waiting one.
-func currentStep(v protocol.ChangeView) (name, state, owner string) {
+func currentStatus(v protocol.ChangeView) (protocol.StepStatus, bool) {
 	find := func(match func(protocol.StepStatus) bool) (protocol.StepStatus, bool) {
 		for _, st := range v.Steps {
 			if match(st) {
@@ -457,20 +502,44 @@ func currentStep(v protocol.ChangeView) (name, state, owner string) {
 	}
 	for _, want := range []string{protocol.StepStateNeedsOwner, protocol.StepStateFailed} {
 		if st, ok := find(func(s protocol.StepStatus) bool { return s.State == want }); ok {
-			return st.Step, st.State, stepOwnerLabel(st.Owner)
+			return st, true
 		}
 	}
 	if len(v.Next) > 0 {
 		if st, ok := find(func(s protocol.StepStatus) bool { return s.StepRef == v.Next[0] }); ok {
-			return st.Step, st.State, stepOwnerLabel(st.Owner)
+			return st, true
 		}
 	}
 	for _, want := range []string{protocol.StepStateRunning, protocol.StepStateWaiting} {
 		if st, ok := find(func(s protocol.StepStatus) bool { return s.State == want }); ok {
-			return st.Step, st.State, stepOwnerLabel(st.Owner)
+			return st, true
 		}
 	}
+	return protocol.StepStatus{}, false
+}
+
+func currentStep(v protocol.ChangeView) (name, state, owner string) {
+	if st, ok := currentStatus(v); ok {
+		return st.Step, st.State, stepOwnerLabel(st.Owner)
+	}
 	return "", "", ""
+}
+
+// changeStatusLine is the words of a row: the step, its state and its owner.
+func changeStatusLine(v protocol.ChangeView) string {
+	step, state, owner := currentStep(v)
+	status := step
+	switch state {
+	case protocol.StepStateNeedsOwner:
+		status += " needs you"
+	case "":
+	default:
+		status += " " + state
+	}
+	if owner != "" && state != protocol.StepStateNeedsOwner {
+		status += " · " + owner
+	}
+	return strings.TrimSpace(status)
 }
 
 // inFlight lists the open changes that moved in the last day, or that need the
@@ -488,26 +557,16 @@ func (a *app) inFlight(ctx context.Context, now time.Time) ([]changeRow, int) {
 	var rows []changeRow
 	for _, v := range res.Items {
 		c := v.Change
+		v.Steps = changeSteps(v)
 		updated := time.Unix(max(c.UpdatedAt, c.CreatedAt), 0)
-		step, state, owner := currentStep(v)
+		_, state, _ := currentStep(v)
 		needs := state == protocol.StepStateNeedsOwner
 		if now.Sub(updated) > inFlightWindow && !needs {
 			continue
 		}
 		marks, aria := changeMarks(v.Steps)
-		status := step
-		switch state {
-		case protocol.StepStateNeedsOwner:
-			status += " needs you"
-		case "":
-		default:
-			status += " " + state
-		}
-		if owner != "" && !needs {
-			status += " · " + owner
-		}
-		rows = append(rows, changeRow{ID: c.ID, Title: firstNonEmpty(c.Title, c.Branch, c.ID), Project: c.Project, Revision: c.Revision,
-			Marks: marks, Aria: aria, Status: strings.TrimSpace(status), Age: ago(updated, now), NeedsYou: needs})
+		rows = append(rows, changeRow{ID: c.ID, Title: firstNonEmpty(c.Title, c.Branch, c.ID), Project: c.Project, Revision: c.Revision, Risk: c.Risk,
+			Marks: marks, Aria: aria, Status: changeStatusLine(v), Age: ago(updated, now), NeedsYou: needs})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].NeedsYou && !rows[j].NeedsYou })
 	more := 0

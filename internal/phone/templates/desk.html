@@ -23,7 +23,7 @@
 </section>
 <section class="box"><header><h2>In flight</h2><span class="meta">{{len .Changes}} change{{if ne (len .Changes) 1}}s{{end}}{{if .More}} · {{.More}} more in the Changes screen{{end}}</span></header>
 {{if .Changes}}<div class="tablewrap"><table><thead><tr><th>Change</th><th>Steps</th><th class="hide-sm">Status</th><th>Age</th></tr></thead><tbody>
-{{range .Changes}}<tr><td><b>{{.Title}}</b><div class="mono muted">{{.ID}} · rev {{.Revision}}</div><div class="muted show-sm">{{.Status}}</div></td><td><span class="pipe" role="img" aria-label="{{.Aria}}">{{range .Marks}}<i{{if .}} class="{{.}}"{{end}}></i>{{end}}</span></td><td class="muted hide-sm">{{.Status}}</td><td class="num muted">{{.Age}}</td></tr>{{end}}
+{{range .Changes}}<tr><td><a href="/changes?s={{.ID}}#detail"><b>{{.Title}}</b></a><div class="mono muted">{{.ID}} · rev {{.Revision}}</div><div class="muted show-sm">{{.Status}}</div></td><td><span class="pipe" role="img" aria-label="{{.Aria}}">{{range .Marks}}<i{{if .}} class="{{.}}"{{end}}></i>{{end}}</span></td><td class="muted hide-sm">{{.Status}}</td><td class="num muted">{{.Age}}</td></tr>{{end}}
 </tbody></table></div>{{else}}<div class="body muted">No open changes moved in the last day.</div>{{end}}
 </section></div>
 <div class="stack">

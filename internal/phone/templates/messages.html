@@ -1,0 +1,13 @@
+{{define "messages"}}<div class="split">
+<section class="box"><header><h2>Conversations</h2><span class="meta">{{len .Rows}} shown{{if .More}} · {{.More}} older in the TUI{{end}}</span></header>
+<div class="convolist">{{range .Rows}}<a class="convo" href="/messages?s={{.ID}}#thread"{{if .Selected}} aria-selected="true"{{end}}><div class="line1"><b>{{.Who}}</b>{{if .CTO}}<span class="chip cto">CTO</span>{{end}}{{if .Worker}}<span class="chip">worker</span>{{end}}<span class="when">{{.Age}} · {{.Count}} msgs</span></div>{{if .Preview}}<div class="prev">{{.Preview}}</div>{{end}}</a>{{else}}<div class="body muted">No conversations yet.</div>{{end}}</div>
+</section>
+{{with .Thread}}<section class="box sticky"><header><h2>{{.Title}}</h2>{{if ne .Title .Parties}}<span class="meta">{{.Parties}}</span>{{end}}</header><div class="body">
+{{if .Err}}<p class="error" role="alert">{{.Err}}</p>{{end}}
+<div class="thread" id="thread" tabindex="0" aria-label="Messages of {{.Parties}}">{{range .Msgs}}<div class="msg{{.Class}}"><div class="who"><b>{{.Who}}</b> · {{.Age}}{{if ne .Age "now"}} ago{{end}}</div>{{if .Instruction}}<div class="instr">Your instruction: {{.Instruction}}</div>{{end}}<div class="text">{{.Text}}</div></div>{{else}}{{if not .Err}}<div class="muted">No messages in this conversation yet.</div>{{end}}{{end}}</div>
+{{if .To}}<form class="composer" method="post" action="/action"><input type="hidden" name="kind" value="reply"><input type="hidden" name="id" value="{{.ID}}">
+{{if eq (len .To) 1}}{{with index .To 0}}<input type="hidden" name="to" value="{{.ID}}"><textarea name="action" rows="2" required aria-label="Your message to {{.Name}}" placeholder="Write as you to {{.Name}}"></textarea>{{end}}
+{{else}}<select name="to" aria-label="Send to">{{range .To}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select><textarea name="action" rows="2" required aria-label="Your message" placeholder="Write as you"></textarea>{{end}}
+<button class="btn primary" type="submit">Send</button></form>{{end}}
+</div></section>{{end}}
+</div>{{end}}

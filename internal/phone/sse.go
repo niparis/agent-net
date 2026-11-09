@@ -28,11 +28,11 @@ func (a *app) stream(w http.ResponseWriter, r *http.Request) {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	screen, selected := r.URL.Query().Get("screen"), r.URL.Query().Get("s")
+	screen, q := r.URL.Query().Get("screen"), query{Selected: r.URL.Query().Get("s"), Filter: r.URL.Query().Get("f")}
 	previous := ""
 	for {
 		ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
-		p := a.load(ctx, screen, selected)
+		p := a.load(ctx, screen, q)
 		cancel()
 		var b bytes.Buffer
 		if err := shell.ExecuteTemplate(&b, "stream", p); err != nil {

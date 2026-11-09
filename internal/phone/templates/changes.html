@@ -1,0 +1,15 @@
+{{define "changes"}}<div class="split">
+<section class="box"><header><h2>Changes</h2><span class="meta">{{len .Rows}} shown</span><span class="act"><span class="seg" role="group" aria-label="Filter">{{range .Filters}}<a href="{{.Href}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</span></span></header>
+{{if .Rows}}<div class="tablewrap"><table><thead><tr><th>Change</th><th>Steps</th><th class="hide-sm">Status</th><th>Age</th></tr></thead><tbody>
+{{range .Rows}}<tr data-href="/changes?f={{$.Filter}}&amp;s={{.ID}}#detail"{{if .Selected}} aria-selected="true"{{end}}><td><a href="/changes?f={{$.Filter}}&amp;s={{.ID}}#detail"><b>{{.Title}}</b></a><div class="mono muted"><span class="nb">{{.ID}}</span> · <span class="nb">rev {{.Revision}}</span>{{if .Risk}} · <span class="nb">risk {{.Risk}}</span>{{end}}</div><div class="muted show-sm">{{.Status}}</div></td><td><span class="pipe" role="img" aria-label="{{.Aria}}">{{range .Marks}}<i{{if .}} class="{{.}}"{{end}}></i>{{end}}</span></td><td class="muted hide-sm">{{.Status}}</td><td class="num muted">{{.Age}}</td></tr>{{end}}
+</tbody></table></div>
+<div class="legend">One mark for each step that applies, in order: accept, review, test, approve, merge, test after merge, release, deploy, verify.</div>
+{{else}}<div class="body muted">{{if eq .Filter "mine"}}No change waits for you.{{else if eq .Filter "all"}}No changes found.{{else}}No open changes.{{end}}</div>{{end}}
+</section>
+{{with .Detail}}<section class="box sticky detail" id="detail"><div class="body">
+<h3>{{.Title}}</h3><div class="lede mono">{{.ID}} · revision {{.Revision}}{{if .Risk}} · risk {{.Risk}}{{end}}{{if .DiffStat}} · {{.DiffStat}}{{end}}</div>
+<dl class="kv"><dt>Status</dt><dd>{{.Status}}</dd>{{if .Author}}<dt>Author</dt><dd>{{.Author}}{{if .Model}} <span class="mono muted">{{.Model}}</span>{{end}}</dd>{{end}}{{if .Caller}}<dt>Caller</dt><dd>{{.Caller}}</dd>{{end}}{{if .Project}}<dt>Project</dt><dd>{{.Project}}</dd>{{end}}{{if .Branch}}<dt>Branch</dt><dd class="mono">{{.Branch}}</dd>{{end}}{{if .Head}}<dt>Head</dt><dd class="mono">{{.Head}}</dd>{{end}}</dl>
+<div class="section"><h4>Steps</h4><div class="steps">{{range .Steps}}<div class="step{{if .Mark}} {{.Mark}}{{end}}"><span class="mk" aria-hidden="true">{{if eq .Mark "p"}}✓{{else if eq .Mark "f"}}✗{{else if eq .Mark "r"}}…{{else if eq .Mark "w"}}!{{else if eq .Mark "s"}}–{{end}}</span><div><div class="t"><b>{{.Name}}</b><span class="muted">{{.State}} · {{.Owner}}</span></div>{{if .By}}<div class="note by">by {{.By}}</div>{{end}}{{if .Note}}<div class="note">{{.Note}}</div>{{end}}</div></div>{{else}}<div class="muted">No steps yet.</div>{{end}}</div></div>
+<div class="row-note muted">Steps are claimed, reported and approved from the TUI or by the agents.</div>
+</div></section>{{end}}
+</div>{{end}}

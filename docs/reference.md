@@ -768,9 +768,9 @@ The console has six screens: Desk (`/`, key `1`), Sessions (`/sessions`, `2`),
 Graph (`/graph`, `3`), Changes (`/changes`, `4`), Messages (`/messages`, `5`)
 and Workers (`/workers`, `6`). On a desk they sit in a left rail. Under 760px
 wide they sit in a bottom bar. The top bar has the title, a live dot and the CTO
-button, which opens a side panel (key `c`). In this version Desk and Sessions
-are built; the other screens say "coming in the next update", and the CTO panel
-says that chat arrives later.
+button, which opens a side panel (key `c`). In this version Desk, Sessions,
+Changes and Messages are built; Graph and Workers say "coming in the next
+update", and the CTO panel says that chat arrives later.
 
 - **Desk** shows Needs you (the open asks of the TUI Desk, with the
   recommendation and the "why you" line), In flight (open delivery changes that
@@ -783,12 +783,34 @@ says that chat arrives later.
   sessions grouped by needs you, working, idle and offline. The detail panel
   shows the task, machine, project, model, place, charter purpose and recent
   conversations. It is read only. A session is opened from the TUI.
+- **Changes** (`/changes?f=open|mine|all&s=<change>`) lists the delivery changes
+  of the TUI Delivery tab, read with `changes_owner_find`. Each row has the
+  title, the id, the revision, the risk, the step strip, a status line and the
+  age. The filters are open (open and merged changes), mine to do (the change
+  needs the owner: a step that needs the owner, or a step the owner owns) and
+  all (also done and stopped changes, 50 of each). The detail panel shows the
+  id, revision, risk, author and its model, caller, branch and head, and each
+  step with its state, owner, who reported it and the evidence note. It has no
+  button: a step is claimed, reported and approved from the TUI or by the
+  agents.
+- **Messages** (`/messages?s=<conversation>`) lists the newest 50 stored
+  conversations (`conversations`) with the two sides, the last line or worker
+  task, the age, the message count and a CTO chip. The thread reads the stored
+  messages (`conversation_messages`, up to 200, oldest first). Worker notices
+  and system lines are dimmed. The composer sends the owner's words to a
+  session of that conversation with the same owner send as the TUI, so the
+  message arrives marked as the owner. The gateway opens a new conversation
+  for that message, and the page then shows it.
 - The console is read and answer only. Its one write route is `POST /action`
-  with the kinds `held`, `outcome`, `inbox`, `mark` and `send`. There is no
-  route that starts or stops sessions or workers, or that changes charters,
+  with the kinds `held`, `outcome`, `inbox`, `mark`, `send` and `reply`. A
+  `reply` takes the conversation id (`id`), the recipient session (`to`) and the
+  text (`action`); the recipient must be a side of that conversation, and the
+  text is at most 64 KiB. There is no route that starts or stops sessions or
+  workers, that claims, reports or approves a step, or that changes charters,
   teams, edges or settings.
-- `GET /events?screen=<screen>[&s=<session>]` is a server-sent event stream
-  that sends the screen again when it changes.
+- `GET /events?screen=<screen>[&s=<row>][&f=<filter>]` is a server-sent event
+  stream that sends the screen again when it changes. It reads only what that
+  screen shows.
 - The pages load nothing from outside the gateway.
 
 For a manually configured gateway, pass `--apps-listen 127.0.0.1:7422` and
