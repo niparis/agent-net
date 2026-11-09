@@ -1012,7 +1012,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_brief",
-    "description": "Chief of staff only: deliver one informational daily brief to the owner's Desk. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; a second call for the same date replaces it. Call with no body for the schedule: brief time, time zone, next run, last date sent and last brief id. A brief never asks for an answer.",
+    "description": "Chief of staff only: deliver one informational daily brief to the owner's Desk. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; the same date replaces it. Call with no body for the schedule. A brief never asks for an answer.",
     "inputSchema": {
       "type": "object",
       "properties": {
