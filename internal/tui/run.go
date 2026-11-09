@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"os"
+	"sync/atomic"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/executable"
@@ -30,8 +32,37 @@ func Run(ctx context.Context, src Source, versions ...string) error {
 	if m.herdrSocket != "" {
 		m.herdrPaneID = os.Getenv("HERDR_PANE_ID")
 	}
+	var inRender atomic.Bool
+	m.inRender = &inRender
+	keyQueue := make(chan tea.Msg, 256)
+	m.keyQueue = keyQueue
 	for {
-		p := tea.NewProgram(m, tea.WithContext(ctx))
+		var p *tea.Program
+		opts := []tea.ProgramOption{
+			tea.WithContext(ctx),
+			tea.WithFilter(func(model tea.Model, msg tea.Msg) tea.Msg {
+				k, ok := msg.(tea.KeyPressMsg)
+				if ok && inRender.Load() {
+					act := keyAction(contextInbox, k.String())
+					switch act {
+					case actUp, actDown, actPageUp, actPageDown, actFirst, actLast:
+						select {
+						case keyQueue <- msg:
+							if p != nil {
+								go func() {
+									time.Sleep(10 * time.Millisecond)
+									p.Send(deskFlushMsg{})
+								}()
+							}
+							return nil
+						default:
+						}
+					}
+				}
+				return msg
+			}),
+		}
+		p = tea.NewProgram(m, opts...)
 		if receiver, ok := src.(interface {
 			SetUIPush(func(protocol.UIRequest))
 		}); ok {

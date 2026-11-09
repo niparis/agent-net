@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
@@ -73,6 +74,10 @@ type Model struct {
 	handled                             []protocol.ChiefSort
 	digest                              *deskDigest
 	lastInput                           time.Time
+	keyQueue                            chan tea.Msg
+	keyPending                          []tea.Msg
+	inRender                            *atomic.Bool
+	deskCache                           *deskCacheState
 	deskPending                         *deskMark
 	inboxDetail, inboxEditing           bool
 	inboxDeliveryID                     string
@@ -277,7 +282,11 @@ func New(src Source) Model {
 	m := Model{src: src, loc: time.Local, now: time.Now, home: localHomeDir(), width: 80, height: 24, feed: newFeed(), input: ti, fetching: true, activeOnly: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
 		convDetail: map[string]convDetail{}, convDetailLoading: map[string]bool{},
-		graphPixel: &graphPixelState{imageID: graphview.ImageID}}
+		graphPixel: &graphPixelState{imageID: graphview.ImageID},
+		deskCache: &deskCacheState{
+			rowLines: make(map[inboxRowLineKey]string),
+			whyLines: make(map[inboxWhyLineKey]string),
+		}}
 	if _, ok := src.(interface {
 		SubscribeTopics(context.Context) (*operator.TopicSubscription, error)
 	}); ok {
@@ -296,6 +305,8 @@ func New(src Source) Model {
 }
 
 // ---- messages ----
+
+type deskFlushMsg struct{}
 
 type tickMsg struct{}
 
@@ -658,7 +669,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if len(m.keyPending) > 0 {
+		pending := m.keyPending[0]
+		m.keyPending = m.keyPending[1:]
+		next, cmd1 := m.update(pending)
+		nextM, cmd2 := next.(Model).update(msg)
+		return nextM, tea.Batch(cmd1, cmd2)
+	}
 	switch msg := msg.(type) {
+	case deskFlushMsg:
+		if m.tab == inboxTab && m.keyQueue != nil {
+			select {
+			case firstMsg := <-m.keyQueue:
+				if k, ok := firstMsg.(tea.KeyPressMsg); ok {
+					return m.inboxTabKey(k)
+				}
+				return m.Update(firstMsg)
+			default:
+			}
+		}
+		return m, nil
 	case removeSessionsMsg:
 		return m.removeSessionsResult(msg)
 	case graphRemovedMsg:

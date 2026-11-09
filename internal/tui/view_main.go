@@ -150,6 +150,10 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) renderView() string {
+	if m.inRender != nil {
+		m.inRender.Store(true)
+		defer m.inRender.Store(false)
+	}
 	if m.quitting {
 		return ""
 	}
