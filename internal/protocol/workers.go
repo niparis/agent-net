@@ -327,6 +327,9 @@ type (
 		// MachineNote says why the gateway picked this machine when the
 		// project is on several.
 		MachineNote string `json:"machine_note,omitempty"`
+		// Hint is one line about a defect this start may fix (see
+		// WorkerStartResult.Hint).
+		Hint string `json:"hint,omitempty"`
 		// Permissions is the worker permission level of the project.
 		Permissions string `json:"permissions,omitempty"`
 		// OSSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
@@ -362,6 +365,10 @@ type (
 		Task string `json:"task,omitempty"`
 		// Title is the worker's short title. Empty means derive it from Task.
 		Title string `json:"title,omitempty"`
+		// Fixes is the shipped change this start says it fixes. The machine
+		// keeps it with the worker so its hand-back does not hint at the same
+		// defect again. Empty when the start named none.
+		Fixes string `json:"fixes,omitempty"`
 		// Isolation is "" (a worktree if the folder is a repository),
 		// IsolationWorktree or IsolationNone.
 		Isolation string `json:"isolation,omitempty"`
@@ -898,6 +905,10 @@ type WorkerNotice struct {
 	// RateAsk adds the one-line satisfaction ask to the notice (difficulty
 	// calibration, part 4).
 	RateAsk bool
+	// DefectHint is one line about a recent change by another worker that
+	// touched the same files, so the caller can record the defect it fixes.
+	// Empty when nothing overlaps or the start already named `fixes`.
+	DefectHint string
 
 	// OSSandbox is the OS wrapper the worker ran in ("bubblewrap"), or "".
 	OSSandbox string
@@ -984,6 +995,9 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 			b.WriteString("changes (git diff --stat):\n" + n.DiffStat + "\n")
 		}
 	}
+	if n.DefectHint != "" {
+		b.WriteString(n.DefectHint + "\n")
+	}
 	if n.RateAsk {
 		b.WriteString(FormatRateAsk(n.Session, n.Model, n.Difficulty, n.RunTime) + "\n")
 	}
@@ -1015,6 +1029,7 @@ func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Sn
 	}
 	line := ChecklistMarker + " " + strings.ReplaceAll(snap.String("delivery.caller_review_and_merge", settings.Where{}), "{{where}}", NeutralizeMarkers(where))
 	line += "\nTest scope: delivery.contract.test (the test step owns suites and CI)."
+	line += "\nFound a defect in earlier work? Set fixes=<change> on the fix, or file defect_found_later. Rework from your own brief: brief_defect."
 	if learned {
 		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
 	}
@@ -1042,4 +1057,33 @@ type WorkerRunState struct {
 	Session       string `json:"session"`
 	RunGeneration int    `json:"run_generation"`
 	Ended         bool   `json:"ended,omitempty"`
+}
+
+// FrameRecentWorkerChanges is the daemon to gateway read a worker hand-back
+// makes: the merged changes of a project that another worker made recently.
+const FrameRecentWorkerChanges = "worker.recent_changes"
+
+// RecentWorkerChangesRequest asks for the merged changes of one project in a
+// window. ExcludeSession leaves out the worker that is handing back itself,
+// and ExcludeChange leaves out the change it is working on. Limit is 1 to 5.
+type RecentWorkerChangesRequest struct {
+	Project        string `json:"project"`
+	ExcludeSession string `json:"exclude_session,omitempty"`
+	ExcludeChange  string `json:"exclude_change,omitempty"`
+	Limit          int    `json:"limit,omitempty"`
+}
+
+// RecentWorkerChange is one merged change a hand-back may be fixing.
+type RecentWorkerChange struct {
+	ChangeID      string `json:"change_id"`
+	Title         string `json:"title,omitempty"`
+	WorkerID      string `json:"worker_id,omitempty"`
+	WorkerSession string `json:"worker_session,omitempty"`
+	MergedAt      int64  `json:"merged_at"`
+	MergedCommit  string `json:"merged_commit,omitempty"`
+}
+
+// RecentWorkerChangesResult answers FrameRecentWorkerChanges, newest first.
+type RecentWorkerChangesResult struct {
+	Changes []RecentWorkerChange `json:"changes"`
 }

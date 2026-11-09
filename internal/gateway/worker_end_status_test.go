@@ -206,8 +206,8 @@ func TestWorkerRunGenerationEnd(t *testing.T) {
 }
 
 func TestWorkerRunGenerationMigration(t *testing.T) {
-	if version := migrationVersion(t, "Worker run generations fence"); version != 125 {
-		t.Fatalf("worker run generation migration=%d, want 125 after ch_8171", version)
+	if version := migrationVersion(t, "Worker run generations fence"); version != 126 {
+		t.Fatalf("worker run generation migration=%d, want 126 after ch_8171", version)
 	}
 	s, _ := newTestStore(t)
 	if _, err := s.db.Exec(`ALTER TABLE sessions DROP COLUMN worker_run_generation`); err != nil {

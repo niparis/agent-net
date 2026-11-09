@@ -455,6 +455,23 @@ CREATE INDEX IF NOT EXISTS worker_defects_model ON worker_defects (model, at);
 -- adds that many points of rework to the worker's task. Rows made before this
 -- column existed count as severity 1.
 SELECT 1 /* worker defect severity */;
+`, `
+-- Rework caused by a bad brief (difficulty calibration). It is charged to the
+-- session that wrote the brief, never to the worker, so it stays out of
+-- worker_defects and out of the picker's quality data. run_id and
+-- worker_session_id name the worker run it caused.
+CREATE TABLE IF NOT EXISTS worker_brief_defects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL DEFAULT 0,
+  worker_session_id TEXT NOT NULL DEFAULT '',
+  caller TEXT NOT NULL DEFAULT '',
+  rater TEXT NOT NULL DEFAULT '',
+  rater_model TEXT NOT NULL DEFAULT '',
+  severity INTEGER NOT NULL CHECK(severity BETWEEN 1 AND 4),
+  note TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
+CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
 `, `SELECT 1 /* worker blast radius columns */;`, `
 -- Automatic continues the daemon sent for a worker run. They cost the caller
 -- no rework, so they are kept apart from continue_count and never enter the

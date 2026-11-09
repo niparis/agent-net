@@ -157,8 +157,8 @@ func TestSettingsTargetSeedsExistingRecords(t *testing.T) {
 
 func TestSettingsTargetMigrationReplayKeepsTokens(t *testing.T) {
 	s, _ := targetNamesakes(t)
-	if got := migrationVersion(t, "Immutable settings target identities"); got != 124 {
-		t.Fatalf("settings target identity migration is %d, want 124", got)
+	if got := migrationVersion(t, "Immutable settings target identities"); got != 125 {
+		t.Fatalf("settings target identity migration is %d, want 125", got)
 	}
 	first, err := s.ResolveSettingsTarget(protocol.SettingsTarget{Level: "repo", Name: "shop"})
 	if err != nil || first.Target == nil {

@@ -389,6 +389,10 @@ type WorkerStartResult struct {
 	// Reminder is a short note for the caller when it named a model itself
 	// instead of leaving the choice to the picker. Empty otherwise.
 	Reminder string `json:"reminder,omitempty"`
+	// Hint is one line about a defect this start may fix: the recent changes
+	// in the project that `fixes` can name. Empty when the task does not sound
+	// like a fix or when `fixes` was set.
+	Hint string `json:"hint,omitempty"`
 	// Worktree and Branch are set when the worker got its own worktree.
 	Worktree string `json:"worktree,omitempty"`
 	Branch   string `json:"branch,omitempty"`

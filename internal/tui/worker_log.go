@@ -186,7 +186,7 @@ func workerLogDetailsFit(lines []string, height, offset, width int) []string {
 
 func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 	var detail []string
-	labels := []string{"Title", "Caller", "Model", "Where", "Run time", "Failure", "Not picked"}
+	labels := []string{"Title", "Caller", "Brief defects", "Model", "Where", "Run time", "Failure", "Not picked"}
 	labelWidth := 0
 	for _, label := range labels {
 		labelWidth = max(labelWidth, len(label))
@@ -200,6 +200,9 @@ func workerLogDetails(r protocol.WorkerLogEntry, width int) []string {
 		caller += " (" + r.CallerHost + ")"
 	}
 	addFact("Caller", caller)
+	if r.BriefDefects > 0 {
+		addFact("Brief defects", fmt.Sprintf("%d brief defects (charged to the caller, not the worker)", r.BriefDefects))
+	}
 	addFact("Model", workerLogModel(r.Harness, r.Model))
 	where := strings.Join(nonEmpty(r.Hostname, r.Project), " / ")
 	if where == "" {

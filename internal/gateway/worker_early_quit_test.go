@@ -51,8 +51,8 @@ func TestMigrationWorkerEarlyQuitReplay(t *testing.T) {
 	s, _ := newTestStore(t)
 	version := migrationVersion(t, "worker early quit evidence")
 	t.Logf("early quit migration: %d", version)
-	if version != 127 {
-		t.Fatalf("migration %d, want 127 on this base", version)
+	if version != 128 {
+		t.Fatalf("migration %d, want 128 on this base", version)
 	}
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
 		t.Fatal(err)

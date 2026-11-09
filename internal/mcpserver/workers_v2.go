@@ -88,6 +88,9 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		}
 		if q, ok := m["queue_id"].(string); ok {
 			out["queued"] = map[string]any{"queue_id": q, "position": m["position"], "reason": firstValue(m, "queue_reason", "reason")}
+			if hint, ok := m["hint"].(string); ok && hint != "" {
+				out["hint"] = hint
+			}
 			return out, nil
 		}
 		// The daemon's answer does not repeat the request: fill the task from
@@ -109,6 +112,9 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			worker["provider"] = protocol.ModelVendor(harness, selection.Model)
 		}
 		worker["model_selection"] = selection.Display()
+		if hint, ok := m["hint"].(string); ok && hint != "" {
+			out["hint"] = hint
+		}
 
 		out["worker"] = worker
 		return out, nil
@@ -128,8 +134,11 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if kind == "defect_found_later" && severity == 0 {
 			return nil, errors.New(`severity is required for defect_found_later, for example {"kind":"defect_found_later","severity":2,"note":"Visible annoyance"}`)
 		}
-		if kind != "rating" && kind != "defect_found_later" {
-			return nil, errors.New(`kind must be rating or defect_found_later`)
+		if kind == "brief_defect" && severity == 0 {
+			return nil, errors.New(`severity is required for brief_defect, for example {"kind":"brief_defect","severity":2,"note":"The brief named the wrong branch"}`)
+		}
+		if kind != "rating" && kind != "defect_found_later" && kind != "brief_defect" {
+			return nil, errors.New(`kind must be rating, defect_found_later or brief_defect`)
 		}
 		m, err := rateCall(ctx, run, protocol.RateRequest{Worker: str("worker"), Kind: kind, Score: score, Severity: severity, Note: str("note")})
 		if err != nil {

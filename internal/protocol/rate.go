@@ -33,6 +33,11 @@ const (
 	// merge). Each report adds RateSeverityMin to RateSeverityMax points of
 	// rework to the task.
 	RateKindDefectLater = "defect_found_later"
+	// RateKindBriefDefect is rework caused by a bad brief: the caller's own
+	// brief, or a lead's brief for a member. It is charged to the briefing
+	// session and never to the worker, so it does not change the worker's
+	// quality data.
+	RateKindBriefDefect = "brief_defect"
 	// RateSeverityMin and RateSeverityMax are the severity scale of a late
 	// defect report.
 	RateSeverityMin = 1
@@ -45,8 +50,8 @@ type RateRequest struct {
 	// Worker is the session ID of the finished worker, as the end notice names
 	// it.
 	Worker string `json:"worker"`
-	// Kind is RateKindRating (the default, also when empty) or
-	// RateKindDefectLater.
+	// Kind is RateKindRating (the default, also when empty),
+	// RateKindDefectLater or RateKindBriefDefect.
 	Kind string `json:"kind,omitempty"`
 	// Score is 1 to 5 for the result. A defect report has no score.
 	Score int `json:"score,omitempty"`

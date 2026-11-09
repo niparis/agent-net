@@ -129,6 +129,17 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		return g.workerStop(ctx, nc, p)
 
+	case protocol.FrameRecentWorkerChanges:
+		p, err := decode[protocol.RecentWorkerChangesRequest](raw)
+		if err != nil {
+			return nil, reject("bad worker.recent_changes")
+		}
+		changes, err := g.store.RecentWorkerChanges(p.Project, p.ExcludeSession, p.ExcludeChange, p.Limit)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.RecentWorkerChangesResult{Changes: changes}, nil
+
 	case "worker.assessment":
 		p, err := decode[protocol.WorkerAssessment](raw)
 		if err != nil || p.RunID == "" || p.SessionID == "" {
@@ -861,7 +872,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
 		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
-		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers})
+		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
@@ -887,6 +898,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		// Nothing began: the caller is told, and the start ends here.
 		g.abandon(pick.NodeID, startRef)
 	}
+	hint := ""
+	if err == nil {
+		hint = g.store.WorkerStartHint(pick.Name, p.Title, p.Task, p.Fixes)
+	}
 	if err == nil && launched.Queued && launched.QueueID != "" {
 		if launched.QueueID != startRef {
 			_ = g.store.recordLegacyQueueID(pick.NodeID, startRef, launched.QueueID)
@@ -900,7 +915,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
 			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title, Queued: true, QueueID: launched.QueueID,
 			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms,
-			Track: track, Playbooks: books}, nil
+			Track: track, Playbooks: books, Hint: hint}, nil
 	}
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
@@ -919,7 +934,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	return protocol.WorkerStartAnswer{StartRef: startRef, Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
-		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books}, nil
+		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint}, nil
 }
 
 // recordWorkerPickerNote stores the start's judge result and the picker's

@@ -24,12 +24,15 @@ type WorkerLogEntry struct {
 	// "owner" for a start from the TUI or command line, "CTO" for a CTO
 	// start, and the caller session's name otherwise. CallerHost is that
 	// session's machine. Both are empty for a run whose caller is unknown.
-	Caller     string            `json:"caller,omitempty"`
-	CallerHost string            `json:"caller_host,omitempty"`
-	Difficulty string            `json:"difficulty"`
-	Status     string            `json:"status"`
-	StartedAt  int64             `json:"started_at"`
-	RunSeconds int64             `json:"run_seconds"`
-	Failure    string            `json:"failure,omitempty"`
-	Assessment *WorkerAssessment `json:"assessment,omitempty"`
+	Caller     string `json:"caller,omitempty"`
+	CallerHost string `json:"caller_host,omitempty"`
+	// BriefDefects is how many brief defects are charged to this run's
+	// caller. They are the caller's rework, not the worker's.
+	BriefDefects int               `json:"brief_defects,omitempty"`
+	Difficulty   string            `json:"difficulty"`
+	Status       string            `json:"status"`
+	StartedAt    int64             `json:"started_at"`
+	RunSeconds   int64             `json:"run_seconds"`
+	Failure      string            `json:"failure,omitempty"`
+	Assessment   *WorkerAssessment `json:"assessment,omitempty"`
 }

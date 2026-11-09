@@ -24,7 +24,7 @@ const calibrationWindow = protocol.TrackRecordDays * 24 * time.Hour
 // and their assessments), the defects, the ratings, the scores and the callers'
 // names (sessions, profiles, owner_settings) and the table versions the scores
 // depend on. Keep it equal to those queries (see readThrough).
-var calibrationTables = []string{"worker_runs", "worker_assessments", "worker_defects", "worker_ratings",
+var calibrationTables = []string{"worker_runs", "worker_assessments", "worker_defects", "worker_ratings", "worker_brief_defects",
 	"sessions", "profiles", "owner_settings", "table_versions"}
 
 // Calibration reads the calibration of the worker picks. The read is kept until
@@ -101,9 +101,14 @@ func (s *Store) calibrationRead() (protocol.Calibration, error) {
 	cal.Ratings = ratings
 	cal.Defects = totalDefects
 	cal.Quality = s.QualityAnalysis()
+	briefDefects, err := s.BriefDefectCountsByCaller(cut)
+	if err != nil {
+		return protocol.Calibration{}, err
+	}
 	for i := range cal.Callers {
 		cal.Callers[i].Name = names[cal.Callers[i].Caller]
 		cal.Callers[i].Model = models[cal.Callers[i].Caller]
+		cal.Callers[i].BriefDefects = briefDefects[cal.Callers[i].Caller]
 	}
 	sort.SliceStable(cal.Callers, func(i, j int) bool {
 		a, b := cal.Callers[i], cal.Callers[j]

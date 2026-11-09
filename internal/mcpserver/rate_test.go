@@ -88,3 +88,35 @@ func TestAgentWorkerRateDefectFoundLater(t *testing.T) {
 		t.Fatalf("defect result: %+v", out)
 	}
 }
+
+// agent_worker_rate takes kind brief_defect: a severity and a note, charged to
+// the briefing session, and the answer says it was recorded.
+func TestAgentWorkerRateBriefDefect(t *testing.T) {
+	var saw map[string]any
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		switch method {
+		case "agent_rate":
+			raw, _ := json.Marshal(params)
+			json.Unmarshal(raw, &saw)
+			return json.RawMessage(`{"accepted":true,"worker":"s_w1","kind":"brief_defect","severity":2,"model":"deepseek-v4.1-flash","difficulty":"hard"}`), nil
+		case "list":
+			return workerListWith(ratedWorker()), nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_rate",
+		Arguments: map[string]any{"worker": "s_w1", "kind": "brief_defect", "severity": 2, "note": "the brief named the wrong branch"}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_rate brief defect: %v %+v", err, res)
+	}
+	if saw["kind"] != "brief_defect" || saw["note"] != "the brief named the wrong branch" || saw["severity"] != float64(2) {
+		t.Fatalf("brief defect request: %+v", saw)
+	}
+	if _, ok := saw["score"]; ok {
+		t.Fatalf("a brief defect sent a score: %+v", saw)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	if out["recorded"] != true || out["kind"] != "brief_defect" || out["severity"] != float64(2) {
+		t.Fatalf("brief defect result: %+v", out)
+	}
+}

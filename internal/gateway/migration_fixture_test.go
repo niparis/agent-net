@@ -63,8 +63,8 @@ func TestMigrationInboxAndSessionIdentityReplay(t *testing.T) {
 		{"ALTER TABLE inbox_items ADD COLUMN options", 114},
 		{"Explicit session and run identity", 115},
 		{"Owner changes to a registered session's agent", 116},
-		{"worker early quit evidence", 127},
-		{"Session harness activity and unexpected loss", 128},
+		{"worker early quit evidence", 128},
+		{"Session harness activity and unexpected loss", 129},
 	} {
 		if got := migrationVersion(t, migration.marker); got != migration.version {
 			t.Fatalf("migration %q is %d, want %d", migration.marker, got, migration.version)

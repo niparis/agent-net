@@ -44,8 +44,8 @@ func TestSessionStallMigrationReplay(t *testing.T) {
 				}
 			}
 			version := migrationVersion(t, "Session harness activity and unexpected loss")
-			if version != 128 {
-				t.Fatalf("stall migration = %d, want 128", version)
+			if version != 129 {
+				t.Fatalf("stall migration = %d, want 129", version)
 			}
 			replay := func() {
 				t.Helper()
