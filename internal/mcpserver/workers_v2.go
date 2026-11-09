@@ -127,7 +127,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		return map[string]any{"worker": workerOutput(m)}, nil
 	case "agent_worker_rate":
 		kind := str("kind")
-		score, severity := integer("score"), integer("severity")
+		score, severity, defect := integer("score"), integer("severity"), integer("defect")
 		if kind == "rating" && score == 0 {
 			return nil, errors.New(`score is required for rating, for example {"kind":"rating","score":4}`)
 		}
@@ -137,20 +137,32 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if kind == "brief_defect" && severity == 0 {
 			return nil, errors.New(`severity is required for brief_defect, for example {"kind":"brief_defect","severity":2,"note":"The brief named the wrong branch"}`)
 		}
-		if kind != "rating" && kind != "defect_found_later" && kind != "brief_defect" {
-			return nil, errors.New(`kind must be rating, defect_found_later or brief_defect`)
+		if kind == "move_to_brief_defect" && defect == 0 {
+			return nil, errors.New(`defect is required for move_to_brief_defect, from the defect_found_later answer, for example {"kind":"move_to_brief_defect","worker":"s_abc","defect":12}`)
 		}
-		m, err := rateCall(ctx, run, protocol.RateRequest{Worker: str("worker"), Kind: kind, Score: score, Severity: severity, Note: str("note")})
+		if kind != "rating" && kind != "defect_found_later" && kind != "brief_defect" && kind != "move_to_brief_defect" {
+			return nil, errors.New(`kind must be rating, defect_found_later, brief_defect or move_to_brief_defect`)
+		}
+		m, err := rateCall(ctx, run, protocol.RateRequest{Worker: str("worker"), Kind: kind, Defect: int64(defect), Score: score, Severity: severity, Note: str("note")})
 		if err != nil {
 			return nil, err
 		}
 		worker := map[string]any{"session_id": m["worker"], "model": m["model"], "harness": m["harness"], "difficulty": m["difficulty"]}
 		result := map[string]any{"recorded": m["accepted"], "worker": filledWorker(ctx, call, worker), "kind": kind}
+		if reason, ok := m["reason"].(string); ok && reason != "" {
+			result["reason"] = reason
+		}
 		if score != 0 {
 			result["score"] = score
 		}
 		if severity != 0 {
 			result["severity"] = severity
+		}
+		if v, ok := m["defect"]; ok && v != nil {
+			result["defect"] = v
+		}
+		if v, ok := m["brief_defect"]; ok && v != nil {
+			result["brief_defect"] = v
 		}
 		return result, nil
 	case "agent_handback":

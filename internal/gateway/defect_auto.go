@@ -75,7 +75,7 @@ func (s *Store) addAutoDefect(tx *sql.Tx, d autoDefect) (bool, error) {
 		return false, err
 	}
 	now := s.now()
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE session_id=? AND at>=?
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE session_id=? AND at>=? AND moved_at=0
 		AND id NOT IN (SELECT defect_id FROM worker_defect_auto)`, worker, now.Add(-autoDefectManualWindow).Unix()).Scan(&n); err != nil || n > 0 {
 		return false, err
 	}

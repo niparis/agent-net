@@ -175,7 +175,7 @@ type defectSummary struct {
 func (s *Store) qualityDefects(cut int64) (map[string]defectSummary, error) {
 	out := map[string]defectSummary{}
 	rows, err := s.db.Query(`SELECT session_id, severity, COUNT(*) FROM worker_defects
-		WHERE at >= ? GROUP BY session_id, severity`, cut)
+		WHERE at >= ? AND moved_at = 0 GROUP BY session_id, severity`, cut)
 	if err != nil {
 		return nil, err
 	}
