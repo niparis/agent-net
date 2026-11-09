@@ -163,11 +163,132 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 	return "", nil
 }
 
-// ResolveLeadAddress resolves a Repo or Team name or ID to an online lead.
+// resolveLeadSession picks the session of a lead that gets a message: a live
+// session first, then the pinned session, then the newest non-archived,
+// non-worker session in the Repo (for a repo address), then the newest such
+// session anywhere. The chosen session waits in the queue and the wake on
+// message resumes it. It returns sql.ErrNoRows when the lead has no session at
+// all.
+func resolveLeadSession(db leadDB, agent, repo, preferred string, now time.Time) (string, error) {
+	var id string
+	err := liveLeadSession(db, agent, repo, preferred, false, now).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", err
+	}
+	// The pinned lead session comes next, even when it is offline.
+	if preferred != "" {
+		err = db.QueryRow(`SELECT id FROM sessions WHERE id=? AND archived_at=0`, preferred).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if err != sql.ErrNoRows {
+			return "", err
+		}
+	}
+	// A message to a Repo waits for the lead in that Repo before its sessions
+	// anywhere else.
+	if repo != "" {
+		err = db.QueryRow(`SELECT s.id FROM sessions s WHERE s.agent_id=? AND s.repo_id=? AND s.worker='' AND s.archived_at=0
+			AND s.harness NOT IN ('owner','cto') ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent, repo).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if err != sql.ErrNoRows {
+			return "", err
+		}
+	}
+	err = db.QueryRow(`SELECT s.id FROM sessions s WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0
+		AND s.harness NOT IN ('owner','cto') ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", sql.ErrNoRows
+	}
+	return id, err
+}
+
+// resolveSessionName resolves an exact session name to the session that gets a
+// message: a live session with that name first, as before, otherwise the newest
+// non-archived, non-worker session of the same Agent. That session waits in the
+// queue and the wake on message resumes it, like a send to its ID.
+func (s *Store) resolveSessionName(name string) (string, error) {
+	rows, err := s.db.Query(`SELECT s.id,COALESCE(s.agent_id,''),s.online,s.worker,s.harness,COALESCE(n.hostname,'-'),s.cwd
+		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id LEFT JOIN nodes n ON n.id=s.node_id
+		WHERE COALESCE(NULLIF(p.name,''),s.name)=? AND s.archived_at=0`, name)
+	if err != nil {
+		return "", err
+	}
+	type liveSession struct{ id, harness, host, cwd string }
+	var live []liveSession
+	agents := map[string]bool{}
+	for rows.Next() {
+		var id, agent, worker, harness, host, cwd string
+		var online int
+		if err := rows.Scan(&id, &agent, &online, &worker, &harness, &host, &cwd); err != nil {
+			rows.Close()
+			return "", err
+		}
+		if harness == "owner" {
+			continue
+		}
+		if online != 0 {
+			live = append(live, liveSession{id, harness, host, cwd})
+			continue
+		}
+		if worker == "" && agent != "" && harness != "cto" {
+			agents[agent] = true
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case len(live) == 1:
+		return live[0].id, nil
+	case len(live) > 1:
+		lines := make([]string, 0, len(live))
+		for _, s := range live {
+			lines = append(lines, fmt.Sprintf("%s (%s on %s, %s)", s.id, s.harness, s.host, s.cwd))
+		}
+		return "", reject("%d sessions are named %q; use a session ID: %s", len(live), name, strings.Join(lines, "; "))
+	}
+	if len(agents) == 0 {
+		return "", reject("no session is named %q; use agent_sessions_find to find a session_id", name)
+	}
+	if len(agents) > 1 {
+		return "", reject("more than one agent is named %q; use a session ID", name)
+	}
+	var agent string
+	for a := range agents {
+		agent = a
+	}
+	var id string
+	err = s.db.QueryRow(`SELECT s.id FROM sessions s WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0
+		AND s.harness NOT IN ('owner','cto') ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", reject("no session is named %q; use agent_sessions_find to find a session_id", name)
+	}
+	return id, err
+}
+
+// ResolveLeadAddress resolves a Repo or Team name or ID, or an exact session
+// name, to the session that gets the message. A live session comes first. When
+// the lead or agent has no live session, the newest one is returned so the
+// caller stores and queues the message exactly as for a session-ID send.
 func (s *Store) ResolveLeadAddress(address string) (string, error) {
-	kind, name, ok := strings.Cut(address, ":")
+	kind, name, ok := strings.Cut(strings.TrimSpace(address), ":")
 	name = strings.TrimSpace(name)
-	if !ok || name == "" || (kind != "repo" && kind != "team") {
+	if !ok {
+		address = strings.TrimSpace(address)
+		if address == "" {
+			return "", reject("use a session ID, an exact name, repo:<name> or team:<name>")
+		}
+		return s.resolveSessionName(address)
+	}
+	if name == "" || (kind != "repo" && kind != "team") {
 		return "", reject("use repo:<name> or team:<name>")
 	}
 	var rows *sql.Rows
@@ -210,10 +331,13 @@ func (s *Store) ResolveLeadAddress(address string) (string, error) {
 	if !lead.Valid {
 		return "", reject("%s %s has no lead", kind, name)
 	}
-	var session string
-	err = liveLeadSession(s.db, lead.String, id, preferred.String, false, s.now()).Scan(&session)
+	repo := ""
+	if kind == "repo" {
+		repo = id
+	}
+	session, err := resolveLeadSession(s.db, lead.String, repo, preferred.String, s.now())
 	if err == sql.ErrNoRows {
-		return "", reject("%s %s lead has no live session", kind, name)
+		return "", reject("%s %s lead has no session", kind, name)
 	}
 	return session, err
 }
@@ -237,13 +361,14 @@ func validateLeadAddress(tx *sql.Tx, address, recipient string, now time.Time) e
 		return err
 	}
 	var lead, preferred sql.NullString
+	var leadID string
 	count := 0
 	for rows.Next() {
-		var id, repoName string
+		var repoName string
 		if kind == "team" {
-			err = rows.Scan(&id, &lead, &preferred)
+			err = rows.Scan(&leadID, &lead, &preferred)
 		} else {
-			err = rows.Scan(&id, &repoName, &lead, &preferred)
+			err = rows.Scan(&leadID, &repoName, &lead, &preferred)
 		}
 		if err != nil {
 			rows.Close()
@@ -258,11 +383,16 @@ func validateLeadAddress(tx *sql.Tx, address, recipient string, now time.Time) e
 	}
 	var match bool
 	if count == 1 && lead.Valid {
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND agent_id=? AND online=1 AND worker='' AND harness NOT IN ('owner','cto') AND (id=? OR NOT EXISTS(SELECT 1 FROM sessions p WHERE p.id=? AND p.agent_id=? AND p.online=1 AND p.worker='' AND p.harness NOT IN ('owner','cto')
-			AND (p.limited_until<=? OR sessions.limited_until>?))))`, recipient, lead.String, preferred.String, preferred.String, lead.String, now.Unix(), now.Unix()).Scan(&match)
-		if err != nil {
+		repo := ""
+		if kind == "repo" {
+			repo = leadID
+		}
+		var chosen string
+		chosen, err = resolveLeadSession(tx, lead.String, repo, preferred.String, now)
+		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
+		match = err == nil && chosen == recipient
 	}
 	if !match {
 		return reject("lead for %s changed or went offline; retry the address", address)

@@ -1331,7 +1331,10 @@ func (d *Daemon) keepOutbox(ctx context.Context, stalled bool) {
 	}
 }
 
-// resolveTo turns a session ID or a unique online agent name into a session ID.
+// resolveTo turns a session ID, a unique agent name, or a repo:<name> or
+// team:<name> address into a session ID. The gateway returns a live session
+// first and otherwise the newest session of the lead or agent, which waits in
+// the queue and is woken by the message like any session-ID send.
 func (d *Daemon) resolveTo(ctx context.Context, to string) (string, error) {
 	to = strings.TrimSpace(to)
 	if to == "" {
@@ -1340,46 +1343,17 @@ func (d *Daemon) resolveTo(ctx context.Context, to string) (string, error) {
 	if strings.HasPrefix(to, "s_") {
 		return to, nil
 	}
-	if strings.HasPrefix(to, "repo:") || strings.HasPrefix(to, "team:") {
-		data, err := d.call(ctx, "lead.resolve", map[string]string{"address": to})
-		if err != nil {
-			return "", err
-		}
-		var result struct {
-			ID string `json:"session_id"`
-		}
-		if err = json.Unmarshal(data, &result); err != nil {
-			return "", err
-		}
-		return result.ID, nil
-	}
-	data, err := d.call(ctx, "query.agents", protocol.QueryAgents{OnlineOnly: true, Text: to})
+	data, err := d.call(ctx, "lead.resolve", map[string]string{"address": to})
 	if err != nil {
 		return "", err
 	}
-	var r struct {
-		Agents []protocol.AgentView `json:"agents"`
+	var result struct {
+		ID string `json:"session_id"`
 	}
-	if err := json.Unmarshal(data, &r); err != nil {
+	if err = json.Unmarshal(data, &result); err != nil {
 		return "", err
 	}
-	var match []protocol.AgentView
-	for _, a := range r.Agents {
-		if a.Profile.Name == to {
-			match = append(match, a)
-		}
-	}
-	switch len(match) {
-	case 0:
-		return "", fmt.Errorf("no online agent is named %q; use agent_sessions_find to find a session_id", to)
-	case 1:
-		return match[0].SessionID, nil
-	}
-	var lines []string
-	for _, a := range match {
-		lines = append(lines, fmt.Sprintf("%s (%s on %s, %s)", a.SessionID, a.Harness, a.Hostname, a.Cwd))
-	}
-	return "", fmt.Errorf("%d online agents are named %q, use a session_id: %s", len(match), to, strings.Join(lines, "; "))
+	return result.ID, nil
 }
 
 // ---- delivery ----
