@@ -610,9 +610,11 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "desk.log", p)
 	case "learned_list", "learned_answer", "learned_view":
 		var p struct {
-			ID     int64  `json:"suggestion_id"`
-			Node   string `json:"node"`
-			Action string `json:"action"`
+			ID        int64  `json:"suggestion_id"`
+			Node      string `json:"node"`
+			Action    string `json:"action"`
+			IfVersion uint64 `json:"if_version,omitempty"`
+			Lite      bool   `json:"lite,omitempty"`
 		}
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad learned request")
@@ -622,11 +624,13 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("owner session not registered")
 		}
 		frame := struct {
-			Owner  string `json:"owner"`
-			ID     int64  `json:"suggestion_id"`
-			Node   string `json:"node"`
-			Action string `json:"action"`
-		}{owner, p.ID, p.Node, p.Action}
+			Owner     string `json:"owner"`
+			ID        int64  `json:"suggestion_id"`
+			Node      string `json:"node"`
+			Action    string `json:"action"`
+			IfVersion uint64 `json:"if_version,omitempty"`
+			Lite      bool   `json:"lite,omitempty"`
+		}{owner, p.ID, p.Node, p.Action, p.IfVersion, p.Lite}
 		res, err = d.call(ctx, strings.Replace(method, "_", ".", 1), frame)
 	case "inbox_answer":
 		var p struct {
