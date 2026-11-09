@@ -35,6 +35,18 @@ CREATE TABLE IF NOT EXISTS ask_sorts (
 CREATE INDEX IF NOT EXISTS ask_sorts_ask ON ask_sorts(ask_id, id);
 `
 
+// chiefAdoptMigration records the time an ask started waiting for the chief
+// and whether its creator routed it on purpose. The columns are added in the
+// migrate loop, which checks that each one is missing.
+const chiefAdoptMigration = `
+-- Chief of staff adoption (decision 0114): when an ask started waiting for the
+-- chief. Zero means its created_at. An ask opened before the chief existed is
+-- adopted now, so its 15 minutes start now, not when its asker wrote it.
+-- route_fixed marks an ask whose creator named the next who, so adoption
+-- leaves it there.
+SELECT 1 /* chief ask adoption time */;
+`
+
 // chiefSession is the registered chief session id, or "" when there is none.
 func chiefSession(q askDB) (string, error) {
 	var id string
@@ -60,7 +72,9 @@ func liveChief(q askDB) (string, error) {
 }
 
 // SetChief names the chief session. Only the owner or the CTO may do it. An
-// empty id clears the role.
+// empty id clears the role. A new chief takes over the open asks that wait for
+// the owner and were never offered to a chief, so asks opened before the chief
+// existed are not stranded.
 func (s *Store) SetChief(q protocol.ChiefSetRequest, actor string) error {
 	if !actorAllowed(actor, "rule") {
 		return reject("only the owner or the CTO may set the chief of staff")
@@ -81,9 +95,20 @@ func (s *Store) SetChief(q protocol.ChiefSetRequest, actor string) error {
 	if protocol.IsOwner(harness) || harness == "cto" || harness == "bot" || worker != "" || archived != 0 {
 		return reject("the chief of staff must be a live agent session, not a worker, the owner, the CTO or a bot")
 	}
-	_, err = s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSessionKey, q.SessionID, s.now().UnixNano())
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := s.now().UnixNano()
+	if _, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSessionKey, q.SessionID, now); err != nil {
+		return err
+	}
+	if _, err = adoptChiefAsks(tx, q.SessionID, now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ChiefStatus reads the registered chief and the model it is set to run on.
@@ -124,6 +149,28 @@ func chiefRoute(q askDB, item protocol.InboxItem) (string, error) {
 		return protocol.AskNextOwner, err
 	}
 	return protocol.AskNextChief, nil
+}
+
+// adoptChiefAsks gives the chief every open ask that still waits for the owner
+// and was never offered to a chief. It runs when a chief is set and on the
+// start and minute reconcile, so asks opened before the chief existed reach
+// it. An ask that was sorted, answered, sent to a session, already offered, or
+// routed by its creator on purpose (route_fixed) is left alone. The chief's own
+// asks are not routed to itself.
+func adoptChiefAsks(q askDB, chief string, now int64) (int, error) {
+	if chief == "" {
+		return 0, nil
+	}
+	res, err := q.Exec(`UPDATE inbox_items SET next_who=?, chief_at=?
+		WHERE status='open' AND (next_who='' OR next_who=?) AND session_id<>?
+		AND route_fixed=0 AND chief_sent_at=0
+		AND NOT EXISTS (SELECT 1 FROM ask_sorts r WHERE r.ask_id=inbox_items.id)`,
+		protocol.AskNextChief, now, protocol.AskNextOwner, chief)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
 }
 
 // chiefBatch is one message to the chief: the asks that arrived close together.
@@ -272,31 +319,40 @@ func (g *Gateway) flushChief(ctx context.Context) {
 }
 
 // reconcileChiefAsks gives the asks back to the owner that the chief has held
-// for ChiefTimeout, and every ask waiting on a chief that is not live. Each one
+// for ChiefTimeout, and every ask waiting on a chief that is not live. It also
+// adopts open owner asks that were never offered to a chief, which is how asks
+// open at gateway start reach a chief that is already set. Each returned ask
 // gets a log line that says why.
 func (s *Store) reconcileChiefAsks(now time.Time) error {
 	chief, err := liveChief(s.db)
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.Query(`SELECT id,kind,text,about_kind,about_id,created_at FROM inbox_items WHERE status='open' AND next_who=?`, protocol.AskNextChief)
+	if _, err := adoptChiefAsks(s.db, chief, now.UnixNano()); err != nil {
+		return err
+	}
+	rows, err := s.db.Query(`SELECT id,kind,text,about_kind,about_id,created_at,chief_at FROM inbox_items WHERE status='open' AND next_who=?`, protocol.AskNextChief)
 	if err != nil {
 		return err
 	}
 	type held struct {
 		id, text, aboutKind, aboutID string
-		created                      int64
+		created, chiefAt             int64
 	}
 	var late []held
 	cutoff := now.Add(-protocol.ChiefTimeout).UnixNano()
 	for rows.Next() {
 		var h held
 		var kind string
-		if err := rows.Scan(&h.id, &kind, &h.text, &h.aboutKind, &h.aboutID, &h.created); err != nil {
+		if err := rows.Scan(&h.id, &kind, &h.text, &h.aboutKind, &h.aboutID, &h.created, &h.chiefAt); err != nil {
 			rows.Close()
 			return err
 		}
-		if chief == "" || h.created < cutoff {
+		anchor := h.created
+		if h.chiefAt != 0 {
+			anchor = h.chiefAt
+		}
+		if chief == "" || anchor < cutoff {
 			late = append(late, h)
 		}
 	}
@@ -326,6 +382,51 @@ type askSortRow struct {
 	answeredAt                                                    int64
 }
 
+// waitingChiefAsks lists the open asks that wait for the chief, oldest first.
+func (s *Store) waitingChiefAsks(q askDB, now time.Time) ([]protocol.AskWaiting, error) {
+	rows, err := q.Query(`SELECT id,kind,session_id,from_kind,text,recommendation,created_at
+		FROM inbox_items WHERE status='open' AND next_who=? ORDER BY created_at,id`,
+		protocol.AskNextChief)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.AskWaiting{}
+	for rows.Next() {
+		var w protocol.AskWaiting
+		var session, fromKind string
+		var createdN int64
+		if err := rows.Scan(&w.Ask, &w.Kind, &session, &fromKind, &w.Text, &w.Recommendation, &createdN); err != nil {
+			return nil, err
+		}
+		w.From = fromKind
+		if w.From == "" || w.From == protocol.AskFromSession {
+			w.From = sessionLabel(q, session)
+		}
+		w.Age = askAge(now, time.Unix(0, createdN))
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+// askAge is how old an ask is, in a short form: 45s, 12m, 3h05m or 2d04h.
+func askAge(now, created time.Time) string {
+	d := now.Sub(created)
+	if d < 0 {
+		d = 0
+	}
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		return fmt.Sprintf("%dd%02dh", int(d.Hours())/24, int(d.Hours())%24)
+	}
+}
+
 // SortAsk applies one sort of the chief of staff. Only the live chief may
 // sort, and only an ask that waits for it. The ask keeps its earlier next,
 // status and answer in ask_sorts. It returns the message to send when the ask
@@ -351,6 +452,14 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 	var chiefNode string
 	if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil || chiefNode != node {
 		return out, none, reject("the chief of staff is not on this machine")
+	}
+	if q.Result == protocol.AskSortList {
+		asks, err := s.waitingChiefAsks(tx, s.now())
+		if err != nil {
+			return out, none, err
+		}
+		out = protocol.AskSortResult{Result: protocol.AskSortList, Asks: asks}
+		return out, none, nil
 	}
 	var a askSortRow
 	err = tx.QueryRow(`SELECT text,kind,session_id,about_kind,about_id,next_who,status,answer,answered_at FROM inbox_items WHERE id=?`, q.Ask).

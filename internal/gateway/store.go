@@ -1279,7 +1279,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration}
 
 // briefDefectMoveMigration records that a late defect was reclassified as a
 // brief defect. The worker_defects row stays; these columns name who moved it,
@@ -1878,6 +1878,30 @@ func (s *Store) migrate() error {
 		}
 		// SQLite has no ADD COLUMN IF NOT EXISTS, and a test may replay a
 		// migration on a database that already has these columns.
+		if strings.Contains(migrations[i], "chief ask adoption time") {
+			for _, col := range []struct{ name, spec string }{
+				{"chief_at", `INTEGER NOT NULL DEFAULT 0`},
+				{"route_fixed", `INTEGER NOT NULL DEFAULT 0`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
+					if col.name == "route_fixed" {
+						if _, err := tx.Exec(`UPDATE inbox_items SET route_fixed=1 WHERE source_ref LIKE 'tailscale-pair:%' OR source_ref LIKE 'lead_ask:%'`); err != nil {
+							tx.Rollback()
+							return fmt.Errorf("migration %d: %w", i+1, err)
+						}
+					}
+				}
+			}
+		}
 		if strings.Contains(migrations[i], "OAuth pending browser hash") {
 			for _, col := range []struct{ name, spec string }{
 				{"browser_hash", `browser_hash TEXT NOT NULL DEFAULT ''`},
