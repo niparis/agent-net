@@ -161,6 +161,10 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 			return
 		}
 		path := a.models.transcript(f.info.NativeID, f.info.Cwd)
+		if noTurnSinceCompact(path) {
+			a.compactSkip(f.info.NativeID, "no_activity_since_compact")
+			continue
+		}
 		if contextTokens(path) < int64(snap.Int("sessions.idle_compaction_min_tokens", settings.Where{})) {
 			a.compactSkip(f.info.NativeID, "small_context")
 			continue
@@ -232,8 +236,74 @@ func attachClients(out []byte, exceptPID int) map[string][]int {
 	return clients
 }
 
+// localCommandPrefixes are the string contents Claude Code writes for a local
+// command such as /compact and its output. They follow the compaction and are
+// not turns.
+var localCommandPrefixes = []string{"<command-name>", "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>"}
+
+// isLocalCommandContent says a user entry carries only local command
+// bookkeeping, not something the owner or the model said.
+func isLocalCommandContent(raw json.RawMessage) bool {
+	var text string
+	if json.Unmarshal(raw, &text) != nil {
+		return false
+	}
+	text = strings.TrimSpace(text)
+	for _, p := range localCommandPrefixes {
+		if strings.HasPrefix(text, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// noTurnSinceCompact says the session's newest user or assistant turn is the
+// compaction Claude Code wrote, so it has done nothing since. It reads the
+// transcript, so the answer survives a daemon restart. Non-turn entries
+// (system, attachment and other bookkeeping), user entries that only carry
+// command output (isMeta) and the entries of a local command such as /compact
+// are skipped.
+func noTurnSinceCompact(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return false // unknown, so do not skip
+	}
+	compacted := false
+	scanTail(path, fi.Size(), func(line []byte) bool {
+		var v struct {
+			Type             string `json:"type"`
+			Subtype          string `json:"subtype"`
+			IsMeta           bool   `json:"isMeta"`
+			IsSidechain      bool   `json:"isSidechain"`
+			IsCompactSummary bool   `json:"isCompactSummary"`
+			Message          struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(line, &v) != nil || v.IsSidechain {
+			return false
+		}
+		// Claude Code writes a system compact_boundary and then a user entry
+		// with isCompactSummary for the summary that replaces the conversation.
+		if (v.Type == "system" && v.Subtype == "compact_boundary") || (v.Type == "user" && v.IsCompactSummary) {
+			compacted = true
+			return true
+		}
+		if v.Type == "assistant" {
+			return true // a real turn, so there was activity
+		}
+		if v.Type == "user" && !v.IsMeta && !isLocalCommandContent(v.Message.Content) {
+			return true // a real user turn
+		}
+		return false
+	})
+	return compacted
+}
+
 // Same definition as claudeTranscriptStats: the last assistant's input plus
 // cache read and cache creation, without output tokens or cumulative usage.
+// After a compaction the context is the compact boundary's postTokens, not the
+// usage of the assistant turn that was before it.
 func contextTokens(path string) int64 {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -242,20 +312,35 @@ func contextTokens(path string) int64 {
 	var tokens int64
 	scanTail(path, fi.Size(), func(line []byte) bool {
 		var v struct {
-			Type    string `json:"type"`
-			Message struct {
+			Type             string `json:"type"`
+			Subtype          string `json:"subtype"`
+			IsCompactSummary bool   `json:"isCompactSummary"`
+			Message          struct {
 				Usage struct {
 					Input    int64 `json:"input_tokens"`
 					Read     int64 `json:"cache_read_input_tokens"`
 					Creation int64 `json:"cache_creation_input_tokens"`
 				} `json:"usage"`
 			} `json:"message"`
+			CompactMetadata struct {
+				PostTokens int64 `json:"postTokens"`
+			} `json:"compactMetadata"`
 		}
-		if json.Unmarshal(line, &v) != nil || v.Type != "assistant" {
+		if json.Unmarshal(line, &v) != nil {
 			return false
 		}
-		tokens = v.Message.Usage.Input + v.Message.Usage.Read + v.Message.Usage.Creation
-		return true
+		switch {
+		case v.Type == "assistant":
+			tokens = v.Message.Usage.Input + v.Message.Usage.Read + v.Message.Usage.Creation
+			return true
+		case v.Type == "system" && v.Subtype == "compact_boundary":
+			tokens = v.CompactMetadata.PostTokens
+			return true
+		case v.Type == "user" && v.IsCompactSummary:
+			// The summary follows the boundary, so keep looking for it.
+			return false
+		}
+		return false
 	})
 	return tokens
 }
