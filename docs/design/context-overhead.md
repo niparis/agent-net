@@ -9,8 +9,8 @@ Measurements taken 2026-11-09 from this checkout. Tokens are estimated as UTF-8 
 | Guidance block, `block_claude.golden` | 9,366 | 2,342 | Loaded from instruction file at session start, normally retained on each model request. Claude. |
 | Guidance block, `block_other.golden` | 9,323 | 2,331 | Same. Codex, OpenCode, Pi and agy where the instruction file is read. |
 | MCP server fixed instructions | 428 | 107 | Session start and retained context. Claude, Codex and agy MCP clients; Pi and OpenCode use their plugin instead. Includes the announce rule. |
-| Initial charter in MCP instructions, sample below | 899 | 225 | Session start, retained context. Claude, Codex and agy when server and charter are available. |
-| Effective charter, sample below | 899 | 225 | Each prompt on Claude with policy hook; each model request on Pi and OpenCode when policy is available. Codex and agy have no per-turn hook; they get the initial charter. Claude delivered messages also trigger the hook. |
+| Initial charter in MCP instructions, measured hook-sized example | 3,555 | 889 | Session start, retained context. Claude, Codex and agy when server and charter are available. |
+| Effective charter, real transcript common size | 3,555 | 889 | Each prompt on Claude with policy hook; each model request on Pi and OpenCode when policy is available. Codex and agy have no per-turn hook; they get the initial charter. Claude delivered messages also trigger the hook. |
 | Pi/OpenCode announce rule | 357 | 89 | Added to system context on each request by their plugins, unless already present. |
 | Normal catalog, 32 tools | 29,513 | 7,378 | Available at startup; exposure to model depends on harness, below. Merger uses this role too. |
 | Worker catalog, 19 tools | 16,285 | 4,071 | Available at startup for a worker with tools enabled. Codex worker briefs can instead say tools are off. |
@@ -22,7 +22,17 @@ Measurements taken 2026-11-09 from this checkout. Tokens are estimated as UTF-8 
 | Worker brief fixture, Codex / Claude / OpenCode / Pi / agy | 1,405 / 1,557 / 1,323 / 1,323 / 1,318 | 351 / 389 / 331 / 331 / 330 | Once per worker task, then retained as history. Includes a short placeholder task, project rules, charter and worktree details; real task and charter add bytes. |
 | Worker notice checklist alone | 530 | 133 | Included in the 855-byte notice, not an extra charge. |
 
-The charter sample uses a growing project, a short purpose, refusal and rule, one consumer and its accepts/refuses. It is `protocol.NodeContext` output, including the default maturity rules and decision instruction. It is illustrative, not a measurement of a private charter. The agent's own charter, global-only rules, deploy edges, dependencies, delivery assignments and one-time draft request can add to it. No configured charter can mean zero. The daemon joins node and agent charter in `internal/daemon/policy.go` and `charter_text.go`; `internal/protocol/graph_context.go` builds the node portion. Delegation policy text is optional and has not been included in the sample.
+The hook measurement reads `attachment.content` strings containing the effective-charter marker in Claude JSONL files, counts only `UserPromptSubmit` attachments, and sums UTF-8 content bytes. It copies no transcript text. These are snapshots of live transcripts, so counts can grow. They are different sessions, not repetitions of a synthetic sample.
+
+| Session (short ID) | Injections | Total bytes | Most common size | Range |
+| --- | ---: | ---: | ---: | ---: |
+| 16a63c67 | 888 | 2,692,781 | 3,555 (715 times) | 758-4,138 |
+| 6fb0a650 | 341 | 955,049 | 3,555 (247 times) | 758-3,555 |
+| d50d5a55 | 5 | 3,790 | 758 (5 times) | 758 |
+
+For the first session, the full size distribution is 715 x 3,555, 94 x 842, 42 x 758, 35 x 962, one x 2,164 and one x 4,138 bytes. The reported 868 injections were an earlier observation; the file contained 888 when measured here. Multiplying all 888 by 3,555 would give 3,156,840 bytes, but the actual sum is 2,692,781 because the content changed. These are inserted bytes, before resending history, not the accumulated input across requests.
+
+The daemon joins node and agent charter in `internal/daemon/policy.go` and `charter_text.go`; `internal/protocol/graph_context.go` builds the node portion. Global rules, deployment edges, dependencies, delivery assignments, agent charter and the one-time draft request affect size. No configured charter can mean zero. Delegation policy text is optional and is not separately counted. The 3,555-byte example is the common real hook attachment, not necessarily the exact initial MCP charter.
 
 The notice uses `FormatWorkerNotice` with a sample project and worktree; its report is not agent-net overhead. The reminder follows the single-task format in `internal/gateway/delivery_tasks.go`, with example identifiers, one-line diff, empty evidence and the default test contract in `internal/settings/standard.yaml`. Messages and reminder contents can be much larger. The worker fixtures are `internal/protocol/testdata/worker-settings-baseline.json`, sandboxed worktree variants. Guidance fixtures are the blocks alone, not surrounding project instructions.
 
@@ -46,20 +56,22 @@ The CTO role has: agent_graph_read, agent_learn, agent_machine_get, agent_machin
 
 ## Example totals
 
-These are input-context estimates over model requests, not a prediction of invoice cost. Assume 50 requests, no compaction, one copy of each retained prefix on every request, no extra agent-net messages, and the sample 899-byte charter. Exclude repeated historical hook outputs: if each becomes a persistent user message, its subsequent resends add substantially more. Tool result text and cache discounts are excluded.
+These are input-context estimates over model requests, not an invoice. Assume 50 requests, no compaction, one 3,555-byte charter hook attachment per request, and one copy of each retained prefix on every request. A hook attachment inserted on request k is present on that request and all 50-k later requests: 50 + 49 + ... + 1 = 1,275 copies. Multiple delivered messages can each create another attachment in a turn, increasing the total. After compaction the sum restarts at the compacted history; actual compaction and caching depend on the harness. Tool results and cache discounts are excluded.
 
-| Session | Calculation in bytes per request | 50-request tokens |
+| Session | Calculation | 50-request tokens |
 | --- | --- | ---: |
-| Claude, only always-load catalog | (9,366 + 428 + 899 initial + 3,886 + 899 hook) / 4 | 193,475 |
-| Codex or agy, catalog eager assumption | (9,323 + 428 + 899 + 29,513) / 4 | 502,038 (assumption) |
-| OpenCode or Pi, catalog eager assumption | (9,323 + 29,513 + 899 + 357) / 4 | 501,150 (assumption) |
+| Claude, only always-load catalog | [50 x (9,366 guidance + 428 instructions + 3,555 initial charter + 3,886 tools) + 1,275 x 3,555 hook] / 4 | 1,348,594 |
+| Codex or agy, catalog eager assumption | 50 x (9,323 guidance + 428 instructions + 3,555 initial charter + 29,513 tools) / 4 | 535,238 |
+| OpenCode or Pi, catalog eager assumption | 50 x (9,323 guidance + 29,513 tools + 3,555 charter + 357 announce) / 4 | 534,350 |
 
-For a typical 10-request Codex worker with tools disabled, use the 9,323-byte guidance, 428-byte MCP instructions if present, 899-byte initial charter and 1,405-byte brief: 10 x 12,055 / 4 = **30,138 tokens**. If the MCP server is actually off, subtract 3,318 tokens for its instructions and initial charter. One 855-byte worker notice adds about 214 tokens to the caller's next request. The illustrative OpenCode/Pi worker with eager worker catalog, guidance, brief, per-request charter and announce rule costs 10 x (9,323 + 1,323 + 16,285 + 899 + 357) / 4 = **70,468 tokens**. These scenarios deliberately specify assumptions rather than assert unverified harness billing.
+The Claude hook alone accounts for **1,133,156 input tokens** in the 50-request example. Replacing 50 injections with one identical retained copy would cost 44,438 tokens over 50 requests, saving **1,088,719** tokens. If the initial MCP charter already supplies the same content, avoiding all additional hook copies could save the full 1,133,156. The example does not count a separate model call per delivered message; those add more. The Pi and OpenCode hooks add system context on each request rather than demonstrated persistent attachments, so their table assumes one current copy per request, not the Claude triangular accumulation.
+
+For a 10-request Codex worker with tools disabled, use the 9,323-byte guidance, 428-byte MCP instructions if present, a 3,555-byte initial charter and 1,405-byte brief: 10 x 14,711 / 4 = **36,778 tokens**. If the MCP server is actually off, subtract 9,958 tokens for its instructions and initial charter. One 855-byte worker notice adds about 214 tokens to the caller's next request. The illustrative OpenCode/Pi worker with eager worker catalog, guidance, brief, per-request charter and announce rule costs 10 x (9,323 + 1,323 + 16,285 + 3,555 + 357) / 4 = **77,108 tokens**. These scenarios specify assumptions rather than assert unverified harness billing.
 
 ## Trims ranked by potential savings
 
-1. Defer or selectively expose the 29,513-byte normal catalog on eager harnesses. A session that needs none of it could save up to 7,378 tokens per request, or 368,913 over 50 requests, before discovery overhead. The agent loses immediate visibility and may fail to discover a needed tool. Confirm Codex and agy loading first; Pi/OpenCode need a search or smaller-tool mechanism.
-2. Shorten tool descriptions and schemas by 25%. This saves about 1,845 tokens per eager normal request, or 92,228 over 50. This overlaps with item 1. The agent loses parameter guidance and may make more invalid calls.
-3. Shorten the 9.3 KB guidance and remove overlap with tool and server instructions. Cutting it by half saves about 1,165 tokens per request, or 58,269 over 50 requests. The agent loses detailed examples and repeated procedural reminders; keep authority and safety rules discoverable.
-4. Send the 899-byte charter once and resend only on change or compaction. Avoiding 49 additional copies saves about 11,013 newly inserted tokens over 50 prompts, plus any later resends of those copies. The agent loses immediate refresh if change detection or compaction handling fails; system-context injection that replaces rather than accumulates the prior copy needs separate accounting.
+1. Send the charter once and resend it only when it changes or after compaction. In the 50-request Claude example, replacing the 50 hook attachments with one saves about 1,088,719 input tokens before cache effects. A short hash or delta line can signal unchanged or changed content, at the cost of its own repeated history. The agent risks stale or incomplete rules if change detection, delta application or compaction handling fails.
+2. Defer or selectively expose the 29,513-byte normal catalog on eager harnesses. A session that needs none of it could save up to 7,378 tokens per request, or 368,913 over 50 requests, before discovery overhead. The agent loses immediate visibility and may fail to discover a needed tool. Confirm Codex and agy loading first; Pi/OpenCode need a search or smaller-tool mechanism.
+3. Shorten tool descriptions and schemas by 25%. This saves about 1,845 tokens per eager normal request, or 92,228 over 50. This overlaps with item 2. The agent loses parameter guidance and may make more invalid calls.
+4. Shorten the 9.3 KB guidance and remove overlap with tool and server instructions. Cutting it by half saves about 1,165 tokens per request, or 58,269 over 50 requests. The agent loses detailed examples and repeated procedural reminders; keep authority and safety rules discoverable.
 5. Shorten the 530-byte worker checklist by half, saving about 66 tokens per notice. The caller loses explicit review and test reminders. Compact step reminders and message footers too, but keep the provenance and authority distinction.
