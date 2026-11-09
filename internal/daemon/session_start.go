@@ -293,6 +293,12 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	notify := p.CTOProposal && !remoteOwner
 	if p.Harness == "codex" {
 		args := []string{bin}
+		// Pin a running shared server. Without an explicit target Codex can
+		// silently fall back to an embedded server, invisible to discovery.
+		// When it is not running, let Codex's normal startup create it.
+		if ca, ok := d.adapters["codex"].(*codexAdapter); ok && ca.serverPID() != 0 {
+			args = append(args, "--remote", "unix://")
+		}
 		if r.AgentID != "" {
 			var err error
 			r, err = d.prepareOwnerCodex(ctx, r)

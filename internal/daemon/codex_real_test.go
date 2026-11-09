@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/creack/pty"
 )
 
 // The real Codex, with a fake model (decision 0012). It starts a private
@@ -146,11 +148,17 @@ func TestCodexRealAppServer(t *testing.T) {
 
 	g := startGateway(t, t.TempDir(), "")
 	codexHome, home := shortDir(t), shortDir(t)
+	work, embeddedWork, interactiveWork := t.TempDir(), t.TempDir(), t.TempDir()
 	n := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) { c.CodexHome = codexHome; c.CodexInterval = 200 * time.Millisecond }})
 	cfg := fmt.Sprintf(`model_provider = "mock"
 model = "mock-model"
 approval_policy = "never"
 sandbox_mode = "read-only"
+
+[projects.%q]
+trust_level = "trusted"
+[projects.%q]
+trust_level = "trusted"
 
 [model_providers.mock]
 name = "mock"
@@ -163,7 +171,7 @@ command = %q
 args = ["mcp", "--codex"]
 default_tools_approval_mode = "approve"
 env = { AGENT_NET_SOCKET = %q, AGENT_NET_NO_AUTO_UPGRADE = "1" }
-`, ms.URL, exe, n.sock)
+`, embeddedWork, interactiveWork, ms.URL, exe, n.sock)
 	if err := os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +200,6 @@ env = { AGENT_NET_SOCKET = %q, AGENT_NET_NO_AUTO_UPGRADE = "1" }
 		return err == nil
 	})
 	t.Cleanup(window.close)
-	work := t.TempDir()
 	raw, err := window.call(context.Background(), "thread/start", map[string]any{"cwd": work})
 	if err != nil {
 		t.Fatal(err)
@@ -271,4 +278,41 @@ env = { AGENT_NET_SOCKET = %q, AGENT_NET_NO_AUTO_UPGRADE = "1" }
 	if !sawNote("item/started", `"userMessage"`, `"clientId":null`, "CALLTOOL agent_message_send") {
 		t.Fatal("a typed turn did not show as a userMessage with a null clientId")
 	}
+
+	// Run the actual terminal with the chief's overrides. Without --remote,
+	// -c selects an embedded server and reproduces the refused MCP hello.
+	// With --remote, even the first tool call must discover and register the
+	// thread, then announce as that session.
+	terminal := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command(codexBin, args...)
+		cmd.Dir = dir
+		cmd.Env = append(srv.Env, "TERM=xterm-256color")
+		pt, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 120})
+		if err != nil {
+			t.Fatal(err)
+		}
+		go io.Copy(io.Discard, pt)
+		t.Cleanup(func() {
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			cmd.Wait()
+			pt.Close()
+		})
+	}
+	model.setArgs(`{"task":"interactive codex test"}`)
+	flags := []string{"-m", "mock-model", "-c", "model_reasoning_effort=medium", "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "CALLTOOL agent_announce"}
+	terminal(embeddedWork, flags...)
+	waitFor(t, "embedded Codex MCP refused", 30*time.Second, func() bool {
+		n.d.mcpHellos.mu.Lock()
+		defer n.d.mcpHellos.mu.Unlock()
+		return strings.Contains(n.d.mcpHellos.last, "parent process is not the Codex app server")
+	})
+	if got := codexAgents(t, pi)[embeddedWork]; got.SessionID != "" {
+		t.Fatalf("embedded thread incorrectly discovered: %+v", got)
+	}
+	terminal(interactiveWork, append([]string{"--remote", "unix://"}, flags...)...)
+	waitFor(t, "interactive Codex discovered and announced", 30*time.Second, func() bool {
+		a := codexAgents(t, pi)[interactiveWork]
+		return a.SessionID != "" && a.Harness == "codex" && a.Profile.Task == "interactive codex test"
+	})
 }

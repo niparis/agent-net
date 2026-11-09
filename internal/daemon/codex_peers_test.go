@@ -613,6 +613,73 @@ func TestCodexShimSendsAsItsThread(t *testing.T) {
 	}
 }
 
+// A tool call can arrive before the next periodic discovery of its new thread.
+func TestCodexHelloDiscoversNewThread(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	f := startFakeShared(t)
+	f.set(fakeThread{ID: "old-thread", Cwd: "/work/old", Status: "idle", Source: "cli"})
+	n := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) {
+		c.CodexHome = f.home
+		c.CodexInterval = time.Hour
+	}})
+	ca := n.d.adapters["codex"].(*codexAdapter)
+	eventually(t, "initial discovery finished", func() bool { return n.d.SessionID("codex", "old-thread") != "" })
+	if ca.serverPID() == 0 {
+		t.Fatal("not connected to shared server")
+	}
+	f.set(fakeThread{ID: "new-thread", Cwd: "/work/new", Status: "idle", Source: "cli"})
+	sh := startCodexShim(t, n)
+	if txt, isErr := sh.tool("new-thread", "agent_announce", map[string]any{"task": "new task"}); isErr {
+		t.Fatalf("first call of new thread: %s", txt)
+	}
+	if n.d.SessionID("codex", "new-thread") == "" {
+		t.Fatal("thread was not registered")
+	}
+}
+
+// A terminal may call its first tool just after starting the shared server,
+// before the adapter's next connection attempt.
+func TestCodexHelloWaitsForServer(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := shortDir(t)
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.CodexHome = home
+		c.CodexInterval = 200 * time.Millisecond
+	}})
+	sh := startCodexShim(t, n)
+	lc := &localConn{d: n.d}
+	result := make(chan error, 1)
+	go func() {
+		_, err := lc.helloCodexMCP(helloParams{}, sh.cmd.Process.Pid)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		t.Fatalf("hello returned before the server started: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	f := &fakeShared{t: t, home: home, threads: map[string]*fakeThread{}}
+	dir := filepath.Join(home, "app-server-control")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("unix", filepath.Join(dir, "app-server-control.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(f.handle)}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("hello after server started: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("hello did not wait for the server")
+	}
+}
+
 func TestCodexHelloPeerChecks(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")

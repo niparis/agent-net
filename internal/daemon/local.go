@@ -633,7 +633,22 @@ func (lc *localConn) helloCodexMCP(p helloParams, pid int) (any, error) {
 	if ca == nil {
 		return nil, errors.New("this daemon has no Codex support")
 	}
+	// Codex may have just started its shared server while discovery is still
+	// between connection attempts. Wait for the kernel-identified server,
+	// never accepting the caller's claim as evidence of its identity.
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
 	srv := ca.serverPID()
+	for srv == 0 && d.cfg.CodexHome != "" {
+		select {
+		case <-deadline.C:
+			return nil, errors.New("peer check failed: this daemon is not connected to a Codex app server")
+		case <-tick.C:
+			srv = ca.serverPID()
+		}
+	}
 	if srv == 0 {
 		return nil, errors.New("peer check failed: this daemon is not connected to a Codex app server")
 	}
@@ -651,14 +666,29 @@ func (lc *localConn) helloCodexMCP(p helloParams, pid int) (any, error) {
 		lc.mu.Unlock()
 		return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion()}, nil
 	}
-	if !ca.isThread(p.NativeID) {
-		return nil, errors.New("the daemon has not discovered this Codex thread (is it open in a window?)")
+	// A new thread may call a tool before the discovery loop has processed
+	// thread/started or the gateway has registered it. Ask the loop to list
+	// again and wait briefly; a claimed ID is never enough to register it.
+	select {
+	case ca.kick <- struct{}{}:
+	default:
 	}
-	d.mu.Lock()
-	ls := d.sessions[key("codex", p.NativeID)]
-	d.mu.Unlock()
-	if ls == nil {
-		return nil, errors.New("the daemon has not discovered this Codex thread")
+	var ls *localSession
+	for {
+		if ca.isThread(p.NativeID) {
+			d.mu.Lock()
+			ls = d.sessions[key("codex", p.NativeID)]
+			ready := ls != nil && ls.sessionID != ""
+			d.mu.Unlock()
+			if ready {
+				break
+			}
+		}
+		select {
+		case <-deadline.C:
+			return nil, errors.New("the daemon has not discovered or registered this Codex thread (is it open in a window and the gateway reachable?)")
+		case <-tick.C:
+		}
 	}
 	lc.bind("mcp", ls)
 	lc.mu.Lock()

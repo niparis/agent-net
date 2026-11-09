@@ -474,6 +474,34 @@ func TestSessionStartCodexPlan(t *testing.T) {
 	}
 }
 
+// A running shared server must own the thread. Otherwise Codex may silently
+// start an embedded server, whose MCP child the daemon refuses.
+func TestSessionStartCodexUsesConnectedServer(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	f := startFakeShared(t)
+	bins := fakeBin(t, "codex")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.HarnessPaths = bins
+		c.CodexHome = f.home
+		c.CodexInterval = 50 * time.Millisecond
+	})
+	eventually(t, "connected to shared server", func() bool {
+		return n.d.adapters["codex"].(*codexAdapter).serverPID() != 0
+	})
+	repo := newRepo(t, "shop")
+	n.register(t, repo)
+	var r struct {
+		Plan protocol.EnterPlan `json:"enter_plan"`
+	}
+	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{
+		Project: repo, Harness: "codex", Model: "model-x", FirstMessage: "hello",
+	}), &r)
+	want := []string{bins["codex"], "--remote", "unix://", "-m", "model-x", "hello"}
+	if !reflect.DeepEqual(r.Plan.Argv, want) {
+		t.Fatalf("plan: %v, want %v", r.Plan.Argv, want)
+	}
+}
+
 func TestSessionStartAgentRefusedBeforeLaunch(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startWorkerNode(t, g, shortSet, func(c *Config) {
@@ -506,7 +534,7 @@ func TestSessionStartCodexAgent(t *testing.T) {
 	if a == nil || a.AgentID != "chosen" {
 		t.Fatalf("first identity: %+v", a)
 	}
-	if r.EnterPlan == nil || !reflect.DeepEqual(r.EnterPlan.Argv, []string{bins["codex"], "resume", r.NativeID, "Inspect this project"}) {
+	if r.EnterPlan == nil || !reflect.DeepEqual(r.EnterPlan.Argv, []string{bins["codex"], "--remote", "unix://", "resume", r.NativeID, "Inspect this project"}) {
 		t.Fatalf("plan: %+v", r.EnterPlan)
 	}
 }
