@@ -126,13 +126,73 @@ func isGitRepo(ctx context.Context, dir string) bool {
 	return err == nil
 }
 
+// worktreeFetchTimeout bounds the fetch that looks for a newer upstream tip.
+const worktreeFetchTimeout = 10 * time.Second
+
+// freshUpstreamBase returns the commit a new worktree should start from when
+// the owner asked for no base. Work often lands on the remote (a merged pull
+// request) while the local branch stays behind. So it fetches the upstream of
+// the checked-out branch and, when local HEAD is an ancestor of the fetched
+// tip, returns that tip. In every other case (detached HEAD, no upstream,
+// unpushed or diverged commits, a failed fetch) it returns localHead and logs
+// why. It never moves the owner's checkout or any local branch: a fetch only
+// updates refs/remotes.
+func (d *Daemon) freshUpstreamBase(ctx context.Context, main, localHead string) string {
+	keep := func(why string) string {
+		if d.log != nil {
+			d.log.Printf("worktree base: starting from local HEAD %s in %s: %s", shortCommit(localHead), main, why)
+		}
+		return localHead
+	}
+	branch, err := gitOut(ctx, main, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil || branch == "" {
+		return keep("HEAD is not on a branch")
+	}
+	upstream, err := gitOut(ctx, main, "rev-parse", "--symbolic-full-name", "@{u}")
+	if err != nil || !strings.HasPrefix(upstream, "refs/remotes/") {
+		return keep("branch " + branch + " has no remote upstream")
+	}
+	remote, err := gitOut(ctx, main, "config", "--get", "branch."+branch+".remote")
+	if err != nil || remote == "" || remote == "." || strings.HasPrefix(remote, "-") {
+		return keep("branch " + branch + " has no remote")
+	}
+	merge, err := gitOut(ctx, main, "config", "--get", "branch."+branch+".merge")
+	if err != nil || !strings.HasPrefix(merge, "refs/heads/") {
+		return keep("branch " + branch + " has no upstream branch")
+	}
+	fctx, cancel := context.WithTimeout(ctx, worktreeFetchTimeout)
+	defer cancel()
+	if _, err := gitOutWithContext(fctx, main, "fetch", "--quiet", remote, "+"+merge+":"+upstream); err != nil {
+		return keep("fetch of " + remote + " failed: " + err.Error())
+	}
+	tip, err := gitOut(ctx, main, "rev-parse", "--verify", upstream+"^{commit}")
+	if err != nil {
+		return keep("cannot read " + upstream + ": " + err.Error())
+	}
+	if _, err := gitOut(ctx, main, "merge-base", "--is-ancestor", localHead, tip); err != nil {
+		return keep("local " + branch + " has commits that " + upstream + " does not")
+	}
+	if tip != localHead && d.log != nil {
+		d.log.Printf("worktree base: starting from %s %s (local %s is behind) in %s", upstream, shortCommit(tip), shortCommit(localHead), main)
+	}
+	return tip
+}
+
+func shortCommit(c string) string {
+	if len(c) > 12 {
+		return c[:12]
+	}
+	return c
+}
+
 // createWorktree makes the worker's own worktree of its project, on a new
 // branch, in a folder the daemon manages (not in the user's checkout). The
 // worker then runs in it.
 func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ...string) error {
 	main := w.path
 	ref := "HEAD"
-	if len(requestedBase) > 0 && requestedBase[0] != "" {
+	requested := len(requestedBase) > 0 && requestedBase[0] != ""
+	if requested {
 		name := requestedBase[0]
 		if strings.HasPrefix(name, "-") {
 			return fmt.Errorf("invalid base branch %q", name)
@@ -148,6 +208,9 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 			return fmt.Errorf("base branch %q does not exist: %w", requestedBase[0], err)
 		}
 		return fmt.Errorf("cannot make a worktree: %s is not a git repository with a commit (%v)", main, err)
+	}
+	if !requested {
+		base = d.freshUpstreamBase(ctx, main, base)
 	}
 	dir := filepath.Join(d.cfg.StateDir, "worktrees", w.id)
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
