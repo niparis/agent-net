@@ -86,8 +86,8 @@ func (s *Store) availableChief(q askDB, now time.Time) (chiefHealth, error) {
 	return chiefHealth{id: id}, nil
 }
 
-// chiefSilent tells whether the chief got asks and has sorted nothing for
-// ChiefSilentAfter. The verdict is kept in chiefSilentKey so that moving the
+// chiefSilent tells whether the chief got asks and has sorted nothing, with
+// no harness activity, for ChiefSilentAfter. The verdict is kept in chiefSilentKey so that moving the
 // asks away does not end it. It ends at the chief's next sort, or after
 // ChiefRetryAfter, when the next ask tries the chief again.
 func (s *Store) chiefSilent(q askDB, chief string, now time.Time) (bool, error) {
@@ -119,7 +119,13 @@ func (s *Store) chiefSilent(q askDB, chief string, now time.Time) (bool, error) 
 	if !oldest.Valid {
 		return false, nil
 	}
-	anchor := max(oldest.Int64, lastSort)
+	// A chief whose harness did something lately (output, a turn, a delivery
+	// acknowledgement) is working, even if it has not sorted yet.
+	var activity int64
+	if err := q.QueryRow(`SELECT harness_activity FROM sessions WHERE id=?`, chief).Scan(&activity); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	anchor := max(oldest.Int64, lastSort, activity)
 	if nowN-anchor < int64(protocol.ChiefSilentAfter) {
 		return false, nil
 	}

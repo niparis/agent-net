@@ -63,9 +63,9 @@ func TestChiefQuotaExhaustedMovesWaitingAsks(t *testing.T) {
 	}
 }
 
-// A chief that got its batch and made no sort for three batch waits, with
-// asks waiting, is unavailable.
-func TestChiefSilentForThreeBatchesIsUnavailable(t *testing.T) {
+// A chief that got its batch and made no sort and showed no harness activity
+// for ChiefSilentAfter, with asks waiting, is unavailable.
+func TestChiefSilentWithNoActivityIsUnavailable(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
 	id := chiefAsk(t, s, asker, "Ship it?")
 	c.t = c.t.Add(time.Minute)
@@ -99,6 +99,40 @@ func TestChiefSilentForThreeBatchesIsUnavailable(t *testing.T) {
 		t.Fatalf("new ask next = %q while the chief is silent, want owner", next)
 	}
 	_ = chief
+}
+
+// A chief that is still working is not silent, even when it has sorted nothing
+// for longer than ChiefSilentAfter: a model turn on a batch can take minutes.
+// Its asks stay with it until the activity itself stops for ChiefSilentAfter.
+func TestChiefWithRecentHarnessActivityIsNotSilent(t *testing.T) {
+	s, c, chief, asker, _ := chiefRig(t)
+	id := chiefAsk(t, s, asker, "Ship it?")
+	c.t = c.t.Add(time.Minute)
+	if _, ok := sendDueChief(t, s, c.t); !ok {
+		t.Fatal("no batch went to the chief")
+	}
+	c.t = c.t.Add(protocol.ChiefSilentAfter + time.Minute)
+	// The chief's harness was active a minute ago.
+	if _, err := s.db.Exec(`UPDATE sessions SET harness_activity=? WHERE id=?`, c.t.Add(-time.Minute).UnixNano(), chief); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.releaseChiefAsks(c.t); err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, id); next != protocol.AskNextChief {
+		t.Fatalf("next = %q for a chief with recent activity, want chief", next)
+	}
+	if st, _ := s.ChiefStatus(); st.Down != "" {
+		t.Fatalf("down = %q for a working chief, want none", st.Down)
+	}
+	// Its activity stops: ChiefSilentAfter later, it is silent.
+	c.t = c.t.Add(protocol.ChiefSilentAfter)
+	if err := s.releaseChiefAsks(c.t); err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, id); next != protocol.AskNextOwner {
+		t.Fatalf("next = %q once the activity stopped, want owner", next)
+	}
 }
 
 // A silent chief that sorts again is available again at once.

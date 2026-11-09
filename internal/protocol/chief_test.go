@@ -93,10 +93,10 @@ func TestChiefQuotaDown(t *testing.T) {
 }
 
 func TestChiefOfflineLineAndSilentText(t *testing.T) {
-	if got := ChiefOfflineLine("no sorts for 90 seconds"); got != "chief of staff offline: no sorts for 90 seconds" {
+	if got := ChiefOfflineLine("no sorts for 10 minutes"); got != "chief of staff offline: no sorts for 10 minutes" {
 		t.Fatalf("line = %q", got)
 	}
-	if got := ChiefSilentText(2 * time.Minute); got != "no sorts for 2 minutes" {
+	if got := ChiefSilentText(ChiefSilentAfter); got != "no sorts for 10 minutes" {
 		t.Fatalf("text = %q", got)
 	}
 }

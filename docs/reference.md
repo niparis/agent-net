@@ -2678,10 +2678,11 @@ once a second with the batch tick, and when an ask is created.
 - *Not running.* The session is offline (`session offline`), the harness was
   lost (`harness lost`), or the session reports a provider usage limit from its
   last turn (`harness error: <limit> until <time>`, from `limited_until`).
-- *Silent.* The chief was sent asks and made no sort for three batch waits
-  (`ChiefSilentAfter`, 90 seconds, a constant; `no sorts for 90 seconds`). The
-  mark is kept in the owner setting `chief_silent_at`. It ends after
-  `ChiefRetryAfter` (15 minutes, a constant), when the next ask goes to the chief
+- *Silent.* The chief was sent asks, made no sort and showed no harness
+  activity (`sessions.harness_activity`: output, a turn, a delivery
+  acknowledgement) for `ChiefSilentAfter` (10 minutes, a constant; `no sorts for
+  10 minutes`). A chief that is still working is never silent. The mark is kept in the owner setting
+  `chief_silent_at`. It ends after `ChiefRetryAfter` (15 minutes, a constant), when the next ask goes to the chief
   again as a probe, or when the chief sorts. Naming a new chief clears it.
 
 While the chief is unavailable, an ask that would go to the chief goes to the

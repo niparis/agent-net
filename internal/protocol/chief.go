@@ -30,10 +30,10 @@ const (
 const ChiefTimeout = 15 * time.Minute
 
 // ChiefSilentAfter is how long the chief may sit on asks that were sent to it
-// without making any sort before agent-net treats it as unavailable. It is
-// three batch waits (ChiefMaxWait is the longest a batch waits to go out), and
-// a constant, not a setting.
-const ChiefSilentAfter = 3 * ChiefMaxWait
+// with no sort and no harness activity before agent-net treats it as
+// unavailable. A model turn on a batch can take minutes, so a chief that is
+// still working is never silent. It is a constant, not a setting.
+const ChiefSilentAfter = 10 * time.Minute
 
 // ChiefRetryAfter is how long a chief that was silent stays unavailable. After
 // it, the next ask goes to the chief again as a probe, and a sort ends the
