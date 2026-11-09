@@ -442,7 +442,15 @@ func (d *Daemon) workersView(ctx context.Context, q protocol.WorkersQuery) (*pro
 	// the daemon does not know owns none, so the gateway is not asked at all.
 	var r protocol.AgentsResult
 	if q.OwnerClaude == "" || owner != "" {
-		data, err := d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true, WorkersOwnedBy: owner})
+		var data json.RawMessage
+		var err error
+		if owner != "" {
+			// A Claude session's panel polls every few seconds: the answer
+			// stays until the gateway pushes a change of that owner's rows.
+			data, err = d.ownerAgents(ctx, owner)
+		} else {
+			data, err = d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true})
+		}
 		if err != nil {
 			return nil, err
 		}

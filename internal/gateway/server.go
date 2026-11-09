@@ -200,6 +200,7 @@ type offlineTimer struct {
 type nodeConn struct {
 	topicSubscribed atomic.Bool
 	sessionAgents   atomic.Bool
+	workers         workersWatch // owners whose workers rows this node follows
 	graphRefs       atomic.Bool
 	id              string
 	tokenHash       string // credential used for this connection
@@ -974,6 +975,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	}
 	if typ == protocol.FrameTopicsSubscribe {
 		return g.subscribeTopics(ctx, nc), nil
+	}
+	if typ == protocol.FrameWorkersWatch {
+		return g.watchWorkers(ctx, nc, raw)
 	}
 	if strings.HasPrefix(typ, "xfer.") {
 		return g.handleTransfer(nc, typ, raw)

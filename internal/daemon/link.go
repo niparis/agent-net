@@ -102,6 +102,11 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if json.Unmarshal(raw, &event) == nil {
 				d.topics.publish(l, event)
 			}
+		case protocol.FrameWorkersChanged:
+			var ev protocol.WorkersChanged
+			if json.Unmarshal(raw, &ev) == nil {
+				d.workersChanged(l, ev)
+			}
 		case "node.token":
 			var p struct {
 				Token string `json:"token"`

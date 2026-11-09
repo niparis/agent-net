@@ -3478,21 +3478,38 @@ func (s *Store) agentsBase(f protocol.QueryAgents) ([]protocol.AgentView, error)
 
 // agentsBaseWith is agentsBase with the select it reads the rows with.
 func (s *Store) agentsBaseWith(selectSQL string, f protocol.QueryAgents) ([]protocol.AgentView, error) {
+	var owners []string
+	if f.WorkersOwnedBy != "" {
+		owners = []string{f.WorkersOwnedBy}
+	}
+	return s.agentsBaseOwned(selectSQL, f, owners)
+}
+
+// agentsBaseOwned is agentsBaseWith for the workers of several owners: with
+// owners, it keeps each owner's own row and the workers they started that are
+// running or ended in the last two minutes.
+func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners []string) ([]protocol.AgentView, error) {
 	// The harness filter is applied here too, so the select list (a dozen
 	// subqueries per row) is only worked out for the sessions that stay.
 	where, args := ``, []any{}
 	if f.Harness != "" {
 		where, args = ` AND s.harness=?`, append(args, f.Harness)
 	}
-	if f.WorkersOwnedBy != "" {
+	if len(owners) > 0 {
 		// s.worker is empty for a session that is not a worker, and
 		// json_extract fails on an empty string, so the CASE guards it.
 		// A panel shows the running workers and the ones that ended in
 		// the last two minutes (workersView), so leave the older ended
 		// workers in the store: a session that has started dozens of
 		// them made every poll tens of KB for rows nobody sees.
-		where += ` AND (s.id=? OR (CASE WHEN s.worker<>'' THEN json_extract(s.worker,'$.owner') END = ? AND (s.online=1 OR (s.status='ended' AND s.last_seen>=?))))`
-		args = append(args, f.WorkersOwnedBy, f.WorkersOwnedBy, s.now().Add(-protocol.RecentWorkerWindow).UnixNano())
+		marks := strings.TrimSuffix(strings.Repeat("?,", len(owners)), ",")
+		where += ` AND (s.id IN (` + marks + `) OR (CASE WHEN s.worker<>'' THEN json_extract(s.worker,'$.owner') END IN (` + marks + `) AND (s.online=1 OR (s.status='ended' AND s.last_seen>=?))))`
+		for i := 0; i < 2; i++ {
+			for _, o := range owners {
+				args = append(args, o)
+			}
+		}
+		args = append(args, s.now().Add(-protocol.RecentWorkerWindow).UnixNano())
 	}
 	rows, err := s.db.Query(selectSQL+` WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (`+piChildSQL+`)`+where+` ORDER BY s.last_seen DESC, s.id`, args...)
 	if err != nil {
