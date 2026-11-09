@@ -2927,6 +2927,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok {
 			return nil, reject("unknown message %q", p.MessageID)
 		}
+		m.CitedNotes, err = st.citedNotes(m)
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"message": m}, nil
 	}
 	if data, ok, err := g.handleUsage(nc, typ, raw); ok {
@@ -3019,6 +3023,13 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 		g.logLine("error", "where", "authority note", "err", err)
 	} else {
 		m.AuthorityNote = note
+	}
+	// The notes on cited messages are agent-net's own text (decision 0121).
+	m.CitedNotes = nil
+	if notes, err := g.store.citedNotes(m); err != nil {
+		g.logLine("error", "where", "cited notes", "err", err)
+	} else {
+		m.CitedNotes = notes
 	}
 	authority, rule, err := g.store.MergeRuleForSession(m.To)
 	if err != nil {

@@ -371,6 +371,9 @@ func BuildFrameFor(m protocol.Message, replySock string, toWorker bool) ([]byte,
 	if m.ApprovalNote != "" {
 		details += "\n[agent-net] " + m.ApprovalNote
 	}
+	for _, note := range m.CitedNotes {
+		details += "\n[agent-net] " + note
+	}
 	var attrs []string
 	if from != "" {
 		attrs = append(attrs, fmt.Sprintf(`from="%s"`, from))

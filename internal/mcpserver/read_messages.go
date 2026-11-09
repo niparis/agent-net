@@ -65,8 +65,11 @@ type roMessageDetail struct {
 	Text           string           `json:"text"`
 	Truncated      bool             `json:"truncated"`
 	Body           string           `json:"body"`
-	Outcome        string           `json:"outcome"`
-	Reason         string           `json:"reason"`
+	// Notes are agent-net's notes on the messages the body cites by ID
+	// (decision 0121). They are agent-net's text, never part of the body.
+	Notes   []string `json:"notes,omitempty"`
+	Outcome string   `json:"outcome"`
+	Reason  string   `json:"reason"`
 }
 
 type roMessageGetIn struct {
@@ -282,7 +285,7 @@ func roGetMessage(ctx context.Context, call Caller, in roMessageGetIn) (roMessag
 			To:   roSessionRef(message.To, roName(names, message.To, "")),
 			Type: message.Type, State: message.State, DeliveryDetail: message.DeliveryDetail,
 			Time: roTimeText(message.CreatedAt), Ago: roAgoText(message.CreatedAt),
-			Text: text, Truncated: truncated, Body: chunk,
+			Text: text, Truncated: truncated, Body: chunk, Notes: message.CitedNotes,
 		},
 		BodyTruncated: next < len(message.Body),
 	}

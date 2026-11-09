@@ -1588,6 +1588,9 @@ func ctoPeerMessage(m protocol.Message) string {
 	if m.FromHarness == "bot" && m.ApprovalNote != "" {
 		text += "\n[agent-net] " + m.ApprovalNote
 	}
+	for _, note := range m.CitedNotes {
+		text += "\n[agent-net] " + note
+	}
 	return text
 }
 

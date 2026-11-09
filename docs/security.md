@@ -642,6 +642,10 @@ Only the owner can change edge rules or answer a held request through the local 
 
 The gateway supplies the trust and approval flags; senders cannot set them in a message. Adapters write the notes after the body. The marker rule breaks `[agent-net` in a body so that it cannot imitate agent-net framing. Plain text can still claim approval, so only the agent-net note proves it. An approval applies to the held request. A decline or expiry generates a reply to the sender. Rules and held messages are stored at the gateway; a session removal does not remove a graph edge.
 
+## Cited message notes
+
+A message may cite another message by its ID, and agent-net then adds a note with the cited message's sender, recipient, time and body ([decision 0121](decisions/0121-cited-message-notes.md)). This does not widen who can read a message. The gateway adds the note only when the sender of the new message was the sender or the recipient of the cited message. That session could already read the text and paste it into its own message; agent-net only vouches that the text is genuine. For any other ID, whether it exists or not, the note is not added and the reply is the same, so a session learns nothing about messages it was not part of. The gateway looks at the first 3 distinct IDs of a body only, and shows at most 1500 characters of each cited body. It writes the notes itself on every delivery and every `message_status` read, and ignores any `cited_notes` a sender supplies. Names and bodies in a note pass the marker rule. The direct read of a message (`message_status`, `agent_message_get`) still checks that the caller took part in it.
+
 ## Hints about who can help
 
 After a failed tool call, agent-net can add one line telling the model which other online session may own the failing service (decision [0013](decisions/0013-peer-trust-and-hints.md#part-b---hints-about-who-can-help)). The matching runs in your daemon, on tokens, with no model call. What leaves the machine: nothing new. The daemon asks the gateway for the list of online sessions, which it already knows, and compares the error text with it locally. The error text is not sent to the gateway.
