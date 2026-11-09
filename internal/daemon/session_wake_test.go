@@ -94,6 +94,44 @@ func TestMessageDoesNotWakeWorkingClaude(t *testing.T) {
 		t.Fatalf("working session was started: %v", err)
 	}
 }
+func TestMessageWakesClaudeStartedInParentFolder(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	worktree := filepath.Join(repo, ".claude", "worktrees", "x")
+	if err := os.MkdirAll(worktree, 0755); err != nil {
+		t.Fatal(err)
+	}
+	listing, calls := filepath.Join(t.TempDir(), "agents.json"), filepath.Join(t.TempDir(), "calls")
+	b, _ := json.Marshal([]map[string]string{{"id": wakeNative[:8], "cwd": repo, "state": "done"}})
+	if err := os.WriteFile(listing, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_CLAUDE_AGENTS_FILE", listing)
+	t.Setenv("FAKE_CLAUDE_AGENTS_LOG", calls)
+	id, err := g.gw.Store().UpsertSession(c.d.NodeID(), protocol.SessionInfo{Harness: "claude", NativeID: wakeNative, Cwd: worktree, Name: "shop", Mode: protocol.ModeBackground})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.gw.Store().SetSessionOffline(c.d.NodeID(), id); err != nil {
+		t.Fatal(err)
+	}
+	r := wakeRig{c, g, id, repo, listing, calls}
+	r.send(t, "wake worktree session")
+	eventually(t, "worktree session receives message", func() bool {
+		if lines := r.g.logs.lines("session wake", r.id); len(lines) > 0 {
+			t.Fatalf("wake failed: %v", lines)
+		}
+		return len(r.c.adapter.deliveredTo(r.id)) == 1
+	})
+	rec := readClaude(t, repo)
+	if rec.Cwd != repo {
+		t.Fatalf("launch ran in %s, want repo root %s", rec.Cwd, repo)
+	}
+	if _, err := os.Stat(filepath.Join(worktree, "fake-claude.json")); !os.IsNotExist(err) {
+		t.Fatalf("launch ran in worktree, expected repo root")
+	}
+}
 func TestMessageWakeBackoff(t *testing.T) {
 	r := newWakeRig(t, "done")
 	t.Setenv(envFakeStartFails, "1")

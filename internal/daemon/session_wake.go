@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,8 +36,8 @@ type claudeAgentRecord struct {
 // another folder all stop it. A record with no kind counts as background only
 // for a session recorded as background, as the retired check reads it. A
 // finished or stopped background run leaves its record behind, so a finished or
-// stopped one in the session's folder does not: the session's owner resumes it
-// the same way.
+// stopped one in the session's folder (or a parent folder that contains it) does
+// not: the session's owner resumes it the same way.
 func interactiveRecordClear(record claudeAgentRecord, identity bool, mode, cwd string) bool {
 	if !identity || record.PID != 0 {
 		return false
@@ -51,7 +50,7 @@ func interactiveRecordClear(record claudeAgentRecord, identity bool, mode, cwd s
 	case "interactive":
 		return true
 	case "background", "bg":
-		return (record.State == "done" || record.State == "stopped") && record.Cwd != "" && filepath.Clean(record.Cwd) == filepath.Clean(cwd)
+		return (record.State == "done" || record.State == "stopped") && record.Cwd != "" && within(cwd, record.Cwd)
 	}
 	return false
 }
@@ -111,6 +110,7 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 	}
 	matches := 0
 	retired := false
+	launchDir := a.Cwd
 	// An interactive session that is not running has no background record to
 	// check, so its absence is normal. Anything live, or any record that does
 	// not say plainly what it is, is not. With autonomy wake, every record of
@@ -128,7 +128,11 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 		matches++
 		identity := full || (prefix && record.SessionID == "")
 		background := record.Kind == "background" || record.Kind == "bg" || (record.Kind == "" && a.Mode == protocol.ModeBackground)
-		retired = identity && background && record.PID == 0 && (record.State == "done" || record.State == "stopped") && record.Cwd != "" && filepath.Clean(record.Cwd) == filepath.Clean(a.Cwd)
+		cwdOK := record.Cwd != "" && within(a.Cwd, record.Cwd)
+		retired = identity && background && record.PID == 0 && (record.State == "done" || record.State == "stopped") && cwdOK
+		if retired {
+			launchDir = record.Cwd
+		}
 		if !interactiveRecordClear(record, identity, a.Mode, a.Cwd) {
 			interactive = false
 		}
@@ -142,7 +146,7 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 	if settings := claudeSettingsWithMCPAnswers("", a.Cwd); settings != "" {
 		args = append(args, "--settings", settings)
 	}
-	sf, err := d.launchClaudeBackground(ctx, bin, a.Cwd, args, "", a.NativeID, nil, nil)
+	sf, err := d.launchClaudeBackground(ctx, bin, launchDir, args, "", a.NativeID, nil, nil)
 	if err != nil {
 		return err
 	}
