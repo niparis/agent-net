@@ -79,7 +79,7 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 		t.Fatalf("expected open and merged backfill tasks, got %+v", beforeTasks)
 	}
 	before := repoAgentLegacySnapshot(t, r.s, r.caller, r.sonnet, openChange, mergedChange)
-	_, err := r.s.db.Exec(`DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update; DROP TRIGGER repo_agent_project_insert; DROP TRIGGER repo_agent_project_update; DROP TRIGGER repo_agent_session_insert; DROP TRIGGER repo_agent_session_update; DROP TRIGGER repo_agent_architect_insert; DROP TRIGGER repo_agent_architect_delete; DROP TRIGGER IF EXISTS bot_agent_insert; DROP TRIGGER IF EXISTS bot_agent_rename; DROP TRIGGER IF EXISTS bot_agent_revoke; DROP TABLE repos; DROP TABLE agents; DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Repo and agent records"))
+	_, err := r.s.db.Exec(`DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update; DROP TRIGGER repo_agent_project_insert; DROP TRIGGER repo_agent_project_update; DROP TRIGGER repo_agent_session_insert; DROP TRIGGER repo_agent_session_update; DROP TRIGGER repo_agent_architect_insert; DROP TRIGGER repo_agent_architect_delete; DROP TRIGGER IF EXISTS bot_agent_insert; DROP TRIGGER IF EXISTS bot_agent_rename; DROP TRIGGER IF EXISTS bot_agent_revoke; DROP TRIGGER IF EXISTS bot_names_rename; DROP TRIGGER IF EXISTS bot_names_revoke; DROP TABLE repos; DROP TABLE agents; DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Repo and agent records"))
 	if err != nil {
 		t.Fatal(err)
 	}

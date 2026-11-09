@@ -35,7 +35,7 @@ func (g *Gateway) botMCPServer() *mcp.Server {
 			panic(err)
 		}
 		open := entry.Hints.OpenWorld
-		server.AddTool(&mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: entry.InputSchema,
+		server.AddTool(&mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: botSchemaWithAs(entry.InputSchema),
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: entry.Hints.ReadOnly, IdempotentHint: entry.Hints.Idempotent, OpenWorldHint: &open}},
 			func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				info := auth.TokenInfoFromContext(ctx)
@@ -51,11 +51,26 @@ func (g *Gateway) botMCPServer() *mcp.Server {
 				} else if err := json.Unmarshal(req.Params.Arguments, &in); err != nil || in == nil {
 					return botToolError(fmt.Errorf("arguments must be a JSON object"))
 				}
+				// The name a call acts under is not part of the tool's own input.
+				as, err := botCallName(in, req)
+				if err != nil {
+					return botToolError(err)
+				}
+				_, explicit := in["as"]
+				delete(in, "as")
 				if err := resolved.Validate(in); err != nil {
 					return botToolError(err)
 				}
 				var sid string
-				if err := g.store.db.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness='bot' AND native_id=?`, info.UserID, info.UserID).Scan(&sid); err != nil {
+				if as != "" || explicit {
+					app, ok := info.Extra["app"].(App)
+					if !ok {
+						return botToolError(fmt.Errorf("missing app identity"))
+					}
+					if sid, err = g.store.touchBotNamed(app, as); err != nil {
+						return botToolError(err)
+					}
+				} else if err := g.store.db.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness='bot' AND native_id=?`, info.UserID, info.UserID).Scan(&sid); err != nil {
 					return botToolError(err)
 				}
 				out, err := g.botToolCall(ctx, sid, entry.Name, in)
@@ -70,6 +85,31 @@ func (g *Gateway) botMCPServer() *mcp.Server {
 			})
 	}
 	return server
+}
+
+// botSchemaWithAs adds the optional as argument to a tool's input schema, so a
+// bot can see it. Only bots get it: the same tools of other roles do not.
+func botSchemaWithAs(raw json.RawMessage) json.RawMessage {
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		panic(err)
+	}
+	props, _ := schema["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+	}
+	props["as"] = map[string]any{
+		"type":        "string",
+		"minLength":   1,
+		"maxLength":   botNameMaxLen,
+		"description": "Optional name to act under, 1 to 32 characters: letters, digits, space, - and _. Each name has its own identity, so its messages and replies are separate from other names of this app. Leave it out to use the app's shared identity. The name is a label, not a security boundary.",
+	}
+	schema["properties"] = props
+	out, err := json.Marshal(schema)
+	if err != nil {
+		panic(err)
+	}
+	return out
 }
 
 // botAllow counts one tool call against the app's limits: every call counts as
