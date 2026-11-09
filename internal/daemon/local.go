@@ -313,7 +313,7 @@ func (lc *localConn) cleanup() {
 	}
 	d.mu.Unlock()
 	if sid != "" {
-		d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: sid, Lost: lost})
+		d.removeSession(protocol.SessionRemove{SessionID: sid, Lost: lost})
 	}
 }
 

@@ -932,7 +932,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		// A resumed worker may replace a native session while retaining its
 		// gateway ID. Do not take that newly registered session offline.
 		if d.sessionByID(goneSession.SessionID) == nil {
-			d.call(context.Background(), "session.remove", goneSession)
+			d.removeSession(goneSession)
 		}
 	}
 }
@@ -1126,8 +1126,20 @@ func (d *Daemon) pushSession(ls *localSession) {
 		// before it has an ID to take offline. Finish that removal now, unless
 		// another local session has taken over the gateway identity.
 		if removed && d.sessionByID(r.SessionID) == nil {
-			d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: r.SessionID})
+			d.removeSession(protocol.SessionRemove{SessionID: r.SessionID})
 		}
+	}
+}
+
+// removeSession takes a session offline at the gateway. A reconnect can
+// register the same gateway ID again after the caller decided to remove it and
+// before the gateway handled the removal. The removal then lands last and
+// leaves a live session offline, with its peer trust hidden from online lists.
+// When that happened, register the live session again.
+func (d *Daemon) removeSession(r protocol.SessionRemove) {
+	d.call(context.Background(), "session.remove", r)
+	if ls := d.activitySession(r.SessionID); ls != nil {
+		d.pushSession(ls)
 	}
 }
 
