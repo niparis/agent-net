@@ -1,0 +1,58 @@
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" role="img" aria-label="Left: a hive of agents packed around one task with crossing lines and conflicting choices, everything reaching you. Right: a supervised swarm, agents split into projects with leads, a few lines where work meets, one control space, and a funnel to two real decisions on your Desk.">
+<style>
+.t{fill:#18212a;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}.ts{fill:#5d6a75;font:12px system-ui,-apple-system,"Segoe UI",sans-serif}.tm{fill:#18212a;font:12px ui-monospace,Menlo,monospace}
+.th{fill:#18212a;font:600 16px system-ui,sans-serif}.tg{fill:#5d6a75;font:600 16px system-ui,sans-serif}
+.chip{fill:#ffffff;stroke:#0c6f7d;stroke-width:1.5}.chipg{fill:#e3e7ea;stroke:#9aa5ae;stroke-width:1.5}
+.box{fill:#d5ecee;stroke:#0c6f7d;stroke-width:1.2}.boxg{fill:none;stroke:#9aa5ae;stroke-dasharray:6 5;stroke-width:1.5}
+.ln{stroke:#0c6f7d;stroke-width:1.6;fill:none}.lng{stroke:#9aa5ae;stroke-width:1.1;fill:none;opacity:.8}
+.yous{stroke:#c2580a;fill:none;stroke-width:1.5}.desk{fill:#fde6d2;stroke:#c2580a;stroke-width:1.5}.bad{fill:#b42318}.panel{fill:#ffffff}.sep{stroke:#d3d9de;stroke-width:1}
+</style>
+        <rect class="panel" x="0" y="0" width="960" height="440"/>
+        <line class="sep" x1="430" y1="24" x2="430" y2="416"/>
+        <!-- left: hive -->
+        <text class="tg" x="24" y="40">An unsupervised swarm</text>
+        <text class="ts" x="24" y="60">many agents on one task</text>
+        <rect class="boxg" x="140" y="150" width="150" height="86" rx="10"/>
+        <text class="ts" x="176" y="198">one task</text>
+        <g class="lng">
+          <path d="M96 124 L322 262"/><path d="M96 262 L330 126"/><path d="M214 96 L214 290"/><path d="M84 196 L346 196"/><path d="M120 110 L300 280"/><path d="M300 110 L120 280"/><path d="M96 124 L330 126"/><path d="M96 262 L322 262"/>
+        </g>
+        <g>
+          <rect class="chipg" x="60" y="108" width="72" height="30" rx="7"/><text class="ts" x="74" y="128">agent</text>
+          <rect class="chipg" x="290" y="110" width="72" height="30" rx="7"/><text class="ts" x="304" y="130">agent</text>
+          <rect class="chipg" x="178" y="76" width="72" height="30" rx="7"/><text class="ts" x="190" y="96">queen</text>
+          <rect class="chipg" x="40" y="180" width="72" height="30" rx="7"/><text class="ts" x="54" y="200">agent</text>
+          <rect class="chipg" x="320" y="180" width="72" height="30" rx="7"/><text class="ts" x="334" y="200">agent</text>
+          <rect class="chipg" x="60" y="248" width="72" height="30" rx="7"/><text class="ts" x="74" y="268">agent</text>
+          <rect class="chipg" x="290" y="248" width="72" height="30" rx="7"/><text class="ts" x="304" y="268">agent</text>
+        </g>
+        <circle class="bad" cx="232" cy="166" r="6"/><text class="ts" x="246" y="170">conflicting choices</text>
+        <g class="lng"><path d="M120 300 L200 352"/><path d="M214 300 L214 352"/><path d="M310 300 L228 352"/><path d="M90 300 L196 352"/><path d="M336 300 L232 352"/></g>
+        <rect class="chipg" x="150" y="356" width="128" height="34" rx="8"/><text class="t" x="178" y="378">you</text>
+        <text class="ts" x="128" y="410">every question reaches you</text>
+        <!-- right: supervised swarm -->
+        <text class="th" x="454" y="40">A supervised swarm</text>
+        <text class="ts" x="454" y="60">each agent owns its piece</text>
+        <g>
+          <rect class="box" x="454" y="80" width="146" height="112" rx="10"/><text class="t" x="468" y="102">backend</text>
+          <rect class="chip" x="468" y="114" width="118" height="28" rx="7"/><text class="tm" x="478" y="132">★ lead</text>
+          <rect class="chip" x="468" y="150" width="118" height="28" rx="7"/><text class="tm" x="478" y="168">worker</text>
+          <rect class="box" x="620" y="80" width="146" height="112" rx="10"/><text class="t" x="634" y="102">frontend</text>
+          <rect class="chip" x="634" y="114" width="118" height="28" rx="7"/><text class="tm" x="644" y="132">★ lead</text>
+          <rect class="chip" x="634" y="150" width="118" height="28" rx="7"/><text class="tm" x="644" y="168">worker</text>
+          <rect class="box" x="786" y="80" width="150" height="112" rx="10"/><text class="t" x="800" y="102">homelab</text>
+          <rect class="chip" x="800" y="114" width="122" height="28" rx="7"/><text class="tm" x="810" y="132">★ lead</text>
+          <rect class="chip" x="800" y="150" width="122" height="28" rx="7"/><text class="tm" x="810" y="168">worker</text>
+        </g>
+        <path class="ln" d="M600 128 L620 128"/><path class="ln" d="M766 128 L786 128"/>
+        <text class="ts" x="636" y="74">where work meets</text>
+        <path class="ln" d="M527 192 L527 222"/><path class="ln" d="M693 192 L693 222"/><path class="ln" d="M861 192 L861 222"/>
+        <rect class="box" x="454" y="222" width="482" height="44" rx="10"/>
+        <text class="t" x="476" y="249">One control space: CTO + chief of staff</text>
+        <path class="yous" d="M560 266 L660 330 L730 330 L830 266"/>
+        <text class="ts" x="568" y="300">22 closed · 4 sent on</text>
+        <path class="yous" d="M695 330 L695 352"/>
+        <rect class="desk" x="600" y="352" width="190" height="40" rx="9"/>
+        <text class="t" x="620" y="377">Desk: 2 real decisions</text>
+        <text class="ts" x="626" y="412">only these reach you</text>
+</svg>

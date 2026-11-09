@@ -23,6 +23,8 @@
 <p align="center">
   <a href="#quickstart">Quickstart</a> ·
   <a href="#background-sessions-the-swarm-runs-without-you-at-the-terminal">Background sessions</a> ·
+  <a href="#workers-that-pick-themselves-and-get-better">Workers</a> ·
+  <a href="#smart-defaults-and-you-can-change-almost-anything">Customise</a> ·
   <a href="#your-memory-the-swarm-learns-how-you-decide">Your memory</a> ·
   <a href="#several-machines-one-network">Several machines</a> ·
   <a href="#the-ideas">The ideas</a> ·
@@ -33,7 +35,10 @@
 </p>
 
 <p align="center">
-  <img alt="The agent-net TUI: sessions that ask you a question, and the CTO box with two open proposals" src="docs/img/tui/cto-inbox.png" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/swarm-dark.svg">
+    <img alt="Left: an unsupervised swarm, many agents on one task with crossing lines and conflicting choices, every question reaching you. Right: a supervised swarm, each project with its lead and workers, lines only where work meets, one control space with the CTO and the chief of staff, and a funnel that leaves two real decisions on your Desk." src="docs/img/swarm-light.svg" width="900">
+  </picture>
 </p>
 
 ---
@@ -44,6 +49,10 @@ agent-net turns the Claude Code, Codex, OpenCode, Pi and Antigravity sessions on
 
 - **The CTO** runs the swarm on your instructions. Ask it in plain words to add a machine, write a charter, set a rule between two projects or start a worker. Every change it makes leaves an undo.
 - **The chief of staff** reads every ask meant for you first. It closes what it can, sends the rest to the agent that should answer, and leaves only real decisions on your Desk.
+
+<p align="center">
+  <img alt="The Desk in the agent-net TUI: While you were away (3 h): closed 22, sent on 4, answered 2, 3 for you. Below it, a short Needs you list, changes in flight with their steps, what was handled for you, and the log." src="docs/img/tui/desk.svg" width="900">
+</p>
 
 Both are yours to shape. You choose their role, harness, model and rules. For example, run the CTO in Claude Code on Opus with the standing order "never remove a machine without asking me", and the chief of staff in Codex on a small model with the rule "anything that costs money goes to the owner".
 
@@ -81,6 +90,36 @@ Every session in the swarm can run in the background. You start it, wake it, ste
 - **You look in only when you want to.** Press Enter on any session to open it live, in herdr or your terminal. Stop, resume or restart it from the TUI, the web console or by asking the CTO.
 
 Example. Before bed you tell the CTO: *"Start a Codex session in billing-api on the build box: migrate the invoice job to the new queue, use workers for the code."* The session plans the work, hands the code to two workers, reviews their reports and opens the pull request. At 3 a.m. the frontend session, also in the background, asks it about a renamed field; the billing session wakes, answers and goes back to sleep. In the morning your Desk holds one question: *"Merge PR #212? CI green. Recommended: yes."*
+
+## Workers that pick themselves, and get better
+
+You do not choose a model for each job. The swarm does, and it learns from every job it runs.
+
+- **It sizes the job.** A small judge model reads the brief and rates it on six points (reasoning, scope, coupling, uncertainty, verification, risk). The result is a level, from trivial to very complex.
+- **It picks a model and a harness.** From the worker profiles you registered, it keeps the models whose track record at that level is good enough. It prefers subscriptions that are behind their quota pace, keeps the ones you protect for last, and rotates so no model takes every job. Easy work goes to cheaper models.
+- **It learns from the results.** Every worker's outcome is recorded: done or not, how much rework its caller needed, and defects found later. A model that does well at a level gets more of that work, and one that does badly gets less. About one pick in ten tries a model one level above its proven record, so the swarm finds out when a cheaper model has grown good enough.
+- **It reads your playbook.** You can write a note for a model, such as *"Codex terra: give it the test command, it forgets to run it"*. The note travels with every brief for that model. agent-net also writes notes itself when the same lesson comes up in several sessions, and it never changes a note you pinned.
+
+Example. A brief to fix a flaky test is judged normal. Three models qualify; the picker gives it to Gemini Flash because the Claude subscription is ahead of pace this week. The worker finishes in nine minutes and its caller rates it 3 of 5 for a sloppy report. Next week that model's normal-level score is a little lower, and a similar job may go elsewhere.
+
+The Quality panel (TUI tab 3) shows each model's record by level, in minutes of the orchestrator's time per task.
+
+## Smart defaults, and you can change almost anything
+
+agent-net works the day you install it. A CTO, a picker, delivery steps and a Desk are all set up with defaults that fit one person running a handful of projects. When you want it to work differently, almost everything is a setting, a charter or a rule, and the CTO can change it for you in plain words.
+
+| You can change | For example |
+|---|---|
+| The CTO | Its harness and model, its title, and its standing orders |
+| The chief of staff | Which session plays the part, its model, and its charter |
+| Charters | What each project does, accepts and refuses, and when it must ask you |
+| Teams and leads | Who leads which projects, and whether members ask the lead or you |
+| Rules between projects | Who may ask whom, and whether requests run, wait for you or are refused |
+| Delivery steps | Who accepts, reviews, tests, merges, releases and verifies, per project |
+| Worker choice | Registered models, protected subscriptions, level floors, playbook notes |
+| Background behaviour | Wake on message, standing loops and their interval |
+
+The defaults are conservative where it matters: nothing deletes data, spends money or touches secrets without you.
 
 ## Your memory: the swarm learns how you decide
 
