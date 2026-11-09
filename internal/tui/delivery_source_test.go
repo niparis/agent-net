@@ -439,16 +439,16 @@ func TestGatewayDeliveryPagesThroughEveryState(t *testing.T) {
 	if len(f.calls) != 4 || f.ops[0] != protocol.OpChangesOwnerFind {
 		t.Fatalf("calls %+v ops %v", f.calls, f.ops)
 	}
-	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize}); f.calls[0] != want {
+	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize, Lite: true}); f.calls[0] != want {
 		t.Errorf("first call %+v, want %+v", f.calls[0], want)
 	}
-	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize, Cursor: "ch_5"}); f.calls[1] != want {
+	if want := (protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: deliveryPageSize, Cursor: "ch_5", Lite: true}); f.calls[1] != want {
 		t.Errorf("second call %+v, want %+v", f.calls[1], want)
 	}
-	if want := (protocol.ChangesFindArgs{State: protocol.ChangeDone, Limit: deliveryPageSize}); f.calls[2] != want {
+	if want := (protocol.ChangesFindArgs{State: protocol.ChangeDone, Limit: deliveryPageSize, Lite: true}); f.calls[2] != want {
 		t.Errorf("done call %+v, want %+v", f.calls[2], want)
 	}
-	if want := (protocol.ChangesFindArgs{State: protocol.ChangeStopped, Limit: deliveryPageSize}); f.calls[3] != want {
+	if want := (protocol.ChangesFindArgs{State: protocol.ChangeStopped, Limit: deliveryPageSize, Lite: true}); f.calls[3] != want {
 		t.Errorf("stopped call %+v, want %+v", f.calls[3], want)
 	}
 	// A repo filter is the project filter.
@@ -918,5 +918,17 @@ func TestDeliveryLatestFailedStepFinding(t *testing.T) {
 	ch := deliveryChangeFromView(v, t0)
 	if ch.Step != protocol.StepTest || deliveryRowFinding(ch) != latest.Note {
 		t.Fatalf("latest failure: %+v", ch)
+	}
+}
+
+func TestGatewayDeliveryAsksForItsVersionAndStaysOnNotModified(t *testing.T) {
+	f := &deliveryCaller{pages: []protocol.ChangesFindResult{{NotModified: true}}}
+	src := newGatewayDelivery(f.Call, func() time.Time { return t0 })
+	src.SetIfVersion(17)
+	if _, err := src.Changes(context.Background(), ""); !errors.Is(err, errDeliveryNotModified) {
+		t.Fatalf("unchanged list: %v", err)
+	}
+	if len(f.calls) != 1 || f.calls[0].IfVersion != 17 || !f.calls[0].Lite {
+		t.Fatalf("call %+v, want if_version 17 and lite", f.calls)
 	}
 }

@@ -114,10 +114,12 @@ type deliveryState struct {
 	changes []deliveryChange
 	err     string
 
-	loading       bool      // a list load is out
-	loadedAt      time.Time // when the last load started
-	topicVersion  uint64
-	topicSeen     bool
+	loading      bool      // a list load is out
+	loadedAt     time.Time // when the last load started
+	topicVersion uint64
+	topicSeen    bool
+	// dataVersion is the changes topic version the held list was read at.
+	dataVersion   uint64
 	detailLoading bool // the full change is out
 	detailErr     string
 	expanded      map[string]bool
@@ -136,6 +138,10 @@ type deliveryStartMsg struct{}
 type deliveryLoadedMsg struct {
 	changes []deliveryChange
 	err     error
+	// version is the changes topic version at the start of the load.
+	version uint64
+	// notModified means the list on screen is still current.
+	notModified bool
 }
 
 // withDeliverySource sets where the view gets its changes.
@@ -151,11 +157,15 @@ func (m Model) deliveryLoad() tea.Cmd {
 	if src == nil {
 		return nil
 	}
+	version := m.topicVersions[protocol.TopicChanges]
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), deliveryLoadTimeout)
 		defer cancel()
 		changes, err := src.Changes(ctx, "")
-		return deliveryLoadedMsg{changes: changes, err: err}
+		if errors.Is(err, errDeliveryNotModified) {
+			return deliveryLoadedMsg{notModified: true, version: version}
+		}
+		return deliveryLoadedMsg{changes: changes, err: err, version: version}
 	}
 }
 
@@ -175,6 +185,9 @@ func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
 	m.delivery.loading, m.delivery.loadedAt = true, m.now()
 	if v, ok := m.topicVersions[protocol.TopicChanges]; ok {
 		m.delivery.topicVersion, m.delivery.topicSeen = v, true
+	}
+	if v, ok := m.deliverySrc.(interface{ SetIfVersion(uint64) }); ok {
+		v.SetIfVersion(m.delivery.dataVersion)
 	}
 	return m, m.deliveryLoad()
 }
@@ -448,6 +461,13 @@ func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 	d := m.delivery
 	prev, had := m.selectedChange()
 	d.loaded, d.loading = true, false
+	if msg.notModified {
+		// The topic did not move: the list on screen is still current and
+		// costs no bytes to keep.
+		d.err, d.dataVersion = "", msg.version
+		m.delivery = d
+		return m, nil
+	}
 	if msg.err != nil {
 		d.err = msg.err.Error()
 	} else {
@@ -461,6 +481,7 @@ func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 			}
 		}
 		d.changes = changes
+		d.dataVersion = msg.version
 	}
 	m.delivery = d
 	visible := m.deliveryVisible()
