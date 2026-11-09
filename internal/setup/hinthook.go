@@ -35,7 +35,6 @@ const hintTimeoutSeconds = 2
 // shell commands are looked at there, for a command that printed an error and
 // still exited 0 (curl without --fail).
 var hintEvents = []struct{ event, matcher string }{
-	{"PreToolUse", "Bash"},
 	{"PostToolUseFailure", ""},
 	{"PostToolUse", "Bash"},
 }
@@ -235,8 +234,82 @@ func withoutHooks(doc *settingsDoc, ours func(string) bool) (changed bool, err e
 
 // withHint adds our hooks (after removing an older copy of them, so a moved
 // binary is updated). changed says whether the document differs.
+var hintPreconditions = []string{"Bash(gh pr merge*)", "Bash(gh pr close*)", "Bash(gh workflow run*)"}
+
+func hintPreHooksCurrent(doc *settingsDoc, cmd string) bool {
+	hooks, err := hooksOf(doc)
+	if err != nil {
+		return false
+	}
+	i := hooks.indexOf("PreToolUse")
+	if i < 0 {
+		return false
+	}
+	groups, err := groupsOf(hooks.members[i].val)
+	if err != nil {
+		return false
+	}
+	found := map[string]bool{}
+	for _, group := range groups {
+		all, some, entries := groupHas(group, isHintCommand)
+		if !some {
+			continue
+		}
+		var g struct {
+			Matcher string `json:"matcher"`
+		}
+		var entry struct {
+			Command string `json:"command"`
+			Timeout int    `json:"timeout"`
+			If      string `json:"if"`
+		}
+		if !all || len(entries) != 1 || json.Unmarshal(group, &g) != nil || json.Unmarshal(entries[0], &entry) != nil || g.Matcher != "Bash" || entry.Command != cmd || entry.Timeout != hintTimeoutSeconds || found[entry.If] {
+			return false
+		}
+		found[entry.If] = true
+	}
+	if len(found) != len(hintPreconditions) {
+		return false
+	}
+	for _, condition := range hintPreconditions {
+		if !found[condition] {
+			return false
+		}
+	}
+	return true
+}
+
 func withHint(doc *settingsDoc, cmd string) (changed bool, err error) {
-	return withHooks(doc, cmd, isHintCommand, hintEvents, hintTimeoutSeconds)
+	if hooksAreCurrent(doc, cmd, isHintCommand, hintEvents, hintTimeoutSeconds) && hintPreHooksCurrent(doc, cmd) {
+		return false, nil
+	}
+	before := string(doc.encode())
+	if _, err = withoutHint(doc); err != nil {
+		return false, err
+	}
+	if _, err = withHooks(doc, cmd, isHintCommand, hintEvents, hintTimeoutSeconds); err != nil {
+		return false, err
+	}
+	hooks, err := hooksOf(doc)
+	if err != nil {
+		return false, err
+	}
+	var groups []json.RawMessage
+	if i := hooks.indexOf("PreToolUse"); i >= 0 {
+		groups, err = groupsOf(hooks.members[i].val)
+		if err != nil {
+			return false, fmt.Errorf("hooks.PreToolUse in settings is not a list")
+		}
+	}
+	for _, condition := range hintPreconditions {
+		group := map[string]any{"matcher": "Bash", "hooks": []any{map[string]any{"type": "command", "command": cmd, "timeout": hintTimeoutSeconds, "if": condition}}}
+		raw, _ := json.Marshal(group)
+		groups = append(groups, raw)
+	}
+	raw, _ := json.Marshal(groups)
+	setMember(hooks, "PreToolUse", raw)
+	setMember(doc, "hooks", encodeObject(hooks))
+	return string(doc.encode()) != before, nil
 }
 
 // withHooks adds cmd on each event (after removing older hooks of ours).

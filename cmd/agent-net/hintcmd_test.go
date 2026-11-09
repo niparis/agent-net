@@ -46,7 +46,7 @@ func deniedMerge(failure string) string {
 		`"tool_input":{"command":"gh pr merge 12 --squash"},"error":` + strconv.Quote(failure) + `}`
 }
 
-const leadLine = "agent-net: in this team, merges and other blocked steps belong to your lead lead (s_lead) under the owner's team rule (asks_to=lead). Hand the change over (the PR link and your review) with agent_message_send, and say it is for the lead's own merge decision, not a request to run your denied command."
+const leadLine = "agent-net: in this team, merges and other blocked steps belong to your lead lead (s_lead) under the owner's team rule (asks_to=lead). If this session cannot run it, hand the change over (the PR link and your review) with agent_message_send for the lead's own merge decision."
 
 var oneHint = protocol.HintResult{Text: "agent-net: ask cogforge (session s_1)."}
 

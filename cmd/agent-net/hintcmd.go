@@ -150,7 +150,7 @@ func shellCommandWord(raw string) (word string, ended bool) {
 
 // leadDeniedLine tells the member how to hand the change to the lead.
 func leadDeniedLine(res protocol.TeamLeadResult) string {
-	return fmt.Sprintf("agent-net: in this team, merges and other blocked steps belong to your lead %s (%s) under the owner's team rule (asks_to=lead). Hand the change over (the PR link and your review) with agent_message_send, and say it is for the lead's own merge decision, not a request to run your denied command.", res.Lead, res.LeadSession)
+	return fmt.Sprintf("agent-net: in this team, merges and other blocked steps belong to your lead %s (%s) under the owner's team rule (asks_to=lead). If this session cannot run it, hand the change over (the PR link and your review) with agent_message_send for the lead's own merge decision.", res.Lead, res.LeadSession)
 }
 
 func leadStepCommand(command string) bool {
