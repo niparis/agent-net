@@ -104,7 +104,7 @@ More agents need structure, not more prompting.
 - A **charter** is a few lines per project: what it does, what it accepts, what it refuses, and when it must ask you. *"homelab-agent refuses to touch the encryption key."*
 - A **team** groups projects that belong together, with one session as its **lead**. Members ask the lead first, not you. *"The forge team's lead may merge its members' work."*
 - **Rules between projects** say who may ask whom, and whether a request runs, waits for you or is refused.
-- **Steps** carry every change through accept, review, test, merge, release and verify. Each step has an owner, someone other than the author checks the work, and the evidence is recorded.
+- **Steps** carry every change through accept, test, merge, release and verify, with a review for riskier changes. Each step has an owner, and the evidence is recorded. Tests and merges belong to a merger, not to the agent that wrote the change.
 
 Example. The forge lead approves a deploy. A member asks the operator agent to deploy and quotes the approval. agent-net shows the operator the original message, so it deploys without asking again. You see one line in the log.
 
@@ -201,7 +201,7 @@ The common criticism of multi-agent systems is right about one shape: many agent
 
 - **Each agent owns its piece.** One session per project, or one worker per task, with its own context and its own git branch. Two agents do not edit the same thing at once.
 - **Agents talk where their work meets.** When a change crosses projects, one session tells the other, the way two engineers on two services do. A worker gets a written brief and hands back a checked report, not a shared transcript.
-- **Someone other than the author checks every change.** Accept, review, test, merge, release and verify each have an owner.
+- **Every change is checked before it ships.** Accept, test, merge, release and verify each have an owner, riskier changes get a review, and the tests run in a merger, not in the session that wrote the code.
 - **Cost is chosen.** Each task goes to the cheapest model that is good enough for it, spread across your subscriptions.
 - **You supervise by exception.** Leads answer their members, the chief of staff sorts the rest, and only real decisions reach your Desk.
 
