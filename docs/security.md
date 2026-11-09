@@ -758,6 +758,7 @@ The daemon scans its own machine at start, after it reconnects and every five mi
 
 - Skill-entry symlinks are followed only when their resolved folder is inside the home. The scanner opens the folder within the home root and rechecks the target. A separate comparison fingerprint omits executable bits and common editor noise; integrity operations use the strict hash.
 - A comparison manifest: at most 200 files and 64 KiB of JSON per skill copy. An oversized manifest is marked too large to compare; no partial file list is sent.
+- A prompt or agent file (a Claude Code command or subagent, one Markdown file): at most 64 MiB, read through the opened folder root, so a link out of the home or a file that changes while it is read is refused. The scan sends the same fields as for a skill: name, path, hash, front-matter description and a one-entry manifest. Import packs the file as a one-file bundle and the gateway checks it against the observed hash with the same 2 MiB limit.
 - A skill bundle: at most 10,000 entries and 64 MiB of regular file data. Special files, absolute or escaping symlinks and files that change while being read are rejected.
 - Pi source discovery: at most 10,000 directories and 32 path components.
 - MCP and settings files: 1 MiB. A report: 10,000 entries, 512 KiB of field text, 1 MiB of manifests and 3 MiB encoded. A single file list is limited to 256 KiB. Reads are paged to 240 KiB.

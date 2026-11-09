@@ -65,3 +65,35 @@ func TestInventoryTrackedUsesOneListingPerProjectRoot(t *testing.T) {
 		t.Fatalf("%d listings for one project root", calls)
 	}
 }
+
+// A project command or agent is tracked when git lists that file. One that is
+// only in the checkout is a local copy.
+func TestInventoryMarksTrackedProjectCommandsAndAgents(t *testing.T) {
+	home := t.TempDir()
+	repo := t.TempDir()
+	for _, f := range []string{".claude/commands/committed.md", ".claude/commands/local-only.md", ".claude/agents/committed-agent.md", ".claude/agents/local-agent.md"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(repo, f)), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, f), []byte("text "+f), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitIn(t, repo, "init", "-q", "-b", "main")
+	gitIn(t, repo, "add", ".claude/commands/committed.md", ".claude/agents/committed-agent.md")
+	gitIn(t, repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "files")
+	report := inventory.Scan(inventory.Options{Home: home, Machine: "m", Projects: []protocol.ProjectEntry{{Name: "repo", Path: repo}}})
+	markTrackedSkills(&report)
+	got := map[string]bool{}
+	for _, it := range report.Items {
+		if protocol.IsFileKind(it.Kind) && it.Scope == protocol.InventoryProject {
+			got[it.Kind+":"+it.Name] = it.Tracked
+		}
+	}
+	want := map[string]bool{"prompt:committed": true, "prompt:local-only": false, "agent:committed-agent": true, "agent:local-agent": false}
+	for k, v := range want {
+		if g, ok := got[k]; !ok || g != v {
+			t.Errorf("%s tracked=%v (seen %v), want %v", k, g, ok, v)
+		}
+	}
+}
