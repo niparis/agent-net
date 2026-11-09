@@ -242,6 +242,7 @@ The short version. The full model, including what is not protected, is in [docs/
 - A machine joins with a one-time code (10 minutes, one use) and the SHA-256 of the gateway's CA. Traffic is TLS with the gateway's own CA, and each machine has its own token.
 - The daemon checks which local process is calling, from the kernel's view of the caller's process.
 - A message from another agent is never your approval. Owner-only changes need your action in the TUI.
+- The CTO's messages are not reviewed by Claude Code's auto-mode check; each receiving agent's charter and permission checks still apply.
 - Connected apps: off by default. Each app is approved by you in the TUI with a one-time code, gets only its own tools, and is rate limited. Revoke it with `x`.
 - The guidance agent-net adds to your instruction files is advice to the model, not enforcement.
 - Not protected: a compromised enrolled machine, prompt injection carried in a message, and any process running as your user.

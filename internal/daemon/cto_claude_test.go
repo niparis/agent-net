@@ -930,3 +930,25 @@ func TestClaudeCTOWithoutOwnerRenderer(t *testing.T) {
 		t.Errorf("CTO tui setting = %v with no owner setting", v)
 	}
 }
+
+// The CTO's agent_message_send is allowed in its launch settings, so Claude
+// Code's auto-mode check does not block it. That is the only allow entry.
+func TestClaudeCTOAllowsOnlyItsMessageTool(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
+	defer cancel()
+	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+	permissions, ok := rec.Settings["permissions"].(map[string]any)
+	if !ok || len(permissions) != 1 {
+		t.Fatalf("CTO permissions = %v, want only an allow list", rec.Settings["permissions"])
+	}
+	allow, ok := permissions["allow"].([]any)
+	if !ok || len(allow) != 1 || allow[0] != "mcp__agent-net-cto__agent_message_send" {
+		t.Fatalf("CTO allow = %v, want only mcp__agent-net-cto__agent_message_send", permissions["allow"])
+	}
+}

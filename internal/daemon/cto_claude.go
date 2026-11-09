@@ -259,7 +259,9 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	if err := claudetrust.Set(dir); err != nil {
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
-	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "1"}}
+	// The CTO's message tool is allowed, so Claude Code's auto-mode check does not
+	// block it. The name is the cto-mcp server's tool: mcp__<server>__<tool>.
+	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "permissions": map[string]any{"allow": []string{"mcp__agent-net-cto__agent_message_send"}}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "1"}}
 	if tui := ownerClaudeRenderer(d.cfg.ClaudeSessionsDir); tui != "" {
 		launch["tui"] = tui
 	}
