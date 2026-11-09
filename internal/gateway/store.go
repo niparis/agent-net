@@ -1239,7 +1239,7 @@ CREATE TABLE IF NOT EXISTS worker_defect_auto (
  defect_id INTEGER PRIMARY KEY, change_id TEXT NOT NULL, kind TEXT NOT NULL,
  revision INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS worker_defect_auto_key ON worker_defect_auto(change_id, kind, revision);
-`}
+`, chiefMigration}
 
 // teamAsksToMigration adds the team setting that sends a member's questions
 // for the owner to its team lead (decision 0100).
@@ -1679,6 +1679,25 @@ func (s *Store) migrate() error {
 			}
 			if err == nil {
 				result, err = tx.Exec(asksMigrationRest)
+			}
+		} else if strings.Contains(migrations[i], "Chief of staff (decision 0111)") {
+			// The two columns are added only when missing, so a database that
+			// was rewound keeps its values. The tables are created with IF NOT EXISTS.
+			for _, col := range []struct{ name, spec string }{
+				{"priority", `INTEGER NOT NULL DEFAULT 0`}, {"chief_sent_at", `INTEGER NOT NULL DEFAULT 0`},
+			} {
+				var has int
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
+					break
+				}
+				if has == 0 {
+					if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
+				result, err = tx.Exec(migrations[i])
 			}
 		} else if strings.Contains(migrations[i], "Team asks_to (decision 0100)") {
 			var has int

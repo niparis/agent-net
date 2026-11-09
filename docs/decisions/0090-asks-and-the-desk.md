@@ -2,7 +2,7 @@
 
 Date: 2026-11-08
 Status: Accepted by the owner. Part A1 (store, sources, auto-close, log, RPC)
-and part A2 (the Desk tab) are built. Part B (the chief of staff) is not.
+and part A2 (the Desk tab) are built. Part B1 (the chief of staff, gateway and daemon) is built, see [0111](0111-chief-of-staff.md).
 
 ## The problem
 
@@ -120,7 +120,8 @@ the Desk, because `a` approves an ask. `l` opens the log.
 ## Part B
 
 The chief of staff, a separate role that sorts asks (`next = chief`,
-`why_you`) under its own charter. Not built.
+`why_you`) under its own charter. Part B1, the gateway and daemon side, is built
+(see [0111](0111-chief-of-staff.md)). The Desk screens for it are not.
 
 ## Cost
 

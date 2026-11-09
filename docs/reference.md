@@ -2487,6 +2487,52 @@ An ask closes by itself with a kept reason: `change_done` (the change it is abou
 
 The log (`desk_log`) holds what is not a question: "CTO applied ...", "CTO sent ...", a new app, and what the gateway did by itself (closing an ask, reminders, idle checks, retired notices). It keeps the newest 2000 lines. The Desk tab (tab 7) shows the asks, the changes in flight and the log. The CTO and app notices are in the log only: the migration that came with the Desk closed their old Inbox rows (`moved_to_log`), and `desk_settle` marks a log line as undone.
 
+## The chief of staff (decision 0111)
+
+A registered agent session sorts the asks that would go to the owner first. The
+owner or the CTO names it with `chief.set` (operator `chief_set`, `{session_id}`;
+an empty id clears it). The session must be a live agent session, not a worker,
+the owner, the CTO or a bot. Its model is the setting `chief.model`, default
+`codex · openai · gpt-6.1-sol · medium`, which `chief.get` (operator `chief_get`)
+returns with the session, its name and whether it is online.
+
+**Routing.** A new ask goes to the chief (`next = chief`, the Desk shows it as
+"with someone") when a chief is online and the ask does not name another next.
+The chief's own asks go to the owner. A team lead's route is not changed.
+
+**Batches.** Asks for the chief leave as one message from `agent-net` after a
+quiet window of 5 seconds since the newest ask, and never later than 30 seconds
+after the oldest. One message holds up to 25 asks: id, kind, asker, subject,
+question, options, recommendation and up to five related open asks. The gateway
+checks for due batches once a second. A sent ask is never sent again.
+
+**Fallback.** An ask the chief has not sorted in 15 minutes (a constant) goes to
+the owner. An ask waiting on a chief that is offline goes to the owner at once.
+Each one writes a Desk log line (`The chief of staff did not sort it in 15
+minutes, so it is with you: ...` or `The chief of staff is offline, ...`).
+
+**`agent_ask_sort {ask, result, reason, into, to, priority, why_you}`** (any
+agent session; only the live chief may call it, others are refused). `reason` is
+required, up to 300 characters.
+
+- `close`: the ask closes; its answer is `chief: <reason>`.
+- `merge`: the ask closes; `into` is another open ask, which gets the line
+  `merged: <id>` in its detail.
+- `send`: `to` is a live session that gets the ask as a message from `agent-net`
+  naming the chief. The ask waits on that session.
+- `owner`: the ask goes to the owner. `priority` (1 to 3) and `why_you` are
+  required.
+
+Every sort writes one `ask_sorts` row with the ask as it was (`prev_next`,
+`prev_status`, `prev_answer`, `prev_answered_at`) and one Desk log line with
+source `chief`. Nothing is deleted.
+
+**`ask_history` `{ask}`** (operator `ask_history`, gateway `ask.history`) returns
+`{"sorts": [...]}`, oldest first. Each sort has `at`, `sorter`, `result`,
+`into`, `to`, `reason`, `priority`, `why_you` and the `prev_*` fields.
+
+Asks now carry `priority` (the chief's rank for an ask sent to the owner).
+
 ## Waiting sessions on the Desk (tab 7)
 
 A session can wait for you: it asks permission for a tool, asks a question, or wants your input. The TUI lists those sessions on the Desk (decision [0016](decisions/0016-needs-you.md)). Every machine's TUI sees them, so one screen answers "what needs me" across the network.

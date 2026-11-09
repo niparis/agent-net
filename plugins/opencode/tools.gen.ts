@@ -42,6 +42,63 @@ export const TOOL_CATALOG = [
     "method": "announce"
   },
   {
+    "name": "agent_ask_sort",
+    "description": "Chief of staff only: sort one ask that waits for you. close it, merge it into another open ask, send it to a session, or send it to the owner with priority and why_you. Sort only; never answer for the owner.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ask": {
+          "type": "string",
+          "description": "The ask id from the chief's batch message."
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "close",
+            "merge",
+            "send",
+            "owner"
+          ],
+          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it."
+        },
+        "into": {
+          "type": "string",
+          "description": "For merge: the open ask id to merge into."
+        },
+        "to": {
+          "type": "string",
+          "description": "For send: the session id that should answer it."
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Why, in one line."
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "For owner: 1 is most urgent."
+        },
+        "why_you": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "For owner: why only the owner can decide it."
+        }
+      },
+      "required": [
+        "ask",
+        "result",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "ask_sort"
+  },
+  {
     "name": "agent_change_submit",
     "description": "Submit work done outside a worker as a change, so agent-net moves it through the project's delivery steps. A worker's complete hand-back submits its change by itself. A new head commit on the same change makes a new revision.",
     "inputSchema": {

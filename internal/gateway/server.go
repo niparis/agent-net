@@ -456,6 +456,8 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				for _, node := range nodes {
 					g.dispatchPending(ctx, node, false)
 				}
+				// The chief of staff's asks go out in batches (decision 0111).
+				g.flushChief(ctx)
 			}()
 		case <-appsCleanup.C:
 			func() {
@@ -2540,6 +2542,24 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad ask.close")
 		}
 		return map[string]bool{"ok": true}, st.CloseExternalAsk(nc.id, p)
+
+	case "chief.get":
+		return st.ChiefStatus()
+
+	case "chief.set":
+		p, err := decode[protocol.ChiefSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad chief.set")
+		}
+		return map[string]bool{"ok": true}, st.SetChief(p, graphActor(raw))
+
+	case "ask.history":
+		p, err := decode[protocol.AskHistoryRequest](raw)
+		if err != nil {
+			return nil, reject("bad ask.history")
+		}
+		sorts, err := st.AskSortHistory(p.Ask)
+		return protocol.AskHistoryResult{Sorts: sorts}, err
 
 	case "inbox.answer":
 		var p struct {

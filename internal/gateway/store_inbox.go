@@ -87,9 +87,10 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	if len(item.Text) > protocol.MaxBodyBytes || len(item.Recommendation) > protocol.MaxBodyBytes || len(item.Detail) > protocol.MaxBodyBytes {
 		return item, reject("inbox text too long")
 	}
-	nextWho := item.NextWho
-	if nextWho == "" {
-		nextWho = protocol.AskNextOwner
+	// An ask goes to the chief of staff when one is live (decision 0111).
+	nextWho, err := chiefRoute(db, item)
+	if err != nil {
+		return item, err
 	}
 	if len(item.Options) > 4 {
 		return item, reject("too many options")

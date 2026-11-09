@@ -1071,6 +1071,14 @@ settings:
     levels: [network, repo]
     default: "Check the change works in the real setup, the way the owner will use it. Pass, fail with what is wrong, or needs_owner when only the owner can check."
     live: true
+  - key: chief.model
+    description: Model of the chief of staff session, as harness, provider, model and effort in one line. Used when the owner or the CTO starts the chief (decision 0111).
+    kind: rule
+    type: string
+    levels: [network]
+    default: "codex · openai · gpt-6.1-sol · medium"
+    live: true
+
 ledger:
   - {row: 1, code: "guidance is always synced at startup"}
   - {row: 2, keys: [guidance.intro_text], step: 4}

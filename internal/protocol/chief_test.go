@@ -1,0 +1,34 @@
+package protocol
+
+import "testing"
+
+// Each sort result needs what it acts on: a target for merge, a session for
+// send, a priority and a why_you line for owner. A reason is always needed.
+func TestAskSortArgsValidate(t *testing.T) {
+	ok := []AskSortArgs{
+		{Ask: "i_1", Result: AskSortClose, Reason: "answered"},
+		{Ask: "i_1", Result: AskSortMerge, Into: "i_2", Reason: "same"},
+		{Ask: "i_1", Result: AskSortSend, To: "s_2", Reason: "theirs"},
+		{Ask: "i_1", Result: AskSortOwner, Priority: 3, WhyYou: "only you can decide", Reason: "decision"},
+	}
+	for _, a := range ok {
+		if err := a.Validate(); err != nil {
+			t.Errorf("%+v: %v", a, err)
+		}
+	}
+	bad := []AskSortArgs{
+		{Result: AskSortClose, Reason: "x"},
+		{Ask: "i_1", Result: AskSortClose},
+		{Ask: "i_1", Result: "answer", Reason: "x"},
+		{Ask: "i_1", Result: AskSortMerge, Reason: "x"},
+		{Ask: "i_1", Result: AskSortSend, Reason: "x"},
+		{Ask: "i_1", Result: AskSortOwner, Priority: 0, WhyYou: "x", Reason: "x"},
+		{Ask: "i_1", Result: AskSortOwner, Priority: 4, WhyYou: "x", Reason: "x"},
+		{Ask: "i_1", Result: AskSortOwner, Priority: 1, Reason: "x"},
+	}
+	for _, a := range bad {
+		if err := a.Validate(); err == nil {
+			t.Errorf("accepted %+v", a)
+		}
+	}
+}
