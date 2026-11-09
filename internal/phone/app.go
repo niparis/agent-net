@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,12 +65,40 @@ func New(src source) http.Handler {
 	})
 }
 
+// queryFrom reads what a page names: its row, the Changes filter, whether the
+// CTO panel is open, and its older-history offset. The panel remembers its open
+// state in a cookie as well as localStorage, so a page arrives already open.
+func queryFrom(r *http.Request) query {
+	q := query{Selected: r.URL.Query().Get("s"), Filter: r.URL.Query().Get("f")}
+	q.CTO = r.URL.Query().Get("cto") == "1"
+	if c, err := r.Cookie("anw-cto"); err == nil && c.Value == "1" {
+		q.CTO = true
+	}
+	if h, err := strconv.Atoi(r.URL.Query().Get("h")); err == nil && h > 0 {
+		q.H = h
+	}
+	return q
+}
+
+// localBack is the page a form returns to. Anything that is not a path on this
+// console returns to the Desk, so a form cannot send the owner outside.
+func localBack(v string) string {
+	if v == "" || !strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") || strings.Contains(v, `\`) {
+		return "/"
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.IsAbs() || u.Host != "" || strings.Contains(u.Path, `\`) {
+		return "/"
+	}
+	return u.RequestURI()
+}
+
 // screen serves one full page.
 func (a *app) screen(id string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
 		defer cancel()
-		p := a.load(ctx, id, query{Selected: r.URL.Query().Get("s"), Filter: r.URL.Query().Get("f")})
+		p := a.load(ctx, id, queryFrom(r))
 		var b bytes.Buffer
 		if err := shell.ExecuteTemplate(&b, "page", p); err != nil {
 			http.Error(w, "page error", http.StatusInternalServerError)
@@ -98,15 +127,18 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "daemon unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	id, act := r.PostForm.Get("id"), strings.TrimSpace(r.PostForm.Get("action"))
-	if id == "" || act == "" {
+	kind := r.PostForm.Get("kind")
+	id, act := strings.TrimSpace(r.PostForm.Get("id")), strings.TrimSpace(r.PostForm.Get("action"))
+	text := strings.TrimSpace(r.PostForm.Get("text"))
+	// Only the CTO composer has no id or action value: its words are the text.
+	if kind == "" || (kind != "cto_send" && (id == "" || act == "")) {
 		http.Error(w, "missing action", http.StatusBadRequest)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
 	defer cancel()
-	back := "/"
-	switch r.PostForm.Get("kind") {
+	back := localBack(r.PostForm.Get("back"))
+	switch kind {
 	case "held":
 		if act != "a" && act != "A" && act != "r" && act != "R" {
 			err = fmt.Errorf("invalid action")
@@ -139,6 +171,29 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 		// screen (conversation id, recipient session, text).
 		err = a.reply(ctx, id, r.PostForm.Get("to"), act)
 		back = "/messages?s=" + url.QueryEscape(id)
+	case "cto_send":
+		// The owner's words to the CTO, on the same call the TUI makes. The
+		// daemon wakes the CTO harness when it is not running.
+		if text == "" {
+			err = fmt.Errorf("the message is empty")
+		} else if len(text) > protocol.MaxBodyBytes {
+			err = fmt.Errorf("the message is longer than %d bytes", protocol.MaxBodyBytes)
+		} else {
+			_, err = a.src.Call(ctx, protocol.OpCTOSend, protocol.CTOSendRequest{Text: text})
+		}
+	case "proposal":
+		// Apply or decline one open CTO proposal, with the same owner answer
+		// the TUI sends.
+		if act != "a" && act != "x" {
+			err = fmt.Errorf("invalid action")
+			break
+		}
+		node, derr := decodeProposalNode(r.PostForm.Get("node"))
+		if derr != nil {
+			err = derr
+			break
+		}
+		_, err = a.src.Call(ctx, protocol.OpProposalAnswer, protocol.CTOProposalAnswer{NodeID: node, ID: id, Action: act})
 	default:
 		err = fmt.Errorf("invalid action")
 	}

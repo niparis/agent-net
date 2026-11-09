@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,24 +51,34 @@ func screenByID(id string) screenInfo {
 // page is everything one render needs. Desk and Sessions are set for their own
 // screen only.
 type page struct {
-	Screen    screenInfo
-	Screens   []screenInfo
-	Error     string
-	Connected bool
-	AskCount  int
-	Live      string
-	EventsURL string
-	Desk      *deskView
-	Sessions  *sessionsView
-	Changes   *changesView
-	Messages  *messagesView
-	Graph     *graphView
-	Workers   *workersView
+	Screen       screenInfo
+	Screens      []screenInfo
+	Error        string
+	Connected    bool
+	AskCount     int
+	Live         string
+	EventsURL    string
+	CTOOpen      bool
+	CTOTitle     string
+	CTOBack      string
+	CTOEventsURL string
+	CTO          *ctoView
+	Desk         *deskView
+	Sessions     *sessionsView
+	Changes      *changesView
+	Messages     *messagesView
+	Graph        *graphView
+	Workers      *workersView
 }
 
-// query is what a page names beyond its screen: the selected row and, for the
-// Changes screen, the filter.
-type query struct{ Selected, Filter string }
+// query is what a page names beyond its screen: the selected row, the Changes
+// filter, whether the CTO panel is open, its older-history offset, and whether
+// only the panel should be read for its own stream.
+type query struct {
+	Selected, Filter string
+	CTO, OnlyCTO     bool
+	H                int
+}
 
 // events is the stream address of a screen with its query.
 func (q query) events(screen string) string {
@@ -77,6 +88,38 @@ func (q query) events(screen string) string {
 	}
 	if q.Filter != "" {
 		v.Set("f", q.Filter)
+	}
+	return "/events?" + v.Encode()
+}
+
+// ctoHref is a page of the console with the CTO panel open, at an older-history
+// offset when h is above zero.
+func (q query) ctoHref(s screenInfo, h int) string {
+	v := url.Values{"cto": {"1"}}
+	if q.Selected != "" {
+		v.Set("s", q.Selected)
+	}
+	if q.Filter != "" && s.ID == "changes" {
+		v.Set("f", q.Filter)
+	}
+	if h > 0 {
+		v.Set("h", strconv.Itoa(h))
+	}
+	return s.Path + "?" + v.Encode()
+}
+
+// ctoEvents is the panel's own section of the events stream. It names the
+// screen so the panel's older and newer links keep the owner where he is.
+func (q query) ctoEvents(s screenInfo) string {
+	v := url.Values{"section": {"cto"}, "screen": {s.ID}}
+	if q.Selected != "" {
+		v.Set("s", q.Selected)
+	}
+	if q.Filter != "" && s.ID == "changes" {
+		v.Set("f", q.Filter)
+	}
+	if q.H > 0 {
+		v.Set("h", strconv.Itoa(q.H))
 	}
 	return "/events?" + v.Encode()
 }
@@ -172,6 +215,26 @@ func (a *app) load(ctx context.Context, screen string, q query) page {
 		q.Filter = ""
 	}
 	p.EventsURL = q.events(p.Screen.ID)
+	p.CTOOpen = q.CTO
+	p.CTOTitle = protocol.DefaultCTOTitle
+	p.CTOBack = q.ctoHref(p.Screen, q.H)
+	p.CTOEventsURL = q.ctoEvents(p.Screen)
+	if q.CTO && a.src != nil {
+		p.CTO = a.cto(ctx, q.H)
+		if p.CTO.Title != "" {
+			p.CTOTitle = p.CTO.Title
+		}
+		if p.CTO.Older > 0 {
+			p.CTO.OlderHref = q.ctoHref(p.Screen, p.CTO.Older)
+		}
+		if q.H > 0 {
+			p.CTO.LatestHref = q.ctoHref(p.Screen, 0)
+		}
+	}
+	// The panel has its own section of the stream and reads only itself.
+	if q.OnlyCTO {
+		return p
+	}
 	if a.src == nil {
 		p.Error = "Daemon not connected."
 		return p

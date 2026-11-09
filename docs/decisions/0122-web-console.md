@@ -1,7 +1,7 @@
 # 0122 - The web console
 
 Date: 2026-11-09
-Status: Accepted by the owner (2026-11-09). Parts 1 to 3 of 4 built.
+Status: Accepted by the owner (2026-11-09). Parts 1 to 4 built.
 
 ## The problem
 
@@ -32,23 +32,27 @@ Tailscale to start. Go ahead and build it."
    (6). The top bar has the title, a live dot and the CTO button.
    - Part 1 builds Desk and Sessions. Graph, Changes, Messages and Workers say
      "coming in the next update". The CTO button opens an empty side panel that
-     says "CTO chat arrives in part 4".
+     says "CTO chat arrives in part 4" (part 4 replaces it, see items 16 and 17).
    - Part 2 is Changes and Messages (built, see items 10 to 12). Part 3 is
      Graph and Workers (built, see items 13 to 15). Part 4 is the CTO chat
-     panel.
+     panel (built, see items 16 and 17).
 4. **Read and answer only.** The console answers what waits for the owner and
    reads the rest. Its only `POST` route is `/action`, with these kinds and no
    others: `held` (`AnswerHeld`), `outcome` (`ResolveOutcome`), `inbox`
    (`inbox_answer`: approve, refuse, dismiss, an option or typed text), `mark`
    (`ask_mark`, "didn't need me"), `send` (a message as the owner to a
-   session that waits) and `reply` (the owner's words in a conversation of the
-   Messages screen). There is no route that starts or stops a session or a
-   worker, changes a charter, a team, an edge or a setting. A test holds this.
-5. **Asks the console does not answer.** A CTO proposal, a learned suggestion,
-   a charter draft and a delivery step say "Answer from the TUI". An approval
-   that needs the owner's consent page (internet access) and an approval that
-   needs evidence fields can be dismissed on the web but not approved. The TUI
-   opens the consent page and takes the evidence.
+   session that waits), `reply` (the owner's words in a conversation of the
+   Messages screen), `cto_send` (the owner's words to the CTO, `text`) and
+   `proposal` (Apply or Decline one open CTO proposal: `id`, an encoded `node`
+   target and `action` `a` or `x`). There is no route that starts or stops a
+   session or a worker, changes a charter, a team, an edge or a setting. A test
+   holds this exact list.
+5. **Asks the console does not answer.** A learned suggestion, a charter draft
+   and a delivery step say "Answer from the TUI": only the CTO panel answers a
+   proposal, with Apply and Decline, and only with the same owner action the TUI
+   sends. An approval that needs the owner's consent page (internet access) and
+   an approval that needs evidence fields can be dismissed on the web but not
+   approved. The TUI opens the consent page and takes the evidence.
 6. **Desk.** Needs you reads `asks_list`, the same list as the TUI Desk, in the
    TUI order, with the question, who asks, the kind, the age, the
    recommendation and the "why you" line. In flight lists the open changes that
@@ -129,6 +133,32 @@ Tailscale to start. Go ahead and build it."
     The Graph screen reads the graph, `chief_get` and the conversations of the
     last hour. The Workers screen reads `usage` and the worker snapshot. Neither
     screen reads the change list, the message text or the Desk lists.
+
+16. **CTO panel.** The CTO button and the key `c` open a side panel on every
+    screen. At 1180px and wider it is a third column; below that it is an
+    overlay, and on a phone it is a full-height sheet. It stays open across
+    screen changes, remembered in `localStorage` inside a try/catch and in a
+    cookie of the same name so a new page arrives already open. The header shows
+    the CTO's title from `cto_settings`, its harness and its model. The
+    conversation is the TUI CTO pane's timeline, read with `cto_events`; an
+    Older messages link asks for the page before the current offset, and Latest
+    returns to the newest page. Owner lines say "you", CTO lines are styled as
+    the CTO and harness actions are dimmed. The model's text is text: no HTML
+    from it, markdown is not rendered, and line breaks stay. The composer sends
+    with `cto_send`, the same call the TUI makes, so the words arrive from the
+    owner in person; the daemon starts or wakes the CTO harness when it is not
+    running. An open proposal from `proposal_list` is a card with Apply and
+    Decline, answered with the TUI's owner action (`proposal_answer`, `a` or
+    `x`). The card carries the proposal's machine as an encoded value, never a
+    printed node ID. The panel does not start workers or change charters or
+    settings; the CTO may do those when the owner asks it in the chat, exactly
+    as in the TUI.
+17. **Live for the panel.** `/events?section=cto&screen=<screen>&h=<offset>`
+    is the panel's own section of the same stream. It sends the panel body as
+    `event: cto` to its own id, so the screen and the panel update
+    independently. A screen stream never reads the CTO timeline. An update is
+    skipped while the owner is typing in the composer, and the panel keeps its
+    scroll place.
 
 ## Not decided here
 

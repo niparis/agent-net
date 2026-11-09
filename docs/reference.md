@@ -768,8 +768,10 @@ The console has six screens: Desk (`/`, key `1`), Sessions (`/sessions`, `2`),
 Graph (`/graph`, `3`), Changes (`/changes`, `4`), Messages (`/messages`, `5`)
 and Workers (`/workers`, `6`). On a desk they sit in a left rail. Under 760px
 wide they sit in a bottom bar. The top bar has the title, a live dot and the CTO
-button, which opens a side panel (key `c`). All six screens are built. The CTO
-panel says that chat arrives in part 4.
+button, which opens the owner's conversation with the CTO (key `c`). The panel
+is a third column at 1180px and wider, an overlay below that, and a full-height
+sheet on a phone. It stays open across screen changes, remembered in
+`localStorage` and in a cookie of the same name.
 
 - **Desk** shows Needs you (the open asks of the TUI Desk, with the
   recommendation and the "why you" line), In flight (open delivery changes that
@@ -819,18 +821,38 @@ panel says that chat arrives in part 4.
   message arrives marked as the owner, with the conversation id, so it stays in
   that thread. A worker row groups several conversations, so a reply there goes
   to the newest one that has the chosen session as a side.
+- **CTO** (the side panel, key `c`) reads `cto_settings` for the title, harness
+  and model, `cto_events` for the same timeline as the TUI CTO pane and
+  `proposal_list` for the open proposals. The header shows the title from the
+  setting and the harness and model. Owner lines say "you"; CTO lines are
+  styled as the CTO and harness actions are dimmed. The model's text is text:
+  it is escaped, markdown is not rendered, and its line breaks stay. An Older
+  messages link reads the page before the current offset, and Latest returns to
+  the newest page. The composer sends with `cto_send`, the call the TUI makes,
+  so the words arrive from the owner in person and the daemon starts or wakes
+  the CTO harness when it is not running. An open proposal is a card with Apply
+  and Decline, answered with the TUI's owner action (`proposal_answer`, `a` or
+  `x`). The card carries the machine as an encoded value, so no node ID is
+  printed. The panel cannot start a worker or change a charter or setting; the
+  CTO itself may do those when the owner asks it in the chat.
 - The console is read and answer only. Its one write route is `POST /action`
-  with the kinds `held`, `outcome`, `inbox`, `mark`, `send` and `reply`. A
-  `reply` takes the conversation id (`id`), the recipient session (`to`) and the
-  text (`action`); the recipient must be a side of that conversation, and the
-  text is at most 64 KiB. There is no route that starts or stops sessions or
-  workers, that claims, reports or approves a step, or that changes charters,
-  teams, edges or settings.
+  with the kinds `held`, `outcome`, `inbox`, `mark`, `send`, `reply`,
+  `cto_send` and `proposal`. A `reply` takes the conversation id (`id`), the
+  recipient session (`to`) and the text (`action`); the recipient must be a
+  side of that conversation, and the text is at most 64 KiB. A `cto_send`
+  takes the owner's words in `text`. A `proposal` takes the proposal id (`id`),
+  an encoded machine target (`node`) and `action` `a` to apply or `x` to
+  decline. There is no route that starts or stops sessions or workers, that
+  claims, reports or approves a step, or that changes charters, teams, edges or
+  settings.
 - `GET /events?screen=<screen>[&s=<row>][&f=<filter>]` is a server-sent event
   stream that sends the screen again when it changes. It reads only what that
   screen shows: the Graph screen reads the graph, the chief status and the
   conversations of the last hour; the Workers screen reads the quota report
-  and the worker snapshot.
+  and the worker snapshot. `GET /events?section=cto&screen=<screen>&h=<offset>`
+  is the CTO panel's own section: it sends the panel body as `event: cto` to its
+  own id and reads only the CTO timeline and proposals, so the screen and the
+  panel update independently. An update is skipped while the owner is typing.
 - The pages load nothing from outside the gateway.
 
 For a manually configured gateway, pass `--apps-listen 127.0.0.1:7422` and

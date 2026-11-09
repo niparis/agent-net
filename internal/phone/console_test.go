@@ -27,6 +27,11 @@ type consoleOperator struct {
 	// conversation, newest first.
 	reads   map[string]int
 	threads map[string][]protocol.Message
+	// The CTO panel reads the settings, the timeline and the open proposals.
+	cto        protocol.CTOSettings
+	ctoEvents  protocol.CTOEvents
+	proposals  []protocol.CTOProposal
+	ctoIndexes []int
 }
 
 func (f *consoleOperator) Snapshot(context.Context) (operator.Snapshot, error) {
@@ -137,6 +142,39 @@ func (f *consoleOperator) Call(_ context.Context, method string, params any) (js
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		return json.Marshal(protocol.ConversationMessagesResult{Messages: f.threads[q.ConversationID]})
+	case protocol.OpCTOSettings:
+		return json.Marshal(f.cto)
+	case protocol.OpCTOEvents:
+		q, _ := params.(protocol.CTOEventsRequest)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.ctoIndexes = append(f.ctoIndexes, q.Index)
+		return json.Marshal(f.ctoEvents)
+	case protocol.OpProposalList:
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return json.Marshal(f.proposals)
+	case protocol.OpCTOSend:
+		q, _ := params.(protocol.CTOSendRequest)
+		f.record("cto_send:" + q.Text)
+		raw, _ := json.Marshal(map[string]any{"type": "user", "text": q.Text, "time": map[string]int64{"created": time.Now().UnixMilli()}})
+		f.mu.Lock()
+		f.ctoEvents.Messages = append(f.ctoEvents.Messages, raw)
+		f.mu.Unlock()
+		return nil, nil
+	case protocol.OpProposalAnswer:
+		q, _ := params.(protocol.CTOProposalAnswer)
+		f.record("proposal:" + q.NodeID + ":" + q.ID + ":" + q.Action)
+		f.mu.Lock()
+		var kept []protocol.CTOProposal
+		for _, p := range f.proposals {
+			if p.ID != q.ID {
+				kept = append(kept, p)
+			}
+		}
+		f.proposals = kept
+		f.mu.Unlock()
+		return nil, nil
 	}
 	f.record("call:" + method)
 	if method == "inbox_answer" {
@@ -166,32 +204,41 @@ func (f *consoleOperator) has(call string) bool {
 
 func newConsoleOperator() *consoleOperator {
 	now := time.Now()
-	return &consoleOperator{reads: map[string]int{}, threads: map[string][]protocol.Message{
-		"c_3": {
-			{ID: "m_b", ConversationID: "c_3", From: "s_wait", To: "s_owner", FromName: "waiting-agent", Body: "allow the tools?", CreatedAt: now.Add(-2 * time.Minute)},
-			{ID: "m_a", ConversationID: "c_3", From: "s_owner", To: "s_wait", FromName: "you (on alpha-box)", FromHarness: protocol.OwnerHarness, Body: "go ahead and run the build", OwnerInstruction: "run the build", CreatedAt: now.Add(-10 * time.Minute)},
-		},
-		"c_1": {
-			{ID: "m_c", ConversationID: "c_1", From: "s_busy", To: "s_wait", FromName: "busy-agent", Body: "recent conversation line", CreatedAt: now},
-		},
-		"c_cto": {
-			{ID: "m_d", ConversationID: "c_cto", From: "s_cto", To: "s_busy", FromName: "the CTO", FromCTO: true, Body: "cto line about the plan", CreatedAt: now.Add(-2 * time.Minute)},
-		},
-		"worker:s_w1": {
-			{ID: "m_f", ConversationID: "c_w", From: "s_w1", To: "s_wait", FromName: "worker-one", Body: "[agent-net worker notice]\nstatus: done\nrun time: 12m\n3 files changed", CreatedAt: now.Add(-3 * time.Minute)},
-			{ID: "m_e", ConversationID: "c_w", From: "s_w1", To: "s_wait", FromName: "worker-one", Body: "[agent-net worker notice]\nstatus: started", CreatedAt: now.Add(-20 * time.Minute)},
-		},
-	}, asks: []protocol.Ask{
-		{ID: "i_q", Kind: protocol.AskKindQuestion, State: protocol.AskStateOpen, From: "tenebrae", FromKind: protocol.AskFromSession, Next: protocol.AskNextOwner,
-			Question: "Allow the record tools for every session?", Recommendation: "Yes, record and read tools only.", WhyYou: "Permission settings are yours.", Options: []string{"Record only", "All tools"},
-			CreatedAt: time.Now().Add(-4 * time.Minute)},
-		{ID: "i_h", Kind: protocol.AskKindHeld, State: protocol.AskStateOpen, From: "peer-a", MessageID: "m_held", AboutID: "s_busy", Detail: "held request body", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-		{ID: "i_e", Kind: protocol.AskKindEscalation, State: protocol.AskStateOpen, From: "peer-b", MessageID: "r_esc", Question: "Request: do the thing\nReason: unclear", Recommendation: "Let it stand.", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-		{ID: "i_c", Kind: protocol.AskKindApproval, State: protocol.AskStateOpen, From: "gateway", Ref: "apps-public-consent", Question: "Allow internet access?", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-		{ID: "i_w", Kind: protocol.AskKindWaiting, State: protocol.AskStateOpen, From: "waiting-agent", FromSession: "s_wait", Question: "allow the tools?", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-		{ID: "i_p", Kind: protocol.AskKindProposal, State: protocol.AskStateOpen, From: "CTO", Ref: "proposal:n1:p1", Question: "start a session", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-		{ID: "i_other", Kind: protocol.AskKindQuestion, State: protocol.AskWithSomeone, From: "x", Question: "not yours to answer", Next: "chief", CreatedAt: time.Now()},
-	}}
+	return &consoleOperator{
+		reads: map[string]int{},
+		cto:   protocol.CTOSettings{Title: "Atlas", Harness: "claude", Model: "opus-5-5"},
+		ctoEvents: protocol.CTOEvents{Messages: []json.RawMessage{
+			json.RawMessage(`{"type":"user","text":"Good morning, CTO.","time":{"created":` + strconv.FormatInt(now.Add(-2*time.Minute).UnixMilli(), 10) + `}}`),
+			json.RawMessage(`{"type":"assistant","text":"Morning. Two things need you.\nThe first is ready.","time":{"created":` + strconv.FormatInt(now.Add(-time.Minute).UnixMilli(), 10) + `}}`),
+		}, Actions: []protocol.CTOAction{{Text: "read graph", At: now.Add(-90 * time.Second).UnixNano()}}, Older: 120},
+		proposals: []protocol.CTOProposal{{ID: "p_1", NodeID: "n_secretnode1", Tool: "graph_change", Action: "charter_set",
+			Args: json.RawMessage(`{"node":"forge","attr":"lead_merges","value":"on"}`), Reason: "Turn on lead merges for forge.", Status: "open", CreatedAt: now.Add(-time.Minute)}},
+		threads: map[string][]protocol.Message{
+			"c_3": {
+				{ID: "m_b", ConversationID: "c_3", From: "s_wait", To: "s_owner", FromName: "waiting-agent", Body: "allow the tools?", CreatedAt: now.Add(-2 * time.Minute)},
+				{ID: "m_a", ConversationID: "c_3", From: "s_owner", To: "s_wait", FromName: "you (on alpha-box)", FromHarness: protocol.OwnerHarness, Body: "go ahead and run the build", OwnerInstruction: "run the build", CreatedAt: now.Add(-10 * time.Minute)},
+			},
+			"c_1": {
+				{ID: "m_c", ConversationID: "c_1", From: "s_busy", To: "s_wait", FromName: "busy-agent", Body: "recent conversation line", CreatedAt: now},
+			},
+			"c_cto": {
+				{ID: "m_d", ConversationID: "c_cto", From: "s_cto", To: "s_busy", FromName: "the CTO", FromCTO: true, Body: "cto line about the plan", CreatedAt: now.Add(-2 * time.Minute)},
+			},
+			"worker:s_w1": {
+				{ID: "m_f", ConversationID: "c_w", From: "s_w1", To: "s_wait", FromName: "worker-one", Body: "[agent-net worker notice]\nstatus: done\nrun time: 12m\n3 files changed", CreatedAt: now.Add(-3 * time.Minute)},
+				{ID: "m_e", ConversationID: "c_w", From: "s_w1", To: "s_wait", FromName: "worker-one", Body: "[agent-net worker notice]\nstatus: started", CreatedAt: now.Add(-20 * time.Minute)},
+			},
+		}, asks: []protocol.Ask{
+			{ID: "i_q", Kind: protocol.AskKindQuestion, State: protocol.AskStateOpen, From: "tenebrae", FromKind: protocol.AskFromSession, Next: protocol.AskNextOwner,
+				Question: "Allow the record tools for every session?", Recommendation: "Yes, record and read tools only.", WhyYou: "Permission settings are yours.", Options: []string{"Record only", "All tools"},
+				CreatedAt: time.Now().Add(-4 * time.Minute)},
+			{ID: "i_h", Kind: protocol.AskKindHeld, State: protocol.AskStateOpen, From: "peer-a", MessageID: "m_held", AboutID: "s_busy", Detail: "held request body", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
+			{ID: "i_e", Kind: protocol.AskKindEscalation, State: protocol.AskStateOpen, From: "peer-b", MessageID: "r_esc", Question: "Request: do the thing\nReason: unclear", Recommendation: "Let it stand.", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
+			{ID: "i_c", Kind: protocol.AskKindApproval, State: protocol.AskStateOpen, From: "gateway", Ref: "apps-public-consent", Question: "Allow internet access?", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
+			{ID: "i_w", Kind: protocol.AskKindWaiting, State: protocol.AskStateOpen, From: "waiting-agent", FromSession: "s_wait", Question: "allow the tools?", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
+			{ID: "i_p", Kind: protocol.AskKindProposal, State: protocol.AskStateOpen, From: "CTO", Ref: "proposal:n1:p1", Question: "start a session", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
+			{ID: "i_other", Kind: protocol.AskKindQuestion, State: protocol.AskWithSomeone, From: "x", Question: "not yours to answer", Next: "chief", CreatedAt: time.Now()},
+		}}
 }
 
 func page1(t *testing.T, f *consoleOperator, path string) string {
@@ -242,7 +289,7 @@ func TestDeskRendersAsksWithRecommendationAndWhyYou(t *testing.T) {
 	for _, name := range []string{"Desk", "Sessions", "Graph", "Changes", "Messages", "Workers"} {
 		mustContain(t, "rail "+name, body, ">"+name+"<")
 	}
-	mustContain(t, "shell", body, `id="toggleCTO"`, `class="bottomnav"`, "CTO chat arrives in part 4", `class="live"`)
+	mustContain(t, "shell", body, `id="toggleCTO"`, `class="bottomnav"`, `id="ctobody"`, `id="cto" hidden`, `class="live"`)
 	// An ask that waits on someone else is not shown.
 	mustNotContain(t, "desk", body, "not yours to answer")
 	// Hand-off kinds say where to answer.
@@ -338,7 +385,7 @@ func TestNoActionRoutesForWorkersCharterOrSettings(t *testing.T) {
 			t.Errorf("POST %s: %d, want 404 or 405", path, code)
 		}
 	}
-	for _, kind := range []string{"worker_start", "worker_stop", "charter_set", "settings", "start", "stop", "graph", "edge_set", "proposal"} {
+	for _, kind := range []string{"worker_start", "worker_stop", "charter_set", "settings", "start", "stop", "graph", "edge_set"} {
 		if code := post(t, f, "/action", url.Values{"kind": {kind}, "id": {"x"}, "action": {"y"}}); code != 400 {
 			t.Errorf("kind %s: %d, want 400", kind, code)
 		}
