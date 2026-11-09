@@ -871,8 +871,24 @@ func TestProtectedQuotaGoldens(t *testing.T) {
 		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sonnet", Harness: "claude", Model: "claude-sonnet-4"}}
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "claude", Plan: "max", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 30}}}}}
 		view := ansi.Strip(m.testView())
-		if !strings.Contains(view, "🔒 claude") || !strings.Contains(view, "🔒 sonnet") {
-			t.Fatalf("missing subscription or profile lock:\n%s", view)
+		if !strings.Contains(view, "🔒 claude") {
+			t.Fatalf("missing subscription lock:\n%s", view)
+		}
+		// The profile lock is plain text in the PROT column, not an emoji in the row.
+		if !strings.Contains(view, "PROT") {
+			t.Fatalf("missing PROT column:\n%s", view)
+		}
+		profileLocked := false
+		for _, line := range lines(view) {
+			if strings.Contains(line, "sonnet") && strings.Contains(line, "prot") {
+				profileLocked = true
+			}
+			if strings.Contains(line, "sonnet") && strings.Contains(line, "🔒") {
+				t.Fatalf("profile row still has the lock emoji: %s", line)
+			}
+		}
+		if !profileLocked {
+			t.Fatalf("missing profile lock in the PROT column:\n%s", view)
 		}
 		golden(t, fmt.Sprintf("quotas_protected_%dx%d", size[0], size[1]), m.testView())
 		m = keys(m, "p")
