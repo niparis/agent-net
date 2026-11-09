@@ -156,8 +156,8 @@ func TestTeamGraphLegacyParityAndMigrationReplay(t *testing.T) {
 	}
 	// No teams must leave every legacy node, setting, edge and source untouched.
 	v := migrationVersion(t, "Team records and typed membership")
-	if v != 127 {
-		t.Fatalf("migration %d, want 127", v)
+	if v != 126 {
+		t.Fatalf("migration %d, want 126", v)
 	}
 	for i := 0; i < 2; i++ {
 		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, v); err != nil {
