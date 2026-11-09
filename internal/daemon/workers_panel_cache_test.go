@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 // A Claude session's workers panel asks every 3 seconds. While nothing on the
 // network changes, those calls must cost the gateway nothing: the daemon
 // answers from the last gateway answer, which stays valid until the gateway
-// pushes a change of the agents or workers topic.
+// pushes a change of that owner's rows. Writes of other sessions do not count.
 func TestWorkersPanelPollsCostTheGatewayNothingWhileNothingChanges(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
@@ -74,6 +75,9 @@ func TestWorkersPanelPollsCostTheGatewayNothingWhileNothingChanges(t *testing.T)
 
 	before := cliCalls("query.agents")
 	for i := 0; i < 10; i++ {
+		// Other sessions on the network write all the time. The agents topic
+		// moves with each, and the owner's rows do not: no new gateway call.
+		helloPi(t, w.node, fmt.Sprintf("bystander-%d", i), fmt.Sprintf("/other/%d", i), true)
 		got, _ := json.Marshal(panel())
 		if string(got) != string(wantJSON) {
 			t.Fatalf("poll %d changed the rows:\nwant %s\ngot  %s", i, wantJSON, got)

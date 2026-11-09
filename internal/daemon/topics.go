@@ -41,10 +41,29 @@ func (h *topicHub) subscribe(ctx context.Context, l *link, lc *localConn, reques
 	need := h.versions == nil
 	h.mu.Unlock()
 	if need {
-		if err := h.fill(ctx, l, request); err != nil {
+		versions, err := request(ctx)
+		if err != nil {
 			h.remove(lc)
 			return nil, err
 		}
+		h.mu.Lock()
+		// Pushes can precede the result. Preserve the newest version.
+		if h.link != l {
+			h.mu.Unlock()
+			h.remove(lc)
+			return nil, errors.New("gateway link changed")
+		}
+		if h.versions == nil {
+			h.versions = make(map[string]uint64)
+		}
+		for topic, v := range versions {
+			if v > h.versions[topic] {
+				h.versions[topic] = v
+			} else if _, ok := h.versions[topic]; !ok {
+				h.versions[topic] = v
+			}
+		}
+		h.mu.Unlock()
 	}
 	h.mu.Lock()
 	versions := make(map[string]uint64, len(h.versions))
@@ -53,69 +72,6 @@ func (h *topicHub) subscribe(ctx context.Context, l *link, lc *localConn, reques
 	}
 	h.mu.Unlock()
 	return versions, nil
-}
-
-// fill asks the gateway for the current versions and keeps the newest of what
-// it answers and what was pushed meanwhile. It does not take setup.
-func (h *topicHub) fill(ctx context.Context, l *link, request func(context.Context) (map[string]uint64, error)) error {
-	versions, err := request(ctx)
-	if err != nil {
-		return err
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	// Pushes can precede the result. Preserve the newest version.
-	if h.link != l {
-		return errors.New("gateway link changed")
-	}
-	if h.versions == nil {
-		h.versions = make(map[string]uint64)
-	}
-	for topic, v := range versions {
-		if v > h.versions[topic] {
-			h.versions[topic] = v
-		} else if _, ok := h.versions[topic]; !ok {
-			h.versions[topic] = v
-		}
-	}
-	return nil
-}
-
-// ensure makes the daemon itself follow the topics of l, with no local
-// client, so versions answers. The gateway pushes every change after the first
-// subscription on the link, so a later call costs nothing.
-func (h *topicHub) ensure(ctx context.Context, l *link, request func(context.Context) (map[string]uint64, error)) error {
-	h.setup.Lock()
-	defer h.setup.Unlock()
-	h.mu.Lock()
-	if h.link != l {
-		h.link, h.versions = l, nil
-	}
-	need := h.versions == nil
-	h.mu.Unlock()
-	if !need {
-		return nil
-	}
-	return h.fill(ctx, l, request)
-}
-
-// versionsOf returns the versions of the topics as the gateway last told this
-// daemon on l, and false when it has not (no subscription, another link).
-func (h *topicHub) versionsOf(l *link, topics ...string) ([]uint64, bool) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.link != l || h.versions == nil {
-		return nil, false
-	}
-	out := make([]uint64, len(topics))
-	for i, t := range topics {
-		v, ok := h.versions[t]
-		if !ok {
-			return nil, false
-		}
-		out[i] = v
-	}
-	return out, true
 }
 
 func (h *topicHub) publish(l *link, event protocol.TopicEvent) {
@@ -182,7 +138,18 @@ func (lc *localConn) subscribeTopics(ctx context.Context) (any, error) {
 		return nil, errNotConnected
 	}
 	h := &lc.d.topics
-	versions, err := h.subscribe(ctx, l, lc, requestTopicVersions(l))
+	versions, err := h.subscribe(ctx, l, lc, func(ctx context.Context) (map[string]uint64, error) {
+		raw, err := l.call(ctx, protocol.FrameTopicsSubscribe, nil)
+		if err != nil {
+			return nil, err
+		}
+		var v map[string]uint64
+		err = json.Unmarshal(raw, &v)
+		if err == nil && len(v) != len(protocol.Topics) {
+			err = errors.New("incomplete topic subscription")
+		}
+		return v, err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -208,21 +175,4 @@ func (lc *localConn) subscribeTopics(ctx context.Context) (any, error) {
 		}
 	}()
 	return versions, nil
-}
-
-// requestTopicVersions subscribes the link to the gateway's topic pushes and
-// returns the current versions.
-func requestTopicVersions(l *link) func(context.Context) (map[string]uint64, error) {
-	return func(ctx context.Context) (map[string]uint64, error) {
-		raw, err := l.call(ctx, protocol.FrameTopicsSubscribe, nil)
-		if err != nil {
-			return nil, err
-		}
-		var v map[string]uint64
-		err = json.Unmarshal(raw, &v)
-		if err == nil && len(v) != len(protocol.Topics) {
-			err = errors.New("incomplete topic subscription")
-		}
-		return v, err
-	}
 }
