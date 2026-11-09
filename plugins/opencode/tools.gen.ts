@@ -43,7 +43,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff only: sort one ask that waits for you. close it, merge it into another open ask, send it to a session, or send it to the owner with priority and why_you. detail: \"full\" reads one ask instead: the whole question, recommendation, options, source, route and exact draft or learned payload. Sort only; never answer for the owner.",
+    "description": "Chief of staff only: sort one ask that waits for you. close it, merge it into another open ask, send it to a session, or send it to the owner with priority and why_you. detail: \"full\" reads one ask in full. Sort only; never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -56,7 +56,7 @@ export const TOOL_CATALOG = [
           "enum": [
             "full"
           ],
-          "description": "full: read this one ask in full instead of sorting it. Leave result and the sort fields empty."
+          "description": "full: read this one ask in full instead of sorting it: the whole question, recommendation, options, source, route and exact draft or learned payload. Leave result and the sort fields empty."
         },
         "result": {
           "type": "string",
