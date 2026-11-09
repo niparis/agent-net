@@ -6,13 +6,13 @@
 │ docs/setup.md, Quota).                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 🔒 protected · 6 registered · 0 running · scores: Artificial Anal…─╮
-│ NAME                HARNESS  MODEL             T   S   N   H   V   PROT      │
-│ terra max codex     codex    gpt-6.1-terra:max ·   ·   ·   ·   ▸             │
-│ sonnet xhigh claude claude   sonnet-5-5:xhigh  ·   ·   ·   ▸   ·   prot      │
-│ sol medium codex    codex    gpt-6.1-sol       ·   ·   ·   ·   ·             │
-│ haiku xhigh claude  claude   haiku-5-5:xhigh   ·   ·   ▸   ·   ·   prot      │
-│ haiku high claude   claude   haiku-5-5:high    ▸   ▸   ·   ·   ·   prot      │
-│ deepseek opencode   opencode deepseek-v4-pro   ·   ·   ·   ·   ·             │
+│ MODEL                    HARNESS  T      S      N      H      V      PROT    │
+│ gpt-6.1-terra:max        codex    0.72·5 0.73·5 0.74·5 0.75·5 ▸0.76          │
+│ claude-sonnet-5-5:xhigh  claude   0.70·4 0.71·4 0.72·4 ▸0.73  0.74·4 prot    │
+│ gpt-6.1-sol:medium       codex    0.78·8 0.79·8 0.80·8 0.81·8 0.82·8         │
+│ claude-haiku-5-5:xhigh   claude   0.76·7 0.77·7 ▸0.78  0.79·7 0.80·7 prot    │
+│ claude-haiku-5-5:high    claude   ▸0.74  ▸0.75  0.76·6 0.77·6 0.78·6 prot    │
+│ deepseek-v4-pro          opencode 0.80·9 0.81·9 0.82·9 0.83·9 0.84·9         │
 │   (not a worker provider)                                                    │
 │ T haiku high claude · S haiku high claude · N haiku xhigh claude · H sonnet  │
 │ xhigh claude · V terra max codex                                             │

@@ -8,13 +8,13 @@
 │ 1 other subscription · s to show                                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
-│ NAME               HARNESS  MODEL                     SCORE        T   S   N   H   V    USED                         │
-│ renamed            pi       gpt-6.1-zed               -            ·   ·   ·   ·   ·    unused                       │
+│ MODEL                      HARNESS  SCORE        T       S       N       H       V        USED                       │
+│ gpt-6.1-zed                pi       -            ·       ·       ·       ·       ·        unused                     │
 │   model gone - ask the CTO to fix                                                                                    │
-│ opus               claude   opus-5-5:high             51.7/high    ·   ·   ·   ·   ▸    12 · 83% done · 2 failed     │
-│ sol                codex    gpt-6.1-sol:medium        46.1/medium  ▸   ▸   ·   ·   ·    unused                       │
-│ terra              codex    gpt-6.1-terra:high        42.3/high    ·   ·   ▸   ▸   ·    unused                       │
-│ terra pi           pi       gpt-6.1-terra             38.1         ·   ·   ·   ·   ·    unused                       │
+│ claude-opus-5-5:high       claude   51.7/high    ·       ·       ·       ·       ▸        12 · 83% done · 2 failed   │
+│ gpt-6.1-sol:medium         codex    46.1/medium  ▸       ▸       ·       ·       ·        unused                     │
+│ gpt-6.1-terra:high         codex    42.3/high    ·       ·       ▸       ▸       ·        unused                     │
+│ gpt-6.1-terra              pi       38.1         ·       ·       ·       ·       ·        unused                     │
 │   not on research                                                                                                    │
 │ T sol · S sol · N terra · H terra · V opus                                                                           │
 │ T:trivial S:simple N:normal H:hard V:very complex · ▸ = chosen                                                       │

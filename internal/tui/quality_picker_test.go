@@ -283,7 +283,7 @@ func TestQualityPickerEmptyCellsShowADotNotANumber(t *testing.T) {
 	m.defaultPickerSelection()
 	body := ansi.Strip(strings.Join(m.qualityPickerBody(120, 30), "\n"))
 	for _, line := range strings.Split(body, "\n") {
-		if !strings.HasPrefix(strings.TrimLeft(line, "│ ▸"), "sol codex") {
+		if !strings.HasPrefix(strings.TrimLeft(line, "│ ▸"), "gpt-6.1-sol:medium") {
 			continue
 		}
 		// sol has tasks in two of the shown buckets and a dot everywhere else.
@@ -311,11 +311,22 @@ func TestQualityPickerEmptyCellsShowADotNotANumber(t *testing.T) {
 	}
 }
 
+func ownerShapedProfileList() []protocol.WorkerProfile {
+	return []protocol.WorkerProfile{
+		{Name: "sonnet claude", Harness: "claude", Model: "claude-sonnet-5-5"},
+		{Name: "deepseek opencode", Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash", Effort: "high"},
+		{Name: "sol codex", Harness: "codex", Model: "openai-codex/gpt-6.1-sol", Effort: "medium"},
+		{Name: "opus claude", Harness: "claude", Model: "anthropic/claude-opus-5-5", Effort: "high"},
+		{Name: "aardvark unscored", Harness: "codex", Model: "aardvark"},
+	}
+}
+
 func TestQualityPickerOwnerShapedGoldens(t *testing.T) {
-	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+	for _, size := range [][2]int{{160, 40}, {120, 34}, {80, 24}} {
 		m := newModel(size[0], size[1])
 		m.tab = quotasTab
 		m.qualityDetail = true
+		m.snap.WorkerProfiles = ownerShapedProfileList()
 		m.picker, m.pickerLoaded = ownerShapedPicker(), true
 		m.defaultPickerSelection()
 		golden(t, fmt.Sprintf("quality_picker_owner_%dx%d", size[0], size[1]), m.testView())
@@ -373,7 +384,7 @@ func TestQualityPickerReadsOnOpenAndRefreshOnly(t *testing.T) {
 }
 
 func TestQualityPickerGoldens(t *testing.T) {
-	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+	for _, size := range [][2]int{{160, 40}, {120, 34}, {80, 24}} {
 		m := newModel(size[0], size[1])
 		m.tab = quotasTab
 		m.qualityDetail = true
@@ -389,5 +400,133 @@ func TestQualityPickerGoldens(t *testing.T) {
 			}
 		}
 		golden(t, fmt.Sprintf("quality_picker_%dx%d", size[0], size[1]), view)
+	}
+}
+
+// rowContaining returns the first stripped line that holds every needle.
+func rowContaining(body string, needles ...string) string {
+	for _, line := range strings.Split(body, "\n") {
+		ok := true
+		for _, needle := range needles {
+			if !strings.Contains(line, needle) {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return line
+		}
+	}
+	return ""
+}
+
+// A row is named by the model key the worker log shows, not by the profile's
+// free text, and the harness sits in its own column.
+func TestQualityRowsShowModelKeyAndHarness(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.qualityDetail = true
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sol codex", Harness: "codex", Model: "gpt-6.1-sol", Effort: "medium"}}
+	a := pickerFixture()
+	a.Profiles = []protocol.PickerProfileRow{{Name: "sol codex", Key: "openai-codex/gpt-6.1-sol:medium", Model: "gpt-6.1-sol", Score: 33, Level: "simple", Ceiling: 2.25, Scored: true}}
+	m.picker, m.pickerLoaded = a, true
+	m.defaultPickerSelection()
+
+	body := ansi.Strip(strings.Join(m.qualityPickerBody(120, 30), "\n"))
+	row := rowContaining(body, "gpt-6.1-sol:medium", "codex")
+	if row == "" {
+		t.Fatalf("no row names gpt-6.1-sol:medium next to codex:\n%s", body)
+	}
+	if strings.Contains(body, "sol codex") {
+		t.Fatalf("a profile name is still in the grid:\n%s", body)
+	}
+	if !strings.Contains(body, "gpt-6.1-sol:medium · codex") {
+		t.Fatalf("the detail pane does not name the key and harness:\n%s", body)
+	}
+}
+
+// One model under two harnesses is two rows, because the harness tells them
+// apart, even when the model key is the same.
+func TestQualityShowsSameModelUnderTwoHarnesses(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.qualityDetail = true
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{
+		{Name: "sonnet claude", Harness: "claude", Model: "claude-sonnet-5-5"},
+		{Name: "sonnet agy", Harness: "agy", Model: "claude-sonnet-5-5"},
+	}
+	a := ownerShapedPicker()
+	a.Profiles = []protocol.PickerProfileRow{
+		{Name: "sonnet claude", Key: "claude-sonnet-5-5", Score: 44, Level: "hard", Ceiling: 4, Scored: true},
+		{Name: "sonnet agy", Key: "claude-sonnet-5-5", Score: 44, Level: "hard", Ceiling: 4, Scored: true},
+	}
+	m.picker, m.pickerLoaded = a, true
+
+	rows, profiles, _ := m.pickerRowSet()
+	if profiles != 2 || len(rows) != 2 {
+		t.Fatalf("rows = %d (%d profiles), want two rows for the two harnesses", len(rows), profiles)
+	}
+	body := ansi.Strip(strings.Join(m.qualityPickerBody(120, 30), "\n"))
+	if !strings.Contains(body, "claude") || !strings.Contains(body, "agy") {
+		t.Fatalf("one harness column is missing:\n%s", body)
+	}
+}
+
+// At 80 columns a key is cut in the middle, never at its effort end.
+func TestQualityLongKeyKeepsItsEffortAt80(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = quotasTab
+	m.qualityDetail = true
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra coder", Harness: "codex", Model: "gpt-6.1-terra-coder-preview", Effort: "medium"}}
+	a := pickerFixture()
+	a.Profiles = []protocol.PickerProfileRow{{Name: "terra coder", Key: "openai-codex/gpt-6.1-terra-coder-preview:medium", Model: "gpt-6.1-terra-coder-preview", Score: 55, Level: "very_complex", Ceiling: 5, Scored: true}}
+	m.picker, m.pickerLoaded = a, true
+	m.defaultPickerSelection()
+
+	body := ansi.Strip(strings.Join(m.qualityPickerBody(80, 23), "\n"))
+	row := rowContaining(body, "…:medium", "codex")
+	if row == "" {
+		t.Fatalf("the long key lost its effort or was not cut:\n%s", body)
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if w := ansi.StringWidth(line); w > 76 {
+			t.Errorf("a row at 80 columns is %d wide: %q", w, line)
+		}
+	}
+}
+
+// The Quotas subtab draws level scores, so it reads the picker table too.
+func TestQuotasTabAsksForPickerScores(t *testing.T) {
+	src := &pickerFetchSource{
+		fetchCountSource: &fetchCountSource{fakeSource: &fakeSource{snap: fakeSnapshot(), usage: fakeUsage(), counts: fakeCounts()}},
+		picker:           pickerFixture(),
+	}
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
+	m = keys(m, "3")
+	m = refresh(m, src)
+	if src.pickerCalls != 1 || !m.pickerLoaded {
+		t.Fatalf("picker_get calls on the Quotas tab = %d, loaded %v; want 1, true", src.pickerCalls, m.pickerLoaded)
+	}
+}
+
+// The Quality row names an agy effort with a colon too, while the harness
+// column still says agy.
+func TestQualityAgyRowUsesColonEffort(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = quotasTab
+	m.qualityDetail = true
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "opus agy", Harness: "agy", Model: "claude-opus-5-5", Effort: "high"}}
+	a := pickerFixture()
+	a.Profiles = []protocol.PickerProfileRow{{Name: "opus agy", Key: "claude-opus-5-5-high", Model: "claude-opus-5-5-high", Score: 60, Level: "very_complex", Ceiling: 5, Scored: true}}
+	m.picker, m.pickerLoaded = a, true
+	m.defaultPickerSelection()
+	body := ansi.Strip(strings.Join(m.qualityPickerBody(120, 30), "\n"))
+	if !strings.Contains(body, "claude-opus-5-5:high") {
+		t.Fatalf("agy row does not use the colon key:\n%s", body)
+	}
+	if strings.Contains(body, "claude-opus-5-5-high") {
+		t.Fatalf("agy row still uses the dash key:\n%s", body)
 	}
 }

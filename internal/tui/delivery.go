@@ -518,8 +518,9 @@ func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
 	if !m.workersLog {
 		m.workerLogDetailsFocus = false
 	}
-	if m.qualityDetail {
-		// The table changes only on writes: read it when the subtab opens.
+	if !m.workersLog {
+		// The Quotas panel and the Quality subtab draw the picker table, so
+		// they read it when it comes back on screen.
 		m.pickerWanted = true
 	}
 	return m, nil

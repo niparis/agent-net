@@ -1,20 +1,20 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online
   Quotas      Workers log    [ Quality ]
 ╭─Quality · worker picker──────────────────────────────────────────────────────╮
-│ PROFILE                AA  1.00  1.33  1.67  2.00  2.33                      │
-│ bucket mean                0.81  0.76  0.70  0.66  0.50                      │
-│ tasks                       n13   n14   n15   n13    n1                      │
-│   opus claude          57     ·     ·     ·     ·     ·                      │
-│   deepseek opencode    52  0.79  0.75  0.70  0.67     ·                      │
-│ ▸ sonnet claude        44  0.80  0.76  0.71  0.67     ·                      │
-│   sol codex            33     ·  0.76  0.68     ·     ·                      │
-│   aardvark unscored     -     ·     ·     ·     ·     ·                      │
+│ MODEL                        HARNESS    AA  1.00  1.33  1.67  2.00  2.33     │
+│ bucket mean                                 0.81  0.76  0.70  0.66  0.50     │
+│ tasks                                        n13   n14   n15   n13    n1     │
+│   claude-opus-5-5:high       claude     57     ·     ·     ·     ·     ·     │
+│   deepseek-v4.1-flash:high   opencode   52  0.79  0.75  0.70  0.67     ·     │
+│ ▸ claude-sonnet-5-5          claude     44  0.80  0.76  0.71  0.67     ·     │
+│   gpt-6.1-sol:medium         codex      33     ·  0.76  0.68     ·     ·     │
+│   aardvark                   codex       -     ·     ·     ·     ·     ·     │
 │ profiles 1-5 of 8 · up/down moves                                            │
 │ 3 older model keys shown, dim · o to hide                                    │
 │ Selected cell ────────────────────────────────────────────────────────────── │
-│ sonnet claude · bucket 1.00-1.33 · n6                                        │
+│ claude-sonnet-5-5 · claude · bucket 1.00-1.33 · n6                           │
 │ score 0.80 [0.78-0.83] · mean 0.81                                           │
-│ best sonnet claude 0.80 [0.78-0.83] n6                                       │
+│ best claude-sonnet-5-5 · claude 0.80 [0.78-0.83] n6                          │
 │ verdict: allowed                                                             │
 │ bucket 0.33 · k 5 · allowed 0.90 · margin 0.25 · boost 1.5 · uncertain n 5   │
 │ AA = benchmark score · plain = 3+ tasks · dim = 1-2 · dot = no task yet      │

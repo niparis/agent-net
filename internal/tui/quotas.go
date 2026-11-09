@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -275,15 +276,15 @@ func (m Model) quotaWarning() (string, bool) {
 }
 
 type quotaModel struct {
-	name, harness, model, defaultEffort, effort   string
-	notOn                                         []string
-	score                                         protocol.ModelScore
-	used, done, failedRuns, infraRuns             int
-	last                                          int64
-	failed, allowed, scored, succeeded, available bool
-	stale, protected                              bool
-	provider                                      string
-	track                                         protocol.TrackRecord
+	name, harness, model, key, defaultEffort, effort string
+	notOn                                            []string
+	score                                            protocol.ModelScore
+	used, done, failedRuns, infraRuns                int
+	last                                             int64
+	failed, allowed, scored, succeeded, available    bool
+	stale, protected                                 bool
+	provider                                         string
+	track                                            protocol.TrackRecord
 }
 
 // quotaModels lists only registered profiles, including unavailable profiles.
@@ -295,7 +296,7 @@ func (m Model) quotaModels() []quotaModel {
 		if p.Effort != "" {
 			model += ":" + p.Effort
 		}
-		row := quotaModel{name: p.Name, harness: p.Harness, model: model, effort: p.Effort, failed: true, stale: p.Available != nil && !*p.Available}
+		row := quotaModel{name: p.Name, harness: p.Harness, model: model, key: workerModelLabel(p.Selection()), effort: p.Effort, failed: true, stale: p.Available != nil && !*p.Available}
 		trackedModels := map[string]bool{model: true}
 		missingMachines := map[string]bool{}
 		for _, machine := range p.MachineAvailability {
@@ -421,6 +422,18 @@ func (m Model) localPickerPreview() map[string]string {
 	return nil
 }
 
+// workerModelLabel is the model key the owner reads: the model without its
+// provider prefix, and the effort after a colon. agy stores the effort after a
+// dash, so this makes every harness read the same way. A profile with no effort
+// has no suffix.
+func workerModelLabel(sel protocol.ModelSelection) string {
+	label := protocol.PickerModelDisplay(sel.Model)
+	if sel.Effort != "" {
+		label += ":" + sel.Effort
+	}
+	return label
+}
+
 // pickerPreviewName is the name the gateway uses for a pick: the model family
 // and the effort, for example "terra high".
 func pickerPreviewName(model string) string {
@@ -447,15 +460,81 @@ func pickerPreviewName(model string) string {
 	return family
 }
 
-// pickerPreviewCell marks the profile the gateway preview chooses for a level.
-func pickerPreviewCell(preview map[string]string, level string, r quotaModel) string {
-	if len(preview) == 0 {
-		return sDim.Render(cell("-", 3))
+// pickerModelRow finds the picker row for a model key. The key may carry a
+// provider prefix in either form; the row name drops it.
+func (m Model) pickerModelRow(key string) (protocol.PickerModelRow, bool) {
+	norm := pickerModelNorm(key)
+	dash := ""
+	if base, effort := protocol.SplitModelLevel(protocol.PickerModelDisplay(key)); effort != "" {
+		dash = strings.ToLower(base + "-" + effort)
 	}
-	if preview[level] == pickerPreviewName(r.model) {
-		return sAccent.Render(cell("▸", 3))
+	for _, row := range m.picker.Models {
+		got := pickerModelNorm(row.Key)
+		if got == norm || dash != "" && got == dash {
+			return row, true
+		}
 	}
-	return sDim.Render(cell("·", 3))
+	return protocol.PickerModelRow{}, false
+}
+
+// pickerLevelScore sums the picker cells whose bucket centre is inside the
+// level's D range. The score is the task-weighted mean of the same cell scores
+// the Quality grid shows, so one cell per level stands for its D buckets.
+func (m Model) pickerLevelScore(key, level string) (float64, int, bool) {
+	lo, hi, ok := protocol.LevelDRange(level)
+	if !ok || len(m.picker.Buckets) == 0 {
+		return 0, 0, false
+	}
+	row, ok := m.pickerModelRow(key)
+	if !ok {
+		return 0, 0, false
+	}
+	sum, tasks := 0.0, 0
+	for i, bucket := range m.picker.Buckets {
+		centre := (bucket.Lo + bucket.Hi) / 2
+		if centre < lo || centre >= hi || i >= len(row.Cells) {
+			continue
+		}
+		cell := row.Cells[i]
+		if cell.N <= 0 {
+			continue
+		}
+		sum += cell.Score * float64(cell.N)
+		tasks += cell.N
+	}
+	if tasks == 0 {
+		return 0, 0, false
+	}
+	return sum / float64(tasks), tasks, true
+}
+
+// workerLevelCell is one T S N H V cell: the model's score at the level, its
+// task count when it fits, and the pick marker on top of the score.
+func (m Model) workerLevelCell(r quotaModel, level string, preview map[string]string, width int) string {
+	picked := len(preview) > 0 && preview[level] == pickerPreviewName(r.model)
+	score, tasks, ok := m.pickerLevelScore(r.key, level)
+	if !ok {
+		if picked {
+			return sAccent.Render(cell("▸", width))
+		}
+		return sDim.Render(cell("·", width))
+	}
+	text := fmt.Sprintf("%.2f", score)
+	if picked {
+		text = "▸" + text
+	}
+	count := fmt.Sprintf("·%d", tasks)
+	if ansi.StringWidth(text+count) <= width {
+		text += count
+	}
+	style := lipgloss.NewStyle()
+	switch {
+	case picked:
+		style = sAccent
+	case tasks < protocol.PickerMinCellTasks:
+		style = sDim
+	}
+	return style.Render(cell(text, width))
 }
 
 // pickProfileName is the name of the profile a preview pick stands for, as the
@@ -485,10 +564,10 @@ func workerScoreEffort(r quotaModel) string {
 	return ""
 }
 
-func workerPreviewHeader() string {
+func workerPreviewHeader(width int) string {
 	var cells []string
 	for _, letter := range []string{"T", "S", "N", "H", "V"} {
-		cells = append(cells, cell(letter, 3))
+		cells = append(cells, cell(letter, width))
 	}
 	return strings.Join(cells, " ")
 }
@@ -522,11 +601,16 @@ func (m Model) quotaModelsView(w int) []string {
 			runningCount++
 		}
 	}
-	harnessWidth, modelWidth, scoreWidth := 8, 25, 12
+	harnessWidth := pickerHarnessWidth
+	modelWidth, scoreWidth := 26, 12
 	if w < 110 {
-		modelWidth, scoreWidth = 17, 0
+		modelWidth, scoreWidth = 24, 0
 	}
-	previewWidth := len(workerPreviewHeader())
+	levelWidth := 6
+	if w >= 110 {
+		levelWidth = 7
+	}
+	previewWidth := len(workerPreviewHeader(levelWidth))
 	// A protected provider is marked with plain text in its own column. An emoji
 	// in a table row is drawn at another width by some terminals, which moves
 	// the cells after it.
@@ -536,16 +620,10 @@ func (m Model) quotaModelsView(w int) []string {
 			lockWidth = 4
 		}
 	}
-	// The NAME column fits the longest profile name, within what is left once
-	// the other columns and a USED column (on wide screens) have their room.
-	longest := 15
-	if w >= 110 {
-		longest = 18
-	}
-	for _, r := range rows {
-		longest = max(longest, ansi.StringWidth(sanitize(r.name)))
-	}
-	fixed := 1 + harnessWidth + 1 + modelWidth + 1 + previewWidth + 1
+	// The MODEL column takes what is left once the other columns and a USED
+	// column (on wide screens) have their room. A long key is cut in the
+	// middle, never at its effort end.
+	fixed := 1 + harnessWidth + 1 + 1 + previewWidth + 1
 	if lockWidth > 0 {
 		fixed += 1 + lockWidth
 	}
@@ -556,14 +634,14 @@ func (m Model) quotaModelsView(w int) []string {
 	if w >= 110 {
 		usedMin = 2 + 10
 	}
-	nameWidth := min(longest, 32, max(w-4-fixed-usedMin, 10))
-	usedWidth := max(w-4-(nameWidth+fixed+2), 0)
+	modelWidth = min(modelWidth, max(w-4-fixed-usedMin, 12))
+	usedWidth := max(w-4-(modelWidth+fixed+2), 0)
 	showUsed := w >= 110 && usedWidth >= 10
-	header := cell("NAME", nameWidth) + " " + cell("HARNESS", harnessWidth) + " " + cell("MODEL", modelWidth)
+	header := cell("MODEL", modelWidth) + " " + cell("HARNESS", harnessWidth)
 	if scoreWidth > 0 {
 		header += " " + cell("SCORE", scoreWidth)
 	}
-	header += " " + workerPreviewHeader()
+	header += " " + workerPreviewHeader(levelWidth)
 	if lockWidth > 0 {
 		header += " " + cell("PROT", lockWidth)
 	}
@@ -579,7 +657,7 @@ func (m Model) quotaModelsView(w int) []string {
 	for _, r := range rows {
 		var cellsOut []string
 		for _, level := range levels {
-			cellsOut = append(cellsOut, pickerPreviewCell(preview, level, r))
+			cellsOut = append(cellsOut, m.workerLevelCell(r, level, preview, levelWidth))
 		}
 		score := "-"
 		if r.scored && !r.stale {
@@ -588,12 +666,12 @@ func (m Model) quotaModelsView(w int) []string {
 		if effort := workerScoreEffort(r); effort != "" && !r.stale {
 			score += "/" + effort
 		}
-		model := shortWorkerModel(r.model, modelWidth)
+		model := pickerModelLabel(sanitize(r.key), modelWidth)
 		lock := ""
 		if r.protected {
 			lock = "prot"
 		}
-		line := fmt.Sprintf("%s %s %s", cell(sanitize(r.name), nameWidth), cell(r.harness, harnessWidth), cell(sanitize(model), modelWidth))
+		line := cell(model, modelWidth) + " " + cell(r.harness, harnessWidth)
 		if scoreWidth > 0 {
 			line += " " + cell(score, scoreWidth)
 		}

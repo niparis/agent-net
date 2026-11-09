@@ -387,7 +387,7 @@ func (m Model) fetchCmd() tea.Cmd {
 	inboxSeen, inboxAt := m.inboxSeen, m.inboxAt
 	deskLogOpen := m.deskLogOpen
 	wantWorkerLog := m.tab == quotasTab && m.workersLog
-	wantPicker := m.tab == quotasTab && m.qualityDetail && m.pickerWanted
+	wantPicker := m.tab == quotasTab && !m.workersLog && m.pickerWanted
 	now := m.now
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
@@ -1536,8 +1536,8 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.tab = i
 			m.uiFilter = ""
 			m.focus = focusSessions
-			if i == quotasTab && m.qualityDetail {
-				// Returning to the Quality subtab reads the picker table again.
+			if i == quotasTab {
+				// The Quotas panel and the Quality subtab both read the picker table.
 				m.pickerWanted = true
 			}
 			if i == sessionsTab {
