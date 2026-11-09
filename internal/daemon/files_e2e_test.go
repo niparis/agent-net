@@ -51,6 +51,10 @@ case "$1 $2" in
 	fi
 	;;
 "file get")
+	if [ -f "$d/refuse-get" ]; then
+		echo "file access denied" >&2
+		exit 1
+	fi
 	for f in "$d"/waiting/*; do
 		[ -e "$f" ] && mv "$f" "$3/"
 	done
@@ -559,4 +563,26 @@ func TestFilesUnreadableDownloadsShowsInDetail(t *testing.T) {
 		d := n.message(res.Message.ID).DeliveryDetail
 		return strings.Contains(d, "cannot read") && strings.Contains(d, "Downloads")
 	})
+}
+
+// A successful Taildrop does not prove that the receiver can collect it.
+// Linux may deny its daemon access to the Tailscale inbox. Worker notices
+// must still get their files through the gateway in this case.
+func TestWorkerNoticeFilesWhenTaildropCannotBeCollected(t *testing.T) {
+	n := startFilesNet(t, filesNetOpts{layout: "linux", tailnet: true})
+	n.flag("refuse-get")
+	src := writeTestFile(t, filepath.Join(n.project, "result.txt"), []byte("result"))
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(20*time.Second))
+	defer cancel()
+	res, err := n.a.d.SendFiles(ctx, FileSend{From: n.alice, To: n.bob, Body: "[agent-net worker notice]\nstatus: done\nreport", WorkerNotice: true, Paths: []string{src}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 1 || res.Files[0].Path != FilePathGateway {
+		t.Fatalf("file route = %+v, want gateway when Taildrop collection can fail", res.Files)
+	}
+	n.waitDelivered(res.Message.ID)
+	if got := string(mustReadFile(t, filepath.Join(n.inbox(res.Message.ID), "result.txt"))); got != "result" {
+		t.Fatalf("file = %q", got)
+	}
 }

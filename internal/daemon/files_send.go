@@ -54,8 +54,9 @@ type FileSendResult struct {
 // SendFiles checks the files, sends the message with their manifest and then
 // pushes the bytes: on this machine through the local handoff folder, over
 // Taildrop when the receiver is an online peer on this machine's tailnet,
-// else through the gateway in parts. A Taildrop that fails falls back to the
-// gateway. The receiving daemon finds each file by its unique name and hash.
+// else through the gateway in parts. Worker notices use the gateway between
+// machines. A Taildrop that fails falls back to the gateway. The receiving
+// daemon finds each file by its unique name and hash.
 //
 // The message is not queued while the gateway is unreachable: its ID names
 // the files, so it must be stored first. An error after the message was
@@ -112,7 +113,12 @@ func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *Outgo
 		return res, errors.New("the stored file list differs from the checked snapshots")
 	}
 	path, ip, receiver, note := d.fileRoute(ctx, stored.Message.To)
-	if path == FilePathTaildrop && stored.Message.State == protocol.StateHeld {
+	if path == FilePathTaildrop && req.WorkerNotice {
+		// A successful Taildrop does not mean the receiving daemon can read
+		// its inbox. The gateway is readable by the enrolled receiver and
+		// keeps the files while it is offline.
+		path, note = FilePathGateway, "worker notice files use the gateway"
+	} else if path == FilePathTaildrop && stored.Message.State == protocol.StateHeld {
 		// The owner may refuse the message. Bytes on the gateway expire;
 		// a Taildrop would sit in the receiver's Downloads for good.
 		path, note = FilePathGateway, "the message waits for the owner's approval, so the files wait on the gateway"

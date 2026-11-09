@@ -969,7 +969,7 @@ The Pi and OpenCode plugins provide both tools from their generated catalog. Cla
    - over Taildrop (`tailscale file cp <file> <address>:`) when the receiving machine reported a Tailscale address and `tailscale status --json` lists it as an online peer;
    - else through the gateway in parts (`xfer.begin`, `xfer.part`, `xfer.finish`), with the unique name as the upload name.
 
-A Taildrop that fails (for example a receiver that is offline) falls back to the gateway, which holds the bytes until the receiver comes online or 7 days pass. A message held for the owner's approval sends its files through the gateway, not over Taildrop. An empty file carries no bytes: the receiver writes it from the manifest. The daemon finds `tailscale` on `PATH`, then on macOS at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`. With no Tailscale, files go through the gateway.
+A Taildrop that fails (for example a receiver that is offline) falls back to the gateway, which holds the bytes until the receiver comes online or 7 days pass. A message held for the owner's approval sends its files through the gateway, not over Taildrop. A worker notice also uses the gateway between machines: a successful Taildrop does not establish that the receiving daemon can collect it. An empty file carries no bytes: the receiver writes it from the manifest. The daemon finds `tailscale` on `PATH`, then on macOS at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`. With no Tailscale, files go through the gateway.
 
 **Receiving.** When a message with a manifest arrives, the daemon of the receiving session collects its files before delivering it. A worker notice has a shorter bounded wait, described below. The daemon looks, in this order:
 

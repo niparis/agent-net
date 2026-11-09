@@ -354,7 +354,7 @@ What the sending daemon checks, before the message is stored:
 How the bytes travel:
 
 - **Unique names.** Every file travels as `agent-net-<message id>-<file id>-<name>`, over Taildrop and through the gateway. The receiving daemon takes a file only when its name is announced by a message it is collecting and its size and SHA-256 match the manifest. It never follows a symlink left under an announced name.
-- **Taildrop** is used only when the receiving machine reported a Tailscale address that this machine's `tailscale status` lists as an online peer, so both machines are on one tailnet. A Taildrop that fails falls back to the gateway. A message held for the owner's approval keeps its files on the gateway, which deletes them after 7 days if nobody approves.
+- **Taildrop** is used only when the receiving machine reported a Tailscale address that this machine's `tailscale status` lists as an online peer, so both machines are on one tailnet. A Taildrop that fails falls back to the gateway. Worker notices use the gateway between machines because a successful Taildrop does not prove that the receiver can read its Tailscale inbox. A message held for the owner's approval keeps its files on the gateway, which deletes them after 7 days if nobody approves.
 - **The gateway** stores the parts (below). The receiver finds an upload by its unique name with `xfer.find`, which lists only finished uploads addressed to the calling machine.
 - **Same machine.** Between two sessions of one machine the copy moves through `<state>/files/local/`, never through the network.
 

@@ -10,7 +10,10 @@ message expires. A caller needs the report even if the files do not arrive.
 
 ## Decision
 
-The sender retries failed file offers for a stored worker notice with the same
+For a worker notice between machines, the sender offers files through the
+gateway. A successful Taildrop does not prove the receiving daemon can read
+the Tailscale inbox. Same-machine notices use the local handoff as before. The
+sender retries failed file offers for a stored worker notice with the same
 message key and checked snapshots. The receiver waits at most two minutes from
 when the gateway stored the notice. If files are still missing, or collection
 fails, it delivers the notice with their names and the files that arrived. If
