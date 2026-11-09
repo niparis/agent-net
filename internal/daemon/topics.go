@@ -29,6 +29,10 @@ func (h *topicHub) subscribe(ctx context.Context, l *link, lc *localConn, reques
 	if h.subs == nil {
 		h.subs = make(map[*localConn]*topicSubscriber)
 	}
+	if _, exists := h.subs[lc]; exists {
+		h.mu.Unlock()
+		return nil, errors.New("connection already subscribed to topics")
+	}
 	if h.link != l {
 		h.link, h.versions = l, nil
 	}

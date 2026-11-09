@@ -163,3 +163,33 @@ func TestTopicSubscriptionUsesOwnerGate(t *testing.T) {
 		}
 	}
 }
+
+func TestTopicHubRejectsDuplicateLocalSubscription(t *testing.T) {
+	var hub topicHub
+	link := &link{}
+	lc := &localConn{}
+	calls := 0
+	request := func(context.Context) (map[string]uint64, error) {
+		calls++
+		return map[string]uint64{protocol.TopicNodes: 1}, nil
+	}
+	if _, err := hub.subscribe(context.Background(), link, lc, request); err != nil {
+		t.Fatal(err)
+	}
+	first := hub.subs[lc]
+	if _, err := hub.subscribe(context.Background(), link, lc, request); err == nil {
+		t.Fatal("duplicate subscription accepted")
+	}
+	if hub.subs[lc] != first || calls != 1 {
+		t.Fatal("duplicate replaced the subscriber or repeated the gateway request")
+	}
+	hub.publish(link, protocol.TopicEvent{Topic: protocol.TopicNodes, Version: 2})
+	select {
+	case <-first.wake:
+	default:
+		t.Fatal("original subscriber was not woken")
+	}
+	if hub.take(lc)[protocol.TopicNodes] != 2 {
+		t.Fatal("original subscriber lost its event")
+	}
+}

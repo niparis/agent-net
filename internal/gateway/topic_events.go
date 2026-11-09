@@ -34,6 +34,12 @@ func (g *Gateway) topicVersions() map[string]uint64 {
 	v := g.store.topicVersions()
 	v[protocol.TopicUsage] += g.usage.version.Load()
 	v[protocol.TopicNodes] += g.usage.quotaVersion.Load()
+	// Nodes, agent views, worker profile availability and project layouts use
+	// live connections. MCP and inventory readers also watch the nodes topic.
+	connections := g.connVersion.Load()
+	for _, topic := range []string{protocol.TopicNodes, protocol.TopicAgents, protocol.TopicWorkers, protocol.TopicProjects} {
+		v[topic] += connections
+	}
 	return v
 }
 

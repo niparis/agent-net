@@ -24,7 +24,12 @@ changes. A client refetches the affected snapshot parts. The gateway compares
 the read cache's per-table write stamps, which move at commit, every 250 ms;
 writes in the interval coalesce to the latest version. Memory-only usage has
 its own counter, and a separate quota counter also moves the nodes topic. A
-subscriber joining after a restart must treat the initial versions as new,
+connection counter moves the nodes, agents, workers and projects topics when a
+machine connects or disconnects. It covers worker profile availability and
+project layouts as well as node and session views. MCP server `HostOnline` and
+tool and inventory host availability also depend on live connections; clients
+of those reads watch the nodes topic. A subscriber joining after a restart must
+treat the initial versions as new,
 since versions are for one gateway process, not durable sequence numbers.
 
 The dependency sets are declared in `internal/gateway/topic_events.go`, reusing
@@ -32,13 +37,13 @@ the table sets of the cached reads:
 
 | Topic | Tables and other inputs |
 | --- | --- |
-| agents | `agentsTables`: sessions, nodes, profiles, apps, projects and their names and mergers, agents, repos, teams and members, settings, charters, messages, inbox and loops used by the agent read |
-| nodes | `nodesTables`, `calibrationTables`, quota blocks, node health, playbook, owner and network settings; in-memory quotas |
-| workers | `workerLogTables`, `calibrationTables`, worker starts, quota blocks, owner and network settings |
+| agents | `agentsTables`: sessions, nodes, profiles, apps, projects and their names and mergers, agents, repos, teams and members, settings, charters, messages, inbox and loops used by the agent read; live connections |
+| nodes | `nodesTables`, `calibrationTables`, quota blocks, node health, playbook, owner and network settings; in-memory quotas and live connections (also for MCP and inventory host status) |
+| workers | `workerLogTables`, `calibrationTables`, worker starts, quota blocks, owner and network settings; live connections for worker profile availability |
 | graph | `graphTables`: graph nodes, edges, charters, teams, projects, settings, loops and the session columns used by the graph |
 | inbox | `inboxTables`, messages, ask sorts, desk log, charter draft asks and owner settings |
 | changes | delivery changes, revisions, evidence, tasks, messages, stats, inbox and delegates; events and messages |
-| projects | projects, repos, names, mergers, sessions, nodes and `graphTables` |
+| projects | projects, repos, names, mergers, sessions, nodes and `graphTables`; live connections for project layouts |
 | learned | `learnedListTables`: suggestions, details, phrase state, views, graph history and charter, drafts, agent charters and values, teams and agents |
 | usage | sessions, nodes, quota blocks and the in-memory usage reports |
 

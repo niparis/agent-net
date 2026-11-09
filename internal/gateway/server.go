@@ -153,6 +153,7 @@ type Gateway struct {
 
 	mu                sync.Mutex
 	conns             map[string]*nodeConn
+	connVersion       atomic.Uint64
 	wakeMu            sync.Mutex
 	wakeClaims        map[string]wakeClaim
 	timers            map[string]*offlineTimer
@@ -763,6 +764,9 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	}
 	old := g.conns[nodeID]
 	g.conns[nodeID] = nc
+	if old == nil {
+		g.connVersion.Add(1)
+	}
 	if t := g.timers[nodeID]; t != nil {
 		t.timer.Stop()
 		delete(g.timers, nodeID)
@@ -785,6 +789,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	g.mu.Lock()
 	if g.conns[nodeID] == nc && !g.closed {
 		delete(g.conns, nodeID)
+		g.connVersion.Add(1)
 		t := &offlineTimer{}
 		t.timer = time.AfterFunc(g.opts.OfflineGrace, func() { g.nodeGone(nodeID, t) })
 		g.timers[nodeID] = t
