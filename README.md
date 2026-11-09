@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img alt="A 12 second loop of the real agent-net TUI in four beats: the Sessions tab with six sessions on two machines, three busy and 0 needs you; a Messages exchange where backend tells frontend that user_id is now account_id and frontend replies with commit 3f2a91c; a worker's change in flight as accept, review, test and merge turn green in turn; and the Desk showing closed 22 · sent on 4, then one decision, Merge PR #212?, in Needs you." src="docs/img/demo.svg" width="900">
+  <img alt="A 12 second loop of the real agent-net TUI in four beats: the Sessions tab with six sessions on two machines and three busy; a Messages exchange where shared-auth tells invoices-app that token field renamed: user_id is now account_id in shared-auth v2.3, and invoices-app replies with updated to v2.3, commit 3f2a91c; a worker's change, Use shared-auth v2.3 in invoices-app, as accept, review, test and merge turn green in turn; and the Desk showing closed 22 · sent on 4, then one decision, Merge PR #212?, in Needs you." src="docs/img/demo.svg" width="900">
 </p>
 
 <p align="center">

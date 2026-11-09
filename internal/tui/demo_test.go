@@ -28,15 +28,20 @@ func demoNodes() []protocol.NodeView {
 
 func demoAgents() []protocol.AgentView {
 	return []protocol.AgentView{
-		agent("s_backend", "n_laptop", "laptop", "claude", "backend", func(a *protocol.AgentView) {
+		agent("s_billing", "n_laptop", "laptop", "claude", "billing", func(a *protocol.AgentView) {
 			a.Status, a.Mode, a.Model = "busy", protocol.ModeBackground, "claude-opus-5-5"
-			a.Repo = protocol.RepoInfo{Project: "shop", Branch: "main"}
-			a.Profile.Function = "the API"
+			a.Repo = protocol.RepoInfo{Project: "billing", Branch: "main"}
+			a.Profile.Function = "billing and invoices"
 		}),
-		agent("s_frontend", "n_laptop", "laptop", "opencode", "frontend", func(a *protocol.AgentView) {
+		agent("s_invoices", "n_laptop", "laptop", "opencode", "invoices-app", func(a *protocol.AgentView) {
 			a.Status, a.Mode, a.Model = "busy", protocol.ModeForeground, "opencode-go/deepseek-v4.1"
-			a.Repo = protocol.RepoInfo{Project: "shop", Branch: "main"}
-			a.Profile.Function = "the web app"
+			a.Repo = protocol.RepoInfo{Project: "billing", Branch: "main"}
+			a.Profile.Function = "the invoices app"
+		}),
+		agent("s_shared_auth", "n_laptop", "laptop", "claude", "shared-auth", func(a *protocol.AgentView) {
+			a.Status, a.Mode, a.Model = "idle", protocol.ModeForeground, "claude-sonnet-5-5"
+			a.Repo = protocol.RepoInfo{Project: "shared-auth", Branch: "main"}
+			a.Profile.Function = "the shared auth library"
 		}),
 		agent("s_homelab", "n_laptop", "laptop", "claude", "homelab", func(a *protocol.AgentView) {
 			a.Status, a.Mode, a.Model = "idle", protocol.ModeForeground, "claude-sonnet-5-5"
@@ -48,15 +53,10 @@ func demoAgents() []protocol.AgentView {
 			a.Repo = protocol.RepoInfo{Project: "forge", Branch: "main"}
 			a.Profile.Function = "the data pipeline"
 		}),
-		agent("s_worker_be", "n_build", "build-box", "pi", "worker", func(a *protocol.AgentView) {
+		agent("s_worker_billing", "n_build", "build-box", "pi", "worker", func(a *protocol.AgentView) {
 			a.Status, a.Mode, a.Model = "idle", protocol.ModeBackground, "pi/qwen3-coder"
 			a.Profile.Function = "worker"
-			a.Worker = &protocol.WorkerInfo{Owner: "s_backend"}
-		}),
-		agent("s_worker_forge", "n_build", "build-box", "pi", "worker", func(a *protocol.AgentView) {
-			a.Status, a.Mode, a.Model = "idle", protocol.ModeBackground, "pi/qwen3-coder"
-			a.Profile.Function = "worker"
-			a.Worker = &protocol.WorkerInfo{Owner: "s_forge"}
+			a.Worker = &protocol.WorkerInfo{Owner: "s_billing"}
 		}),
 	}
 }
@@ -99,14 +99,15 @@ func demoMessages(m Model, reply bool) Model {
 	m.feed = newFeed()
 	m.feed.items = []*feedItem{{
 		EventID: 1, At: t0.Add(-2 * time.Minute), Kind: "msg.stored", MsgID: "m_1",
-		From: "s_backend", To: "s_frontend", Type: protocol.TypeRequest, ConversationID: "c_1",
-		State: protocol.StateDelivered, Snippet: "user_id is now account_id", Body: "user_id is now account_id", Snip: snipDone,
+		From: "s_shared_auth", To: "s_invoices", Type: protocol.TypeRequest, ConversationID: "c_1",
+		State: protocol.StateDelivered, Snippet: "token field renamed: user_id is now account_id in shared-auth v2.3",
+		Body: "token field renamed: user_id is now\naccount_id in shared-auth v2.3", Snip: snipDone,
 	}}
 	if reply {
 		m.feed.items = append(m.feed.items, &feedItem{
 			EventID: 2, At: t0.Add(-time.Minute), Kind: "msg.stored", MsgID: "m_2",
-			From: "s_frontend", To: "s_backend", Type: protocol.TypeReply, Parent: "m_1", ConversationID: "c_1",
-			State: protocol.StateReplied, Snippet: "updated, commit 3f2a91c", Body: "updated, commit 3f2a91c", Snip: snipDone,
+			From: "s_invoices", To: "s_shared_auth", Type: protocol.TypeReply, Parent: "m_1", ConversationID: "c_1",
+			State: protocol.StateReplied, Snippet: "updated to v2.3, commit 3f2a91c", Body: "updated to v2.3, commit 3f2a91c", Snip: snipDone,
 		})
 	}
 	m.feedCur = len(m.feed.items) - 1
@@ -153,8 +154,8 @@ func demoChange(passed int) deliveryChange {
 		stepState = "passed"
 	}
 	return deliveryChange{
-		ID: "c_1", Title: "Use account_id in the shop API", Repo: "shop", Head: "3f2a91c0d4e5",
-		Branch: "agent-net/w_account", Revision: 1, State: "open", Caller: "s_worker_be",
+		ID: "c_1", Title: "Use account_id in the invoices app", Repo: "billing", Head: "3f2a91c0d4e5",
+		Branch: "agent-net/w_account", Revision: 1, State: "open", Caller: "s_worker_billing",
 		Step: names[current], StepOwner: "merger", OwnerKind: "node", StepState: stepState,
 		Waiting: 2 * time.Minute, Steps: steps, Marks: marks,
 	}
@@ -196,11 +197,11 @@ func demoFrames(t *testing.T) []demoFrame {
 	messages := demoBase(t, snap)
 	return []demoFrame{
 		{name: "demo_00_sessions", duration: 3 * time.Second, view: sessions.testView(),
-			want: []string{"0 needs you", "backend", "frontend", "homelab", "forge", "laptop", "build-box", "3 busy"}},
+			want: []string{"0 needs you", "billing", "invoices-app", "shared-auth", "homelab", "forge", "laptop", "build-box", "3 busy"}},
 		{name: "demo_01_request", duration: 1500 * time.Millisecond, view: demoMessages(messages, false).testView(),
-			want: []string{"backend", "frontend", "user_id is now account_id"}},
+			want: []string{"shared-auth", "invoices-app", "token field renamed: user_id is now", "account_id in shared-auth v2.3"}},
 		{name: "demo_02_reply", duration: 1500 * time.Millisecond, view: demoMessages(messages, true).testView(),
-			want: []string{"backend", "frontend", "updated, commit 3f2a91c"}},
+			want: []string{"shared-auth", "invoices-app", "updated to v2.3, commit 3f2a91c"}},
 		{name: "demo_03_accept", duration: 750 * time.Millisecond, view: demoDesk(t, 1, false, false).testView(),
 			want: []string{"In flight · 1", "review", "●○○○"}},
 		{name: "demo_04_review", duration: 750 * time.Millisecond, view: demoDesk(t, 2, false, false).testView(),
