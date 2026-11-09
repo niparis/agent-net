@@ -65,8 +65,9 @@ func (g *Gateway) wakeOnMessage(a protocol.AgentView) bool {
 
 // wakeReceiptNote adds to the sender's routing note when a message waits for an
 // offline session that is not woken: a Pi session that autonomy would wake, or
-// any wakeable session when wake is off or the last wake failed.
-func (g *Gateway) wakeReceiptNote(m protocol.Message, route string) string {
+// any wakeable session when wake is off, when it is being woken, or when its
+// last wake failed. started says that dispatching m started a wake of the session.
+func (g *Gateway) wakeReceiptNote(m protocol.Message, route string, started bool) string {
 	if m.State != protocol.StateStored {
 		return route
 	}
@@ -79,7 +80,7 @@ func (g *Gateway) wakeReceiptNote(m protocol.Message, route string) string {
 	case a.Harness == "pi" && g.autonomyWake(a):
 		line = "Pi sessions are not woken by messages"
 	case wakeHarness(a.Harness):
-		line = g.wakeStatusLine(a)
+		line = g.wakeStatusLine(a, started)
 	}
 	if line == "" {
 		return route
@@ -90,23 +91,25 @@ func (g *Gateway) wakeReceiptNote(m protocol.Message, route string) string {
 	return route + " " + line
 }
 
-func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m protocol.Message) {
+// wakeForMessage wakes an offline session for m when the wake rules allow it. It
+// reports whether it started a wake of the session.
+func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m protocol.Message) bool {
 	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online || m.State != protocol.StateStored || !m.ExpiresAt.After(g.store.now()) {
-		return
+		return false
 	}
 	if m.From == "agent-net" && len(m.IdempotencyKey) >= 5 && m.IdempotencyKey[:5] == "step_" {
 		current, err := g.store.stepMessageCurrent(m.ID)
 		if err != nil || !current {
-			return
+			return false
 		}
 	} else if !g.wakeAllowed(a, isLoopMessage(m) || g.autonomyWake(a)) {
 		// A queued message wakes only what wakeAllowed lets it wake. The step
 		// messages below keep the rule of their ready task (wakeSession). A
 		// standing loop tick counts as an autonomy wake (the owner set the loop).
-		return
+		return false
 	}
 	fromMessage := g.wakeAllowed(a, isLoopMessage(m) || g.autonomyWake(a))
-	g.wakeSessionAs(ctx, a, isLoopMessage(m), fromMessage)
+	return g.wakeSessionAs(ctx, a, isLoopMessage(m), fromMessage)
 }
 
 // isLoopMessage tells whether the reserved sender's message is a standing
@@ -126,30 +129,31 @@ func (g *Gateway) wakeSession(ctx context.Context, a protocol.AgentView) {
 
 // wakeSessionAs is wakeSession. loop says the wake is a standing loop tick,
 // which does not need the autonomy rule. fromMessage says the wake was
-// permitted by wakeForMessage (e.g. by wake_on_message).
-func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop bool, fromMessage bool) {
+// permitted by wakeForMessage (e.g. by wake_on_message). It reports whether it
+// started a wake: the claim is taken and the call to the machine is under way.
+func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop bool, fromMessage bool) bool {
 	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online {
-		return
+		return false
 	}
 	autonomy := loop || g.autonomyWake(a)
 	if !fromMessage {
 		if !autonomy && (a.Harness != "claude" || a.Mode == protocol.ModeForeground) {
-			return
+			return false
 		}
 	}
 	g.mu.Lock()
 	target := g.conns[a.NodeID]
 	g.mu.Unlock()
 	if target == nil {
-		return
+		return false
 	}
 	claimed, err := g.store.claimWake(a.SessionID)
 	if err != nil {
 		g.logLine("error", "where", "claim session wake", "session", a.SessionID, "err", err)
-		return
+		return false
 	}
 	if !claimed {
-		return
+		return false
 	}
 	token := protocol.NewID("wake")
 	g.wakeMu.Lock()
@@ -158,6 +162,9 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 	}
 	g.wakeClaims[a.SessionID] = wakeClaim{token: token, node: a.NodeID, native: a.NativeID}
 	g.wakeMu.Unlock()
+	// The claim is removed when the call returns, on every path after this point.
+	// It is removed after the answer is recorded, so a receipt written while the
+	// claim is set can only say that a wake is under way.
 	go func() {
 		defer func() {
 			g.wakeMu.Lock()
@@ -182,6 +189,17 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 			g.logLine("error", "where", "clear session wake failure", "session", a.SessionID, "err", err)
 		}
 	}()
+	return true
+}
+
+// wakeInFlight tells whether a wake of the session is under way, started by any
+// message: claimed, and not yet answered by the machine. A receipt uses it for a
+// message that joins a wake another message started.
+func (g *Gateway) wakeInFlight(session string) bool {
+	g.wakeMu.Lock()
+	defer g.wakeMu.Unlock()
+	_, ok := g.wakeClaims[session]
+	return ok
 }
 
 // On reconnect, queued messages can have arrived while the machine was away.

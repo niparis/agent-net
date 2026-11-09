@@ -65,10 +65,10 @@ func TestMessageReceiptSaysWakeIsOff(t *testing.T) {
 			p := newWakeProbe(t)
 			id := p.offline(t, tc.harness, tc.mode, protocol.AutonomyOff)
 			setWakeOnMessage(t, p.s, id, protocol.WakeOnMessageOff)
-			m := p.message(t, id)
+			m, started := p.sendMessage(t, id)
 			p.expectNoWake(t)
 			want := "queued; proj is offline and wake is off for this agent"
-			if note := p.g.wakeReceiptNote(m, ""); note != want {
+			if note := p.g.wakeReceiptNote(m, "", started); note != want {
 				t.Fatalf("note = %q, want %q", note, want)
 			}
 			if n := len(p.notices(t, p.from)); n != 0 {
@@ -91,6 +91,8 @@ func TestWakeFailureIsKeptAndSenderIsToldOnce(t *testing.T) {
 	if notes := p.notices(t, p.from); len(notes) != 1 || !strings.Contains(notes[0], reason) {
 		t.Fatalf("sender notices = %q", notes)
 	}
+	// The failed wake is over once its claim is gone.
+	eventually(t, "first wake over", func() bool { return !p.g.wakeInFlight(id) })
 
 	// Inside the ten-minute limit a second message does not ask again, and its
 	// receipt says why the session is still asleep.
@@ -98,9 +100,9 @@ func TestWakeFailureIsKeptAndSenderIsToldOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.g.dispatch(context.Background(), m)
+	started := p.g.dispatch(context.Background(), m)
 	p.expectNoWake(t)
-	if note := p.g.wakeReceiptNote(m, ""); !strings.Contains(note, "last wake failed: "+reason) {
+	if note := p.g.wakeReceiptNote(m, "", started); !strings.Contains(note, "last wake failed: "+reason) {
 		t.Fatalf("receipt = %q", note)
 	}
 
@@ -123,5 +125,36 @@ func TestWakeFailureIsKeptAndSenderIsToldOnce(t *testing.T) {
 	}
 	p.g.dispatch(context.Background(), m)
 	p.expectWake(t, id)
+	eventually(t, "failure cleared", func() bool { return p.failures(id) == 0 })
+}
+
+// A message that starts a new wake says that the session is being woken. It does
+// not repeat the failure of the earlier wake while the new one is under way.
+func TestReceiptSaysWakingWhenMessageStartsAWake(t *testing.T) {
+	const reason = "Claude background record is missing, ambiguous, or not retired"
+	p := newWakeProbeRefusing(t, reason)
+	id := p.offline(t, "claude", protocol.ModeBackground, protocol.AutonomyOff)
+	p.message(t, id)
+	p.expectWake(t, id)
+	eventually(t, "failure kept", func() bool { return p.failures(id) == 1 })
+
+	// The limit has passed. The machine now accepts the wake, but its answer waits
+	// until the receipt is written.
+	if _, err := p.s.db.Exec(`UPDATE retired_session_wakes SET attempted_at=0`); err != nil {
+		t.Fatal(err)
+	}
+	p.setRefusal("")
+	release := p.holdWakes()
+	defer release()
+	m, _, err := send(p.s, p.from, id, "second", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := p.g.dispatch(context.Background(), m)
+	p.expectWake(t, id)
+	if note := p.g.wakeReceiptNote(m, "", started); note != "queued; proj is offline, waking it" {
+		t.Fatalf("receipt = %q", note)
+	}
+	release()
 	eventually(t, "failure cleared", func() bool { return p.failures(id) == 0 })
 }

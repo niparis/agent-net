@@ -23,6 +23,8 @@ type wakeProbe struct {
 	mu    sync.Mutex
 	// refusal is the reason the machine gives for a wake, or empty to accept.
 	refusal string
+	// gate, when set, holds the machine's answer to a wake until it is closed.
+	gate chan struct{}
 }
 
 func (p *wakeProbe) setRefusal(reason string) {
@@ -36,6 +38,24 @@ func (p *wakeProbe) wakeRefusal() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.refusal
+}
+
+// holdWakes makes the machine's answer to each wake wait. The returned function
+// lets the answers through. It is safe to call more than once.
+func (p *wakeProbe) holdWakes() func() {
+	gate := make(chan struct{})
+	p.mu.Lock()
+	p.gate = gate
+	p.mu.Unlock()
+	var once sync.Once
+	return func() { once.Do(func() { close(gate) }) }
+}
+
+// wakeGate is the gate that holds the machine's answer, or nil.
+func (p *wakeProbe) wakeGate() chan struct{} {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.gate
 }
 
 // newWakeProbe has one machine with a fake daemon that records wake frames,
@@ -69,6 +89,9 @@ func newWakeProbeRefusing(t *testing.T, refusal string) *wakeProbe {
 				return err
 			}
 			p.wakes <- m
+			if gate := p.wakeGate(); gate != nil {
+				<-gate
+			}
 			if reason := p.wakeRefusal(); reason != "" {
 				return errors.New(reason)
 			}
@@ -94,12 +117,20 @@ func (p *wakeProbe) offline(t *testing.T, harness, mode, autonomy string) string
 
 func (p *wakeProbe) message(t *testing.T, to string) protocol.Message {
 	t.Helper()
+	m, _ := p.sendMessage(t, to)
+	return m
+}
+
+// sendMessage sends a message from the probe's sender and dispatches it. It also
+// reports whether dispatch started a wake, which the receipt note uses.
+func (p *wakeProbe) sendMessage(t *testing.T, to string) (protocol.Message, bool) {
+	t.Helper()
 	m, _, err := send(p.s, p.from, to, "wake-"+to, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.g.dispatch(context.Background(), m)
-	return m
+	started := p.g.dispatch(context.Background(), m)
+	return m, started
 }
 
 func (p *wakeProbe) stepMessage(t *testing.T, to string) protocol.Message {
@@ -179,9 +210,9 @@ func TestMessageDoesNotWakeInteractiveClaudeWhenWakeOnMessageOff(t *testing.T) {
 	p := newWakeProbe(t)
 	id := p.offline(t, "claude", protocol.ModeForeground, protocol.AutonomyOff)
 	setWakeOnMessage(t, p.s, id, protocol.WakeOnMessageOff)
-	m := p.message(t, id)
+	m, started := p.sendMessage(t, id)
 	p.expectNoWake(t)
-	if note := p.g.wakeReceiptNote(m, ""); !strings.Contains(note, "wake is off for this agent") {
+	if note := p.g.wakeReceiptNote(m, "", started); !strings.Contains(note, "wake is off for this agent") {
 		t.Fatalf("receipt note = %q, want 'wake is off for this agent'", note)
 	}
 }
@@ -235,9 +266,9 @@ func TestMessageWakesCodexAndOpenCodeByDefault(t *testing.T) {
 			off := newWakeProbe(t)
 			id = off.offline(t, harness, "", protocol.AutonomyOff)
 			setWakeOnMessage(t, off.s, id, protocol.WakeOnMessageOff)
-			m := off.message(t, id)
+			m, started := off.sendMessage(t, id)
 			off.expectNoWake(t)
-			if note := off.g.wakeReceiptNote(m, ""); !strings.Contains(note, "wake is off for this agent") {
+			if note := off.g.wakeReceiptNote(m, "", started); !strings.Contains(note, "wake is off for this agent") {
 				t.Fatalf("receipt note = %q, want 'wake is off for this agent'", note)
 			}
 		})
@@ -263,28 +294,30 @@ func TestMessageWakeKeepsTheTenMinuteLimitForAutonomy(t *testing.T) {
 func TestMessageToOfflinePiIsNotWoken(t *testing.T) {
 	p := newWakeProbe(t)
 	id := p.offline(t, "pi", "", protocol.AutonomyWake)
-	m := p.message(t, id)
+	m, started := p.sendMessage(t, id)
 	p.expectNoWake(t)
 	if m.State != protocol.StateStored {
 		t.Fatalf("state = %s", m.State)
 	}
-	if note := p.g.wakeReceiptNote(m, "Redirected to x."); note != "Redirected to x. Pi sessions are not woken by messages" {
+	if note := p.g.wakeReceiptNote(m, "Redirected to x.", started); note != "Redirected to x. Pi sessions are not woken by messages" {
 		t.Fatalf("note = %q", note)
 	}
-	if note := p.g.wakeReceiptNote(m, ""); note != "Pi sessions are not woken by messages" {
+	if note := p.g.wakeReceiptNote(m, "", started); note != "Pi sessions are not woken by messages" {
 		t.Fatalf("note = %q", note)
 	}
 
 	off := newWakeProbe(t)
 	id = off.offline(t, "pi", "", protocol.AutonomyOff)
-	m = off.message(t, id)
-	if note := off.g.wakeReceiptNote(m, ""); note != "" {
+	m, started = off.sendMessage(t, id)
+	if note := off.g.wakeReceiptNote(m, "", started); note != "" {
 		t.Fatalf("autonomy off note = %q", note)
 	}
-	// Other offline harnesses and online sessions get no such line.
+	// Codex is woken by the message, so its receipt says the wake is under way. It
+	// never gets the Pi line.
 	cx := newWakeProbe(t)
 	id = cx.offline(t, "codex", "", protocol.AutonomyWake)
-	if note := cx.g.wakeReceiptNote(cx.message(t, id), ""); note != "" {
+	cm, cstarted := cx.sendMessage(t, id)
+	if note := cx.g.wakeReceiptNote(cm, "", cstarted); note != "queued; proj is offline, waking it" {
 		t.Fatalf("codex note = %q", note)
 	}
 }
