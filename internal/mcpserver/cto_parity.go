@@ -91,7 +91,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("inbox_answer", "Answer inbox item.", map[string]ctoField{"id": s("Inbox ID."), "answer": s("Answer.")})
 	add("outcome_overrule", "Resolve an outcome.", map[string]ctoField{"reply_id": s("Reply ID."), "action": en("Action.", "let_stand", "overrule")})
 
-	add("tools_toggle", "Switch a skill on or off for one project.", map[string]ctoField{"item": s("Item ID."), "project": s("Project."), "on": b("On or off.")})
+	add("tools_toggle", "Switch a skill, command or agent on or off for one project.", map[string]ctoField{"item": s("Item ID."), "project": s("Project."), "on": b("On or off.")})
 	add("tools_new_projects", "Set the choice for future projects.", map[string]ctoField{"item": s("Item ID."), "on": b("On or off.")})
 	add("tools_plan", "Plan assignments; repo removal on a local branch.", map[string]ctoField{
 		"item": s("Item ID."), "target": obj("Assignment."),

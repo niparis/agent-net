@@ -518,9 +518,11 @@ current onboarding tip. The chat
 polls once per second and shows recorded CTO tool calls, including reads and
 failures, plus graph diffs; a graph change refreshes the Graph.
 
-Press `5` to open Tools. It is one list of every skill and MCP server: one row
-per tool, with its name, status and estimated startup token cost. MCP servers
-are marked with a diamond. The selected row has a detail panel with its
+Press `5` to open Tools. It is one list of every skill, Claude Code command,
+Claude Code agent and MCP server: one row per tool, with its name, status and
+estimated startup token cost. MCP servers are marked with a diamond. A command
+is shown as `/name` and an agent as `name (agent)`; a skill, a command and an
+agent can have the same name and are separate rows. The selected row has a detail panel with its
 description, estimated costs and source. Rows that need
 attention come first with a `!` and the reason, such as a version that differs
 between machines or two different copies on one machine. `R` rescans tool
@@ -549,6 +551,8 @@ are removed. Remove everywhere requires confirmation. Skill copies use the
 existing guarded backup and removal path; all observed user variants are
 backed up and a canonical version stays in the store.
 A tracked repository skill uses the existing branch-and-commit removal plan.
+A tracked command or agent in a repository cannot be removed this way: the plan
+says to remove it in the repository.
 Native MCP entries keep their import and guarded native-removal requirements.
 
 Compare the copies opens one box with the two copies side by side. Each column
@@ -920,9 +924,9 @@ machine reconnects first. A reconnect syncs the sessions again.
 | quota-axi auth check | `~/.config/agent-net/quota-axi-auth.json` | Provider status and Keychain prompt outcome, without credentials or source paths. Uninstall removes it. |
 | quota-axi choice | `~/.config/agent-net/quota-axi-choice.json` | Selected executable path, version, and reason. Setup and the daemon keep a working choice; uninstall removes the record. |
 | quota-axi private copy | `~/.local/share/agent-net/quota-axi/` | The pinned npm package `quota-axi`, installed by setup or the daemon when the Quota integration is on and you have no quota-axi. The daemon uses it when no usable owner copy is selected. Removed by uninstall and when the item is turned off. |
-| Skill manifest | `~/.local/state/agent-net/daemon/skill-manifest.json` | Paths, hashes, revisions and ownership of skill copies the daemon made, and the Git exclude lines it owns. Mode 0600, owned by you. Kept until uninstall, which also releases the owned exclude lines. |
-| Skill copies | The native skill folders of each harness (for example `~/.claude/skills/<name>/`, `~/.agents/skills/<name>/`, and `<checkout>/.agents/skills/<name>/` for a project) | A skill the owner assigned. Written by the daemon as your user. Uninstall keeps them: they are your skills now, and removing them could lose work. Undo removes the ones the manifest says agent-net made. |
-| Git exclude lines | `<checkout>/.git/info/exclude` (the path from `git rev-parse --git-path info/exclude`, shared by linked worktrees) | One line per project skill copy, added only by the daemon. Each line is reference-counted in the manifest. Uninstall removes the owned lines and leaves the rest of the file. `.gitignore` and the Git index are never changed. |
+| Skill manifest | `~/.local/state/agent-net/daemon/skill-manifest.json` | Paths, hashes, revisions and ownership of skill, command and agent copies the daemon made (the path is the folder of a skill and the file of a command or agent), and the Git exclude lines it owns. Mode 0600, owned by you. Kept until uninstall, which also releases the owned exclude lines. |
+| Skill copies | The native skill folders of each harness (for example `~/.claude/skills/<name>/`, `~/.agents/skills/<name>/`, and `<checkout>/.agents/skills/<name>/` for a project), and for a command or an agent the file `~/.claude/commands/<name>.md`, `~/.claude/agents/<name>.md`, `<checkout>/.claude/commands/<name>.md` or `<checkout>/.claude/agents/<name>.md` | A skill the owner assigned. Written by the daemon as your user. Uninstall keeps them: they are your skills now, and removing them could lose work. Undo removes the ones the manifest says agent-net made. |
+| Git exclude lines | `<checkout>/.git/info/exclude` (the path from `git rev-parse --git-path info/exclude`, shared by linked worktrees) | One line per project skill copy, added only by the daemon. A skill line ends with a slash (`/.claude/skills/name/`). A command or agent line names the file and has no slash (`/.claude/commands/name.md`), because a slash would match only a folder. Each line is reference-counted in the manifest. Uninstall removes the owned lines and leaves the rest of the file. `.gitignore` and the Git index are never changed. |
 | Temporary files | `~/.local/state/agent-net/daemon/.skill-manifest-*`, `.project-verify-*`, `.project-ignore-*`; `.claude.json.lock` (a folder, next to `~/.claude.json`) and `<config>.agent-net-*` (next to a native MCP file) | Short-lived. The daemon deletes them when the step ends. A crash can leave one: uninstall removes the ones in the state folder. `.claude.json.lock` is Claude Code's own lock folder, taken for the length of one edit. A lock folder untouched for 30 seconds was left by a Claude that crashed, and the daemon removes it; trusting a folder that is already trusted takes no lock. |
 | Skill backups | `~/.local/state/agent-net/daemon/skill-backups/<item hash>/<time>-<id>/` | Exact copy of a skill directory before the daemon removed it. Local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days (pruned after each removal and at daemon start). Uninstall removes them. |
 | MCP config backups | `~/.local/state/agent-net/daemon/mcp-backups/<item hash>/<time>-<id>/` | The whole native MCP config file (`preimage`) as it was before the daemon removed an entry or added one for a project coverage row, and `meta.json` (file path, hashes, entry name). A backup can hold secrets: local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days. Uninstall removes them. |
@@ -1448,8 +1452,12 @@ A model provider that is not a subscription and has no usable quota reading is p
 
 ## Tools inventory
 
-Tab 5 opens Skills per project: projects on the left, skills and checkboxes
-on the right. The project list comes from `tools_projects`, which includes
+Tab 5 opens Skills per project: projects on the left, skills, commands and
+agents with checkboxes on the right. Commands (`/name`) and agents (`name
+(agent)`) are switched on and off per project exactly like skills, through the
+same `tools_toggle` and `tools_apply` methods. They are listed after the
+skills. Project and session token counts and costs count skills only. The
+rest of this section says skill for all three kinds. The project list comes from `tools_projects`, which includes
 only projects inside a Git repository. Seen folders without a Git root
 are excluded. Each project keeps its skill count.
 The visible tabs at the top show Skills per project and All
@@ -1517,7 +1525,7 @@ A project skill item has `tracked: true` when `git ls-files` lists files under i
 
 The owner can request a refresh through `inventory_scan`. `inventory_get`
 returns report pages with an `offset` request field and a `next` cursor.
-`tools_items` returns item pages with optional `kind`, `harness`, `project`,
+`tools_items` returns item pages with optional `kind` (`skill`, `prompt`, `agent`, `mcp`, or `bundles` for the first three), `harness`, `project`,
 `state` and `offset` filters. `tools_item` takes an `id` from that list and
 returns its locations and file-list differences against same-name variants.
 The owner-only `tools_skill_details` reads the file manifest of one observed
@@ -1916,6 +1924,8 @@ the plan. A same-named skill in another source that can shadow these copies is
 a conflict. The scanner also observes project `.agent/skills` without managing
 it. Removals move an agent-net-owned verified source to the daemon's local backup
 directory before removing it from the skill location.
+
+**Prompt and agent files.** A prompt or an agent is copied as one file, with the same checks, journal, manifest, backup and undo as a skill. The destination is `~/.claude/commands/<name>.md` or `~/.claude/agents/<name>.md` at user level, and `<checkout>/.claude/commands/<name>.md` or `<checkout>/.claude/agents/<name>.md` for a project. Only the `claude` harness and these two folders are used: no `.agents` folder, no Antigravity folder and no shadow check against other harness folders. The plan target names the folder in `root`, and the daemon refuses any other root for these kinds. The daemon unpacks the stored one-file bundle into a staging folder beside the destination, checks its hash, then moves the file into place with an atomic no-replace rename and removes the staging folder. An existing file with other content is a conflict and is never overwritten. A file with the same content that agent-net did not write is recorded as not owned and is never removed. Removal moves the file to the local backup folder (a copy and delete when the backup is on another filesystem), and undo of a removal puts it back from the backup if the original path is still free.
 It compares the source hash with the planned version and reports a conflict if
 the content changed. Backups retain the original path under a timestamped
 directory. Moves wait for every planned copy
@@ -2013,7 +2023,7 @@ assignments.
 
 ### Managed skill versions
 
-The owner can import an observed skill, prompt or agent with the `tools_import` operator method. A prompt or an agent is stored as a bundle of one file `<name>.md`, under its own kind: the same name as a skill is a separate item with its own numbers. Reading a stored version (`tools_read_file`) uses the path `<name>.md`. Applying a prompt or an agent to a project or a user folder is not built yet.
+The owner can import an observed skill, prompt or agent with the `tools_import` operator method. A prompt or an agent is stored as a bundle of one file `<name>.md`, under its own kind: the same name as a skill is a separate item with its own numbers. Reading a stored version (`tools_read_file`) uses the path `<name>.md`. Applying works for the three kinds the same way (see "Prompt and agent files" below).
 Pass `item` as the ID from `tools_items` and `location` as an object with
 `node_id` and `location` from that item's locations. The source machine must be
 online. The gateway copies skill contents as supplied and does not scan them
