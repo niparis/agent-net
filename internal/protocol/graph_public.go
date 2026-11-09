@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -81,6 +82,8 @@ type PublicGraphPage struct {
 	Total     int               `json:"total"`
 	Next      int               `json:"next,omitempty"`
 	EdgeTotal int               `json:"edge_total"`
+	// Note is set when a name read matches more than one node.
+	Note string `json:"note,omitempty"`
 }
 
 // PublicGraph projects a graph onto the public fields only. It never copies a
@@ -98,7 +101,9 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 			charter := n.Charter
 			detail.Charter = &charter
 			page.Nodes = append(page.Nodes, detail)
-			break
+			if q.Ref != nil {
+				break
+			}
 		}
 		for _, e := range g.Edges {
 			if (q.Ref != nil && (RefMatches(e.FromRef, q.Ref) || RefMatches(e.ToRef, q.Ref))) || (q.Ref == nil && (e.From == node || e.To == node)) {
@@ -108,6 +113,13 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 		sortPublicEdges(page.Edges)
 		page.Total = len(page.Nodes)
 		page.EdgeTotal = len(page.Edges)
+		if q.Ref == nil && len(page.Nodes) > 1 {
+			kinds := make([]string, len(page.Nodes))
+			for i, n := range page.Nodes {
+				kinds[i] = n.Kind
+			}
+			page.Note = fmt.Sprintf("%d nodes are named %q (%s). Each is a separate node with its own charter; read one alone with typed: true and its ref.", len(page.Nodes), node, strings.Join(kinds, ", "))
+		}
 		return page
 	}
 

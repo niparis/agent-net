@@ -7,6 +7,10 @@ type GraphRead struct {
 	Ref     *GraphRef `json:"ref,omitempty"`
 	Typed   bool      `json:"typed,omitempty"`
 	Project string    `json:"project,omitempty"` // a node name; empty means all
+	// Also asks the gateway to add the other nodes that share Project's name
+	// (a repo and an agent can) after the node found by name. Only the public
+	// read sets it; the per-turn charter read does not.
+	Also bool `json:"also,omitempty"`
 }
 
 // GraphGot answers "graph.read": the node's charter and the nodes and edges

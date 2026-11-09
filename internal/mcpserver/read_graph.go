@@ -79,6 +79,7 @@ func roReadGraph(ctx context.Context, call Caller, in roGraphReadIn) (roGraphRea
 			return roGraphReadOut{}, err
 		}
 		out := roGraphReadOut{Nodes: roGraphNodes(page.Nodes), Edges: roGraphEdges(page.Edges)}
+		out.Note = page.Note
 		if len(out.Nodes) == 0 {
 			out.Note = fmt.Sprintf("No graph node is named %q. Read the graph without node to list the names.", in.Node)
 		}
