@@ -96,11 +96,12 @@ type localConn struct {
 	once   sync.Once
 	closed chan struct{}
 
-	mu     sync.Mutex
-	client string
-	ls     *localSession // bound session; nil for cli
-	ended  bool          // plugin reported an explicit session shutdown
-	acks   map[string]chan ack
+	mu       sync.Mutex
+	client   string
+	viaLabel string
+	ls       *localSession // bound session; nil for cli
+	ended    bool          // plugin reported an explicit session shutdown
+	acks     map[string]chan ack
 	// peerPID is the process ID of the other end, read in hello.
 	peerPID     int
 	agyNativeID string        // untrusted until session discovery verifies it
@@ -339,6 +340,7 @@ func (lc *localConn) delivered(raw json.RawMessage) any {
 type helloParams struct {
 	OpenCodeActivity int64  `json:"opencode_activity"`
 	Client           string `json:"client"`
+	Via              string `json:"via"`
 	TUI              bool   `json:"tui"`
 	Harness          string `json:"harness"`
 	NativeID         string `json:"native_id"`
@@ -407,6 +409,9 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 	case "cli":
 		lc.mu.Lock()
 		lc.client = "cli"
+		if p.Via == protocol.ViaPhone {
+			lc.viaLabel = protocol.ViaPhone
+		}
 		lc.peerPID = pid
 		lc.mu.Unlock()
 		if p.TUI {

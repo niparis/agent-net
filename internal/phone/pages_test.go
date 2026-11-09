@@ -32,7 +32,10 @@ func (f *fakeOperator) SendAsOwner(_ context.Context, to, body string) (protocol
 	f.calls = append(f.calls, "send:"+body)
 	return protocol.MessageSent{}, nil
 }
-func (f *fakeOperator) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+func (f *fakeOperator) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	if raw, ok := snapshotFixtureRead(ctx, f, method); ok {
+		return raw, nil
+	}
 	if method == protocol.OpAsksList {
 		return json.RawMessage(`{"asks":[{"id":"i_h","kind":"held","message_id":"m_1","detail":"held request"},{"id":"i_o","kind":"escalation","message_id":"r_1","question":"Request: outcome request\nReason: unclear"},{"id":"i_1","kind":"question","question":"inbox request"}]}`), nil
 	}

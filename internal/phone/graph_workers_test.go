@@ -68,6 +68,12 @@ func (f *richOperator) Snapshot(ctx context.Context) (operator.Snapshot, error) 
 }
 
 func (f *richOperator) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	if raw, ok := snapshotFixtureRead(ctx, f, method); ok {
+		f.mu.Lock()
+		f.reads[method]++
+		f.mu.Unlock()
+		return raw, nil
+	}
 	switch method {
 	case protocol.OpGraphView, protocol.OpUsage, protocol.OpChiefGet:
 		f.mu.Lock()

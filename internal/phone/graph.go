@@ -201,7 +201,7 @@ func graphNodeViewFor(n protocol.Node, key, state string, selected bool) *graphN
 // hour. The conversations supply the dashed message edges.
 func (a *app) graph(ctx context.Context, snap operator.Snapshot, selected string) *graphView {
 	v := &graphView{}
-	raw, err := a.src.Call(ctx, protocol.OpGraphView, protocol.QueryGraph{Places: true, All: true})
+	raw, err := a.read(ctx, protocol.OpGraphView, protocol.QueryGraph{Places: true, All: true})
 	if err != nil {
 		v.Err = "The graph could not be read: " + firstLine(err.Error())
 		return v
@@ -212,7 +212,7 @@ func (a *app) graph(ctx context.Context, snap operator.Snapshot, selected string
 		return v
 	}
 	var chief protocol.ChiefStatus
-	if raw, err := a.src.Call(ctx, protocol.OpChiefGet, nil); err == nil {
+	if raw, err := a.read(ctx, protocol.OpChiefGet, nil); err == nil {
 		_ = json.Unmarshal(raw, &chief)
 	}
 
@@ -462,7 +462,7 @@ func (a *app) graph(ctx context.Context, snap operator.Snapshot, selected string
 		}
 		return ""
 	}
-	if raw, err := a.src.Call(ctx, protocol.OpConversations, protocol.QueryConversations{Limit: 100}); err == nil {
+	if raw, err := a.read(ctx, protocol.OpConversations, protocol.QueryConversations{Limit: 100}); err == nil {
 		var page protocol.ConversationPage
 		if json.Unmarshal(raw, &page) == nil {
 			for _, c := range page.Conversations {

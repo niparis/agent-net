@@ -44,7 +44,7 @@ type ctoView struct {
 // nothing: the TUI keeps the settings form.
 func (a *app) ctoSettings(ctx context.Context) protocol.CTOSettings {
 	var s protocol.CTOSettings
-	raw, err := a.src.Call(ctx, protocol.OpCTOSettings, nil)
+	raw, err := a.read(ctx, protocol.OpCTOSettings, nil)
 	if err == nil {
 		_ = json.Unmarshal(raw, &s)
 	}
@@ -66,7 +66,7 @@ func (a *app) cto(ctx context.Context, h int) *ctoView {
 	if h > 0 {
 		index = -h
 	}
-	raw, err := a.src.Call(ctx, protocol.OpCTOEvents, protocol.CTOEventsRequest{Index: index})
+	raw, err := a.read(ctx, protocol.OpCTOEvents, protocol.CTOEventsRequest{Index: index})
 	if err != nil {
 		v.Err = "The conversation could not be read: " + firstLine(err.Error())
 	} else {
@@ -77,7 +77,7 @@ func (a *app) cto(ctx context.Context, h int) *ctoView {
 		}
 	}
 
-	raw, err = a.src.Call(ctx, protocol.OpProposalList, nil)
+	raw, err = a.read(ctx, protocol.OpProposalList, nil)
 	if err != nil {
 		if v.Err == "" {
 			v.Err = "The proposals could not be read: " + firstLine(err.Error())

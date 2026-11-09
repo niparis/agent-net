@@ -264,7 +264,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 		defer profiling.Close()
 	}
 	// The phone app is served by the gateway-managed apps listener.
-	op := operator.New(daemon.SocketPath())
+	op := operator.NewPhone(daemon.SocketPath())
 	defer op.Close()
 	gw, err := gateway.New(gateway.Options{PhoneApp: phone.New(op), DataDir: *data, DistDir: *dist, SANs: extra, Logger: logger, PublicURL: *appsPublicURL, AppsListen: *appsListen,
 		Version: version, Restart: restartGateway, Retention: keep})

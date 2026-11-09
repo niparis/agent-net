@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 	"time"
@@ -63,5 +64,46 @@ func TestCleanUsageBoundsWhatANodeSends(t *testing.T) {
 	}
 	if empty := cleanUsage(protocol.UsageReport{}); empty.Trees == nil {
 		t.Error("trees should be an empty list, not null")
+	}
+}
+
+func TestConsoleHeaderCountsMatchVisibleSessions(t *testing.T) {
+	s, _ := newTestStore(t)
+	n, _, err := s.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session string
+	for _, h := range []string{"claude", "owner", "codex"} {
+		if id, err := s.UpsertSession(n, protocol.SessionInfo{Harness: h, NativeID: h}); err != nil {
+			t.Fatal(err)
+		} else if h == "claude" {
+			session = id
+		}
+	}
+	for _, item := range []protocol.InboxItem{
+		{Kind: "question", Text: "question"}, {Kind: "approval", Text: "approval"}, {Kind: "feature_idea", Text: "hidden idea"},
+	} {
+		item.SessionID = session
+		if _, err := s.CreateInboxItem(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	agents, err := s.Agents(protocol.QueryAgents{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.SessionCounts(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(c)
+	var fields map[string]any
+	json.Unmarshal(raw, &fields)
+	if fields["console_asks"] != float64(2) {
+		t.Errorf("ask count=%v want=2", fields["console_asks"])
+	}
+	if fields["console_sessions"] != float64(len(agents)) {
+		t.Fatalf("console count=%v want=%d", fields["console_sessions"], len(agents))
 	}
 }
