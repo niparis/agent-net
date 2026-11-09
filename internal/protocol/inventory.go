@@ -508,3 +508,69 @@ type ToolProjectState struct {
 type ToolPlanProbes struct {
 	Probes []ToolPlanProbe `json:"probes"`
 }
+
+// ToolSaveChanged saves a copy that was edited after the daemon deployed it as
+// the skill's next stored version. It is a tools_import that first checks the
+// copy is really marked "changed here".
+type ToolSaveChanged struct {
+	ToolImport
+	Owner string `json:"owner,omitempty"`
+}
+
+// Update states of one copy in a ToolUpdatePlan.
+const (
+	UpdateWillReplace = "update" // an older stored version: it will be replaced
+	UpdateKept        = "kept"   // left as it is; Reason says why
+	UpdateApplied     = "applied"
+	UpdateFailed      = "failed"
+)
+
+// ToolUpdateRequest asks which copies of a skill are older than a stored
+// version (the plan), or, with Copies, replaces exactly those copies. Item is
+// the item of the stored version to deploy. Copies must come from the plan the
+// owner saw; any other copy is refused.
+type ToolUpdateRequest struct {
+	Item   string               `json:"item"`
+	Copies []ToolImportLocation `json:"copies,omitempty"`
+	Owner  string               `json:"owner,omitempty"`
+}
+
+// ToolUpdateCopy is one copy in an update plan or result.
+type ToolUpdateCopy struct {
+	NodeID   string `json:"node_id"`
+	Machine  string `json:"machine"`
+	Location string `json:"location"`
+	Project  string `json:"project,omitempty"`
+	Harness  string `json:"harness,omitempty"`
+	// FromNo is the store number of the copy's current content, 0 if none.
+	FromNo   int    `json:"from_no,omitempty"`
+	FromItem string `json:"from_item"`
+	FromHash string `json:"from_hash"`
+	State    string `json:"state"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// ToolUpdatePlan lists every copy of a skill name with its fate: replaced by
+// the stored version, or kept (a changed copy, a newer or unknown content, an
+// offline machine). Nothing is written when a plan is made.
+type ToolUpdatePlan struct {
+	Item   string           `json:"item"`
+	Name   string           `json:"name"`
+	No     int              `json:"version_no"`
+	Hash   string           `json:"hash"`
+	Copies []ToolUpdateCopy `json:"copies"`
+}
+
+// ToolUpdateCopyRequest is sent to the machine that holds one copy. The
+// machine repeats every check: the copy must still have FromHash, must not be
+// changed here, and must live in a place agent-net writes.
+type ToolUpdateCopyRequest struct {
+	Name     string `json:"name"`
+	Location string `json:"location"`
+	FromItem string `json:"from_item"`
+	FromHash string `json:"from_hash"`
+	ToItem   string `json:"to_item"`
+	ToHash   string `json:"to_hash"`
+	Data     []byte `json:"data"`
+	Owner    string `json:"owner,omitempty"`
+}
