@@ -191,60 +191,50 @@ func TestCheckAnswerBlockedNamesTheBlocker(t *testing.T) {
 	}
 }
 
-func TestCheckTwoMoreWithoutProgressStops(t *testing.T) {
+// After a "more" answer the same task line is not checked again today, with
+// a turn or with progress. A new task line is checked.
+func TestCheckMoreWaitsForANewTaskLine(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
 	req, _, err := send(s, a, b, "req", "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	node := mustNode(t, s, b)
 	idleSince(t, s, c, b, 21*time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check 1 = %+v", got)
 	}
 	c.t = c.t.Add(time.Minute)
-	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: first step"}); err != nil {
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "more: first step"}); err != nil {
 		t.Fatal(err)
 	}
-	// A turn is activity, but it changes no message and no open work.
-	c.t = c.t.Add(time.Minute)
-	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
-	if got := checks(t, s); len(got) != 1 {
-		t.Fatalf("check 2 = %+v", got)
-	}
-	c.t = c.t.Add(time.Minute)
-	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: still first step"}); err != nil {
-		t.Fatal(err)
-	}
-	items, err := s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := 0
-	for _, item := range items {
-		if item.Kind == "check" && item.Status == "open" {
-			open++
-		}
-	}
-	if open != 1 {
-		t.Fatalf("Needs you rows = %d, want 1: %+v", open, items)
-	}
+	// A turn changes no message and no open work.
 	c.t = c.t.Add(time.Minute)
 	activity(t, s, b, "pi", "nb")
 	c.t = c.t.Add(21 * time.Minute)
 	if got := checks(t, s); len(got) != 0 {
-		t.Fatalf("check after two stalled more answers: %+v", got)
+		t.Fatalf("check after the same more line: %+v", got)
 	}
-	// Progress (the request is answered) allows checks again.
+	// Progress does not change the line either.
 	if _, _, err := send(s, b, a, "reply", req.ID); err != nil {
 		t.Fatal(err)
 	}
 	c.t = c.t.Add(time.Minute)
 	activity(t, s, b, "pi", "nb")
 	c.t = c.t.Add(21 * time.Minute)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("check after progress with the same more line: %+v", got)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "working on the second step"}); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Minute)
+	activity(t, s, b, "pi", "nb")
+	c.t = c.t.Add(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
-		t.Fatalf("check after progress = %+v", got)
+		t.Fatalf("check after the task changed = %+v", got)
 	}
 }
 
@@ -507,5 +497,99 @@ func TestCheckDailyCapHoldsWhenTaskChanges(t *testing.T) {
 	c.t = c.t.Add(21 * time.Minute)
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("check over the daily cap: %+v", got)
+	}
+}
+
+// The live bug (2026-11-09): a lead answered "more" with a task line and kept
+// that line. The answer cleared the stored task hash, so each new message and
+// turn re-armed the check, about six a night.
+func TestCheckNotRepeatedAfterMoreWithSameTask(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if _, _, err := send(s, a, b, "req", ""); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("first check = %+v", got)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: write the docs"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		// A new message changes the progress markers, and a turn is activity.
+		c.t = c.t.Add(time.Minute)
+		if _, _, err := send(s, a, b, fmt.Sprintf("note-%d", i), ""); err != nil {
+			t.Fatal(err)
+		}
+		c.t = c.t.Add(time.Minute)
+		activity(t, s, b, "pi", "nb")
+		c.t = c.t.Add(21 * time.Minute)
+		if got := checks(t, s); len(got) != 0 {
+			t.Fatalf("round %d: check after more with the same task: %+v", i, got)
+		}
+	}
+	counts, err := s.SessionCounts(24 * time.Hour)
+	if err != nil || counts.ChecksSent != 1 || counts.CheckAnswersMore != 1 {
+		t.Fatalf("counts = %+v, %v", counts, err)
+	}
+}
+
+// A running standing loop already prompts its target on its clock, so the
+// idle check does not ask that session too. A paused loop prompts nothing,
+// and the check runs again.
+func TestCheckSkipsTheSessionAStandingLoopPrompts(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	loopNode(t, s, c, b)
+	loopTicks(t, s)
+	if _, _, err := send(s, a, b, "req", ""); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("check while the loop prompts the session: %+v", got)
+	}
+	if _, err := s.db.Exec(`UPDATE agent_loops SET paused=? WHERE node='proj'`, loopNoMoving); err != nil {
+		t.Fatal(err)
+	}
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("check while the loop is paused = %+v, want 1", got)
+	}
+}
+
+// A wake-mode session is not held by the same-line rule after "more": its
+// check sends the wake, so the no-progress streak decides, as before. Progress
+// and the same line still get it the next check.
+func TestCheckWakeSessionAfterMoreWithProgressGetsItsNextCheck(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	setAutonomy(t, s, b, protocol.AutonomyWake)
+	req, _, err := send(s, a, b, "req", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("check 1 = %+v", got)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: first step"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := wakeMessages(t, s); len(got) != 1 {
+		t.Fatalf("wake after more = %d, want 1", len(got))
+	}
+	// Progress: the request is answered. The task line is unchanged.
+	c.t = c.t.Add(time.Minute)
+	if _, _, err := send(s, b, a, "reply", req.ID); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Minute)
+	activity(t, s, b, "pi", "nb")
+	c.t = c.t.Add(21 * time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("wake session check after more with progress = %+v, want 1", got)
 	}
 }

@@ -201,6 +201,10 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 		}
 	}
 	cto := s.ctoSessionID()
+	prompted, err := s.loopPrompted()
+	if err != nil {
+		return nil, err
+	}
 	now := s.now()
 	today := now.UTC().Format(idleCheckDay)
 	var out []protocol.Message
@@ -209,6 +213,10 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 			continue
 		}
 		if a.Status != "idle" || a.LastActive == 0 || now.Sub(time.Unix(a.LastActive, 0)) < idleCheckAfter {
+			continue
+		}
+		// A running standing loop prompts this session on its clock already.
+		if prompted[a.SessionID] {
 			continue
 		}
 		if a.Waiting != nil || a.Limited(now) {
@@ -264,6 +272,40 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 			return nil, err
 		}
 		out = append(out, m)
+	}
+	return out, nil
+}
+
+// loopPrompted is the set of sessions that a running standing loop prompts on
+// its clock: the target loopTick picks for each node whose loop is running.
+// The target is picked from every session, not only the online ones checkIdle
+// loaded: loopTarget ranks an offline repo lead first, and loopTick may prompt
+// that lead (waking it). Choosing from checkIdle's online list would name a
+// different session. So this loads the full list again, and only while a loop
+// is running.
+func (s *Store) loopPrompted() (map[string]bool, error) {
+	rows, err := s.loadLoops()
+	if err != nil {
+		return nil, err
+	}
+	var nodes []string
+	for _, r := range rows {
+		if r.every > 0 && r.paused == loopRunning {
+			nodes = append(nodes, r.node)
+		}
+	}
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+	agents, err := s.Agents(protocol.QueryAgents{})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, node := range nodes {
+		if target, ok := loopTarget(agents, node); ok {
+			out[target.SessionID] = true
+		}
 	}
 	return out, nil
 }
@@ -493,12 +535,20 @@ func (s *Store) answerCheck(sessionID, task string) error {
 		if wake {
 			wakeOpen, wakeMsgs = open, msgs
 		}
-		if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_open,check_msgs)
-			VALUES(?,?,0,?,?,?)
+		// The task the session answered "more" about is remembered like a
+		// "blocked" answer: the same line is not checked again today. A wake
+		// session is the exception: its check makes the wake, so the
+		// no-progress streak decides there, as before.
+		moreHash := checkTaskHash(task)
+		if autonomy == protocol.AutonomyWake {
+			moreHash = ""
+		}
+		if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_open,check_msgs,check_task_hash)
+			VALUES(?,?,0,?,?,?,?)
 			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0,
 			check_more=excluded.check_more,check_open=excluded.check_open,check_msgs=excluded.check_msgs,
-			check_task_hash=''`,
-			sessionID, active, streak, open, msgs); err != nil {
+			check_task_hash=excluded.check_task_hash`,
+			sessionID, active, streak, open, msgs, moreHash); err != nil {
 			return err
 		}
 		if wake || st.wakeDay != "" {
