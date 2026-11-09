@@ -101,7 +101,10 @@ type Model struct {
 	zoneName   string
 	zoneSource string
 
-	width, height       int
+	width, height int
+	// demo is set only by the README animation's fixture. It shows the zero
+	// count in the header, so the first beat can say "0 needs you".
+	demo                bool
 	tab                 int
 	quotaScroll         int
 	quotaSelected       int

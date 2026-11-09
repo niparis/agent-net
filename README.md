@@ -35,6 +35,10 @@
 </p>
 
 <p align="center">
+  <img alt="A 12 second loop of the real agent-net TUI in four beats: the Sessions tab with six sessions on two machines, three busy and 0 needs you; a Messages exchange where backend tells frontend that user_id is now account_id and frontend replies with commit 3f2a91c; a worker's change in flight as accept, review, test and merge turn green in turn; and the Desk showing closed 22 · sent on 4, then one decision, Merge PR #212?, in Needs you." src="docs/img/demo.svg" width="900">
+</p>
+
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/img/swarm-dark.svg">
     <img alt="Left: an unsupervised swarm, many agents on one task with crossing lines and conflicting choices, every question reaching you. Right: a supervised swarm, each project with its lead and workers, lines only where work meets, one control space with the CTO and the chief of staff, and a funnel that leaves two real decisions on your Desk." src="docs/img/swarm-light.svg" width="900">

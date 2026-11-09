@@ -475,7 +475,7 @@ func (m Model) titleLine(w int) string {
 		mid = fmt.Sprintf("%d online · %d busy", c.Online, busy)
 		compact = mid
 	}
-	if n := m.waitingCount(); n > 0 {
+	if n := m.waitingCount(); n > 0 || m.demo {
 		mid += " · " + sNeeds.Render(fmt.Sprintf("%d needs you", n))
 		compact += " · " + sNeeds.Render(fmt.Sprintf("%d needs you", n))
 	}

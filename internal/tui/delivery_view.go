@@ -218,7 +218,7 @@ func (m Model) deliveryRow(c deliveryColumns, ch deliveryChange, selected bool) 
 	}
 	status, style := m.deliveryStatusText(ch)
 	age := deliveryWaitText(ch.Waiting)
-	parts = append(parts, cell(firstNonEmpty(ch.Step, "-"), deliveryStepW), style.Render(cell(status, c.status)), sDim.Render(cell(age, deliveryAgeW)), cell(deliveryProgress(ch), c.progress))
+	parts = append(parts, cell(firstNonEmpty(ch.Step, "-"), deliveryStepW), style.Render(cell(status, c.status)), sDim.Render(cell(age, deliveryAgeW)), padStyled(deliveryProgress(ch), c.progress))
 	line := lead + strings.Join(parts, gap)
 	if selected {
 		line = selectedRow(line)
@@ -304,14 +304,14 @@ func deliveryProgress(ch deliveryChange) string {
 		} else if !present[stepName] {
 			continue
 		}
+		glyph := "○"
 		switch states[i] {
 		case stripFailed:
-			b.WriteString("✗")
+			glyph = "✗"
 		case stripPassed:
-			b.WriteString("●")
-		default:
-			b.WriteString("○")
+			glyph = "●"
 		}
+		b.WriteString(stripStyle(states[i]).Render(glyph))
 	}
 	return b.String()
 }
