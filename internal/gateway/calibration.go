@@ -20,7 +20,25 @@ const calibrationWindow = protocol.TrackRecordDays * 24 * time.Hour
 // difficulty, the weighted rework median of the last seven finished tasks,
 // the two offsets and what the loop would do. It never writes state and the
 // chooser never reads it.
+// calibrationTables are the tables Calibration reads: the rework tasks (the runs
+// and their assessments), the defects, the ratings, the scores and the callers'
+// names (sessions, profiles, owner_settings) and the table versions the scores
+// depend on. Keep it equal to those queries (see readThrough).
+var calibrationTables = []string{"worker_runs", "worker_assessments", "worker_defects", "worker_ratings",
+	"sessions", "profiles", "owner_settings", "table_versions"}
+
+// Calibration reads the calibration of the worker picks. The read is kept until
+// one of calibrationTables is written, and never past the second it was read in:
+// the window is the last few weeks by the clock. Each caller gets a copy.
 func (s *Store) Calibration() (protocol.Calibration, error) {
+	v, err := s.readThrough("calibration", calibrationTables, true, func() (any, error) { return s.calibrationRead() })
+	if err != nil {
+		return protocol.Calibration{}, err
+	}
+	return copyOf(v.(protocol.Calibration)), nil
+}
+
+func (s *Store) calibrationRead() (protocol.Calibration, error) {
 	cut := s.now().Add(-calibrationWindow).Unix()
 	tasks, _, err := s.reworkTasks(cut)
 	if err != nil {

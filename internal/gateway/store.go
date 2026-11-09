@@ -3137,7 +3137,32 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	return a, nil
 }
 
+// agentOneTables are the tables Agent reads, through every function it calls:
+// the agent row (agentListTables), its delegation, its charter and its loop.
+// Keep it equal to those queries (see readThrough).
+var agentOneTables = tableUnion(agentListTables, delegationTables, shortAgentChartersTables, loopTables)
+
+type agentOne struct {
+	a  protocol.AgentView
+	ok bool
+}
+
+// Agent returns one agent view. The read is kept until one of agentOneTables is
+// written, and never past the second it was read in (the owner use decays with
+// the clock). Each caller gets a copy.
 func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
+	v, err := s.readThrough("agent|"+sessionID, agentOneTables, true, func() (any, error) {
+		a, ok, err := s.agentRead(sessionID)
+		return agentOne{a, ok}, err
+	})
+	if err != nil {
+		return protocol.AgentView{}, false, err
+	}
+	one := v.(agentOne)
+	return copyOf(one.a), one.ok, nil
+}
+
+func (s *Store) agentRead(sessionID string) (protocol.AgentView, bool, error) {
 	a, ok, err := s.agentBase(sessionID)
 	if err != nil || !ok {
 		return a, false, err

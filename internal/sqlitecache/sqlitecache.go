@@ -20,6 +20,7 @@
 package sqlitecache
 
 import (
+	"bytes"
 	"container/list"
 	"context"
 	"database/sql/driver"
@@ -36,6 +37,12 @@ import (
 // or one-off statements.
 const maxQueryLen = 16 << 10
 
+// preUpdateRegisterer is what the modernc connection offers for the pre-update
+// hook (see Connector.preUpdate).
+type preUpdateRegisterer interface {
+	RegisterPreUpdateHook(sqlite.PreUpdateHookFn)
+}
+
 // Connector opens connections for sql.OpenDB.
 type Connector struct {
 	inner driver.Connector
@@ -48,7 +55,18 @@ type Connector struct {
 	writes atomic.Uint64
 	global atomic.Uint64
 	schema atomic.Uint64
+	// tables counts every write to a table, whatever its columns.
 	tables sync.Map // lower case table name -> *atomic.Uint64
+	// wide counts the writes to a table that name no column (an INSERT, a
+	// DELETE): they move every column of the table.
+	wide sync.Map // lower case table name -> *atomic.Uint64
+	// cols counts the changes of a column's value. The key is table.column.
+	cols sync.Map // lower case table.column -> *atomic.Uint64
+	// names keeps the column names of the tables statements write.
+	names sync.Map // lower case table name -> *tableNames
+	// watched holds the tables that a column key names. The pre-update hook
+	// counts only these: a table no key reads by column costs nothing per row.
+	watched sync.Map // lower case table name -> struct{}
 
 	views    atomic.Pointer[viewSet]
 	observer atomic.Pointer[func(Statement)]
@@ -74,33 +92,55 @@ func New(dsn string, size int) (*Connector, error) {
 func (c *Connector) Writes() uint64 { return c.writes.Load() }
 
 // Stamp is a number that changes whenever a statement that may change one of
-// the tables has run. Names are table names in any case. Read it before
-// reading data you keep, and keep it with the data: the data is current while
-// Stamp of the same tables gives the same number.
+// the keys has run. A key is a table name, in any case, or table.column. Read
+// it before reading data you keep, and keep it with the data: the data is
+// current while Stamp of the same keys gives the same number.
 //
 // A write counts for the tables SQLite says the statement changes, which
 // includes the tables its triggers change. A statement that ran with Exec and
 // changed no row counts for none. A write the connector cannot place
 // (a schema change, a script, a statement it does not keep, a savepoint)
-// counts for every table, so Stamp of any tables moves.
+// counts for every table, so Stamp of any keys moves.
+//
+// A table key moves for every write to the table. A table.column key moves when
+// a write changes the value of that column in a row, and for any INSERT or
+// DELETE of the table, since those write every column of a row. A write that
+// leaves a column's value as it was does not move it, and neither does a write
+// to other columns. So a column key is right for a value that depends on the
+// columns it names and on which rows exist, and on nothing else of the table.
 //
 // The number is a sum of counts that only go up, so it is the same exactly
 // when none of them moved. It is not a count of writes.
-func (c *Connector) Stamp(tables ...string) uint64 {
+func (c *Connector) Stamp(keys ...string) uint64 {
 	sum := c.global.Load()
-	for _, t := range tables {
-		sum += c.counter(t).Load()
+	for _, k := range keys {
+		if i := strings.IndexByte(k, '.'); i >= 0 {
+			c.watch(k[:i])
+			sum += c.count(&c.wide, k[:i]).Load() + c.count(&c.cols, k).Load()
+			continue
+		}
+		sum += c.count(&c.tables, k).Load()
 	}
 	return sum
 }
 
-// counter returns the write count of a table.
-func (c *Connector) counter(table string) *atomic.Uint64 {
+// watch marks table as one that a column key names, so the hook counts its rows.
+// A table is watched before the key is read, so every write after that read is
+// counted, and a write before it is in the data the read loads.
+func (c *Connector) watch(table string) {
 	table = strings.ToLower(table)
-	if v, ok := c.tables.Load(table); ok {
+	if _, ok := c.watched.Load(table); !ok {
+		c.watched.LoadOrStore(table, struct{}{})
+	}
+}
+
+// count returns the counter of key in m, made when it is first used.
+func (c *Connector) count(m *sync.Map, key string) *atomic.Uint64 {
+	key = strings.ToLower(key)
+	if v, ok := m.Load(key); ok {
 		return v.(*atomic.Uint64)
 	}
-	v, _ := c.tables.LoadOrStore(table, new(atomic.Uint64))
+	v, _ := m.LoadOrStore(key, new(atomic.Uint64))
 	return v.(*atomic.Uint64)
 }
 
@@ -114,6 +154,10 @@ type Statement struct {
 	// Reads and Writes are the sorted, lower case names of the tables SQLite
 	// says the statement reads and writes, triggers and views included.
 	Reads, Writes []string
+	// ReadColumns are the sorted table.column names of the columns the
+	// statement reads. A table that is read through no column is in Reads
+	// only.
+	ReadColumns []string
 	// Schema is true for a statement that changes the schema.
 	Schema bool
 }
@@ -132,7 +176,8 @@ func (c *Connector) SetObserver(fn func(Statement)) {
 // stmtInfo is what the authorizer told about one statement.
 type stmtInfo struct {
 	reads, writes []string
-	counters      []*atomic.Uint64 // the counts of writes
+	readColumns   []string
+	counters      []*atomic.Uint64 // the counts of writes, one for each table
 	schemaChange  bool
 	// rowCounted is true when the statement changes tables only (none of the
 	// names it writes is a view), so it changed nothing when it reports that
@@ -190,6 +235,7 @@ func (c *Connector) observe(query string, info *stmtInfo) {
 	st := Statement{Query: query}
 	if info != nil {
 		st.Known, st.Reads, st.Writes, st.Schema = true, info.reads, info.writes, info.schemaChange
+		st.ReadColumns = info.readColumns
 	}
 	(*f)(st)
 }
@@ -212,6 +258,14 @@ func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
 		inner.Close()
 		return nil, driver.ErrBadConn
 	}
+	// Without the hook the connector could not count the columns a write
+	// changes, and a column stamp would never move.
+	hooks, ok := inner.(preUpdateRegisterer)
+	if !ok {
+		inner.Close()
+		return nil, driver.ErrBadConn
+	}
+	hooks.RegisterPreUpdateHook(c.preUpdate)
 	cc.exec, _ = inner.(driver.ExecerContext)
 	cc.query, _ = inner.(driver.QueryerContext)
 	// Without an authorizer the connector cannot place a write, and counts it
@@ -538,6 +592,7 @@ func isScript(query string) bool {
 // prepared.
 type collector struct {
 	reads, writes map[string]struct{}
+	readCols      map[string]struct{} // table.column
 	schemaChange  bool
 }
 
@@ -551,15 +606,15 @@ func (c *conn) authorize(action sqlite.AuthorizerActionCode, arg1, arg2, _, _ st
 	}
 	switch action {
 	case sqlite.AuthRead:
-		if col.reads == nil {
-			col.reads = map[string]struct{}{}
+		table := strings.ToLower(arg1)
+		addName(&col.reads, table)
+		if arg2 != "" {
+			addName(&col.readCols, table+"."+strings.ToLower(arg2))
 		}
-		col.reads[strings.ToLower(arg1)] = struct{}{}
 	case sqlite.AuthInsert, sqlite.AuthUpdate, sqlite.AuthDelete:
-		if col.writes == nil {
-			col.writes = map[string]struct{}{}
-		}
-		col.writes[strings.ToLower(arg1)] = struct{}{}
+		// The columns a write changes are counted by the pre-update hook, row
+		// by row, so only the table is named here.
+		addName(&col.writes, arg1)
 	case sqlite.AuthCreateIndex, sqlite.AuthCreateTable, sqlite.AuthCreateTempIndex, sqlite.AuthCreateTempTable,
 		sqlite.AuthCreateTempTrigger, sqlite.AuthCreateTempView, sqlite.AuthCreateTrigger, sqlite.AuthCreateView,
 		sqlite.AuthDropIndex, sqlite.AuthDropTable, sqlite.AuthDropTempIndex, sqlite.AuthDropTempTable,
@@ -585,10 +640,13 @@ func (c *conn) prepare(ctx context.Context, query string) (driver.Stmt, *stmtInf
 	if err != nil {
 		return nil, nil, err
 	}
-	info := &stmtInfo{reads: sortedNames(col.reads), writes: sortedNames(col.writes), schemaChange: col.schemaChange}
+	info := &stmtInfo{reads: sortedNames(col.reads), writes: sortedNames(col.writes), readColumns: sortedNames(col.readCols), schemaChange: col.schemaChange}
 	for _, w := range info.writes {
-		info.counters = append(info.counters, c.owner.counter(w))
+		info.counters = append(info.counters, c.owner.count(&c.owner.tables, w))
 	}
+	// The pre-update hook numbers the columns of a row, so the names of the
+	// tables this statement writes (triggers included) are known before it runs.
+	c.rememberColumns(ctx, info.writes)
 	if len(info.writes) > 0 && !info.schemaChange {
 		info.rowCounted = c.noViews(ctx, info.writes)
 	}
@@ -631,6 +689,119 @@ func (c *conn) noViews(ctx context.Context, names []string) bool {
 		}
 	}
 	return true
+}
+
+// tableNames are the column names of a table, in the order the pre-update hook
+// numbers them, as of one schema count.
+type tableNames struct {
+	schema uint64
+	cols   []string
+}
+
+// rememberColumns keeps the column names of tables for the current schema. It
+// runs before a statement, outside the hook, because the hook may not query the
+// database. A table whose names are not known is counted as a whole when it is
+// written (see preUpdate).
+func (c *conn) rememberColumns(ctx context.Context, tables []string) {
+	if c.query == nil {
+		return
+	}
+	schema := c.owner.schema.Load()
+	for _, t := range tables {
+		key := strings.ToLower(t)
+		if v, ok := c.owner.names.Load(key); ok && v.(*tableNames).schema == schema {
+			continue
+		}
+		rows, err := c.query.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, []driver.NamedValue{{Ordinal: 1, Value: t}})
+		if err != nil {
+			continue
+		}
+		var cols []string
+		dest := make([]driver.Value, 1)
+		for rows.Next(dest) == nil {
+			if n, ok := dest[0].(string); ok {
+				cols = append(cols, strings.ToLower(n))
+			}
+		}
+		rows.Close()
+		if len(cols) > 0 {
+			c.owner.names.Store(key, &tableNames{schema: schema, cols: cols})
+		}
+	}
+}
+
+// columnNames returns the column names of table in the order the pre-update
+// hook numbers them, when they are known for the current schema.
+func (c *Connector) columnNames(table string) ([]string, bool) {
+	v, ok := c.names.Load(table)
+	if !ok {
+		return nil, false
+	}
+	tn := v.(*tableNames)
+	if tn.schema != c.schema.Load() {
+		return nil, false
+	}
+	return tn.cols, true
+}
+
+// preUpdate counts the rows a statement changes. SQLite calls it for each row
+// before the change, with the old and the new values of every column. An
+// UPDATE moves the count of each column whose value changed, so an UPDATE
+// that sets a column to the value it has moves nothing for it. An INSERT or a
+// DELETE moves every column of the table. When the column names are not known,
+// a write counts for every column of its table.
+func (c *Connector) preUpdate(d sqlite.SQLitePreUpdateData) {
+	table := strings.ToLower(d.TableName)
+	if _, ok := c.watched.Load(table); !ok {
+		return
+	}
+	names, known := c.columnNames(table)
+	n := d.Count()
+	if sqlite.AuthorizerActionCode(d.Op) != sqlite.AuthUpdate || !known || len(names) != n {
+		c.count(&c.wide, table).Add(1)
+		return
+	}
+	old, nw := make([]any, n), make([]any, n)
+	if d.Old(old...) != nil || d.New(nw...) != nil {
+		c.count(&c.wide, table).Add(1)
+		return
+	}
+	for i := range old {
+		if !sameValue(old[i], nw[i]) {
+			c.count(&c.cols, table+"."+names[i]).Add(1)
+		}
+	}
+}
+
+// sameValue says whether two column values are the same. The driver gives
+// int64, float64, string, []byte or nil, and the common cases are compared
+// without reflection: a row is compared on every write.
+func sameValue(a, b any) bool {
+	switch x := a.(type) {
+	case nil:
+		return b == nil
+	case int64:
+		y, ok := b.(int64)
+		return ok && x == y
+	case string:
+		y, ok := b.(string)
+		return ok && x == y
+	case float64:
+		y, ok := b.(float64)
+		return ok && x == y
+	case []byte:
+		y, ok := b.([]byte)
+		return ok && bytes.Equal(x, y)
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+// addName adds name, in lower case, to the set *m. The set is made on first use.
+func addName(m *map[string]struct{}, name string) {
+	if *m == nil {
+		*m = map[string]struct{}{}
+	}
+	(*m)[strings.ToLower(name)] = struct{}{}
 }
 
 func sortedNames(m map[string]struct{}) []string {

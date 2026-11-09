@@ -54,6 +54,13 @@ func tableUnion(lists ...[]string) []string {
 // fails when a query reads a table the set does not name. An empty set means
 // any write to the database.
 //
+// A key may name one column of a table, as table.column. The value then
+// depends on that column and on which rows exist, and a write that leaves the
+// column's value as it was, or that changes other columns, keeps the value.
+// The graph reads four columns of sessions this way, so a session.upsert that
+// rewrites its status keeps the graph (see sqlitecache.Stamp). Name every column
+// the load reads from a table, and no other: the guard test checks it.
+//
 // A read that depends on the time, such as a window of the last day or a
 // decay, passes timed=true: its value is kept for the second it was read in,
 // by the store's clock, and not longer.

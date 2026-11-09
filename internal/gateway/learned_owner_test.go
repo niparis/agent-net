@@ -98,3 +98,22 @@ func TestLearnedViewedTracksApplicationOrder(t *testing.T) {
 		t.Fatalf("application order: %+v %v", v, err)
 	}
 }
+
+// A suggestion shows in the owner's list once its ready time has passed, with no
+// write in between. The list is kept between writes, so the time must be checked
+// on each call.
+func TestLearnedListShowsAReadySuggestionWithoutAWrite(t *testing.T) {
+	s, c, _, _ := learnedProjects(t)
+	id := insertLearned(t, s, "app", "refuses", "", "add", "deploy changes", "outcome")
+	readyAt := c.now().Add(2 * time.Minute).UnixNano()
+	if _, err := s.db.Exec(`UPDATE learned_suggestions SET severity='major', ready_at=? WHERE id=?`, readyAt, id); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := s.OwnerLearned(); err != nil || len(list) != 0 {
+		t.Fatalf("before the ready time: %+v %v", list, err)
+	}
+	c.t = c.t.Add(3 * time.Minute)
+	if list, err := s.OwnerLearned(); err != nil || len(list) != 1 {
+		t.Fatalf("after the ready time, without a write: %+v %v", list, err)
+	}
+}

@@ -154,7 +154,24 @@ func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 
 const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at,options,asker_name,change_title`
 
+// inboxTables are the tables inboxRead reads: the items, the delivery steps and
+// their changes, the names of the askers (agentNames: sessions, nodes, profiles)
+// and the pipeline of a delivery step, which reads the graph and the settings.
+// Keep it equal to those queries (see readThrough).
+var inboxTables = tableUnion([]string{"inbox_items", "delivery_step_inbox", "delivery_changes", "sessions", "nodes", "profiles"}, graphTables)
+
+// ListInbox lists the open and recent inbox items. The read is kept until one
+// of inboxTables is written, and never past the second it was read in: the
+// "connected" rule compares with the clock. Each caller gets a copy.
 func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
+	v, err := s.readThrough("inbox", inboxTables, true, func() (any, error) { return s.inboxRead() })
+	if err != nil {
+		return nil, err
+	}
+	return copyOf(v.([]protocol.InboxItem)), nil
+}
+
+func (s *Store) inboxRead() ([]protocol.InboxItem, error) {
 	// An open ask that waits on someone other than the owner (a team lead) is
 	// not the owner's Inbox item.
 	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items WHERE NOT (status='open' AND next_who NOT IN ('owner','')) ORDER BY created_at,id`)
