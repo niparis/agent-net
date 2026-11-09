@@ -228,7 +228,12 @@ type fileStamp struct {
 const workerNoticeFileWait = 2 * time.Minute
 
 func isWorkerFileNotice(m protocol.Message) bool {
-	return m.FromWorker && strings.HasPrefix(m.Body, "[agent-net worker notice]\nstatus: ")
+	if !strings.HasPrefix(m.Body, "[agent-net worker notice]\nstatus: ") {
+		return false
+	}
+	// The gateway keeps messages longer than it keeps ended worker sessions.
+	// Once that session is deleted, its sender fields are all empty on replay.
+	return m.FromWorker || (m.FromHarness == "" && m.FromName == "")
 }
 
 // fileWaitDeadline takes the clock as an argument so old and replayed notices

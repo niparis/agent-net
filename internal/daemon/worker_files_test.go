@@ -186,6 +186,7 @@ func TestWorkerNoticeFileDeadline(t *testing.T) {
 		t.Fatalf("replayed notice should already have timed out: %s", got)
 	}
 	m.FromWorker = false
+	m.FromHarness, m.FromName = "fake", "peer"
 	if got := fileWaitDeadline(m, FileConfig{}, now); !got.Equal(m.ExpiresAt) {
 		t.Fatalf("ordinary message deadline = %s, want expiry %s", got, m.ExpiresAt)
 	}
@@ -280,5 +281,15 @@ func TestWorkerNoticeMissingFilesGatewayDelivery(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("handback did not stop after cancellation")
+	}
+}
+
+func TestOrphanedWorkerNoticeFileDeadline(t *testing.T) {
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	// The gateway deletes old worker sessions while keeping their messages.
+	// On replay, the left join no longer marks the sender as a worker.
+	m := protocol.Message{Body: "[agent-net worker notice]\nstatus: done\nreport", CreatedAt: now.Add(-3 * time.Minute), ExpiresAt: now.Add(time.Hour)}
+	if got := fileWaitDeadline(m, FileConfig{}, now); !got.Before(now) {
+		t.Fatalf("orphaned worker notice deadline = %s, should have expired", got)
 	}
 }
