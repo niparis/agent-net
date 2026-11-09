@@ -1,4 +1,4 @@
-# 0126 - Claude Code permission proposals go through the owner's click
+# 0127 - Claude Code permission proposals go through the owner's click
 
 Date: 2026-11-09
 Status: Accepted by the owner, through the CTO
@@ -11,7 +11,7 @@ the approval.
 
 ## Propose
 
-`agent_permission_propose {rules, targets, reason}` is open to every session,
+`agent_permission_propose {kind, rules, targets, machine, reason}` is open to every session,
 the CTO included, and refused for the command line. It takes exact Claude Code
 permission rule strings (for example `Bash(gh pr merge *)`), repo or project
 names, and a reason. Only `permissions.allow` entries are proposed: there is
@@ -55,6 +55,28 @@ was there before. The undo is owner-only too, through `permission_undo`. The
 result says that a Claude session already running in that repo may need a
 restart, or `/hooks` opened once, to load the new rules.
 
+## Folder trust
+
+The same tool has a second kind, `trust`. It takes one enrolled machine and
+exact absolute folder paths, or paths under `~/`, and a reason. The owner gets
+one ask that lists every folder and the machine. Approve sends the same
+`permission.apply` frame with `kind: trust`; the machine's daemon calls
+`folderTrustLocal`, the writer the owner's own `session_change` trust already
+uses. There is no second trust writer. The result records `Added` from that
+writer: a folder the owner already trusted stays, and the undo removes only a
+trust this approval created. If the trust store cannot remove it, the result
+says so.
+
+When a session start, resume or wake answers `needs_trust`, the gateway raises
+the trust ask itself, with the folder, the machine and the session in the
+reason. It keeps one open ask per machine and folder, so repeated starts do not
+make a pile of asks. An agent cannot grant trust for itself: the owner's click
+is still the only path.
+
+## First use
+
 The first use after release is `Bash(gh pr merge *)` and `Bash(gh pr close *)`
 for the forge repos: tenebrae, finget, tradedesk, freqtradebots,
-slither-swap, tenebrae-strats, cogforge and ingest-forge.
+slither-swap, tenebrae-strats, cogforge and ingest-forge. The first folder
+trust case is `wbg-worldview` on the research machine, including its
+`.claude/worktrees/wbg-poc`, which returned `needs_trust`.

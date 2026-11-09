@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -210,6 +211,171 @@ func TestPermissionProposalOwnerClickAppliesAndUndoes(t *testing.T) {
 	}
 	if !settled {
 		t.Fatalf("log line after undo: %+v", after.Entries)
+	}
+}
+
+// Folder trust goes through the same owner click and the owner's existing trust
+// writer. A folder the owner already trusted is left alone by the undo.
+func TestTrustProposalOwnerClickAppliesThroughExistingWriterAndUndoes(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := folderTrustEnv(t)
+	n := startWorkerNode(t, g, shortSet, nil)
+	fresh := newHomeRepo(t, home, "code/fresh")
+	already := newHomeRepo(t, home, "code/already")
+	if err := claudetrust.Set(already); err != nil {
+		t.Fatal(err)
+	}
+
+	pi, _ := helloPi(t, n.node, "nt", home, false)
+	raw := pi.mustCall(protocol.OpPermissionPropose, protocol.PermissionProposeRequest{
+		Kind:    protocol.PermissionKindTrust,
+		Machine: n.cfg.Hostname,
+		Targets: []string{fresh, already},
+		Reason:  "Claude Code cannot start in these folders",
+	})
+	var proposal protocol.PermissionProposeResult
+	if err := json.Unmarshal(raw, &proposal); err != nil {
+		t.Fatal(err)
+	}
+	if proposal.ID == "" || len(proposal.Targets) != 2 {
+		t.Fatalf("trust proposal: %+v", proposal)
+	}
+	var inbox struct {
+		Items []protocol.InboxItem `json:"items"`
+	}
+	if err := json.Unmarshal(n.cli.mustCall("inbox_list", nil), &inbox); err != nil {
+		t.Fatal(err)
+	}
+	var ask protocol.InboxItem
+	for _, item := range inbox.Items {
+		if item.Kind == protocol.AskKindPermission && strings.Contains(item.Text, fresh) {
+			ask = item
+		}
+	}
+	if ask.ID == "" || !strings.Contains(ask.Text, already) || !strings.Contains(ask.Text, n.cfg.Hostname) ||
+		!strings.Contains(ask.Text, "Claude Code cannot start in these folders") {
+		t.Fatalf("trust ask: %+v", ask)
+	}
+
+	// No click yet: a non-owner answer and a direct apply frame write nothing.
+	if _, err := pi.call("inbox_answer", map[string]string{"id": ask.ID, "answer": "approve"}); err == nil {
+		t.Fatal("an agent session answered the owner's trust ask")
+	}
+	if _, err := pi.call(protocol.FramePermissionApply, protocol.PermissionApplyFrame{
+		ProposalID: proposal.ID, Kind: protocol.PermissionKindTrust,
+		Target: protocol.PermissionTarget{Path: fresh},
+	}); err == nil {
+		t.Fatal("a session sent a direct trust apply frame")
+	}
+	if trusted, _ := claudetrust.Trusted(fresh); trusted {
+		t.Fatal("the folder was trusted before the owner clicked")
+	}
+	if trusted, _ := claudetrust.Trusted(already); !trusted {
+		t.Fatal("the owner's earlier trust was lost")
+	}
+
+	var answered struct {
+		PermissionResults []protocol.PermissionApplyResult `json:"permission_results"`
+		PermissionError   string                           `json:"permission_error"`
+	}
+	if err := json.Unmarshal(n.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": "approve"}), &answered); err != nil {
+		t.Fatal(err)
+	}
+	if answered.PermissionError != "" || len(answered.PermissionResults) != 2 {
+		t.Fatalf("trust apply: %+v %s", answered.PermissionResults, answered.PermissionError)
+	}
+	if trusted, err := claudetrust.Trusted(fresh); err != nil || !trusted {
+		t.Fatalf("fresh folder not trusted: %v %v", trusted, err)
+	}
+	if trusted, err := claudetrust.Trusted(already); err != nil || !trusted {
+		t.Fatalf("already trusted folder lost: %v %v", trusted, err)
+	}
+
+	var log protocol.DeskLogResult
+	if err := json.Unmarshal(n.cli.mustCall(protocol.OpDeskLog, protocol.DeskLogQuery{Limit: 20}), &log); err != nil {
+		t.Fatal(err)
+	}
+	var undo protocol.PermissionUndoRequest
+	for _, e := range log.Entries {
+		if len(e.Options) == 2 && e.Options[0] == protocol.OpPermissionUndo {
+			_ = json.Unmarshal([]byte(e.Options[1]), &undo)
+		}
+	}
+	if undo.ID != proposal.ID {
+		t.Fatalf("trust log entry has no undo: %+v", log.Entries)
+	}
+	if _, err := n.cli.call(protocol.OpPermissionUndo, undo); err != nil {
+		t.Fatalf("trust undo: %v", err)
+	}
+	if trusted, _ := claudetrust.Trusted(fresh); trusted {
+		t.Fatal("undo did not remove the trust the approval added")
+	}
+	if trusted, _ := claudetrust.Trusted(already); !trusted {
+		t.Fatal("undo removed a trust that was there before")
+	}
+}
+
+// A needs_trust start raises exactly one trust ask for its machine and folder.
+func TestNeedsTrustRaisesOneDedupedAsk(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	repo := newHomeRepo(t, home, "code/wbg")
+	r := sessionStartPathCall(t, c.workerNode, protocol.SessionStartRequest{Path: repo, Harness: "claude"})
+	if r.Status != "needs_trust" || r.Path != repo {
+		t.Fatalf("untrusted start: %+v", r)
+	}
+	asks := func() []protocol.Ask {
+		t.Helper()
+		var list protocol.AsksResult
+		if err := json.Unmarshal(c.cli.mustCall(protocol.OpAsksList, nil), &list); err != nil {
+			t.Fatal(err)
+		}
+		return list.Asks
+	}
+	count := func(list []protocol.Ask) int {
+		n := 0
+		for _, a := range list {
+			if a.Kind == protocol.AskKindPermission && strings.Contains(a.Question, repo) {
+				n++
+			}
+		}
+		return n
+	}
+	eventually(t, "one trust ask after the first needs_trust", func() bool { return count(asks()) == 1 })
+	if got := count(asks()); got != 1 {
+		t.Fatalf("trust asks after the first needs_trust: %d", got)
+	}
+	r = sessionStartPathCall(t, c.workerNode, protocol.SessionStartRequest{Path: repo, Harness: "claude"})
+	if r.Status != "needs_trust" {
+		t.Fatalf("second untrusted start: %+v", r)
+	}
+	if got := count(asks()); got != 1 {
+		t.Fatalf("trust asks after the second needs_trust: %d", got)
+	}
+	var ask protocol.Ask
+	for _, a := range asks() {
+		if a.Kind == protocol.AskKindPermission && strings.Contains(a.Question, repo) {
+			ask = a
+		}
+	}
+	if !strings.Contains(ask.Question, c.cfg.Hostname) || !strings.Contains(ask.Question, "needs Claude Code folder trust") {
+		t.Fatalf("automatic trust ask text: %s", ask.Question)
+	}
+	if trusted, _ := claudetrust.Trusted(repo); trusted {
+		t.Fatal("needs_trust alone trusted the folder")
+	}
+	if _, err := c.cli.call("inbox_answer", map[string]string{"id": ask.ID, "answer": "approve"}); err != nil {
+		t.Fatalf("approve the automatic trust ask: %v", err)
+	}
+	if trusted, err := claudetrust.Trusted(repo); err != nil || !trusted {
+		t.Fatalf("automatic trust ask did not trust the folder: %v %v", trusted, err)
+	}
+	if _, err := c.cli.call(protocol.OpPermissionUndo, protocol.PermissionUndoRequest{ID: strings.TrimPrefix(ask.Ref, "permission:")}); err != nil {
+		t.Fatalf("undo the automatic trust: %v", err)
+	}
+	if trusted, _ := claudetrust.Trusted(repo); trusted {
+		t.Fatal("undo did not remove the automatic trust")
 	}
 }
 

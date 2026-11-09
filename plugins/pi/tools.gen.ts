@@ -1063,36 +1063,43 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_permission_propose",
-    "description": "Propose exact Claude Code permission allow rules for registered repos. The owner answers one owner-only ask; no file changes before that.",
+    "description": "Propose Claude Code permission rules or folder trust for the owner to approve.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "permissions",
+            "trust"
+          ],
+          "description": "permissions or trust"
+        },
         "rules": {
           "type": "array",
-          "minItems": 1,
           "items": {
-            "type": "string",
-            "maxLength": 1024
+            "type": "string"
           },
-          "description": "Exact Claude Code permission rule strings for permissions.allow, such as \"Bash(gh pr merge *)\"."
+          "description": "allow rules for permissions"
         },
         "targets": {
           "type": "array",
           "minItems": 1,
           "items": {
-            "type": "string",
-            "maxLength": 256
+            "type": "string"
           },
-          "description": "Registered repo or project names, as agent_projects_find knows them."
+          "description": "repo names, or folder paths for trust"
+        },
+        "machine": {
+          "type": "string",
+          "description": "machine for trust"
         },
         "reason": {
           "type": "string",
-          "maxLength": 2000,
-          "description": "Why these rules are needed."
+          "description": "why"
         }
       },
       "required": [
-        "rules",
         "targets",
         "reason"
       ],

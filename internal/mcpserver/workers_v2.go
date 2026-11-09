@@ -253,7 +253,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		return map[string]any{"id": m["id"], "status": m["status"]}, nil
 	case "agent_permission_propose":
 		m, err := opResult(run(ctx, protocol.OpPermissionPropose, protocol.PermissionProposeRequest{
-			Rules: stringSlice(a["rules"]), Targets: stringSlice(a["targets"]), Reason: str("reason"),
+			Kind: str("kind"), Rules: stringSlice(a["rules"]), Targets: stringSlice(a["targets"]), Machine: str("machine"), Reason: str("reason"),
 		}))
 		if err != nil {
 			return nil, err

@@ -1750,6 +1750,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return res, err
 
+	case protocol.FramePermissionTrustAsk:
+		var p protocol.PermissionTrustAsk
+		if json.Unmarshal(raw, &p) != nil || p.Path == "" {
+			return nil, reject("bad permission.trust_ask")
+		}
+		g.raiseTrustAsk(p.Session, nc.id, st.hostname(nc.id), p.Path, p.Project, p.Owner)
+		return map[string]bool{"raised": true}, nil
+
 	case "permission.undo":
 		var p protocol.PermissionUndoFrame
 		if json.Unmarshal(raw, &p) != nil || p.ProposalID == "" || !g.validToolOwner(nc, p.Owner) {

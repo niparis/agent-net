@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Claude Code permission rules (decision 0126). The gateway sends these frames
+// Claude Code permission rules (decision 0127). The gateway sends these frames
 // only after the owner answered a permission ask. They are handled on the
 // gateway link and nowhere else: a local session has no method that can write
 // these files.
@@ -118,6 +120,24 @@ func claudePermissionRemove(dir string, rules []string) ([]string, error) {
 	return removed, nil
 }
 
+// reportTrustNeed tells the gateway that a local start answered needs_trust,
+// so the gateway raises the owner's one-click trust ask. It writes nothing.
+func (d *Daemon) reportTrustNeed(ctx context.Context, path, project, session string) {
+	if !filepath.IsAbs(path) {
+		return
+	}
+	if session == "" {
+		session = d.ownerSessionID()
+	}
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if _, err := d.call(cctx, protocol.FramePermissionTrustAsk, protocol.PermissionTrustAsk{
+		Session: session, Owner: d.ownerSessionID(), Path: path, Project: project,
+	}); err != nil {
+		d.Logf("permission.trust_ask.report path=%s error=%v", path, err)
+	}
+}
+
 // proposePermission sends one proposal to the gateway. It writes nothing.
 func (d *Daemon) proposePermission(ctx context.Context, session string, req protocol.PermissionProposeRequest) (protocol.PermissionProposeResult, error) {
 	var out protocol.PermissionProposeResult
@@ -131,11 +151,31 @@ func (d *Daemon) proposePermission(ctx context.Context, session string, req prot
 	return out, nil
 }
 
-// permissionApply writes one proposal's rules into one repository.
-func (d *Daemon) permissionApply(p protocol.PermissionApplyFrame) protocol.PermissionApplyResult {
-	res := protocol.PermissionApplyResult{Target: p.Target, Status: "failed"}
+// permissionApply writes one proposal's rules into one repository, or trusts
+// one folder through the owner's existing trust writer.
+func (d *Daemon) permissionApply(ctx context.Context, p protocol.PermissionApplyFrame) protocol.PermissionApplyResult {
+	res := protocol.PermissionApplyResult{Target: p.Target, Kind: p.Kind, Status: "failed"}
 	if !filepath.IsAbs(p.Target.Path) {
 		res.Error = "the target path is not absolute"
+		return res
+	}
+	if p.Kind == protocol.PermissionKindTrust {
+		out, err := d.folderTrustLocal(ctx, protocol.FolderTrustRequest{Path: p.Target.Path})
+		if err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		res.TrustAdded = out.Added
+		switch {
+		case out.Added:
+			res.Status = "applied"
+		case out.Trusted:
+			res.Status = "already_present"
+		default:
+			res.Error = "the folder was not trusted"
+			return res
+		}
+		d.Logf("permission.apply proposal=%s folder=%s trusted=%t added=%t", p.ProposalID, p.Target.Path, out.Trusted, out.Added)
 		return res
 	}
 	info, err := os.Stat(p.Target.Path)
@@ -162,11 +202,30 @@ func (d *Daemon) permissionApply(p protocol.PermissionApplyFrame) protocol.Permi
 	return res
 }
 
-// permissionRevoke removes only the listed rules from one repository.
-func (d *Daemon) permissionRevoke(p protocol.PermissionRevokeFrame) protocol.PermissionApplyResult {
-	res := protocol.PermissionApplyResult{Target: protocol.PermissionTarget{Path: p.Path}, Status: "failed"}
+// permissionRevoke removes only the listed rules, or the trust, one approval
+// added.
+func (d *Daemon) permissionRevoke(ctx context.Context, p protocol.PermissionRevokeFrame) protocol.PermissionApplyResult {
+	res := protocol.PermissionApplyResult{Target: protocol.PermissionTarget{Path: p.Path}, Kind: p.Kind, Status: "failed"}
 	if !filepath.IsAbs(p.Path) {
 		res.Error = "the target path is not absolute"
+		return res
+	}
+	if p.Kind == protocol.PermissionKindTrust {
+		was, err := claudetrust.Trusted(p.Path)
+		if err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		if !was {
+			res.Status = "absent"
+			return res
+		}
+		if _, err := d.folderTrustLocal(ctx, protocol.FolderTrustRequest{Path: p.Path, Remove: true}); err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		res.Status = "removed"
+		d.Logf("permission.revoke proposal=%s folder=%s removed=true", p.ProposalID, p.Path)
 		return res
 	}
 	removed, err := claudePermissionRemove(p.Path, p.Rules)
@@ -191,17 +250,19 @@ func (d *Daemon) onPermissionFrame(ctx context.Context, l *link, h protocol.Head
 	switch h.Type {
 	case protocol.FramePermissionApply:
 		var p protocol.PermissionApplyFrame
-		if json.Unmarshal(raw, &p) != nil || p.Target.Path == "" || len(p.Rules) == 0 {
+		if json.Unmarshal(raw, &p) != nil || p.Target.Path == "" ||
+			(p.Kind != protocol.PermissionKindTrust && len(p.Rules) == 0) {
 			err = errors.New("bad permission apply")
 		} else {
-			res = d.permissionApply(p)
+			res = d.permissionApply(ctx, p)
 		}
 	case protocol.FramePermissionRevoke:
 		var p protocol.PermissionRevokeFrame
-		if json.Unmarshal(raw, &p) != nil || p.Path == "" || len(p.Rules) == 0 {
+		if json.Unmarshal(raw, &p) != nil || p.Path == "" ||
+			(p.Kind != protocol.PermissionKindTrust && len(p.Rules) == 0) {
 			err = errors.New("bad permission revoke")
 		} else {
-			res = d.permissionRevoke(p)
+			res = d.permissionRevoke(ctx, p)
 		}
 	default:
 		err = errors.New("unknown permission frame")

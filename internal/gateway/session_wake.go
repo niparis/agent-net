@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -185,11 +186,20 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 		if autonomy || fromMessage {
 			frame["autonomy"] = protocol.AutonomyWake
 		}
-		_, err := target.call(cctx, protocol.FrameSessionWake, frame)
+		raw, err := target.call(cctx, protocol.FrameSessionWake, frame)
 		if err != nil {
+			// An untrusted folder can stop the wake before it starts. The owner
+			// gets the same one-click trust ask a start would raise.
+			if strings.Contains(strings.ToLower(err.Error()), "trust") && a.Cwd != "" {
+				g.raiseTrustAsk(a.SessionID, a.NodeID, a.Hostname, a.Cwd, a.Profile.Project, a.SessionID)
+			}
 			g.logLine("error", "where", "session wake", "session", a.SessionID, "err", err)
 			g.wakeFailed(wctx, a.SessionID, token, err)
 			return
+		}
+		var res protocol.StartedSession
+		if json.Unmarshal(raw, &res) == nil && res.Status == "needs_trust" && res.Path != "" {
+			g.raiseTrustAsk(a.SessionID, a.NodeID, a.Hostname, res.Path, res.Project, a.SessionID)
 		}
 		if err := g.store.clearWakeFailure(a.SessionID); err != nil {
 			g.logLine("error", "where", "clear session wake failure", "session", a.SessionID, "err", err)

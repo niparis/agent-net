@@ -6,19 +6,43 @@ package protocol
 // the target machines to write <repo>/.claude/settings.local.json. No agent,
 // the CTO included, can apply a proposal without that answer.
 
-// FramePermissionApply tells a daemon to merge rules into the allow list of one
-// repository. The gateway sends it, and only after the owner answered the ask.
+// The two proposal kinds. A permissions proposal carries allow rules for
+// repositories; a trust proposal carries folders on one machine.
+const (
+	PermissionKindRules = "permissions"
+	PermissionKindTrust = "trust"
+)
+
+// FramePermissionApply tells a daemon to merge rules into one repository, or to
+// trust one folder, through the owner's existing trust writer. The gateway
+// sends it, and only after the owner answered the ask.
 const FramePermissionApply = "permission.apply"
 
-// FramePermissionRevoke tells a daemon to remove the exact rules one approval
-// added, and nothing else.
+// FramePermissionRevoke tells a daemon to remove the exact rules or trust one
+// approval added, and nothing else.
 const FramePermissionRevoke = "permission.revoke"
 
+// FramePermissionTrustAsk lets a daemon tell the gateway that a local start
+// answered needs_trust, so the gateway raises the owner-only trust ask. It
+// writes nothing.
+const FramePermissionTrustAsk = "permission.trust_ask"
+
+// PermissionTrustAsk is the daemon's report of one folder that needs Claude
+// Code trust. Session and Owner name who hit it; the gateway adds the machine.
+type PermissionTrustAsk struct {
+	Session string `json:"session,omitempty"`
+	Owner   string `json:"owner,omitempty"`
+	Path    string `json:"path"`
+	Project string `json:"project,omitempty"`
+}
+
 // PermissionProposeRequest is agent_permission_propose: exact Claude Code
-// permission rules, the repo or project names they apply to, and why.
+// permission rules for repositories, or exact folders to trust on one machine.
 type PermissionProposeRequest struct {
-	Rules   []string `json:"rules"`
+	Kind    string   `json:"kind,omitempty"`
+	Rules   []string `json:"rules,omitempty"`
 	Targets []string `json:"targets"`
+	Machine string   `json:"machine,omitempty"`
 	Reason  string   `json:"reason"`
 }
 
@@ -49,7 +73,8 @@ type PermissionProposeResult struct {
 // rejected, applied, partial (some targets failed), failed or undone.
 type PermissionProposal struct {
 	ID           string                  `json:"id"`
-	Rules        []string                `json:"rules"`
+	Kind         string                  `json:"kind"`
+	Rules        []string                `json:"rules,omitempty"`
 	Targets      []PermissionTarget      `json:"targets"`
 	Reason       string                  `json:"reason"`
 	ProposedBy   string                  `json:"proposed_by"`
@@ -60,32 +85,38 @@ type PermissionProposal struct {
 	DecidedBy    string                  `json:"decided_by,omitempty"`
 	Results      []PermissionApplyResult `json:"results,omitempty"`
 	DeskLogID    int64                   `json:"desk_log_id,omitempty"`
+	DedupeKey    string                  `json:"dedupe_key,omitempty"`
 }
 
 // PermissionApplyFrame asks one daemon to add rules to one repository's
-// .claude/settings.local.json permissions.allow list.
+// .claude/settings.local.json permissions.allow list, or to trust one folder.
 type PermissionApplyFrame struct {
 	ProposalID string           `json:"proposal_id"`
+	Kind       string           `json:"kind"`
 	Target     PermissionTarget `json:"target"`
-	Rules      []string         `json:"rules"`
+	Rules      []string         `json:"rules,omitempty"`
 }
 
-// PermissionRevokeFrame asks one daemon to remove exactly the rules an earlier
-// approval added to one repository.
+// PermissionRevokeFrame asks one daemon to remove exactly the rules, or the
+// trust, an earlier approval added.
 type PermissionRevokeFrame struct {
 	ProposalID string   `json:"proposal_id"`
+	Kind       string   `json:"kind"`
 	Path       string   `json:"path"`
-	Rules      []string `json:"rules"`
+	Rules      []string `json:"rules,omitempty"`
 }
 
 // PermissionApplyResult is the outcome for one target. Status is applied,
-// already_present, removed, absent or failed.
+// already_present, removed, absent or failed. TrustAdded says an approval
+// created the folder trust, so only then does the undo remove it.
 type PermissionApplyResult struct {
-	Target  PermissionTarget `json:"target"`
-	Status  string           `json:"status"`
-	Added   []string         `json:"added,omitempty"`
-	Removed []string         `json:"removed,omitempty"`
-	Error   string           `json:"error,omitempty"`
+	Target     PermissionTarget `json:"target"`
+	Kind       string           `json:"kind,omitempty"`
+	Status     string           `json:"status"`
+	Added      []string         `json:"added,omitempty"`
+	Removed    []string         `json:"removed,omitempty"`
+	TrustAdded bool             `json:"trust_added,omitempty"`
+	Error      string           `json:"error,omitempty"`
 }
 
 // PermissionUndoRequest asks the owner's undo of one approval.

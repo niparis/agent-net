@@ -115,7 +115,7 @@ const (
 	OpCharterDraft = "agent_charter_draft" // takes CharterDraftRequest, answers CharterDraftResult
 
 	// OpPermissionPropose proposes exact Claude Code permission allow rules
-	// for registered repositories (decision 0126). Open to every session,
+	// for registered repositories (decision 0127). Open to every session,
 	// including the CTO, and refused for the command line. It changes no file:
 	// the owner answers an owner-only ask, and only then does the gateway tell
 	// each target machine to apply.

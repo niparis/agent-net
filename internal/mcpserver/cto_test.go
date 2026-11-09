@@ -369,7 +369,8 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	}
 	// Leave room for connected-app actions and the parallel trust/standing-orders
 	// tools without removing the descriptions callers need.
-	const schemaBudget = 36 * 1024
+	// agent_permission_propose, owner-approved permission rules, 2026-11-09
+	const schemaBudget = 36*1024 + 640
 	t.Logf("total schema: %d bytes, %d bytes left of the %d byte budget", len(schema), schemaBudget-len(schema), schemaBudget)
 	if len(schema) >= schemaBudget {
 		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), schemaBudget)

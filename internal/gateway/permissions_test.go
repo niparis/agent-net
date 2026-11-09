@@ -102,6 +102,55 @@ func TestPermissionAskIsOwnerOnlyAndRouteFixed(t *testing.T) {
 	}
 }
 
+// A trust proposal names one machine and exact folders, and the gateway's own
+// needs_trust ask is deduped by machine and folder while it is open.
+func TestPermissionTrustProposalAndDedupedAsk(t *testing.T) {
+	s, node, session := permissionRig(t)
+	if _, err := s.ProposePermission(protocol.PermissionProposeFrame{
+		SessionID: session,
+		PermissionProposeRequest: protocol.PermissionProposeRequest{
+			Kind: protocol.PermissionKindTrust, Machine: "missing-machine",
+			Targets: []string{"/tmp/one"}, Reason: "start there",
+		},
+	}); err == nil || !strings.Contains(err.Error(), "missing-machine") {
+		t.Fatalf("unknown machine: %v", err)
+	}
+	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
+		SessionID: session,
+		PermissionProposeRequest: protocol.PermissionProposeRequest{
+			Kind: protocol.PermissionKindTrust, Machine: "box",
+			Targets: []string{"/tmp/one", "/tmp/one", "/tmp/two"}, Reason: "start there",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Targets) != 2 || res.Targets[0].NodeID != node || res.Targets[0].Path != "/tmp/one" {
+		t.Fatalf("trust targets: %+v", res.Targets)
+	}
+	var text string
+	if err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE source_ref=?`, permissionAskPrefix+res.ID).Scan(&text); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Trust 2 Claude Code folder(s)", "box", "/tmp/one", "/tmp/two", "start there"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("trust ask does not name %q:\n%s", want, text)
+		}
+	}
+	created, err := s.RaiseTrustAsk(session, node, "box", "/tmp/three", "proj", "session needs trust")
+	if err != nil || !created {
+		t.Fatalf("first automatic ask: created=%v err=%v", created, err)
+	}
+	created, err = s.RaiseTrustAsk(session, node, "box", "/tmp/three", "proj", "session needs trust again")
+	if err != nil || created {
+		t.Fatalf("duplicate automatic ask: created=%v err=%v", created, err)
+	}
+	var open int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM permission_proposals WHERE kind=? AND dedupe_key=?`, protocol.PermissionKindTrust, node+"\x00/tmp/three").Scan(&open); err != nil || open != 1 {
+		t.Fatalf("automatic trust asks: %d %v", open, err)
+	}
+}
+
 // The approval log keeps its undo option until the undo settles it.
 func TestPermissionResultLogSettlesOnUndo(t *testing.T) {
 	s, _, session := permissionRig(t)
