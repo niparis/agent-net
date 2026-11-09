@@ -1,5 +1,13 @@
 package protocol
 
+// LearnedListQuery asks for the owner's learned list. IfVersion is the
+// learned topic version the caller already holds. Lite leaves out the rows and
+// fields that no TUI screen shows.
+type LearnedListQuery struct {
+	IfVersion uint64 `json:"if_version,omitempty"`
+	Lite      bool   `json:"lite,omitempty"`
+}
+
 // LearnedEvidence identifies a signal and retains the excerpt used by the rule.
 type LearnedEvidence struct {
 	ID      string `json:"id"`
