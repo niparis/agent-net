@@ -61,6 +61,10 @@ func TestNamedModelReminderComesFromTheSetting(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
+	// The gateway sends its first settings snapshot after the link is up, and
+	// that push replaces any snapshot stored before it. Wait for it first, so
+	// the snapshot stored below is the last one the daemon takes.
+	eventually(t, "the gateway's first settings snapshot", func() bool { return w.d.settingsSnapshot.Load() != nil })
 	snap, err := w.d.cleanSettingsSnapshot([]byte(`{"revision":9,"recipe":"current","delivery_cutover":true,"values":[{"key":"` + namedModelKey + `","level":"network","scope":"network","value":"Name a model rarely."}],"maturity":{}}`))
 	if err != nil {
 		t.Fatal(err)
