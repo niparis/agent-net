@@ -86,7 +86,7 @@ func demoBase(t *testing.T, snap Snapshot) Model {
 	src.usage, src.counts = demoUsage(), &protocol.SessionCounts{Online: 6}
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
-	m.cto, m.demo = nil, true
+	m.cto = nil
 	m = send(m, tea.WindowSizeMsg{Width: demoWidth, Height: demoHeight})
 	m = refresh(m, src)
 	m.src = src
@@ -154,7 +154,7 @@ func demoChange(passed int) deliveryChange {
 		stepState = "passed"
 	}
 	return deliveryChange{
-		ID: "c_1", Title: "Use account_id in the invoices app", Repo: "billing", Head: "3f2a91c0d4e5",
+		ID: "c_1", Title: "Use shared-auth v2.3 in invoices-app", Repo: "billing", Head: "3f2a91c0d4e5",
 		Branch: "agent-net/w_account", Revision: 1, State: "open", Caller: "s_worker_billing",
 		Step: names[current], StepOwner: "merger", OwnerKind: "node", StepState: stepState,
 		Waiting: 2 * time.Minute, Steps: steps, Marks: marks,
@@ -165,7 +165,7 @@ func demoDesk(t *testing.T, passed int, digest, ask bool) Model {
 	t.Helper()
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{demoChange(passed)}}, demoWidth, demoHeight))
 	m.snap = demoSnapshot()
-	m.cto, m.demo = nil, true
+	m.cto = nil
 	if digest {
 		m.digest = &deskDigest{away: 3 * time.Hour, loaded: true,
 			counts: deskCounts{closed: 22, sentOn: 4, answered: 2, forYou: 1}}
@@ -197,7 +197,7 @@ func demoFrames(t *testing.T) []demoFrame {
 	messages := demoBase(t, snap)
 	return []demoFrame{
 		{name: "demo_00_sessions", duration: 3 * time.Second, view: sessions.testView(),
-			want: []string{"0 needs you", "billing", "invoices-app", "shared-auth", "homelab", "forge", "laptop", "build-box", "3 busy"}},
+			want: []string{"6 online", "3 busy", "billing", "invoices-app", "shared-auth", "homelab", "forge", "laptop", "build-box"}},
 		{name: "demo_01_request", duration: 1500 * time.Millisecond, view: demoMessages(messages, false).testView(),
 			want: []string{"shared-auth", "invoices-app", "token field renamed: user_id is now", "account_id in shared-auth v2.3"}},
 		{name: "demo_02_reply", duration: 1500 * time.Millisecond, view: demoMessages(messages, true).testView(),
