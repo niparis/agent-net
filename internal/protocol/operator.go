@@ -431,7 +431,14 @@ type WorkerStartResult struct {
 	// the machine has no room now, QueueID names the start (agent_worker_stop takes
 	// it), Position is its place in that machine's queue, and QueueReason
 	// says why it waits. A worker notice follows when it starts.
-	Status      string `json:"status,omitempty"`
+	//
+	// Status "accepted" means the daemon took the start but the judge or the
+	// launch is still running: StartID names it, and a worker notice follows
+	// when the worker starts, queues or fails. SessionID is empty.
+	Status  string `json:"status,omitempty"`
+	StartID string `json:"start_id,omitempty"`
+	// Note is one line about the answer, set for an accepted start.
+	Note        string `json:"note,omitempty"`
 	QueueID     string `json:"queue_id,omitempty"`
 	Position    int    `json:"position,omitempty"`
 	QueueReason string `json:"queue_reason,omitempty"`

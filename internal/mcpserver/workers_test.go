@@ -159,3 +159,27 @@ func TestStartWithoutTouches(t *testing.T) {
 		t.Fatalf("start without touches: %+v %v", res, err)
 	}
 }
+
+func TestStartAcceptedAnswerTellsTheCallerToWait(t *testing.T) {
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "worker_start" {
+			return json.RawMessage(`{"status":"accepted","start_id":"a_1","note":"the start is accepted","project":"p"}`), nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start", Arguments: map[string]any{"task": "x", "model": "x"}})
+	text := ""
+	if res != nil {
+		for _, c := range res.Content {
+			if tc, ok := c.(*mcp.TextContent); ok {
+				text += tc.Text
+			}
+		}
+	}
+	if err != nil || res.IsError {
+		t.Fatalf("accepted start: %s %v", text, err)
+	}
+	if !strings.Contains(text, `"accepted"`) || !strings.Contains(text, "a_1") || strings.Contains(text, `"worker"`) {
+		t.Fatalf("accepted start answer: %s", text)
+	}
+}
