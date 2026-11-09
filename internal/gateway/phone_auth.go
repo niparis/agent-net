@@ -57,7 +57,11 @@ func setPhoneCookie(w http.ResponseWriter, token string, now time.Time) {
 	http.SetCookie(w, &http.Cookie{Name: phoneCookieName, Value: token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(phoneTokenTTL / time.Second), Expires: now.Add(phoneTokenTTL)})
 }
 func phoneRoute(path string) bool {
-	return path == "/" || path == "/action" || path == "/events" || path == "/manifest.webmanifest" || strings.HasPrefix(path, "/session/") || strings.HasPrefix(path, "/static/")
+	switch path {
+	case "/", "/action", "/events", "/manifest.webmanifest", "/sessions", "/graph", "/changes", "/messages", "/workers":
+		return true
+	}
+	return strings.HasPrefix(path, "/session/") || strings.HasPrefix(path, "/static/")
 }
 func (g *Gateway) phoneAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

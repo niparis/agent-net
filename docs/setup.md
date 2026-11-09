@@ -143,8 +143,9 @@ Run the gateway and its joined daemon under the same user on the gateway host.
 Expose the connected apps listener over HTTPS and set its public URL. Open that
 URL on the phone, then enter its code under `S` > Connected apps > Add in the
 TUI. Approve the owner app and its name. In Safari, use Share, then Add to Home
-Screen. To sign out a phone, revoke it under Connected apps. See the [phone
-app reference](reference.md#phone-app).
+Screen. The page is the web console: Desk and Sessions, with the keys `1` to
+`6` on a desk. To sign out a phone, revoke it under Connected apps. See the
+[phone app reference](reference.md#phone-app).
 
 ## Workers on a machine
 

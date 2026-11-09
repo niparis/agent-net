@@ -1,0 +1,19 @@
+{{define "sessions"}}<div class="stack">
+<div class="machines">{{range .Machines}}<div class="machine"><div class="h"><span class="dot {{if .Online}}busy{{else}}off{{end}}"></span><b>{{.Name}}</b>{{if .OS}}<span class="muted">{{.OS}}</span>{{end}}{{if .Version}}<span class="chip ok vers">{{.Version}}</span>{{end}}</div>
+{{if .Online}}{{if .HasUsage}}<div class="meter"><span>cpu</span><span class="bar"><i style="width:{{.CPU}}%"></i></span><span class="num">{{.CPU}}%</span></div>{{if .Mem}}<div class="meter"><span>mem</span><span class="bar"><i style="width:{{.MemPct}}%"></i></span><span class="num">{{.Mem}}</span></div>{{end}}{{else}}<div class="muted small">no usage report yet</div>{{end}}{{else}}<div class="chip">offline</div>{{end}}
+<div class="muted small">{{.Sessions}} sessions</div></div>{{else}}<div class="muted">No machines found.</div>{{end}}</div>
+<div class="split">
+<section class="box"><header><h2>Sessions</h2><span class="meta">{{.Shown}} shown</span></header>
+{{if .Groups}}<div class="tablewrap"><table><thead><tr><th>Session</th><th class="hide-sm">Machine</th><th class="hide-sm">Project</th><th class="hide-sm">Model</th><th>Active</th></tr></thead><tbody>
+{{range .Groups}}<tr class="group"><td colspan="5">{{.Label}} ({{len .Rows}})</td></tr>
+{{range .Rows}}<tr data-href="/sessions?s={{.ID}}#detail"{{if .Selected}} aria-selected="true"{{end}}><td><span class="dot {{.Class}}"></span><a href="/sessions?s={{.ID}}#detail"><b>{{.Name}}</b></a>{{if .Worker}} <span class="chip">worker</span>{{end}}<span class="task">{{.Task}}</span><span class="muted small show-sm">{{.Machine}} · {{.Project}}</span></td><td class="hide-sm">{{.Machine}}</td><td class="hide-sm">{{.Project}}</td><td class="mono hide-sm">{{.Model}}</td><td class="num muted">{{.Active}}</td></tr>{{end}}{{end}}
+</tbody></table></div>{{else}}<div class="body muted">No sessions found.</div>{{end}}
+</section>
+{{with .Detail}}<section class="box sticky detail" id="detail"><div class="body">
+<h3>{{.Name}}</h3><div class="lede"><span class="chip {{.Class}}">{{.Status}}</span></div>
+<dl class="kv"><dt>Task</dt><dd>{{if .Task}}{{.Task}}{{else}}-{{end}}</dd><dt>Machine</dt><dd>{{.Machine}}</dd><dt>Project</dt><dd>{{.Project}}</dd><dt>Model</dt><dd class="mono">{{.Model}}</dd><dt>Place</dt><dd>{{.Place}}</dd></dl>
+<div class="section"><h4>Charter</h4><div>{{if .Charter}}{{.Charter}}{{else}}<span class="muted">No charter purpose yet.</span>{{end}}</div></div>
+<div class="section"><h4>Recent conversations</h4>{{range .Convos}}<div class="convo"><div class="line1"><b>{{.Title}}</b><span class="when">{{.Age}}</span></div>{{if .Last}}<div class="prev">{{.Last}}</div>{{end}}</div>{{else}}<div class="muted">None lately.</div>{{end}}</div>
+<div class="row-note muted">Open from the TUI</div>
+</div></section>{{end}}
+</div></div>{{end}}

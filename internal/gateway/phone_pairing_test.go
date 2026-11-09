@@ -118,6 +118,25 @@ func TestPhonePairingAndAuthorization(t *testing.T) {
 		t.Fatalf("revoked cookie accepted: %d %s", w.Code, w.Body.String())
 	}
 }
+func TestPhoneConsoleScreensSitBehindThePairing(t *testing.T) {
+	s, c, h, _ := phoneFixture(t)
+	cookie, _, _ := phonePair(t, s, c, h, "owner_app")
+	// A new pairing is rate limited, so one screen stands for the others.
+	if w := phoneRequest(h, "GET", "/sessions", nil, ""); !phoneCodeRE.Match(w.Body.Bytes()) {
+		t.Errorf("/sessions without the cookie did not show the pairing page: %d", w.Code)
+	}
+	for _, path := range []string{"/sessions", "/graph", "/changes", "/messages", "/workers", "/session/s_1"} {
+		if w := phoneRequest(h, "GET", path, cookie, ""); w.Code == 404 || phoneCodeRE.Match(w.Body.Bytes()) {
+			t.Errorf("%s with the cookie: %d", path, w.Code)
+		}
+	}
+	// Nothing that starts, stops or changes anything is a route.
+	for _, path := range []string{"/workers/start", "/charter", "/settings", "/sessions/stop", "/graph/edge"} {
+		if w := phoneRequest(h, "POST", path, cookie, "https://gateway.example"); w.Code != 404 {
+			t.Errorf("POST %s: %d, want 404", path, w.Code)
+		}
+	}
+}
 func TestPhoneRejectsBotAndExpiredTokens(t *testing.T) {
 	s, c, h, _ := phoneFixture(t)
 	bot, err := s.CreateApp("bot", "bot", "client", "bot", nil)

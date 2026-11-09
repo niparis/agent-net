@@ -42,7 +42,7 @@ func (f *fakeOperator) Call(_ context.Context, method string, params any) (json.
 func TestPagesAndActions(t *testing.T) {
 	f := &fakeOperator{}
 	h := New(f)
-	for _, tc := range []struct{ path, want string }{{"/", "test-machine"}, {"/", "held request"}, {"/", "outcome request"}, {"/", "inbox request"}, {"/session/s_1", "conversation text"}} {
+	for _, tc := range []struct{ path, want string }{{"/sessions", "test-machine"}, {"/", "held request"}, {"/", "outcome request"}, {"/", "inbox request"}, {"/sessions?s=s_1", "test-task"}} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", tc.path, nil))
 		if w.Code != 200 || !strings.Contains(w.Body.String(), tc.want) {
@@ -71,27 +71,6 @@ func TestActionRejectsCrossOrigin(t *testing.T) {
 	New(f).ServeHTTP(w, r)
 	if w.Code != 403 || len(f.calls) != 0 {
 		t.Fatalf("cross-origin action: %d, %v", w.Code, f.calls)
-	}
-}
-
-func TestUnavailableDaemonIsVisibleInLiveSections(t *testing.T) {
-	var b strings.Builder
-	if err := shell.ExecuteTemplate(&b, "sections", page{Error: "daemon not reachable"}); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(b.String(), "daemon not reachable") {
-		t.Fatal("missing connection error")
-	}
-}
-
-func TestSessionsPreferRepositoryProjectAndWaitingIsNotEmpty(t *testing.T) {
-	p := page{Snapshot: operator.Snapshot{Connected: true, Agents: []protocol.AgentView{{SessionID: "s_1", Harness: "codex", Repo: protocol.RepoInfo{Project: "repo-project"}, Waiting: &protocol.Waiting{Text: "Need an answer"}}}}}
-	var b strings.Builder
-	if err := shell.ExecuteTemplate(&b, "sections", p); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(b.String(), "repo-project") || strings.Contains(b.String(), "No requests to review") {
-		t.Fatal(b.String())
 	}
 }
 

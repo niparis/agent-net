@@ -758,9 +758,38 @@ The model is required, and the note is at most 1024 bytes after cleaning (contro
 
 ## Phone app
 
-The phone app uses the connected apps listener and the gateway host's daemon.
-The gateway and daemon must run under the same user. The app uses the daemon's
-socket and the same operator calls as the TUI. Actions run as the owner.
+The web console is the owner's browser and phone interface. It uses the
+connected apps listener and the gateway host's daemon ([decision
+0119](decisions/0119-web-console.md)). The gateway and daemon must run under the
+same user. The console uses the daemon's socket and the same operator calls as
+the TUI. Actions run as the owner.
+
+The console has six screens: Desk (`/`, key `1`), Sessions (`/sessions`, `2`),
+Graph (`/graph`, `3`), Changes (`/changes`, `4`), Messages (`/messages`, `5`)
+and Workers (`/workers`, `6`). On a desk they sit in a left rail. Under 760px
+wide they sit in a bottom bar. The top bar has the title, a live dot and the CTO
+button, which opens a side panel (key `c`). In this version Desk and Sessions
+are built; the other screens say "coming in the next update", and the CTO panel
+says that chat arrives later.
+
+- **Desk** shows Needs you (the open asks of the TUI Desk, with the
+  recommendation and the "why you" line), In flight (open delivery changes that
+  moved in the last day, read only), Handled for you and the Log. The owner
+  answers an ask with the buttons of its kind: approve, reject, dismiss, an
+  option, typed text, let stand or overrule, and "didn't need me". Proposals,
+  learned suggestions, charter drafts and delivery steps are answered in the
+  TUI.
+- **Sessions** shows the machines (online, version, cpu, memory) and the
+  sessions grouped by needs you, working, idle and offline. The detail panel
+  shows the task, machine, project, model, place, charter purpose and recent
+  conversations. It is read only. A session is opened from the TUI.
+- The console is read and answer only. Its one write route is `POST /action`
+  with the kinds `held`, `outcome`, `inbox`, `mark` and `send`. There is no
+  route that starts or stops sessions or workers, or that changes charters,
+  teams, edges or settings.
+- `GET /events?screen=<screen>[&s=<session>]` is a server-sent event stream
+  that sends the screen again when it changes.
+- The pages load nothing from outside the gateway.
 
 For a manually configured gateway, pass `--apps-listen 127.0.0.1:7422` and
 `--apps-public-url https://apps.example.test` to `agent-net gateway`. Point a
@@ -775,9 +804,8 @@ issue or renewal; use with less than 30 days left renews it. See the [phone
 security boundary](security.md#phone-owner-identity).
 
 The old `agent-net phone owner` command and `--phone-listen` flag are removed.
-Remove the flag from any manually edited service command. The app refreshes
-its machine, session and Inbox sections while open. It does not send push
-notifications.
+Remove the flag from any manually edited service command. The console refreshes
+its open screen while it is open. It does not send push notifications.
 
 ## Ports
 
@@ -1100,7 +1128,7 @@ The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUS
 | Command | Flag | Default |
 |---|---|---|
 | `gateway` | `--listen ADDR` | `0.0.0.0:7420`. If reachable on a public routable address, the gateway logs a warning at start and hourly, and surfaces it in `agent-net nodes` and the TUI status line. |
-| | `--apps-listen ADDR` | Override the managed connected apps listener address, normally `127.0.0.1:7422`. Binds to loopback only. It serves the phone app at `/` and the bot MCP endpoint at `/mcp`. |
+| | `--apps-listen ADDR` | Override the managed connected apps listener address, normally `127.0.0.1:7422`. Binds to loopback only. It serves the web console (the phone app) at `/` and the bot MCP endpoint at `/mcp`. |
 | | `--apps-public-url URL` | empty. Public HTTPS base URL of the apps listener, used for authorization discovery and phone action origin checks. Normally set by the "Reachable from the internet" switch. |
 | | `--data DIR` | `~/.local/state/agent-net/gateway` |
 | | `--dist DIR` | `~/.local/share/agent-net/dist` |

@@ -1,0 +1,35 @@
+{{define "desk"}}<div class="split"><div class="stack">
+<section class="box"><header><h2>Needs you</h2><span class="meta">{{len .Asks}} open</span></header>
+{{range .Asks}}<div class="ask" data-ask="{{.ID}}"><span class="stripe"></span><div>
+<div class="head"><b>{{.From}}</b><span class="chip{{if or (eq .Kind "held request") (eq .Kind "approval")}} you{{end}}">{{.Kind}}</span>{{if .Age}}<span>{{.Age}}{{if ne .Age "now"}} ago{{end}}</span>{{end}}{{if .Priority}}<span class="chip">priority {{.Priority}}</span>{{end}}</div>
+<div class="q">{{.Question}}</div>
+{{if .Reason}}<div class="rec">Reason: {{.Reason}}</div>{{end}}
+{{if .Detail}}<div class="rec pre">{{.Detail}}</div>{{end}}
+{{if .Recommendation}}<div class="rec"><b>Recommended:</b> {{.Recommendation}}</div>{{end}}
+{{if .WhyYou}}<div class="rec">Why you: {{.WhyYou}}</div>{{end}}
+</div>
+{{if or .Approve .Refuse .Dismiss .Options (eq .Form "outcome")}}<div class="actions">
+{{if eq .Form "held"}}<form method="post" action="/action"><input type="hidden" name="kind" value="held"><input type="hidden" name="id" value="{{.TargetID}}"><button class="btn primary" name="action" value="a">Approve</button><button class="btn" name="action" value="r">Reject</button><button class="btn quiet" name="action" value="A">Always approve</button><button class="btn quiet" name="action" value="R">Never approve</button></form>
+{{else if eq .Form "outcome"}}<form method="post" action="/action"><input type="hidden" name="kind" value="outcome"><input type="hidden" name="id" value="{{.TargetID}}"><button class="btn primary" name="action" value="let_stand">Let stand</button><button class="btn" name="action" value="overrule">Overrule</button></form>
+{{else if eq .Form "inbox"}}<form method="post" action="/action"><input type="hidden" name="kind" value="inbox"><input type="hidden" name="id" value="{{.TargetID}}">{{if .Approve}}<button class="btn primary" name="action" value="approve">Approve</button>{{end}}{{if .Refuse}}<button class="btn" name="action" value="refuse">Reject</button>{{end}}{{range .Options}}<button class="btn" name="action" value="{{.}}">{{.}}</button>{{end}}{{if .Dismiss}}<button class="btn quiet" name="action" value="dismiss">Dismiss</button>{{end}}</form>{{end}}
+</div>{{end}}
+{{if or .CanMark .CanText .Hint}}<div class="actions more">
+{{if .CanMark}}<form method="post" action="/action"><input type="hidden" name="kind" value="mark"><input type="hidden" name="id" value="{{.ID}}"><button class="btn quiet" name="action" value="didnt_need_me">Didn’t need me</button></form>{{end}}
+{{if .Hint}}<span class="muted hint">{{.Hint}}</span>{{end}}
+{{if .CanText}}<details class="write"><summary class="btn quiet">Write an answer</summary><form method="post" action="/action"><input type="hidden" name="kind" value="{{if eq .Form "send"}}send{{else}}inbox{{end}}"><input type="hidden" name="id" value="{{.TargetID}}"><textarea name="action" rows="2" required aria-label="Your answer to {{.From}}" placeholder="Your answer goes to {{.From}}"></textarea><button class="btn primary">Send to {{.From}}</button></form></details>{{end}}
+</div>{{end}}
+</div>
+{{else}}<div class="body muted">Nothing is waiting for you.</div>{{end}}
+</section>
+<section class="box"><header><h2>In flight</h2><span class="meta">{{len .Changes}} change{{if ne (len .Changes) 1}}s{{end}}{{if .More}} · {{.More}} more in the Changes screen{{end}}</span></header>
+{{if .Changes}}<div class="tablewrap"><table><thead><tr><th>Change</th><th>Steps</th><th class="hide-sm">Status</th><th>Age</th></tr></thead><tbody>
+{{range .Changes}}<tr><td><b>{{.Title}}</b><div class="mono muted">{{.ID}} · rev {{.Revision}}</div><div class="muted show-sm">{{.Status}}</div></td><td><span class="pipe" role="img" aria-label="{{.Aria}}">{{range .Marks}}<i{{if .}} class="{{.}}"{{end}}></i>{{end}}</span></td><td class="muted hide-sm">{{.Status}}</td><td class="num muted">{{.Age}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<div class="body muted">No open changes moved in the last day.</div>{{end}}
+</section></div>
+<div class="stack">
+<section class="box"><header><h2>Handled for you</h2><span class="meta">the chief of staff, last day</span></header>
+{{if .Handled}}<div class="tablewrap"><table><tbody>{{range .Handled}}<tr><td><span class="chip{{if eq .Label "merged"}} ok{{end}}">{{.Label}}</span></td><td{{if .Undone}} class="muted"{{end}}>{{.Question}}{{if .Reason}}<div class="muted small">{{.Reason}}</div>{{end}}</td><td class="num muted">{{.Age}}</td></tr>{{end}}</tbody></table></div>{{else}}<div class="body muted">The chief of staff sorted nothing in the last day.</div>{{end}}
+</section>
+<section class="box"><header><h2>Log</h2><span class="meta">CTO, gateway and release notices</span></header>
+{{if .Log}}<div class="tablewrap"><table><tbody>{{range .Log}}<tr><td class="num muted mono">{{.Age}}</td><td><span class="chip">{{.Source}}</span></td><td>{{.Text}}</td></tr>{{end}}</tbody></table></div>{{else}}<div class="body muted">Nothing logged yet.</div>{{end}}
+</section></div></div>{{end}}

@@ -11,8 +11,9 @@ import (
 	"github.com/niparis/agent-net/internal/operator"
 )
 
-// stream periodically reads the same snapshot used by the TUI. Full sections
-// make reconnects self-healing and avoid depending on a browser-side cache.
+// stream periodically reads the same data as the TUI and sends the open screen
+// again when it changed. The screen is named by the page that opened the stream.
+// Full sections make reconnects self-healing and avoid a browser-side cache.
 func (a *app) stream(w http.ResponseWriter, r *http.Request) {
 	flush, ok := w.(http.Flusher)
 	if !ok {
@@ -27,13 +28,14 @@ func (a *app) stream(w http.ResponseWriter, r *http.Request) {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	screen, selected := r.URL.Query().Get("screen"), r.URL.Query().Get("s")
 	previous := ""
 	for {
 		ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
-		p := a.data(ctx)
+		p := a.load(ctx, screen, selected)
 		cancel()
 		var b bytes.Buffer
-		if err := shell.ExecuteTemplate(&b, "sections", p); err != nil {
+		if err := shell.ExecuteTemplate(&b, "stream", p); err != nil {
 			return
 		}
 		current := b.String()
