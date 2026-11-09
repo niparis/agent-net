@@ -8,7 +8,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestOwnerAnswerCreatesAnswerRowAndAutomaticCloseDoesNot(t *testing.T) {
+// The owner asked (through the CTO, 2026-11-09) to store every outcome in
+// plain words, including a button with no text: an owner dismiss is one answer
+// row, but an automatic close is not a decision and makes none.
+func TestOwnerAnswerAndDismissCreateAnswerRowAndAutomaticCloseDoesNot(t *testing.T) {
 	s, _ := newTestStore(t)
 	// Create an ask for a project.
 	item, err := s.CreateInboxItem(protocol.InboxItem{
@@ -74,7 +77,7 @@ func TestOwnerAnswerCreatesAnswerRowAndAutomaticCloseDoesNot(t *testing.T) {
 		t.Errorf("expected 0 answer rows for automatic close, got %d", len(closedJudgments))
 	}
 
-	// Also verify dismissing an ask does not create an answer row.
+	// An owner dismiss is one answer row that says no decision was made.
 	dismissItem, err := s.CreateInboxItem(protocol.InboxItem{
 		Kind:      "question",
 		SessionID: "s_test_session_3",
@@ -91,8 +94,8 @@ func TestOwnerAnswerCreatesAnswerRowAndAutomaticCloseDoesNot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dismissJudgments) != 0 {
-		t.Errorf("expected 0 answer rows for dismissed ask, got %d", len(dismissJudgments))
+	if len(dismissJudgments) != 1 || !strings.HasSuffix(dismissJudgments[0].Text, "A: dismissed: no decision") {
+		t.Errorf("expected one answer row ending %q for the dismissed ask, got %+v", "A: dismissed: no decision", dismissJudgments)
 	}
 }
 
