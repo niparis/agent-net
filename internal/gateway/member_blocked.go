@@ -119,21 +119,52 @@ func clockText(unixNano int64, now time.Time) string {
 	return t.Format("2006-01-02 15:04") + " UTC"
 }
 
-// waitsOnOwnWorker tells whether an announce that reads as blocked only does
-// so because of a progress answer that names a wait ("more: waiting on worker
-// rework of PR #79"), and the member has a running worker it started. Then the
-// member waits on its own worker, which is normal progress, so nothing is sent.
-// A "blocked" answer, a wait set in the waiting field, and a member with no
-// running worker still count.
+// waitsOnOwnWorker tells whether an announce that reads as blocked waits only on
+// workers the member started and that are still running. Then nothing is sent:
+// the member waits on its own work, which is normal progress. Two cases count:
+//   - the announce names by session id a running worker the member owns, under
+//     any answer ("blocked on worker s_... (PR #79 rework)");
+//   - the announce is a "more" answer with a wait phrase, and the member owns a
+//     running worker ("more: waiting on worker rework of PR #79").
+//
+// A wait set in the waiting field always counts, and so does a blocked answer
+// that names no running worker of the member.
 func (s *Store) waitsOnOwnWorker(p protocol.ProfileAnnounce, task string) (bool, error) {
 	if protocol.CleanWaiting(p.Waiting) != nil {
 		return false, nil
 	}
-	if kind, _ := parseCheckAnswer(strings.TrimSpace(task)); kind != "more" {
+	task = strings.TrimSpace(task)
+	named, err := s.namesOwnRunningWorker(p.SessionID, task)
+	if err != nil || named {
+		return named, err
+	}
+	if kind, _ := parseCheckAnswer(task); kind != "more" {
 		return false, nil
 	}
 	n, err := s.owningWorkerCount(p.SessionID)
 	return n > 0, err
+}
+
+// namesOwnRunningWorker tells whether task contains the session id of a worker
+// that member owns and that is online, which is how the idle check counts a
+// running worker.
+func (s *Store) namesOwnRunningWorker(member, task string) (bool, error) {
+	rows, err := s.db.Query(`SELECT id FROM sessions WHERE online=1 AND worker<>'' AND json_valid(worker)
+		AND json_extract(worker,'$.owner')=?`, member)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return false, err
+		}
+		if id != "" && strings.Contains(task, id) {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // blockedMemberNotice runs after an announce was stored. When the session is a

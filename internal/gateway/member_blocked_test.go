@@ -166,14 +166,36 @@ func TestBlockedAnnounceOutsideALeadTeamSendsNothing(t *testing.T) {
 	}
 }
 
-// runningWorker starts a worker that member owns and that is still running.
-func runningWorker(t *testing.T, s *Store, c *clock, member string) {
+// runningWorker starts a worker that member owns and that is still running. It
+// returns the worker's session id.
+func runningWorker(t *testing.T, s *Store, c *clock, member string) string {
 	t.Helper()
 	node := mustNode(t, s, member)
-	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "rework-worker", Name: "rework",
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "rework-worker", Name: "rework",
 		Status: "idle", LastActive: c.t.Unix(),
-		Worker: &protocol.WorkerInfo{ID: "w-rework", Owner: member, StartedAt: c.t.Unix()}}); err != nil {
+		Worker: &protocol.WorkerInfo{ID: "w-rework", Owner: member, StartedAt: c.t.Unix()}})
+	if err != nil {
 		t.Fatal(err)
+	}
+	return id
+}
+
+// finget's announce named its own running worker by session id, under a
+// "blocked" answer. The worker's end is the only thing that changes the rule.
+func TestMemberBlockedOnANamedRunningWorkerSendsNothingUntilItEnds(t *testing.T) {
+	s, c, member, _ := leadTeamRig(t)
+	worker := runningWorker(t, s, c, member)
+	text := "blocked on worker " + worker + " (PR #79 rework) and on the 06:00 UTC daily-research run"
+	announce(t, s, member, protocol.ProfileAnnounce{Task: text})
+	if got := blockedNotices(t, s); len(got) != 0 {
+		t.Fatalf("notices while its named worker runs = %+v", got)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, worker); err != nil {
+		t.Fatal(err)
+	}
+	announce(t, s, member, protocol.ProfileAnnounce{Task: text})
+	if got := blockedNotices(t, s); len(got) != 1 || !strings.Contains(got[0].Body, worker) {
+		t.Fatalf("notices after its named worker ended = %+v", got)
 	}
 }
 
