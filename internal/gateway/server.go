@@ -2720,8 +2720,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
+		var queueNote string
 		if !workerTask {
-			err = g.resumeEndedWorker(ctx, nc, p)
+			queueNote, err = g.resumeEndedWorker(ctx, nc, p)
 		}
 		if err != nil {
 			g.notifyResumeRefusal(ctx, p, err)
@@ -2742,6 +2743,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 					"reason", err.Error())
 			}
 			return nil, err
+		}
+		if queueNote != "" {
+			if route == "" {
+				route = queueNote
+			} else {
+				route = queueNote + "; " + route
+			}
 		}
 		started := false
 		if created && m.State != protocol.StateHeld {

@@ -506,7 +506,7 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 	case "worker.validate_stop":
 		var p protocol.WorkerKill
 		if err = json.Unmarshal(raw, &p); err == nil {
-			err = d.cancelQueued(p.Session, p.Requester, p.AsOwner, true)
+			err = d.stopWorkerSession(p, true)
 		}
 	case "worker.kill":
 		var p protocol.WorkerKill
@@ -526,7 +526,7 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 	case "worker.resume":
 		var p protocol.WorkerResume
 		if err = json.Unmarshal(raw, &p); err == nil {
-			err = d.resumeWorkerSession(ctx, p.Session, p.Requester)
+			data, err = d.resumeWorkerSession(ctx, p.Session, p.Requester)
 		}
 	}
 	if res, eerr := protocol.EncodeResult(h.ID, data, err); eerr == nil {

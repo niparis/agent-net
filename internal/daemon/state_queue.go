@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS worker_queue (
 	seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, owner TEXT NOT NULL,
 	owner_name TEXT NOT NULL DEFAULT '',
 	project TEXT NOT NULL, path TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '',
-	task TEXT NOT NULL, isolation TEXT NOT NULL DEFAULT '', queued_at INTEGER NOT NULL, assessment TEXT NOT NULL DEFAULT '');
+	task TEXT NOT NULL, isolation TEXT NOT NULL DEFAULT '', queued_at INTEGER NOT NULL, assessment TEXT NOT NULL DEFAULT '', resume_session TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS worker_costs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT, harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '',
 	ended_at INTEGER NOT NULL, avg_cpu REAL NOT NULL, peak_cpu REAL NOT NULL, avg_rss REAL NOT NULL, peak_rss REAL NOT NULL)`
@@ -48,6 +48,8 @@ type queuedStart struct {
 	// AutoContinue is the start's automatic-continue setting.
 	AutoContinue bool
 	QueuedAt     time.Time
+	// ResumeSession is set when this queued entry restarts an ended worker session.
+	ResumeSession string
 }
 
 func (s *state) addQueued(q queuedStart) error {
@@ -57,14 +59,14 @@ func (s *state) addQueued(q queuedStart) error {
 			assessment = string(raw)
 		}
 	}
-	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial), assessment, q.ChangeID, q.MCPServers, q.Fixes)
+	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial), assessment, q.ChangeID, q.MCPServers, q.Fixes, q.ResumeSession)
 	return err
 }
 
 // queue lists the waiting starts, the oldest first.
 func (s *state) queue() ([]queuedStart, error) {
-	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes FROM worker_queue ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session FROM worker_queue ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +77,7 @@ func (s *state) queue() ([]queuedStart, error) {
 		var at int64
 		var autoContinue int
 		var assessment string
-		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial, &assessment, &q.ChangeID, &q.MCPServers, &q.Fixes); err != nil {
+		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial, &assessment, &q.ChangeID, &q.MCPServers, &q.Fixes, &q.ResumeSession); err != nil {
 			return nil, err
 		}
 		q.QueuedAt = time.Unix(0, at)
@@ -101,6 +103,16 @@ func (s *state) queueLen() (int, error) {
 // removeQueued deletes a start from the queue and says whether it was there.
 func (s *state) removeQueued(id string) bool {
 	res, err := s.db.Exec(`DELETE FROM worker_queue WHERE id = ?`, id)
+	if err != nil {
+		return false
+	}
+	n, _ := res.RowsAffected()
+	return n > 0
+}
+
+// removeQueuedForSession deletes any queued start restarting the given worker session.
+func (s *state) removeQueuedForSession(sessionID string) bool {
+	res, err := s.db.Exec(`DELETE FROM worker_queue WHERE resume_session = ?`, sessionID)
 	if err != nil {
 		return false
 	}
