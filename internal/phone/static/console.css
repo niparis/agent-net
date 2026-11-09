@@ -168,6 +168,8 @@ dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .graph .node text.s { fill: var(--muted); font: 11px var(--f-mono); }
 .graph .node a { text-decoration: none; }
 .graph .node a:hover text { fill: var(--accent); }
+.graph text { paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+.graph .team text, .graph .boxnodes text { stroke: var(--sunk); }
 .graph .edge { stroke: var(--line); stroke-width: 1.5; fill: none; }
 .graph .edge.msg { stroke: var(--accent); stroke-dasharray: 5 4; }
 .graph .edge.dep { stroke: var(--muted); }

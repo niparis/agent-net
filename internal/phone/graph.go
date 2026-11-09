@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -539,14 +540,34 @@ func layoutGraph(v *graphView) {
 	v.Height = y + maxH + 24
 }
 
+// graphNodeRadius is the radius of a node circle. An edge starts and ends on
+// that circle's edge, so it never runs through the circle or its label.
+const graphNodeRadius = 7
+
 func graphEdge(from, to string, pos map[string][2]int, message bool, aria string) graphEdgeView {
 	a, b := pos[from], pos[to]
-	mx, my := (a[0]+b[0])/2, (a[1]+b[1])/2-20
+	dx, dy := float64(b[0]-a[0]), float64(b[1]-a[1])
+	length := math.Hypot(dx, dy)
+	x1, y1, x2, y2 := a[0], a[1], b[0], b[1]
+	ux, uy := 1.0, 0.0
+	if length > 0 {
+		ux, uy = dx/length, dy/length
+	}
+	if length > 2*graphNodeRadius {
+		x1 = a[0] + int(math.Round(ux*graphNodeRadius))
+		y1 = a[1] + int(math.Round(uy*graphNodeRadius))
+		x2 = b[0] - int(math.Round(ux*graphNodeRadius))
+		y2 = b[1] - int(math.Round(uy*graphNodeRadius))
+	}
+	// Bend the curve to one side of the edge. The normal keeps the tangent at
+	// both ends pointing away from the circle, also on a short vertical edge.
+	mx := (x1+x2)/2 + int(math.Round(uy*18))
+	my := (y1+y2)/2 - int(math.Round(ux*18))
 	class := "edge dep"
 	if message {
 		class = "edge msg"
 	}
-	return graphEdgeView{Class: class, D: fmt.Sprintf("M%d %d Q%d %d %d %d", a[0], a[1], mx, my, b[0], b[1]), Aria: aria}
+	return graphEdgeView{Class: class, D: fmt.Sprintf("M%d %d Q%d %d %d %d", x1, y1, mx, my, x2, y2), Aria: aria}
 }
 
 // graphDetail fills the card of the selected record. The name and the place

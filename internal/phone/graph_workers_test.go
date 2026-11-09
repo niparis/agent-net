@@ -3,8 +3,10 @@ package phone
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -283,4 +285,32 @@ func TestGraphLayoutKeepsBoxesAndCellsApart(t *testing.T) {
 			seen[p] = true
 		}
 	}
+}
+
+func TestGraphEdgesStopAtTheNodeCircle(t *testing.T) {
+	pos := map[string][2]int{"a": {100, 100}, "b": {300, 100}}
+	if got := graphEdge("a", "b", pos, false, "").D; !strings.Contains(got, "M107 100") || !strings.Contains(got, "293 100") {
+		t.Fatalf("horizontal edge does not stop at r=7: %s", got)
+	}
+	pos = map[string][2]int{"a": {100, 100}, "b": {100, 300}}
+	if got := graphEdge("a", "b", pos, true, "").D; !strings.Contains(got, "M100 107") || !strings.Contains(got, "100 293") {
+		t.Fatalf("vertical edge does not stop at r=7: %s", got)
+	}
+}
+
+func TestGraphTextHasAHaloAndTheTitlesPaintOverEdges(t *testing.T) {
+	css, err := fs.ReadFile(files, "static/console.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, "graph halo", string(css),
+		"paint-order: stroke", "stroke-width: 4px", "stroke-linejoin: round",
+		"stroke: var(--panel)", ".graph .team text, .graph .boxnodes text { stroke: var(--sunk); }")
+	body := richPage(t, "/graph")
+	edge := strings.Index(body, `class="edge dep"`)
+	title := strings.Index(body, ">team forge-team<")
+	if edge < 0 || title < 0 || title < edge {
+		t.Fatalf("the team title must paint after the edges: edge %d title %d", edge, title)
+	}
+	mustContain(t, "box nodes", body, `<g class="boxnodes">`)
 }

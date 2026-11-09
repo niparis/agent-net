@@ -2,10 +2,11 @@
 <section class="box graph"><header><h2>Network</h2><span class="meta">{{.TeamLabel}} · {{.NodeLabel}}{{if .Messages}} · {{.MessagesLabel}} in the last hour{{end}}</span></header>
 {{if .Err}}<div class="body error" role="alert">{{.Err}}</div>{{else}}
 <div class="graphwrap"><svg viewBox="0 0 {{.Width}} {{.Height}}" role="img" aria-label="Network graph" style="min-width:{{.Width}}px">
-{{range .Boxes}}<g class="team"><rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" rx="10"/><text x="{{.TextX}}" y="{{.TextY}}">{{.Title}}</text>{{if .Sub}}<text class="sub" x="{{.TextX}}" y="{{.SubY}}">{{.Sub}}</text>{{end}}</g>
-{{end}}{{range .Edges}}<path class="{{.Class}}" d="{{.D}}"><title>{{.Aria}}</title></path>{{end}}
+{{range .Boxes}}<g class="team"><rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" rx="10"/></g>{{end}}
+{{range .Edges}}<path class="{{.Class}}" d="{{.D}}"><title>{{.Aria}}</title></path>{{end}}
+{{range .Boxes}}<g class="team"><text x="{{.TextX}}" y="{{.TextY}}">{{.Title}}</text>{{if .Sub}}<text class="sub" x="{{.TextX}}" y="{{.SubY}}">{{.Sub}}</text>{{end}}</g>{{end}}
 {{range .Staff}}{{template "gnode" .}}{{end}}
-{{range .Boxes}}{{range .Nodes}}{{template "gnode" .}}{{end}}{{end}}
+{{range .Boxes}}<g class="boxnodes">{{range .Nodes}}{{template "gnode" .}}{{end}}</g>{{end}}
 </svg></div>
 <div class="legend"><span><span class="dot you"></span>needs you</span><span><span class="dot busy"></span>busy</span><span><span class="dot idle"></span>idle</span><span><span class="dot off"></span>offline</span><span>- - - message in the last hour</span><span>solid line: depends on</span></div>
 {{end}}
