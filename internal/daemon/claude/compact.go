@@ -367,6 +367,11 @@ func compactBoundaryAfter(path string, offset int64) bool {
 	return false
 }
 
+// compactInstructions is the free text the daemon types after /compact. It tells
+// Claude what the summary must keep for an agent-net session to keep working.
+// One line, no newlines: the text is typed into the terminal as one command.
+const compactInstructions = "Keep: the current task and its goal; open questions to the owner and to other agents; every agent-net ID (sessions s_, workers, changes ch_, messages, asks); branches, worktree paths and full commit shas; decisions made; the next step."
+
 func (a *Adapter) compactSession(ctx context.Context, f found, path string) (result error) {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -451,7 +456,7 @@ func (a *Adapter) compactSession(ctx context.Context, f found, path string) (res
 	if err != nil || json.Unmarshal(raw, &sf) != nil || sf.Status != "idle" || sf.SessionID != f.info.NativeID || sf.JobID != f.job {
 		return fmt.Errorf("session changed before compact")
 	}
-	if _, err := terminal.Write([]byte("/compact\r")); err != nil {
+	if _, err := terminal.Write([]byte("/compact " + compactInstructions + "\r")); err != nil {
 		return err
 	}
 	timeout := a.compactTimeout
