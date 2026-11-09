@@ -40,6 +40,42 @@ func TestRecentActivityKeepsSessionWorking(t *testing.T) {
 	}
 }
 
+// A live session stays in Working until an hour after its real last activity,
+// whatever its harness, status and place in a caller tree. AgentView.LastActive
+// is that real activity: the daemon fills it from the harness's own output as
+// well as from turn boundaries, so a missed turn start or end does not make a
+// session that just worked look unused.
+func TestEveryHarnessStaysWorkingForAnHour(t *testing.T) {
+	for _, tc := range []struct {
+		harness, status string
+	}{
+		{"claude", "idle"}, {"claude", "shell"}, {"codex", "idle"},
+		{"opencode", "idle"}, {"pi", "idle"}, {"agy", "idle"},
+	} {
+		t.Run(tc.harness+"-"+tc.status, func(t *testing.T) {
+			root := protocol.AgentView{SessionID: "s_root", NodeID: "one", Hostname: "desk", Harness: tc.harness,
+				Online: true, Status: tc.status, LastActive: t0.Add(-24 * time.Minute).Unix(), LastSeen: t0.Unix(),
+				Profile: protocol.Profile{Name: "root"}}
+			// A worker under the root is old and must not decide the band.
+			kid := protocol.AgentView{SessionID: "s_kid", NodeID: "one", Hostname: "desk", Harness: "opencode",
+				Online: true, Status: "idle", LastActive: t0.Add(-2 * time.Hour).Unix(), LastSeen: t0.Unix(),
+				Profile: protocol.Profile{Name: "kid"}, Worker: &protocol.WorkerInfo{ID: "w_kid", Owner: "s_root"}}
+			m := treeModel(120, 40, Snapshot{Connected: true, Agents: []protocol.AgentView{root, kid}})
+			if got := groupOf(m, "s_root").host; got != "Working" {
+				t.Fatalf("24 minutes after activity: group %q, want Working", got)
+			}
+
+			// The same session quiet for over an hour is Idle.
+			root.LastActive = t0.Add(-61 * time.Minute).Unix()
+			m = treeModel(120, 40, Snapshot{Connected: true, Agents: []protocol.AgentView{root}})
+			m.activeOnly = false
+			if got := groupOf(m, "s_root").host; got != "Idle" {
+				t.Fatalf("61 minutes after activity: group %q, want Idle", got)
+			}
+		})
+	}
+}
+
 // Being offline is never recent, however fresh the last activity time is.
 func TestOfflineSessionIsNeverRecent(t *testing.T) {
 	m := quietModel(time.Minute, false)
