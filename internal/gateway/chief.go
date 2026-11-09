@@ -271,9 +271,16 @@ func (s *Store) relatedAsks(id, session, about string) string {
 
 // storeAgentNetMessage writes a message from agent-net to a session in the
 // caller's transaction. The gateway dispatches it after the commit.
-func (s *Store) storeAgentNetMessage(q askDB, to, body string, now time.Time) (protocol.Message, error) {
+//
+// A message about one ask carries the ask in its key (chiefAskKeyPrefix), so a
+// reply to the message can answer the ask (agentNetReply).
+func (s *Store) storeAgentNetMessage(q askDB, to, body, askID string, now time.Time) (protocol.Message, error) {
+	key := protocol.NewID("chief")
+	if askID != "" {
+		key = chiefAskKeyPrefix + askID + ":" + key
+	}
 	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: "agent-net", FromName: "agent-net", FromHarness: "agent-net",
-		To: to, Type: protocol.TypeRequest, Body: body, IdempotencyKey: protocol.NewID("chief"),
+		To: to, Type: protocol.TypeRequest, Body: body, IdempotencyKey: key,
 		CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored}
 	_, err := q.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
 		VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body,
@@ -288,7 +295,7 @@ func (s *Store) storeChiefBatch(b chiefBatch, now time.Time) (protocol.Message, 
 		return protocol.Message{}, err
 	}
 	defer tx.Rollback()
-	m, err := s.storeAgentNetMessage(tx, b.chief, b.body, now)
+	m, err := s.storeAgentNetMessage(tx, b.chief, b.body, "", now)
 	if err != nil {
 		return m, err
 	}
@@ -579,7 +586,7 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		}
 		body := fmt.Sprintf("The chief of staff sent you ask %s from %s: %s\nWhy it reached you: %s\nAnswer it yourself only if you can. Anything that needs the owner goes to them with agent_owner_ask.",
 			q.Ask, sessionLabel(s.db, a.session), strings.TrimSpace(a.text), reason)
-		m, err := s.storeAgentNetMessage(tx, q.To, body, now)
+		m, err := s.storeAgentNetMessage(tx, q.To, body, q.Ask, now)
 		if err != nil {
 			return out, none, err
 		}

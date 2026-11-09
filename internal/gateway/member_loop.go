@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -20,7 +22,14 @@ const memberLines = 4
 // memberReport is the lines of the Members part, already worded.
 type memberReport struct {
 	blocked, workers []string
+	// told are the blocked members the lines show, with the fingerprint of the
+	// text shown. The tick records them when it is sent (recordMemberTold), so
+	// a later tick does not list the same wait again.
+	told []memberTold
 }
+
+// memberTold is one blocked member a tick listed, and what it was blocked on.
+type memberTold struct{ session, key string }
 
 func (r memberReport) none() bool { return len(r.blocked)+len(r.workers) == 0 }
 
@@ -87,14 +96,13 @@ func (s *Store) leadMemberSessions(lead protocol.AgentView) (map[string]bool, er
 // memberBlockedSince says when a member began to read as blocked or waiting.
 // ok is false when it does not. The task counts when it reads blocked, and an
 // explicit wait counts too; harness prompts do not, they end with the turn.
-func memberBlockedSince(a protocol.AgentView) (since int64, text string, ok bool) {
-	var waiting *protocol.Waiting
+func memberBlockedSince(a protocol.AgentView) (since int64, text string, waiting *protocol.Waiting, ok bool) {
 	if a.Waiting != nil && a.Waiting.Explicit {
 		waiting = a.Waiting
 	}
 	text, ok = blockedReading(a.Profile.Task, waiting)
 	if !ok {
-		return 0, "", false
+		return 0, "", nil, false
 	}
 	if taskReadsBlocked(a.Profile.Task) {
 		since = a.TaskStarted
@@ -102,7 +110,18 @@ func memberBlockedSince(a protocol.AgentView) (since int64, text string, ok bool
 	if waiting != nil && waiting.Since > 0 && (since == 0 || waiting.Since < since) {
 		since = waiting.Since
 	}
-	return since, text, true
+	return since, text, waiting, true
+}
+
+// recordMemberTold remembers which waits a sent tick listed.
+func (s *Store) recordMemberTold(q askDB, told []memberTold) error {
+	for _, t := range told {
+		if _, err := q.Exec(`INSERT INTO member_blocked_ticks(session_id,text_hash) VALUES(?,?)
+			ON CONFLICT(session_id) DO UPDATE SET text_hash=excluded.text_hash`, t.session, t.key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // loopMembers builds the Members part for one lead's tick: the members that
@@ -117,8 +136,9 @@ func (s *Store) loopMembers(lead protocol.AgentView, agents []protocol.AgentView
 	}
 	labels := map[string]string{}
 	type blockedMember struct {
-		since int64
-		line  string
+		since        int64
+		line         string
+		session, key string
 	}
 	var blocked []blockedMember
 	for _, a := range agents {
@@ -130,15 +150,28 @@ func (s *Store) loopMembers(lead protocol.AgentView, agents []protocol.AgentView
 		if !a.Online {
 			continue
 		}
-		since, text, ok := memberBlockedSince(a)
+		since, text, waiting, ok := memberBlockedSince(a)
 		if !ok {
+			if _, err := s.db.Exec(`DELETE FROM member_blocked_ticks WHERE session_id=?`, a.SessionID); err != nil {
+				return r, err
+			}
+			continue
+		}
+		// A wait the last tick listed, with the same text, is not listed again
+		// (decision 0126). A changed text is new.
+		key := blockedKey(text, waiting)
+		var listed string
+		if err := s.db.QueryRow(`SELECT text_hash FROM member_blocked_ticks WHERE session_id=?`, a.SessionID).Scan(&listed); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return r, err
+		}
+		if listed == key {
 			continue
 		}
 		line := label + " is blocked or waiting"
 		if since > 0 {
 			line = label + " blocked or waiting for " + durationText(now.Sub(time.Unix(since, 0)))
 		}
-		blocked = append(blocked, blockedMember{since, line + ": " + protocol.NeutralizeMarkers(askFirstLine(text, 120))})
+		blocked = append(blocked, blockedMember{since, line + ": " + protocol.NeutralizeMarkers(askFirstLine(text, 120)), a.SessionID, key})
 	}
 	sort.SliceStable(blocked, func(i, j int) bool {
 		if (blocked[i].since == 0) != (blocked[j].since == 0) {
@@ -146,8 +179,11 @@ func (s *Store) loopMembers(lead protocol.AgentView, agents []protocol.AgentView
 		}
 		return blocked[i].since < blocked[j].since
 	})
-	for _, b := range blocked {
+	for i, b := range blocked {
 		r.blocked = append(r.blocked, b.line)
+		if i < memberLines {
+			r.told = append(r.told, memberTold{b.session, b.key})
+		}
 	}
 	r.workers, err = s.memberWorkerLines(members, labels, sinceUnix, now)
 	return r, err

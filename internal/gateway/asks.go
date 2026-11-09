@@ -415,6 +415,17 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 	if protocol.IsOwner(harness) || worker != "" {
 		return nil
 	}
+	// A wait on the session's own lead is an ordinary wait inside the team: the
+	// lead hears of it (blockedMemberNotice), the owner has no ask (decision
+	// 0126). A wait a harness event reported (a permission prompt) is the
+	// owner's, whatever its text says.
+	if !w.Blocking {
+		if _, named, err := s.waitNamesLead(q, session, w.Text); err != nil {
+			return err
+		} else if named {
+			return s.closeAskRef(q, ref, protocol.AskReasonResolved)
+		}
+	}
 	_, err := s.createInboxItem(q, protocol.InboxItem{
 		Kind: protocol.AskKindWaiting, SessionID: session, SourceRef: ref,
 		AboutKind: protocol.AskAboutSession, AboutID: session,

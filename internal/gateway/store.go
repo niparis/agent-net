@@ -1279,7 +1279,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration}
 
 // briefDefectMoveMigration records that a late defect was reclassified as a
 // brief defect. The worker_defects row stays; these columns name who moved it,
@@ -3733,6 +3733,11 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 	} else if p.OwnerApproved {
 		return msg, false, reject("owner approval requires the CTO session")
+	}
+	// agent-net is not a session. A reply to its message about an ask closes
+	// the ask (agentNetReply).
+	if p.Recipient == agentNetSender && p.ParentID != "" {
+		return s.agentNetReply(tx, p)
 	}
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Recipient).Scan(&n); err != nil || n == 0 {
 		return msg, false, reject("unknown recipient session %q", p.Recipient)
