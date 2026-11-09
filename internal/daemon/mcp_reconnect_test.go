@@ -3,6 +3,7 @@ package daemon
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net"
 	"path/filepath"
 	"strings"
@@ -37,7 +38,7 @@ func TestMCPClientReconnectsAfterDaemonRestart(t *testing.T) {
 	// With the daemon down the error is clear, and the next call recovers.
 	b.d.Stop()
 	_, err := md.Call(ctx, "list", map[string]any{})
-	if err != mcpserver.ErrUnreachable {
+	if !errors.Is(err, mcpserver.ErrUnreachable) {
 		t.Fatalf("want ErrUnreachable, got %v", err)
 	}
 	b.restart()

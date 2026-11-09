@@ -17,6 +17,8 @@ Codex windows run their threads on a shared local app server (feature `daemon_au
 
 `agent-net setup` adds the server to `~/.codex/config.toml` (or `$CODEX_HOME`) as a marked block, and the guidance text to `~/.codex/AGENTS.md`. It follows the answer to the one integrations question, or `--accept-codex-tools` / `--no-accept-codex-tools` (a local answer for that machine). The answer is whether Codex may call the agent-net tools without asking each time (`default_tools_approval_mode = "approve"`, for this server only). Without it, Codex asks before every call, and refuses calls when its approval policy is `never`. You can also change the line in `config.toml` by hand. See [reference.md](reference.md#what-setup-changes-on-your-machine).
 
+The block also names the daemon's socket in `env`. Codex starts `agent-net mcp --codex` with only a few variables of its own, so without that line the server dials the fallback socket path, finds no daemon, and every tool call says "agent-net daemon not reachable at ...". A block written by an older setup has no `env` line: run `agent-net setup` once to update it.
+
 Codex reads its config when a thread starts: a thread that was open before setup does not have the tools until you start a new one. Receiving needs no setup.
 
 ## Limits

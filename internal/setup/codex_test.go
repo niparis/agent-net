@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/guidance"
 )
 
@@ -39,7 +40,7 @@ func TestCodexMCPPromptYes(t *testing.T) {
 			t.Errorf("lacks %q:\n%s", want, out)
 		}
 	}
-	want := codexMine + "\n" + codexBegin + "\n[mcp_servers.agent-net]\ncommand = '/opt/test/agent-net'\nargs = [\"mcp\", \"--codex\"]\ndefault_tools_approval_mode = \"approve\"\n" + codexEnd + "\n"
+	want := codexMine + "\n" + codexBegin + "\n[mcp_servers.agent-net]\ncommand = '/opt/test/agent-net'\nargs = [\"mcp\", \"--codex\"]\nenv = { AGENT_NET_SOCKET = '" + daemon.SocketPath() + "' }\ndefault_tools_approval_mode = \"approve\"\n" + codexEnd + "\n"
 	if got := readFile(t, cfg); got != want {
 		t.Errorf("config:\n%s\nwant:\n%s", got, want)
 	}
@@ -54,6 +55,36 @@ func TestCodexMCPPromptYes(t *testing.T) {
 	out = runAsking(t, Options{})
 	if !strings.Contains(out, "codex mcp ok (unchanged; calls need no approval)") || readFile(t, cfg) != want {
 		t.Errorf("rerun:\n%s\n%s", out, readFile(t, cfg))
+	}
+}
+
+// Codex starts an MCP server with its own short list of variables, so
+// XDG_RUNTIME_DIR and AGENT_NET_SOCKET of the session never reach it. The
+// block must hand the server the socket itself.
+func TestCodexMCPBlockGivesTheDaemonSocket(t *testing.T) {
+	f, cfg := codexFixture(t)
+	sock := filepath.Join(f.home, "run", "agent-net", "daemon.sock")
+	t.Setenv("AGENT_NET_SOCKET", sock)
+	run(t, Options{Join: f.newJoin(t), CodexTools: CodexToolsNo})
+	if got := readFile(t, cfg); !strings.Contains(got, "env = { AGENT_NET_SOCKET = '"+sock+"' }\n") {
+		t.Fatalf("config lacks the socket:\n%s", got)
+	}
+}
+
+// A block written before the socket was given is updated in place by the next
+// setup, so an existing install gets the fix when the owner runs setup again.
+func TestCodexMCPUpdatesAnOldBlockWithTheSocket(t *testing.T) {
+	f, cfg := codexFixture(t)
+	sock := filepath.Join(f.home, "run", "agent-net", "daemon.sock")
+	t.Setenv("AGENT_NET_SOCKET", sock)
+	old := codexBegin + "\n[mcp_servers.agent-net]\ncommand = '/opt/test/agent-net'\nargs = [\"mcp\", \"--codex\"]\n" + codexEnd + "\n"
+	os.WriteFile(cfg, []byte(codexMine+"\n"+old), 0o600)
+	out := run(t, Options{Join: f.newJoin(t), CodexTools: CodexToolsNo})
+	if !strings.Contains(out, "codex mcp updated") {
+		t.Errorf("output:\n%s", out)
+	}
+	if got := readFile(t, cfg); !strings.Contains(got, "env = { AGENT_NET_SOCKET = '"+sock+"' }\n") || strings.Count(got, codexBegin) != 1 {
+		t.Fatalf("config:\n%s", got)
 	}
 }
 
