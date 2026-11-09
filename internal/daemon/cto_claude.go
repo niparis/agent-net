@@ -259,7 +259,12 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	if err := claudetrust.Set(dir); err != nil {
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
-	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "1"}}
+	// CLAUDE_CODE_DISABLE_MOUSE is read inside the session, from its settings env
+	// and from the environment of Claude's background service. The command that
+	// starts the job and the attach client are ignored, so "0" here is the only
+	// way to keep the wheel working for a long CTO reply whatever started the
+	// service. See docs/decisions/0128-cto-keeps-mouse-tracking-on.md.
+	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0"}}
 	if tui := ownerClaudeRenderer(d.cfg.ClaudeSessionsDir); tui != "" {
 		launch["tui"] = tui
 	}
@@ -277,7 +282,10 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	defer c.starting.Store(false)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
-	cmd.Env = workerEnv(os.Environ(), map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"})
+	// The first launch can start Claude's background service, and every session
+	// that service starts later inherits this environment. Do not hand it a
+	// variable that turns the wheel off.
+	cmd.Env = withoutEnvKey(os.Environ(), "CLAUDE_CODE_DISABLE_MOUSE")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if claudeTrustPrompt(output) {
@@ -317,6 +325,17 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+// withoutEnvKey returns env without any entry for key.
+func withoutEnvKey(env []string, key string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if k, _, _ := strings.Cut(kv, "="); k != key {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // Terminal failure states are authoritative: a session file can appear before a resume fails.

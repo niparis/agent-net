@@ -1212,9 +1212,11 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `AGENT_NET_IGNORE` | daemon | `1` in a session's environment keeps that session off the network: the daemon registers no session and no project for it, and removes one it had. Set it on the harness process (`AGENT_NET_IGNORE=1 claude`, or the equivalent for Pi and OpenCode). A Codex thread has no process of its own, so set it where the shared Codex app server starts; it then hides every thread of that server. A worker started by the daemon is always registered. |
 | `AGENT_NET_MCP_HANDOVER` | `agent-net mcp` | Set by `agent-net mcp` on itself when it switches to a newer binary. It holds the path of a private temp file (`agent-net-mcp-handover-*` in `$TMPDIR`) with the start-up messages and unread input. The new process reads it, deletes the file and unsets the variable. Do not set it. |
 | `CLAUDE_CODE_SESSION_ID` | `agent-net mcp` | Set by Claude Code for the MCP servers it starts. Not set by you. |
-| `CLAUDE_CODE_DISABLE_MOUSE` | daemon | `1` in the environment of Claude Code background sessions agent-net starts and in the fallback `claude attach` plan. Herdr attach clients unset it, so mouse tracking is on there. |
+| `CLAUDE_CODE_DISABLE_MOUSE` | daemon | `1` in the environment of Claude Code background sessions that agent-net starts for workers and owner sessions. The CTO's own Claude session gets `0` in its launch settings, so the wheel scrolls its long replies. |
 
-The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUSE=1`. It unsets the variable for a herdr attach client, and keeps it for a terminal fallback so a plain drag selects text there.
+The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUSE=1`. Claude Code reads it inside the session, from the session's settings `env` and from the environment of Claude's background service. It does not read it from the `claude --bg` command or from the `claude attach` client, so setting or unsetting it on an attach has no effect. With the variable on, the session never asks the terminal for mouse events: the wheel does not scroll its fullscreen view, and a plain drag selects text.
+
+The CTO is the exception ([decision 0128](decisions/0128-cto-keeps-mouse-tracking-on.md)). Its launch settings set `CLAUDE_CODE_DISABLE_MOUSE=0`, which also wins over a service that something else started with the variable on. Its launch command and its attach plan carry no mouse variable. In a plain terminal, hold Shift while dragging to select text in the CTO. A CTO that was already running keeps the old setting until it is started again.
 
 ## Flags
 

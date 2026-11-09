@@ -94,8 +94,8 @@ func TestClaudeCTOBackgroundAndResume(t *testing.T) {
 		t.Fatalf("first: %+v %q", rec, id)
 	}
 	settingsEnv, _ := rec.Settings["env"].(map[string]any)
-	if settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "1" || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" || rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "1" {
-		t.Fatalf("mouse off: settings %v session %v command %v", settingsEnv, rec.Env, rec.CommandEnv)
+	if settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
+		t.Fatalf("mouse tracking must stay on: settings %v session %v command %v", settingsEnv, rec.Env, rec.CommandEnv)
 	}
 	transcriptDir := filepath.Join(filepath.Dir(n.sessions), "projects", "fake")
 	if err := os.MkdirAll(transcriptDir, 0700); err != nil {
@@ -117,6 +117,35 @@ func TestClaudeCTOBackgroundAndResume(t *testing.T) {
 	rec = readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
 	if rec.Session != id || argValue(rec.Args, "--resume") != id {
 		t.Fatalf("resume: %+v", rec)
+	}
+}
+
+// The wheel scrolls the CTO's long replies only while the session itself has
+// mouse tracking on. Claude Code takes CLAUDE_CODE_DISABLE_MOUSE from the
+// settings env and from the environment of its background service, never from
+// the command that starts the job or from the attach client. A service that
+// something else started with the variable set (the daemon's own environment
+// stands in for it here) must not turn the wheel off for the CTO.
+func TestClaudeCTOKeepsMouseTrackingOnWhenTheServiceHasItOff(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	t.Setenv("CLAUDE_CODE_DISABLE_MOUSE", "1")
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
+	defer cancel()
+	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+	settingsEnv, _ := rec.Settings["env"].(map[string]any)
+	if settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "0" {
+		t.Fatalf("the CTO's settings must turn mouse tracking on: %v", settingsEnv)
+	}
+	if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" {
+		t.Fatalf("the CTO session's own mouse setting = %q, want 0", rec.Env["CLAUDE_CODE_DISABLE_MOUSE"])
+	}
+	if rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
+		t.Fatalf("the launch command must not pass the variable on to Claude's service: %q", rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"])
 	}
 }
 
@@ -467,8 +496,8 @@ func TestCTOEnterClaude(t *testing.T) {
 	if len(plan.Argv) != 3 || plan.Argv[1] != "attach" || plan.Argv[2] != n.d.claudeCTO.ref {
 		t.Fatalf("plan: %+v", plan)
 	}
-	if plan.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" {
-		t.Fatalf("attach env: %v", plan.Env)
+	if _, set := plan.Env["CLAUDE_CODE_DISABLE_MOUSE"]; set {
+		t.Fatalf("the CTO's attach must not touch mouse tracking: %v", plan.Env)
 	}
 	cfgPath := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".claude.json")
 	raw, err := os.ReadFile(cfgPath)
