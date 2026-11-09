@@ -255,7 +255,7 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		Model:    a.Model,
 		Online:   a.Online,
 		Status:   a.Status,
-		Task:     a.Profile.Task,
+		Task:     a.Profile.TaskLine(),
 		LastSeen: rfc3339(a.LastSeen),
 	}
 	if a.Harness == "cto" && a.Online {

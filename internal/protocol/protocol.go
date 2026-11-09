@@ -275,9 +275,25 @@ type Profile struct {
 	Project      string   `json:"project"`
 	Capabilities []string `json:"capabilities"`
 	Task         string   `json:"task"`
+	// TaskNote is set by the gateway when it reads the session, never by the
+	// agent: a task line that names a worker which has ended gets
+	// "(worker <id> ended <time>)". The stored task is not changed.
+	TaskNote string `json:"task_note,omitempty"`
 	// Expertise is what the session can answer about, in a short line the
 	// agent wrote ("cogforge API and its deployment; live logs of homelab").
 	Expertise string `json:"expertise,omitempty"`
+}
+
+// TaskLine is the announced task with the gateway's note after it, when there
+// is one. Views show this line. Checks and searches read Task.
+func (p Profile) TaskLine() string {
+	if p.TaskNote == "" {
+		return p.Task
+	}
+	if p.Task == "" {
+		return p.TaskNote
+	}
+	return p.Task + " " + p.TaskNote
 }
 
 // AgentView keeps what the daemon verified apart from what the agent claims.

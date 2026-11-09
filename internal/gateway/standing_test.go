@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -74,7 +75,16 @@ func TestStandingOrdersOldMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec("UPDATE schema_version SET version=?", len(migrations)-1); err != nil {
+	at := -1
+	for i, m := range migrations {
+		if strings.Contains(m, "Standing order search columns") {
+			at = i
+		}
+	}
+	if at < 0 {
+		t.Fatal("standing order search migration not found")
+	}
+	if _, err = s.db.Exec("UPDATE schema_version SET version=?", at); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.migrate(); err != nil {

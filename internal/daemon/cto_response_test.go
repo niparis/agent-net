@@ -84,3 +84,13 @@ func TestCTODefaultPagesStaySmall(t *testing.T) {
 		}
 	}
 }
+
+// The CTO's agents view keeps the gateway's note on a stale worker line, also
+// when the announced task is cut.
+func TestCTOAgentsViewKeepsTheStaleWorkerNote(t *testing.T) {
+	a := protocol.AgentView{SessionID: "s_1", Profile: protocol.Profile{Task: strings.Repeat("x", 300), TaskNote: "(worker s_0123456789abcdef ended Nov 9 01:07 UTC)"}}
+	got := compactCTOAgents([]protocol.AgentView{a}).(map[string]any)["agents"].([]ctoAgent)
+	if len(got) != 1 || !strings.HasSuffix(got[0].Task, " (worker s_0123456789abcdef ended Nov 9 01:07 UTC)") || len(got[0].Task) > 160+60 {
+		t.Fatalf("agents = %+v", got)
+	}
+}

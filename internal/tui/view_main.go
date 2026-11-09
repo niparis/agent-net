@@ -1636,7 +1636,7 @@ func taskText(a protocol.AgentView) string {
 	if a.Harness == "cto" {
 		return "" // the CTO has a fixed brief, not an announced task
 	}
-	if t := strings.TrimSpace(a.Profile.Task); t != "" {
+	if t := strings.TrimSpace(a.Profile.TaskLine()); t != "" {
 		return sanitize(t)
 	}
 	if a.Worker != nil {

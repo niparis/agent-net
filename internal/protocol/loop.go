@@ -70,6 +70,10 @@ func LoopEvery(settings map[string]string) time.Duration {
 type LoopPrompt struct {
 	// Changes is the "Since ..." line: what changed since the last tick.
 	Changes string
+	// Members is the "Members:" part: the lines about team members that are
+	// blocked or waiting and the workers they started. Empty when there is
+	// nothing to say.
+	Members string
 	Purpose string
 	// Custom replaces the middle sentence when set.
 	Custom string
@@ -81,8 +85,9 @@ type LoopPrompt struct {
 const LoopOwnerLine = "If you need the owner, ask once with agent_owner_ask and carry on with work that does not depend on the answer; do not wait."
 
 // LoopMessage builds the tick's prompt. The changes line comes first, then
-// the purpose, then the middle sentence (the default or the node's own), the
-// plan sentence when a plan is set, and the owner line.
+// the Members part when there is one, then the purpose, then the middle
+// sentence (the default or the node's own), the plan sentence when a plan is
+// set, and the owner line.
 func LoopMessage(p LoopPrompt) string {
 	purpose := strings.TrimRight(strings.TrimSpace(NeutralizeMarkers(p.Purpose)), ". ")
 	if purpose == "" {
@@ -95,6 +100,9 @@ func LoopMessage(p LoopPrompt) string {
 	out := "[agent-net] Loop: "
 	if c := strings.TrimSpace(p.Changes); c != "" {
 		out += strings.TrimSuffix(c, ".") + ". "
+	}
+	if m := strings.TrimSpace(NeutralizeMarkers(p.Members)); m != "" {
+		out += "Members:\n" + m + "\n"
 	}
 	out += "Your purpose is " + purpose + ". " + middle
 	if plan := strings.TrimSpace(NeutralizeMarkers(p.Plan)); plan != "" {
