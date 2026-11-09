@@ -3217,11 +3217,16 @@ resume it. This holds whatever the agent's autonomy is. A ready unclaimed delive
 asks that specific session's machine to resume it. Node-owned steps wait for an
 online session. Step notifications are queued after the session is online, so
 its backlog is sent in one batch. The machine checks the output of
-`claude agents --json --all`: the matching background record must be `done`
-with no running process, its folder must exist, and the session must not be a
-worker. When the record
+`claude agents --json --all`: a matching background record must be `done` or
+`stopped` with no running process, its folder must exist, and the session must
+not be a worker. When the record
 omits its kind, agent-net must have recorded the session as a background
-session. Stopped, removed or unreadable records are not resumed. The gateway makes at most one attempt per session per 10 minutes,
+session. A live or running record, an unreadable listing, a worker and a folder
+that is gone are refused. When the record is missing, ambiguous or not retired
+(for example a record in another folder) and no matching record shows a live
+process, the wake uses the same resume path as `session_change` resume. An
+interactive session without autonomy is not taken by that fallback, and an
+archived session is never resumed. The gateway makes at most one attempt per session per 10 minutes,
 including across gateway restarts, and logs a failure once. A failed attempt
 is kept: a restart does not retry it, only a new message asks again, and each
 sender with a queued message gets one agent-net notice that says why. Queued messages
@@ -3257,15 +3262,16 @@ What each harness does:
 
 - Claude, interactive: `claude --bg --resume <session id>` in the recorded
   folder, through the same launcher as the background wake. The session is not
-  running, so it has no `done` record to check. The machine refuses when
-  `claude agents --json --all` lists a matching record that is running, names
-  another session, has no kind (unless the session is recorded as background),
-  or is a background record that is not `done` or is in another folder (a
-  stopped one, for example). A finished background
+  running, so it has no `done` record to check. A matching record that is
+  running stops the wake. A record that is missing, names another session, has
+  no kind (unless the session is recorded as background), is in another folder
+  or is otherwise not retired does not: the machine takes the same resume path
+  that `session_change` resume runs. A finished or stopped background
   run of the same session in the session's folder does not refuse it: Claude
   keeps that record after the run. The same rule holds for a session whose mode
-  is background or not known: every record of the session must allow the
-  resume, whatever the mode. A copy with a new native ID keeps the agent-net
+  is background or not known, whatever the record. An interactive session
+  without autonomy is still not woken by that fallback, and an archived
+  session is never resumed. A copy with a new native ID keeps the agent-net
   session ID and its queued messages, as above.
 - Codex: `thread/resume` on the shared Codex app server, with the session's
   folder. Codex lists the thread as loaded, the daemon registers it under the

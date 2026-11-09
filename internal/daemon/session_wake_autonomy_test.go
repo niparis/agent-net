@@ -137,13 +137,10 @@ func TestMessageDoesNotWakeInteractiveClaudeWithAutonomyOff(t *testing.T) {
 	}
 }
 
-func TestInteractiveWakeRefusesRunningOrUnclearRecords(t *testing.T) {
+func TestInteractiveWakeRefusesRunningRecords(t *testing.T) {
 	for name, records := range map[string][]map[string]any{
-		"running":            {{"id": wakeNative[:8], "kind": "interactive", "pid": 4242}},
-		"working-bg":         {{"id": wakeNative[:8], "kind": "background", "state": "working"}},
-		"no-kind":            {{"id": wakeNative[:8], "state": "done"}},
-		"other-sessionid":    {{"id": wakeNative[:8], "sessionId": "different-native", "kind": "interactive"}},
-		"finished-elsewhere": {{"id": wakeNative[:8], "kind": "background", "state": "done", "cwd": "/elsewhere"}},
+		"running":    {{"id": wakeNative[:8], "kind": "interactive", "pid": 4242}},
+		"working-bg": {{"id": wakeNative[:8], "kind": "background", "state": "working"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newInteractiveWakeRig(t, protocol.AutonomyWake, records)
@@ -152,6 +149,26 @@ func TestInteractiveWakeRefusesRunningOrUnclearRecords(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(r.repo, "fake-claude.json")); !os.IsNotExist(err) {
 				t.Fatalf("session started: %v", err)
+			}
+		})
+	}
+}
+
+// A record that is not retired but shows no live process does not stop the
+// wake: it takes the owner resume path, as session_change resume does.
+func TestInteractiveWakeFallsBackOnUnclearRecords(t *testing.T) {
+	for name, records := range map[string][]map[string]any{
+		"no-kind":            {{"id": wakeNative[:8], "state": "done"}},
+		"other-sessionid":    {{"id": wakeNative[:8], "sessionId": "different-native", "kind": "interactive"}},
+		"finished-elsewhere": {{"id": wakeNative[:8], "kind": "background", "state": "done", "cwd": "/elsewhere"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newInteractiveWakeRig(t, protocol.AutonomyWake, records)
+			if err := r.c.d.wakeSession(context.Background(), r.id, "", true); err != nil {
+				t.Fatalf("wake refused: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(r.repo, "fake-claude.json")); err != nil {
+				t.Fatalf("session did not start: %v", err)
 			}
 		})
 	}

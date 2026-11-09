@@ -13,8 +13,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// wakeRetiredClaude accepts only a known local non-worker with an unambiguous
-// matching background record in state done or stopped. The record, not gateway presence,
+// wakeRetiredClaude is the background wake for a queued message. A known local
+// non-worker with an unambiguous retired record wakes from it. When the record
+// is missing, ambiguous or not retired and no record shows a live process, the
+// wake falls back to the owner resume path. The record, not gateway presence,
 // is authoritative about a stop or removal by the owner.
 func (d *Daemon) wakeRetiredClaude(ctx context.Context, id, token string) error {
 	return d.wakeClaude(ctx, id, token, false)
@@ -55,9 +57,11 @@ func interactiveRecordClear(record claudeAgentRecord, identity bool, mode, cwd s
 	return false
 }
 
-// wakeClaude is the Claude wake. A background session is resumed only from a
-// retired record. With autonomy wake the gateway also asks for an interactive
-// session, which is resumed in the background the same way (never a view).
+// wakeClaude is the Claude wake. A background session is resumed from a
+// retired record, or through the owner resume path when the record is missing,
+// ambiguous or not retired and no record shows a live process. With autonomy
+// wake the gateway also asks for an interactive session, which is resumed in
+// the background the same way (never a view).
 func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 110*time.Second)
 	defer cancel()
@@ -110,6 +114,7 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 	}
 	matches := 0
 	retired := false
+	live := false
 	launchDir := a.Cwd
 	// An interactive session that is not running has no background record to
 	// check, so its absence is normal. Anything live, or any record that does
@@ -127,6 +132,9 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 		}
 		matches++
 		identity := full || (prefix && record.SessionID == "")
+		if identity && (record.PID != 0 || record.State == "working" || record.State == "running") {
+			live = true
+		}
 		background := record.Kind == "background" || record.Kind == "bg" || (record.Kind == "" && a.Mode == protocol.ModeBackground)
 		cwdOK := record.Cwd != "" && within(a.Cwd, record.Cwd)
 		retired = identity && background && record.PID == 0 && (record.State == "done" || record.State == "stopped") && cwdOK
@@ -138,14 +146,22 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 		}
 	}
 	if !(matches == 1 && retired) && !interactive {
-		return errors.New("Claude background record is missing, ambiguous, or not retired")
+		// A live record is not the offline session the gateway asked about. An
+		// interactive session without autonomy is not eligible for a retired
+		// wake, so the fallback must not make it one.
+		if live || (!autonomy && a.Mode == protocol.ModeForeground) {
+			return errors.New("Claude background record is missing, ambiguous, or not retired")
+		}
+		// The record guard is stricter than the owner's resume: a record can be
+		// missing, ambiguous or unfinished while `claude --bg --resume` still
+		// opens the conversation, which is what session_change resume runs.
+		// Take that same path, then let discovery register the session so the
+		// queued message is delivered.
+		d.log.Printf("session wake: no retired Claude record for %s; resuming as owner resume does", id)
 	}
 	// This is the same background launcher as owner resume, without any view.
 	// The MCP choice of the folder goes in the launch settings, as on resume.
-	args := []string{"--bg", "--resume", a.NativeID}
-	if settings := claudeSettingsWithMCPAnswers("", a.Cwd); settings != "" {
-		args = append(args, "--settings", settings)
-	}
+	args := d.claudeResumeArgs(a)
 	sf, err := d.launchClaudeBackground(ctx, bin, launchDir, args, "", a.NativeID, nil, nil)
 	if err != nil {
 		return err

@@ -543,6 +543,12 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
+	return d.launchOwnerClaude(r, bin, d.claudeResumeArgs(a), a.NativeID, socket, pane, false, false, false), nil
+}
+
+// claudeResumeArgs is the argument list of the owner resume. The wake fallback
+// uses the same list, so a wake and session_change resume open the same way.
+func (d *Daemon) claudeResumeArgs(a protocol.AgentView) []string {
 	args := []string{"--bg", "--resume", a.NativeID}
 	settings := ""
 	if a.Type == "merger" {
@@ -551,7 +557,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if settings = claudeSettingsWithMCPAnswers(settings, a.Cwd); settings != "" {
 		args = append(args, "--settings", settings)
 	}
-	return d.launchOwnerClaude(r, bin, args, a.NativeID, socket, pane, false, false, false), nil
+	return args
 }
 
 func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {
