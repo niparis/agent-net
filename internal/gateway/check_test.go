@@ -558,3 +558,38 @@ func TestCheckSkipsTheSessionAStandingLoopPrompts(t *testing.T) {
 		t.Fatalf("check while the loop is paused = %+v, want 1", got)
 	}
 }
+
+// A wake-mode session is not held by the same-line rule after "more": its
+// check sends the wake, so the no-progress streak decides, as before. Progress
+// and the same line still get it the next check.
+func TestCheckWakeSessionAfterMoreWithProgressGetsItsNextCheck(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	setAutonomy(t, s, b, protocol.AutonomyWake)
+	req, _, err := send(s, a, b, "req", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("check 1 = %+v", got)
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: first step"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := wakeMessages(t, s); len(got) != 1 {
+		t.Fatalf("wake after more = %d, want 1", len(got))
+	}
+	// Progress: the request is answered. The task line is unchanged.
+	c.t = c.t.Add(time.Minute)
+	if _, _, err := send(s, b, a, "reply", req.ID); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Minute)
+	activity(t, s, b, "pi", "nb")
+	c.t = c.t.Add(21 * time.Minute)
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("wake session check after more with progress = %+v, want 1", got)
+	}
+}

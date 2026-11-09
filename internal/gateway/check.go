@@ -278,8 +278,11 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 
 // loopPrompted is the set of sessions that a running standing loop prompts on
 // its clock: the target loopTick picks for each node whose loop is running.
-// The loop reads every session, offline ones too, so the target is picked
-// from the same full list.
+// The target is picked from every session, not only the online ones checkIdle
+// loaded: loopTarget ranks an offline repo lead first, and loopTick may prompt
+// that lead (waking it). Choosing from checkIdle's online list would name a
+// different session. So this loads the full list again, and only while a loop
+// is running.
 func (s *Store) loopPrompted() (map[string]bool, error) {
 	rows, err := s.loadLoops()
 	if err != nil {
@@ -533,13 +536,19 @@ func (s *Store) answerCheck(sessionID, task string) error {
 			wakeOpen, wakeMsgs = open, msgs
 		}
 		// The task the session answered "more" about is remembered like a
-		// "blocked" answer: the same line is not checked again today.
+		// "blocked" answer: the same line is not checked again today. A wake
+		// session is the exception: its check makes the wake, so the
+		// no-progress streak decides there, as before.
+		moreHash := checkTaskHash(task)
+		if autonomy == protocol.AutonomyWake {
+			moreHash = ""
+		}
 		if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_open,check_msgs,check_task_hash)
 			VALUES(?,?,0,?,?,?,?)
 			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0,
 			check_more=excluded.check_more,check_open=excluded.check_open,check_msgs=excluded.check_msgs,
 			check_task_hash=excluded.check_task_hash`,
-			sessionID, active, streak, open, msgs, checkTaskHash(task)); err != nil {
+			sessionID, active, streak, open, msgs, moreHash); err != nil {
 			return err
 		}
 		if wake || st.wakeDay != "" {
