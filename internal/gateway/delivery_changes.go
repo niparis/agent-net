@@ -61,6 +61,16 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		data, err = g.store.ClaimStep(nc.id, q)
+	case protocol.FrameAskSort:
+		q, derr := decode[protocol.AskSortRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		res, m, serr := g.store.SortAsk(nc.id, q)
+		if serr == nil && m.ID != "" {
+			g.dispatch(ctx, m)
+		}
+		data, err = res, serr
 	case protocol.FrameChangeGet:
 		q, derr := decode[protocol.ChangeGetRequest](raw)
 		if derr != nil {

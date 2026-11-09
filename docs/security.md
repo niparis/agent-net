@@ -432,6 +432,14 @@ A message from the person at a machine is sent from that machine's **owner sessi
 - **Worktrees.** With `isolation: worktree` a worker edits its own git worktree under the daemon's state folder, not your checkout. The branch `agent-net/<worker id>` is made in your project.
 - **The feed** now also carries `worker.started`, `worker.stopped` and `worker.refused` (project, harness, model, reason and owner session ID, cut to 200 characters), readable by every enrolled machine, like the other feed events.
 
+## The chief of staff
+
+- **Only the live chief sorts asks.** `agent_ask_sort` (gateway `ask.sort`) is refused unless the caller is the session named by `chief_session`, the session is online, and it runs on the machine that sent the frame. The chief can only act on an ask whose next is the chief. It cannot answer an ask for the owner: `send` hands the ask to a session, and `owner` hands it back.
+- **Only the owner or the CTO names the chief.** `chief.set` (operator `chief_set`) needs the owner or CTO actor. The chief must be a live agent session, not a worker, the owner, the CTO or a bot.
+- **Nothing is deleted.** Each sort keeps the ask as it was in `ask_sorts`, so a sort can be undone.
+
+See [decision 0114](decisions/0114-chief-of-staff.md) and [reference](reference.md#the-chief-of-staff-decision-0114).
+
 ## Delivery records
 
 Before calling a harness, the daemon saves a delivery intent in its private

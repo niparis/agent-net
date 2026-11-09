@@ -102,7 +102,7 @@ func (s *Store) DeskLog(limit int) ([]protocol.DeskLogEntry, error) {
 
 const askSelect = `SELECT i.id,i.kind,i.session_id,i.node,i.text,i.recommendation,i.message_id,i.conversation_id,i.created_at,i.status,i.answer,i.answered_at,i.options,
  COALESCE(NULLIF(i.asker_name,''), CASE WHEN s.archived_at=0 THEN COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.title,'') ELSE '' END, ''),
- i.change_title,i.from_kind,i.source_ref,i.about_kind,i.about_id,i.next_who,i.why_you,i.detail,
+ i.change_title,i.from_kind,i.source_ref,i.about_kind,i.about_id,i.next_who,i.why_you,i.detail,i.priority,
  COALESCE(d.change_id,''),COALESCE(d.step,''),COALESCE(d.for_step,''),COALESCE(d.after_merge,0),COALESCE(d.commit_hash,''),COALESCE(c.project,''),COALESCE(c.title,'')
  FROM inbox_items i LEFT JOIN sessions s ON s.id=i.session_id LEFT JOIN profiles p ON p.session_id=i.session_id
  LEFT JOIN delivery_step_inbox d ON d.item_id=i.id LEFT JOIN delivery_changes c ON c.id=d.change_id`
@@ -128,7 +128,7 @@ func (s *Store) ListAsks() ([]protocol.Ask, error) {
 		var after int
 		var d protocol.InboxDelivery
 		if err := rows.Scan(&a.ID, &a.Kind, &a.FromSession, &a.Node, &a.Question, &a.Recommendation, &a.MessageID, &a.ConversationID, &created, &status, &a.Answer, &answered, &options,
-			&a.From, &changeTitle, &a.FromKind, &a.Ref, &a.AboutKind, &a.AboutID, &a.Next, &a.WhyYou, &a.Detail,
+			&a.From, &changeTitle, &a.FromKind, &a.Ref, &a.AboutKind, &a.AboutID, &a.Next, &a.WhyYou, &a.Detail, &a.Priority,
 			&changeID, &d.Step, &d.For, &after, &d.Commit, &project, &a.AboutTitle); err != nil {
 			rows.Close()
 			return nil, err
@@ -510,6 +510,9 @@ func (s *Store) reconcileAsks() error {
 	}
 	if _, err := s.reconcileChangeAsks(s.db); err != nil {
 		return fmt.Errorf("change asks: %w", err)
+	}
+	if err := s.reconcileChiefAsks(s.now()); err != nil {
+		return fmt.Errorf("chief asks: %w", err)
 	}
 	if _, err := s.reconcileEscalationAsks(s.db); err != nil {
 		return fmt.Errorf("escalation asks: %w", err)

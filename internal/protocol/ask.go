@@ -92,8 +92,10 @@ type Ask struct {
 	Recommendation string   `json:"recommendation,omitempty"`
 	Detail         string   `json:"detail,omitempty"`
 	// Next is who must act now: owner, a session id, or chief.
-	Next        string `json:"next"`
-	WhyYou      string `json:"why_you,omitempty"`
+	Next   string `json:"next"`
+	WhyYou string `json:"why_you,omitempty"`
+	// Priority (1 to 3) is the chief's rank for an ask it sent to the owner.
+	Priority    int    `json:"priority,omitempty"`
 	Answer      string `json:"answer,omitempty"`
 	CloseReason string `json:"close_reason,omitempty"`
 	// Ref is the source's own key (a message id, a draft id) and links the ask

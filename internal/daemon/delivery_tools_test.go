@@ -307,14 +307,47 @@ func TestChangeSubmitRefusedForWorkers(t *testing.T) {
 		}
 	}
 	n.d.mu.Unlock()
-	for _, op := range []string{protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport} {
-		_, err := lc.call(op, map[string]any{"branch": "feat/x"})
+	for _, op := range []string{protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpAskSort} {
+		_, err := lc.call(op, map[string]any{"branch": "feat/x", "ask": "i_1", "result": "close", "reason": "x"})
 		if err == nil || !strings.Contains(err.Error(), "worker") {
 			t.Errorf("%s from a worker: %v", op, err)
 		}
 	}
 	if got := f.frames(protocol.FrameChangeSubmit); len(got) != 0 {
 		t.Fatalf("a worker's submit reached the gateway: %s", got)
+	}
+}
+
+// The chief's sort goes to the gateway with the caller's own session, so the
+// gateway checks the chief and no agent can name another session.
+func TestAskSortForwardsTheCallerSession(t *testing.T) {
+	t.Parallel()
+	n, f := startDeliveryNode(t)
+	f.answer(protocol.FrameAskSort, func(raw json.RawMessage) (any, error) {
+		var q protocol.AskSortRequest
+		_ = json.Unmarshal(raw, &q)
+		return protocol.AskSortResult{Ask: q.Ask, Result: q.Result, Next: protocol.AskNextOwner, State: protocol.AskStateOpen}, nil
+	})
+	_, wt := deliveryWorktree(t)
+	lc, sid := helloDelivery(t, n, "np-chief", wt, "gpt-6.1-sol")
+	res, err := lc.call(protocol.OpAskSort, map[string]any{"ask": "i_1", "result": "owner", "priority": 1, "why_you": "only you decide", "reason": "decision"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out protocol.AskSortResult
+	if err := json.Unmarshal(res, &out); err != nil || out.Next != protocol.AskNextOwner || out.Ask != "i_1" {
+		t.Fatalf("result = %s (%v)", res, err)
+	}
+	sent := f.frames(protocol.FrameAskSort)
+	if len(sent) != 1 {
+		t.Fatalf("frames sent = %d, want 1", len(sent))
+	}
+	var q protocol.AskSortRequest
+	if err := json.Unmarshal(sent[0], &q); err != nil {
+		t.Fatal(err)
+	}
+	if q.SessionID != sid || q.Ask != "i_1" || q.Result != protocol.AskSortOwner || q.Priority != 1 || q.WhyYou != "only you decide" {
+		t.Fatalf("frame = %+v, caller session %s", q, sid)
 	}
 }
 
