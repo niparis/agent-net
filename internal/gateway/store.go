@@ -3487,8 +3487,12 @@ func (s *Store) agentsBaseWith(selectSQL string, f protocol.QueryAgents) ([]prot
 	if f.WorkersOwnedBy != "" {
 		// s.worker is empty for a session that is not a worker, and
 		// json_extract fails on an empty string, so the CASE guards it.
-		where += ` AND (s.id=? OR CASE WHEN s.worker<>'' THEN json_extract(s.worker,'$.owner') END = ?)`
-		args = append(args, f.WorkersOwnedBy, f.WorkersOwnedBy)
+		// A panel shows the running workers and the ones that ended in
+		// the last two minutes (workersView), so leave the older ended
+		// workers in the store: a session that has started dozens of
+		// them made every poll tens of KB for rows nobody sees.
+		where += ` AND (s.id=? OR (CASE WHEN s.worker<>'' THEN json_extract(s.worker,'$.owner') END = ? AND (s.online=1 OR (s.status='ended' AND s.last_seen>=?))))`
+		args = append(args, f.WorkersOwnedBy, f.WorkersOwnedBy, s.now().Add(-protocol.RecentWorkerWindow).UnixNano())
 	}
 	rows, err := s.db.Query(selectSQL+` WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (`+piChildSQL+`)`+where+` ORDER BY s.last_seen DESC, s.id`, args...)
 	if err != nil {

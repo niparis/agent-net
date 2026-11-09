@@ -1649,7 +1649,7 @@ func (d *Daemon) ownerOffline(ctx context.Context, owner string) bool {
 }
 
 // recentWindow is how long an ended worker stays visible to `workers -recent`.
-const recentWindow = 2 * time.Minute
+const recentWindow = protocol.RecentWorkerWindow
 
 // recentWorker is a worker that ended, kept for a short while so a status view
 // can show the end it reached.

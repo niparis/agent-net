@@ -473,6 +473,11 @@ type WorkerHandbackResult struct {
 	AutoContinued bool `json:"auto_continued,omitempty"`
 }
 
+// RecentWorkerWindow is how long a worker that ended stays visible: the
+// gateway keeps its row for an owner's panel query, and the daemon keeps its
+// own record for the recent list. One constant, so both sides agree.
+const RecentWorkerWindow = 2 * time.Minute
+
 // WorkersQuery is the optional request of OpWorkers. An empty query lists the
 // running workers, as OpWorkers always did.
 type WorkersQuery struct {

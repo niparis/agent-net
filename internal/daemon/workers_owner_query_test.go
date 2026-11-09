@@ -74,3 +74,76 @@ func TestWorkersQueryOfOneOwnerDoesNotFetchEveryAgent(t *testing.T) {
 		t.Fatalf("an owner-filtered workers query read %d bytes from the gateway, the full list is %d", ownedBytes, allBytes)
 	}
 }
+
+// The gateway now leaves out the owner's workers that ended long ago. The
+// panel must show exactly the same rows as before: the running worker and the
+// one that ended in the last two minutes. Compare the workers result from the
+// old answer (every worker) with the new one (the recent window only).
+func TestWorkersViewKeepsTheSameRowsWhenTheGatewaySkipsOldEndedWorkers(t *testing.T) {
+	const claudeID = "11111111-2222-3333-4444-555555555555"
+	owner := "s_owner"
+	worker := func(sid string, started int64, online bool, status string) protocol.AgentView {
+		return protocol.AgentView{SessionID: sid, NodeID: "n1", Hostname: "host", Harness: "opencode", Model: "fake/m1",
+			Cwd: "/work", Online: online, Status: status,
+			Worker: &protocol.WorkerInfo{ID: sid, Owner: owner, Project: "shop", StartedAt: started}}
+	}
+	running := worker("s_running", 3, true, "busy")
+	recent := worker("s_recent", 2, false, "ended")
+	ownerView := protocol.AgentView{SessionID: owner, NodeID: "n1", Hostname: "host", Harness: "claude",
+		Online: true, Status: "idle", Profile: protocol.Profile{Name: "owner"}}
+
+	oldAgents := []protocol.AgentView{ownerView, running, recent}
+	for i := 0; i < 20; i++ {
+		oldAgents = append(oldAgents, worker(fmt.Sprintf("s_old%d", i), int64(i), false, "ended"))
+	}
+	newAgents := []protocol.AgentView{ownerView, running, recent}
+
+	agents := oldAgents
+	d := &Daemon{
+		cfg: Config{testGatewayCall: func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
+			if typ != "query.agents" {
+				return nil, false, nil
+			}
+			if q, ok := params.(protocol.QueryAgents); !ok || q.WorkersOwnedBy != owner {
+				return nil, false, nil
+			}
+			out, err := json.Marshal(protocol.AgentsResult{Agents: agents})
+			return out, true, err
+		}},
+		sessions: map[string]*localSession{key("claude", claudeID): {info: protocol.SessionInfo{Harness: "claude", NativeID: claudeID}, sessionID: owner}},
+		recent: map[string]recentWorker{"s_recent": {
+			view: protocol.WorkerView{SessionID: "s_recent", NodeID: "n1", Hostname: "host", Harness: "opencode", Model: "fake/m1",
+				Project: "shop", Path: "/work", Owner: owner, OwnerName: "owner", StartedAt: 2, Status: "complete",
+				EndedAt: time.Now().Add(-30 * time.Second).Unix(), EndStatus: "complete"},
+			at: time.Now(),
+		}},
+	}
+	query := func() []byte {
+		t.Helper()
+		res, err := d.workersView(context.Background(), protocol.WorkersQuery{OwnerClaude: claudeID, Recent: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := json.Marshal(res)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	before := query()
+	agents = newAgents
+	after := query()
+	if string(before) != string(after) {
+		t.Fatalf("the panel result changed:\nbefore %s\nafter  %s", before, after)
+	}
+	var res protocol.WorkersResult
+	if err := json.Unmarshal(after, &res); err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Workers) != 2 || res.Workers[0].SessionID != "s_running" || res.Workers[1].SessionID != "s_recent" {
+		t.Fatalf("the panel shows %+v, want the running worker and the one that ended 30 s ago", res.Workers)
+	}
+	oldJSON, _ := json.Marshal(protocol.AgentsResult{Agents: oldAgents})
+	newJSON, _ := json.Marshal(protocol.AgentsResult{Agents: newAgents})
+	t.Logf("gateway answer for the panel: before %d bytes, after %d bytes", len(oldJSON), len(newJSON))
+}
