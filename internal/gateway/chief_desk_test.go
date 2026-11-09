@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -107,23 +108,32 @@ func TestAskUndoAndMarkNeedOwnerOrCTO(t *testing.T) {
 	}
 }
 
-// A mark is stored as a correction with the ask's project as area and the ask id
-// as ref. The chief's next batch carries it, so the chief learns from it.
+// A mark is stored in the owner judgment store as a correction (kind correction,
+// area chief, ref the ask id). The chief's next batch carries it, so the chief
+// learns from it. There is no second table for marks.
 func TestAskMarkStoresCorrectionForTheChief(t *testing.T) {
 	s, c, _, asker, _ := chiefRig(t)
 	id := chiefAskKind(t, s, asker, "approval", "Deploy the snapshot fix?")
 	if err := s.MarkAsk(protocol.AskMarkRequest{Ask: id, Mark: protocol.MarkDidntNeedMe, Why: "the deploy is routine"}, "owner"); err != nil {
 		t.Fatalf("mark: %v", err)
 	}
-	var area, ref, text, mark string
-	if err := s.db.QueryRow(`SELECT area,ref,text,mark FROM chief_corrections`).Scan(&area, &ref, &text, &mark); err != nil {
+	found, err := s.FindJudgments(protocol.JudgmentsFindRequest{Kind: protocol.StandingKindCorrection, Ref: id})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if area != "demo" || ref != id || mark != protocol.MarkDidntNeedMe {
-		t.Fatalf("correction area %q ref %q mark %q", area, ref, mark)
+	if len(found) != 1 {
+		t.Fatalf("judgments of kind correction for ask %s: %+v", id, found)
 	}
-	if !strings.Contains(text, "did not need ask "+id) || !strings.Contains(text, "the deploy is routine") {
-		t.Fatalf("correction text %q", text)
+	j := found[0]
+	if j.Area != "chief" || j.Ref != id || j.Kind != protocol.StandingKindCorrection {
+		t.Fatalf("judgment area %q ref %q kind %q", j.Area, j.Ref, j.Kind)
+	}
+	if !strings.Contains(j.Text, "did not need ask "+id) || !strings.Contains(j.Text, "the deploy is routine") {
+		t.Fatalf("judgment text %q", j.Text)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT count(*) FROM chief_corrections`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("the old table got %d rows (%v)", n, err)
 	}
 	if !deskLogHas(t, s, "Owner marked ask "+id) {
 		t.Fatal("the mark has no log line")
@@ -179,5 +189,59 @@ func TestChiefSortsListsTheLastDay(t *testing.T) {
 	}
 	if late, _ := s.ChiefSorts(c.now().Add(time.Minute)); len(late) != 0 {
 		t.Fatalf("sorts after the window: %+v", late)
+	}
+}
+
+// The batch reads the newest five marks from the judgment store, newest first,
+// even when they were all made in the same second.
+func TestChiefBatchReadsNewestFiveCorrectionsFromJudgments(t *testing.T) {
+	s, c, _, asker, _ := chiefRig(t)
+	for i := 1; i <= 6; i++ {
+		id := chiefAskKind(t, s, asker, "approval", fmt.Sprintf("Deploy number %d?", i))
+		if err := s.MarkAsk(protocol.AskMarkRequest{Ask: id, Mark: protocol.MarkDidntNeedMe}, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c.t = c.t.Add(time.Minute)
+	chiefAsk(t, s, asker, "Merge PR 3?")
+	body, sent := sendDueChief(t, s, c.now().Add(time.Minute))
+	if !sent {
+		t.Fatal("no batch")
+	}
+	at := func(n int) int { return strings.Index(body, fmt.Sprintf("Deploy number %d?", n)) }
+	if at(1) >= 0 || at(6) < 0 || at(2) < 0 || !(at(6) < at(5) && at(5) < at(4) && at(4) < at(3) && at(3) < at(2)) {
+		t.Fatalf("the batch does not carry marks 6 to 2 newest first: %q", body)
+	}
+}
+
+// Marks of the old chief_corrections table move into the judgment store once.
+// The table stays, and a replay does not copy a row twice.
+func TestChiefCorrectionsMigrateToJudgments(t *testing.T) {
+	s, _ := newTestStore(t)
+	for i, text := range []string{"first mark", "second mark"} {
+		if _, err := s.db.Exec(`INSERT INTO chief_corrections(at,mark,text,area,ref) VALUES(?,?,?,?,?)`,
+			int64(1700000000+i)*1e9, protocol.MarkDidntNeedMe, text, "demo", fmt.Sprintf("i_%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rewind := migrationVersion(t, "Owner marks move to the judgment store") - 1
+	for i := 0; i < 2; i++ {
+		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.migrate(); err != nil {
+			t.Fatal(err)
+		}
+		found, err := s.FindJudgments(protocol.JudgmentsFindRequest{Kind: protocol.StandingKindCorrection, Area: "chief"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(found) != 2 || found[0].Text != "second mark" || found[1].Text != "first mark" || found[0].Ref != "i_1" || found[0].SavedAt != 1700000001 {
+			t.Fatalf("round %d: %+v", i, found)
+		}
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT count(*) FROM chief_corrections`).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("the old table has %d rows (%v)", n, err)
 	}
 }

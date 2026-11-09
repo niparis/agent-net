@@ -152,6 +152,12 @@ func (s *Store) StandingOrderHistory(id string) ([]protocol.StandingOrder, error
 
 // AddJudgment adds a correction or rule to the owner judgment store.
 func (s *Store) AddJudgment(q protocol.JudgmentAddRequest) (protocol.StandingOrder, error) {
+	return addJudgment(s.db, time.Now(), q)
+}
+
+// addJudgment is the one write path of corrections and rules. Owner marks on
+// asks use it inside their own transaction.
+func addJudgment(db execer, now time.Time, q protocol.JudgmentAddRequest) (protocol.StandingOrder, error) {
 	if q.Kind != protocol.StandingKindCorrection && q.Kind != protocol.StandingKindRule {
 		return protocol.StandingOrder{}, errors.New("judgment kind must be correction or rule")
 	}
@@ -159,11 +165,10 @@ func (s *Store) AddJudgment(q protocol.JudgmentAddRequest) (protocol.StandingOrd
 	if err != nil {
 		return protocol.StandingOrder{}, err
 	}
-	now := time.Now().Unix()
 	o := protocol.StandingOrder{
 		ID:        protocol.NewID("so"),
 		Text:      text,
-		SavedAt:   now,
+		SavedAt:   now.Unix(),
 		Source:    protocol.StandingSourceOwner,
 		Kind:      q.Kind,
 		Area:      q.Area,
@@ -172,7 +177,7 @@ func (s *Store) AddJudgment(q protocol.JudgmentAddRequest) (protocol.StandingOrd
 		Pinned:    false,
 		UpdatedAt: 0,
 	}
-	_, err = s.db.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+	_, err = db.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref) VALUES(?,?,?,?,?,?,?,?,?,?)`,
 		o.ID, o.Text, o.SavedAt, o.Source, "[]", 0, 0, o.Kind, o.Area, o.Ref)
 	return o, err
 }
@@ -203,7 +208,7 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
  WHERE (?='' OR o.area=?)
    AND (?='' OR o.kind=?)
    AND (?='' OR o.ref=?)
- ORDER BY o.pinned DESC, o.saved_at DESC, o.id DESC LIMIT ?`, q.Area, q.Area, q.Kind, q.Kind, q.Ref, q.Ref, limit)
+ ORDER BY o.pinned DESC, o.saved_at DESC, o.rowid DESC LIMIT ?`, q.Area, q.Area, q.Kind, q.Kind, q.Ref, q.Ref, limit)
 	}
 	if err != nil {
 		return nil, err

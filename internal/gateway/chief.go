@@ -472,14 +472,32 @@ func (s *Store) AskSortHistory(askID string) ([]protocol.AskSort, error) {
 
 // chiefCorrectionsMigration keeps the owner's marks of the Desk (decision 0114,
 // part 2). A mark is a correction the chief reads in its next batch.
-// TODO(judgment_add): when the judgment store lands, write each mark there
-// with judgment_add (kind correction, area, ref) and read the batch from it.
-// Until then this table is the store.
+// The marks now live in the owner judgment store (kind correction, area chief).
+// This table is no longer written or read; its rows were copied there by the
+// last migration (ownerMarksMigration). It stays, because dropping it would
+// delete data.
 const chiefCorrectionsMigration = `-- The owner's marks on asks (decision 0114, part 2): didnt_need_me or
 -- should_have_asked. area is the ask's project, ref the ask id.
 CREATE TABLE IF NOT EXISTS chief_corrections (
  id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, mark TEXT NOT NULL,
  text TEXT NOT NULL, area TEXT NOT NULL DEFAULT '', ref TEXT NOT NULL DEFAULT '');
+`
+
+// chiefJudgmentArea is the area of the judgments that teach the chief.
+const chiefJudgmentArea = "chief"
+
+// ownerMarksMigration copies the marks of chief_corrections into the owner
+// judgment store (kind correction, area chief, ref the ask id). Rows go in
+// order, so the newest mark has the highest rowid. A row that is already there
+// is not copied again, so the statement is safe to replay. The old table is
+// kept.
+const ownerMarksMigration = `
+-- Owner marks move to the judgment store (decision 0114, part 2): one memory.
+INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref)
+SELECT 'so_m_' || lower(hex(randomblob(8))), c.text, c.at / 1000000000, 'owner', '[]', 0, 0, 'correction', 'chief', c.ref
+FROM chief_corrections c
+WHERE NOT EXISTS (SELECT 1 FROM standing_orders o WHERE o.kind='correction' AND o.area='chief' AND o.ref=c.ref AND o.text=c.text AND o.saved_at=c.at / 1000000000)
+ORDER BY c.id;
 `
 
 // chiefCorrectionsInBatch is how many of the newest marks a batch carries.
@@ -580,9 +598,10 @@ func removeMergedNote(tx *sql.Tx, into, ask string) error {
 	return err
 }
 
-// MarkAsk stores the owner's mark on one ask as a correction that the chief
-// reads in its next batch (decision 0114, part 2). The mark names the ask's
-// project as area and the ask id as ref.
+// MarkAsk stores the owner's mark on one ask in the owner judgment store, as a
+// correction that the chief reads in its next batch (decision 0114, part 2).
+// The judgment has kind correction, area chief and the ask id as ref. The text
+// says what the owner marked and carries the ask's first line.
 func (s *Store) MarkAsk(q protocol.AskMarkRequest, actor string) error {
 	if !actorAllowed(actor, "rule") {
 		return reject("only the owner or the CTO may mark an ask")
@@ -590,8 +609,8 @@ func (s *Store) MarkAsk(q protocol.AskMarkRequest, actor string) error {
 	if err := q.Validate(); err != nil {
 		return reject("%v", err)
 	}
-	var text, node, aboutKind, aboutID string
-	err := s.db.QueryRow(`SELECT text,node,about_kind,about_id FROM inbox_items WHERE id=?`, q.Ask).Scan(&text, &node, &aboutKind, &aboutID)
+	var text, aboutKind, aboutID string
+	err := s.db.QueryRow(`SELECT text,about_kind,about_id FROM inbox_items WHERE id=?`, q.Ask).Scan(&text, &aboutKind, &aboutID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return reject("unknown ask %q", q.Ask)
 	}
@@ -613,8 +632,8 @@ func (s *Store) MarkAsk(q protocol.AskMarkRequest, actor string) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO chief_corrections(at,mark,text,area,ref) VALUES(?,?,?,?,?)`,
-		s.now().UnixNano(), q.Mark, sentence, node, q.Ask); err != nil {
+	if _, err := addJudgment(tx, s.now(), protocol.JudgmentAddRequest{
+		Kind: protocol.StandingKindCorrection, Area: chiefJudgmentArea, Ref: q.Ask, Text: sentence}); err != nil {
 		return err
 	}
 	logText := "Owner marked ask " + q.Ask + ": " + markWords(q.Mark) + ". " + askFirstLine(text, 120)
@@ -642,19 +661,17 @@ func markWords(mark string) string {
 }
 
 // recentCorrections is the text of the newest marks, one line each, for the
-// chief's batch. It is empty when there are none.
+// chief's batch. They come from the owner judgment store. It is empty when
+// there are none.
 func (s *Store) recentCorrections() string {
-	rows, err := s.db.Query(`SELECT text FROM chief_corrections ORDER BY id DESC LIMIT ?`, chiefCorrectionsInBatch)
+	found, err := s.FindJudgments(protocol.JudgmentsFindRequest{
+		Kind: protocol.StandingKindCorrection, Area: chiefJudgmentArea, Limit: chiefCorrectionsInBatch})
 	if err != nil {
 		return ""
 	}
-	defer rows.Close()
 	var b strings.Builder
-	for rows.Next() {
-		var text string
-		if rows.Scan(&text) == nil {
-			fmt.Fprintf(&b, "- %s\n", text)
-		}
+	for _, j := range found {
+		fmt.Fprintf(&b, "- %s\n", j.Text)
 	}
 	return b.String()
 }
