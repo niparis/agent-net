@@ -38,7 +38,8 @@ func runThreaded(ctx context.Context, socket string, opts Options, harness, meta
 	conn := newStdioConn(0, os.Stdout, takeHandover(logf), logf)
 	go conn.readLoop()
 	cwd, _ := os.Getwd()
-	rt := &threadRouter{socket: socket, cwd: cwd, version: opts.Version, harness: harness, perThread: map[string]*Daemon{}}
+	rt := &threadRouter{socket: socket, cwd: cwd, version: opts.Version, harness: harness, logf: logf,
+		failures: &failureLog{}, perThread: map[string]*Daemon{}}
 	rt.root = rt.newDaemon("")
 	defer rt.Close()
 	sw := newSwitcher(opts, conn, logf)
@@ -95,7 +96,9 @@ func metadataThread(key string) mcp.Middleware {
 // threadRouter sends each call over the connection of the thread it came from.
 type threadRouter struct {
 	socket, cwd, version, harness string
-	root                          *Daemon // no thread
+	logf                          func(format string, a ...any)
+	failures                      *failureLog // shared by the root and the thread connections
+	root                          *Daemon     // no thread
 
 	mu        sync.Mutex
 	perThread map[string]*Daemon
@@ -107,7 +110,10 @@ func (r *threadRouter) newDaemon(thread string) *Daemon {
 	if thread != "" {
 		hello["native_id"] = thread
 	}
-	return NewDaemon(r.socket, hello)
+	d := NewDaemon(r.socket, hello)
+	d.Logf = r.logf
+	d.failures = r.failures
+	return d
 }
 
 func (r *threadRouter) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {

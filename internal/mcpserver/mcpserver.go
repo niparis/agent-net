@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -217,7 +218,31 @@ func announceReminder() mcp.Middleware {
 }
 
 // ErrUnreachable is what a tool call returns when the daemon cannot be reached.
+// The error a call returns wraps it and names the socket and the reason.
 var ErrUnreachable = errors.New("agent-net daemon not reachable; it will be retried on the next call")
+
+// unreachableError is ErrUnreachable with the socket that was dialled and the
+// reason the connection failed.
+type unreachableError struct {
+	socket string
+	reason error
+}
+
+func (e *unreachableError) Error() string {
+	return fmt.Sprintf("agent-net daemon not reachable at %s: %s; it will be retried on the next call", e.socket, connReason(e.reason))
+}
+
+func (e *unreachableError) Is(target error) bool { return target == ErrUnreachable }
+
+// connReason is the short cause of a connection error: "connect: no such file
+// or directory" for a dial, the text itself for anything else.
+func connReason(err error) string {
+	var op *net.OpError
+	if errors.As(err, &op) && op.Err != nil {
+		return op.Err.Error()
+	}
+	return err.Error()
+}
 
 // Daemon is a connection to the daemon that redials on demand. Every new
 // connection sends the same hello, so the session is the same one.
@@ -231,8 +256,59 @@ type Daemon struct {
 	// OnHello, if set, gets the daemon's agent-net version after every
 	// successful hello (the first connection and each redial). It must not block.
 	OnHello func(daemonVersion string)
+	// Logf, if set, gets one line when the session cannot connect, with the
+	// reason. See connFailed.
+	Logf func(format string, a ...any)
+	// failures is shared by the daemon connections of one process, so one
+	// outage is logged once for the process.
+	failures *failureLog
 
 	staleNote
+}
+
+// failureLog keeps the last line logged about a failed connection. It is
+// cleared when a connection succeeds.
+type failureLog struct {
+	mu   sync.Mutex
+	last string
+}
+
+// failed writes line through logf, unless it repeats the last one. A
+// reconnect that fails the same way again adds nothing to the log.
+func (f *failureLog) failed(logf func(format string, a ...any), line string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if line == f.last {
+		return
+	}
+	f.last = line
+	logf("%s", line)
+}
+
+// connected clears the last failure, so the next outage is logged again.
+func (f *failureLog) connected() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.last = ""
+}
+
+// connFailed logs why the session cannot connect. A call that its own context
+// ended is not a failure to report.
+func (d *Daemon) connFailed(err error, reason string) {
+	if d.Logf == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+	d.failures.failed(d.Logf, "cannot connect to the daemon at "+d.socket+": "+reason)
+}
+
+// helloReason says why the daemon did not let the session in: its refusal
+// text, or the connection that closed during the hello.
+func helloReason(err error) string {
+	var re client.RemoteError
+	if errors.As(err, &re) {
+		return "hello refused: " + err.Error()
+	}
+	return "hello failed: " + connReason(err)
 }
 
 // staleNote is shared by the ordinary and CTO MCP transports.
@@ -268,7 +344,7 @@ func (d *staleNote) takeNote() string {
 }
 
 func NewDaemon(socket string, hello map[string]any) *Daemon {
-	return &Daemon{socket: socket, hello: hello, Changed: make(chan struct{}, 1)}
+	return &Daemon{socket: socket, hello: hello, Changed: make(chan struct{}, 1), failures: &failureLog{}}
 }
 
 func (d *Daemon) Close() {
@@ -300,13 +376,16 @@ func (d *Daemon) conn(ctx context.Context) (*client.Client, error) {
 		}
 	})
 	if err != nil {
+		d.connFailed(err, connReason(err))
 		return nil, err
 	}
 	res, err := cl.Call(ctx, "hello", d.hello)
 	if err != nil {
 		cl.Close()
+		d.connFailed(err, helloReason(err))
 		return nil, err
 	}
+	d.failures.connected()
 	d.cl = cl
 	var hr struct {
 		Note    string `json:"tools_note"`
@@ -384,7 +463,7 @@ func (d *Daemon) Call(ctx context.Context, method string, params any) (json.RawM
 	}
 	res, err = d.once(ctx, method, params)
 	if client.IsConnError(err) {
-		return nil, ErrUnreachable
+		return nil, &unreachableError{socket: d.socket, reason: err}
 	}
 	return res, err
 }
@@ -416,6 +495,7 @@ func Run(ctx context.Context, socket string, opts Options) error {
 	d := NewDaemon(socket, map[string]any{"client": "mcp", "harness": "claude",
 		"native_id": nativeID, "cwd": cwd, "status": "idle", "protocol": protocol.LocalProtocol,
 		"version": opts.Version})
+	d.Logf = logf
 	defer d.Close()
 	sw := newSwitcher(opts, conn, logf)
 	// Connect now if the daemon is up; if not, the first tool call tries again.

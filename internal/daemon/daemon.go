@@ -322,6 +322,7 @@ type Daemon struct {
 	startedAt           time.Time
 	cloneProject        func(context.Context, string, string) error // test hook
 	files               fileState
+	mcpHellos           mcpHelloLog
 	settingsMu          sync.Mutex
 	settingsSnapshot    atomic.Pointer[settings.Snapshot]
 	agyEvents           map[string]antigravityEvent // guarded by mu

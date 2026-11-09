@@ -218,6 +218,7 @@ func (lc *localConn) run(ctx context.Context) {
 			}
 			res, err := lc.hello(req.Params)
 			lc.respond(req.ID, res, err)
+			lc.d.logMCPHello(req.Params, err)
 			if err != nil {
 				return
 			}
@@ -578,6 +579,38 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}, nil
 	}
 	return nil, fmt.Errorf("unknown client %q", p.Client)
+}
+
+// mcpHelloLog keeps the refusal that logMCPHello last logged.
+type mcpHelloLog struct {
+	mu   sync.Mutex
+	last string
+}
+
+// logMCPHello logs a refused hello of an MCP server, once until a hello of an
+// MCP server succeeds again. A server that cannot connect says hello on every
+// reconnect, and the same refusal would fill the log.
+func (d *Daemon) logMCPHello(raw json.RawMessage, err error) {
+	var p helloParams
+	if json.Unmarshal(raw, &p) != nil || p.Client != "mcp" {
+		return
+	}
+	d.mcpHellos.mu.Lock()
+	defer d.mcpHellos.mu.Unlock()
+	if err == nil {
+		d.mcpHellos.last = ""
+		return
+	}
+	who := p.Harness
+	if p.NativeID != "" {
+		who += " " + p.NativeID
+	}
+	line := fmt.Sprintf("mcp hello refused: %s: %v", who, err)
+	if line == d.mcpHellos.last {
+		return
+	}
+	d.mcpHellos.last = line
+	d.Logf("%s", line)
 }
 
 // helloCodexMCP is the hello of `agent-net mcp --codex`. Codex starts one such

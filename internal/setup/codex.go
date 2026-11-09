@@ -81,13 +81,18 @@ func tomlString(s string) string {
 	return `"` + r.Replace(s) + `"`
 }
 
-// codexBlock is the text setup owns in config.toml.
-func codexBlock(exe string, approve bool) string {
+// codexBlock is the text setup owns in config.toml. Codex starts an MCP server
+// with a short list of variables of its own (HOME, PATH, USER and a few more),
+// so the session's XDG_RUNTIME_DIR and AGENT_NET_SOCKET never reach
+// `agent-net mcp --codex`. The block names the daemon's socket, as the other
+// harnesses do for their servers.
+func codexBlock(exe, socket string, approve bool) string {
 	var b strings.Builder
 	b.WriteString(codexBegin + "\n")
 	b.WriteString("[mcp_servers.agent-net]\n")
 	b.WriteString("command = " + tomlString(exe) + "\n")
 	b.WriteString("args = [\"mcp\", \"--codex\"]\n")
+	b.WriteString("env = { AGENT_NET_SOCKET = " + tomlString(socket) + " }\n")
 	if approve {
 		b.WriteString("default_tools_approval_mode = \"approve\"\n")
 	}
@@ -179,7 +184,7 @@ func (r *runner) codexMCP() {
 			return
 		}
 	}
-	block := codexBlock(r.Exe, approve)
+	block := codexBlock(r.Exe, daemon.SocketPath(), approve)
 	var out string
 	if have {
 		out = text[:b] + block + text[e:]
