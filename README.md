@@ -69,14 +69,14 @@ agent-net moves you out of that chair, one piece of work at a time.
 | | You | The agents | In agent-net |
 |---|---|---|---|
 | **In the loop** | prompt, and read every turn | wait for your next prompt | any session you open in a terminal |
-| **Near the loop** | respond to results and real decisions | work on their own, then wait with a result and a recommendation | workers, messages between sessions, delivery steps, the Desk |
+| **Near the loop** | respond to results and real decisions | work on their own and hand back results; only real decisions wait for you, with a recommendation | workers, messages between sessions, delivery steps, the Desk |
 | **Out of the loop** | look in when you want | work toward their charter on a schedule | background sessions and standing loops |
 
 In the loop, you prompt. Near the loop, you respond. Out of the loop, the work does not wait for you at all; it works for you, then waits for your review. You choose how far out each project goes. Irreversible actions, money and secrets always stay with you.
 
 ## Five levels, from one session to a swarm
 
-Each level adds one thing to the one before. Most people start at level 1 and stop wherever it stops paying.
+Each level adds one thing to the one before. Levels 2 to 4 move you near the loop, and level 5 takes work out of it. Most people start at level 1 and stop wherever it stops paying.
 
 ### Level 1. Sessions that talk
 
@@ -95,6 +95,8 @@ A session hands a single task to a **worker**: a new session in its own git work
 
 Example. A brief to fix a flaky test is judged normal. Three models qualify; the picker gives it to Gemini Flash because the Claude subscription is ahead of pace this week. The worker finishes in nine minutes and its caller rates it 3 of 5 for a sloppy report. Next week that model's normal-level score is a little lower, and a similar job may go elsewhere.
 
+Another. Your Mac's daemon hangs after an upgrade. The agent that owns agent-net writes a brief, and a worker on a cheaper model reproduces the hang and fixes it. Review, tests and the release run as steps. The next upgrade comes back by itself in 16 seconds.
+
 The Quality sub-tab (TUI tab 3, then Tab twice) shows the picker as it decides: each registered model's score at each difficulty level that has tasks, the number of tasks behind each score, and whether the selected model is allowed at that level.
 
 ### Level 3. Rules, so many agents stay a team
@@ -108,12 +110,12 @@ More agents need structure, not more prompting.
 
 Example. The forge lead approves a deploy. A member asks the operator agent to deploy and quotes the approval. agent-net shows the operator the original message, so it deploys without asking again. You see one line in the log.
 
-### Level 4. Near the loop: the Desk, the chief of staff and your memory
+### Level 4. The Desk, the chief of staff and your memory
 
 Now the agents work on their own, and you respond instead of prompting.
 
-- **The Desk** is the one place where things wait for you: irreversible actions, money, secrets, and choices only you can make. Everything else is handled and logged. *"Buy 2 TB of backup space? Recommended: yes."* Every ask brings a recommendation, so most answers are one key.
-- **The chief of staff** sorts every ask before it reaches the Desk: it closes stale and duplicate asks, sends the rest to the agent that should decide, and keeps only what truly needs you.
+- **The Desk** is the one place where things wait for you: irreversible actions, money, secrets, and choices only you can make. Everything else is handled and logged. *"Buy 2 TB of backup space? Recommended: yes."* Most asks bring a recommendation, so most answers are one key.
+- **The chief of staff**, once you set one, sorts every ask before it reaches the Desk: it closes stale and duplicate asks, sends the rest to the agent that should decide, and keeps only what truly needs you.
 - **Your memory** keeps what you decide, so the swarm asks you less next time. Standing orders such as *"never deploy on Fridays"*, each answer you give on the Desk, and your corrections: press `n` ("didn't need me") or `m` ("should have asked me") on what the chief of staff did. Before an agent asks you, it searches this memory (`agent_owner_judgments_find`); if you already answered the same kind of question, it acts on that answer and names it.
 - **Agents can do what you can do.** Almost every control in the TUI has a matching tool for the CTO, so you can run the whole network by asking. The decisions that stay yours, it prepares but does not make.
 
@@ -121,14 +123,14 @@ Example. On Monday you approve homelab-agent's merge of an image-pin update and 
 
 The memory lives in your gateway's database, on your machine. Standing orders are listed in the TUI (Settings), where you add, remove or restore them; the CTO can do the same on your instructions.
 
-### Level 5. Out of the loop: background sessions on every machine
+### Level 5. Background sessions on every machine
 
-Every session can run without a terminal, on any machine, and keep working while you are away.
+Sessions can run without a terminal, on any machine, and keep working while you are away.
 
 - **Start one anywhere.** Ask the CTO, or press a key in the TUI, to start a session in any project on any machine, with the harness, model, branch and first message you choose. Claude Code sessions run as background jobs of Claude's own service.
 - **It wakes when it is needed.** A message to a session that went offline asks its machine to resume the same conversation, then delivers the message. Claude Code, Codex and OpenCode sessions wake this way; no new session is started.
 - **It keeps working on its own clock.** Give a project a standing loop, for example every 4 hours, and its session is nudged with what changed since the last tick: new messages, finished workers, open asks. It does the next step and reports. Two ticks with no progress pause the loop and leave one question on your Desk.
-- **You look in only when you want to.** Press Enter on any session to open it live, in herdr or your terminal, or open the web console on your phone or tablet. Stop, resume or restart it from the TUI, the web console or by asking the CTO.
+- **You look in only when you want to.** Press Enter on any session to open it live, in herdr or your terminal, or follow it from the web console on your phone or tablet. Stop, resume or restart it from the TUI or by asking the CTO.
 
 **Several machines, one network.** One machine runs the **gateway**. Every machine, the gateway's included, runs a small **daemon** that finds its local sessions, delivers their messages and starts their workers. Sessions on any machine talk to sessions on any other, and the TUI on any machine shows them all. To add a machine, ask the CTO *"Add my MacBook."* It prints one line, valid for 10 minutes and one machine:
 
@@ -136,7 +138,7 @@ Every session can run without a terminal, on any machine, and keep working while
 curl -fsSL -k --pinnedpubkey 'sha256//...' 'https://192.168.1.10:7420/install/ABCD2345' | sh
 ```
 
-Paste it on the new machine. If the gateway is on Tailscale, the CTO also prints a line for its Tailscale address, so a laptop stays connected away from home. `agent-net upgrade` on the gateway upgrades every machine. Details: [docs/setup.md](docs/setup.md).
+Paste it on the new machine. If the gateway is on Tailscale, the CTO also prints a line for its Tailscale address, so a laptop stays connected away from home. Now a Claude Code session on your MacBook can ask the OpenCode session on the Linux box which port its dev server uses, and a worker for a laptop project can run on the Linux box. Add a third machine the same way. `agent-net upgrade` on the gateway upgrades every machine, and a machine that was offline catches up when it reconnects. Details: [docs/setup.md](docs/setup.md).
 
 Example. Before bed you tell the CTO: *"Start a Codex session in billing on the build box: migrate the invoice job to the new queue, use workers for the code."* The session plans the work, hands the code to two workers, reviews their reports and opens the pull request. At 3 a.m. the shared-auth session, also in the background, asks it whether billing is ready for the v2.3 token change; the billing session wakes, answers and goes back to sleep. In the morning your Desk holds one question: *"Merge PR #212? CI green. Recommended: yes."*
 
@@ -256,6 +258,7 @@ To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to dele
 ## Roadmap
 
 - **Load notices.** The gateway already counts every call by origin and method. When one origin's load rises far above its usual level, tell the agent that can fix it, with the top method, instead of waiting for someone to read the counters.
+- **Typed decision models for bounded choices.** Several of agent-net's decisions pick from a fixed set: which worker model takes a brief, how hard a brief is, what the chief of staff does with an ask, whether an idle session should be compacted. Decision models such as Jev (TypeSafe AI) return such a choice with a calibrated probability, in one pass and without generated text. The plan is to run one beside the current picker first, in shadow, and compare its picks with real outcomes before it decides anything.
 - **Tool summaries.** A cheap model turns a worker's tool calls into a few plain sentences as it works, shown in the workers panel and the web console, with the raw calls one step away.
 - **The web console, next steps.** The Desk, sessions, changes, messages, graph, workers and the CTO panel are live in a browser and on the phone. Next: load only what each screen shows, and push changes instead of refreshing.
 - **Worker skill injection.** Give each worker the skills and MCP servers its job needs when it starts, chosen from its brief and its project, instead of every worker getting everything installed on the machine.
