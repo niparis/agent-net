@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 type ctoUndoSource struct {
 	fakeSource
+	mu      sync.Mutex // a refresh asks its reads together
 	methods []string
 	params  []any
 }
@@ -19,13 +21,17 @@ type ctoUndoSource struct {
 type ctoUndoRefusedSource struct{ ctoUndoSource }
 
 func (s *ctoUndoRefusedSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	s.mu.Lock()
 	s.methods = append(s.methods, method)
+	s.mu.Unlock()
 	return json.RawMessage(`{"state":"refused","reason":"changed since apply"}`), nil
 }
 
 func (s *ctoUndoSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	s.mu.Lock()
 	s.methods = append(s.methods, method)
 	s.params = append(s.params, params)
+	s.mu.Unlock()
 	return json.RawMessage(`{}`), nil
 }
 

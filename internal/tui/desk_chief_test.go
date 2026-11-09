@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,14 +18,17 @@ import (
 // deskCallSource records the calls the Desk makes and answers the log.
 type deskCallSource struct {
 	fakeSource
+	mu    sync.Mutex // a refresh asks its reads together
 	calls []string
 	args  []any
 	log   []protocol.DeskLogEntry
 }
 
 func (s *deskCallSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	s.mu.Lock()
 	s.calls = append(s.calls, method)
 	s.args = append(s.args, params)
+	s.mu.Unlock()
 	switch method {
 	case protocol.OpDeskLog:
 		return json.Marshal(protocol.DeskLogResult{Entries: s.log})

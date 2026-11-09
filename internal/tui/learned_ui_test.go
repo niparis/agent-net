@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -12,12 +13,15 @@ import (
 
 type learnedSource struct {
 	fakeSource
+	mu     sync.Mutex // a refresh asks its reads together
 	method string
 	params any
 }
 
 func (s *learnedSource) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	s.mu.Lock()
 	s.method, s.params = method, params
+	s.mu.Unlock()
 	return json.RawMessage(`{}`), nil
 }
 func TestLearnedMapShowsEvidenceAndUndo(t *testing.T) {
