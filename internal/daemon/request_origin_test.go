@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -74,4 +76,39 @@ func TestLocalConnOriginLabels(t *testing.T) {
 	if got := viaFrom(context.Background()); got != protocol.ViaDaemon {
 		t.Errorf("a call with no label = %q, want daemon", got)
 	}
+}
+
+func TestPhoneCallsCarryPhoneOrigin(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{interval: time.Hour})
+	c := operator.NewPhone(n.sock)
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := c.Call(ctx, protocol.OpAgents, protocol.QueryAgents{}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := c.Call(ctx, protocol.OpCounts, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var counts protocol.SessionCounts
+	if err := json.Unmarshal(raw, &counts); err != nil {
+		t.Fatal(err)
+	}
+	if counts.MachinesOnline != 1 {
+		t.Fatalf("online machines=%d want=1", counts.MachinesOnline)
+	}
+	waitDaemonLink(t, "phone origin counter", func() bool {
+		out, err := g.gw.MachineGet(ctx, protocol.MachineGetRequest{Machine: n.d.hostName()})
+		if err != nil || out.Requests == nil {
+			return false
+		}
+		for _, stat := range out.Requests.Since.Top {
+			if stat.Method == "query.agents" && stat.Origin == protocol.ViaPhone && stat.Calls > 0 {
+				return true
+			}
+		}
+		return false
+	})
 }

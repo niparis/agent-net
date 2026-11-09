@@ -135,7 +135,7 @@ func (a *app) messages(ctx context.Context, snap operator.Snapshot, selected str
 
 func (a *app) conversations(ctx context.Context) (protocol.ConversationPage, bool) {
 	var page protocol.ConversationPage
-	raw, err := a.src.Call(ctx, protocol.OpConversations, protocol.QueryConversations{Limit: conversationPageSize})
+	raw, err := a.read(ctx, protocol.OpConversations, protocol.QueryConversations{Limit: conversationPageSize})
 	if err != nil || json.Unmarshal(raw, &page) != nil {
 		return page, false
 	}
@@ -144,7 +144,7 @@ func (a *app) conversations(ctx context.Context) (protocol.ConversationPage, boo
 
 // threadMessages reads the stored messages of one conversation, oldest first.
 func (a *app) threadMessages(ctx context.Context, id string) ([]protocol.Message, error) {
-	raw, err := a.src.Call(ctx, protocol.OpConversationMessages, protocol.QueryConversationMessages{ConversationID: id, Limit: threadLimit})
+	raw, err := a.read(ctx, protocol.OpConversationMessages, protocol.QueryConversationMessages{ConversationID: id, Limit: threadLimit})
 	if err != nil {
 		return nil, err
 	}

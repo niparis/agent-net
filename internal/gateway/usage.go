@@ -233,6 +233,9 @@ func (g *Gateway) handleUsage(nc *nodeConn, typ string, raw []byte) (data any, o
 
 	case "query.counts":
 		c, err := g.store.SessionCounts(24 * time.Hour)
+		g.mu.Lock()
+		c.MachinesOnline = len(g.conns)
+		g.mu.Unlock()
 		return c, true, err
 	}
 	return nil, false, nil
@@ -252,6 +255,15 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 				CASE WHEN last_seen > ? AND EXISTS(SELECT 1 FROM apps WHERE apps.id=sessions.node_id AND revoked_at IS NULL) THEN 1 ELSE 0 END
 			ELSE online END AS online
 			FROM sessions WHERE archived_at=0 AND harness != 'owner')`, cutoff, s.now().Add(-10*time.Minute).UnixNano()).Scan(&c.Online, &c.Offline24h, &c.OfflineTotal)
+	if err == nil {
+		err = s.db.QueryRow(`SELECT COUNT(*) FROM sessions s LEFT JOIN nodes n ON n.id=s.node_id
+   WHERE s.archived_at=0 AND s.harness <> 'owner' AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (` + piChildSQL + `)`).Scan(&c.ConsoleSessions)
+	}
+	if err == nil {
+		err = s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE status='open'
+   AND (next_who='' OR next_who='owner')
+   AND kind IN ('question','approval','step','waiting','held','rejection','escalation','proposal','draft','learned','check','session_stall')`).Scan(&c.ConsoleAsks)
+	}
 	s.pendingMu.Lock()
 	c.PendingStalls = s.pendingStalls
 	s.pendingMu.Unlock()

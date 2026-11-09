@@ -107,11 +107,14 @@ func (f *consoleOperator) drop(idOrMessage string) {
 	}
 	f.asks = kept
 }
-func (f *consoleOperator) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+func (f *consoleOperator) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	now := time.Now()
 	f.mu.Lock()
 	f.reads[method]++
 	f.mu.Unlock()
+	if raw, ok := snapshotFixtureRead(ctx, f, method); ok {
+		return raw, nil
+	}
 	switch method {
 	case protocol.OpAsksList:
 		f.mu.Lock()

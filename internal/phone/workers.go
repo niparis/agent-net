@@ -16,7 +16,7 @@ import (
 
 // The Workers screen reads the same data as the TUI Quotas tab: the quota
 // report, the registered profiles with their rotation, the scores, and the
-// worker log. It is read only: protect, start and stop are TUI actions.
+// live worker sessions. It is read only: protect, start and stop are TUI actions.
 
 type quotaCellView struct {
 	Provider, Plan, Window, Pace, Reset string
@@ -70,7 +70,7 @@ type quotaReading struct {
 // subscriptions merges the quota readings of every machine. A newer reading
 // of the same provider, plan and window replaces an older one.
 func (a *app) subscriptions(ctx context.Context, snap operator.Snapshot) ([]quotaCellView, string, string) {
-	raw, err := a.src.Call(ctx, protocol.OpUsage, nil)
+	raw, err := a.read(ctx, protocol.OpUsage, nil)
 	if err != nil {
 		return nil, "", "The quota report could not be read: " + firstLine(err.Error())
 	}
@@ -308,36 +308,30 @@ func profileModelLabel(p protocol.WorkerProfile) string {
 // ---- Running workers ----
 
 func runningWorkers(snap operator.Snapshot) []runningRowView {
-	agents := map[string]protocol.AgentView{}
-	for _, a := range snap.Agents {
-		agents[a.SessionID] = a
-	}
 	var out []runningRowView
 	now := time.Now().Unix()
-	for _, e := range snap.WorkerLog {
-		if e.Status != "running" {
-			continue
+	var agents []protocol.AgentView
+	for _, a := range snap.Agents {
+		if a.Worker != nil && a.Online && a.Status != "ended" {
+			agents = append(agents, a)
 		}
-		name := firstNonEmpty(e.Title, "worker")
-		task := e.Title
-		tokens := int64(0)
-		if a, ok := agents[e.SessionID]; ok {
-			name = firstNonEmpty(sessionName(a), name)
-			if a.Worker != nil {
-				tokens = a.Worker.Tokens
-				task = firstNonEmpty(a.Worker.Task, task)
-			}
+	}
+	sort.SliceStable(agents, func(i, j int) bool { return agents[i].Worker.StartedAt > agents[j].Worker.StartedAt })
+	for _, a := range agents {
+		w := a.Worker
+		run := int64(0)
+		if w.StartedAt > 0 {
+			run = max(now-w.StartedAt, 0)
 		}
-		run := e.RunSeconds
-		if run <= 0 && e.StartedAt > 0 {
-			run = max(now-e.StartedAt, 0)
+		model := a.Harness
+		if a.Model != "" {
+			model = strings.TrimSpace(a.Harness + " · " + a.Model)
 		}
-		model := e.Harness
-		if e.Model != "" {
-			model = strings.TrimSpace(e.Harness + " · " + e.Model)
-		}
-		out = append(out, runningRowView{Name: name, Model: model, Task: firstNonEmpty(task, e.Project, "-"),
-			Run: shortRun(run), Tokens: firstNonEmpty(protocol.CompactTokens(tokens), "-"), Cost: "-"})
+		out = append(out, runningRowView{
+			Name: firstNonEmpty(sessionName(a), w.Title, "worker"), Model: model,
+			Task: firstNonEmpty(w.Task, w.Title, w.Project, "-"), Run: shortRun(run),
+			Tokens: firstNonEmpty(protocol.CompactTokens(w.Tokens), "-"), Cost: "-",
+		})
 	}
 	return out
 }

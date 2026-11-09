@@ -33,12 +33,15 @@ func viaFrom(ctx context.Context) string {
 // that has not said hello yet is unknown.
 func (lc *localConn) via() string {
 	lc.mu.Lock()
-	client, tui, ls := lc.client, lc.tui, lc.ls
+	client, tui, ls, label := lc.client, lc.tui, lc.ls, lc.viaLabel
 	lc.mu.Unlock()
 	switch client {
 	case "":
 		return protocol.ViaUnknown
 	case "cli":
+		if label == protocol.ViaPhone {
+			return protocol.ViaPhone
+		}
 		if tui {
 			return protocol.ViaTUI
 		}

@@ -57,7 +57,7 @@ func changeFilterID(f string) string {
 // findChanges reads one page of changes. An error leaves the list empty: the
 // screen then says nothing is open, and the next tick reads again.
 func (a *app) findChanges(ctx context.Context, args protocol.ChangesFindArgs) []protocol.ChangeView {
-	raw, err := a.src.Call(ctx, protocol.OpChangesOwnerFind, args)
+	raw, err := a.read(ctx, protocol.OpChangesOwnerFind, args)
 	if err != nil {
 		return nil
 	}

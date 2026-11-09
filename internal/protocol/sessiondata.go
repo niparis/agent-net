@@ -296,6 +296,11 @@ type TextPage struct {
 // every session. Offline sessions are kept for 30 days, so the total of
 // sessions is mostly old ones; Offline24h is the number that matters.
 type SessionCounts struct {
+	// ConsoleAsks counts the open asks shown to the owner on the Desk.
+	ConsoleAsks int `json:"console_asks"`
+	// ConsoleSessions matches the unfiltered agent list, excluding owners.
+	ConsoleSessions              int `json:"console_sessions"`
+	MachinesOnline               int `json:"machines_online"`
 	PendingReminders             int `json:"pending_reminders"`
 	PendingRemindersOffline      int `json:"pending_reminders_offline"`
 	PendingAnsweredAfterReminder int `json:"pending_answered_after_reminder"`

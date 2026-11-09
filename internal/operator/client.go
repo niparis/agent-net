@@ -17,6 +17,7 @@ import (
 // as a CLI client. It connects again by itself after the daemon restarts.
 type Client struct {
 	path string
+	via  string
 
 	mu        sync.Mutex
 	cl        *client.Client
@@ -29,6 +30,9 @@ var _ Operator = (*Client)(nil)
 // New returns a client for the daemon socket at path. It does not connect
 // until the first call, so a daemon that starts later is found.
 func New(path string) *Client { return &Client{path: path} }
+
+// NewPhone uses the owner channel with a distinct accounting label.
+func NewPhone(path string) *Client { return &Client{path: path, via: protocol.ViaPhone} }
 
 // SetUIPush registers the TUI callback before the first connection.
 func (s *Client) SetUIPush(push func(protocol.UIRequest)) {
@@ -60,7 +64,7 @@ func (s *Client) conn(ctx context.Context) (*client.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w (%s)", ErrDaemonDown, s.path)
 	}
-	if _, err := cl.Call(ctx, "hello", map[string]any{"client": "cli", "protocol": protocol.LocalProtocol, "tui": s.uiPush != nil}); err != nil {
+	if _, err := cl.Call(ctx, "hello", map[string]any{"client": "cli", "via": s.via, "protocol": protocol.LocalProtocol, "tui": s.uiPush != nil}); err != nil {
 		cl.Close()
 		if client.IsConnError(err) {
 			return nil, fmt.Errorf("%w (%s)", ErrDaemonDown, s.path)

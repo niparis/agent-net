@@ -239,7 +239,7 @@ func (a *app) load(ctx context.Context, screen string, q query) page {
 		p.Error = "Daemon not connected."
 		return p
 	}
-	snap, err := a.src.Snapshot(ctx)
+	snap, err := a.screenSnapshot(ctx, p.Screen.ID)
 	if err != nil {
 		p.Error = err.Error()
 		return p
@@ -249,23 +249,16 @@ func (a *app) load(ctx context.Context, screen string, q query) page {
 		p.Error = "Daemon not connected."
 		return p
 	}
-	asks := a.asks(ctx)
-	p.AskCount = len(asks)
-	online := 0
-	for _, n := range snap.Nodes {
-		if n.Online {
-			online++
-		}
+	var counts protocol.SessionCounts
+	if raw, err := a.read(ctx, protocol.OpCounts, nil); err == nil {
+		_ = json.Unmarshal(raw, &counts)
 	}
-	sessions := 0
-	for _, ag := range snap.Agents {
-		if !protocol.IsOwner(ag.Harness) {
-			sessions++
-		}
-	}
-	p.Live = fmt.Sprintf("live · %s · %s", plural(online, "machine"), plural(sessions, "session"))
+	p.AskCount = counts.ConsoleAsks
+	p.Live = fmt.Sprintf("live · %s · %s", plural(counts.MachinesOnline, "machine"), plural(counts.ConsoleSessions, "session"))
 	switch p.Screen.ID {
 	case "desk":
+		asks := a.asks(ctx)
+		p.AskCount = len(asks)
 		p.Desk = a.desk(ctx, asks, snap)
 	case "sessions":
 		p.Sessions = a.sessions(ctx, snap, q.Selected)
@@ -345,7 +338,7 @@ func askRank(a protocol.Ask) int {
 // asks reads the one list of asks the Desk shows (decision 0090). An ask that
 // waits on someone else, or of a kind the Desk does not show, is left out.
 func (a *app) asks(ctx context.Context) []protocol.Ask {
-	raw, err := a.src.Call(ctx, protocol.OpAsksList, nil)
+	raw, err := a.read(ctx, protocol.OpAsksList, nil)
 	if err != nil {
 		return nil
 	}
@@ -456,7 +449,7 @@ func (a *app) desk(ctx context.Context, asks []protocol.Ask, snap operator.Snaps
 		d.Asks = append(d.Asks, askCard(ask, now, names))
 	}
 	d.Changes, d.More = a.inFlight(ctx, now)
-	if raw, err := a.src.Call(ctx, protocol.OpChiefSorts, nil); err == nil {
+	if raw, err := a.read(ctx, protocol.OpChiefSorts, nil); err == nil {
 		var v protocol.ChiefSortsResult
 		if json.Unmarshal(raw, &v) == nil {
 			for _, s := range v.Sorts {
@@ -468,7 +461,7 @@ func (a *app) desk(ctx context.Context, asks []protocol.Ask, snap operator.Snaps
 			}
 		}
 	}
-	if raw, err := a.src.Call(ctx, protocol.OpDeskLog, protocol.DeskLogQuery{Limit: 20}); err == nil {
+	if raw, err := a.read(ctx, protocol.OpDeskLog, protocol.DeskLogQuery{Limit: 20}); err == nil {
 		var v protocol.DeskLogResult
 		if json.Unmarshal(raw, &v) == nil {
 			for _, e := range v.Entries {
@@ -615,7 +608,7 @@ func changeStatusLine(v protocol.ChangeView) string {
 // owner. It is read only: the TUI Delivery tab and the Changes screen have the
 // rest.
 func (a *app) inFlight(ctx context.Context, now time.Time) ([]changeRow, int) {
-	raw, err := a.src.Call(ctx, protocol.OpChangesOwnerFind, protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: 100})
+	raw, err := a.read(ctx, protocol.OpChangesOwnerFind, protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: 100})
 	if err != nil {
 		return nil, 0
 	}
@@ -683,7 +676,7 @@ func (a *app) sessions(ctx context.Context, snap operator.Snapshot, selected str
 	now := time.Now()
 	v := &sessionsView{}
 	usage := map[string]protocol.UsageNode{}
-	if raw, err := a.src.Call(ctx, protocol.OpUsage, nil); err == nil {
+	if raw, err := a.read(ctx, protocol.OpUsage, nil); err == nil {
 		var res protocol.UsageResult
 		if json.Unmarshal(raw, &res) == nil {
 			if res.Gateway != nil {
@@ -772,7 +765,7 @@ func (a *app) sessionDetail(ctx context.Context, ag protocol.AgentView, now time
 	d.Status = map[string]string{"you": "needs you", "busy": "busy", "idle": "idle", "off": "offline"}[d.Class]
 	d.Place = "answers to you"
 	if ag.AgentID != "" {
-		if raw, err := a.src.Call(ctx, protocol.OpGraphView, protocol.QueryGraph{Places: true, All: true}); err == nil {
+		if raw, err := a.read(ctx, protocol.OpGraphView, protocol.QueryGraph{Places: true, All: true}); err == nil {
 			var g protocol.GraphView
 			if json.Unmarshal(raw, &g) == nil {
 				for _, n := range g.Nodes {
@@ -793,7 +786,7 @@ func (a *app) sessionDetail(ctx context.Context, ag protocol.AgentView, now time
 			}
 		}
 	}
-	if raw, err := a.src.Call(ctx, protocol.OpConversations, protocol.QueryConversations{Limit: 50}); err == nil {
+	if raw, err := a.read(ctx, protocol.OpConversations, protocol.QueryConversations{Limit: 50}); err == nil {
 		var page protocol.ConversationPage
 		if json.Unmarshal(raw, &page) == nil {
 			for _, c := range page.Conversations {

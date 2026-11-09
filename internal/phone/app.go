@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/operator"
@@ -25,7 +26,6 @@ var files embed.FS
 var shell = template.Must(template.ParseFS(files, "templates/*.html"))
 
 type source interface {
-	Snapshot(context.Context) (operator.Snapshot, error)
 	AnswerHeld(context.Context, protocol.HeldAnswer) error
 	ResolveOutcome(context.Context, string, string) error
 	SendAsOwner(context.Context, string, string) (protocol.MessageSent, error)
@@ -34,6 +34,8 @@ type source interface {
 type app struct {
 	src      source
 	interval time.Duration
+	cacheMu  sync.Mutex
+	cache    map[string]*cachedRead
 }
 
 // New returns the console handler. Every route here sits behind the gateway's
@@ -137,6 +139,7 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
 	defer cancel()
+	defer a.clearReads()
 	back := localBack(r.PostForm.Get("back"))
 	switch kind {
 	case "held":
