@@ -479,6 +479,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				if err := g.store.reconcileAsks(); err != nil {
 					g.logLine("error", "where", "asks", "err", err)
 				}
+				g.flushLeadRequests(ctx)
 				if err := g.store.samplePendingStalls(); err != nil {
 					g.logLine("error", "where", "pending sample", "err", err)
 				}
@@ -1674,7 +1675,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if owner != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
-		return st.SubmitCharterDraft(p.SessionID, p.CharterDraftRequest, p.SourceHash)
+		res, err := st.SubmitCharterDraft(p.SessionID, p.CharterDraftRequest, p.SourceHash)
+		g.flushLeadRequests(ctx)
+		return res, err
 
 	case "rate.offer":
 		p, err := decode[protocol.RateOfferFrame](raw)
@@ -2223,7 +2226,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			if err := st.DecideLearned(p.ID, p.Action); err != nil {
 				return map[string]bool{"ok": true}, err
 			}
-			return map[string]bool{"ok": true}, st.reconcileLearnedAsks()
+			err := st.reconcileLearnedAsks()
+			g.flushLeadRequests(ctx)
+			return map[string]bool{"ok": true}, err
 		default:
 			return map[string]bool{"ok": true}, st.MarkLearnedViewed(p.Node, p.ID)
 		}
@@ -2845,6 +2850,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 // dispatch sends a stored message to its recipient's node if that node is
 // connected and the session is online.
+// flushLeadRequests delivers the requests that the asks reconcile sent to team
+// leads (a charter draft or a learned edge of a member node).
+func (g *Gateway) flushLeadRequests(ctx context.Context) {
+	for _, m := range g.store.TakeLeadRequests() {
+		g.dispatch(ctx, m)
+	}
+}
+
 func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) {
 	a, ok, err := g.store.Agent(m.To)
 	if err != nil || !ok || a.Harness == "bot" {

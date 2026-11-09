@@ -323,12 +323,17 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	// answer applies the drafted value exactly as the owner's TUI accept does,
 	// then closes the Inbox row. Nothing is delivered to a session.
 	if item.Kind == protocol.AskKindDraft {
-		if answer != "accept" && answer != "reject" {
-			return item, reject("a charter draft answer must be accept or reject")
-		}
 		var ref string
 		if err = tx.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=?`, id).Scan(&ref); err != nil {
 			return item, err
+		}
+		// The ask of a node holds all its fields; the answer may name one.
+		if strings.HasPrefix(ref, draftGroupRefPrefix) {
+			_ = tx.Rollback()
+			return s.answerDraftGroup(item, ref, answer, actor, len(validate) > 0 && validate[0])
+		}
+		if answer != "accept" && answer != "reject" {
+			return item, reject("a charter draft answer must be accept or reject")
 		}
 		draftID, parseErr := sourceRefID(ref, "draft:")
 		if parseErr != nil {

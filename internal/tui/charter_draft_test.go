@@ -80,3 +80,50 @@ func TestInboxShowsDraftAsADecision(t *testing.T) {
 		t.Fatalf("called %s %s", src.method, raw)
 	}
 }
+
+// The ask of a node holds all its drafted fields. The Desk shows it once, with
+// the fields in the detail, and accept or reject answers the ask itself.
+func TestDeskShowsGroupedDraftAsOneDecision(t *testing.T) {
+	for _, tc := range []struct{ key, answer string }{{"a", "accept"}, {"r", "reject"}} {
+		t.Run(tc.answer, func(t *testing.T) {
+			src := &learnedSource{fakeSource: fakeSource{snap: fakeSnapshot()}}
+			m := New(src)
+			m.snap = src.snap
+			m.asks = []protocol.Ask{{
+				ID: "i_group", Kind: protocol.AskKindDraft, State: protocol.AskStateOpen, FromKind: protocol.AskFromGateway, From: "charter draft",
+				AboutKind: protocol.AskAboutProject, AboutID: "cogforge", Question: "Charter draft for cogforge: 2 fields",
+				Detail:  "Drafted from AGENTS.md:\n- repo purpose = Generic endpoints for the shop\n- agent accepts = bug fixes",
+				Options: []string{"accept", "reject"}, Next: protocol.AskNextOwner, Ref: "drafts:node:cogforge",
+			}}
+			m.tab = inboxTab
+			view := m.testView()
+			for _, want := range []string{"cogforge", "Charter draft for cogforge: 2 fields"} {
+				if !strings.Contains(view, want) {
+					t.Fatalf("inbox lacks %q:\n%s", want, view)
+				}
+			}
+			rows := m.inboxRows()
+			if len(rows) != 1 {
+				t.Fatalf("want one row, got %d", len(rows))
+			}
+			var fieldLines int
+			for _, line := range strings.Split(strings.Join(m.inboxDetailLines(rows[0]), "\n"), "\n") {
+				if strings.HasPrefix(line, "- repo purpose = ") || strings.HasPrefix(line, "- agent accepts = ") {
+					fieldLines++
+				}
+			}
+			if fieldLines != 2 {
+				t.Fatalf("detail does not list each field on its own line: %q", m.inboxDetailLines(rows[0]))
+			}
+			_, cmd := m.Update(tea.KeyPressMsg{Text: tc.key, Code: []rune(tc.key)[0]})
+			if cmd == nil {
+				t.Fatalf("%s missing", tc.answer)
+			}
+			cmd()
+			raw, _ := json.Marshal(src.params)
+			if src.method != "inbox_answer" || !strings.Contains(string(raw), `"id":"i_group"`) || !strings.Contains(string(raw), `"answer":"`+tc.answer+`"`) {
+				t.Fatalf("called %s %s", src.method, raw)
+			}
+		})
+	}
+}
