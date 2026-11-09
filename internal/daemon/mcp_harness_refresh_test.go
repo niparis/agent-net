@@ -14,6 +14,7 @@ import (
 // refreshWorld is a host node that runs one global MCP server "probe", and a
 // work node with two registered projects, alpha and beta.
 type refreshWorld struct {
+	g          *testGateway
 	host, work *node
 	cli        *localClient
 	repos      map[string]string
@@ -23,7 +24,7 @@ func newRefreshWorld(t *testing.T, o nodeOpts) *refreshWorld {
 	t.Helper()
 	useHelper(t)
 	g := startGateway(t, t.TempDir(), "")
-	w := &refreshWorld{repos: map[string]string{}}
+	w := &refreshWorld{g: g, repos: map[string]string{}}
 	w.host = startNode(t, g, nodeOpts{cmdline: "pi"})
 	if o.cmdline == "" {
 		o.cmdline = "pi"

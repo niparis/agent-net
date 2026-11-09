@@ -420,6 +420,7 @@ type Daemon struct {
 	panel           workersPanelCache // kept answers of the workers panel query, see workers_panel_cache.go
 	ln              *localServer
 	mcp             *mcpHost
+	catalog         mcpCatalogCache // kept answers to mcp.catalog, see mcp_catalog_cache.go
 
 	upg upgradeState
 
