@@ -295,7 +295,9 @@ func uniqueNonEmpty(values []string) []string {
 	return out
 }
 
-func queryIn(db *sql.DB, format string, values []string) (*sql.Rows, error) {
+func queryIn(db interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}, format string, values []string) (*sql.Rows, error) {
 	if len(values) == 0 {
 		// No row names the level: read nothing without a round trip.
 		return db.Query(`SELECT NULL,NULL,NULL WHERE 0`)

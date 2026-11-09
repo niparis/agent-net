@@ -10,7 +10,10 @@ import "sync/atomic"
 //
 // So the loop hands each frame to one of three places:
 //   - a goroutine of its own, for the frame types that are pure reads. They
-//     share nothing with the order of other frames;
+//     share nothing with the order of other frames, and their queries run on
+//     the store's read pool, not on the writer connection (decision 0110). A
+//     read that starts after a write was answered sees it: the write has
+//     committed, and a committed write is visible to every pool connection;
 //   - the node's write lane, one goroutine that runs the other frames one at a
 //     time in the order they arrived, so a node keeps the order of its writes;
 //   - itself, for "hello" only. It sets what the next frames are checked

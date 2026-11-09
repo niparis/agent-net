@@ -73,17 +73,17 @@ func TestUpsertSessionKeepsTheRequestedIDForANewRecord(t *testing.T) {
 // cleanupOnInsert simulates cleanup deleting a session after its lookup but
 // before the upsert inserts it again.
 type cleanupOnInsert struct {
-	*sql.DB
+	*storeDB
 	id string
 }
 
 func (q *cleanupOnInsert) Exec(query string, args ...any) (sql.Result, error) {
 	if strings.HasPrefix(strings.TrimSpace(query), "INSERT INTO sessions ") {
-		if _, err := q.DB.Exec("DELETE FROM sessions WHERE id = ?", q.id); err != nil {
+		if _, err := q.storeDB.Exec("DELETE FROM sessions WHERE id = ?", q.id); err != nil {
 			return nil, err
 		}
 	}
-	return q.DB.Exec(query, args...)
+	return q.storeDB.Exec(query, args...)
 }
 
 func TestUpsertKeepsKnownIDWhenCleanupRacesInsert(t *testing.T) {
@@ -97,7 +97,7 @@ func TestUpsertKeepsKnownIDWhenCleanupRacesInsert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := s.upsertSession(&cleanupOnInsert{DB: s.db, id: id}, node, in)
+	got, _, err := s.upsertSession(&cleanupOnInsert{storeDB: s.db, id: id}, node, in)
 	if err != nil {
 		t.Fatal(err)
 	}

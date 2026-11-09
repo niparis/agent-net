@@ -54,7 +54,7 @@ type Store struct {
 	pendingMu       sync.Mutex
 	pendingEpisodes map[string]pendingEpisode
 	pendingStalls   int
-	db              *sql.DB
+	db              *storeDB
 	// connector opens the database connection. Its write count says when
 	// data read from the database may be out of date.
 	connector *sqlitecache.Connector
@@ -1293,10 +1293,12 @@ func OpenStore(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db := sql.OpenDB(connector)
-	// One connection keeps writes serialized and avoids lock errors.
-	db.SetMaxOpenConns(1)
-	s := &Store{db: db, connector: connector, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
+	wdb := sql.OpenDB(connector)
+	// One connection keeps writes serialized and avoids lock errors. Reads run
+	// on a pool of read-only connections that opens at the end (see openReadPool).
+	wdb.SetMaxOpenConns(1)
+	s := &Store{db: &storeDB{w: wdb}, connector: connector, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
+	db := s.db
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -1354,6 +1356,10 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	if err := s.refreshQuality(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.openReadPool(); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -2073,7 +2079,9 @@ func (s *Store) migrate() error {
 // SchemaVersion returns the highest applied migration.
 func (s *Store) SchemaVersion() (int, error) {
 	var v int
-	err := s.db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_version`).Scan(&v)
+	// The writer answers: the version is what the file says now, and the
+	// guard that refuses a newer file runs there too.
+	err := s.db.w.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_version`).Scan(&v)
 	return v, err
 }
 
