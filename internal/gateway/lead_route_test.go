@@ -196,6 +196,44 @@ func TestTeamLeadRouteReplyReachesParentSender(t *testing.T) {
 	}
 }
 
+// A message sent into a conversation started by a team member must reach that
+// member even without a parent_id, rather than redirecting to the team lead.
+func TestTeamLeadRouteConversationMemberReachesMember(t *testing.T) {
+	s := teamStore(t)
+	var target, lead string
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='demo'`).Scan(&target); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='other'`).Scan(&lead); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := graphSessions(t, s, "outside")
+	outsider := ids["outside"]
+	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
+	agent := protocol.GraphRef{Kind: "agent", ID: "other"}
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &agent})
+	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &repo})
+	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "alpha", AsksTo: protocol.AsksToLead})
+	if err := s.SetLead(protocol.LeadSetRequest{Ref: repo}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _, _, err := s.StoreLeadMessage(protocol.MsgSend{Sender: target, Recipient: outsider, Body: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ans, _, note, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: target, ConversationID: req.ConversationID, Body: "answer in conversation"})
+	if err != nil || ans.To != target || note != "" {
+		t.Fatalf("conversation message went to %s instead of %s (note %q): %v", ans.To, target, note, err)
+	}
+
+	// A new request without conversation_id still goes to the lead.
+	m, _, note, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: target, Body: "new request"})
+	if err != nil || m.To != lead || !strings.Contains(note, "Redirected") {
+		t.Fatalf("new request: %+v %q %v", m, note, err)
+	}
+}
+
 // The same holds for a Repo lead.
 func TestRepoLeadRouteReplyReachesParentSender(t *testing.T) {
 	s := teamStore(t)
