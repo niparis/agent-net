@@ -28,7 +28,7 @@
   <a href="#your-memory-the-swarm-learns-how-you-decide">Your memory</a> ·
   <a href="#several-machines-one-network">Several machines</a> ·
   <a href="#the-ideas">The ideas</a> ·
-  <a href="#why-not-just">Why not just …</a> ·
+  <a href="#why-not-just-">Why not just …</a> ·
   <a href="docs/tour.md">Tour</a> ·
   <a href="docs/security.md">Security</a> ·
   <a href="docs/README.md">Docs</a>
@@ -106,7 +106,7 @@ You do not choose a model for each job. The swarm does, and it learns from every
 
 Example. A brief to fix a flaky test is judged normal. Three models qualify; the picker gives it to Gemini Flash because the Claude subscription is ahead of pace this week. The worker finishes in nine minutes and its caller rates it 3 of 5 for a sloppy report. Next week that model's normal-level score is a little lower, and a similar job may go elsewhere.
 
-The Quality panel (TUI tab 3) shows each model's record by level, in minutes of the orchestrator's time per task.
+The Quality sub-tab (TUI tab 3, then Tab twice) shows the picker as it decides: each registered model's score at each difficulty level that has tasks, the number of tasks behind each score, and whether the selected model is allowed at that level.
 
 ## Smart defaults, and you can change almost anything
 
