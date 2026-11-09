@@ -88,7 +88,13 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	if len(item.Text) > protocol.MaxBodyBytes || len(item.Recommendation) > protocol.MaxBodyBytes || len(item.Detail) > protocol.MaxBodyBytes {
 		return item, reject("inbox text too long")
 	}
-	// An ask goes to the chief of staff when one is live (decision 0114).
+	// An ask goes to the chief of staff when one is live (decision 0114). A
+	// caller that names the next who has routed the ask on purpose, so chief
+	// adoption leaves it there.
+	routeFixed := 0
+	if item.NextWho != "" {
+		routeFixed = 1
+	}
 	nextWho, err := chiefRoute(db, item)
 	if err != nil {
 		return item, err
@@ -120,9 +126,9 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	item.Answer = ""
 	item.AnsweredAt = time.Time{}
 	_, err = db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,
-		from_kind,source_ref,about_kind,about_id,next_who,why_you,detail) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		from_kind,source_ref,about_kind,about_id,next_who,why_you,detail,route_fixed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status, string(options), item.AskerName, item.ChangeTitle,
-		item.FromKind, item.SourceRef, item.AboutKind, item.AboutID, nextWho, item.WhyYou, item.Detail)
+		item.FromKind, item.SourceRef, item.AboutKind, item.AboutID, nextWho, item.WhyYou, item.Detail, routeFixed)
 	return item, err
 }
 

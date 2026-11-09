@@ -35,12 +35,15 @@ CREATE TABLE IF NOT EXISTS ask_sorts (
 CREATE INDEX IF NOT EXISTS ask_sorts_ask ON ask_sorts(ask_id, id);
 `
 
-// chiefAdoptMigration records the time an ask started waiting for the chief.
-// The column is added in the migrate loop, which checks that it is missing.
+// chiefAdoptMigration records the time an ask started waiting for the chief
+// and whether its creator routed it on purpose. The columns are added in the
+// migrate loop, which checks that each one is missing.
 const chiefAdoptMigration = `
 -- Chief of staff adoption (decision 0114): when an ask started waiting for the
 -- chief. Zero means its created_at. An ask opened before the chief existed is
 -- adopted now, so its 15 minutes start now, not when its asker wrote it.
+-- route_fixed marks an ask whose creator named the next who, so adoption
+-- leaves it there.
 SELECT 1 /* chief ask adoption time */;
 `
 
@@ -151,15 +154,16 @@ func chiefRoute(q askDB, item protocol.InboxItem) (string, error) {
 // adoptChiefAsks gives the chief every open ask that still waits for the owner
 // and was never offered to a chief. It runs when a chief is set and on the
 // start and minute reconcile, so asks opened before the chief existed reach
-// it. An ask that was sorted, answered, sent to a session, or already offered
-// is left alone. The chief's own asks are not routed to itself.
+// it. An ask that was sorted, answered, sent to a session, already offered, or
+// routed by its creator on purpose (route_fixed) is left alone. The chief's own
+// asks are not routed to itself.
 func adoptChiefAsks(q askDB, chief string, now int64) (int, error) {
 	if chief == "" {
 		return 0, nil
 	}
 	res, err := q.Exec(`UPDATE inbox_items SET next_who=?, chief_at=?
 		WHERE status='open' AND (next_who='' OR next_who=?) AND session_id<>?
-		AND chief_sent_at=0
+		AND route_fixed=0 AND chief_sent_at=0
 		AND NOT EXISTS (SELECT 1 FROM ask_sorts r WHERE r.ask_id=inbox_items.id)`,
 		protocol.AskNextChief, now, protocol.AskNextOwner, chief)
 	if err != nil {

@@ -133,6 +133,39 @@ func TestGatewayStartAdoptsAsksForExistingChief(t *testing.T) {
 	}
 }
 
+// An ask whose creator routed it to the owner on purpose stays with the owner.
+// The Tailscale pairing notice is one: only the owner may revoke a device, so
+// the chief must not adopt it or close it.
+func TestChiefDoesNotAdoptOwnerOnlyAsk(t *testing.T) {
+	s, _ := newTestStore(t)
+	chief, asker := twoSessions(t, s)
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id IN (?,?)`, chief, asker); err != nil {
+		t.Fatal(err)
+	}
+	notice, err := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: asker, Node: "apps",
+		FromKind: protocol.AskFromApps, NextWho: protocol.AskNextOwner, AskerName: "Tailscale",
+		SourceRef: "tailscale-pair:test", Text: "Paired X by Tailscale sign-in",
+		Recommendation: "Information only. Revoke this device in Connected apps if this was not you."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, notice.ID); next != protocol.AskNextOwner {
+		t.Fatalf("before a chief, next = %q, want owner", next)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, notice.ID); next != protocol.AskNextOwner {
+		t.Fatalf("after chief_set, next = %q, want owner", next)
+	}
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, notice.ID); next != protocol.AskNextOwner {
+		t.Fatalf("after reconcile, next = %q, want owner", next)
+	}
+}
+
 // A chief set after asks are already open takes them over: the chief can sort
 // them, and the ones it has not sorted leave in a batch. An answered ask stays
 // with the owner.

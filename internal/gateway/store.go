@@ -1879,15 +1879,20 @@ func (s *Store) migrate() error {
 		// SQLite has no ADD COLUMN IF NOT EXISTS, and a test may replay a
 		// migration on a database that already has these columns.
 		if strings.Contains(migrations[i], "chief ask adoption time") {
-			var has int
-			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name='chief_at'`).Scan(&has); err != nil {
-				tx.Rollback()
-				return fmt.Errorf("migration %d: %w", i+1, err)
-			}
-			if has == 0 {
-				if _, err := tx.Exec(`ALTER TABLE inbox_items ADD COLUMN chief_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+			for _, col := range []struct{ name, spec string }{
+				{"chief_at", `INTEGER NOT NULL DEFAULT 0`},
+				{"route_fixed", `INTEGER NOT NULL DEFAULT 0`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
 				}
 			}
 		}
