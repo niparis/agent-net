@@ -66,6 +66,15 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 			return "", nil
 		}
 	}
+	if m.ConversationID != "" {
+		var inThread bool
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM messages WHERE conversation_id=? AND sender=?)`, m.ConversationID, m.To).Scan(&inThread); err != nil {
+			return "", err
+		}
+		if inThread {
+			return "", nil
+		}
+	}
 	if worker != "" {
 		var owner string
 		if err = tx.QueryRow(`SELECT COALESCE(CASE WHEN json_valid(worker) THEN json_extract(worker,'$.owner') END,'') FROM sessions WHERE id=?`, m.From).Scan(&owner); err != nil {
