@@ -34,6 +34,8 @@ const (
 // PickerSettings are the owner and CTO settings of the picker (picker.* in the
 // settings recipe). A zero field takes its default.
 type PickerSettings struct {
+	WeakerBias   float64 `json:"weaker_bias"`
+	ExploreShare float64 `json:"explore_share"`
 	// BucketWidth is the width of a D bucket, starting at 1.0.
 	BucketWidth float64 `json:"bucket_width"`
 	// K is the weight of the bucket mean, in tasks.
@@ -55,13 +57,19 @@ type PickerSettings struct {
 // third to ten digits, which the owner calls 0.33: the buckets read 1.00, 1.33,
 // 1.67, 2.00 and so on.
 func DefaultPickerSettings() PickerSettings {
-	return PickerSettings{BucketWidth: 0.3333333333, K: 5, AllowedFraction: .9, OverqualifiedMargin: .25, UncertainBoost: 1.5, UncertainN: 5}
+	return PickerSettings{WeakerBias: 1, ExploreShare: .1, BucketWidth: 0.3333333333, K: 5, AllowedFraction: .9, OverqualifiedMargin: .25, UncertainBoost: 1.5, UncertainN: 5}
 }
 
 // Normalized replaces every missing or invalid field with its default.
 func (s PickerSettings) Normalized() PickerSettings {
 	d := DefaultPickerSettings()
 	bad := func(v float64) bool { return v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) }
+	if bad(s.WeakerBias) {
+		s.WeakerBias = d.WeakerBias
+	}
+	if bad(s.ExploreShare) || s.ExploreShare > 1 {
+		s.ExploreShare = d.ExploreShare
+	}
 	if bad(s.BucketWidth) {
 		s.BucketWidth = d.BucketWidth
 	}

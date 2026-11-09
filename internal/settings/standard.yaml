@@ -631,6 +631,26 @@ settings:
     levels: [network]
     default: 0.1
     live: true
+  - key: picker.weaker_bias
+    rows: [78]
+    description: Exponent of the inverse benchmark factor in the picker rotation. The weight of a qualifying model is its quota pace factor times (highest benchmark / its benchmark) to this power, so 0.01 is nearly even and a higher value favours the weaker benchmark.
+    kind: rule
+    type: float
+    min: 0.01
+    max: 10
+    levels: [network]
+    default: 1.0
+    live: true
+  - key: picker.explore_share
+    rows: [78]
+    description: Share of picks that go to an allowed thin cell (fewer than 3 tasks in the bucket) while proven models qualify. Counted from the rotation, not random. 0.1 is about one pick in ten.
+    kind: rule
+    type: float
+    min: 0.01
+    max: 1
+    levels: [network]
+    default: 0.1
+    live: true
   - key: picker.bucket_width
     rows: [70]
     description: Width of a judge D bucket for the worker picker, starting at 1.0. One third gives the buckets 1.00, 1.33, 1.67, 2.00.
@@ -673,7 +693,7 @@ settings:
     live: true
   - key: picker.uncertain_boost
     rows: [78]
-    description: Rotation weight multiplier for a model whose cell holds fewer than picker.uncertain_n tasks, so uncertain models get a few more tasks.
+    description: Rotation weight multiplier for a model whose cell holds fewer than picker.uncertain_n tasks, so uncertain models get a few more tasks. Used only when no model qualifies in the bucket.
     kind: rule
     type: float
     min: 1

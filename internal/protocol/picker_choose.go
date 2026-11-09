@@ -7,26 +7,10 @@ import (
 	"strings"
 )
 
-// The cell pick (decision 0105).
-//
-// For a task with judge D, the bucket of D is read for every candidate that has
-// quota left:
-//
-//  1. best is the highest cell score among the candidates with at least three
-//     tasks in the bucket. With none, it is the bucket mean.
-//  2. A candidate with three tasks or more is allowed unless the top of its
-//     interval is below AllowedFraction x best. A candidate with fewer is
-//     allowed when its benchmark ceiling reaches the bucket.
-//  3. An allowed candidate whose benchmark ceiling is more than one bucket above
-//     D is left out when a weaker allowed candidate exists and either its score
-//     is more than OverqualifiedMargin under the best, or it has fewer than
-//     three tasks in the bucket (then the benchmark alone decides). This keeps
-//     strong models off easy work, and an untried strong model too.
-//  4. The rest rotate with the smooth weighted round robin of the level rule.
-//     The weight is the quota room term, the cell score, the boost for a cell
-//     with fewer than UncertainN tasks and the track terms. A cell more than
-//     one bucket below the model's ceiling gets no boost.
-//
+// The cell pick (decision 0105) keeps the interval-based allowed set and
+// over-qualification rule, then rotates proven candidates whose cell scores
+// reach the qualifying threshold. Allowed thin cells receive an exploration
+// share. When no candidates qualify, the original allowed rotation applies.
 // When nothing is allowed the caller falls back to the level rule.
 
 // PickerCandidateFacts is what the cell rule reads about one candidate in one
@@ -146,6 +130,8 @@ type pickerEntry struct {
 	allowed   bool
 	prior     bool
 	reason    string
+	weight    float64
+	qualified bool
 }
 
 // chooseByCells runs the cell rule. A non-empty fallback says why it chose
@@ -161,6 +147,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 	}
 
 	var entries []*pickerEntry
+	var quotaExcluded []string
 	for _, c := range candidates {
 		provider := c.Provider
 		if provider == "" {
@@ -168,6 +155,11 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		}
 		room, note, measured, blocked := workerQuotaRoom(quotas, provider, c.Model)
 		if blocked {
+			name := c.Name
+			if name == "" {
+				name = PickerModelDisplay(PickerModelKey(c.Harness, c.Model))
+			}
+			quotaExcluded = append(quotaExcluded, name+" left out (quota: "+note+")")
 			continue
 		}
 		if measured {
@@ -205,33 +197,94 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		e.reason = verdicts[i].Reason
 	}
 
-	var eligible []rankedChoice
-	var final []*pickerEntry
+	var qualified, thin, allowed []*pickerEntry
+	best := table.BucketMean(bucket)
+	if bestEntry != nil {
+		best = bestEntry.cell.Score
+	}
+	bestBench := 0.0
 	for _, e := range entries {
 		if !e.allowed {
 			continue
 		}
-		final = append(final, e)
-		// An early quit is one failed attempt, with the existing failure weight.
-		c := e.c
-		c.Failed = c.Failed || c.EarlyQuitLevels[level]
-		fit := math.Max(e.cell.Score, .05)
-		if e.cell.N < set.UncertainN && !e.above {
-			fit *= set.UncertainBoost
+		allowed = append(allowed, e)
+		if e.scored && e.bench > bestBench {
+			bestBench = e.bench
 		}
-		weight := rotationWeight(c, fit, e.room, e.measured)
-		choice := WorkerModelChoice{WorkerModelCandidate: c, Fit: "cell", QuotaNote: e.quotaNote}
-		if e.scored {
-			choice.Score = e.bench
+		if e.cell.N < PickerMinCellTasks {
+			thin = append(thin, e)
+			continue
 		}
-		eligible = append(eligible, rankedChoice{choice: choice, weight: weight})
+		if e.cell.Score >= set.AllowedFraction*best {
+			e.qualified = true
+			qualified = append(qualified, e)
+		} else {
+			e.reason = fmt.Sprintf("score below %g×best", set.AllowedFraction)
+		}
 	}
-	if len(final) == 0 {
-		return WorkerModelChoice{}, header + ": fallback to the level rule (no profile is allowed by its record or its benchmark)"
+	var eligible []rankedChoice
+	var final []*pickerEntry
+	exploring := false
+	if len(qualified) == 0 {
+		eligible = nil
+		final = nil
+		for _, e := range entries {
+			if !e.allowed {
+				continue
+			}
+			final = append(final, e)
+			// An early quit is one failed attempt, with the existing failure weight.
+			c := e.c
+			c.Failed = c.Failed || c.EarlyQuitLevels[level]
+			fit := math.Max(e.cell.Score, .05)
+			if e.cell.N < set.UncertainN && !e.above {
+				fit *= set.UncertainBoost
+			}
+			weight := rotationWeight(c, fit, e.room, e.measured)
+			choice := WorkerModelChoice{WorkerModelCandidate: c, Fit: "cell", QuotaNote: e.quotaNote}
+			if e.scored {
+				choice.Score = e.bench
+			}
+			eligible = append(eligible, rankedChoice{choice: choice, weight: weight})
+		}
+		if len(final) == 0 {
+			return WorkerModelChoice{}, header + ": fallback to the level rule (no profile is allowed by its record or its benchmark)"
+		}
+
+	} else {
+		final = qualified
+		if len(thin) > 0 {
+			lvl := state.level(level)
+			lvl.ExploreCredit += set.ExploreShare
+			if lvl.ExploreCredit >= 1-1e-9 {
+				lvl.ExploreCredit -= 1
+				final, exploring = thin, true
+			}
+		}
+		for _, e := range allowed {
+			weight := quotaPaceFactor(e.room, e.measured)
+			if e.scored && e.bench > 0 && bestBench > 0 {
+				weight *= math.Pow(bestBench/e.bench, set.WeakerBias)
+			}
+			e.weight = weight
+		}
+		for _, e := range final {
+			choice := WorkerModelChoice{WorkerModelCandidate: e.c, Fit: "cell", QuotaNote: e.quotaNote, Score: e.bench}
+			eligible = append(eligible, rankedChoice{choice: choice, weight: e.weight})
+		}
+	}
+	var saved map[string]float64
+	if exploring {
+		lvl := state.level(level)
+		saved, lvl.Current = lvl.Current, lvl.ExploreCurrent
 	}
 
 	// 4. Rotate among the allowed.
 	picked, err := rotateRanked(state, level, eligible)
+	if exploring {
+		lvl := state.level(level)
+		lvl.ExploreCurrent, lvl.Current = lvl.Current, saved
+	}
 	if err != nil {
 		return WorkerModelChoice{}, header + ": fallback to the level rule (" + err.Error() + ")"
 	}
@@ -243,7 +296,14 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			break
 		}
 	}
-	picked.PickNote = pickerNote(header, entries, chosen, bestEntry)
+	if len(qualified) > 0 {
+		picked.PickNote = pickerNoteQualifying(header, entries, chosen, bestEntry, exploring, set)
+	} else {
+		picked.PickNote = pickerNote(header, entries, chosen, bestEntry)
+	}
+	if len(quotaExcluded) > 0 {
+		picked.PickNote += "; " + strings.Join(quotaExcluded, "; ")
+	}
 	return picked, ""
 }
 
@@ -305,6 +365,44 @@ func pickerNote(header string, entries []*pickerEntry, chosen, best *pickerEntry
 			break
 		}
 		parts = append(parts, item(e, " left out ("+e.reason+")"))
+	}
+	return header + ": " + strings.Join(parts, "; ")
+}
+
+// pickerNoteQualifying is the note of a pick made from the qualifying set. It
+// names the chosen cell, every qualifier with its rotation weight, the thin
+// cells that were open to the exploration share, and each candidate that was
+// left out with the reason.
+func pickerNoteQualifying(header string, entries []*pickerEntry, chosen, best *pickerEntry, exploring bool, set PickerSettings) string {
+	cell := func(e *pickerEntry) string {
+		return strings.TrimSpace(e.name + " " + pickerCellText(e.cell))
+	}
+	var qualifying, thin, left []string
+	for _, e := range entries {
+		switch {
+		case e.qualified:
+			qualifying = append(qualifying, fmt.Sprintf("%s weight %.2f", cell(e), e.weight))
+		case e.allowed && e.cell.N < PickerMinCellTasks:
+			thin = append(thin, fmt.Sprintf("%s (benchmark) weight %.2f", cell(e), e.weight))
+		case e.reason != "":
+			left = append(left, cell(e)+" left out ("+e.reason+")")
+		}
+	}
+	tag := ", chosen"
+	switch {
+	case exploring:
+		tag = ", exploration pick"
+	case chosen == best:
+		tag = ", best"
+	}
+	parts := []string{cell(chosen) + tag}
+	parts = append(parts, "qualifying: "+strings.Join(qualifying, ", "))
+	if len(thin) > 0 {
+		share := fmt.Sprintf("thin cells (explore share %g): ", set.ExploreShare)
+		parts = append(parts, share+strings.Join(thin, ", "))
+	}
+	if len(left) > 0 {
+		parts = append(parts, strings.Join(left, "; "))
 	}
 	return header + ": " + strings.Join(parts, "; ")
 }
