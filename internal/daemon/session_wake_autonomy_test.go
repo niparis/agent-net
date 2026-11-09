@@ -140,7 +140,7 @@ func TestMessageDoesNotWakeInteractiveClaudeWithAutonomyOff(t *testing.T) {
 func TestInteractiveWakeRefusesRunningOrUnclearRecords(t *testing.T) {
 	for name, records := range map[string][]map[string]any{
 		"running":            {{"id": wakeNative[:8], "kind": "interactive", "pid": 4242}},
-		"stopped-bg":         {{"id": wakeNative[:8], "kind": "background", "state": "stopped"}},
+		"working-bg":         {{"id": wakeNative[:8], "kind": "background", "state": "working"}},
 		"no-kind":            {{"id": wakeNative[:8], "state": "done"}},
 		"other-sessionid":    {{"id": wakeNative[:8], "sessionId": "different-native", "kind": "interactive"}},
 		"finished-elsewhere": {{"id": wakeNative[:8], "kind": "background", "state": "done", "cwd": "/elsewhere"}},

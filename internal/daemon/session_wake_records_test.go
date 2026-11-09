@@ -23,6 +23,23 @@ func TestMessageWakesInteractiveClaudeWithFinishedBackgroundRecord(t *testing.T)
 	})
 }
 
+// A stopped background run of the same session does not stop an interactive
+// wake. Claude keeps its record after the run, so the session then has an
+// interactive record and a stopped background one. The wake resumes it.
+func TestMessageWakesInteractiveClaudeWithStoppedBackgroundRecord(t *testing.T) {
+	r := newInteractiveWakeRig(t, protocol.AutonomyWake, []map[string]any{
+		{"id": wakeNative[:8], "kind": "interactive", "state": "done"},
+		{"id": wakeNative[:8], "kind": "background", "state": "stopped"},
+	})
+	r.send(t, "wake after a stopped background run")
+	eventually(t, "interactive session with a stopped background record receives message", func() bool {
+		if lines := r.g.logs.lines("session wake", r.id); len(lines) > 0 {
+			t.Fatalf("wake failed: %v", lines)
+		}
+		return len(r.c.adapter.deliveredTo(r.id)) == 1
+	})
+}
+
 // A session whose machine has not recorded its mode is not known to be a
 // background session, so with autonomy wake it is resumed like an interactive
 // one. The gateway asks only with autonomy wake for such a session.
