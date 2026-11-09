@@ -745,6 +745,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if method == protocol.MethodHint {
 		return lc.hintCall(ctx, client, ls, raw)
 	}
+	if method == protocol.MethodTeamLead {
+		return lc.teamLeadCall(ctx, client, ls, raw)
+	}
 	if method == protocol.MethodPolicy {
 		return lc.policyCall(ctx, client, ls, raw)
 	}

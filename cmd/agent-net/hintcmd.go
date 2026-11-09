@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -147,18 +149,74 @@ func shellCommandWord(raw string) (word string, ended bool) {
 	return strings.Trim(raw, "()"), false
 }
 
+// deniedRE matches the permission-denial wording a failed tool call carries.
+// Claude Code's permission system says the action was denied; GitHub says a
+// token or an app lacks the permission. It must stay permission specific, so
+// an ordinary command error keeps the existing hint.
+var deniedRE = regexp.MustCompile(`(?i)(` +
+	`permission (to use [^\n]{0,160} |to [^\n]{0,160} )?(has been |was |is )?denied` +
+	`|permissions? denied` +
+	`|operation not permitted` +
+	`|sandbox (denial|denied|violation)` +
+	`|resource not accessible by (integration|personal access token)` +
+	`|must have admin rights` +
+	`|(do not|does not|don't) have (the )?(required )?permissions?` +
+	`|insufficient permissions?` +
+	`|not authorized to` +
+	`)`)
+
+// permissionDenied tells whether a failed call was refused by a permission
+// check rather than by an ordinary command error.
+func permissionDenied(text string) bool { return deniedRE.MatchString(text) }
+
+// leadDeniedLine is the one line the hook adds for a denied step in a team
+// that sends blocked steps to its lead. The member sends the message itself,
+// so the PR link and the review travel with it.
+func leadDeniedLine(res protocol.TeamLeadResult) string {
+	return fmt.Sprintf("agent-net: this action was denied here. Your team sends blocked steps to its lead %s (%s): "+
+		"send it what you need done (for example the PR link and your review) with agent_message_send, then carry on.",
+		res.Lead, res.LeadSession)
+}
+
+func writeHookContext(stdout io.Writer, event, text string) {
+	var out hookOutput
+	out.HookSpecificOutput.HookEventName = event
+	out.HookSpecificOutput.AdditionalContext = text
+	b, err := json.Marshal(out)
+	if err != nil {
+		return
+	}
+	stdout.Write(append(b, '\n'))
+}
+
 // runHint is `agent-net hint`: a Claude Code hook for PostToolUseFailure and
 // PostToolUse. It reads the hook input on stdin, asks the daemon for a hint and
 // prints the hook output only when there is one. It never fails: on any
 // problem it prints nothing and exits 0, so it can not disturb the session.
 func runHint(ctx context.Context, stdin io.Reader, stdout io.Writer,
-	ask func(ctx context.Context, req protocol.HintRequest) (protocol.HintResult, error)) {
+	ask func(ctx context.Context, req protocol.HintRequest) (protocol.HintResult, error),
+	lead func(ctx context.Context, req protocol.TeamLeadRequest) (protocol.TeamLeadResult, error)) {
 	raw, err := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if err != nil {
 		return
 	}
 	var in hookInput
 	if json.Unmarshal(raw, &in) != nil || in.SessionID == "" || in.IsInterrupt {
+		return
+	}
+	// Claude Code's permission system reports a denial in the failure's error
+	// text (PostToolUseFailure). That step goes to the team lead, not to the
+	// other sessions the ordinary hint looks for. A read-only command that
+	// cannot read a file is an ordinary command error: it keeps the hint.
+	if in.EventName == "PostToolUseFailure" && permissionDenied(in.Error) &&
+		(in.ToolName != "Bash" || !readOnlyBashCommand(in.ToolInput.Command)) {
+		ctx, cancel := context.WithTimeout(ctx, hintBudget)
+		defer cancel()
+		res, err := lead(ctx, protocol.TeamLeadRequest{Harness: "claude", NativeID: in.SessionID})
+		if err != nil || res.Lead == "" || res.LeadSession == "" {
+			return
+		}
+		writeHookContext(stdout, in.EventName, leadDeniedLine(res))
 		return
 	}
 	var text string
@@ -188,14 +246,7 @@ func runHint(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	if err != nil || res.Text == "" {
 		return
 	}
-	var out hookOutput
-	out.HookSpecificOutput.HookEventName = in.EventName
-	out.HookSpecificOutput.AdditionalContext = res.Text
-	b, err := json.Marshal(out)
-	if err != nil {
-		return
-	}
-	stdout.Write(append(b, '\n'))
+	writeHookContext(stdout, in.EventName, res.Text)
 }
 
 func cmdHint(ctx context.Context, _ []string) error {
@@ -207,6 +258,19 @@ func cmdHint(ctx context.Context, _ []string) error {
 		}
 		defer cl.Close()
 		raw, err := cl.Call(ctx, protocol.MethodHint, req)
+		if err != nil {
+			return res, err
+		}
+		err = json.Unmarshal(raw, &res)
+		return res, err
+	}, func(ctx context.Context, req protocol.TeamLeadRequest) (protocol.TeamLeadResult, error) {
+		var res protocol.TeamLeadResult
+		cl, err := dialCLI(ctx)
+		if err != nil {
+			return res, err
+		}
+		defer cl.Close()
+		raw, err := cl.Call(ctx, protocol.MethodTeamLead, req)
 		if err != nil {
 			return res, err
 		}

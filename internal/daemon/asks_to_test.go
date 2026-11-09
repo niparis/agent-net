@@ -58,6 +58,64 @@ func ownerInbox(t *testing.T, n *node) []protocol.InboxItem {
 	return listed.Items
 }
 
+// A member reads its team lead for the Claude hint hook. The lead itself has
+// none, and a team that sends questions to the owner has none.
+func TestTeamLeadReadForClaudeHint(t *testing.T) {
+	t.Parallel()
+	_, lead, member, leadID, _, st := forgeNodes(t)
+
+	raw, err := member.call(protocol.MethodTeamLead, protocol.TeamLeadRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res protocol.TeamLeadResult
+	if err := json.Unmarshal(raw, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Team != "forge" || res.Lead != "lead" || res.LeadSession != leadID {
+		t.Fatalf("member lead: %+v, lead session %s", res, leadID)
+	}
+
+	raw, err = lead.call(protocol.MethodTeamLead, protocol.TeamLeadRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res = protocol.TeamLeadResult{}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Team != "" || res.LeadSession != "" {
+		t.Fatalf("the lead got a lead: %+v", res)
+	}
+
+	if err := st.WriteTeam(protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: protocol.AsksToOwner}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = member.call(protocol.MethodTeamLead, protocol.TeamLeadRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res = protocol.TeamLeadResult{}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.LeadSession != "" {
+		t.Fatalf("asks_to=owner still named a lead: %+v", res)
+	}
+}
+
+// The owner's ask question path is unchanged by the read.
+func TestTeamLeadReadChangesNothing(t *testing.T) {
+	t.Parallel()
+	n, _, member, _, memberID, _ := forgeNodes(t)
+	if _, err := member.call(protocol.MethodTeamLead, protocol.TeamLeadRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if w := waitingOf(t, n, memberID); w != nil {
+		t.Fatalf("the read made the member wait: %+v", w)
+	}
+}
+
 // A member of a team that asks its lead calls agent_owner_ask. The owner sees
 // nothing, the member is told and carries on, the lead gets the question, and
 // the lead's reply reaches the member.
