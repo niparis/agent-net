@@ -366,6 +366,17 @@ await test("agent_owner_ask sends a waiting question", async () => {
   await p.fire("session_shutdown", {});
 });
 
+await test("agent_owner_ask passes replaces for an approval", async () => {
+  const p = makePi(); extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  await p.tools.get("agent_owner_ask").execute("id", { kind: "approval", text: "Delete?", recommendation: "no", replaces: "i_old" });
+  const sent = requests.filter((r) => r.method === "request_approval").pop();
+  if (!sent || sent.params.replaces !== "i_old" || sent.params.action !== "Delete?") throw new Error(JSON.stringify(sent));
+  await p.fire("session_shutdown", {});
+});
+
 await test("agent_announce asks for a task and says so; no name or function is required", async () => {
   const p = makePi();
   extension(p.api);

@@ -227,6 +227,14 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 				out["note"] = note
 			}
 		}
+		// The session's other pending asks stay open. List them so the agent can
+		// name one with replaces; a stale ask does not go away by itself.
+		if raw, ok := top["other_open"].([]any); ok && len(raw) > 0 {
+			out["other_open"] = raw
+			if _, has := out["note"]; !has {
+				out["note"] = "Your earlier pending asks are still open. Pass replaces with one of their IDs to retire it."
+			}
+		}
 		return out, nil
 	case "agent_learn":
 		m, err := learnCall(ctx, run, protocol.LearnRequest{SubjectKind: str("subject_kind"), Subject: str("subject"), Finding: str("finding"), Evidence: stringSlice(a["evidence"])})

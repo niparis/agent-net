@@ -1122,6 +1122,8 @@ The local method `charter_text` and the gateway frame `charter.global` give a se
 
 Question, approval and idea text is limited to 4000 Unicode characters at the gateway.
 
+An agent can retire only its own pending ask, and only by naming it with `replaces`. A new ask never retires another one, so a decision the owner has not seen (a data delete, a spend) cannot be dropped by a later ask from the same session.
+
 The daemon accepts `inbox_list` and `inbox_answer` only through the owner operator gate. Agent tools can create requests only for their bound session; the gateway checks that the session belongs to the authenticated daemon and derives the project from it. As with other owner operations, a compromised enrolled machine is within the trust boundary.
 
 An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that the owner approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.

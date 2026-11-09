@@ -235,28 +235,82 @@ func TestInboxFieldsRoundTrip(t *testing.T) {
 	}
 }
 
-func TestInboxReplacementAndTextLimit(t *testing.T) {
+func TestInboxTextLimit(t *testing.T) {
 	s, _ := newTestStore(t)
-	first, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: "s_a", Text: "first"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: strings.Repeat("é", 4001)})
+	if err == nil {
+		t.Fatal("accepted question over 4000 characters")
 	}
-	_, err = s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: "s_a", Text: "second"})
-	if err != nil {
-		t.Fatal(err)
-	}
+}
+
+func inboxStatus(t *testing.T, s *Store, id string) string {
+	t.Helper()
 	items, err := s.ListInbox()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range items {
-		if item.ID == first.ID && item.Status != "replaced" {
-			t.Fatalf("not replaced: %+v", item)
+		if item.ID == id {
+			return item.Status
 		}
 	}
-	_, err = s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: strings.Repeat("é", 4001)})
-	if err == nil {
-		t.Fatal("accepted question over 4000 characters")
+	t.Fatalf("item %s not listed", id)
+	return ""
+}
+
+// A new ask adds to the pending ones. Only replaces retires an earlier ask.
+func TestInboxNewAskKeepsEarlierOpenAsks(t *testing.T) {
+	for _, kind := range []string{"approval", "question"} {
+		s, _ := newTestStore(t)
+		first, err := s.CreateInboxItem(protocol.InboxItem{Kind: kind, SessionID: "s_a", Text: "delete the data"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err := s.CreateInboxItem(protocol.InboxItem{Kind: kind, SessionID: "s_a", Text: "spend the money"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := inboxStatus(t, s, first.ID); got != "open" {
+			t.Fatalf("%s: first ask is %q after a second ask without replaces", kind, got)
+		}
+		if got := inboxStatus(t, s, second.ID); got != "open" {
+			t.Fatalf("%s: second ask is %q", kind, got)
+		}
+	}
+}
+
+func TestInboxReplacesRetiresOnlyTheNamedAsk(t *testing.T) {
+	s, _ := newTestStore(t)
+	first, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "first"})
+	second, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "second"})
+	third, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "third", Replaces: first.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := inboxStatus(t, s, first.ID); got != "replaced" {
+		t.Fatalf("named ask is %q", got)
+	}
+	if got := inboxStatus(t, s, second.ID); got != "open" {
+		t.Fatalf("unnamed ask is %q", got)
+	}
+	if got := inboxStatus(t, s, third.ID); got != "open" {
+		t.Fatalf("new ask is %q", got)
+	}
+}
+
+func TestOtherOpenAsksListsTheSessionsPendingAsks(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "delete the data\nmore detail"})
+	b, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: "s_a", Text: "which one?"})
+	s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_other", Text: "someone else"})
+	c, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "spend the money"})
+	got, err := s.OtherOpenAsks("s_a", c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []protocol.OpenAskRef{{ID: a.ID, Kind: "approval", Text: "delete the data"}, {ID: b.ID, Kind: "question", Text: "which one?"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v want %+v", got, want)
 	}
 }
 

@@ -958,7 +958,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_ask",
-    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. Give replaces to replace or close your earlier pending ask. Use it when you stop to wait for the owner.",
+    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. A new ask adds to your pending ones; pass replaces to retire one. The result lists your other open asks. Use it when you stop to wait for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -999,7 +999,7 @@ export const TOOL_CATALOG = [
         },
         "replaces": {
           "type": "string",
-          "description": "ID of an earlier pending ask from this session to replace or close."
+          "description": "ID of a pending ask of yours to retire."
         }
       },
       "required": [],

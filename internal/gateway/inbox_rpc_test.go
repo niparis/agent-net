@@ -60,7 +60,8 @@ func TestInboxCreateUsesResolvedRepoAndQuestionDetails(t *testing.T) {
 	}
 	request := map[string]any{"session_id": r.caller, "kind": "question", "text": "Which branch?", "recommendation": "main", "options": []string{"main", "next"}}
 	type result struct {
-		Item protocol.InboxItem `json:"item"`
+		Item      protocol.InboxItem    `json:"item"`
+		OtherOpen []protocol.OpenAskRef `json:"other_open"`
 	}
 	first, err := deliveryCall[result](r, r.a, "inbox.create", request)
 	if err != nil {
@@ -72,10 +73,23 @@ func TestInboxCreateUsesResolvedRepoAndQuestionDetails(t *testing.T) {
 	if first.Item.AskerName != "Reviewer" || first.Item.Recommendation != "main" || !reflect.DeepEqual(first.Item.Options, []string{"main", "next"}) {
 		t.Fatalf("question details lost: %+v", first.Item)
 	}
+	// Without replaces the first ask stays open, and the result lists it.
 	request["text"] = "Which branch now?"
 	second, err := deliveryCall[result](r, r.a, "inbox.create", request)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(second.OtherOpen) != 1 || second.OtherOpen[0].ID != first.Item.ID || second.OtherOpen[0].Text != "Which branch?" {
+		t.Fatalf("other_open: %+v", second.OtherOpen)
+	}
+	request["text"] = "Which branch finally?"
+	request["replaces"] = first.Item.ID
+	third, err := deliveryCall[result](r, r.a, "inbox.create", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(third.OtherOpen) != 1 || third.OtherOpen[0].ID != second.Item.ID {
+		t.Fatalf("other_open after replaces: %+v", third.OtherOpen)
 	}
 	items, err := r.s.ListInbox()
 	if err != nil {
@@ -85,7 +99,7 @@ func TestInboxCreateUsesResolvedRepoAndQuestionDetails(t *testing.T) {
 	for _, item := range items {
 		status[item.ID] = item.Status
 	}
-	if status[first.Item.ID] != "replaced" || status[second.Item.ID] != "open" {
+	if status[first.Item.ID] != "replaced" || status[second.Item.ID] != "open" || status[third.Item.ID] != "open" {
 		t.Fatalf("question statuses: %v", status)
 	}
 }

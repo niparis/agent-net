@@ -198,6 +198,10 @@ func TestChiefBatchReadsNewestFiveCorrectionsFromJudgments(t *testing.T) {
 	s, c, _, asker, _ := chiefRig(t)
 	for i := 1; i <= 6; i++ {
 		id := chiefAskKind(t, s, asker, "approval", fmt.Sprintf("Deploy number %d?", i))
+		// Answered asks leave the open list, so only the last ask is a neighbour.
+		if _, err := s.AnswerInbox(id, "no"); err != nil {
+			t.Fatal(err)
+		}
 		if err := s.MarkAsk(protocol.AskMarkRequest{Ask: id, Mark: protocol.MarkDidntNeedMe}, "owner"); err != nil {
 			t.Fatal(err)
 		}

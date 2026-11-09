@@ -55,16 +55,31 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 	if err != nil {
 		return item, err
 	}
-	if item.Kind == "question" || item.Kind == "approval" {
-		_, err = tx.Exec(`UPDATE inbox_items SET status='replaced',answered_at=? WHERE session_id=? AND kind=? AND status='open' AND id<>?`, item.CreatedAt.UnixNano(), item.SessionID, item.Kind, item.ID)
-		if err != nil {
-			return item, err
-		}
-	}
 	if err = tx.Commit(); err != nil {
 		return item, err
 	}
 	return item, nil
+}
+
+// OtherOpenAsks lists the open owner asks of a session other than one item, by
+// ID with the first line of each. A new ask does not retire the earlier ones;
+// the asking agent sees this list and names one with replaces to retire it.
+func (s *Store) OtherOpenAsks(session, except string) ([]protocol.OpenAskRef, error) {
+	rows, err := s.db.Query(`SELECT id,kind,text FROM inbox_items WHERE session_id=? AND status='open' AND kind IN ('question','approval','feature_idea') AND id<>? ORDER BY created_at,rowid`, session, except)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.OpenAskRef{}
+	for rows.Next() {
+		var r protocol.OpenAskRef
+		if err := rows.Scan(&r.ID, &r.Kind, &r.Text); err != nil {
+			return nil, err
+		}
+		r.Text = askFirstLine(r.Text, 100)
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // RequestWrittenApproval adds the exact action to the owner's inbox.

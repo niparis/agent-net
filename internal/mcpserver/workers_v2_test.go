@@ -156,6 +156,23 @@ func TestOwnerAskSentToTheTeamLeadSaysSo(t *testing.T) {
 	}
 }
 
+// A new ask does not retire the earlier ones. The result lists the session's
+// other open asks so the agent can name one with replaces.
+func TestOwnerAskResultListsOtherOpenAsks(t *testing.T) {
+	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
+		return json.RawMessage(`{"item":{"id":"i_2","kind":"approval","status":"open"},"other_open":[{"id":"i_1","kind":"approval","text":"delete the data"}]}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "approval", "text": "spend", "recommendation": "yes"}})
+	if err != nil || res.IsError {
+		t.Fatalf("%v %+v", err, res)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	others, _ := out["other_open"].([]any)
+	if out["item_id"] != "i_2" || len(others) != 1 || !strings.Contains(fmt.Sprint(others[0]), "i_1") || !strings.Contains(fmt.Sprint(out["note"]), "replaces") {
+		t.Fatalf("result: %#v", out)
+	}
+}
+
 func TestRedesignedOwnerKindsAndTextJSON(t *testing.T) {
 	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
 		return json.RawMessage(`{"item_id":"i_1","kind":"question","state":"open"}`), nil
