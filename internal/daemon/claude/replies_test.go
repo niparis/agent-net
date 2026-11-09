@@ -191,9 +191,8 @@ func TestClaudeRepliesSameSenderTwoConversationsDoNotCross(t *testing.T) {
 	if p := r.answer(second, "second answer"); p.ParentID != "m_second" {
 		t.Fatalf("answer to the second conversation = %+v, want parent m_second", p)
 	}
-	if got := r.book.closedAs("m_first"); got != daemon.ReplyMatchExact {
-		t.Fatalf("m_first closed as %q", got)
-	}
+	eventually(t, "m_first closed", func() bool { return r.book.closedAs("m_first") == daemon.ReplyMatchExact })
+	eventually(t, "m_second closed", func() bool { return r.book.closedAs("m_second") == daemon.ReplyMatchExact })
 	// Both are answered now: a further message in the conversation has no
 	// request to answer, and stays in the conversation.
 	if p := r.answer(second, "one more thing"); p.ParentID != "" || p.ConversationID != "c_second" || p.Type != protocol.TypeReply {
