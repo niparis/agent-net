@@ -1765,13 +1765,25 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return st.GraphForRef(p.Ref)
 		}
 		return st.visibleGraph(p.All)
-	case "standing.list", "standing.save", "standing.remove":
+	case "standing.list", "standing.save", "standing.remove", "standing.update", "standing.search", "standing.history":
 		q, err := decode[protocol.StandingOrdersRequest](raw)
 		if err != nil {
 			return nil, reject("bad %s", typ)
 		}
-		var res protocol.StandingOrdersResult
+		res := protocol.StandingOrdersResult{Orders: []protocol.StandingOrder{}}
 		switch typ {
+		case "standing.search":
+			res.Orders, err = st.SearchStandingOrders(q)
+			return res, err
+		case "standing.history":
+			res.History, err = st.StandingOrderHistory(q.ID)
+			return res, err
+		case "standing.update":
+			o, e := st.UpdateStandingOrder(q)
+			if e != nil {
+				return nil, e
+			}
+			res.Order = &o
 		case "standing.save":
 			o, err := st.SaveStandingOrder(q)
 			if err != nil {

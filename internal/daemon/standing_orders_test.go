@@ -114,3 +114,48 @@ func TestStandingOrdersAreInTheCTOFirstTurn(t *testing.T) {
 		t.Fatalf("first turn lacks the orders: %q", first)
 	}
 }
+
+func TestStandingOrdersFirstTurnBudget(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startWorkerNode(t, g, shortSet, nil)
+	pin := true
+	for _, q := range []protocol.StandingOrdersRequest{
+		{Text: "pinned instruction", Pinned: &pin},
+		{Text: strings.Repeat("oversized ", 500)},
+	} {
+		if _, err := g.gw.Store().SaveStandingOrder(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := n.d.ctoFirstTurn(context.Background(), "hello")
+	if !strings.Contains(got, "- pinned instruction\n") || !strings.Contains(got, "1 more standing orders: search them with cto_standing_orders search\n\nhello") {
+		t.Fatal(got)
+	}
+}
+
+func TestStandingOrdersSearchUpdateHistoryTool(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startWorkerNode(t, g, shortSet, nil)
+	if err := n.d.registerCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	saved := standingCall(t, n.d, map[string]any{"action": "save", "text": "coordinate workers", "tags": []string{"teams"}, "pinned": true})
+	id := saved.Order.ID
+	found := standingCall(t, n.d, map[string]any{"action": "search", "query": "workers", "tag": "teams"})
+	if len(found.Orders) != 1 || found.Orders[0].Snippet == "" {
+		t.Fatalf("%+v", found)
+	}
+	updated := standingCall(t, n.d, map[string]any{"action": "update", "order_id": id, "text": "coordinate teams", "pinned": false, "tags": []string{}})
+	if updated.Order.Pinned || len(updated.Order.Tags) != 0 {
+		t.Fatalf("%+v", updated)
+	}
+	history := standingCall(t, n.d, map[string]any{"action": "history", "order_id": id})
+	if len(history.History) != 1 || history.History[0].Text != "coordinate workers" {
+		t.Fatalf("%+v", history)
+	}
+	standingCall(t, n.d, map[string]any{"action": "remove", "order_id": id})
+	history = standingCall(t, n.d, map[string]any{"action": "history", "order_id": id})
+	if len(history.History) != 2 {
+		t.Fatalf("%+v", history)
+	}
+}

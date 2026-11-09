@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -31,8 +32,15 @@ func (m Model) standingItems() []settingsItem {
 		if o.Source == protocol.StandingSourceCTO {
 			who = "CTO"
 		}
+		mark := ""
+		if o.Pinned {
+			mark = "* "
+		}
+		if len(o.Tags) > 0 {
+			mark += "[" + strings.Join(o.Tags, ", ") + "] "
+		}
 		when := time.Unix(o.SavedAt, 0).Format("2006-01-02")
-		items = append(items, settingsItem{6, "standing", i, fmt.Sprintf("%s  (%s, %s)", sanitize(o.Text), who, when)})
+		items = append(items, settingsItem{6, "standing", i, fmt.Sprintf("%s  (%s, %s)", mark+sanitize(o.Text), who, when)})
 	}
 	return items
 }

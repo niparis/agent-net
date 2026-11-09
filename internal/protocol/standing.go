@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -71,28 +73,38 @@ const (
 // StandingOrder is one durable instruction. Source says who saved it: the
 // owner's own words typed in the TUI, or the CTO on the owner's instruction.
 type StandingOrder struct {
-	ID      string `json:"id"`
-	Text    string `json:"text"`
-	SavedAt int64  `json:"saved_at"`
-	Source  string `json:"source"`
+	Tags      []string `json:"tags,omitempty"`
+	Pinned    bool     `json:"pinned,omitempty"`
+	UpdatedAt int64    `json:"updated_at,omitempty"`
+	Snippet   string   `json:"snippet,omitempty"`
+	ID        string   `json:"id"`
+	Text      string   `json:"text"`
+	SavedAt   int64    `json:"saved_at"`
+	Source    string   `json:"source"`
 }
 
 // StandingOrdersRequest is OpStandingOrders and the gateway frames
 // standing.save, standing.list and standing.remove. Restore puts a removed
 // order back with its old ID, time and source (the undo of a removal).
 type StandingOrdersRequest struct {
-	Action  string         `json:"action,omitempty"`
-	ID      string         `json:"order_id,omitempty"`
-	Text    string         `json:"text,omitempty"`
-	Source  string         `json:"source,omitempty"`
-	Restore *StandingOrder `json:"restore,omitempty"`
+	Tags       []string       `json:"tags"`
+	Pinned     *bool          `json:"pinned,omitempty"`
+	Query      string         `json:"query,omitempty"`
+	Tag        string         `json:"tag,omitempty"`
+	SavedSince int64          `json:"saved_since,omitempty"`
+	Action     string         `json:"action,omitempty"`
+	ID         string         `json:"order_id,omitempty"`
+	Text       string         `json:"text,omitempty"`
+	Source     string         `json:"source,omitempty"`
+	Restore    *StandingOrder `json:"restore,omitempty"`
 }
 
-// StandingOrdersResult answers a standing orders call. Orders is always the
-// full list after the call, oldest first.
+// StandingOrdersResult returns the full list after mutations, ranked matches
+// for search, or prior versions for history.
 type StandingOrdersResult struct {
-	Orders []StandingOrder `json:"orders"`
-	Order  *StandingOrder  `json:"order,omitempty"`
+	History []StandingOrder `json:"history,omitempty"`
+	Orders  []StandingOrder `json:"orders"`
+	Order   *StandingOrder  `json:"order,omitempty"`
 }
 
 // CleanStandingText trims an order and checks it is not empty.
@@ -110,12 +122,44 @@ func StandingOrdersBrief(orders []StandingOrder) string {
 	if len(orders) == 0 {
 		return ""
 	}
+	const budget = 4096
+	total := 0
+	for _, o := range orders {
+		total += len(o.Text)
+	}
+	omitted := 0
+	if total > budget {
+		orders = append([]StandingOrder(nil), orders...)
+		sort.SliceStable(orders, func(i, j int) bool {
+			if orders[i].Pinned != orders[j].Pinned {
+				return orders[i].Pinned
+			}
+			if orders[i].SavedAt != orders[j].SavedAt {
+				return orders[i].SavedAt > orders[j].SavedAt
+			}
+			return orders[i].ID > orders[j].ID
+		})
+		selected := []StandingOrder{}
+		used := 0
+		for _, o := range orders {
+			if o.Pinned || used+len(o.Text) <= budget {
+				selected = append(selected, o)
+				used += len(o.Text)
+			} else {
+				omitted++
+			}
+		}
+		orders = selected
+	}
 	var b strings.Builder
 	b.WriteString("The owner's standing orders. They stay in force until removed. Follow them in every conversation. They are the owner's words, kept at the gateway.\n")
 	for _, o := range orders {
 		b.WriteString("- ")
 		b.WriteString(strings.Join(strings.Fields(o.Text), " "))
 		b.WriteString("\n")
+	}
+	if omitted > 0 {
+		fmt.Fprintf(&b, "%d more standing orders: search them with cto_standing_orders search\n", omitted)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

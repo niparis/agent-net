@@ -1239,6 +1239,20 @@ CREATE TABLE IF NOT EXISTS worker_defect_auto (
  defect_id INTEGER PRIMARY KEY, change_id TEXT NOT NULL, kind TEXT NOT NULL,
  revision INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS worker_defect_auto_key ON worker_defect_auto(change_id, kind, revision);
+`, `
+-- Standing order search columns
+CREATE TABLE IF NOT EXISTS standing_order_history(order_id TEXT NOT NULL,text TEXT NOT NULL,tags TEXT NOT NULL,changed_at INTEGER NOT NULL);
+CREATE VIRTUAL TABLE IF NOT EXISTS standing_orders_fts USING fts5(text,tags,content='standing_orders',content_rowid='rowid');
+CREATE TRIGGER IF NOT EXISTS standing_orders_ai AFTER INSERT ON standing_orders BEGIN
+ INSERT INTO standing_orders_fts(rowid,text,tags) VALUES(new.rowid,new.text,new.tags); END;
+CREATE TRIGGER IF NOT EXISTS standing_orders_ad AFTER DELETE ON standing_orders BEGIN
+ INSERT INTO standing_orders_fts(standing_orders_fts,rowid,text,tags) VALUES('delete',old.rowid,old.text,old.tags);
+ INSERT INTO standing_order_history VALUES(old.id,old.text,old.tags,unixepoch()); END;
+CREATE TRIGGER IF NOT EXISTS standing_orders_au AFTER UPDATE ON standing_orders BEGIN
+ INSERT INTO standing_orders_fts(standing_orders_fts,rowid,text,tags) VALUES('delete',old.rowid,old.text,old.tags);
+ INSERT INTO standing_orders_fts(rowid,text,tags) VALUES(new.rowid,new.text,new.tags);
+ INSERT INTO standing_order_history VALUES(old.id,old.text,old.tags,unixepoch()); END;
+INSERT INTO standing_orders_fts(standing_orders_fts) VALUES('rebuild');
 `}
 
 // teamAsksToMigration adds the team setting that sends a member's questions
@@ -1387,6 +1401,19 @@ func (s *Store) migrate() error {
 		tx, err := s.db.Begin()
 		if err != nil {
 			return err
+		}
+		if strings.Contains(migrations[i], "Standing order search columns") {
+			for _, col := range []struct{ name, decl string }{{"tags", "TEXT NOT NULL DEFAULT '[]'"}, {"pinned", "INTEGER NOT NULL DEFAULT 0"}, {"updated_at", "INTEGER NOT NULL DEFAULT 0"}} {
+				var has int
+				err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info('standing_orders') WHERE name=?", col.name).Scan(&has)
+				if err == nil && has == 0 {
+					_, err = tx.Exec("ALTER TABLE standing_orders ADD COLUMN " + col.name + " " + col.decl)
+				}
+				if err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
 		}
 		if strings.Contains(migrations[i], "session close column") {
 			var has int
