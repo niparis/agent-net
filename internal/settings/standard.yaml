@@ -966,7 +966,7 @@ settings:
     kind: advice
     type: text
     levels: [network]
-    default: "- **Keep messages short and complete.** Put the point in the first line. Give the context it cannot see (repo, branch, files). One message per need. No status updates, thanks or acknowledgements."
+    default: "- **Keep messages short and complete.** Put the point in the first line. Give the context it cannot see (repo, branch, files). One message per need. No status updates, thanks or acknowledgements. A status report or FYI that needs no answer is sent with type \"notification\"; agent_message_reply with ack: true closes a request that needs no answer."
     live: true
   - key: guidance.announce_task
     rows: [13]

@@ -115,12 +115,13 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 		protocol.ReplyOutcome
 		MessageID      string `json:"message_id"`
 		Body           string `json:"body"`
+		Ack            bool   `json:"ack"`
 		AsOwner        bool   `json:"as_owner"`
 		IdempotencyKey string `json:"idempotency_key"`
 		Receipt        bool   `json:"receipt"`
 	}
 	if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
-		return nil, errors.New("reply needs message_id and body")
+		return nil, errors.New("reply needs message_id")
 	}
 	if p.AsOwner {
 		if sid != d.ctoSessionID() {
@@ -130,6 +131,9 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 	p.ReplyOutcome, err = protocol.CleanOutcome(p.ReplyOutcome)
 	if err != nil {
 		return nil, err
+	}
+	if p.Ack && p.Outcome != "" {
+		return nil, errors.New("ack cannot be combined with outcome")
 	}
 	data, err := d.call(ctx, "query.message", protocol.QueryMessage{MessageID: p.MessageID})
 	if err != nil {
@@ -141,8 +145,12 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 	if err := json.Unmarshal(data, &parent); err != nil {
 		return nil, err
 	}
+	kind := protocol.TypeReply
+	if p.Ack {
+		kind = protocol.TypeAck
+	}
 	data, err = d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: parent.Message.From,
-		Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey, ReplyOutcome: p.ReplyOutcome, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner})
+		Type: kind, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey, ReplyOutcome: p.ReplyOutcome, Ack: p.Ack, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner})
 	if err == nil && sid == d.ctoSessionID() {
 		err = d.recordCTOSent(ctx, parent.Message.From, p.AsOwner)
 	}

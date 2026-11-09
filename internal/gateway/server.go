@@ -2957,6 +2957,11 @@ func (g *Gateway) flushLeadRequests(ctx context.Context) {
 // connected and the session is online. It reports whether it started a wake of
 // an offline recipient.
 func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) bool {
+	// An ack closes a request without a delivery: nothing is sent and nothing
+	// is woken.
+	if m.Type == protocol.TypeAck {
+		return false
+	}
 	a, ok, err := g.store.Agent(m.To)
 	if err != nil || !ok || a.Harness == "bot" {
 		return false

@@ -305,7 +305,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		style = lipgloss.NewStyle().Foreground(roleCTO)
 	} else if state == protocol.StateFailed || state == protocol.StateExpired {
 		style = lipgloss.NewStyle().Foreground(roleError)
-	} else if typ == protocol.TypeRequest && state != protocol.StateReplied {
+	} else if typ == protocol.TypeRequest && state != protocol.StateReplied && state != protocol.StateAcknowledged {
 		style = lipgloss.NewStyle().Foreground(roleWarning)
 	}
 	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(marker)-ansi.StringWidth(suffix)-1, 0)
@@ -323,7 +323,7 @@ func (m Model) workerConversationLine(c messageConversation, w int, selected boo
 	}
 	status := m.workerThreadStatus(c)
 	statusStyle := workerStatusStyle(status)
-	if status != "done" && status != "failed" && status != "blocked" && status != "timed out" && len(c.items) > 0 && c.typ == protocol.TypeRequest && c.state != protocol.StateReplied && c.state != protocol.StateFailed && c.state != protocol.StateExpired {
+	if status != "done" && status != "failed" && status != "blocked" && status != "timed out" && len(c.items) > 0 && c.typ == protocol.TypeRequest && c.state != protocol.StateReplied && c.state != protocol.StateAcknowledged && c.state != protocol.StateFailed && c.state != protocol.StateExpired {
 		statusStyle = lipgloss.NewStyle().Foreground(roleWarning)
 	}
 	caller := m.partyName(c.workerOwner, c.fromName)

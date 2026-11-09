@@ -22,7 +22,7 @@ const remindableRequest = ` FROM messages q
  AND dst.status='idle' AND dst.last_active>0 AND dst.last_active<?
  AND src.harness<>'owner' AND dst.harness NOT IN ('owner','cto')
  AND NOT EXISTS (SELECT 1 FROM owner_settings c WHERE c.key='cto_session' AND c.value=q.recipient)
- AND NOT EXISTS (SELECT 1 FROM messages r WHERE r.conversation_id=q.conversation_id AND r.type='reply' AND r.created_at>=q.created_at)
+ AND NOT EXISTS (SELECT 1 FROM messages r WHERE r.conversation_id=q.conversation_id AND r.type IN ` + answeredTypesSQL + ` AND r.created_at>=q.created_at)
  AND COALESCE((SELECT e.rule FROM graph_edges e
  WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dp.project,'')
  AND e.target<>'' AND (e.source=COALESCE(NULLIF(src.repo_project,''),sp.project,'') OR e.source='*')
@@ -118,7 +118,7 @@ func (s *Store) reminderCounts(c *protocol.SessionCounts) error {
 	c.PendingRemindersOffline = len(s.reminderOffline)
 	s.reminderMu.Unlock()
 	return s.db.QueryRow(`SELECT COUNT(*),COALESCE(SUM(EXISTS(
- SELECT 1 FROM messages r WHERE r.conversation_id=q.conversation_id AND r.type='reply'
+ SELECT 1 FROM messages r WHERE r.conversation_id=q.conversation_id AND r.type IN `+answeredTypesSQL+`
  AND r.sender=q.recipient AND r.recipient=q.sender AND r.created_at>=n.created_at AND r.created_at<=n.created_at+?
  )),0) FROM messages n JOIN messages q ON q.id=n.parent_id WHERE n.sender='agent-net' AND n.idem_key LIKE 'reminder:%'`, int64(30*time.Minute)).Scan(&c.PendingReminders, &c.PendingAnsweredAfterReminder)
 }

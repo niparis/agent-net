@@ -109,6 +109,7 @@ func replyCall(ctx context.Context, run func(context.Context, string, any) (any,
 	params := map[string]any{
 		"message_id":      in.Message,
 		"body":            in.Body,
+		"ack":             in.Ack,
 		"outcome":         outcome.Outcome,
 		"reason":          outcome.Reason,
 		"redirect_to":     outcome.RedirectTo,

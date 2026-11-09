@@ -23,12 +23,16 @@ const (
 	StateReplied    = "replied"
 	StateFailed     = "failed"
 	StateExpired    = "expired"
+	// StateAcknowledged is a request closed by an ack: answered, but with
+	// nothing delivered to the sender.
+	StateAcknowledged = "acknowledged"
 )
 
 // Message types.
 const (
 	TypeRequest      = "request"
 	TypeReply        = "reply"
+	TypeAck          = "ack"
 	TypeNotification = "notification"
 )
 
@@ -569,7 +573,12 @@ type (
 		// Order asks the gateway to label the message an order. The gateway
 		// checks that the sender is above the recipient in the tree. If not,
 		// the message goes as a request.
-		Order    bool   `json:"order,omitempty"`
+		Order bool `json:"order,omitempty"`
+		// Ack closes the parent request without sending anything to its
+		// sender. The body may be empty and an outcome is refused. The request
+		// then counts as answered for reminders, the TUI's wait/owes view and
+		// idle checks.
+		Ack      bool   `json:"ack,omitempty"`
 		Type     string `json:"message_type"`
 		Body     string `json:"body"`
 		ParentID string `json:"parent_message_id,omitempty"`

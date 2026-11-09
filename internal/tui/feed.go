@@ -31,12 +31,13 @@ const (
 // Message states in the order a message passes through them. A later event
 // never moves a message back (a late "delivered" after "replied" keeps "replied").
 var stateRank = map[string]int{
-	protocol.StateStored:     0,
-	protocol.StateDispatched: 1,
-	protocol.StateDelivered:  2,
-	protocol.StateReplied:    3,
-	protocol.StateFailed:     4,
-	protocol.StateExpired:    4,
+	protocol.StateStored:       0,
+	protocol.StateDispatched:   1,
+	protocol.StateDelivered:    2,
+	protocol.StateReplied:      3,
+	protocol.StateAcknowledged: 3,
+	protocol.StateFailed:       4,
+	protocol.StateExpired:      4,
 }
 
 // feedItem is one line of the message feed. A message is one item whose state

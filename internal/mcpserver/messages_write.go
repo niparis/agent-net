@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -37,6 +38,7 @@ type messageSendIn struct {
 type messageReplyIn struct {
 	Message        string `json:"message"`
 	Body           string `json:"body"`
+	Ack            bool   `json:"ack,omitempty"`
 	Outcome        string `json:"outcome,omitempty"`
 	Reason         string `json:"reason,omitempty"`
 	RedirectTo     string `json:"redirect_to,omitempty"`
@@ -114,6 +116,12 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 		})
 		if err != nil {
 			return toolError(fmt.Errorf("%v. accept needs no extra fields; reject and escalate need reason; redirect needs reason and redirect_to; escalate needs recommendation", err))
+		}
+		if in.Ack && outcome.Outcome != "" {
+			return toolError(errors.New("ack cannot be combined with outcome; ack closes the request without a reply"))
+		}
+		if strings.TrimSpace(in.Body) == "" && !in.Ack {
+			return toolError(errors.New(`body is empty; pass a body, or set ack: true to close a request that needs no answer`))
 		}
 		out, err := replyCall(ctx, run, in, outcome, true)
 		if err != nil {
