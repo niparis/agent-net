@@ -13,6 +13,7 @@ func TestAskSortArgsValidate(t *testing.T) {
 		{Ask: "i_1", Result: AskSortMerge, Into: "i_2", Reason: "same"},
 		{Ask: "i_1", Result: AskSortSend, To: "s_2", Reason: "theirs"},
 		{Ask: "i_1", Result: AskSortOwner, Priority: 3, WhyYou: "only you can decide", Reason: "decision"},
+		{Result: AskSortList},
 	}
 	for _, a := range ok {
 		if err := a.Validate(); err != nil {

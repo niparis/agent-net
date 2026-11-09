@@ -89,6 +89,135 @@ func sendDueChief(t *testing.T, s *Store, now time.Time) (string, bool) {
 	return b.body, true
 }
 
+// A gateway that starts with a chief already set adopts the open asks that
+// were never offered to it, so a restart does not strand them.
+func TestGatewayStartAdoptsAsksForExistingChief(t *testing.T) {
+	path := seededStorePath(t, "gw.db")
+	base := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.now = func() time.Time { return base }
+	s.tempFolders = []string{}
+	chief, asker := twoSessions(t, s)
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id IN (?,?)`, chief, asker); err != nil {
+		t.Fatal(err)
+	}
+	id := chiefAsk(t, s, asker, "Opened with no chief?")
+	if next := askNext(t, s, id); next != protocol.AskNextOwner {
+		t.Fatalf("before the chief existed, next = %q, want owner", next)
+	}
+	// The setting was already stored when the gateway stopped, so SetChief
+	// does not run this time. Only the start reconcile can adopt the ask.
+	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`, chiefSessionKey, chief, base.UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if next := askNext(t, s, id); next != protocol.AskNextChief {
+		t.Fatalf("after a start with a chief set, next = %q, want chief", next)
+	}
+	var chiefAt int64
+	if err := s.db.QueryRow(`SELECT chief_at FROM inbox_items WHERE id=?`, id).Scan(&chiefAt); err != nil {
+		t.Fatal(err)
+	}
+	if chiefAt == 0 {
+		t.Fatal("the adopted ask has no chief_at, so its fallback clock is wrong")
+	}
+}
+
+// A chief set after asks are already open takes them over: the chief can sort
+// them, and the ones it has not sorted leave in a batch. An answered ask stays
+// with the owner.
+func TestChiefSetAdoptsAsksOpenBeforeIt(t *testing.T) {
+	s, c := newTestStore(t)
+	chief, asker := twoSessions(t, s)
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id IN (?,?)`, chief, asker); err != nil {
+		t.Fatal(err)
+	}
+	var node string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	first := chiefAsk(t, s, asker, "Was this open before the chief?")
+	second := chiefAskKind(t, s, asker, "feature_idea", "And this one?")
+	answered := chiefAskKind(t, s, asker, "approval", "The owner already answered this")
+	if _, err := s.AnswerInbox(answered, "yes"); err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, first); next != protocol.AskNextOwner {
+		t.Fatalf("before a chief, next = %q, want owner", next)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	// The live failure: an ask opened before chief_set was not waiting for the
+	// chief, so this sort was refused.
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: first, Result: protocol.AskSortClose, Reason: "answered in the thread"}}); err != nil {
+		t.Fatalf("sort an ask opened before chief_set: %v", err)
+	}
+	sorts, err := s.ChiefSorts(c.now().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sorts) != 1 || sorts[0].Ask != first {
+		t.Fatalf("chief sorts = %+v, want the sort of %s", sorts, first)
+	}
+	if next := askNext(t, s, second); next != protocol.AskNextChief {
+		t.Fatalf("an ask opened before chief_set is next %q, want chief", next)
+	}
+	if next := askNext(t, s, answered); next != protocol.AskNextOwner {
+		t.Fatalf("the answered ask is next %q, want owner", next)
+	}
+	c.t = c.t.Add(31 * time.Second)
+	body, sent := sendDueChief(t, s, c.now())
+	if !sent {
+		t.Fatal("no batch went to the chief for asks opened before it")
+	}
+	if !strings.Contains(body, second) || strings.Contains(body, first) {
+		t.Fatalf("batch body = %q, want %s and not the sorted %s", body, second, first)
+	}
+}
+
+// agent_ask_sort with result list returns the asks that wait for the chief,
+// with their fields and age. A sort still needs an ask and a reason.
+func TestAskSortListsWaitingAsks(t *testing.T) {
+	s, c, chief, asker, node := chiefRig(t)
+	closed := chiefAsk(t, s, asker, "Already sorted?")
+	sortAsk(t, s, chief, node, protocol.AskSortArgs{Ask: closed, Result: protocol.AskSortClose, Reason: "done"})
+	waiting := chiefAskKind(t, s, asker, "feature_idea", "Still waiting?")
+	onOwner := chiefAskKind(t, s, asker, "approval", "With the owner?")
+	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who=? WHERE id=?`, protocol.AskNextOwner, onOwner); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(90 * time.Minute)
+	res, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Result: protocol.AskSortList}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result != protocol.AskSortList || len(res.Asks) != 1 {
+		t.Fatalf("list = %+v, want one waiting ask", res)
+	}
+	got := res.Asks[0]
+	if got.Ask != waiting || got.Kind != "feature_idea" || got.From != "bob" || got.Text != "Still waiting?" || got.Recommendation != "yes" || got.Age != "1h30m" {
+		t.Fatalf("listed ask = %+v", got)
+	}
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: asker, AskSortArgs: protocol.AskSortArgs{Result: protocol.AskSortList}}); err == nil {
+		t.Fatal("a non-chief listed the asks")
+	}
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Result: protocol.AskSortClose}}); err == nil {
+		t.Fatal("a sort without an ask and a reason was accepted")
+	}
+}
+
 // A new ask with a live chief goes to the chief, and the chief gets one task
 // message for it after the quiet window. The chief's own asks go to the owner.
 func TestChiefRoutesAskAndSendsOneTask(t *testing.T) {

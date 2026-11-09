@@ -2608,6 +2608,12 @@ returns with the session, its name and whether it is online.
 **Routing.** A new ask goes to the chief (`next = chief`, the Desk shows it as
 "with someone") when a chief is online and the ask does not name another next.
 The chief's own asks go to the owner. A team lead's route is not changed.
+When `chief.set` names a chief, and when the gateway starts with a chief set,
+every open ask that still waits for the owner and was never offered to a chief
+is marked as waiting for it. That includes asks opened before the chief
+existed. An ask the owner already answered, one that was already sorted, or one
+already sent to a session is left alone. The 15 minute fallback starts when the
+ask starts waiting for the chief, so an adopted ask gets its full time.
 
 **Batches.** Asks for the chief leave as one message from `agent-net` after a
 quiet window of 5 seconds since the newest ask, and never later than 30 seconds
@@ -2622,7 +2628,7 @@ minutes, so it is with you: ...` or `The chief of staff is offline, ...`).
 
 **`agent_ask_sort {ask, result, reason, into, to, priority, why_you}`** (any
 agent session; only the live chief may call it, others are refused). `reason` is
-required, up to 300 characters.
+required for every sort, up to 300 characters. `result` is one of:
 
 - `close`: the ask closes; its answer is `chief: <reason>`.
 - `merge`: the ask closes; `into` is another open ask, which gets the line
@@ -2631,6 +2637,10 @@ required, up to 300 characters.
   naming the chief. The ask waits on that session.
 - `owner`: the ask goes to the owner. `priority` (1 to 3) and `why_you` are
   required.
+- `list`: reads only. It returns the open asks that wait for the chief, oldest
+  first, in `asks`: `ask`, `kind`, `from`, `text`, `recommendation` and `age`
+  (such as `12m` or `3h05m`). `ask` and `reason` are not needed. It changes no
+  ask.
 
 Every sort writes one `ask_sorts` row with the ask as it was (`prev_next`,
 `prev_status`, `prev_answer`, `prev_answered_at`) and one Desk log line with

@@ -43,13 +43,13 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff only: sort one ask that waits for you. close it, merge it into another open ask, send it to a session, or send it to the owner with priority and why_you. Sort only; never answer for the owner.",
+    "description": "Chief of staff only: sort one ask that waits for you (close, merge, send, owner), or list them with result list. Sort only; never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "ask": {
           "type": "string",
-          "description": "The ask id from the chief's batch message."
+          "description": "The ask id from the chief's list or batch. Not needed for list."
         },
         "result": {
           "type": "string",
@@ -57,9 +57,10 @@ export const TOOL_CATALOG = [
             "close",
             "merge",
             "send",
-            "owner"
+            "owner",
+            "list"
           ],
-          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it."
+          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you."
         },
         "into": {
           "type": "string",
@@ -72,7 +73,7 @@ export const TOOL_CATALOG = [
         "reason": {
           "type": "string",
           "maxLength": 300,
-          "description": "Why, in one line."
+          "description": "Why, in one line. Required for a sort, not for list."
         },
         "priority": {
           "type": "integer",
@@ -87,9 +88,7 @@ export const TOOL_CATALOG = [
         }
       },
       "required": [
-        "ask",
-        "result",
-        "reason"
+        "result"
       ],
       "additionalProperties": false
     },

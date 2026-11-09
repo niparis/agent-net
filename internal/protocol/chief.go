@@ -16,6 +16,9 @@ const (
 	AskSortMerge = "merge"
 	AskSortSend  = "send"
 	AskSortOwner = "owner"
+	// AskSortList is the read-only result: list the asks that wait for the
+	// chief, and change none of them.
+	AskSortList = "list"
 	// AskSortUndo is the result of an undo: a row in the sort history that puts
 	// an ask back the way it was before the newest sort.
 	AskSortUndo = "undo"
@@ -75,7 +78,7 @@ const MaxChiefReasonChars = 300
 
 // AskSortArgs are the arguments of agent_ask_sort. Ask is the ask id. Into is
 // the target of merge, To the session of send, Priority (1 to 3) and WhyYou
-// the owner's line for owner.
+// the owner's line for owner. Result list is read-only and needs nothing else.
 type AskSortArgs struct {
 	Ask      string `json:"ask"`
 	Result   string `json:"result"`
@@ -88,6 +91,9 @@ type AskSortArgs struct {
 
 // Validate checks a sort before the gateway looks at the ask.
 func (a AskSortArgs) Validate() error {
+	if a.Result == AskSortList {
+		return nil
+	}
 	if strings.TrimSpace(a.Ask) == "" {
 		return errors.New("ask is required")
 	}
@@ -115,7 +121,7 @@ func (a AskSortArgs) Validate() error {
 			return errors.New("owner needs why_you: why the owner must decide")
 		}
 	default:
-		return errors.New("result must be close, merge, send or owner")
+		return errors.New("result must be close, merge, send, owner or list")
 	}
 	return nil
 }
@@ -126,12 +132,25 @@ type AskSortRequest struct {
 	AskSortArgs
 }
 
-// AskSortResult says where the ask is after the sort.
+// AskSortResult says where the ask is after the sort. A list result puts the
+// asks that wait for the chief in Asks and changes nothing.
 type AskSortResult struct {
-	Ask    string `json:"ask"`
-	Result string `json:"result"`
-	Next   string `json:"next"`
-	State  string `json:"state"`
+	Ask    string       `json:"ask"`
+	Result string       `json:"result"`
+	Next   string       `json:"next"`
+	State  string       `json:"state"`
+	Asks   []AskWaiting `json:"asks,omitempty"`
+}
+
+// AskWaiting is one ask that waits for the chief in a list. Age is short and
+// human: 45s, 12m, 3h05m or 2d04h.
+type AskWaiting struct {
+	Ask            string `json:"ask"`
+	Kind           string `json:"kind"`
+	From           string `json:"from"`
+	Text           string `json:"text"`
+	Recommendation string `json:"recommendation"`
+	Age            string `json:"age"`
 }
 
 // AskSort is one row of an ask's sort history. The Prev fields hold the ask as
