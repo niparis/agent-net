@@ -72,13 +72,13 @@ Where a principle is a goal that the product does not fully meet yet, it says so
 
 14. **Know exactly what your agents run.** Every skill, prompt and agent
     definition a session runs can be read in agent-net and traced to its
-    source and version. Skills can today; prompts and agent definitions are
-    on the roadmap.
+    source and version. Imported skills can today; prompts and agent
+    definitions are on the roadmap.
 15. **One source for each capability.** A skill, prompt or agent definition
     has one stored source. Copies can be rebuilt from it, and a copy that
     changes is either brought back or saved as a new version, never left as a
-    silent fork. Today skills work this way; prompts and agent definitions
-    are on the roadmap.
+    silent fork. Today imported skills work this way; prompts and agent
+    definitions are on the roadmap.
 
 ## Building it
 
