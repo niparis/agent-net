@@ -1253,7 +1253,47 @@ CREATE TRIGGER IF NOT EXISTS standing_orders_au AFTER UPDATE ON standing_orders 
  INSERT INTO standing_orders_fts(rowid,text,tags) VALUES(new.rowid,new.text,new.tags);
  INSERT INTO standing_order_history VALUES(old.id,old.text,old.tags,unixepoch()); END;
 INSERT INTO standing_orders_fts(standing_orders_fts) VALUES('rebuild');
-`}
+`, ownerJudgmentsMigration}
+
+const ownerJudgmentsMigration = `
+-- Owner judgment store: extend standing_orders with kind, area and ref, and backfill answered owner asks.
+DROP TRIGGER IF EXISTS standing_orders_ad;
+DROP TRIGGER IF EXISTS standing_orders_au;
+CREATE TRIGGER IF NOT EXISTS standing_orders_ad AFTER DELETE ON standing_orders BEGIN
+ INSERT INTO standing_orders_fts(standing_orders_fts,rowid,text,tags) VALUES('delete',old.rowid,old.text,old.tags);
+ INSERT INTO standing_order_history(order_id,text,tags,changed_at,kind,area,ref) VALUES(old.id,old.text,old.tags,unixepoch(),old.kind,old.area,old.ref); END;
+CREATE TRIGGER IF NOT EXISTS standing_orders_au AFTER UPDATE ON standing_orders BEGIN
+ INSERT INTO standing_orders_fts(standing_orders_fts,rowid,text,tags) VALUES('delete',old.rowid,old.text,old.tags);
+ INSERT INTO standing_orders_fts(rowid,text,tags) VALUES(new.rowid,new.text,new.tags);
+ INSERT INTO standing_order_history(order_id,text,tags,changed_at,kind,area,ref) VALUES(old.id,old.text,old.tags,unixepoch(),old.kind,old.area,old.ref); END;
+INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref)
+SELECT
+ 'so_b_' || lower(hex(randomblob(8))),
+ 'Q: ' || trim(i.text) || ' / A: ' || trim(i.answer),
+ COALESCE(NULLIF(i.answered_at / 1000000000, 0), i.created_at / 1000000000, unixepoch()),
+ 'owner',
+ '[]',
+ 0,
+ 0,
+ 'answer',
+ COALESCE(
+   NULLIF((SELECT c.project FROM delivery_changes c WHERE c.id=i.about_id AND i.about_kind='change'), ''),
+   NULLIF((SELECT c.project FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id WHERE d.item_id=i.id), ''),
+   CASE WHEN i.about_kind IN ('project', 'repo', 'team') THEN NULLIF(i.about_id, '') ELSE NULL END,
+   NULLIF((SELECT p.project FROM profiles p WHERE p.session_id=i.session_id), ''),
+   NULLIF((SELECT s.repo_project FROM sessions s WHERE s.id=i.session_id), ''),
+   NULLIF((SELECT s.repo_id FROM sessions s WHERE s.id=i.session_id), ''),
+   NULLIF(i.node, ''),
+   ''
+ ),
+ i.id
+FROM inbox_items i
+WHERE i.status IN ('answered', 'approved', 'refused') AND i.answer<>''
+  AND NOT EXISTS (SELECT 1 FROM standing_orders WHERE ref=i.id)
+ORDER BY COALESCE(NULLIF(i.answered_at, 0), i.created_at) DESC
+LIMIT 500;
+INSERT INTO standing_orders_fts(standing_orders_fts) VALUES('rebuild');
+`
 
 // teamAsksToMigration adds the team setting that sends a member's questions
 // for the owner to its team lead (decision 0100).
@@ -1408,6 +1448,26 @@ func (s *Store) migrate() error {
 				err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info('standing_orders') WHERE name=?", col.name).Scan(&has)
 				if err == nil && has == 0 {
 					_, err = tx.Exec("ALTER TABLE standing_orders ADD COLUMN " + col.name + " " + col.decl)
+				}
+				if err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "Owner judgment store") {
+			for _, col := range []struct{ table, name, decl string }{
+				{"standing_orders", "kind", "TEXT NOT NULL DEFAULT 'order'"},
+				{"standing_orders", "area", "TEXT NOT NULL DEFAULT ''"},
+				{"standing_orders", "ref", "TEXT NOT NULL DEFAULT ''"},
+				{"standing_order_history", "kind", "TEXT NOT NULL DEFAULT 'order'"},
+				{"standing_order_history", "area", "TEXT NOT NULL DEFAULT ''"},
+				{"standing_order_history", "ref", "TEXT NOT NULL DEFAULT ''"},
+			} {
+				var has int
+				err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?", col.table, col.name).Scan(&has)
+				if err == nil && has == 0 {
+					_, err = tx.Exec("ALTER TABLE " + col.table + " ADD COLUMN " + col.name + " " + col.decl)
 				}
 				if err != nil {
 					tx.Rollback()

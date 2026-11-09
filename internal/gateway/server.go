@@ -1801,6 +1801,22 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return res, nil
+	case "judgment.find":
+		q, err := decode[protocol.JudgmentsFindRequest](raw)
+		if err != nil {
+			return nil, reject("bad judgment.find")
+		}
+		items, err := st.FindJudgments(q)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"items": items, "total": len(items)}, nil
+	case "judgment.add":
+		q, err := decode[protocol.JudgmentAddRequest](raw)
+		if err != nil {
+			return nil, reject("bad judgment.add")
+		}
+		return st.AddJudgment(q)
 	case "playbook.set":
 		p, err := decode[protocol.PlaybookSetRequest](raw)
 		if err != nil {

@@ -755,7 +755,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		return lc.waitingCall(client, ls, raw)
 	}
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
-		"nodes": true, "restart": true, "projects": true, "events": true, protocol.OpWorkers: true}
+		"nodes": true, "restart": true, "projects": true, "events": true, protocol.OpWorkers: true, "judgments_find": true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
 		method != "project_add" && method != "project_remove" &&
 		method != protocol.OpSend && method != protocol.OpWorkerStart && method != protocol.OpWorkerStop &&
@@ -1018,6 +1018,13 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, errors.New("bad projects params")
 		}
 		return d.call(ctx, "query.projects", p)
+
+	case "judgments_find":
+		var q protocol.JudgmentsFindRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad judgments_find params")
+		}
+		return d.judgmentsFind(ctx, q)
 
 	case "settings_read":
 		var q protocol.SettingsReadRequest

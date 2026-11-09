@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -374,6 +375,11 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	if _, err = tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
 		return item, err
 	}
+	if actor == "owner" {
+		if err = s.recordOwnerAnswerTx(tx, item, answer); err != nil {
+			return item, err
+		}
+	}
 	var sender string
 	err = tx.QueryRow(`SELECT o.id FROM sessions o JOIN sessions r ON r.node_id=o.node_id WHERE r.id=? AND o.harness=? LIMIT 1`, item.SessionID, protocol.OwnerHarness).Scan(&sender)
 	if err == sql.ErrNoRows {
@@ -440,4 +446,64 @@ func (s *Store) agentNames() (map[string]string, error) {
 		names[id] = name
 	}
 	return names, rows.Err()
+}
+
+func (s *Store) askArea(tx *sql.Tx, item protocol.InboxItem) string {
+	var aboutKind, aboutID string
+	_ = tx.QueryRow(`SELECT about_kind, about_id FROM inbox_items WHERE id=?`, item.ID).Scan(&aboutKind, &aboutID)
+
+	var project string
+	if aboutKind == "change" && aboutID != "" {
+		_ = tx.QueryRow(`SELECT project FROM delivery_changes WHERE id=?`, aboutID).Scan(&project)
+		if project != "" {
+			return project
+		}
+	}
+	_ = tx.QueryRow(`SELECT c.project FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id WHERE d.item_id=?`, item.ID).Scan(&project)
+	if project != "" {
+		return project
+	}
+
+	if (aboutKind == "project" || aboutKind == "repo" || aboutKind == "team") && aboutID != "" {
+		return aboutID
+	}
+
+	if item.SessionID != "" {
+		var repoProject, profProject, repoID string
+		_ = tx.QueryRow(`SELECT COALESCE(s.repo_project,''), COALESCE(p.project,''), COALESCE(s.repo_id,'')
+			FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, item.SessionID).Scan(&repoProject, &profProject, &repoID)
+		if repoProject != "" {
+			return repoProject
+		}
+		if profProject != "" {
+			return profProject
+		}
+		if repoID != "" {
+			return repoID
+		}
+
+		var teamName string
+		_ = tx.QueryRow(`SELECT t.name FROM teams t JOIN team_members tm ON tm.team_id=t.id JOIN sessions s ON s.id=?
+			WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id AND s.repo_id<>'') OR (tm.member_kind='agent' AND tm.member_id=s.agent_id AND s.agent_id<>'')) LIMIT 1`,
+			item.SessionID).Scan(&teamName)
+		if teamName != "" {
+			return teamName
+		}
+	}
+
+	if item.Node != "" && !strings.HasPrefix(item.Node, "n_") {
+		return item.Node
+	}
+
+	return ""
+}
+
+func (s *Store) recordOwnerAnswerTx(tx *sql.Tx, item protocol.InboxItem, answer string) error {
+	area := s.askArea(tx, item)
+	text := fmt.Sprintf("Q: %s / A: %s", strings.TrimSpace(item.Text), strings.TrimSpace(answer))
+	now := s.now().Unix()
+	id := protocol.NewID("so")
+	_, err := tx.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		id, text, now, protocol.StandingSourceOwner, "[]", 0, 0, protocol.StandingKindAnswer, area, item.ID)
+	return err
 }

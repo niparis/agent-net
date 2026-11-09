@@ -54,6 +54,7 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 			"Call it again whenever your task changes.",
 			"AGENTS.md automatically",
 			"When you stop to wait for my decision or answer, call `agent_owner_ask` with the question in one line",
+			"Before asking the owner, search what he already decided: agent_owner_judgments_find",
 		} {
 			if !strings.Contains(b, want) {
 				t.Errorf("%s block lacks %q", v, want)

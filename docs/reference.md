@@ -326,6 +326,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | CTO read | Source and detail |
 |---|---|
 | `agent_sessions_find`, `agent_session_get` | Sessions and one session's full profile, as for an agent |
+| `agent_owner_judgments_find` | The owner's judgments (orders, rules, answers, corrections) by query, area or kind |
 | `agent_machines_find`, `agent_machine_get` | Machines, and one machine's health, load and busiest processes, or its models, quotas, track record or playbook |
 | `agent_machine_log` | Redacted daemon or gateway log on one online machine |
 | `agent_projects_find` | Public projects and where they live |
@@ -3485,17 +3486,28 @@ ticker waits are excluded. Step-task dispatches are counted each minute.
 When the count exceeds 60, the gateway logs
 `event=step.dispatch_count level=debug count=<count>`.
 
-Standing orders live in the gateway's standing_orders table: id, text,
-saved_at, source, tags (a JSON list), pinned and updated_at. An external-content
+Standing orders and owner judgments live in the gateway's standing_orders table: id, text,
+saved_at, source, tags (a JSON list), pinned, updated_at, kind (order, rule, answer,
+correction), area (optional repo or team name) and ref (optional ask id). An external-content
 standing_orders_fts FTS5 index follows text and tags through triggers.
-standing_order_history records order_id, text, tags and changed_at before each
+standing_order_history records order_id, text, tags, kind, area, ref and changed_at before each
 update or removal. Search returns up to 20 matches, ranked by bm25, with a
 snippet; tag, source and saved_since narrow the results. The CTO tool accepts
 save, list, read, update, remove, search and history. Update accepts text, tags
 and pinned independently.
 
+When the owner answers, approves or refuses an ask with an answer string (actor owner),
+an answer row (kind answer) is automatically saved with text "Q: <question> / A: <answer>",
+area set to the ask's project or team, and ref set to the ask id. Automatic closes,
+CTO resolutions and chief actions do not record answer rows. The operator method
+judgment_add records corrections or rules with kind, text, area and ref.
+
+All agents can search the owner's past decisions with agent_owner_judgments_find
+(query, area, kind, limit). Judgments are queried on demand rather than injected
+into every prompt.
+
 At the start of each CTO conversation, orders enter the system prompt or
-precede the first owner message, depending on the harness. Up to 4096 bytes of
-order text load as before. Above that budget, pinned orders always load, then
+precede the first owner message, depending on the harness. Only orders and rules
+load. Up to 4096 bytes of order text load as before. Above that budget, pinned orders always load, then
 the newest orders that fit. Pins may exceed the budget. Omitted orders add:
 "N more standing orders: search them with cto_standing_orders search".

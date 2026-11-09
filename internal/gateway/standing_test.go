@@ -70,11 +70,14 @@ func TestStandingOrdersOldMigration(t *testing.T) {
  ALTER TABLE standing_orders DROP COLUMN tags;
  ALTER TABLE standing_orders DROP COLUMN pinned;
  ALTER TABLE standing_orders DROP COLUMN updated_at;
+ ALTER TABLE standing_orders DROP COLUMN kind;
+ ALTER TABLE standing_orders DROP COLUMN area;
+ ALTER TABLE standing_orders DROP COLUMN ref;
  INSERT INTO standing_orders VALUES('old','legacy workers',1,'owner');`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec("UPDATE schema_version SET version=?", len(migrations)-1); err != nil {
+	if _, err = s.db.Exec("UPDATE schema_version SET version=?", len(migrations)-2); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.migrate(); err != nil {
