@@ -304,7 +304,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_graph_read",
-    "description": "Read the graph: nodes with their charters and rules, and the edges between them. Give node to read one node and its edges. If a repo and an agent share the name, both come back, labelled by kind and ref. typed: true with a ref reads one.",
+    "description": "Read the graph: nodes with their charters and rules, and the edges between them. Give node to read one node and its edges. A shared name returns every node.",
     "inputSchema": {
       "type": "object",
       "properties": {
