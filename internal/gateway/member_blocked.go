@@ -119,6 +119,23 @@ func clockText(unixNano int64, now time.Time) string {
 	return t.Format("2006-01-02 15:04") + " UTC"
 }
 
+// waitsOnOwnWorker tells whether an announce that reads as blocked only does
+// so because of a progress answer that names a wait ("more: waiting on worker
+// rework of PR #79"), and the member has a running worker it started. Then the
+// member waits on its own worker, which is normal progress, so nothing is sent.
+// A "blocked" answer, a wait set in the waiting field, and a member with no
+// running worker still count.
+func (s *Store) waitsOnOwnWorker(p protocol.ProfileAnnounce, task string) (bool, error) {
+	if protocol.CleanWaiting(p.Waiting) != nil {
+		return false, nil
+	}
+	if kind, _ := parseCheckAnswer(strings.TrimSpace(task)); kind != "more" {
+		return false, nil
+	}
+	n, err := s.owningWorkerCount(p.SessionID)
+	return n > 0, err
+}
+
 // blockedMemberNotice runs after an announce was stored. When the session is a
 // member of a team with asks_to=lead and the announce reads as blocked or
 // waiting, it tells the team lead once: a message from agent-net with who, the
@@ -144,6 +161,9 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 	text, blocked := blockedReading(task, p.Waiting)
 	if !blocked {
 		_, err := s.db.Exec(`DELETE FROM member_blocked_notices WHERE session_id=?`, p.SessionID)
+		return nil, err
+	}
+	if own, err := s.waitsOnOwnWorker(p, task); err != nil || own {
 		return nil, err
 	}
 	team, leadAgent, pinned, ok, err := s.askerTeam(p.SessionID)
