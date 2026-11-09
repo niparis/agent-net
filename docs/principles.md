@@ -70,13 +70,23 @@ Where a principle is a goal that the product does not fully meet yet, it says so
     read as a few sentences, with the raw calls one step away. A summary helps
     you watch; it never replaces review of the result.
 
+14. **Know exactly what your agents run.** Every skill, prompt and agent
+    definition a session runs can be read in agent-net and traced to its
+    source and version. Skills can today; prompts and agent definitions are
+    on the roadmap.
+15. **One source for each capability.** A skill, prompt or agent definition
+    has one stored source. Copies can be rebuilt from it, and a copy that
+    changes is either brought back or saved as a new version, never left as a
+    silent fork. Today skills work this way; prompts and agent definitions
+    are on the roadmap.
+
 ## Building it
 
-14. **Performance first.** A feature that loads the gateway or the machine
+16. **Performance first.** A feature that loads the gateway or the machine
     heavily is not done. Load data for what is on screen, push changes instead
     of polling, and measure before and after.
-15. **Smart defaults, everything changeable.** Every role, model, rule and
+17. **Smart defaults, everything changeable.** Every role, model, rule and
     screen setting has a working default and can be changed by you, and most
     of them by the CTO for you.
-16. **Plain words.** Docs, messages and screens use short sentences and
+18. **Plain words.** Docs, messages and screens use short sentences and
     concrete words.

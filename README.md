@@ -49,6 +49,8 @@
 
 agent-net turns the Claude Code, Codex, OpenCode, Pi and Antigravity sessions on your laptop and your servers into one swarm. Each session owns a project. Leads answer for their teams. Workers take single tasks on the cheapest model that fits. Everyone follows the rules you write, and anything that needs you lands on one Desk.
 
+It pays off when you run agents on many repositories, in more than one harness or on more than one machine. With one or two repositories and one agent, you do not need it.
+
 ### Your two supervisors
 
 - **The CTO** runs the swarm on your instructions. Ask it in plain words to add a machine, write a charter, set a rule between two projects or start a worker. Every change it makes leaves an undo.
@@ -106,6 +108,7 @@ More agents need structure, not more prompting.
 - A **charter** is a few lines per project: what it does, what it accepts, what it refuses, and when it must ask you. *"homelab-agent refuses to touch the encryption key."*
 - A **team** groups projects that belong together, with one session as its **lead**. Members ask the lead first, not you. *"The forge team's lead may merge its members' work."*
 - **Rules between projects** say who may ask whom, and whether a request runs, waits for you or is refused.
+- **Shared skills and MCP servers.** With many repositories, skills end up copied everywhere, duplicated and out of date. The Tools tab lists every skill and MCP server on every machine. The gateway stores numbered versions of each skill, and you switch a skill on per project; agent-net makes and tracks the copies. A shared MCP server runs on one machine and its tools reach agents on all of them.
 - **Steps** carry every change through accept, test, merge, release and verify, with a review for riskier changes. Each step has an owner, and the evidence is recorded. Start a merger session and it owns tests and merges for the project; until then the caller owns them.
 
 Example. The forge lead approves a deploy. A member asks the operator agent to deploy and quotes the approval. agent-net shows the operator the original message, so it deploys without asking again. You see one line in the log.
@@ -259,6 +262,7 @@ To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to dele
 
 - **Load notices.** The gateway already counts every call by origin and method. When one origin's load rises far above its usual level, tell the agent that can fix it, with the top method, instead of waiting for someone to read the counters.
 - **Typed decision models for bounded choices.** Several of agent-net's decisions pick from a fixed set: which worker model takes a brief, how hard a brief is, what the chief of staff does with an ask, whether an idle session should be compacted. Decision models such as Jev (TypeSafe AI) return such a choice with a calibrated probability, in one pass and without generated text. The plan is to run one beside the current picker first, in shadow, and compare its picks with real outcomes before it decides anything. Notes: [docs/design/decision-models.md](docs/design/decision-models.md).
+- **Skills, prompts and agents from one source.** Manage slash-command prompts and subagent definitions the way skills are managed today, and when someone improves a deployed copy, save it as the next version and offer it to every other copy instead of letting it drift.
 - **Tool summaries.** A cheap model turns a worker's tool calls into a few plain sentences as it works, shown in the workers panel and the web console, with the raw calls one step away.
 - **The web console, next steps.** The Desk, sessions, changes, messages, graph, workers and the CTO panel are live in a browser and on the phone. Next: load only what each screen shows, and push changes instead of refreshing.
 - **Worker skill injection.** Give each worker the skills and MCP servers its job needs when it starts, chosen from its brief and its project, instead of every worker getting everything installed on the machine.
