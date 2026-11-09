@@ -24,10 +24,10 @@ Ask an agent to "do this with a worker". It calls `agent_worker_start` with a br
 3. **Starts the worker** in its own git worktree by default. Codex workers and Antigravity workers are sandboxed by their own sandboxes. On Linux, Pi and OpenCode workers run in bubblewrap when the project has the OS sandbox on (`workers.os_sandbox` in `node.json`). Otherwise Claude, Pi and OpenCode workers run with the owner's permissions. See the roadmap.
 4. **Sends a notice** when the worker ends: status, run time, tokens, the branch and the diff stat, with the worker's report. The calling agent reviews the diff and runs the tests before it tells you the work is done.
 
-Each task's outcome is recorded: nudges, fixes, and bugs found later. Those outcomes become a score for each model at each difficulty level. The Quality sub-tab (tab 3, then Tab) shows the picker exactly as it decides: one row per model, one column per difficulty level, and for the selected cell its score, its range, the number of tasks and the verdict (allowed or not).
+Each task's outcome is recorded: nudges, fixes, and bugs found later. Those outcomes become a score for each model at each difficulty level. The Quality sub-tab (tab 3, then Tab twice) shows the picker exactly as it decides: one row per registered worker profile, one column per difficulty level that has tasks, and for the selected cell its score, its range, the number of tasks and the verdict (allowed or not).
 
 <p align="center">
-  <img alt="Quality sub-tab: the worker picker grid, one row per model with its benchmark score, one column per difficulty level from 1.00 to 4.67, cells coloured by score, and the selected cell's score, range and verdict below" src="img/tui/quality.png" width="900">
+  <img alt="Quality sub-tab: the worker picker grid, one row per model with its benchmark score, one column per difficulty level from 1.00 to 4.67, cells coloured by score, and the selected cell's score, range and verdict below" src="img/tui/quality.svg" width="900">
 </p>
 
 Quotas (tab 3) also shows each subscription's usage and pace. Details: [workers](reference.md#workers), [subscription quotas](reference.md#subscription-quotas).

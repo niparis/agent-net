@@ -106,7 +106,7 @@ You do not choose a model for each job. The swarm does, and it learns from every
 
 Example. A brief to fix a flaky test is judged normal. Three models qualify; the picker gives it to Gemini Flash because the Claude subscription is ahead of pace this week. The worker finishes in nine minutes and its caller rates it 3 of 5 for a sloppy report. Next week that model's normal-level score is a little lower, and a similar job may go elsewhere.
 
-The Quality sub-tab (TUI tab 3, then Tab) shows the picker as it decides: each model's score at every difficulty level, the models allowed at that level, and the number of tasks behind each score.
+The Quality sub-tab (TUI tab 3, then Tab twice) shows the picker as it decides: each registered model's score at each difficulty level that has tasks, the number of tasks behind each score, and whether the selected model is allowed at that level.
 
 ## Smart defaults, and you can change almost anything
 
