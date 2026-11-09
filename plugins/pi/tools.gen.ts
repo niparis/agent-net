@@ -43,13 +43,20 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff only: sort one ask that waits for you. close it, merge it into another open ask, send it to a session, or send it to the owner with priority and why_you. Sort only; never answer for the owner.",
+    "description": "Chief of staff only: sort one ask that waits for you. close it, merge it into another open ask, send it to a session, or send it to the owner with priority and why_you. detail: \"full\" reads one ask instead: the whole question, recommendation, options, source, route and exact draft or learned payload. Sort only; never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "ask": {
           "type": "string",
           "description": "The ask id from the chief's batch message."
+        },
+        "detail": {
+          "type": "string",
+          "enum": [
+            "full"
+          ],
+          "description": "full: read this one ask in full instead of sorting it. Leave result and the sort fields empty."
         },
         "result": {
           "type": "string",
@@ -87,9 +94,7 @@ export const TOOL_CATALOG = [
         }
       },
       "required": [
-        "ask",
-        "result",
-        "reason"
+        "ask"
       ],
       "additionalProperties": false
     },
@@ -988,7 +993,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_judgments_find",
-    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections. Returns ranked matches with snippets when given a query, or the newest first.",
+    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1010,12 +1015,22 @@ export const TOOL_CATALOG = [
           ],
           "description": "Optional judgment kind: order, rule, answer, correction."
         },
+        "marks": {
+          "type": "boolean",
+          "description": "Only the owner's Desk marks (didn't need me, should have asked me), each with its ask, the whole question and the chief's disposition."
+        },
         "limit": {
           "type": "integer",
           "minimum": 1,
           "maximum": 100,
           "default": 20,
           "description": "Maximum rows in this page, up to 100."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Rows to skip, for the next page."
         }
       },
       "required": [],

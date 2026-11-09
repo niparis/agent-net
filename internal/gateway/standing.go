@@ -4,10 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/redact"
 )
 
 // StandingOrders lists the owner's standing orders and rules, oldest first.
@@ -183,13 +185,23 @@ func addJudgment(db execer, now time.Time, q protocol.JudgmentAddRequest) (proto
 }
 
 // FindJudgments searches the owner judgment store: ranked rows with snippets
-// when query is provided, or the newest first when no query is given.
+// when query is provided, or the newest first when no query is given. With
+// Marks it returns only the owner's Desk marks and adds the ask, its whole
+// question and what the chief did with it to each row.
 func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.StandingOrder, error) {
 	limit := q.Limit
 	if limit <= 0 {
 		limit = 20
 	} else if limit > 100 {
 		limit = 100
+	}
+	offset := q.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	kind, area := q.Kind, q.Area
+	if q.Marks {
+		kind, area = protocol.StandingKindCorrection, chiefJudgmentArea
 	}
 
 	var rows *sql.Rows
@@ -201,30 +213,112 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
    AND (?='' OR o.area=?)
    AND (?='' OR o.kind=?)
    AND (?='' OR o.ref=?)
- ORDER BY bm25(standing_orders_fts), o.id LIMIT ?`, q.Query, q.Area, q.Area, q.Kind, q.Kind, q.Ref, q.Ref, limit)
+ ORDER BY bm25(standing_orders_fts), o.id LIMIT ? OFFSET ?`, q.Query, area, area, kind, kind, q.Ref, q.Ref, limit, offset)
 	} else {
 		rows, err = s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,'' AS snippet,o.kind,o.area,o.ref
  FROM standing_orders o
  WHERE (?='' OR o.area=?)
    AND (?='' OR o.kind=?)
    AND (?='' OR o.ref=?)
- ORDER BY o.pinned DESC, o.saved_at DESC, o.rowid DESC LIMIT ?`, q.Area, q.Area, q.Kind, q.Kind, q.Ref, q.Ref, limit)
+ ORDER BY o.pinned DESC, o.saved_at DESC, o.rowid DESC LIMIT ? OFFSET ?`, area, area, kind, kind, q.Ref, q.Ref, limit, offset)
 	}
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []protocol.StandingOrder{}
 	for rows.Next() {
 		var o protocol.StandingOrder
 		var tags string
 		if err := rows.Scan(&o.ID, &o.Text, &o.SavedAt, &o.Source, &tags, &o.Pinned, &o.UpdatedAt, &o.Snippet, &o.Kind, &o.Area, &o.Ref); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		json.Unmarshal([]byte(tags), &o.Tags)
 		out = append(out, o)
 	}
-	return out, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if q.Marks {
+		for i := range out {
+			if err := s.addMarkAsk(&out[i]); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
+// addMarkAsk puts the ask on a mark row: its whole question, the mark and the
+// chief's latest disposition.
+func (s *Store) addMarkAsk(o *protocol.StandingOrder) error {
+	o.Ask = o.Ref
+	o.Mark = markFromText(o.Text)
+	if o.Mark != "" {
+		o.MarkText = markWords(o.Mark)
+	}
+	if o.Ask != "" {
+		var text string
+		err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE id=?`, o.Ask).Scan(&text)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		o.Question = redact.SecretValues(text)
+		if o.Disposition, err = s.askDisposition(o.Ask); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// markFromText names the mark that MarkAsk wrote into the judgment text. It is
+// empty for an older row that does not carry one.
+func markFromText(text string) string {
+	switch {
+	case strings.HasPrefix(text, "The owner did not need ask "):
+		return protocol.MarkDidntNeedMe
+	case strings.HasPrefix(text, "The owner should have been asked about ask "):
+		return protocol.MarkShouldHaveAsked
+	}
+	return ""
+}
+
+// askDisposition is the chief's latest sort of one ask in one line.
+func (s *Store) askDisposition(id string) (string, error) {
+	var result, into, to, reason, why string
+	var priority int
+	err := s.db.QueryRow(`SELECT result,into_id,to_id,reason,priority,why_you FROM ask_sorts WHERE ask_id=? ORDER BY id DESC LIMIT 1`, id).
+		Scan(&result, &into, &to, &reason, &priority, &why)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "not sorted", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	line := ""
+	switch result {
+	case protocol.AskSortClose:
+		line = "closed: " + reason
+	case protocol.AskSortMerge:
+		line = "merged into " + into + ": " + reason
+	case protocol.AskSortSend:
+		line = "sent to " + nextName(s.db, to) + ": " + reason
+	case protocol.AskSortOwner:
+		line = "sent to the owner"
+		if priority > 0 {
+			line += fmt.Sprintf(" (priority %d)", priority)
+		}
+		if why != "" {
+			line += ": " + why
+		}
+	case protocol.AskSortUndo:
+		line = "undone: " + reason
+	default:
+		line = result + ": " + reason
+	}
+	return redact.SecretValues(line), nil
 }
 
 // BackfillAnswerJudgments backfills answered owner asks into standing_orders as kind=answer (newest 500).

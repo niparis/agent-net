@@ -13,6 +13,7 @@ func TestAskSortArgsValidate(t *testing.T) {
 		{Ask: "i_1", Result: AskSortMerge, Into: "i_2", Reason: "same"},
 		{Ask: "i_1", Result: AskSortSend, To: "s_2", Reason: "theirs"},
 		{Ask: "i_1", Result: AskSortOwner, Priority: 3, WhyYou: "only you can decide", Reason: "decision"},
+		{Ask: "i_1", Detail: "full"},
 	}
 	for _, a := range ok {
 		if err := a.Validate(); err != nil {
@@ -28,6 +29,9 @@ func TestAskSortArgsValidate(t *testing.T) {
 		{Ask: "i_1", Result: AskSortOwner, Priority: 0, WhyYou: "x", Reason: "x"},
 		{Ask: "i_1", Result: AskSortOwner, Priority: 4, WhyYou: "x", Reason: "x"},
 		{Ask: "i_1", Result: AskSortOwner, Priority: 1, Reason: "x"},
+		{Ask: "i_1", Detail: "short"},
+		{Ask: "i_1", Detail: "full", Result: AskSortClose, Reason: "x"},
+		{Ask: "i_1", Detail: "full", Priority: 1},
 	}
 	for _, a := range bad {
 		if err := a.Validate(); err == nil {

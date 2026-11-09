@@ -60,6 +60,39 @@ func Secrets(s string) string {
 	return s
 }
 
+// SecretValues returns s with the values that look like secrets replaced by
+// Mask. Unlike Secrets it keeps an ordinary word after a name, so a line such
+// as "token: nodes" keeps the token's scope readable while a token value is
+// masked. Use it where the text must stay useful to a reader, such as the full
+// read of an ask.
+func SecretValues(s string) string {
+	if s == "" {
+		return s
+	}
+	s = privateKey.ReplaceAllString(s, Mask)
+	s = authHeader.ReplaceAllString(s, "${1}"+Mask)
+	s = bearer.ReplaceAllString(s, "${1}"+Mask)
+	s = urlCreds.ReplaceAllString(s, "${1}"+Mask+"${3}")
+	s = keyValue.ReplaceAllStringFunc(s, func(m string) string {
+		sub := keyValue.FindStringSubmatch(m)
+		if len(sub) > 2 && looksLikeSecret(sub[2]) {
+			return sub[1] + Mask
+		}
+		return m
+	})
+	s = strings.TrimPrefix(secretFlag.ReplaceAllStringFunc(" "+s, func(m string) string {
+		sub := secretFlag.FindStringSubmatch(m)
+		if len(sub) > 3 && looksLikeSecret(sub[3]) {
+			return sub[1] + sub[2] + Mask
+		}
+		return m
+	}), " ")
+	for _, re := range tokenPatterns {
+		s = re.ReplaceAllString(s, Mask)
+	}
+	return s
+}
+
 // ArgsLen is how many characters of a command line are kept.
 const ArgsLen = 80
 

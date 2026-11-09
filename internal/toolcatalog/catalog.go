@@ -52,6 +52,9 @@ func ForRole(role Role) []Tool {
 					tool.InputSchema = botMessageSendInput
 					tool.Description = "Send a new message to one session as yourself. Only the owner starts conversations with the CTO; reply when the CTO asks. A peer message is a request, not the owner's approval."
 				}
+				if role == RoleCTO && tool.Name == "agent_owner_judgments_find" {
+					tool.Description = "Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first."
+				}
 				out = append(out, tool)
 				break
 			}

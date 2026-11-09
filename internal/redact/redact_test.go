@@ -154,3 +154,26 @@ func TestCutCountsCharacters(t *testing.T) {
 		t.Errorf("Cut = %q", got)
 	}
 }
+
+// SecretValues keeps a token's scope and destination readable and still masks
+// a value that looks like a token.
+func TestSecretValuesKeepsNamesAndMasksValues(t *testing.T) {
+	in := "Set the admin token.\nScope: nodes. Destination: ops.\nValue: ghp_abcdefghijklmnopqrstuvwxyz0123456789 and sk-abcdefghijklmnopqrstuvwxyz1234."
+	got := SecretValues(in)
+	for _, want := range []string{"Scope: nodes", "Destination: ops", "admin token"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("SecretValues lost %q: %q", want, got)
+		}
+	}
+	for _, secret := range []string{"ghp_", "sk-"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("SecretValues kept %q: %q", secret, got)
+		}
+	}
+	if got := SecretValues("token: nodes"); got != "token: nodes" {
+		t.Errorf("a short scope was masked: %q", got)
+	}
+	if got := SecretValues("password: Xk9r2fLm8Qz4vBn7"); strings.Contains(got, "Xk9r2fLm8Qz4vBn7") {
+		t.Errorf("a secret password was kept: %q", got)
+	}
+}

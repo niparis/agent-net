@@ -75,7 +75,8 @@ const MaxChiefReasonChars = 300
 
 // AskSortArgs are the arguments of agent_ask_sort. Ask is the ask id. Into is
 // the target of merge, To the session of send, Priority (1 to 3) and WhyYou
-// the owner's line for owner.
+// the owner's line for owner. Detail "full" reads one ask instead of sorting
+// it, and then only Ask is required.
 type AskSortArgs struct {
 	Ask      string `json:"ask"`
 	Result   string `json:"result"`
@@ -84,12 +85,23 @@ type AskSortArgs struct {
 	Reason   string `json:"reason"`
 	Priority int    `json:"priority,omitempty"`
 	WhyYou   string `json:"why_you,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 }
 
-// Validate checks a sort before the gateway looks at the ask.
+// Validate checks a sort before the gateway looks at the ask. A full read is
+// one ask id and nothing else.
 func (a AskSortArgs) Validate() error {
 	if strings.TrimSpace(a.Ask) == "" {
 		return errors.New("ask is required")
+	}
+	if a.Detail != "" {
+		if a.Detail != "full" {
+			return errors.New(`detail must be "full"`)
+		}
+		if a.Result != "" || a.Into != "" || a.To != "" || a.Reason != "" || a.Priority != 0 || a.WhyYou != "" {
+			return errors.New("detail full reads one ask: leave result and the sort fields empty")
+		}
+		return nil
 	}
 	if strings.TrimSpace(a.Reason) == "" {
 		return errors.New("reason is required: say why in one line")
@@ -126,12 +138,60 @@ type AskSortRequest struct {
 	AskSortArgs
 }
 
-// AskSortResult says where the ask is after the sort.
+// AskSortResult says where the ask is after the sort. A full read has Result
+// "read" and fills Full.
 type AskSortResult struct {
-	Ask    string `json:"ask"`
-	Result string `json:"result"`
-	Next   string `json:"next"`
-	State  string `json:"state"`
+	Ask    string   `json:"ask"`
+	Result string   `json:"result"`
+	Next   string   `json:"next"`
+	State  string   `json:"state"`
+	Full   *AskFull `json:"full,omitempty"`
+}
+
+// AskFull is one ask read in full: the whole question, the recommendation and
+// options, the source, the route and sort history, the owner's answer and the
+// exact payload of a charter draft or a learned proposal. Secret values are
+// masked; a token's scope and destination are kept.
+type AskFull struct {
+	ID             string              `json:"id"`
+	Kind           string              `json:"kind"`
+	Status         string              `json:"status"`
+	State          string              `json:"state"`
+	Question       string              `json:"question"`
+	Detail         string              `json:"detail,omitempty"`
+	Options        []string            `json:"options,omitempty"`
+	Recommendation string              `json:"recommendation,omitempty"`
+	FromSession    string              `json:"from_session"`
+	FromName       string              `json:"from_name,omitempty"`
+	FromKind       string              `json:"from_kind,omitempty"`
+	Node           string              `json:"node,omitempty"`
+	AboutKind      string              `json:"about_kind,omitempty"`
+	AboutID        string              `json:"about_id,omitempty"`
+	AboutTitle     string              `json:"about_title,omitempty"`
+	Next           string              `json:"next"`
+	NextName       string              `json:"next_name,omitempty"`
+	WhyYou         string              `json:"why_you,omitempty"`
+	Priority       int                 `json:"priority,omitempty"`
+	CreatedAt      time.Time           `json:"created_at"`
+	Answer         string              `json:"answer,omitempty"`
+	AnsweredAt     time.Time           `json:"answered_at,omitempty"`
+	SourceRef      string              `json:"source_ref,omitempty"`
+	Routing        []AskSort           `json:"routing,omitempty"`
+	Charter        []CharterDraftField `json:"charter,omitempty"`
+	Learned        *LearnedSuggestion  `json:"learned,omitempty"`
+}
+
+// CharterDraftField is one proposed charter value in a draft-charter ask.
+type CharterDraftField struct {
+	ID        int64     `json:"id"`
+	Level     string    `json:"level"`
+	Scope     string    `json:"scope"`
+	Attr      string    `json:"attr"`
+	Value     string    `json:"value"`
+	Source    string    `json:"source,omitempty"`
+	Status    string    `json:"status"`
+	DraftedBy string    `json:"drafted_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // AskSort is one row of an ask's sort history. The Prev fields hold the ask as
