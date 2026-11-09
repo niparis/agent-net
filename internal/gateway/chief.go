@@ -411,6 +411,53 @@ func (s *Store) waitingChiefAsks(q askDB, now time.Time) ([]protocol.AskWaiting,
 	return out, rows.Err()
 }
 
+// askSortStats counts one sorter's sorts by result in one grouped query. Since
+// and until are Unix seconds, fromID and toID sort ids; zero leaves a bound
+// open. FirstID and LastID cover every row that matched.
+func askSortStats(q askDB, sorter string, since, until, fromID, toID int64) (protocol.AskSortStats, error) {
+	out := protocol.AskSortStats{Sorter: sorter, Counts: map[string]int{}}
+	query := `SELECT result, COUNT(*), MIN(id), MAX(id) FROM ask_sorts WHERE sorter=?`
+	args := []any{sorter}
+	if since > 0 {
+		query += ` AND at>=?`
+		args = append(args, since*int64(time.Second))
+	}
+	if until > 0 {
+		query += ` AND at<=?`
+		args = append(args, until*int64(time.Second))
+	}
+	if fromID > 0 {
+		query += ` AND id>=?`
+		args = append(args, fromID)
+	}
+	if toID > 0 {
+		query += ` AND id<=?`
+		args = append(args, toID)
+	}
+	query += ` GROUP BY result ORDER BY result`
+	rows, err := q.Query(query, args...)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var result string
+		var n int
+		var first, last int64
+		if err := rows.Scan(&result, &n, &first, &last); err != nil {
+			return out, err
+		}
+		out.Counts[result] = n
+		if out.FirstID == 0 || first < out.FirstID {
+			out.FirstID = first
+		}
+		if last > out.LastID {
+			out.LastID = last
+		}
+	}
+	return out, rows.Err()
+}
+
 // askAge is how old an ask is, in a short form: 45s, 12m, 3h05m or 2d04h.
 func askAge(now, created time.Time) string {
 	d := now.Sub(created)
@@ -463,7 +510,15 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		if err != nil {
 			return out, none, err
 		}
-		out = protocol.AskSortResult{Result: protocol.AskSortList, Asks: asks}
+		sorter := strings.TrimSpace(q.Sorter)
+		if sorter == "" {
+			sorter = q.SessionID
+		}
+		stats, err := askSortStats(tx, sorter, q.Since, q.Until, q.FromID, q.ToID)
+		if err != nil {
+			return out, none, err
+		}
+		out = protocol.AskSortResult{Result: protocol.AskSortList, Asks: asks, Stats: &stats}
 		return out, none, nil
 	}
 	var a askSortRow

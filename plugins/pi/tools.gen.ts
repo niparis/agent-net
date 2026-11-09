@@ -43,7 +43,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff only: sort one ask that waits for you (close, merge, send, owner), list them with result list, or read one in full with detail full. Sort only; never answer for the owner.",
+    "description": "Chief of staff only: sort one ask that waits for you (close, merge, send, owner), list them with result list and the sorter's counts by result (optional sorter, since/until or id range), or read one in full with detail full. Sort only; never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -67,7 +67,7 @@ export const TOOL_CATALOG = [
             "owner",
             "list"
           ],
-          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you."
+          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you, with the sorter's counts by result."
         },
         "into": {
           "type": "string",
@@ -92,6 +92,26 @@ export const TOOL_CATALOG = [
           "type": "string",
           "maxLength": 300,
           "description": "For owner: why only the owner can decide it."
+        },
+        "sorter": {
+          "type": "string",
+          "description": "For list: count the sorts of this sorter (a session id, or owner). Defaults to the caller."
+        },
+        "since": {
+          "type": "integer",
+          "description": "For list: only count sorts at or after this Unix time in seconds."
+        },
+        "until": {
+          "type": "integer",
+          "description": "For list: only count sorts at or before this Unix time in seconds."
+        },
+        "from_id": {
+          "type": "integer",
+          "description": "For list: only count sorts with an id at or after this."
+        },
+        "to_id": {
+          "type": "integer",
+          "description": "For list: only count sorts with an id at or before this."
         }
       },
       "required": [],

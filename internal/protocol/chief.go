@@ -78,9 +78,10 @@ const MaxChiefReasonChars = 300
 
 // AskSortArgs are the arguments of agent_ask_sort. Ask is the ask id. Into is
 // the target of merge, To the session of send, Priority (1 to 3) and WhyYou
-// the owner's line for owner. Result list is read-only and needs nothing else.
-// Detail "full" reads one ask instead of sorting it, and then only Ask is
-// required.
+// the owner's line for owner. Result list is read-only and needs nothing else,
+// but it may name Sorter and narrow the counts to a time range (Since, Until
+// in Unix seconds) or an id range (FromID, ToID). Detail "full" reads one ask
+// instead of sorting it, and then only Ask is required.
 type AskSortArgs struct {
 	Ask      string `json:"ask"`
 	Result   string `json:"result"`
@@ -90,12 +91,29 @@ type AskSortArgs struct {
 	Priority int    `json:"priority,omitempty"`
 	WhyYou   string `json:"why_you,omitempty"`
 	Detail   string `json:"detail,omitempty"`
+	Sorter   string `json:"sorter,omitempty"`
+	Since    int64  `json:"since,omitempty"`
+	Until    int64  `json:"until,omitempty"`
+	FromID   int64  `json:"from_id,omitempty"`
+	ToID     int64  `json:"to_id,omitempty"`
 }
 
 // Validate checks a sort before the gateway looks at the ask. A full read is
-// one ask id and nothing else.
+// one ask id and nothing else. A list may choose its sorter and ranges.
 func (a AskSortArgs) Validate() error {
 	if a.Result == AskSortList {
+		if a.Since < 0 || a.Until < 0 {
+			return errors.New("since and until are Unix seconds and cannot be negative")
+		}
+		if a.Since != 0 && a.Until != 0 && a.Since > a.Until {
+			return errors.New("since must not be after until")
+		}
+		if a.FromID < 0 || a.ToID < 0 {
+			return errors.New("from_id and to_id cannot be negative")
+		}
+		if a.FromID != 0 && a.ToID != 0 && a.FromID > a.ToID {
+			return errors.New("from_id must not be after to_id")
+		}
 		return nil
 	}
 	if strings.TrimSpace(a.Ask) == "" {
@@ -146,15 +164,26 @@ type AskSortRequest struct {
 }
 
 // AskSortResult says where the ask is after the sort. A list result puts the
-// asks that wait for the chief in Asks and changes nothing. A full read has
-// Result "read" and fills Full.
+// asks that wait for the chief in Asks and the counts of one sorter's sorts in
+// Stats, and changes nothing. A full read has Result "read" and fills Full.
 type AskSortResult struct {
-	Ask    string       `json:"ask"`
-	Result string       `json:"result"`
-	Next   string       `json:"next"`
-	State  string       `json:"state"`
-	Asks   []AskWaiting `json:"asks,omitempty"`
-	Full   *AskFull     `json:"full,omitempty"`
+	Ask    string        `json:"ask"`
+	Result string        `json:"result"`
+	Next   string        `json:"next"`
+	State  string        `json:"state"`
+	Asks   []AskWaiting  `json:"asks,omitempty"`
+	Stats  *AskSortStats `json:"stats,omitempty"`
+	Full   *AskFull      `json:"full,omitempty"`
+}
+
+// AskSortStats counts the successful sorts of one sorter by result. FirstID and
+// LastID are the smallest and largest sort id that matched, and are zero when
+// none did. The counts hold only the results that occurred.
+type AskSortStats struct {
+	Sorter  string         `json:"sorter"`
+	Counts  map[string]int `json:"counts"`
+	FirstID int64          `json:"first_id"`
+	LastID  int64          `json:"last_id"`
 }
 
 // AskWaiting is one ask that waits for the chief in a list. Age is short and
