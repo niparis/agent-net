@@ -166,6 +166,69 @@ func TestChiefDoesNotAdoptOwnerOnlyAsk(t *testing.T) {
 	}
 }
 
+// An ask stored before route_fixed existed, such as an open Tailscale
+// pairing notice, must have route_fixed backfilled so chief adoption does
+// not adopt it when the gateway upgrades.
+func TestChiefMigrationPreservesOwnerRoutedAsk(t *testing.T) {
+	s, _ := newTestStore(t)
+	chief, asker := twoSessions(t, s)
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id IN (?,?)`, chief, asker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE inbox_items DROP COLUMN route_fixed`); err != nil {
+		t.Fatal(err)
+	}
+	version := migrationVersion(t, "chief ask adoption time")
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
+		t.Fatal(err)
+	}
+	noticeID := "i_tailscale_pair"
+	if _, err := s.db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,from_kind,source_ref,about_kind,about_id,next_who,why_you,detail)
+		VALUES (?,'check',?,'apps','Paired phone by Tailscale sign-in','Information only. Revoke this device in Connected apps if this was not you.','','',?,'open','[]','Tailscale','',?,'tailscale-pair:node-123','','','owner','','')`,
+		noticeID, asker, s.now().UnixNano(), protocol.AskFromApps); err != nil {
+		t.Fatal(err)
+	}
+	leadAskID := "i_lead_ask"
+	if _, err := s.db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,from_kind,source_ref,about_kind,about_id,next_who,why_you,detail)
+		VALUES (?,'question',?,'demo','Question for lead?','','m1','c1',?,'open','[]','lead asker','','','lead_ask:m1','project','demo','s_lead','','')`,
+		leadAskID, asker, s.now().UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	regularID := "i_regular"
+	if _, err := s.db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,from_kind,source_ref,about_kind,about_id,next_who,why_you,detail)
+		VALUES (?,'question',?,'demo','Regular question?','','m2','c2',?,'open','[]','alice','','','','','','owner','','')`,
+		regularID, asker, s.now().UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	for id, wantRouteFixed := range map[string]int{noticeID: 1, leadAskID: 1, regularID: 0} {
+		var routeFixed int
+		if err := s.db.QueryRow(`SELECT route_fixed FROM inbox_items WHERE id=?`, id).Scan(&routeFixed); err != nil {
+			t.Fatal(err)
+		}
+		if routeFixed != wantRouteFixed {
+			t.Fatalf("%s route_fixed = %d, want %d", id, routeFixed, wantRouteFixed)
+		}
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, noticeID); next != protocol.AskNextOwner {
+		t.Fatalf("after chief_set, notice next = %q, want %q", next, protocol.AskNextOwner)
+	}
+	if next := askNext(t, s, regularID); next != protocol.AskNextChief {
+		t.Fatalf("after chief_set, regular next = %q, want %q", next, protocol.AskNextChief)
+	}
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, noticeID); next != protocol.AskNextOwner {
+		t.Fatalf("after reconcile, notice next = %q, want %q", next, protocol.AskNextOwner)
+	}
+}
+
 // A chief set after asks are already open takes them over: the chief can sort
 // them, and the ones it has not sorted leave in a batch. An answered ask stays
 // with the owner.

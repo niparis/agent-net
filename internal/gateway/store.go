@@ -1893,6 +1893,12 @@ func (s *Store) migrate() error {
 						tx.Rollback()
 						return fmt.Errorf("migration %d: %w", i+1, err)
 					}
+					if col.name == "route_fixed" {
+						if _, err := tx.Exec(`UPDATE inbox_items SET route_fixed=1 WHERE source_ref LIKE 'tailscale-pair:%' OR source_ref LIKE 'lead_ask:%'`); err != nil {
+							tx.Rollback()
+							return fmt.Errorf("migration %d: %w", i+1, err)
+						}
+					}
 				}
 			}
 		}
