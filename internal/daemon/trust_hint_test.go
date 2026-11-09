@@ -1,8 +1,11 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,6 +94,98 @@ func TestPeerTrustSurvivesAReconnectOfTheSession(t *testing.T) {
 		t.Fatalf("session id changed: %s -> %s", sid, sid2)
 	}
 	eventually(t, "trust kept", func() bool { return trustAgent(trustList(t, cli), sid).PeerTrust })
+}
+
+// The old connection's cleanup takes the session offline after the new
+// connection already registered it again. The test holds that removal until
+// the reconnect is complete, which is the order the flake showed.
+func TestReconnectIsOnlineWhenTheOldConnectionCleansUpLate(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	removing, release, removed := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var once, unblock sync.Once
+	defer unblock.Do(func() { close(release) })
+	var n *node
+	n = startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, func(c *Config) {
+		c.testGatewayCall = func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
+			if typ != "session.remove" {
+				return nil, false, nil
+			}
+			first := false
+			once.Do(func() { first = true })
+			if !first {
+				return nil, false, nil
+			}
+			close(removing)
+			<-release
+			res, err := n.d.call(ctx, typ, params)
+			close(removed)
+			return res, true, err
+		}
+	})
+	p, sid := helloPi(t, n, "p1", "/w/one", true)
+	cli := cliClient(t, n)
+	cli.mustCall(protocol.OpSessionTrust, protocol.SessionTrustRequest{SessionID: sid, On: true})
+	p.c.Close()
+	select {
+	case <-removing:
+	case <-time.After(scaled(5 * time.Second)):
+		t.Fatal("the old connection did not clean up")
+	}
+	_, sid2 := helloPi(t, n, "p1", "/w/one", true)
+	if sid2 != sid {
+		t.Fatalf("session id changed: %s -> %s", sid, sid2)
+	}
+	unblock.Do(func() { close(release) })
+	select {
+	case <-removed:
+	case <-time.After(scaled(5 * time.Second)):
+		t.Fatal("the late removal did not finish")
+	}
+	eventually(t, "session online with trust", func() bool { return trustAgent(trustList(t, cli), sid).PeerTrust })
+}
+
+// pushSession holds the session's pushMu while it finishes a removal. When the
+// same local session is registered again during that removal, the re-push must
+// not wait on the lock the caller holds.
+func TestRemovalInsidePushSessionDoesNotWaitOnItsOwnLock(t *testing.T) {
+	t.Parallel()
+	ls := &localSession{info: protocol.SessionInfo{Harness: "codex", NativeID: "n1"}}
+	k := key("codex", "n1")
+	var d *Daemon
+	var upserts atomic.Int32
+	d = &Daemon{sessions: map[string]*localSession{k: ls}, cfg: Config{
+		testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+			switch typ {
+			case "session.upsert":
+				if upserts.Add(1) == 1 {
+					// Discovery removes the session while its registration is in flight.
+					d.mu.Lock()
+					delete(d.sessions, k)
+					d.mu.Unlock()
+				}
+				return json.RawMessage(`{"session_id":"s_1"}`), true, nil
+			case "session.remove":
+				// The same session object comes back before the removal lands.
+				d.mu.Lock()
+				d.sessions[k] = ls
+				d.mu.Unlock()
+				return nil, true, nil
+			}
+			return nil, true, nil
+		},
+	}}
+	done := make(chan struct{})
+	go func() {
+		d.pushSession(ls)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(scaled(2 * time.Second)):
+		t.Fatal("pushSession waited on its own lock")
+	}
+	eventually(t, "the live session is registered again", func() bool { return upserts.Load() == 2 })
 }
 
 func TestHintNamesTheSessionThatOwnsTheService(t *testing.T) {
