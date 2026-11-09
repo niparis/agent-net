@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"net/http"
+	"slices"
 	"sort"
 	"sync"
 
@@ -54,19 +55,26 @@ func (s *Store) pickerSettings() (protocol.PickerSettings, error) {
 		OverqualifiedMargin: snap.Float("picker.overqualified_margin", w),
 		UncertainBoost:      snap.Float("picker.uncertain_boost", w),
 		UncertainN:          snap.Int("picker.uncertain_n", w),
+		WeakerBias:          snap.Float("picker.weaker_bias", w),
+		ExploreShare:        snap.Float("picker.explore_share", w),
 	}.Normalized(), nil
 }
 
-// pickerTasks scores each task once. A continuation's task_id links its run
-// to the root session. Its first model and assessment and last counted outcome
-// describe the task; fixes and session evidence count once across the chain.
-// Stopped and infrastructure runs do not contribute. No time cut is applied.
+// pickerTasks scores each task once. A run and its continuations are one task
+// (decision 0105). The chain link is the task root of the run: task_id when the
+// continuation started a new session, otherwise the session id, because a
+// continue to the same session records another worker_runs row with the same
+// session. This is the same root the rework counters use (runsSnapshot). The
+// first counted run gives the model and the first judge result of the chain
+// gives D. The last counted run gives the outcome. Fix rounds, defects and
+// failed steps count once per chain; a continuation costs nothing. Stopped and
+// infrastructure runs do not contribute. No time cut is applied.
 func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 	snap, err := s.runsSnapshot()
 	if err != nil {
 		return nil, err
 	}
-	// The latest valid judge result of each session. The rows come oldest first.
+	// The first valid judge result of each session. The rows come oldest first.
 	judged := map[string]float64{}
 	rows, err := s.db.Query(`SELECT session_id, d FROM worker_assessments WHERE d > 0 ORDER BY started_at, assessed_at`)
 	if err != nil {
@@ -79,7 +87,9 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 			rows.Close()
 			return nil, err
 		}
-		judged[session] = d
+		if judged[session] == 0 {
+			judged[session] = d
+		}
 	}
 	err = rows.Err()
 	rows.Close()
@@ -137,19 +147,11 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 	counts := func(outcome string) bool {
 		return outcome != protocol.OutcomeStopped && outcome != protocol.OutcomeInfra
 	}
-	// A continuation records the root session in task_id. Only group roots
-	// that have such a link: unrelated runs of a session remain separate.
-	linked := map[string]bool{}
-	for _, r := range snap.rows {
-		if r.task != "" && r.task != r.session {
-			linked[r.task] = true
-		}
-	}
 	type chain struct {
+		root     string
 		key      string
-		d        float64
 		facts    protocol.PickerTaskFacts
-		sessions map[string]bool
+		sessions []string
 	}
 	groups := map[string]*chain{}
 	var order []*chain
@@ -158,48 +160,40 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 			continue
 		}
 		root := r.task
-		if root == "" && linked[r.session] {
+		if root == "" {
 			root = r.session
 		}
-		var c *chain
-		if root != "" {
-			c = groups[root]
-		}
+		c := groups[root]
 		if c == nil {
-			c = &chain{key: protocol.PickerModelKey(r.harness, r.model), d: judged[r.session], sessions: map[string]bool{}}
-			if root != "" && judged[root] > 0 {
-				c.d = judged[root]
-			}
-			if root != "" {
-				groups[root] = c
-			}
+			c = &chain{root: root, key: protocol.PickerModelKey(r.harness, r.model)}
+			groups[root] = c
 			order = append(order, c)
 		}
+		// The rows come oldest first, so the last row is the final outcome.
 		c.facts.Complete = r.outcome == protocol.OutcomeComplete
 		c.facts.FixRounds += r.fix
-		c.sessions[r.session] = true
-	}
-	// Session evidence belongs once to its final counted run, as before.
-	last := map[string]*chain{}
-	for _, c := range order {
-		for session := range c.sessions {
-			last[session] = c
+		if !slices.Contains(c.sessions, r.session) {
+			c.sessions = append(c.sessions, r.session)
 		}
 	}
 	out := make([]protocol.PickerTask, 0, len(order))
 	for _, c := range order {
-		if c.d <= 0 || c.key == "" {
-			continue
-		}
-		for session := range c.sessions {
-			if last[session] != c {
-				continue
-			}
+		// D is the first judge result of the root session, or of the first
+		// session of the chain that has one.
+		d := judged[c.root]
+		for _, session := range c.sessions {
+			// A session is in one chain only, so its evidence counts once.
 			c.facts.FailedSteps += failed[session]
 			c.facts.Defects += defects[session][0]
 			c.facts.DefectSeverity += defects[session][1]
+			if d <= 0 {
+				d = judged[session]
+			}
 		}
-		out = append(out, protocol.PickerTask{Key: c.key, D: c.d, Score: protocol.PickerTaskScore(c.facts)})
+		if d <= 0 || c.key == "" {
+			continue
+		}
+		out = append(out, protocol.PickerTask{Key: c.key, D: d, Score: protocol.PickerTaskScore(c.facts)})
 	}
 
 	return out, nil
