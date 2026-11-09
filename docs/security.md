@@ -1285,11 +1285,11 @@ What limits it:
 
 What it exposes: the command line of each process goes into the tool result, the Inbox notice and the daemon log, cut at 400 characters. A command line can hold a secret (an API key in an argument). It is the same data any user on the machine reads with `ps`, but now it is written to the Inbox and the log too. The gateway event keeps only pids and outcomes. The notice is the record of what was stopped.
 
-### Settled Claude background processes
+### Stopped Claude background trees
 
-The daemon ends Claude `bg-pty-host` trees that it can show belong to a settled job ([decision 0108](decisions/0108-end-settled-claude-background-processes.md)). It reads the job ID from the spare's own session file in `~/.claude/sessions`, and the job state from `~/.claude/jobs/<job>/state.json`. A tree is ended only when that state is `stopped`, `done` or `failed`, the tree is older than `claude.reap_after`, and every rule of the CTO process stop holds: the daemon's own user (real and effective), not the agent-net daemon or gateway, and not a registered live session or worker. The idle spare has no session file, so it has no claimed job and is kept. The Claude daemon, its spare pool and trees without a settled job are never touched.
+When agent-net stops a Claude worker or owner session it runs `claude stop`, records the job's pty host and claimed process, and checks again about ten seconds later ([decision 0108](decisions/0108-end-stopped-claude-background-trees.md)). The check trusts only the supervisor's roster, `~/.claude/daemon/roster.json`: every pid in it is live, whatever `~/.claude/jobs/<id>/state.json` says. The check ends a tree only after a roster at most 60 seconds old no longer lists the job or either recorded pid. A missing or stale roster means it does nothing; `daemon.status.json` is never used.
 
-The daemon records the process start time before SIGTERM and checks it again before SIGTERM and SIGKILL, so a reused process number is not signalled. After `claude stop` it checks the same tree once, about ten seconds later. Each ended tree writes one line with the job ID, host pid, age and tree RSS to the daemon log. The sweep runs every ten minutes and can be turned off with `claude.reap_settled`.
+After that it ends what is left only when the job state is `stopped`, `done` or `failed`, every pid still carries the recorded start time, the tree belongs to the daemon's own user (real and effective), and it is not a registered live agent-net session or worker. The start time is checked again before SIGTERM and before SIGKILL, so a reused process number is not signalled. There is no periodic sweep. Each ended tree writes one line with the job ID, host pid, age and tree RSS to the daemon log.
 
 ## Automatic reply reminders
 

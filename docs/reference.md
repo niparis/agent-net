@@ -3416,37 +3416,36 @@ once per session in an idle stretch. After success the Sessions
 row says `compacted while idle HH:MM`, in your display time zone, until a new turn.
 The separate CTO compaction loop handles OpenCode, so it does not overlap.
 
-### Ending settled background Claude processes
+### Ending a stopped background Claude tree
 
-See [decision 0108](decisions/0108-end-settled-claude-background-processes.md).
+See [decision 0108](decisions/0108-end-stopped-claude-background-trees.md).
 
-Claude Code keeps a pool of spare background processes. A `claude --bg` job
-claims one, and the process keeps the command line `bg-spare` for the rest of
-its life. Claude retires a settled spare after about an hour of idle, but a
-spare can outlive its job for days when that retire does not run. On 2026-11-08,
-23 of them held 2.9 GB on research.
+`claude stop <id>` asks Claude's supervisor to end a background job. The
+supervisor's process tree can still be there afterwards, so when agent-net stops
+a Claude worker or owner session it records the job's pty host and claimed
+process before the stop, then checks again about ten seconds later.
 
-The daemon sweeps every ten minutes for a `claude bg-pty-host` tree that serves
-a settled job. It ends the tree with SIGTERM, then SIGKILL after two seconds,
-and checks each process start time again before each signal. It ends a tree only
-when all of these hold:
+The supervisor's roster, `~/.claude/daemon/roster.json`, is the first check. It
+is written whenever the supervisor's workers change, and every pid in it is a
+live session or worker, including idle interactive sessions whose
+`~/.claude/jobs/<id>/state.json` says `done`. If the roster is missing, older
+than 60 seconds, or still lists the job or either recorded pid, the check does
+nothing. `daemon.status.json` is never used: it can be hours stale.
 
-- the tree is older than `claude.reap_after` (default `"30m"`);
-- its job's `~/.claude/jobs/<job>/state.json` says `stopped`, `done` or `failed`;
-- it serves a job at all: the idle spare has no session file, so no job claimed it;
-- it is not a live agent-net session or worker, and it belongs to the daemon's user;
-- it is not the Claude daemon, its spare pool, the agent-net daemon or gateway.
+Only when a fresh roster no longer lists the tree does the check look at the
+real process tree. It ends what is left only when the job's state is `stopped`,
+`done` or `failed`, the pids carry the recorded start times, the tree belongs to
+the daemon's user (real and effective), and it is not a registered live
+agent-net session or worker. Ending is SIGTERM, then SIGKILL after two seconds,
+with the start time checked again before each signal.
 
-`claude.reap_settled` (default `true`) turns the sweep off. Both are live advice
-settings at network scope, so the CTO can change them without an approval.
-
-When agent-net stops a Claude worker or owner session, it records that job's
-tree before `claude stop`, then checks again about ten seconds later. If the job
-is settled and the tree is still there, it ends it the same way. This closes the
-gap between a stop and the next sweep.
+There is no periodic sweep. A read-only survey on research on 2026-11-09 found
+no tree that was absent from a fresh roster and still had a job: every live tree
+was in the roster, and the only other tree was the idle spare, which has no job.
+So agent-net only closes the gap its own stops can create.
 
 Each ended tree writes one line to the daemon log:
-`claude.reap job=<id> pid=<host pid> age=<age> rss=<tree RSS> reason=<settled|stopped> ended=<term|kill|failed>`.
+`claude.tree job=<id> pid=<host pid> age=<age> rss=<tree RSS> ended=<term|kill|failed>`.
 
 ### Delivery step contracts
 

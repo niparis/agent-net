@@ -96,12 +96,15 @@ type Config struct {
 	// testProcessStopGrace replaces processStopGrace, the wait between SIGTERM
 	// and SIGKILL.
 	testProcessStopGrace time.Duration
-	// testClaudeProcs replaces the process table of the Claude background
-	// reaper, so its tests never look at a real process.
+	// testClaudeProcs replaces the process table of the Claude end-of-job
+	// check, so its tests never look at a real process.
 	testClaudeProcs func() []claudeBgProc
 	// testClaudeStopCheckAt replaces the delay before a stopped Claude job's
 	// tree is checked.
 	testClaudeStopCheckAt time.Duration
+	// testClaudeNow replaces time.Now for the Claude end-of-job check and its
+	// roster freshness.
+	testClaudeNow func() time.Time
 	// testNoDifficulty skips the difficulty judge at worker start. Test
 	// daemons set it, because their fake harnesses cannot answer the judge;
 	// the assessment tests turn it off again.
@@ -657,8 +660,6 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.queueLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.cleanupLoop(ctx) }()
-	d.wg.Add(1)
-	go func() { defer d.wg.Done(); d.claudeReapLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.deliveredPruneLoop(ctx) }()
 	d.wg.Add(1)

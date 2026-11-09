@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,34 +8,30 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/niparis/agent-net/internal/settings"
 )
 
-// Claude Code keeps a pool of spare background processes. Each `claude --bg`
-// job claims a spare, and the spare process keeps the command line
-// "bg-spare" for the rest of its life. The Claude daemon retires a spare after
-// its job settles and sits idle, but a spare can survive a settle for a long
-// time, and it can survive for days when the retire does not run. 23 of them
-// held 2.9 GB on research on 2026-11-08.
+// Claude Code keeps a pool of spare background processes. A `claude --bg` job
+// claims one, and the claimed process keeps the command line "bg-spare" for the
+// rest of its life. When agent-net stops such a job it runs `claude stop <id>`,
+// which asks Claude's own supervisor to end it. That is a polite request: the
+// process tree can still be there afterwards.
 //
-// The reaper ends a bg-pty-host tree when the job it serves has settled and the
-// tree is old enough. Its guards are the ones of the CTO process stop
-// (decision 0102): the daemon's own user, never the agent-net services, never a
-// live session or worker, and the process start time is read again before each
-// signal. A tree with no claimed job is the idle spare and is kept.
+// The supervisor's own truth is ~/.claude/daemon/roster.json, written whenever
+// its workers change and fresh within seconds. Every pid in the roster is a
+// live session or worker, including idle interactive sessions whose
+// ~/.claude/jobs/<id>/state.json says "done". So the roster is the first and
+// strongest check: a tree may be ended only when its pty host has left a fresh
+// roster. A command name or an age is never evidence by itself.
 const (
-	// claudeReapEvery is how often the sweep looks. It is the only new loop.
-	claudeReapEvery = 10 * time.Minute
-	// claudeReapAfter is the default age a settled tree must reach.
-	claudeReapAfter = 30 * time.Minute
 	// claudeStopCheckDelay is how long after `claude stop` the tree is checked.
 	claudeStopCheckDelay = 10 * time.Second
-	// claudeReapGrace is how long a tree gets after SIGTERM before SIGKILL.
-	claudeReapGrace = 2 * time.Second
+	// claudeRosterMaxAge is how old a roster may be and still be trusted.
+	claudeRosterMaxAge = 60 * time.Second
+	// claudeTreeGrace is how long a tree gets after SIGTERM before SIGKILL.
+	claudeTreeGrace = 2 * time.Second
 )
 
-// claudeBgProc is what the reaper needs to know about one process.
+// claudeBgProc is what the end-of-job check needs to know about one process.
 type claudeBgProc struct {
 	PID, PPID int
 	UID, EUID int
@@ -54,7 +49,7 @@ type claudeBgTree struct {
 	RSSKB   int64
 }
 
-// job returns the job the tree serves, or "" for the idle spare.
+// job returns the job the tree serves, or "" when no job claimed it.
 func (t claudeBgTree) job(byPID map[int]string) string {
 	for _, p := range t.Procs {
 		if job := byPID[p.PID]; job != "" {
@@ -62,6 +57,41 @@ func (t claudeBgTree) job(byPID map[int]string) string {
 		}
 	}
 	return ""
+}
+
+// claudeRoster is the supervisor's list of live workers.
+type claudeRoster struct {
+	SupervisorPID int                          `json:"supervisorPid"`
+	UpdatedAt     int64                        `json:"updatedAt"`
+	Workers       map[string]claudeRosterEntry `json:"workers"`
+}
+
+type claudeRosterEntry struct {
+	PID           int    `json:"pid"`
+	ProcStart     string `json:"procStart"`
+	ReplPID       int    `json:"replPid"`
+	ReplProcStart string `json:"replProcStart"`
+}
+
+// claudeRoster reads the supervisor's roster when it is fresh. A missing,
+// unreadable or stale roster is never used to decide that something is dead.
+func (d *Daemon) claudeRoster() (claudeRoster, bool) {
+	if d.cfg.ClaudeSessionsDir == "" {
+		return claudeRoster{}, false
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "daemon", "roster.json"))
+	if err != nil {
+		return claudeRoster{}, false
+	}
+	var r claudeRoster
+	if json.Unmarshal(raw, &r) != nil || r.UpdatedAt <= 0 {
+		return claudeRoster{}, false
+	}
+	age := d.claudeBgNow().Sub(time.UnixMilli(r.UpdatedAt))
+	if age < -claudeRosterMaxAge || age > claudeRosterMaxAge {
+		return claudeRoster{}, false
+	}
+	return r, true
 }
 
 // readClaudeBgProcs lists the Claude background processes of this machine. It
@@ -91,7 +121,12 @@ func (d *Daemon) claudeBgProcs() []claudeBgProc {
 	return readClaudeBgProcs()
 }
 
-func (d *Daemon) claudeBgNow() time.Time { return time.Now() }
+func (d *Daemon) claudeBgNow() time.Time {
+	if d.cfg.testClaudeNow != nil {
+		return d.cfg.testClaudeNow()
+	}
+	return time.Now()
+}
 
 // claudeBgCommand tells if a command line is a Claude background process.
 func claudeBgCommand(cmd string) bool {
@@ -167,9 +202,7 @@ func claudeBgTrees(procs []claudeBgProc) []claudeBgTree {
 	return out
 }
 
-// claudeSessionJobs maps a live background process ID to the job that claimed
-// it. Claude writes the job ID in the spare's session file; the idle spare has
-// no session file, so it has no job.
+// claudeSessionJobs maps a background process ID to the job that claimed it.
 func claudeSessionJobs(sessionsDir string) map[int]string {
 	out := map[int]string{}
 	if sessionsDir == "" {
@@ -221,45 +254,8 @@ func claudeJobSettled(state string) bool {
 	return state == "stopped" || state == "done" || state == "failed"
 }
 
-// claudeReapLoop runs the settled-tree sweep every ten minutes.
-func (d *Daemon) claudeReapLoop(ctx context.Context) {
-	runEvery(ctx, claudeReapEvery, claudeReapEvery, d.reapSettledClaude)
-}
-
-// reapSettledClaude ends every old bg-pty-host tree whose job has settled.
-func (d *Daemon) reapSettledClaude() {
-	snap := d.SettingsSnapshot()
-	if !snap.Bool("claude.reap_settled", settings.Where{}) {
-		return
-	}
-	after := snap.Duration("claude.reap_after", settings.Where{})
-	if after <= 0 {
-		after = claudeReapAfter
-	}
-	procs := d.claudeBgProcs()
-	jobs := claudeSessionJobs(d.cfg.ClaudeSessionsDir)
-	now := d.claudeBgNow()
-	for _, tree := range claudeBgTrees(procs) {
-		job := tree.job(jobs)
-		if job == "" { // the idle spare: no job claimed it
-			continue
-		}
-		state, ok := claudeJobState(d.cfg.ClaudeSessionsDir, job)
-		if !ok || !claudeJobSettled(state) {
-			continue
-		}
-		if tree.Started.IsZero() || now.Sub(tree.Started) < after {
-			continue
-		}
-		if d.claudeTreeRefusal(tree) != "" {
-			continue
-		}
-		d.endClaudeBgTree(tree, job, "settled")
-	}
-}
-
 // afterClaudeStop records the tree of a job that agent-net is about to stop,
-// then checks within about ten seconds that it is gone and ends it if not.
+// then checks within about ten seconds that it is gone and ends what is left.
 func (d *Daemon) afterClaudeStop(job string) {
 	if job == "" || filepath.Base(job) != job {
 		return
@@ -288,8 +284,23 @@ func (d *Daemon) afterClaudeStop(job string) {
 // number is not touched.
 func (d *Daemon) claudeBgPIDsForJob(job string) map[int]string {
 	out := map[int]string{}
+	procs := d.claudeBgProcs()
+	tokens := make(map[int]string, len(procs))
+	for _, p := range procs {
+		tokens[p.PID] = p.Token
+	}
+	if roster, ok := d.claudeRoster(); ok {
+		if e, ok := roster.Workers[job]; ok {
+			if tok := tokens[e.PID]; tok != "" {
+				out[e.PID] = tok
+			}
+			if tok := tokens[e.ReplPID]; tok != "" {
+				out[e.ReplPID] = tok
+			}
+		}
+	}
 	jobs := claudeSessionJobs(d.cfg.ClaudeSessionsDir)
-	for _, tree := range claudeBgTrees(d.claudeBgProcs()) {
+	for _, tree := range claudeBgTrees(procs) {
 		if tree.job(jobs) != job {
 			continue
 		}
@@ -300,10 +311,31 @@ func (d *Daemon) claudeBgPIDsForJob(job string) map[int]string {
 	return out
 }
 
-// finishClaudeStop ends the tree of a stopped job if it is still there.
+// finishClaudeStop ends the tree of a stopped job if the supervisor no longer
+// lists it and the real process tree is still there.
 func (d *Daemon) finishClaudeStop(job string, before map[int]string) {
-	if state, ok := claudeJobState(d.cfg.ClaudeSessionsDir, job); ok && !claudeJobSettled(state) {
-		d.Logf("claude.reap job=%s check=after-stop action=kept state=%s", job, state)
+	roster, fresh := d.claudeRoster()
+	if !fresh {
+		d.Logf("claude.tree job=%s check=after-stop action=kept reason=roster-stale", job)
+		return
+	}
+	if _, listed := roster.Workers[job]; listed {
+		d.Logf("claude.tree job=%s check=after-stop action=kept reason=roster", job)
+		return
+	}
+	for _, e := range roster.Workers {
+		if _, ok := before[e.PID]; ok && e.PID > 0 {
+			d.Logf("claude.tree job=%s check=after-stop action=kept reason=roster-pid pid=%d", job, e.PID)
+			return
+		}
+		if _, ok := before[e.ReplPID]; ok && e.ReplPID > 0 {
+			d.Logf("claude.tree job=%s check=after-stop action=kept reason=roster-pid pid=%d", job, e.ReplPID)
+			return
+		}
+	}
+	state, ok := claudeJobState(d.cfg.ClaudeSessionsDir, job)
+	if !ok || !claudeJobSettled(state) {
+		d.Logf("claude.tree job=%s check=after-stop action=kept state=%s", job, state)
 		return
 	}
 	jobs := claudeSessionJobs(d.cfg.ClaudeSessionsDir)
@@ -323,7 +355,7 @@ func (d *Daemon) finishClaudeStop(job string, before map[int]string) {
 		if d.claudeTreeRefusal(tree) != "" {
 			continue
 		}
-		d.endClaudeBgTree(tree, job, "stopped")
+		d.endClaudeBgTree(tree, job)
 	}
 }
 
@@ -349,7 +381,7 @@ func (d *Daemon) claudeTreeRefusal(tree claudeBgTree) string {
 
 // endClaudeBgTree sends TERM to the tree, waits, then sends KILL to what is
 // still the same run. It writes one log line for the ended tree.
-func (d *Daemon) endClaudeBgTree(tree claudeBgTree, job, why string) {
+func (d *Daemon) endClaudeBgTree(tree claudeBgTree, job string) {
 	tokens := make(map[int]string, len(tree.Procs))
 	var pids []int
 	for _, p := range tree.Procs {
@@ -362,9 +394,9 @@ func (d *Daemon) endClaudeBgTree(tree claudeBgTree, job, why string) {
 	if len(pids) == 0 {
 		return
 	}
-	grace := d.processGrace()
-	if d.cfg.testProcessStopGrace == 0 {
-		grace = claudeReapGrace
+	grace := claudeTreeGrace
+	if d.cfg.testProcessStopGrace > 0 {
+		grace = d.cfg.testProcessStopGrace
 	}
 	var termed []int
 	for _, pid := range pids {
@@ -402,7 +434,7 @@ func (d *Daemon) endClaudeBgTree(tree claudeBgTree, job, why string) {
 	if age < 0 {
 		age = 0
 	}
-	d.Logf("claude.reap job=%s pid=%d age=%s rss=%s reason=%s ended=%s", job, tree.Root, age.Round(time.Minute), claudeRSSText(tree.RSSKB), why, outcome)
+	d.Logf("claude.tree job=%s pid=%d age=%s rss=%s ended=%s", job, tree.Root, age.Round(time.Minute), claudeRSSText(tree.RSSKB), outcome)
 }
 
 // claudeBgSameRun tells if pid is alive and is the run that was read.
