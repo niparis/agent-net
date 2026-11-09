@@ -140,6 +140,30 @@ func findClaudeCTOBg(sessions, dir, ref string) (claudeSessionFile, bool) {
 	return claudeSessionFile{}, false
 }
 
+// ownerClaudeRenderer is the "tui" setting (the terminal renderer) from the
+// owner's Claude Code user settings, or "" when there is none. The CTO starts
+// with --setting-sources "", so none of the owner's settings reach it. This one
+// is passed on in its launch settings: "fullscreen" is what gives every other
+// session scrollback, and without it a long CTO reply runs off the screen. No
+// other owner setting is read.
+func ownerClaudeRenderer(sessionsDir string) string {
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(sessionsDir), "settings.json"))
+	if err != nil {
+		return ""
+	}
+	var user struct {
+		TUI string `json:"tui"`
+	}
+	if json.Unmarshal(raw, &user) != nil {
+		return ""
+	}
+	switch user.TUI {
+	case "fullscreen", "default":
+		return user.TUI
+	}
+	return ""
+}
+
 // startClaudeCTO is serialized with CTO mutations by ctoDispatchMu. Only
 // inspecting and publishing runtime state takes cto.mu. Launching Claude,
 // capability checks and waiting for its session file run without it.
@@ -235,7 +259,11 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	if err := claudetrust.Set(dir); err != nil {
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
-	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "1"}})
+	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "1"}}
+	if tui := ownerClaudeRenderer(d.cfg.ClaudeSessionsDir); tui != "" {
+		launch["tui"] = tui
+	}
+	settings, _ := json.Marshal(launch)
 	args := []string{"--bg", "--tools", "", "--setting-sources", "", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", d.ctoSystemPrompt(ctx)}
 	if id != "" {
 		args = append(args, "--resume", id)
