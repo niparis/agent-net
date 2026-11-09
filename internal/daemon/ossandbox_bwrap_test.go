@@ -209,10 +209,21 @@ func TestOSSandboxPiWorkerEndToEnd(t *testing.T) {
 	t.Setenv("PI_CODING_AGENT_DIR", agent)
 	t.Setenv(envFakePiProbeHome, home)
 	t.Setenv(envFakePiProbeExt, "1")
+	// The test binary is the fake `pi` itself, as in the OpenCode test. A
+	// launcher script would not do: the test binary usually sits under /tmp,
+	// which the sandbox replaces with the worker's private tmp, so a launcher
+	// that execs it finds nothing there. The sandbox binds the harness binary
+	// itself, so pointing at the binary keeps it visible.
+	t.Setenv(envFakePi, "1")
+	sessions := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_SESSION_DIR", sessions)
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.OSSandbox = []string{"shop"}
-	w := startPiNode(t, g, set)
+	w := startWorkerNode(t, g, set, func(c *Config) {
+		c.HarnessPaths = map[string]string{"pi": resolved(os.Args[0])}
+		c.PiSessionsDir = sessions
+	})
 	w.register(t, newRepo(t, "shop"))
 	owner := w.ownerID()
 
