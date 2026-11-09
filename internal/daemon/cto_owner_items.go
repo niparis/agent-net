@@ -10,13 +10,14 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 var ctoOwnerItemKinds = map[string]bool{
-	protocol.AskKindDraft: true, protocol.AskKindHeld: true,
+	protocol.AskKindDraft: true, protocol.AskKindHeld: true, protocol.AskKindLearned: true,
 	protocol.AskKindApproval: true, protocol.AskKindQuestion: true,
 	protocol.AskKindEscalation: true, protocol.AskKindRejection: true,
 }
@@ -36,11 +37,11 @@ func ctoOwnerKindFilter(kind string) (string, error) {
 		return protocol.AskKindProposal, nil
 	}
 	switch kind {
-	case "all", "inbox", protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindHeld,
+	case "all", "inbox", protocol.AskKindDraft, protocol.AskKindLearned, protocol.AskKindProposal, protocol.AskKindHeld,
 		protocol.AskKindApproval, protocol.AskKindQuestion, protocol.AskKindEscalation, protocol.AskKindRejection:
 		return kind, nil
 	}
-	return "", errors.New(`kind must be all, draft, proposal, held, inbox, approval, question, escalation or rejection. Example: {"kind":"draft"}`)
+	return "", errors.New(`kind must be all, draft, learned, proposal, held, inbox, approval, question, escalation or rejection. Example: {"kind":"draft"}`)
 }
 
 // ctoOwnerItemRows reads the gateway's open asks and the daemon's own open
@@ -143,6 +144,28 @@ func ctoOwnerAskRow(ask protocol.Ask) map[string]any {
 		answer := ctoOwnerFirst(options, "accept")
 		row["action"] = answer
 		row["answer"] = ctoOwnerCall("answer", map[string]any{"kind": "inbox", "id": ask.ID, "answer": answer})
+	case protocol.AskKindLearned:
+		// A pending major learned proposal is decided by its suggestion ID, the
+		// same call the owner's accept and reject keys make.
+		if len(options) == 0 {
+			options = []string{"accept", "reject"}
+			row["options"] = options
+		}
+		action := "accept"
+		if strings.EqualFold(ctoOwnerFirst(options, "accept"), "reject") {
+			action = "reject"
+		}
+		row["action"] = action
+		row["tool"] = "settings_change"
+		id, parseErr := strconv.ParseInt(strings.TrimPrefix(ask.Ref, "learned:"), 10, 64)
+		if parseErr == nil && strings.HasPrefix(ask.Ref, "learned:") {
+			row["answer"] = ctoOwnerCall("settings_change", map[string]any{
+				"area": "operator", "method": "learned_answer",
+				"arguments": map[string]any{"suggestion_id": id, "action": action},
+			})
+		} else {
+			row["answer"] = ctoOwnerCall("answer", map[string]any{"kind": "inbox", "id": ask.ID, "answer": action})
+		}
 	case protocol.AskKindHeld:
 		if len(options) == 0 {
 			options = []string{"approve", "refuse"}

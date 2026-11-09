@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -105,5 +106,91 @@ func TestCTOTeamSettingsSetTeamRef(t *testing.T) {
 	}
 	if _, err := w.d.runCTOToolRaw(context.Background(), "graph_change", json.RawMessage(`{"action":"settings_set","ref":{"kind":"team","id":"forge"},"setting":"autonomy","value":"wake"}`)); err == nil || !strings.Contains(err.Error(), "asks_to") || !strings.Contains(err.Error(), "work_mode") {
 		t.Fatalf("unknown team setting error = %v, want the valid team settings named", err)
+	}
+}
+
+// The CTO sets a team's authority mode and held back text with the same
+// gateway validation as the owner's Teams list keys, and graph undo restores
+// each earlier value.
+func TestCTOTeamModeAndHeldBackUndo(t *testing.T) {
+	g, w := startCTOTeamFixture(t)
+	ctx := context.Background()
+	team := func() protocol.Team {
+		t.Helper()
+		teams, err := g.gw.Store().Teams()
+		if err != nil || len(teams) != 1 {
+			t.Fatalf("teams = %+v, %v", teams, err)
+		}
+		return teams[0]
+	}
+	historyID := func() int64 {
+		t.Helper()
+		data, err := w.d.call(ctx, "cto.graph_latest", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var latest struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal(data, &latest); err != nil {
+			t.Fatal(err)
+		}
+		return latest.ID
+	}
+	set := func(attr, value string) int64 {
+		t.Helper()
+		raw, err := json.Marshal(map[string]string{"action": "team_charter", "team": "forge", "attr": attr, "value": value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if class, err := ctoClass("graph_change", raw); err != nil || class != ctoMinor {
+			t.Fatalf("%s class = %s, %v; want minor", attr, class, err)
+		}
+		if _, err := w.d.runCTOToolRaw(ctx, "graph_change", raw); err != nil {
+			t.Fatalf("%s: %v", attr, err)
+		}
+		return historyID()
+	}
+	undo := func(id int64) {
+		t.Helper()
+		if _, err := w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(fmt.Sprintf(`{"action":"undo","id":%d}`, id))); err != nil {
+			t.Fatalf("undo %d: %v", id, err)
+		}
+	}
+
+	modeID := set("mode", protocol.AuthorityAbsolute)
+	if got := team().AuthorityMode; got != protocol.AuthorityAbsolute {
+		t.Fatalf("mode = %q, want absolute", got)
+	}
+	heldID := set("held_back", "deploy to production")
+	if got := team().HeldBack; got != "deploy to production" {
+		t.Fatalf("held back = %q", got)
+	}
+	if _, err := w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"team_charter","team":"forge","attr":"mode","value":"always"}`)); err == nil || !strings.Contains(err.Error(), "authority mode") {
+		t.Fatalf("bad mode error = %v, want the authority modes named", err)
+	}
+	if _, err := w.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"team_charter","team":"forge","attr":"held_back","value":"bad\u0001text"}`)); err == nil || !strings.Contains(err.Error(), "held back") {
+		t.Fatalf("bad held back error = %v, want invalid held back text", err)
+	}
+
+	undo(heldID)
+	if got := team(); got.HeldBack != "" || got.AuthorityMode != protocol.AuthorityAbsolute {
+		t.Fatalf("after held back undo: %+v", got)
+	}
+	undo(modeID)
+	if got := team().AuthorityMode; got != protocol.DefaultAuthorityMode {
+		t.Fatalf("after mode undo: %q, want %q", got, protocol.DefaultAuthorityMode)
+	}
+}
+
+// An ordinary agent session cannot reach the CTO's team write or owner item
+// read, whatever the arguments.
+func TestCTOTeamModeAndOwnerItemsAreCTOOnly(t *testing.T) {
+	_, w := startCTOTeamFixture(t)
+	agent, _ := helloPi(t, w.node, "not-the-cto", "/w/not-the-cto", true)
+	for _, method := range []string{"graph_change", "cto_proposals_find"} {
+		if _, err := agent.call(method, map[string]any{"kind": "all", "action": "team_charter", "team": "forge", "attr": "mode", "value": "absolute"}); err == nil {
+			t.Fatalf("agent called %s", method)
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -60,4 +61,44 @@ func TestCTOTeamCharterSchemaAcceptsLeadMerges(t *testing.T) {
 	if err := ValidateCTOActionSchema("graph_change", settings); err != nil {
 		t.Fatalf("settings_set team lead_merges: %v", err)
 	}
+}
+
+func TestCTOTeamCharterSchemaAcceptsModeAndHeldBack(t *testing.T) {
+	for _, attr := range []string{"mode", "held_back"} {
+		raw, err := json.Marshal(map[string]string{"action": "team_charter", "team": "forge", "attr": attr, "value": "x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateCTOActionSchema("graph_change", raw); err != nil {
+			t.Errorf("graph_change team_charter %s: %v", attr, err)
+		}
+		args, err := json.Marshal(map[string]string{"team": "forge", "attr": attr, "value": "x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := CTOArguments("team_charter", args); err != nil {
+			t.Errorf("team_charter %s: %v", attr, err)
+		}
+	}
+}
+
+func TestCTOProposalsFindListsLearned(t *testing.T) {
+	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name != "cto_proposals_find" {
+			continue
+		}
+		props, _ := ctoToolSchema(t, tool)
+		got := strings.Join(enumStrings(props["kind"]["enum"]), " ")
+		for _, want := range []string{"all", "draft", "learned"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("cto_proposals_find kind enum = %q, want %s", got, want)
+			}
+		}
+		return
+	}
+	t.Fatal("cto_proposals_find is not listed")
 }

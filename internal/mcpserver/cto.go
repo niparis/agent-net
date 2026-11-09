@@ -45,9 +45,10 @@ var ctoCharterAttrs = func() []string {
 }()
 
 // ctoGraphAttrs are the attributes graph_change accepts: the charter fields,
-// asks_to, a Team setting that team_charter writes (decision 0100), and
-// lead_merges, the owner's Team grant that the lead merges its members' work.
-var ctoGraphAttrs = append(append([]string{}, ctoCharterAttrs...), "asks_to", "lead_merges")
+// asks_to, a Team setting that team_charter writes (decision 0100),
+// lead_merges, the owner's Team grant that the lead merges its members' work,
+// and the Team mode and held back text (decision 0089).
+var ctoGraphAttrs = append(append([]string{}, ctoCharterAttrs...), "asks_to", "lead_merges", "mode", "held_back")
 
 var ctoEdgeKinds = []string{"depends", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies"}
 
@@ -127,7 +128,7 @@ var ctoTools = map[string]ctoToolDef{
 			"team":    {typ: "string", desc: "Team name or ID."},
 			"purpose": {typ: "string", desc: "Team purpose."},
 			"node":    {typ: "string", desc: "Node."},
-			"attr":    {typ: "string", desc: "Attribute. asks_to: owner or lead; work_mode: workers_code or on_request.", enum: ctoGraphAttrs},
+			"attr":    {typ: "string", desc: "Attribute. asks_to: owner or lead; work_mode: workers_code or on_request; mode: absolute, charter_first or negotiate; held_back: free text for the Team.", enum: ctoGraphAttrs},
 			"level":   {typ: "string", desc: "Charter level; defaults to repo or ref kind.", enum: []string{"global", "team", "repo", "agent"}},
 			"value":   {typ: "string", desc: "Value; empty clears."},
 			"name":    {typ: "string", desc: "Display name."},

@@ -131,6 +131,14 @@ func ResolveTeamAction(action string, raw json.RawMessage, look TeamLookup) (Tea
 		if err != nil {
 			return TeamWrite{}, err
 		}
+		// mode and held_back are Team fields, not inherited charter text. They
+		// take the owner paths with the same validation as the Teams list keys.
+		switch str("attr") {
+		case "mode":
+			return TeamWrite{Action: "mode", ID: id, Mode: str("value")}, nil
+		case "held_back":
+			return TeamWrite{Action: "held_back", ID: id, HeldBack: str("value")}, nil
+		}
 		return TeamWrite{Action: "charter", ID: id, Attr: str("attr"), Value: str("value")}, nil
 	case "team_create":
 		name := str("name")
