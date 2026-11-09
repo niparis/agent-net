@@ -23,6 +23,8 @@ type wakeProbe struct {
 	mu    sync.Mutex
 	// refusal is the reason the machine gives for a wake, or empty to accept.
 	refusal string
+	// gate, when set, holds the machine's answer to a wake until it is closed.
+	gate chan struct{}
 }
 
 func (p *wakeProbe) setRefusal(reason string) {
@@ -36,6 +38,24 @@ func (p *wakeProbe) wakeRefusal() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.refusal
+}
+
+// holdWakes makes the machine's answer to each wake wait. The returned function
+// lets the answers through. It is safe to call more than once.
+func (p *wakeProbe) holdWakes() func() {
+	gate := make(chan struct{})
+	p.mu.Lock()
+	p.gate = gate
+	p.mu.Unlock()
+	var once sync.Once
+	return func() { once.Do(func() { close(gate) }) }
+}
+
+// wakeGate is the gate that holds the machine's answer, or nil.
+func (p *wakeProbe) wakeGate() chan struct{} {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.gate
 }
 
 // newWakeProbe has one machine with a fake daemon that records wake frames,
@@ -69,6 +89,9 @@ func newWakeProbeRefusing(t *testing.T, refusal string) *wakeProbe {
 				return err
 			}
 			p.wakes <- m
+			if gate := p.wakeGate(); gate != nil {
+				<-gate
+			}
 			if reason := p.wakeRefusal(); reason != "" {
 				return errors.New(reason)
 			}

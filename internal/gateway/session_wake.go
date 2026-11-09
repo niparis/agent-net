@@ -65,7 +65,8 @@ func (g *Gateway) wakeOnMessage(a protocol.AgentView) bool {
 
 // wakeReceiptNote adds to the sender's routing note when a message waits for an
 // offline session that is not woken: a Pi session that autonomy would wake, or
-// any wakeable session when wake is off or the last wake failed.
+// any wakeable session when wake is off, when it is being woken, or when its
+// last wake failed.
 func (g *Gateway) wakeReceiptNote(m protocol.Message, route string) string {
 	if m.State != protocol.StateStored {
 		return route
@@ -182,6 +183,15 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 			g.logLine("error", "where", "clear session wake failure", "session", a.SessionID, "err", err)
 		}
 	}()
+}
+
+// wakeInFlight tells whether a wake of the session is under way: claimed and not
+// yet answered by the machine. It is set before the message's receipt is written.
+func (g *Gateway) wakeInFlight(session string) bool {
+	g.wakeMu.Lock()
+	defer g.wakeMu.Unlock()
+	_, ok := g.wakeClaims[session]
+	return ok
 }
 
 // On reconnect, queued messages can have arrived while the machine was away.

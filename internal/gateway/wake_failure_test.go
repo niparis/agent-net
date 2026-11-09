@@ -125,3 +125,34 @@ func TestWakeFailureIsKeptAndSenderIsToldOnce(t *testing.T) {
 	p.expectWake(t, id)
 	eventually(t, "failure cleared", func() bool { return p.failures(id) == 0 })
 }
+
+// A message that starts a new wake says that the session is being woken. It does
+// not repeat the failure of the earlier wake while the new one is under way.
+func TestReceiptSaysWakingWhenMessageStartsAWake(t *testing.T) {
+	const reason = "Claude background record is missing, ambiguous, or not retired"
+	p := newWakeProbeRefusing(t, reason)
+	id := p.offline(t, "claude", protocol.ModeBackground, protocol.AutonomyOff)
+	p.message(t, id)
+	p.expectWake(t, id)
+	eventually(t, "failure kept", func() bool { return p.failures(id) == 1 })
+
+	// The limit has passed. The machine now accepts the wake, but its answer waits
+	// until the receipt is written.
+	if _, err := p.s.db.Exec(`UPDATE retired_session_wakes SET attempted_at=0`); err != nil {
+		t.Fatal(err)
+	}
+	p.setRefusal("")
+	release := p.holdWakes()
+	defer release()
+	m, _, err := send(p.s, p.from, id, "second", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.g.dispatch(context.Background(), m)
+	p.expectWake(t, id)
+	if note := p.g.wakeReceiptNote(m, ""); note != "queued; proj is offline, waking it" {
+		t.Fatalf("receipt = %q", note)
+	}
+	release()
+	eventually(t, "failure cleared", func() bool { return p.failures(id) == 0 })
+}
