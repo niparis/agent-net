@@ -229,7 +229,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		if obs.Scope == protocol.InventoryProject {
 			obs.Project = project
 		}
-		if (f.Kind == "" || kind == f.Kind) && (f.Harness == "" || obs.Harness == f.Harness) && (f.Project == "" || obs.Project == f.Project) && (f.State == "" || obs.State == f.State) {
+		if protocol.KindMatches(f.Kind, kind) && (f.Harness == "" || obs.Harness == f.Harness) && (f.Project == "" || obs.Project == f.Project) && (f.State == "" || obs.State == f.State) {
 			matched[id] = true
 		}
 		item := all[id]
@@ -295,7 +295,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		variants[key][id] = true
 		all[id] = &protocol.ToolItem{ID: id, Kind: kind, Name: name, Hash: hash, Locations: []protocol.ToolLocation{}, Unassigned: true, State: "unobserved"}
 		order = append(order, id)
-		if (f.Kind == "" || f.Kind == kind) && f.Harness == "" && f.Project == "" && (f.State == "" || f.State == "unobserved") {
+		if protocol.KindMatches(f.Kind, kind) && f.Harness == "" && f.Project == "" && (f.State == "" || f.State == "unobserved") {
 			matched[id] = true
 		}
 	}

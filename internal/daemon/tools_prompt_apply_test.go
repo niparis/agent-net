@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -294,4 +295,100 @@ func TestProbeOfCommandDestination(t *testing.T) {
 	if r = d.probeToolDestination(probe); r.Conflict != "destination already exists and is not owned" {
 		t.Fatalf("existing file: %+v", r)
 	}
+}
+
+// A command found in the user folder is imported, copied to a project and
+// removed again through the real gateway and daemon path, as the Tools tab
+// and the CTO tools drive it.
+func TestCommandImportApplyAndRemoveThroughGateway(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	source := filepath.Join(home, ".claude/commands/review.md")
+	if err := os.MkdirAll(filepath.Dir(source), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("---\ndescription: Review a diff\n---\nLook at it.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	checkout := filepath.Join(t.TempDir(), "project")
+	if err := os.Mkdir(checkout, 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, checkout, "init", "-q", "-b", "main")
+	detect := func(context.Context) []protocol.HarnessInfo { return []protocol.HarnessInfo{{Name: "claude"}} }
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: detect, cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	cli.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{checkout}})
+	var item protocol.ToolItem
+	eventually(t, "command in the inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"kind": "prompt"})
+		if err != nil {
+			return false
+		}
+		var p protocol.ToolsPage
+		if json.Unmarshal(raw, &p) != nil {
+			return false
+		}
+		for _, v := range p.Items {
+			if v.Name == "review" {
+				item = v
+				return true
+			}
+		}
+		return false
+	})
+	if item.Kind != "prompt" || item.Description != "Review a diff" || !item.Global {
+		t.Fatalf("item: %+v", item)
+	}
+	loc := item.Locations[0]
+	var version struct {
+		Number int `json:"Number"`
+	}
+	_ = json.Unmarshal(cli.mustCall("tools_import", protocol.ToolImport{Item: item.ID, Location: protocol.ToolImportLocation{NodeID: loc.NodeID, Location: loc.Location}}), &version)
+
+	plan := func(a protocol.ToolAssignment) protocol.ToolPlan {
+		var p protocol.ToolPlan
+		if err := json.Unmarshal(cli.mustCall("tools_plan", protocol.ToolPlanRequest{Item: item.ID, Target: a}), &p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	p := plan(protocol.ToolAssignment{Scope: "projects", Projects: []string{"project"}})
+	copies := 0
+	for _, target := range p.Targets {
+		if target.Action == "copy" && target.Checkout == checkout {
+			copies++
+			if target.Conflict != "" || target.Harness != "claude" || target.Root != ".claude/commands" || target.Destination != filepath.Join(checkout, ".claude/commands/review.md") {
+				t.Fatalf("invalid target: %+v", target)
+			}
+		}
+	}
+	if copies != 1 {
+		t.Fatalf("copy targets: %+v", p.Targets)
+	}
+	cli.mustCall("tools_apply", protocol.ToolPlanID{ID: p.ID})
+	copied := filepath.Join(checkout, ".claude/commands/review.md")
+	eventually(t, "project copy", func() bool {
+		b, err := os.ReadFile(copied)
+		return err == nil && strings.Contains(string(b), "Look at it.")
+	})
+	exclude, _ := os.ReadFile(filepath.Join(checkout, ".git/info/exclude"))
+	if !strings.Contains(string(exclude), "/.claude/commands/review.md\n") {
+		t.Fatalf("exclude: %q", exclude)
+	}
+	// Remove everywhere: the project copy goes and its exclude line with it.
+	p = plan(protocol.ToolAssignment{Scope: "uninstalled"})
+	cli.mustCall("tools_apply", protocol.ToolPlanID{ID: p.ID})
+	eventually(t, "copies removed", func() bool {
+		_, e1 := os.Lstat(copied)
+		_, e2 := os.Lstat(source)
+		return os.IsNotExist(e1) && os.IsNotExist(e2)
+	})
+	eventually(t, "exclude released", func() bool {
+		b, _ := os.ReadFile(filepath.Join(checkout, ".git/info/exclude"))
+		return !strings.Contains(string(b), "review.md")
+	})
 }

@@ -15,21 +15,21 @@ type skillGroupKey struct{}
 // Prefer this checkout's copy, then this machine's user copy, then the
 // newest library version. The owner chooses projects, never machines.
 func (g *Gateway) skillCopyIdentity(id, node, project string) bool {
-	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventoryBundles}, func(string) bool { return true })
 	if err != nil {
 		return false
 	}
-	name := ""
+	name, kind := "", ""
 	for _, it := range items {
 		if it.ID == id {
-			name = it.Name
+			name, kind = it.Name, it.Kind
 		}
 	}
 	best := ""
 	score := -1
 	version := -1
 	for _, it := range items {
-		if it.Name != name {
+		if it.Name != name || it.Kind != kind {
 			continue
 		}
 		rank := 0
@@ -54,19 +54,19 @@ func (g *Gateway) skillCopyIdentity(id, node, project string) bool {
 }
 
 func (g *Gateway) toggleSkillGroup(ctx context.Context, p protocol.ToolToggleRequest, actor string) (protocol.ToolPlan, bool, error) {
-	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventoryBundles}, func(string) bool { return true })
 	if err != nil {
 		return protocol.ToolPlan{}, true, err
 	}
-	name := ""
+	name, kind := "", ""
 	for _, it := range items {
 		if it.ID == p.Item {
-			name = it.Name
+			name, kind = it.Name, it.Kind
 		}
 	}
 	var copies []protocol.ToolItem
 	for _, it := range items {
-		if it.Name == name {
+		if it.Name == name && it.Kind == kind {
 			copies = append(copies, it)
 		}
 	}
@@ -208,22 +208,22 @@ func (g *Gateway) applySkillGroup(ctx context.Context, id, actor string) (protoc
 	}
 	// A newly discovered content identity also belongs to this name. Never
 	// apply an older group that omitted it.
-	items, e := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	items, e := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventoryBundles}, func(string) bool { return true })
 	if e != nil {
 		return protocol.ToolApplyResult{}, true, e
 	}
 	members := map[string]bool{}
-	name := ""
+	name, kind := "", ""
 	for _, m := range p.Members {
 		members[m.Item] = true
 	}
 	for _, it := range items {
 		if it.ID == p.Item {
-			name = it.Name
+			name, kind = it.Name, it.Kind
 		}
 	}
 	for _, it := range items {
-		if it.Name == name && !members[it.ID] && len(it.Locations) > 0 {
+		if it.Name == name && it.Kind == kind && !members[it.ID] && len(it.Locations) > 0 {
 			return protocol.ToolApplyResult{}, true, errors.New("plan out of date")
 		}
 	}

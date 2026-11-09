@@ -10,6 +10,15 @@ const (
 	InventoryAgent  = "agent"
 )
 
+// InventoryBundles is a tools filter value that selects every kind that is
+// stored and switched on per project: skills, prompts and agents.
+const InventoryBundles = "bundles"
+
+// KindMatches says whether an item of kind matches the Kind of a tools filter.
+func KindMatches(filter, kind string) bool {
+	return filter == "" || filter == kind || (filter == InventoryBundles && IsBundleKind(kind))
+}
+
 // IsBundleKind says whether items of this kind are stored, versioned and
 // switched on per project like skills.
 func IsBundleKind(kind string) bool {

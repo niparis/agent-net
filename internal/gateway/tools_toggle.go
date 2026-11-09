@@ -95,7 +95,7 @@ func (s *Store) ToolProjectStates() ([]protocol.ToolProjectState, error) {
 	return s.toolProjectStates(false)
 }
 func (s *Store) toolProjectStates(validate bool) ([]protocol.ToolProjectState, error) {
-	items, err := s.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	items, err := s.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventoryBundles}, func(string) bool { return true })
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +217,7 @@ func (s *Store) toolToggleAssignment(p protocol.ToolToggleRequest, validate bool
 	if err != nil {
 		return protocol.ToolAssignment{}, err
 	}
-	items, err := s.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	items, err := s.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventoryBundles}, func(string) bool { return true })
 	if err != nil {
 		return protocol.ToolAssignment{}, err
 	}
@@ -287,7 +287,7 @@ func (g *Gateway) ensureSkillImported(ctx context.Context, itemID string) error 
 		return err
 	}
 	if imported == 0 {
-		items, e := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+		items, e := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventoryBundles}, func(string) bool { return true })
 		if e != nil {
 			return e
 		}
@@ -403,7 +403,7 @@ func (g *Gateway) addNewSkillProjects(ctx context.Context) error {
 }
 
 func (g *Gateway) addNewSkillProjectsLocked(ctx context.Context) error {
-	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventoryBundles}, func(string) bool { return true })
 	if err != nil {
 		return err
 	}
@@ -536,11 +536,10 @@ func (s *Store) skillInputsOf() (skillInputs, error) {
 	// owner keeps through a version or a revision: what ToolsItems lists.
 	err := s.db.QueryRow(`SELECT COALESCE(group_concat(id, ','), ''),
 		(SELECT COUNT(*) FROM tool_project_seen), (SELECT COUNT(*) FROM tool_project_settings)
-		FROM (SELECT i.id FROM tool_identities i WHERE i.kind=? AND (
+		FROM (SELECT i.id FROM tool_identities i WHERE i.kind IN ('skill','prompt','agent') AND (
 		 EXISTS (SELECT 1 FROM tool_locations l WHERE l.identity_id=i.id)
 		 OR EXISTS (SELECT 1 FROM skill_versions v WHERE v.item=i.id)
-		 OR EXISTS (SELECT 1 FROM tool_revisions r WHERE r.item=i.id)) ORDER BY i.id)`,
-		protocol.InventorySkill).Scan(&in.Items, &in.Marks, &in.Settings)
+		 OR EXISTS (SELECT 1 FROM tool_revisions r WHERE r.item=i.id)) ORDER BY i.id)`).Scan(&in.Items, &in.Marks, &in.Settings)
 	if err != nil {
 		return in, err
 	}
@@ -569,7 +568,7 @@ func (g *Gateway) skillInputsSettled() bool {
 // there is something to write.
 func (s *Store) skillSettingsMissing() (bool, error) {
 	var missing bool
-	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM tool_identities i WHERE i.kind=? AND NOT EXISTS (SELECT 1 FROM tool_project_settings t WHERE t.item=i.id))`, protocol.InventorySkill).Scan(&missing)
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM tool_identities i WHERE i.kind IN ('skill','prompt','agent') AND NOT EXISTS (SELECT 1 FROM tool_project_settings t WHERE t.item=i.id))`).Scan(&missing)
 	return missing, err
 }
 
@@ -601,7 +600,7 @@ func (g *Gateway) setToolNewProjects(ctx context.Context, p protocol.ToolNewProj
 	if err != nil {
 		return protocol.ToolPlan{}, err
 	}
-	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventoryBundles}, func(string) bool { return true })
 	if err != nil {
 		return protocol.ToolPlan{}, err
 	}
