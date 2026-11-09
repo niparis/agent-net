@@ -62,6 +62,10 @@ func mcpTestCall(ctx context.Context, run func(context.Context, string, any) (an
 	return opResult(run(ctx, "mcp_test", map[string]any{"name": server}))
 }
 
+func ownerBriefCall(ctx context.Context, run func(context.Context, string, any) (any, error), in protocol.OwnerBriefArgs) (map[string]any, error) {
+	return opResult(run(ctx, protocol.OpOwnerBrief, in))
+}
+
 // ownerAskCall is the one owner request operation. Kind picks the daemon
 // method: question asks the owner, approval asks for one action, idea sends a
 // feature idea.
