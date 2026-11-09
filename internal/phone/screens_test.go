@@ -245,14 +245,14 @@ func TestNoStepActionRouteExists(t *testing.T) {
 	}
 }
 
-// TestReplyIsTheOnlyNewActionKind holds the list of kinds of POST /action: the
-// five of part 1 and reply.
-func TestReplyIsTheOnlyNewActionKind(t *testing.T) {
+// TestWebActionKindsAreExact holds the list of kinds of POST /action: the five
+// asks of part 1, reply, and the CTO panel's send and proposal answer.
+func TestWebActionKindsAreExact(t *testing.T) {
 	src, err := os.ReadFile("app.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := strings.Index(string(src), "switch r.PostForm.Get(\"kind\")")
+	start := strings.Index(string(src), "switch kind {")
 	if start < 0 {
 		t.Fatal("kind switch not found")
 	}
@@ -261,7 +261,7 @@ func TestReplyIsTheOnlyNewActionKind(t *testing.T) {
 	for _, m := range regexp.MustCompile(`case "([a-z_]+)":`).FindAllStringSubmatch(string(src)[start:start+end], -1) {
 		got[m[1]] = true
 	}
-	want := map[string]bool{"held": true, "outcome": true, "inbox": true, "mark": true, "send": true, "reply": true}
+	want := map[string]bool{"held": true, "outcome": true, "inbox": true, "mark": true, "send": true, "reply": true, "cto_send": true, "proposal": true}
 	if len(got) != len(want) {
 		t.Fatalf("action kinds: %v, want %v", got, want)
 	}

@@ -1153,10 +1153,14 @@ The web console on that listener (decision 0122) is read and answer only. The
 gateway lets a paired phone reach only the console screens (`/`, `/sessions`,
 `/graph`, `/changes`, `/messages`, `/workers`), `/session/{id}` (a redirect),
 `/events`, `/action`, the manifest and the static files. The one write route is
-`POST /action`, with the kinds `held`, `outcome`, `inbox`, `mark` and `send`.
-Any other path is refused with 404, and any other kind with 400. No page shows a
-token, a node ID or a join string, and no page loads a script, style or font
-from another host.
+`POST /action`, with the kinds `held`, `outcome`, `inbox`, `mark`, `send`,
+`reply`, `cto_send` and `proposal`. `reply` stays inside a conversation the
+owner can see; `cto_send` queues the owner's words to the CTO, which may act
+within its charter; `proposal` applies or declines one open CTO proposal with
+the same owner action the TUI sends. Any other path is refused with 404, and
+any other kind with 400. No page shows a token, a node ID or a join string, and
+no page loads a script, style or font from another host. A proposal card carries
+its machine as an encoded value, never a printed node ID.
 
 Skill file previews use the owner-only operator gate. The gateway checks the owner session and the current observed skill location; the originating daemon checks that the relative path is in its current manifest and that the file still matches its fingerprint. Previews reject symlinks, non-regular files, invalid UTF-8, NUL bytes and files over 64 KiB. Contents pass through the gateway on request and are not stored by the preview operation. Enrolled daemons remain inside the gateway trust boundary.
 

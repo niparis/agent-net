@@ -1,0 +1,10 @@
+{{define "ctobody"}}<header><b>{{.CTOTitle}}</b>{{with .CTO}}{{if .Chip}}<span class="chip cto">{{.Chip}}</span>{{end}}{{end}}<span class="spacer"></span><button class="btn quiet" type="button" id="closeCTO" aria-label="Close the {{.CTOTitle}} panel">Close</button></header>
+{{with .CTO}}
+{{if .Err}}<div class="body error" role="alert">{{.Err}}</div>{{end}}
+<div class="log" id="ctolog" aria-live="polite">
+{{range .Lines}}<div class="msg{{.Class}}"><div class="who">{{if .Who}}<b>{{.Who}}</b>{{if .Age}} · {{.Age}}{{end}}{{else}}{{.Age}}{{end}}</div><div class="text">{{.Text}}</div></div>{{end}}
+{{range .Proposals}}<div class="proposal"><div class="psum">{{.Summary}}</div>{{if .Reason}}<div class="preason">{{.Reason}}</div>{{end}}{{if .Age}}<div class="when">{{.Age}} ago</div>{{end}}<div class="actions"><form method="post" action="/action"><input type="hidden" name="kind" value="proposal"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="node" value="{{.Node}}"><input type="hidden" name="back" value="{{$.CTOBack}}"><button class="btn primary" name="action" value="a">Apply</button><button class="btn" name="action" value="x">Decline</button></form></div></div>{{end}}
+</div>
+{{if or .OlderHref .LatestHref}}<div class="older">{{if .LatestHref}}<a class="btn quiet" href="{{.LatestHref}}">Latest</a>{{end}}{{if .OlderHref}}<a class="btn quiet" href="{{.OlderHref}}">Older messages</a>{{end}}</div>{{end}}
+<form class="ctocomposer" method="post" action="/action" id="ctoform"><input type="hidden" name="kind" value="cto_send"><input type="hidden" name="back" value="{{$.CTOBack}}"><textarea name="text" rows="2" required aria-label="Your message to the {{$.CTOTitle}}" placeholder="Ask the {{$.CTOTitle}} in plain words"></textarea><div class="sendrow"><span class="muted small">The {{$.CTOTitle}} acts within its charter. Proposals wait for you.</span><button class="btn primary" type="submit">Send</button></div></form>
+{{else}}<div class="log"><p class="muted">Opening the conversation with the {{.CTOTitle}}…</p></div>{{end}}{{end}}

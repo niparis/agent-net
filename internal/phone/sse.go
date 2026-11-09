@@ -28,19 +28,29 @@ func (a *app) stream(w http.ResponseWriter, r *http.Request) {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	screen, q := r.URL.Query().Get("screen"), query{Selected: r.URL.Query().Get("s"), Filter: r.URL.Query().Get("f")}
+	section := r.URL.Query().Get("section")
+	screen := r.URL.Query().Get("screen")
+	q := queryFrom(r)
+	// The panel has its own section and its own id, so a screen and the panel
+	// update independently. A screen stream never reads the CTO conversation.
+	q.CTO = section == "cto"
+	q.OnlyCTO = section == "cto"
+	event, tmpl := "update", "stream"
+	if section == "cto" {
+		event, tmpl = "cto", "ctobody"
+	}
 	previous := ""
 	for {
 		ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
 		p := a.load(ctx, screen, q)
 		cancel()
 		var b bytes.Buffer
-		if err := shell.ExecuteTemplate(&b, "stream", p); err != nil {
+		if err := shell.ExecuteTemplate(&b, tmpl, p); err != nil {
 			return
 		}
 		current := b.String()
 		if current != previous {
-			if _, err := fmt.Fprint(w, "event: update\n"); err != nil {
+			if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
 				return
 			}
 			for _, line := range strings.Split(current, "\n") {

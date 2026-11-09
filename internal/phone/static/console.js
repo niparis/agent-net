@@ -6,17 +6,60 @@
   var cto = document.getElementById('cto');
   var toggle = document.getElementById('toggleCTO');
 
+  // The panel has its own section of /events, so a screen and the panel update
+  // independently. The composer is inside the section and is not redrawn while
+  // the owner writes in it.
+  var ctoStream = null;
+  function ctoToBottom(offset) {
+    var log = document.getElementById('ctolog');
+    if (log) log.scrollTop = log.scrollHeight - log.clientHeight - (offset || 0);
+  }
+  function startCTOStream() {
+    if (ctoStream || !cto || !window.EventSource) return;
+    var url = cto.dataset.events;
+    if (!url) return;
+    ctoStream = new EventSource(url);
+    ctoStream.addEventListener('cto', function (e) {
+      var body = document.getElementById('ctobody');
+      if (!body) return;
+      var a = document.activeElement;
+      if (a && cto.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName)) return;
+      var field = body.querySelector('textarea');
+      if (field && field.value) return;
+      var log = document.getElementById('ctolog');
+      var fromBottom = log ? log.scrollHeight - log.clientHeight - log.scrollTop : null;
+      body.innerHTML = e.data;
+      if (fromBottom !== null) ctoToBottom(fromBottom > 8 ? fromBottom : 0);
+    });
+  }
+  function stopCTOStream() {
+    if (ctoStream) { ctoStream.close(); ctoStream = null; }
+  }
   function setCTO(open) {
     if (!cto || !app) return;
     cto.hidden = !open;
     app.classList.toggle('cto-open', open);
     if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     try { localStorage.setItem('anw-cto', open ? '1' : '0'); } catch (e) {}
+    document.cookie = 'anw-cto=' + (open ? '1' : '0') + '; path=/; SameSite=Lax';
+    if (open) { startCTOStream(); ctoToBottom(0); } else stopCTOStream();
   }
   if (toggle) toggle.addEventListener('click', function () { setCTO(cto.hidden); });
-  var close = document.getElementById('closeCTO');
-  if (close) close.addEventListener('click', function () { setCTO(false); });
-  try { if (localStorage.getItem('anw-cto') === '1') setCTO(true); } catch (e) {}
+  // The panel header is redrawn by the stream, so the close button is found
+  // when it is clicked.
+  document.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('#closeCTO')) setCTO(false);
+  });
+  var storedCTO = null;
+  try { storedCTO = localStorage.getItem('anw-cto'); } catch (e) {}
+  if (storedCTO === '1') {
+    setCTO(true);
+  } else if (storedCTO === '0') {
+    setCTO(false);
+  } else if (cto && !cto.hidden) {
+    startCTOStream();
+    ctoToBottom(0);
+  }
 
   document.addEventListener('keydown', function (e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;

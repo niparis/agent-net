@@ -1,13 +1,13 @@
 {{define "page"}}<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#102c29"><meta name="color-scheme" content="light dark"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/static/icon.svg"><link rel="apple-touch-icon" href="/static/icon.png"><link rel="stylesheet" href="/static/console.css"><script src="/static/htmx.min.js" defer></script><script src="/static/sse.js" defer></script><script src="/static/console.js" defer></script><title>{{.Screen.Name}} - agent-net</title></head>
 <body>
-<div class="app" id="app">
+<div class="app{{if .CTOOpen}} cto-open{{end}}" id="app">
 <nav class="rail" aria-label="Screens"><div class="brand"><b>agent-net</b></div><div class="navlist">{{range .Screens}}<a class="nav" href="{{.Path}}" data-key="{{.Key}}"{{if eq .ID $.Screen.ID}} aria-current="page"{{end}}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">{{.Icon}}</svg>{{.Name}}{{if eq .ID "desk"}}<span class="count" id="navcount"{{if not $.AskCount}} hidden{{end}}>{{$.AskCount}}</span>{{end}}<span class="k">{{.Key}}</span></a>{{end}}</div></nav>
 <div class="main">
 <div class="top"><div><h1 id="title">{{.Screen.Name}}</h1><div class="sub">{{.Screen.Sub}}</div></div><span class="spacer"></span>{{template "live" .}}<button class="ctobtn" type="button" id="toggleCTO" aria-controls="cto" aria-expanded="false">CTO</button></div>
 <div class="content" id="content"{{if .Connected}} hx-ext="sse" sse-connect="{{.EventsURL}}"{{end}}><div id="screen"{{if .Connected}} sse-swap="update"{{end}}>{{template "body" .}}</div></div>
 </div>
-<aside class="cto" id="cto" hidden aria-label="CTO"><header><b>CTO</b><span class="spacer"></span><button class="btn quiet" type="button" id="closeCTO" aria-label="Close the CTO panel">Close</button></header><div class="ctobody"><p>CTO chat arrives in part 4.</p><p class="muted">Until then, talk to the CTO in the TUI.</p></div></aside>
+<aside class="cto" id="cto"{{if not .CTOOpen}} hidden{{end}} aria-label="{{.CTOTitle}}" data-events="{{.CTOEventsURL}}"><div id="ctobody">{{template "ctobody" .}}</div></aside>
 </div>
 <nav class="bottomnav" aria-label="Screens">{{range .Screens}}<a href="{{.Path}}"{{if eq .ID $.Screen.ID}} aria-current="page"{{end}}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">{{.Icon}}</svg>{{.Name}}{{if eq .ID "desk"}}<span class="count" id="bnavcount"{{if not $.AskCount}} hidden{{end}}>{{$.AskCount}}</span>{{end}}</a>{{end}}</nav>
 </body></html>{{end}}
