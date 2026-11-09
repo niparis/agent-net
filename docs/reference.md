@@ -60,8 +60,8 @@ sampling is available and the process is not shared. A warning is a prompt to
 inspect the session; it never stops or restarts it. Workers use their own idle
 notices. A session raises one warning for one activity time. Once it is open,
 answered or closed by the chief of staff, the same activity time raises no new
-warning; only later activity can. Offline sessions, and sessions that are idle
-or have announced done, are not warned about.
+warning; only later activity can. Offline sessions, and non-busy sessions that
+announced done, are not warned about.
 
 Agents, workers and the CTO can read public settings with `agent_settings_read`.
 It accepts an optional `key` and `repo` and returns definitions, effective

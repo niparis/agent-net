@@ -413,6 +413,37 @@ func TestSessionStallSkipsOfflineAndIdleDone(t *testing.T) {
 	})
 }
 
+func TestSessionStallIdlePendingDeliveryStillRaises(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, err := s.CreateNode("test-host", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "idle-pending", Status: "idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender, _ := twoSessions(t, s)
+	if _, _, err := send(s, sender, id, "idle-pending-delivery", ""); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	stalls := stallItems(t, s)
+	if len(stalls) != 1 || stalls[0].Status != "open" || stalls[0].SessionID != id {
+		t.Fatalf("idle pending stall: %+v", stalls)
+	}
+	c.t = c.t.Add(time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(stallItems(t, s)); got != 1 {
+		t.Fatalf("idle pending stall repeated: %d asks", got)
+	}
+}
+
 func TestSessionStallBusySessionStillRaises(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, err := s.CreateNode("test-host", "linux")

@@ -73,9 +73,10 @@ func (s *Store) checkSessionStalls() error {
 	rows.Close()
 	now := s.now()
 	for _, c := range sessions {
-		// An offline session, or one that is idle and done, has nothing to
-		// stall. A busy session that stopped making progress still does.
-		idleDone := c.status == "idle" || (c.status != "busy" && announcedDone(c.task))
+		// An offline session, or one that is not busy and has announced done,
+		// has nothing to stall. A busy session that stopped making progress
+		// still does, and so does an idle session with a stuck delivery.
+		idleDone := c.status != "busy" && announcedDone(c.task)
 		eligible := c.online != 0 && c.worker == "" && c.waiting == "" && !idleDone && (c.pending > 0 || c.status == "busy")
 		baseline := c.active
 		if c.status != "busy" && c.pending > baseline {
