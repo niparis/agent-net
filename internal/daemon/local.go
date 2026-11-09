@@ -818,6 +818,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if method == protocol.MethodPolicy {
 		return lc.policyCall(ctx, client, ls, raw)
 	}
+	if method == protocol.MethodCompaction {
+		return lc.compactionCall(client, raw)
+	}
 	if method == protocol.MethodCharterText {
 		return lc.charterTextCall(ctx, client, ls)
 	}

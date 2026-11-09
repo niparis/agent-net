@@ -59,6 +59,23 @@ const (
 // It is not an operator method.
 const MethodPolicy = "policy"
 
+// MethodCompaction is the local method of the Claude Code hook that says a
+// session's transcript was compacted. The daemon sends the charter block
+// again on the next prompt, because the summary may have dropped it.
+const MethodCompaction = "compaction"
+
+// CompactionRequest is MethodCompaction. The Claude Code hook names the
+// session it runs for.
+type CompactionRequest struct {
+	Harness  string `json:"harness,omitempty"`
+	NativeID string `json:"native_id,omitempty"`
+}
+
+// CharterChangedNotice is the one line before a charter block that changed
+// since the last one the session saw. The hook sends the full new text after
+// it, because the model must see the values, not only that they changed.
+const CharterChangedNotice = "[agent-net] The charter changed since it was last sent. The full text follows."
+
 // CoderAgentPrefix starts the name of the subagent that agent-net defines.
 const CoderAgentPrefix = "agent-net-coder-"
 

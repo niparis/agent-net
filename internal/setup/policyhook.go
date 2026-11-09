@@ -32,7 +32,14 @@ const policyStepName = "claude policy hook"
 const policyTimeoutSeconds = 3
 
 // policyEvents: UserPromptSubmit has no matcher (it fires on every prompt).
-var policyEvents = []struct{ event, matcher string }{{"UserPromptSubmit", ""}}
+// PostCompact fires after a manual or automatic compaction, and SessionStart
+// with matcher compact is the same moment for Claude Code versions that only
+// report it there. Both tell the daemon to send the charter block again.
+var policyEvents = []struct{ event, matcher string }{
+	{"UserPromptSubmit", ""},
+	{"PostCompact", ""},
+	{"SessionStart", "compact"},
+}
 
 type policyState struct {
 	Asked     bool   `json:"asked"`
@@ -131,6 +138,43 @@ func (r *runner) claudePolicyHook() {
 		return
 	}
 	r.step(policyStepName, "on (hook in "+displayPath(path)+")", nil)
+}
+
+// refreshPolicyHook brings the policy hooks up to date when the owner turned
+// them on and agent-net added them. The daemon applies unchanged answers
+// without a setup run, so a new agent-net version that adds an event reaches
+// machines set up before. It writes and logs only when the hooks differ. A
+// binary whose name does not say agent-net is left alone, like the needs hooks.
+func refreshPolicyHook(want bool, logf func(format string, args ...any)) {
+	st := loadPolicyState()
+	if !want || !st.Installed || claudePath() == "" {
+		return
+	}
+	exe, err := refreshExecutable()
+	if err != nil || !isPolicyCommand(policyCommand(exe)) {
+		return
+	}
+	path := st.Settings
+	if path == "" {
+		path = claudeSettingsPath()
+	}
+	doc, err := readSettings(path)
+	if err != nil {
+		return
+	}
+	changed, err := withHooks(doc, policyCommand(exe), isPolicyCommand, policyEvents, policyTimeoutSeconds)
+	if err != nil || !changed {
+		return
+	}
+	if err := atomicWrite(path, doc.encode(), 0o644); err != nil {
+		if logf != nil {
+			logf("%s: could not update the hooks in %s: %v", policyStepName, displayPath(path), err)
+		}
+		return
+	}
+	if logf != nil {
+		logf("%s: updated (hooks in %s)", policyStepName, displayPath(path))
+	}
 }
 
 // askPolicyHook asks on the controlling terminal. ok is false when there is no

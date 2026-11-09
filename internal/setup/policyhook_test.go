@@ -8,6 +8,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/claudeagents"
 	"github.com/niparis/agent-net/internal/daemon"
+	"github.com/niparis/agent-net/internal/integrations"
 )
 
 func TestPolicyHookIsAskedAndAddedOnYes(t *testing.T) {
@@ -136,6 +137,57 @@ func TestPolicyAndHintHooksLiveSideBySideAndUninstallRemovesOnlyOurs(t *testing.
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("a file that agent-net did not write was removed: %s", p)
 		}
+	}
+}
+
+// An upgrade can add a compaction event to the policy hook. The daemon
+// applies the same answers at start, so a machine set up before must get the
+// new events without a setup run. The second apply leaves the file alone.
+func TestApplyIntegrationsUpdatesThePolicyHookOfAnOlderVersion(t *testing.T) {
+	f := newFixture(t)
+	fakeClaude(t, f.home)
+	old := refreshExecutable
+	refreshExecutable = func() (string, error) { return "/opt/test/agent-net", nil }
+	t.Cleanup(func() { refreshExecutable = old })
+	writeSettings(t, f, otherKeys)
+	// What an older agent-net wrote: UserPromptSubmit only.
+	doc, err := readSettings(settingsFile(f))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := withHooks(doc, policyCommand("/opt/test/agent-net"), isPolicyCommand, policyEvents[:1], policyTimeoutSeconds); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicWrite(settingsFile(f), doc.encode(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := savePolicyState(policyState{Asked: true, Installed: true, Settings: settingsFile(f)}); err != nil {
+		t.Fatal(err)
+	}
+	var answers integrations.Answers
+	answers.PolicyHook = true
+	if err := integrations.SaveApplied(filepath.Join(f.home, "cfg"), answers); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyIntegrations(answers, nil); err != nil {
+		t.Fatal(err)
+	}
+	h := hooksOfFile(t, f)
+	if g := h["PostCompact"]; len(g) != 1 || g[0].Hooks[0].Command != "/opt/test/agent-net policy-hook" {
+		t.Fatalf("PostCompact after the upgrade apply: %+v", g)
+	}
+	if g := h["SessionStart"]; len(g) != 1 || g[0].Matcher != "compact" || g[0].Hooks[0].Command != "/opt/test/agent-net policy-hook" {
+		t.Fatalf("SessionStart after the upgrade apply: %+v", g)
+	}
+	if n := strings.Count(readSettingsFile(t, f), "policy-hook"); n != 3 {
+		t.Fatalf("want 3 policy hooks, got %d:\n%s", n, readSettingsFile(t, f))
+	}
+	before := readSettingsFile(t, f)
+	if err := ApplyIntegrations(answers, nil); err != nil {
+		t.Fatal(err)
+	}
+	if readSettingsFile(t, f) != before {
+		t.Error("a second apply rewrote the policy hooks")
 	}
 }
 
