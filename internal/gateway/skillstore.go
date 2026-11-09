@@ -163,7 +163,7 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 		return v, reject("import needs an item and a location")
 	}
 	var name, hash string
-	err := g.store.db.QueryRow(`SELECT i.name,i.hash FROM tool_identities i JOIN tool_locations l ON l.identity_id=i.id WHERE i.id=? AND i.kind='skill' AND l.node_id=? AND json_extract(l.observation,'$.location')=? AND json_extract(l.observation,'$.state')='ok' LIMIT 1`, p.Item, p.Location.NodeID, p.Location.Location).Scan(&name, &hash)
+	err := g.store.db.QueryRow(`SELECT i.name,i.hash FROM tool_identities i JOIN tool_locations l ON l.identity_id=i.id WHERE i.id=? AND i.kind IN ('skill','prompt','agent') AND l.node_id=? AND json_extract(l.observation,'$.location')=? AND json_extract(l.observation,'$.state')='ok' LIMIT 1`, p.Item, p.Location.NodeID, p.Location.Location).Scan(&name, &hash)
 	if err != nil || hash == "" {
 		return v, reject("skill location is not a current observation")
 	}
@@ -313,7 +313,7 @@ func (g *Gateway) readSkillText(ctx context.Context, p protocol.SkillTextRequest
 	if p.Item == "" || p.Location.NodeID == "" || p.Location.Location == "" || p.Path == "" {
 		return nil, reject("file request is incomplete")
 	}
-	err := g.store.db.QueryRow(`SELECT i.name,i.hash FROM tool_identities i JOIN tool_locations l ON l.identity_id=i.id WHERE i.id=? AND i.kind='skill' AND l.node_id=? AND json_extract(l.observation,'$.location')=? AND json_extract(l.observation,'$.state')='ok' LIMIT 1`, p.Item, p.Location.NodeID, p.Location.Location).Scan(&p.Name, &p.Hash)
+	err := g.store.db.QueryRow(`SELECT i.name,i.hash FROM tool_identities i JOIN tool_locations l ON l.identity_id=i.id WHERE i.id=? AND i.kind IN ('skill','prompt','agent') AND l.node_id=? AND json_extract(l.observation,'$.location')=? AND json_extract(l.observation,'$.state')='ok' LIMIT 1`, p.Item, p.Location.NodeID, p.Location.Location).Scan(&p.Name, &p.Hash)
 	if err != nil || p.Hash == "" {
 		return nil, reject("skill location is not a current observation")
 	}

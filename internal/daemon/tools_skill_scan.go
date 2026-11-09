@@ -41,15 +41,26 @@ func (d *Daemon) skillDetails(p protocol.ToolSkillScan) (protocol.ToolSkillDetai
 	}
 	d.toolsMu.Lock()
 	observed := false
+	kind := ""
 	for _, item := range d.toolsReport.Items {
-		if item.Kind == protocol.InventorySkill && item.Name == p.Name && item.Location == p.Location && item.Hash == p.Hash && item.State == protocol.InventoryOK {
-			observed = true
+		if protocol.IsBundleKind(item.Kind) && item.Name == p.Name && item.Location == p.Location && item.Hash == p.Hash && item.State == protocol.InventoryOK {
+			observed, kind = true, item.Kind
 			break
 		}
 	}
 	d.toolsMu.Unlock()
 	if !observed {
 		return protocol.ToolSkillDetails{}, errors.New("skill is no longer observed")
+	}
+	if protocol.IsFileKind(kind) {
+		hash, manifest, err := inventory.ObserveFile(p.Location, p.Name)
+		if err != nil {
+			return protocol.ToolSkillDetails{}, errors.New("skill cannot be read")
+		}
+		if hash != p.Hash {
+			return protocol.ToolSkillDetails{}, errors.New("skill changed since its scan")
+		}
+		return protocol.ToolSkillDetails{Manifest: manifest, ScannedAt: time.Now().UTC()}, nil
 	}
 	hash, err := inventory.SkillHash(p.Location)
 	if err != nil {

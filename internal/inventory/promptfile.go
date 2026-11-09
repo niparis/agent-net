@@ -145,3 +145,20 @@ func PackNamedFile(path, name string) ([]byte, error) {
 	}
 	return out.Bytes(), nil
 }
+
+// ObserveFile reads one prompt or agent file again and returns its strict hash
+// and its manifest, the way a scan records them. It is used to check an
+// observation before the file is imported or read.
+func ObserveFile(path, name string) (string, *protocol.SkillManifest, error) {
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return "", nil, err
+	}
+	defer root.Close()
+	data, info, err := readBundleFile(root, filepath.Base(path))
+	if err != nil {
+		return "", nil, err
+	}
+	obs := observeFile(name, data, info)
+	return obs.Hash, obs.Manifest, nil
+}
