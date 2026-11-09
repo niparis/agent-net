@@ -14,11 +14,11 @@ Keys · all screens ────────────────────
  Desk
   pgup/pgdn              page
   home/g, end            first, last row
-  a                      approve
-  r                      refuse
-  s                      let stand
-  O                      overrule
-  A                      approve all
+  a                      approve the request
+  r                      refuse the request
+  s                      keep the refusal
+  O                      grant the request
+  A                      approve all changes
   t                      type answer
   more below
 up/down scroll  ? this screen  esc close

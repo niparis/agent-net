@@ -6,8 +6,8 @@ Desk · no chief of staff · sorted 0 asks today · log closed (l opens it)
 │   alice         held request → strategies                        5m │ │ session ci-runner · agent-net on build-vm    │
 │   ops → app     deploy app refused: "not now"                    6m │ │ 10 minutes ago                               │
 │   CTO           start a Pi session in shop, on Mac               8m │ │                                              │
-│   ops (learned) add "deploys" to what it refuses                 7m │ │ t type answer  x dismiss  enter details      │
-│   Notice        checker is blocked on the deploy key            11m │ │                                              │
+│   ops (learned) add "deploys" to what it refuses                 7m │ │ t answer ci-runner  x dismiss the ask        │
+│   Notice        checker is blocked on the deploy key            11m │ │ enter open details                           │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─In flight · 0───────────────────────────────────────────────────────╮ │                                              │
 │ Loading changes...                                                  │ │                                              │
@@ -31,4 +31,4 @@ Desk · no chief of staff · sorted 0 asks today · log closed (l opens it)
 │                                                                                                                      │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-t type answer  x dismiss  enter details  n didn't need me  ↑↓ select  l log  ? help
+t answer ci-runner  x dismiss the ask  enter open details  n didn't need me  ↑↓ select  l open the log  ? help

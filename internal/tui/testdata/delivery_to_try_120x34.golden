@@ -10,8 +10,8 @@ Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 │   Enter reuses bg attach pane           verify   try it 3h0m   ○    │ │ session, press Enter, and confirm that it    │
 │     merged: 7c694c9  check: It should focus that pane, not open a … │ │ opens and comes online.                      │
 │   Stop shows at once in Sessions        verify   try it 3h0m   ○    │ │                                              │
-│     merged: 7c694c9  check: Owner check: in Sessions, select a ses… │ │ enter evidence  v all changes  R refresh     │
-│   x removes an offline session for good verify   try it 3h0m   ○    │ │ y it works  n it fails                       │
+│     merged: 7c694c9  check: Owner check: in Sessions, select a ses… │ │ enter open the change  v show all changes    │
+│   x removes an offline session for good verify   try it 3h0m   ○    │ │ R refresh  y it works  n it fails            │
 │     merged: 7c694c9  check: It should ask to remove it and then be… │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─Handled for you · 0─────────────────────────────────────────────────╮ │                                              │
@@ -31,4 +31,4 @@ Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter evidence  v all changes  R refresh  y it works  n it fails  ↑↓ select  l log  ? help
+enter open the change  v show all changes  R refresh  y it works  n it fails  ↑↓ select  l open the log  ? help

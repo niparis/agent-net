@@ -296,6 +296,58 @@ func inboxOutcomeSummary(e protocol.OutcomeInboxEntry) string {
 	return text
 }
 
+// inboxOutcomeParty is the side a refusal blocked: the node that asked.
+func inboxOutcomeParty(row inboxRow) string {
+	if s := strings.TrimSpace(sanitize(row.outcome.To)); s != "" {
+		return s
+	}
+	return "the requester"
+}
+
+// inboxOutcomeRequest is the request the refusal blocked, short enough to sit
+// on a key line.
+func inboxOutcomeRequest(row inboxRow) string {
+	s := strings.TrimSpace(sanitize(row.outcome.Request))
+	if s == "" {
+		return "the request"
+	}
+	return cutWords(s, 44)
+}
+
+// inboxOutcomeChoiceLabels say what each outcome key does, with the names and
+// the request filled in. Each label stays short enough for the two keys to
+// share one 80 column line.
+func inboxOutcomeChoiceLabels(row inboxRow) (string, string) {
+	const labelMax = 37
+	party, request := inboxOutcomeParty(row), inboxOutcomeRequest(row)
+	keep := "Keep refusal: " + party + " denied " + request
+	if row.outcome.Outcome == "escalate" {
+		keep = "Keep escalation: " + party + " denied " + request
+	}
+	return cutWords(keep, labelMax), cutWords("Overrule: "+party+" gets "+request, labelMax)
+}
+
+// inboxOutcomeAsked says who asked whom for what.
+func inboxOutcomeAsked(row inboxRow) string {
+	requester := firstNonEmpty(sanitize(row.outcome.To), "an agent")
+	refuser := firstNonEmpty(sanitize(row.outcome.From), "another agent")
+	request := firstNonEmpty(sanitize(row.outcome.Request), "a request")
+	return requester + " asked " + refuser + ": " + request
+}
+
+// inboxOutcomeNote says who refused and why, in the refuser's own words.
+func inboxOutcomeNote(row inboxRow) string {
+	who := firstNonEmpty(sanitize(row.outcome.From), "The other side")
+	line := who + " refused this request"
+	if row.outcome.Outcome == "escalate" {
+		line = who + " escalated this request"
+	}
+	if reason := strings.TrimSpace(sanitize(row.outcome.Reason)); reason != "" {
+		line += ": \"" + reason + "\""
+	}
+	return line
+}
+
 // inboxProposalSummary says what the CTO wants to do, with the machine named
 // as the gateway knows it, never by its node ID.
 func (m Model) inboxProposalSummary(p protocol.CTOProposal) string {
@@ -690,7 +742,7 @@ func (m Model) inboxPanelText(row inboxRow) string {
 	case "held":
 		return sanitizeBody(row.held.Body)
 	case "outcome":
-		text := inboxOutcomeSummary(row.outcome)
+		text := inboxOutcomeAsked(row) + " · " + inboxOutcomeNote(row)
 		if row.outcome.Recommendation != "" {
 			text += "\nRecommendation: " + sanitize(row.outcome.Recommendation)
 		}
@@ -1298,53 +1350,88 @@ func (m Model) inboxResolveOutcome(row inboxRow, action string) tea.Cmd {
 // inboxItemHints lists only the keys that act on the selected row. A key
 // that acts on every proposal or on the whole inbox is not listed here.
 func (m Model) inboxItemHints(row inboxRow) []hint {
+	details := bindingHint(contextInbox, "details")
 	switch row.kind {
 	case "held":
-		open := bindingHint(contextInbox, "details")
-		open.label = "open session"
-		return []hint{open, bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse")}
+		open := details
+		open.label = "open the session"
+		to := m.inboxSessionName(row.held.To)
+		if to == "" || strings.HasPrefix(to, "s_") {
+			to = "the other agent"
+		}
+		return keepChoices([]hint{open,
+			{key: "a", label: "send it to " + sanitize(to), prio: 1},
+			{key: "r", label: "keep it held", prio: 1}})
 	case "waiting":
-		open := bindingHint(contextInbox, "details")
-		open.label = "open session"
-		return []hint{open}
+		open := details
+		open.label = "open " + sanitize(m.inboxSessionName(row.session))
+		return keepChoices([]hint{open})
 	case "question":
-		h := []hint{bindingHint(contextInbox, "answer"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
-		if len(row.item.Options) > 0 {
-			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "pick", prio: 1}}, h...)
+		h := []hint{
+			{key: "t", label: "answer " + sanitize(row.name), prio: 1},
+			{key: "x", label: "dismiss the ask", prio: 1},
+			details,
 		}
-		return h
+		if len(row.item.Options) > 0 {
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "choose an answer", prio: 1}}, h...)
+		}
+		return keepChoices(h)
 	case "approval":
-		h := []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse"), bindingHint(contextInbox, "dismiss"), bindingHint(contextInbox, "details")}
-		if len(row.item.Options) > 0 {
-			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "pick", prio: 1}}, h...)
+		name := sanitize(row.name)
+		h := []hint{
+			{key: "a", label: "approve " + name + "'s request", prio: 1},
+			{key: "r", label: "refuse " + name + "'s request", prio: 1},
+			{key: "x", label: "dismiss the ask", prio: 1},
+			details,
 		}
-		return h
+		if len(row.item.Options) > 0 {
+			h = append([]hint{{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "choose an answer", prio: 1}}, h...)
+		}
+		return keepChoices(h)
 	case "proposal":
-		return []hint{bindingHint(contextInbox, "approve"), bindingHint(contextInbox, "refuse")}
+		return keepChoices([]hint{
+			{key: "a", label: "approve the change", prio: 1},
+			{key: "r", label: "decline the change", prio: 1},
+		})
 	case "outcome":
-		return []hint{bindingHint(contextInbox, "let stand"), bindingHint(contextInbox, "overrule")}
+		keep, overrule := inboxOutcomeChoiceLabels(row)
+		return keepChoices([]hint{{key: "s", label: keep, prio: 1}, {key: "O", label: overrule, prio: 1}})
 	case "learned":
-		return []hint{{key: "a", label: "accept", prio: 1}, {key: "r", label: "reject", prio: 1}}
+		what := "suggestion"
+		if row.learned.Origin == "draft" || strings.HasSuffix(row.name, " (draft)") {
+			what = "draft"
+		}
+		return keepChoices([]hint{{key: "a", label: "accept the " + what, prio: 1}, {key: "r", label: "reject the " + what, prio: 1}})
 	case "step":
-		open := bindingHint(contextInbox, "details")
-		open.label = "go to change"
-		return []hint{open}
+		open := details
+		open.label = "open the change"
+		return keepChoices([]hint{open})
 	case "notice":
-		return []hint{bindingHint(contextInbox, "dismiss")}
+		return keepChoices([]hint{{key: "x", label: "dismiss the notice", prio: 1}})
 	}
 	return nil
+}
+
+// keepChoices makes a row's own keys outlast the marks, the log and the help
+// key when the bar is too wide for all of them.
+func keepChoices(hs []hint) []hint {
+	for i := range hs {
+		hs[i].prio = 0
+	}
+	return hs
 }
 
 // inboxHints is the bottom key line: the keys that act on the selected row,
 // then the movement and help keys.
 func (m Model) inboxHints() []hint {
 	help := bindingHint(contextInbox, "help")
+	help.prio = 0
 	if m.inboxDetail {
 		row, ok := m.inboxSelected(m.inboxRows())
 		var h []hint
 		if ok && (row.kind == "question" || row.kind == "approval") {
 			if len(row.item.Options) > 0 {
-				h = append(h, hint{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "pick", prio: 1})
+				h = append(h, hint{key: fmt.Sprintf("1-%d", len(row.item.Options)), label: "choose an answer", prio: 1})
 			}
 			h = append(h, bindingHint(contextInbox, "answer"))
 			if row.kind == "approval" {
@@ -1353,8 +1440,9 @@ func (m Model) inboxHints() []hint {
 		}
 		return append(h, bindingHint(contextInbox, "back"))
 	}
-	move := hint{key: "↑↓", label: "select", prio: 1}
+	move := hint{key: "↑↓", label: "select", prio: 0}
 	logHint := bindingHint(contextInbox, "log")
+	logHint.prio = 1
 	if m.deskOnChange() {
 		if m.delivery.reporting || m.delivery.detail {
 			return m.deliveryHints()

@@ -106,6 +106,13 @@ func TestDeskShowsGroupedDraftAsOneDecision(t *testing.T) {
 			if len(rows) != 1 {
 				t.Fatalf("want one row, got %d", len(rows))
 			}
+			var choices []string
+			for _, h := range m.inboxItemHints(rows[0]) {
+				choices = append(choices, h.key+" "+h.label)
+			}
+			if got := strings.Join(choices, "  "); !strings.Contains(got, "accept the draft") || !strings.Contains(got, "reject the draft") {
+				t.Fatalf("draft choices do not say what they do: %q", got)
+			}
 			var fieldLines int
 			for _, line := range strings.Split(strings.Join(m.inboxDetailLines(rows[0]), "\n"), "\n") {
 				if strings.HasPrefix(line, "- repo purpose = ") || strings.HasPrefix(line, "- agent accepts = ") {

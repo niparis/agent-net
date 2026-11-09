@@ -5,8 +5,8 @@ Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 ╰─────────────────────────────────────────────────────────────────────╯ │ step approve: waiting for you                │
 ╭─In flight · 3───────────────────────────────────────────────────────╮ │ with you                                     │
 │   TITLE                    STEP     STATUS             AGE    DONE  │ │                                              │
-│ ▸ Say what a delivery row… approve  waiting for you    6m     ●●●○○ │ │ enter evidence  v all changes  R refresh     │
-│   Show the provider in ea… review   waiting for merger 2h0m   ●○○○  │ │                                              │
+│ ▸ Say what a delivery row… approve  waiting for you    6m     ●●●○○ │ │ enter open the change  v show all changes    │
+│   Show the provider in ea… review   waiting for merger 2h0m   ●○○○  │ │ R refresh                                    │
 │   Fix the deploy gate      review   back to an unknow… 5h0m   ●✗●○○ │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─Handled for you · 0─────────────────────────────────────────────────╮ │                                              │
@@ -21,4 +21,4 @@ Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter evidence  v all changes  R refresh  ↑↓ select  l log  ? help
+enter open the change  v show all changes  R refresh  ↑↓ select  l open the log  ? help

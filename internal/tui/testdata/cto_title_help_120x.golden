@@ -168,13 +168,13 @@ Legend ────────────────────────�
  Desk
   pgup/pgdn              page
   home/g, end            first, last row
-  a                      approve
-  r                      refuse
-  s                      let stand
-  O                      overrule
-  A                      approve all
+  a                      approve the request
+  r                      refuse the request
+  s                      keep the refusal
+  O                      grant the request
+  A                      approve all changes
   t                      type answer
-  x                      dismiss
+  x                      dismiss the ask
   u                      undo
   n                      on an ask that reached you: the chief did not need to send it. Type one optional line of why;
                          the chief reads it in its next batch.
@@ -185,22 +185,22 @@ Legend ────────────────────────�
                          change
 
  On a held request row
-  a                      approve
-  r                      refuse
+  a                      approve the request
+  r                      refuse the request
 
  On a learned suggestion row
-  a                      accept
-  r                      reject
+  a                      accept it
+  r                      reject it
 
  On an outcome row
-  s                      let stand
-  O                      overrule
+  s                      keep the refusal
+  O                      grant the request
 
  On a Atlas proposal row
   enter                  open the proposal detail
-  a                      approve
-  r                      decline
-  A                      approve all
+  a                      approve the change
+  r                      decline the change
+  A                      approve all the changes
 
  On a change in flight
   pgup                   ten changes up
@@ -242,9 +242,9 @@ Legend ────────────────────────�
   esc                    back
   up/down, j/k           scroll
   ?                      help
-  a                      approve
-  r                      decline
-  A                      approve all
+  a                      approve the change
+  r                      decline the change
+  A                      approve all the changes
 
  Proposal history
   esc                    back

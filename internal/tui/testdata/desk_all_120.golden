@@ -8,8 +8,8 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 │     priority 1 · why you: the ingest-forge charter has no rule for… │ │ session ingest-forge · on Mac                │
 ╰─────────────────────────────────────────────────────────────────────╯ │ 2 hours ago                                  │
 ╭─In flight · 5───────────────────────────────────────────────────────╮ │                                              │
-│   TITLE                     STEP     STATUS             AGE    DONE │ │ 1-2 pick  t type answer  x dismiss           │
-│   Approve the deploy gate   approve  waiting for you    3h0m   ○    │ │ enter details                                │
+│   TITLE                     STEP     STATUS             AGE    DONE │ │ 1-2 choose an answer  t answer ingest-forge  │
+│   Approve the deploy gate   approve  waiting for you    3h0m   ○    │ │ x dismiss the ask  enter open details        │
 │   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │                                              │
 │ … 5 more                                                            │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
@@ -31,4 +31,4 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-1-2 pick  t type answer  x dismiss  enter details  n didn't need me  ↑↓ select  l log  ? help
+1-2 choose an answer  t answer ingest-forge  x dismiss the ask  enter open details  n didn't need me  ↑↓ select  ? help
