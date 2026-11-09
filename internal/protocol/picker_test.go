@@ -299,42 +299,87 @@ func TestPickNoUncertainBoostMoreThanOneBucketBelowTheCeiling(t *testing.T) {
 	}
 }
 
-func TestPickLeavesOutAnOverqualifiedModel(t *testing.T) {
-	// An easy task, D 1.8. "strong" is far above the task by its benchmark
-	// and 0.4 under the best cell. A lenient interval test lets it through, so
-	// only the over-qualification rule can remove it.
-	tasks := append(pickTasks("cheap", 1.8, repeat(10, 1, .8, 1)...), pickTasks("strong", 1.8, repeat(10, .5, .5, .5)...)...)
+func TestPickOpusWithNoRecordIsAllowedInTheTopColumn(t *testing.T) {
+	// D 4.1 is bucket 9 (4.00-4.33). Opus benchmarks 51.7, ceiling D 5.0, which
+	// is within one bucket of the work, and a weaker model with a record is
+	// also allowed. Opus is allowed by its benchmark, and the rotation reaches it.
+	scores := pickScores(map[string]float64{"weak": 39, "opus": 51.7})
+	hard := pickTasks("weak", 4.1, repeat(10, 1, .8, 1)...)
+	table := BuildPickerTable(hard, DefaultPickerSettings())
+	lo, _ := table.BucketRange(9)
+	facts := []PickerCandidateFacts{
+		{Key: "weak", Cell: table.Cell("weak", 9), Scored: true, Benchmark: 39, Ceiling: 3.75},
+		{Key: "opus", Cell: table.Cell("opus", 9), Scored: true, Benchmark: 51.7, Ceiling: 5},
+	}
+	got, _ := PickerBucketVerdicts(facts, lo, table.BucketMean(9), 9, DefaultPickerSettings())
+	if !got[1].Allowed || !got[1].Prior || got[1].Reason != "" {
+		t.Fatalf("opus = %+v, want allowed by its benchmark", got[1])
+	}
+	counts := pickN(t, pickCandidates("weak", "opus"), "very_complex", 4.1, hard, scores, DefaultPickerSettings(), 40)
+	if counts["opus"] == 0 {
+		t.Fatalf("opus with n=0 was never picked in the top column: %v", counts)
+	}
+}
+
+func TestPickModelFarAboveTheWorkIsNotCutByItsBenchmark(t *testing.T) {
+	// D 1.8, bucket 2. The ceiling of "opus" is D 5.0, three buckets above the
+	// work, and "opus" has no record. The old over-qualification cut left it
+	// out. Now it is allowed by its benchmark and the verdict says so.
+	tasks := pickTasks("cheap", 1.8, repeat(10, 1, .8, 1)...)
+	table := BuildPickerTable(tasks, DefaultPickerSettings())
+	lo, _ := table.BucketRange(2)
+	facts := []PickerCandidateFacts{
+		{Key: "cheap", Cell: table.Cell("cheap", 2), Scored: true, Benchmark: 29, Ceiling: 2.25},
+		{Key: "opus", Cell: table.Cell("opus", 2), Scored: true, Benchmark: 51.7, Ceiling: 5},
+	}
+	got, _ := PickerBucketVerdicts(facts, lo, table.BucketMean(2), 2, DefaultPickerSettings())
+	if !got[1].Allowed || !got[1].Prior {
+		t.Fatalf("opus = %+v, want allowed by its benchmark", got[1])
+	}
+}
+
+func TestPickModelUnderTheBestIsLeftOutByTheQualifyingRule(t *testing.T) {
+	// "strong" has 10 tasks scoring about 0.12 under the best cell. Its
+	// interval is wide enough to be allowed, so only the qualifying rule
+	// (cell score under 0.9 x best) keeps it out of the rotation. The note
+	// says so, and never says "overqualified".
+	var tasks []PickerTask
+	tasks = append(tasks, pickTasks("cheap", 1.8, repeat(10, 1)...)...)
+	tasks = append(tasks, pickTasks("strong", 1.8, repeat(3, 1, .75, .75, .75)...)...)
 	scores := pickScores(map[string]float64{"cheap": 29, "strong": 51})
-	s := DefaultPickerSettings()
-	s.AllowedFraction = .3
-	counts := pickN(t, pickCandidates("cheap", "strong"), "simple", 1.8, tasks, scores, s, 20)
-	if counts["strong"] != 0 {
+	table := BuildPickerTable(tasks, DefaultPickerSettings())
+	cheapScore, strongScore := table.Cell("cheap", 2).Score, table.Cell("strong", 2).Score
+	if gap := cheapScore - strongScore; gap < .1 || gap > .14 {
+		t.Fatalf("fixture gap %.3f, want about 0.12 (cheap %.3f, strong %.3f)", gap, cheapScore, strongScore)
+	}
+	counts := pickN(t, pickCandidates("cheap", "strong"), "simple", 1.8, tasks, scores, DefaultPickerSettings(), 20)
+	if counts["strong"] != 0 || counts["cheap"] != 20 {
 		t.Fatalf("picks: %v", counts)
 	}
-	// The same record on a task within one bucket of the strong model's
-	// ceiling keeps it in the rotation.
-	hard := append(pickTasks("cheap", 4.5, repeat(10, 1, .8, 1)...), pickTasks("strong", 4.5, repeat(10, .5, .5, .5)...)...)
-	counts = pickN(t, pickCandidates("cheap", "strong"), "very_complex", 4.5, hard, scores, s, 20)
-	if counts["strong"] == 0 || counts["cheap"] == 0 {
-		t.Fatalf("picks at the ceiling: %v", counts)
+	choice, err := ChooseWorkerModel(pickCandidates("cheap", "strong"), "simple", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 1.8, Table: table})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(choice.PickNote, "strong ") || !strings.Contains(choice.PickNote, "left out (score below 0.9×best)") || strings.Contains(choice.PickNote, "overqualified") {
+		t.Fatalf("note: %q", choice.PickNote)
 	}
 }
 
-func TestPickOverqualifiedRuleNeedsAWeakerAllowedModel(t *testing.T) {
-	// Only strong models are on the roster, so none can be dropped.
-	tasks := append(pickTasks("s1", 1.8, repeat(10, 1, .8, 1)...), pickTasks("s2", 1.8, repeat(10, .5, .5, .5)...)...)
-	scores := pickScores(map[string]float64{"s1": 51, "s2": 51})
-	s := DefaultPickerSettings()
-	s.AllowedFraction = .3
-	counts := pickN(t, pickCandidates("s1", "s2"), "simple", 1.8, tasks, scores, s, 20)
-	if counts["s1"] == 0 || counts["s2"] == 0 {
+func TestPickKeepsAModelAboveItsBenchmarkOut(t *testing.T) {
+	// A thin model whose benchmark ceiling is below the task stays out. D 4.5
+	// is far above "weak" (ceiling D 2.25).
+	scores := pickScores(map[string]float64{"weak": 29, "strong": 51})
+	tasks := pickTasks("strong", 4.5, repeat(10, 1)...)
+	counts := pickN(t, pickCandidates("weak", "strong"), "very_complex", 4.5, tasks, scores, DefaultPickerSettings(), 20)
+	if counts["weak"] != 0 || counts["strong"] != 20 {
 		t.Fatalf("picks: %v", counts)
 	}
 }
 
-func TestPickKeepsUntriedStrongModelsOffEasyWork(t *testing.T) {
+func TestPickUntriedStrongModelsGetTheExploreShareOnEasyWork(t *testing.T) {
 	// D 1.8 is bucket 2. "cheap" has a record. "strong" benchmarks very_complex
-	// (ceiling D 5.0), far above the task, and has no record, or only two tasks.
+	// (ceiling D 5.0) and has no record, or only two tasks. It is allowed by its
+	// benchmark and gets the explore share, not a rotation seat.
 	scores := pickScores(map[string]float64{"cheap": 29, "strong": 51})
 	cheap := pickTasks("cheap", 1.8, repeat(10, 1, .8, 1)...)
 	for name, tasks := range map[string][]PickerTask{
@@ -342,22 +387,16 @@ func TestPickKeepsUntriedStrongModelsOffEasyWork(t *testing.T) {
 		"two tasks": append(append([]PickerTask(nil), cheap...), pickTasks("strong", 1.8, 1, 1)...),
 	} {
 		counts := pickN(t, pickCandidates("cheap", "strong"), "simple", 1.8, tasks, scores, DefaultPickerSettings(), 20)
-		if counts["strong"] != 0 || counts["cheap"] != 20 {
-			t.Fatalf("%s: picks %v", name, counts)
+		if counts["strong"] != 2 || counts["cheap"] != 18 {
+			t.Fatalf("%s: picks %v, want the 10 percent explore share", name, counts)
 		}
 	}
-	// Near its ceiling the same model with no record still gets tries.
-	hard := pickTasks("cheap", 4.5, repeat(10, 1, .8, 1)...)
-	counts := pickN(t, pickCandidates("cheap", "strong"), "very_complex", 4.5, hard, scores, DefaultPickerSettings(), 20)
-	if counts["strong"] == 0 {
-		t.Fatalf("near the ceiling: picks %v", counts)
-	}
-	// With no weaker model allowed, the strong one is not left out.
-	counts = pickN(t, pickCandidates("strong"), "simple", 1.8, nil, scores, DefaultPickerSettings(), 5)
+	// With no weaker model allowed, the strong one is used.
+	counts := pickN(t, pickCandidates("strong"), "simple", 1.8, nil, scores, DefaultPickerSettings(), 5)
 	if counts["strong"] != 5 {
 		t.Fatalf("alone: picks %v", counts)
 	}
-	// Two untried strong models are equally strong: neither is weaker.
+	// Two untried strong models are equally strong.
 	both := pickScores(map[string]float64{"s1": 51, "s2": 51})
 	counts = pickN(t, pickCandidates("s1", "s2"), "simple", 1.8, nil, both, DefaultPickerSettings(), 10)
 	if counts["s1"] == 0 || counts["s2"] == 0 {
@@ -466,7 +505,7 @@ func TestPickNoteNamesTheCellsAndWhatWasLeftOut(t *testing.T) {
 	}
 }
 
-func TestPickNoteShowsOverqualifiedAndPriorAndChosenNotBest(t *testing.T) {
+func TestPickNoteShowsPriorAndChosenNotBest(t *testing.T) {
 	tasks := append(pickTasks("cheap", 1.8, repeat(10, 1, .8, 1)...), pickTasks("strong", 1.8, repeat(10, .5, .5, .5)...)...)
 	scores := pickScores(map[string]float64{"cheap": 29, "strong": 51, "fresh": 51})
 	s := DefaultPickerSettings()
@@ -476,13 +515,16 @@ func TestPickNoteShowsOverqualifiedAndPriorAndChosenNotBest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(choice.PickNote, "strong ") || !strings.Contains(choice.PickNote, "left out (overqualified)") {
-		t.Fatalf("note: %q", choice.PickNote)
+	// The lenient fraction lets "strong" qualify. "fresh" has no record and its
+	// benchmark is above the bucket start, so it is a thin cell open to the
+	// explore share. Nothing is left out as overqualified.
+	for _, want := range []string{"cheap 0.90 [0.86-0.95] n30, best", "strong 0.53 [0.49-0.58] n30 weight", "thin cells (explore share 0.1): fresh n0 (benchmark)"} {
+		if !strings.Contains(choice.PickNote, want) {
+			t.Fatalf("note misses %q: %q", want, choice.PickNote)
+		}
 	}
-	// "fresh" has no record and benchmarks far above this easy task, and "cheap"
-	// is a weaker model that is allowed, so fresh is left out by its benchmark.
-	if !strings.Contains(choice.PickNote, "fresh n0 left out (overqualified)") || !strings.Contains(choice.PickNote, "cheap 0.90 [0.86-0.95] n30") {
-		t.Fatalf("note should name the model with no record and the best cell: %q", choice.PickNote)
+	if strings.Contains(choice.PickNote, "overqualified") {
+		t.Fatalf("note: %q", choice.PickNote)
 	}
 }
 
@@ -570,8 +612,8 @@ func TestPickerBucketVerdictsAreTheCellRule(t *testing.T) {
 	if best != 0 || !got[0].Allowed {
 		t.Fatalf("best = %d, A = %+v, want A allowed and best", best, got[0])
 	}
-	if got[1].Allowed || got[1].Reason != "overqualified" {
-		t.Errorf("B = %+v, want left out as overqualified", got[1])
+	if !got[1].Allowed || !got[1].Prior || got[1].Reason != "" {
+		t.Errorf("B = %+v, want allowed by its benchmark, however far above the work", got[1])
 	}
 	if got[2].Allowed || got[2].Reason != "below 0.9×best" {
 		t.Errorf("D = %+v, want left out below the allowed fraction", got[2])

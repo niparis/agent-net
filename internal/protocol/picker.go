@@ -43,9 +43,6 @@ type PickerSettings struct {
 	// AllowedFraction: a model is allowed unless the top of its interval is
 	// below this fraction of the best cell.
 	AllowedFraction float64 `json:"allowed_fraction"`
-	// OverqualifiedMargin is how far under the best cell a model that is
-	// well above the task by its benchmark must score to be left out.
-	OverqualifiedMargin float64 `json:"overqualified_margin"`
 	// UncertainBoost multiplies the rotation weight of a cell with fewer than
 	// UncertainN tasks.
 	UncertainBoost float64 `json:"uncertain_boost"`
@@ -57,7 +54,7 @@ type PickerSettings struct {
 // third to ten digits, which the owner calls 0.33: the buckets read 1.00, 1.33,
 // 1.67, 2.00 and so on.
 func DefaultPickerSettings() PickerSettings {
-	return PickerSettings{WeakerBias: 1, ExploreShare: .1, BucketWidth: 0.3333333333, K: 5, AllowedFraction: .9, OverqualifiedMargin: .25, UncertainBoost: 1.5, UncertainN: 5}
+	return PickerSettings{WeakerBias: 1, ExploreShare: .1, BucketWidth: 0.3333333333, K: 5, AllowedFraction: .9, UncertainBoost: 1.5, UncertainN: 5}
 }
 
 // Normalized replaces every missing or invalid field with its default.
@@ -78,9 +75,6 @@ func (s PickerSettings) Normalized() PickerSettings {
 	}
 	if bad(s.AllowedFraction) {
 		s.AllowedFraction = d.AllowedFraction
-	}
-	if bad(s.OverqualifiedMargin) {
-		s.OverqualifiedMargin = d.OverqualifiedMargin
 	}
 	if bad(s.UncertainBoost) {
 		s.UncertainBoost = d.UncertainBoost

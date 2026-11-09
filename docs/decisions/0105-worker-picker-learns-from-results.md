@@ -114,15 +114,10 @@ uses the middle of the level's range):
 3. A candidate with 3 tasks or more is allowed unless the top of its interval is
    below `picker.allowed_fraction` (0.9) x best. A candidate with fewer is allowed
    by the benchmark prior.
-4. An allowed candidate whose benchmark ceiling is more than one bucket above D is
-   left out when a weaker allowed candidate exists and either:
-   - it has 3 tasks or more and its score is more than
-     `picker.overqualified_margin` (0.25) under the best; or
-   - it has fewer than 3 tasks. A thin cell has no score of its own, so the
-     benchmark alone decides (owner decision, 2026-11-08).
-   This keeps strong, expensive models off easy work, tried or not. "Weaker" means
-   a lower benchmark score. Two models with the same benchmark are not weaker than
-   each other, and a lone strong model is never left out.
+4. Removed by [0108](0108-remove-the-overqualified-rule.md). This step left out an
+   allowed candidate whose benchmark ceiling was more than one bucket above D when
+   a weaker allowed candidate existed (owner decision, 2026-11-08, for thin cells).
+   The number 4 is kept so the later steps keep theirs.
 5. The qualifying set (owner decision, 2026-11-08: "that rotation is important. i
    like B'") contains the allowed candidates with at least 3 tasks in the
    bucket and a cell score (not the top of the interval) of at least
@@ -160,7 +155,7 @@ older client keeps working.
 `model_note` names the bucket and the chosen cell, then the qualifying set with
 each rotation weight, then the thin cells open to the explore share, then every
 candidate that was left out with its reason (below the qualifying score, below
-the interval, overqualified, above its benchmark, no record and no benchmark),
+the interval, above its benchmark, no record and no benchmark),
 and the quota exclusions. A pick made by the explore share says
 "exploration pick". The pick reads the cached table only.
 
@@ -174,11 +169,11 @@ task yet appears with empty cells. The TUI does not poll it; part 2 reads it.
 ### Settings
 
 `picker.bucket_width` (1/3), `picker.k` (5), `picker.allowed_fraction` (0.9),
-`picker.overqualified_margin` (0.25), `picker.uncertain_boost` (1.5),
+`picker.uncertain_boost` (1.5),
 `picker.uncertain_n` (5), `picker.weaker_bias` (1.0) and `picker.explore_share`
 (0.10). The uncertain boost applies only in the fallback rotation. They are rules of the network. The CTO can change them.
 Settings that the cell rule replaced (`picker.fit_bands`, `picker.max_level_gap`,
-`picker.overqualified_scale`, `picker.poor_track_threshold`,
+`picker.overqualified_scale`, `picker.overqualified_margin` (removed by 0108), `picker.poor_track_threshold`,
 `picker.quality_weighting`) are gone from the ledger or marked as code.
 
 ## Consequences

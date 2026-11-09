@@ -681,16 +681,6 @@ settings:
     levels: [network]
     default: 0.9
     live: true
-  - key: picker.overqualified_margin
-    rows: [72]
-    description: A model that is more than one bucket under its benchmark ceiling is left out when its score is this far under the best cell and a weaker allowed model exists.
-    kind: rule
-    type: float
-    min: 0.01
-    max: 1
-    levels: [network]
-    default: 0.25
-    live: true
   - key: picker.uncertain_boost
     rows: [78]
     description: Rotation weight multiplier for a model whose cell holds fewer than picker.uncertain_n tasks, so uncertain models get a few more tasks. Used only when no model qualifies in the bucket.
@@ -1154,7 +1144,7 @@ ledger:
   - {row: 69, keys: [picker.model_scores]}
   - {row: 70, keys: [picker.bucket_width]}
   - {row: 71, keys: [picker.k]}
-  - {row: 72, keys: [picker.allowed_fraction, picker.overqualified_margin]}
+  - {row: 72, keys: [picker.allowed_fraction]}
   - {row: 73, keys: [picker.rotation_window]}
   - {row: 74, keys: [picker.quota_max_percent]}
   - {row: 75, keys: [picker.running_worker_penalty]}
