@@ -429,18 +429,6 @@ func (d *Daemon) namedModelReminder(p protocol.WorkerStartRequest) string {
 // query keeps the workers of one local Claude session, and adds the workers
 // that ended in the last two minutes.
 func (d *Daemon) workersView(ctx context.Context, q protocol.WorkersQuery) (*protocol.WorkersResult, error) {
-	data, err := d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true})
-	if err != nil {
-		return nil, err
-	}
-	var r protocol.AgentsResult
-	if err := json.Unmarshal(data, &r); err != nil {
-		return nil, err
-	}
-	ws := protocol.WorkersOf(r.Agents)
-	for i := range ws {
-		ws[i].Task = d.workerTask(ws[i].SessionID)
-	}
 	owner := ""
 	if q.OwnerClaude != "" {
 		d.mu.Lock()
@@ -448,6 +436,25 @@ func (d *Daemon) workersView(ctx context.Context, q protocol.WorkersQuery) (*pro
 			owner = ls.sessionID
 		}
 		d.mu.Unlock()
+	}
+	// A Claude session's panel asks every few seconds, so the gateway reads
+	// only that owner's workers, not every agent on the network. A session
+	// the daemon does not know owns none, so the gateway is not asked at all.
+	var r protocol.AgentsResult
+	if q.OwnerClaude == "" || owner != "" {
+		data, err := d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true, WorkersOwnedBy: owner})
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(data, &r); err != nil {
+			return nil, err
+		}
+	}
+	ws := protocol.WorkersOf(r.Agents)
+	for i := range ws {
+		ws[i].Task = d.workerTask(ws[i].SessionID)
+	}
+	if q.OwnerClaude != "" {
 		kept := ws[:0]
 		for _, v := range ws {
 			if owner != "" && v.Owner == owner {

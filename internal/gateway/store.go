@@ -3484,6 +3484,12 @@ func (s *Store) agentsBaseWith(selectSQL string, f protocol.QueryAgents) ([]prot
 	if f.Harness != "" {
 		where, args = ` AND s.harness=?`, append(args, f.Harness)
 	}
+	if f.WorkersOwnedBy != "" {
+		// s.worker is empty for a session that is not a worker, and
+		// json_extract fails on an empty string, so the CASE guards it.
+		where += ` AND (s.id=? OR CASE WHEN s.worker<>'' THEN json_extract(s.worker,'$.owner') END = ?)`
+		args = append(args, f.WorkersOwnedBy, f.WorkersOwnedBy)
+	}
 	rows, err := s.db.Query(selectSQL+` WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (`+piChildSQL+`)`+where+` ORDER BY s.last_seen DESC, s.id`, args...)
 	if err != nil {
 		return nil, err

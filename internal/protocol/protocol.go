@@ -608,6 +608,10 @@ type (
 		// IncludeOwners also returns the owner pseudo-sessions ("you (on
 		// host)"). They are left out by default: they are people, not agents.
 		IncludeOwners bool `json:"include_owners,omitempty"`
+		// WorkersOwnedBy keeps only the workers started by this session, and
+		// that session itself (so a reader can name the owner). A gateway
+		// from before this field ignores it and sends every agent.
+		WorkersOwnedBy string `json:"workers_owned_by,omitempty"`
 	}
 	QueryAgent struct {
 		SessionID string `json:"session_id"`
