@@ -80,11 +80,11 @@ keys. The reference is in [reference](../reference.md#the-chief-on-the-desk-deci
    deleted.
 2. **Marks.** `ask.mark` (owner or CTO) stores `didnt_need_me` or
    `should_have_asked`, with one optional line of why. The mark is a correction
-   with the ask's project as area and the ask id as ref. The next batch message
-   lists the newest five, so the chief reads them with each batch. The judgment
-   store (`judgment_add`) is not on this base, so the marks go to the table
-   `chief_corrections` for now. The TODO in `internal/gateway/chief.go` marks
-   the switch to `judgment_add` when it lands.
+   in the owner judgment store: kind correction, area chief, the ask id as ref.
+   The next batch message lists the newest five, so the chief reads them with
+   each batch. (Part 2 first wrote them to the table `chief_corrections`, because
+   the judgment store was not on its base. A later migration copied those rows
+   into the judgment store. The table is kept but no longer used.)
 3. **The Desk.** The header names the chief and whether it is online, and counts
    the sorts of the last 24 hours. Needs you is the next=owner list, and every
    count of "needs you" reads it. Each row shows priority and why_you. Handled

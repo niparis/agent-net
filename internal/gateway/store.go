@@ -1279,7 +1279,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, ownerMarksMigration}
 
 const ownerJudgmentsMigration = `
 -- Owner judgment store: extend standing_orders with kind, area and ref, and backfill answered owner asks.
