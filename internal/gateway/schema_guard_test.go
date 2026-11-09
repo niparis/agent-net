@@ -64,7 +64,7 @@ func TestOpenStoreMigratesOlderSchemaUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepareOldSessionIdentity(t, &Store{db: db})
+	prepareOldSessionIdentity(t, &Store{db: &storeDB{w: db}})
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}

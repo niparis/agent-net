@@ -97,18 +97,9 @@ func TestServeKeepsReadingWhileRequestsWaitForTheDatabase(t *testing.T) {
 	if !p.waitResult("h1", time.Second) {
 		t.Fatal("no answer to hello")
 	}
-	// Hold the only database connection, so every request that needs it waits.
-	conn, err := g.store.db.Conn(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	released := false
-	release := func() {
-		if !released {
-			released = true
-			conn.Close()
-		}
-	}
+	// Hold every database connection, the writer and the read pool, so every
+	// request that needs one waits.
+	release := holdAllConnections(t, g.store)
 	defer release()
 	p.send(map[string]any{"type": "query.agents", "id": "q1"})
 	p.send(map[string]any{"type": "hidden.set", "id": "w1", "sessions": []string{"s_x"}})
@@ -150,5 +141,38 @@ func TestServeLaneKeepsWriteOrder(t *testing.T) {
 	}
 	if want := fmt.Sprintf(`{"sessions":["s_%d"]}`, n-1); stored != want {
 		t.Fatalf("writes ran out of order, the stored value is %s, want %s", stored, want)
+	}
+}
+
+// A node that writes and then reads must see its write. The write frame runs in
+// the lane and is answered when it has committed; a read after the answer runs
+// on a read pool connection and has to see the row, whatever the readers did
+// before.
+func TestLanePoolReadSeesAWriteOnceItIsAnswered(t *testing.T) {
+	g, url, id, token := newLinkGateway(t, 70*time.Millisecond)
+	p := newServeTestPeer(t, url, token, id, g)
+	p.send(map[string]any{"type": "hello", "id": "h1", "hostname": "test-host"})
+	if !p.waitResult("h1", time.Second) {
+		t.Fatal("no answer to hello")
+	}
+	if g.store.db.r.Load() == nil {
+		t.Skip("the read pool is off")
+	}
+	for i := 0; i < 20; i++ {
+		// Read frames in flight, so pool connections are busy and have loaded the
+		// cache before the write.
+		p.send(map[string]any{"type": "settings.snapshot", "id": fmt.Sprintf("r%d", i)})
+		wid := fmt.Sprintf("w%d", i)
+		p.send(map[string]any{"type": "hidden.set", "id": wid, "sessions": []string{fmt.Sprintf("s_%d", i)}})
+		if !p.waitResult(wid, 2*time.Second) {
+			t.Fatalf("write %d was not answered", i)
+		}
+		var stored string
+		if err := g.store.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, hiddenItemsKey).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf(`{"sessions":["s_%d"]}`, i); stored != want {
+			t.Fatalf("after write %d was answered, a read gave %s, want %s", i, stored, want)
+		}
 	}
 }

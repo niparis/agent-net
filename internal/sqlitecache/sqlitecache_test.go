@@ -247,14 +247,29 @@ func TestTransactionAndContext(t *testing.T) {
 	}
 	before := c.Writes()
 	tx.Exec(`INSERT INTO t(n) VALUES (1)`)
-	if c.Writes() == before {
-		t.Fatal("a write in a transaction was not counted")
+	if c.Writes() != before {
+		t.Fatal("a write in a transaction was counted before its commit")
 	}
 	tx.Rollback()
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM t`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("rollback: %d %v", n, err)
 	}
+	if c.Writes() != before {
+		t.Fatal("a rolled back write was counted")
+	}
+	tx, err = db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx.Exec(`INSERT INTO t(n) VALUES (1)`)
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if c.Writes() != before+1 {
+		t.Fatalf("a committed write was counted %d times", c.Writes()-before)
+	}
+	db.Exec(`DELETE FROM t`)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	for i := 0; i < 5; i++ {

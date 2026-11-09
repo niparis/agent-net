@@ -261,7 +261,8 @@ func TestStampWithTheCacheOffMovesEverything(t *testing.T) {
 	}
 }
 
-// A statement prepared by hand and used in a transaction is counted too.
+// A statement prepared by hand and used in a transaction is counted too, when
+// the transaction commits.
 func TestPreparedStatementWritesAreCounted(t *testing.T) {
 	db, c := openTables(t, 16, "")
 	mustExec(t, db, `INSERT INTO b(n) VALUES (1)`)
@@ -274,13 +275,12 @@ func TestPreparedStatementWritesAreCounted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustExecTx := func() {
+	if got := moved(t, c, func() {
 		if _, err := st.Exec("x", 1); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if got := moved(t, c, mustExecTx); got != "b" {
-		t.Fatalf("prepared update moved %q, want b", got)
+	}); got != "" {
+		t.Fatalf("prepared update moved %q before the commit", got)
 	}
 	ins, err := tx.Prepare(`INSERT INTO c(n) VALUES (?) RETURNING n`)
 	if err != nil {
@@ -292,8 +292,24 @@ func TestPreparedStatementWritesAreCounted(t *testing.T) {
 			t.Fatal(err)
 		}
 		rows.Close()
-	}); got != "c" {
-		t.Fatalf("prepared insert moved %q, want c", got)
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}); got != "bc" {
+		t.Fatalf("the commit of a prepared update and insert moved %q, want bc", got)
+	}
+	// Outside a transaction a prepared statement counts when it ends.
+	out, err := db.Prepare(`UPDATE b SET v=? WHERE n=?`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	if got := moved(t, c, func() {
+		if _, err := out.Exec("y", 1); err != nil {
+			t.Fatal(err)
+		}
+	}); got != "b" {
+		t.Fatalf("prepared update outside a transaction moved %q, want b", got)
 	}
 }
 
