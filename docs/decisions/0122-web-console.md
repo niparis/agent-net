@@ -1,7 +1,7 @@
 # 0122 - The web console
 
 Date: 2026-11-09
-Status: Accepted by the owner (2026-11-09). Part 1 of 4 built.
+Status: Accepted by the owner (2026-11-09). Parts 1 to 3 of 4 built.
 
 ## The problem
 
@@ -33,8 +33,9 @@ Tailscale to start. Go ahead and build it."
    - Part 1 builds Desk and Sessions. Graph, Changes, Messages and Workers say
      "coming in the next update". The CTO button opens an empty side panel that
      says "CTO chat arrives in part 4".
-   - Part 2 is Changes and Messages (built, see items 10 to 12). Part 3 is Graph and Workers. Part 4 is
-     the CTO chat panel.
+   - Part 2 is Changes and Messages (built, see items 10 to 12). Part 3 is
+     Graph and Workers (built, see items 13 to 15). Part 4 is the CTO chat
+     panel.
 4. **Read and answer only.** The console answers what waits for the owner and
    reads the rest. Its only `POST` route is `/action`, with these kinds and no
    others: `held` (`AnswerHeld`), `outcome` (`ResolveOutcome`), `inbox`
@@ -94,6 +95,40 @@ Tailscale to start. Go ahead and build it."
     selected change, Messages the conversation list and the selected thread. A
     live update does not wipe the composer while the owner writes. The thread
     keeps its scroll place across an update.
+
+13. **Graph.** The screen draws the read the TUI Graph tab uses: `graph_view`
+    with `places` and `all`, so team records and each record's place arrive in
+    the same answer. It is one inline SVG built on the server. Team boxes carry
+    the team name, its lead and the team mode. The owner, the CTO and the chief
+    of staff (`chief_get`) sit above them, and records with no team sit in an
+    "answers to you" box. A node shows needs you, busy, idle or offline from its
+    sessions, and a team shows the highest state of its members. Depends edges
+    are solid. Dashed edges come from the newest message of each conversation in
+    the last hour (`conversations`), mapped from the two session IDs to their
+    graph records. A click is a plain link (`?s=<node>`), so it works without
+    JavaScript, and the detail card shows the name, harness and model, place,
+    machine, step owners (the delivery assignment edges of the record or its
+    repo) and charter purpose. The layout is deterministic: teams in columns,
+    members in a grid of fixed cells, so labels do not overlap. At a phone width
+    the SVG keeps its pixel width and scrolls inside `.graphwrap`; the page
+    never scrolls sideways. The legend below the graph names the four states,
+    the message edge and the depends edge. There is no edit action and no "Edit
+    place" button: places and charters stay in the TUI.
+14. **Workers.** Subscriptions read `usage` and merge the same provider, plan and
+    window from every machine, newest reading first. Each row shows the percent
+    left as a bar, the pace, the reset time and a protected chip from
+    `protected_providers_get`. Model picks come from the registered profiles,
+    `scores_get` and `worker_rotation_get`: model, harness, score, the T and S to
+    V columns the model is in rotation for, and the used and done counts from the
+    machines' track records. Running workers come from `worker_log` entries with
+    status running, with their name, model, task, run time and tokens. The cost
+    shows a dash because the worker log carries no cost for a run in progress;
+    the screen does not invent one. The screen is read only: protecting a
+    provider and starting or stopping a worker stay in the TUI.
+15. **Live for both.** The same `/events` stream re-renders Graph and Workers.
+    The Graph screen reads the graph, `chief_get` and the conversations of the
+    last hour. The Workers screen reads `usage` and the worker snapshot. Neither
+    screen reads the change list, the message text or the Desk lists.
 
 ## Not decided here
 

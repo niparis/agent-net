@@ -768,9 +768,8 @@ The console has six screens: Desk (`/`, key `1`), Sessions (`/sessions`, `2`),
 Graph (`/graph`, `3`), Changes (`/changes`, `4`), Messages (`/messages`, `5`)
 and Workers (`/workers`, `6`). On a desk they sit in a left rail. Under 760px
 wide they sit in a bottom bar. The top bar has the title, a live dot and the CTO
-button, which opens a side panel (key `c`). In this version Desk, Sessions,
-Changes and Messages are built; Graph and Workers say "coming in the next
-update", and the CTO panel says that chat arrives later.
+button, which opens a side panel (key `c`). All six screens are built. The CTO
+panel says that chat arrives in part 4.
 
 - **Desk** shows Needs you (the open asks of the TUI Desk, with the
   recommendation and the "why you" line), In flight (open delivery changes that
@@ -783,6 +782,24 @@ update", and the CTO panel says that chat arrives later.
   sessions grouped by needs you, working, idle and offline. The detail panel
   shows the task, machine, project, model, place, charter purpose and recent
   conversations. It is read only. A session is opened from the TUI.
+- **Graph** (`/graph?s=<node>`) draws the same read as the TUI Graph tab
+  (`graph_view` with places and teams) as a server-rendered SVG. Team boxes
+  carry the team name, its lead and the team mode. The owner, the CTO and the
+  chief of staff sit above them, and records with no team sit in an "answers
+  to you" box. Each node shows needs you, busy, idle or offline. Depends edges
+  are solid; conversations whose newest message is in the last hour are dashed.
+  A click selects a node in the address and fills the detail card with the
+  name, harness and model, place (team, lead, mode), machine, step owners and
+  charter purpose. The graph scrolls sideways inside its own box on a phone.
+  It has no edit action: places and charters are edited in the TUI.
+- **Workers** shows subscriptions (each provider, plan and window with the
+  percent left as a bar, the pace, the reset time and a protected chip, read
+  with `usage`), the model picks (model, harness, score, the T and S to V
+  rotation columns and the used and done counts, from the registered profiles,
+  `scores_get` and `worker_rotation_get`) and the workers that are running now
+  (name, model, task, run time and tokens, from `worker_log`; the cost shows a
+  dash because a run in progress has none). It is read only: protecting a
+  provider and starting or stopping a worker stay in the TUI.
 - **Changes** (`/changes?f=open|mine|all&s=<change>`) lists the delivery changes
   of the TUI Delivery tab, read with `changes_owner_find`. Each row has the
   title, the id, the revision, the risk, the step strip, a status line and the
@@ -811,7 +828,9 @@ update", and the CTO panel says that chat arrives later.
   teams, edges or settings.
 - `GET /events?screen=<screen>[&s=<row>][&f=<filter>]` is a server-sent event
   stream that sends the screen again when it changes. It reads only what that
-  screen shows.
+  screen shows: the Graph screen reads the graph, the chief status and the
+  conversations of the last hour; the Workers screen reads the quota report
+  and the worker snapshot.
 - The pages load nothing from outside the gateway.
 
 For a manually configured gateway, pass `--apps-listen 127.0.0.1:7422` and

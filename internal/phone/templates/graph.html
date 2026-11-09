@@ -1,0 +1,21 @@
+{{define "graph"}}<div class="split">
+<section class="box graph"><header><h2>Network</h2><span class="meta">{{.TeamLabel}} · {{.NodeLabel}}{{if .Messages}} · {{.MessagesLabel}} in the last hour{{end}}</span></header>
+{{if .Err}}<div class="body error" role="alert">{{.Err}}</div>{{else}}
+<div class="graphwrap"><svg viewBox="0 0 {{.Width}} {{.Height}}" role="img" aria-label="Network graph" style="min-width:{{.Width}}px">
+{{range .Boxes}}<g class="team"><rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" rx="10"/><text x="{{.TextX}}" y="{{.TextY}}">{{.Title}}</text>{{if .Sub}}<text class="sub" x="{{.TextX}}" y="{{.SubY}}">{{.Sub}}</text>{{end}}</g>
+{{end}}{{range .Edges}}<path class="{{.Class}}" d="{{.D}}"><title>{{.Aria}}</title></path>{{end}}
+{{range .Staff}}{{template "gnode" .}}{{end}}
+{{range .Boxes}}{{range .Nodes}}{{template "gnode" .}}{{end}}{{end}}
+</svg></div>
+<div class="legend"><span><span class="dot you"></span>needs you</span><span><span class="dot busy"></span>busy</span><span><span class="dot idle"></span>idle</span><span><span class="dot off"></span>offline</span><span>- - - message in the last hour</span><span>solid line: depends on</span></div>
+{{end}}
+</section>
+{{with .Detail}}<section class="box sticky detail" id="detail"><div class="body">
+<h3>{{.Name}}</h3><div class="lede">{{if .State}}<span class="chip {{.StateClass}}">{{.State}}</span> {{end}}{{if .Model}}<span class="mono">{{.Model}}</span>{{end}}</div>
+<dl class="kv">{{if .Harness}}<dt>Harness</dt><dd class="mono">{{.Harness}}</dd>{{end}}{{if .Model}}<dt>Model</dt><dd class="mono">{{.Model}}</dd>{{end}}<dt>Place</dt><dd>{{.Place}}</dd>{{if .Machine}}<dt>Machine</dt><dd>{{.Machine}}</dd>{{end}}{{if .Steps}}<dt>Steps</dt><dd>{{.Steps}}</dd>{{end}}{{if .Members}}<dt>Members</dt><dd>{{range $i, $m := .Members}}{{if $i}}, {{end}}{{$m}}{{end}}</dd>{{end}}</dl>
+{{if .Purpose}}<div class="section"><h4>Charter</h4><div class="pre">{{.Purpose}}</div></div>{{end}}
+<div class="row-note muted">The graph is read only. Charters and teams are edited in the TUI.</div>
+</div></section>{{end}}
+</div>{{end}}
+
+{{define "gnode"}}<g class="node{{if .Class}} {{.Class}}{{end}}{{if .Selected}} sel{{end}}"><a href="/graph?s={{.Key}}"><circle cx="{{.X}}" cy="{{.Y}}" r="7"/><text x="{{.TextX}}" y="{{.TextY}}">{{.Name}}</text><text class="s" x="{{.TextX}}" y="{{.SubY}}">{{.Sub}}</text></a></g>{{end}}
