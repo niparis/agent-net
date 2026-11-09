@@ -269,7 +269,7 @@ func PinnedClient(caPEM []byte) (*http.Client, error) {
 		// An idle timeout, so a client that is dropped does not hold its
 		// connection to the gateway open forever.
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
-			IdleConnTimeout: 90 * time.Second, MaxIdleConnsPerHost: 4},
+			IdleConnTimeout: 90 * time.Second, MaxIdleConnsPerHost: 16},
 	}, nil
 }
 

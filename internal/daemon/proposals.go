@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -174,19 +176,39 @@ func (d *Daemon) networkProposals(ctx context.Context) ([]protocol.CTOProposal, 
 	if err := json.Unmarshal(data, &nodes); err != nil {
 		return nil, err
 	}
+	// The other machines are asked together: one after the other, the list took
+	// the sum of their times and one slow machine held up the rest. The first
+	// failure in machine order is the one reported, as before.
+	type answer struct {
+		items []protocol.CTOProposal
+		err   error
+	}
+	var remote []protocol.NodeView
 	for _, node := range nodes.Nodes {
-		if !node.Online || node.NodeID == d.cfg.NodeID {
-			continue
+		if node.Online && node.NodeID != d.cfg.NodeID {
+			remote = append(remote, node)
 		}
-		data, err := d.call(ctx, "query.proposal_list", protocol.CTOProposalAnswer{NodeID: node.NodeID})
-		if err != nil {
-			return nil, fmt.Errorf("list proposals on %s: %w", node.Hostname, err)
+	}
+	answers := make([]answer, len(remote))
+	var wg sync.WaitGroup
+	for i, node := range remote {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			data, err := d.call(ctx, "query.proposal_list", protocol.CTOProposalAnswer{NodeID: node.NodeID})
+			if err != nil {
+				answers[i].err = fmt.Errorf("list proposals on %s: %w", node.Hostname, err)
+				return
+			}
+			answers[i].err = json.Unmarshal(data, &answers[i].items)
+		}()
+	}
+	wg.Wait()
+	for _, a := range answers {
+		if a.err != nil {
+			return nil, a.err
 		}
-		var items []protocol.CTOProposal
-		if err := json.Unmarshal(data, &items); err != nil {
-			return nil, err
-		}
-		out = append(out, items...)
+		out = append(out, a.items...)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
@@ -371,8 +393,18 @@ func (p proposalRunner) openProposalCount() int {
 	return count
 }
 
+// expire closes the proposals that waited a day. A read of the open proposals
+// comes first, and the write only when one is due: a write waits for the one
+// connection and for every other writer of the file, and a list asks every
+// second.
 func (p proposalRunner) expire() error {
-	_, err := p.state.db.Exec(`UPDATE cto_proposals SET status='expired', note='p_' || id || ' expired' WHERE status='open' AND created_at<=?`, p.now().Add(-24*time.Hour).UnixNano())
+	cutoff := p.now().Add(-24 * time.Hour).UnixNano()
+	var due int
+	err := p.state.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM cto_proposals WHERE status='open' AND created_at<=?)`, cutoff).Scan(&due)
+	if err != nil || due == 0 {
+		return err
+	}
+	_, err = p.state.db.Exec(`UPDATE cto_proposals SET status='expired', note='p_' || id || ' expired' WHERE status='open' AND created_at<=?`, cutoff)
 	return err
 }
 
@@ -502,28 +534,63 @@ func (d *Daemon) deliverProposalNote(ctx context.Context) error {
 	return d.proposalRunner().deliverNote(ctx, func(ctx context.Context, note string) error { _, err := d.ctoSend(ctx, note); return err })
 }
 
-func (p proposalRunner) list() ([]proposal, error) {
+// list returns every proposal with its delivery lines, oldest first.
+func (p proposalRunner) list() ([]proposal, error) { return p.read("") }
+
+// listOpen returns the proposals that wait for the owner. Callers that only
+// look at open proposals use it, so they do not read the whole history.
+func (p proposalRunner) listOpen() ([]proposal, error) { return p.read("status='open'") }
+
+// get returns one proposal by its ID (p_1). ok is false when there is none.
+func (p proposalRunner) get(id string) (item proposal, ok bool, err error) {
+	n, perr := strconv.ParseInt(strings.TrimPrefix(id, "p_"), 10, 64)
+	if perr != nil || !strings.HasPrefix(id, "p_") {
+		return proposal{}, false, nil
+	}
+	items, err := p.read("id=?", n)
+	if err != nil || len(items) == 0 {
+		return proposal{}, false, err
+	}
+	return items[0], true, nil
+}
+
+// read loads the proposals and their delivery lines with two queries, however
+// many proposals there are. It used to ask for the lines of each proposal
+// alone, on a table without an index, so the work grew with the square of the
+// history and took seconds on a CTO host that had run for a few months.
+//
+// filter is a condition on cto_proposals, or empty for all of them; args are
+// its values.
+func (p proposalRunner) read(filter string, args ...any) ([]proposal, error) {
 	if err := p.expire(); err != nil {
 		return nil, err
 	}
-	rows, err := p.state.db.Query(`SELECT id,tool,action,args,reason,created_at,status,note,result FROM cto_proposals ORDER BY id`)
+	where, linesWhere := "", ""
+	if filter != "" {
+		where = ` WHERE ` + filter
+		linesWhere = ` WHERE proposal_id IN (SELECT id FROM cto_proposals WHERE ` + filter + `)`
+	}
+	rows, err := p.state.db.Query(`SELECT id,tool,action,args,reason,created_at,status,note,result FROM cto_proposals`+where+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
 	var out []proposal
+	index := map[int64]int{}
 	for rows.Next() {
 		var v proposal
 		var id, at int64
-		var args, result string
-		if err := rows.Scan(&id, &v.Call.Tool, &v.Call.Action, &args, &v.Reason, &at, &v.Status, &v.Note, &result); err != nil {
+		var argsText, result string
+		if err := rows.Scan(&id, &v.Call.Tool, &v.Call.Action, &argsText, &v.Reason, &at, &v.Status, &v.Note, &result); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		v.ID = fmt.Sprintf("p_%d", id)
+		v.ID = "p_" + strconv.FormatInt(id, 10)
 		v.CreatedAt = time.Unix(0, at)
-		v.Call.Args = json.RawMessage(args)
+		v.Call.Args = json.RawMessage(argsText)
 		if result != "" {
 			v.Result = json.RawMessage(result)
 		}
+		index[id] = len(out)
 		out = append(out, v)
 	}
 	if err := rows.Err(); err != nil {
@@ -531,45 +598,34 @@ func (p proposalRunner) list() ([]proposal, error) {
 		return nil, err
 	}
 	rows.Close()
-	for i := range out {
-		rows, err := p.state.db.Query(`SELECT sender,at FROM cto_proposal_messages WHERE proposal_id=? ORDER BY rowid`, strings.TrimPrefix(out[i].ID, "p_"))
-		if err != nil {
+	if len(out) == 0 {
+		return out, nil
+	}
+	lines, err := p.state.db.Query(`SELECT proposal_id,sender,at FROM cto_proposal_messages`+linesWhere+` ORDER BY rowid`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer lines.Close()
+	for lines.Next() {
+		var proposalID, at int64
+		var item protocol.CTOProposalMessage
+		if err := lines.Scan(&proposalID, &item.Sender, &at); err != nil {
 			return nil, err
 		}
-		for rows.Next() {
-			var item protocol.CTOProposalMessage
-			var at int64
-			if err = rows.Scan(&item.Sender, &at); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			item.At = time.Unix(0, at)
+		item.At = time.Unix(0, at)
+		if i, ok := index[proposalID]; ok {
 			out[i].Messages = append(out[i].Messages, item)
 		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return nil, err
-		}
 	}
-	return out, nil
+	return out, lines.Err()
 }
 
 func (p proposalRunner) decide(ctx context.Context, id string, approve bool) error {
-	items, err := p.list()
+	item, found, err := p.get(id)
 	if err != nil {
 		return err
 	}
-	var item proposal
-	found := false
-	for _, v := range items {
-		if v.ID == id && v.Status == "open" {
-			item = v
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !found || item.Status != "open" {
 		return errors.New("proposal is not open")
 	}
 	status := "declined"
@@ -683,15 +739,13 @@ func (p proposalRunner) timeoutTUI(ctx context.Context, id string) error {
 }
 
 func (p proposalRunner) approveAll(ctx context.Context) error {
-	items, err := p.list()
+	items, err := p.listOpen()
 	if err != nil {
 		return err
 	}
 	for _, item := range items {
-		if item.Status == "open" {
-			if err := p.decide(ctx, item.ID, true); err != nil {
-				return err
-			}
+		if err := p.decide(ctx, item.ID, true); err != nil {
+			return err
 		}
 	}
 	return nil

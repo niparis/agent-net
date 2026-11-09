@@ -284,6 +284,8 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 		for _, l := range wrap("Could not load changes: "+sanitize(d.err), innerW) {
 			flight.body = append(flight.body, sBad.Render(l))
 		}
+	} else if d.slow {
+		flight.body = append(flight.body, sDim.Render(clip(deliverySlowText(len(d.changes) > 0), innerW)))
 	}
 	switch {
 	case len(changes) > 0:
@@ -304,7 +306,7 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 		if done, stale := m.deliveryHidden(); !d.showAll && done+stale > 0 {
 			flight.body = append(flight.body, sDim.Render(deliveryHiddenText(done, stale)))
 		}
-	case d.err != "":
+	case d.err != "" || d.slow:
 	case m.deliverySrc != nil && !d.loaded:
 		flight.body = append(flight.body, sDim.Render("Loading changes..."))
 	case len(d.changes) > 0:

@@ -41,16 +41,14 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 			return nil, errors.New("bad proposals arguments")
 		}
 		if q.ID != "" {
-			items, err := d.proposalRunner().list()
+			p, ok, err := d.proposalRunner().get(q.ID)
 			if err != nil {
 				return nil, err
 			}
-			for _, p := range items {
-				if q.ID == p.ID {
-					return map[string]any{"id": p.ID, "tool": p.Call.Tool, "action": p.Call.Action, "arguments": p.Call.Args, "reason": p.Reason, "created_at": p.CreatedAt, "status": p.Status, "note": p.Note}, nil
-				}
+			if !ok {
+				return nil, errors.New("unknown proposal")
 			}
-			return nil, errors.New("unknown proposal")
+			return map[string]any{"id": p.ID, "tool": p.Call.Tool, "action": p.Call.Action, "arguments": p.Call.Args, "reason": p.Reason, "created_at": p.CreatedAt, "status": p.Status, "note": p.Note}, nil
 		}
 		kind, err := ctoOwnerKindFilter(q.Kind)
 		if err != nil {

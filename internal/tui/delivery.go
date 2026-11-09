@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -113,6 +114,11 @@ type deliveryState struct {
 	loaded  bool
 	changes []deliveryChange
 	err     string
+	// slow is set when the last load ended by its deadline. The view then says
+	// "slow, retrying" and keeps the last list. retried is set once the
+	// background retry was made, so a second timeout waits for the next
+	// regular refresh instead of asking again at once.
+	slow, retried bool
 
 	loading      bool      // a list load is out
 	loadedAt     time.Time // when the last load started
@@ -476,14 +482,19 @@ func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 		// The topic did not move: the list on screen is still current and
 		// costs no bytes to keep. The read time does not move, so a list that
 		// gets old is read in full again.
-		d.err, d.dataVersion = "", msg.version
+		d.err, d.slow, d.retried, d.dataVersion = "", false, false, msg.version
 		m.delivery = d
 		return m, nil
 	}
-	if msg.err != nil {
-		d.err = msg.err.Error()
-	} else {
-		d.err = ""
+	retry := false
+	switch {
+	case msg.err != nil && operator.IsSlow(msg.err):
+		d.err, d.slow = "", true
+		retry, d.retried = !d.retried, true
+	case msg.err != nil:
+		d.err, d.slow, d.retried = msg.err.Error(), false, false
+	default:
+		d.err, d.slow, d.retried = "", false, false
 		changes := msg.changes
 		for i := range changes {
 			if had && changes[i].ID == prev.ID {
@@ -513,6 +524,9 @@ func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 	m.delivery = d
 	if onChange {
 		m.inboxIndex = m.askRowCount() + d.row
+	}
+	if retry {
+		return m.startDeliveryLoad()
 	}
 	if sel, ok := m.selectedChange(); ok && d.detail && msg.err == nil {
 		m.delivery.detailLoading = true
