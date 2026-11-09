@@ -840,7 +840,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
+		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "tools.save_changed" || h.Type == "tools.update_plan" || h.Type == "tools.update_copies" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -1295,6 +1295,24 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return g.keepSkillCopy(ctx, p)
+	case "tools.save_changed":
+		p, err := decode[protocol.ToolSaveChanged](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.saveChangedCopy(ctx, p)
+	case "tools.update_plan":
+		p, err := decode[protocol.ToolUpdateRequest](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillUpdatePlan(p.Item)
+	case "tools.update_copies":
+		p, err := decode[protocol.ToolUpdateRequest](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.updateSkillCopies(ctx, p)
 	case "tools.import_folder":
 		p, err := decode[protocol.ToolFolderImport](raw)
 		if err != nil || !g.validToolOwner(nc, p.Owner) {

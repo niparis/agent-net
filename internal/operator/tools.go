@@ -206,3 +206,22 @@ func (s *Client) ToolsKeepCopy(ctx context.Context, p protocol.ToolCopyChoice) e
 	_, err := s.action(ctx, "tools_keep_copy", p)
 	return err
 }
+
+// ToolsSaveChanged saves a copy that was edited after deployment as the
+// skill's next stored version.
+func (s *Client) ToolsSaveChanged(ctx context.Context, imp protocol.ToolImport) error {
+	_, err := s.action(ctx, "tools_save_changed", protocol.ToolSaveChanged{ToolImport: imp})
+	return err
+}
+
+// ToolsUpdatePlan lists what an update to a stored version would do with each
+// copy of the skill. It changes nothing.
+func (s *Client) ToolsUpdatePlan(ctx context.Context, item string) (protocol.ToolUpdatePlan, error) {
+	return decodeCall[protocol.ToolUpdatePlan](s.action(ctx, "tools_update_plan", protocol.ToolUpdateRequest{Item: item}))
+}
+
+// ToolsUpdateCopies replaces exactly the confirmed copies with the stored
+// version.
+func (s *Client) ToolsUpdateCopies(ctx context.Context, item string, copies []protocol.ToolImportLocation) (protocol.ToolUpdatePlan, error) {
+	return decodeCall[protocol.ToolUpdatePlan](s.action(ctx, "tools_update_copies", protocol.ToolUpdateRequest{Item: item, Copies: copies}))
+}
