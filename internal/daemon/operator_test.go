@@ -513,14 +513,24 @@ func TestSessionTextErrors(t *testing.T) {
 	}
 }
 
-// textAdapter is a harness the daemon reads itself, like Claude Code.
+// textAdapter is a harness the daemon reads itself, like Claude Code. Tests
+// that need a specific conversation set page; an empty page keeps the small
+// default below.
 type textAdapter struct {
 	fakeAdapter
-	got []protocol.TextQuery
+	page protocol.TextPage
+	err  error
+	got  []protocol.TextQuery
 }
 
 func (a *textAdapter) Text(ctx context.Context, info protocol.SessionInfo, q protocol.TextQuery) (protocol.TextPage, error) {
 	a.got = append(a.got, q)
+	if a.err != nil {
+		return protocol.TextPage{}, a.err
+	}
+	if len(a.page.Entries) > 0 || a.page.Older != "" || a.page.Newer != "" {
+		return a.page, nil
+	}
 	return protocol.TextPage{Entries: []protocol.TextEntry{
 		{Cursor: "1:0", Role: "user", Text: "token=hunter2hunter2hunter2"},
 		{Cursor: "1:1", Role: "tool_call", Tool: "Bash", Text: "Bash: ls"},

@@ -38,4 +38,5 @@ func addDeliveryTools(s *mcp.Server, call Caller) {
 	deliveryTool[protocol.StepReportArgs, protocol.StepReportResult](s, call, "agent_step_report", protocol.OpStepReport)
 	deliveryTool[protocol.ChangesFindArgs, protocol.ChangesFindResult](s, call, "agent_changes_find", protocol.OpChangesFind)
 	deliveryTool[protocol.AskSortArgs, protocol.AskSortResult](s, call, "agent_ask_sort", protocol.OpAskSort)
+	deliveryTool[protocol.AskIntakeArgs, protocol.AskIntakeResult](s, call, "agent_ask_intake", protocol.OpAskIntake)
 }

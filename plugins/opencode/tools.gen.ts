@@ -42,6 +42,63 @@ export const TOOL_CATALOG = [
     "method": "announce"
   },
   {
+    "name": "agent_ask_intake",
+    "description": "Chief of staff only: list sessions whose last turn may wait for the owner, read that exact turn with the owner's prompt and secrets masked, or import it as one owner ask with its turn reference. Reading and importing never answer, send to, or change a session.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "read",
+            "import"
+          ],
+          "description": "list: sessions that ended a turn and whose last assistant message has not been imported. read: the exact last assistant turn of one session, masked. import: create one owner ask from that turn."
+        },
+        "session": {
+          "type": "string",
+          "description": "For read and import: the session id, or its exact name, that holds the turn."
+        },
+        "turn": {
+          "type": "string",
+          "description": "For import: the turn reference returned by list or read."
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "For import: the question for the owner, in one line."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "description": "For import: up to four answers the owner may give."
+        },
+        "recommendation": {
+          "type": "string",
+          "description": "For import: the chief's recommendation, in one line."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "For list: how many sessions to inspect. Default 25."
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "ask_intake"
+  },
+  {
     "name": "agent_ask_sort",
     "description": "Chief of staff only: sort one ask that waits for you (close, merge, send, owner), list them with result list and the sorter's counts by result (optional sorter, since/until or id range), or read one in full with detail full. Sort only; never answer for the owner.",
     "inputSchema": {

@@ -1425,6 +1425,15 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 		} else {
 			data, err = d.localText(ctx, q)
 		}
+	case protocol.FrameAskIntakeTurn:
+		// The gateway asks only after it checked that the caller is the live
+		// chief. This machine reads the turn and masks it.
+		var q protocol.AskIntakeTurnRequest
+		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+			err = errors.New("bad node.session_last_turn")
+		} else {
+			data = d.localLastTurn(ctx, q.SessionID)
+		}
 	}
 	if frame, e := protocol.EncodeResult(id, data, err); e == nil {
 		l.write(ctx, frame)

@@ -28,7 +28,7 @@ import (
 // other methods.
 func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {
-	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort:
+	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake:
 	default:
 		return nil, false, nil
 	}
@@ -79,6 +79,20 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		}
 		var out protocol.AskSortResult
 		err := d.deliveryCall(ctx, protocol.FrameAskSort, protocol.AskSortRequest{SessionID: sid, AskSortArgs: a}, &out)
+		return out, true, err
+	case protocol.OpAskIntake:
+		if info.Worker != nil {
+			return nil, true, errors.New("a worker does not read or import owner asks")
+		}
+		var a protocol.AskIntakeArgs
+		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+			return nil, true, err
+		}
+		if err := a.Validate(); err != nil {
+			return nil, true, err
+		}
+		var out protocol.AskIntakeResult
+		err := d.deliveryCall(ctx, protocol.FrameAskIntake, protocol.AskIntakeRequest{SessionID: sid, AskIntakeArgs: a}, &out)
 		return out, true, err
 	case protocol.OpStepReport:
 		if info.Worker != nil {

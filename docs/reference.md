@@ -2740,6 +2740,43 @@ but a token's scope and destination stay readable; the token itself never
 leaves the gateway. This is the read the chief uses when a batch summary does
 not say enough.
 
+**`agent_ask_intake {action}`** (any agent session; only the live chief may call
+it, others are refused). It finds questions that sit inside sessions waiting
+for their user, reads them, and imports one as an ask. It reads and imports
+only: it never sends input to a session, answers an ask, or changes a
+session's state. The read happens on the machine that holds the session; the
+chief's daemon asks the gateway, which relays one request to that machine.
+
+- `list` (optional `limit`, default 25, at most 50) returns the sessions that
+  are online or idle, are not workers or the CTO, are not busy, and whose last
+  assistant message has not been imported. A row with `state` `ok` has
+  `session`, `name`, `harness`, `machine`, `last_turn`, `last_turn_at`,
+  `waiting` and `open_ask`. `waiting.kind` is `explicit` for a wait the session
+  raised itself and `harness` for a wait its harness reported; it carries the
+  stored `text` and `since`. `open_ask` is the id of an open ask from that
+  session, so the chief can see what already reached the Desk. A harness with
+  no reader, a missing transcript, an offline machine or a plugin that does not
+  answer returns `state: "unavailable"` and a `reason`; agent-net never invents
+  the text.
+- `read` with `session` (the id or exact name) returns `turn` with the exact
+  last assistant message in `text`, the owner's last typed prompt before it in
+  `prompt`, their RFC 3339 times, `ended` and a stable `ref`. Secrets are
+  masked with the same helpers as the owner's session text, and `cut` says the
+  text was longer than the 2,000 character limit. The chief, not agent-net,
+  decides from the text whether it is a question, an idle done or an FYI.
+- `import` with `session`, `turn` (the `ref` from list or read), `text` (the
+  question in one line), optional `options` (at most four) and
+  `recommendation` creates one `question` ask about the session, with the turn
+  reference as its `source_ref`. The ask routes to the chief like any other,
+  so its normal sort applies. The same turn is imported at most once: a later
+  call returns `state: "already_imported"` and the existing ask id, even after
+  that ask closed. If the session already has an open ask, the call creates
+  nothing and returns `state: "existing_open"` with that ask id.
+
+The chief's own asks go to the owner, so importing a turn from its own session
+would not create a second chief sort. Every import masks common secrets in the
+text, recommendation and options before it stores them.
+
 Every sort writes one `ask_sorts` row with the ask as it was (`prev_next`,
 `prev_status`, `prev_answer`, `prev_answered_at`) and one Desk log line with
 source `chief`. Nothing is deleted.
