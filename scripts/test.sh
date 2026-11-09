@@ -4,14 +4,18 @@ set -u
 
 usage() {
   cat <<'EOF'
-Usage: scripts/test.sh [--shards N | --shard-index I --shard-count N]
+Usage: scripts/test.sh [--shards N | --package NAME --shard-index I --shard-count N]
                       [--check-only] [-- go-test-args...]
 
-Run the test suite with the internal/daemon tests split across processes.
-TEST_SHARDS sets the local shard count. The default is half the available CPUs,
-rounded down, with a minimum of one and a maximum of eight.
+Run the test suite. The tests of the sharded packages, internal/daemon and
+internal/gateway, are split across processes by test name. Every other package
+runs in one go test process.
+TEST_SHARDS sets the local shard count for each sharded package. The default is
+half the available CPUs, rounded down, with a minimum of one and a maximum of
+eight.
 
-Shard indexes are zero-based. Indexed mode runs only that daemon shard, for CI.
+Indexed mode runs one shard of one sharded package, for CI. --package names the
+package (daemon or gateway). Shard indexes are zero-based.
 Arguments after -- are passed to go test.
 EOF
 }
@@ -36,7 +40,20 @@ cpu_count() {
   printf '%s\n' "$count"
 }
 
+# Packages under internal/ whose tests are split into shards by test name.
+sharded_packages=(daemon gateway)
+module_internal=github.com/niparis/agent-net/internal
+
+is_sharded_package() {
+  local name
+  for name in "${sharded_packages[@]}"; do
+    [[ $1 == "$name" ]] && return 0
+  done
+  return 1
+}
+
 requested_shards=${TEST_SHARDS:-}
+package_name=
 shard_index=
 shard_count=
 check_only=0
@@ -56,6 +73,11 @@ while (($#)); do
     --shards)
       (($# >= 2)) || fail "--shards requires a number"
       requested_shards=$2
+      shift 2
+      ;;
+    --package)
+      (($# >= 2)) || fail "--package requires a name"
+      package_name=$2
       shift 2
       ;;
     --shard-index)
@@ -84,6 +106,8 @@ done
 
 if [[ -n $shard_index || -n $shard_count ]]; then
   [[ -n $shard_index && -n $shard_count ]] || fail "--shard-index and --shard-count must be used together"
+  [[ -n $package_name ]] || fail "--package is required with --shard-index and --shard-count"
+  is_sharded_package "$package_name" || fail "unknown package $package_name; use one of: ${sharded_packages[*]}"
   is_nonnegative_integer "$shard_index" || fail "shard index must be a non-negative integer"
   is_positive_integer "$shard_count" || fail "shard count must be a positive integer"
   ((10#$shard_index < 10#$shard_count)) || fail "shard index must be less than shard count"
@@ -93,6 +117,7 @@ if [[ -n $shard_index || -n $shard_count ]]; then
   shard_index=$((10#$shard_index))
 else
   shard_mode=all
+  [[ -z $package_name ]] || fail "--package needs --shard-index and --shard-count"
   if [[ -z $requested_shards ]]; then
     cpus=$(cpu_count)
     requested_shards=$((cpus / 2))
@@ -109,58 +134,79 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-daemon_pkg=github.com/niparis/agent-net/internal/daemon
-mkdir -p "$work/listing"
-if ! env \
-  AGENT_NET_CONFIG_DIR="$work/listing/config" \
-  AGENT_NET_STATE_DIR="$work/listing/state" \
-  AGENT_NET_SOCKET="$work/listing/agent-net.sock" \
-  AGENT_NET_GATEWAY_DATA="$work/listing/gateway" \
-  AGENT_NET_CLAUDE_SESSIONS_DIR="$work/listing/claude-sessions" \
-  go test -list '.*' "$daemon_pkg" >"$work/list-output"; then
-  cat "$work/list-output" >&2
-  fail "could not list tests in $daemon_pkg"
-fi
-awk '/^(Test|Example)[[:alnum:]_]*$/ { print }' "$work/list-output" >"$work/tests"
-test_count=$(wc -l <"$work/tests" | tr -d ' ')
-((test_count > 0)) || fail "no tests found in $daemon_pkg"
-
-if ((shards > test_count)); then
-  if [[ $shard_mode == indexed ]]; then
-    fail "shard count $shards exceeds the $test_count daemon tests"
+# plan_package NAME COUNT lists the tests of internal/NAME, splits them into
+# COUNT shards by test name and checks that the shards hold each test exactly
+# once. Shard files go to $work/NAME/. The number of shards used is left in
+# planned_count, which can be lower than COUNT when there are fewer tests.
+plan_package() {
+  local name=$1 wanted=$2
+  local pkg="$module_internal/$name" dir="$work/$name"
+  local test_count i count oversized regex regex_length
+  mkdir -p "$dir/listing"
+  if ! env \
+    AGENT_NET_CONFIG_DIR="$dir/listing/config" \
+    AGENT_NET_STATE_DIR="$dir/listing/state" \
+    AGENT_NET_SOCKET="$dir/listing/agent-net.sock" \
+    AGENT_NET_GATEWAY_DATA="$dir/listing/gateway" \
+    AGENT_NET_CLAUDE_SESSIONS_DIR="$dir/listing/claude-sessions" \
+    go test -list '.*' "$pkg" >"$dir/list-output"; then
+    cat "$dir/list-output" >&2
+    fail "could not list tests in $pkg"
   fi
-  shards=$test_count
-fi
+  awk '/^(Test|Example)[[:alnum:]_]*$/ { print }' "$dir/list-output" >"$dir/tests"
+  test_count=$(wc -l <"$dir/tests" | tr -d ' ')
+  ((test_count > 0)) || fail "no tests found in $pkg"
 
-# Go's per-argument size limit is 128 KiB on common Unix systems. Keep the
-# generated -run pattern below 100 KiB to leave room for the rest of argv.
-regex_limit=100000
-while :; do
-  oversized=0
-  for ((i=0; i<shards; i++)); do
-    awk -v n="$shards" -v i="$i" '((NR - 1) % n) == i { print }' "$work/tests" >"$work/shard-$i"
-    regex=$(paste -sd '|' "$work/shard-$i")
-    regex_length=$(printf '%s' "$regex" | wc -c | tr -d ' ')
-    if ((regex_length + 4 > regex_limit)); then
-      oversized=1
+  count=$wanted
+  if ((count > test_count)); then
+    if [[ $shard_mode == indexed ]]; then
+      fail "shard count $count exceeds the $test_count $name tests"
     fi
-  done
-  if ((oversized == 0)); then
-    break
+    count=$test_count
   fi
-  if [[ $shard_mode == indexed ]]; then
-    fail "shard regex exceeds ${regex_limit} bytes; increase the CI shard count"
-  fi
-  shards=$((shards + 1))
-done
 
-cat "$work"/shard-* | sort >"$work/union"
-sort "$work/tests" >"$work/tests-sorted"
-if ! diff -u "$work/tests-sorted" "$work/union" >"$work/partition-diff"; then
-  cat "$work/partition-diff" >&2
-  fail "daemon shard lists do not contain each test exactly once"
+  # Go's per-argument size limit is 128 KiB on common Unix systems. Keep the
+  # generated -run pattern below 100 KiB to leave room for the rest of argv.
+  local regex_limit=100000
+  while :; do
+    oversized=0
+    for ((i=0; i<count; i++)); do
+      awk -v n="$count" -v i="$i" '((NR - 1) % n) == i { print }' "$dir/tests" >"$dir/shard-$i"
+      regex=$(paste -sd '|' "$dir/shard-$i")
+      regex_length=$(printf '%s' "$regex" | wc -c | tr -d ' ')
+      if ((regex_length + 4 > regex_limit)); then
+        oversized=1
+      fi
+    done
+    if ((oversized == 0)); then
+      break
+    fi
+    if [[ $shard_mode == indexed ]]; then
+      fail "shard regex exceeds ${regex_limit} bytes; increase the CI shard count"
+    fi
+    count=$((count + 1))
+  done
+
+  cat "$dir"/shard-* | sort >"$dir/union"
+  sort "$dir/tests" >"$dir/tests-sorted"
+  if ! diff -u "$dir/tests-sorted" "$dir/union" >"$dir/partition-diff"; then
+    cat "$dir/partition-diff" >&2
+    fail "$name shard lists do not contain each test exactly once"
+  fi
+  echo "Verified $test_count $name tests across $count shards exactly once."
+  planned_count=$count
+}
+
+if [[ $shard_mode == indexed ]]; then
+  run_names=("$package_name")
+else
+  run_names=("${sharded_packages[@]}")
 fi
-echo "Verified $test_count daemon tests across $shards shards exactly once."
+run_counts=()
+for name in "${run_names[@]}"; do
+  plan_package "$name" "$shards"
+  run_counts+=("$planned_count")
+done
 
 if ((check_only)); then
   exit 0
@@ -210,29 +256,39 @@ launch_job() {
   job_pids+=("$!")
 }
 
-if [[ $shard_mode == all ]]; then
-  for ((i=0; i<shards; i++)); do
-    regex=$(paste -sd '|' "$work/shard-$i")
-    launch_job "daemon shard $((i + 1))/$shards" "$work/output-$job_count" \
-      go test -race -count=1 -run "^($regex)$" "${go_test_args[@]}" "$daemon_pkg"
+for idx in "${!run_names[@]}"; do
+  name=${run_names[$idx]}
+  count=${run_counts[$idx]}
+  first=0
+  last=$((count - 1))
+  if [[ $shard_mode == indexed ]]; then
+    first=$shard_index
+    last=$shard_index
+  fi
+  for ((i=first; i<=last; i++)); do
+    regex=$(paste -sd '|' "$work/$name/shard-$i")
+    launch_job "$name shard $((i + 1))/$count" "$work/output-$job_count" \
+      go test -race -count=1 -run "^($regex)$" "${go_test_args[@]}" "$module_internal/$name"
   done
+done
 
+if [[ $shard_mode == all ]]; then
   if ! go list ./... >"$work/packages"; then
     echo "scripts/test.sh: could not list Go packages" >&2
     exit 1
   fi
   other_packages=()
   while IFS= read -r package; do
-    [[ $package == */internal/daemon || $package == */internal/daemon/* ]] || other_packages+=("$package")
+    sharded=0
+    for name in "${sharded_packages[@]}"; do
+      [[ $package == */internal/$name || $package == */internal/$name/* ]] && sharded=1
+    done
+    ((sharded)) || other_packages+=("$package")
   done <"$work/packages"
   if ((${#other_packages[@]})); then
     launch_job "other packages" "$work/output-$job_count" \
       go test -race -count=1 "${go_test_args[@]}" "${other_packages[@]}"
   fi
-else
-  regex=$(paste -sd '|' "$work/shard-$shard_index")
-  launch_job "daemon shard $((shard_index + 1))/$shards" "$work/output-$job_count" \
-    go test -race -count=1 -run "^($regex)$" "${go_test_args[@]}" "$daemon_pkg"
 fi
 
 # Preserve all output until every process finishes so failures can be printed

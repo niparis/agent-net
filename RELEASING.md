@@ -10,7 +10,7 @@ CI is the release gate. Do not run the long local race suite to release; use `sc
    git push origin HEAD:refs/heads/release-v0.2.0
    ```
 
-2. Wait until the `ci` workflow passes on that exact commit (formatting, `go vet`, all Go tests including the daemon shards, the Pi and OpenCode plugin tests, and the installer syntax).
+2. Wait until the `ci` workflow passes on that exact commit (formatting, `go vet`, all Go tests including the daemon and gateway shards, the Pi and OpenCode plugin tests, and the installer syntax).
 3. Move `main` to that commit. It must be a fast-forward:
 
    ```
