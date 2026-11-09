@@ -268,6 +268,7 @@ func TestCTOOperatorAllowlistCoversOwnerMethods(t *testing.T) {
 		"proposal_start_ack": "the TUI acknowledges its actual terminal start",
 		"cto_graph_window":   "the owner declares that they are driving their TUI",
 		"desk_settle":        "the TUI marks a Desk log line undone after its own undo",
+		"permission_undo":    "only the owner may undo a Claude Code permission approval",
 	}
 	for method := range operatorMethods {
 		if _, ok := covered[method]; ok {

@@ -1279,7 +1279,28 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, permissionProposalMigration}
+
+// permissionProposalMigration stores proposals for Claude Code permission
+// rules (decision 0126). An agent proposes, the owner answers one owner-only
+// ask, and only then does the gateway tell the daemons to write the files.
+// Results name what each approval added, so an undo removes only those entries.
+const permissionProposalMigration = `
+CREATE TABLE IF NOT EXISTS permission_proposals (
+ id TEXT PRIMARY KEY,
+ rules TEXT NOT NULL,
+ targets TEXT NOT NULL,
+ reason TEXT NOT NULL,
+ proposed_by TEXT NOT NULL,
+ proposed_name TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL DEFAULT 'pending',
+ created_at INTEGER NOT NULL,
+ decided_at INTEGER NOT NULL DEFAULT 0,
+ decided_by TEXT NOT NULL DEFAULT '',
+ results TEXT NOT NULL DEFAULT '[]',
+ desk_log_id INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS permission_proposals_status ON permission_proposals(status, created_at);
+`
 
 // briefDefectMoveMigration records that a late defect was reclassified as a
 // brief defect. The worker_defects row stays; these columns name who moved it,

@@ -1062,6 +1062,49 @@ export const TOOL_CATALOG = [
     "method": "judgments_find"
   },
   {
+    "name": "agent_permission_propose",
+    "description": "Propose exact Claude Code permission allow rules for registered repos. The owner answers one owner-only ask; no file changes before that.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "description": "Exact Claude Code permission rule strings for permissions.allow, such as \"Bash(gh pr merge *)\"."
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "description": "Registered repo or project names, as agent_projects_find knows them."
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Why these rules are needed."
+        }
+      },
+      "required": [
+        "rules",
+        "targets",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "agent_permission_propose"
+  },
+  {
     "name": "agent_project_add",
     "description": "Register project folders on this machine, or scan a folder for repositories (use dry_run first). Only when the owner asked.",
     "inputSchema": {

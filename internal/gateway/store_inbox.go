@@ -75,7 +75,7 @@ func (s *Store) RequestWrittenApproval(session, node string, req protocol.Approv
 func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.InboxItem, error) {
 	switch item.Kind {
 	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
-		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindStep, protocol.AskKindWaiting:
+		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindPermission, protocol.AskKindStep, protocol.AskKindWaiting:
 	default:
 		return item, reject("invalid inbox kind")
 	}
@@ -319,6 +319,11 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 		if _, err = tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
 			return item, err
 		}
+		if item.Kind == protocol.AskKindPermission {
+			if err = s.rejectPermissionTx(tx, id); err != nil {
+				return item, err
+			}
+		}
 		if len(validate) > 0 && validate[0] {
 			return item, nil
 		}
@@ -326,6 +331,12 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 			return item, err
 		}
 		return item, nil
+	}
+	// A Claude Code permission proposal is an ask for the gateway, not for a
+	// live session. Only the owner answers it. The gateway applies it after
+	// this call returns, and only for an approved ask.
+	if item.Kind == protocol.AskKindPermission {
+		return s.answerPermissionAsk(tx, item, answer, actor, validate...)
 	}
 	// A charter draft is an ask for the gateway, not for a live session. Its
 	// answer applies the drafted value exactly as the owner's TUI accept does,

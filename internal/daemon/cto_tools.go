@@ -391,6 +391,20 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			state = item.Status
 		}
 		return map[string]any{"item_id": item.ID, "kind": p.Kind, "state": state}, nil
+	case "agent_permission_propose":
+		var p protocol.PermissionProposeRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad agent_permission_propose params")
+		}
+		sid := d.ctoSessionID()
+		if sid == "" {
+			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
+		}
+		out, err := d.proposePermission(ctx, sid, p)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": out.ID, "status": out.Status}, nil
 	case "agent_learn":
 		var p protocol.LearnRequest
 		if json.Unmarshal(raw, &p) != nil {

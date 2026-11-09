@@ -56,6 +56,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
 	"settings_write": true, "settings_undo": true, "settings_owner_read": true, protocol.OpChangesOwnerFind: true, protocol.OpChangesOwnerReport: true,
 	protocol.OpPlaybookGet: true, protocol.OpPlaybookSet: true,
+	protocol.OpPermissionUndo: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -903,6 +904,12 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 		q.By = "owner"
 		res, err = d.call(ctx, "settings.undo", q)
+	case protocol.OpPermissionUndo:
+		var q protocol.PermissionUndoRequest
+		if json.Unmarshal(raw, &q) != nil || q.ID == "" {
+			return nil, true, errors.New("permission_undo needs id")
+		}
+		res, err = d.call(ctx, "permission.undo", protocol.PermissionUndoFrame{ProposalID: q.ID, Owner: d.ownerSessionID()})
 	case protocol.OpLeadSet, protocol.OpTeamWrite, protocol.OpTeamHistory, protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpDeliveryOwnerSet, protocol.OpMergerSet, protocol.OpGraphUndo, protocol.OpRepoCreate, protocol.OpRepoArchive, protocol.OpAgentCreate, protocol.OpAgentTombstone, protocol.OpNodeSettingsGet, protocol.OpNodeSettingsSet:
 		// The gateway trusts enrolled daemons as with session.policy. The owner
 		// gate above must run before forwarding any graph operation.
