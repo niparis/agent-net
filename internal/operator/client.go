@@ -114,11 +114,13 @@ func (s *Client) Call(ctx context.Context, method string, params any) (json.RawM
 // cannot see a timeout that this side ended, so without the report it would
 // leave no trace. It is not sent when there is nobody to tell (the daemon is
 // down, or the gateway is, which the screen already shows), when the caller
-// cancelled the call on purpose, or for a report itself. It runs in the
-// background and never changes the result of the call.
+// cancelled the call on purpose, for a report itself, or when the answer says
+// an older daemon or gateway does not know the call (IsOldPeer): that is
+// version skew, not a slow or failed request. It runs in the background and
+// never changes the result of the call.
 func (s *Client) reportFailure(ctx context.Context, method string, start time.Time, err error) {
 	if method == protocol.OpClientError || errors.Is(err, context.Canceled) ||
-		errors.Is(err, ErrDaemonDown) || errors.Is(err, ErrGatewayDown) {
+		errors.Is(err, ErrDaemonDown) || errors.Is(err, ErrGatewayDown) || IsOldPeer(err.Error()) {
 		return
 	}
 	text := err.Error()

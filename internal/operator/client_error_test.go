@@ -130,3 +130,32 @@ func TestPhoneClientReportsTheWebScreen(t *testing.T) {
 		t.Fatalf("screen = %q, want web", got.Screen)
 	}
 }
+
+// An answer that says the daemon or the gateway does not know the call is
+// version skew between an older peer and a newer client. It is not a slow or
+// failed request, so it is not reported: best-effort reads of a newer screen
+// get this answer from an older daemon on every refresh.
+func TestOldPeerAnswersAreNotReported(t *testing.T) {
+	for _, answer := range []string{`unknown method "scores_get"`, "unknown frame type query.x", `method "chief_get" is not available to cli clients`} {
+		fake, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
+			if method == "newer_read" {
+				return nil, answer
+			}
+			return map[string]any{}, ""
+		})
+		c := New(path)
+		if _, err := c.Call(context.Background(), "newer_read", nil); err == nil {
+			t.Fatalf("%q: expected the refusal", answer)
+		}
+		// A report would reach the fake within a few milliseconds.
+		time.Sleep(100 * time.Millisecond)
+		fake.mu.Lock()
+		calls := append([]string(nil), fake.calls...)
+		fake.mu.Unlock()
+		for _, m := range calls {
+			if m == protocol.OpClientError {
+				t.Fatalf("%q: an old-peer answer was reported (calls %v)", answer, calls)
+			}
+		}
+	}
+}
