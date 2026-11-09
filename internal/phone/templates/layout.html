@@ -14,7 +14,7 @@
 
 {{define "live"}}<span class="live" id="livelabel" title="The page changes when the data does"><i></i>{{if .Live}}{{.Live}}{{else}}not connected{{end}}</span>{{end}}
 
-{{define "body"}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{else if eq .Screen.ID "desk"}}{{template "desk" .Desk}}{{else if eq .Screen.ID "sessions"}}{{template "sessions" .Sessions}}{{else}}{{template "soon" .Screen}}{{end}}{{end}}
+{{define "body"}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{else if eq .Screen.ID "desk"}}{{template "desk" .Desk}}{{else if eq .Screen.ID "sessions"}}{{template "sessions" .Sessions}}{{else if eq .Screen.ID "changes"}}{{template "changes" .Changes}}{{else if eq .Screen.ID "messages"}}{{template "messages" .Messages}}{{else}}{{template "soon" .Screen}}{{end}}{{end}}
 
 {{define "stream"}}{{template "body" .}}<span class="count" id="navcount" hx-swap-oob="true"{{if not .AskCount}} hidden{{end}}>{{.AskCount}}</span><span class="count" id="bnavcount" hx-swap-oob="true"{{if not .AskCount}} hidden{{end}}>{{.AskCount}}</span><span class="live" id="livelabel" hx-swap-oob="true" title="The page changes when the data does"><i></i>{{if .Live}}{{.Live}}{{else}}not connected{{end}}</span>{{end}}
 

@@ -23,6 +23,10 @@ type consoleOperator struct {
 	calls []string
 	asks  []protocol.Ask
 	sent  []string
+	// reads counts the read calls by method; threads holds the messages of a
+	// conversation, newest first.
+	reads   map[string]int
+	threads map[string][]protocol.Message
 }
 
 func (f *consoleOperator) Snapshot(context.Context) (operator.Snapshot, error) {
@@ -66,6 +70,22 @@ func (f *consoleOperator) SendAsOwner(_ context.Context, to, body string) (proto
 	f.record("send:" + to + ":" + body)
 	return protocol.MessageSent{}, nil
 }
+
+// ReplyAsOwner keeps the message in the conversation, as the gateway does for
+// an owner send with a conversation id. The thread of a worker row holds the
+// messages of its conversation.
+func (f *consoleOperator) ReplyAsOwner(_ context.Context, conversation, to, body string) (protocol.MessageSent, error) {
+	f.record("reply:" + conversation + ":" + to + ":" + body)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	msg := protocol.Message{ID: "m_new", ConversationID: conversation, From: "s_owner", To: to, FromName: "you (on alpha-box)", FromHarness: protocol.OwnerHarness, Body: body, CreatedAt: time.Now()}
+	for key := range f.threads {
+		if key == conversation || (conversation == "c_w" && key == "worker:s_w1") {
+			f.threads[key] = append([]protocol.Message{msg}, f.threads[key]...)
+		}
+	}
+	return protocol.MessageSent{Message: &msg}, nil
+}
 func (f *consoleOperator) record(s string) {
 	f.mu.Lock()
 	f.calls = append(f.calls, s)
@@ -84,21 +104,17 @@ func (f *consoleOperator) drop(idOrMessage string) {
 }
 func (f *consoleOperator) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
 	now := time.Now()
+	f.mu.Lock()
+	f.reads[method]++
+	f.mu.Unlock()
 	switch method {
 	case protocol.OpAsksList:
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		return json.Marshal(protocol.AsksResult{Asks: f.asks})
 	case protocol.OpChangesOwnerFind:
-		return json.Marshal(protocol.ChangesFindResult{Items: []protocol.ChangeView{{
-			Change: protocol.Change{ID: "ch_flight1", Title: "Push updates part 1", Project: "agent-net", Revision: 2, State: protocol.ChangeOpen, UpdatedAt: now.Add(-22 * time.Minute).Unix(), CreatedAt: now.Add(-time.Hour).Unix()},
-			Steps: []protocol.StepStatus{
-				{StepRef: protocol.StepRef{Step: "accept"}, State: protocol.StepStatePassed, Owner: protocol.StepOwner{Kind: "caller"}},
-				{StepRef: protocol.StepRef{Step: "review"}, State: protocol.StepStatePassed, Owner: protocol.StepOwner{Kind: "caller"}},
-				{StepRef: protocol.StepRef{Step: "test"}, State: protocol.StepStateRunning, Owner: protocol.StepOwner{Kind: protocol.OwnerNode, Node: "merger-node"}},
-				{StepRef: protocol.StepRef{Step: "merge"}, State: protocol.StepStateWaiting, Owner: protocol.StepOwner{Kind: protocol.OwnerNode, Node: "merger-node"}},
-			},
-		}}})
+		args, _ := params.(protocol.ChangesFindArgs)
+		return json.Marshal(protocol.ChangesFindResult{Items: consoleChanges(args, now)})
 	case protocol.OpChiefSorts:
 		return json.Marshal(protocol.ChiefSortsResult{Sorts: []protocol.ChiefSort{{AskSort: protocol.AskSort{Ask: "i_old", At: now.Add(-time.Hour), Result: "close", Reason: "answered by the lead"}, Question: "handled question text"}}})
 	case protocol.OpDeskLog:
@@ -109,10 +125,18 @@ func (f *consoleOperator) Call(_ context.Context, method string, params any) (js
 	case protocol.OpGraphView:
 		return json.Marshal(protocol.GraphView{Nodes: []protocol.Node{{Ref: &protocol.GraphRef{Kind: "agent", ID: "a_busy"}, Name: "busy-agent", Place: &protocol.NodePlace{Team: "forge-team", TeamLead: "lead-agent"}}}})
 	case protocol.OpConversations:
-		return json.Marshal(protocol.ConversationPage{Conversations: []protocol.ConversationView{
+		return json.Marshal(protocol.ConversationPage{Total: 6, Conversations: []protocol.ConversationView{
 			{ID: "c_1", From: "s_busy", To: "s_wait", FromName: "busy-agent", ToName: "waiting-agent", Count: 3, LastLine: "recent conversation line", At: now},
-			{ID: "c_2", From: "s_x", To: "s_y", FromName: "x", ToName: "y", LastLine: "unrelated line", At: now},
+			{ID: "c_3", From: "s_owner", To: "s_wait", FromName: "you (on alpha-box)", ToName: "waiting-agent", Count: 2, LastLine: "allow the tools?", At: now.Add(-time.Minute), OwnerInstruction: true},
+			{ID: "c_cto", From: "s_cto", To: "s_busy", FromName: "the CTO", ToName: "busy-agent", Count: 1, LastLine: "cto line about the plan", At: now.Add(-2 * time.Minute), FromCTO: true},
+			{ID: "worker:s_w1", From: "s_wait", To: "s_w1", FromName: "waiting-agent", ToName: "worker-one", Count: 4, LastLine: "worker last line", At: now.Add(-3 * time.Minute), WorkerSession: "s_w1", WorkerOwner: "s_wait", Task: "Fix the flaky test"},
+			{ID: "c_2", From: "s_x", To: "s_y", FromName: "x", ToName: "y", LastLine: "unrelated line", At: now.Add(-time.Hour)},
 		}})
+	case protocol.OpConversationMessages:
+		q, _ := params.(protocol.QueryConversationMessages)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return json.Marshal(protocol.ConversationMessagesResult{Messages: f.threads[q.ConversationID]})
 	}
 	f.record("call:" + method)
 	if method == "inbox_answer" {
@@ -141,7 +165,23 @@ func (f *consoleOperator) has(call string) bool {
 }
 
 func newConsoleOperator() *consoleOperator {
-	return &consoleOperator{asks: []protocol.Ask{
+	now := time.Now()
+	return &consoleOperator{reads: map[string]int{}, threads: map[string][]protocol.Message{
+		"c_3": {
+			{ID: "m_b", ConversationID: "c_3", From: "s_wait", To: "s_owner", FromName: "waiting-agent", Body: "allow the tools?", CreatedAt: now.Add(-2 * time.Minute)},
+			{ID: "m_a", ConversationID: "c_3", From: "s_owner", To: "s_wait", FromName: "you (on alpha-box)", FromHarness: protocol.OwnerHarness, Body: "go ahead and run the build", OwnerInstruction: "run the build", CreatedAt: now.Add(-10 * time.Minute)},
+		},
+		"c_1": {
+			{ID: "m_c", ConversationID: "c_1", From: "s_busy", To: "s_wait", FromName: "busy-agent", Body: "recent conversation line", CreatedAt: now},
+		},
+		"c_cto": {
+			{ID: "m_d", ConversationID: "c_cto", From: "s_cto", To: "s_busy", FromName: "the CTO", FromCTO: true, Body: "cto line about the plan", CreatedAt: now.Add(-2 * time.Minute)},
+		},
+		"worker:s_w1": {
+			{ID: "m_f", ConversationID: "c_w", From: "s_w1", To: "s_wait", FromName: "worker-one", Body: "[agent-net worker notice]\nstatus: done\nrun time: 12m\n3 files changed", CreatedAt: now.Add(-3 * time.Minute)},
+			{ID: "m_e", ConversationID: "c_w", From: "s_w1", To: "s_wait", FromName: "worker-one", Body: "[agent-net worker notice]\nstatus: started", CreatedAt: now.Add(-20 * time.Minute)},
+		},
+	}, asks: []protocol.Ask{
 		{ID: "i_q", Kind: protocol.AskKindQuestion, State: protocol.AskStateOpen, From: "tenebrae", FromKind: protocol.AskFromSession, Next: protocol.AskNextOwner,
 			Question: "Allow the record tools for every session?", Recommendation: "Yes, record and read tools only.", WhyYou: "Permission settings are yours.", Options: []string{"Record only", "All tools"},
 			CreatedAt: time.Now().Add(-4 * time.Minute)},
@@ -312,7 +352,7 @@ func TestNoActionRoutesForWorkersCharterOrSettings(t *testing.T) {
 
 func TestComingSoonScreens(t *testing.T) {
 	f := newConsoleOperator()
-	for _, tc := range []struct{ path, title string }{{"/graph", "Graph"}, {"/changes", "Changes"}, {"/messages", "Messages"}, {"/workers", "Workers"}} {
+	for _, tc := range []struct{ path, title string }{{"/graph", "Graph"}, {"/workers", "Workers"}} {
 		body := page1(t, f, tc.path)
 		mustContain(t, tc.path, body, "coming in the next update", "<h1", tc.title)
 		mustNotContain(t, tc.path, body, "<form")
@@ -338,7 +378,7 @@ func TestStreamRendersTheScreenAndCounts(t *testing.T) {
 
 func TestShellLoadsNothingFromOutside(t *testing.T) {
 	f := newConsoleOperator()
-	for _, path := range []string{"/", "/sessions", "/graph"} {
+	for _, path := range []string{"/", "/sessions", "/graph", "/changes", "/messages?s=c_3"} {
 		body := page1(t, f, path)
 		for _, bad := range []string{"googleapis", "gstatic", "cdn.", "unpkg", "jsdelivr", "http://", "https://"} {
 			if strings.Contains(body, bad) {
@@ -393,4 +433,65 @@ func TestDaemonDownIsVisible(t *testing.T) {
 	w := httptest.NewRecorder()
 	New(nil).ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
 	mustContain(t, "nil source", w.Body.String(), "Daemon not connected", "agent-net")
+}
+
+// consoleChanges is the fake gateway's delivery data: three open changes in
+// three states, one done change, and the full read of one change.
+func consoleChanges(args protocol.ChangesFindArgs, now time.Time) []protocol.ChangeView {
+	step := func(name string, state string, owner protocol.StepOwner, note string) protocol.StepStatus {
+		st := protocol.StepStatus{StepRef: protocol.StepRef{Step: name}, State: state, Owner: owner}
+		if note != "" {
+			st.Evidence = &protocol.Evidence{StepRef: st.StepRef, Result: "pass", By: "s_author", ByModel: "claude-sonnet-5-5", Note: note, Commit: "0123456789abcdef0123456789abcdef01234567", At: now.Unix()}
+		}
+		return st
+	}
+	caller, merger := protocol.StepOwner{Kind: "caller"}, protocol.StepOwner{Kind: protocol.OwnerNode, Node: "merger-node"}
+	flight := protocol.ChangeView{
+		Change: protocol.Change{ID: "ch_flight1", Title: "Push updates part 1", Project: "agent-net", Branch: "agent-net/w_flight", HeadCommit: "0123456789abcdef0123456789abcdef01234567", Revision: 2, Risk: 3, State: protocol.ChangeOpen, Caller: "s_wait",
+			Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, SessionID: "s_busy", Model: "gpt-6.1"}, UpdatedAt: now.Add(-22 * time.Minute).Unix(), CreatedAt: now.Add(-time.Hour).Unix()},
+		Steps: []protocol.StepStatus{
+			step("accept", protocol.StepStatePassed, caller, "accepted by reading the diff"),
+			step("review", protocol.StepStatePassed, caller, "review found nothing"),
+			step("test", protocol.StepStateRunning, merger, ""),
+			step("merge", protocol.StepStateWaiting, merger, ""),
+		},
+		Next: []protocol.StepRef{{Step: "test"}},
+	}
+	failed := protocol.ChangeView{
+		Change: protocol.Change{ID: "ch_fail1", Title: "Fix the broken parser", Project: "agent-net", Revision: 1, State: protocol.ChangeOpen, UpdatedAt: now.Add(-3 * time.Hour).Unix(), CreatedAt: now.Add(-4 * time.Hour).Unix()},
+		Steps: []protocol.StepStatus{
+			step("accept", protocol.StepStatePassed, caller, ""),
+			{StepRef: protocol.StepRef{Step: "test"}, State: protocol.StepStateFailed, Owner: merger, Evidence: &protocol.Evidence{StepRef: protocol.StepRef{Step: "test"}, Result: "fail", By: "s_merger", Note: "3 parser tests failed", At: now.Unix()}},
+		},
+	}
+	needs := protocol.ChangeView{
+		Change: protocol.Change{ID: "ch_need1", Title: "Add the owner approval", Project: "agent-net", Revision: 1, State: protocol.ChangeOpen, UpdatedAt: now.Add(-5 * time.Hour).Unix(), CreatedAt: now.Add(-6 * time.Hour).Unix()},
+		Steps: []protocol.StepStatus{
+			step("accept", protocol.StepStatePassed, caller, ""),
+			{StepRef: protocol.StepRef{Step: "approve", For: "merge"}, State: protocol.StepStateNeedsOwner, Owner: protocol.StepOwner{Kind: protocol.OwnerPerson}, Evidence: &protocol.Evidence{StepRef: protocol.StepRef{Step: "approve", For: "merge"}, Result: "needs_owner", By: "s_wait", Note: "the owner decides the risky merge", At: now.Unix()}},
+		},
+	}
+	done := protocol.ChangeView{
+		Change: protocol.Change{ID: "ch_done1", Title: "Old finished change", Project: "agent-net", Revision: 1, State: protocol.ChangeDone, MergedCommit: "fedcba9876543210fedcba9876543210fedcba98", UpdatedAt: now.Add(-72 * time.Hour).Unix(), CreatedAt: now.Add(-80 * time.Hour).Unix()},
+		Steps: []protocol.StepStatus{
+			step("accept", protocol.StepStatePassed, caller, ""),
+			step("review", protocol.StepStateReady, caller, ""),
+			step("verify", protocol.StepStatePassed, caller, "verified on the live system"),
+		},
+	}
+	all := []protocol.ChangeView{flight, failed, needs}
+	switch {
+	case args.Change != "":
+		for _, v := range append(all, done) {
+			if v.Change.ID == args.Change {
+				return []protocol.ChangeView{v}
+			}
+		}
+		return nil
+	case args.State == protocol.ChangeDone:
+		return []protocol.ChangeView{done}
+	case args.State == protocol.ChangeStopped:
+		return nil
+	}
+	return all
 }

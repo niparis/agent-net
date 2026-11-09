@@ -99,7 +99,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 			return nil, true, err
 		}
 		data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest,
-			Body: p.Body, IdempotencyKey: p.IdempotencyKey})
+			Body: p.Body, IdempotencyKey: p.IdempotencyKey, ConversationID: p.ConversationID})
 		return data, true, err
 
 	case protocol.OpWorkerProfiles, protocol.OpWorkerProfileAdd, protocol.OpWorkerProfileRemove:

@@ -3740,21 +3740,47 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			m.Type = protocol.TypeReply
 		}
 	} else if p.ConversationID != "" {
-		// Threaded into a conversation without a parent (W4.4): only by a
-		// session that the recipient wrote to in that conversation.
-		var hop sql.NullInt64
-		if err := tx.QueryRow(`SELECT MAX(hop) FROM messages WHERE conversation_id=? AND sender=? AND recipient=?`,
-			p.ConversationID, p.Recipient, p.Sender).Scan(&hop); err != nil {
+		var senderHarness string
+		if err := tx.QueryRow(`SELECT harness FROM sessions WHERE id=?`, p.Sender).Scan(&senderHarness); err != nil {
 			return msg, false, err
 		}
-		if !hop.Valid {
-			return msg, false, reject("conversation %q has no message from the recipient to the sender", p.ConversationID)
-		}
-		m.ConversationID = p.ConversationID
-		m.Hop = int(hop.Int64) + 1
-		threaded = true
-		if m.Type == "" {
+		if senderHarness == protocol.OwnerHarness {
+			// The owner writes in a conversation of the web console. The
+			// conversation must exist and the recipient must be one of its
+			// sides; the owner need not be a side. It is a reply with no parent.
+			var hop sql.NullInt64
+			var sides int
+			if err := tx.QueryRow(`SELECT MAX(hop), COUNT(CASE WHEN sender=?1 OR recipient=?1 THEN 1 END) FROM messages WHERE conversation_id=?2`,
+				p.Recipient, p.ConversationID).Scan(&hop, &sides); err != nil {
+				return msg, false, err
+			}
+			if !hop.Valid {
+				return msg, false, reject("unknown conversation %q", p.ConversationID)
+			}
+			if sides == 0 {
+				return msg, false, reject("session %q is not part of conversation %q", p.Recipient, p.ConversationID)
+			}
+			m.ConversationID = p.ConversationID
+			m.Hop = int(hop.Int64) + 1
 			m.Type = protocol.TypeReply
+			threaded = true
+		} else {
+			// Threaded into a conversation without a parent (W4.4): only by a
+			// session that the recipient wrote to in that conversation.
+			var hop sql.NullInt64
+			if err := tx.QueryRow(`SELECT MAX(hop) FROM messages WHERE conversation_id=? AND sender=? AND recipient=?`,
+				p.ConversationID, p.Recipient, p.Sender).Scan(&hop); err != nil {
+				return msg, false, err
+			}
+			if !hop.Valid {
+				return msg, false, reject("conversation %q has no message from the recipient to the sender", p.ConversationID)
+			}
+			m.ConversationID = p.ConversationID
+			m.Hop = int(hop.Int64) + 1
+			threaded = true
+			if m.Type == "" {
+				m.Type = protocol.TypeReply
+			}
 		}
 	} else {
 		m.ConversationID = protocol.NewID("c")

@@ -33,14 +33,15 @@ Tailscale to start. Go ahead and build it."
    - Part 1 builds Desk and Sessions. Graph, Changes, Messages and Workers say
      "coming in the next update". The CTO button opens an empty side panel that
      says "CTO chat arrives in part 4".
-   - Part 2 is Changes and Messages. Part 3 is Graph and Workers. Part 4 is
+   - Part 2 is Changes and Messages (built, see items 10 to 12). Part 3 is Graph and Workers. Part 4 is
      the CTO chat panel.
 4. **Read and answer only.** The console answers what waits for the owner and
    reads the rest. Its only `POST` route is `/action`, with these kinds and no
    others: `held` (`AnswerHeld`), `outcome` (`ResolveOutcome`), `inbox`
    (`inbox_answer`: approve, refuse, dismiss, an option or typed text), `mark`
-   (`ask_mark`, "didn't need me") and `send` (a message as the owner to a
-   session that waits). There is no route that starts or stops a session or a
+   (`ask_mark`, "didn't need me"), `send` (a message as the owner to a
+   session that waits) and `reply` (the owner's words in a conversation of the
+   Messages screen). There is no route that starts or stops a session or a
    worker, changes a charter, a team, an edge or a setting. A test holds this.
 5. **Asks the console does not answer.** A CTO proposal, a learned suggestion,
    a charter draft and a delivery step say "Answer from the TUI". An approval
@@ -64,6 +65,35 @@ Tailscale to start. Go ahead and build it."
    adds them.
 9. **No secrets on a page.** No token, node ID or join string is rendered. A
    session ID appears only in a link, as it did before.
+
+10. **Changes.** A list and a detail, read with `changes_owner_find`, the same
+    read the TUI Delivery tab uses. Filters are open, mine to do and all. A row
+    has the title, id, revision, risk, the step strip, the status line and the
+    age. The detail has each step with its state, owner and evidence note. It
+    has no step action: no approve, claim or report from the web. A test holds
+    that no such route or action kind exists. The change read carries no diff
+    stat, so the detail shows one only when a step's evidence has it.
+11. **Messages.** The conversation list (`conversations`) and the thread of the
+    selected one (`conversation_messages`), as the TUI Messages tab reads them.
+    System events and worker notices are dimmed. The composer uses the owner
+    send path of the TUI (`owner_send`), the one that part 1's `send` action
+    uses, so the message arrives marked as the owner in person. `reply` is the
+    only new action kind. It takes the conversation id, the recipient session
+    and the text. The recipient must be a side of that conversation, so a reply
+    cannot be a message to any other session. **Decided: replies stay in the
+    thread.** `owner_send` takes an optional `conversation_id`, which the daemon
+    carries unchanged in `msg.send`. When an owner send has one, the gateway
+    stores the message as a reply in that conversation, with no parent, only if
+    the conversation exists and the recipient is one of its sides. Otherwise it
+    refuses with the reason. A send without the field opens a new conversation as
+    before. The page goes back to the same conversation. A worker row groups
+    conversations, so the reply goes to the newest conversation of that group
+    that has the chosen session as a side.
+12. **Live.** `/events` carries the row (`s`) and, for Changes, the filter (`f`).
+    Each screen reads only what it shows: Changes reads the change list and the
+    selected change, Messages the conversation list and the selected thread. A
+    live update does not wipe the composer while the owner writes. The thread
+    keeps its scroll place across an update.
 
 ## Not decided here
 

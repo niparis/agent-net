@@ -69,7 +69,7 @@ func (a *app) screen(id string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
 		defer cancel()
-		p := a.load(ctx, id, r.URL.Query().Get("s"))
+		p := a.load(ctx, id, query{Selected: r.URL.Query().Get("s"), Filter: r.URL.Query().Get("f")})
 		var b bytes.Buffer
 		if err := shell.ExecuteTemplate(&b, "page", p); err != nil {
 			http.Error(w, "page error", http.StatusInternalServerError)
@@ -80,8 +80,9 @@ func (a *app) screen(id string) http.HandlerFunc {
 	}
 }
 
-// action answers one ask. Only these kinds exist: an answer to something that
-// waits for the owner, never a start, a stop or a change of settings.
+// action answers one ask or writes one reply. Only these kinds exist: an answer
+// to something that waits for the owner, or the owner's own words in a thread.
+// Never a start, a stop, a step of a change or a change of settings.
 func (a *app) action(w http.ResponseWriter, r *http.Request) {
 	origin, err := url.Parse(r.Header.Get("Origin"))
 	if err != nil || origin.Host != r.Host || (origin.Scheme != "https" && origin.Scheme != "http") {
@@ -104,6 +105,7 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), operator.Timeout)
 	defer cancel()
+	back := "/"
 	switch r.PostForm.Get("kind") {
 	case "held":
 		if act != "a" && act != "A" && act != "r" && act != "R" {
@@ -132,6 +134,11 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 		}
 	case "send":
 		_, err = a.src.SendAsOwner(ctx, id, act)
+	case "reply":
+		// A written reply of the owner into a conversation of the Messages
+		// screen (conversation id, recipient session, text).
+		err = a.reply(ctx, id, r.PostForm.Get("to"), act)
+		back = "/messages?s=" + url.QueryEscape(id)
 	default:
 		err = fmt.Errorf("invalid action")
 	}
@@ -139,5 +146,5 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }
