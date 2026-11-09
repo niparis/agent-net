@@ -5,8 +5,8 @@ Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 ╰─────────────────────────────────────────────────────────────────────╯ │ step verify: waiting for you                 │
 ╭─In flight · 4───────────────────────────────────────────────────────╮ │ with merger                                  │
 │   TITLE                     STEP     STATUS             AGE    DONE │ │                                              │
-│ ▸ Resume offline sessions   verify   waiting for you    -      ○○   │ │ enter evidence  v all changes  R refresh     │
-│   Fix the entry test        test     back to tenebrae-… -      ○✗   │ │                                              │
+│ ▸ Resume offline sessions   verify   waiting for you    -      ○○   │ │ enter open the change  v show all changes    │
+│   Fix the entry test        test     back to tenebrae-… -      ○✗   │ │ R refresh                                    │
 │     Enter did not resume the offline session                        │ │                                              │
 │   Repair worker restart     test     back to strategie… -      ○✗   │ │                                              │
 │     Enter did not resume the offline session                        │ │                                              │
@@ -21,4 +21,4 @@ Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter evidence  v all changes  R refresh  ↑↓ select  l log  ? help
+enter open the change  v show all changes  R refresh  ↑↓ select  l open the log  ? help

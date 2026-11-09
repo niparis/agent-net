@@ -369,19 +369,23 @@ func (m Model) deskPanel(w, h int) []string {
 }
 
 func (m Model) deskChangeHints(ch deliveryChange) []hint {
-	h := []hint{bindingHint(contextDelivery, "open"), bindingHint(contextInbox, "show all"), bindingHint(contextDelivery, "refresh")}
+	open := bindingHint(contextDelivery, "open")
+	open.label = "open the change"
+	h := []hint{open, bindingHint(contextInbox, "show all"), bindingHint(contextDelivery, "refresh")}
 	if ch.Group == groupToTry {
 		h = append(h, hint{key: "y", label: "it works", prio: 1}, hint{key: "n", label: "it fails", prio: 1})
 	}
-	return h
+	return keepChoices(h)
 }
 
 func (m Model) deskLogHints(e protocol.DeskLogEntry) []hint {
 	h := []hint{bindingHint(contextInbox, "log")}
 	if _, _, ok := logUndo(e); ok {
-		h = append([]hint{bindingHint(contextInbox, "undo")}, h...)
+		undo := bindingHint(contextInbox, "undo")
+		undo.label = "undo this change"
+		h = append([]hint{undo}, h...)
 	}
-	return h
+	return keepChoices(h)
 }
 
 // inboxTabView draws the Desk: a title, the three sections and a panel for

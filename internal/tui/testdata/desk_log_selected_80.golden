@@ -21,4 +21,4 @@ closed 22 · sent on 4 · answered 2 · 3 for you
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-u undo  l log  ↑↓ select  ? help
+u undo this change  l open the log  ↑↓ select  ? help

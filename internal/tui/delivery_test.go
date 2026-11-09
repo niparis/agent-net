@@ -679,7 +679,7 @@ func TestDeliveryHelpAndHints(t *testing.T) {
 	for _, h := range m.hints() {
 		hints += h.key + " " + h.label + "|"
 	}
-	for _, want := range []string{"evidence", "all changes", "refresh"} {
+	for _, want := range []string{"open the change", "show all changes", "refresh"} {
 		if !strings.Contains(hints, want) {
 			t.Errorf("hints %q missing %q", hints, want)
 		}

@@ -287,7 +287,10 @@ func TestDeskRendersAsksWithRecommendationAndWhyYou(t *testing.T) {
 	mustContain(t, "desk", body,
 		"Needs you", "Allow the record tools for every session?", "tenebrae", "question", "4m",
 		"Recommended", "Yes, record and read tools only.", "Why you", "Permission settings are yours.",
-		"held request body", "do the thing", "unclear", "Let it stand.")
+		"held request body", "do the thing", "unclear", "Let it stand.",
+		"peer-b escalated this request: &#34;unclear&#34;",
+		"Keep the escalation: the requester does not get do the thing",
+		"Overrule: the requester gets do the thing")
 	// The rail, the CTO button and the bottom bar.
 	for _, name := range []string{"Desk", "Sessions", "Graph", "Changes", "Messages", "Workers"} {
 		mustContain(t, "rail "+name, body, ">"+name+"<")

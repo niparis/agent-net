@@ -5,7 +5,7 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 │   ingest-forge [question] Merge PR #3? CI green.                                                         2h │ │ CTO applied graph edge set app -> ops        │
 │   strategies   [approval] Release v1.2.3 to the machines                                                30m │ │ 5 minutes ago                                │
 │   ingest-forge [approval] Pay for the new model?                                                        40m │ │                                              │
-│     priority 1 · why you: the ingest-forge charter has no rule for spend                                    │ │ u undo  l log                                │
+│     priority 1 · why you: the ingest-forge charter has no rule for spend                                    │ │ u undo this change  l open the log           │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─In flight · 5───────────────────────────────────────────────────────────────────────────────────────────────╮ │                                              │
 │   TITLE                       REPO             STEP      STATUS                                AGE     DONE │ │                                              │
@@ -37,4 +37,4 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 │                                                                                                                                                              │
 │ c: open the CTO                                                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-u undo  l log  ↑↓ select  ? help
+u undo this change  l open the log  ↑↓ select  ? help

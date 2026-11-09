@@ -102,6 +102,8 @@ func TestDeskGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}, {160, 40}} {
 		m := deskChiefModel(t, size[0], size[1])
 		golden(t, "desk_all_"+itoa(size[0]), m.testView())
+		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
+		golden(t, "desk_handled_selected_"+itoa(size[0]), m.testView())
 		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible()) + len(m.handled)
 		golden(t, "desk_log_selected_"+itoa(size[0]), m.testView())
 	}

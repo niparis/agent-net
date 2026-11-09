@@ -274,9 +274,12 @@ func (m Model) deskHandledLine(h protocol.ChiefSort, w int, selected bool) strin
 func (m Model) deskHandledHints(h protocol.ChiefSort) []hint {
 	var out []hint
 	if !h.Undone {
-		out = append(out, bindingHint(contextInbox, "undo"))
+		undo := bindingHint(contextInbox, "undo")
+		undo.label = "undo the sort"
+		out = append(out, undo)
 	}
-	return append(out, bindingHint(contextInbox, "should_have_asked"))
+	out = append(out, bindingHint(contextInbox, "should_have_asked"))
+	return keepChoices(out)
 }
 
 // deskHandledPanel draws the handled sort under the cursor, in full.

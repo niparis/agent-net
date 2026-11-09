@@ -181,13 +181,13 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 		kind string
 		keys []string
 	}{
-		{"held", []string{"enter open session", "a approve", "r refuse"}},
-		{"outcome", []string{"s let stand", "O overrule"}},
-		{"learned", []string{"a accept", "r reject"}},
-		{"proposal", []string{"a approve", "r refuse"}},
-		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}},
-		{"question", []string{"t type answer", "x dismiss", "enter details"}},
-		{"notice", []string{"x dismiss"}},
+		{"held", []string{"enter open the session", "a send it to strategies", "r keep it held"}},
+		{"outcome", []string{"s Keep refusal: app denied deploy app", "O Overrule: app gets deploy app"}},
+		{"learned", []string{"a accept the suggestion", "r reject the suggestion"}},
+		{"proposal", []string{"a approve the change", "r decline the change"}},
+		{"approval", []string{"a approve ci-runner's request", "r refuse ci-runner's request", "x dismiss the ask", "enter open details"}},
+		{"question", []string{"t answer ci-runner", "x dismiss the ask", "enter open details"}},
+		{"notice", []string{"x dismiss the notice"}},
 	}
 	for _, tc := range cases {
 		i := inboxRowIndex(m, tc.kind)
@@ -421,6 +421,20 @@ func TestInboxGoldens(t *testing.T) {
 	}
 }
 
+// The choice keys say what they do, with the names and the request filled in.
+// These goldens show a contested outcome, a held request and a learned
+// suggestion at both widths.
+func TestInboxChoiceLabelsGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, _ := inboxAllKindsModel(size[0], size[1])
+		m = openInbox(m)
+		for _, kind := range []string{"outcome", "held", "learned"} {
+			m.inboxIndex = inboxRowIndex(m, kind)
+			golden(t, fmt.Sprintf("inbox_choice_%s_%dx%d", kind, size[0], size[1]), m.testView())
+		}
+	}
+}
+
 func TestInboxEmptyGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := openInbox(newModel(size[0], size[1]))
@@ -499,7 +513,7 @@ func TestInboxPanelShowsTheSelectedItem(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = openInbox(m)
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"ci-runner asks", "which branch?", "session ci-runner", "agent-net on", "build-vm", "10 minutes ago", "t type answer", "enter details"} {
+	for _, want := range []string{"ci-runner asks", "which branch?", "session ci-runner", "agent-net on", "build-vm", "10 minutes ago", "t answer ci-runner", "enter open details"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("question panel lacks %q:\n%s", want, view)
 		}
@@ -507,7 +521,7 @@ func TestInboxPanelShowsTheSelectedItem(t *testing.T) {
 
 	m.inboxIndex = inboxRowIndex(m, "outcome")
 	view = ansi.Strip(m.testView())
-	for _, want := range []string{"ops → app", "deploy app refused: \"not now\"", "6 minutes ago", "s let stand", "O overrule"} {
+	for _, want := range []string{"ops → app", "app asked ops: deploy app", "ops refused", "\"not now\"", "6 minutes ago", "s Keep refusal: app denied deploy app", "O Overrule: app gets deploy app"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("outcome panel lacks %q:\n%s", want, view)
 		}
@@ -527,13 +541,13 @@ func TestInboxKeyBarFollowsTheSelection(t *testing.T) {
 		want []string
 		not  []string
 	}{
-		{"held", []string{"enter open session", "a approve", "r refuse"}, []string{"s let stand", "x dismiss"}},
-		{"outcome", []string{"s let stand", "O overrule"}, []string{"a approve", "t type answer"}},
-		{"learned", []string{"a accept", "r reject"}, []string{"enter details", "x dismiss"}},
-		{"proposal", []string{"a approve", "r refuse"}, []string{"t type answer", "enter details", "A approve all"}},
-		{"approval", []string{"a approve", "r refuse", "x dismiss", "enter details"}, []string{"s let stand", "t type answer"}},
-		{"question", []string{"t type answer", "x dismiss", "enter details"}, []string{"a approve", "r refuse"}},
-		{"notice", []string{"x dismiss"}, []string{"a approve", "t type answer", "enter details"}},
+		{"held", []string{"enter open the session", "a send it to strategies", "r keep it held"}, []string{"s Keep refusal", "x dismiss the ask"}},
+		{"outcome", []string{"s Keep refusal: app denied deploy app", "O Overrule: app gets deploy app"}, []string{"a approve ci-runner's request", "t answer ci-runner"}},
+		{"learned", []string{"a accept the suggestion", "r reject the suggestion"}, []string{"enter open details", "x dismiss the ask"}},
+		{"proposal", []string{"a approve the change", "r decline the change"}, []string{"t answer", "enter open details", "A approve all"}},
+		{"approval", []string{"a approve ci-runner's request", "r refuse ci-runner's request", "x dismiss the ask", "enter open details"}, []string{"s Keep refusal", "t answer"}},
+		{"question", []string{"t answer ci-runner", "x dismiss the ask", "enter open details"}, []string{"a approve", "r refuse"}},
+		{"notice", []string{"x dismiss the notice"}, []string{"a approve", "t answer", "enter open details"}},
 	}
 	for _, tc := range cases {
 		m.inboxIndex = inboxRowIndex(m, tc.kind)
@@ -564,14 +578,14 @@ func TestInboxItemKeysPerKind(t *testing.T) {
 	m = withWaitingAsks(m)
 	m = openInbox(m)
 	cases := []struct{ kind, item, bar string }{
-		{"held", "enter open session  a approve  r refuse", "enter open session  a approve  r refuse  n didn't need me  ↑↓ select  l log  ? help"},
-		{"waiting", "enter open session", "enter open session  n didn't need me  ↑↓ select  l log  ? help"},
-		{"question", "t type answer  x dismiss  enter details", "t type answer  x dismiss  enter details  n didn't need me  ↑↓ select  l log  ? help"},
-		{"approval", "a approve  r refuse  x dismiss  enter details", "a approve  r refuse  x dismiss  enter details  n didn't need me  ↑↓ select  l log  ? help"},
-		{"proposal", "a approve  r refuse", "a approve  r refuse  n didn't need me  ↑↓ select  l log  ? help"},
-		{"learned", "a accept  r reject", "a accept  r reject  n didn't need me  ↑↓ select  l log  ? help"},
-		{"outcome", "s let stand  O overrule", "s let stand  O overrule  n didn't need me  ↑↓ select  l log  ? help"},
-		{"notice", "x dismiss", "x dismiss  n didn't need me  ↑↓ select  l log  ? help"},
+		{"held", "enter open the session  a send it to strategies  r keep it held", "enter open the session  a send it to strategies  r keep it held  n didn't need me  ↑↓ select  l open the log  ? help"},
+		{"waiting", "enter open tenebrae-53", "enter open tenebrae-53  n didn't need me  ↑↓ select  l open the log  ? help"},
+		{"question", "t answer ci-runner  x dismiss the ask  enter open details", "t answer ci-runner  x dismiss the ask  enter open details  n didn't need me  ↑↓ select  l open the log  ? help"},
+		{"approval", "a approve ci-runner's request  r refuse ci-runner's request  x dismiss the ask  enter open details", "a approve ci-runner's request  r refuse ci-runner's request  x dismiss the ask  enter open details  ↑↓ select  ? help"},
+		{"proposal", "a approve the change  r decline the change", "a approve the change  r decline the change  n didn't need me  ↑↓ select  l open the log  ? help"},
+		{"learned", "a accept the suggestion  r reject the suggestion", "a accept the suggestion  r reject the suggestion  n didn't need me  ↑↓ select  l open the log  ? help"},
+		{"outcome", "s Keep refusal: app denied deploy app  O Overrule: app gets deploy app", "s Keep refusal: app denied deploy app  O Overrule: app gets deploy app  n didn't need me  ↑↓ select  ? help"},
+		{"notice", "x dismiss the notice", "x dismiss the notice  n didn't need me  ↑↓ select  l open the log  ? help"},
 	}
 	for _, tc := range cases {
 		m.inboxIndex = inboxRowIndex(m, tc.kind)
@@ -634,7 +648,7 @@ func TestInboxPanelSitsBelowTheBoxesOnANarrowScreen(t *testing.T) {
 	if lastBox < 0 || panelAt <= lastBox {
 		t.Fatalf("the panel is not under the boxes (box ends %d, panel at %d):\n%s", lastBox, panelAt, view)
 	}
-	if !strings.Contains(view, "which branch?") || !strings.Contains(view, "t type answer") {
+	if !strings.Contains(view, "which branch?") || !strings.Contains(view, "t answer ci-runner") {
 		t.Fatalf("the narrow panel lacks the item text or keys:\n%s", view)
 	}
 }

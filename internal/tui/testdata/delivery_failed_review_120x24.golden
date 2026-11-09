@@ -6,8 +6,8 @@ Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 ╭─In flight · 5───────────────────────────────────────────────────────╮ │ the worker                                   │
 │   TITLE                     STEP     STATUS             AGE    DONE │ │ with you                                     │
 │   Approve the deploy gate   approve  waiting for you    3h0m   ○    │ │                                              │
-│   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │ enter evidence  v all changes  R refresh     │
-│   Say what a delivery row … test     waiting for ci-ru… 6m     ●●○○ │ │                                              │
+│   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │ enter open the change  v show all changes    │
+│   Say what a delivery row … test     waiting for ci-ru… 6m     ●●○○ │ │ R refresh                                    │
 │     merged: abcdef1                                                 │ │                                              │
 │ ▸ Fix the deploy gate       review   back to strategie… 2h5m   ●✗   │ │                                              │
 │   wbg-procurement · 2 changes: accept by wbg-procurement (exited) … │ │                                              │
@@ -21,4 +21,4 @@ Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter evidence  v all changes  R refresh  ↑↓ select  l log  ? help
+enter open the change  v show all changes  R refresh  ↑↓ select  l open the log  ? help

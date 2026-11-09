@@ -137,6 +137,9 @@ type askView struct {
 	Approve, Refuse, Dismiss     bool
 	HeldAlways, CanText, CanMark bool
 	Hint                         string
+	HeldTo                       string // who a held request would reach
+	RefusalNote                  string // who refused and why, above the choices
+	LetStand, Overrule           string // what the two outcome answers do
 }
 
 type changeRow struct {
@@ -372,6 +375,16 @@ func firstLine(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// shortText keeps a label to n runes so a button stays readable.
+func shortText(s string, n int) string {
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n])) + "..."
+}
+
 // askView makes the card of one ask and says which answers the web offers.
 // Kinds that need more than an answer (a CTO proposal, a learned suggestion)
 // are answered in the TUI.
@@ -382,7 +395,8 @@ func askCard(a protocol.Ask, now time.Time, names map[string]string) askView {
 	switch a.Kind {
 	case protocol.AskKindHeld:
 		v.Kind = "held request"
-		v.Question = "A request to " + firstNonEmpty(names[a.AboutID], "a session") + " is held for your approval."
+		v.HeldTo = firstNonEmpty(names[a.AboutID], "the other agent")
+		v.Question = "A request to " + v.HeldTo + " is held for your approval."
 		v.Detail = a.Detail
 		v.Form, v.TargetID, v.Approve, v.Refuse, v.HeldAlways = "held", a.MessageID, true, true, true
 	case protocol.AskKindRejection, protocol.AskKindEscalation:
@@ -390,6 +404,20 @@ func askCard(a protocol.Ask, now time.Time, names map[string]string) askView {
 		if first, rest, ok := strings.Cut(a.Question, "\nReason: "); ok {
 			request, reason = strings.TrimPrefix(first, "Request: "), rest
 		}
+		party := firstNonEmpty(a.Node, "the requester")
+		request = firstNonEmpty(shortText(request, 70), "the request")
+		refuser := firstNonEmpty(a.From, "The other agent")
+		v.RefusalNote = refuser + " refused this request"
+		keep := "Keep the refusal: " + party + " does not get " + request
+		if a.Kind == protocol.AskKindEscalation {
+			v.RefusalNote = refuser + " escalated this request"
+			keep = "Keep the escalation: " + party + " does not get " + request
+		}
+		if reason != "" {
+			v.RefusalNote += ": \"" + reason + "\""
+		}
+		v.LetStand = keep
+		v.Overrule = "Overrule: " + party + " gets " + request
 		v.Question, v.Reason = request, reason
 		v.Form, v.TargetID = "outcome", a.MessageID
 	case protocol.AskKindWaiting:

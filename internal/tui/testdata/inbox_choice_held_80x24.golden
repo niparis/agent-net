@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (7) │ 12 online
+Desk · no chief of staff · sorted 0 asks today · log closed (l opens it)
+╭─Needs you · 7────────────────────────────────────────────────────────────────╮
+│   ci-runner     [question] which branch?                                 10m │
+│   ci-runner     [approval] deploy abc                                     9m │
+│ ▸ alice         held request → strategies                                 5m │
+│ … 4 more                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─In flight · 0────────────────────────────────────────────────────────────────╮
+│ Loading changes...                                                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Handled for you · 0──────────────────────────────────────────────────────────╮
+│ The chief of staff sorted nothing in the last day.                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─alice held a request─────────────────────────────────────────────────────────╮
+│ please help                                                                  │
+│ from alice · session strategies · strategies on Mac · 5 minutes ago          │
+│ enter open the session  a send it to strategies  r keep it held              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO · 1 open proposal────────────────────────────────────────────────────────╮
+│                                                                              │
+│ 1/7 See  All your agents, live. Enter opens tenebrae-53.                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter open the session  a send it to strategies  r keep it held  ↑↓ select
