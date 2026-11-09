@@ -145,10 +145,10 @@ func TestPickerTaskKeysOutcomesAndInvalidD(t *testing.T) {
 	}
 }
 
-// Every run is a task, with its own outcome and fix rounds. A session that ran
-// twice gives two tasks that share the session's latest valid D. The session's
-// defects and failed steps count once, on its last run.
-func TestPickerEveryRunIsATaskAndSessionPenaltiesCountOnce(t *testing.T) {
+// A session that ran twice (a continue to the same session) is one task. Its D
+// is the first valid judge result, its fix rounds add up and the session's
+// defects and failed steps count once.
+func TestPickerSessionRunsAreOneTaskAndPenaltiesCountOnce(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("h", "linux")
 	at := c.now().Unix()
@@ -170,17 +170,16 @@ func TestPickerEveryRunIsATaskAndSessionPenaltiesCountOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := pickerTasksByKey(t, s)["gpt-6.1-sol:low"]
-	if len(got) != 2 {
+	if len(got) != 1 {
 		t.Fatalf("tasks: %+v", got)
 	}
-	if got[0].D != 3.1 || got[1].D != 3.1 || got[0].Score != 1 || math.Abs(got[1].Score-.25) > 1e-9 {
-		t.Fatalf("latest D 3.1 on both runs; the first run is clean, the last has one fix round and the defect: %+v", got)
+	if got[0].D != 2.4 || math.Abs(got[0].Score-.25) > 1e-9 {
+		t.Fatalf("first D 2.4; one fix round and one defect (1 + severity 1) cost .75: %+v", got)
 	}
 }
 
 // Stopped and infra runs say nothing about the model: they are not tasks, so
-// they add nothing to n and nothing to the score. The session's penalties go to
-// its last run that counts.
+// they add nothing to n and nothing to the score.
 func TestPickerStoppedAndInfraRunsAreLeftOut(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("h", "linux")
@@ -383,5 +382,106 @@ func TestWorkerChoiceNoteForACellPick(t *testing.T) {
 	choice = protocol.WorkerModelChoice{PickNote: "bucket 4.33-4.67: fallback to the level rule (x)", Fallback: true, Score: 39.5, Weight: 1}
 	if got := workerChoiceNote("normal", choice, nil, nil, nil); got != "bucket 4.33-4.67: fallback to the level rule (x); 39.5, good enough; no quota pace reading; rotation weight 1.00" {
 		t.Fatalf("fallback note: %q", got)
+	}
+}
+
+func TestPickerContinuationChain(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	at := c.now().Unix()
+	for i, run := range []struct{ session, task, outcome string }{
+		{"s_root", "", protocol.OutcomePartial},
+		{"s_next", "s_root", protocol.OutcomeComplete},
+	} {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: run.session, TaskID: run.task, Continue: i, Harness: "codex", Model: "gpt-6.1-terra:high", Outcome: run.outcome, StartedAt: at + int64(i)*100, EndedAt: at + int64(i)*100 + 60}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pickerAssessment(t, s, "s_root", 2.5)
+	pickerAssessment(t, s, "s_next", 3.5)
+	got := pickerTasksByKey(t, s)["gpt-6.1-terra:high"]
+	if len(got) != 1 || got[0].D != 2.5 || math.Abs(got[0].Score-1) > 1e-9 {
+		t.Fatalf("chain = %+v, want one task at D 2.5 and score 1", got)
+	}
+	if _, err := s.db.Exec(`INSERT INTO worker_defects(session_id, severity, at) VALUES('s_next', 1, ?)`, at); err != nil {
+		t.Fatal(err)
+	}
+	got = pickerTasksByKey(t, s)["gpt-6.1-terra:high"]
+	if len(got) != 1 || got[0].Score != .5 {
+		t.Fatalf("chain with one defect = %+v, want one task scored .5", got)
+	}
+}
+
+// The live data shape: a continue to the same worker session records another
+// worker_runs row with the same session id and no task_id. Those rows are one
+// task.
+func TestPickerChainSameSessionRows(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	at := c.now().Unix()
+	for i, r := range []struct {
+		outcome string
+		fix     int
+	}{{protocol.OutcomeComplete, 1}, {protocol.OutcomeComplete, 1}, {protocol.OutcomeComplete, 0}} {
+		pickerRun(t, s, node, "s_worker", "codex", "gpt-6.1-terra:high", r.outcome, r.fix, at+int64(i)*100)
+	}
+	pickerAssessment(t, s, "s_worker", 3.0)
+	got := pickerTasksByKey(t, s)["gpt-6.1-terra:high"]
+	// One task, two fix rounds in total, nothing for the third run.
+	if len(got) != 1 || got[0].D != 3.0 || math.Abs(got[0].Score-.5) > 1e-9 {
+		t.Fatalf("same-session rows = %+v, want one task scored .5", got)
+	}
+}
+
+// A continue costs nothing, and a partial run that was never continued is 0.
+func TestPickerChainContinueIsFree(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	at := c.now().Unix()
+	for i, outcome := range []string{protocol.OutcomePartial, protocol.OutcomePartial, protocol.OutcomeComplete} {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_done", Continue: 2, Harness: "codex", Model: "gpt-6.1-terra:high", Outcome: outcome, StartedAt: at, EndedAt: at + int64(i)*100}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pickerRun(t, s, node, "s_never", "codex", "gpt-6.1-terra:high", protocol.OutcomePartial, 0, at)
+	pickerAssessment(t, s, "s_done", 3.0)
+	pickerAssessment(t, s, "s_never", 3.0)
+	got := pickerTasksByKey(t, s)["gpt-6.1-terra:high"]
+	if len(got) != 2 || got[0].Score != 1 || got[1].Score != 0 {
+		t.Fatalf("tasks = %+v, want a continued task at 1 and a partial one at 0", got)
+	}
+}
+
+// Defects and failed steps count once per chain, whichever session holds them.
+func TestPickerChainEvidenceCountsOnce(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	at := c.now().Unix()
+	pickerRun(t, s, node, "s_root", "codex", "gpt-6.1-terra:high", protocol.OutcomePartial, 0, at)
+	pickerRun(t, s, node, "s_root", "codex", "gpt-6.1-terra:high", protocol.OutcomePartial, 0, at+50)
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_next", TaskID: "s_root", Harness: "codex", Model: "gpt-6.1-terra:high", Outcome: protocol.OutcomeComplete, StartedAt: at + 100, EndedAt: at + 200}); err != nil {
+		t.Fatal(err)
+	}
+	pickerAssessment(t, s, "s_root", 2.5)
+	if _, err := s.db.Exec(`INSERT INTO worker_defects(session_id, severity, at) VALUES('s_root', 1, ?)`, at); err != nil {
+		t.Fatal(err)
+	}
+	got := pickerTasksByKey(t, s)["gpt-6.1-terra:high"]
+	if len(got) != 1 || got[0].D != 2.5 || got[0].Score != .5 {
+		t.Fatalf("chain = %+v, want one task at D 2.5 scored .5 (one defect)", got)
+	}
+}
+
+func TestPickerSameSessionAutoContinueChain(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	at := c.now().Unix()
+	pickerRun(t, s, node, "s_worker", "codex", "gpt-6.1-terra:high", protocol.OutcomePartial, 0, at)
+	pickerRun(t, s, node, "s_worker", "codex", "gpt-6.1-terra:high", protocol.OutcomeComplete, 0, at+100)
+	pickerAssessment(t, s, "s_worker", 3.0)
+	pickerAssessment(t, s, "s_worker", 4.0)
+	got := pickerTasksByKey(t, s)["gpt-6.1-terra:high"]
+	if len(got) != 1 || got[0].Score != 1 || got[0].D != 3.0 {
+		t.Fatalf("auto-continuation = %+v", got)
 	}
 }

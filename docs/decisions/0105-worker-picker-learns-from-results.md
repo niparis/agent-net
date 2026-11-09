@@ -43,20 +43,23 @@ prefix (`opencode-go/`) stays in the key and is removed only to display it.
 
 ### Task score, 0 to 1
 
-A task is one row of `worker_runs` that has a judge result, joined to its
-session. This is the join the owner's tables were built from. On 2026-11-08 the
-owner corrected two points of the first table: session penalties count once, and
-stopped and infra runs are left out.
+A run and its continuations are one task (owner decision, 2026-11-08: "continuation
+should have 0 penalty, not even a small one"). The link is the task root of a
+`worker_runs` row: `task_id` when the continue started a new session (it holds
+the root session), otherwise `session_id`, because a continue to the same
+worker session adds another row with the same session. This is the root the
+rework counters use. On the live data 256 sessions have more than one row and
+21 rows carry a `task_id`; no two sessions share a recorded worktree branch, so
+a branch is not used as a link.
 
-- The model key, the outcome and the fix rounds are the run's own.
-- D is the latest valid judge result (D above 0) of the run's session.
-- The defects and the failed delivery steps are the session's. They count once,
-  on the last run of the session that counts. Earlier runs of the session keep
-  their own outcome and fix rounds and carry no defect or failed step.
-- A run that ended `stopped` or `infra` is not a task. It says nothing about the
-  model, so it adds nothing to a score or to n. If a session's last run was
-  stopped, its penalties go to the last run before it that counts.
-- A run that ended `partial`, `failed` or `timed_out` is a task and scores 0.
+The model comes from the first counted run and D from the first valid judge
+result of the root session (or of the first session of the chain that has one).
+The outcome comes from the last counted run. Fix rounds add up across the runs.
+Defects and failed delivery steps are read per session and count once, because
+a session is in one chain only. A continuation costs nothing: there is no
+continue penalty and no setting for one. A partial run that was never continued
+is the last run of its chain and scores 0. Runs that ended `stopped` or `infra`
+do not count.
 
 The score of a task:
 
@@ -120,14 +123,26 @@ uses the middle of the level's range):
    This keeps strong, expensive models off easy work, tried or not. "Weaker" means
    a lower benchmark score. Two models with the same benchmark are not weaker than
    each other, and a lone strong model is never left out.
-5. The rest rotate with the smooth weighted round robin of decision 0026 (quota
-   pace, running workers, recent success or failure, completion bonus). The
-   over-qualification term is replaced by the cell score, and a cell with fewer
-   than `picker.uncertain_n` (5) tasks gets `picker.uncertain_boost` (1.5), so an
-   uncertain model gets a few more tasks. A cell more than one bucket below the
-   model's benchmark ceiling gets no boost, so extra tries go to models near their
-   ceiling.
-6. If no candidate is allowed, the old level rule picks, and the note says so.
+5. The qualifying set (owner decision, 2026-11-08: "that rotation is important. i
+   like B'") contains the allowed candidates with at least 3 tasks in the
+   bucket and a cell score (not the top of the interval) of at least
+   `picker.allowed_fraction` (0.9) x best. The pick rotates among them with the
+   smooth weighted round robin. A candidate weighs its quota pace factor (the
+   existing one, with the five-point penalty per running worker) times
+   `(highest benchmark among the allowed / its benchmark) ^ picker.weaker_bias`
+   (default 1). A lower benchmark weighs more, so weaker proven models get more
+   picks and stronger ones are not starved. A candidate with no benchmark has
+   factor 1. The old cell-score, track record and uncertain-boost terms are not
+   in this weight.
+6. `picker.explore_share` (default 0.10): about 1 pick in 10 goes to an allowed
+   thin cell (fewer than 3 tasks, allowed by its benchmark). The share is
+   counted, not random: each pick adds the share to a credit kept in the
+   rotation state, and a pick whose credit reaches 1 takes 1 and rotates
+   among the thin cells with their own weights. The state survives a restart.
+7. Fallbacks, in order: when nothing qualifies (no candidate has 3 tasks in the
+   bucket), the allowed set rotates as before this change, with the cell score,
+   the uncertain boost and the track terms in the weight. When no candidate is
+   allowed, the level rule picks.
 
 Removed: the fixed band (max level or one below) as the rule of eligibility, and
 the "poor track" completion-only rule. Both stay inside the fallback only.
@@ -142,15 +157,12 @@ older client keeps working.
 
 ### Pick note
 
-`model_note` names the bucket, the chosen cell, the best cell and everything left
-out with its reason:
-
-`bucket 2.33-2.67: deepseek 0.76 [0.67-0.84] n42, best; flash 0.66 [0.51-0.80] n17
-allowed; terra:medium 0.27 [0.12-0.41] n6 left out (below 0.9×best); terra:max
-left out (overqualified)`
-
-It shows at most three other allowed models and five left out. It follows the
-judge line that already starts every start note.
+`model_note` names the bucket and the chosen cell, then the qualifying set with
+each rotation weight, then the thin cells open to the explore share, then every
+candidate that was left out with its reason (below the qualifying score, below
+the interval, overqualified, above its benchmark, no record and no benchmark),
+and the quota exclusions. A pick made by the explore share says
+"exploration pick". The pick reads the cached table only.
 
 ### Read API
 
@@ -162,8 +174,9 @@ task yet appears with empty cells. The TUI does not poll it; part 2 reads it.
 ### Settings
 
 `picker.bucket_width` (1/3), `picker.k` (5), `picker.allowed_fraction` (0.9),
-`picker.overqualified_margin` (0.25), `picker.uncertain_boost` (1.5) and
-`picker.uncertain_n` (5). They are rules of the network. The CTO can change them.
+`picker.overqualified_margin` (0.25), `picker.uncertain_boost` (1.5),
+`picker.uncertain_n` (5), `picker.weaker_bias` (1.0) and `picker.explore_share`
+(0.10). The uncertain boost applies only in the fallback rotation. They are rules of the network. The CTO can change them.
 Settings that the cell rule replaced (`picker.fit_bands`, `picker.max_level_gap`,
 `picker.overqualified_scale`, `picker.poor_track_threshold`,
 `picker.quality_weighting`) are gone from the ledger or marked as code.
@@ -183,9 +196,7 @@ Settings that the cell rule replaced (`picker.fit_bands`, `picker.max_level_gap`
   the middle of each level's D range, instead of simulating the level rule. The
   Quality subtab shows the same cells the picker reads, with the verdicts of the
   same protocol function.
-- A model that is continued often is not punished on every run: its defects and
-  failed steps land on one run per session. Its earlier runs still show their own
-  partial outcomes and fix rounds.
+- Continued runs count as one task, with no continuation penalty.
 - Runs that were stopped or hit an infrastructure failure are not in the table.
   A model behind an unreliable provider is not judged by those runs. Its timed
   out and failed runs still count as 0.

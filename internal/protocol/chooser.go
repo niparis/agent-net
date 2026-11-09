@@ -49,6 +49,8 @@ type WorkerRotation struct {
 
 // WorkerRotationLevel is one difficulty's rotation state.
 type WorkerRotationLevel struct {
+	ExploreCredit  float64            `json:"explore_credit,omitempty"`
+	ExploreCurrent map[string]float64 `json:"explore_current,omitempty"`
 	// Current carries each candidate's weight between starts.
 	Current map[string]float64 `json:"current,omitempty"`
 	// Recent lists the last picks, newest last.
@@ -69,7 +71,13 @@ func (r WorkerRotation) Clone() WorkerRotation {
 		if state == nil {
 			continue
 		}
-		copied := &WorkerRotationLevel{Recent: append([]string(nil), state.Recent...)}
+		copied := &WorkerRotationLevel{ExploreCredit: state.ExploreCredit, Recent: append([]string(nil), state.Recent...)}
+		if state.ExploreCurrent != nil {
+			copied.ExploreCurrent = make(map[string]float64, len(state.ExploreCurrent))
+			for k, v := range state.ExploreCurrent {
+				copied.ExploreCurrent[k] = v
+			}
+		}
 		if state.Current != nil {
 			copied.Current = make(map[string]float64, len(state.Current))
 			for key, weight := range state.Current {
@@ -346,18 +354,23 @@ func workerRotationWeight(c WorkerModelCandidate, score, weakestAdequate, room f
 	return rotationWeight(c, fit, room, measured)
 }
 
+// quotaPaceFactor is the rotation weight a provider's quota pace gives.
+// Room is percentage points behind pace. Five points behind is about a quarter
+// more weight, and a lagging provider can lean further. Ahead of pace keeps
+// less, but never zero. A missing or stale reading is neutral.
+func quotaPaceFactor(room float64, measured bool) float64 {
+	if !measured {
+		return 1
+	}
+	return math.Max(0.1, math.Min(4, math.Exp(room/20)))
+}
+
 // rotationWeight turns quota room, a fit term and track record into a positive
 // weight. Every candidate that passes the rules of a pick keeps a positive
 // weight, so none is starved. The fit term is the caller's: the level rule
 // passes its over-qualification decay, the cell rule its cell score.
 func rotationWeight(c WorkerModelCandidate, fit, room float64, measured bool) float64 {
-	weight := 1.0
-	if measured {
-		// Room is percentage points behind pace. Five points behind is about a
-		// quarter more weight, and a lagging provider can lean further. Ahead of
-		// pace keeps less, but never zero.
-		weight *= math.Max(0.1, math.Min(4, math.Exp(room/20)))
-	}
+	weight := quotaPaceFactor(room, measured)
 	weight *= fit
 	if n := c.Track.Complete + c.Track.Partial + c.Track.Failed; n >= 5 {
 		weight *= 1 + 0.20*float64(c.Track.Complete)/float64(n)

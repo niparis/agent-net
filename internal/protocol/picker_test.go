@@ -215,29 +215,52 @@ func TestPickLeavesOutAConfidentlyWorseModel(t *testing.T) {
 	}
 }
 
-func TestPickKeepsAnUncertainModelInTheRotation(t *testing.T) {
-	tasks := append(pickTasks("good", 2.5, repeat(15, 1, .5)...), pickTasks("new", 2.5, 1, 0, 1, 0)...)
-	// "new" benchmarks at normal (ceiling D 3.0), one bucket above this task, so
-	// it keeps the boost. Its interval is wide because it has four tasks.
+// A model with fewer than three tasks in the bucket is not in the qualifying
+// set. It takes the exploration share of the picks, counted from the rotation
+// state: exactly one pick in ten at the default share.
+func TestPickExploresAThinCellAtTheExploreShare(t *testing.T) {
+	tasks := append(pickTasks("good", 2.5, repeat(15, 1, .5)...), pickTasks("new", 2.5, 1, 0)...)
+	// "new" benchmarks at normal (ceiling D 3.0), so the benchmark allows it.
 	scores := pickScores(map[string]float64{"good": 51, "new": 39})
 	counts := pickN(t, pickCandidates("good", "new"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 40)
-	if counts["new"] < 10 || counts["good"] < 10 {
+	if counts["new"] != 4 || counts["good"] != 36 {
+		t.Fatalf("picks: %v, want 4 exploration picks in 40", counts)
+	}
+	set := DefaultPickerSettings()
+	set.ExploreShare = .25
+	counts = pickN(t, pickCandidates("good", "new"), "normal", 2.5, tasks, scores, set, 40)
+	if counts["new"] != 10 {
+		t.Fatalf("share .25: picks %v, want 10 of 40", counts)
+	}
+}
+
+// A model with three tasks or more whose score is under 0.9 x best is neither
+// in the qualifying set nor in the exploration set.
+func TestPickLeavesOutAModelBelowTheQualifyingScore(t *testing.T) {
+	tasks := append(pickTasks("good", 2.5, repeat(15, 1, .5)...), pickTasks("new", 2.5, 1, 0, 1, 0)...)
+	scores := pickScores(map[string]float64{"good": 51, "new": 39})
+	counts := pickN(t, pickCandidates("good", "new"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 40)
+	if counts["new"] != 0 {
 		t.Fatalf("picks: %v", counts)
 	}
 }
 
-func TestPickBetterScoreGetsMorePicksWhenBothAreKnown(t *testing.T) {
-	tasks := append(pickTasks("a", 2.5, repeat(10, 1, .5, 1, .5)...), pickTasks("b", 2.5, repeat(10, 1, .5, .5, .5)...)...)
+// The score decides, not the better model's lead: two qualifying models with
+// the same benchmark and quota share the picks evenly.
+func TestPickQualifyingModelsShareEvenlyAtTheSameBenchmark(t *testing.T) {
+	tasks := append(pickTasks("a", 2.5, repeat(10, 1, .5, 1, .5)...), pickTasks("b", 2.5, repeat(10, 1, .5, .5, 1)...)...)
 	scores := pickScores(map[string]float64{"a": 51, "b": 51})
 	counts := pickN(t, pickCandidates("a", "b"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 60)
-	if counts["a"] <= counts["b"] || counts["b"] == 0 {
+	if counts["a"] != 30 || counts["b"] != 30 {
 		t.Fatalf("picks: %v", counts)
 	}
 }
 
 func TestPickUncertainBoostIsOnTheWeight(t *testing.T) {
-	tasks := append(pickTasks("known", 2.5, repeat(10, 1, 0)...), pickTasks("fresh", 2.5, 1, 0, 1, 0)...)
+	tasks := append(pickTasks("known", 2.5, repeat(10, 1, 0)...), pickTasks("fresh", 2.5, 1, 0)...)
 	// Both benchmark at normal: the ceiling (D 3.0) is one bucket above D 2.5.
+	// "fresh" has a thin cell and no candidate qualifies beside it, so the
+	// allowed set rotates with the cell score, as before.
 	scores := pickScores(map[string]float64{"known": 39, "fresh": 39})
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
 	choice, err := ChooseWorkerModel(pickCandidates("fresh"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
@@ -249,13 +272,14 @@ func TestPickUncertainBoostIsOnTheWeight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	near(t, "weight", choice.Weight, table.Cell("known", 4).Score)
+	// A qualifying model weighs its quota pace times the benchmark factor: 1.
+	near(t, "weight", choice.Weight, 1)
 }
 
 // A cell more than one bucket below the model's benchmark ceiling gets no
 // boost, with or without tasks: the model is well above this work.
 func TestPickNoUncertainBoostMoreThanOneBucketBelowTheCeiling(t *testing.T) {
-	tasks := pickTasks("fresh", 2.5, 1, 0, 1, 0)
+	tasks := pickTasks("fresh", 2.5, 1, 0)
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
 	in := &PickerInput{D: 2.5, Table: table}
 	for _, c := range []struct {
@@ -436,7 +460,7 @@ func TestPickNoteNamesTheCellsAndWhatWasLeftOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; flash 0.63 [0.44-0.81] n6 allowed; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)"
+	want := "bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30 weight 1.00; flash 0.63 [0.44-0.81] n6 left out (score below 0.9×best); terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)"
 	if choice.Name != "deepseek" || choice.PickNote != want {
 		t.Fatalf("choice %s\nnote %q\nwant %q", choice.Name, choice.PickNote, want)
 	}
@@ -565,5 +589,119 @@ func TestPickerBucketVerdictsAreTheCellRule(t *testing.T) {
 	got, _ = PickerBucketVerdicts(facts, lo, mean, 4, DefaultPickerSettings())
 	if !got[1].Allowed || !got[1].Prior {
 		t.Errorf("B with ceiling 2.5 = %+v, want allowed by benchmark", got[1])
+	}
+}
+
+func TestPickerBPrimeRotation(t *testing.T) {
+	tasks := append(pickTasks("strong", 2.5, repeat(5, 1)...), pickTasks("weak", 2.5, repeat(5, 1)...)...)
+	scores := pickScores(map[string]float64{"strong": 51, "weak": 39, "fresh": 39})
+	got := pickN(t, pickCandidates("strong", "weak", "fresh"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 100)
+	if got["fresh"] != 10 || got["weak"] <= got["strong"] || got["strong"] == 0 {
+		t.Fatalf("rotation: %v", got)
+	}
+}
+
+func TestPickerBPrimeUsesScoreNotInterval(t *testing.T) {
+	tasks := append(pickTasks("good", 2.5, repeat(10, 1)...), pickTasks("weak", 2.5, repeat(10, .7)...)...)
+	scores := pickScores(map[string]float64{"good": 39, "weak": 39})
+	got := pickN(t, pickCandidates("good", "weak"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 30)
+	if got["weak"] != 0 {
+		t.Fatalf("below-threshold model was picked: %v", got)
+	}
+}
+
+// Weight = quota pace x (best benchmark / benchmark) ^ weaker_bias. With
+// benchmarks 50 and 40 the weights are 1 and 1.25, so 90 smooth picks split
+// 40 and 50.
+func TestPickerBPrimeWeakerBiasSetsTheShares(t *testing.T) {
+	tasks := append(pickTasks("strong", 2.5, repeat(5, 1)...), pickTasks("weak", 2.5, repeat(5, 1)...)...)
+	scores := pickScores(map[string]float64{"strong": 50, "weak": 40})
+	got := pickN(t, pickCandidates("strong", "weak"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 90)
+	if got["strong"] != 40 || got["weak"] != 50 {
+		t.Fatalf("bias 1: %v, want 40 and 50", got)
+	}
+	set := DefaultPickerSettings()
+	set.WeakerBias = 2 // weights 1 and 1.5625
+	got = pickN(t, pickCandidates("strong", "weak"), "normal", 2.5, tasks, scores, set, 256)
+	if got["strong"] != 100 || got["weak"] != 156 {
+		t.Fatalf("bias 2: %v, want 100 and 156", got)
+	}
+}
+
+// A provider behind its quota pace gets more weight, with equal benchmarks.
+func TestPickerBPrimeQuotaPaceScalesTheWeight(t *testing.T) {
+	tasks := append(pickTasks("a", 2.5, repeat(5, 1)...), pickTasks("b", 2.5, repeat(5, 1)...)...)
+	scores := pickScores(map[string]float64{"a": 50, "b": 50})
+	c := pickCandidates("a", "b")
+	c[0].Provider, c[1].Provider = "pa", "pb"
+	// pa is halfway through its week and has used 30 percent: 20 points of room.
+	q := &Quotas{GeneratedAt: 1000, Providers: []QuotaProvider{{Provider: "pa", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: 30, ResetsAt: 1000 + 7*12*3600}}}}}
+	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	rotation := &WorkerRotation{}
+	counts := map[string]int{}
+	for i := 0; i < 100; i++ {
+		choice, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, rotation, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		counts[choice.Name]++
+	}
+	// exp(20/20) = 2.718 against 1: about 73 and 27.
+	if counts["a"] < 70 || counts["a"] > 76 {
+		t.Fatalf("picks: %v", counts)
+	}
+}
+
+// The qualifying set is the models with three tasks or more and a cell score
+// of 0.9 x best or more. The note names it with the weights, names the thin
+// cells open to exploration and gives the reason for each model left out.
+func TestPickerBPrimeNoteNamesTheQualifyingSetAndWeights(t *testing.T) {
+	tasks := append(pickTasks("a", 2.5, repeat(10, 1)...), pickTasks("b", 2.5, repeat(10, 1)...)...)
+	tasks = append(tasks, pickTasks("c", 2.5, repeat(10, 0)...)...)
+	tasks = append(tasks, pickTasks("thin", 2.5, 1)...)
+	scores := pickScores(map[string]float64{"a": 50, "b": 40, "c": 40, "thin": 40})
+	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	choice, err := ChooseWorkerModel(pickCandidates("a", "b", "c", "thin"), "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"qualifying: ", "a 0.89 [0.75-1.00] n10 weight 1.00", "b 0.89 [0.75-1.00] n10 weight 1.25", "thin cells (explore share 0.1): thin ", "(benchmark) weight 1.25", "c 0.23 [0.09-0.37] n10 left out (below 0.9×best)"} {
+		if !strings.Contains(choice.PickNote, want) {
+			t.Errorf("note lacks %q: %s", want, choice.PickNote)
+		}
+	}
+	if strings.Contains(choice.PickNote, "qualifying: thin") {
+		t.Errorf("a thin cell is in the qualifying set: %s", choice.PickNote)
+	}
+}
+
+// With no model at three tasks, nothing qualifies: the allowed set rotates as
+// before, with no exploration state used.
+func TestPickerBPrimeWithoutQualifiersRotatesTheAllowedSet(t *testing.T) {
+	tasks := append(pickTasks("x", 2.5, 1, 0), pickTasks("y", 2.5, 1, 1)...)
+	scores := pickScores(map[string]float64{"x": 39, "y": 39})
+	got := pickN(t, pickCandidates("x", "y"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 40)
+	if got["x"] == 0 || got["y"] == 0 {
+		t.Fatalf("picks: %v", got)
+	}
+}
+
+func TestPickerBPrimeExplorationStateSurvivesAClone(t *testing.T) {
+	tasks := append(pickTasks("good", 2.5, repeat(15, 1, .5)...), pickTasks("new", 2.5, 1, 0)...)
+	scores := pickScores(map[string]float64{"good": 51, "new": 39})
+	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	rotation := &WorkerRotation{}
+	counts := map[string]int{}
+	for i := 0; i < 40; i++ {
+		clone := rotation.Clone() // the gateway stores and reloads the state between picks
+		rotation = &clone
+		choice, err := ChooseWorkerModel(pickCandidates("good", "new"), "normal", scores, nil, nil, nil, rotation, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		counts[choice.Name]++
+	}
+	if counts["new"] != 4 {
+		t.Fatalf("picks: %v", counts)
 	}
 }
