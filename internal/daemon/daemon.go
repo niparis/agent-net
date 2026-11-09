@@ -112,6 +112,10 @@ type Config struct {
 	// daemons set it, because their fake harnesses cannot answer the judge;
 	// the assessment tests turn it off again.
 	testNoDifficulty bool
+	// testAssess replaces the difficulty judge at worker start.
+	testAssess func(ctx context.Context, project, task string) *protocol.WorkerAssessment
+	// testStartBudget replaces workerStartAnswerBudget.
+	testStartBudget time.Duration
 	// testGatewayCall is a fake gateway for chosen frame types: when it
 	// returns handled, Daemon.call returns its answer and the real gateway
 	// never sees the frame.

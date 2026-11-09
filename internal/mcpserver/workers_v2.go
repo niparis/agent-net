@@ -86,6 +86,11 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if r, ok := m["reminder"].(string); ok && r != "" {
 			out["reminder"] = r
 		}
+		if status, _ := m["status"].(string); status == "accepted" {
+			// The judge and the launch go on in the daemon. A notice follows.
+			out["accepted"] = map[string]any{"start_id": m["start_id"], "note": m["note"]}
+			return out, nil
+		}
 		if q, ok := m["queue_id"].(string); ok {
 			out["queued"] = map[string]any{"queue_id": q, "position": m["position"], "reason": firstValue(m, "queue_reason", "reason")}
 			if hint, ok := m["hint"].(string); ok && hint != "" {

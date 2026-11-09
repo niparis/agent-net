@@ -77,3 +77,24 @@ func (s *Store) notStartedNotice(tx *sql.Tx, w workerStart, host, reason string)
 	s.event(tx, "msg.stored", "", n.From, n.ID, "type=notification by=agent-net not_started")
 	return n, true, nil
 }
+
+// startReportNotice stores agent-net's notice about the end of an accepted
+// start, once per start id.
+func (s *Store) startReportNotice(owner, id, body string) (protocol.Message, bool, error) {
+	var none protocol.Message
+	now := s.now()
+	n := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"),
+		From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: owner, Type: protocol.TypeNotification,
+		Body: body, IdempotencyKey: notStartedKeyPrefix + "report:" + id, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(), State: protocol.StateStored}
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
+		VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, n.ID, n.ConversationID, n.ParentID, n.From, n.To, n.Type, n.Body,
+		n.IdempotencyKey, n.CreatedAt.UnixNano(), n.ExpiresAt.UnixNano(), n.State)
+	if err != nil {
+		return none, false, err
+	}
+	if c, err := res.RowsAffected(); err != nil || c == 0 {
+		return none, false, err
+	}
+	s.Event("msg.stored", "", n.From, n.ID, "type=notification by=agent-net start_report")
+	return n, true, nil
+}

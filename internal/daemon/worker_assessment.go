@@ -23,6 +23,9 @@ const workerJudgeTimeout = 90 * time.Second
 // confidence judge gives normal with the reason in Error. The caller's
 // difficulty and touches are not read.
 func (d *Daemon) assessWorkerStart(ctx context.Context, project, task string) *protocol.WorkerAssessment {
+	if d.cfg.testAssess != nil {
+		return d.cfg.testAssess(ctx, project, task)
+	}
 	started := time.Now()
 	a := &protocol.WorkerAssessment{RunID: protocol.NewID("k"), StartedAt: started.UnixNano(), Label: "normal", PickerLabel: "normal"}
 	if d.cfg.testNoDifficulty {
