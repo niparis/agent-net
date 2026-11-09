@@ -1143,9 +1143,20 @@ peer and listener addresses and ports against `/proc/net/tcp` and
 `/proc/net/tcp6`. The matching established peer socket must have uid 0.
 Forwarded addresses do not participate in this check. The assumption is that
 a local process running as root is trusted as tailscaled; anyone with root on
-the gateway machine already owns it. Agents running as the unprivileged owner
-cannot create a uid-0 socket. This does not inspect root's process file
-descriptors, which the user-service gateway cannot read.
+the gateway machine already owns it. An agent running as the unprivileged
+owner on the gateway machine can send forged headers to the loopback listener,
+but cannot create the uid-0 peer socket needed for those headers to be trusted.
+This does not inspect root's process file descriptors, which the user-service
+gateway cannot read.
+
+The identity is the owner's Tailscale user, not a device. Every device signed
+in to the tailnet as that user auto-pairs, including machines where AI agents
+run (for example the owner's laptop, or the gateway machine through another
+tailnet path). An agent on such a machine can therefore fetch the console
+through its own tailscaled and receive a full owner cookie. The owner
+accepted this risk on 2026-11-09, in person, choosing this over limiting
+auto-pairing to devices that do not run agent-net. The uid-0 check stops only
+local forgery on the gateway machine.
 
 Tailscale Serve removes client-supplied identity headers before adding the
 verified tailnet identity. Funnel requests receive no user identity headers.
