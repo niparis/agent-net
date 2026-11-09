@@ -63,6 +63,12 @@ type InventoryItem struct {
 	// Tracked is set for a project skill when the repository lists files under
 	// it: it is part of the repo. An untracked project skill is a local copy.
 	Tracked bool `json:"tracked,omitempty"`
+	// DeployedHash is the content hash of the stored version the daemon put
+	// here, from its skill manifest. ChangedHere is true when this copy's
+	// content no longer matches it: someone edited the deployed copy. Both are
+	// empty for a copy the daemon did not make.
+	DeployedHash string `json:"deployed_hash,omitempty"`
+	ChangedHere  bool   `json:"changed_here,omitempty"`
 	// Import says whether a native MCP entry can move into the federation. It
 	// is set only for native MCP entries and holds names, never values.
 	Import *MCPImportInfo `json:"import,omitempty"`
@@ -95,6 +101,8 @@ type ToolLocation struct {
 	// content, or 0 when no stored version has this content (it was edited
 	// outside agent-net, or never imported).
 	VersionNo int `json:"version_no,omitempty"`
+	// DeployedNo is the store number of DeployedHash, or 0 when unknown.
+	DeployedNo int `json:"deployed_no,omitempty"`
 	InventoryItem
 }
 type ToolItem struct {

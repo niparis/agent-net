@@ -304,6 +304,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	if err != nil {
 		return nil, err
 	}
+	storedNo := map[string]int{}
 	numbers, err := s.db.Query(`SELECT item,number FROM skill_versions WHERE number>0`)
 	if err != nil {
 		return nil, err
@@ -315,6 +316,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 			numbers.Close()
 			return nil, err
 		}
+		storedNo[id] = n
 		if item := all[id]; item != nil {
 			item.VersionNo = n
 			for i := range item.Locations {
@@ -326,6 +328,18 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	numbers.Close()
 	if err != nil {
 		return nil, err
+	}
+	// A copy the daemon deployed says which hash it came from. Show that
+	// hash's store number next to it, so "changed here" can say "from v2".
+	for _, item := range all {
+		for i := range item.Locations {
+			l := &item.Locations[i]
+			if l.DeployedHash == "" || item.Kind != protocol.InventorySkill {
+				continue
+			}
+			identity, _ := json.Marshal([]string{protocol.InventorySkill, item.Name, l.DeployedHash})
+			l.DeployedNo = storedNo[string(identity)]
+		}
 	}
 	revisions, err := s.db.Query(`SELECT r.item,r.revision,r.assignment,r.version,r.actor,r.source,r.at FROM tool_revisions r WHERE r.revision=(SELECT MAX(t.revision) FROM tool_revisions t WHERE t.item=r.item)`)
 	if err != nil {
