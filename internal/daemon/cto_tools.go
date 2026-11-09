@@ -46,41 +46,40 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 	if id == "" {
 		return map[string]any{"kind": "result", "value": result}, nil
 	}
-	items, err := lc.d.proposalRunner().list()
+	found, haveItem, err := lc.d.proposalRunner().get(id)
 	if err != nil {
 		return nil, err
 	}
-	for _, item := range items {
-		if item.ID == id {
-			if item.Status != "open" {
-				return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
-			}
-			text := ProposalToolResult(id)
-			message := fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)
-			if item.Call.Tool == "project_change" && item.Call.Action == "create" {
-				text = "Project proposal " + id + " awaits the owner's approval in the dialog or Inbox."
-				var start protocol.SessionStartRequest
-				if json.Unmarshal(item.Call.Args, &start) == nil {
-					model := firstNonEmpty(start.Model, start.Harness)
-					if start.Harness == "claude" && start.Model == "claude-opus-5-5" {
-						model = "Claude Opus"
-					}
-					name := filepath.Base(filepath.Clean(start.Path))
-					if start.Remote != "" {
-						message = fmt.Sprintf("%s -> %s, %s, clone of %s, %s, background. OK?", name, start.NodeID, start.Path, start.Remote, model)
-					} else {
-						message = fmt.Sprintf("%s -> %s, %s, %s, background. OK?", name, start.NodeID, start.Path, model)
-					}
-					if reason := ctoCut(cleanLine(item.Reason), 120); reason != "" {
-						message += " " + reason
-					}
+	if haveItem {
+		item := found
+		if item.Status != "open" {
+			return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
+		}
+		text := ProposalToolResult(id)
+		message := fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)
+		if item.Call.Tool == "project_change" && item.Call.Action == "create" {
+			text = "Project proposal " + id + " awaits the owner's approval in the dialog or Inbox."
+			var start protocol.SessionStartRequest
+			if json.Unmarshal(item.Call.Args, &start) == nil {
+				model := firstNonEmpty(start.Model, start.Harness)
+				if start.Harness == "claude" && start.Model == "claude-opus-5-5" {
+					model = "Claude Opus"
+				}
+				name := filepath.Base(filepath.Clean(start.Path))
+				if start.Remote != "" {
+					message = fmt.Sprintf("%s -> %s, %s, clone of %s, %s, background. OK?", name, start.NodeID, start.Path, start.Remote, model)
+				} else {
+					message = fmt.Sprintf("%s -> %s, %s, %s, background. OK?", name, start.NodeID, start.Path, model)
+				}
+				if reason := ctoCut(cleanLine(item.Reason), 120); reason != "" {
+					message += " " + reason
 				}
 			}
-			if item.Call.Tool == "session_change" && (item.Call.Action == "merger_start" || item.Call.Action == "merger_stop") {
-				message = item.Reason
-			}
-			return map[string]any{"kind": "proposal", "proposal_id": id, "text": text, "message": message}, nil
 		}
+		if item.Call.Tool == "session_change" && (item.Call.Action == "merger_start" || item.Call.Action == "merger_stop") {
+			message = item.Reason
+		}
+		return map[string]any{"kind": "proposal", "proposal_id": id, "text": text, "message": message}, nil
 	}
 	return nil, errors.New("proposal not found")
 }
@@ -152,17 +151,15 @@ func (p proposalRunner) decideForDialog(ctx context.Context, id string, approve 
 	if decideErr != nil && decideErr.Error() == "proposal is not open" {
 		return proposal{}, false, decideErr
 	}
-	items, err := p.list()
+	found, haveItem, err := p.get(id)
 	if err != nil {
 		return proposal{}, false, err
 	}
-	for _, item := range items {
-		if item.ID == id && (decideErr == nil || item.Status == "failed") && item.Status != "open" {
-			if err := p.markNoteDelivered(ctx, id); err != nil {
-				return proposal{}, false, err
-			}
-			return item, true, nil
+	if haveItem && (decideErr == nil || found.Status == "failed") && found.Status != "open" {
+		if err := p.markNoteDelivered(ctx, id); err != nil {
+			return proposal{}, false, err
 		}
+		return found, true, nil
 	}
 	return proposal{}, false, decideErr
 }
@@ -305,22 +302,20 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if p.ID == "" {
 			return nil, errors.New("proposal_ask needs id")
 		}
-		items, err := d.proposalRunner().list()
+		found, haveItem, err := d.proposalRunner().get(p.ID)
 		if err != nil {
 			return nil, err
 		}
-		for _, item := range items {
-			if item.ID == p.ID {
-				if item.Status != "open" {
-					return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
-				}
-				if dest, ok := ctx.Value(dialogProposalKey{}).(*string); ok {
-					*dest = item.ID
-				}
-				return ProposalToolResult(item.ID), nil
-			}
+		if !haveItem {
+			return nil, fmt.Errorf("unknown proposal %s", p.ID)
 		}
-		return nil, fmt.Errorf("unknown proposal %s", p.ID)
+		if found.Status != "open" {
+			return nil, fmt.Errorf("proposal %s is %s, not open", found.ID, found.Status)
+		}
+		if dest, ok := ctx.Value(dialogProposalKey{}).(*string); ok {
+			*dest = found.ID
+		}
+		return ProposalToolResult(found.ID), nil
 	case "agent_message_send":
 		var p map[string]any
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {

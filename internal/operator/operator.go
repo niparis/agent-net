@@ -155,6 +155,7 @@ const (
 	ProblemDaemon          // the daemon cannot be reached
 	ProblemGateway         // the daemon cannot reach the gateway
 	ProblemOther           // the daemon refused a call
+	ProblemSlow            // a call ended by its deadline: the answer is slow, not refused
 )
 
 // ErrDaemonDown and ErrGatewayDown are the two failures a screen explains.
@@ -179,8 +180,17 @@ func ClassifyError(err error) Problem {
 		return ProblemDaemon
 	case errors.Is(err, ErrGatewayDown):
 		return ProblemGateway
+	case IsSlow(err):
+		return ProblemSlow
 	}
 	return ProblemOther
+}
+
+// IsSlow tells whether err is a request that ended by its deadline: the
+// caller's own, or one the daemon reports. It is a slow answer, not a refusal,
+// so a screen shows it as "slow, retrying" and asks again.
+func IsSlow(err error) bool {
+	return err != nil && (errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "deadline exceeded"))
 }
 
 // IsOldPeer tells whether an error text comes from a daemon that does not know

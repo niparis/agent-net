@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/niparis/agent-net/internal/client"
@@ -18,6 +19,9 @@ import (
 type Client struct {
 	path string
 	via  string
+	// screen names the tab or view that is on screen. A failed call is
+	// reported with it (see reportFailure).
+	screen atomic.Pointer[string]
 
 	mu        sync.Mutex
 	cl        *client.Client
@@ -32,7 +36,27 @@ var _ Operator = (*Client)(nil)
 func New(path string) *Client { return &Client{path: path} }
 
 // NewPhone uses the owner channel with a distinct accounting label.
-func NewPhone(path string) *Client { return &Client{path: path, via: protocol.ViaPhone} }
+func NewPhone(path string) *Client {
+	c := &Client{path: path, via: protocol.ViaPhone}
+	c.SetScreen("web")
+	return c
+}
+
+// SetScreen says which tab or view makes the calls from now on. The daemon log
+// and the gateway counters of failed calls show it.
+func (s *Client) SetScreen(name string) {
+	if cur := s.screen.Load(); cur != nil && *cur == name {
+		return
+	}
+	s.screen.Store(&name)
+}
+
+func (s *Client) screenName() string {
+	if p := s.screen.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
 
 // SetUIPush registers the TUI callback before the first connection.
 func (s *Client) SetUIPush(push func(protocol.UIRequest)) {
@@ -75,8 +99,48 @@ func (s *Client) conn(ctx context.Context) (*client.Client, error) {
 	return cl, nil
 }
 
-// Call makes one daemon call and classifies the failure.
+// Call makes one daemon call and classifies the failure. A call that fails or
+// times out is reported to the daemon, which logs it and counts it.
 func (s *Client) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	start := time.Now()
+	raw, err := s.call(ctx, method, params)
+	if err != nil {
+		s.reportFailure(ctx, method, start, err)
+	}
+	return raw, err
+}
+
+// reportFailure tells the daemon that a call failed on this side. The daemon
+// cannot see a timeout that this side ended, so without the report it would
+// leave no trace. It is not sent when there is nobody to tell (the daemon is
+// down, or the gateway is, which the screen already shows), when the caller
+// cancelled the call on purpose, or for a report itself. It runs in the
+// background and never changes the result of the call.
+func (s *Client) reportFailure(ctx context.Context, method string, start time.Time, err error) {
+	if method == protocol.OpClientError || errors.Is(err, context.Canceled) ||
+		errors.Is(err, ErrDaemonDown) || errors.Is(err, ErrGatewayDown) {
+		return
+	}
+	text := err.Error()
+	report := protocol.ClientError{Method: method, Ms: time.Since(start).Milliseconds(), Screen: s.screenName(), Err: text,
+		Timeout: errors.Is(err, context.DeadlineExceeded) || strings.Contains(text, "deadline exceeded")}
+	if deadline, ok := ctx.Deadline(); ok {
+		// The deadline was set a moment before start; the nearest millisecond
+		// gives the timeout the caller chose.
+		report.TimeoutMs = max(deadline.Sub(start).Round(time.Millisecond).Milliseconds(), 0)
+	}
+	go func() {
+		rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cl, err := s.conn(rctx)
+		if err != nil {
+			return
+		}
+		_, _ = cl.Call(rctx, protocol.OpClientError, report)
+	}()
+}
+
+func (s *Client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	cl, err := s.conn(ctx)
 	if err != nil {
 		return nil, err
