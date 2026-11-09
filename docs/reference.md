@@ -2717,15 +2717,15 @@ chief's daemon asks the gateway, which relays one request to that machine.
 
 - `list` (optional `limit`, default 25, at most 50) returns the sessions that
   are online or idle, are not workers or the CTO, are not busy, and whose last
-  assistant message has not been imported. Each row has `session`, `name`,
-  `harness`, `machine`, `state`, `last_turn`, `last_turn_at`, `waiting` and
-  `open_ask`. `waiting.kind` is `explicit` for a wait the session raised itself
-  and `harness` for a wait its harness reported; it carries the stored `text`
-  and `since`. `open_ask` is the id of an open ask from that session, so the
-  chief can see what already reached the Desk. A harness with no reader, a
-  missing transcript, an offline machine or a plugin that does not answer
-  returns `state: "unavailable"` and a `reason`; agent-net never invents the
-  text.
+  assistant message has not been imported. A row with `state` `ok` has
+  `session`, `name`, `harness`, `machine`, `last_turn`, `last_turn_at`,
+  `waiting` and `open_ask`. `waiting.kind` is `explicit` for a wait the session
+  raised itself and `harness` for a wait its harness reported; it carries the
+  stored `text` and `since`. `open_ask` is the id of an open ask from that
+  session, so the chief can see what already reached the Desk. A harness with
+  no reader, a missing transcript, an offline machine or a plugin that does not
+  answer returns `state: "unavailable"` and a `reason`; agent-net never invents
+  the text.
 - `read` with `session` (the id or exact name) returns `turn` with the exact
   last assistant message in `text`, the owner's last typed prompt before it in
   `prompt`, their RFC 3339 times, `ended` and a stable `ref`. Secrets are
