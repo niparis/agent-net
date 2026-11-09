@@ -2,7 +2,7 @@
 
 The screens of the TUI and what you can do on each. For what agent-net is and why, read the [README](../README.md).
 
-`agent-net` opens the TUI. It has seven tabs: **1** Sessions, **2** Graph, **3** Quotas, **4** Messages, **5** Tools, **6** Settings, **7** Inbox. `?` lists the keys of the screen you are on.
+`agent-net` opens the TUI. It has seven tabs: **1** Sessions, **2** Graph, **3** Quotas, **4** Messages, **5** Tools, **6** Settings, **7** Desk. `?` lists the keys of the screen you are on.
 
 ## Sessions and messages
 
@@ -24,10 +24,10 @@ Ask an agent to "do this with a worker". It calls `agent_worker_start` with a br
 3. **Starts the worker** in its own git worktree by default. Codex workers and Antigravity workers are sandboxed by their own sandboxes. On Linux, Pi and OpenCode workers run in bubblewrap when the project has the OS sandbox on (`workers.os_sandbox` in `node.json`). Otherwise Claude, Pi and OpenCode workers run with the owner's permissions. See the roadmap.
 4. **Sends a notice** when the worker ends: status, run time, tokens, the branch and the diff stat, with the worker's report. The calling agent reviews the diff and runs the tests before it tells you the work is done.
 
-Each task's outcome is recorded: nudges, fixes, and bugs found later. The Quality panel (tab 3, `d` for details) shows how much of the orchestrator's time each model costs per task, by level.
+Each task's outcome is recorded: nudges, fixes, and bugs found later. Those outcomes become a score for each model at each difficulty level. The Quality sub-tab (tab 3, then Tab) shows the picker exactly as it decides: one row per model, one column per difficulty level, and for the selected cell its score, its range, the number of tasks and the verdict (allowed or not).
 
 <p align="center">
-  <img alt="Quality analysis: four cards, simple, normal, hard and very complex, each listing the models with the minutes of orchestrator time per task and the number of tasks" src="img/tui/quality.png" width="900">
+  <img alt="Quality sub-tab: the worker picker grid, one row per model with its benchmark score, one column per difficulty level from 1.00 to 4.67, cells coloured by score, and the selected cell's score, range and verdict below" src="img/tui/quality.png" width="900">
 </p>
 
 Quotas (tab 3) also shows each subscription's usage and pace. Details: [workers](reference.md#workers), [subscription quotas](reference.md#subscription-quotas).
@@ -38,10 +38,10 @@ The Graph (tab 2) is the map of your agents: each project node has a charter (wh
 
 The CTO is an agent that runs the network for you. Press `c` and ask it in plain words: add a machine, draft a charter, set an edge, start a worker. Changes apply at once and leave an Inbox notice with an undo key where one is possible. Only removing a node, repo or machine, and rotating a machine token, wait for you as proposals. Your own login and OAuth consent stay with you: the CTO sends a one-click prompt.
 
-## Inbox
+## Desk
 
 <p align="center">
-  <img alt="Sessions with the Inbox tab showing 2 waiting, and the CTO box with two open proposals" src="img/tui/cto-inbox.png" width="900">
+  <img alt="The Desk: items that wait for the owner, grouped by urgency, and changes in flight" src="img/tui/desk.svg" width="900">
 </p>
 
 Everything that waits for you, and every change in flight, is on one screen, the Desk (tab 7): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. See [owner inbox](reference.md#owner-inbox-and-written-approvals).
