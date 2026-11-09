@@ -199,6 +199,11 @@ func TestWakeDailyCapIsSeparateFromTheCheckCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 6; i++ {
+		// A new task line is what allows the next check (the same line after
+		// a "more" answer is not checked again).
+		if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: fmt.Sprintf("working on step %d", i+1)}); err != nil {
+			t.Fatal(err)
+		}
 		idleSince(t, s, c, b, 21*time.Minute)
 		if got := checks(t, s); len(got) != 1 {
 			t.Fatalf("check %d = %+v", i+1, got)
