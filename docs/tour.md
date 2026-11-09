@@ -11,7 +11,7 @@ Every session on every machine, with its agent, project, model, status, CPU and 
 Ask an agent things like:
 
 - "Ask the Pi session on the build VM which port its dev server uses."
-- "Tell the backend session that the API field `user_id` is now `account_id`."
+- "Tell the billing and invoices sessions that shared-auth v2.3 renames `user_id` to `account_id`."
 
 The message enters the other session as a new turn, labelled with its sender, and the reply comes back into your conversation. Agents answer each other without waiting for you; they still ask you before risky or out-of-scope work. Per session, the RULE cell sets how requests from other agents are handled (`normal`, `ask` or `auto`), and the DELEGATE cell sets who does the coding: the session itself, a native subagent on a cheaper model, or workers. See [delegation policy](reference.md#delegation-policy).
 

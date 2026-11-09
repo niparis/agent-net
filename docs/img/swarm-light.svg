@@ -34,10 +34,10 @@
         <text class="th" x="454" y="40">A supervised swarm</text>
         <text class="ts" x="454" y="60">each agent owns its piece</text>
         <g>
-          <rect class="box" x="454" y="80" width="146" height="112" rx="10"/><text class="t" x="468" y="102">backend</text>
+          <rect class="box" x="454" y="80" width="146" height="112" rx="10"/><text class="t" x="468" y="102">billing</text>
           <rect class="chip" x="468" y="114" width="118" height="28" rx="7"/><text class="tm" x="478" y="132">★ lead</text>
           <rect class="chip" x="468" y="150" width="118" height="28" rx="7"/><text class="tm" x="478" y="168">worker</text>
-          <rect class="box" x="620" y="80" width="146" height="112" rx="10"/><text class="t" x="634" y="102">frontend</text>
+          <rect class="box" x="620" y="80" width="146" height="112" rx="10"/><text class="t" x="634" y="102">invoices</text>
           <rect class="chip" x="634" y="114" width="118" height="28" rx="7"/><text class="tm" x="644" y="132">★ lead</text>
           <rect class="chip" x="634" y="150" width="118" height="28" rx="7"/><text class="tm" x="644" y="168">worker</text>
           <rect class="box" x="786" y="80" width="150" height="112" rx="10"/><text class="t" x="800" y="102">homelab</text>

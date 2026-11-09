@@ -74,7 +74,7 @@ It is not:
 
 ## Three stories
 
-**A rename across two repos.** The backend session renames `user_id` to `account_id`. It tells the frontend session on your laptop, which updates its calls and replies with the commit. You read both in Messages. You typed nothing.
+**A change in a shared library.** The session that owns `shared-auth`, a library two of your apps use, renames `user_id` to `account_id` and releases v2.3. It tells the sessions of both apps, one on your laptop and one on the build box. Each updates its code and replies with the commit. You read it all in Messages. You typed nothing.
 
 **A bug fixed while you are away.** Your Mac's daemon hangs after an upgrade. The agent that owns agent-net writes a brief, and a worker on a cheaper model reproduces the hang and fixes it. Review, tests and the release run as steps. The next upgrade comes back by itself in 16 seconds.
 
@@ -89,7 +89,7 @@ Every session in the swarm can run in the background. You start it, wake it, ste
 - **It keeps working on its own clock.** Give a project a standing loop, for example every 4 hours, and its session is nudged with what changed since the last tick: new messages, finished workers, open asks. It does the next step and reports. Two ticks with no progress pause the loop and leave one question on your Desk.
 - **You look in only when you want to.** Press Enter on any session to open it live, in herdr or your terminal. Stop, resume or restart it from the TUI, the web console or by asking the CTO.
 
-Example. Before bed you tell the CTO: *"Start a Codex session in billing-api on the build box: migrate the invoice job to the new queue, use workers for the code."* The session plans the work, hands the code to two workers, reviews their reports and opens the pull request. At 3 a.m. the frontend session, also in the background, asks it about a renamed field; the billing session wakes, answers and goes back to sleep. In the morning your Desk holds one question: *"Merge PR #212? CI green. Recommended: yes."*
+Example. Before bed you tell the CTO: *"Start a Codex session in billing on the build box: migrate the invoice job to the new queue, use workers for the code."* The session plans the work, hands the code to two workers, reviews their reports and opens the pull request. At 3 a.m. the shared-auth session, also in the background, asks it whether billing is ready for the v2.3 token change; the billing session wakes, answers and goes back to sleep. In the morning your Desk holds one question: *"Merge PR #212? CI green. Recommended: yes."*
 
 ## Workers that pick themselves, and get better
 
@@ -170,7 +170,7 @@ Install details and options: [docs/setup.md](docs/setup.md). On a Mac, ask the C
 Nine words, in the order you meet them.
 
 - **Session.** An agent in one of five harnesses, opened by you in a terminal or started by agent-net in the background. agent-net finds it, gives it tools, and can wake it when a message arrives. *"The Pi session on the build VM."*
-- **Message.** One session asks another and gets the answer back in its own conversation. It arrives like a message you typed, labelled with its sender. *"Ask the backend session which port its dev server uses."*
+- **Message.** One session asks another and gets the answer back in its own conversation. It arrives like a message you typed, labelled with its sender. *"Ask the billing session which port its dev server uses."*
 - **Worker.** A new session started for one task, in its own git worktree. It hands back a report with the diff, the run time and the cost. *"Fix the flaky test with a worker."*
 - **Charter.** A few lines per project: what it does, what it accepts, what it refuses, and when it must ask you. *"homelab-agent refuses to touch the encryption key."*
 - **Team and lead.** Projects that belong together, with one session as their lead. Members ask the lead first, not you. *"The forge team's lead may merge its members' work."*
@@ -258,6 +258,7 @@ To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to dele
 ## Roadmap
 
 - **The web console.** The Desk, sessions, changes and messages in a browser and on the phone, served by the gateway. Read and answer first; the CTO chat panel next.
+- **Worker skill injection.** Give each worker the skills and MCP servers its job needs when it starts, chosen from its brief and its project, instead of every worker getting everything installed on the machine.
 - **Model choice from capability.** Match each model's measured capability to the task's raw difficulty score, corrected by how much review time its past work cost. Plan: [docs/design/model-capability.md](docs/design/model-capability.md).
 - **An optional sandbox for every worker.** Linux is done for Pi and OpenCode workers: bubblewrap, switched on per project with `workers.os_sandbox` in `node.json`. Still to do: macOS (sandbox-exec, designed), and Claude workers, which are refused while the switch is on because `claude --bg` runs outside any wrapper (the plan is Claude Code's own sandbox settings). Codex and Antigravity keep their own sandboxes. Design: [docs/design/worker-os-sandbox.md](docs/design/worker-os-sandbox.md); plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
 - **A modular agent-net:** agent-net keeps the mechanisms, and a way of working (who does what, how work is tested and merged, what agents are told) becomes data at network, team, repo or agent level, which the CTO can propose to change. Plan: [docs/design/modularity.md](docs/design/modularity.md).
