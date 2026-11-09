@@ -1372,7 +1372,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_rate",
-    "description": "Rate a finished worker from 1 to 5, or report a defect found later with a severity from 1 to 4. Only the session that started the worker may rate it.",
+    "description": "Rate a finished worker from 1 to 5, or report a defect found later with a severity from 1 to 4. brief_defect charges rework from a bad brief to the briefing session, not the worker. Only the session that started the worker may rate it.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1384,9 +1384,10 @@ export const TOOL_CATALOG = [
           "type": "string",
           "enum": [
             "rating",
-            "defect_found_later"
+            "defect_found_later",
+            "brief_defect"
           ],
-          "description": "Select the kind or action."
+          "description": "Select the kind: rating, defect_found_later, or brief_defect for rework caused by a bad brief."
         },
         "score": {
           "type": "integer",
@@ -1398,11 +1399,11 @@ export const TOOL_CATALOG = [
           "type": "integer",
           "minimum": 1,
           "maximum": 4,
-          "description": "Later defect severity from 1 to 4."
+          "description": "Severity from 1 to 4 for a defect or a brief defect."
         },
         "note": {
           "type": "string",
-          "description": "Short explanation of the rating or defect."
+          "description": "Short explanation of the rating, the defect, or the bad brief."
         }
       },
       "required": [

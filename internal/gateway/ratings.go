@@ -178,6 +178,8 @@ func (s *Store) AddRating(f protocol.RateFrame) (protocol.RateResult, error) {
 		return s.addRating(f)
 	case protocol.RateKindDefectLater:
 		return s.addDefect(f)
+	case protocol.RateKindBriefDefect:
+		return s.addBriefDefect(f)
 	default:
 		return protocol.RateResult{}, reject("unknown rating kind %q", f.Kind)
 	}
@@ -280,6 +282,63 @@ func (s *Store) addDefect(f protocol.RateFrame) (protocol.RateResult, error) {
 	return out, nil
 }
 
+// addBriefDefect stores one rework caused by a bad brief. It is charged to the
+// session that wrote the brief (the worker's caller), not to the worker, so it
+// is kept in its own table and never enters worker_defects or the picker's
+// quality data. It names the worker run it caused. Only the caller, or the
+// owner, may file one.
+func (s *Store) addBriefDefect(f protocol.RateFrame) (protocol.RateResult, error) {
+	worker := strings.TrimSpace(f.Worker)
+	rater := strings.TrimSpace(f.Rater)
+	out := protocol.RateResult{Worker: worker, Kind: protocol.RateKindBriefDefect, Severity: f.Severity}
+	if worker == "" || rater == "" {
+		return out, reject("a brief defect needs a worker session and the session that reports it")
+	}
+	if !protocol.ValidRateSeverity(f.Severity) {
+		return out, reject("severity must be 1 to 4, not %d", f.Severity)
+	}
+	facts, ok, err := s.workerRatingFacts(worker)
+	if err != nil {
+		return out, err
+	}
+	if !ok || facts.runID == 0 {
+		out.Reason = "the worker has not finished: no run to attach the brief defect to"
+		return out, nil
+	}
+	if facts.caller != rater {
+		owner, err := s.sessionOwner(rater)
+		if err != nil {
+			return out, err
+		}
+		if !owner {
+			// A lead may file about a member's brief (the briefing session is
+			// the member). Authority uses the same tree check as an order.
+			_, above, err := orderAbove(s.db, rater, facts.caller, s.now())
+			if err != nil {
+				return out, err
+			}
+			if !above {
+				out.Reason = "only the session that wrote the brief, its lead, or the owner may report a brief defect"
+				return out, nil
+			}
+		}
+	}
+	note := redact.Secrets(protocol.CleanRateNote(f.Note))
+	var raterModel string
+	s.db.QueryRow(`SELECT model FROM sessions WHERE id = ?`, rater).Scan(&raterModel)
+	at := s.now().Unix()
+	if _, err := s.db.Exec(`INSERT INTO worker_brief_defects
+		(run_id, worker_session_id, caller, rater, rater_model, severity, note, at)
+		VALUES (?,?,?,?,?,?,?,?)`, facts.runID, worker, facts.caller, rater, raterModel, f.Severity, note, at); err != nil {
+		return out, err
+	}
+	// No refreshQuality: the worker's quality and the picker never read this
+	// table.
+	out.Accepted, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
+		true, facts.model, facts.harness, facts.effort, facts.difficulty, at
+	return out, nil
+}
+
 // sessionOwner tells whether a session is a machine's owner pseudo-session.
 func (s *Store) sessionOwner(sessionID string) (bool, error) {
 	var harness string
@@ -357,6 +416,27 @@ func (s *Store) DefectCountsBySession(cut int64) (map[string]int, error) {
 			return nil, err
 		}
 		out[session] = n
+	}
+	return out, rows.Err()
+}
+
+// BriefDefectCountsByCaller counts the brief defects charged to each briefing
+// session since cut. They are the caller's rework and are never added to a
+// worker's score.
+func (s *Store) BriefDefectCountsByCaller(cut int64) (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT caller, COUNT(*) FROM worker_brief_defects WHERE at >= ? GROUP BY caller`, cut)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var caller string
+		var n int
+		if err := rows.Scan(&caller, &n); err != nil {
+			return nil, err
+		}
+		out[caller] = n
 	}
 	return out, rows.Err()
 }

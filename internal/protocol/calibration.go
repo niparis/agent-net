@@ -65,11 +65,14 @@ type CalibrationLevel struct {
 // CalibrationCaller is one caller and its levels. Strong is true when the
 // caller's own model scores at least CalibrationStrongScore.
 type CalibrationCaller struct {
-	Caller string             `json:"caller"`
-	Name   string             `json:"name,omitempty"`
-	Model  string             `json:"model,omitempty"`
-	Strong bool               `json:"strong"`
-	Levels []CalibrationLevel `json:"levels,omitempty"`
+	Caller string `json:"caller"`
+	Name   string `json:"name,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Strong bool   `json:"strong"`
+	// BriefDefects is rework this caller caused with its own brief, charged
+	// here and not to the worker.
+	BriefDefects int                `json:"brief_defects,omitempty"`
+	Levels       []CalibrationLevel `json:"levels,omitempty"`
 }
 
 // Calibration is the read-only table: one entry per caller, plus the network

@@ -185,7 +185,7 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
 		switch method {
 		case "worker_start":
-			return json.RawMessage(`{"status":"started","session_id":"s_w1","harness":"opencode","model":"deepseek-v4.1-flash","project":"shop","hostname":"research","permissions":"sandboxed","owner_line":"Tell your user: worker on deepseek-v4.1-flash, difficulty normal (D 2.60; R3 S2 C3 U2 V2 K2).","reminder":"You named the model."}`), nil
+			return json.RawMessage(`{"status":"started","session_id":"s_w1","harness":"opencode","model":"deepseek-v4.1-flash","project":"shop","hostname":"research","permissions":"sandboxed","owner_line":"Tell your user: worker on deepseek-v4.1-flash, difficulty normal (D 2.60; R3 S2 C3 U2 V2 K2).","reminder":"You named the model.","hint":"If this fixes earlier work, pass fixes=<change id> so agent-net counts the defect. Recent changes in shop: ch_1"}`), nil
 		case "list":
 			return list, nil
 		}
@@ -210,6 +210,9 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	}
 	if r, _ := out["reminder"].(string); r != "You named the model." {
 		t.Fatalf("reminder: %q", r)
+	}
+	if h, _ := out["hint"].(string); !strings.Contains(h, "fixes=<change id>") || !strings.Contains(h, "ch_1") {
+		t.Fatalf("hint: %q", h)
 	}
 }
 

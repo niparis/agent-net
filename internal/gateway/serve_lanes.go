@@ -44,6 +44,7 @@ var parallelFrames = map[string]bool{
 	"cto.graph_latest": true, "cto.graph_history": true,
 	"charter.history": true, "edge.history": true, "settings.history": true,
 	"change.list": true, "change.get": true,
+	"worker.recent_changes": true,
 }
 
 // frameLane runs the write frames of one connection in arrival order.

@@ -16,7 +16,7 @@ import (
 // that a run's lookup finds (messages), and the agent rows of the workers
 // (agentListTables, which covers the session, node and caller profile). Keep it
 // equal to those queries (see readThrough).
-var workerLogTables = tableUnion([]string{"worker_runs", "messages"}, agentListTables)
+var workerLogTables = tableUnion([]string{"worker_runs", "messages", "worker_brief_defects"}, agentListTables)
 
 // WorkerLog combines ended runs and current starts, with a hard owner-view limit.
 //
@@ -69,6 +69,18 @@ func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+	seenCallers := map[string]bool{}
+	var callerIDs []string
+	for _, run := range runs {
+		if run.callerID != "" && !seenCallers[run.callerID] {
+			seenCallers[run.callerID] = true
+			callerIDs = append(callerIDs, run.callerID)
+		}
+	}
+	briefDefects, err := s.briefDefectsByCaller(callerIDs)
+	if err != nil {
+		return nil, err
+	}
 	// Many runs share a caller: look each one up once.
 	type callerName struct{ name, host string }
 	callers := map[string]callerName{}
@@ -84,6 +96,7 @@ func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 	}
 	for _, run := range runs {
 		r := run.entry
+		r.BriefDefects = briefDefects[run.callerID]
 		if r.Caller, r.CallerHost, err = workerCaller(run.callerID); err != nil {
 			return nil, err
 		}
@@ -114,7 +127,7 @@ func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, protocol.WorkerLogEntry{SessionID: a.SessionID, NodeID: a.NodeID, Hostname: a.Hostname, Project: w.Project, Harness: a.Harness, Model: a.Model, Title: protocol.WorkerTitle(w.Title, w.Task, "-"), Difficulty: w.DifficultyUsed, Status: "running", StartedAt: w.StartedAt, RunSeconds: max(s.now().Unix()-w.StartedAt, 0), Assessment: w.Assessment, Caller: caller, CallerHost: callerHost})
+		out = append(out, protocol.WorkerLogEntry{SessionID: a.SessionID, NodeID: a.NodeID, Hostname: a.Hostname, Project: w.Project, Harness: a.Harness, Model: a.Model, Title: protocol.WorkerTitle(w.Title, w.Task, "-"), Difficulty: w.DifficultyUsed, Status: "running", StartedAt: w.StartedAt, RunSeconds: max(s.now().Unix()-w.StartedAt, 0), Assessment: w.Assessment, Caller: caller, CallerHost: callerHost, BriefDefects: briefDefects[w.Owner]})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
 	if len(out) > limit {
@@ -157,6 +170,33 @@ func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 		}
 	}
 	return out, nil
+}
+
+// briefDefectsByCaller counts the brief defects charged to each of the given
+// briefing sessions. One statement for the whole log.
+func (s *Store) briefDefectsByCaller(callers []string) (map[string]int, error) {
+	out := map[string]int{}
+	if len(callers) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(callers))
+	for i, c := range callers {
+		args[i] = c
+	}
+	rows, err := s.db.Query(`SELECT caller, COUNT(*) FROM worker_brief_defects WHERE caller IN (?`+strings.Repeat(",?", len(callers)-1)+`) GROUP BY caller`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var caller string
+		var n int
+		if err := rows.Scan(&caller, &n); err != nil {
+			return nil, err
+		}
+		out[caller] = n
+	}
+	return out, rows.Err()
 }
 
 // workerCaller resolves the caller session of a run to the name and machine

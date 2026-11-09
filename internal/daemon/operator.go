@@ -387,12 +387,12 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
 			Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, MachineNote: ans.MachineNote,
 			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
-			Reminder: d.namedModelReminder(p)}, nil
+			Reminder: d.namedModelReminder(p), Hint: ans.Hint}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
 		Permissions: ans.Permissions, OSSandbox: ans.OSSandbox, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
-		Reminder: d.namedModelReminder(p)}
+		Reminder: d.namedModelReminder(p), Hint: ans.Hint}
 	if ans.Starting {
 		out.Status = "starting"
 		return out, nil
