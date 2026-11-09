@@ -28,7 +28,7 @@ import (
 // other methods.
 func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {
-	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort:
+	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpOwnerBrief:
 	default:
 		return nil, false, nil
 	}
@@ -79,6 +79,24 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		}
 		var out protocol.AskSortResult
 		err := d.deliveryCall(ctx, protocol.FrameAskSort, protocol.AskSortRequest{SessionID: sid, AskSortArgs: a}, &out)
+		return out, true, err
+	case protocol.OpOwnerBrief:
+		if info.Worker != nil {
+			return nil, true, errors.New("a worker does not deliver the owner's brief")
+		}
+		var a protocol.OwnerBriefArgs
+		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+			return nil, true, err
+		}
+		if err := a.Validate(); err != nil {
+			return nil, true, err
+		}
+		frame := protocol.FrameOwnerBrief
+		if a.IsStatus() {
+			frame = protocol.FrameOwnerBriefStatus
+		}
+		var out protocol.OwnerBriefResult
+		err := d.deliveryCall(ctx, frame, protocol.OwnerBriefRequest{SessionID: sid, OwnerBriefArgs: a}, &out)
 		return out, true, err
 	case protocol.OpStepReport:
 		if info.Worker != nil {

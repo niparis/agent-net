@@ -331,6 +331,8 @@ func askRank(a protocol.Ask) int {
 		return 7
 	case protocol.AskKindCheck, protocol.AskKindStall:
 		return 8
+	case protocol.AskKindBrief:
+		return 8
 	}
 	return 9
 }
@@ -420,6 +422,10 @@ func askCard(a protocol.Ask, now time.Time, names map[string]string) askView {
 		}
 	case protocol.AskKindCheck, protocol.AskKindStall:
 		v.Form, v.Dismiss = "inbox", true
+		v.Detail = a.Detail
+	case protocol.AskKindBrief:
+		v.Kind = "brief"
+		v.Form, v.Dismiss, v.CanMark = "inbox", true, false
 		v.Detail = a.Detail
 	default:
 		v.Form, v.Hint = "tui", "Answer from the TUI."

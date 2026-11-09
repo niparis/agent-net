@@ -15,7 +15,7 @@ import (
 // addRedesignedTools registers the agent and worker contracts directly from
 // the shared catalog. The daemon methods remain the existing implementations.
 func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, string, any) (any, error)) {
-	for _, name := range []string{"agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_ask", "agent_learn", "agent_charter_draft", "agent_project_add", "agent_mcp_test"} {
+	for _, name := range []string{"agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_ask", "agent_owner_brief", "agent_learn", "agent_charter_draft", "agent_project_add", "agent_mcp_test"} {
 		entry := redesignedCatalogTool(name)
 		t := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: json.RawMessage(entry.InputSchema)}
 		s.AddTool(t, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -33,7 +33,7 @@ func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, st
 	if os.Getenv("AGENT_NET_WORKER") != "" {
 		// These are agent-only capabilities.
 		s.RemoveTools("agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_owner_ask",
-			"agent_project_add", "agent_announce", "agent_charter_draft")
+			"agent_project_add", "agent_announce", "agent_charter_draft", "agent_owner_brief")
 	}
 }
 
@@ -228,6 +228,12 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			}
 		}
 		return out, nil
+	case "agent_owner_brief":
+		m, err := ownerBriefCall(ctx, run, protocol.OwnerBriefArgs{Body: str("body"), Date: str("date")})
+		if err != nil {
+			return nil, err
+		}
+		return m, nil
 	case "agent_learn":
 		m, err := learnCall(ctx, run, protocol.LearnRequest{SubjectKind: str("subject_kind"), Subject: str("subject"), Finding: str("finding"), Evidence: stringSlice(a["evidence"])})
 		if err != nil {

@@ -1088,6 +1088,13 @@ settings:
     levels: [network]
     default: "codex · openai · gpt-6.1-sol · medium"
     live: true
+  - key: chief.brief_time
+    description: Local time of the chief of staff's daily brief, as HH:MM in the owner's time zone (decision 0114). The timer does not run until the owner's time zone is set.
+    kind: rule
+    type: string
+    levels: [network]
+    default: "09:00"
+    live: true
 
 ledger:
   - {row: 1, code: "guidance is always synced at startup"}

@@ -68,6 +68,9 @@ const (
 	AskKindWaiting    = "waiting"
 	AskKindStall      = "session_stall"
 	AskKindCheck      = "check"
+	// AskKindBrief is the chief of staff's daily brief: information for the
+	// owner, dismissed when read. It never asks for an answer.
+	AskKindBrief = "brief"
 )
 
 // Ask is one row of the Desk. It has the shape of a delivery step: who waits,

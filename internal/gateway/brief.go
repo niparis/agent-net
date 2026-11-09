@@ -1,0 +1,247 @@
+package gateway
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
+)
+
+// The daily brief of the chief of staff (decision 0114). The gateway wakes the
+// chief once per owner-local date at chief.brief_time, and the chief delivers
+// one informational item with agent_owner_brief. The date sent is durable, so
+// a restart never sends a second wake and a missed tick still sends once later
+// that day. Without the owner's time zone no timer runs.
+
+type briefSchedule struct {
+	timeText string
+	hour     int
+	minute   int
+	zoneName string
+	loc      *time.Location
+	zoneSet  bool
+	valid    bool
+}
+
+func parseBriefClock(text string) (hour, minute int, ok bool) {
+	parts := strings.Split(strings.TrimSpace(text), ":")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	h, err := strconv.Atoi(parts[0])
+	if err != nil || h < 0 || h > 23 {
+		return 0, 0, false
+	}
+	m, err := strconv.Atoi(parts[1])
+	if err != nil || m < 0 || m > 59 || len(parts[1]) != 2 {
+		return 0, 0, false
+	}
+	return h, m, true
+}
+
+func (s *Store) briefSchedule() (briefSchedule, error) {
+	out := briefSchedule{}
+	tz, err := s.timeZoneSetting()
+	if err != nil {
+		return out, err
+	}
+	out.zoneName = tz.Name
+	if tz.Name != "" && tz.Name != protocol.TimeZoneAuto {
+		out.loc, err = time.LoadLocation(tz.Name)
+		if err == nil {
+			out.zoneSet = true
+		}
+	}
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		return out, err
+	}
+	out.timeText = strings.TrimSpace(snap.String(protocol.ChiefBriefTimeKey, settings.Where{}))
+	if out.timeText == "" {
+		out.timeText = protocol.DefaultChiefBriefTime
+	}
+	if out.hour, out.minute, out.valid = parseBriefClock(out.timeText); !out.valid {
+		out.hour, out.minute = 9, 0
+	}
+	return out, nil
+}
+
+func (s *Store) ownerSetting(key string) (string, error) {
+	var value string
+	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return value, err
+}
+
+func (s *Store) setOwnerSetting(q askDB, key, value string, now time.Time) error {
+	_, err := q.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value, now.UnixNano())
+	return err
+}
+
+// briefDue says whether the brief of the current owner-local date is due and
+// has not gone out.
+func briefDue(now time.Time, loc *time.Location, hour, minute int, lastSent string) bool {
+	local := now.In(loc)
+	today := time.Date(local.Year(), local.Month(), local.Day(), hour, minute, 0, 0, loc)
+	return !local.Before(today) && lastSent != local.Format("2006-01-02")
+}
+
+// nextBriefRun is the next time the timer would send. When the brief is due
+// today and has not gone out, it is the next minute tick.
+func nextBriefRun(now time.Time, loc *time.Location, hour, minute int, lastSent string) time.Time {
+	local := now.In(loc)
+	today := time.Date(local.Year(), local.Month(), local.Day(), hour, minute, 0, 0, loc)
+	if lastSent == local.Format("2006-01-02") {
+		return today.AddDate(0, 0, 1)
+	}
+	if local.Before(today) {
+		return today
+	}
+	return now.Truncate(time.Minute).Add(time.Minute)
+}
+
+// checkDailyBrief stores one wake message for the chief when the brief is due.
+// The message is dispatched by the gateway; a nil and false answer means the
+// timer did nothing.
+func (s *Store) checkDailyBrief(now time.Time) (protocol.Message, bool, error) {
+	sch, err := s.briefSchedule()
+	if err != nil || !sch.zoneSet || !sch.valid {
+		return protocol.Message{}, false, err
+	}
+	chief, err := chiefSession(s.db)
+	if err != nil || chief == "" {
+		return protocol.Message{}, false, err
+	}
+	last, err := s.ownerSetting(protocol.BriefLastSentKey)
+	if err != nil || !briefDue(now, sch.loc, sch.hour, sch.minute, last) {
+		return protocol.Message{}, false, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return protocol.Message{}, false, err
+	}
+	defer tx.Rollback()
+	// Re-read inside the transaction: a tick cannot send twice even if two
+	// callers race.
+	if err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, protocol.BriefLastSentKey).Scan(&last); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return protocol.Message{}, false, err
+		}
+		last = ""
+	}
+	date := now.In(sch.loc).Format("2006-01-02")
+	if !briefDue(now, sch.loc, sch.hour, sch.minute, last) {
+		return protocol.Message{}, false, nil
+	}
+	body := fmt.Sprintf("Daily brief due for %s. Write it and deliver it with agent_owner_brief.", date)
+	m, err := s.storeAgentNetMessage(tx, chief, body, now)
+	if err != nil {
+		return protocol.Message{}, false, err
+	}
+	if err = s.setOwnerSetting(tx, protocol.BriefLastSentKey, date, now); err != nil {
+		return protocol.Message{}, false, err
+	}
+	return m, true, tx.Commit()
+}
+
+// dailyBriefStatus returns the schedule and the delivery receipt.
+func (s *Store) dailyBriefStatus(now time.Time) (protocol.OwnerBriefResult, error) {
+	sch, err := s.briefSchedule()
+	if err != nil {
+		return protocol.OwnerBriefResult{}, err
+	}
+	out := protocol.OwnerBriefResult{BriefTime: sch.timeText, TimeZone: sch.zoneName}
+	if out.LastDateSent, err = s.ownerSetting(protocol.BriefLastSentKey); err != nil {
+		return out, err
+	}
+	if out.LastItemID, err = s.ownerSetting(protocol.BriefLastItemKey); err != nil {
+		return out, err
+	}
+	if !sch.zoneSet {
+		out.Status = protocol.BriefStatusWaitingZone
+		return out, nil
+	}
+	if !sch.valid {
+		out.Status = protocol.BriefStatusLooksInvalid
+		return out, nil
+	}
+	chief, err := chiefSession(s.db)
+	if err != nil {
+		return out, err
+	}
+	if chief == "" {
+		out.Status = protocol.BriefStatusNoChief
+		return out, nil
+	}
+	out.Status = protocol.BriefStatusActive
+	next := nextBriefRun(now, sch.loc, sch.hour, sch.minute, out.LastDateSent)
+	out.NextRunLocal = next.In(sch.loc).Format("2006-01-02 15:04")
+	out.NextRunUTC = next.UTC().Format(time.RFC3339)
+	return out, nil
+}
+
+// putOwnerBrief stores or replaces the brief of one owner-local date. Only the
+// live chief may deliver one. The item is informational: its only action is
+// dismiss.
+func (s *Store) putOwnerBrief(session string, a protocol.OwnerBriefArgs, now time.Time) (protocol.OwnerBriefResult, error) {
+	if err := a.Validate(); err != nil {
+		return protocol.OwnerBriefResult{}, err
+	}
+	if a.IsStatus() {
+		return protocol.OwnerBriefResult{}, reject("a brief body is required")
+	}
+	chief, err := liveChief(s.db)
+	if err != nil {
+		return protocol.OwnerBriefResult{}, err
+	}
+	if chief == "" || chief != session {
+		return protocol.OwnerBriefResult{}, reject("only the chief of staff may deliver a brief")
+	}
+	date := strings.TrimSpace(a.Date)
+	body := strings.TrimRight(a.Body, "\r\n")
+	label := "Daily brief " + date
+	ref := protocol.BriefSourceRef(date)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return protocol.OwnerBriefResult{}, err
+	}
+	defer tx.Rollback()
+	var id string
+	err = tx.QueryRow(`SELECT id FROM inbox_items WHERE source_ref=? ORDER BY created_at DESC, id DESC LIMIT 1`, ref).Scan(&id)
+	switch {
+	case err == nil:
+		// One brief per local date. A repeat keeps the item id and replaces
+		// its text, also when the owner dismissed the earlier one.
+		_, err = tx.Exec(`UPDATE inbox_items SET kind=?,session_id=?,node='',text=?,recommendation='',message_id='',conversation_id='',
+			created_at=?,status='open',answer='',answered_at=0,options='[]',asker_name=?,change_title='',
+			from_kind=?,source_ref=?,about_kind='',about_id='',next_who=?,why_you='',detail='',route_fixed=1,priority=0
+			WHERE id=?`, protocol.AskKindBrief, chief, body, now.UnixNano(), label, protocol.AskFromGateway, ref, protocol.AskNextOwner, id)
+		if err != nil {
+			return protocol.OwnerBriefResult{}, err
+		}
+	case errors.Is(err, sql.ErrNoRows):
+		item, cerr := s.createInboxItem(tx, protocol.InboxItem{Kind: protocol.AskKindBrief, SessionID: chief, Text: body,
+			AskerName: label, FromKind: protocol.AskFromGateway, SourceRef: ref, NextWho: protocol.AskNextOwner})
+		if cerr != nil {
+			return protocol.OwnerBriefResult{}, cerr
+		}
+		id = item.ID
+	default:
+		return protocol.OwnerBriefResult{}, err
+	}
+	if err = s.setOwnerSetting(tx, protocol.BriefLastItemKey, id, now); err != nil {
+		return protocol.OwnerBriefResult{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return protocol.OwnerBriefResult{}, err
+	}
+	return protocol.OwnerBriefResult{ItemID: id, Date: date, Status: "delivered"}, nil
+}

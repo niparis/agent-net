@@ -800,7 +800,7 @@ sheet on a phone. It stays open across screen changes, remembered in
   answers an ask with the buttons of its kind: approve, reject, dismiss, an
   option, typed text, let stand or overrule, and "didn't need me". Proposals,
   learned suggestions, charter drafts and delivery steps are answered in the
-  TUI.
+  TUI. A daily brief appears as `Daily brief <date>` and offers Dismiss only.
 - **Sessions** shows the machines (online, version, cpu, memory) and the
   sessions grouped by needs you, working, idle and offline. The detail panel
   shows the task, machine, project, model, place, charter purpose and recent
@@ -2633,7 +2633,7 @@ Everything that waits on a person is an ask, kept in the gateway's `inbox_items`
 | `desk_settle` | `desk.settle` | `{"ok": true}`: marks a log line as undone (its undo options go). |
 | `desk_log` | `desk.log` | `{"entries": [...]}`: the newest log lines first (`limit`, default 100, at most 500). Each has `at`, `source`, `about_kind`, `about_id`, `text`, `detail` and `options` (the way to undo a CTO change). |
 
-Kinds: `question`, `approval`, `feature_idea`, `rejection`, `escalation`, `held`, `learned`, `draft`, `proposal`, `step`, `waiting`, `session_stall` and `check`. A source outside the gateway opens an ask with `ask.open`, closes it with `ask.close`, or replaces all of its open asks of one kind with `ask.sync`; each call is safe to repeat and only touches asks of the calling machine.
+Kinds: `question`, `approval`, `feature_idea`, `rejection`, `escalation`, `held`, `learned`, `draft`, `proposal`, `step`, `waiting`, `session_stall`, `check` and `brief`. A source outside the gateway opens an ask with `ask.open`, closes it with `ask.close`, or replaces all of its open asks of one kind with `ask.sync`; each call is safe to repeat and only touches asks of the calling machine.
 
 An ask closes by itself with a kept reason: `change_done` (the change it is about is done or stopped), `session_ended` (the asking session was archived or its worker run ended; held requests and outcomes are work between two sessions and stay), `resolved` (its source was decided), `expired` (a held request ran out), `activity_or_end` (a stall), `replaced` (the asker replaced or withdrew it). The gateway runs a set-based reconcile at start and every minute for the changes that come with time.
 
@@ -2714,6 +2714,36 @@ Every sort writes one `ask_sorts` row with the ask as it was (`prev_next`,
 `prev_status`, `prev_answer`, `prev_answered_at`) and one Desk log line with
 source `chief`. Nothing is deleted.
 
+**The daily brief.** The owner can give the chief one morning prompt without a
+new ask. The setting `chief.brief_time` is a local time `HH:MM` (default
+`09:00`) read in the owner's time zone (operator `timezone_get`). Until the
+owner has named a zone, the timer does not run and `agent_owner_brief` reports
+`waiting for the owner's time zone`. The gateway checks on its minute tick and
+sends the chief one message from `agent-net` on the first tick of each
+owner-local date at or after that time: `Daily brief due for <local date>.
+Write it and deliver it with agent_owner_brief.` The date is stored in
+`owner_settings` (`chief.brief_last_sent`), so a gateway or daemon restart does
+not send twice, and a tick missed while the gateway was down still sends once
+later that day. The send wakes the chief like any other message.
+
+**`agent_owner_brief {body, date}`** (any agent session; only the live chief may
+call it, others are refused). `body` is the brief, at most 15 lines, and `date`
+is the owner-local date as `YYYY-MM-DD`. It creates one Desk item of kind
+`brief`, labelled `Daily brief <date>`, with the body as its text. A brief is
+informational: it has no approve or refuse, only dismiss, and it is never an
+approval ask. A second call for the same date replaces that date's brief and
+returns its item id and the date. For example:
+
+```
+agent_owner_brief {"body":"Handled the deploy fix and two reviews.\nDecisions waiting: PR #31 (recommend merge), the storage plan (recommend wait).\nStuck: the Mac build needs a signing key.","date":"2026-11-09"}
+```
+
+**`agent_owner_brief {}`** reads the schedule instead. It returns `brief_time`,
+`time_zone`, `next_run_local`, `next_run_utc`, `last_date_sent`, `last_item_id`
+and `status` (`active`, `waiting for the owner's time zone` or `no chief of
+staff`). The last brief id is also stored in `owner_settings`
+(`chief.brief_last_item`).
+
 **`ask_history` `{ask}`** (operator `ask_history`, gateway `ask.history`) returns
 `{"sorts": [...]}`, oldest first. Each sort has `at`, `sorter`, `result`,
 `into`, `to`, `reason`, `priority`, `why_you` and the `prev_*` fields.
@@ -2734,7 +2764,7 @@ The CTO lists have `chief_sorts` (read), and `ask_undo` and `ask_mark` (changes,
 **The Desk (tab 7).**
 
 - The header reads `Desk · chief of staff <name> on` (or `off`, or `no chief of staff`), then `sorted N asks today`. "Today" is the last 24 hours of sorts.
-- **Needs you** lists only the asks whose `next` is the owner. Each row shows its priority and why_you under it. The tab title (`7 Desk (3)`), the Sessions band and the header count this list.
+- **Needs you** lists only the asks whose `next` is the owner. Each row shows its priority and why_you under it. The tab title (`7 Desk (3)`), the Sessions band and the header count this list. A daily brief shows as one row labelled `Daily brief <date>`; Enter reads it and `x` dismisses it. It offers no other action.
 - **Handled for you** lists the sorts from `chief_sorts`. A row shows the result (closed, merged, sent, to you, or undone), the question, the reason when it fits, and `→ session` for a send. `u` undoes a sort that is not undone; `m` marks it "should have asked me". The full reason is in the panel.
 - **n** on a Needs you row marks "didn't need me". **m** on a handled row marks "should have asked me". Each asks for one optional line of why; Enter stores it, Esc cancels.
 - **The digest.** When the owner comes back after an hour or more without a key press, the Desk shows "While you were away (N h)" with four counts (closed, sent on, answered, for you). The counts are read once from the newest 500 log lines, and only the lines since the owner's last key press count. `x` hides the digest; while it shows, `x` only hides it, and does not dismiss an ask. The digest reads the log text the gateway writes (`Chief closed ask:`, `Chief sent ask to`, `so it is with you`, and `Closed ... (answered)`): change those lines and the counts change with them.

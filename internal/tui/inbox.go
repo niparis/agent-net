@@ -163,6 +163,10 @@ func (m Model) askRow(a protocol.Ask) (inboxRow, bool) {
 		}
 		row.group, row.key, row.kind = inboxNotice, "notice:"+a.ID, "notice"
 		row.name, row.text = name, text
+	case protocol.AskKindBrief:
+		// One informational item a day, labelled with its owner-local date.
+		row.group, row.key, row.kind = inboxNotice, "brief:"+a.ID, "brief"
+		row.name, row.text = firstNonEmpty(a.From, "Daily brief"), inboxFirstLine(a.Question)
 	default:
 		return inboxRow{}, false
 	}
@@ -255,7 +259,7 @@ func inboxKindRank(row inboxRow) int {
 		return 6
 	case "learned":
 		return 7
-	case "notice":
+	case "notice", "brief":
 		return 8
 	}
 	return 9
@@ -681,6 +685,8 @@ func (m Model) inboxPanelTitle(row inboxRow) string {
 			return "Notice"
 		}
 		return sanitize(row.name) + " connected"
+	case "brief":
+		return sanitize(firstNonEmpty(row.name, "Daily brief"))
 	}
 	return sanitize(row.name)
 }
@@ -714,6 +720,8 @@ func (m Model) inboxPanelText(row inboxRow) string {
 		}
 		return text
 	case "notice":
+		return sanitize(row.item.Text)
+	case "brief":
 		return sanitize(row.item.Text)
 	case "approval", "question":
 		text := sanitize(row.item.Text)
@@ -763,6 +771,8 @@ func (m Model) inboxPanelOrigin(row inboxRow, withAge bool) string {
 		} else if row.item.SessionID != "" {
 			add(m.inboxSessionOrigin(row.item.SessionID))
 		}
+	case "brief":
+		add("daily brief")
 	}
 	if withAge {
 		add(inboxAgeText(m.now(), row.since))
@@ -1187,7 +1197,7 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.inboxEditing = true
 		}
 	case "dismiss":
-		if row.kind == "notice" || row.kind == "approval" || row.kind == "question" {
+		if row.kind == "notice" || row.kind == "approval" || row.kind == "question" || row.kind == "brief" {
 			m.inboxError = ""
 			m.inboxNote = ""
 			return m, m.inboxAnswer(row.item.ID, "dismiss")
@@ -1330,6 +1340,8 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 		open.label = "go to change"
 		return []hint{open}
 	case "notice":
+		return []hint{bindingHint(contextInbox, "dismiss")}
+	case "brief":
 		return []hint{bindingHint(contextInbox, "dismiss")}
 	}
 	return nil

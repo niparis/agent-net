@@ -1011,6 +1011,29 @@ export const TOOL_CATALOG = [
     "method": "waiting"
   },
   {
+    "name": "agent_owner_brief",
+    "description": "Chief of staff only: deliver one informational daily brief to the owner's Desk. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; a second call for the same date replaces it. Call with no body for the schedule: brief time, time zone, next run, last date sent and last brief id. A brief never asks for an answer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "string",
+          "description": "The brief for the owner's Desk, at most 15 lines. Leave it empty to read the schedule instead."
+        },
+        "date": {
+          "type": "string",
+          "description": "The owner-local date the brief is for, YYYY-MM-DD. Required with a body."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "owner_brief"
+  },
+  {
     "name": "agent_owner_judgments_find",
     "description": "Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages.",
     "inputSchema": {

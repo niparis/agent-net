@@ -75,7 +75,8 @@ func (s *Store) RequestWrittenApproval(session, node string, req protocol.Approv
 func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.InboxItem, error) {
 	switch item.Kind {
 	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
-		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindStep, protocol.AskKindWaiting:
+		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindStep, protocol.AskKindWaiting,
+		protocol.AskKindBrief:
 	default:
 		return item, reject("invalid inbox kind")
 	}
@@ -307,6 +308,9 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	}
 	if strings.TrimSpace(answer) == "" || len(answer) > protocol.MaxBodyBytes {
 		return item, reject("invalid answer")
+	}
+	if item.Kind == protocol.AskKindBrief && answer != "dismiss" && answer != "seen" {
+		return item, reject("a brief is informational: dismiss it only")
 	}
 	// Dismissing closes the item without answering it. It needs no recipient:
 	// an old approval can outlive the session that asked for it, and the owner
