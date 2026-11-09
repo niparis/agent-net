@@ -9,11 +9,11 @@ import (
 
 // learnedListTables are the tables OwnerLearned reads: the suggestions and their
 // details, phrase state and views, the history of a change (graph_history), the
-// graph charter and the drafts. The drafts' own-value check (draftOwnValue) also
-// reads the agent and team charters. Keep it equal to those queries (see
-// readThrough).
+// graph charter and the drafts. The drafts' own-value check (draftOwnValue) reads
+// the agent and team charters, and the drafts' names (draftName) read the agents
+// and the teams. Keep it equal to those queries (see readThrough).
 var learnedListTables = []string{"learned_suggestions", "learned_suggestion_details", "learned_phrase_state",
-	"learned_views", "graph_history", "graph_charter", "charter_drafts", "agent_charter", "charter_values", "teams"}
+	"learned_views", "graph_history", "graph_charter", "charter_drafts", "agent_charter", "charter_values", "teams", "agents"}
 
 // ownerLearnedRows is what the owner's list reads from the database: every
 // suggestion, ready or not, and the pending drafts. OwnerLearned applies the
