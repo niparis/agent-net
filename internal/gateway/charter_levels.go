@@ -75,6 +75,19 @@ func (s *Store) setLevelCharter(q protocol.CharterSetRequest, actor string, vali
 		}
 		return s.WriteTeam(tw, actor)
 	}
+	// lead_merges is the owner's grant that the team lead merges its members'
+	// work. Like asks_to it is a Team column; an empty value means off.
+	if level == "team" && q.Attr == "lead_merges" {
+		value := strings.TrimSpace(q.Value)
+		if value == "" {
+			value = protocol.LeadMergesOff
+		}
+		tw := protocol.TeamWrite{Action: "lead_merges", ID: scope, LeadMerges: value}
+		if validate {
+			return s.ValidateTeam(tw, actor)
+		}
+		return s.WriteTeam(tw, actor)
+	}
 	value, err := protocol.CleanCharterValue(q.Attr, q.Value)
 	if err != nil {
 		return reject("%v", err)

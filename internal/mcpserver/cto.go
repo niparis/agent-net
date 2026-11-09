@@ -45,8 +45,9 @@ var ctoCharterAttrs = func() []string {
 }()
 
 // ctoGraphAttrs are the attributes graph_change accepts: the charter fields,
-// and asks_to, a Team setting that team_charter writes (decision 0100).
-var ctoGraphAttrs = append(append([]string{}, ctoCharterAttrs...), "asks_to")
+// asks_to, a Team setting that team_charter writes (decision 0100), and
+// lead_merges, the owner's Team grant that the lead merges its members' work.
+var ctoGraphAttrs = append(append([]string{}, ctoCharterAttrs...), "asks_to", "lead_merges")
 
 var ctoEdgeKinds = []string{"depends", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies"}
 
@@ -61,9 +62,10 @@ var ctoNodeSettings = []string{"tests_before_merge", "merge_authority", "worker_
 var ctoGraphSettings = append(append([]string{}, ctoNodeSettings...), "asks_to")
 
 // ctoTeamSettings are the settings settings_set accepts for a Team target:
-// asks_to and every node setting that is also a charter attribute at Team level.
+// asks_to, lead_merges and every node setting that is also a charter attribute
+// at Team level.
 var ctoTeamSettings = func() []string {
-	out := []string{"asks_to"}
+	out := []string{"asks_to", "lead_merges"}
 	for _, setting := range ctoNodeSettings {
 		if protocol.CharterAttributeAtLevel("team", setting) {
 			out = append(out, setting)

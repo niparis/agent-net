@@ -18,12 +18,15 @@ type TeamLeadRequest struct {
 }
 
 // TeamLeadResult answers MethodTeamLead. LeadSession is empty when the
-// session's team does not send blocked steps to a lead, or the session is the
-// lead itself.
+// session's team has no lead to send to, or the session is the lead itself.
+// LeadMerges is the owner's lead_merges grant of the team. AsksToLead says the
+// team sends blocked steps to the lead (asks_to=lead).
 type TeamLeadResult struct {
 	Team        string `json:"team,omitempty"`
 	Lead        string `json:"lead,omitempty"`
 	LeadSession string `json:"lead_session,omitempty"`
+	LeadMerges  bool   `json:"lead_merges,omitempty"`
+	AsksToLead  bool   `json:"asks_to_lead,omitempty"`
 }
 
 // QueryTeamLead is the gateway read behind MethodTeamLead. It takes a gateway

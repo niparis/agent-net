@@ -22,9 +22,12 @@ type Team struct {
 	HeldBack      string `json:"held_back"`
 	// AsksTo says where a member's agent_owner_ask goes: owner (the default)
 	// or lead (the team lead answers first; decision 0100).
-	AsksTo    string `json:"asks_to"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
+	AsksTo string `json:"asks_to"`
+	// LeadMerges is on when the owner lets the team lead merge the work of its
+	// members (lead_merges, off by default). Members are told; nothing is gated.
+	LeadMerges string `json:"lead_merges"`
+	CreatedAt  int64  `json:"created_at"`
+	UpdatedAt  int64  `json:"updated_at"`
 }
 
 // TeamWrite is owner-only. Membership ID is the new Team, empty to remove.
@@ -49,6 +52,26 @@ type TeamWrite struct {
 	HeldBack string `json:"held_back,omitempty"`
 	// AsksTo is the new value for action "asks_to": owner or lead.
 	AsksTo string `json:"asks_to,omitempty"`
+	// LeadMerges is the new value for action "lead_merges": on or off.
+	LeadMerges string `json:"lead_merges,omitempty"`
+}
+
+// Team lead_merges values. A team starts with off, the owner's default.
+const (
+	LeadMergesOn  = "on"
+	LeadMergesOff = "off"
+)
+
+// ValidLeadMerges reports whether v is a lead_merges value.
+func ValidLeadMerges(v string) bool { return v == LeadMergesOn || v == LeadMergesOff }
+
+// NormalLeadMerges reads an empty value, from a database or an older gateway,
+// as off.
+func NormalLeadMerges(v string) string {
+	if v == LeadMergesOn {
+		return LeadMergesOn
+	}
+	return LeadMergesOff
 }
 
 // TeamChange retains immutable before/after JSON snapshots or Team IDs for a

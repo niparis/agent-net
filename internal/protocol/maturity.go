@@ -111,6 +111,9 @@ type NodeSettingsResult struct {
 	Autonomy string `json:"autonomy"`
 	// WakeOnMessage is the effective wake_on_message rule, on when it is unset.
 	WakeOnMessage string `json:"wake_on_message,omitempty"`
+	// LeadMerges is the lead_merges grant of a team node: on or off. Empty for
+	// any other node.
+	LeadMerges string `json:"lead_merges,omitempty"`
 }
 
 // NodeSettingsGetRequest is the request of node_settings_get.

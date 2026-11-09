@@ -1279,7 +1279,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration}
 
 // briefDefectMoveMigration records that a late defect was reclassified as a
 // brief defect. The worker_defects row stays; these columns name who moved it,
@@ -1336,6 +1336,13 @@ INSERT INTO standing_orders_fts(standing_orders_fts) VALUES('rebuild');
 const teamAsksToMigration = `
 -- Team asks_to (decision 0100): owner (default) or lead.
 ALTER TABLE teams ADD COLUMN asks_to TEXT NOT NULL DEFAULT 'owner';
+`
+
+// leadMergesMigration adds the team setting that lets its lead merge the work
+// of its members, on the owner's grant (lead_merges, 2026-11-09).
+const leadMergesMigration = `
+-- Team lead_merges: on lets the lead merge the members' work; off (the default).
+ALTER TABLE teams ADD COLUMN lead_merges TEXT NOT NULL DEFAULT 'off';
 `
 
 // asksMigrationRest is the part of the asks migration that is safe to replay
@@ -1825,6 +1832,16 @@ func (s *Store) migrate() error {
 		} else if strings.Contains(migrations[i], "Team asks_to (decision 0100)") {
 			var has int
 			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('teams') WHERE name='asks_to'`).Scan(&has)
+			if err == nil {
+				if has == 0 {
+					result, err = tx.Exec(migrations[i])
+				} else {
+					result, err = tx.Exec(`SELECT 1`)
+				}
+			}
+		} else if strings.Contains(migrations[i], "Team lead_merges: on lets the lead") {
+			var has int
+			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('teams') WHERE name='lead_merges'`).Scan(&has)
 			if err == nil {
 				if has == 0 {
 					result, err = tx.Exec(migrations[i])

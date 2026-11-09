@@ -17,39 +17,59 @@ import (
 // The key ends with the id of the request message that carries the question.
 const leadAskRefPrefix = "lead_ask:"
 
-// askerTeam finds the active team that sends the questions of a session to its
-// lead. The session's repo team comes first, then the team of its agent, as
-// lead routing does. ok is false when the session is in no such team, or is
-// the lead itself.
-func (s *Store) askerTeam(session string) (teamName, leadAgent, pinned string, ok bool, err error) {
+// memberTeam is the active team of a session that has a lead to send to: its
+// team and lead, and the team's settings that concern a member.
+type memberTeam struct {
+	name, leadAgent, pinned string
+	asksToLead, leadMerges  bool
+}
+
+// memberTeamOf finds the active team of a session, with a lead that is not the
+// session itself. The session's repo team comes first, then the team of its
+// agent, as lead routing does. ok is false when the session is in no such
+// team, or is the lead itself.
+func (s *Store) memberTeamOf(session string) (t memberTeam, ok bool, err error) {
 	var agent, repo, harness, worker string
 	err = s.db.QueryRow(`SELECT COALESCE(agent_id,''),COALESCE(repo_id,''),harness,worker FROM sessions WHERE id=?`, session).Scan(&agent, &repo, &harness, &worker)
 	if err == sql.ErrNoRows {
-		return "", "", "", false, nil
+		return t, false, nil
 	}
 	if err != nil {
-		return "", "", "", false, err
+		return t, false, err
 	}
 	// Only agents in the tree have a lead. The owner, the CTO and workers
 	// (which their caller answers) do not.
 	if agent == "" || worker != "" || protocol.IsOwner(harness) || harness == "cto" {
-		return "", "", "", false, nil
+		return t, false, nil
 	}
-	var teamID, asksTo string
+	var teamID, asksTo, leadMerges string
 	var lead, pin sql.NullString
-	err = s.db.QueryRow(`SELECT t.id,t.name,t.owner_agent_id,t.lead_session,t.asks_to FROM teams t JOIN team_members tm ON tm.team_id=t.id
+	err = s.db.QueryRow(`SELECT t.id,t.name,t.owner_agent_id,t.lead_session,t.asks_to,t.lead_merges FROM teams t JOIN team_members tm ON tm.team_id=t.id
 		WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=? AND tm.member_id<>'') OR (tm.member_kind='agent' AND tm.member_id=?))
-		ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &teamName, &lead, &pin, &asksTo)
+		ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &t.name, &lead, &pin, &asksTo, &leadMerges)
 	if err == sql.ErrNoRows {
-		return "", "", "", false, nil
+		return t, false, nil
 	}
 	if err != nil {
+		return t, false, err
+	}
+	if !lead.Valid || lead.String == "" || isLeadSession(lead, pin, agent, session) {
+		return t, false, nil
+	}
+	t.leadAgent, t.pinned = lead.String, pin.String
+	t.asksToLead = asksTo == protocol.AsksToLead
+	t.leadMerges = protocol.NormalLeadMerges(leadMerges) == protocol.LeadMergesOn
+	return t, true, nil
+}
+
+// askerTeam finds the active team that sends the questions of a session to its
+// lead: a team of the session with asks_to=lead. ok is false otherwise.
+func (s *Store) askerTeam(session string) (teamName, leadAgent, pinned string, ok bool, err error) {
+	t, ok, err := s.memberTeamOf(session)
+	if err != nil || !ok || !t.asksToLead {
 		return "", "", "", false, err
 	}
-	if asksTo != protocol.AsksToLead || !lead.Valid || lead.String == "" || isLeadSession(lead, pin, agent, session) {
-		return "", "", "", false, nil
-	}
-	return teamName, lead.String, pin.String, true, nil
+	return t.name, t.leadAgent, t.pinned, true, nil
 }
 
 // leadAskSession picks the session of the lead that gets the question: a live
@@ -71,20 +91,22 @@ func (s *Store) leadAskSession(leadAgent, pinned string) (id, name string, err e
 // steps to its lead. It is the read behind query.team_lead: the Claude Code
 // hint hook uses it to name the lead when a tool call was denied. An empty
 // result means the session is outside such a team, or is the lead itself.
+// It also answers for a team whose lead_merges is on, whatever its asks_to: the
+// hook then states the grant.
 func (s *Store) TeamLeadFor(session string) (protocol.TeamLeadResult, error) {
 	var out protocol.TeamLeadResult
-	team, leadAgent, pinned, ok, err := s.askerTeam(session)
-	if err != nil || !ok {
+	t, ok, err := s.memberTeamOf(session)
+	if err != nil || !ok || (!t.asksToLead && !t.leadMerges) {
 		return out, err
 	}
-	leadSession, leadName, err := s.leadAskSession(leadAgent, pinned)
+	leadSession, leadName, err := s.leadAskSession(t.leadAgent, t.pinned)
 	if err != nil || leadSession == "" || leadSession == session {
 		return out, err
 	}
 	if leadName == "" {
-		leadName = leadAgent
+		leadName = t.leadAgent
 	}
-	return protocol.TeamLeadResult{Team: team, Lead: leadName, LeadSession: leadSession}, nil
+	return protocol.TeamLeadResult{Team: t.name, Lead: leadName, LeadSession: leadSession, LeadMerges: t.leadMerges, AsksToLead: t.asksToLead}, nil
 }
 
 // RedirectOwnerAsk sends the ask of a session to its team lead when the
