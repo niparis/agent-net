@@ -258,6 +258,49 @@ func TestChangeSubmitOtherBranchOfTheRepository(t *testing.T) {
 	}
 }
 
+// A caller that submits a new revision with change=... and no target branch
+// takes the base commit from the change, so the diff stat and sensitive path
+// are computed instead of "diff unavailable".
+func TestChangeSubmitContinueComputesDiffFromChangeBase(t *testing.T) {
+	t.Parallel()
+	n, f := startDeliveryNode(t)
+	repo := newRepo(t, "demo")
+	wt := filepath.Join(filepath.Dir(repo), "demo-sensitive")
+	gitIn(t, repo, "worktree", "add", "-q", "-b", "feat/x", wt)
+	if err := os.MkdirAll(filepath.Join(wt, "internal/gateway"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "internal/gateway/store.go"), []byte("package gateway\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", ".")
+	gitIn(t, wt, "commit", "-q", "-m", "sensitive change")
+	base, head := gitHead(t, repo, "main"), gitHead(t, wt, "HEAD")
+	f.answer(protocol.FrameChangeGet, func(raw json.RawMessage) (any, error) {
+		var q protocol.ChangeGetRequest
+		_ = json.Unmarshal(raw, &q)
+		return protocol.ChangeView{Change: protocol.Change{ID: q.ChangeID, Project: "demo", Branch: "feat/x",
+			BaseCommit: base, HeadCommit: head, Revision: 1, State: protocol.ChangeOpen}}, nil
+	})
+	lc, _ := helloDelivery(t, n, "np-continue", wt, "claude-opus-5-5")
+	lc.mustCall(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Branch: "feat/x", Change: "ch_prev"})
+	frames := f.frames(protocol.FrameChangeSubmit)
+	if len(frames) == 0 {
+		t.Fatal("no change.submit frame")
+	}
+	var q protocol.ChangeSubmitRequest
+	_ = json.Unmarshal(frames[len(frames)-1], &q)
+	if q.ChangeID != "ch_prev" || q.BaseCommit != base {
+		t.Fatalf("continue submit base %q, want %q: %s", q.BaseCommit, base, deliveryJSON(q))
+	}
+	if q.SensitivePath != "internal/gateway/store.go" {
+		t.Fatalf("sensitive path %q: %s", q.SensitivePath, deliveryJSON(q))
+	}
+	if !strings.Contains(q.DiffStat, "internal/gateway/store.go") {
+		t.Fatalf("diff stat %q", q.DiffStat)
+	}
+}
+
 // A submit that git cannot back is refused before the gateway sees it, with a
 // reason the agent can act on.
 func TestChangeSubmitRefusals(t *testing.T) {
