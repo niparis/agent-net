@@ -78,7 +78,7 @@ func TestQualityPickerVerdictsMatchProtocol(t *testing.T) {
 	wantReason := map[string]string{
 		"opencode-go/deepseek-v4.1-flash:high": "verdict: allowed",
 		"openai-codex/gpt-6.1-sol:low":         "verdict: chosen by benchmark (n<3)",
-		"anthropic/claude-opus-5-5":            "verdict: left out (overqualified)",
+		"anthropic/claude-opus-5-5":            "verdict: chosen by benchmark (n<3)",
 	}
 	for i, row := range rows {
 		m.pickerSelModel = i

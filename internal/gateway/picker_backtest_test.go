@@ -109,7 +109,63 @@ func (s *Store) pickerTasksBeforeChains() ([]protocol.PickerTask, error) {
 	return out, nil
 }
 
-// TestPickerBacktest reads only the explicitly supplied copied database.
+// backtestLevel is the judge label of a D, by the same cut points as
+// protocol.LevelDRange. A column of the table has no label of its own, so the
+// column backtest uses the label of the middle of the bucket.
+func backtestLevel(d float64) string {
+	switch {
+	case d < 1.5:
+		return "trivial"
+	case d < 2.25:
+		return "simple"
+	case d < 3:
+		return "normal"
+	case d < 3.75:
+		return "hard"
+	}
+	return "very_complex"
+}
+
+// backtestShares runs the real picker 1000 times from a fresh rotation, with
+// no quota, and returns the share of each profile and the first pick's note.
+func backtestShares(t *testing.T, candidates []protocol.WorkerModelCandidate, level string, d float64, table *protocol.PickerTable, scores []protocol.ModelScore, minimums map[string]float64) (string, string) {
+	t.Helper()
+	in := &protocol.PickerInput{D: d, Table: table}
+	rotation := &protocol.WorkerRotation{}
+	shares := map[string]int{}
+	note := ""
+	const picks = 1000
+	for k := 0; k < picks; k++ {
+		choice, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, nil, nil, rotation, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if k == 0 {
+			note = choice.PickNote
+		}
+		shares[choice.Name]++
+	}
+	var names []string
+	for name := range shares {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(a, b int) bool {
+		if shares[names[a]] != shares[names[b]] {
+			return shares[names[a]] > shares[names[b]]
+		}
+		return names[a] < names[b]
+	})
+	var out []string
+	for _, name := range names {
+		out = append(out, fmt.Sprintf("%s=%.1f", name, 100*float64(shares[name])/picks))
+	}
+	return strings.Join(out, ";"), note
+}
+
+// TestPickerBacktest reads only the explicitly supplied copied database. It
+// prints TASK lines for the last 20 tasks and COLUMN lines for each D column,
+// both from the real picker with no quota, so the same test can run on two
+// versions of the picker and the output can be compared.
 func TestPickerBacktest(t *testing.T) {
 	path := os.Getenv("AGENT_NET_PICKER_BACKTEST_DB")
 	if path == "" {
@@ -120,11 +176,6 @@ func TestPickerBacktest(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	beforeTasks, err := s.pickerTasksBeforeChains()
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := protocol.BuildPickerTable(beforeTasks, s.pickerTable().Settings())
 	after := s.pickerTable()
 	profiles, err := s.WorkerProfiles()
 	if err != nil {
@@ -142,14 +193,11 @@ func TestPickerBacktest(t *testing.T) {
 	for _, p := range profiles {
 		candidates = append(candidates, protocol.WorkerModelCandidate{Name: p.Name, Harness: p.Harness, Model: p.Selection().LegacyModel(), DefaultEffort: p.Effort})
 	}
-	fmt.Println("SCORES profile bucket before(n) after(n)")
-	for _, m := range []string{"gpt-6.1-sol:low", "gpt-6.1-sol:medium", "gpt-6.1-sol:high", "gpt-6.1-terra:low", "gpt-6.1-terra:medium", "gpt-6.1-terra:high", "gpt-6.1-terra:max"} {
-		for bucket := 0; bucket <= 9; bucket++ {
-			lo, _ := after.BucketRange(bucket)
-			a, b := before.Cell(m, bucket), after.Cell(m, bucket)
-			fmt.Printf("SCORE %s %.2f %.3f(%d) %.3f(%d)\n", m, lo, a.Score, a.N, b.Score, b.N)
-		}
+	var names []string
+	for _, c := range candidates {
+		names = append(names, c.Name)
 	}
+	fmt.Println("PROFILES " + strings.Join(names, ";"))
 	// The last 20 tasks: distinct sessions by the end of their last run. D is
 	// the first valid judge result, the one the table scores the task under.
 	rows, err := s.db.Query(`SELECT r.session_id, r.model, r.difficulty, MAX(r.ended_at) e,
@@ -172,61 +220,23 @@ func TestPickerBacktest(t *testing.T) {
 		runs = append(runs, r)
 	}
 	rows.Close()
-	fmt.Println("RUN n D level actual | current best, allowed | B' first pick note | simulated share of 1000 picks (no quota)")
 	for i, r := range runs {
 		if r.d <= 0 {
-			fmt.Printf("RUN %d no-assessment %s %s\n", i+1, r.level, r.model)
+			fmt.Printf("TASK\t%d\tno-assessment\t%s\t%s\t\t\n", i+1, r.level, r.model)
 			continue
 		}
 		level := r.level
 		if level == "" {
 			level = "normal"
 		}
-		bucket := after.Bucket(r.d)
-		lo, _ := after.BucketRange(bucket)
-		oldFacts := make([]protocol.PickerCandidateFacts, len(candidates))
-		for j, c := range candidates {
-			score, _, ceil, ok := protocol.WorkerBenchmarkCeiling(c, scores, minimums)
-			key := protocol.PickerModelKey(c.Harness, c.Model)
-			oldFacts[j] = protocol.PickerCandidateFacts{Key: key, Cell: before.Cell(key, bucket), Scored: ok, Benchmark: score, Ceiling: ceil}
-		}
-		oldVerdicts, oldIdx := protocol.PickerBucketVerdicts(oldFacts, lo, before.BucketMean(bucket), bucket, before.Settings())
-		oldBest, oldName := before.BucketMean(bucket), "mean"
-		if oldIdx >= 0 {
-			oldBest, oldName = oldFacts[oldIdx].Cell.Score, candidates[oldIdx].Name
-		}
-		var oldAllowed []string
-		for j, v := range oldVerdicts {
-			if v.Allowed {
-				oldAllowed = append(oldAllowed, fmt.Sprintf("%s %.2f n%d", candidates[j].Name, oldFacts[j].Cell.Score, oldFacts[j].Cell.N))
-			}
-		}
-		// The real picker, on the corrected table, many times from a fresh
-		// rotation: the shares are what the weights and the explore share give.
-		in := &protocol.PickerInput{D: r.d, Table: after}
-		rotation := &protocol.WorkerRotation{}
-		shares := map[string]int{}
-		firstNote := ""
-		const picks = 1000
-		for k := 0; k < picks; k++ {
-			choice, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, nil, nil, rotation, in)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if k == 0 {
-				firstNote = choice.PickNote
-			}
-			shares[choice.Name]++
-		}
-		var names []string
-		for name := range shares {
-			names = append(names, name)
-		}
-		sort.Slice(names, func(a, b int) bool { return shares[names[a]] > shares[names[b]] })
-		var share []string
-		for _, name := range names {
-			share = append(share, fmt.Sprintf("%s %.1f%%", name, 100*float64(shares[name])/picks))
-		}
-		fmt.Printf("RUN %d %.2f %s %s | best=%s %.2f; allowed=%s | %s | %s\n", i+1, r.d, level, r.model, oldName, oldBest, strings.Join(oldAllowed, ", "), firstNote, strings.Join(share, ", "))
+		share, note := backtestShares(t, candidates, level, r.d, after, scores, minimums)
+		fmt.Printf("TASK\t%d\t%.2f\t%s\t%s\t%s\t%s\n", i+1, r.d, level, r.model, share, note)
+	}
+	for bucket := 0; bucket <= 11; bucket++ {
+		lo, hi := after.BucketRange(bucket)
+		mid := (lo + hi) / 2
+		level := backtestLevel(mid)
+		share, note := backtestShares(t, candidates, level, mid, after, scores, minimums)
+		fmt.Printf("COLUMN\t%.2f\t%s\t%s\t%s\n", lo, level, share, note)
 	}
 }

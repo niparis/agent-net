@@ -13,7 +13,7 @@ import (
 
 // A member can leave "T2b worker running" in its task for an hour after the
 // worker ended, and nothing shows the lead that the line is stale (decision
-// 0108). When a view reads a task line that names a worker session which has
+// 0111). When a view reads a task line that names a worker session which has
 // ended, the gateway adds the note "(worker <id> ended <time>)" to the
 // session's Profile.TaskNote. It is worked out at read time, with a fixed
 // date and time so a cached read stays right. The member's own

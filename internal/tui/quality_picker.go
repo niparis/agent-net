@@ -865,13 +865,13 @@ func pickerModelLabel(name string, w int) string {
 // way to the short one when the terminal is narrow, never to a wrapped label.
 func pickerSettingsText(s protocol.PickerSettings, width int) string {
 	s = s.Normalized()
-	full := fmt.Sprintf("settings: bucket width %.2f · k %g · allowed fraction %.2f · margin %.2f · boost %g · uncertain n %d",
-		s.BucketWidth, s.K, s.AllowedFraction, s.OverqualifiedMargin, s.UncertainBoost, s.UncertainN)
+	full := fmt.Sprintf("settings: bucket width %.2f · k %g · allowed fraction %.2f · boost %g · uncertain n %d",
+		s.BucketWidth, s.K, s.AllowedFraction, s.UncertainBoost, s.UncertainN)
 	if ansi.StringWidth(full) <= width {
 		return full
 	}
-	short := fmt.Sprintf("bucket %.2f · k %g · allowed %.2f · margin %.2f · boost %g · uncertain n %d",
-		s.BucketWidth, s.K, s.AllowedFraction, s.OverqualifiedMargin, s.UncertainBoost, s.UncertainN)
+	short := fmt.Sprintf("bucket %.2f · k %g · allowed %.2f · boost %g · uncertain n %d",
+		s.BucketWidth, s.K, s.AllowedFraction, s.UncertainBoost, s.UncertainN)
 	return short
 }
 

@@ -17,7 +17,7 @@
 │ score 0.80 [0.78-0.83] · mean 0.81                                           │
 │ best claude-sonnet-5-5 · claude 0.80 [0.78-0.83] n6                          │
 │ verdict: allowed                                                             │
-│ bucket 0.33 · k 5 · allowed 0.90 · margin 0.25 · boost 1.5 · uncertain n 5   │
+│ bucket 0.33 · k 5 · allowed 0.90 · boost 1.5 · uncertain n 5                 │
 │ AA = benchmark score · dot = no task yet · underline = past ceiling          │
 │ [0.80] = selected cell · o = older model keys · R = read again               │
 ╰──────────────────────────────────────────────────────────────────────────────╯

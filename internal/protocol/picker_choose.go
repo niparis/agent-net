@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-// The cell pick (decision 0105) keeps the interval-based allowed set and
-// over-qualification rule, then rotates proven candidates whose cell scores
-// reach the qualifying threshold. Allowed thin cells receive an exploration
-// share. When no candidates qualify, the original allowed rotation applies.
-// When nothing is allowed the caller falls back to the level rule.
+// The cell pick (decision 0105) keeps the interval-based allowed set, then
+// rotates proven candidates whose cell scores reach the qualifying threshold.
+// Allowed thin cells receive an exploration share. When no candidates qualify,
+// the original allowed rotation applies. When nothing is allowed the caller
+// falls back to the level rule.
 
 // PickerCandidateFacts is what the cell rule reads about one candidate in one
 // bucket. The TUI builds these from picker_get and the picker builds them from
@@ -26,9 +26,9 @@ type PickerCandidateFacts struct {
 
 // PickerVerdict is the cell rule's decision for one candidate in one bucket.
 // Reason is empty when the candidate is allowed; it is one of "below 0.9×best",
-// "overqualified", "above its benchmark" or "no record, no benchmark" when it
-// is left out. Prior is true when the candidate is allowed by its benchmark
-// because it has fewer than PickerMinCellTasks tasks in the bucket.
+// "above its benchmark" or "no record, no benchmark" when it is left out.
+// Prior is true when the candidate is allowed by its benchmark because it has
+// fewer than PickerMinCellTasks tasks in the bucket.
 type PickerVerdict struct {
 	Key     string
 	Allowed bool
@@ -51,9 +51,9 @@ func pickerBucket(d float64, s PickerSettings) int {
 //
 // The decision here is exactly the one chooseByCells uses: a candidate with a
 // record is allowed unless the top of its interval is below AllowedFraction x
-// best, a thin candidate is allowed by its benchmark ceiling, and an allowed
-// candidate well above the work is left out when a weaker allowed candidate
-// exists.
+// best, and a thin candidate is allowed by its benchmark ceiling. A strong
+// model is never left out for being far above the work: the weaker bias and the
+// qualifying rule in chooseByCells steer the work instead.
 func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean float64, bucket int, s PickerSettings) ([]PickerVerdict, int) {
 	s = s.Normalized()
 	out := make([]PickerVerdict, len(facts))
@@ -64,9 +64,7 @@ func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean flo
 			best, bestIdx = f.Cell.Score, i
 		}
 	}
-	above := make([]bool, len(facts))
 	for i, f := range facts {
-		above[i] = f.Scored && pickerBucket(f.Ceiling-pickerEdgeTolerance*10, s)-bucket > 1
 		switch {
 		case f.Cell.N >= PickerMinCellTasks:
 			out[i].Allowed = f.Cell.Hi >= s.AllowedFraction*best
@@ -79,32 +77,6 @@ func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean flo
 			out[i].Reason = "above its benchmark"
 		default:
 			out[i].Reason = "no record, no benchmark"
-		}
-	}
-	// The over-qualification test reads the allowed set as it stood before any
-	// candidate was left out, which is what chooseByCells has always done.
-	initiallyAllowed := make([]bool, len(facts))
-	for i := range out {
-		initiallyAllowed[i] = out[i].Allowed
-	}
-	bench := func(f PickerCandidateFacts) float64 {
-		if !f.Scored {
-			return math.Inf(-1)
-		}
-		return f.Benchmark
-	}
-	for i, f := range facts {
-		if !initiallyAllowed[i] {
-			continue
-		}
-		if !above[i] || f.Cell.N >= PickerMinCellTasks && best-f.Cell.Score <= s.OverqualifiedMargin {
-			continue
-		}
-		for j, other := range facts {
-			if j != i && initiallyAllowed[j] && bench(other) < bench(f) {
-				out[i].Allowed, out[i].Reason = false, "overqualified"
-				break
-			}
 		}
 	}
 	return out, bestIdx
@@ -120,6 +92,8 @@ type pickerEntry struct {
 	bench   float64
 	scored  bool
 	ceiling float64
+	// benchLevel is the highest level the benchmark score meets.
+	benchLevel string
 	// above is true when the benchmark ceiling is more than one bucket above D:
 	// the model is well above this work.
 	above bool
@@ -171,7 +145,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		if e.name == "" {
 			e.name = PickerModelDisplay(key)
 		}
-		e.bench, _, e.ceiling, e.scored = WorkerBenchmarkCeiling(c, scores, minimums)
+		e.bench, e.benchLevel, e.ceiling, e.scored = WorkerBenchmarkCeiling(c, scores, minimums)
 		e.above = e.scored && table.Bucket(e.ceiling-pickerEdgeTolerance*10)-bucket > 1
 		entries = append(entries, e)
 	}
@@ -197,7 +171,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		e.reason = verdicts[i].Reason
 	}
 
-	var qualified, thin, allowed []*pickerEntry
+	var qualified, thin, thinOut, allowed []*pickerEntry
 	best := table.BucketMean(bucket)
 	if bestEntry != nil {
 		best = bestEntry.cell.Score
@@ -212,7 +186,13 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			bestBench = e.bench
 		}
 		if e.cell.N < PickerMinCellTasks {
-			thin = append(thin, e)
+			// Explore is up only: a thin cell is tried when the task is a step
+			// up for the model, never a step down.
+			if exploreIsUp(table, e, level, bucket) {
+				thin = append(thin, e)
+			} else {
+				thinOut = append(thinOut, e)
+			}
 			continue
 		}
 		if e.cell.Score >= set.AllowedFraction*best {
@@ -220,6 +200,11 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			qualified = append(qualified, e)
 		} else {
 			e.reason = fmt.Sprintf("score below %g×best", set.AllowedFraction)
+		}
+	}
+	if len(qualified) > 0 {
+		for _, e := range thinOut {
+			e.reason = "explore is up only"
 		}
 	}
 	var eligible []rankedChoice
@@ -307,6 +292,18 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 	return picked, ""
 }
 
+// exploreIsUp tells whether the task is a step up for a thin cell (decision
+// 0112). Either the model has a proven record in a lower bucket and none in
+// this bucket or above, or it has no proven record anywhere and its benchmark
+// level is exactly the task's level.
+func exploreIsUp(table *PickerTable, e *pickerEntry, level string, bucket int) bool {
+	below, atOrAbove := table.ProvenRecords(e.key, bucket)
+	if below || atOrAbove {
+		return below && !atOrAbove
+	}
+	return e.scored && e.benchLevel == level
+}
+
 // pickerNote is the explanation of a cell pick: the chosen cell, the best cell
 // and what was left out with its reason. It names at most three allowed and
 // five left out models.
@@ -382,7 +379,7 @@ func pickerNoteQualifying(header string, entries []*pickerEntry, chosen, best *p
 		switch {
 		case e.qualified:
 			qualifying = append(qualifying, fmt.Sprintf("%s weight %.2f", cell(e), e.weight))
-		case e.allowed && e.cell.N < PickerMinCellTasks:
+		case e.allowed && e.cell.N < PickerMinCellTasks && e.reason == "":
 			thin = append(thin, fmt.Sprintf("%s (benchmark) weight %.2f", cell(e), e.weight))
 		case e.reason != "":
 			left = append(left, cell(e)+" left out ("+e.reason+")")

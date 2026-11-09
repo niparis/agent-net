@@ -49,14 +49,13 @@ func (s *Store) pickerSettings() (protocol.PickerSettings, error) {
 	}
 	w := settings.Where{}
 	return protocol.PickerSettings{
-		BucketWidth:         snap.Float("picker.bucket_width", w),
-		K:                   snap.Float("picker.k", w),
-		AllowedFraction:     snap.Float("picker.allowed_fraction", w),
-		OverqualifiedMargin: snap.Float("picker.overqualified_margin", w),
-		UncertainBoost:      snap.Float("picker.uncertain_boost", w),
-		UncertainN:          snap.Int("picker.uncertain_n", w),
-		WeakerBias:          snap.Float("picker.weaker_bias", w),
-		ExploreShare:        snap.Float("picker.explore_share", w),
+		BucketWidth:     snap.Float("picker.bucket_width", w),
+		K:               snap.Float("picker.k", w),
+		AllowedFraction: snap.Float("picker.allowed_fraction", w),
+		UncertainBoost:  snap.Float("picker.uncertain_boost", w),
+		UncertainN:      snap.Int("picker.uncertain_n", w),
+		WeakerBias:      snap.Float("picker.weaker_bias", w),
+		ExploreShare:    snap.Float("picker.explore_share", w),
 	}.Normalized(), nil
 }
 

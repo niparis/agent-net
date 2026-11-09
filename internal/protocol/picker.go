@@ -43,9 +43,6 @@ type PickerSettings struct {
 	// AllowedFraction: a model is allowed unless the top of its interval is
 	// below this fraction of the best cell.
 	AllowedFraction float64 `json:"allowed_fraction"`
-	// OverqualifiedMargin is how far under the best cell a model that is
-	// well above the task by its benchmark must score to be left out.
-	OverqualifiedMargin float64 `json:"overqualified_margin"`
 	// UncertainBoost multiplies the rotation weight of a cell with fewer than
 	// UncertainN tasks.
 	UncertainBoost float64 `json:"uncertain_boost"`
@@ -57,7 +54,7 @@ type PickerSettings struct {
 // third to ten digits, which the owner calls 0.33: the buckets read 1.00, 1.33,
 // 1.67, 2.00 and so on.
 func DefaultPickerSettings() PickerSettings {
-	return PickerSettings{WeakerBias: 1, ExploreShare: .1, BucketWidth: 0.3333333333, K: 5, AllowedFraction: .9, OverqualifiedMargin: .25, UncertainBoost: 1.5, UncertainN: 5}
+	return PickerSettings{WeakerBias: 1, ExploreShare: .1, BucketWidth: 0.3333333333, K: 5, AllowedFraction: .9, UncertainBoost: 1.5, UncertainN: 5}
 }
 
 // Normalized replaces every missing or invalid field with its default.
@@ -78,9 +75,6 @@ func (s PickerSettings) Normalized() PickerSettings {
 	}
 	if bad(s.AllowedFraction) {
 		s.AllowedFraction = d.AllowedFraction
-	}
-	if bad(s.OverqualifiedMargin) {
-		s.OverqualifiedMargin = d.OverqualifiedMargin
 	}
 	if bad(s.UncertainBoost) {
 		s.UncertainBoost = d.UncertainBoost
@@ -278,6 +272,35 @@ func (t *PickerTable) Cell(key string, bucket int) PickerCell {
 	variance := math.Max((n*cs.variance()+k*bucketVar)/(n+k), allVar*.5)
 	half := pickerZ * math.Sqrt(variance/(n+k))
 	return PickerCell{Score: score, Lo: math.Max(0, score-half), Hi: math.Min(1, score+half), N: cs.n}
+}
+
+// provenAt tells whether a key has a proven record in a bucket: at least
+// PickerMinCellTasks tasks and a cell score of at least AllowedFraction times
+// the best cell score there (over every model in the table).
+func (t *PickerTable) provenAt(key string, bucket int) bool {
+	if t.cells[key][bucket].n < PickerMinCellTasks {
+		return false
+	}
+	best := 0.0
+	for k, row := range t.cells {
+		if row[bucket].n >= PickerMinCellTasks {
+			best = math.Max(best, t.Cell(k, bucket).Score)
+		}
+	}
+	return t.Cell(key, bucket).Score >= t.settings.AllowedFraction*best
+}
+
+// ProvenRecords tells whether a key has a proven record in a bucket below the
+// given one, and whether it has one in that bucket or above it.
+func (t *PickerTable) ProvenRecords(key string, bucket int) (below, atOrAbove bool) {
+	for b := range t.cells[key] {
+		if b < bucket && !below {
+			below = t.provenAt(key, b)
+		} else if b >= bucket && !atOrAbove {
+			atOrAbove = t.provenAt(key, b)
+		}
+	}
+	return below, atOrAbove
 }
 
 // PickerBucketRow is one bucket of the read API.
