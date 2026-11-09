@@ -126,7 +126,7 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	settingsEnv := map[string]string{
 		"AGENT_NET_SOCKET":          d.cfg.SocketPath,
 		"AGENT_NET_WORKER":          w.id,
-		"CLAUDE_CODE_DISABLE_MOUSE": "1",
+		"CLAUDE_CODE_DISABLE_MOUSE": "0",
 	}
 	for k, v := range commitEnv {
 		settingsEnv[k] = v
@@ -738,19 +738,21 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, a
 		}
 		env = filtered
 	}
-	set := map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"}
-	for k, v := range extraEnv {
-		set[k] = v
-	}
+	// The session's launch settings decide mouse tracking (decision 0128), so
+	// the command must not hand Claude's background service a copy that turns
+	// the wheel off for the sessions it starts later.
 	filtered := env[:0]
 	for _, item := range env {
 		k, _, _ := strings.Cut(item, "=")
+		if k == "CLAUDE_CODE_DISABLE_MOUSE" {
+			continue
+		}
 		if (strings.HasPrefix(k, "GIT_CONFIG_") || strings.HasPrefix(k, "AGENT_NET_TRAILER_")) && len(extraEnv) > 0 {
 			continue
 		}
 		filtered = append(filtered, item)
 	}
-	cmd.Env = workerEnv(filtered, set)
+	cmd.Env = workerEnv(filtered, extraEnv)
 	out, err := cmd.CombinedOutput()
 	if logPath != "" {
 		logf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)

@@ -357,7 +357,10 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.Merger {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
-	if settings = claudeSettingsWithMCPAnswers(settings, r.Path); settings != "" {
+	// The wheel scrolls every managed session, not only the CTO (decision
+	// 0128). The setting belongs in the session's launch settings, because the
+	// environment of Claude's background service wins over the command.
+	if settings = claudeSettingsWithMCPAnswers(claudeMouseOn(settings), r.Path); settings != "" {
 		args = append(args, "--settings", settings)
 	}
 	if p.Model != "" {
@@ -554,7 +557,7 @@ func (d *Daemon) claudeResumeArgs(a protocol.AgentView) []string {
 	if a.Type == "merger" {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
-	if settings = claudeSettingsWithMCPAnswers(settings, a.Cwd); settings != "" {
+	if settings = claudeSettingsWithMCPAnswers(claudeMouseOn(settings), a.Cwd); settings != "" {
 		args = append(args, "--settings", settings)
 	}
 	return args
@@ -657,8 +660,10 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 			if job == "" && len(r.NativeID) >= 8 {
 				job = r.NativeID[:8]
 			}
+			// Claude Code ignores the mouse variable on the attach client; the
+			// session's launch settings carry it (decision 0128).
 			plan := protocol.EnterPlan{Argv: []string{bin, "attach", job}, Dir: r.Path, Host: r.Hostname,
-				Env: map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"}, Note: "Press ctrl+] to come back here; the session keeps running."}
+				Note: "Press ctrl+] to come back here; the session keeps running."}
 			if job == "" {
 				plan.Argv = nil
 				plan.Note = "The session started but has no Claude background ID to attach."
