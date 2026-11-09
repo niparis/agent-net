@@ -380,17 +380,28 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if err != nil {
 			return nil, err
 		}
-		var item struct {
-			ID     string `json:"id"`
-			State  string `json:"state"`
-			Status string `json:"status"`
+		// The gateway answers {"item": {...}, "other_open": [...]}.
+		var res struct {
+			Item struct {
+				ID     string `json:"id"`
+				State  string `json:"state"`
+				Status string `json:"status"`
+			} `json:"item"`
+			OtherOpen []protocol.OpenAskRef `json:"other_open"`
 		}
-		_ = json.Unmarshal(value, &item)
-		state := item.State
+		_ = json.Unmarshal(value, &res)
+		state := res.Item.State
 		if state == "" {
-			state = item.Status
+			state = res.Item.Status
 		}
-		return map[string]any{"item_id": item.ID, "kind": p.Kind, "state": state}, nil
+		out := map[string]any{"item_id": res.Item.ID, "kind": p.Kind, "state": state}
+		// A new ask adds to the pending ones: list the others so the CTO can
+		// name one with replaces.
+		if len(res.OtherOpen) > 0 {
+			out["other_open"] = res.OtherOpen
+			out["note"] = "Your earlier pending asks are still open. Pass replaces with one of their IDs to retire it."
+		}
+		return out, nil
 	case "agent_learn":
 		var p protocol.LearnRequest
 		if json.Unmarshal(raw, &p) != nil {

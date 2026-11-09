@@ -1075,8 +1075,8 @@ function mapCatalogParams(name: string, params: any): any {
     case "agent_mcp_test": return { name: params.server };
     case "agent_worker_stop": return { session: params.worker };
     case "agent_owner_ask":
-      if (params.kind === "approval") return { __method: "request_approval", __params: { action: params.text, recommendation: params.recommendation } };
-      if (params.kind === "idea") return { __method: "propose_idea", __params: { text: params.text, recommendation: params.recommendation } };
+      if (params.kind === "approval") return { __method: "request_approval", __params: { action: params.text, recommendation: params.recommendation, replaces: params.replaces } };
+      if (params.kind === "idea") return { __method: "propose_idea", __params: { text: params.text, recommendation: params.recommendation, replaces: params.replaces } };
       return { ...params, explicit: true };
     default: return params;
   }

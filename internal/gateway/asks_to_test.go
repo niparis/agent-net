@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -152,19 +154,34 @@ func TestRedirectedAskTellsTheLeadWhatStaysWithTheOwner(t *testing.T) {
 	}
 }
 
-// A new ask of the same kind replaces the earlier open one, as for the owner.
-func TestRedirectedAskReplacesTheEarlierOneOfTheSameKind(t *testing.T) {
+// A redirected ask adds to the pending ones, as for the owner. Only replaces
+// retires the one it names.
+func TestRedirectedAskKeepsTheEarlierOneUnlessReplaced(t *testing.T) {
 	s, asker, _ := forgeRig(t)
 	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: protocol.AsksToLead})
-	if _, _, err := s.RedirectOwnerAsk(ownerAsk(asker, "first?")); err != nil {
+	first, _, err := s.RedirectOwnerAsk(ownerAsk(asker, "first?"))
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.RedirectOwnerAsk(ownerAsk(asker, "second?")); err != nil {
 		t.Fatal(err)
 	}
+	if asks, _ := s.ListAsks(); len(asks) != 2 {
+		t.Fatalf("asks without replaces: %+v", asks)
+	}
+	third := ownerAsk(asker, "third?")
+	third.Replaces = first.ItemID
+	if _, _, err := s.RedirectOwnerAsk(third); err != nil {
+		t.Fatal(err)
+	}
 	asks, _ := s.ListAsks()
-	if len(asks) != 1 || asks[0].Question != "second?" {
-		t.Fatalf("asks: %+v", asks)
+	got := []string{}
+	for _, a := range asks {
+		got = append(got, a.Question)
+	}
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, []string{"second?", "third?"}) {
+		t.Fatalf("asks with replaces: %v", got)
 	}
 }
 

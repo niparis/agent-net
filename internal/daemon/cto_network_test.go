@@ -251,3 +251,51 @@ func approveOwnerMessage(t *testing.T, d *Daemon, result any) {
 		t.Fatal(err)
 	}
 }
+
+// A new CTO ask adds to the pending ones. The result carries the item ID and
+// lists the other open asks, so the CTO can name one with replaces.
+func TestCTOOwnerAskKeepsEarlierAsksAndListsThem(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, WorkerSettings{}, nil)
+	w.cli.mustCall("cto_send", map[string]string{"text": "start"})
+	ask := func(args map[string]any) map[string]any {
+		t.Helper()
+		raw, _ := json.Marshal(args)
+		out, err := w.d.runCTOTool(context.Background(), "agent_owner_ask", raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(out)
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	first := ask(map[string]any{"kind": "approval", "text": "delete the data", "recommendation": "yes"})
+	firstID, _ := first["item_id"].(string)
+	if firstID == "" {
+		t.Fatalf("first result has no item_id: %v", first)
+	}
+	second := ask(map[string]any{"kind": "approval", "text": "spend the money", "recommendation": "yes"})
+	others, _ := second["other_open"].([]any)
+	if len(others) != 1 || !strings.Contains(fmt.Sprint(others[0]), firstID) {
+		t.Fatalf("second result: %v", second)
+	}
+	statusOf := func(id string) string {
+		for _, it := range ownerInbox(t, w.node) {
+			if it.ID == id {
+				return it.Status
+			}
+		}
+		return ""
+	}
+	if got := statusOf(firstID); got != "open" {
+		t.Fatalf("first ask is %q", got)
+	}
+	ask(map[string]any{"kind": "approval", "text": "spend less", "recommendation": "yes", "replaces": firstID})
+	if got := statusOf(firstID); got != "replaced" {
+		t.Fatalf("named ask is %q", got)
+	}
+}

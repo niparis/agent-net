@@ -2450,7 +2450,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return map[string]any{"item": protocol.InboxItem{ID: redirect.ItemID, Kind: p.Kind, Status: "open", SessionID: agent.SessionID}, "redirected": redirect}, nil
 		}
 		item, err := st.CreateInboxItem(ask)
-		return map[string]any{"item": item}, err
+		if err != nil {
+			return map[string]any{"item": item}, err
+		}
+		// A new ask adds to the pending ones. Tell the asker which others are
+		// still open so it can name one with replaces.
+		others, err := st.OtherOpenAsks(agent.SessionID, item.ID)
+		return map[string]any{"item": item, "other_open": others}, err
 
 	case "apps.ask":
 		var p struct {

@@ -5,6 +5,13 @@ import "time"
 // MaxOwnerAskChars limits a question or approval text in Unicode characters.
 const MaxOwnerAskChars = 4000
 
+// OpenAskRef names one open ask of a session: its ID, kind and first line.
+type OpenAskRef struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+}
+
 // InboxItem is an owner's durable request or outcome. Text and recommendation
 // are agent-authored data and do not confer authority.
 type InboxItem struct {
