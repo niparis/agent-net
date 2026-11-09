@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
@@ -363,16 +365,31 @@ func (s *Store) moveToBriefDefect(f protocol.RateFrame) (protocol.RateResult, er
 	if worker == "" || rater == "" {
 		return out, reject("a move needs a worker session and the session that moves it")
 	}
-	if f.Defect <= 0 {
-		return out, reject("a move needs the defect id from the defect_found_later answer")
+	defectID := f.Defect
+	if defectID <= 0 {
+		candidates, err := s.defectsToMove(worker, rater)
+		if err != nil {
+			return out, err
+		}
+		switch len(candidates) {
+		case 0:
+			out.Reason = "no unmoved defect filed by this session on that worker"
+			return out, nil
+		case 1:
+			defectID = candidates[0].id
+		default:
+			out.Reason = severalDefectsReason(candidates)
+			return out, nil
+		}
 	}
+	out.Defect = defectID
 	var (
 		sessionID, filer, note  string
 		runID, briefID, movedAt int64
 		severity                int
 	)
 	err := s.db.QueryRow(`SELECT session_id, caller, run_id, severity, note, moved_at, brief_defect_id
-		FROM worker_defects WHERE id = ?`, f.Defect).
+		FROM worker_defects WHERE id = ?`, defectID).
 		Scan(&sessionID, &filer, &runID, &severity, &note, &movedAt, &briefID)
 	if errors.Is(err, sql.ErrNoRows) {
 		out.Reason = "no defect with that id"
@@ -390,7 +407,7 @@ func (s *Store) moveToBriefDefect(f protocol.RateFrame) (protocol.RateResult, er
 		return out, nil
 	}
 	var auto bool
-	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM worker_defect_auto WHERE defect_id = ?)`, f.Defect).Scan(&auto); err != nil {
+	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM worker_defect_auto WHERE defect_id = ?)`, defectID).Scan(&auto); err != nil {
 		return out, err
 	}
 	if auto {
@@ -429,7 +446,7 @@ func (s *Store) moveToBriefDefect(f protocol.RateFrame) (protocol.RateResult, er
 		return out, err
 	}
 	res, err = tx.Exec(`UPDATE worker_defects SET moved_at = ?, moved_by = ?, brief_defect_id = ?
-		WHERE id = ? AND moved_at = 0`, at, rater, newID, f.Defect)
+		WHERE id = ? AND moved_at = 0`, at, rater, newID, defectID)
 	if err != nil {
 		return out, err
 	}
@@ -452,6 +469,53 @@ func (s *Store) moveToBriefDefect(f protocol.RateFrame) (protocol.RateResult, er
 	out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
 		facts.model, facts.harness, facts.effort, facts.difficulty, at
 	return out, nil
+}
+
+// defectToMove is one unmoved, non-automatic late defect the filer can name in
+// a move.
+type defectToMove struct {
+	id       int64
+	severity int
+	note     string
+	at       int64
+}
+
+// defectsToMove finds the rows a move without a defect id can choose: the
+// caller's own late defects on the worker, not moved yet and not recorded by
+// agent-net itself.
+func (s *Store) defectsToMove(worker, rater string) ([]defectToMove, error) {
+	rows, err := s.db.Query(`SELECT id, severity, note, at FROM worker_defects
+		WHERE session_id = ? AND caller = ? AND moved_at = 0
+		  AND id NOT IN (SELECT defect_id FROM worker_defect_auto)
+		ORDER BY at, id`, worker, rater)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []defectToMove
+	for rows.Next() {
+		var d defectToMove
+		if err := rows.Scan(&d.id, &d.severity, &d.note, &d.at); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// severalDefectsReason lists the candidates so the caller can retry with one
+// id. The date is UTC and the note is cut to 60 characters.
+func severalDefectsReason(candidates []defectToMove) string {
+	parts := make([]string, 0, len(candidates))
+	for _, d := range candidates {
+		note := []rune(d.note)
+		if len(note) > 60 {
+			note = note[:60]
+		}
+		parts = append(parts, fmt.Sprintf("%d severity %d, %s, %s",
+			d.id, d.severity, time.Unix(d.at, 0).UTC().Format("2006-01-02"), string(note)))
+	}
+	return "several defects match; retry with defect=<id>: " + strings.Join(parts, "; ")
 }
 
 // sessionOwner tells whether a session is a machine's owner pseudo-session.

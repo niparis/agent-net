@@ -137,9 +137,6 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if kind == "brief_defect" && severity == 0 {
 			return nil, errors.New(`severity is required for brief_defect, for example {"kind":"brief_defect","severity":2,"note":"The brief named the wrong branch"}`)
 		}
-		if kind == "move_to_brief_defect" && defect == 0 {
-			return nil, errors.New(`defect is required for move_to_brief_defect, from the defect_found_later answer, for example {"kind":"move_to_brief_defect","worker":"s_abc","defect":12}`)
-		}
 		if kind != "rating" && kind != "defect_found_later" && kind != "brief_defect" && kind != "move_to_brief_defect" {
 			return nil, errors.New(`kind must be rating, defect_found_later, brief_defect or move_to_brief_defect`)
 		}

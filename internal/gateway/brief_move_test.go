@@ -1,9 +1,11 @@
 package gateway
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -227,5 +229,110 @@ func TestMoveDefectChargesTheBriefingCaller(t *testing.T) {
 	}
 	if chargedTo != caller || rater != owner {
 		t.Fatalf("brief defect charged to %q by %q, want the briefing caller %q by the owner %q", chargedTo, rater, caller, owner)
+	}
+}
+
+// Without a defect id, a move takes the only unmoved defect the filer filed on
+// that worker.
+func TestMoveDefectWithoutIDWhenOnlyOne(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	wid := ratingRun(t, s, node, caller, "p/m", "hard")
+	filed, err := s.AddRating(defectFrame(wid, caller, "the brief named the wrong branch"))
+	if err != nil || !filed.Accepted {
+		t.Fatalf("defect: %+v %v", filed, err)
+	}
+
+	out, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{
+		Worker: wid, Kind: protocol.RateKindMoveToBriefDefect,
+	}, Rater: caller})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Accepted || out.Defect != filed.Defect || out.BriefDefect == 0 {
+		t.Fatalf("move without an id: %+v", out)
+	}
+	var movedAt int64
+	if err := s.db.QueryRow(`SELECT moved_at FROM worker_defects WHERE id = ?`, filed.Defect).Scan(&movedAt); err != nil {
+		t.Fatal(err)
+	}
+	if movedAt == 0 {
+		t.Fatal("the only matching defect was not moved")
+	}
+}
+
+// Without a defect id, several unmoved defects are refused and the reason
+// lists each id with its severity, UTC date and the first 60 characters of its
+// note, so the filer can retry with one id.
+func TestMoveDefectWithoutIDListsSeveral(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	wid := ratingRun(t, s, node, caller, "p/m", "hard")
+	first, err := s.AddRating(defectFrame(wid, caller, "the brief named the wrong branch"))
+	if err != nil || !first.Accepted {
+		t.Fatalf("first defect: %+v %v", first, err)
+	}
+	longNote := "the brief left out the retry rule and the owner's naming convention for the settings page"
+	secondFrame := defectFrame(wid, caller, longNote)
+	secondFrame.Severity = 3
+	second, err := s.AddRating(secondFrame)
+	if err != nil || !second.Accepted {
+		t.Fatalf("second defect: %+v %v", second, err)
+	}
+
+	out, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{
+		Worker: wid, Kind: protocol.RateKindMoveToBriefDefect,
+	}, Rater: caller})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Accepted || !strings.Contains(out.Reason, "several defects match") {
+		t.Fatalf("several defects were not refused clearly: %+v", out)
+	}
+	for _, want := range []string{
+		fmt.Sprintf("%d severity 1", first.Defect),
+		fmt.Sprintf("%d severity 3", second.Defect),
+		time.Unix(first.At, 0).UTC().Format("2006-01-02"),
+		string([]rune(longNote)[:60]),
+	} {
+		if !strings.Contains(out.Reason, want) {
+			t.Fatalf("reason %q does not contain %q", out.Reason, want)
+		}
+	}
+	if strings.Contains(out.Reason, longNote) {
+		t.Fatalf("reason was not cut to 60 characters: %q", out.Reason)
+	}
+
+	retry, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{
+		Worker: wid, Kind: protocol.RateKindMoveToBriefDefect, Defect: second.Defect,
+	}, Rater: caller})
+	if err != nil || !retry.Accepted {
+		t.Fatalf("retry with one id: %+v %v", retry, err)
+	}
+	var stillOpen int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE id = ? AND moved_at = 0`, first.Defect).Scan(&stillOpen); err != nil {
+		t.Fatal(err)
+	}
+	if stillOpen != 1 {
+		t.Fatal("the retry moved a defect other than the one named")
+	}
+}
+
+// With no unmoved defect left, a move without an id says so.
+func TestMoveDefectWithoutIDWhenNone(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	wid := ratingRun(t, s, node, caller, "p/m", "hard")
+	out, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{
+		Worker: wid, Kind: protocol.RateKindMoveToBriefDefect,
+	}, Rater: caller})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Accepted || !strings.Contains(out.Reason, "no unmoved defect") {
+		t.Fatalf("no defect to move: %+v", out)
 	}
 }

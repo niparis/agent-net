@@ -142,15 +142,34 @@ func TestAgentWorkerRateRefusalCarriesTheReason(t *testing.T) {
 	}
 }
 
-// move_to_brief_defect needs the defect id before it reaches the daemon.
-func TestAgentWorkerRateMoveNeedsDefectID(t *testing.T) {
-	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+// A move without a defect id reaches the gateway, which picks the only match.
+func TestAgentWorkerRateMoveWithoutDefectID(t *testing.T) {
+	var saw map[string]any
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		switch method {
+		case "agent_rate":
+			raw, _ := json.Marshal(params)
+			json.Unmarshal(raw, &saw)
+			return json.RawMessage(`{"accepted":true,"worker":"s_w1","kind":"move_to_brief_defect","defect":12,"brief_defect":13}`), nil
+		case "list":
+			return workerListWith(ratedWorker()), nil
+		}
 		return json.RawMessage(`{}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_rate",
 		Arguments: map[string]any{"worker": "s_w1", "kind": "move_to_brief_defect"}})
-	if err == nil && (res == nil || !res.IsError) {
-		t.Fatalf("a move without a defect id was accepted: %+v", res)
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_rate move: %v %+v", err, res)
+	}
+	if saw["kind"] != "move_to_brief_defect" {
+		t.Fatalf("move request: %+v", saw)
+	}
+	if _, ok := saw["defect"]; ok {
+		t.Fatalf("an omitted defect id was sent: %+v", saw)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	if out["recorded"] != true || out["defect"] != float64(12) || out["brief_defect"] != float64(13) {
+		t.Fatalf("move result: %+v", out)
 	}
 }
 
