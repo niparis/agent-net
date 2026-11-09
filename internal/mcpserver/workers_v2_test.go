@@ -133,7 +133,7 @@ func TestWorkerRoleDoesNotSeeDelegationTools(t *testing.T) {
 	cs := connectServer(t, func(context.Context, string, any) (json.RawMessage, error) { return json.RawMessage(`{}`), nil })
 	listed, _ := cs.ListTools(context.Background(), nil)
 	for _, tool := range listed.Tools {
-		if tool.Name == "agent_worker_start" || tool.Name == "agent_worker_stop" || tool.Name == "agent_worker_rate" || tool.Name == "agent_owner_ask" || tool.Name == "agent_project_add" || tool.Name == "agent_announce" {
+		if tool.Name == "agent_worker_start" || tool.Name == "agent_worker_stop" || tool.Name == "agent_worker_rate" || tool.Name == "agent_owner_ask" || tool.Name == "agent_owner_brief" || tool.Name == "agent_project_add" || tool.Name == "agent_announce" {
 			t.Errorf("worker sees %s", tool.Name)
 		}
 	}

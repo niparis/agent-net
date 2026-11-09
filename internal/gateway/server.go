@@ -486,6 +486,13 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				if err := g.store.checkSessionStalls(); err != nil {
 					g.logLine("error", "where", "session stalls", "err", err)
 				}
+				// The chief of staff's daily brief wakes it once per owner-local
+				// date (decision 0114).
+				if m, sent, err := g.store.checkDailyBrief(g.store.now()); err != nil {
+					g.logLine("error", "where", "daily brief", "err", err)
+				} else if sent {
+					g.dispatch(ctx, m)
+				}
 				if err := g.store.reconcileAsks(); err != nil {
 					g.logLine("error", "where", "asks", "err", err)
 				}
@@ -2702,6 +2709,36 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "chief.get":
 		return st.ChiefStatus()
+
+	case "brief.put":
+		p, err := decode[protocol.OwnerBriefRequest](raw)
+		if err != nil {
+			return nil, reject("bad brief.put")
+		}
+		if p.SessionID == "" {
+			return nil, reject("brief.put needs the caller's session")
+		}
+		if _, _, _, err = st.askingSession(nc.id, p.SessionID); err != nil {
+			return nil, err
+		}
+		return st.putOwnerBrief(p.SessionID, p.OwnerBriefArgs, st.now())
+
+	case "brief.status":
+		p, err := decode[protocol.OwnerBriefRequest](raw)
+		if err != nil {
+			return nil, reject("bad brief.status")
+		}
+		if _, _, _, err = st.askingSession(nc.id, p.SessionID); err != nil {
+			return nil, err
+		}
+		chief, err := liveChief(st.db)
+		if err != nil {
+			return nil, err
+		}
+		if chief == "" || chief != p.SessionID {
+			return nil, reject("only the chief of staff may read the brief schedule")
+		}
+		return st.dailyBriefStatus(st.now())
 
 	case "chief.set":
 		p, err := decode[protocol.ChiefSetRequest](raw)

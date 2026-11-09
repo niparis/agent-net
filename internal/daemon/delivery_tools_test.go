@@ -350,7 +350,7 @@ func TestChangeSubmitRefusedForWorkers(t *testing.T) {
 		}
 	}
 	n.d.mu.Unlock()
-	for _, op := range []string{protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpAskSort} {
+	for _, op := range []string{protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpAskSort, protocol.OpOwnerBrief} {
 		_, err := lc.call(op, map[string]any{"branch": "feat/x", "ask": "i_1", "result": "close", "reason": "x"})
 		if err == nil || !strings.Contains(err.Error(), "worker") {
 			t.Errorf("%s from a worker: %v", op, err)
@@ -391,6 +391,72 @@ func TestAskSortForwardsTheCallerSession(t *testing.T) {
 	}
 	if q.SessionID != sid || q.Ask != "i_1" || q.Result != protocol.AskSortOwner || q.Priority != 1 || q.WhyYou != "only you decide" {
 		t.Fatalf("frame = %+v, caller session %s", q, sid)
+	}
+}
+
+// The chief's brief status and delivery go to the gateway with the caller's
+// own session, so the gateway checks the chief and no agent names another.
+func TestOwnerBriefForwardsStatusAndDelivery(t *testing.T) {
+	t.Parallel()
+	n, f := startDeliveryNode(t)
+	f.answer(protocol.FrameOwnerBriefStatus, func(raw json.RawMessage) (any, error) {
+		var q protocol.OwnerBriefRequest
+		_ = json.Unmarshal(raw, &q)
+		return protocol.OwnerBriefResult{Status: protocol.BriefStatusActive, BriefTime: "09:00", TimeZone: "Europe/Paris",
+			NextRunLocal: "2026-11-10 09:00", NextRunUTC: "2026-11-10T08:00:00Z"}, nil
+	})
+	f.answer(protocol.FrameOwnerBrief, func(raw json.RawMessage) (any, error) {
+		var q protocol.OwnerBriefRequest
+		_ = json.Unmarshal(raw, &q)
+		return protocol.OwnerBriefResult{ItemID: "i_brief", Date: q.Date, Status: "delivered"}, nil
+	})
+	_, wt := deliveryWorktree(t)
+	lc, sid := helloDelivery(t, n, "np-chief", wt, "gpt-6.1-sol")
+
+	res, err := lc.call(protocol.OpOwnerBrief, map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status protocol.OwnerBriefResult
+	if err := json.Unmarshal(res, &status); err != nil || status.Status != protocol.BriefStatusActive || status.TimeZone != "Europe/Paris" {
+		t.Fatalf("status = %s (%v)", res, err)
+	}
+	statusFrames := f.frames(protocol.FrameOwnerBriefStatus)
+	if len(statusFrames) != 1 {
+		t.Fatalf("status frames = %d, want 1", len(statusFrames))
+	}
+	var sq protocol.OwnerBriefRequest
+	if err := json.Unmarshal(statusFrames[0], &sq); err != nil || sq.SessionID != sid {
+		t.Fatalf("status frame = %+v, caller session %s (%v)", sq, sid, err)
+	}
+
+	res, err = lc.call(protocol.OpOwnerBrief, map[string]any{"body": "One line.", "date": "2026-11-09"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt protocol.OwnerBriefResult
+	if err := json.Unmarshal(res, &receipt); err != nil || receipt.ItemID != "i_brief" || receipt.Date != "2026-11-09" {
+		t.Fatalf("receipt = %s (%v)", res, err)
+	}
+	sent := f.frames(protocol.FrameOwnerBrief)
+	if len(sent) != 1 {
+		t.Fatalf("delivery frames = %d, want 1", len(sent))
+	}
+	var q protocol.OwnerBriefRequest
+	if err := json.Unmarshal(sent[0], &q); err != nil || q.SessionID != sid || q.Body != "One line." || q.Date != "2026-11-09" {
+		t.Fatalf("delivery frame = %+v, caller session %s (%v)", q, sid, err)
+	}
+
+	// A long brief is refused before it reaches the gateway.
+	lines := make([]string, 16)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	if _, err := lc.call(protocol.OpOwnerBrief, map[string]any{"body": strings.Join(lines, "\n"), "date": "2026-11-09"}); err == nil || !strings.Contains(err.Error(), "15") {
+		t.Fatalf("16 lines: %v", err)
+	}
+	if got := f.frames(protocol.FrameOwnerBrief); len(got) != 1 {
+		t.Fatalf("a long brief reached the gateway: %d frames", len(got))
 	}
 }
 
