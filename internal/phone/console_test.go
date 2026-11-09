@@ -350,12 +350,12 @@ func TestNoActionRoutesForWorkersCharterOrSettings(t *testing.T) {
 	}
 }
 
-func TestComingSoonScreens(t *testing.T) {
+func TestGraphAndWorkersAreNoLongerComingSoon(t *testing.T) {
 	f := newConsoleOperator()
-	for _, tc := range []struct{ path, title string }{{"/graph", "Graph"}, {"/workers", "Workers"}} {
+	for _, tc := range []struct{ path, title, panel string }{{"/graph", "Graph", "Network"}, {"/workers", "Workers", "Subscriptions"}} {
 		body := page1(t, f, tc.path)
-		mustContain(t, tc.path, body, "coming in the next update", "<h1", tc.title)
-		mustNotContain(t, tc.path, body, "<form")
+		mustContain(t, tc.path, body, "<h1", tc.title, tc.panel)
+		mustNotContain(t, tc.path, body, "coming in the next update", "<form")
 	}
 }
 

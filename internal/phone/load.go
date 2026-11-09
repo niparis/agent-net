@@ -61,6 +61,8 @@ type page struct {
 	Sessions  *sessionsView
 	Changes   *changesView
 	Messages  *messagesView
+	Graph     *graphView
+	Workers   *workersView
 }
 
 // query is what a page names beyond its screen: the selected row and, for the
@@ -208,6 +210,10 @@ func (a *app) load(ctx context.Context, screen string, q query) page {
 		p.Changes = a.changes(ctx, snap, q)
 	case "messages":
 		p.Messages = a.messages(ctx, snap, q.Selected)
+	case "graph":
+		p.Graph = a.graph(ctx, snap, q.Selected)
+	case "workers":
+		p.Workers = a.workers(ctx, snap)
 	}
 	return p
 }

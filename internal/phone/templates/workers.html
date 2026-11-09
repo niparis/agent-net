@@ -1,0 +1,19 @@
+{{define "workers"}}<div class="stack">
+<section class="box"><header><h2>Subscriptions</h2><span class="meta">left in each window{{if .QuotaAge}} · {{.QuotaAge}}{{end}}</span></header>
+{{if .QuotaNote}}<div class="body muted">{{.QuotaNote}}</div>{{else}}{{range .Quotas}}<div class="quota"><div><b>{{.Provider}}</b> <span class="muted">{{.Plan}} · {{.Window}}</span>{{if .Protected}} <span class="chip">protected</span>{{end}}</div><div class="qbar"><span class="bar"><i{{if .Warn}} class="warn"{{end}} style="width:{{.Left}}%"></i></span><span class="num">{{.Left}}%</span></div><div class="pace">{{.Pace}} · {{.Reset}}</div></div>{{end}}{{end}}
+</section>
+<div class="split even">
+<section class="box"><header><h2>Model picks</h2><span class="meta">each model's rotation per difficulty</span></header>
+{{if .Picks}}<div class="tablewrap"><table class="wide"><thead><tr><th>Model</th><th>Harness</th><th>Score</th><th>T</th><th>S</th><th>N</th><th>H</th><th>V</th><th>Used</th></tr></thead><tbody>
+{{range .Picks}}<tr><td class="mono">{{.Model}}</td><td>{{.Harness}}</td><td class="num">{{.Score}}</td>{{range .Levels}}<td class="lv{{if .}} on{{end}}">{{if .}}▸{{else}}·{{end}}</td>{{end}}<td class="muted">{{.Usage}}</td></tr>{{end}}
+</tbody></table></div>
+<div class="legend"><span>T trivial · S simple · N normal · H hard · V very complex · ▸ in rotation</span></div>
+{{else}}<div class="body muted">No worker profiles are registered.</div>{{end}}
+</section>
+<section class="box"><header><h2>Running now</h2><span class="meta">{{.RunningLabel}}</span></header>
+<div class="tablewrap"><table class="wide"><thead><tr><th>Worker</th><th>Model</th><th>Task</th><th>Time</th><th>Tokens</th><th>Cost</th></tr></thead><tbody>
+{{range .Running}}<tr><td><b>{{.Name}}</b></td><td class="mono muted">{{.Model}}</td><td>{{.Task}}</td><td class="num">{{.Run}}</td><td class="num">{{.Tokens}}</td><td class="num">{{.Cost}}</td></tr>{{else}}<tr><td colspan="6" class="muted">No workers are running.</td></tr>{{end}}
+</tbody></table></div>
+</section>
+</div>
+</div>{{end}}
