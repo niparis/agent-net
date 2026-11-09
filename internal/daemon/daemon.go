@@ -96,6 +96,9 @@ type Config struct {
 	// testProcessStopGrace replaces processStopGrace, the wait between SIGTERM
 	// and SIGKILL.
 	testProcessStopGrace time.Duration
+	// claudeRosterPath replaces the Claude roster file that a process stop
+	// reads (process_stop_claude.go). Empty uses the user's Claude folder.
+	claudeRosterPath string
 	// testNoDifficulty skips the difficulty judge at worker start. Test
 	// daemons set it, because their fake harnesses cannot answer the judge;
 	// the assessment tests turn it off again.

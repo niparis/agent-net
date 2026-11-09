@@ -221,7 +221,7 @@ var ctoTools = map[string]ctoToolDef{
 	"proposal_ask": {desc: "Open the approval dialog for a waiting proposal.", fields: map[string]ctoField{"id": {typ: "string", desc: "Open proposal ID."}}},
 	"cto_new":      {desc: "Start a new conversation for the active harness."},
 	"settings_change": {
-		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite, onboarding, or stop processes (process_stop: TERM then KILL, no undo).",
+		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite, onboarding, or stop processes (process_stop: TERM then KILL, no undo; never a live Claude or agent-net session).",
 		fields: map[string]ctoField{
 			"method":              {typ: "string", enum: strings.Fields(protocol.CTOOperatorReads + " " + protocol.CTOOperatorChanges)},
 			"arguments":           {typ: "object", desc: "Arguments for the owner operation."},

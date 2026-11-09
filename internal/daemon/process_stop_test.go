@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -151,6 +152,8 @@ func processStopDaemon(g *signalGuard) *Daemon {
 		cfg: Config{
 			NodeID: "n_local", Hostname: "localhost-test",
 			testProcessSignal: g.signal, testProcessStopGrace: 300 * time.Millisecond,
+			// No roster: a Claude background process is refused, as with a missing roster.
+			claudeRosterPath: os.DevNull,
 		},
 		log:      log.New(io.Discard, "", 0),
 		sessions: map[string]*localSession{},
@@ -444,6 +447,7 @@ func TestCTOProcessStopRelaysToTheMachineAndAuditsWithoutUndo(t *testing.T) {
 	a := startWorkerNode(t, g, shortSet, nil)
 	b := startWorkerNode(t, g, shortSet, func(c *Config) {
 		c.testProcessSignal, c.testProcessStopGrace = guard.signal, 300*time.Millisecond
+		c.claudeRosterPath = os.DevNull
 	})
 	if err := a.d.registerCTOSession(context.Background()); err != nil {
 		t.Fatal(err)
@@ -489,6 +493,7 @@ func TestCTOProcessStopOnThisMachineAndByHostname(t *testing.T) {
 	guard := newSignalGuard(s)
 	a := startWorkerNode(t, g, shortSet, func(c *Config) {
 		c.testProcessSignal, c.testProcessStopGrace = guard.signal, 300*time.Millisecond
+		c.claudeRosterPath = os.DevNull
 	})
 	if err := a.d.registerCTOSession(context.Background()); err != nil {
 		t.Fatal(err)
@@ -551,4 +556,267 @@ func TestProcessStopSignalsForRealWithoutTheTestHook(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	waitExited(t, s)
+}
+
+// ---- Claude Code background sessions (the roster, process_stop_claude.go) ----
+
+// writeClaudeRoster writes a roster file in a temp folder, in the shape the
+// Claude supervisor uses, and returns its path.
+func writeClaudeRoster(t *testing.T, supervisor int, updated time.Time, workers map[string]any) string {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"supervisorPid": supervisor, "updatedAt": updated.UnixMilli(), "workers": workers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "roster.json")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// startNamedThrowaway starts a sleeping child whose command line reads as name,
+// such as "claude bg-spare". Only the command line differs from startThrowaway.
+func startNamedThrowaway(t *testing.T, name string) *throwaway {
+	t.Helper()
+	cmd := exec.Command("sleep", "300")
+	cmd.Args[0] = name
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	s := &throwaway{cmd: cmd, pid: cmd.Process.Pid, done: make(chan struct{})}
+	go func() {
+		cmd.Wait()
+		close(s.done)
+	}()
+	t.Cleanup(func() {
+		cmd.Process.Kill()
+		select {
+		case <-s.done:
+		case <-time.After(5 * time.Second):
+			t.Errorf("throwaway process %d did not exit", s.pid)
+		}
+	})
+	return s
+}
+
+// startParentWithChild starts a shell that starts one sleeping child, as a
+// background host starts a session's processes. It returns the shell and the
+// child's process ID. The child's output goes to /dev/null, so it does not
+// hold the shell's pipe open.
+func startParentWithChild(t *testing.T) (*throwaway, int) {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", "sleep 300 >/dev/null 2>&1 & echo $!; wait")
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	r := bufio.NewReader(out)
+	line, err := r.ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil {
+		t.Fatalf("child pid %q: %v", line, err)
+	}
+	s := &throwaway{cmd: cmd, pid: cmd.Process.Pid, done: make(chan struct{})}
+	go func() {
+		io.Copy(io.Discard, r)
+		cmd.Wait()
+		close(s.done)
+	}()
+	t.Cleanup(func() {
+		syscall.Kill(child, syscall.SIGKILL) // the test's own child; the shell does not end it
+		cmd.Process.Kill()
+		select {
+		case <-s.done:
+		case <-time.After(5 * time.Second):
+			t.Errorf("throwaway shell %d did not exit", s.pid)
+		}
+	})
+	return s, child
+}
+
+func TestProcessStopRefusesARosterSessionAndItsSessionProcess(t *testing.T) {
+	host := startThrowaway(t, false)    // stands for the background host (pty host)
+	session := startThrowaway(t, false) // stands for the session process
+	plain := startThrowaway(t, false)
+	g := newSignalGuard(host, session, plain)
+	d := processStopDaemon(g)
+	d.cfg.claudeRosterPath = writeClaudeRoster(t, 0, time.Now(), map[string]any{
+		"ab12cd34": map[string]any{"pid": host.pid, "replPid": session.pid, "cwd": "/work/finget", "sessionId": "sess-1"},
+	})
+
+	got := stopLocal(t, d, host.pid, session.pid, plain.pid)
+	g.check(t)
+	for _, p := range got[:2] {
+		if p.Outcome != protocol.ProcessRefused {
+			t.Fatalf("a live Claude session must be refused: %+v", p)
+		}
+		if !strings.Contains(p.Reason, "ab12cd34") || !strings.Contains(p.Reason, "/work/finget") {
+			t.Errorf("the reason must name the session (short id and cwd): %q", p.Reason)
+		}
+	}
+	if got[2].Outcome != protocol.ProcessStoppedTerm {
+		t.Errorf("an ordinary process is stopped: %+v", got[2])
+	}
+	waitExited(t, plain)
+	time.Sleep(100 * time.Millisecond)
+	if host.exited() || session.exited() {
+		t.Fatal("a refused Claude process was stopped")
+	}
+	if sent := g.log(); len(sent) != 1 || sent[0] != fmt.Sprintf("%d:%d", plain.pid, syscall.SIGTERM) {
+		t.Errorf("only the ordinary process may be signalled, sent %v", sent)
+	}
+}
+
+func TestProcessStopRefusesTheClaudeSupervisor(t *testing.T) {
+	supervisor := startThrowaway(t, false)
+	g := newSignalGuard(supervisor)
+	d := processStopDaemon(g)
+	d.cfg.claudeRosterPath = writeClaudeRoster(t, supervisor.pid, time.Now(), map[string]any{})
+
+	got := stopLocal(t, d, supervisor.pid)[0]
+	g.check(t)
+	if got.Outcome != protocol.ProcessRefused || !strings.Contains(got.Reason, "Claude supervisor") {
+		t.Fatalf("the Claude supervisor must be refused: %+v", got)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if supervisor.exited() || len(g.log()) != 0 {
+		t.Fatalf("the supervisor was signalled: %v", g.log())
+	}
+}
+
+func TestProcessStopRefusesADescendantOfAPtyHost(t *testing.T) {
+	host, child := startParentWithChild(t)
+	g := newSignalGuard(host)
+	g.allow(&throwaway{pid: child})
+	d := processStopDaemon(g)
+	d.cfg.claudeRosterPath = writeClaudeRoster(t, 0, time.Now(), map[string]any{
+		"ef56gh78": map[string]any{"pid": host.pid, "replPid": 0, "cwd": "/work/slitherswap", "sessionId": "sess-2"},
+	})
+
+	got := stopLocal(t, d, child)[0]
+	g.check(t)
+	if got.Outcome != protocol.ProcessRefused {
+		t.Fatalf("a process inside a live session must be refused: %+v", got)
+	}
+	if !strings.Contains(got.Reason, "ef56gh78") || !strings.Contains(got.Reason, "/work/slitherswap") {
+		t.Errorf("the reason must name the session (short id and cwd): %q", got.Reason)
+	}
+	if got.ParentPID != host.pid {
+		t.Errorf("the refused child reports its parent %d, want the host %d", got.ParentPID, host.pid)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if len(g.log()) != 0 {
+		t.Fatalf("a refused descendant was signalled: %v", g.log())
+	}
+	if err := syscall.Kill(child, 0); err != nil {
+		t.Fatalf("the child must still run: %v", err)
+	}
+}
+
+func TestProcessStopRefusesEveryClaudeBackgroundProcessWhenTheRosterIsNotFresh(t *testing.T) {
+	cases := map[string]string{
+		"a stale roster":   writeClaudeRoster(t, 0, time.Now().Add(-5*time.Minute), map[string]any{}),
+		"a missing roster": filepath.Join(t.TempDir(), "no-roster.json"),
+	}
+	for name, path := range cases {
+		t.Run(name, func(t *testing.T) {
+			bg := startNamedThrowaway(t, "claude bg-spare")
+			daemonProc := startNamedThrowaway(t, "claude daemon")
+			g := newSignalGuard(bg, daemonProc)
+			d := processStopDaemon(g)
+			d.cfg.claudeRosterPath = path
+
+			got := stopLocal(t, d, bg.pid, daemonProc.pid)
+			g.check(t)
+			for _, p := range got {
+				if p.Outcome != protocol.ProcessRefused || !strings.Contains(p.Reason, "Claude roster not fresh; cannot tell live sessions") {
+					t.Errorf("pid %d must be refused for the roster: %+v", p.PID, p)
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+			if bg.exited() || daemonProc.exited() || len(g.log()) != 0 {
+				t.Fatalf("a Claude background process was signalled: %v", g.log())
+			}
+		})
+	}
+}
+
+func TestProcessStopStillStopsANonClaudeOrphan(t *testing.T) {
+	cases := map[string]func(t *testing.T) string{
+		"with a stale roster": func(t *testing.T) string {
+			return writeClaudeRoster(t, 0, time.Now().Add(-5*time.Minute), map[string]any{})
+		},
+		"with a fresh roster of other sessions": func(t *testing.T) string {
+			live := startThrowaway(t, false)
+			return writeClaudeRoster(t, 0, time.Now(), map[string]any{
+				"ij90kl12": map[string]any{"pid": live.pid, "replPid": 0, "cwd": "/work/other", "sessionId": "sess-3"},
+			})
+		},
+	}
+	for name, roster := range cases {
+		t.Run(name, func(t *testing.T) {
+			orphan := startThrowaway(t, false)
+			g := newSignalGuard(orphan)
+			d := processStopDaemon(g)
+			d.cfg.claudeRosterPath = roster(t)
+
+			got := stopLocal(t, d, orphan.pid)[0]
+			g.check(t)
+			if got.Outcome != protocol.ProcessStoppedTerm {
+				t.Fatalf("a non-Claude orphan must still be stopped: %+v", got)
+			}
+			waitExited(t, orphan)
+		})
+	}
+}
+
+func TestClaudeRosterFreshnessIsSixtySeconds(t *testing.T) {
+	me := os.Getuid()
+	now := time.Now()
+	cases := []struct {
+		name    string
+		updated time.Time
+		fresh   bool
+	}{
+		{"written five seconds ago", now.Add(-5 * time.Second), true},
+		{"written a minute and a second ago", now.Add(-61 * time.Second), false},
+		{"dated two minutes ahead", now.Add(2 * time.Minute), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := processStopDaemon(newSignalGuard())
+			d.cfg.claudeRosterPath = writeClaudeRoster(t, 0, tc.updated, map[string]any{})
+			got := d.processRefusal(procView{PID: 4242, UID: me, EUID: me, Command: "claude bg-spare"})
+			refused := strings.Contains(got, "Claude roster not fresh")
+			if refused == tc.fresh {
+				t.Errorf("fresh=%v: refusal %q", tc.fresh, got)
+			}
+		})
+	}
+}
+
+func TestProcessRefusalForClaudeCommandLines(t *testing.T) {
+	me := os.Getuid()
+	d := processStopDaemon(newSignalGuard())
+	d.cfg.claudeRosterPath = os.DevNull
+	cases := map[string]bool{
+		"claude bg-spare":                        true,
+		"/home/x/.local/bin/claude daemon start": true,
+		"claude":                                 false,
+		"sleep 300":                              false,
+		"/usr/bin/python3 claude_helper.py bg-run": false,
+	}
+	for command, refused := range cases {
+		got := d.processRefusal(procView{PID: 4242, UID: me, EUID: me, Command: command})
+		if refused != strings.Contains(got, "Claude roster not fresh") {
+			t.Errorf("%q: refusal %q", command, got)
+		}
+	}
 }
