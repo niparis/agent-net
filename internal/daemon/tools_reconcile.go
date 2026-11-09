@@ -38,7 +38,7 @@ func (d *Daemon) recordSkill(t protocol.ToolTarget, dest string, owned bool) err
 	for i := range entries {
 		if entries[i].Path == dest {
 			if entries[i].Item == t.Revision.Item && entries[i].Owned {
-				if info, err := os.Lstat(dest); err == nil && info.IsDir() {
+				if info, err := os.Lstat(dest); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
 					owned = true
 				}
 			}
@@ -85,9 +85,17 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 	if t.Target.Conflict != "" && t.Target.Conflict != "destination already exists and is not owned" && t.Target.Conflict != "machine offline; destination cannot be inspected" {
 		return fail("conflict", "plan target requires inspection")
 	}
+	kind := itemKind(t.Revision.Item)
+	entry := protocol.BundleEntryName(kind, t.Name)
 	root := d.cfg.InventoryHome
 	rel := globalSkillRel(t.Target.Harness)
-	if t.Target.Root != "" {
+	if protocol.IsFileKind(kind) {
+		// A prompt or an agent has one root, named by the plan.
+		if !fileKindRoot(kind, t.Target.Root) || t.Target.Harness != "claude" {
+			return fail("conflict", "unsupported skill root")
+		}
+		rel = t.Target.Root
+	} else if t.Target.Root != "" {
 		rel = t.Target.Root
 		if rel != ".claude/skills" && rel != ".agents/skills" && rel != ".gemini/config/skills" {
 			return fail("conflict", "unsupported skill root")
@@ -102,10 +110,10 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 	if rel == "" {
 		return fail("manual", "unsupported harness")
 	}
-	if t.Target.Destination != "" && filepath.Clean(t.Target.Destination) != filepath.Join(root, rel, t.Name) {
+	if t.Target.Destination != "" && filepath.Clean(t.Target.Destination) != filepath.Join(root, rel, entry) {
 		return fail("conflict", "planned destination differs")
 	}
-	if t.Target.Root != "" {
+	if t.Target.Root != "" && !protocol.IsFileKind(kind) {
 		for _, other := range []string{".codex/skills", ".config/opencode/skills", ".pi/agent/skills"} {
 			if _, err := os.Lstat(filepath.Join(root, other, t.Name)); err == nil || !os.IsNotExist(err) {
 				return fail("conflict", "another skill source may shadow the planned path")
@@ -141,7 +149,9 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 	if root == "" || !filepath.IsAbs(root) || d.cfg.StateDir == "" {
 		return fail("failed", "local directories unavailable")
 	}
-	manifestDest := filepath.Join(root, rel, t.Name)
+	kind := itemKind(t.Revision.Item)
+	entry := protocol.BundleEntryName(kind, t.Name)
+	manifestDest := filepath.Join(root, rel, entry)
 	if reason := d.skillConflict(manifestDest); reason != "" {
 		return fail("conflict", reason)
 	}
@@ -160,7 +170,7 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 		return fail("conflict", "skill root cannot be opened safely")
 	}
 	defer cur.Close()
-	dest := skillPath{cur, t.Name}
+	dest := skillPath{cur, entry}
 	if _, err = dest.lstat(); err == nil {
 		hash, e := skillHashAt(dest)
 		if e != nil || hash != t.Revision.Version {
@@ -199,7 +209,7 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 		retain = true
 		return fail("failed", "skill operation interrupted")
 	}
-	if err = renameSkillAt(stage, dest, true); err != nil {
+	if err = installStaged(kind, stage, dest, entry); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return fail("conflict", "destination appeared during copy")
 		}
@@ -331,7 +341,7 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 							if t.Target.Root != "" {
 								root = t.Target.Root
 							}
-							t.Target.Destination = filepath.Join(t.Target.Checkout, root, t.Name)
+							t.Target.Destination = filepath.Join(t.Target.Checkout, root, protocol.BundleEntryName(itemKind(t.Revision.Item), t.Name))
 						}
 						result = d.copyProjectSkillIn(t, b.Data, worktrees[t.Target.Project], true)
 					} else {

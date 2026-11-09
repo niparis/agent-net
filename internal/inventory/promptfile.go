@@ -110,15 +110,21 @@ func PackFile(path string) ([]byte, error) { return PackNamedFile(path, filepath
 
 // PackNamedFile packs one regular file as a bundle that holds it under name.
 func PackNamedFile(path, name string) ([]byte, error) {
-	if name == "" || name != filepath.Base(name) {
-		return nil, errors.New("invalid file name")
-	}
 	root, err := os.OpenRoot(filepath.Dir(path))
 	if err != nil {
 		return nil, err
 	}
 	defer root.Close()
-	info, err := root.Lstat(filepath.Base(path))
+	return PackFileRoot(root, filepath.Base(path), name)
+}
+
+// PackFileRoot packs the regular file rel of an opened folder as a bundle that
+// holds it under name.
+func PackFileRoot(root *os.Root, rel, name string) ([]byte, error) {
+	if name == "" || name != filepath.Base(name) {
+		return nil, errors.New("invalid file name")
+	}
+	info, err := root.Lstat(rel)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +134,7 @@ func PackNamedFile(path, name string) ([]byte, error) {
 	if info.Size() > MaxBundleBytes {
 		return nil, errors.New("skill exceeds bundle limit")
 	}
-	data, _, err := readBundleFile(root, filepath.Base(path))
+	data, _, err := readBundleFile(root, rel)
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +150,34 @@ func PackNamedFile(path, name string) ([]byte, error) {
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// FileBundleHashRoot is the strict hash of the regular file rel of an opened
+// folder, as a bundle of one file named after it. It equals SkillHash of a
+// folder that holds only that file.
+func FileBundleHashRoot(root *os.Root, rel string) (string, error) {
+	data, info, err := readBundleFile(root, rel)
+	if err != nil {
+		return "", err
+	}
+	return FileBundleHash(filepath.Base(rel), data, byte(info.Mode()&0111), false), nil
+}
+
+// EntryHash is the strict hash of a skill folder, or of a prompt or agent file.
+func EntryHash(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return SkillHash(path)
+	}
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	return FileBundleHashRoot(root, filepath.Base(path))
 }
 
 // ObserveFile reads one prompt or agent file again and returns its strict hash

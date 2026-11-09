@@ -331,6 +331,9 @@ type ToolSkillDetails struct {
 }
 
 type ToolPlanProbe struct {
+	// Kind is set for a prompt or an agent, which are files. It is empty for a
+	// skill, so a probe of a skill is the same as it was before.
+	Kind    string `json:"kind,omitempty"`
 	Root    string `json:"root,omitempty"`
 	Name    string `json:"name"`
 	Harness string `json:"harness"`

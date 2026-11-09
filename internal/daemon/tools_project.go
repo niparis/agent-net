@@ -96,7 +96,10 @@ func (d *Daemon) skillFolderConflict(checkout string, worktrees []string, known 
 	return ""
 }
 
-func projectExcludePattern(rel string) string {
+// projectExcludePattern is the exclude line for one managed path. A skill is a
+// folder and its line ends with a slash. A prompt or an agent is a file, and a
+// line with a trailing slash would not match it.
+func projectExcludePattern(rel string, dir bool) string {
 	var b strings.Builder
 	b.WriteByte('/')
 	for _, r := range filepath.ToSlash(rel) {
@@ -106,7 +109,9 @@ func projectExcludePattern(rel string) string {
 		}
 		b.WriteRune(r)
 	}
-	b.WriteByte('/')
+	if dir {
+		b.WriteByte('/')
+	}
 	return b.String()
 }
 
@@ -143,34 +148,45 @@ func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktr
 	if t.Name == "" || t.Name == "." || t.Name == ".." || filepath.Base(t.Name) != t.Name || strings.ContainsAny(t.Name, "/\\\x00\r\n") {
 		return fail("conflict", "invalid skill name")
 	}
+	kind := itemKind(t.Revision.Item)
+	fileKind := protocol.IsFileKind(kind)
+	entry := protocol.BundleEntryName(kind, t.Name)
 	root := ""
-	switch t.Target.Harness {
-	case "claude":
-		root = ".claude/skills"
-	case "codex":
-		root = ".agents/skills"
-	case "opencode":
-		root = ".opencode/skills"
-	case "pi":
-		root = ".pi/skills"
-	default:
-		return fail("manual", "unsupported harness")
-	}
-	if t.Target.Root != "" {
-		if t.Target.Root != ".claude/skills" && t.Target.Root != ".agents/skills" {
+	if fileKind {
+		// A prompt or an agent has one root, named by the plan.
+		if t.Target.Harness != "claude" || !fileKindRoot(kind, t.Target.Root) {
 			return fail("conflict", "unsupported skill root")
 		}
 		root = t.Target.Root
+	} else {
+		switch t.Target.Harness {
+		case "claude":
+			root = ".claude/skills"
+		case "codex":
+			root = ".agents/skills"
+		case "opencode":
+			root = ".opencode/skills"
+		case "pi":
+			root = ".pi/skills"
+		default:
+			return fail("manual", "unsupported harness")
+		}
+		if t.Target.Root != "" {
+			if t.Target.Root != ".claude/skills" && t.Target.Root != ".agents/skills" {
+				return fail("conflict", "unsupported skill root")
+			}
+			root = t.Target.Root
+		}
 	}
 	if t.Target.Destination != "" {
-		if filepath.Base(t.Target.Destination) != t.Name {
+		if filepath.Base(t.Target.Destination) != entry {
 			return fail("conflict", "planned destination differs")
 		}
 		planned, err := filepath.Rel(t.Target.Checkout, filepath.Dir(t.Target.Destination))
 		if err != nil {
 			return fail("conflict", "planned destination differs")
 		}
-		allowed := planned == root || (t.Target.Harness == "opencode" && (planned == ".claude/skills" || planned == ".agents/skills")) || (t.Target.Harness == "pi" && planned == ".agents/skills")
+		allowed := planned == root || (!fileKind && t.Target.Harness == "opencode" && (planned == ".claude/skills" || planned == ".agents/skills")) || (!fileKind && t.Target.Harness == "pi" && planned == ".agents/skills")
 		if !allowed {
 			return fail("conflict", "planned destination differs")
 		}
@@ -222,7 +238,7 @@ func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktr
 		return fail("conflict", "Git worktree directory is unsafe")
 	}
 	defer gitRoot.Close()
-	rel := filepath.Join(root, t.Name)
+	rel := filepath.Join(root, entry)
 	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "project-copy", Target: filepath.Join(checkout, rel), AfterHash: t.Revision.Version, Item: t.Revision.Item, Revision: t.Revision.Revision, Step: "prepared"})
 	if err != nil {
 		return fail("failed", "cannot write skill journal")
@@ -259,11 +275,13 @@ func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktr
 		if os.IsNotExist(e) {
 			break
 		}
-		if e != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		last := cur == filepath.Join(checkout, rel)
+		wantFile := last && fileKind
+		if e != nil || info.Mode()&os.ModeSymlink != 0 || (wantFile && !info.Mode().IsRegular()) || (!wantFile && !info.IsDir()) {
 			return fail("conflict", "destination contains a symlink or non-directory")
 		}
-		if cur == filepath.Join(checkout, rel) {
-			h, e := inventory.SkillHash(cur)
+		if last {
+			h, e := inventory.EntryHash(cur)
 			if e != nil || h != t.Revision.Version {
 				return fail("conflict", "destination differs")
 			}
@@ -305,7 +323,7 @@ func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktr
 		return fail("pending", "cannot lock Git exclude")
 	}
 	defer unlock()
-	pattern := projectExcludePattern(rel)
+	pattern := projectExcludePattern(rel, !fileKind)
 	before, err := readSkillExclude(safeExclude)
 	if err != nil {
 		return fail("pending", "cannot read Git exclude")
@@ -318,6 +336,10 @@ func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktr
 		}
 	}
 	checkFiles := func(excludes string) error {
+		if fileKind {
+			_, e := projectGitConfig(checkout, excludes, "check-ignore", "--no-index", "-q", "--", rel)
+			return e
+		}
 		return filepath.WalkDir(stage, func(path string, entry fs.DirEntry, e error) error {
 			if e != nil {
 				return e
@@ -452,9 +474,9 @@ func (d *Daemon) recordProjectExclude(path, exclude, line string, owned bool) er
 // sources that would make a skill visible more than once.
 func projectTargets(targets []protocol.ToolTarget) map[string]string {
 	type group struct {
-		item, checkout, name string
-		harnesses            []string
-		targets              []protocol.ToolTarget
+		item, checkout, name, kind string
+		harnesses                  []string
+		targets                    []protocol.ToolTarget
 	}
 	groups := map[string]*group{}
 	for _, t := range targets {
@@ -464,7 +486,7 @@ func projectTargets(targets []protocol.ToolTarget) map[string]string {
 		key := t.Revision.Item + "\x00" + t.Target.Checkout
 		g := groups[key]
 		if g == nil {
-			g = &group{item: t.Revision.Item, checkout: t.Target.Checkout, name: t.Name}
+			g = &group{item: t.Revision.Item, checkout: t.Target.Checkout, name: t.Name, kind: itemKind(t.Revision.Item)}
 			groups[key] = g
 		}
 		g.harnesses = append(g.harnesses, t.Target.Harness)
@@ -472,6 +494,20 @@ func projectTargets(targets []protocol.ToolTarget) map[string]string {
 	}
 	conflicts := map[string]string{}
 	for key, g := range groups {
+		if protocol.IsFileKind(g.kind) {
+			// A prompt or an agent has one root and no compatibility sources.
+			for _, t := range g.targets {
+				if t.Target.Harness != "claude" || !fileKindRoot(g.kind, t.Target.Root) {
+					conflicts[key] = "unsupported skill root"
+					break
+				}
+				if t.Target.Destination != "" && filepath.Clean(t.Target.Destination) != filepath.Join(g.checkout, t.Target.Root, protocol.BundleEntryName(g.kind, g.name)) {
+					conflicts[key] = "planned destination differs"
+					break
+				}
+			}
+			continue
+		}
 		for _, t := range g.targets {
 			root, conflict := inventory.ProjectSkillRoot(t.Target.Harness, g.harnesses)
 			if t.Target.Root != "" {

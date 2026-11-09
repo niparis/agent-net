@@ -16,12 +16,20 @@ import (
 // undoCopyDestination returns the root and destination path of a copy that an
 // undo reverses, or a conflict reason.
 func (d *Daemon) undoCopyDestination(t protocol.ToolTarget, targets []protocol.ToolTarget) (root, dest, reason string) {
+	kind := itemKind(t.Revision.Item)
+	entry := protocol.BundleEntryName(kind, t.Name)
+	fileKind := protocol.IsFileKind(kind)
 	if t.Name == "" || t.Name == "." || t.Name == ".." || filepath.Base(t.Name) != t.Name || strings.ContainsAny(t.Name, "/\\\x00\r\n") {
 		return "", "", "invalid skill name"
 	}
 	if t.Target.Checkout == "" {
 		rel := globalSkillRel(t.Target.Harness)
-		if t.Target.Root != "" {
+		if fileKind {
+			if t.Target.Harness != "claude" || !fileKindRoot(kind, t.Target.Root) {
+				return "", "", "unsupported skill root"
+			}
+			rel = t.Target.Root
+		} else if t.Target.Root != "" {
 			rel = t.Target.Root
 			if rel != ".claude/skills" && rel != ".agents/skills" && rel != ".gemini/config/skills" {
 				return "", "", "unsupported skill root"
@@ -30,7 +38,7 @@ func (d *Daemon) undoCopyDestination(t protocol.ToolTarget, targets []protocol.T
 		if rel == "" || !filepath.IsAbs(d.cfg.InventoryHome) {
 			return "", "", "unsupported harness"
 		}
-		dest = filepath.Join(d.cfg.InventoryHome, rel, t.Name)
+		dest = filepath.Join(d.cfg.InventoryHome, rel, entry)
 		if t.Target.Destination != "" && filepath.Clean(t.Target.Destination) != dest {
 			return "", "", "planned destination differs"
 		}
@@ -49,11 +57,20 @@ func (d *Daemon) undoCopyDestination(t protocol.ToolTarget, targets []protocol.T
 			}
 		}
 		skillRoot, _ := inventory.ProjectSkillRoot(t.Target.Harness, names)
-		dest = filepath.Join(checkout, skillRoot, t.Name)
+		if fileKind {
+			skillRoot = t.Target.Root
+		}
+		dest = filepath.Join(checkout, skillRoot, entry)
 	}
 	rel, err := filepath.Rel(checkout, filepath.Dir(dest))
 	allowed := map[string]bool{".claude/skills": true, ".agents/skills": true, ".opencode/skills": true, ".pi/skills": true}
-	if err != nil || filepath.Base(dest) != t.Name || !allowed[filepath.ToSlash(rel)] {
+	if fileKind {
+		allowed = map[string]bool{}
+		for _, r := range protocol.FileKindRoots(kind) {
+			allowed[r] = true
+		}
+	}
+	if err != nil || filepath.Base(dest) != entry || !allowed[filepath.ToSlash(rel)] {
 		return "", "", "planned destination differs"
 	}
 	return checkout, dest, ""
@@ -99,7 +116,9 @@ func (d *Daemon) undoCopySkill(t protocol.ToolTarget, targets []protocol.ToolTar
 		return fail("conflict", "destination path is unsafe")
 	}
 	defer parent.Close()
-	anchored := skillPath{parent, t.Name}
+	kind := itemKind(t.Revision.Item)
+	fileKind := protocol.IsFileKind(kind)
+	anchored := skillPath{parent, protocol.BundleEntryName(kind, t.Name)}
 	info, err := anchored.lstat()
 	if os.IsNotExist(err) {
 		if err = d.forgetSkill(dest); err != nil {
@@ -107,7 +126,7 @@ func (d *Daemon) undoCopySkill(t protocol.ToolTarget, targets []protocol.ToolTar
 		}
 		return fail("applied", "")
 	}
-	if err != nil || !info.IsDir() {
+	if err != nil || (fileKind && !info.Mode().IsRegular()) || (!fileKind && !info.IsDir()) {
 		return fail("conflict", "changed since apply")
 	}
 	owned, err := d.projectSkillOwned(dest, t.Revision.Item)
@@ -117,7 +136,7 @@ func (d *Daemon) undoCopySkill(t protocol.ToolTarget, targets []protocol.ToolTar
 	if !owned {
 		return fail("conflict", "not installed by agent-net")
 	}
-	if skillTreeHasSymlinkAt(anchored) {
+	if !fileKind && skillTreeHasSymlinkAt(anchored) {
 		return fail("conflict", "changed since apply")
 	}
 	if top, e := projectGit(filepath.Dir(dest), "rev-parse", "--show-toplevel"); e == nil {
@@ -148,7 +167,9 @@ func (d *Daemon) undoRemoveSkill(t protocol.ToolTarget) protocol.ToolResult {
 	r := protocol.ToolResult{Item: t.Revision.Item, Revision: t.Revision.Revision, Index: t.Index}
 	fail := func(state, reason string) protocol.ToolResult { r.State, r.Reason = state, reason; return r }
 	source := filepath.Clean(t.Target.Source)
-	if !filepath.IsAbs(source) || t.Name == "" || filepath.Base(source) != t.Name || t.Name == "." || t.Name == ".." {
+	kind := itemKind(t.Revision.Item)
+	entry := protocol.BundleEntryName(kind, t.Name)
+	if !filepath.IsAbs(source) || t.Name == "" || filepath.Base(source) != entry || t.Name == "." || t.Name == ".." {
 		return fail("conflict", "invalid source")
 	}
 	if reason := d.skillConflict(source); reason != "" {
@@ -171,7 +192,12 @@ func (d *Daemon) undoRemoveSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if backup == "" {
 		return fail("failed", "no local backup matches the removed content")
 	}
-	bundle, err := inventory.PackSkill(backup)
+	var bundle []byte
+	if protocol.IsFileKind(kind) {
+		bundle, err = inventory.PackNamedFile(backup, entry)
+	} else {
+		bundle, err = inventory.PackSkill(backup)
+	}
 	if err != nil {
 		return fail("failed", "cannot read local backup")
 	}
@@ -215,7 +241,7 @@ func (d *Daemon) undoRemoveSkill(t protocol.ToolTarget) protocol.ToolResult {
 		retain = true
 		return fail("failed", "skill operation interrupted")
 	}
-	if err = renameSkillAt(stage, skillPath{parent, t.Name}, true); err != nil {
+	if err = installStaged(kind, stage, skillPath{parent, entry}, entry); err != nil {
 		if os.IsExist(err) {
 			return fail("conflict", "changed since apply")
 		}
