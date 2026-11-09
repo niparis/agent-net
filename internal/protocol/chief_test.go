@@ -3,6 +3,7 @@ package protocol
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // Each sort result needs what it acts on: a target for merge, a session for
@@ -65,5 +66,37 @@ func TestAskMarkRequestValidate(t *testing.T) {
 		if err := m.Validate(); err == nil {
 			t.Errorf("%+v was accepted", m)
 		}
+	}
+}
+
+// The chief's quota verdict reads the picker's quota data: a used-up window of
+// the chief's provider says so and names the reset.
+func TestChiefQuotaDown(t *testing.T) {
+	q := &Quotas{GeneratedAt: 1, Providers: []QuotaProvider{{Provider: "codex",
+		Windows: []QuotaWindow{{ID: "weekly", Label: "weekly", PercentUsed: 100, ResetsAt: time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC).Unix()}}}}}
+	got := ChiefQuotaDown(q, "codex", "")
+	if got != "codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC)" {
+		t.Fatalf("down = %q", got)
+	}
+	q.Providers[0].Windows[0].PercentUsed = 40
+	if got := ChiefQuotaDown(q, "codex", ""); got != "" {
+		t.Fatalf("down = %q with quota left, want none", got)
+	}
+	q.Providers[0].Windows[0].PercentUsed = 100
+	q.Providers[0].Stale = true
+	if got := ChiefQuotaDown(q, "codex", ""); got != "" {
+		t.Fatalf("down = %q for a stale reading, want none", got)
+	}
+	if got := ChiefQuotaDown(nil, "codex", ""); got != "" {
+		t.Fatalf("down = %q with no reading, want none", got)
+	}
+}
+
+func TestChiefOfflineLineAndSilentText(t *testing.T) {
+	if got := ChiefOfflineLine("no sorts for 10 minutes"); got != "chief of staff offline: no sorts for 10 minutes" {
+		t.Fatalf("line = %q", got)
+	}
+	if got := ChiefSilentText(ChiefSilentAfter); got != "no sorts for 10 minutes" {
+		t.Fatalf("text = %q", got)
 	}
 }

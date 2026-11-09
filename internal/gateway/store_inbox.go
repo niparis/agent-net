@@ -109,9 +109,13 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	if item.NextWho != "" {
 		routeFixed = 1
 	}
-	nextWho, err := chiefRoute(db, item)
+	nextWho, skipped, err := s.chiefRoute(db, item)
 	if err != nil {
 		return item, err
+	}
+	if skipped {
+		// The chief is registered but cannot work: the ask was sent past it.
+		routeFixed = 1
 	}
 	if len(item.Options) > 4 {
 		return item, reject("too many options")

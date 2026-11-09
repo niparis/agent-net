@@ -198,6 +198,9 @@ func (m Model) deskChiefText() string {
 	case m.chief.SessionID == "":
 		return sDim.Render("no chief of staff")
 	}
+	if m.chief.Down != "" {
+		return sBad.Render(protocol.ChiefOfflineLine(sanitize(m.chief.Down)))
+	}
 	text := "chief of staff"
 	if name := sanitize(m.chief.Name); name != "" {
 		text += " " + name

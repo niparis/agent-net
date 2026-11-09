@@ -146,6 +146,25 @@ func TestDeskHandledListsChiefSorts(t *testing.T) {
 	}
 }
 
+// A chief that cannot work shows as one header line with the reason. A chief
+// that can work keeps today's header.
+func TestDeskHeaderShowsChiefOfflineReason(t *testing.T) {
+	m := deskChiefModel(t, 120, 40)
+	m.chief.Down = "codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC)"
+	line := ansi.Strip(m.deskHeaderLine(120))
+	want := "Desk · chief of staff offline: codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC) · sorted 4 asks today"
+	if !strings.HasPrefix(line, want) {
+		t.Fatalf("header = %q, want it to start with %q", line, want)
+	}
+	if strings.Contains(line, "\n") || ansi.StringWidth(line) > 120 {
+		t.Fatalf("header is not one line: %q", line)
+	}
+	m.chief.Down = ""
+	if got := ansi.Strip(m.deskHeaderLine(120)); !strings.HasPrefix(got, "Desk · chief of staff agent-net 2 on · sorted 4 asks today") {
+		t.Fatalf("a working chief changed the header: %q", got)
+	}
+}
+
 // The digest counts what happened while the owner was away an hour or more,
 // and x hides it. A short absence shows no digest.
 func TestDeskDigestAfterAnHourAwayHidesWithX(t *testing.T) {

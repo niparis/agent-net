@@ -28,6 +28,8 @@ type consoleOperator struct {
 	reads   map[string]int
 	threads map[string][]protocol.Message
 	// The CTO panel reads the settings, the timeline and the open proposals.
+	// chiefDown is the reason the fake chief cannot work ("" when it can).
+	chiefDown  string
 	cto        protocol.CTOSettings
 	ctoEvents  protocol.CTOEvents
 	proposals  []protocol.CTOProposal
@@ -123,6 +125,10 @@ func (f *consoleOperator) Call(ctx context.Context, method string, params any) (
 	case protocol.OpChangesOwnerFind:
 		args, _ := params.(protocol.ChangesFindArgs)
 		return json.Marshal(protocol.ChangesFindResult{Items: consoleChanges(args, now)})
+	case protocol.OpChiefGet:
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return json.Marshal(protocol.ChiefStatus{SessionID: "s_chief", Name: "chief of staff", Online: true, Down: f.chiefDown})
 	case protocol.OpChiefSorts:
 		return json.Marshal(protocol.ChiefSortsResult{Sorts: []protocol.ChiefSort{{AskSort: protocol.AskSort{Ask: "i_old", At: now.Add(-time.Hour), Result: "close", Reason: "answered by the lead"}, Question: "handled question text"}}})
 	case protocol.OpDeskLog:
@@ -307,6 +313,16 @@ func TestDeskShowsInFlightHandledAndLog(t *testing.T) {
 	mustContain(t, "desk", body, "In flight", "Push updates part 1", "ch_flight1", "merger-node", "Handled for you", "handled question text", "answered by the lead", "Log", "log line text", "release")
 	// The pipeline strip has a class per step state.
 	mustContain(t, "pipeline", body, `class="pipe"`, `<i class="p">`, `<i class="r">`)
+}
+
+// A chief that cannot work shows as one line above the asks, with the reason.
+// A chief that can work shows no line.
+func TestDeskShowsChiefOfflineLine(t *testing.T) {
+	f := newConsoleOperator()
+	mustNotContain(t, "desk with a working chief", page1(t, f, "/"), "chief of staff offline")
+	f.chiefDown = "codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC)"
+	body := page1(t, f, "/")
+	mustContain(t, "desk", body, `class="chiefline"`, "chief of staff offline: codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC)")
 }
 
 func TestAnswerPostsThroughOperatorAndAskDisappears(t *testing.T) {

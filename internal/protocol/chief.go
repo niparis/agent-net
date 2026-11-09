@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,17 @@ const (
 // ChiefTimeout is how long the chief has to sort an ask before it goes to the
 // owner. It is a constant, not a setting.
 const ChiefTimeout = 15 * time.Minute
+
+// ChiefSilentAfter is how long the chief may sit on asks that were sent to it
+// with no sort and no harness activity before agent-net treats it as
+// unavailable. A model turn on a batch can take minutes, so a chief that is
+// still working is never silent. It is a constant, not a setting.
+const ChiefSilentAfter = 10 * time.Minute
+
+// ChiefRetryAfter is how long a chief that was silent stays unavailable. After
+// it, the next ask goes to the chief again as a probe, and a sort ends the
+// wait at once.
+const ChiefRetryAfter = ChiefTimeout
 
 // ChiefQuietWindow is how long asks for the chief wait so that a burst goes
 // out as one message. ChiefMaxWait sends a batch even when asks keep coming.
@@ -283,6 +295,52 @@ type ChiefStatus struct {
 	Name      string `json:"name,omitempty"`
 	Online    bool   `json:"online"`
 	Model     string `json:"model"`
+	// Down is why the chief cannot work now, in a few words, or "" when it
+	// can (or when there is no chief). The Desk shows it as
+	// "chief of staff offline: <Down>".
+	Down string `json:"down,omitempty"`
+}
+
+// ChiefOfflineLine is the one line the Desk shows when the chief cannot work.
+func ChiefOfflineLine(down string) string {
+	return "chief of staff offline: " + down
+}
+
+// ChiefQuotaDown says why the chief's provider has no quota, or "" when the
+// reading shows some left (or none is usable). harness and model are the
+// chief session's. It reads the same quota data the picker uses.
+func ChiefQuotaDown(q *Quotas, harness, model string) string {
+	providers := []string{QuotaProviderForStart(harness, model)}
+	if p := ProfileProvider(harness, model); p != "" && p != providers[0] {
+		providers = append(providers, p)
+	}
+	for _, p := range providers {
+		if p == "" {
+			continue
+		}
+		w, ok := q.ExhaustedWindowFor(p, model)
+		if !ok {
+			continue
+		}
+		out := p + " quota exhausted (" + QuotaWindowName(w) + " window"
+		if w.ResetsAt > 0 {
+			out += ", until " + time.Unix(w.ResetsAt, 0).UTC().Format("2006-01-02 15:04 UTC")
+		}
+		return out + ")"
+	}
+	return ""
+}
+
+// ChiefSilentText says how long the chief was silent, for the Desk line.
+func ChiefSilentText(d time.Duration) string {
+	if d >= time.Minute && d%time.Minute == 0 {
+		n := int(d / time.Minute)
+		if n == 1 {
+			return "no sorts for 1 minute"
+		}
+		return "no sorts for " + strconv.Itoa(n) + " minutes"
+	}
+	return "no sorts for " + strconv.Itoa(int(d/time.Second)) + " seconds"
 }
 
 // AskUndoRequest names the ask whose newest sort the owner undoes.
