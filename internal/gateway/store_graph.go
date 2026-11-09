@@ -437,6 +437,7 @@ func (s *Store) NodeSettings(node string) (protocol.NodeSettingsResult, error) {
 	out.Defaults = protocol.DefaultsForMaturity(n.Charter.Maturity)
 	out.Effective = protocol.NodeDefaults(n.Charter.Maturity, n.Settings)
 	out.Autonomy = protocol.NodeAutonomy(n.Settings)
+	out.WakeOnMessage = protocol.NodeWakeOnMessage(n.Settings)
 	return out, nil
 }
 

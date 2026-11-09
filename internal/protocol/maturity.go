@@ -66,12 +66,21 @@ const (
 	// path, relative to the session's folder, of a plan file the tick names.
 	SettingLoopMode = "loop_mode"
 	SettingLoopPlan = "loop_plan"
+	// SettingWakeOnMessage is whether an offline session is woken by a message.
+	// The default is on.
+	SettingWakeOnMessage = "wake_on_message"
 )
 
 // Autonomy values. They are rules, not display text.
 const (
 	AutonomyOff  = "off"
 	AutonomyWake = "wake"
+)
+
+// WakeOnMessage values.
+const (
+	WakeOnMessageOn  = "on"
+	WakeOnMessageOff = "off"
 )
 
 // MaturityDefaults is the set of controls a maturity level selects.
@@ -100,6 +109,8 @@ type NodeSettingsResult struct {
 	// Autonomy is the effective autonomy rule, off when it is unset. It sits
 	// beside the maturity defaults because it is not one of them.
 	Autonomy string `json:"autonomy"`
+	// WakeOnMessage is the effective wake_on_message rule, on when it is unset.
+	WakeOnMessage string `json:"wake_on_message,omitempty"`
 }
 
 // NodeSettingsGetRequest is the request of node_settings_get.
@@ -257,7 +268,7 @@ func (d MaturityDefaults) Apply(settings map[string]string) MaturityDefaults {
 
 // NodeSettingNames lists the settings an owner may override.
 func NodeSettingNames() []string {
-	return []string{SettingTestsBeforeMerge, SettingMergeAuthority, SettingWorkerSandbox, SettingJudgeConsumers, SettingDeployRule, SettingAutonomy}
+	return []string{SettingTestsBeforeMerge, SettingMergeAuthority, SettingWorkerSandbox, SettingJudgeConsumers, SettingDeployRule, SettingAutonomy, SettingWakeOnMessage}
 }
 
 // NodeAutonomy returns the node's effective autonomy rule. The default is off,
@@ -270,6 +281,18 @@ func NodeAutonomy(settings map[string]string) string {
 		return AutonomyWake
 	}
 	return AutonomyOff
+}
+
+// NodeWakeOnMessage returns the node's effective wake_on_message rule. The
+// default is on, and only off turns it off.
+func NodeWakeOnMessage(settings map[string]string) string {
+	if ValidateNodeSetting(SettingWakeOnMessage, settings[SettingWakeOnMessage]) != nil {
+		return WakeOnMessageOn
+	}
+	if settings[SettingWakeOnMessage] == WakeOnMessageOff {
+		return WakeOnMessageOff
+	}
+	return WakeOnMessageOn
 }
 
 // ValidateNodeSetting checks a setting name and value. An empty value is valid:
@@ -305,7 +328,7 @@ func ValidateNodeSetting(setting, value string) error {
 		return nil
 	}
 	var allowed []string
-	keys := map[string]string{SettingTestsBeforeMerge: "delivery.tests_before_merge", SettingMergeAuthority: "delivery.merge_authority", SettingJudgeConsumers: "charter.judge_consumers", SettingDeployRule: "delivery.deploy_rule", SettingAutonomy: "charter.autonomy_mode"}
+	keys := map[string]string{SettingTestsBeforeMerge: "delivery.tests_before_merge", SettingMergeAuthority: "delivery.merge_authority", SettingJudgeConsumers: "charter.judge_consumers", SettingDeployRule: "delivery.deploy_rule", SettingAutonomy: "charter.autonomy_mode", SettingWakeOnMessage: "charter.wake_on_message"}
 	if setting == SettingWorkerSandbox {
 		allowed = []string{WorkersSandboxed, WorkersNoNetwork, WorkersReadOnly}
 	} else if key, ok := keys[setting]; ok {

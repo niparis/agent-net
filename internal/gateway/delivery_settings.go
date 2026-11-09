@@ -16,6 +16,7 @@ var deliveryNodeKeys = map[string]string{
 	protocol.SettingJudgeConsumers:   "charter.judge_consumers",
 	protocol.SettingDeployRule:       "delivery.deploy_rule",
 	protocol.SettingAutonomy:         "charter.autonomy_mode",
+	protocol.SettingWakeOnMessage:    "charter.wake_on_message",
 	protocol.SettingLoopEvery:        "loop.every",
 	protocol.SettingLoopPrompt:       "loop.prompt",
 	protocol.SettingLoopMode:         "loop.mode",
@@ -85,7 +86,7 @@ func nodeEffectiveSettings(snap settings.Snapshot, name, maturity string, existi
 		existing = map[string]string{}
 	}
 	defaults := protocol.DefaultsForMaturity(maturity)
-	base := map[string]string{protocol.SettingTestsBeforeMerge: defaults.TestsBeforeMerge, protocol.SettingMergeAuthority: defaults.MergeAuthority, protocol.SettingJudgeConsumers: defaults.JudgeConsumers, protocol.SettingDeployRule: defaults.DeployRule, protocol.SettingAutonomy: protocol.AutonomyOff, protocol.SettingWorkerSandbox: defaults.WorkerSandbox, protocol.SettingLoopEvery: "0s", protocol.SettingLoopPrompt: "", protocol.SettingLoopMode: protocol.LoopModeAlways, protocol.SettingLoopPlan: ""}
+	base := map[string]string{protocol.SettingTestsBeforeMerge: defaults.TestsBeforeMerge, protocol.SettingMergeAuthority: defaults.MergeAuthority, protocol.SettingJudgeConsumers: defaults.JudgeConsumers, protocol.SettingDeployRule: defaults.DeployRule, protocol.SettingAutonomy: protocol.AutonomyOff, protocol.SettingWakeOnMessage: protocol.WakeOnMessageOn, protocol.SettingWorkerSandbox: defaults.WorkerSandbox, protocol.SettingLoopEvery: "0s", protocol.SettingLoopPrompt: "", protocol.SettingLoopMode: protocol.LoopModeAlways, protocol.SettingLoopPlan: ""}
 	for old, key := range deliveryNodeKeys {
 		e, err := snap.Resolve(key, settings.Where{Repo: name})
 		if err != nil {

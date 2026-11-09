@@ -15,12 +15,16 @@ import (
 const wakeFailedKeyPrefix = "wake-failed:"
 
 // wakeAllowed tells whether agent-net may ask a machine to wake an offline
-// session of this harness for a message. A Claude background session is woken
-// whatever the autonomy (decision 0065). Every other wake needs autonomy wake:
-// an interactive Claude session, a Claude session whose mode is not known, Codex
-// and OpenCode.
+// session of this harness for a message. A wakeable harness (wakeHarness:
+// Claude in terminal or background mode, Codex, OpenCode; not Pi; never
+// workers) is woken by a message when wake_on_message is on (the default).
+// Autonomy wake still allows it for backward compatibility; loop ticks still
+// count; step messages keep their own rule.
 func (g *Gateway) wakeAllowed(a protocol.AgentView, autonomy bool) bool {
-	if a.Harness == "claude" && a.Mode == protocol.ModeBackground {
+	if !wakeHarness(a.Harness) || a.Worker != nil {
+		return false
+	}
+	if g.wakeOnMessage(a) {
 		return true
 	}
 	return autonomy

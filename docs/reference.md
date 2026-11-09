@@ -737,7 +737,7 @@ Agent list and get include the public charter fields purpose, maturity, accepts,
 - `node_add {name}` and `node_remove {name}` add or remove an architect. Removal requires no edges, and clears the node's settings with it.
 - `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.
 - `node_settings_get {node}` returns the node's maturity, its overrides, the defaults its maturity gives, the effective values and `autonomy`.
-- `node_settings_set {node, setting, value}` sets or clears one override. Settings are `tests_before_merge` (`optional`, `suite`, `suite-new-tests`, `suite-new-tests-review`), `merge_authority` (`full`, `delegated`, `ask`), `worker_sandbox` (`sandboxed`, `no-network`, `read-only`), `judge_consumers` (`free`, `charter`, `strict`, `escalate`), `deploy_rule` (`brief`, `ask`, `owner`), `autonomy` (`off`, `wake`), `loop_every` (a duration above zero, such as `4h`), `loop_prompt` (free text), `loop_mode` (`always`, `on_change`), `loop_plan` (a relative path) and `work_mode` (`workers_code`, `on_request`; stored as the repo level charter attribute, see Work mode). An empty value clears the override; autonomy is off when unset, and a loop is off when `loop_every` is unset. The CTO sets `loop_every` and `loop_prompt` without a proposal (they are advice). The method is behind the owner gate and refuses agent sessions. The effective values, the autonomy and the delegation policies are readable by every agent through `agent_graph_read` and `agent_session_get`; only the change is owner-gated.
+- `node_settings_set {node, setting, value}` sets or clears one override. Settings are `tests_before_merge` (`optional`, `suite`, `suite-new-tests`, `suite-new-tests-review`), `merge_authority` (`full`, `delegated`, `ask`), `worker_sandbox` (`sandboxed`, `no-network`, `read-only`), `judge_consumers` (`free`, `charter`, `strict`, `escalate`), `deploy_rule` (`brief`, `ask`, `owner`), `autonomy` (`off`, `wake`), `wake_on_message` (`on`, `off`), `loop_every` (a duration above zero, such as `4h`), `loop_prompt` (free text), `loop_mode` (`always`, `on_change`), `loop_plan` (a relative path) and `work_mode` (`workers_code`, `on_request`; stored as the repo level charter attribute, see Work mode). An empty value clears the override; autonomy is off when unset, wake_on_message is on when unset, and a loop is off when `loop_every` is unset. The CTO sets `wake_on_message`, `loop_every` and `loop_prompt` without a proposal (minor / advice). The method is behind the owner gate and refuses agent sessions. The effective values, the autonomy and the delegation policies are readable by every agent through `agent_graph_read` and `agent_session_get`; only the change is owner-gated.
 - `graph_undo {id}` reverts a history row, or the latest row if id is omitted. Undo is recorded as another change and refuses a stale value. Node undo refuses to remove a node with a charter, settings or edges. Old graph history for a moved node setting cannot be undone through graph undo; use settings history for later changes.
 
 History limits default to 1000 and are capped at 1000. Edge history has `old` and `new` edge objects, omitted when absent. Gateway frames use the same names with dots instead of underscores; `graph.undo` uses `history_id` because `id` identifies the frame itself; `node_settings_get` and `node_settings_set` use `node.settings.get` and `node.settings.set`.
@@ -2972,20 +2972,21 @@ original agent-net session ID and its queued messages follow that copy. This
 background wake never opens a view. A message queued while its machine is
 disconnected is checked when the machine reconnects.
 
-**Wake on messages (autonomy `wake`).** When the agent of an offline owner
-session has autonomy `wake`, a queued message also asks that session's machine
-to resume the same session, then the gateway delivers the queued messages.
+**Wake on messages (`wake_on_message`).** By default (`wake_on_message: on`),
+a queued message to an offline owner session of a wakeable harness (Claude in
+terminal, background or unknown mode, Codex, OpenCode; not Pi; never workers)
+asks that session's machine to resume the same session, then the gateway
+delivers the queued messages.
 The limits are the ones above: one attempt per session per 10 minutes, kept
 across gateway restarts, a failure logged once, never a worker, and never a new
 session or a clone. A wake never opens a view, a herdr pane or a window: the
-owner opens the session with Enter as usual. With autonomy `off` (the default)
-a message asks for no wake, except that a Claude background session (mode
-`background`) is still woken by the background wake above. An interactive
-Claude session, a Claude session whose mode is not known, Codex and OpenCode
-are not asked, and the sender's receipt says so: `queued; <name> is offline and
-wake is off for this agent`. A wake that the machine refused for a reason gives
-the receipt `queued; <name> is offline and its last wake failed: <reason>`, and
-the sender gets one notice with the same reason. What each harness does:
+owner opens the session with Enter as usual. With `wake_on_message: off`,
+a message asks for no wake unless the agent's autonomy is `wake` (kept for
+backward compatibility). When wake is off and autonomy is not wake,
+offline sessions stay asleep, and the sender's receipt says so: `queued; <name>
+is offline and wake is off for this agent`. A wake that the machine refused for
+a reason gives the receipt `queued; <name> is offline and its last wake failed: <reason>`,
+and the sender gets one notice with the same reason. What each harness does:
 
 - Claude, interactive: `claude --bg --resume <session id>` in the recorded
   folder, through the same launcher as the background wake. The session is not

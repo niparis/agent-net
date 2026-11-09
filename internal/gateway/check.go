@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // The idle check (decision 0036). agent-net asks an idle agent with open work
@@ -132,6 +134,30 @@ func (s *Store) agentAutonomy(a protocol.AgentView) (string, error) {
 		return protocol.AutonomyOff, err
 	}
 	return deliveryValue(snap, "charter.autonomy_mode", node)
+}
+
+// agentWakeOnMessage reads the node's effective wake_on_message setting. The
+// default is on. Only an explicit off turns it off.
+func (s *Store) agentWakeOnMessage(a protocol.AgentView) bool {
+	node := agentNode(a)
+	graph, err := s.Graph()
+	if err != nil {
+		return true
+	}
+	node = chartedProject(graph, node)
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		return true
+	}
+	e, err := snap.Resolve("charter.wake_on_message", settings.Where{Repo: node, Agent: a.AgentID})
+	if err != nil {
+		return true
+	}
+	var val string
+	if json.Unmarshal(e.Value, &val) != nil {
+		return true
+	}
+	return val != protocol.WakeOnMessageOff
 }
 
 func wakeBody(line string) string {

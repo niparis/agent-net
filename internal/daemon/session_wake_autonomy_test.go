@@ -24,6 +24,11 @@ func setWakeAutonomy(t *testing.T, cli *localClient, project, value string) {
 	cli.mustCall("node_settings_set", map[string]any{"node": project, "setting": protocol.SettingAutonomy, "value": value})
 }
 
+func setWakeOnMessage(t *testing.T, cli *localClient, project, value string) {
+	t.Helper()
+	cli.mustCall("node_settings_set", map[string]any{"node": project, "setting": protocol.SettingWakeOnMessage, "value": value})
+}
+
 // newInteractiveWakeRig is a wake rig whose session was an interactive Claude
 // session (mode foreground) with the given autonomy, and whose machine lists
 // the given background records.
@@ -88,6 +93,23 @@ func TestMessageWakesInteractiveClaudeWithAutonomy(t *testing.T) {
 	}
 }
 
+// With autonomy off and wake_on_message unset, an interactive Claude session
+// that is not running is woken by default.
+func TestMessageWakesInteractiveClaudeWithAutonomyOffByDefault(t *testing.T) {
+	r := newInteractiveWakeRig(t, protocol.AutonomyOff, nil)
+	r.send(t, "wake the interactive session by default")
+	eventually(t, "interactive session receives message", func() bool {
+		if lines := r.g.logs.lines("session wake", r.id); len(lines) > 0 {
+			t.Fatalf("wake failed: %v", lines)
+		}
+		return len(r.c.adapter.deliveredTo(r.id)) == 1
+	})
+	rec := readClaude(t, r.repo)
+	if argValue(rec.Args, "--resume") != wakeNative {
+		t.Fatalf("resume args %v", rec.Args)
+	}
+}
+
 func TestMessageWakesInteractiveClaudeCopyKeepsTheSessionID(t *testing.T) {
 	t.Setenv("FAKE_CLAUDE_NEW_RESUME_ID", "1")
 	r := newInteractiveWakeRig(t, protocol.AutonomyWake, []map[string]any{{"id": wakeNative[:8], "kind": "interactive", "state": "done"}})
@@ -98,10 +120,11 @@ func TestMessageWakesInteractiveClaudeCopyKeepsTheSessionID(t *testing.T) {
 	}
 }
 
-// With autonomy off an interactive session stays asleep: no record is read and
-// nothing starts.
+// With autonomy off and wake_on_message off an interactive session stays asleep:
+// no record is read and nothing starts.
 func TestMessageDoesNotWakeInteractiveClaudeWithAutonomyOff(t *testing.T) {
 	r := newInteractiveWakeRig(t, protocol.AutonomyOff, nil)
+	setWakeOnMessage(t, r.c.cli, "shop", protocol.WakeOnMessageOff)
 	r.send(t, "stay asleep")
 	if err := r.c.d.wakeRetiredClaude(context.Background(), r.id, ""); err == nil {
 		t.Fatal("interactive session woken without autonomy")
@@ -187,6 +210,7 @@ func TestMessageDoesNotWakeCodexWithAutonomyOff(t *testing.T) {
 	n := codexNode(t, g, f)
 	pi, _ := helloPi(t, n, "np", "/work/pi", true)
 	id, _ := offlineOwnerSession(t, g, n, "codex", "t-old", protocol.AutonomyOff)
+	setWakeOnMessage(t, cliClient(t, n), "shop", protocol.WakeOnMessageOff)
 	m := sendResult(t, pi.mustCall("send", map[string]any{"to": id, "body": "stay asleep"}))
 	time.Sleep(400 * time.Millisecond)
 	f.mu.Lock()
@@ -278,7 +302,8 @@ func TestMessageWakesOpenCodeSessionWithAutonomy(t *testing.T) {
 }
 
 func TestMessageDoesNotWakeOpenCodeWithAutonomyOff(t *testing.T) {
-	_, pi, id, seen, plugin := openCodeWakeRig(t, protocol.AutonomyOff)
+	n, pi, id, seen, plugin := openCodeWakeRig(t, protocol.AutonomyOff)
+	setWakeOnMessage(t, cliClient(t, n.node), "shop", protocol.WakeOnMessageOff)
 	m := sendResult(t, pi.mustCall("send", map[string]any{"to": id, "body": "stay asleep"}))
 	time.Sleep(400 * time.Millisecond)
 	if plugin() != nil || len(seen()) != 0 {

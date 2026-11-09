@@ -148,6 +148,15 @@ settings:
     levels: [network, repo]
     default: "off"
     live: true
+  - key: charter.wake_on_message
+    rows: [46]
+    description: Whether an offline session is woken by a message.
+    kind: rule
+    type: enum
+    values: [on, off]
+    levels: [network, repo, agent]
+    default: "on"
+    live: true
   - key: loop.every
     rows: [46]
     description: How often agent-net wakes the repo's lead agent to keep working toward its purpose; 0s means no loop.
@@ -1108,7 +1117,7 @@ ledger:
   - {row: 43, code: "maturity stays a charter fact"}
   - {row: 44, keys: [delivery.tests_before_merge, delivery.merge_authority, workers.sandbox_level, charter.judge_consumers, delivery.deploy_rule], step: 6}
   - {row: 45, keys: [charter.judge_consumers, charter.consumer_text_free, charter.consumer_text_charter, charter.consumer_text_strict, charter.consumer_text_escalate], step: 6}
-  - {row: 46, keys: [charter.autonomy_mode, loop.every, loop.prompt, loop.mode, loop.plan], step: 6}
+  - {row: 46, keys: [charter.autonomy_mode, charter.wake_on_message, loop.every, loop.prompt, loop.mode, loop.plan], step: 6}
   - {row: 47, keys: [charter.size_budgets]}
   - {row: 48, keys: [charter.context_template]}
   - {row: 49, keys: [charter.neighbor_summary_limits]}
