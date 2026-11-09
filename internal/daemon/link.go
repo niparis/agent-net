@@ -411,7 +411,12 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	for _, ls := range missing {
 		d.pushSession(ls)
 	}
-	d.flushOutbox(rctx)
+	// The outbox goes first, as before. keepOutbox then sends what is queued
+	// while this link stays up. It ends when rctx is cancelled (runLink does
+	// that on return), and d.wg counts it, so Stop waits for it.
+	stalled := d.flushOutbox(rctx)
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.keepOutbox(rctx, stalled) }()
 	d.flushWorkerAssessments(rctx)
 	d.reportWorkerEnds(rctx)
 	d.cleanupWorkers(rctx)

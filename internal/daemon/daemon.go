@@ -328,6 +328,7 @@ type Daemon struct {
 	toolsMu             sync.Mutex
 	toolsReport         protocol.InventoryReport
 	toolsWake           chan struct{}
+	outboxWake          chan struct{} // a queued message wakes the link's outbox loop
 	skillConflicts      map[string]string
 	toolsPlanKeyOnce    sync.Once
 	toolsPlanKey        [32]byte
@@ -567,7 +568,7 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{startedAt: time.Now(), cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
-		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1),
+		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1), outboxWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}, "agy": agyLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]chan struct{}{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
@@ -1210,29 +1211,75 @@ func (d *Daemon) send(ctx context.Context, p protocol.MsgSend) (json.RawMessage,
 	if err := d.st.enqueue(raw); err != nil {
 		return nil, err
 	}
+	d.wakeOutbox()
 	d.Logf("gateway unreachable, queued message (key %s)", p.IdempotencyKey)
 	out, _ := json.Marshal(map[string]any{"queued": true, "idempotency_key": p.IdempotencyKey})
 	return out, nil
 }
 
-func (d *Daemon) flushOutbox(ctx context.Context) {
+// wakeOutbox tells the outbox loop of the current link that a message is
+// queued. It never blocks: one pending signal is enough.
+func (d *Daemon) wakeOutbox() {
+	select {
+	case d.outboxWake <- struct{}{}:
+	default:
+	}
+}
+
+// flushOutbox sends the queued messages in order. It returns true when it
+// stopped on a fault that may pass (the link, a timeout, or a gateway fault the
+// gateway marked as retryable). The message that failed and the rest stay
+// queued, and the next flush sends them in the same order with the same
+// idempotency keys.
+func (d *Daemon) flushOutbox(ctx context.Context) (stalled bool) {
 	d.sendMu.Lock()
 	defer d.sendMu.Unlock()
 	items, err := d.st.outbox()
 	if err != nil {
 		d.Logf("outbox: %v", err)
-		return
+		return true
 	}
 	for _, q := range items {
 		_, err := d.call(withCallWait(ctx, 90*time.Second), "msg.send", q.msg)
+		if errors.Is(err, errGatewayRetry) {
+			return true // a gateway fault of its own: keep it, it may go away
+		}
 		var re RemoteError
 		if err != nil && !errors.As(err, &re) {
-			return // link trouble: keep the rest, in order
+			return true // link trouble: keep the rest, in order
 		}
 		if err != nil {
 			d.Logf("outbox message %s refused: %v", q.msg.IdempotencyKey, err)
 		}
 		d.st.dequeue(q.seq)
+	}
+	return false
+}
+
+// keepOutbox runs while the link is up. A message queued while the link is up
+// goes out at once: send wakes it. A flush that stopped on a fault that may
+// pass is tried again after a pause that starts at BackoffMin and doubles up
+// to BackoffMax. With an empty outbox it only waits on a channel, with no
+// timer and no polling. stalled is the result of the flush that ran at connect.
+func (d *Daemon) keepOutbox(ctx context.Context, stalled bool) {
+	pause := d.cfg.BackoffMin
+	for {
+		if stalled {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(pause):
+			}
+			pause = min(pause*2, d.cfg.BackoffMax)
+		} else {
+			pause = d.cfg.BackoffMin
+			select {
+			case <-ctx.Done():
+				return
+			case <-d.outboxWake:
+			}
+		}
+		stalled = d.flushOutbox(ctx)
 	}
 }
 
