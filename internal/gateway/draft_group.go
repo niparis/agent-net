@@ -398,7 +398,7 @@ func (s *Store) answerDraftGroup(item protocol.InboxItem, ref, answer, actor str
 	item.Status = "open"
 	if len(rest) == 0 {
 		item.Status = "answered"
-		if _, err := s.db.Exec(`UPDATE inbox_items SET status='answered',answer=?,answered_at=? WHERE id=? AND status='open'`, answer, item.AnsweredAt.UnixNano(), item.ID); err != nil {
+		if err := s.closeAnsweredItem(item, answer); err != nil {
 			return item, err
 		}
 	}

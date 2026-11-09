@@ -96,9 +96,19 @@ func (s *Store) answerAppConsent(id, answer, owner string, fromCTO bool) (bool, 
 		return true, reject("invalid app consent target")
 	}
 	if answer == "refuse" {
-		return true, s.RefusePending(p.ID)
+		err = s.RefusePending(p.ID)
+	} else {
+		err = s.ApprovePending(p.ID, p.Kind, p.Name, s.now(), owner)
 	}
-	return true, s.ApprovePending(p.ID, p.Kind, p.Name, s.now(), owner)
+	if err != nil {
+		return true, err
+	}
+	// The ask closes later as resolved; the owner's decision is kept now.
+	items, err := scanInboxRows(s.db.Query(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, id))
+	if err != nil || len(items) != 1 {
+		return true, err
+	}
+	return true, s.recordOwnerAnswer(s.db, items[0], answer)
 }
 
 func (s *Store) reconcileAppConsentAsks() error {

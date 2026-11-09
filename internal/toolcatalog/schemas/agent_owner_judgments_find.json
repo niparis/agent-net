@@ -52,6 +52,14 @@
       },
       "total": {
         "type": "integer"
+      },
+      "marks_stored": {
+        "type": "integer",
+        "description": "With marks: true, how many owner marks storage holds."
+      },
+      "note": {
+        "type": "string",
+        "description": "With marks: true and no rows, says whether storage holds any marks."
       }
     },
     "required": [

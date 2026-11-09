@@ -3,7 +3,6 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -319,6 +318,9 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 		if _, err = tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
 			return item, err
 		}
+		if err = s.recordOwnerAnswer(tx, item, answer); err != nil {
+			return item, err
+		}
 		if len(validate) > 0 && validate[0] {
 			return item, nil
 		}
@@ -369,10 +371,7 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 		if err = s.DecideCharterDraft(draftID, answer, actor); err != nil {
 			return item, err
 		}
-		if _, err = s.db.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
-			return item, err
-		}
-		return item, nil
+		return item, s.closeAnsweredItem(item, answer)
 	}
 	switch answer {
 	case "approve":
@@ -387,10 +386,9 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	if _, err = tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
 		return item, err
 	}
-	if actor == "owner" {
-		if err = s.recordOwnerAnswerTx(tx, item, answer); err != nil {
-			return item, err
-		}
+	// The CTO answers for the owner, on his instructions: it is his decision.
+	if err = s.recordOwnerAnswer(tx, item, answer); err != nil {
+		return item, err
 	}
 	var sender string
 	err = tx.QueryRow(`SELECT o.id FROM sessions o JOIN sessions r ON r.node_id=o.node_id WHERE r.id=? AND o.harness=? LIMIT 1`, item.SessionID, protocol.OwnerHarness).Scan(&sender)
@@ -460,7 +458,7 @@ func (s *Store) agentNames() (map[string]string, error) {
 	return names, rows.Err()
 }
 
-func (s *Store) askArea(tx *sql.Tx, item protocol.InboxItem) string {
+func (s *Store) askArea(tx askDB, item protocol.InboxItem) string {
 	var aboutKind, aboutID string
 	_ = tx.QueryRow(`SELECT about_kind, about_id FROM inbox_items WHERE id=?`, item.ID).Scan(&aboutKind, &aboutID)
 
@@ -508,14 +506,4 @@ func (s *Store) askArea(tx *sql.Tx, item protocol.InboxItem) string {
 	}
 
 	return ""
-}
-
-func (s *Store) recordOwnerAnswerTx(tx *sql.Tx, item protocol.InboxItem, answer string) error {
-	area := s.askArea(tx, item)
-	text := fmt.Sprintf("Q: %s / A: %s", strings.TrimSpace(item.Text), strings.TrimSpace(answer))
-	now := s.now().Unix()
-	id := protocol.NewID("so")
-	_, err := tx.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		id, text, now, protocol.StandingSourceOwner, "[]", 0, 0, protocol.StandingKindAnswer, area, item.ID)
-	return err
 }

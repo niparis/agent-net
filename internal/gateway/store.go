@@ -1447,6 +1447,12 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("reconcile asks: %w", err)
 	}
+	// Asks answered while nothing wrote their judgments (and answers that an
+	// older version stored as a bare code) get their rows.
+	if err := s.BackfillAnswerJudgments(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("answer judgments backfill: %w", err)
+	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
 		db.Close()
