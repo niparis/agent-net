@@ -281,7 +281,7 @@ if [[ $shard_mode == all ]]; then
   while IFS= read -r package; do
     sharded=0
     for name in "${sharded_packages[@]}"; do
-      [[ $package == */internal/$name || $package == */internal/$name/* ]] && sharded=1
+      [[ $package == */internal/$name ]] && sharded=1
     done
     ((sharded)) || other_packages+=("$package")
   done <"$work/packages"
