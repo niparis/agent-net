@@ -2989,11 +2989,19 @@ across gateway restarts, a failure logged once, never a worker, and never a new
 session or a clone. A wake never opens a view, a herdr pane or a window: the
 owner opens the session with Enter as usual. With `wake_on_message: off`,
 a message asks for no wake unless the agent's autonomy is `wake` (kept for
-backward compatibility). When wake is off and autonomy is not wake,
-offline sessions stay asleep, and the sender's receipt says so: `queued; <name>
-is offline and wake is off for this agent`. A wake that the machine refused for
-a reason gives the receipt `queued; <name> is offline and its last wake failed: <reason>`,
-and the sender gets one notice with the same reason. What each harness does:
+backward compatibility). The sender's receipt for a message to an offline
+session says which of three cases applies:
+
+- `queued; <name> is offline and wake is off for this agent`. Wake is off and
+  autonomy is not wake, so the session stays asleep.
+- `queued; <name> is offline, waking it`. A wake is under way, started by this
+  message or by an earlier one. The receipt does not repeat an earlier failure.
+- `queued; <name> is offline and its last wake failed: <reason>`. No wake is
+  under way, and the last wake the machine refused for a reason has not been
+  cleared by a wake that worked. The sender also gets one notice with the same
+  reason.
+
+What each harness does:
 
 - Claude, interactive: `claude --bg --resume <session id>` in the recorded
   folder, through the same launcher as the background wake. The session is not
