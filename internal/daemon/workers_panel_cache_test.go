@@ -89,6 +89,23 @@ func TestWorkersPanelPollsCostTheGatewayNothingWhileNothingChanges(t *testing.T)
 		t.Fatalf("10 polls made %d gateway query.agents calls, want 0", after-before)
 	}
 
+	// The gateway's reads of the watched rows are in the request counters, so
+	// their cost can be read live next to the other requests.
+	eventually(t, "the watch reads show in the request counters", func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		out, err := g.gw.MachineGet(ctx, protocol.MachineGetRequest{Machine: w.node.d.hostName()})
+		if err != nil || out.Requests == nil {
+			return false
+		}
+		for _, s := range out.Requests.Since.Top {
+			if s.Method == "workers.watch_read" && s.Origin == protocol.ViaDaemon && s.Calls > 0 {
+				return true
+			}
+		}
+		return false
+	})
+
 	// A change on the network shows in the next polls: a second worker.
 	second := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "say ok again"})
 	eventually(t, "the panel shows the new worker", func() bool {

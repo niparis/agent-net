@@ -25,9 +25,19 @@ import (
 // connection, so a daemon that keeps the highest one it saw never mistakes an
 // older state for the current one.
 
+// workersWatchTick is how often the loop looks, so a node costs at most one
+// read of the watched rows a second. The agents tables move several times a
+// second on a busy network; a change shows in a panel within a second.
+const workersWatchTick = time.Second
+
 // workersWatchRecheck is how often the rows are read even when no table the
 // agents view reads has been written.
 const workersWatchRecheck = 5 * time.Second
+
+// workersWatchReadMethod is the name each read of the watched rows has in the
+// request counters (origin daemon), so its cost shows next to the other
+// requests in the machine report.
+const workersWatchReadMethod = "workers.watch_read"
 
 type watchedOwner struct {
 	rev  uint64
@@ -138,7 +148,7 @@ func dedupe(in []string) []string {
 // watchWorkersLoop pushes the owners whose rows changed. It reads the rows when
 // the agents tables moved, and now and then without that.
 func (g *Gateway) watchWorkersLoop(ctx context.Context, nc *nodeConn) {
-	ticker := time.NewTicker(250 * time.Millisecond)
+	ticker := time.NewTicker(workersWatchTick)
 	defer ticker.Stop()
 	w := &nc.workers
 	stamp := func() uint64 { return g.store.readStamp(agentsTables) + g.connVersion.Load() }
@@ -166,7 +176,12 @@ func (g *Gateway) watchWorkersLoop(ctx context.Context, nc *nodeConn) {
 			continue
 		}
 		sort.Strings(owners)
+		started := time.Now()
 		hashes, err := g.store.workerPanelHashes(owners)
+		if g.reqs != nil {
+			done := time.Now()
+			g.reqs.record(workersWatchReadMethod, protocol.ViaDaemon, done, done.Sub(started), 0)
+		}
 		if err != nil {
 			continue // the stamp stays old, so the next tick reads again
 		}
