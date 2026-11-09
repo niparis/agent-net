@@ -205,9 +205,17 @@ runs during a turn. A compaction object replaces the previous rules; omitted
 fields use their defaults. Old floor and growth fields are ignored.
 
 These daemon rules apply to OpenCode, which exposes a compaction API. Claude
-Code has an interactive `/compact` command but this background integration has
-no supported compaction control or context monitoring; Claude manages its own
-compaction. The cache-expiry setting is ignored for that harness.
+Code has no such API. The daemon compacts an idle Claude session by attaching
+with `claude attach <jobId>` and typing `/compact` with fixed focus
+instructions, so the summary keeps what an agent-net session needs. The typed
+line is:
+
+```
+/compact Keep: the current task and its goal; open questions to the owner and to other agents; every agent-net ID (sessions s_, workers, changes ch_, messages, asks); branches, worktree paths and full commit shas; decisions made; the next step.
+```
+
+The cache-expiry setting is ignored for that harness. The idle Claude rules are
+set by the `sessions.idle_compaction` settings.
 
 The daemon asks OpenCode 2.2.0 to compact with
 `POST /api/session/{id}/compact` and `{"delivery":"steer"}`, which runs at the

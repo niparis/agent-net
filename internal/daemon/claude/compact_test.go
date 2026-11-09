@@ -92,11 +92,12 @@ func TestIdleCompact(t *testing.T) {
 			if !tc.noPrompt {
 				script += "printf '❯'\n"
 			}
-			script += "IFS= read -r line\n[ \"$1\" = attach ] && [ \"$2\" = job-test ] && [ \"$line\" = /compact ] || exit 12\n" + fakeCompactOutput + "IFS= read -r line\n"
+			script += "IFS= read -r line\n[ \"$1\" = attach ] && [ \"$2\" = job-test ] && [ \"$line\" = \"$COMPACT_WANT\" ] || exit 12\n" + fakeCompactOutput + "IFS= read -r line\n"
 			if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("COMPACT_TRANSCRIPT", transcript)
+			t.Setenv("COMPACT_WANT", "/compact "+compactInstructions)
 			starts := filepath.Join(dir, "starts")
 			t.Setenv("COMPACT_STARTS", starts)
 			h := &compactHost{fakeHost: &fakeHost{}, snap: settings.Snapshot{}, viewing: map[int]bool{77: tc.viewing}}
@@ -280,11 +281,12 @@ func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
 				}
 			}
 			bin := filepath.Join(dir, "claude")
-			script := "#!/bin/sh\nstty -echo\nprintf x >> \"$COMPACT_STARTS\"\nprintf '❯'\nIFS= read -r line\n[ \"$1\" = attach ] && [ \"$2\" = job-test ] && [ \"$line\" = /compact ] || exit 12\n" + fakeCompactOutput + "IFS= read -r line\n"
+			script := "#!/bin/sh\nstty -echo\nprintf x >> \"$COMPACT_STARTS\"\nprintf '❯'\nIFS= read -r line\n[ \"$1\" = attach ] && [ \"$2\" = job-test ] && [ \"$line\" = \"$COMPACT_WANT\" ] || exit 12\n" + fakeCompactOutput + "IFS= read -r line\n"
 			if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("COMPACT_TRANSCRIPT", transcript)
+			t.Setenv("COMPACT_WANT", "/compact "+compactInstructions)
 			starts := filepath.Join(dir, "starts")
 			t.Setenv("COMPACT_STARTS", starts)
 			h := &compactHost{fakeHost: &fakeHost{}, snap: settings.Snapshot{}}
@@ -323,6 +325,64 @@ func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
 				t.Fatalf("missing log %q; logs=%v", tc.wantLog, h.logs)
 			}
 		})
+	}
+}
+
+// The daemon types "/compact " and the fixed instructions, then a carriage
+// return, into the attach terminal. The fake claude reads the raw bytes (raw
+// mode keeps the \r) and checks them byte for byte.
+func TestIdleCompactTypesFixedInstructions(t *testing.T) {
+	const assistant = `{"type":"assistant","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":299970}}}` + "\n"
+	dir := t.TempDir()
+	sessions := filepath.Join(dir, "sessions")
+	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", sessions)
+	projects := filepath.Join(dir, "projects")
+	td := filepath.Join(projects, transcriptDir(dir))
+	if err := os.MkdirAll(sessions, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(td, 0700); err != nil {
+		t.Fatal(err)
+	}
+	transcript := filepath.Join(td, "test.jsonl")
+	if err := os.WriteFile(transcript, []byte(assistant), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sf := filepath.Join(sessions, fmt.Sprintf("%d.json", os.Getpid()))
+	if err := os.WriteFile(sf, []byte(fmt.Sprintf(`{"pid":%d,"sessionId":"test","cwd":%q,"kind":"bg","jobId":"job-test","status":"idle"}`, os.Getpid(), dir)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	for _, p := range []string{sf, transcript} {
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := "/compact " + compactInstructions + "\r"
+	bin := filepath.Join(dir, "claude")
+	script := fmt.Sprintf("#!/bin/sh\nstty raw -echo\nprintf '❯'\ndd bs=1 count=%d of=\"$COMPACT_LINE\" 2>/dev/null\n", len(want)) + fakeCompactOutput + "IFS= read -r line\n"
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("COMPACT_TRANSCRIPT", transcript)
+	line := filepath.Join(dir, "typed")
+	t.Setenv("COMPACT_LINE", line)
+	h := &compactHost{fakeHost: &fakeHost{}, snap: settings.Snapshot{}}
+	h.snap.Values = []settings.Value{{Key: "sessions.idle_compaction_min_tokens", Level: "network", Scope: "network", Value: []byte("1000")}}
+	a := New(Config{SessionsDir: sessions, ProjectsDir: projects})
+	a.host = h
+	a.compactBinary = bin
+	a.compactPromptTimeout = 100 * time.Millisecond
+	a.compactTimeout = time.Second
+	a.compactAttached = func(context.Context) (map[string]bool, error) { return map[string]bool{}, nil }
+	a.poll()
+	a.compactOnce(context.Background())
+	got, err := os.ReadFile(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Fatalf("typed %q, want %q; logs=%v", got, want, h.logs)
 	}
 }
 
