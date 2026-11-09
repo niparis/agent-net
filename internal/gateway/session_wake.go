@@ -162,6 +162,12 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 	}
 	g.wakeClaims[a.SessionID] = wakeClaim{token: token, node: a.NodeID, native: a.NativeID}
 	g.wakeMu.Unlock()
+	// The wake outlives the caller. A message from a bot or an app arrives on an
+	// HTTP request whose context ends when the handler returns, and the machine
+	// may still be answering. The wake keeps the caller's values, and wakeTimeout
+	// still bounds the call. Every caller of dispatch gets this, so none of them
+	// needs its own copy.
+	wctx := context.WithoutCancel(ctx)
 	// The claim is removed when the call returns, on every path after this point.
 	// It is removed after the answer is recorded, so a receipt written while the
 	// claim is set can only say that a wake is under way.
@@ -173,7 +179,7 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 			}
 			g.wakeMu.Unlock()
 		}()
-		cctx, cancel := context.WithTimeout(ctx, wakeTimeout)
+		cctx, cancel := context.WithTimeout(wctx, wakeTimeout)
 		defer cancel()
 		frame := map[string]string{"session_id": a.SessionID, "token": token}
 		if autonomy || fromMessage {
@@ -182,7 +188,7 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 		_, err := target.call(cctx, protocol.FrameSessionWake, frame)
 		if err != nil {
 			g.logLine("error", "where", "session wake", "session", a.SessionID, "err", err)
-			g.wakeFailed(ctx, a.SessionID, token, err)
+			g.wakeFailed(wctx, a.SessionID, token, err)
 			return
 		}
 		if err := g.store.clearWakeFailure(a.SessionID); err != nil {
