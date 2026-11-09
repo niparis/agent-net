@@ -178,7 +178,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		out = append(out, kv("function", f))
 	}
 	if a.Profile.Task != "" {
-		out = append(out, kv("task", a.Profile.Task))
+		out = append(out, kv("task", a.Profile.TaskLine()))
 	}
 	if a.Profile.Expertise != "" {
 		out = append(out, kv("expert", a.Profile.Expertise))

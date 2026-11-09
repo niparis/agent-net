@@ -810,6 +810,9 @@ func compactCTOAgents(in []protocol.AgentView) any {
 		if len(task) > 160 {
 			task = task[:160]
 		}
+		if a.Profile.TaskNote != "" {
+			task += " " + cleanLine(a.Profile.TaskNote)
+		}
 		out = append(out, ctoAgent{a.SessionID, name, project, a.Hostname, a.Cwd, a.Harness, a.Model, a.Status, task})
 	}
 	return map[string]any{"agents": out}

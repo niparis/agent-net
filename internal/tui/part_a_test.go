@@ -337,3 +337,14 @@ func TestSessionsTableAt80ShowsAgentProjectAndTask(t *testing.T) {
 		t.Error("the 120 column header lost MODEL")
 	}
 }
+
+// The gateway adds a note to a task that names an ended worker. The TASK cell
+// shows it after the announced task.
+func TestTaskCellShowsTheGatewayNoteAfterTheTask(t *testing.T) {
+	a := agent("s_0000000000000012", "n_mac", "Mac", "claude", "web", nil)
+	a.Profile.Task = "T2b worker running"
+	a.Profile.TaskNote = "(worker s_0123456789abcdef ended Nov 9 01:07 UTC)"
+	if got := taskText(a); got != "T2b worker running (worker s_0123456789abcdef ended Nov 9 01:07 UTC)" {
+		t.Errorf("task cell = %q", got)
+	}
+}

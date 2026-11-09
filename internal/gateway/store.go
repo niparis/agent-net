@@ -1239,6 +1239,13 @@ CREATE TABLE IF NOT EXISTS worker_defect_auto (
  defect_id INTEGER PRIMARY KEY, change_id TEXT NOT NULL, kind TEXT NOT NULL,
  revision INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS worker_defect_auto_key ON worker_defect_auto(change_id, kind, revision);
+`, `
+-- The blocked-member notice (decision 0111): the fingerprint of the blocked or
+-- waiting announce that was last told to a team lead, one row per session. The
+-- row goes when the session announces something that is not blocked. The text
+-- itself is never stored.
+CREATE TABLE IF NOT EXISTS member_blocked_notices (
+ session_id TEXT PRIMARY KEY, text_hash TEXT NOT NULL, at INTEGER NOT NULL);
 `}
 
 // teamAsksToMigration adds the team setting that sends a member's questions
@@ -2959,12 +2966,21 @@ func (s *Store) SetNodeOffline(nodeID string) error {
 // not taken from the agent either: it comes from the project's AGENTS.md (see
 // RepoInfo.Description), so a "function" in the request is ignored.
 func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Profile, error) {
+	prof, _, err := s.AnnounceNotify(nodeID, p)
+	return prof, err
+}
+
+// AnnounceNotify is Announce for the gateway's request handler. It also
+// returns the message that tells a team lead its member is blocked or waiting,
+// when this announce caused one (decision 0111). The message is stored; the
+// caller dispatches it.
+func (s *Store) AnnounceNotify(nodeID string, p protocol.ProfileAnnounce) (protocol.Profile, *protocol.Message, error) {
 	owner, err := s.SessionNode(p.SessionID)
 	if err != nil {
-		return protocol.Profile{}, err
+		return protocol.Profile{}, nil, err
 	}
 	if owner != nodeID {
-		return protocol.Profile{}, reject("unknown session %q", p.SessionID)
+		return protocol.Profile{}, nil, reject("unknown session %q", p.SessionID)
 	}
 	p.Task = strings.TrimSpace(p.Task)
 	p.Expertise = protocol.CleanExpertise(p.Expertise)
@@ -2981,7 +2997,7 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 	// The time of the session's earlier announce, for the asks it left open.
 	var previousAnnounce int64
 	if err := s.db.QueryRow(`SELECT updated_at FROM profiles WHERE session_id=?`, p.SessionID).Scan(&previousAnnounce); err != nil && err != sql.ErrNoRows {
-		return protocol.Profile{}, err
+		return protocol.Profile{}, nil, err
 	}
 	_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at, expertise, task_started)
 		VALUES (?,'','',?,?,?,?,?,?)
@@ -2997,27 +3013,31 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 		updated_at=excluded.updated_at`,
 		p.SessionID, p.Project, caps, p.Task, now, p.Expertise, taskStarted, p.Capabilities == nil)
 	if err != nil {
-		return protocol.Profile{}, err
+		return protocol.Profile{}, nil, err
 	}
 	// An announce without a wait says the session went on. A question or an
 	// approval it raised before its earlier announce is overtaken. One raised
 	// since (the ask and the task line of the same turn) stays.
 	if previousAnnounce > 0 && protocol.CleanWaiting(p.Waiting) == nil {
 		if _, err := s.closeSessionOwnerAsks(s.db, p.SessionID, previousAnnounce, protocol.AskReasonMovedOn, protocol.AskKindQuestion, protocol.AskKindApproval); err != nil {
-			return protocol.Profile{}, err
+			return protocol.Profile{}, nil, err
 		}
 	}
 	if err := s.answerCheck(p.SessionID, p.Task); err != nil {
-		return protocol.Profile{}, err
+		return protocol.Profile{}, nil, err
 	}
 	if err := s.loopAnnounce(p.SessionID, p.Task); err != nil {
-		return protocol.Profile{}, err
+		return protocol.Profile{}, nil, err
+	}
+	notice, err := s.blockedMemberNotice(p)
+	if err != nil {
+		return protocol.Profile{}, nil, err
 	}
 	a, ok, err := s.Agent(p.SessionID)
 	if err != nil || !ok {
-		return protocol.Profile{}, err
+		return protocol.Profile{}, nil, err
 	}
-	return a.Profile, nil
+	return a.Profile, notice, nil
 }
 
 // agentSelectTemplate is the select of an agent row. Three of its values count
@@ -3189,6 +3209,9 @@ func (s *Store) agentRead(sessionID string) (protocol.AgentView, bool, error) {
 	if err := s.applyLoops(one); err != nil {
 		return a, false, err
 	}
+	if err := s.applyEndedWorkerNotes(one); err != nil {
+		return a, false, err
+	}
 	return one[0], true, nil
 }
 
@@ -3267,6 +3290,9 @@ func (s *Store) agentsRead(f protocol.QueryAgents) ([]protocol.AgentView, error)
 		return nil, err
 	}
 	if err := s.applyLoops(out); err != nil {
+		return nil, err
+	}
+	if err := s.applyEndedWorkerNotes(out); err != nil {
 		return nil, err
 	}
 	return out, nil

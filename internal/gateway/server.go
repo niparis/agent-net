@@ -2287,9 +2287,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad profile.announce")
 		}
-		prof, err := st.Announce(nc.id, p)
+		prof, notice, err := st.AnnounceNotify(nc.id, p)
 		if err != nil {
 			return nil, err
+		}
+		// A blocked or waiting announce tells the team lead (decision 0111).
+		// The lead may be on another node.
+		if notice != nil {
+			g.dispatch(ctx, *notice)
 		}
 		// An announce can answer an idle check with "more", which stores one
 		// autonomy wake. Queue it on this node now.

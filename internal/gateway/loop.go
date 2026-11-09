@@ -340,6 +340,11 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 	if err != nil {
 		return res, err
 	}
+	// The lead also hears of its members: blocked or waiting, and the workers
+	// they started (decision 0111). They count as changes for on_change.
+	if changes.members, err = s.loopMembers(target, agents, since, now); err != nil {
+		return res, err
+	}
 	if r.mode == protocol.LoopModeOnChange && changes.none() {
 		return skip(protocol.LoopSkippedQuiet, "")
 	}
@@ -387,7 +392,7 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 	}
 	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"),
 		From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: target.SessionID,
-		Type: protocol.TypeNotification, Body: protocol.LoopMessage(protocol.LoopPrompt{Changes: changes.line(r.sentAt > 0, since), Purpose: purpose, Custom: r.prompt, Plan: r.plan}),
+		Type: protocol.TypeNotification, Body: protocol.LoopMessage(protocol.LoopPrompt{Changes: changes.line(r.sentAt > 0, since), Members: changes.members.text(), Purpose: purpose, Custom: r.prompt, Plan: r.plan}),
 		IdempotencyKey: fmt.Sprintf("loop:%s:%d", target.SessionID, now.Unix()),
 		CreatedAt:      now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(), State: protocol.StateStored}
 	tx, err := s.db.Begin()
@@ -564,11 +569,19 @@ func (g *Gateway) loopTick(ctx context.Context) {
 // last tick is reported twice rather than missed.
 type loopChanges struct {
 	messages, handbacks, steps, asksNew, asksClosed []string
+	// members is the Members part: blocked members and their workers. It is
+	// not a list of ids, so line() leaves it out and the prompt prints it.
+	members memberReport
 }
 
-func (c loopChanges) none() bool {
+// countsNone is true when none of the id lists has an entry.
+func (c loopChanges) countsNone() bool {
 	return len(c.messages)+len(c.handbacks)+len(c.steps)+len(c.asksNew)+len(c.asksClosed) == 0
 }
+
+// none is true when there is nothing to tell the lead, the Members part
+// included. on_change mode skips a tick for which it is true.
+func (c loopChanges) none() bool { return c.countsNone() && c.members.none() }
 
 const loopChangeIDs = 5
 
@@ -612,7 +625,10 @@ func (s *Store) loopChanges(session string, sinceUnix int64) (loopChanges, error
 // line is the prompt's opening: what changed, with counts and ids.
 func (c loopChanges) line(afterTick bool, sinceUnix int64) string {
 	at := time.Unix(sinceUnix, 0).UTC().Format("15:04") + " UTC"
-	if c.none() {
+	if c.countsNone() {
+		if !c.members.none() {
+			return "Nothing new for you since " + at
+		}
 		return "Nothing new since " + at
 	}
 	label := "Since the loop started (" + at + ")"
