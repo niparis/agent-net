@@ -1135,11 +1135,13 @@ func (d *Daemon) pushSession(ls *localSession) {
 // register the same gateway ID again after the caller decided to remove it and
 // before the gateway handled the removal. The removal then lands last and
 // leaves a live session offline, with its peer trust hidden from online lists.
-// When that happened, register the live session again.
+// When that happened, register the live session again. The caller may hold
+// that session's pushMu (pushSession does), so the re-push runs in its own
+// goroutine, which pushMu still orders.
 func (d *Daemon) removeSession(r protocol.SessionRemove) {
 	d.call(context.Background(), "session.remove", r)
 	if ls := d.activitySession(r.SessionID); ls != nil {
-		d.pushSession(ls)
+		go d.pushSession(ls)
 	}
 }
 
