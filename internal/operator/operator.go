@@ -105,6 +105,10 @@ type Snapshot struct {
 	TimeZone string
 	// FailedCalls lists best-effort methods that could not be loaded.
 	FailedCalls []string
+	// Unchanged lists the methods the gateway answered NotModified, so this
+	// snapshot part is the caller's previous copy and its read time did not
+	// move.
+	Unchanged []string
 	// Connected tells whether the daemon has a link to the gateway.
 	Connected bool
 	NodeID    string // the machine the operator runs on

@@ -118,8 +118,10 @@ type deliveryState struct {
 	loadedAt     time.Time // when the last load started
 	topicVersion uint64
 	topicSeen    bool
-	// dataVersion is the changes topic version the held list was read at.
+	// dataVersion is the changes topic version the held list was read at,
+	// and dataAt is when that read happened.
 	dataVersion   uint64
+	dataAt        time.Time
 	detailLoading bool // the full change is out
 	detailErr     string
 	expanded      map[string]bool
@@ -140,6 +142,8 @@ type deliveryLoadedMsg struct {
 	err     error
 	// version is the changes topic version at the start of the load.
 	version uint64
+	// at is when the load started.
+	at time.Time
 	// notModified means the list on screen is still current.
 	notModified bool
 }
@@ -157,15 +161,15 @@ func (m Model) deliveryLoad() tea.Cmd {
 	if src == nil {
 		return nil
 	}
-	version := m.topicVersions[protocol.TopicChanges]
+	version, at := m.topicVersions[protocol.TopicChanges], m.now()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), deliveryLoadTimeout)
 		defer cancel()
 		changes, err := src.Changes(ctx, "")
 		if errors.Is(err, errDeliveryNotModified) {
-			return deliveryLoadedMsg{notModified: true, version: version}
+			return deliveryLoadedMsg{notModified: true, version: version, at: at}
 		}
-		return deliveryLoadedMsg{changes: changes, err: err, version: version}
+		return deliveryLoadedMsg{changes: changes, err: err, version: version, at: at}
 	}
 }
 
@@ -187,7 +191,14 @@ func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
 		m.delivery.topicVersion, m.delivery.topicSeen = v, true
 	}
 	if v, ok := m.deliverySrc.(interface{ SetIfVersion(uint64) }); ok {
-		v.SetIfVersion(m.delivery.dataVersion)
+		held := uint64(0)
+		// Like the snapshot parts, the list is only current while it was read
+		// inside the worker window: rows change with time even when the
+		// changes tables do not.
+		if m.delivery.dataVersion != 0 && !m.delivery.dataAt.IsZero() && m.now().Sub(m.delivery.dataAt) < protocol.RecentWorkerWindow {
+			held = m.delivery.dataVersion
+		}
+		v.SetIfVersion(held)
 	}
 	return m, m.deliveryLoad()
 }
@@ -463,7 +474,8 @@ func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 	d.loaded, d.loading = true, false
 	if msg.notModified {
 		// The topic did not move: the list on screen is still current and
-		// costs no bytes to keep.
+		// costs no bytes to keep. The read time does not move, so a list that
+		// gets old is read in full again.
 		d.err, d.dataVersion = "", msg.version
 		m.delivery = d
 		return m, nil
@@ -481,7 +493,7 @@ func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 			}
 		}
 		d.changes = changes
-		d.dataVersion = msg.version
+		d.dataVersion, d.dataAt = msg.version, msg.at
 	}
 	m.delivery = d
 	visible := m.deliveryVisible()

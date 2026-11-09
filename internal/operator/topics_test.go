@@ -91,6 +91,13 @@ func TestSnapshotSendsVersionsAndKeepsUnchangedParts(t *testing.T) {
 	if len(snap.Agents) != 1 || snap.Agents[0].SessionID != "keep-agent" || len(snap.Nodes) != 1 || snap.Nodes[0].Hostname != "keep-node" {
 		t.Fatalf("unchanged parts were cleared: %+v", snap)
 	}
+	unchanged := map[string]bool{}
+	for _, method := range snap.Unchanged {
+		unchanged[method] = true
+	}
+	if !unchanged[protocol.OpAgents] || !unchanged[protocol.OpNodes] {
+		t.Fatalf("unchanged parts not reported: %v", snap.Unchanged)
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	var agents protocol.QueryAgents

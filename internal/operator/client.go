@@ -136,7 +136,7 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 	// A part the gateway reports unchanged, or one that fails, keeps the
 	// caller's copy. This is what makes a safety refresh cheap.
 	snap := opts.Previous
-	snap.FailedCalls = nil
+	snap.FailedCalls, snap.Unchanged = nil, nil
 	raw, err := s.Call(ctx, protocol.OpInfo, nil)
 	if err != nil {
 		return snap, err
@@ -216,7 +216,9 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 			case protocol.OpAgents:
 				var v protocol.AgentsResult
 				err = json.Unmarshal(c.raw, &v)
-				if !v.NotModified {
+				if v.NotModified {
+					snap.Unchanged = append(snap.Unchanged, c.method)
+				} else {
 					snap.Agents = v.Agents
 				}
 			case "notification_settings":
@@ -232,7 +234,9 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 			case protocol.OpNodes:
 				var v protocol.NodesInfo
 				err = json.Unmarshal(c.raw, &v)
-				if !v.NotModified {
+				if v.NotModified {
+					snap.Unchanged = append(snap.Unchanged, c.method)
+				} else {
 					snap.Nodes = v.Nodes
 					snap.Calibration = v.Calibration
 					snap.GatewayWarnings = v.GatewayWarnings
