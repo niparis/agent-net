@@ -500,7 +500,7 @@ func TestDeliveryStripStates(t *testing.T) {
 
 func TestDeliveryProgressOnlyShowsConfiguredSteps(t *testing.T) {
 	c := deliveryChange{Marks: marks(stripPassed, stripWaiting, stripWaiting, stripWaiting, stripWaiting, stripWaiting, stripWaiting, stripWaiting), Steps: []deliveryStep{{Name: "accept", State: "passed"}, {Name: "approve for deploy", State: "ready"}, {Name: "test after merge", State: "running"}}}
-	got := deliveryProgress(c)
+	got := ansi.Strip(deliveryProgress(c))
 	if got != "●○○" {
 		t.Fatalf("progress %q, want marks for accept, approve, after-merge test", got)
 	}
