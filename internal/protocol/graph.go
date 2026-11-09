@@ -105,6 +105,8 @@ type Node struct {
 	// AsksTo (a team) says where its members' questions for the owner go:
 	// owner or lead (decision 0100).
 	AsksTo string `json:"asks_to,omitempty"`
+	// LeadMerges (a team) is the owner's lead_merges grant: on or off.
+	LeadMerges string `json:"lead_merges,omitempty"`
 	// Place is the record's position in the authority tree, built by the
 	// gateway from the same data as the turn text (decision 0089).
 	Place     *NodePlace `json:"place,omitempty"`
@@ -286,7 +288,7 @@ func CharterAttributeAtLevel(level, attr string) bool {
 	case "repo":
 		return attr == "purpose" || attr == "maturity" || attr == "maturity_note"
 	case "team":
-		return attr == "purpose" || attr == "escalate" || attr == "asks_to"
+		return attr == "purpose" || attr == "escalate" || attr == "asks_to" || attr == "lead_merges"
 	case "agent":
 		return attr == "accepts" || attr == "escalate" || attr == "feature_requests"
 	}

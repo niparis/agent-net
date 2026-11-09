@@ -426,7 +426,18 @@ func (s *Store) NodeSettings(node string) (protocol.NodeSettingsResult, error) {
 		}
 	}
 	if !found {
-		return out, reject("unknown node %q", node)
+		// A Team is a node of the typed graph only. Its lead_merges grant is the
+		// one setting node_settings_get shows for a Team.
+		var leadMerges string
+		err := s.db.QueryRow(`SELECT lead_merges FROM teams WHERE active=1 AND (id=? OR name=?) ORDER BY id LIMIT 1`, node, node).Scan(&leadMerges)
+		if err == sql.ErrNoRows {
+			return out, reject("unknown node %q", node)
+		}
+		if err != nil {
+			return out, err
+		}
+		out.LeadMerges = protocol.NormalLeadMerges(leadMerges)
+		return out, nil
 	}
 	explicit, err := s.nodeExplicitSettings(node)
 	if err != nil {

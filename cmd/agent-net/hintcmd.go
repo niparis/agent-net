@@ -148,9 +148,24 @@ func shellCommandWord(raw string) (word string, ended bool) {
 	return strings.Trim(raw, "()"), false
 }
 
-// leadDeniedLine tells the member how to hand the change to the lead.
-func leadDeniedLine(res protocol.TeamLeadResult) string {
-	return fmt.Sprintf("agent-net: in this team, merges and other blocked steps belong to your lead %s (%s) under the owner's team rule (asks_to=lead). If this session cannot run it, hand the change over (the PR link and your review) with agent_message_send for the lead's own merge decision.", res.Lead, res.LeadSession)
+// leadHintLine is the context for a lead step the session's team sends to its
+// lead. The owner's lead_merges grant is stated as a fact for a merge. The
+// asks_to=lead line stays for the other steps, and for a team that asks the
+// lead. A grant alone says nothing about a close or a workflow run.
+func leadHintLine(res protocol.TeamLeadResult, command string) string {
+	if res.LeadMerges && leadMergeCommand(command) {
+		return fmt.Sprintf("agent-net: the owner granted your lead %s merge rights for team %s. If this session cannot run this merge, hand the change over (the PR link and your review) with agent_message_send to %s (%s), not to the owner.", res.Lead, res.Team, res.Lead, res.LeadSession)
+	}
+	if res.AsksToLead || !res.LeadMerges {
+		return fmt.Sprintf("agent-net: in this team, merges and other blocked steps belong to your lead %s (%s) under the owner's team rule (asks_to=lead). If this session cannot run it, hand the change over (the PR link and your review) with agent_message_send for the lead's own merge decision.", res.Lead, res.LeadSession)
+	}
+	return ""
+}
+
+// leadMergeCommand is a gh pr merge: the step the owner's lead_merges grant covers.
+func leadMergeCommand(command string) bool {
+	words := strings.Fields(command)
+	return len(words) >= 3 && words[0] == "gh" && words[1] == "pr" && words[2] == "merge"
 }
 
 func leadStepCommand(command string) bool {
@@ -195,7 +210,9 @@ func runHint(ctx context.Context, stdin io.Reader, stdout io.Writer,
 		defer cancel()
 		res, err := lead(ctx, protocol.TeamLeadRequest{Harness: "claude", NativeID: in.SessionID})
 		if err == nil && res.Lead != "" && res.LeadSession != "" {
-			writeHookContext(stdout, in.EventName, leadDeniedLine(res))
+			if line := leadHintLine(res, in.ToolInput.Command); line != "" {
+				writeHookContext(stdout, in.EventName, line)
+			}
 		}
 		return
 	}

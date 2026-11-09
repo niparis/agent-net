@@ -41,3 +41,23 @@ func TestCTOTeamSettingsSetSchema(t *testing.T) {
 		t.Fatalf("unknown team setting error = %v, want the valid team settings named", err)
 	}
 }
+
+func TestCTOTeamCharterSchemaAcceptsLeadMerges(t *testing.T) {
+	raw := json.RawMessage(`{"action":"team_charter","team":"forge","attr":"lead_merges","value":"on"}`)
+	if err := ValidateCTOActionSchema("graph_change", raw); err != nil {
+		t.Fatalf("graph_change team_charter lead_merges: %v", err)
+	}
+	if err := CTOArguments("team_charter", json.RawMessage(`{"team":"forge","attr":"lead_merges","value":"on"}`)); err != nil {
+		t.Fatalf("team_charter lead_merges: %v", err)
+	}
+	settings, err := json.Marshal(map[string]any{
+		"action": "settings_set", "ref": map[string]string{"kind": "team", "id": "forge"},
+		"setting": "lead_merges", "value": "on",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCTOActionSchema("graph_change", settings); err != nil {
+		t.Fatalf("settings_set team lead_merges: %v", err)
+	}
+}

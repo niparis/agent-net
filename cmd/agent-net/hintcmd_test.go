@@ -233,3 +233,30 @@ func TestHintHookPreToolUseBudget(t *testing.T) {
 		t.Fatalf("took %v, printed %q", time.Since(start), out.String())
 	}
 }
+
+func TestHintHookPreToolUseStatesTheLeadMergeGrantAsFact(t *testing.T) {
+	const grant = "agent-net: the owner granted your lead lead merge rights for team forge. If this session cannot run this merge, hand the change over (the PR link and your review) with agent_message_send to lead (s_lead), not to the owner."
+	input := func(command string) string {
+		in, _ := json.Marshal(map[string]any{"session_id": "abc", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": map[string]string{"command": command}})
+		return string(in)
+	}
+	granted := protocol.TeamLeadResult{Team: "forge", Lead: "lead", LeadSession: "s_lead", LeadMerges: true}
+	out, asked, leads := runHintWithLead(t, input("gh pr merge 12 --squash"), oneHint, nil, granted, nil)
+	var got struct {
+		H map[string]string `json:"hookSpecificOutput"`
+	}
+	if json.Unmarshal([]byte(out), &got) != nil || got.H["additionalContext"] != grant || len(asked) != 0 || len(leads) != 1 {
+		t.Fatalf("grant merge: output %q, asked %+v, leads %+v", out, asked, leads)
+	}
+	// The grant covers merges. A close with asks_to owner stays silent.
+	if out, _, _ := runHintWithLead(t, input("gh pr close 12"), oneHint, nil, granted, nil); out != "" {
+		t.Fatalf("grant close: %q; want nothing", out)
+	}
+	// A team that also asks the lead keeps the existing line for a close.
+	both := granted
+	both.AsksToLead = true
+	out, _, _ = runHintWithLead(t, input("gh pr close 12"), oneHint, nil, both, nil)
+	if json.Unmarshal([]byte(out), &got) != nil || got.H["additionalContext"] != leadLine {
+		t.Fatalf("grant and asks_to lead, close: %q; want the lead line", out)
+	}
+}
