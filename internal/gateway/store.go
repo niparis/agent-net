@@ -1279,7 +1279,17 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration}
+
+// briefDefectMoveMigration records that a late defect was reclassified as a
+// brief defect. The worker_defects row stays; these columns name who moved it,
+// when, and the worker_brief_defects row it became. Rows never moved keep 0
+// and an empty mover.
+const briefDefectMoveMigration = `
+-- A late defect moved to a brief defect (decision 0116). The original row
+-- stays and the move names the new worker_brief_defects row.
+SELECT 1 /* worker defect moved to brief defect */;
+`
 
 const ownerJudgmentsMigration = `
 -- Owner judgment store: extend standing_orders with kind, area and ref, and backfill answered owner asks.
@@ -2025,6 +2035,25 @@ func (s *Store) migrate() error {
 				if _, err := tx.Exec(`ALTER TABLE worker_defects ADD COLUMN severity INTEGER NOT NULL DEFAULT 1`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker defect moved to brief defect") {
+			for _, col := range []struct{ name, spec string }{
+				{"moved_at", `moved_at INTEGER NOT NULL DEFAULT 0`},
+				{"moved_by", `moved_by TEXT NOT NULL DEFAULT ''`},
+				{"brief_defect_id", `brief_defect_id INTEGER NOT NULL DEFAULT 0`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_defects') WHERE name = ?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE worker_defects ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
 				}
 			}
 		}

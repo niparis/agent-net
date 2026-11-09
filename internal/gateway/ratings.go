@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
@@ -180,6 +182,8 @@ func (s *Store) AddRating(f protocol.RateFrame) (protocol.RateResult, error) {
 		return s.addDefect(f)
 	case protocol.RateKindBriefDefect:
 		return s.addBriefDefect(f)
+	case protocol.RateKindMoveToBriefDefect:
+		return s.moveToBriefDefect(f)
 	default:
 		return protocol.RateResult{}, reject("unknown rating kind %q", f.Kind)
 	}
@@ -268,17 +272,22 @@ func (s *Store) addDefect(f protocol.RateFrame) (protocol.RateResult, error) {
 	var raterModel string
 	s.db.QueryRow(`SELECT model FROM sessions WHERE id = ?`, rater).Scan(&raterModel)
 	at := s.now().Unix()
-	if _, err := s.db.Exec(`INSERT INTO worker_defects
+	res, err := s.db.Exec(`INSERT INTO worker_defects
 		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, rater, raterModel, facts.harness,
-		facts.model, facts.effort, facts.difficulty, f.Severity, note, at); err != nil {
+		facts.model, facts.effort, facts.difficulty, f.Severity, note, at)
+	if err != nil {
+		return out, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
 		return out, err
 	}
 	if err := s.refreshQuality(); err != nil {
 		return out, err
 	}
-	out.Accepted, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
-		true, facts.model, facts.harness, facts.effort, facts.difficulty, at
+	out.Accepted, out.Defect, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
+		true, id, facts.model, facts.harness, facts.effort, facts.difficulty, at
 	return out, nil
 }
 
@@ -327,16 +336,186 @@ func (s *Store) addBriefDefect(f protocol.RateFrame) (protocol.RateResult, error
 	var raterModel string
 	s.db.QueryRow(`SELECT model FROM sessions WHERE id = ?`, rater).Scan(&raterModel)
 	at := s.now().Unix()
-	if _, err := s.db.Exec(`INSERT INTO worker_brief_defects
+	res, err := s.db.Exec(`INSERT INTO worker_brief_defects
 		(run_id, worker_session_id, caller, rater, rater_model, severity, note, at)
-		VALUES (?,?,?,?,?,?,?,?)`, facts.runID, worker, facts.caller, rater, raterModel, f.Severity, note, at); err != nil {
+		VALUES (?,?,?,?,?,?,?,?)`, facts.runID, worker, facts.caller, rater, raterModel, f.Severity, note, at)
+	if err != nil {
+		return out, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
 		return out, err
 	}
 	// No refreshQuality: the worker's quality and the picker never read this
 	// table.
-	out.Accepted, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
-		true, facts.model, facts.harness, facts.effort, facts.difficulty, at
+	out.Accepted, out.BriefDefect, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
+		true, id, facts.model, facts.harness, facts.effort, facts.difficulty, at
 	return out, nil
+}
+
+// moveToBriefDefect reclassifies one late defect as rework from the caller's
+// own brief. Only the session that filed the row may move it, and only once.
+// The original worker_defects row stays and records the move; the new
+// worker_brief_defects row is charged to the worker's caller, so the worker's
+// quality data stops counting it.
+func (s *Store) moveToBriefDefect(f protocol.RateFrame) (protocol.RateResult, error) {
+	worker := strings.TrimSpace(f.Worker)
+	rater := strings.TrimSpace(f.Rater)
+	out := protocol.RateResult{Worker: worker, Kind: protocol.RateKindMoveToBriefDefect, Defect: f.Defect}
+	if worker == "" || rater == "" {
+		return out, reject("a move needs a worker session and the session that moves it")
+	}
+	defectID := f.Defect
+	if defectID <= 0 {
+		candidates, err := s.defectsToMove(worker, rater)
+		if err != nil {
+			return out, err
+		}
+		switch len(candidates) {
+		case 0:
+			out.Reason = "no unmoved defect filed by this session on that worker"
+			return out, nil
+		case 1:
+			defectID = candidates[0].id
+		default:
+			out.Reason = severalDefectsReason(candidates)
+			return out, nil
+		}
+	}
+	out.Defect = defectID
+	var (
+		sessionID, filer, note  string
+		runID, briefID, movedAt int64
+		severity                int
+	)
+	err := s.db.QueryRow(`SELECT session_id, caller, run_id, severity, note, moved_at, brief_defect_id
+		FROM worker_defects WHERE id = ?`, defectID).
+		Scan(&sessionID, &filer, &runID, &severity, &note, &movedAt, &briefID)
+	if errors.Is(err, sql.ErrNoRows) {
+		out.Reason = "no defect with that id"
+		return out, nil
+	}
+	if err != nil {
+		return out, err
+	}
+	if sessionID != worker {
+		out.Reason = "that defect belongs to another worker"
+		return out, nil
+	}
+	if filer != rater {
+		out.Reason = "only the session that filed this defect may move it"
+		return out, nil
+	}
+	var auto bool
+	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM worker_defect_auto WHERE defect_id = ?)`, defectID).Scan(&auto); err != nil {
+		return out, err
+	}
+	if auto {
+		out.Reason = "agent-net recorded this defect itself; it cannot be moved to a brief defect"
+		return out, nil
+	}
+	if movedAt != 0 {
+		out.Reason = "this defect was already moved to a brief defect"
+		out.BriefDefect = briefID
+		return out, nil
+	}
+	facts, ok, err := s.workerRatingFacts(worker)
+	if err != nil {
+		return out, err
+	}
+	if !ok {
+		out.Reason = "the worker's run is gone: there is no caller to charge the brief defect to"
+		return out, nil
+	}
+	var raterModel string
+	s.db.QueryRow(`SELECT model FROM sessions WHERE id = ?`, rater).Scan(&raterModel)
+	at := s.now().Unix()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`INSERT INTO worker_brief_defects
+		(run_id, worker_session_id, caller, rater, rater_model, severity, note, at)
+		VALUES (?,?,?,?,?,?,?,?)`, runID, worker, facts.caller, rater, raterModel, severity, note, at)
+	if err != nil {
+		return out, err
+	}
+	newID, err := res.LastInsertId()
+	if err != nil {
+		return out, err
+	}
+	res, err = tx.Exec(`UPDATE worker_defects SET moved_at = ?, moved_by = ?, brief_defect_id = ?
+		WHERE id = ? AND moved_at = 0`, at, rater, newID, defectID)
+	if err != nil {
+		return out, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return out, err
+	}
+	if n == 0 {
+		out.Reason = "this defect was already moved to a brief defect"
+		return out, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return out, err
+	}
+	// The worker's severity leaves the picker and the quality fit.
+	if err := s.refreshQuality(); err != nil {
+		return out, err
+	}
+	out.Accepted, out.BriefDefect = true, newID
+	out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
+		facts.model, facts.harness, facts.effort, facts.difficulty, at
+	return out, nil
+}
+
+// defectToMove is one unmoved, non-automatic late defect the filer can name in
+// a move.
+type defectToMove struct {
+	id       int64
+	severity int
+	note     string
+	at       int64
+}
+
+// defectsToMove finds the rows a move without a defect id can choose: the
+// caller's own late defects on the worker, not moved yet and not recorded by
+// agent-net itself.
+func (s *Store) defectsToMove(worker, rater string) ([]defectToMove, error) {
+	rows, err := s.db.Query(`SELECT id, severity, note, at FROM worker_defects
+		WHERE session_id = ? AND caller = ? AND moved_at = 0
+		  AND id NOT IN (SELECT defect_id FROM worker_defect_auto)
+		ORDER BY at, id`, worker, rater)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []defectToMove
+	for rows.Next() {
+		var d defectToMove
+		if err := rows.Scan(&d.id, &d.severity, &d.note, &d.at); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// severalDefectsReason lists the candidates so the caller can retry with one
+// id. The date is UTC and the note is cut to 60 characters.
+func severalDefectsReason(candidates []defectToMove) string {
+	parts := make([]string, 0, len(candidates))
+	for _, d := range candidates {
+		note := []rune(d.note)
+		if len(note) > 60 {
+			note = note[:60]
+		}
+		parts = append(parts, fmt.Sprintf("%d severity %d, %s, %s",
+			d.id, d.severity, time.Unix(d.at, 0).UTC().Format("2006-01-02"), string(note)))
+	}
+	return "several defects match; retry with defect=<id>: " + strings.Join(parts, "; ")
 }
 
 // sessionOwner tells whether a session is a machine's owner pseudo-session.
@@ -382,7 +561,7 @@ func (s *Store) RatingCounts() ([]protocol.CalibrationRating, error) {
 		func(c *counts, n int) { c.ratings = n }); err != nil {
 		return nil, err
 	}
-	if err := collect(`SELECT model, COUNT(*) FROM worker_defects WHERE model <> '' GROUP BY model`,
+	if err := collect(`SELECT model, COUNT(*) FROM worker_defects WHERE model <> '' AND moved_at = 0 GROUP BY model`,
 		func(c *counts, n int) { c.defects = n }); err != nil {
 		return nil, err
 	}
@@ -403,7 +582,7 @@ func (s *Store) RatingCounts() ([]protocol.CalibrationRating, error) {
 // the Quotas count. It is one helper so the per-session sum can add them
 // wherever the samples are built.
 func (s *Store) DefectCountsBySession(cut int64) (map[string]int, error) {
-	rows, err := s.db.Query(`SELECT session_id, COUNT(*) FROM worker_defects WHERE at >= ? GROUP BY session_id`, cut)
+	rows, err := s.db.Query(`SELECT session_id, COUNT(*) FROM worker_defects WHERE at >= ? AND moved_at = 0 GROUP BY session_id`, cut)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +623,7 @@ func (s *Store) BriefDefectCountsByCaller(cut int64) (map[string]int, error) {
 // DefectReworkBySession sums the severity points of each worker session's late
 // defects. The calibration adds this to the task's fix count.
 func (s *Store) DefectReworkBySession(cut int64) (map[string]int, error) {
-	rows, err := s.db.Query(`SELECT session_id, SUM(severity) FROM worker_defects WHERE at >= ? GROUP BY session_id`, cut)
+	rows, err := s.db.Query(`SELECT session_id, SUM(severity) FROM worker_defects WHERE at >= ? AND moved_at = 0 GROUP BY session_id`, cut)
 	if err != nil {
 		return nil, err
 	}

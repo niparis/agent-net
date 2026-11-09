@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -86,6 +87,89 @@ func TestAgentWorkerRateDefectFoundLater(t *testing.T) {
 	out, _ := res.StructuredContent.(map[string]any)
 	if out["recorded"] != true || out["kind"] != "defect_found_later" || out["severity"] != float64(3) {
 		t.Fatalf("defect result: %+v", out)
+	}
+}
+
+// agent_worker_rate takes kind move_to_brief_defect: it sends the defect id and
+// returns the moved row and the new brief defect row.
+func TestAgentWorkerRateMoveToBriefDefect(t *testing.T) {
+	var saw map[string]any
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		switch method {
+		case "agent_rate":
+			raw, _ := json.Marshal(params)
+			json.Unmarshal(raw, &saw)
+			return json.RawMessage(`{"accepted":true,"worker":"s_w1","kind":"move_to_brief_defect","defect":12,"brief_defect":13,"model":"deepseek-v4.1-flash","difficulty":"hard"}`), nil
+		case "list":
+			return workerListWith(ratedWorker()), nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_rate",
+		Arguments: map[string]any{"worker": "s_w1", "kind": "move_to_brief_defect", "defect": 12}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_rate move: %v %+v", err, res)
+	}
+	if saw["kind"] != "move_to_brief_defect" || saw["defect"] != float64(12) {
+		t.Fatalf("move request: %+v", saw)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	if out["recorded"] != true || out["kind"] != "move_to_brief_defect" || out["defect"] != float64(12) || out["brief_defect"] != float64(13) {
+		t.Fatalf("move result: %+v", out)
+	}
+}
+
+// A refused move reaches the caller with the gateway's reason, not just
+// recorded false.
+func TestAgentWorkerRateRefusalCarriesTheReason(t *testing.T) {
+	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		switch method {
+		case "agent_rate":
+			return json.RawMessage(`{"accepted":false,"worker":"s_w1","kind":"move_to_brief_defect","reason":"only the session that filed this defect may move it"}`), nil
+		case "list":
+			return workerListWith(ratedWorker()), nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_rate",
+		Arguments: map[string]any{"worker": "s_w1", "kind": "move_to_brief_defect", "defect": 12}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_rate move: %v %+v", err, res)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	if out["recorded"] != false || !strings.Contains(out["reason"].(string), "only the session that filed") {
+		t.Fatalf("refusal result: %+v", out)
+	}
+}
+
+// A move without a defect id reaches the gateway, which picks the only match.
+func TestAgentWorkerRateMoveWithoutDefectID(t *testing.T) {
+	var saw map[string]any
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		switch method {
+		case "agent_rate":
+			raw, _ := json.Marshal(params)
+			json.Unmarshal(raw, &saw)
+			return json.RawMessage(`{"accepted":true,"worker":"s_w1","kind":"move_to_brief_defect","defect":12,"brief_defect":13}`), nil
+		case "list":
+			return workerListWith(ratedWorker()), nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_rate",
+		Arguments: map[string]any{"worker": "s_w1", "kind": "move_to_brief_defect"}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_rate move: %v %+v", err, res)
+	}
+	if saw["kind"] != "move_to_brief_defect" {
+		t.Fatalf("move request: %+v", saw)
+	}
+	if _, ok := saw["defect"]; ok {
+		t.Fatalf("an omitted defect id was sent: %+v", saw)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	if out["recorded"] != true || out["defect"] != float64(12) || out["brief_defect"] != float64(13) {
+		t.Fatalf("move result: %+v", out)
 	}
 }
 

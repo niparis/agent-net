@@ -97,7 +97,7 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 	}
 
 	defects := map[string][2]int{}
-	rows, err = s.db.Query(`SELECT session_id, COUNT(*), COALESCE(SUM(severity), 0) FROM worker_defects GROUP BY session_id`)
+	rows, err = s.db.Query(`SELECT session_id, COUNT(*), COALESCE(SUM(severity), 0) FROM worker_defects WHERE moved_at = 0 GROUP BY session_id`)
 	if err != nil {
 		return nil, err
 	}

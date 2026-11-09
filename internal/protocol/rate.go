@@ -38,21 +38,31 @@ const (
 	// session and never to the worker, so it does not change the worker's
 	// quality data.
 	RateKindBriefDefect = "brief_defect"
+	// RateKindMoveToBriefDefect reclassifies one defect_found_later row as a
+	// brief_defect. The worker's charge stops and the caller who wrote the
+	// brief takes it. Only the session that filed the row may move it, and the
+	// original row stays with the move recorded on it.
+	RateKindMoveToBriefDefect = "move_to_brief_defect"
 	// RateSeverityMin and RateSeverityMax are the severity scale of a late
 	// defect report.
 	RateSeverityMin = 1
 	RateSeverityMax = 4
 )
 
-// RateRequest is agent_worker_rate: one caller's rating of one finished worker, or
-// one defect found later on that worker's task.
+// RateRequest is agent_worker_rate: one caller's rating of one finished worker,
+// one defect found later on that worker's task, one brief defect, or the move
+// of a filed late defect to a brief defect.
 type RateRequest struct {
 	// Worker is the session ID of the finished worker, as the end notice names
 	// it.
 	Worker string `json:"worker"`
 	// Kind is RateKindRating (the default, also when empty),
-	// RateKindDefectLater or RateKindBriefDefect.
+	// RateKindDefectLater, RateKindBriefDefect or RateKindMoveToBriefDefect.
 	Kind string `json:"kind,omitempty"`
+	// Defect is the worker_defects row to move, as the answer to the
+	// defect_found_later call returned it. Only RateKindMoveToBriefDefect uses
+	// it.
+	Defect int64 `json:"defect,omitempty"`
 	// Score is 1 to 5 for the result. A defect report has no score.
 	Score int `json:"score,omitempty"`
 	// Severity is 1 to 4 on a defect report, and required there. It adds that
@@ -82,17 +92,22 @@ type RateFrame struct {
 // RateResult answers agent_worker_rate. Accepted is false when the worker was not
 // started by the caller, was already rated, or is unknown; Reason says why.
 type RateResult struct {
-	Accepted   bool   `json:"accepted"`
-	Reason     string `json:"reason,omitempty"`
-	Worker     string `json:"worker,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	Score      int    `json:"score,omitempty"`
-	Severity   int    `json:"severity,omitempty"`
-	Model      string `json:"model,omitempty"`
-	Harness    string `json:"harness,omitempty"`
-	Effort     string `json:"effort,omitempty"`
-	Difficulty string `json:"difficulty,omitempty"`
-	At         int64  `json:"at,omitempty"`
+	Accepted bool   `json:"accepted"`
+	Reason   string `json:"reason,omitempty"`
+	Worker   string `json:"worker,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+	// Defect is the worker_defects row this call filed, or the one it moved.
+	Defect int64 `json:"defect,omitempty"`
+	// BriefDefect is the worker_brief_defects row a brief_defect call wrote,
+	// or the one a move wrote.
+	BriefDefect int64  `json:"brief_defect,omitempty"`
+	Score       int    `json:"score,omitempty"`
+	Severity    int    `json:"severity,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Harness     string `json:"harness,omitempty"`
+	Effort      string `json:"effort,omitempty"`
+	Difficulty  string `json:"difficulty,omitempty"`
+	At          int64  `json:"at,omitempty"`
 }
 
 // ValidRateScore tells whether a score is on the 1 to 5 scale.

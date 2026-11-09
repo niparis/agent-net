@@ -1470,7 +1470,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_rate",
-    "description": "Rate a finished worker from 1 to 5, or report a defect found later with a severity from 1 to 4. brief_defect charges rework from a bad brief to the briefing session, not the worker. Only the session that started the worker may rate it.",
+    "description": "Rate a worker 1 to 5, or report a defect found later with severity 1 to 4. brief_defect charges rework from a bad brief to the briefing session, not the worker. move_to_brief_defect moves a defect you filed, by id or the only match, to a brief_defect. Only the session that started it may rate it.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1483,9 +1483,14 @@ export const TOOL_CATALOG = [
           "enum": [
             "rating",
             "defect_found_later",
-            "brief_defect"
+            "brief_defect",
+            "move_to_brief_defect"
           ],
-          "description": "Select the kind: rating, defect_found_later, or brief_defect for rework caused by a bad brief."
+          "description": "Select the kind: rating, defect_found_later, brief_defect for rework caused by a bad brief, or move_to_brief_defect to reclassify a defect you filed."
+        },
+        "defect": {
+          "type": "integer",
+          "description": "The defect id to move. Omit it or send 0 when exactly one unmoved defect you filed on that worker is left."
         },
         "score": {
           "type": "integer",
