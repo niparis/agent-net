@@ -220,6 +220,87 @@ func TestMessageWakesCodexThreadWithAutonomy(t *testing.T) {
 	eventually(t, "state delivered", func() bool { return messageState(t, pi, m.ID) == protocol.StateDelivered })
 }
 
+// fakeCodexDaemonStart is a fake `codex` that answers only `app-server daemon
+// start`: it records its arguments and CODEX_HOME, then links the control
+// socket into the Codex home, as the real command does. With fail set it
+// exits with an error and links nothing.
+func fakeCodexDaemonStart(t *testing.T, target string, fail bool) (bin, record string) {
+	t.Helper()
+	dir := shortDir(t)
+	bin, record = filepath.Join(dir, "codex"), filepath.Join(dir, "record")
+	script := "#!/bin/sh\necho \"$*|$CODEX_HOME\" >> " + testShellQuote(record) + "\n" +
+		"[ \"$1 $2 $3\" = \"app-server daemon start\" ] || exit 2\n"
+	if fail {
+		script += "echo 'cannot install the daemon: boom' >&2\nexit 1\n"
+	} else {
+		script += "mkdir -p \"$CODEX_HOME/app-server-control\" && ln -s " + testShellQuote(target) + " \"$CODEX_HOME/app-server-control/app-server-control.sock\"\n" +
+			"echo '{\"status\":\"started\"}'\n"
+	}
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin, record
+}
+
+// After a reboot nothing has started the shared Codex app server, so its
+// control socket is missing. The wake starts the daemon with the Codex
+// command, waits for the socket, and then resumes the saved thread.
+func TestWakeCodexStartsTheAppServerWhenItsSocketIsMissing(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	f, target := startFakeSharedStopped(t)
+	bin, record := fakeCodexDaemonStart(t, target, false)
+	n := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) {
+		c.CodexHome, c.CodexInterval = f.home, time.Second
+		c.HarnessPaths = map[string]string{"codex": bin}
+	}})
+	pi, _ := helloPi(t, n, "np", "/work/pi", true)
+	id, dir := offlineOwnerSession(t, g, n, "codex", "t-old", protocol.AutonomyWake)
+	if _, err := os.Lstat(codexSocketPath(f.home)); err == nil {
+		t.Fatal("the control socket exists before the wake")
+	}
+
+	m := sendResult(t, pi.mustCall("send", map[string]any{"to": id, "body": "wake up after the reboot"}))
+	eventually(t, "message queued into the resumed thread", func() bool { return len(f.queue()) == 1 })
+	if q := f.queue()[0]; q.Thread != "t-old" || q.ClientID != m.ID {
+		t.Fatalf("queue entry: %+v", q)
+	}
+	f.mu.Lock()
+	th := f.threads["t-old"]
+	f.mu.Unlock()
+	if th == nil || th.Cwd != dir {
+		t.Fatalf("resumed thread: %+v, want folder %s", th, dir)
+	}
+	rec, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatalf("the Codex command did not run: %v", err)
+	}
+	if got, want := strings.TrimSpace(string(rec)), "app-server daemon start|"+f.home; got != want {
+		t.Fatalf("Codex ran as %q, want %q", got, want)
+	}
+	if got := n.d.SessionID("codex", "t-old"); got != id {
+		t.Fatalf("session ID after wake = %q, want %q", got, id)
+	}
+}
+
+// When the Codex command cannot start the app server, the wake fails with its
+// reason, not with a missing-file error.
+func TestWakeCodexReportsWhyTheAppServerDidNotStart(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	f, target := startFakeSharedStopped(t)
+	bin, _ := fakeCodexDaemonStart(t, target, true)
+	n := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) {
+		c.CodexHome, c.CodexInterval = f.home, time.Second
+		c.HarnessPaths = map[string]string{"codex": bin}
+	}})
+	id, _ := offlineOwnerSession(t, g, n, "codex", "t-old", protocol.AutonomyWake)
+	err := n.d.wakeSession(context.Background(), id, "", true)
+	if err == nil || !strings.Contains(err.Error(), "boom") || strings.Contains(err.Error(), "lstat") {
+		t.Fatalf("wake error = %v, want the reason from the Codex command", err)
+	}
+}
+
 func TestMessageDoesNotWakeCodexWithAutonomyOff(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")

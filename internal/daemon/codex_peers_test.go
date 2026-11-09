@@ -71,14 +71,31 @@ func startFakeShared(t *testing.T) *fakeShared {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	ln, err := net.Listen("unix", filepath.Join(dir, "app-server-control.sock"))
+	f.serve(filepath.Join(dir, "app-server-control.sock"))
+	return f
+}
+
+// startFakeSharedStopped is a fake app server whose process is running but
+// whose control socket is not linked into the Codex home yet. It is the state
+// after a reboot, where nothing has started the daemon. Like the real daemon,
+// it listens on a short path; the link home/app-server-control/... is made by
+// the fake `codex app-server daemon start`. target is the short path.
+func startFakeSharedStopped(t *testing.T) (f *fakeShared, target string) {
+	t.Helper()
+	f = &fakeShared{t: t, home: shortDir(t), threads: map[string]*fakeThread{}}
+	target = filepath.Join(shortDir(t), "ctl.sock")
+	f.serve(target)
+	return f, target
+}
+
+func (f *fakeShared) serve(sock string) {
+	ln, err := net.Listen("unix", sock)
 	if err != nil {
-		t.Fatal(err)
+		f.t.Fatal(err)
 	}
 	srv := &http.Server{Handler: http.HandlerFunc(f.handle)}
 	go srv.Serve(ln)
-	t.Cleanup(func() { srv.Close() })
-	return f
+	f.t.Cleanup(func() { srv.Close() })
 }
 
 func (f *fakeShared) set(th fakeThread) {

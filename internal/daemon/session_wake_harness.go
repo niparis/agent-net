@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
@@ -73,6 +77,14 @@ func (d *Daemon) wakeGuard(a protocol.AgentView) error {
 func (d *Daemon) wakeCodex(ctx context.Context, a protocol.AgentView) error {
 	r := protocol.StartedSession{ID: protocol.NewID("wake"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: "codex", Path: a.Cwd, NativeID: a.NativeID}
 	r, err := d.prepareOwnerCodexThread(ctx, r, true)
+	if codexServerDown(err) {
+		// After a reboot nothing has started the shared app server, so its
+		// control socket is missing (or left behind with no one listening).
+		if err = d.startCodexAppServer(ctx); err != nil {
+			return fmt.Errorf("cannot start the Codex app server: %w", err)
+		}
+		r, err = d.prepareOwnerCodexThread(ctx, r, true)
+	}
 	if err != nil {
 		return fmt.Errorf("cannot resume the Codex thread: %w", err)
 	}
@@ -80,6 +92,58 @@ func (d *Daemon) wakeCodex(ctx context.Context, a protocol.AgentView) error {
 		return errors.New("Codex resumed a different thread")
 	}
 	return nil
+}
+
+// codexServerDown reports a failed dial of the control socket because the
+// socket is missing or has no listener.
+func codexServerDown(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED)
+}
+
+// startCodexAppServer starts the shared Codex app server with Codex's own
+// command, `codex app-server daemon start`, which does nothing when the daemon
+// already runs, and then waits for its control socket. It runs in the owner's
+// Codex home and changes no Codex file or setting by itself. The command
+// output goes to a file, not a pipe, because the daemon it starts outlives it.
+func (d *Daemon) startCodexAppServer(ctx context.Context) error {
+	bin, err := d.harnessBinary("codex")
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, d.workerSettings("").StartTimeout)
+	defer cancel()
+	out, err := os.CreateTemp("", "agent-net-codex-start-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(out.Name())
+	defer out.Close()
+	cmd := exec.CommandContext(ctx, bin, "app-server", "daemon", "start")
+	cmd.Stdout, cmd.Stderr = out, out
+	cmd.WaitDelay = 5 * time.Second
+	if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
+		cmd.Env = workerEnv(os.Environ(), map[string]string{"CODEX_HOME": home})
+	}
+	if err := cmd.Run(); err != nil {
+		text, _ := os.ReadFile(out.Name())
+		if reason := cleanFailure(string(text)); len(text) > 0 {
+			return fmt.Errorf("%s: %w", reason, err)
+		}
+		return err
+	}
+	sock := codexSocketPath(d.cfg.CodexHome)
+	for {
+		if target, err := filepath.EvalSymlinks(sock); err == nil {
+			if fi, err := os.Lstat(target); err == nil && fi.Mode()&os.ModeSocket != 0 {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("the Codex app server started but its control socket %s did not appear", sock)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // wakeOpenCode loads the saved session in the owner's OpenCode service, in the

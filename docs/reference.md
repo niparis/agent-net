@@ -3346,8 +3346,12 @@ What each harness does:
 - Codex: `thread/resume` on the shared Codex app server, with the session's
   folder. Codex lists the thread as loaded, the daemon registers it under the
   same session ID, and the message is queued with `thread/queue/add`, which
-  starts a turn on an idle thread. The wake is refused when the app server is
-  not running.
+  starts a turn on an idle thread. After a restart of the machine the app
+  server is not running and its control socket is missing. The wake then runs
+  `codex app-server daemon start` (in the configured Codex home, with the
+  start timeout), waits for the control socket, and resumes the thread. If that
+  command fails, the wake fails with the command's own output. See
+  [decision 0129](decisions/0129-wake-starts-the-codex-app-server.md).
 - OpenCode: the saved session is loaded in the owner's OpenCode service
   (`service.json`), in the session's folder, so the plugin registers it again.
   The wake creates no session and is refused when the service is not running.
