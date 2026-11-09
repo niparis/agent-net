@@ -17,13 +17,13 @@ import (
 func readProcView(pid int) (procView, error) {
 	v := procView{PID: pid}
 	// lstart has spaces, so it is read on its own line.
-	out, err := exec.Command("ps", "-ww", "-o", "uid=,ppid=,stat=,lstart=", "-p", strconv.Itoa(pid)).Output()
+	out, err := exec.Command("ps", "-ww", "-o", "uid=,ppid=,stat=,lstart=,rss=", "-p", strconv.Itoa(pid)).Output()
 	line := strings.TrimSpace(string(out))
 	if err != nil || line == "" {
 		return v, os.ErrNotExist
 	}
 	f := strings.Fields(line)
-	if len(f) < 8 { // uid ppid stat and the five words of lstart
+	if len(f) < 9 { // uid ppid stat, the five words of lstart, and rss
 		return v, errors.New("bad ps output")
 	}
 	if v.UID, err = strconv.Atoi(f[0]); err != nil {
@@ -39,6 +39,7 @@ func readProcView(pid int) (procView, error) {
 	if t, err := time.ParseInLocation("Mon Jan _2 15:04:05 2006", start, time.Local); err == nil {
 		v.Started = t.UTC()
 	}
+	v.RSSKB, _ = strconv.ParseInt(f[8], 10, 64)
 	cmd, _ := exec.Command("ps", "-ww", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
 	v.Command = strings.TrimSpace(string(cmd))
 	if v.Command == "" {

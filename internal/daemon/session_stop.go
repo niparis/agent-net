@@ -132,6 +132,7 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 			return no(err)
 		}
 		d.markOwnerStop(ls, true)
+		d.afterClaudeStop(job)
 		if err := exec.CommandContext(ctx, bin, "stop", job).Run(); err != nil {
 			d.markOwnerStop(ls, false)
 			return no(fmt.Errorf("Claude could not stop %s: %w", name, err))

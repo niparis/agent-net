@@ -1285,6 +1285,12 @@ What limits it:
 
 What it exposes: the command line of each process goes into the tool result, the Inbox notice and the daemon log, cut at 400 characters. A command line can hold a secret (an API key in an argument). It is the same data any user on the machine reads with `ps`, but now it is written to the Inbox and the log too. The gateway event keeps only pids and outcomes. The notice is the record of what was stopped.
 
+### Settled Claude background processes
+
+The daemon ends Claude `bg-pty-host` trees that it can show belong to a settled job ([decision 0108](decisions/0108-end-settled-claude-background-processes.md)). It reads the job ID from the spare's own session file in `~/.claude/sessions`, and the job state from `~/.claude/jobs/<job>/state.json`. A tree is ended only when that state is `stopped`, `done` or `failed`, the tree is older than `claude.reap_after`, and every rule of the CTO process stop holds: the daemon's own user (real and effective), not the agent-net daemon or gateway, and not a registered live session or worker. The idle spare has no session file, so it has no claimed job and is kept. The Claude daemon, its spare pool and trees without a settled job are never touched.
+
+The daemon records the process start time before SIGTERM and checks it again before SIGTERM and SIGKILL, so a reused process number is not signalled. After `claude stop` it checks the same tree once, about ten seconds later. Each ended tree writes one line with the job ID, host pid, age and tree RSS to the daemon log. The sweep runs every ten minutes and can be turned off with `claude.reap_settled`.
+
 ## Automatic reply reminders
 
 The gateway can send one notification from the reserved `agent-net` identity

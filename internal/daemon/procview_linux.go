@@ -61,7 +61,14 @@ func readProcView(pid int) (procView, error) {
 			if v.EUID, err = strconv.Atoi(ids[1]); err != nil {
 				return v, err
 			}
-			break
+			continue
+		}
+		if rest, ok := strings.CutPrefix(line, "VmRSS:"); ok {
+			if f := strings.Fields(rest); len(f) > 0 {
+				if kb, err := strconv.ParseInt(f[0], 10, 64); err == nil {
+					v.RSSKB = kb
+				}
+			}
 		}
 	}
 

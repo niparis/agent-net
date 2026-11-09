@@ -449,6 +449,21 @@ settings:
     levels: [network, repo]
     default: 20m
     live: true
+  - key: claude.reap_settled
+    description: End Claude background processes left by settled jobs.
+    kind: advice
+    type: bool
+    levels: [network]
+    default: true
+    live: true
+  - key: claude.reap_after
+    description: Age before a settled Claude background tree is ended.
+    kind: advice
+    type: duration
+    min: 1m
+    levels: [network]
+    default: 30m
+    live: true
   - key: workers.max_age
     rows: [53]
     description: Maximum worker run age.
