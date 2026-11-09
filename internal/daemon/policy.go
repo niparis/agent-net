@@ -113,12 +113,9 @@ func (d *Daemon) policyOf(ctx context.Context, sid, agentsHash string) (protocol
 	}
 	p.cache[sid] = policyEntry{at: now, epoch: epoch, got: got}
 	p.mu.Unlock()
-	if draft != "" {
-		if got.Charter != "" {
-			got.Charter += "\n"
-		}
-		got.Charter += draft
-	}
+	// Keep the draft apart from the charter: the charter block is hashed to
+	// decide whether a later prompt repeats it, and the draft is one turn.
+	got.DraftRequest = draft
 	return got, true
 }
 
@@ -230,6 +227,17 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	}
 	res := d.policyResult(d.infoOf(ls).Harness, got)
 	res.Notice = notice
+	// A Claude Code hook answer is kept in the transcript. Send the full
+	// charter block once, again when it changed, and again after a compaction.
+	// Pi and OpenCode put it into the system prompt of each request, which does
+	// not accumulate, so they keep getting it every turn.
+	if client == "cli" && p.Harness == "claude" {
+		res.Charter = d.charterBlockForTurn(sid, res.Charter)
+	}
+	// The one-time draft request belongs to this turn and follows the charter.
+	if got.DraftRequest != "" {
+		res.Charter = joinCharter(res.Charter, got.DraftRequest)
+	}
 	return res, nil
 }
 

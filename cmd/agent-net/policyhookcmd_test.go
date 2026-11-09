@@ -19,8 +19,21 @@ func runPolicyWith(t *testing.T, input string, res protocol.PolicyResult, err er
 	runPolicyHook(context.Background(), strings.NewReader(input), &out, func(_ context.Context, r protocol.PolicyRequest) (protocol.PolicyResult, error) {
 		asked = append(asked, r)
 		return res, err
-	})
+	}, nil)
 	return out.String(), asked
+}
+
+func runPolicyCompact(t *testing.T, input string) (string, []protocol.CompactionRequest) {
+	t.Helper()
+	var compacted []protocol.CompactionRequest
+	var out bytes.Buffer
+	runPolicyHook(context.Background(), strings.NewReader(input), &out, func(_ context.Context, r protocol.PolicyRequest) (protocol.PolicyResult, error) {
+		return onePolicy, nil
+	}, func(_ context.Context, r protocol.CompactionRequest) error {
+		compacted = append(compacted, r)
+		return nil
+	})
+	return out.String(), compacted
 }
 
 var onePolicy = protocol.PolicyResult{Text: protocol.PolicyLead + "do the code changes yourself."}
@@ -78,7 +91,7 @@ func TestPolicyHookStopsAfterItsBudget(t *testing.T) {
 		func(ctx context.Context, _ protocol.PolicyRequest) (protocol.PolicyResult, error) {
 			<-ctx.Done()
 			return protocol.PolicyResult{}, ctx.Err()
-		})
+		}, nil)
 	if out.Len() != 0 || time.Since(start) > 2*time.Second {
 		t.Fatalf("out %q after %v", out.String(), time.Since(start))
 	}
@@ -103,6 +116,26 @@ func TestPolicyHookCarriesTheCharterEvenWithoutAPolicy(t *testing.T) {
 	both, _ := runPolicyWith(t, in, protocol.PolicyResult{Text: onePolicy.Text, Charter: charter}, nil)
 	if !strings.Contains(both, onePolicy.Text) || !strings.Contains(both, "Decide, do not defer") {
 		t.Fatalf("policy and charter not both there: %q", both)
+	}
+}
+
+func TestPolicyHookReportsCompaction(t *testing.T) {
+	for name, in := range map[string]string{
+		"PostCompact":          `{"session_id":"abc","hook_event_name":"PostCompact","trigger":"auto"}`,
+		"SessionStart compact": `{"session_id":"abc","hook_event_name":"SessionStart","source":"compact"}`,
+	} {
+		out, compacted := runPolicyCompact(t, in)
+		if out != "" {
+			t.Errorf("%s printed %q", name, out)
+		}
+		if len(compacted) != 1 || compacted[0].Harness != "claude" || compacted[0].NativeID != "abc" {
+			t.Errorf("%s: %+v", name, compacted)
+		}
+	}
+	// A normal start does not mean the transcript compacted.
+	out, compacted := runPolicyCompact(t, `{"session_id":"abc","hook_event_name":"SessionStart","source":"startup"}`)
+	if out != "" || len(compacted) != 0 {
+		t.Fatalf("startup: %q %+v", out, compacted)
 	}
 }
 

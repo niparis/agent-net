@@ -14,38 +14,55 @@ import (
 // every prompt of a Claude Code session, so it gives up quickly and silently.
 const policyBudget = 700 * time.Millisecond
 
-// policyHookInput is the part of the UserPromptSubmit hook input that is
-// needed (https://code.claude.com/docs/en/hooks).
+// policyHookInput is the part of the hook input that is needed
+// (https://code.claude.com/docs/en/hooks).
 type policyHookInput struct {
 	SessionID string `json:"session_id"`
 	EventName string `json:"hook_event_name"`
+	Source    string `json:"source"` // SessionStart: startup, resume, clear, compact, fork
 	Prompt    string `json:"prompt"`
 }
 
-// runPolicyHook is `agent-net policy-hook`: a Claude Code UserPromptSubmit
-// hook. It reads the hook input on stdin, asks the daemon for the delegation
-// policy of the session and the charter of its node, and prints the hook output
-// when there is one:
+// runPolicyHook is `agent-net policy-hook`: a Claude Code hook on
+// UserPromptSubmit, PostCompact and SessionStart (matcher compact). It reads
+// the hook input on stdin, asks the daemon for the delegation policy of the
+// session and the charter of its node, and prints the hook output when there
+// is one:
 //
 //	{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"..."}}
 //
-// It never fails: on any problem it prints nothing and exits 0, so it cannot
-// disturb the session.
+// A compaction only tells the daemon, so the next prompt gets the charter
+// block again. It never fails: on any problem it prints nothing and exits 0,
+// so it cannot disturb the session.
 func runPolicyHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
-	ask func(ctx context.Context, req protocol.PolicyRequest) (protocol.PolicyResult, error)) {
+	ask func(ctx context.Context, req protocol.PolicyRequest) (protocol.PolicyResult, error),
+	compacted func(ctx context.Context, req protocol.CompactionRequest) error) {
 	raw, err := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if err != nil {
 		return
 	}
 	var in policyHookInput
-	if json.Unmarshal(raw, &in) != nil || in.SessionID == "" || (in.EventName != "" && in.EventName != "UserPromptSubmit") {
+	if json.Unmarshal(raw, &in) != nil || in.SessionID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, policyBudget)
+	defer cancel()
+	switch in.EventName {
+	case "PostCompact":
+		signalCompaction(ctx, compacted, in.SessionID)
+		return
+	case "SessionStart":
+		if in.Source == "compact" {
+			signalCompaction(ctx, compacted, in.SessionID)
+		}
+		return
+	case "", "UserPromptSubmit":
+	default:
 		return
 	}
 	if r := []rune(in.Prompt); len(r) > 300 {
 		in.Prompt = string(r[:300])
 	}
-	ctx, cancel := context.WithTimeout(ctx, policyBudget)
-	defer cancel()
 	res, err := ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID, Prompt: in.Prompt})
 	if err != nil || (res.Text == "" && res.Charter == "" && res.Notice == "") {
 		return
@@ -70,6 +87,13 @@ func runPolicyHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	stdout.Write(append(b, '\n'))
 }
 
+func signalCompaction(ctx context.Context, compacted func(context.Context, protocol.CompactionRequest) error, sid string) {
+	if compacted == nil {
+		return
+	}
+	_ = compacted(ctx, protocol.CompactionRequest{Harness: "claude", NativeID: sid})
+}
+
 func cmdPolicyHook(ctx context.Context, _ []string) error {
 	runPolicyHook(ctx, os.Stdin, os.Stdout, func(ctx context.Context, req protocol.PolicyRequest) (protocol.PolicyResult, error) {
 		var res protocol.PolicyResult
@@ -84,6 +108,14 @@ func cmdPolicyHook(ctx context.Context, _ []string) error {
 		}
 		err = json.Unmarshal(raw, &res)
 		return res, err
+	}, func(ctx context.Context, req protocol.CompactionRequest) error {
+		cl, err := dialCLI(ctx)
+		if err != nil {
+			return err
+		}
+		defer cl.Close()
+		_, err = cl.Call(ctx, protocol.MethodCompaction, req)
+		return err
 	})
 	return nil
 }

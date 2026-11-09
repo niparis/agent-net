@@ -430,6 +430,9 @@ type Daemon struct {
 	hints hintState
 	// policy caches the delegation policy per session (policy.go).
 	policy policyState
+	// charterSends keeps the charter block of each Claude Code session from
+	// being repeated on every prompt (charter_send.go).
+	charterSends charterSendState
 	// graph caches the graph of each node for its charter (graphread.go).
 	graph graphState
 	// charterEpoch counts the charter changes the gateway announced. The policy
