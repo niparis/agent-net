@@ -23,6 +23,7 @@
 <p align="center">
   <a href="#quickstart">Quickstart</a> ·
   <a href="#background-sessions-the-swarm-runs-without-you-at-the-terminal">Background sessions</a> ·
+  <a href="#your-memory-the-swarm-learns-how-you-decide">Your memory</a> ·
   <a href="#several-machines-one-network">Several machines</a> ·
   <a href="#the-ideas">The ideas</a> ·
   <a href="#why-not-just">Why not just …</a> ·
@@ -80,6 +81,19 @@ Every session in the swarm can run in the background. You start it, wake it, ste
 - **You look in only when you want to.** Press Enter on any session to open it live, in herdr or your terminal. Stop, resume or restart it from the TUI, the web console or by asking the CTO.
 
 Example. Before bed you tell the CTO: *"Start a Codex session in billing-api on the build box: migrate the invoice job to the new queue, use workers for the code."* The session plans the work, hands the code to two workers, reviews their reports and opens the pull request. At 3 a.m. the frontend session, also in the background, asks it about a renamed field; the billing session wakes, answers and goes back to sleep. In the morning your Desk holds one question: *"Merge PR #212? CI green. Recommended: yes."*
+
+## Your memory: the swarm learns how you decide
+
+Every time you decide something, agent-net keeps it, and the swarm uses it so it asks you less the next time.
+
+- **Standing orders.** Lasting instructions you give the CTO in plain words, such as *"never deploy on Fridays"*. They survive restarts and machine changes, and every agent can read them.
+- **Your answers.** Each answer you give on the Desk is stored with its question, its project and when you gave it.
+- **Your corrections.** When the chief of staff brings you something you did not need to see, press `n` ("didn't need me"); when it handled something it should have asked you about, press `m`. Its next batches sort that kind of ask the way you showed it.
+- **Used before asking.** Before an agent or the chief of staff asks you, it searches this memory (`agent_owner_judgments_find`). If you already answered the same kind of question, it acts on that answer and names it, instead of asking again.
+
+Example. On Monday you approve homelab-agent's merge of an image-pin update and add *"approve image-pin merges in truenas-stacks"*. On Wednesday the same kind of merge comes up. homelab-agent finds Monday's answer, merges, and the Desk log shows one line citing it. Nothing reaches you.
+
+The memory lives in your gateway's database, on your machine. Standing orders are listed in the TUI (Settings), where you add, remove or restore them; the CTO can do the same on your instructions.
 
 ## Several machines, one network
 
