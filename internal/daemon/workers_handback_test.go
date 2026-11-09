@@ -372,6 +372,10 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.IdleNotice = 200 * time.Millisecond
+	// The fake server is a race-built test binary. On a loaded host its start
+	// can take longer than the short default, so the start bound is wider. It
+	// only applies when a start fails.
+	set.StartTimeout = scaled(30 * time.Second)
 	w := startWorkerNode(t, g, set, nil)
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -432,8 +436,22 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 	}
 	var followup protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "another turn"}), &followup)
-	if followup.Message == nil {
-		t.Fatal("follow-up message was queued instead of sent")
+	// When the gateway link is down, the daemon queues the send in its outbox
+	// and sends it on reconnect. The test needs the message to reach the
+	// worker, so it accepts a queued send and waits for the gateway to have it.
+	followupID := ""
+	if followup.Message != nil {
+		followupID = followup.Message.ID
+	} else {
+		eventually(t, "queued follow-up reached the gateway", func() bool {
+			for _, m := range w.messagesOf(t, w.ownerID()) {
+				if m.To == res.SessionID && m.Body == "another turn" {
+					followupID = m.ID
+					return true
+				}
+			}
+			return false
+		})
 	}
 	eventually(t, "follow-up assigned to worker", func() bool {
 		worker := w.d.workerBySession(res.SessionID)
@@ -442,11 +460,11 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 		}
 		w.d.wmu.Lock()
 		defer w.d.wmu.Unlock()
-		return worker.taskMsg == followup.Message.ID
+		return worker.taskMsg == followupID
 	})
 	second := w.waitNotice(t, 2)[1]
-	if second.ParentID != followup.Message.ID || second.IdempotencyKey == key || !strings.Contains(second.Body, "idle without hand-back") {
-		t.Fatalf("second idle notice parent %q, want %q, key %q after %q: %+v", second.ParentID, followup.Message.ID, second.IdempotencyKey, key, second)
+	if second.ParentID != followupID || second.IdempotencyKey == key || !strings.Contains(second.Body, "idle without hand-back") {
+		t.Fatalf("second idle notice parent %q, want %q, key %q after %q: %+v", second.ParentID, followupID, second.IdempotencyKey, key, second)
 	}
 	eventually(t, "second idle notice acknowledged", func() bool {
 		worker := w.d.workerBySession(res.SessionID)

@@ -22,6 +22,10 @@ func TestWorkerBlockedEndNoticeDoesNotDelayIdleLimit(t *testing.T) {
 	defer unblock()
 	set := shortSet
 	set.Idle, set.MaxAge = time.Hour, 24*time.Hour
+	// The fake server is a race-built test binary. On a loaded host its start
+	// can take longer than the short default, so the start bound is wider. It
+	// only applies when a start fails.
+	set.StartTimeout = scaled(30 * time.Second)
 	w := startWorkerNode(t, g, set, func(c *Config) {
 		c.testGatewayCall = func(ctx context.Context, method string, params any) (json.RawMessage, bool, error) {
 			if method == "msg.send" {
@@ -47,6 +51,11 @@ func TestWorkerBlockedEndNoticeDoesNotDelayIdleLimit(t *testing.T) {
 			Task: "FAKE:ignore hold the worker", Isolation: protocol.IsolationNone})
 	}
 	first, second := start(), start()
+	// expire makes the worker look idle, and keeps doing so until the worker
+	// starts ending. Activity that reaches the daemon after one expiry restarts
+	// the idle clock: a turn that is still busy, or a late message. So the test
+	// expires the clock again on each poll, and the first expired tick that
+	// finds no activity ends the worker.
 	expire := func(sid string) *worker {
 		t.Helper()
 		rec := w.d.workerBySession(sid)
@@ -58,17 +67,26 @@ func TestWorkerBlockedEndNoticeDoesNotDelayIdleLimit(t *testing.T) {
 			defer w.d.wmu.Unlock()
 			return rec.taskMsg != "" && rec.sendsInFlight == 0
 		})
-		w.d.wmu.Lock()
-		rec.lastActive = time.Now().Add(-2 * time.Hour)
-		w.d.wmu.Unlock()
+		eventually(t, "worker idle limit started its end", func() bool {
+			w.d.wmu.Lock()
+			defer w.d.wmu.Unlock()
+			if rec.stopping {
+				return true
+			}
+			rec.lastActive = time.Now().Add(-2 * time.Hour)
+			return false
+		})
 		return rec
 	}
 	expire(first.SessionID)
-	select {
-	case <-blocked:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first end notice did not reach blocked gateway")
-	}
+	eventually(t, "first end notice reached the blocked gateway", func() bool {
+		select {
+		case <-blocked:
+			return true
+		default:
+			return false
+		}
+	})
 	rec := expire(second.SessionID)
 	// The end decision is made by the worker loop on its tick, and that loop
 	// can be late on a loaded host. The first send stays blocked for the whole

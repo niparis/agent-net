@@ -104,8 +104,13 @@ func killAllWorkers(t *testing.T, d *Daemon) {
 }
 
 func inventoryOf(t *testing.T, cli *localClient, n *node) bool {
+	// Callers poll this. A slow gateway reply under load is "not yet", not a failure.
+	raw, err := cli.call("nodes", nil)
+	if err != nil {
+		return false
+	}
 	var ni protocol.NodesInfo
-	json.Unmarshal(cli.mustCall("nodes", nil), &ni)
+	json.Unmarshal(raw, &ni)
 	for _, v := range ni.Nodes {
 		if v.NodeID == n.d.NodeID() && v.Online && v.Launch != nil && len(v.Harnesses) > 0 {
 			return true
@@ -613,8 +618,15 @@ func TestWorkerWithMessageInFlightIsNotIdle(t *testing.T) {
 func TestBusyWorkerIsNotIdle(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
+	// The idle limit never ends this worker by itself: the test expires the
+	// idle clock by hand, after the harness state it needs is in place. A short
+	// limit would race the harness status poll, which is slower under load.
 	set := shortSet
-	set.Idle = 400 * time.Millisecond
+	set.Idle = time.Hour
+	// The fake server is a race-built test binary. On a loaded host its start
+	// can take longer than the short default, so the start bound is wider. It
+	// only applies when a start fails.
+	set.StartTimeout = scaled(30 * time.Second)
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
@@ -658,17 +670,38 @@ func TestBusyWorkerIsNotIdle(t *testing.T) {
 		ls := w.d.sessionByID(res.SessionID)
 		return ls != nil && w.d.infoOf(ls).Status == "busy"
 	})
+	// The worker has had no message for longer than its idle limit, and it is
+	// busy. A busy worker must stay running: the daemon restarts the idle clock
+	// on each tick it sees the busy session.
+	expireIdle := func() {
+		w.d.wmu.Lock()
+		defer w.d.wmu.Unlock()
+		for _, worker := range w.d.workers {
+			if worker.sessionID == res.SessionID {
+				worker.lastActive = time.Now().Add(-2 * time.Hour)
+			}
+		}
+	}
+	expireIdle()
 	busySince := time.Now()
-	eventually(t, "busy worker stays running for the idle interval", func() bool {
+	eventually(t, "busy worker stays running past its idle limit", func() bool {
 		if n := w.d.workerCount(); n != 1 {
 			t.Fatalf("a busy worker was ended as idle: %d running", n)
 		}
 		return time.Since(busySince) >= 900*time.Millisecond
 	})
-	// When it goes idle and stays quiet, the idle limit applies again.
+	// The harness goes idle. When it stays quiet, the idle limit applies again.
+	// Activity that reaches the daemon after an expiry (a late message, for
+	// example) restarts the clock, so the test expires it again on each poll.
+	// A busy tick cannot end the worker, and once the turn is over the expired
+	// clock ends it.
 	if err := os.Remove(activeFile); err != nil {
 		t.Fatal(err)
 	}
+	eventually(t, "idle worker ended by its idle limit", func() bool {
+		expireIdle()
+		return w.d.workerCount() == 0
+	})
 	w.workerStopped(t, g, protocol.StopIdle)
 }
 
