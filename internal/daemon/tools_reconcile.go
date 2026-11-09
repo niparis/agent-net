@@ -164,7 +164,7 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 	if _, err = dest.lstat(); err == nil {
 		hash, e := skillHashAt(dest)
 		if e != nil || hash != t.Revision.Version {
-			return fail("conflict", "destination differs")
+			return fail("conflict", d.destinationDiffersReason(manifestDest, hash, t.Revision.Item))
 		}
 		if e = d.recordSkill(t, manifestDest, false); e != nil {
 			return fail("failed", "cannot record manifest")

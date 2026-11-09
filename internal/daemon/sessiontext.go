@@ -37,7 +37,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpWorkerLog: true,
 	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
 	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true, protocol.OpAppsGrant: true, protocol.OpAppsUngrant: true,
-	"tools_keep_copy": true, "tools_import_folder": true, "tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
+	"tools_keep_copy": true, "tools_save_changed": true, "tools_update_plan": true, "tools_update_copies": true, "tools_import_folder": true, "tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
 	protocol.OpCTOGraphWindow: true,
 	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true, protocol.OpProposalStartAck: true,
 	"notification_settings": true,
@@ -418,6 +418,20 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 		p.Owner = d.ownerSessionID()
 		res, err = d.call(withCallWait(ctx, 3*time.Minute), "tools.keep_copy", p)
+	case "tools_save_changed":
+		var p protocol.ToolSaveChanged
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("invalid save request")
+		}
+		p.Owner = d.ownerSessionID()
+		res, err = d.call(withCallWait(ctx, 90*time.Second), "tools.save_changed", p)
+	case "tools_update_plan", "tools_update_copies":
+		var p protocol.ToolUpdateRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("invalid update request")
+		}
+		p.Owner = d.ownerSessionID()
+		res, err = d.call(withCallWait(ctx, 10*time.Minute), "tools."+strings.TrimPrefix(method, "tools_"), p)
 	case "tools_import_folder":
 		var p protocol.ToolFolderImport
 		if json.Unmarshal(raw, &p) != nil {

@@ -265,7 +265,7 @@ func (d *Daemon) copyProjectSkillIn(t protocol.ToolTarget, bundle []byte, worktr
 		if cur == filepath.Join(checkout, rel) {
 			h, e := inventory.SkillHash(cur)
 			if e != nil || h != t.Revision.Version {
-				return fail("conflict", "destination differs")
+				return fail("conflict", d.destinationDiffersReason(cur, h, t.Revision.Item))
 			}
 			owned, e := d.projectSkillOwned(cur, t.Revision.Item)
 			if e != nil {

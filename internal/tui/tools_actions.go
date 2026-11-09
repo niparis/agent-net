@@ -68,6 +68,14 @@ func (m Model) toolAttentionReason(r toolsdiff.Row) string {
 	if reason := m.skillScanLockReason(r, ""); reason != "" {
 		return reason
 	}
+	// An edited deployed copy always needs the owner: save it or leave it.
+	switch len(r.Changed) {
+	case 0:
+	case 1:
+		return "changed here on " + sanitize(changedCopyWhere(r.Changed[0]))
+	default:
+		return fmt.Sprintf("%d copies changed here", len(r.Changed))
+	}
 	for _, d := range m.tl.cat.Diffs {
 		if d.Name != r.Name || d.Info || m.tl.accepted[d.Key] {
 			continue
@@ -345,6 +353,13 @@ func (m Model) openToolMenu() (tea.Model, tea.Cmd) {
 			act := toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: r.Name, Copies: copies}
 			add("Compare the copies / Keep this one", func(m Model) (tea.Model, tea.Cmd) { return m.openChoose("Compare, then keep one", act) })
 		}
+	}
+	for _, c := range r.Changed {
+		c := c
+		add("Save the copy on "+changedCopyWhere(c)+" as the next version", func(m Model) (tea.Model, tea.Cmd) { return m.saveChangedTool(r, c) })
+	}
+	if newest, ok := newestStored(r); ok && len(r.Variants) > 1 {
+		add(fmt.Sprintf("Update older copies to v%d", newest.VersionNo), func(m Model) (tea.Model, tea.Cmd) { return m.updateTool(toolsdiff.Row{Name: r.Name, Item: newest}) })
 	}
 	if r.Kind == protocol.InventoryMCP && r.Item.Federated {
 		add("Test it", func(m Model) (tea.Model, tea.Cmd) { return m.mcpToolAction("test", r.Name) })

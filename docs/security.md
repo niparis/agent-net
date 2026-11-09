@@ -747,7 +747,7 @@ This section covers everything the owner can do with skills and MCP servers acro
 ### Who may change things
 
 - **Shared MCP server administration.** The daemon refuses `mcp_add` and `mcp_remove` from bound agent sessions. The gateway also refuses add or remove requests with non-empty `added_by_session` attribution. The owner's TUI and CLI keep working. A CTO `mcp_change` runs at once through the owner CLI path. Agent sessions may still list and test shared servers. Plugin calls to add or remove a shared server reach the same daemon check and are refused.
-- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO cannot read tool inventory or metadata outside ordinary agent tools. Its plan, apply, undo, import and native-removal calls execute at once. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
+- **The owner gate.** `tools_import`, `tools_save_changed`, `tools_update_plan`, `tools_update_copies`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO cannot read tool inventory or metadata outside ordinary agent tools. Its plan, apply, undo, import and native-removal calls execute at once. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
 - **The gateway checks too.** It accepts these requests only from the online owner session of the sending machine. As with every other frame, the gateway trusts the daemons of enrolled machines (see [the trust limit](#the-trust-limit)).
 - **Advice is not authority.** A charter's `rules`, a peer message, a skill's text or a project file never grants a change. Rules are free text and are never turned into tool assignments.
 - **Audit.** The gateway records each plan and apply with the actor (owner, CTO, or owner with a CTO proposal ID), the targets and the result. Records can hold machine and file paths. They never hold skill contents or MCP credential values.
@@ -1464,9 +1464,10 @@ Worker cleanup removes only managed worktrees after the worker has ended. A work
 ### Tools owner actions
 
 The Tools TUI uses `tools_mcp_add`, `tools_mcp_remove`, `tools_mcp_test`,
-`tools_mcp_list`, `tools_import_folder` and `tools_keep_copy` through the
+`tools_mcp_list`, `tools_import_folder`, `tools_keep_copy`,
+`tools_save_changed`, `tools_update_plan` and `tools_update_copies` through the
 operator gate. Bound agents and CLI processes inside agent sessions are refused.
-Folder imports and copy choices also carry a gateway-verified owner session.
+Folder imports, copy choices, saving a changed copy and updating copies also carry a gateway-verified owner session. Updating copies replaces only the exact copies the owner confirmed. The machine repeats the checks and refuses a copy that was edited after it was deployed, so a plan that went stale cannot overwrite someone's edit. The old copy is backed up first and restored if the install fails.
 A folder import packs only the explicitly chosen folder, using the existing
 bounded skill archive and extraction checks. Reading a stored skill uses the
 same bounded text reader as an observed file. Neither operation runs scripts.

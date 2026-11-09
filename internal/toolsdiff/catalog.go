@@ -9,6 +9,7 @@
 package toolsdiff
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -69,6 +70,18 @@ type ProjectState struct {
 	State string
 }
 
+// ChangedCopy is a deployed copy whose content no longer matches the version
+// the daemon deployed ("changed here").
+type ChangedCopy struct {
+	Item       string // item ID of the content now in the copy
+	NodeID     string
+	Machine    string
+	Location   string
+	Project    string
+	Hash       string // fingerprint of the edited content
+	DeployedNo int    // store number of the version it came from, 0 if unknown
+}
+
 // Row is one line of the All tools screen.
 type Row struct {
 	Name    string
@@ -83,6 +96,8 @@ type Row struct {
 	Projects []ProjectState
 	Note     string // short note for the grid; never names a harness
 	Detail   string // one line for the details pane; may name a limit
+	// Changed lists copies the daemon deployed that were edited afterwards.
+	Changed []ChangedCopy
 	// Item is the managed (or federated) item, or the first variant.
 	Item protocol.ToolItem
 	// Variants are all items with this kind and name.
@@ -317,6 +332,7 @@ func rowsOf(g group, ms []Machine) []Row {
 			r.From = "your machines"
 			fillFound(&r, copies, ms)
 		}
+		markChanged(&r, g)
 		rows = append(rows, r)
 	}
 	for _, p := range repoOrder {
@@ -626,4 +642,54 @@ func (r Row) ProjectSummary() (text string, warn bool) {
 		text += " · " + strconv.Itoa(hid) + " hidden"
 	}
 	return text, pend+hid > 0
+}
+
+// markChanged lists the deployed copies that were edited since the daemon put
+// them there, and says so in the row's note and detail.
+func markChanged(r *Row, g group) {
+	if r.Kind != protocol.InventorySkill {
+		return
+	}
+	for _, v := range g.variants {
+		for _, l := range v.Locations {
+			if !l.ChangedHere || l.State != protocol.InventoryOK {
+				continue
+			}
+			r.Changed = append(r.Changed, ChangedCopy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Project: l.Project, Hash: v.Hash, DeployedNo: l.DeployedNo})
+		}
+	}
+	if len(r.Changed) == 0 {
+		return
+	}
+	sort.Slice(r.Changed, func(i, j int) bool {
+		a, b := r.Changed[i], r.Changed[j]
+		return a.Machine+"\x00"+a.Location < b.Machine+"\x00"+b.Location
+	})
+	var where []string
+	for _, c := range r.Changed {
+		from := ""
+		if c.DeployedNo > 0 {
+			from = fmt.Sprintf(" (from v%d)", c.DeployedNo)
+		}
+		w := c.Machine + from
+		if c.Project != "" {
+			w = c.Machine + " in " + c.Project + from
+		}
+		where = append(where, w)
+	}
+	note := "changed on " + r.Changed[0].Machine
+	if len(r.Changed) > 1 {
+		note = fmt.Sprintf("changed on %d copies", len(r.Changed))
+	}
+	if r.Note == "" {
+		r.Note = note
+	} else {
+		r.Note = note + "; " + r.Note
+	}
+	detail := "Changed here: someone edited a copy agent-net put on " + strings.Join(where, ", ") + ". It stays as it is until you save it as the next version."
+	if r.Detail == "" {
+		r.Detail = detail
+	} else {
+		r.Detail += " " + detail
+	}
 }
