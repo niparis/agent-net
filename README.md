@@ -183,7 +183,7 @@ Nine words, in the order you meet them.
 - **CTO.** Your agent for running the network. *"Turn on lead merges for forge."*
 - **Chief of staff.** Your agent for sorting what reaches you. *"Handled for you: 22 closed, 4 sent on, 2 for you."*
 
-A guided tour of every screen is in [docs/tour.md](docs/tour.md).
+A guided tour of every screen is in [docs/tour.md](docs/tour.md). The principles behind these choices are in [docs/principles.md](docs/principles.md).
 
 ## Why not just …
 

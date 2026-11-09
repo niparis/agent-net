@@ -5,6 +5,7 @@
 ## Use it
 
 - [tour.md](tour.md): a tour of every TUI screen and what you can do on each.
+- [principles.md](principles.md): the product principles that decide unclear design choices.
 - [setup.md](setup.md): install, add a machine, update, remove. The details behind the README quickstart.
 - [reference.md](reference.md): ports, files, environment variables, flags, and what setup changes on your machine.
 - [security.md](security.md): the trust model, and what agent-net does not protect against.
