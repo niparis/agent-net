@@ -200,7 +200,7 @@ func TestSessionStallNewPendingDoesNotClearBusyNotice(t *testing.T) {
 	}
 }
 
-func TestSessionStallLostBusySessionAndExplicitEnd(t *testing.T) {
+func TestSessionStallLostBusySessionGetsNoAsk(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("test-host", "linux")
 	in := protocol.SessionInfo{Harness: "claude", NativeID: "lost", Status: "busy"}
@@ -216,8 +216,11 @@ func TestSessionStallLostBusySessionAndExplicitEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, _, _ := s.Agent(id)
-	if a.Online || a.StalledSince == 0 || a.Status != "busy" {
-		t.Fatalf("lost session: %+v", a)
+	if a.Online || a.StalledSince != 0 || a.Status != "busy" {
+		t.Fatalf("lost session got a stall ask: %+v", a)
+	}
+	if got := len(stallItems(t, s)); got != 0 {
+		t.Fatalf("lost session raised %d stall asks, want 0", got)
 	}
 	if err := s.SetSessionOffline(node, id); err != nil {
 		t.Fatal(err)
@@ -228,6 +231,211 @@ func TestSessionStallLostBusySessionAndExplicitEnd(t *testing.T) {
 	a, _, _ = s.Agent(id)
 	if a.StalledSince != 0 || a.Status != "busy" {
 		t.Fatalf("explicit end: %+v", a)
+	}
+}
+
+// stallItems returns the session stall asks in the Inbox, open or closed.
+func stallItems(t *testing.T, s *Store) []protocol.InboxItem {
+	t.Helper()
+	items, err := s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []protocol.InboxItem
+	for _, item := range items {
+		if item.Kind == "session_stall" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// closeByChief closes an ask the way the chief of staff does.
+func closeByChief(t *testing.T, s *Store, id string) {
+	t.Helper()
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed',answer='chief: looked at it',answered_at=? WHERE id=?`, s.now().UnixNano(), id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionStallOneAskPerActivity(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, err := s.CreateNode("test-host", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "once", Status: "busy"}); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	stalls := stallItems(t, s)
+	if len(stalls) != 1 || stalls[0].Status != "open" {
+		t.Fatalf("first ask: %+v", stalls)
+	}
+	closeByChief(t, s, stalls[0].ID)
+	// Every later minute sees the same activity time and must add nothing.
+	for i := 0; i < 3; i++ {
+		c.t = c.t.Add(time.Minute)
+		if err := s.checkSessionStalls(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := len(stallItems(t, s)); got != 1 {
+		t.Fatalf("%d stall asks for one activity time, want 1", got)
+	}
+}
+
+func TestSessionStallNoReRaiseAfterClose(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, err := s.CreateNode("test-host", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := protocol.SessionInfo{Harness: "pi", NativeID: "closed", Status: "busy"}
+	if _, err := s.UpsertSession(node, in); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	stalls := stallItems(t, s)
+	if len(stalls) != 1 {
+		t.Fatalf("first ask: %+v", stalls)
+	}
+	closeByChief(t, s, stalls[0].ID)
+	c.t = c.t.Add(time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(stallItems(t, s)); got != 1 {
+		t.Fatalf("ask raised again after the chief closed it: %d asks", got)
+	}
+	// New activity allows exactly one new ask for the new activity time.
+	in.HarnessActivity = c.t.Unix()
+	if _, err := s.UpsertSession(node, in); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	stalls = stallItems(t, s)
+	open := 0
+	for _, item := range stalls {
+		if item.Status == "open" {
+			open++
+		}
+	}
+	if len(stalls) != 2 || open != 1 {
+		t.Fatalf("new activity: %d asks, %d open, want 2 and 1", len(stalls), open)
+	}
+}
+
+func TestSessionStallNoReRaiseAfterOwnerAnswer(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, err := s.CreateNode("test-host", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "answered", Status: "busy"}); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	stalls := stallItems(t, s)
+	if len(stalls) != 1 {
+		t.Fatalf("first ask: %+v", stalls)
+	}
+	if _, err := s.AnswerInbox(stalls[0].ID, "restarted it"); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(stallItems(t, s)); got != 1 {
+		t.Fatalf("ask raised again after the owner answered it: %d asks", got)
+	}
+}
+
+func TestSessionStallSkipsOfflineAndIdleDone(t *testing.T) {
+	t.Run("offline", func(t *testing.T) {
+		s, c := newTestStore(t)
+		node, _, err := s.CreateNode("test-host", "linux")
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "offline", Status: "busy"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetSessionLost(node, id); err != nil {
+			t.Fatal(err)
+		}
+		c.t = c.t.Add(21 * time.Minute)
+		if err := s.checkSessionStalls(); err != nil {
+			t.Fatal(err)
+		}
+		if got := len(stallItems(t, s)); got != 0 {
+			t.Fatalf("offline session raised %d stall asks, want 0", got)
+		}
+	})
+	t.Run("idle done", func(t *testing.T) {
+		s, c := newTestStore(t)
+		node, _, err := s.CreateNode("test-host", "linux")
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "idle-done", Status: "idle"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "done"}); err != nil {
+			t.Fatal(err)
+		}
+		sender, _ := twoSessions(t, s)
+		if _, _, err := send(s, sender, id, "idle-done-pending", ""); err != nil {
+			t.Fatal(err)
+		}
+		c.t = c.t.Add(21 * time.Minute)
+		if err := s.checkSessionStalls(); err != nil {
+			t.Fatal(err)
+		}
+		if got := len(stallItems(t, s)); got != 0 {
+			t.Fatalf("idle done session raised %d stall asks, want 0", got)
+		}
+	})
+}
+
+func TestSessionStallBusySessionStillRaises(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, err := s.CreateNode("test-host", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "busy", Status: "busy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	stalls := stallItems(t, s)
+	if len(stalls) != 1 || stalls[0].Status != "open" || stalls[0].SessionID != id {
+		t.Fatalf("busy stall: %+v", stalls)
+	}
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(stallItems(t, s)); got != 1 {
+		t.Fatalf("busy stall repeated while open: %d asks", got)
 	}
 }
 
