@@ -543,5 +543,5 @@ func (a *codexAdapter) onUserMessage(raw json.RawMessage) {
 	if sid == "" || a.d.workerBySession(sid) != nil {
 		return
 	}
-	go a.d.ownerTyped(context.Background(), ls, sid)
+	go a.d.ownerTyped(context.Background(), ls, sid, text.String())
 }

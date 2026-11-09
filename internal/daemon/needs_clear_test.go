@@ -165,6 +165,17 @@ func TestTypedClaudePromptClearsTheWaitAndClosesTheAsk(t *testing.T) {
 	cli.mustCall(protocol.MethodPolicy, protocol.PolicyRequest{Harness: "claude", NativeID: "c-one", Prompt: "go"})
 	eventually(t, "typed prompt clears the wait", func() bool { return waitingOf(t, n, id) == nil })
 	eventually(t, "typed prompt closes the ask", func() bool { return inboxStatus(t, n, created.Item.ID) != "open" })
+	// What he typed is his answer: the judgment search finds it with the ask.
+	found, err := n.d.call(context.Background(), "judgment.find", protocol.JudgmentsFindRequest{Ref: created.Item.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var judged struct {
+		Items []protocol.StandingOrder `json:"items"`
+	}
+	if err := json.Unmarshal(found, &judged); err != nil || len(judged.Items) != 1 || judged.Items[0].Text != "Q: Build the grant? / A: go" {
+		t.Fatalf("judgments: %s %v", found, err)
+	}
 }
 
 // A Pi session reports interactive input as owner_prompt. It closes the

@@ -250,6 +250,12 @@ func (s *Store) reconcileEndedSessionAsks(q askDB) (int, error) {
 // deleted. before limits the close to asks made before that time (UnixNano);
 // zero means all.
 func (s *Store) closeSessionOwnerAsks(q askDB, session string, before int64, reason string, kinds ...string) (int, error) {
+	cond, args := sessionOwnerAskCond(session, before, kinds)
+	return s.closeAsks(q, cond, args, reason)
+}
+
+// sessionOwnerAskCond selects the open asks that closeSessionOwnerAsks closes.
+func sessionOwnerAskCond(session string, before int64, kinds []string) (string, []any) {
 	if len(kinds) == 0 {
 		kinds = []string{protocol.AskKindQuestion, protocol.AskKindApproval, protocol.AskKindCheck}
 	}
@@ -259,7 +265,7 @@ func (s *Store) closeSessionOwnerAsks(q askDB, session string, before int64, rea
 		cond += ` AND created_at<?`
 		args = append(args, before)
 	}
-	return s.closeAsks(q, cond, args, reason)
+	return cond, args
 }
 
 // movedOnCleanupKey marks the one-time cleanup in owner_settings.

@@ -543,10 +543,10 @@ func (s *Store) answerLoopAsk(id, answer string, validate ...bool) (protocol.Inb
 		}
 	}
 	now := s.now().UTC()
-	if _, err := s.db.Exec(`UPDATE inbox_items SET status='answered',answer=?,answered_at=? WHERE id=?`, answer, now.UnixNano(), id); err != nil {
+	item.Status, item.Answer, item.AnsweredAt = "answered", answer, now
+	if err := s.closeAnsweredItem(item, answer); err != nil {
 		return item, true, err
 	}
-	item.Status, item.Answer, item.AnsweredAt = "answered", answer, now
 	return item, true, s.loopLog(node, "Loop "+node+": "+answer+" by the owner")
 }
 

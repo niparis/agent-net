@@ -1629,6 +1629,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Owner     string `json:"owner"`
 			SessionID string `json:"session_id"`
 			Prompt    bool   `json:"prompt"`
+			Text      string `json:"text"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {
 			return nil, reject("bad session.owner_use")
@@ -1650,7 +1651,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if p.Prompt {
 			// The owner typed in the session: what it asked is answered or
 			// overtaken (the Needs you tag must not outlive its reason).
-			if _, err := st.closeSessionOwnerAsks(st.db, p.SessionID, 0, protocol.AskReasonOwnerReplied); err != nil {
+			if err := st.closeOwnerRepliedAsks(p.SessionID, p.Text); err != nil {
 				return nil, err
 			}
 		}
@@ -1866,7 +1867,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"items": items, "total": len(items)}, nil
+		res := map[string]any{"items": items, "total": len(items)}
+		if q.Marks {
+			// Say how many marks storage holds, so "no marks yet" is not
+			// mistaken for "marks not indexed".
+			stored, err := st.MarksStored()
+			if err != nil {
+				return nil, err
+			}
+			res["marks_stored"] = stored
+			if len(items) == 0 {
+				res["note"] = marksNote(stored, q.Offset)
+			}
+		}
+		return res, nil
 	case "judgment.add":
 		q, err := decode[protocol.JudgmentAddRequest](raw)
 		if err != nil {

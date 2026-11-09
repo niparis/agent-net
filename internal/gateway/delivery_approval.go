@@ -46,6 +46,9 @@ func (s *Store) answerDeliveryApproval(id, answer string, validate ...bool) (pro
 		if _, err := tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
 			return item, true, err
 		}
+		if err := s.recordOwnerAnswer(tx, item, answer); err != nil {
+			return item, true, err
+		}
 		if len(validate) > 0 && validate[0] {
 			return item, true, nil
 		}
@@ -148,7 +151,7 @@ func (s *Store) answerDeliveryApproval(id, answer string, validate ...bool) (pro
 	if _, err := tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
 		return item, true, err
 	}
-	if err := s.recordOwnerAnswerTx(tx, item, answer); err != nil {
+	if err := s.recordOwnerAnswer(tx, item, answer); err != nil {
 		return item, true, err
 	}
 	if err := s.queueSteps(tx, c, p, item.AnsweredAt.Unix()); err != nil {

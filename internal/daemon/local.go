@@ -976,7 +976,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if sid == "" {
 			return nil, nil
 		}
-		d.ownerTyped(ctx, ls, sid)
+		d.ownerTyped(ctx, ls, sid, "")
 		return nil, nil
 
 	case "harness_activity":

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
@@ -112,10 +113,13 @@ func (s *Store) UpdateStandingOrder(q protocol.StandingOrdersRequest) (protocol.
 }
 
 func (s *Store) SearchStandingOrders(q protocol.StandingOrdersRequest) ([]protocol.StandingOrder, error) {
+	if ftsMatch(q.Query) == "" {
+		return []protocol.StandingOrder{}, nil
+	}
 	rows, err := s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,snippet(standing_orders_fts,0,'[',']','...',24),o.kind,o.area,o.ref
  FROM standing_orders_fts JOIN standing_orders o ON o.rowid=standing_orders_fts.rowid
  WHERE standing_orders_fts MATCH ? AND (?='' OR EXISTS(SELECT 1 FROM json_each(o.tags) WHERE value=?))
- AND (?='' OR o.source=?) AND o.saved_at>=? AND o.kind IN ('order','rule') ORDER BY bm25(standing_orders_fts),o.id LIMIT 20`, q.Query, q.Tag, q.Tag, q.Source, q.Source, q.SavedSince)
+ AND (?='' OR o.source=?) AND o.saved_at>=? AND o.kind IN ('order','rule') ORDER BY bm25(standing_orders_fts),o.id LIMIT 20`, ftsMatch(q.Query), q.Tag, q.Tag, q.Source, q.Source, q.SavedSince)
 	if err != nil {
 		return nil, err
 	}
@@ -206,14 +210,15 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
 
 	var rows *sql.Rows
 	var err error
-	if strings.TrimSpace(q.Query) != "" {
+	match := ftsMatch(q.Query)
+	if match != "" {
 		rows, err = s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,snippet(standing_orders_fts,0,'[',']','...',24),o.kind,o.area,o.ref
  FROM standing_orders_fts JOIN standing_orders o ON o.rowid=standing_orders_fts.rowid
  WHERE standing_orders_fts MATCH ?
    AND (?='' OR o.area=?)
    AND (?='' OR o.kind=?)
    AND (?='' OR o.ref=?)
- ORDER BY bm25(standing_orders_fts), o.id LIMIT ? OFFSET ?`, q.Query, area, area, kind, kind, q.Ref, q.Ref, limit, offset)
+ ORDER BY bm25(standing_orders_fts), o.id LIMIT ? OFFSET ?`, match, area, area, kind, kind, q.Ref, q.Ref, limit, offset)
 	} else {
 		rows, err = s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,'' AS snippet,o.kind,o.area,o.ref
  FROM standing_orders o
@@ -321,37 +326,86 @@ func (s *Store) askDisposition(id string) (string, error) {
 	return redact.SecretValues(line), nil
 }
 
-// BackfillAnswerJudgments backfills answered owner asks into standing_orders as kind=answer (newest 500).
-func (s *Store) BackfillAnswerJudgments() error {
-	_, err := s.db.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref)
-SELECT
- 'so_b_' || lower(hex(randomblob(8))),
- 'Q: ' || trim(i.text) || ' / A: ' || trim(i.answer),
- COALESCE(NULLIF(i.answered_at / 1000000000, 0), i.created_at / 1000000000, unixepoch()),
- 'owner',
- '[]',
- 0,
- 0,
- 'answer',
- COALESCE(
-   NULLIF((SELECT c.project FROM delivery_changes c WHERE c.id=i.about_id AND i.about_kind='change'), ''),
-   NULLIF((SELECT c.project FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id WHERE d.item_id=i.id), ''),
-   CASE WHEN i.about_kind IN ('project', 'repo', 'team') THEN NULLIF(i.about_id, '') ELSE NULL END,
-   NULLIF((SELECT p.project FROM profiles p WHERE p.session_id=i.session_id), ''),
-   NULLIF((SELECT s.repo_project FROM sessions s WHERE s.id=i.session_id), ''),
-   NULLIF((SELECT s.repo_id FROM sessions s WHERE s.id=i.session_id), ''),
-   NULLIF(i.node, ''),
-   ''
- ),
- i.id
-FROM inbox_items i
-WHERE i.status IN ('answered', 'approved', 'refused') AND i.answer<>''
-  AND NOT EXISTS (SELECT 1 FROM standing_orders WHERE ref=i.id)
-ORDER BY COALESCE(NULLIF(i.answered_at, 0), i.created_at) DESC
-LIMIT 500;`)
-	if err != nil {
-		return err
+// MarksStored counts the owner's Desk marks in the judgment store.
+func (s *Store) MarksStored() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM standing_orders WHERE kind=? AND area=?`, protocol.StandingKindCorrection, chiefJudgmentArea).Scan(&n)
+	return n, err
+}
+
+// marksNote explains an empty marks result.
+func marksNote(stored, offset int) string {
+	if stored == 0 {
+		return "0 owner marks are stored: the owner has not marked an ask yet."
 	}
-	_, _ = s.db.Exec(`INSERT INTO standing_orders_fts(standing_orders_fts) VALUES('rebuild')`)
-	return nil
+	return fmt.Sprintf("%d owner marks are stored, none at offset %d.", stored, offset)
+}
+
+// ftsMatch turns a search the way a person types it into an FTS5 MATCH
+// expression. Every term becomes a quoted string, so a hyphen, a colon or a
+// stray quote is text and not FTS5 syntax. Terms join with AND. An upper-case
+// OR between two terms stays OR, a "quoted run" stays one phrase, and a
+// trailing * on a term stays a prefix match.
+func ftsMatch(query string) string {
+	var parts []string
+	rs := []rune(query)
+	for i := 0; i < len(rs); {
+		if unicode.IsSpace(rs[i]) {
+			i++
+			continue
+		}
+		var term string
+		quoted := rs[i] == '"'
+		if quoted {
+			j := i + 1
+			for j < len(rs) && rs[j] != '"' {
+				j++
+			}
+			term = string(rs[i+1 : j])
+			i = j
+			if i < len(rs) {
+				i++
+			}
+		} else {
+			j := i
+			for j < len(rs) && !unicode.IsSpace(rs[j]) {
+				j++
+			}
+			term = string(rs[i:j])
+			i = j
+		}
+		prefix := false
+		if quoted {
+			if i < len(rs) && rs[i] == '*' {
+				prefix = true
+				i++
+			}
+		} else {
+			if term == "OR" {
+				parts = append(parts, "OR")
+				continue
+			}
+			if strings.HasSuffix(term, "*") && len(term) > 1 {
+				prefix = true
+				term = strings.TrimRight(term, "*")
+			}
+		}
+		if strings.TrimSpace(term) == "" {
+			continue
+		}
+		part := `"` + strings.ReplaceAll(term, `"`, `""`) + `"`
+		if prefix {
+			part += "*"
+		}
+		parts = append(parts, part)
+	}
+	// An OR needs a term on both sides.
+	var out []string
+	for i, p := range parts {
+		if p == "OR" && (len(out) == 0 || out[len(out)-1] == "OR" || i == len(parts)-1) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return strings.Join(out, " ")
 }
