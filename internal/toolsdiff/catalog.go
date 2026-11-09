@@ -72,7 +72,7 @@ type ProjectState struct {
 // Row is one line of the All tools screen.
 type Row struct {
 	Name    string
-	Kind    string // protocol.InventorySkill or protocol.InventoryMCP
+	Kind    string // protocol.InventorySkill, InventoryPrompt, InventoryAgent or InventoryMCP
 	Origin  string
 	From    string
 	Version string // short hash of the managed version, or ""
@@ -133,7 +133,7 @@ func managed(it protocol.ToolItem) bool {
 	if it.Federated {
 		return false
 	}
-	return it.Desired != nil || (it.Kind == protocol.InventorySkill && len(it.Locations) == 0)
+	return it.Desired != nil || (protocol.IsBundleKind(it.Kind) && len(it.Locations) == 0)
 }
 
 // readOnlySource marks a copy that no one can move: plugins, packages and the
@@ -178,11 +178,24 @@ func groupItems(items []protocol.ToolItem) []group {
 	}
 	sort.SliceStable(gs, func(i, j int) bool {
 		if gs[i].kind != gs[j].kind {
-			return gs[i].kind == protocol.InventorySkill
+			return kindOrder(gs[i].kind) < kindOrder(gs[j].kind)
 		}
 		return gs[i].name < gs[j].name
 	})
 	return gs
+}
+
+// kindOrder lists skills first, then prompts, agents and MCP servers.
+func kindOrder(kind string) int {
+	switch kind {
+	case protocol.InventorySkill:
+		return 0
+	case protocol.InventoryPrompt:
+		return 1
+	case protocol.InventoryAgent:
+		return 2
+	}
+	return 3
 }
 
 // machinesOf returns the columns: the known machines in their order, then any

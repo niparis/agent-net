@@ -507,7 +507,7 @@ func (g *Gateway) repoRemovalTargets(ctx context.Context, p protocol.ToolPlanReq
 		return nil, errors.New("tool item not found")
 	}
 	if kind != protocol.InventorySkill {
-		return nil, errors.New("repo removal requires a skill")
+		return nil, errors.New("repo removal supports skills only: remove a tracked command or agent in its repository")
 	}
 	if p.Project == "" || len(p.RepoTargets) == 0 || len(p.RepoTargets) > 200 || p.Target.Scope != "projects" || len(p.Target.Projects) != 1 || p.Target.Projects[0] != p.Project {
 		return nil, errors.New("repo removal needs one project checkout")
