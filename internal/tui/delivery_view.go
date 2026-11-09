@@ -505,6 +505,8 @@ func (m Model) deliveryView(w, h int) []string {
 		for _, l := range wrap("Could not load changes: "+sanitize(d.err), inner) {
 			errLine = append(errLine, sBad.Render(l))
 		}
+	} else if d.slow {
+		errLine = append(errLine, sDim.Render(clip(deliverySlowText(len(d.changes) > 0), inner)))
 	}
 	visible := m.deliveryVisible()
 	sel := min(max(d.row, 0), max(len(visible)-1, 0))
@@ -522,7 +524,7 @@ func (m Model) deliveryView(w, h int) []string {
 		var body []string
 		body = append(body, errLine...)
 		switch {
-		case d.err != "":
+		case d.err != "" || d.slow:
 		case m.deliverySrc != nil && !d.loaded:
 			body = append(body, sDim.Render("Loading changes..."))
 		case len(d.changes) > 0:

@@ -814,6 +814,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		lc.mu.Unlock()
 		return d.prepareAntigravityHook(raw, pid)
 	}
+	if method == protocol.OpClientError {
+		return lc.clientError(ctx, client, raw)
+	}
 	if method == protocol.MethodHint {
 		return lc.hintCall(ctx, client, ls, raw)
 	}

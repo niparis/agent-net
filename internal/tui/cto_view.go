@@ -136,6 +136,8 @@ func (m Model) ctoView(w, h int) []string {
 	if c.err != "" {
 		errLines = wrapCTOLine("error: "+c.err, w)
 		lines = append(lines, errLines...)
+	} else if c.slow {
+		lines = append(lines, sDim.Render(clip(slowText, w)))
 	}
 	if c.confirming {
 		lines = append(lines, "Start a new conversation?"+confirmSuffix)

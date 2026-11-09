@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
@@ -41,22 +42,26 @@ type ctoState struct {
 	confirming                 bool
 	opening                    bool
 	title, model, harness, err string
-	enterNotice                string
-	opencodeModel              string
-	claudeModel                string
-	messages                   []string
-	renderCache                map[ctoRenderKey][]string
-	scroll, pageRows           int
-	scrollMax                  int
-	olderCursor                int
-	olderLoading               bool
-	olderPages                 []protocol.CTOEvents
-	lastPoll                   ctoPollMsg
-	history                    []protocol.CTOGraphChange
-	local                      []protocol.CTOAction
-	historyLoaded              bool
-	lastGraphID                int64
-	generation                 int
+	// slow is set when the last poll ended by its deadline: the box says
+	// "slow, retrying" and keeps what it shows. retried says the background
+	// retry was made, so a second timeout waits for the next regular poll.
+	slow, retried    bool
+	enterNotice      string
+	opencodeModel    string
+	claudeModel      string
+	messages         []string
+	renderCache      map[ctoRenderKey][]string
+	scroll, pageRows int
+	scrollMax        int
+	olderCursor      int
+	olderLoading     bool
+	olderPages       []protocol.CTOEvents
+	lastPoll         ctoPollMsg
+	history          []protocol.CTOGraphChange
+	local            []protocol.CTOAction
+	historyLoaded    bool
+	lastGraphID      int64
+	generation       int
 }
 type ctoSettingsForm struct {
 	harness       string
@@ -155,27 +160,49 @@ func (m Model) ctoPollCmd() tea.Cmd {
 	src := m.src.(ctoSource)
 	generation := m.cto.generation
 	session := m.ctoSessionID()
+	lastGraphID := m.cto.lastGraphID
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-		defer cancel()
-		var window protocol.CTOGraphWindow
-		if ws, ok := src.(ctoWindowSource); ok {
-			var err error
-			window, err = ws.CTOGraphWindow(ctx, false)
+		// The four reads do not depend on each other. They run together, each
+		// with its own deadline, so a slow one no longer delays the others.
+		var (
+			wg                       sync.WaitGroup
+			window                   protocol.CTOGraphWindow
+			windowErr                error
+			settings                 protocol.CTOSettings
+			settingsErr              error
+			page                     protocol.TextPage
+			pageErr                  error
+			history                  []protocol.CTOGraphChange
+			historyErr               error
+			windowSrc, haveWindowSrc = src.(ctoWindowSource)
+		)
+		read := func(f func(ctx context.Context)) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+				defer cancel()
+				f(ctx)
+			}()
+		}
+		if haveWindowSrc {
+			read(func(ctx context.Context) { window, windowErr = windowSrc.CTOGraphWindow(ctx, false) })
+		}
+		read(func(ctx context.Context) { settings, settingsErr = src.CTOSettings(ctx) })
+		read(func(ctx context.Context) {
+			page, pageErr = m.src.SessionText(ctx, protocol.TextQuery{SessionID: session, Limit: protocol.TextMaxLimit})
+		})
+		read(func(ctx context.Context) { history, historyErr = src.CTOGraphHistory(ctx, lastGraphID) })
+		wg.Wait()
+		// The first failure in this order is the one the screen shows, as it
+		// was when the reads ran one after the other.
+		for _, err := range []error{windowErr, settingsErr, pageErr} {
 			if err != nil {
 				return ctoPollMsg{err: err, generation: generation}
 			}
 		}
-		settings, err := src.CTOSettings(ctx)
-		if err != nil {
-			return ctoPollMsg{err: err, generation: generation}
-		}
-		page, err := m.src.SessionText(ctx, protocol.TextQuery{SessionID: session, Limit: protocol.TextMaxLimit})
-		if err != nil {
-			return ctoPollMsg{err: err, generation: generation}
-		}
 		events := ctoEventsFromPage(page)
-		history, err := src.CTOGraphHistory(ctx, m.cto.lastGraphID)
+		err := historyErr
 		model := settings.Model
 		if model == "" {
 			model = "default"
@@ -411,7 +438,12 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		return
 	}
 	c.polling = false
+	if r.err != nil && operator.IsSlow(r.err) {
+		c.err, c.slow = "", true
+		return
+	}
 	if r.err != nil {
+		c.slow, c.retried = false, false
 		message := sanitize(r.err.Error())
 		if !c.historyLoaded && strings.Contains(message, "CTO session is not registered") {
 			c.err = ""
@@ -420,7 +452,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		c.err = message
 		return
 	}
-	c.err = ""
+	c.err, c.slow, c.retried = "", false, false
 	if !r.olderPage {
 		c.lastPoll = r
 		c.olderCursor = r.events.Older

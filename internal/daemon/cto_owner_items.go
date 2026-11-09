@@ -74,14 +74,11 @@ func (d *Daemon) ctoOwnerItemRows(ctx context.Context, kind string) ([]map[strin
 		}
 	}
 	if kind == "all" || kind == protocol.AskKindProposal {
-		items, err := d.proposalRunner().list()
+		items, err := d.proposalRunner().listOpen()
 		if err != nil {
 			return nil, err
 		}
 		for _, item := range items {
-			if item.Status != "open" {
-				continue
-			}
 			rows = append(rows, ctoOwnerProposalRow(item))
 		}
 	}

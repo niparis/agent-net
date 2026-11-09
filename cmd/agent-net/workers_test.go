@@ -24,6 +24,8 @@ type fakeOp struct {
 	workers  []protocol.WorkerView
 	result   protocol.WorkerStartResult
 	usage    protocol.UsageResult
+	// usageCalls counts the usage reads, which cost a trip to the gateway.
+	usageCalls int
 }
 
 func (f *fakeOp) Snapshot(context.Context) (operator.Snapshot, error) {
@@ -68,6 +70,7 @@ func (f *fakeOp) Workers(_ context.Context, q protocol.WorkersQuery) ([]protocol
 	return f.workers, f.err
 }
 func (f *fakeOp) Usage(context.Context) (protocol.UsageResult, error) {
+	f.usageCalls++
 	return f.usage, nil
 }
 func (f *fakeOp) UsageTop(context.Context, string) (protocol.UsageTop, error) {

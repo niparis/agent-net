@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
@@ -525,53 +526,75 @@ func (m Model) fetchCmd() tea.Cmd {
 			return res
 		}
 		res.hiddenErr = errors.New("not requested")
+		// The rest are independent reads. They run together, each with its own
+		// deadline, so one slow read no longer makes the others wait for it,
+		// or run out of the deadline it used up. Each group sets its own
+		// fields of res.
+		var wg sync.WaitGroup
+		group := func(read func(ctx context.Context)) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+				defer cancel()
+				read(ctx)
+			}()
+		}
 		if wants(protocol.TopicAgents) || wants(protocol.TopicWorkers) {
-			res.hidden, res.hiddenErr = src.HiddenItems(ctx)
+			group(func(ctx context.Context) { res.hidden, res.hiddenErr = src.HiddenItems(ctx) })
 		}
 
 		if wantPicker {
 			res.pickerAsked = true
-			if caller, ok := src.(interface {
-				Call(context.Context, string, any) (json.RawMessage, error)
-			}); ok {
-				raw, err := caller.Call(ctx, protocol.OpPickerGet, nil)
-				if err == nil {
-					err = json.Unmarshal(raw, &res.picker)
+			group(func(ctx context.Context) {
+				if caller, ok := src.(interface {
+					Call(context.Context, string, any) (json.RawMessage, error)
+				}); ok {
+					raw, err := caller.Call(ctx, protocol.OpPickerGet, nil)
+					if err == nil {
+						err = json.Unmarshal(raw, &res.picker)
+					}
+					res.pickerErr = err
+				} else {
+					res.pickerErr = ErrTooOld
 				}
-				res.pickerErr = err
-			} else {
-				res.pickerErr = ErrTooOld
-			}
+			})
 		}
 
 		if caller, ok := src.(inboxCaller); ok && !onboardingPending && (wants(protocol.TopicInbox) || wants(protocol.TopicWorkers)) {
 			res.onboardingAsked, res.onboardingRevision = true, onboardingRevision
-			var raw json.RawMessage
-			raw, res.onboardingErr = caller.Call(ctx, "onboarding_get", nil)
-			if res.onboardingErr == nil {
-				res.onboardingErr = json.Unmarshal(raw, &res.onboarding)
-			}
+			group(func(ctx context.Context) {
+				var raw json.RawMessage
+				raw, res.onboardingErr = caller.Call(ctx, "onboarding_get", nil)
+				if res.onboardingErr == nil {
+					res.onboardingErr = json.Unmarshal(raw, &res.onboarding)
+				}
+			})
 		}
 		if d, ok := src.(interface {
 			ToolsDifferences(context.Context) (int, error)
 		}); ok && askUsage && askTools && len(res.snap.Nodes) > 1 {
-			count, err := d.ToolsDifferences(ctx)
-			if err == nil {
-				res.onboardingToolsCount, res.onboardingToolsKnown = count, true
-			}
+			group(func(ctx context.Context) {
+				count, err := d.ToolsDifferences(ctx)
+				if err == nil {
+					res.onboardingToolsCount, res.onboardingToolsKnown = count, true
+				}
+			})
 		}
 		if askUsage {
 			res.askedUsage = true
-			if askU {
-				res.usage, res.usageErr = src.Usage(ctx)
-			} else {
-				res.usageErr = ErrUsageUnavailable
-			}
-			if askCounts {
-				res.counts, res.countsErr = src.Counts(ctx)
-			} else {
-				res.countsErr = ErrUsageUnavailable
-			}
+			group(func(ctx context.Context) {
+				if askU {
+					res.usage, res.usageErr = src.Usage(ctx)
+				} else {
+					res.usageErr = ErrUsageUnavailable
+				}
+				if askCounts {
+					res.counts, res.countsErr = src.Counts(ctx)
+				} else {
+					res.countsErr = ErrUsageUnavailable
+				}
+			})
 		}
 		// The list is needed at once on the screen that shows it, or when the
 		// Snapshot says that what waits for the owner changed. Away from that
@@ -581,42 +604,56 @@ func (m Model) fetchCmd() tea.Cmd {
 			(wants(protocol.TopicInbox) || wants(protocol.TopicAgents) || wants(protocol.TopicLearned)) &&
 			(inboxOnScreen || inboxMarkerOf(res.snap) != inboxSeen || res.at.Sub(inboxAt) >= inboxRefreshEvery || topics[protocol.TopicInbox]) {
 			res.listsAsked = true
-			if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
-				res.proposalsOK = true
-			}
-			var data protocol.AsksResult
-			raw, err := c.Call(ctx, protocol.OpAsksList, nil)
-			if err == nil && json.Unmarshal(raw, &data) == nil {
-				res.asks, res.inboxOK = data.Asks, true
-			}
-			var status protocol.ChiefStatus
-			if raw, err := c.Call(ctx, protocol.OpChiefGet, nil); err == nil && json.Unmarshal(raw, &status) == nil {
-				res.chief, res.chiefOK = status, true
-			}
-			var sorts protocol.ChiefSortsResult
-			if raw, err := c.Call(ctx, protocol.OpChiefSorts, nil); err == nil && json.Unmarshal(raw, &sorts) == nil {
-				res.handled, res.handledOK = sorts.Sorts, true
-			}
-			if deskLogOpen {
-				var log protocol.DeskLogResult
-				raw, err := c.Call(ctx, protocol.OpDeskLog, protocol.DeskLogQuery{Limit: deskLogShown})
-				if err == nil && json.Unmarshal(raw, &log) == nil {
-					res.deskLog, res.deskLogOK = log.Entries, true
+			group(func(ctx context.Context) {
+				if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
+					res.proposalsOK = true
 				}
+			})
+			group(func(ctx context.Context) {
+				var data protocol.AsksResult
+				raw, err := c.Call(ctx, protocol.OpAsksList, nil)
+				if err == nil && json.Unmarshal(raw, &data) == nil {
+					res.asks, res.inboxOK = data.Asks, true
+				}
+			})
+			group(func(ctx context.Context) {
+				var status protocol.ChiefStatus
+				if raw, err := c.Call(ctx, protocol.OpChiefGet, nil); err == nil && json.Unmarshal(raw, &status) == nil {
+					res.chief, res.chiefOK = status, true
+				}
+			})
+			group(func(ctx context.Context) {
+				var sorts protocol.ChiefSortsResult
+				if raw, err := c.Call(ctx, protocol.OpChiefSorts, nil); err == nil && json.Unmarshal(raw, &sorts) == nil {
+					res.handled, res.handledOK = sorts.Sorts, true
+				}
+			})
+			if deskLogOpen {
+				group(func(ctx context.Context) {
+					var log protocol.DeskLogResult
+					raw, err := c.Call(ctx, protocol.OpDeskLog, protocol.DeskLogQuery{Limit: deskLogShown})
+					if err == nil && json.Unmarshal(raw, &log) == nil {
+						res.deskLog, res.deskLogOK = log.Entries, true
+					}
+				})
 			}
 		}
-		if skipFeed || !wants(protocol.TopicChanges) {
-			return res
+		if !skipFeed && wants(protocol.TopicChanges) {
+			limit := 100
+			if after == 0 {
+				limit = backlog
+			}
+			group(func(ctx context.Context) {
+				res.events, res.eventsErr = src.Events(ctx, after, limit)
+			})
+			if m.tab == messagesTab {
+				res.convAsked = true
+				group(func(ctx context.Context) {
+					res.convPage, res.convErr = src.Conversations(ctx, protocol.QueryConversations{Limit: conversationPageSize})
+				})
+			}
 		}
-		limit := 100
-		if after == 0 {
-			limit = backlog
-		}
-		res.events, res.eventsErr = src.Events(ctx, after, limit)
-		if m.tab == messagesTab {
-			res.convAsked = true
-			res.convPage, res.convErr = src.Conversations(ctx, protocol.QueryConversations{Limit: conversationPageSize})
-		}
+		wg.Wait()
 		return res
 	}
 }
@@ -667,6 +704,7 @@ func (m Model) bodyCmd(id string) tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	nm := next.(Model)
+	nm.tellScreen()
 	cmds := []tea.Cmd{cmd}
 	if !nm.graphMouseActive() || nm.quitting {
 		nm.graphDragging = false
@@ -872,6 +910,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.onboardingCTOLast, m.onboardingCTOLoaded = last, true
 		}
 		m.applyCTOPoll(msg)
+		if msg.err != nil && operator.IsSlow(msg.err) && !m.cto.retried {
+			// The first timeout asks once more at once; the next one waits
+			// for the regular poll.
+			m.cto.retried, m.cto.polling = true, true
+			return m, m.ctoPollCmd()
+		}
 		if msg.err == nil {
 			m.cto.historyLoaded = true
 			if len(msg.history) > 0 {
@@ -1394,6 +1438,9 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	if r.err != nil {
 		m.problem = ClassifyError(r.err)
 		m.problemT = r.err.Error()
+		if m.problem == ProblemSlow {
+			m.problemT = slowText
+		}
 		return
 	}
 	m.snap.NodeID, m.snap.Version = r.snap.NodeID, r.snap.Version

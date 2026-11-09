@@ -346,9 +346,20 @@ func (s *Store) SetPlaybookPin(model, harness, note string, pin *bool) error {
 func (s *Store) PlaybookNotes() ([]protocol.PlaybookNote, error) {
 	now := s.now()
 	cut := now.Add(-protocol.PlaybookStaleDays * 24 * time.Hour).Unix()
-	if _, err := s.db.Exec(`UPDATE playbook SET stale=1 WHERE stale=0 AND source=? AND pinned=0 AND updated_at < ?`,
-		protocol.PlaybookSourceAuto, cut); err != nil {
+	// Hide the automatic notes that went stale. A read comes first and the
+	// write only when a note is due: even an UPDATE that changes no row takes
+	// the writer connection, and every nodes read (the TUI asks every refresh)
+	// waited behind each write for it.
+	var due int
+	if err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM playbook WHERE stale=0 AND source=? AND pinned=0 AND updated_at < ?)`,
+		protocol.PlaybookSourceAuto, cut).Scan(&due); err != nil {
 		return nil, err
+	}
+	if due != 0 {
+		if _, err := s.db.Exec(`UPDATE playbook SET stale=1 WHERE stale=0 AND source=? AND pinned=0 AND updated_at < ?`,
+			protocol.PlaybookSourceAuto, cut); err != nil {
+			return nil, err
+		}
 	}
 	rows, err := s.db.Query(`SELECT subject_kind, subject, harness, note, source, support, track_line, pinned, created_at, updated_at
 		FROM playbook WHERE stale=0 ORDER BY updated_at DESC, subject_kind, subject, harness`)

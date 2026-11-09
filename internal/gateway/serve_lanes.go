@@ -1,6 +1,10 @@
 package gateway
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
 
 // The read loop of a node connection only reads. A handler can wait for the
 // database, for a lock or for another machine. While the loop waits, nothing
@@ -45,6 +49,11 @@ var parallelFrames = map[string]bool{
 	"charter.history": true, "edge.history": true, "settings.history": true,
 	"change.list": true, "change.get": true,
 	"worker.recent_changes": true, "workers.watch": true,
+	// The Desk reads these every refresh. They only read (the settings come
+	// from the read cache), so one slow write in the lane must not hold them.
+	"chief.get": true, "chief.sorts": true, "ask.history": true,
+	// A failure report is a counter bump: it must not wait behind a write.
+	protocol.FrameClientError: true,
 }
 
 // frameLane runs the write frames of one connection in arrival order.

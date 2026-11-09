@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 // say what each tab asks for.
 type fetchCountSource struct {
 	*fakeSource
+	mu         sync.Mutex // a refresh asks its reads together
 	calls      map[string]int
 	inbox      []protocol.InboxItem
 	proposals  []protocol.CTOProposal
@@ -22,10 +24,9 @@ type fetchCountSource struct {
 }
 
 func (f *fetchCountSource) Call(_ context.Context, method string, _ any) (json.RawMessage, error) {
-	if f.calls == nil {
-		f.calls = map[string]int{}
-	}
-	f.calls[method]++
+	f.countCall(method)
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	switch method {
 	case "onboarding_get":
 		if f.onboarding.Steps == nil {
@@ -41,7 +42,9 @@ func (f *fetchCountSource) Call(_ context.Context, method string, _ any) (json.R
 }
 
 func (f *fetchCountSource) ToolsDifferences(context.Context) (int, error) {
+	f.mu.Lock()
 	f.toolsCall++
+	f.mu.Unlock()
 	f.countCall("tools_differences")
 	return 0, nil
 }
@@ -81,13 +84,19 @@ func (f *fetchCountSource) Counts(ctx context.Context) (protocol.SessionCounts, 
 }
 
 func (f *fetchCountSource) countCall(method string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.calls == nil {
 		f.calls = map[string]int{}
 	}
 	f.calls[method]++
 }
 
-func (f *fetchCountSource) resetCalls() { f.calls = map[string]int{} }
+func (f *fetchCountSource) resetCalls() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = map[string]int{}
+}
 
 func (f *fetchCountSource) count(method string) int { return f.calls[method] }
 

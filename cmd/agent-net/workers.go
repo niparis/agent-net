@@ -154,8 +154,13 @@ func runWorkers(ctx context.Context, op operator.Operator, out io.Writer, args [
 		return err
 	}
 	var loads []machineLoad
-	if u, err := op.Usage(cctx); err == nil {
-		loads = machineLoads(u)
+	// The panel of one Claude Code session asks for its rows every few seconds.
+	// The machines' room and queues are not that session's, and reading them is
+	// a usage call to the gateway for the whole network, so it is left out.
+	if *ownerClaude == "" {
+		if u, err := op.Usage(cctx); err == nil {
+			loads = machineLoads(u)
+		}
 	}
 	var queued []protocol.QueuedWorker
 	for _, m := range loads {

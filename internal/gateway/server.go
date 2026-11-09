@@ -137,6 +137,9 @@ type Gateway struct {
 	// reqs counts the request frames by method and origin (request_stats.go).
 	// It is nil in a Gateway not made by New.
 	reqs *requestStats
+	// clientErrs counts the failures that the TUI and the web console report
+	// (client_errors.go). It is nil in a Gateway not made by New.
+	clientErrs *clientErrorStats
 
 	// Step task batching and coalescing.
 	stepTaskQuietWindow  time.Duration
@@ -342,7 +345,7 @@ func New(opts Options) (*Gateway, error) {
 		store.Close()
 		return nil, err
 	}
-	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger, autoCutover: true, reqs: newRequestStats(time.Now()),
+	g := &Gateway{limiter: ratelimit.New(ratelimit.Config{}, opts.Now), opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger, autoCutover: true, reqs: newRequestStats(time.Now()), clientErrs: newClientErrorStats(),
 		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*offlineTimer{},
 		enrollLimit: newEnrollLimiter(opts.Now),
 		stepBatches: make(map[string]*stepTaskBatch), lastReportBySession: make(map[string]time.Time),
@@ -2639,6 +2642,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad ask.close")
 		}
 		return map[string]bool{"ok": true}, st.CloseExternalAsk(nc.id, p)
+
+	case protocol.FrameClientError:
+		return g.handleClientError(raw)
 
 	case "chief.get":
 		return st.ChiefStatus()

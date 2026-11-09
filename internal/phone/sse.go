@@ -45,7 +45,7 @@ func (a *app) stream(w http.ResponseWriter, r *http.Request) {
 		p := a.load(ctx, screen, q)
 		cancel()
 		var b bytes.Buffer
-		if err := shell.ExecuteTemplate(&b, tmpl, p); err != nil {
+		if err := shell().ExecuteTemplate(&b, tmpl, p); err != nil {
 			return
 		}
 		current := b.String()

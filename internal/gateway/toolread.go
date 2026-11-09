@@ -624,6 +624,7 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 		out.Usage = g.machineUsageNow(ctx, node, online)
 		if g.reqs != nil {
 			snap := g.reqs.snapshot(time.Now())
+			snap.ClientErrors = g.clientErrs.snapshot(time.Now())
 			out.Requests = &snap
 		}
 		return out, nil
