@@ -853,6 +853,12 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.serveRelay(ctx, nc, h, raw)
 			continue
 		}
+		if h.Type == protocol.FrameAskIntake {
+			// Ask intake waits for the machines that hold the sessions, so it
+			// must not block this node's read loop.
+			go g.answer(ctx, nc, h, raw)
+			continue
+		}
 		if strings.HasPrefix(h.Type, "worker.") {
 			// Starting and stopping wait for another machine, so they must not
 			// block this node's other frames.

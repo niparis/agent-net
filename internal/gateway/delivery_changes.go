@@ -71,6 +71,12 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			g.dispatch(ctx, m)
 		}
 		data, err = res, serr
+	case protocol.FrameAskIntake:
+		q, derr := decode[protocol.AskIntakeRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.askIntake(ctx, nc, q)
 	case protocol.FrameChangeGet:
 		q, derr := decode[protocol.ChangeGetRequest](raw)
 		if derr != nil {
