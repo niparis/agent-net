@@ -215,3 +215,21 @@ func TestIsHintCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestHintHookPreToolUseInstallUninstall(t *testing.T) {
+	f := newFixture(t)
+	fakeClaude(t, f.home)
+	writeSettings(t, f, otherKeys)
+	runAsking(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookYes})
+	groups := withCommand(hooksOfFile(t, f)["PreToolUse"], " hint")
+	if len(groups) != 1 || groups[0].Matcher != "Bash" {
+		t.Fatalf("installed: %+v", groups)
+	}
+	var out strings.Builder
+	if err := Uninstall(Options{Out: &out, NoService: true}); err != nil {
+		t.Fatal(err)
+	}
+	if groups = withCommand(hooksOfFile(t, f)["PreToolUse"], " hint"); len(groups) != 0 {
+		t.Fatalf("uninstall: %+v", groups)
+	}
+}

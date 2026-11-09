@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -149,33 +148,17 @@ func shellCommandWord(raw string) (word string, ended bool) {
 	return strings.Trim(raw, "()"), false
 }
 
-// deniedRE matches the permission-denial wording a failed tool call carries.
-// Claude Code's permission system says the action was denied; GitHub says a
-// token or an app lacks the permission. It must stay permission specific, so
-// an ordinary command error keeps the existing hint.
-var deniedRE = regexp.MustCompile(`(?i)(` +
-	`permission (to use [^\n]{0,160} |to [^\n]{0,160} )?(has been |was |is )?denied` +
-	`|permissions? denied` +
-	`|operation not permitted` +
-	`|sandbox (denial|denied|violation)` +
-	`|resource not accessible by (integration|personal access token)` +
-	`|must have admin rights` +
-	`|(do not|does not|don't) have (the )?(required )?permissions?` +
-	`|insufficient permissions?` +
-	`|not authorized to` +
-	`)`)
-
-// permissionDenied tells whether a failed call was refused by a permission
-// check rather than by an ordinary command error.
-func permissionDenied(text string) bool { return deniedRE.MatchString(text) }
-
-// leadDeniedLine is the one line the hook adds for a denied step in a team
-// that sends blocked steps to its lead. The member sends the message itself,
-// so the PR link and the review travel with it.
+// leadDeniedLine tells the member how to hand the change to the lead.
 func leadDeniedLine(res protocol.TeamLeadResult) string {
-	return fmt.Sprintf("agent-net: this action was denied here. Your team sends blocked steps to its lead %s (%s): "+
-		"send it what you need done (for example the PR link and your review) with agent_message_send, then carry on.",
-		res.Lead, res.LeadSession)
+	return fmt.Sprintf("agent-net: in this team, merges and other blocked steps belong to your lead %s (%s) under the owner's team rule (asks_to=lead). Hand the change over (the PR link and your review) with agent_message_send, and say it is for the lead's own merge decision, not a request to run your denied command.", res.Lead, res.LeadSession)
+}
+
+func leadStepCommand(command string) bool {
+	words := strings.Fields(command)
+	if len(words) < 3 || words[0] != "gh" {
+		return false
+	}
+	return words[1] == "pr" && (words[2] == "merge" || words[2] == "close") || words[1] == "workflow" && words[2] == "run"
 }
 
 func writeHookContext(stdout io.Writer, event, text string) {
@@ -189,7 +172,7 @@ func writeHookContext(stdout io.Writer, event, text string) {
 	stdout.Write(append(b, '\n'))
 }
 
-// runHint is `agent-net hint`: a Claude Code hook for PostToolUseFailure and
+// runHint is `agent-net hint`: a Claude Code hook for PreToolUse, PostToolUseFailure and
 // PostToolUse. It reads the hook input on stdin, asks the daemon for a hint and
 // prints the hook output only when there is one. It never fails: on any
 // problem it prints nothing and exits 0, so it can not disturb the session.
@@ -204,19 +187,16 @@ func runHint(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	if json.Unmarshal(raw, &in) != nil || in.SessionID == "" || in.IsInterrupt {
 		return
 	}
-	// Claude Code's permission system reports a denial in the failure's error
-	// text (PostToolUseFailure). That step goes to the team lead, not to the
-	// other sessions the ordinary hint looks for. A read-only command that
-	// cannot read a file is an ordinary command error: it keeps the hint.
-	if in.EventName == "PostToolUseFailure" && permissionDenied(in.Error) &&
-		(in.ToolName != "Bash" || !readOnlyBashCommand(in.ToolInput.Command)) {
+	if in.EventName == "PreToolUse" {
+		if in.ToolName != "Bash" || !leadStepCommand(in.ToolInput.Command) {
+			return
+		}
 		ctx, cancel := context.WithTimeout(ctx, hintBudget)
 		defer cancel()
 		res, err := lead(ctx, protocol.TeamLeadRequest{Harness: "claude", NativeID: in.SessionID})
-		if err != nil || res.Lead == "" || res.LeadSession == "" {
-			return
+		if err == nil && res.Lead != "" && res.LeadSession != "" {
+			writeHookContext(stdout, in.EventName, leadDeniedLine(res))
 		}
-		writeHookContext(stdout, in.EventName, leadDeniedLine(res))
 		return
 	}
 	var text string

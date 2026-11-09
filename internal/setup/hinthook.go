@@ -35,6 +35,7 @@ const hintTimeoutSeconds = 2
 // shell commands are looked at there, for a command that printed an error and
 // still exited 0 (curl without --fail).
 var hintEvents = []struct{ event, matcher string }{
+	{"PreToolUse", "Bash"},
 	{"PostToolUseFailure", ""},
 	{"PostToolUse", "Bash"},
 }
