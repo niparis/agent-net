@@ -176,6 +176,43 @@ func ContinueIntroWithSettings(reason, where string, snap settings.Snapshot, rep
 // MaxAge. The daemon sends it at start and periodically (W7). Running lists
 // the session IDs of the workers the machine runs or has adopted: the gateway
 // never drops those records, whatever their age or state.
+// Statuses of a WorkerStartReport.
+const (
+	StartReportNotStarted = "not started"
+	StartReportQueued     = "queued"
+)
+
+// WorkerStartReportText is the notice for a start that was accepted without
+// an answer and then ended without a running worker, or was queued.
+func WorkerStartReportText(status, project, harness, startID, note string) string {
+	return "[agent-net worker notice]\nstatus: " + status + "\nnote: " + note + "\nstart: " + startID +
+		"\nworker: none (" + harness + "), project " + project + "\n"
+}
+
+// WorkerAcceptedStartText is the notice for a start that was accepted without
+// an answer and then became a worker. status is "started" or "starting".
+func WorkerAcceptedStartText(startID, status, session, harness, model, project, host, worktree, branch, ownerLine string) string {
+	note := "the accepted start has begun; the task has been sent to the worker"
+	if status == "starting" {
+		note = "the accepted start has begun; the worker is being set up and gets its task when it is ready"
+	}
+	b := "[agent-net worker notice]\nstatus: " + status + "\nnote: " + note + "\nstart: " + startID + "\nworker: " + session + " (" + harness
+	if model != "" {
+		b += ", " + model
+	}
+	b += "), project " + project + " on " + host
+	if worktree != "" {
+		b += "\nworktree: " + worktree
+	}
+	if branch != "" {
+		b += "\nbranch: " + branch
+	}
+	if ownerLine != "" {
+		b += "\n" + ownerLine
+	}
+	return b + "\n"
+}
+
 // WorkerNotStartedText is the text of the notice for a queued start that did not
 // become a worker.
 func WorkerNotStartedText(project, harness, why string) string {
@@ -296,6 +333,24 @@ type (
 		// assessment (for example the read-only phrasing worker). A caller's
 		// Difficulty field is ignored.
 		Level string `json:"level,omitempty"`
+		// Precheck is set by the gateway for "worker.precheck": the checks that
+		// need no judge run, nothing starts. A caller never sets it.
+		Precheck bool `json:"-"`
+	}
+	// WorkerStartReport is "worker.start_report", machine to gateway: the end
+	// of a start the machine had accepted without an answer (the judge and the
+	// launch ran on in the background). The gateway tells the owner, which must
+	// be a session of the sending machine, with a notice from agent-net.
+	WorkerStartReport struct {
+		Owner   string `json:"owner_session"`
+		Project string `json:"project"`
+		Harness string `json:"harness"`
+		// Status is StartReportNotStarted or StartReportQueued.
+		Status string `json:"status"`
+		// Note is the reason, or the queue facts, as one short line.
+		Note string `json:"note"`
+		// ID is the start id the caller was given; it makes the notice unique.
+		ID string `json:"start_id"`
 	}
 	// WorkerStartAnswer is the gateway's answer to "worker.start".
 	WorkerStartAnswer struct {
@@ -339,6 +394,9 @@ type (
 		// Hint is one line about a defect this start may fix (see
 		// WorkerStartResult.Hint).
 		Hint string `json:"hint,omitempty"`
+		// Phases is how long the gateway spent on each part of the start, for
+		// the daemon's slow log ("picker=12 launch=40", milliseconds).
+		Phases string `json:"phases,omitempty"`
 		// Permissions is the worker permission level of the project.
 		Permissions string `json:"permissions,omitempty"`
 		// OSSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""

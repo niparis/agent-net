@@ -124,6 +124,28 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		return out, err
 
+	case "worker.precheck":
+		// The checks of a start that need no judge: project, machine, harness,
+		// the named model and its provider's allowance. Nothing starts.
+		p, err := decode[protocol.WorkerStartFrame](raw)
+		if err != nil {
+			return nil, reject("bad worker.precheck")
+		}
+		p.Precheck = true
+		out, err := g.workerStart(ctx, nc, p, true)
+		var rj Rejection
+		if errors.As(err, &rj) {
+			g.workerRefused(nc, p.Owner, p, string(rj))
+		}
+		return out, err
+
+	case "worker.start_report":
+		p, err := decode[protocol.WorkerStartReport](raw)
+		if err != nil {
+			return nil, reject("bad worker.start_report")
+		}
+		return nil, g.workerStartReport(ctx, nc, p)
+
 	case "worker.stop":
 		p, err := decode[protocol.WorkerStopFrame](raw)
 		if err != nil {
@@ -433,6 +455,7 @@ func (g *Gateway) workerCandidates(callerNode string, p protocol.WorkerStartFram
 
 func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, validate ...bool) (protocol.WorkerStartAnswer, error) {
 	var none protocol.WorkerStartAnswer
+	began := time.Now()
 	p.Project, p.Harness = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness)
 	p.Model, p.Machine = protocol.CleanModel(p.Model), strings.TrimSpace(p.Machine)
 	selection := protocol.ParseModelSelection(p.Harness, p.Provider, p.Model, p.Effort)
@@ -632,6 +655,18 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	automatic := p.Model == "" || strings.EqualFold(p.Model, "auto")
 	var automaticNote, harnessNote string
+	if automatic && p.Precheck {
+		// The picker needs the judge's level, so a precheck never runs it: a
+		// level that the judge would lower must not refuse a start that can
+		// run. Only what needs no level is checked: a named harness whose
+		// whole account has no allowance left.
+		if p.Harness != "" {
+			if reason := protocol.QuotaHarnessRefusal(g.nodeQuotas(pick.NodeID), p.Harness); reason != "" {
+				return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
+			}
+		}
+		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path}, nil
+	}
 	if automatic {
 		difficulty := difficultyUsed
 		providers, err := g.store.workerProviders()
@@ -695,7 +730,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				if len(skippedProfiles) > 0 {
 					reason += "; " + strings.Join(skippedProfiles, "; ")
 				}
-				return none, reject("%s", reason)
+				return none, g.refuseWithAlternative(ctx, nc, p, reason)
 			}
 			candidates, familyNote, err := filterWorkerFamilies(candidates, p.NotFamily)
 			if err != nil {
@@ -704,9 +739,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			choice, protectionNote, err := g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(p.Assessment, difficulty), scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
 			if err != nil {
 				if familyNote != "" {
-					return none, reject("%v; %s", err, familyNote)
+					return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("%v; %s", err, familyNote))
 				}
-				return none, reject("%v", err)
+				return none, g.refuseWithAlternative(ctx, nc, p, err.Error())
 			}
 			p.Harness, p.Model = choice.Harness, choice.Model
 			automaticNote = "(" + workerChoiceNote(difficulty, choice, candidates, scores, minimums)
@@ -817,15 +852,16 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if under, floorSentence, _ := protocol.CheckWorkerFloor(quotas, floors, p.Harness, p.Model); under {
 			isOwner := protocol.IsOwner(owner.Harness) && !p.FromCTO
 			if !isOwner {
-				return none, reject("%s", floorSentence)
+				return none, g.refuseWithAlternative(ctx, nc, p, floorSentence)
 			}
 		}
 	}
 	// A provider with no allowance left refuses the start now, with the reset
 	// time, instead of failing at the first model call (decision 0022).
 	if reason := protocol.QuotaRefusal(quotas, p.Harness, p.Model); reason != "" {
-		return none, reject("machine %s: %s", node.Hostname, reason)
+		return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
 	}
+	pickerMS := time.Since(began).Milliseconds()
 	track, books, err := g.choiceNotes(pick.NodeID, pick.Hostname, pick.Name, p.Harness, p.Model)
 	if err != nil {
 		return none, err
@@ -862,7 +898,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		perms = protocol.WorkersReadOnly
 	}
 	if len(validate) > 0 && validate[0] {
-		return none, nil
+		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
+			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote}, nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
@@ -872,6 +909,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err := g.store.trackWorkerStart(startRef, pick.NodeID, p.Owner, pick.Name, p.Harness, perms); err != nil {
 		return none, err
 	}
+	launchBegan := time.Now()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
 		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
 		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes})
@@ -884,6 +922,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		g.abandon(pick.NodeID, startRef)
 		return none, reject("machine %s refused the worker: %v", pick.Hostname, err)
 	}
+	phases := fmt.Sprintf("picker=%d launch=%d", pickerMS, time.Since(launchBegan).Milliseconds())
 	launched, err := decode[protocol.WorkerLaunched](raw)
 	if err == nil && launched.SessionID != "" {
 		if serr := g.store.startSession(pick.NodeID, startRef, launched.SessionID); serr != nil {
@@ -917,7 +956,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
 			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title, Queued: true, QueueID: launched.QueueID,
 			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms,
-			Track: track, Playbooks: books, Hint: hint}, nil
+			Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
 	}
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
@@ -932,11 +971,70 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			"isolation", p.Isolation, "branch", launched.Branch), " "))
 	g.logLine(event, "node", pick.NodeID, "host", pick.Hostname, "session", launched.SessionID,
 		"worker", launched.WorkerID, "project", pick.Name, "path", pick.Path, "harness", p.Harness, "model", p.Model,
-		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "permissions", perms, "worktree", launched.Worktree, "branch", launched.Branch)
+		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "permissions", perms, "worktree", launched.Worktree, "branch", launched.Branch,
+		"picker_ms", pickerMS, "launch_ms", time.Since(launchBegan).Milliseconds())
 	return protocol.WorkerStartAnswer{StartRef: startRef, Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
-		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint}, nil
+		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
+}
+
+// refuseWithAlternative refuses a start for want of a provider's allowance or
+// a usable candidate. When the caller named the model or the harness, the
+// refusal also says which choice the picker would make without that
+// restriction, so the caller can start again at once.
+func (g *Gateway) refuseWithAlternative(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, reason string) error {
+	if p.Harness != "" || (p.Model != "" && !strings.EqualFold(p.Model, "auto")) {
+		if alt := g.alternativeChoice(ctx, nc, p); alt != "" {
+			reason += "; try " + alt
+		}
+	}
+	return reject("%s", reason)
+}
+
+// alternativeChoice is the harness and model the picker chooses for the same
+// start when the caller's harness and model are left out. It checks only; it
+// starts nothing. It is empty when the picker has no choice either.
+func (g *Gateway) alternativeChoice(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame) string {
+	q := p
+	q.Harness, q.Model, q.Provider, q.Effort = "", "", "", ""
+	q.Precheck, q.Continue = false, ""
+	ans, err := g.workerStart(ctx, nc, q, true)
+	if err != nil || ans.Harness == "" || ans.Model == "" {
+		return ""
+	}
+	return ans.Harness + " " + ans.Model
+}
+
+// workerStartReport tells the owner how a start ended that its machine had
+// accepted without an answer. The owner must be a session of the sending
+// machine; the notice comes from agent-net, as the not-started notice does,
+// and is not made for the owner's own session or a bot.
+func (g *Gateway) workerStartReport(ctx context.Context, nc *nodeConn, p protocol.WorkerStartReport) error {
+	if p.Status != protocol.StartReportNotStarted && p.Status != protocol.StartReportQueued {
+		return reject("unknown start report status %q", p.Status)
+	}
+	owner, ok, err := g.store.Agent(p.Owner)
+	if err != nil {
+		return err
+	}
+	if !ok || owner.NodeID != nc.id {
+		return reject("owner session %q does not belong to this node", p.Owner)
+	}
+	g.store.Event("worker.start_report", nc.id, p.Owner, "",
+		strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "status", p.Status, "note", oneLine(p.Note, maxNotStartedReason)), " "))
+	if owner.Harness == "bot" || protocol.IsOwner(owner.Harness) {
+		return nil
+	}
+	n, ok, err := g.store.startReportNotice(p.Owner, p.ID, protocol.WorkerStartReportText(p.Status,
+		oneLine(p.Project, 100), oneLine(p.Harness, 40), oneLine(p.ID, 40), oneLine(p.Note, maxNotStartedReason)))
+	if err != nil {
+		return protocol.RetryableError{Err: err}
+	}
+	if ok {
+		g.dispatch(ctx, n)
+	}
+	return nil
 }
 
 // recordWorkerPickerNote stores the start's judge result and the picker's

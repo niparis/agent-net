@@ -317,6 +317,27 @@ func QuotaRefusal(quotas *Quotas, harness, model string) string {
 	return quotaExhaustedText(qp, w)
 }
 
+// QuotaHarnessRefusal is the reason a harness with no model named cannot start
+// anything: a window of its provider that limits every model is exhausted. A
+// window of one model family leaves the other models, so it never refuses.
+// It is "" when the harness has no quota provider or may still be used.
+func QuotaHarnessRefusal(quotas *Quotas, harness string) string {
+	qp := QuotaProviderForHarness(harness)
+	if qp == "" {
+		return ""
+	}
+	p, ok := quotas.Provider(qp)
+	if !ok || !p.usable() {
+		return ""
+	}
+	for _, w := range p.Windows {
+		if quotaWindowFamily(w.ID) == "" && (w.Exhausted || w.PercentUsed >= 100) {
+			return quotaExhaustedText(qp, w)
+		}
+	}
+	return ""
+}
+
 // quotaExhaustedText says that a provider window has no allowance left. A
 // window that a worker run reported (kind quotaAccountKind) says so and until
 // when. The account window blocks every model of the provider, so the sentence
