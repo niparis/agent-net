@@ -503,12 +503,44 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 	if err != nil {
 		return out, none, err
 	}
-	if chief == "" || chief != q.SessionID {
+	owner := false
+	if q.Result == "hide" {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND node_id=? AND harness=? AND online=1 AND archived_at=0`, q.SessionID, node, protocol.OwnerHarness).Scan(&n); err != nil {
+			return out, none, err
+		}
+		owner = n > 0
+	}
+	if !owner && (chief == "" || chief != q.SessionID) {
 		return out, none, reject("only the chief of staff may sort asks")
 	}
 	var chiefNode string
-	if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil || chiefNode != node {
-		return out, none, reject("the chief of staff is not on this machine")
+	if !owner {
+		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil || chiefNode != node {
+			return out, none, reject("the chief of staff is not on this machine")
+		}
+	}
+	if q.Result == "hide" {
+		f := hideFilter{Kind: q.Kind, Result: q.HideResult, Before: q.Before, RepeatsOnly: q.RepeatsOnly}
+		var h hideResult
+		switch q.Mode {
+		case "preview":
+			h, err = hidePreview(tx, f)
+		case "apply":
+			h, err = s.hideApply(tx, f, q.Token)
+		case "undo":
+			h, err = s.hideUndo(tx, q.Receipt)
+		}
+		if err != nil {
+			return out, none, reject("%v", err)
+		}
+		if err = tx.Commit(); err != nil {
+			return out, none, err
+		}
+		if q.Mode != "preview" {
+			s.logf("ask sort hide %s receipt=%s before=%d after=%d ids=%d", q.Mode, h.Receipt, h.Before, h.After, len(h.IDs))
+		}
+		return protocol.AskSortResult{Result: "hide", HiddenIDs: h.IDs, VisibleBefore: h.Before, VisibleAfter: h.After, Token: h.Token, Receipt: h.Receipt}, none, nil
 	}
 	if q.Result == protocol.AskSortList {
 		asks, err := s.waitingChiefAsks(tx, s.now())

@@ -100,7 +100,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff only: sort one ask that waits for you (close, merge, send, owner), list them with result list and the sorter's counts by result (optional sorter, since/until or id range), or read one in full with detail full. Sort only; never answer for the owner.",
+    "description": "Chief of staff only: sort one ask that waits for you (close, merge, send, owner), list them with result list and the sorter's counts by result (optional sorter, since/until or id range), or read one in full with detail full. Use result hide with mode preview, apply or undo to hide sort history reversibly. Never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -122,7 +122,8 @@ export const TOOL_CATALOG = [
             "merge",
             "send",
             "owner",
-            "list"
+            "list",
+            "hide"
           ],
           "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you, with the sorter's counts by result."
         },
@@ -169,6 +170,39 @@ export const TOOL_CATALOG = [
         "to_id": {
           "type": "integer",
           "description": "For list: only count sorts with an id at or before this."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "preview",
+            "apply",
+            "undo"
+          ],
+          "description": "Hide history mode."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Hide filter: ask kind."
+        },
+        "hide_result": {
+          "type": "string",
+          "description": "Hide filter: sort result."
+        },
+        "before": {
+          "type": "string",
+          "description": "Hide filter: UTC RFC3339 exclusive cutoff."
+        },
+        "repeats_only": {
+          "type": "boolean",
+          "description": "Hide only repeated stall closes."
+        },
+        "token": {
+          "type": "string",
+          "description": "Preview token for apply."
+        },
+        "receipt": {
+          "type": "string",
+          "description": "Receipt for undo."
         }
       },
       "required": [],

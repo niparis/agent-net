@@ -95,24 +95,43 @@ const MaxChiefReasonChars = 300
 // in Unix seconds) or an id range (FromID, ToID). Detail "full" reads one ask
 // instead of sorting it, and then only Ask is required.
 type AskSortArgs struct {
-	Ask      string `json:"ask"`
-	Result   string `json:"result"`
-	Into     string `json:"into,omitempty"`
-	To       string `json:"to,omitempty"`
-	Reason   string `json:"reason"`
-	Priority int    `json:"priority,omitempty"`
-	WhyYou   string `json:"why_you,omitempty"`
-	Detail   string `json:"detail,omitempty"`
-	Sorter   string `json:"sorter,omitempty"`
-	Since    int64  `json:"since,omitempty"`
-	Until    int64  `json:"until,omitempty"`
-	FromID   int64  `json:"from_id,omitempty"`
-	ToID     int64  `json:"to_id,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	HideResult  string `json:"hide_result,omitempty"`
+	Before      string `json:"before,omitempty"`
+	RepeatsOnly bool   `json:"repeats_only,omitempty"`
+	Token       string `json:"token,omitempty"`
+	Receipt     string `json:"receipt,omitempty"`
+	Ask         string `json:"ask"`
+	Result      string `json:"result"`
+	Into        string `json:"into,omitempty"`
+	To          string `json:"to,omitempty"`
+	Reason      string `json:"reason"`
+	Priority    int    `json:"priority,omitempty"`
+	WhyYou      string `json:"why_you,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+	Sorter      string `json:"sorter,omitempty"`
+	Since       int64  `json:"since,omitempty"`
+	Until       int64  `json:"until,omitempty"`
+	FromID      int64  `json:"from_id,omitempty"`
+	ToID        int64  `json:"to_id,omitempty"`
 }
 
 // Validate checks a sort before the gateway looks at the ask. A full read is
 // one ask id and nothing else. A list may choose its sorter and ranges.
 func (a AskSortArgs) Validate() error {
+	if a.Result == "hide" {
+		if a.Mode != "preview" && a.Mode != "apply" && a.Mode != "undo" {
+			return errors.New("hide mode must be preview, apply or undo")
+		}
+		if a.Mode == "undo" && a.Receipt == "" {
+			return errors.New("undo needs receipt")
+		}
+		if a.Mode == "apply" && a.Token == "" {
+			return errors.New("apply needs token")
+		}
+		return nil
+	}
 	if a.Result == AskSortList {
 		if a.Since < 0 || a.Until < 0 {
 			return errors.New("since and until are Unix seconds and cannot be negative")
@@ -179,13 +198,18 @@ type AskSortRequest struct {
 // asks that wait for the chief in Asks and the counts of one sorter's sorts in
 // Stats, and changes nothing. A full read has Result "read" and fills Full.
 type AskSortResult struct {
-	Ask    string        `json:"ask"`
-	Result string        `json:"result"`
-	Next   string        `json:"next"`
-	State  string        `json:"state"`
-	Asks   []AskWaiting  `json:"asks,omitempty"`
-	Stats  *AskSortStats `json:"stats,omitempty"`
-	Full   *AskFull      `json:"full,omitempty"`
+	HiddenIDs     []int64       `json:"hidden_ids,omitempty"`
+	VisibleBefore int           `json:"visible_before"`
+	VisibleAfter  int           `json:"visible_after"`
+	Token         string        `json:"token,omitempty"`
+	Receipt       string        `json:"receipt,omitempty"`
+	Ask           string        `json:"ask"`
+	Result        string        `json:"result"`
+	Next          string        `json:"next"`
+	State         string        `json:"state"`
+	Asks          []AskWaiting  `json:"asks,omitempty"`
+	Stats         *AskSortStats `json:"stats,omitempty"`
+	Full          *AskFull      `json:"full,omitempty"`
 }
 
 // AskSortStats counts the successful sorts of one sorter by result. FirstID and
