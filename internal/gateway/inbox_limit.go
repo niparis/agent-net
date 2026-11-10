@@ -16,12 +16,26 @@ import (
 const DefaultInboxLimit = 5
 
 // waitingSQL matches the messages that count toward a recipient's inbox
-// limit: undelivered messages with no batch carrier of their own. Messages in
-// a batch are represented by the batch message, so counting both would count
-// the same wait twice. It takes the table alias as its first argument and the
-// current time as its second.
+// limit: peer messages that wait undelivered, with no batch carrier of their
+// own. Messages in a batch are represented by the batch message, so counting
+// both would count the same wait twice. Replies never count: an answer to the
+// recipient's own request is always allowed through. Neither do agent-net's
+// own notices, or messages between a worker and its caller in either
+// direction (decision 0129, fix round). It takes the table alias as its first
+// argument and the current time as its second.
 func waitingSQL(alias string) string {
-	return alias + `.batch_id='' AND ` + alias + `.state IN ('stored','dispatched') AND ` + alias + `.expires_at > ?`
+	return alias + `.batch_id='' AND ` + alias + `.state IN ('stored','dispatched') AND ` + alias + `.expires_at > ?
+		AND ` + alias + `.type<>'reply' AND ` + alias + `.sender<>'` + agentNetSender + `' AND NOT ` + workerLinkSQL(alias)
+}
+
+// workerLinkSQL is true when one end of a message is a worker and the other is
+// that worker's caller. Those messages carry task, notice and hand-back
+// traffic and are not peer messages.
+func workerLinkSQL(alias string) string {
+	return `(EXISTS (SELECT 1 FROM sessions wsw WHERE wsw.id=` + alias + `.sender AND wsw.worker<>'' AND json_valid(wsw.worker)
+			AND json_extract(wsw.worker,'$.owner')=` + alias + `.recipient)
+		OR EXISTS (SELECT 1 FROM sessions wsr WHERE wsr.id=` + alias + `.recipient AND wsr.worker<>'' AND json_valid(wsr.worker)
+			AND json_extract(wsr.worker,'$.owner')=` + alias + `.sender))`
 }
 
 // waitingCountTx counts the messages waiting at the gateway for a recipient.
@@ -34,17 +48,29 @@ func waitingCountTx(tx interface {
 }
 
 // checkInboxLimit refuses a new message when the recipient already has the
-// allowed number waiting. The owner, and the CTO writing with the owner's
-// voice, are exempt (decision 0129).
-func checkInboxLimit(tx *sql.Tx, sender, recipient string, ownerVoice bool, now int64) error {
-	if ownerVoice {
+// allowed number waiting. The owner, the CTO writing with the owner's voice,
+// replies, agent-net's own notices and worker-to-caller traffic are exempt
+// (decision 0129).
+func checkInboxLimit(tx *sql.Tx, p protocol.MsgSend, ownerVoice bool, now int64) error {
+	if ownerVoice || p.Type == protocol.TypeReply || p.Sender == agentNetSender {
 		return nil
 	}
+	if p.WorkerTask || p.WorkerNotice || p.WorkerIdleNotice {
+		return nil
+	}
+	sender, recipient := p.Sender, p.Recipient
 	var harness string
 	if err := tx.QueryRow(`SELECT harness FROM sessions WHERE id=?`, sender).Scan(&harness); err != nil {
 		return err
 	}
 	if protocol.IsOwner(harness) {
+		return nil
+	}
+	linked, err := workerLinked(tx, sender, recipient)
+	if err != nil {
+		return err
+	}
+	if linked {
 		return nil
 	}
 	limit, err := inboxLimitTx(tx, recipient)
@@ -71,6 +97,26 @@ func checkInboxLimit(tx *sql.Tx, sender, recipient string, ownerVoice bool, now 
 		at = oldest.UTC().Format("2006-01-02 15:04 MST")
 	}
 	return reject("recipient has %d waiting, oldest %s at %s; withdraw one or wait", waiting, who, at)
+}
+
+// workerLinked says whether one end of the message is a worker and the other
+// is that worker's caller.
+func workerLinked(tx *sql.Tx, sender, recipient string) (bool, error) {
+	for _, pair := range [][2]string{{sender, recipient}, {recipient, sender}} {
+		var owner string
+		err := tx.QueryRow(`SELECT COALESCE(CASE WHEN worker<>'' AND json_valid(worker)
+			THEN json_extract(worker,'$.owner') END,'') FROM sessions WHERE id=?`, pair[0]).Scan(&owner)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				continue
+			}
+			return false, err
+		}
+		if owner != "" && owner == pair[1] {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // oldestWaitingTx returns the oldest waiting message to the recipient, and
@@ -147,7 +193,7 @@ func (s *Store) enrichQueue(m protocol.Message) protocol.Message {
 // queueStatusLine is the one-line receipt a sender gets: its position, how
 // many wait, and the recipient's busy time.
 func queueStatusLine(m protocol.Message) string {
-	if m.QueueWaiting == 0 || (m.State != protocol.StateStored && m.State != protocol.StateDispatched) {
+	if m.Type == protocol.TypeReply || m.QueueWaiting == 0 || (m.State != protocol.StateStored && m.State != protocol.StateDispatched) {
 		return ""
 	}
 	line := "queued behind " + strconv.Itoa(m.QueuePosition-1)

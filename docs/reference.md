@@ -1056,12 +1056,18 @@ A message that has waited `BusyHoldLimit` (30 minutes) while the session still
 reports busy is sent anyway, and the gateway logs `msg.released_stuck`.
 
 `messages.inbox_limit` (default 5, levels network, repo and agent, resolved per
-recipient) caps how many undelivered messages may wait for one session. A
+recipient) caps how many undelivered peer messages may wait for one session. A
 message already in a batch counts once, as the batch. At the limit a send is
 refused with `recipient has N waiting, oldest from you at <time>; withdraw one
 or wait`. The owner's messages and the CTO's messages with `as_owner: true` are
-exempt. Any sender may set `urgent`: it goes ahead of older held messages and
-still counts toward the limit. A value of 0 turns the limit off.
+exempt. So are three kinds of traffic that are not peer messages: a reply to
+the recipient's own request, agent-net's own notices (step tasks, reminders,
+not-started notices), and messages between a worker and the caller that started
+it, in either direction (the task, the caller's follow-ups, and worker notices
+such as done or started). Exempt traffic is never refused and does not count
+toward the limit, but it still takes the busy hold and the batch. Any sender
+may set `urgent`: it goes ahead of older held messages and still counts toward
+the limit. A value of 0 turns the limit off.
 
 The send result and `agent_message_status` carry `queue_position` (1 is next),
 `queue_waiting`, `busy_for_seconds` and a one-line `queue` receipt such as

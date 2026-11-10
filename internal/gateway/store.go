@@ -3846,7 +3846,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		return msg, false, reject("rate limit: at most %d messages per minute per session", protocol.RatePerMinute)
 	}
 	if !p.Ack && p.Type != protocol.TypeAck {
-		if err := checkInboxLimit(tx, p.Sender, p.Recipient, p.FromCTO && p.OwnerApproved, s.now().UnixNano()); err != nil {
+		if err := checkInboxLimit(tx, p, p.FromCTO && p.OwnerApproved, s.now().UnixNano()); err != nil {
 			return msg, false, err
 		}
 	}

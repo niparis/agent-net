@@ -3189,6 +3189,10 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) bool {
 	return false
 }
 
+// busyHoldRaceHook runs between the busy check and the hold. A test sets it to
+// flip the session's status, so the race is exercised without a sleep.
+var busyHoldRaceHook = func() {}
+
 func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Message) {
 	g.sendDeliverWith(ctx, nodeID, m, false)
 }
@@ -3201,7 +3205,14 @@ func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol
 	// (decision 0129). Workers are left out: their daemon queues per turn.
 	if !released {
 		if ok, err := g.store.busyHoldEligible(m.To); err == nil && ok {
+			busyHoldRaceHook()
 			if g.store.HoldForBusy(m) {
+				// The session may have gone ready between the check and the
+				// hold. Release it now, or it would wait for another change
+				// or the 30 minute fallback (decision 0129, fix round).
+				if still, err := g.store.busyHoldEligible(m.To); err == nil && !still {
+					g.releaseBusyHold(ctx, m.To, false)
+				}
 				return
 			}
 		}
