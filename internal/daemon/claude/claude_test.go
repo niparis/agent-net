@@ -439,3 +439,36 @@ func TestDeliverToWorkerNamesHandback(t *testing.T) {
 		t.Fatalf("the frame to a worker does not name agent_handback: %s", got)
 	}
 }
+
+// A batch message is one harness write, but every original in it is recorded
+// for reply matching, so an answer names the original (decision 0129).
+func TestBatchDeliveryRecordsEveryOriginal(t *testing.T) {
+	r := newRig(t)
+	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })
+	older := msg
+	older.ID, older.Body = "m_older", "older news"
+	newest := msg
+	newest.ID, newest.Body = "m_newest", "newest news"
+	batch := msg
+	batch.ID, batch.Body = "m_batch", "2 messages arrived while you were busy."
+	batch.Type = protocol.TypeRequest
+	batch.Batch = []protocol.Message{newest, older}
+	if res := r.a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "sess-1", SessionID: "s_claude"}, batch); !res.Delivered {
+		t.Fatalf("batch delivery: %+v", res)
+	}
+	<-r.lines
+	r.book.mu.Lock()
+	rows := append([]daemon.ClaudeDelivery(nil), r.book.rows...)
+	r.book.mu.Unlock()
+	if len(rows) != 2 {
+		t.Fatalf("recorded %d deliveries, want the 2 originals: %+v", len(rows), rows)
+	}
+	if rows[0].MessageID != "m_newest" || rows[1].MessageID != "m_older" {
+		t.Fatalf("recorded %+v, want newest then older", rows)
+	}
+	for _, row := range rows {
+		if row.MessageID == "m_batch" {
+			t.Fatal("the batch carrier was recorded as a request")
+		}
+	}
+}
