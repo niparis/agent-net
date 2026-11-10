@@ -225,3 +225,33 @@ var errGroupOnly = &staticError{"group messages are for the CTO only; send to on
 type staticError struct{ text string }
 
 func (e *staticError) Error() string { return e.text }
+
+func TestAgentMessageWithdraw(t *testing.T) {
+	var calls []call
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		raw, _ := json.Marshal(params)
+		var m map[string]any
+		json.Unmarshal(raw, &m)
+		calls = append(calls, call{method, m})
+		if m["older_than"] == true {
+			return json.RawMessage(`{"withdrawn":2,"messages":[{"message_id":"m_1","state":"withdrawn"},{"message_id":"m_2","state":"withdrawn"}]}`), nil
+		}
+		return json.RawMessage(`{"message":{"message_id":"m_1","state":"withdrawn"}}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_message_withdraw",
+		Arguments: map[string]any{"message": "m_1"}})
+	if err != nil || res.IsError {
+		t.Fatalf("withdraw: %v %+v", err, res)
+	}
+	if len(calls) != 1 || calls[0].method != "withdraw" || calls[0].params["message_id"] != "m_1" {
+		t.Fatalf("daemon call: %+v", calls)
+	}
+	validateAgainstCatalog(t, "agent_message_withdraw", res.StructuredContent)
+	if _, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_message_withdraw",
+		Arguments: map[string]any{"message": "m_1", "older_than": true}}); err != nil {
+		t.Fatal(err)
+	}
+	if calls[1].params["older_than"] != true {
+		t.Fatalf("older_than not passed: %+v", calls[1])
+	}
+}

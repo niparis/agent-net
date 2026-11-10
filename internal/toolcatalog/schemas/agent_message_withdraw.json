@@ -1,0 +1,1 @@
+{"input":{"type":"object","properties":{"message":{"type":"string"},"older_than":{"type":"boolean"}},"required":["message"],"additionalProperties":false},"output":{"type":"object"}}

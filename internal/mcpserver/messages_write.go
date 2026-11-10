@@ -33,6 +33,7 @@ type messageSendIn struct {
 	Type    string        `json:"type,omitempty"`
 	AsOwner bool          `json:"as_owner,omitempty"`
 	Order   bool          `json:"order,omitempty"`
+	Urgent  bool          `json:"urgent,omitempty"`
 }
 
 type messageReplyIn struct {
@@ -96,7 +97,7 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 			}
 			set["online_only"] = online
 		}
-		out, err := sendCall(ctx, run, in.To, set, in.Body, in.Type, in.AsOwner, in.Order, true)
+		out, err := sendCall(ctx, run, in.To, set, in.Body, in.Type, in.AsOwner, in.Order, in.Urgent, true)
 		if err != nil {
 			return toolError(err)
 		}
@@ -130,6 +131,21 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 		return catalogResult("agent_message_reply", out)
 	})
 
+	addCatalogTool(s, "agent_message_withdraw", func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var in messageWithdrawIn
+		if err := decodeCatalogInput("agent_message_withdraw", req, &in); err != nil {
+			return toolError(err)
+		}
+		out, err := opResult(run(ctx, "withdraw", map[string]any{
+			"message_id": in.MessageID,
+			"older_than": in.OlderThan,
+		}))
+		if err != nil {
+			return toolError(err)
+		}
+		return catalogResult("agent_message_withdraw", out)
+	})
+
 	addCatalogTool(s, "agent_message_handoff", func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var in messageHandoffIn
 		if err := decodeCatalogInput("agent_message_handoff", req, &in); err != nil {
@@ -146,6 +162,12 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 		}
 		return catalogResult("agent_message_handoff", out)
 	})
+}
+
+// messageWithdrawIn is the input of agent_message_withdraw.
+type messageWithdrawIn struct {
+	MessageID string `json:"message"`
+	OlderThan bool   `json:"older_than,omitempty"`
 }
 
 // messageHandoffIn is the input of agent_message_handoff.

@@ -55,6 +55,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		Type           string      `json:"type"`
 		AsOwner        bool        `json:"as_owner"`
 		Order          bool        `json:"order"`
+		Urgent         bool        `json:"urgent"`
 		IdempotencyKey string      `json:"idempotency_key"`
 		Receipt        bool        `json:"receipt"`
 	}
@@ -95,7 +96,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		address = p.To
 	}
 	data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: kind, LeadAddress: address,
-		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner, Order: p.Order})
+		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner, Order: p.Order, Urgent: p.Urgent})
 	if err == nil && sid == d.ctoSessionID() {
 		err = d.recordCTOSent(ctx, to, p.AsOwner)
 	}
@@ -309,9 +310,16 @@ func (d *Daemon) receiptForSend(ctx context.Context, data json.RawMessage, to st
 	var result struct {
 		Message *protocol.Message `json:"message"`
 		Routing string            `json:"routing"`
+		Queue   string            `json:"queue"`
 	}
 	if json.Unmarshal(data, &result) == nil {
 		receipt.Note = result.Routing
+		if result.Queue != "" {
+			if receipt.Note != "" {
+				receipt.Note += "; "
+			}
+			receipt.Note += result.Queue
+		}
 		if result.Message != nil && result.Message.To != "" && result.Message.To != to {
 			receipt.To = messageSessionRef{ID: result.Message.To, Name: d.sessionName(ctx, result.Message.To)}
 		}
@@ -338,6 +346,28 @@ func messageStateOf(data json.RawMessage) (id, state string) {
 		return r.Key, "queued"
 	}
 	return "", "unknown"
+}
+
+// localWithdraw takes back an undelivered message. The gateway decides
+// whether the actor is the sender, the owner or the CTO (decision 0130).
+func (d *Daemon) localWithdraw(ctx context.Context, lc *localConn, raw json.RawMessage) (any, error) {
+	sid, err := lc.boundID()
+	if err != nil {
+		return nil, err
+	}
+	var p struct {
+		MessageID string `json:"message_id"`
+		OlderThan bool   `json:"older_than"`
+		AsOwner   bool   `json:"as_owner"`
+	}
+	if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
+		return nil, errors.New("withdraw needs message_id")
+	}
+	if p.AsOwner && sid != d.ctoSessionID() {
+		return nil, errors.New("as_owner is for the CTO session only; withdraw your own message instead")
+	}
+	return d.call(ctx, "msg.withdraw", protocol.MsgWithdraw{MessageID: p.MessageID, OlderThan: p.OlderThan,
+		Sender: sid, AsOwner: p.AsOwner})
 }
 
 // localHandoff passes a message this session received to another session. The

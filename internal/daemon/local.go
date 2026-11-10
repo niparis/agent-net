@@ -1156,6 +1156,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	case "reply":
 		return d.localReply(ctx, lc, raw)
 
+	case "withdraw":
+		return d.localWithdraw(ctx, lc, raw)
+
 	case "handoff":
 		return d.localHandoff(ctx, lc, raw)
 
