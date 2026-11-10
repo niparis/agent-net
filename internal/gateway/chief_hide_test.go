@@ -68,3 +68,28 @@ func TestChiefHideHistory(t *testing.T) {
 		t.Fatalf("status: %q %v", status, err)
 	}
 }
+
+func TestChiefHideRepeatsOnly(t *testing.T) {
+	s, c, chief, asker, node := chiefRig(t)
+	var ids []int64
+	for _, baseline := range []string{"100", "100", "200", "200", "100"} {
+		ask := chiefAskKind(t, s, asker, "session_stall", "stall")
+		if _, err := s.db.Exec(`UPDATE inbox_items SET conversation_id=? WHERE id=?`, baseline, ask); err != nil {
+			t.Fatal(err)
+		}
+		sortAsk(t, s, chief, node, protocol.AskSortArgs{Ask: ask, Result: protocol.AskSortClose, Reason: "handled"})
+		var id int64
+		if err := s.db.QueryRow(`SELECT id FROM ask_sorts WHERE ask_id=?`, ask).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	args := protocol.AskSortArgs{Result: "hide", Mode: "preview", Kind: "session_stall", HideResult: "close", Before: c.now().Add(time.Hour).UTC().Format(time.RFC3339), RepeatsOnly: true}
+	got, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: args})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.HiddenIDs, []int64{ids[1], ids[3]}) {
+		t.Fatalf("ids %v", got.HiddenIDs)
+	}
+}
