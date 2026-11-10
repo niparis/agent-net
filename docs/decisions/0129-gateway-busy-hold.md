@@ -1,8 +1,7 @@
 # 0129 - Messages wait at the gateway while a session is busy
 
 **Date:** 2026-11-09
-**Status:** Accepted. Parts a to d are built. Withdraw and the owner and CTO
-withdraw method are designed here and not built yet.
+**Status:** Accepted. Parts a to d and withdraw are built.
 
 ## Context
 
@@ -57,7 +56,7 @@ turns the limit off.
 cell adds `gw N · in M`: held at the gateway, and dispatched but not delivered
 to the harness.
 
-**Withdraw (designed, not built).** A sender may withdraw its own message
+**Withdraw.** A sender may withdraw its own message
 while it is held, stored, or dispatched and not yet delivered. The owner and
 the CTO may withdraw any undelivered message to a session, including every
 message older than a named one. A withdrawn message gets the state

@@ -115,6 +115,9 @@ type Message struct {
 	// Batch carries the original messages when one held batch goes to a
 	// recipient as one message, newest first. Empty on every other message.
 	Batch []Message `json:"batch,omitempty"`
+	// BatchCarrier is the ID of the batch message this message waits in. It
+	// stays in the gateway and is not sent over the wire.
+	BatchCarrier string `json:"-"`
 	// QueuePosition is the place of a waiting message in its recipient's
 	// gateway queue, 1 being next, and QueueWaiting is how many messages wait
 	// for that recipient. Both are filled on read, never stored.

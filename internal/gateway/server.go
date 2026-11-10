@@ -2937,6 +2937,33 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"message": m, "routing": g.wakeReceiptNote(m, route, started), "queue": queueStatusLine(m)}, nil
 
+	case "msg.withdraw":
+		p, err := decode[protocol.MsgWithdraw](raw)
+		if err != nil || p.MessageID == "" {
+			return nil, reject("bad msg.withdraw")
+		}
+		owner, err := st.SessionNode(p.Sender)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("sender session %q does not belong to this node", p.Sender)
+		}
+		if p.OlderThan {
+			ms, err := st.WithdrawOlderThan(p.MessageID, p.Sender)
+			if err != nil {
+				g.logLine("msg.refused", "node", nc.id, "from", p.Sender, "reason", err.Error())
+				return nil, err
+			}
+			return map[string]any{"withdrawn": len(ms), "messages": ms}, nil
+		}
+		m, err := st.Withdraw(p.MessageID, p.Sender)
+		if err != nil {
+			g.logLine("msg.refused", "node", nc.id, "from", p.Sender, "reason", err.Error())
+			return nil, err
+		}
+		return map[string]any{"message": m}, nil
+
 	case "msg.handoff":
 		p, err := decode[protocol.MsgHandoff](raw)
 		if err != nil {
