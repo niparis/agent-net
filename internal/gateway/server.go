@@ -499,6 +499,15 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				if err := g.store.reconcileAsks(); err != nil {
 					g.logLine("error", "where", "asks", "err", err)
 				}
+				// A session that stays busy past BusyHoldLimit gets its held
+				// messages anyway (decision 0130, part c).
+				if stuck, err := g.store.StuckBusySessions(); err != nil {
+					g.logLine("error", "where", "stuck busy", "err", err)
+				} else {
+					for _, id := range stuck {
+						g.releaseBusyHold(ctx, id, true)
+					}
+				}
 				g.flushLeadRequests(ctx)
 				if err := g.store.samplePendingStalls(); err != nil {
 					g.logLine("error", "where", "pending sample", "err", err)
@@ -1534,6 +1543,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
+		for _, s := range out {
+			g.releaseBusyHold(ctx, s.SessionID, false)
+		}
 		g.dispatchStepTasks(ctx)
 		res := make([]map[string]string, 0, len(out))
 		for _, s := range out {
@@ -1581,6 +1593,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
+		g.releaseBusyHold(ctx, id, false)
 		g.dispatchStepTasks(ctx)
 		return map[string]string{"session_id": id}, nil
 
@@ -2915,13 +2928,41 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if cur, ok, _ := st.Message(m.ID); ok {
 			m = cur
 		}
+		m = st.queueStatusFor(m)
 		// A reply to a handed-off request also stores the lead's copy.
 		if created && m.Type == protocol.TypeReply {
 			if cp, ok, _ := st.HandoffCopy(m.ID); ok {
 				g.dispatch(ctx, cp)
 			}
 		}
-		return map[string]any{"message": m, "routing": g.wakeReceiptNote(m, route, started)}, nil
+		return map[string]any{"message": m, "routing": g.wakeReceiptNote(m, route, started), "queue": queueStatusLine(m)}, nil
+
+	case "msg.withdraw":
+		p, err := decode[protocol.MsgWithdraw](raw)
+		if err != nil || p.MessageID == "" {
+			return nil, reject("bad msg.withdraw")
+		}
+		owner, err := st.SessionNode(p.Sender)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("sender session %q does not belong to this node", p.Sender)
+		}
+		if p.OlderThan {
+			ms, err := st.WithdrawOlderThan(p.MessageID, p.Sender)
+			if err != nil {
+				g.logLine("msg.refused", "node", nc.id, "from", p.Sender, "reason", err.Error())
+				return nil, err
+			}
+			return map[string]any{"withdrawn": len(ms), "messages": ms}, nil
+		}
+		m, err := st.Withdraw(p.MessageID, p.Sender)
+		if err != nil {
+			g.logLine("msg.refused", "node", nc.id, "from", p.Sender, "reason", err.Error())
+			return nil, err
+		}
+		return map[string]any{"message": m}, nil
 
 	case "msg.handoff":
 		p, err := decode[protocol.MsgHandoff](raw)
@@ -3105,7 +3146,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"message": m}, nil
+		m = st.queueStatusFor(m)
+		return map[string]any{"message": m, "queue": queueStatusLine(m)}, nil
 	}
 	if data, ok, err := g.handleUsage(nc, typ, raw); ok {
 		return data, err
@@ -3147,7 +3189,34 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) bool {
 	return false
 }
 
+// busyHoldRaceHook runs between the busy check and the hold. A test sets it to
+// flip the session's status, so the race is exercised without a sleep.
+var busyHoldRaceHook = func() {}
+
 func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Message) {
+	g.sendDeliverWith(ctx, nodeID, m, false)
+}
+
+func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol.Message, released bool) {
+	if m.HeldForBusy {
+		return
+	}
+	// A message for a session that is in a turn waits at the gateway
+	// (decision 0130). Workers are left out: their daemon queues per turn.
+	if !released {
+		if ok, err := g.store.busyHoldEligible(m.To); err == nil && ok {
+			busyHoldRaceHook()
+			if g.store.HoldForBusy(m) {
+				// The session may have gone ready between the check and the
+				// hold. Release it now, or it would wait for another change
+				// or the 30 minute fallback (decision 0130, fix round).
+				if still, err := g.store.busyHoldEligible(m.To); err == nil && !still {
+					g.releaseBusyHold(ctx, m.To, false)
+				}
+				return
+			}
+		}
+	}
 	if held, err := g.store.SessionAgentPending(m.To); err != nil || held {
 		return
 	}
@@ -3246,6 +3315,32 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 		} else {
 			g.store.UnmarkDispatched(m.ID)
 		}
+	}
+}
+
+// releaseBusyHold delivers everything the gateway held for a session, as one
+// message when there are several. force is the 30-minute fallback (decision
+// 0130): the messages go even though the session still reports busy.
+func (g *Gateway) releaseBusyHold(ctx context.Context, sessionID string, force bool) {
+	carrier, n, err := g.store.ReleaseBusyHold(sessionID, force)
+	if err != nil {
+		g.logLine("error", "where", "release busy hold", "session", sessionID, "err", err)
+		return
+	}
+	if n == 0 {
+		return
+	}
+	node, err := g.store.SessionNode(sessionID)
+	if err != nil {
+		g.logLine("error", "where", "release busy hold node", "session", sessionID, "err", err)
+		return
+	}
+	if force {
+		g.logLine("msg.released_stuck", "session", sessionID, "msg", carrier.ID, "count", n, "limit_s", int(BusyHoldLimit.Seconds()))
+	}
+	g.sendDeliverWith(ctx, node, carrier, true)
+	if force {
+		g.store.clearBusySince(sessionID)
 	}
 }
 

@@ -372,8 +372,9 @@ action tool per area:
 
 | CTO change tool | Actions or area |
 |---|---|
-| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions |
+| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions; `urgent: true` goes ahead of older waiting messages |
 | `agent_message_reply` | a reply with an outcome, or `ack: true` to close a request that needs no answer; `as_owner: true` replies on the owner's instructions |
+| `agent_message_withdraw` | one undelivered message, or with `older_than: true` every undelivered message to that recipient that is this old or older; the owner and the CTO may withdraw another session's message |
 | `agent_owner_ask` | a question, approval or idea with a recommendation and up to four answers, into the Inbox |
 | `agent_learn` | one finding, under the daily limit |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
@@ -1026,6 +1027,64 @@ Agent-net integrates with parts of each harness that are not general protocols. 
 | Pi extension API | The extension uses Pi's extension hooks and RPC events, and connects to the daemon over its local Unix socket. | Pi sessions may not register, receive messages or return replies. | A Pi worker start times out if the extension does not register it; the daemon logs connection or delivery failures. See [agent-net.ts](../plugins/pi/agent-net.ts) and [worker_pi.go](../internal/daemon/worker_pi.go). |
 | Antigravity hooks and stream-json | Hooks report session start, prompt and stop events to the daemon. Workers use `--input-format stream-json` and `--output-format stream-json`; the daemon reads events and writes incoming turns to the process. | The daemon may lose session status or worker conversations if hook events, JSON fields or stream event shapes change. | Sessions stop appearing or updating, or workers fail to initialize or report stream errors in the daemon log. See [antigravity.go](../internal/daemon/antigravity.go) and [worker_agy.go](../internal/daemon/worker_agy.go). |
 
+## Messages that wait at the gateway
+
+A message to an online session that reports `busy` does not go into the
+session. The gateway keeps it with state `stored` and `held_for_busy` set,
+then sends it when the session reports it is no longer busy. Workers keep
+their own turn queue, and an offline session keeps the queue and wake path.
+Decision [0130](decisions/0130-gateway-busy-hold.md) has the design.
+
+When several messages waited, they go as one message, newest first:
+
+```
+3 messages arrived while you were busy. Act on the newest; read the older ones as context.
+
+--- 1 of 3: message m_... from builder ---
+<body>
+
+--- 2 of 3: message m_... from reviewer ---
+<body>
+```
+
+A single held message goes as it is. The batch keeps every original message in
+its `batch` field, so a reply or an ack still names the original. The batch
+row is what moves through the delivery states; its originals move with it.
+The header text and the `batch` field are agent-net's own, not the sender's.
+
+A message that has waited `BusyHoldLimit` (30 minutes) while the session still
+reports busy is sent anyway, and the gateway logs `msg.released_stuck`.
+
+`messages.inbox_limit` (default 5, levels network, repo and agent, resolved per
+recipient) caps how many undelivered peer messages may wait for one session. A
+message already in a batch counts once, as the batch. At the limit a send is
+refused with `recipient has N waiting, oldest from you at <time>; withdraw one
+or wait`. The owner's messages and the CTO's messages with `as_owner: true` are
+exempt. So are three kinds of traffic that are not peer messages: a reply to
+the recipient's own request, agent-net's own notices (step tasks, reminders,
+not-started notices), and messages between a worker and the caller that started
+it, in either direction (the task, the caller's follow-ups, and worker notices
+such as done or started). Exempt traffic is never refused and does not count
+toward the limit, but it still takes the busy hold and the batch. Any sender
+may set `urgent`: it goes ahead of older held messages and still counts toward
+the limit. A value of 0 turns the limit off.
+
+The send result and `agent_message_status` carry `queue_position` (1 is next),
+`queue_waiting`, `busy_for_seconds` and a one-line `queue` receipt such as
+`queued behind 2, session busy for 6 min`. In the TUI the STATUS cell adds
+`gw N · in M`: N held at the gateway, M dispatched but not yet delivered to
+the harness.
+
+`agent_message_withdraw` takes back an undelivered message. Its sender may
+withdraw its own; an owner session and the CTO may withdraw any undelivered
+message to one session. `older_than: true` withdraws every undelivered message
+to that message's recipient that is as old as or older than the named one.
+The message gets the state `withdrawn` and stays visible to its sender in
+`agent_message_status`. A message the harness already accepted (delivered,
+replied or acknowledged) cannot be withdrawn, and the error says so. A
+withdrawn original leaves its pending batch, and the batch text is rebuilt
+without it.
+
 ## Delivery states
 
 The receiver saves `injecting` in `daemon.db` before calling a harness. It saves
@@ -1162,8 +1221,13 @@ The gateway writes one line per event to stderr (the systemd journal, or the lau
 
 | Event | When | Main keys |
 |---|---|---|
-| `msg.stored` | The gateway accepted a message. This is the one line per message. | `msg`, `conv`, `type` (`request`, `reply`, `ack` or `notification`), `from`, `from_name`, `from_harness`, `from_host`, `to`, `to_name`, `to_harness`, `to_host`, `bytes` (size of the body) |
-| `msg.dispatched` | The message was sent to the recipient's machine. | `msg`, `conv`, `type`, `to`, `to_host` |
+| `msg.stored` | The gateway accepted a message. This is the one line per message. | `msg`, `conv`, `type` (`request`, `reply`, `ack` or `notification`), `from`, `from_name`, `from_harness`, `from_host`, `to`, `to_name`, `to_harness`, `to_host`, `bytes` (size of the body), `state`, and `recipient_busy_s` while the recipient is busy |
+| `msg.held_busy` | The message waits at the gateway because the recipient is in a turn (decision 0130). | `msg`, `conv`, `type`, `to`, `to_host`, `busy_for_s`, `reason` |
+| `msg.batch` | Several held messages go as one batch. | `msg` (the batch), `conv`, `type`, `to`, `to_host`, `count`, `busy_for_s` |
+| `msg.released_busy` | One held message goes as it is. | same as `msg.batch`, `count` is 1 |
+| `msg.released_stuck` | The 30-minute fallback sent held messages to a session that still reports busy. | `session`, `msg`, `count`, `limit_s` |
+| `msg.withdrawn` | The sender, the owner or the CTO withdrew an undelivered message. | `msg`, `conv`, `type`, `to`, `to_host`, `by` |
+| `msg.dispatched` | The message was sent to the recipient's machine. | `msg`, `conv`, `type`, `to`, `to_host`, and `recipient_busy_s` while the recipient is busy |
 | `msg.delivered` | The recipient's machine put it into the session. | same, and `detail` |
 | `msg.failed` | It could not be delivered. | same, and `detail` |
 | `msg.expired` | It was not delivered within 24 hours. | same |

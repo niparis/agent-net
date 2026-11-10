@@ -26,6 +26,9 @@ const (
 	// StateAcknowledged is a request closed by an ack: answered, but with
 	// nothing delivered to the sender.
 	StateAcknowledged = "acknowledged"
+	// StateWithdrawn is a message its sender took back from the gateway
+	// before it reached the recipient's harness (decision 0130).
+	StateWithdrawn = "withdrawn"
 )
 
 // Message types.
@@ -101,6 +104,28 @@ type Message struct {
 	// IsOrder is true when the sender flagged the message as an order and the
 	// gateway checked that the sender is above the recipient in the tree.
 	IsOrder bool `json:"is_order,omitempty"`
+	// Urgent is the sender's request to deliver this message ahead of older
+	// held messages. It still counts toward the recipient's inbox limit
+	// (decision 0130).
+	Urgent bool `json:"urgent,omitempty"`
+	// HeldForBusy is true while the gateway keeps this message because the
+	// recipient is running a turn. It stays state stored until the gateway
+	// releases it, alone or in a batch (decision 0130).
+	HeldForBusy bool `json:"held_for_busy,omitempty"`
+	// Batch carries the original messages when one held batch goes to a
+	// recipient as one message, newest first. Empty on every other message.
+	Batch []Message `json:"batch,omitempty"`
+	// BatchCarrier is the ID of the batch message this message waits in. It
+	// stays in the gateway and is not sent over the wire.
+	BatchCarrier string `json:"-"`
+	// QueuePosition is the place of a waiting message in its recipient's
+	// gateway queue, 1 being next, and QueueWaiting is how many messages wait
+	// for that recipient. Both are filled on read, never stored.
+	QueuePosition int `json:"queue_position,omitempty"`
+	QueueWaiting  int `json:"queue_waiting,omitempty"`
+	// BusyForSeconds is how long the recipient has been busy, filled on read
+	// when the recipient is busy. Zero otherwise.
+	BusyForSeconds int64 `json:"busy_for_seconds,omitempty"`
 	// AuthorityNote is agent-net's label for an order, or for a reply from
 	// above (advice). The gateway fills it on every delivery from the live
 	// tree, and a sender cannot set it (decision 0089).
@@ -352,8 +377,13 @@ type AgentView struct {
 	Harness            string           `json:"harness"`
 	Cwd                string           `json:"cwd"`
 	Status             string           `json:"status"`
-	Online             bool             `json:"online"`
-	LastSeen           int64            `json:"last_seen"`
+	// GatewayHeld and InSession count what waits for this session: messages
+	// held at the gateway, and messages dispatched but not delivered to its
+	// harness yet (decision 0130). Zero from an older gateway.
+	GatewayHeld int   `json:"gateway_held,omitempty"`
+	InSession   int   `json:"in_session,omitempty"`
+	Online      bool  `json:"online"`
+	LastSeen    int64 `json:"last_seen"`
 	// LastActive is when the session last did something, in Unix seconds.
 	// It is not when its daemon last reported it. 0 from an older gateway.
 	LastActive int64 `json:"last_active,omitempty"`
@@ -574,6 +604,10 @@ type (
 		// checks that the sender is above the recipient in the tree. If not,
 		// the message goes as a request.
 		Order bool `json:"order,omitempty"`
+		// Urgent asks the gateway to deliver this message ahead of older
+		// messages held for the recipient. It still counts toward the inbox
+		// limit (decision 0130).
+		Urgent bool `json:"urgent,omitempty"`
 		// Ack closes the parent request without sending anything to its
 		// sender. The body may be empty and an outcome is refused. The request
 		// then counts as answered for reminders, the TUI's wait/owes view and
@@ -650,6 +684,17 @@ type (
 	}
 	MsgDeliver struct {
 		Message Message `json:"message"`
+	}
+	// MsgWithdraw takes back an undelivered message. A sender withdraws its
+	// own message; the owner and the CTO may withdraw any message to one
+	// session, or every message older than a named one (decision 0130).
+	MsgWithdraw struct {
+		MessageID string `json:"message_id"`
+		// OlderThan, when set, withdraws every undelivered message to that
+		// message's recipient that is older than it. Owner and CTO only.
+		OlderThan bool   `json:"older_than,omitempty"`
+		Sender    string `json:"sender_session_id"`
+		AsOwner   bool   `json:"as_owner,omitempty"`
 	}
 	// NodeRename is the "node.rename" request: the owner gives a machine a
 	// display name, or clears it with an empty name.

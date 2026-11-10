@@ -157,6 +157,15 @@ settings:
     levels: [network, repo, agent]
     default: "on"
     live: true
+  - key: messages.inbox_limit
+    description: How many undelivered messages may wait at the gateway for one session; zero means no limit. Owner and CTO-as-owner messages skip it.
+    kind: advice
+    type: int
+    min: 0
+    max: 100
+    levels: [network, repo, agent]
+    default: 5
+    live: true
   - key: loop.every
     rows: [46]
     description: How often agent-net wakes the repo's lead agent to keep working toward its purpose; 0s means no loop.

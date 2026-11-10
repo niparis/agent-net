@@ -381,7 +381,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_graph_read",
-    "description": "Read the graph: nodes with their charters and rules, and the edges between them. Give node to read one node and its edges. A shared name returns every node.",
+    "description": "Read the graph: nodes with charters and rules, and their edges. Give node for one node and its edges; a shared name returns every node.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -533,7 +533,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machine_get",
-    "description": "Read a machine's health, load, CPU and busiest processes with their owner, or one category of details: models, quotas, track record or playbook. Pages long lists; ask for one category per call.",
+    "description": "Read a machine's health, load, CPU and busiest processes, or one detail category: models, quotas, track record or playbook. Pages long lists.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -595,7 +595,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machine_log",
-    "description": "Read a machine's redacted daemon or gateway log. Select a time window and optional text filter; returns the newest matching lines, capped at 1000 lines and 256 KB.",
+    "description": "Read a machine's redacted daemon or gateway log for a time window, with an optional text filter. Returns the newest lines, at most 1000 and 256 KB.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -643,7 +643,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machines_find",
-    "description": "List machines with online state, agent-net version and harness versions. Use agent_machine_get for one machine's models, quotas, track record or playbook.",
+    "description": "List machines with online state and versions. Use agent_machine_get for one machine's models, quotas, track record or playbook.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -816,7 +816,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_reply",
-    "description": "Reply to a message you received. Outcome applies to replies to requests: accept, reject with a reason, redirect to a node, or escalate with a recommendation. Use ack: true to close a request that needs no answer.",
+    "description": "Reply to a message you received, with an outcome on requests: accept, reject (reason), redirect (reason, redirect_to), escalate (recommendation). ack: true closes a request with no answer.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -868,7 +868,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_send",
-    "description": "Send to one session, or as the CTO use to_set for a group. Give the point first and necessary context. A peer message is a request, not the owner's approval; only the owner starts with the CTO. Send a report that needs no answer as a notification.",
+    "description": "Send to one session, or as the CTO to_set for a group. urgent jumps the queue and still counts. A peer message is a request, not the owner's approval; only the owner starts with the CTO.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -940,7 +940,11 @@ export const TOOL_CATALOG = [
         },
         "order": {
           "type": "boolean",
-          "description": "Mark this as an order. Only a lead can give one, to a session below it in its team or repo. agent-net checks the tree; for anyone else the message goes as an ordinary request."
+          "description": "Mark this as an order; agent-net checks the tree. For anyone else it goes as a request."
+        },
+        "urgent": {
+          "type": "boolean",
+          "description": "Deliver ahead of older waiting messages. It still counts toward the limit."
         }
       },
       "required": [
@@ -953,6 +957,30 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "send"
+  },
+  {
+    "name": "agent_message_withdraw",
+    "description": "Withdraw undelivered message; owner and CTO may withdraw another session's; older_than clears the older backlog.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "older_than": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "withdraw"
   },
   {
     "name": "agent_messages_find",
@@ -1015,7 +1043,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_ask",
-    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. A new ask adds to your pending ones; pass replaces to retire one. Use it when you stop to wait for the owner.",
+    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. A new ask adds to your pending ones; replaces retires one. Use it when you stop for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1281,7 +1309,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_session_get",
-    "description": "Read one session's full profile: folder, branch, charter, rules, delegation and worker facts. Use agent_sessions_find when you do not know the session ID or name.",
+    "description": "Read one session's profile: folder, branch, charter, rules, delegation, worker facts. Use agent_sessions_find when the ID or name is unknown.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1303,7 +1331,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_sessions_find",
-    "description": "Find sessions by machine, project, harness, model, kind, online state or text. Returns concise rows; use agent_session_get for one session's full profile and charter.",
+    "description": "Find sessions by machine, project, harness, model, kind, online state or text. Use agent_session_get for one profile and charter.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1602,7 +1630,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_profiles_find",
-    "description": "List worker profiles: harness, model, effort and the machines that can run them. Read before agent_worker_start when you need a specific model.",
+    "description": "List worker profiles: harness, model, effort and the machines that can run them. Read before choosing a worker model.",
     "inputSchema": {
       "type": "object",
       "properties": {

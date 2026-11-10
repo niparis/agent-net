@@ -29,6 +29,16 @@ func newTestStore(t testing.TB) (*Store, *clock) {
 }
 
 // twoSessions makes two online sessions on two nodes.
+// disableInboxLimit turns messages.inbox_limit off for a test that sends many
+// peer messages to one recipient to exercise another limit.
+func disableInboxLimit(t *testing.T, s *Store) {
+	t.Helper()
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision)
+		VALUES('messages.inbox_limit','network','network','','0',1)`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func twoSessions(t *testing.T, s *Store) (a, b string) {
 	t.Helper()
 	n1, _, err := s.CreateNode("h1", "linux")
@@ -249,6 +259,7 @@ func TestConversationBudget(t *testing.T) {
 
 func TestRateLimit(t *testing.T) {
 	s, c := newTestStore(t)
+	disableInboxLimit(t, s)
 	a, b := twoSessions(t, s)
 	for i := 0; i < protocol.RatePerMinute; i++ {
 		if _, _, err := send(s, a, b, "k"+string(rune('a'+i)), ""); err != nil {
