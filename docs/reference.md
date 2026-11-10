@@ -2445,11 +2445,16 @@ task notice expires, the gateway can issue a fresh notice to that session.
 When a ready step task stays unclaimed, the gateway re-sends a task reminder
 after `delivery.step_reminder` (default 2h, 0 turns it off), marked with
 `[agent-net step task reminder]` and the time it has been ready. At most one
-reminder is sent per interval, and reminders follow standard batching. When
+reminder is sent per interval, and reminders follow standard batching. Unclaimed
+verify steps after merge instead get reminders at 30 minutes, 2 hours, 8 hours
+and 24 hours from becoming ready, then once every 24 hours. Their last notice
+time survives gateway restarts. Setting the reminder interval to 0 also disables
+these reminders. When
 a step stays unclaimed past `delivery.step_stuck` (default 12h, 0 turns it off),
 the gateway sends one stuck notice to the change's caller session:
 `<title> (<id>): <step> has waited <age> for <owner>; nobody claimed it.`
-This notice is sent only once per change, revision and step.
+This notice is sent only once per change, revision and step. For verify steps
+after merge, this remains true even after message history is pruned.
 
 ### The playbook and the track record
 

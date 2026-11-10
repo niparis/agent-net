@@ -447,9 +447,33 @@ func (s *Store) stepReminderCutoff() int64 {
 	return s.now().Add(-interval).UnixNano()
 }
 
+// verifyReminderAges are measured from the time the step became ready.
+var verifyReminderAges = [...]time.Duration{30 * time.Minute, 2 * time.Hour, 8 * time.Hour, 24 * time.Hour}
+
+func verifyReminderDue(ready, last time.Time) time.Time {
+	for _, age := range verifyReminderAges {
+		if due := ready.Add(age); due.After(last) {
+			return due
+		}
+	}
+	age := last.Sub(ready)
+	return ready.Add((age/(24*time.Hour) + 1) * 24 * time.Hour)
+}
+
 // stepMessageRecorded reports whether the step already has a live task notice
 // for this session that is newer than the reminder cutoff.
 func (s *Store) stepMessageRecorded(t nodeTaskTarget, cutoff int64) (bool, error) {
+	if t.ref.AfterMerge && t.ref.Step == protocol.StepVerify && cutoff != 0 {
+		var ready, last int64
+		var claimed string
+		err := s.db.QueryRow(`SELECT created_at,last_notice_at,claimed_by FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=1`, t.id, t.revision, t.ref.Step, t.ref.For).Scan(&ready, &last, &claimed)
+		if err != nil {
+			return false, err
+		}
+		if claimed == "" && last != 0 {
+			return s.now().Before(verifyReminderDue(time.Unix(ready, 0), time.Unix(0, last))), nil
+		}
+	}
 	var recorded int
 	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
 		WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=? AND d.session_id=?
@@ -585,9 +609,9 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		 (t.owner_node=? AND EXISTS(SELECT 1 FROM delivery_step_delegates a WHERE a.change_id=t.change_id AND a.revision=t.revision
 		 AND a.step=t.step AND a.for_step=t.for_step AND a.after_merge=t.after_merge AND (a.node=`+sessionRepoSQL+` OR a.node='agent:'||COALESCE(s.agent_id,'')))))
 		AND s.harness NOT IN ('owner','bot','cto')
-		AND NOT EXISTS (SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
+		AND ((t.step='verify' AND t.after_merge=1 AND ?<>0) OR NOT EXISTS (SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
 		WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
-		AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired' AND (?=0 OR m.created_at>=?))`, callerTaskOwner, delegateTaskOwner, reminderCutoff, reminderCutoff)
+		AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired' AND (?=0 OR m.created_at>=?)))`, callerTaskOwner, delegateTaskOwner, reminderCutoff, reminderCutoff, reminderCutoff)
 	if err != nil {
 		g.logLine("error", "where", "step task targets", "err", err)
 		return
@@ -616,6 +640,13 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	}
 	groups := map[string][]nodeTaskTarget{}
 	for _, target := range targets {
+		if target.ref.AfterMerge && target.ref.Step == protocol.StepVerify {
+			recorded, err := g.store.stepMessageRecorded(target, reminderCutoff)
+			if err != nil || recorded {
+				continue
+			}
+		}
+
 		groups[target.session] = append(groups[target.session], target)
 	}
 
@@ -745,7 +776,7 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 	rows, err := g.store.db.Query(`SELECT t.change_id, t.revision, t.step, t.for_step, t.after_merge, t.owner_node, t.created_at, c.caller, c.title
 		FROM delivery_step_tasks t
 		JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
-		WHERE t.completed=0 AND t.claimed_by=''
+		WHERE t.completed=0 AND t.claimed_by='' AND (t.step<>'verify' OR t.after_merge=0 OR t.stuck_notified=0)
 		AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
 		AND c.caller <> ''
 		AND t.created_at <= ?
@@ -828,6 +859,10 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 		}
 		n, err := res.RowsAffected()
 		if err != nil || n == 0 {
+			tx.Rollback()
+			continue
+		}
+		if _, err := tx.Exec(`UPDATE delivery_step_tasks SET stuck_notified=1 WHERE step='verify' AND after_merge=1 AND change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`, it.changeID, it.revision, it.ref.Step, it.ref.For, boolInt(it.ref.AfterMerge)); err != nil {
 			tx.Rollback()
 			continue
 		}
@@ -1239,6 +1274,9 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 				return protocol.Message{}, err
 			} else if n > 0 {
 				added = true
+				if _, err := tx.Exec(`UPDATE delivery_step_tasks SET last_notice_at=? WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`, s.now().UnixNano(), t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge)); err != nil {
+					return protocol.Message{}, err
+				}
 			}
 		}
 		if added {
