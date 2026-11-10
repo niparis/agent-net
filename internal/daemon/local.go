@@ -779,7 +779,9 @@ func (lc *localConn) boundID() (string, error) {
 }
 
 func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMessage) (any, error) {
-	defer lc.d.slowCall(method, time.Now())
+	ph := &callPhases{}
+	ctx = context.WithValue(ctx, phasesKey{}, ph)
+	defer lc.d.slowCall(method, time.Now(), ph)
 	d := lc.d
 	if method == protocol.OpTopicsSubscribe {
 		return lc.subscribeTopics(ctx)

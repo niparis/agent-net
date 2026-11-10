@@ -272,6 +272,11 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 				return nil, true, errors.New("no project: name one (agent_projects_find), or start the worker from a session that runs in a project folder")
 			}
 		}
+		if client != "cli" {
+			// An agent's harness gives up on a slow tool call: it may get an
+			// "accepted" answer. The owner's command line and TUI wait.
+			ctx = context.WithValue(ctx, answerEarlyKey{}, true)
+		}
 		out, err := d.workerStartCall(ctx, sid, p, callerProject, callerPath)
 		return out, true, err
 
@@ -363,28 +368,58 @@ func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequ
 
 func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool, callerPath string, fromCTO ...bool) (*protocol.WorkerStartResult, error) {
 	cto := len(fromCTO) > 0 && fromCTO[0]
+	ph := phasesOf(ctx)
 	var err error
+	end := ph.begin("validate")
 	p, err = checkedWorkerStart(p)
+	end()
 	if err != nil {
 		return nil, err
 	}
 	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto}
 	if p.Continue == "" {
+		// Everything that needs no judge is checked first, in a moment: the
+		// project, the machine, the named model and its provider's allowance.
+		end := ph.begin("precheck")
+		err := d.precheckWorkerStart(ctx, frame, cto)
+		end()
+		if err != nil {
+			return nil, err
+		}
+	}
+	run := func(ctx context.Context) (*protocol.WorkerStartResult, error) {
+		return d.runWorkerStartCall(ctx, caller, p, frame, callerPath, cto, ph)
+	}
+	if early, _ := ctx.Value(answerEarlyKey{}).(bool); !early || cto || p.Continue != "" {
+		return run(ctx)
+	}
+	return d.startWithinBudget(ctx, caller, p, ph, run)
+}
+
+// runWorkerStartCall judges the brief, asks the gateway to start the worker,
+// then sends the task as a message from the caller.
+func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, frame protocol.WorkerStartFrame, callerPath string, cto bool, ph *callPhases) (*protocol.WorkerStartResult, error) {
+	var err error
+	if p.Continue == "" {
 		// The judge runs here, before the gateway picks a machine or a model.
 		// Its label is the level. The caller's difficulty is ignored, and a
 		// failed judge never blocks the start.
+		end := ph.begin("judge")
 		frame.Assessment = d.assessWorkerStart(ctx, d.judgeDir(callerPath, p.Project), p.Task)
+		end()
 		frame.Level = protocol.WorkerLevel(frame.Assessment)
 		// An older gateway still reads Difficulty; give it the judge's label.
 		frame.Difficulty = frame.Level
 	}
 	cctx := withCallWait(ctx, d.workerSettings("").StartTimeout+40e9)
 	var data json.RawMessage
+	end := ph.begin("gateway")
 	if cto {
 		data, err = d.ctoAttributedCall(cctx, "worker.start", frame)
 	} else {
 		data, err = d.call(cctx, "worker.start", frame)
 	}
+	end()
 	if err != nil {
 		return nil, tooOldGateway(err)
 	}
@@ -392,6 +427,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	if err := json.Unmarshal(data, &ans); err != nil || (ans.SessionID == "" && !ans.Queued) {
 		return nil, errors.New("the gateway answered without a worker session")
 	}
+	ph.note("gateway", ans.Phases)
 	selected := protocol.ParseModelSelection(ans.Harness, ans.Provider, ans.Model, ans.Effort)
 	ans.Provider, ans.Effort = selected.Provider, selected.Effort
 	if ans.Provider == "" {
@@ -420,8 +456,10 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		task = ans.Task // a continued worker gets the old first task
 	}
 	charter := d.charterBrief(ctx, ans.Project)
+	end = ph.begin("task")
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest, WorkerTask: true, WorkerTaskRef: ans.StartRef,
 		Body: protocol.WorkerTaskBodyOS(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, ans.OSSandbox, d.SettingsSnapshot(), ans.Project)})
+	end()
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)
 	}
