@@ -55,7 +55,10 @@ func checkInboxLimit(tx *sql.Tx, p protocol.MsgSend, ownerVoice bool, now int64)
 	if ownerVoice || p.Type == protocol.TypeReply || p.Sender == agentNetSender {
 		return nil
 	}
-	if p.WorkerTask || p.WorkerNotice || p.WorkerIdleNotice {
+	// WorkerTask is checked by workerTaskForSend; WorkerNotice and
+	// WorkerIdleNotice are not authenticated by the gateway, so a peer could
+	// set them. Real worker traffic is exempt through workerLinked below.
+	if p.WorkerTask {
 		return nil
 	}
 	sender, recipient := p.Sender, p.Recipient

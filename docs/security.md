@@ -758,7 +758,9 @@ from piling stale orders into a busy session. Your own messages and the CTO's
 messages sent on your instructions always get through. So do replies, agent-net's
 own notices and messages between a worker and its caller, so a burst of step
 tasks or worker notices can never lock a session out of its own work; those
-messages are not counted either. The exempt send is
+messages are not counted either. The worker exemption comes from the stored
+worker's owner, not from a sender flag: a peer cannot set a flag to skip the
+limit. The exempt send is
 marked by the gateway from the sender session's harness and the CTO flag; a
 sender cannot set it in the message body. A held message never leaves the
 gateway before the session's next ready report, or after 30 minutes
