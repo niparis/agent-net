@@ -123,7 +123,8 @@ export const TOOL_CATALOG = [
             "send",
             "owner",
             "list",
-            "hide"
+            "hide",
+            "undo"
           ],
           "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you, with the sorter's counts by result."
         },
@@ -138,7 +139,7 @@ export const TOOL_CATALOG = [
         "reason": {
           "type": "string",
           "maxLength": 300,
-          "description": "Why, in one line. Required for a sort, not for list."
+          "description": "Why, in one line. Required for close, merge, send and owner; not for list, hide or undo."
         },
         "priority": {
           "type": "integer",
