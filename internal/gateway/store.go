@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration}
 
 // permissionProposalMigration stores proposals for Claude Code permission
 // rules and folder trust (decision 0127). An agent or the gateway proposes, the
@@ -1358,6 +1358,16 @@ WHERE i.status IN ('answered', 'approved', 'refused') AND i.answer<>''
 ORDER BY COALESCE(NULLIF(i.answered_at, 0), i.created_at) DESC
 LIMIT 500;
 INSERT INTO standing_orders_fts(standing_orders_fts) VALUES('rebuild');
+`
+
+// busyHoldMigration adds the gateway busy hold (decision 0129): a message can
+// wait at the gateway while its recipient runs a turn, carry the original
+// messages of a batch, be urgent, and be withdrawn before it reaches the
+// harness. busy_since is when the session's current or last busy stretch began.
+const busyHoldMigration = `
+-- gateway busy hold columns (decision 0129). The columns are added
+-- replay-safely below.
+CREATE INDEX IF NOT EXISTS messages_waiting ON messages (recipient, state, batch_id);
 `
 
 // teamAsksToMigration adds the team setting that sends a member's questions
@@ -1702,6 +1712,29 @@ func (s *Store) migrate() error {
 				if _, err := tx.Exec(`ALTER TABLE session_checks ADD COLUMN check_task_hash TEXT NOT NULL DEFAULT ''`); err != nil {
 					tx.Rollback()
 					return err
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "gateway busy hold columns") {
+			for _, col := range []struct{ table, name, spec string }{
+				{"messages", "urgent", "urgent INTEGER NOT NULL DEFAULT 0"},
+				{"messages", "held_for_busy", "held_for_busy INTEGER NOT NULL DEFAULT 0"},
+				{"messages", "held_at", "held_at INTEGER NOT NULL DEFAULT 0"},
+				{"messages", "batch_id", "batch_id TEXT NOT NULL DEFAULT ''"},
+				{"messages", "batch_json", "batch_json TEXT NOT NULL DEFAULT ''"},
+				{"messages", "withdrawn_at", "withdrawn_at INTEGER NOT NULL DEFAULT 0"},
+				{"sessions", "busy_since", "busy_since INTEGER NOT NULL DEFAULT 0"},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
 				}
 			}
 		}
@@ -2485,9 +2518,9 @@ func (s *Store) upsertSession(q interface {
 			return "", false, err
 		}
 	}
-	var knownID, knownName, knownWaiting string
-	err = q.QueryRow(`SELECT id, name, waiting FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
-		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName, &knownWaiting)
+	var knownID, knownName, knownWaiting, knownStatus string
+	err = q.QueryRow(`SELECT id, name, waiting, status FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
+		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName, &knownWaiting, &knownStatus)
 	known := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
@@ -2633,6 +2666,9 @@ func (s *Store) upsertSession(q interface {
 	err = q.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
 		nodeID, in.Harness, in.NativeID).Scan(&id)
 	if err != nil {
+		return "", false, err
+	}
+	if err := setBusySince(q, id, in.Status, knownStatus, now); err != nil {
 		return "", false, err
 	}
 	if waiting != knownWaiting {
@@ -3300,6 +3336,8 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
  @COUNT@
  s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at,
  @STALL@
+ @HELD@
+ @INSESSION@
  s.limited_until, s.limited_reason
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id@JOINS@`
 
@@ -3307,7 +3345,7 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
 var agentListTables = []string{"sessions", "nodes", "profiles", "apps", "project_display_names", "project_mergers",
 	"worker_assessments", "agents", "repo_leads", "repos", "teams", "team_members", "setting_values", "inbox_items",
-	"owner_settings"}
+	"owner_settings", "messages"}
 
 const (
 	// agentRepoCountWhere is what makes a session count toward its Repo's
@@ -3328,11 +3366,15 @@ var (
 		"@MAX@", `COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),`,
 		"@COUNT@", `(SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND `+agentRepoCountWhere+`),`,
 		"@STALL@", `COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0),`,
+		"@HELD@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.held_for_busy=1 AND mw.state='stored'),0),`,
+		"@INSESSION@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='dispatched' AND mw.batch_id=''),0),`,
 		"@JOINS@", "").Replace(agentSelectTemplate)
 	agentListSelect = strings.NewReplacer(
 		"@MAX@", `COALESCE(CAST(mx.value AS INTEGER),0),`,
 		"@COUNT@", `COALESCE(rc.n,0),`,
 		"@STALL@", `COALESCE(CAST(st.conversation_id AS INTEGER),0),`,
+		"@HELD@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.held_for_busy=1 AND mw.state='stored'),0),`,
+		"@INSESSION@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='dispatched' AND mw.batch_id=''),0),`,
 		"@JOINS@", agentListJoins).Replace(agentSelectTemplate)
 )
 
@@ -3348,7 +3390,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.IdleCompactedAt, &a.StalledSince, &a.LimitedUntil, &a.LimitedReason)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.IdleCompactedAt, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason)
 	if err != nil {
 		return a, err
 	}
@@ -3625,22 +3667,29 @@ func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
 	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),''),
-	COALESCE((SELECT mf.files FROM message_files mf WHERE mf.message_id=m.id),''), m.worker_task, m.is_order
+	COALESCE((SELECT mf.files FROM message_files mf WHERE mf.message_id=m.id),''), m.worker_task, m.is_order,
+	m.urgent, m.held_for_busy, m.batch_json
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
-	var files string
+	var files, batchJSON string
 	var workerTask sql.NullBool
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction, &files, &workerTask, &m.IsOrder)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction, &files, &workerTask, &m.IsOrder,
+		&m.Urgent, &m.HeldForBusy, &batchJSON)
 	if workerTask.Valid {
 		m.WorkerTask = &workerTask.Bool
 	}
 	if err == nil && files != "" {
 		if jerr := json.Unmarshal([]byte(files), &m.Files); jerr != nil {
 			err = fmt.Errorf("message %s: stored files: %w", m.ID, jerr)
+		}
+	}
+	if err == nil && batchJSON != "" {
+		if jerr := json.Unmarshal([]byte(batchJSON), &m.Batch); jerr != nil {
+			err = fmt.Errorf("message %s: stored batch: %w", m.ID, jerr)
 		}
 	}
 	if m.FromCTO {
@@ -3796,12 +3845,18 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	if !s.allow(p.Sender) {
 		return msg, false, reject("rate limit: at most %d messages per minute per session", protocol.RatePerMinute)
 	}
+	if !p.Ack && p.Type != protocol.TypeAck {
+		if err := checkInboxLimit(tx, p.Sender, p.Recipient, p.FromCTO && p.OwnerApproved, s.now().UnixNano()); err != nil {
+			return msg, false, err
+		}
+	}
 
 	now := s.now()
 	m := protocol.Message{
 		ID: protocol.NewID("m"), From: p.Sender, To: p.Recipient, Type: p.Type, Body: p.Body,
 		IdempotencyKey: p.IdempotencyKey, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(),
 		State: protocol.StateStored, FromCTO: p.FromCTO, OwnerApproved: p.OwnerApproved && p.FromCTO, WorkerTask: &workerTask,
+		Urgent: p.Urgent,
 	}
 	if p.Ack {
 		// An ack is history only: it is never queued for delivery.
@@ -4013,9 +4068,9 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 	}
 	_, err = tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
-		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task, is_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task, is_order, urgent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.Hop,
-		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask, m.IsOrder)
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask, m.IsOrder, m.Urgent)
 	if err != nil {
 		return msg, false, err
 	}
@@ -4113,6 +4168,16 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			}
 		}
 	}
+	if m.ParentID != "" {
+		state := protocol.StateReplied
+		if m.Type == protocol.TypeAck {
+			state = protocol.StateAcknowledged
+		}
+		// An answer to a batch message answers every original in it.
+		if _, err := tx.Exec(`UPDATE messages SET state=? WHERE batch_id=? AND state IN ('stored','dispatched','delivered')`, state, m.ParentID); err != nil {
+			return msg, false, err
+		}
+	}
 	if threaded && m.Type == protocol.TypeReply {
 		// A reply to a handed-off request also goes to the lead as a copy.
 		var handed string
@@ -4166,10 +4231,13 @@ func (s *Store) party(prefix, sessionID string) []any {
 // logMessage writes the one line that describes a stored message. It has ids,
 // type, both ends and the size of the body, and never the body.
 func (s *Store) logMessage(m protocol.Message) {
-	kv := []any{"msg", m.ID, "conv", m.ConversationID, "type", m.Type}
+	kv := []any{"msg", m.ID, "conv", m.ConversationID, "type", m.Type, "state", m.State}
 	kv = append(kv, s.party("from", m.From)...)
 	kv = append(kv, s.party("to", m.To)...)
 	kv = append(kv, "bytes", len(m.Body))
+	if busy := s.busyForSeconds(m.To, s.now().UnixNano()); busy > 0 {
+		kv = append(kv, "recipient_busy_s", busy)
+	}
 	s.logf("msg.stored", kv...)
 }
 
@@ -4189,6 +4257,9 @@ func (s *Store) logStep(event, id string, extra ...any) {
 		var host string
 		s.db.QueryRow(`SELECT n.hostname FROM sessions s JOIN nodes n ON n.id = s.node_id WHERE s.id = ?`, to).Scan(&host)
 		kv = append(kv, "to_host", host)
+		if busy := s.busyForSeconds(to, s.now().UnixNano()); busy > 0 {
+			kv = append(kv, "recipient_busy_s", busy)
+		}
 	}
 	s.logf(event, append(kv, extra...)...)
 }
@@ -4207,7 +4278,8 @@ func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Messa
 	}
 	rows, err := s.db.Query(msgSelect+` JOIN sessions r ON r.id = m.recipient
 		WHERE NOT ( `+sessionAgentHoldSQL("r")+` ) AND r.node_id = ? AND r.harness <> 'bot' AND r.online = 1 AND `+states+` AND m.expires_at > ?
-		ORDER BY m.created_at, m.rowid`, nodeID, s.now().UnixNano())
+		AND m.held_for_busy=0 AND m.batch_id=''
+		ORDER BY m.urgent DESC, m.created_at, m.rowid`, nodeID, s.now().UnixNano())
 	if err != nil {
 		return nil, err
 	}
@@ -4303,6 +4375,13 @@ func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.M
 		}
 		if err != nil {
 			return notice, false, err
+		}
+		// A batch message reports for every original message it carries. A
+		// withdrawn original keeps its state.
+		if state == protocol.StateDelivered || state == protocol.StateFailed {
+			if _, err := tx.Exec(`UPDATE messages SET state=? WHERE batch_id=? AND state IN ('stored','dispatched','failed')`, state, id); err != nil {
+				return notice, false, err
+			}
 		}
 		// A failure that is not retried is final: tell the sender once.
 		if state == protocol.StateFailed && !retryableFailure(detail) {
@@ -4802,6 +4881,10 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 	}
 	count, err := res.RowsAffected()
 	if err != nil || count == 0 {
+		return false, err
+	}
+	// The originals of a batch expire with it.
+	if _, err = tx.Exec(`UPDATE messages SET state='expired' WHERE batch_id=? AND state IN ('stored','dispatched','failed')`, id); err != nil {
 		return false, err
 	}
 	if _, err = tx.Exec(`DELETE FROM delivery_retries WHERE message_id=?`, id); err != nil {

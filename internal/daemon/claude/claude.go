@@ -458,13 +458,24 @@ func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m pr
 	// before the session can see the message (W4.4), and before its reply
 	// socket exists, so a sweep never closes that socket.
 	book := a.host.Replies()
-	if err := book.SaveDelivery(daemon.ClaudeDelivery{MessageID: m.ID, Recipient: target.SessionID, Sender: m.From,
-		ConversationID: m.ConversationID, Type: m.Type, DeliveredAt: time.Now(), ExpiresAt: m.ExpiresAt}); err != nil {
-		a.host.Logf("claude: cannot record delivery %s for reply matching: %v", m.ID, err)
+	// A batch carries several original messages. Record each, so an answer
+	// maps to the newest one from that sender and conversation, not to the
+	// batch carrier (decision 0129).
+	records := []protocol.Message{m}
+	if len(m.Batch) > 0 {
+		records = m.Batch
+	}
+	for _, r := range records {
+		if err := book.SaveDelivery(daemon.ClaudeDelivery{MessageID: r.ID, Recipient: target.SessionID, Sender: r.From,
+			ConversationID: r.ConversationID, Type: r.Type, DeliveredAt: time.Now(), ExpiresAt: r.ExpiresAt}); err != nil {
+			a.host.Logf("claude: cannot record delivery %s for reply matching: %v", r.ID, err)
+		}
 	}
 	forget := func() {
-		if err := book.ForgetDelivery(m.ID); err != nil {
-			a.host.Logf("claude: cannot forget undelivered %s: %v", m.ID, err)
+		for _, r := range records {
+			if err := book.ForgetDelivery(r.ID); err != nil {
+				a.host.Logf("claude: cannot forget undelivered %s: %v", r.ID, err)
+			}
 		}
 	}
 	replySock, err := a.replySocket(m.From, m.ConversationID)
