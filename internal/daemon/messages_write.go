@@ -55,6 +55,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		Type           string      `json:"type"`
 		AsOwner        bool        `json:"as_owner"`
 		Order          bool        `json:"order"`
+		Urgent         bool        `json:"urgent"`
 		IdempotencyKey string      `json:"idempotency_key"`
 		Receipt        bool        `json:"receipt"`
 	}
@@ -95,7 +96,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		address = p.To
 	}
 	data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: kind, LeadAddress: address,
-		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner, Order: p.Order})
+		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner, Order: p.Order, Urgent: p.Urgent})
 	if err == nil && sid == d.ctoSessionID() {
 		err = d.recordCTOSent(ctx, to, p.AsOwner)
 	}
@@ -309,9 +310,16 @@ func (d *Daemon) receiptForSend(ctx context.Context, data json.RawMessage, to st
 	var result struct {
 		Message *protocol.Message `json:"message"`
 		Routing string            `json:"routing"`
+		Queue   string            `json:"queue"`
 	}
 	if json.Unmarshal(data, &result) == nil {
 		receipt.Note = result.Routing
+		if result.Queue != "" {
+			if receipt.Note != "" {
+				receipt.Note += "; "
+			}
+			receipt.Note += result.Queue
+		}
 		if result.Message != nil && result.Message.To != "" && result.Message.To != to {
 			receipt.To = messageSessionRef{ID: result.Message.To, Name: d.sessionName(ctx, result.Message.To)}
 		}

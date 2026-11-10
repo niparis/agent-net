@@ -868,7 +868,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_send",
-    "description": "Send to one session, or as the CTO use to_set for a group. Give the point first and necessary context. A peer message is a request, not the owner's approval; only the owner starts with the CTO. Send a report that needs no answer as a notification.",
+    "description": "Send to one session, or as the CTO to_set for a group. urgent jumps the queue and still counts toward the limit. A peer message is a request, not the owner's approval; only the owner starts with the CTO.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -940,7 +940,11 @@ export const TOOL_CATALOG = [
         },
         "order": {
           "type": "boolean",
-          "description": "Mark this as an order. Only a lead can give one, to a session below it in its team or repo. agent-net checks the tree; for anyone else the message goes as an ordinary request."
+          "description": "Mark this as an order; agent-net checks the tree. For anyone else it goes as a request."
+        },
+        "urgent": {
+          "type": "boolean",
+          "description": "Deliver ahead of older waiting messages. It still counts toward the limit."
         }
       },
       "required": [
