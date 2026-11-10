@@ -569,6 +569,22 @@ func TestChiefSortResults(t *testing.T) {
 // return the ask to the session it is about, a self-loop. Every other send
 // keeps the path it had.
 func TestChiefSendToTheAskAboutSessionIsRefused(t *testing.T) {
+	// With the read pool off every read runs on the one writer connection, the
+	// one the sort's transaction holds. The name lookup inside the sort must
+	// still finish, or the gateway hangs.
+	for _, pool := range []string{"read pool on", "read pool off"} {
+		t.Run(pool, func(t *testing.T) {
+			if pool == "read pool off" {
+				old := readPoolMax
+				readPoolMax = 0
+				defer func() { readPoolMax = old }()
+			}
+			testChiefSendToTheAskAboutSessionIsRefused(t)
+		})
+	}
+}
+
+func testChiefSendToTheAskAboutSessionIsRefused(t *testing.T) {
 	s, _, chief, asker, node := chiefRig(t)
 	other, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "nc", Name: "carol"})
 	if err != nil {

@@ -607,7 +607,7 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		// An ask about a session cannot go back to that session: it would
 		// return to the session it is about, a loop. Every other send stays.
 		if q.To == a.session {
-			return out, none, reject("this ask is about %s; sending it back to them makes a loop. Close it, send it to someone else, or send it to the owner.", sessionLabel(s.db, a.session))
+			return out, none, reject("this ask is about %s; sending it back to them makes a loop. Close it, send it to someone else, or send it to the owner.", sessionLabel(tx, a.session))
 		}
 		var n int
 		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND archived_at=0 AND id<>?`, q.To, chief).Scan(&n); err != nil {
@@ -620,13 +620,13 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 			return out, none, err
 		}
 		body := fmt.Sprintf("The chief of staff sent you ask %s from %s: %s\nWhy it reached you: %s\nAnswer it yourself only if you can. Anything that needs the owner goes to them with agent_owner_ask.",
-			q.Ask, sessionLabel(s.db, a.session), strings.TrimSpace(a.text), reason)
+			q.Ask, sessionLabel(tx, a.session), strings.TrimSpace(a.text), reason)
 		m, err := s.storeAgentNetMessage(tx, q.To, body, q.Ask, now)
 		if err != nil {
 			return out, none, err
 		}
 		out.Next, out.State = q.To, protocol.AskWithSomeone
-		logText = fmt.Sprintf("Chief sent ask to %s: %s", sessionLabel(s.db, q.To), text)
+		logText = fmt.Sprintf("Chief sent ask to %s: %s", sessionLabel(tx, q.To), text)
 		if err := s.commitSort(tx, rec, now, logText, a, "chief"); err != nil {
 			return out, none, err
 		}
