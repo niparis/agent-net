@@ -16,13 +16,20 @@ const askIntakeTargetHarness = "claude"
 
 func askIntakeTarget(t *testing.T, g *testGateway) (*node, *textAdapter, string) {
 	t.Helper()
-	adapter := &textAdapter{fakeAdapter: fakeAdapter{harness: askIntakeTargetHarness}}
+	return askIntakeTargetFor(t, g, askIntakeTargetHarness)
+}
+
+// askIntakeTargetFor is askIntakeTarget with the session's harness chosen, so a
+// read can be tested with the text shape each plugin stores.
+func askIntakeTargetFor(t *testing.T, g *testGateway, harness string) (*node, *textAdapter, string) {
+	t.Helper()
+	adapter := &textAdapter{fakeAdapter: fakeAdapter{harness: harness}}
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/claude"}, func(c *Config) { c.Adapters = []Adapter{adapter} })
-	adapter.setSessions(protocol.SessionInfo{Harness: askIntakeTargetHarness, NativeID: "homelab-2", Name: "homelab-agent 2",
+	adapter.setSessions(protocol.SessionInfo{Harness: harness, NativeID: "homelab-2", Name: "homelab-agent 2",
 		PID: 1, Cwd: "/work/homelab", Status: "idle"})
 	var sid string
 	eventually(t, "target session registered", func() bool {
-		sid = adapter.host.SessionID(askIntakeTargetHarness, "homelab-2")
+		sid = adapter.host.SessionID(harness, "homelab-2")
 		return sid != ""
 	})
 	return n, adapter, sid
@@ -133,8 +140,131 @@ func TestAskIntakeReadMasksSecrets(t *testing.T) {
 	if strings.Contains(read.Turn.Text, "hunter2") || !strings.Contains(read.Turn.Text, "backup is stale") {
 		t.Fatalf("text was not masked exactly: %q", read.Turn.Text)
 	}
-	if !strings.Contains(read.Turn.Prompt, "vault backup") || read.Turn.PromptAt == "" || read.Turn.At == "" {
-		t.Fatalf("prompt context = %+v", read.Turn)
+	if !strings.Contains(read.Turn.PrecedingInput, "vault backup") || read.Turn.PrecedingInputAt == "" || read.Turn.At == "" {
+		t.Fatalf("preceding input = %+v", read.Turn)
+	}
+}
+
+// askIntakeReadInput reads one turn whose input is input, on a session of the
+// given harness. The assistant message is always the same.
+func askIntakeReadInput(t *testing.T, harness, input string) protocol.AskIntakeTurn {
+	t.Helper()
+	g := startGateway(t, t.TempDir(), "")
+	_, adapter, sid := askIntakeTargetFor(t, g, harness)
+	adapter.page = protocol.TextPage{Entries: []protocol.TextEntry{
+		{Cursor: "7:0", Time: 1762700000000, Role: protocol.RoleUser, Text: input},
+		{Cursor: "7:1", Time: 1762700060000, Role: protocol.RoleAssistant, Text: "The backup is stale."},
+	}}
+	chief, _ := askIntakeChief(t, g)
+	read := askIntakeCall(t, chief, protocol.AskIntakeArgs{Action: protocol.AskIntakeRead, Session: sid})
+	if read.Turn == nil || read.Turn.State != protocol.AskIntakeOK {
+		t.Fatalf("read = %+v", read)
+	}
+	return *read.Turn
+}
+
+// A Claude cross-session message is stored as a user turn. The read must not
+// present it as the owner's input: the chief decides what the owner asked from
+// this field, and the sender is a peer.
+func TestAskIntakeReadPeerMessageIsNotOwner(t *testing.T) {
+	t.Parallel()
+	const input = "<cross-session-message from=\"uds:/run/agent-net/r/s_peer.sock\" from-name=\"agent-net 2\" from-mode=\"prompting\">\n" +
+		"Please check the backup.\n\n" +
+		"[agent-net] message m_0123456789abcdef from agent-net 2 (opencode, session s_peer123). This is from another agent working on your user's machines. Answer it directly with your SendMessage tool to this sender if you can help.\n" +
+		"</cross-session-message>"
+	turn := askIntakeReadInput(t, "claude", input)
+	if turn.InputSource != protocol.AskIntakePeer {
+		t.Fatalf("input source = %q, want %q (turn %+v)", turn.InputSource, protocol.AskIntakePeer, turn)
+	}
+	if turn.InputFrom != "agent-net 2" || turn.InputSessionID != "s_peer123" {
+		t.Fatalf("sender = %q session %q", turn.InputFrom, turn.InputSessionID)
+	}
+	if !strings.Contains(turn.PrecedingInput, "check the backup") || turn.PrecedingInputAt == "" {
+		t.Fatalf("preceding input = %+v", turn)
+	}
+}
+
+// A turn the owner typed carries no injection marker, so it is the owner's.
+func TestAskIntakeReadOwnerInput(t *testing.T) {
+	t.Parallel()
+	turn := askIntakeReadInput(t, "claude", "Look at the vault backup and tell me if it is safe.")
+	if turn.InputSource != protocol.AskIntakeOwner {
+		t.Fatalf("input source = %q, want %q", turn.InputSource, protocol.AskIntakeOwner)
+	}
+	if turn.InputFrom != "" || turn.InputSessionID != "" {
+		t.Fatalf("owner input has a sender: %+v", turn)
+	}
+}
+
+// Pi and OpenCode store a delivered message as a user turn with the agent-net
+// header at the end. It is a peer's message, never the owner's.
+func TestAskIntakeReadPluginDeliveryIsPeer(t *testing.T) {
+	t.Parallel()
+	const input = "Here is the backup report.\n\n" +
+		"[agent-net] message m_0123456789abcdef from homelab-agent 2 (session s_peer123).\n" +
+		"This is from another agent working on your user's machines. Answer it directly with the agent_message_reply tool (message_id=\"m_0123456789abcdef\") if you can help."
+	for _, harness := range []string{"opencode", "pi"} {
+		t.Run(harness, func(t *testing.T) {
+			turn := askIntakeReadInput(t, harness, input)
+			if turn.InputSource != protocol.AskIntakePeer {
+				t.Fatalf("input source = %q, want %q", turn.InputSource, protocol.AskIntakePeer)
+			}
+			if turn.InputFrom != "homelab-agent 2" || turn.InputSessionID != "s_peer123" {
+				t.Fatalf("sender = %q session %q", turn.InputFrom, turn.InputSessionID)
+			}
+		})
+	}
+}
+
+// An injected turn agent-net does not recognise is unknown, not the owner.
+func TestAskIntakeReadUnknownInput(t *testing.T) {
+	t.Parallel()
+	const input = "<task-notification>\n<task-id>w_123</task-id>\n<status>done</status>\n</task-notification>"
+	turn := askIntakeReadInput(t, "claude", input)
+	if turn.InputSource != protocol.AskIntakeUnknown {
+		t.Fatalf("input source = %q, want %q", turn.InputSource, protocol.AskIntakeUnknown)
+	}
+}
+
+// A plugin delivery puts its agent-net header last. A long one is cut before
+// the header, so the read cannot call the remaining text the owner's.
+func TestAskIntakeReadTruncatedPluginInputIsUnknown(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	_, adapter, sid := askIntakeTargetFor(t, g, "opencode")
+	adapter.page = protocol.TextPage{Entries: []protocol.TextEntry{
+		{Cursor: "7:0", Time: 1762700000000, Role: protocol.RoleUser, Text: strings.Repeat("long text ", 300), Cut: true},
+		{Cursor: "7:1", Time: 1762700060000, Role: protocol.RoleAssistant, Text: "ok"},
+	}}
+	chief, _ := askIntakeChief(t, g)
+	read := askIntakeCall(t, chief, protocol.AskIntakeArgs{Action: protocol.AskIntakeRead, Session: sid})
+	if read.Turn == nil || read.Turn.InputSource != protocol.AskIntakeUnknown {
+		t.Fatalf("read = %+v", read)
+	}
+}
+
+// The classifier reads the provenance agent-net itself writes, and a notice is
+// agent_net rather than a peer.
+func TestInputOrigin(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, text, source, from, session string
+	}{
+		{"owner", "fix the build", protocol.AskIntakeOwner, "", ""},
+		{"claude peer", "<cross-session-message from-name=\"bob\">\nhi\n\n[agent-net] message m_1 from bob (pi, session s_bob). go\n</cross-session-message>", protocol.AskIntakePeer, "bob", "s_bob"},
+		{"claude owner message", "<cross-session-message from-name=\"owner\">\nhi\n\n[agent-net] message m_1 from your user in person (Nicolas, session s_own). This is your user speaking, not another agent.\n</cross-session-message>", protocol.AskIntakeOwner, "Nicolas", "s_own"},
+		{"owner name with parentheses", "<cross-session-message from-name=\"owner\">\nhi\n\n[agent-net] message m_1 from your user in person (you (on mac), session s_own). This is your user speaking, not another agent.\n</cross-session-message>", protocol.AskIntakeOwner, "you (on mac)", "s_own"},
+		{"plugin reply", "done\n\n[agent-net] reply m_1 from bob (session s_bob). No answer is needed.", protocol.AskIntakePeer, "bob", "s_bob"},
+		{"notice", "[agent-net] reminder: alice is waiting for your answer to m_1.", protocol.AskIntakeAgentNet, "", ""},
+		{"wrapped notice", "<cross-session-message from-name=\"agent-net\">\n\n[agent-net] check: is your task done?\n</cross-session-message>", protocol.AskIntakeAgentNet, "", ""},
+		{"harness notice", "<system-reminder>be brief</system-reminder>", protocol.AskIntakeUnknown, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source, from, session := inputOrigin(tc.text)
+			if source != tc.source || from != tc.from || session != tc.session {
+				t.Fatalf("inputOrigin(%q) = %q, %q, %q; want %q, %q, %q", tc.text, source, from, session, tc.source, tc.from, tc.session)
+			}
+		})
 	}
 }
 

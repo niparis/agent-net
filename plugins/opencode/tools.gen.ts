@@ -43,7 +43,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_intake",
-    "description": "Chief of staff only: list sessions whose last turn may wait for the owner, read that exact turn with the owner's prompt and secrets masked, or import it as one owner ask with its turn reference. Reading and importing never answer, send to, or change a session.",
+    "description": "Chief of staff only: list sessions whose last turn may wait for the owner, read that turn with the preceding input (labelled owner, peer, agent_net or unknown) and secrets masked, or import it as one owner ask. Never answers, sends to, or changes a session.",
     "inputSchema": {
       "type": "object",
       "properties": {

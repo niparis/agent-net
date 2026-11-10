@@ -181,17 +181,25 @@ func (g *Gateway) askIntakeTurn(ctx context.Context, c askIntakeCandidate) proto
 	return turn
 }
 
-// askIntakeRead returns the exact last turn of one session, with the owner's
-// last typed prompt before it.
+// askIntakeRead returns the exact last turn of one session, with the input
+// before it and the source of that input.
 func (g *Gateway) askIntakeRead(ctx context.Context, q protocol.AskIntakeRequest) (protocol.AskIntakeResult, error) {
 	a, err := g.askIntakeTarget(q.Session)
 	if err != nil {
 		return protocol.AskIntakeResult{}, err
 	}
 	turn := g.askIntakeTurnOf(ctx, a)
+	source := turn.InputSource
+	if source == "" && turn.PrecedingInput != "" {
+		// A machine on an older version sends the input without its source.
+		// It is not the owner's by default.
+		source = protocol.AskIntakeUnknown
+	}
 	out := protocol.AskIntakeResult{Action: protocol.AskIntakeRead, State: turn.State}
 	row := protocol.AskIntakeTurn{Session: a.SessionID, State: turn.State, Reason: turn.Reason, At: turn.At,
-		Text: turn.Text, Prompt: turn.Prompt, PromptAt: turn.PromptAt, Cut: turn.Cut, Ended: turn.Ended}
+		Text: turn.Text, PrecedingInput: turn.PrecedingInput, PrecedingInputAt: turn.PrecedingInputAt,
+		InputSource: source, InputFrom: turn.InputFrom, InputSessionID: turn.InputSessionID,
+		Cut: turn.Cut, Ended: turn.Ended}
 	if turn.State == protocol.AskIntakeOK && turn.Ref != "" {
 		row.Ref = protocol.AskIntakeSourceRef(a.SessionID, turn.Ref)
 	}

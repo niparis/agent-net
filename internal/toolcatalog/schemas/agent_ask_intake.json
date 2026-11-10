@@ -82,8 +82,11 @@
           "ref": {"type": "string"},
           "at": {"type": "string"},
           "text": {"type": "string"},
-          "prompt": {"type": "string"},
-          "prompt_at": {"type": "string"},
+          "preceding_input": {"type": "string"},
+          "preceding_input_at": {"type": "string"},
+          "input_source": {"type": "string"},
+          "input_from": {"type": "string"},
+          "input_session_id": {"type": "string"},
           "cut": {"type": "boolean"},
           "ended": {"type": "boolean"}
         },
