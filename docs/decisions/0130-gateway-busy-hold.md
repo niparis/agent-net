@@ -1,4 +1,4 @@
-# 0129 - Messages wait at the gateway while a session is busy
+# 0130 - Messages wait at the gateway while a session is busy
 
 **Date:** 2026-11-09
 **Status:** Accepted. Parts a to d and withdraw are built.

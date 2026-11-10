@@ -960,7 +960,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_withdraw",
-    "description": "Withdraw an undelivered message; owner and CTO may withdraw another session's; older_than clears the older backlog.",
+    "description": "Withdraw undelivered message; owner and CTO may withdraw another session's; older_than clears the older backlog.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -1033,7 +1033,7 @@ A message to an online session that reports `busy` does not go into the
 session. The gateway keeps it with state `stored` and `held_for_busy` set,
 then sends it when the session reports it is no longer busy. Workers keep
 their own turn queue, and an offline session keeps the queue and wake path.
-Decision [0129](decisions/0129-gateway-busy-hold.md) has the design.
+Decision [0130](decisions/0130-gateway-busy-hold.md) has the design.
 
 When several messages waited, they go as one message, newest first:
 
@@ -1222,7 +1222,7 @@ The gateway writes one line per event to stderr (the systemd journal, or the lau
 | Event | When | Main keys |
 |---|---|---|
 | `msg.stored` | The gateway accepted a message. This is the one line per message. | `msg`, `conv`, `type` (`request`, `reply`, `ack` or `notification`), `from`, `from_name`, `from_harness`, `from_host`, `to`, `to_name`, `to_harness`, `to_host`, `bytes` (size of the body), `state`, and `recipient_busy_s` while the recipient is busy |
-| `msg.held_busy` | The message waits at the gateway because the recipient is in a turn (decision 0129). | `msg`, `conv`, `type`, `to`, `to_host`, `busy_for_s`, `reason` |
+| `msg.held_busy` | The message waits at the gateway because the recipient is in a turn (decision 0130). | `msg`, `conv`, `type`, `to`, `to_host`, `busy_for_s`, `reason` |
 | `msg.batch` | Several held messages go as one batch. | `msg` (the batch), `conv`, `type`, `to`, `to_host`, `count`, `busy_for_s` |
 | `msg.released_busy` | One held message goes as it is. | same as `msg.batch`, `count` is 1 |
 | `msg.released_stuck` | The 30-minute fallback sent held messages to a session that still reports busy. | `session`, `msg`, `count`, `limit_s` |

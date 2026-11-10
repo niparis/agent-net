@@ -460,7 +460,7 @@ func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m pr
 	book := a.host.Replies()
 	// A batch carries several original messages. Record each, so an answer
 	// maps to the newest one from that sender and conversation, not to the
-	// batch carrier (decision 0129).
+	// batch carrier (decision 0130).
 	records := []protocol.Message{m}
 	if len(m.Batch) > 0 {
 		records = m.Batch

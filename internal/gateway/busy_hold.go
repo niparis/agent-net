@@ -12,7 +12,7 @@ import (
 
 // BusyHoldLimit is how long a message waits for a session that stays busy.
 // After this the gateway delivers the held messages anyway, so a session that
-// is stuck reporting busy is not starved (decision 0129, part c).
+// is stuck reporting busy is not starved (decision 0130, part c).
 const BusyHoldLimit = 30 * time.Minute
 
 // busyHoldEligible tells whether the gateway should keep a message for this
@@ -182,7 +182,7 @@ func (s *Store) insertBusyBatch(tx *sql.Tx, sessionID string, held []protocol.Me
 }
 
 // busyBatchBody is the one text a session sees for a batch. The header is the
-// owner's wording (decision 0129, part d): act on the newest and read the
+// owner's wording (decision 0130, part d): act on the newest and read the
 // older ones as context. Each original message keeps its ID.
 func busyBatchBody(held []protocol.Message) string {
 	var b strings.Builder

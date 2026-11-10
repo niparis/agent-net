@@ -12,7 +12,7 @@ import (
 
 // DefaultInboxLimit is how many messages may wait at the gateway for one
 // recipient unless messages.inbox_limit says otherwise. Zero turns the limit
-// off (decision 0129).
+// off (decision 0130).
 const DefaultInboxLimit = 5
 
 // waitingSQL matches the messages that count toward a recipient's inbox
@@ -21,7 +21,7 @@ const DefaultInboxLimit = 5
 // both would count the same wait twice. Replies never count: an answer to the
 // recipient's own request is always allowed through. Neither do agent-net's
 // own notices, or messages between a worker and its caller in either
-// direction (decision 0129, fix round). It takes the table alias as its first
+// direction (decision 0130, fix round). It takes the table alias as its first
 // argument and the current time as its second.
 func waitingSQL(alias string) string {
 	return alias + `.batch_id='' AND ` + alias + `.state IN ('stored','dispatched') AND ` + alias + `.expires_at > ?
@@ -50,7 +50,7 @@ func waitingCountTx(tx interface {
 // checkInboxLimit refuses a new message when the recipient already has the
 // allowed number waiting. The owner, the CTO writing with the owner's voice,
 // replies, agent-net's own notices and worker-to-caller traffic are exempt
-// (decision 0129).
+// (decision 0130).
 func checkInboxLimit(tx *sql.Tx, p protocol.MsgSend, ownerVoice bool, now int64) error {
 	if ownerVoice || p.Type == protocol.TypeReply || p.Sender == agentNetSender {
 		return nil
