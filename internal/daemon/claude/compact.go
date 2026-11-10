@@ -456,7 +456,9 @@ func (a *Adapter) compactSession(ctx context.Context, f found, path string) (res
 	if err != nil || json.Unmarshal(raw, &sf) != nil || sf.Status != "idle" || sf.SessionID != f.info.NativeID || sf.JobID != f.job {
 		return fmt.Errorf("session changed before compact")
 	}
-	if _, err := terminal.Write([]byte("/compact " + compactInstructions + "\r")); err != nil {
+	// Bracketed paste wraps the typed command so Claude Code's terminal paste
+	// sanitizer does not strip the trailing \r as an invisible character.
+	if _, err := terminal.Write([]byte("\x1b[200~/compact " + compactInstructions + "\x1b[201~\r")); err != nil {
 		return err
 	}
 	timeout := a.compactTimeout
