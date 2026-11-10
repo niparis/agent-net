@@ -373,6 +373,67 @@ func TestBuildFrameReplyFooter(t *testing.T) {
 	}
 }
 
+// A batch gets its own provenance line: it says how many held messages it
+// carries, names the newest sender with harness, and never calls the carrier
+// a reply even when the newest original was one (decision 0130).
+func TestBuildFrameBatchNamesTheBatchAndTheNewestSender(t *testing.T) {
+	m := msg
+	m.Type = protocol.TypeReply
+	m.FromName = "chief-of-staff"
+	m.FromHarness = "claude"
+	m.ConversationID = "c_1"
+	m.ParentID = "m_parent"
+	m.Batch = []protocol.Message{
+		{ID: "m_1", From: "s_bob", FromName: "chief-of-staff", FromHarness: "claude", Type: protocol.TypeReply},
+		{ID: "m_2", From: "s_carol", FromName: "builder", FromHarness: "pi", Type: protocol.TypeNotification},
+		{ID: "m_3", From: "s_dave", FromName: "reviewer", FromHarness: "opencode", Type: protocol.TypeRequest},
+	}
+	line, err := BuildFrame(m, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(line, &f); err != nil {
+		t.Fatal(err)
+	}
+	want := "[agent-net] batch of 3 held messages, newest from chief-of-staff (claude, session s_bob), conversation c_1; each message keeps its own id."
+	if !strings.Contains(f.Message.Content, "\n\n"+want+"\n</cross-session-message>") {
+		t.Fatalf("bad batch footer: %q", f.Message.Content)
+	}
+	if strings.Contains(f.Message.Content, "[agent-net] reply ") || strings.Contains(f.Message.Content, "unknown") {
+		t.Fatalf("the batch footer calls it a reply or an unknown sender: %q", f.Message.Content)
+	}
+}
+
+// A single released message is the original itself, with no batch, so it keeps
+// its normal message trailer.
+func TestBuildFrameSingleHeldMessageKeepsNormalTrailer(t *testing.T) {
+	m := msg
+	m.HeldForBusy = true
+	line, err := BuildFrame(m, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(line, &f); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.Message.Content, "[agent-net] message m_0123456789abcdef from bob (pi, session s_bob)") {
+		t.Fatalf("single held message lost its normal trailer: %q", f.Message.Content)
+	}
+	if strings.Contains(f.Message.Content, "batch of") {
+		t.Fatalf("a single message is called a batch: %q", f.Message.Content)
+	}
+}
+
 func TestCTOOwnerFrameRequestsConversationReply(t *testing.T) {
 	raw, err := BuildCTOFrame("msg1", "show status")
 	if err != nil {

@@ -1052,6 +1052,12 @@ its `batch` field, so a reply or an ack still names the original. The batch
 row is what moves through the delivery states; its originals move with it.
 The header text and the `batch` field are agent-net's own, not the sender's.
 
+The provenance line an adapter adds after the body names the batch and its
+newest sender, for example `[agent-net] batch of 3 held messages, newest from
+builder (claude, session s_...); each message keeps its own id.` It never
+calls the batch a reply, even when the newest original was one, and it names
+the sender instead of showing a raw session ID with an unknown harness.
+
 A message that has waited `BusyHoldLimit` (30 minutes) while the session still
 reports busy is sent anyway, and the gateway logs `msg.released_stuck`.
 

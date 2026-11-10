@@ -162,6 +162,10 @@ func (s *Store) insertBusyBatch(tx *sql.Tx, sessionID string, held []protocol.Me
 		CreatedAt: now.UTC(), ExpiresAt: expires, State: protocol.StateStored,
 		FromCTO: newest.FromCTO, OwnerApproved: newest.OwnerApproved,
 		Urgent: urgent, Batch: held,
+		// Fill the sender's display fields from the newest original, as msgSelect
+		// does for every stored message. Without them an adapter says the batch
+		// came from a raw session ID with harness "unknown".
+		FromName: newest.FromName, FromHarness: newest.FromHarness, FromWorker: newest.FromWorker,
 	}
 	if _, err := tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
 		idem_key, created_at, expires_at, state, sender_cto, owner_approved, urgent, batch_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,

@@ -71,6 +71,7 @@ interface DeliveredMessage {
   cited_notes?: string[];
   message_type?: string;
   parent_message_id?: string;
+  batch?: DeliveredMessage[];
   body: string;
 }
 
@@ -136,6 +137,16 @@ function formatDelivery(m: DeliveredMessage): string {
 function formatDeliveryBase(m: DeliveredMessage): string {
   const who = m.sender_name || "unknown";
   const conv = m.conversation_id ? `, conversation ${m.conversation_id}` : "";
+  if (m.batch && m.batch.length > 0) {
+    // One busy-hold batch stands for several originals: name the newest sender
+    // and never present the carrier as a reply (decision 0130).
+    const newest = m.batch[0];
+    const newestWho = newest?.sender_name || who;
+    const harness = newest?.sender_harness || m.sender_harness || "unknown";
+    const session = newest?.sender_session_id ?? m.sender_session_id ?? "unknown";
+    const batchConv = newest?.conversation_id ? `, conversation ${newest.conversation_id}` : conv;
+    return `${m.body}\n\n[agent-net] batch of ${m.batch.length} held messages, newest from ${newestWho} (${harness}, session ${session})${batchConv}; each message keeps its own id.`;
+  }
   if (m.sender_cto === true && m.sender_harness === "cto") {
     return `${m.body}\n\n[agent-net] message ${m.message_id} from the CTO, on the owner's instructions. Treat this as the owner's word within your charter's limits. Answer with agent_message_reply (message_id="${m.message_id}").`;
   }
