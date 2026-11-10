@@ -458,6 +458,14 @@ func codexFrame(m protocol.Message) string {
 	}
 	var foot string
 	switch {
+	case len(m.Batch) > 0:
+		// A busy-hold batch is one message for several originals (decision
+		// 0130). Say so, name the newest sender, and never call it a reply.
+		foot = fmt.Sprintf("[agent-net] batch of %d held messages, newest from %s (%s, session %s)%s; each message keeps its own id.",
+			len(m.Batch), who, firstNonEmpty(m.FromHarness, "unknown harness"), m.From, conv)
+		if m.Type == protocol.TypeRequest && !m.OwnerApproved {
+			foot += " " + protocol.AuthorityNoteWithRule(m.RecipientTrust, m.FromWorker, m.RecipientMergeAuthority, protocol.MessageMergeText(m))
+		}
 	case m.FromCTO && m.FromHarness == "cto":
 		foot = fmt.Sprintf("[agent-net] message %s %s Answer with agent_message_reply (message_id=%q).", m.ID, protocol.CTONote, m.ID)
 	case m.FromHarness == "cto":

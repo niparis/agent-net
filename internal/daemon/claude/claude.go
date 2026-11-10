@@ -315,7 +315,16 @@ func BuildFrameFor(m protocol.Message, replySock string, toWorker bool) ([]byte,
 	}
 	// The body goes first: Claude shows only the first line as a preview.
 	var details string
-	if m.FromCTO && m.FromHarness == "cto" {
+	if len(m.Batch) > 0 {
+		// The carrier of a busy-hold batch is one message for several originals
+		// (decision 0130): say that, name the newest sender, and never call it a
+		// reply even when the newest original was one.
+		details = fmt.Sprintf("[agent-net] batch of %d held messages, newest from %s (%s, session %s)%s; each message keeps its own id.",
+			len(m.Batch), name, harness, m.From, conv)
+		if m.Type == protocol.TypeRequest && !m.OwnerApproved {
+			details += " " + protocol.AuthorityNoteWithRule(m.RecipientTrust, m.FromWorker, m.RecipientMergeAuthority, protocol.MessageMergeText(m))
+		}
+	} else if m.FromCTO && m.FromHarness == "cto" {
 		details = fmt.Sprintf("[agent-net] message %s %s Answer it directly with your SendMessage tool to this sender.", m.ID, protocol.CTONote)
 	} else if m.FromHarness == "cto" {
 		details = fmt.Sprintf("[agent-net] message %s %s Answer it directly with your SendMessage tool to this sender.", m.ID, protocol.CTOPeerNote)

@@ -497,6 +497,15 @@ func TestCodexFrameKinds(t *testing.T) {
 	if got := codexFrame(r); !strings.Contains(got, "No answer is needed") || !strings.Contains(got, "answering your message m0") {
 		t.Fatalf("reply: %q", got)
 	}
+	b := r
+	b.Batch = []protocol.Message{
+		{ID: "m2", From: "s1", FromName: "bob", FromHarness: "claude", Type: protocol.TypeReply},
+		{ID: "m3", From: "s2", FromName: "carol", FromHarness: "pi", Type: protocol.TypeRequest},
+	}
+	if got := codexFrame(b); !strings.Contains(got, "batch of 2 held messages, newest from bob (claude, session s1)") ||
+		strings.Contains(got, "[agent-net] reply ") || strings.Contains(got, "No answer is needed") || strings.Contains(got, "unknown") {
+		t.Fatalf("batch: %q", got)
+	}
 }
 
 // ---- the MCP shim ----

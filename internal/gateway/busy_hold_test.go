@@ -89,6 +89,38 @@ func TestBusySessionHoldsThenDeliversOneBatch(t *testing.T) {
 	}
 }
 
+// The batch carrier carries the newest sender's display name and harness, so
+// an adapter's provenance line says who wrote it instead of falling back to
+// the raw session ID with harness "unknown".
+func TestBusyBatchCarrierKeepsSenderNameAndHarness(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	busyStatus(t, s, b, "busy")
+	for i := 0; i < 3; i++ {
+		c.t = c.t.Add(time.Minute)
+		m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeRequest,
+			Body: "body-" + strconv.Itoa(i), IdempotencyKey: "name-" + strconv.Itoa(i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !s.HoldForBusy(m) {
+			t.Fatalf("message %d was not held", i)
+		}
+	}
+	busyStatus(t, s, b, "idle")
+	carrier, n, err := s.ReleaseBusyHold(b, false)
+	if err != nil || n != 3 {
+		t.Fatalf("release: n=%d err=%v", n, err)
+	}
+	if carrier.FromName != "alice" || carrier.FromHarness != "claude" {
+		t.Fatalf("carrier sender = %q (%q), want alice (claude)", carrier.FromName, carrier.FromHarness)
+	}
+	got, ok, err := s.Message(carrier.ID)
+	if err != nil || !ok || got.FromName != "alice" || got.FromHarness != "claude" {
+		t.Fatalf("stored carrier sender = %q (%q), %v", got.FromName, got.FromHarness, err)
+	}
+}
+
 // A single held message goes as it is, with its own ID.
 func TestBusySessionSingleMessageKeepsItsID(t *testing.T) {
 	s, _ := newTestStore(t)
