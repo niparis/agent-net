@@ -192,6 +192,7 @@ type AskSortResult struct {
 // LastID are the smallest and largest sort id that matched, and are zero when
 // none did. The counts hold only the results that occurred.
 type AskSortStats struct {
+	Hidden  int            `json:"hidden_count"`
 	Sorter  string         `json:"sorter"`
 	Counts  map[string]int `json:"counts"`
 	FirstID int64          `json:"first_id"`

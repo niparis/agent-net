@@ -420,7 +420,7 @@ func (s *Store) waitingChiefAsks(q askDB, now time.Time) ([]protocol.AskWaiting,
 // open. FirstID and LastID cover every row that matched.
 func askSortStats(q askDB, sorter string, since, until, fromID, toID int64) (protocol.AskSortStats, error) {
 	out := protocol.AskSortStats{Sorter: sorter, Counts: map[string]int{}}
-	query := `SELECT result, COUNT(*), MIN(id), MAX(id) FROM ask_sorts WHERE sorter=?`
+	query := `SELECT result, COUNT(*), MIN(id), MAX(id), SUM(CASE WHEN hidden_at<>0 THEN 1 ELSE 0 END) FROM ask_sorts WHERE sorter=?`
 	args := []any{sorter}
 	if since > 0 {
 		query += ` AND at>=?`
@@ -446,12 +446,13 @@ func askSortStats(q askDB, sorter string, since, until, fromID, toID int64) (pro
 	defer rows.Close()
 	for rows.Next() {
 		var result string
-		var n int
+		var n, hidden int
 		var first, last int64
-		if err := rows.Scan(&result, &n, &first, &last); err != nil {
+		if err := rows.Scan(&result, &n, &first, &last, &hidden); err != nil {
 			return out, err
 		}
 		out.Counts[result] = n
+		out.Hidden += hidden
 		if out.FirstID == 0 || first < out.FirstID {
 			out.FirstID = first
 		}
@@ -1108,7 +1109,7 @@ func (s *Store) ChiefSorts(since time.Time) ([]protocol.ChiefSort, error) {
 		COALESCE(i.text,''),
 		EXISTS (SELECT 1 FROM ask_sorts u WHERE u.ask_id=r.ask_id AND u.id>r.id AND u.result=?)
 		FROM ask_sorts r LEFT JOIN inbox_items i ON i.id=r.ask_id
-		WHERE r.at>=? AND r.result<>? ORDER BY r.id DESC LIMIT 100`, protocol.AskSortUndo, since.UnixNano(), protocol.AskSortUndo)
+		WHERE r.at>=? AND r.result<>? AND r.hidden_at=0 ORDER BY r.id DESC LIMIT 100`, protocol.AskSortUndo, since.UnixNano(), protocol.AskSortUndo)
 	if err != nil {
 		return nil, err
 	}
