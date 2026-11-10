@@ -49,3 +49,11 @@ session on another machine when the TUI ran in a plain terminal, and plain ssh
 cannot carry the clipboard: image paste failed. The remote client runs in the
 TUI's own terminal, so it is used again whenever this machine has herdr.
 AGENTS.md states the rules.
+
+## Note 2026-11-09
+
+The CTO on another machine was still planned as a plain `claude attach` and
+wrapped in `ssh -t`. It had no herdr sidebar, and image paste into it failed.
+A remote enter now opens or focuses the CTO pane on the CTO's machine and
+answers its pane ID, like a normal session, so the asking machine runs
+`herdr --remote`. The local CTO path is unchanged.

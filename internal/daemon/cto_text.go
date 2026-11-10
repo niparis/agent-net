@@ -183,7 +183,7 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 	if viaGateway && !q.HerdrClient {
 		plan, err = d.ctoEnterBase(ctx)
 	} else {
-		plan, err = d.ctoEnterWithLocation(ctx, q.HerdrSocket, q.HerdrPaneID)
+		plan, err = d.ctoEnterWithLocation(ctx, q.HerdrSocket, q.HerdrPaneID, q.HerdrClient)
 	}
 	if viaGateway && err == nil {
 		if plan.OpenedHerdr && q.HerdrClient {
