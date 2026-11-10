@@ -46,9 +46,12 @@ and agent) caps the messages waiting at the gateway for one recipient.
 Messages in a batch count once, as the batch. At the limit a send is refused
 with `recipient has N waiting, oldest from you at <time>; withdraw one or
 wait`. The owner's messages, and the CTO's messages sent with
-`as_owner: true`, skip the limit. Any sender may mark a message `urgent`: it
-goes ahead of older held messages but still counts toward the limit. Zero
-turns the limit off.
+`as_owner: true`, skip the limit. Replies, agent-net's own notices (step
+tasks, reminders) and messages between a worker and its caller in either
+direction are not peer messages: they are never refused and are not counted,
+so a burst of orchestration traffic cannot lock a session out of its own work.
+Any sender may mark a message `urgent`: it goes ahead of older held messages
+but still counts toward the limit. Zero turns the limit off.
 
 **Visibility.** A send result and `agent_message_status` carry
 `queue_position`, `queue_waiting`, `busy_for_seconds` and the one-line
