@@ -2777,7 +2777,11 @@ of:
 - `merge`: the ask closes; `into` is another open ask, which gets the line
   `merged: <id>` in its detail.
 - `send`: `to` is a live session that gets the ask as a message from `agent-net`
-  naming the chief. The ask waits on that session.
+  naming the chief. The ask waits on that session. A `to` that is the ask's
+  own session is refused, with the reason `this ask is about <name>; sending it
+  back to them makes a loop. Close it, send it to someone else, or send it to
+  the owner.`, because the ask is about that session and would return to it.
+  Every other send keeps the path it had.
 - `owner`: the ask goes to the owner. `priority` (1 to 3) and `why_you` are
   required.
 - `list`: reads only. It returns the open asks that wait for the chief, oldest

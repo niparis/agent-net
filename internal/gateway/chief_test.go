@@ -565,6 +565,39 @@ func TestChiefSortResults(t *testing.T) {
 	}
 }
 
+// An ask about a session never goes back to that session: the send would
+// return the ask to the session it is about, a self-loop. Every other send
+// keeps the path it had.
+func TestChiefSendToTheAskAboutSessionIsRefused(t *testing.T) {
+	s, _, chief, asker, node := chiefRig(t)
+	other, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "nc", Name: "carol"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := chiefAsk(t, s, asker, "Is the scheduled run done?")
+	_, _, err = s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: id, Result: protocol.AskSortSend, To: asker, Reason: "bob is blocked on it"}})
+	want := "this ask is about bob; sending it back to them makes a loop. Close it, send it to someone else, or send it to the owner."
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("send to the ask's own session = %v, want %q", err, want)
+	}
+	if next := askNext(t, s, id); next != protocol.AskNextChief {
+		t.Fatalf("the refused send moved the ask to %q", next)
+	}
+	if msgs := chiefMessages(t, s, asker); len(msgs) != 0 {
+		t.Fatalf("the refused send sent %d messages", len(msgs))
+	}
+
+	res, msg, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: id, Result: protocol.AskSortSend, To: other, Reason: "carol runs the schedule"}})
+	if err != nil {
+		t.Fatalf("send to another session: %v", err)
+	}
+	if msg.To != other || res.Next != other || askNext(t, s, id) != other {
+		t.Fatalf("send to another session: message to %q, next %q, ask next %q", msg.To, res.Next, askNext(t, s, id))
+	}
+}
+
 // Only the live chief may sort, and only an ask that waits for the chief.
 func TestChiefSortRefusesNonChief(t *testing.T) {
 	s, _, chief, asker, node := chiefRig(t)

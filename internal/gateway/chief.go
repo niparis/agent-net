@@ -604,6 +604,11 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		}
 		out.Next, out.State = "", protocol.AskClosed
 	case protocol.AskSortSend:
+		// An ask about a session cannot go back to that session: it would
+		// return to the session it is about, a loop. Every other send stays.
+		if q.To == a.session {
+			return out, none, reject("this ask is about %s; sending it back to them makes a loop. Close it, send it to someone else, or send it to the owner.", sessionLabel(s.db, a.session))
+		}
 		var n int
 		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND archived_at=0 AND id<>?`, q.To, chief).Scan(&n); err != nil {
 			return out, none, err
