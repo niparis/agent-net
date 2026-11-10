@@ -1281,7 +1281,10 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, `
+ALTER TABLE ask_sorts ADD COLUMN hidden_at INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE ask_sort_hide_receipts (id TEXT PRIMARY KEY, ids TEXT NOT NULL, undone INTEGER NOT NULL DEFAULT 0);
+`}
 
 // permissionProposalMigration stores proposals for Claude Code permission
 // rules and folder trust (decision 0127). An agent or the gateway proposes, the
