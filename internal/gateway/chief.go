@@ -558,6 +558,13 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		out = protocol.AskSortResult{Result: protocol.AskSortList, Asks: asks, Stats: &stats}
 		return out, none, nil
 	}
+	if q.Result == protocol.AskSortUndo {
+		out, err := s.undoAsk(tx, q.Ask, chief, true, s.now())
+		if err != nil {
+			return out, none, err
+		}
+		return out, none, tx.Commit()
+	}
 	var a askSortRow
 	err = tx.QueryRow(`SELECT text,kind,session_id,about_kind,about_id,next_who,status,answer,answered_at FROM inbox_items WHERE id=?`, q.Ask).
 		Scan(&a.text, &a.kind, &a.session, &a.aboutKind, &a.aboutID, &a.next, &a.status, &a.answer, &a.answeredAt)
@@ -615,13 +622,13 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 			return out, none, err
 		}
 		body := fmt.Sprintf("The chief of staff sent you ask %s from %s: %s\nWhy it reached you: %s\nAnswer it yourself only if you can. Anything that needs the owner goes to them with agent_owner_ask.",
-			q.Ask, sessionLabel(s.db, a.session), strings.TrimSpace(a.text), reason)
+			q.Ask, sessionLabel(tx, a.session), strings.TrimSpace(a.text), reason)
 		m, err := s.storeAgentNetMessage(tx, q.To, body, q.Ask, now)
 		if err != nil {
 			return out, none, err
 		}
 		out.Next, out.State = q.To, protocol.AskWithSomeone
-		logText = fmt.Sprintf("Chief sent ask to %s: %s", sessionLabel(s.db, q.To), text)
+		logText = fmt.Sprintf("Chief sent ask to %s: %s", sessionLabel(tx, q.To), text)
 		if err := s.commitSort(tx, rec, now, logText, a, "chief"); err != nil {
 			return out, none, err
 		}
@@ -724,9 +731,22 @@ func (s *Store) UndoAsk(id, actor string) (protocol.AskSortResult, error) {
 		return out, err
 	}
 	defer tx.Rollback()
+	out, err = s.undoAsk(tx, id, actor, false, s.now())
+	if err != nil {
+		return out, err
+	}
+	return out, tx.Commit()
+}
+
+// undoAsk is the one undo, inside the caller's transaction: the owner's and the
+// CTO's ask_undo, and the chief's own undo of its newest sort. With chiefOnly
+// the newest sort must be the chief's, and the ask goes back to the chief so it
+// can sort again. It writes the undo row and one Desk log line.
+func (s *Store) undoAsk(tx *sql.Tx, id, actor string, chiefOnly bool, now time.Time) (protocol.AskSortResult, error) {
+	var out protocol.AskSortResult
 	var last protocol.AskSort
 	var at, answered int64
-	err = tx.QueryRow(`SELECT id,at,sorter,result,into_id,to_id,reason,priority,why_you,prev_next,prev_status,prev_answer,prev_answered_at
+	err := tx.QueryRow(`SELECT id,at,sorter,result,into_id,to_id,reason,priority,why_you,prev_next,prev_status,prev_answer,prev_answered_at
 		FROM ask_sorts WHERE ask_id=? ORDER BY id DESC LIMIT 1`, id).
 		Scan(&last.ID, &at, &last.Sorter, &last.Result, &last.Into, &last.To, &last.Reason, &last.Priority, &last.WhyYou,
 			&last.PrevNext, &last.PrevStatus, &last.PrevAnswer, &answered)
@@ -738,6 +758,9 @@ func (s *Store) UndoAsk(id, actor string) (protocol.AskSortResult, error) {
 	}
 	if last.Result == protocol.AskSortUndo {
 		return out, reject("the sort of ask %s is already undone", id)
+	}
+	if chiefOnly && last.Sorter != actor {
+		return out, reject("ask %s was not sorted by you, so you cannot undo that sort", id)
 	}
 	var next, status, answer, text, aboutKind, aboutID string
 	var nowAnswered int64
@@ -761,9 +784,11 @@ func (s *Store) UndoAsk(id, actor string) (protocol.AskSortResult, error) {
 	if changed {
 		return out, reject("ask %s changed since the chief sorted it, so it cannot be undone", id)
 	}
-	now := s.now()
 	restored := last.PrevNext
-	if restored == "" || restored == protocol.AskNextChief {
+	if chiefOnly {
+		// The chief undid its own sort, so it gets the ask back to sort again.
+		restored = protocol.AskNextChief
+	} else if restored == "" || restored == protocol.AskNextChief {
 		restored = protocol.AskNextOwner
 	}
 	if _, err := tx.Exec(`UPDATE inbox_items SET next_who=?, status=?, answer=?, answered_at=?, priority=0, why_you='' WHERE id=?`,
@@ -780,11 +805,15 @@ func (s *Store) UndoAsk(id, actor string) (protocol.AskSortResult, error) {
 		rec.PrevAnsweredAt = time.Unix(0, nowAnswered).UTC()
 	}
 	logText := "Undone chief sort of ask " + id + ": " + askFirstLine(text, 120)
-	if err := s.commitSort(tx, rec, now, logText, askSortRow{text: text, aboutKind: aboutKind, aboutID: aboutID}, deskSource(actor)); err != nil {
+	source := deskSource(actor)
+	if chiefOnly {
+		source = "chief"
+	}
+	if err := s.commitSort(tx, rec, now, logText, askSortRow{text: text, aboutKind: aboutKind, aboutID: aboutID}, source); err != nil {
 		return out, err
 	}
 	out = protocol.AskSortResult{Ask: id, Result: protocol.AskSortUndo, Next: restored, State: protocol.AskStateOpen}
-	return out, tx.Commit()
+	return out, nil
 }
 
 // removeMergedNote takes the "merged: <ask>" line that a merge wrote into the
