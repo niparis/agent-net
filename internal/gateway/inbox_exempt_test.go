@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -144,5 +145,21 @@ func TestBusyHoldRaceReleasesWhenStatusFlipsBeforeHold(t *testing.T) {
 	}
 	if !pendingHas(t, s, b, m.ID) {
 		t.Fatal("the released message is not queued for delivery")
+	}
+}
+
+// A peer cannot skip the limit by setting a worker flag: only real worker
+// traffic (checked against the stored worker owner) is exempt.
+func TestInboxLimitDoesNotTrustWorkerNoticeFlag(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	fillInbox(t, s, a, b, DefaultInboxLimit, "full")
+	_, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification,
+		Body: "pretends to be a worker notice", WorkerNotice: true, IdempotencyKey: "fake-notice"})
+	if err == nil {
+		t.Fatal("a peer skipped the limit with WorkerNotice")
+	}
+	if !strings.Contains(err.Error(), "has 5 waiting") {
+		t.Fatalf("refusal = %q", err)
 	}
 }
