@@ -33,6 +33,7 @@ type messageSendIn struct {
 	Type    string        `json:"type,omitempty"`
 	AsOwner bool          `json:"as_owner,omitempty"`
 	Order   bool          `json:"order,omitempty"`
+	Urgent  bool          `json:"urgent,omitempty"`
 }
 
 type messageReplyIn struct {
@@ -96,7 +97,7 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 			}
 			set["online_only"] = online
 		}
-		out, err := sendCall(ctx, run, in.To, set, in.Body, in.Type, in.AsOwner, in.Order, true)
+		out, err := sendCall(ctx, run, in.To, set, in.Body, in.Type, in.AsOwner, in.Order, in.Urgent, true)
 		if err != nil {
 			return toolError(err)
 		}
