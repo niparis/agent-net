@@ -441,7 +441,7 @@ func TestDeliverToWorkerNamesHandback(t *testing.T) {
 }
 
 // A batch message is one harness write, but every original in it is recorded
-// for reply matching, so an answer names the original (decision 0129).
+// for reply matching, so an answer names the original (decision 0130).
 func TestBatchDeliveryRecordsEveryOriginal(t *testing.T) {
 	r := newRig(t)
 	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })

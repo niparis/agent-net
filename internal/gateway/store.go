@@ -1360,12 +1360,12 @@ LIMIT 500;
 INSERT INTO standing_orders_fts(standing_orders_fts) VALUES('rebuild');
 `
 
-// busyHoldMigration adds the gateway busy hold (decision 0129): a message can
+// busyHoldMigration adds the gateway busy hold (decision 0130): a message can
 // wait at the gateway while its recipient runs a turn, carry the original
 // messages of a batch, be urgent, and be withdrawn before it reaches the
 // harness. busy_since is when the session's current or last busy stretch began.
 const busyHoldMigration = `
--- gateway busy hold columns (decision 0129). The columns are added
+-- gateway busy hold columns (decision 0130). The columns are added
 -- replay-safely below.
 CREATE INDEX IF NOT EXISTS messages_waiting ON messages (recipient, state, batch_id);
 `

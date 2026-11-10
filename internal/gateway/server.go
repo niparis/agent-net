@@ -500,7 +500,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 					g.logLine("error", "where", "asks", "err", err)
 				}
 				// A session that stays busy past BusyHoldLimit gets its held
-				// messages anyway (decision 0129, part c).
+				// messages anyway (decision 0130, part c).
 				if stuck, err := g.store.StuckBusySessions(); err != nil {
 					g.logLine("error", "where", "stuck busy", "err", err)
 				} else {
@@ -3202,14 +3202,14 @@ func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol
 		return
 	}
 	// A message for a session that is in a turn waits at the gateway
-	// (decision 0129). Workers are left out: their daemon queues per turn.
+	// (decision 0130). Workers are left out: their daemon queues per turn.
 	if !released {
 		if ok, err := g.store.busyHoldEligible(m.To); err == nil && ok {
 			busyHoldRaceHook()
 			if g.store.HoldForBusy(m) {
 				// The session may have gone ready between the check and the
 				// hold. Release it now, or it would wait for another change
-				// or the 30 minute fallback (decision 0129, fix round).
+				// or the 30 minute fallback (decision 0130, fix round).
 				if still, err := g.store.busyHoldEligible(m.To); err == nil && !still {
 					g.releaseBusyHold(ctx, m.To, false)
 				}
@@ -3320,7 +3320,7 @@ func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol
 
 // releaseBusyHold delivers everything the gateway held for a session, as one
 // message when there are several. force is the 30-minute fallback (decision
-// 0129): the messages go even though the session still reports busy.
+// 0130): the messages go even though the session still reports busy.
 func (g *Gateway) releaseBusyHold(ctx context.Context, sessionID string, force bool) {
 	carrier, n, err := g.store.ReleaseBusyHold(sessionID, force)
 	if err != nil {

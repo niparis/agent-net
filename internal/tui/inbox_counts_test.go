@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Decision 0129: the STATUS cell says how much waits for a session, held at
+// Decision 0130: the STATUS cell says how much waits for a session, held at
 // the gateway and sent but not yet delivered to the harness.
 func TestSessionRowShowsGatewayAndInSessionCounts(t *testing.T) {
 	m := newModel(120, 34)

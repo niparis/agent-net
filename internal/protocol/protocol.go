@@ -27,7 +27,7 @@ const (
 	// nothing delivered to the sender.
 	StateAcknowledged = "acknowledged"
 	// StateWithdrawn is a message its sender took back from the gateway
-	// before it reached the recipient's harness (decision 0129).
+	// before it reached the recipient's harness (decision 0130).
 	StateWithdrawn = "withdrawn"
 )
 
@@ -106,11 +106,11 @@ type Message struct {
 	IsOrder bool `json:"is_order,omitempty"`
 	// Urgent is the sender's request to deliver this message ahead of older
 	// held messages. It still counts toward the recipient's inbox limit
-	// (decision 0129).
+	// (decision 0130).
 	Urgent bool `json:"urgent,omitempty"`
 	// HeldForBusy is true while the gateway keeps this message because the
 	// recipient is running a turn. It stays state stored until the gateway
-	// releases it, alone or in a batch (decision 0129).
+	// releases it, alone or in a batch (decision 0130).
 	HeldForBusy bool `json:"held_for_busy,omitempty"`
 	// Batch carries the original messages when one held batch goes to a
 	// recipient as one message, newest first. Empty on every other message.
@@ -379,7 +379,7 @@ type AgentView struct {
 	Status             string           `json:"status"`
 	// GatewayHeld and InSession count what waits for this session: messages
 	// held at the gateway, and messages dispatched but not delivered to its
-	// harness yet (decision 0129). Zero from an older gateway.
+	// harness yet (decision 0130). Zero from an older gateway.
 	GatewayHeld int   `json:"gateway_held,omitempty"`
 	InSession   int   `json:"in_session,omitempty"`
 	Online      bool  `json:"online"`
@@ -606,7 +606,7 @@ type (
 		Order bool `json:"order,omitempty"`
 		// Urgent asks the gateway to deliver this message ahead of older
 		// messages held for the recipient. It still counts toward the inbox
-		// limit (decision 0129).
+		// limit (decision 0130).
 		Urgent bool `json:"urgent,omitempty"`
 		// Ack closes the parent request without sending anything to its
 		// sender. The body may be empty and an outcome is refused. The request
@@ -687,7 +687,7 @@ type (
 	}
 	// MsgWithdraw takes back an undelivered message. A sender withdraws its
 	// own message; the owner and the CTO may withdraw any message to one
-	// session, or every message older than a named one (decision 0129).
+	// session, or every message older than a named one (decision 0130).
 	MsgWithdraw struct {
 		MessageID string `json:"message_id"`
 		// OlderThan, when set, withdraws every undelivered message to that

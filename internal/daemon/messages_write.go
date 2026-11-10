@@ -349,7 +349,7 @@ func messageStateOf(data json.RawMessage) (id, state string) {
 }
 
 // localWithdraw takes back an undelivered message. The gateway decides
-// whether the actor is the sender, the owner or the CTO (decision 0129).
+// whether the actor is the sender, the owner or the CTO (decision 0130).
 func (d *Daemon) localWithdraw(ctx context.Context, lc *localConn, raw json.RawMessage) (any, error) {
 	sid, err := lc.boundID()
 	if err != nil {

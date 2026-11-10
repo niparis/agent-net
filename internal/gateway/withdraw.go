@@ -15,7 +15,7 @@ const withdrawableStates = `('stored','dispatched','held','failed')`
 
 // Withdraw takes back one undelivered message. A session may withdraw its own
 // message; an owner session and the CTO may withdraw any undelivered message
-// to a session (decision 0129, part 4). A message the harness has accepted
+// to a session (decision 0130, part 4). A message the harness has accepted
 // cannot be withdrawn.
 func (s *Store) Withdraw(id, actor string) (protocol.Message, error) {
 	tx, err := s.db.Begin()
