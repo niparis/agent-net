@@ -304,3 +304,59 @@ func TestDeliveryReminderAndStuckDisabledByZero(t *testing.T) {
 		t.Fatalf("after count=%d want=1 (0 should disable both reminders and stuck notices) err=%v", afterCount, err)
 	}
 }
+
+func TestVerifyReminderBackoff(t *testing.T) {
+	r := newDeliveryRig(t)
+	callerNeedsSharedPipeline(t, r)
+	c := mergedChange(t, r, "feature/backoff", true)
+	ref := protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true}
+	target := nodeTaskTarget{id: c.ID, revision: c.Revision, ref: ref, session: r.caller}
+	r.g.dispatchStepTasks(context.Background())
+	start := r.clk.t
+	// Reopen the store after the first reminder; the next dispatch keeps its schedule.
+	for _, minutes := range []int{29, 30, 31, 119, 120, 121, 479, 480, 481, 1439, 1440, 1441, 2879, 2880} {
+		r.clk.t = start.Add(time.Duration(minutes) * time.Minute)
+		got, err := r.s.stepMessageRecorded(target, r.s.stepReminderCutoff())
+		due := minutes == 30 || minutes == 120 || minutes == 480 || minutes == 1440 || minutes == 2880
+		if err != nil || got == due {
+			t.Fatalf("at %dm recorded=%v due=%v err=%v", minutes, got, due, err)
+		}
+		if due {
+			r.g.dispatchStepTasks(context.Background())
+			r.g.flushStepTasks(r.caller)
+			if minutes == 30 {
+				reopened, err := OpenStore(r.s.path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { reopened.Close() })
+				reopened.now = r.s.now
+				r.s = reopened
+				r.g.store = reopened
+			}
+		}
+	}
+}
+
+func TestVerifyStuckNoticeSurvivesPruning(t *testing.T) {
+	r := newDeliveryRig(t)
+	callerNeedsSharedPipeline(t, r)
+	mergedChange(t, r, "feature/stuck-verify", true)
+	if _, err := r.s.db.Exec("UPDATE delivery_step_tasks SET completed=1 WHERE step<>'verify'"); err != nil {
+		t.Fatal(err)
+	}
+	r.clk.t = r.clk.t.Add(12 * time.Hour)
+	r.g.checkStuckStepTasks(context.Background(), 12*time.Hour)
+	var count int
+	if err := r.s.db.QueryRow("SELECT count(*) FROM messages WHERE body LIKE '%nobody claimed%'").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("first notice=%d err=%v", count, err)
+	}
+	if _, err := r.s.db.Exec("DELETE FROM messages"); err != nil {
+		t.Fatal(err)
+	}
+	r.clk.t = r.clk.t.Add(24 * time.Hour)
+	r.g.checkStuckStepTasks(context.Background(), 12*time.Hour)
+	if err := r.s.db.QueryRow("SELECT count(*) FROM messages WHERE body LIKE '%nobody claimed%'").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("repeated notice=%d err=%v", count, err)
+	}
+}

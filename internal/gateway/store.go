@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`}
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.
@@ -2304,6 +2304,34 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		if strings.Contains(migrations[i], "verify reminder state") {
+			for _, column := range []string{"last_notice_at", "stuck_notified"} {
+				var has int
+				if err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info('delivery_step_tasks') WHERE name=?", column).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec("ALTER TABLE delivery_step_tasks ADD COLUMN " + column + " INTEGER NOT NULL DEFAULT 0"); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+			// Preserve the cadence and notices already sent before this migration.
+			if _, err := tx.Exec(`UPDATE delivery_step_tasks SET
+ last_notice_at=COALESCE((SELECT MAX(m.created_at) FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
+ WHERE d.change_id=delivery_step_tasks.change_id AND d.revision=delivery_step_tasks.revision
+ AND d.step=delivery_step_tasks.step AND d.for_step=delivery_step_tasks.for_step AND d.after_merge=1),0),
+ stuck_notified=EXISTS(SELECT 1 FROM messages m WHERE m.sender='agent-net' AND m.idem_key=
+ 'delivery:stuck:' || delivery_step_tasks.change_id || ':' || delivery_step_tasks.revision || ':' || delivery_step_tasks.step || ':' || delivery_step_tasks.for_step || ':1')
+ WHERE step='verify' AND after_merge=1`); err != nil {
+				tx.Rollback()
+				return err
+			}
+
+		}
+
 		if strings.Contains(migrations[i], "delivery step tasks urgent column") {
 			var has int
 			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivery_step_tasks') WHERE name = 'urgent'`).Scan(&has); err != nil {
