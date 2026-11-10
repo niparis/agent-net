@@ -3366,14 +3366,14 @@ var (
 		"@MAX@", `COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),`,
 		"@COUNT@", `(SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND `+agentRepoCountWhere+`),`,
 		"@STALL@", `COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0),`,
-		"@HELD@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.held_for_busy=1 AND mw.state='stored'),0),`,
+		"@HELD@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='stored' AND mw.batch_id=''),0),`,
 		"@INSESSION@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='dispatched' AND mw.batch_id=''),0),`,
 		"@JOINS@", "").Replace(agentSelectTemplate)
 	agentListSelect = strings.NewReplacer(
 		"@MAX@", `COALESCE(CAST(mx.value AS INTEGER),0),`,
 		"@COUNT@", `COALESCE(rc.n,0),`,
 		"@STALL@", `COALESCE(CAST(st.conversation_id AS INTEGER),0),`,
-		"@HELD@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.held_for_busy=1 AND mw.state='stored'),0),`,
+		"@HELD@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='stored' AND mw.batch_id=''),0),`,
 		"@INSESSION@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='dispatched' AND mw.batch_id=''),0),`,
 		"@JOINS@", agentListJoins).Replace(agentSelectTemplate)
 )

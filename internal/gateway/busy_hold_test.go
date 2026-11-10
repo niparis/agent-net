@@ -349,6 +349,9 @@ func TestSendToBusySessionIsHeldAndReportsQueue(t *testing.T) {
 	if q, _ := second["queue"].(string); !strings.Contains(q, "queued behind 0, session busy for 5 min") {
 		t.Fatalf("queue line = %q", q)
 	}
+	if a, _, _ := s.Agent(b); a.GatewayHeld != 2 || a.InSession != 0 {
+		t.Fatalf("session counts = gw %d, in %d; want gw 2, in 0", a.GatewayHeld, a.InSession)
+	}
 	// The ready report sends the batch, and the originals stop waiting.
 	nodeB := mustNode(t, s, b)
 	upsert, _ := json.Marshal(protocol.SessionUpsert{Session: protocol.SessionInfo{Harness: "pi", NativeID: "nb", Status: "idle"}})
@@ -361,5 +364,10 @@ func TestSendToBusySessionIsHeldAndReportsQueue(t *testing.T) {
 	}
 	if m, _, _ := s.Message(first.ID); m.HeldForBusy {
 		t.Fatalf("the original %s is still marked held", first.ID)
+	}
+	// There is no node connection in this test, so the batch waits one more
+	// step at the gateway; either way the originals no longer wait.
+	if a, _, _ := s.Agent(b); a.GatewayHeld != 1 || a.InSession != 0 {
+		t.Fatalf("session counts after ready = gw %d, in %d; want gw 1, in 0", a.GatewayHeld, a.InSession)
 	}
 }
