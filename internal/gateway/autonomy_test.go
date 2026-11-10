@@ -193,6 +193,7 @@ func TestAutonomyWakeStillLeavesABlockedRow(t *testing.T) {
 
 func TestWakeDailyCapIsSeparateFromTheCheckCap(t *testing.T) {
 	s, c := newTestStore(t)
+	disableInboxLimit(t, s)
 	a, b := twoSessions(t, s)
 	setAutonomy(t, s, b, protocol.AutonomyWake)
 	if _, _, err := send(s, a, b, "req", ""); err != nil {
