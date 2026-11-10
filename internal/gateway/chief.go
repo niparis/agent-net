@@ -420,7 +420,7 @@ func (s *Store) waitingChiefAsks(q askDB, now time.Time) ([]protocol.AskWaiting,
 // open. FirstID and LastID cover every row that matched.
 func askSortStats(q askDB, sorter string, since, until, fromID, toID int64) (protocol.AskSortStats, error) {
 	out := protocol.AskSortStats{Sorter: sorter, Counts: map[string]int{}}
-	query := `SELECT result, COUNT(*), MIN(id), MAX(id) FROM ask_sorts WHERE sorter=?`
+	query := `SELECT result, COUNT(*), MIN(id), MAX(id), SUM(CASE WHEN hidden_at<>0 THEN 1 ELSE 0 END) FROM ask_sorts WHERE sorter=?`
 	args := []any{sorter}
 	if since > 0 {
 		query += ` AND at>=?`
@@ -446,12 +446,13 @@ func askSortStats(q askDB, sorter string, since, until, fromID, toID int64) (pro
 	defer rows.Close()
 	for rows.Next() {
 		var result string
-		var n int
+		var n, hidden int
 		var first, last int64
-		if err := rows.Scan(&result, &n, &first, &last); err != nil {
+		if err := rows.Scan(&result, &n, &first, &last, &hidden); err != nil {
 			return out, err
 		}
 		out.Counts[result] = n
+		out.Hidden += hidden
 		if out.FirstID == 0 || first < out.FirstID {
 			out.FirstID = first
 		}
@@ -502,12 +503,44 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 	if err != nil {
 		return out, none, err
 	}
-	if chief == "" || chief != q.SessionID {
+	owner := false
+	if q.Result == "hide" {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND node_id=? AND harness=? AND online=1 AND archived_at=0`, q.SessionID, node, protocol.OwnerHarness).Scan(&n); err != nil {
+			return out, none, err
+		}
+		owner = n > 0
+	}
+	if !owner && (chief == "" || chief != q.SessionID) {
 		return out, none, reject("only the chief of staff may sort asks")
 	}
 	var chiefNode string
-	if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil || chiefNode != node {
-		return out, none, reject("the chief of staff is not on this machine")
+	if !owner {
+		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil || chiefNode != node {
+			return out, none, reject("the chief of staff is not on this machine")
+		}
+	}
+	if q.Result == "hide" {
+		f := hideFilter{Kind: q.Kind, Result: q.HideResult, Before: q.Before, RepeatsOnly: q.RepeatsOnly}
+		var h hideResult
+		switch q.Mode {
+		case "preview":
+			h, err = hidePreview(tx, f)
+		case "apply":
+			h, err = s.hideApply(tx, f, q.Token)
+		case "undo":
+			h, err = s.hideUndo(tx, q.Receipt)
+		}
+		if err != nil {
+			return out, none, reject("%v", err)
+		}
+		if err = tx.Commit(); err != nil {
+			return out, none, err
+		}
+		if q.Mode != "preview" {
+			s.logf("ask sort hide %s receipt=%s before=%d after=%d ids=%d", q.Mode, h.Receipt, h.Before, h.After, len(h.IDs))
+		}
+		return protocol.AskSortResult{Result: "hide", HiddenIDs: &h.IDs, VisibleBefore: h.Before, VisibleAfter: h.After, Token: h.Token, Receipt: h.Receipt}, none, nil
 	}
 	if q.Result == protocol.AskSortList {
 		asks, err := s.waitingChiefAsks(tx, s.now())
@@ -1108,7 +1141,7 @@ func (s *Store) ChiefSorts(since time.Time) ([]protocol.ChiefSort, error) {
 		COALESCE(i.text,''),
 		EXISTS (SELECT 1 FROM ask_sorts u WHERE u.ask_id=r.ask_id AND u.id>r.id AND u.result=?)
 		FROM ask_sorts r LEFT JOIN inbox_items i ON i.id=r.ask_id
-		WHERE r.at>=? AND r.result<>? ORDER BY r.id DESC LIMIT 100`, protocol.AskSortUndo, since.UnixNano(), protocol.AskSortUndo)
+		WHERE r.at>=? AND r.result<>? AND r.hidden_at=0 ORDER BY r.id DESC LIMIT 100`, protocol.AskSortUndo, since.UnixNano(), protocol.AskSortUndo)
 	if err != nil {
 		return nil, err
 	}

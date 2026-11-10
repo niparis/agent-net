@@ -1281,7 +1281,14 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration}
+
+// askSortHideMigration stores receipts for reversible history hiding. The
+// column is added in the migration loop so replaying the migration is safe.
+const askSortHideMigration = `
+-- Ask sort hide receipts
+CREATE TABLE IF NOT EXISTS ask_sort_hide_receipts (id TEXT PRIMARY KEY, ids TEXT NOT NULL, undone INTEGER NOT NULL DEFAULT 0);
+`
 
 // permissionProposalMigration stores proposals for Claude Code permission
 // rules and folder trust (decision 0127). An agent or the gateway proposes, the
@@ -1946,6 +1953,19 @@ func (s *Store) migrate() error {
 		}
 		// SQLite has no ADD COLUMN IF NOT EXISTS, and a test may replay a
 		// migration on a database that already has these columns.
+		if strings.Contains(migrations[i], "Ask sort hide receipts") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('ask_sorts') WHERE name='hidden_at'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE ask_sorts ADD COLUMN hidden_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
 		if strings.Contains(migrations[i], "chief ask adoption time") {
 			for _, col := range []struct{ name, spec string }{
 				{"chief_at", `INTEGER NOT NULL DEFAULT 0`},

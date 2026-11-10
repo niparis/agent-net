@@ -2795,6 +2795,25 @@ caller (the chief); `since` and `until` are Unix seconds (both inclusive), and
 when none did). The chief uses it to audit its own sorts without reading every
 row.
 
+**Hide handled history.** The live chief or a live owner session may call
+`agent_ask_sort` with `result: "hide"`. For a preview, set `mode: "preview"`,
+`kind`, `hide_result`, `before` (an exclusive UTC RFC3339 cutoff), and optionally
+`repeats_only: true`. The response includes the exact sort IDs, visible counts
+before and after, and a token. Apply with `mode: "apply"`, the same filter and
+`token`. The gateway rejects a changed match set. The response contains a
+receipt and IDs. Undo with `mode: "undo"` and `receipt`. The operation changes
+only sort history visibility, never inbox items. Open and dismissed asks are excluded. Visible counts cover all sort history,
+not only the last 24 hours shown on the Desk. Hidden
+rows are omitted from Handled for you in the Desk and web console. List stats
+still count them and include `hidden_count`.
+
+For `repeats_only`, only `session_stall` closes are supported. Stall asks carry
+the session ID and the activity baseline in `conversation_id` (Unix seconds).
+Stall sorts for a session with the same nonempty baseline are one episode
+until a sort for that session has a different baseline; the first close stays
+visible. A changed baseline starts another episode. Asks without a baseline are kept. This uses recorded stall baselines,
+which have one-second precision.
+
 **`agent_ask_sort {ask, detail: "full"}`** reads one ask in full for the chief. It
 sorts nothing, and it takes only `ask`. The answer has `result` `read`, `next`,
 `state` and `full` with the whole question and detail, the recommendation and
