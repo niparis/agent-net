@@ -1590,11 +1590,9 @@ func (m Model) sessionMachine(a protocol.AgentView) string {
 	return strings.Split(host, ".")[0]
 }
 
-// sessionStatusCell is the short STATUS text. The age of an offline
-// session moves to TASK, so every state fits the STATUS column.
-// sessionStatusCell is the STATUS cell. Behind the status, it counts what
-// waits for the session: messages held at the gateway and messages sent but
-// not yet delivered to its harness (decision 0129).
+// sessionStatusCell is the STATUS cell: the short status text, and behind it
+// the counts of what waits for the session. The age of an offline session
+// moves to TASK, so every state fits the STATUS column.
 func (m Model) sessionStatusCell(a protocol.AgentView) string {
 	s := m.sessionStatusBase(a)
 	if a.GatewayHeld > 0 || a.InSession > 0 {
