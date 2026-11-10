@@ -72,3 +72,52 @@ func TestPrecheckRefusesExhaustedNamedModelWithAlternative(t *testing.T) {
 		t.Fatalf("open starts %d, %v", n, err)
 	}
 }
+
+// The picker needs the judge's level, so a precheck never refuses a start for
+// a level: a named harness with an automatic model passes when only a lower,
+// judged level would qualify.
+func TestPrecheckDoesNotRefuseOnLevelForAutomaticModel(t *testing.T) {
+	g, node := scopeGateway(t)
+	st := g.store
+	if err := st.SetNodeHello(node, "nas", "1"); err != nil {
+		t.Fatal(err)
+	}
+	launch := true
+	if err := st.SetNodeLaunch(node, &launch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetNodeHarnesses(node, []protocol.HarnessInfo{{Name: "claude", Models: []string{"claude-opus-5-5"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkerProfile(protocol.WorkerProfile{Name: "opus", Harness: "claude", Model: "claude-opus-5-5"}); err != nil {
+		t.Fatal(err)
+	}
+	// Score 12: the model reaches trivial only, so "normal" has no model.
+	if _, err := st.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, scoresKey, `[{"match":"claude-opus-5-5","score":12}]`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, workerProvidersKey, `{"providers":["anthropic"]}`); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc := &nodeConn{id: node}
+	g.conns[node] = nc
+	t.Cleanup(func() { delete(g.conns, node) })
+	frame := func(level string) []byte {
+		raw, _ := json.Marshal(protocol.WorkerStartFrame{Owner: owner, Level: level,
+			WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "claude"}})
+		return raw
+	}
+	// The real start at normal is refused, which is why the precheck must not
+	// judge by it ...
+	if _, err := g.handleWorker(context.Background(), nc, "worker.start", frame("normal")); err == nil || !strings.Contains(err.Error(), "no registered workers") && !strings.Contains(err.Error(), "no model qualifies") {
+		t.Fatalf("start at normal: %v", err)
+	}
+	// ... and the precheck passes.
+	if _, err := g.handleWorker(context.Background(), nc, "worker.precheck", frame("")); err != nil {
+		t.Fatalf("precheck refused a start by level: %v", err)
+	}
+}

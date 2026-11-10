@@ -655,8 +655,16 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	automatic := p.Model == "" || strings.EqualFold(p.Model, "auto")
 	var automaticNote, harnessNote string
-	if automatic && p.Precheck && p.Harness == "" {
-		// The picker needs the judge's level: nothing more to check before it.
+	if automatic && p.Precheck {
+		// The picker needs the judge's level, so a precheck never runs it: a
+		// level that the judge would lower must not refuse a start that can
+		// run. Only what needs no level is checked: a named harness whose
+		// whole account has no allowance left.
+		if p.Harness != "" {
+			if reason := protocol.QuotaHarnessRefusal(g.nodeQuotas(pick.NodeID), p.Harness); reason != "" {
+				return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
+			}
+		}
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path}, nil
 	}
 	if automatic {
