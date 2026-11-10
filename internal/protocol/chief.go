@@ -198,7 +198,7 @@ type AskSortRequest struct {
 // asks that wait for the chief in Asks and the counts of one sorter's sorts in
 // Stats, and changes nothing. A full read has Result "read" and fills Full.
 type AskSortResult struct {
-	HiddenIDs     []int64       `json:"hidden_ids,omitempty"`
+	HiddenIDs     *[]int64      `json:"hidden_ids,omitempty"`
 	VisibleBefore int           `json:"visible_before"`
 	VisibleAfter  int           `json:"visible_after"`
 	Token         string        `json:"token,omitempty"`

@@ -540,7 +540,7 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		if q.Mode != "preview" {
 			s.logf("ask sort hide %s receipt=%s before=%d after=%d ids=%d", q.Mode, h.Receipt, h.Before, h.After, len(h.IDs))
 		}
-		return protocol.AskSortResult{Result: "hide", HiddenIDs: h.IDs, VisibleBefore: h.Before, VisibleAfter: h.After, Token: h.Token, Receipt: h.Receipt}, none, nil
+		return protocol.AskSortResult{Result: "hide", HiddenIDs: &h.IDs, VisibleBefore: h.Before, VisibleAfter: h.After, Token: h.Token, Receipt: h.Receipt}, none, nil
 	}
 	if q.Result == protocol.AskSortList {
 		asks, err := s.waitingChiefAsks(tx, s.now())

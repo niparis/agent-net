@@ -2738,7 +2738,8 @@ row.
 before and after, and a token. Apply with `mode: "apply"`, the same filter and
 `token`. The gateway rejects a changed match set. The response contains a
 receipt and IDs. Undo with `mode: "undo"` and `receipt`. The operation changes
-only sort history visibility, never inbox items. Open asks are excluded. Hidden
+only sort history visibility, never inbox items. Open and dismissed asks are excluded. Visible counts cover all sort history,
+not only the last 24 hours shown on the Desk. Hidden
 rows are omitted from Handled for you in the Desk and web console. List stats
 still count them and include `hidden_count`.
 

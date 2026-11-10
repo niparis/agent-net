@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +27,7 @@ func TestChiefHideHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(preview.HiddenIDs, []int64{sortID}) || preview.VisibleBefore != 1 || preview.VisibleAfter != 0 {
+	if preview.HiddenIDs == nil || !reflect.DeepEqual(*preview.HiddenIDs, []int64{sortID}) || preview.VisibleBefore != 1 || preview.VisibleAfter != 0 {
 		t.Fatalf("preview: %+v", preview)
 	}
 	list, err := s.ChiefSorts(time.Time{})
@@ -41,7 +43,7 @@ func TestChiefHideHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(applied.HiddenIDs, []int64{sortID}) || applied.Receipt == "" {
+	if applied.HiddenIDs == nil || !reflect.DeepEqual(*applied.HiddenIDs, []int64{sortID}) || applied.Receipt == "" {
 		t.Fatalf("apply: %+v", applied)
 	}
 	list, err = s.ChiefSorts(time.Time{})
@@ -89,7 +91,29 @@ func TestChiefHideRepeatsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got.HiddenIDs, []int64{ids[1], ids[3]}) {
+	if got.HiddenIDs == nil || !reflect.DeepEqual(*got.HiddenIDs, []int64{ids[1], ids[3]}) {
 		t.Fatalf("ids %v", got.HiddenIDs)
+	}
+}
+
+func TestChiefHideExcludesInFlightAndReturnsEmptyIDs(t *testing.T) {
+	s, c, chief, asker, node := chiefRig(t)
+	ask := chiefAskKind(t, s, asker, "session_stall", "stall")
+	sortAsk(t, s, chief, node, protocol.AskSortArgs{Ask: ask, Result: protocol.AskSortClose, Reason: "handled"})
+	for _, status := range []string{"open", "dismissed"} {
+		if _, err := s.db.Exec(`UPDATE inbox_items SET status=? WHERE id=?`, status, ask); err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Result: "hide", Mode: "preview", Kind: "session_stall", HideResult: "close", Before: c.now().Add(time.Hour).UTC().Format(time.RFC3339)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.HiddenIDs == nil || len(*got.HiddenIDs) != 0 {
+			t.Fatalf("%s: %+v", status, got)
+		}
+		raw, err := json.Marshal(got)
+		if err != nil || !strings.Contains(string(raw), `"hidden_ids":[]`) {
+			t.Fatalf("empty preview JSON %s %v", raw, err)
+		}
 	}
 }
