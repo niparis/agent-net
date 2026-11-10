@@ -348,6 +348,28 @@ func messageStateOf(data json.RawMessage) (id, state string) {
 	return "", "unknown"
 }
 
+// localWithdraw takes back an undelivered message. The gateway decides
+// whether the actor is the sender, the owner or the CTO (decision 0129).
+func (d *Daemon) localWithdraw(ctx context.Context, lc *localConn, raw json.RawMessage) (any, error) {
+	sid, err := lc.boundID()
+	if err != nil {
+		return nil, err
+	}
+	var p struct {
+		MessageID string `json:"message_id"`
+		OlderThan bool   `json:"older_than"`
+		AsOwner   bool   `json:"as_owner"`
+	}
+	if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
+		return nil, errors.New("withdraw needs message_id")
+	}
+	if p.AsOwner && sid != d.ctoSessionID() {
+		return nil, errors.New("as_owner is for the CTO session only; withdraw your own message instead")
+	}
+	return d.call(ctx, "msg.withdraw", protocol.MsgWithdraw{MessageID: p.MessageID, OlderThan: p.OlderThan,
+		Sender: sid, AsOwner: p.AsOwner})
+}
+
 // localHandoff passes a message this session received to another session. The
 // gateway keeps the original sender on the new message, so the member's reply
 // goes straight to the asker, and stores a copy of that reply for this session.

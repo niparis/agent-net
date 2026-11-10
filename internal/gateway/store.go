@@ -3668,7 +3668,7 @@ const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.reci
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
 	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),''),
 	COALESCE((SELECT mf.files FROM message_files mf WHERE mf.message_id=m.id),''), m.worker_task, m.is_order,
-	m.urgent, m.held_for_busy, m.batch_json
+	m.urgent, m.held_for_busy, m.batch_json, m.batch_id
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
@@ -3678,7 +3678,7 @@ func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var workerTask sql.NullBool
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
 		&m.IdempotencyKey, &created, &expires, &m.State, &m.DeliveryDetail, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote, &m.OwnerInstruction, &files, &workerTask, &m.IsOrder,
-		&m.Urgent, &m.HeldForBusy, &batchJSON)
+		&m.Urgent, &m.HeldForBusy, &batchJSON, &m.BatchCarrier)
 	if workerTask.Valid {
 		m.WorkerTask = &workerTask.Bool
 	}

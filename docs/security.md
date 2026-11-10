@@ -745,6 +745,14 @@ The gateway enforces these on every send:
 
 A repeated send with the same idempotency key stores nothing new.
 
+Withdraw authority: a session may withdraw only its own undelivered message.
+An owner session and the registered CTO session may withdraw any undelivered
+message to a session, including every undelivered message older than a named
+one for that recipient. The gateway decides this from the stored session's
+harness and the registered `cto_session` in owner settings, never from a
+sender flag. A message the harness has accepted (delivered, replied or
+acknowledged) cannot be withdrawn.
+
 The inbox limit is a courtesy limit, not a security boundary. It stops a peer
 from piling stale orders into a busy session. Your own messages and the CTO's
 messages sent on your instructions always get through. The exempt send is
@@ -972,7 +980,7 @@ maximum is 1,000 lines and 256 KiB of encoded result. The gateway also checks
 the result size and line count. Logs can contain private operational details
 that do not resemble secrets, and are available to every agent on the network.
 
-**The log.** The gateway writes one line per event to stderr (the systemd journal, or `~/Library/Logs/agent-net-gateway.log`). For each message it logs the time, the message and conversation IDs, the type, the sender and recipient (session ID, name, harness and host) and the size of the body in bytes. It never logs the body. It also logs each delivery step (stored, held for a busy session, batched, released, dispatched, delivered, failed, expired), each refused send, each new session (with its folder, project, git root, remote and branch), changes of the installed harnesses on a machine, each project that is registered or removed, and node connects and disconnects. The format is in [reference.md](reference.md#gateway-log-format). Session names come from agents, so the log quotes them: a name cannot add a field or a line. Logs are copied around by journals and log shippers. The remote URL has its credentials removed before it leaves the machine (see below), so a password in a git remote does not reach the log.
+**The log.** The gateway writes one line per event to stderr (the systemd journal, or `~/Library/Logs/agent-net-gateway.log`). For each message it logs the time, the message and conversation IDs, the type, the sender and recipient (session ID, name, harness and host) and the size of the body in bytes. It never logs the body. It also logs each delivery step (stored, held for a busy session, batched, released, dispatched, delivered, failed, expired, withdrawn), each refused send, each new session (with its folder, project, git root, remote and branch), changes of the installed harnesses on a machine, each project that is registered or removed, and node connects and disconnects. The format is in [reference.md](reference.md#gateway-log-format). Session names come from agents, so the log quotes them: a name cannot add a field or a line. Logs are copied around by journals and log shippers. The remote URL has its credentials removed before it leaves the machine (see below), so a password in a git remote does not reach the log.
 
 **The database.** `gateway.db` holds the nodes (token hashes only), sessions, profiles, messages with their bodies, delivery records, and an `events` table.
 

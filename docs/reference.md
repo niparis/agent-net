@@ -374,6 +374,7 @@ action tool per area:
 |---|---|
 | `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions; `urgent: true` goes ahead of older waiting messages |
 | `agent_message_reply` | a reply with an outcome, or `ack: true` to close a request that needs no answer; `as_owner: true` replies on the owner's instructions |
+| `agent_message_withdraw` | one undelivered message, or with `older_than: true` every undelivered message to that recipient that is this old or older; the owner and the CTO may withdraw another session's message |
 | `agent_owner_ask` | a question, approval or idea with a recommendation and up to four answers, into the Inbox |
 | `agent_learn` | one finding, under the daily limit |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
@@ -1068,6 +1069,16 @@ The send result and `agent_message_status` carry `queue_position` (1 is next),
 `gw N · in M`: N held at the gateway, M dispatched but not yet delivered to
 the harness.
 
+`agent_message_withdraw` takes back an undelivered message. Its sender may
+withdraw its own; an owner session and the CTO may withdraw any undelivered
+message to one session. `older_than: true` withdraws every undelivered message
+to that message's recipient that is as old as or older than the named one.
+The message gets the state `withdrawn` and stays visible to its sender in
+`agent_message_status`. A message the harness already accepted (delivered,
+replied or acknowledged) cannot be withdrawn, and the error says so. A
+withdrawn original leaves its pending batch, and the batch text is rebuilt
+without it.
+
 ## Delivery states
 
 The receiver saves `injecting` in `daemon.db` before calling a harness. It saves
@@ -1209,6 +1220,7 @@ The gateway writes one line per event to stderr (the systemd journal, or the lau
 | `msg.batch` | Several held messages go as one batch. | `msg` (the batch), `conv`, `type`, `to`, `to_host`, `count`, `busy_for_s` |
 | `msg.released_busy` | One held message goes as it is. | same as `msg.batch`, `count` is 1 |
 | `msg.released_stuck` | The 30-minute fallback sent held messages to a session that still reports busy. | `session`, `msg`, `count`, `limit_s` |
+| `msg.withdrawn` | The sender, the owner or the CTO withdrew an undelivered message. | `msg`, `conv`, `type`, `to`, `to_host`, `by` |
 | `msg.dispatched` | The message was sent to the recipient's machine. | `msg`, `conv`, `type`, `to`, `to_host`, and `recipient_busy_s` while the recipient is busy |
 | `msg.delivered` | The recipient's machine put it into the session. | same, and `detail` |
 | `msg.failed` | It could not be delivered. | same, and `detail` |
