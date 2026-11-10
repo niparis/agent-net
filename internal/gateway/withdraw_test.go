@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -207,5 +209,30 @@ func TestWithdrawRemovesAnOriginalFromItsBatch(t *testing.T) {
 	}
 	if m, _, _ := s.Message(carrier.ID); m.State != protocol.StateWithdrawn {
 		t.Fatalf("an emptied batch is %q, want withdrawn", m.State)
+	}
+}
+
+func TestWithdrawThroughTheGateway(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification,
+		Body: "stale", IdempotencyKey: "gateway-stale"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &Gateway{store: s, conns: map[string]*nodeConn{}}
+	raw, _ := json.Marshal(protocol.MsgWithdraw{MessageID: m.ID, Sender: a})
+	data, err := g.handle(context.Background(), &nodeConn{id: mustNode(t, s, a)}, "msg.withdraw", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := data.(map[string]any)["message"].(protocol.Message)
+	if got.State != protocol.StateWithdrawn {
+		t.Fatalf("gateway withdraw left %q", got.State)
+	}
+	// A sender from another node cannot withdraw it.
+	raw, _ = json.Marshal(protocol.MsgWithdraw{MessageID: m.ID, Sender: b})
+	if _, err := g.handle(context.Background(), &nodeConn{id: mustNode(t, s, b)}, "msg.withdraw", raw); err == nil {
+		t.Fatal("another sender withdrew the message")
 	}
 }
