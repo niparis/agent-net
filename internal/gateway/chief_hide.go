@@ -39,7 +39,7 @@ func hidePreview(tx *sql.Tx, f hideFilter) (hideResult, error) {
 	}
 	query := `SELECT r.id FROM ask_sorts r JOIN inbox_items i ON i.id=r.ask_id WHERE r.hidden_at=0 AND r.result<>'undo' AND i.status NOT IN ('open','dismissed') AND i.kind=? AND r.result=? AND r.at<?`
 	if f.RepeatsOnly {
-		query += ` AND i.session_id<>'' AND i.conversation_id<>'' AND EXISTS (SELECT 1 FROM ask_sorts p JOIN inbox_items j ON j.id=p.ask_id WHERE j.kind='session_stall' AND j.session_id=i.session_id AND j.conversation_id=i.conversation_id AND p.result='close' AND p.id<r.id AND NOT EXISTS (SELECT 1 FROM ask_sorts x JOIN inbox_items k ON k.id=x.ask_id WHERE k.kind='session_stall' AND k.session_id=i.session_id AND k.conversation_id<>i.conversation_id AND x.result='close' AND x.id>p.id AND x.id<r.id))`
+		query += ` AND i.session_id<>'' AND i.conversation_id<>'' AND EXISTS (SELECT 1 FROM ask_sorts p JOIN inbox_items j ON j.id=p.ask_id WHERE j.kind='session_stall' AND j.session_id=i.session_id AND j.conversation_id=i.conversation_id AND p.result='close' AND p.id<r.id AND NOT EXISTS (SELECT 1 FROM ask_sorts x JOIN inbox_items k ON k.id=x.ask_id WHERE k.kind='session_stall' AND k.session_id=i.session_id AND k.conversation_id<>i.conversation_id AND x.id>p.id AND x.id<r.id))`
 	}
 	query += ` ORDER BY r.id`
 	rows, err := tx.Query(query, f.Kind, f.Result, before.UnixNano())

@@ -2745,9 +2745,9 @@ still count them and include `hidden_count`.
 
 For `repeats_only`, only `session_stall` closes are supported. Stall asks carry
 the session ID and the activity baseline in `conversation_id` (Unix seconds).
-Consecutive closed stall sorts for a session with the same nonempty baseline are
-one episode; the first close stays visible. A changed baseline starts another
-episode. Asks without a baseline are kept. This uses recorded stall baselines,
+Stall sorts for a session with the same nonempty baseline are one episode
+until a sort for that session has a different baseline; the first close stays
+visible. A changed baseline starts another episode. Asks without a baseline are kept. This uses recorded stall baselines,
 which have one-second precision.
 
 **`agent_ask_sort {ask, detail: "full"}`** reads one ask in full for the chief. It
