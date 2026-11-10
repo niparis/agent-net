@@ -116,13 +116,17 @@ func TestSessionStartClaude(t *testing.T) {
 			} else if argValue(rec.Args, "--model") != "" {
 				t.Errorf("default args %v", rec.Args)
 			}
-			for _, flag := range []string{"--settings", "--mcp-config", "--resume"} {
+			for _, flag := range []string{"--mcp-config", "--resume"} {
 				if argValue(rec.Args, flag) != "" {
 					t.Errorf("worker flag %s in %v", flag, rec.Args)
 				}
 			}
-			if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" || rec.Env["AGENT_NET_WORKER"] != "" {
-				t.Errorf("owner environment: %v", rec.Env)
+			settingsEnv, _ := rec.Settings["env"].(map[string]any)
+			if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || rec.Env["AGENT_NET_WORKER"] != "" {
+				t.Errorf("owner environment: settings %v session %v", rec.Settings, rec.Env)
+			}
+			if rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
+				t.Errorf("launch command carries the mouse setting: %v", rec.CommandEnv)
 			}
 			noFlagThatSkipsPermissions(t, rec.Args)
 			a := c.agentOf(t, r.SessionID)
@@ -174,6 +178,41 @@ func TestSessionStartClaude(t *testing.T) {
 	}
 }
 
+// Decision 0128: the wheel scrolls every Claude session agent-net starts. The
+// setting must be in the launch settings, because Claude's background service
+// gives every session it starts later its own environment. The launch command
+// must not carry it either way.
+func TestClaudeSessionLaunchSettingsKeepMouseTrackingOn(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_DISABLE_MOUSE", "1") // the background service has it off
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	trustClaudeFolder(t, repo)
+	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", c.sessions)
+	var r sessionStartTestResult
+	mustJSON(t, c.cli.mustCall("session_start", map[string]any{"project": "shop", "harness": "claude"}), &r)
+	t.Cleanup(func() { killFakeClaude(t, repo) })
+	eventually(t, "started owner session", func() bool {
+		mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+		if r.Status == "failed" {
+			t.Fatalf("start failed: %+v", r)
+		}
+		return r.Status == "started"
+	})
+	rec := readClaude(t, repo)
+	settingsEnv, _ := rec.Settings["env"].(map[string]any)
+	if settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "0" {
+		t.Fatalf("launch settings must turn mouse tracking on: %v", rec.Settings)
+	}
+	if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" {
+		t.Fatalf("session mouse setting = %q, want 0", rec.Env["CLAUDE_CODE_DISABLE_MOUSE"])
+	}
+	if rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
+		t.Fatalf("launch command must not pass the variable on: %q", rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"])
+	}
+}
+
 func TestSessionResumeClaude(t *testing.T) {
 	for _, copySession := range []bool{false, true} {
 		t.Run(fmt.Sprint("copy=", copySession), func(t *testing.T) {
@@ -215,8 +254,12 @@ func TestSessionResumeClaude(t *testing.T) {
 			if argValue(rec.Args, "--resume") != native || rec.Cwd != repo || r.NativeID != rec.Session || (r.NativeID != native) != copySession {
 				t.Fatalf("resume %+v record %+v", r, rec)
 			}
-			if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" || rec.Env["AGENT_NET_WORKER"] != "" || argValue(rec.Args, "--mcp-config") != "" || argValue(rec.Args, "--settings") != "" {
+			settingsEnv, _ := rec.Settings["env"].(map[string]any)
+			if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || rec.Env["AGENT_NET_WORKER"] != "" || argValue(rec.Args, "--mcp-config") != "" {
 				t.Fatalf("owner settings: %+v", rec)
+			}
+			if rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
+				t.Fatalf("launch command carries the mouse setting: %v", rec.CommandEnv)
 			}
 		})
 	}

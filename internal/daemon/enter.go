@@ -345,8 +345,9 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		if err != nil || id == "" {
 			return no("cannot attach to %s: %v", name, firstNonNil(err, errors.New("no background id")))
 		}
+		// Claude Code ignores the mouse variable on the attach client; the
+		// session's launch settings carry it (decision 0128).
 		plan.Argv = []string{bin, "attach", id}
-		plan.Env = map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"}
 		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 		return plan, nil
 	case "opencode":

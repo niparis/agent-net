@@ -49,3 +49,16 @@ separate question for the owner.
 
 A CTO that is already running keeps its old environment. It is started again
 the next time it starts, for example when its model changes or after a stop.
+
+## Note (2026-11-09)
+
+The owner chose mouse tracking on for every Claude session agent-net starts,
+not only the CTO: "scrolling is now quite hard - it's basically scrolling the
+history window" in a normal session, while the CTO scrolled fine.
+
+Managed sessions and Claude workers now put `CLAUDE_CODE_DISABLE_MOUSE=0` in
+their launch settings, the same way the CTO does. The launch command drops the
+variable from its environment, and the attach plan no longer carries it. The
+wheel scrolls the conversation in every session. Selecting text then needs
+Shift while dragging (Option on some terminals), because a plain drag is a
+mouse event for the session.
