@@ -2764,11 +2764,19 @@ chief's daemon asks the gateway, which relays one request to that machine.
   answer returns `state: "unavailable"` and a `reason`; agent-net never invents
   the text.
 - `read` with `session` (the id or exact name) returns `turn` with the exact
-  last assistant message in `text`, the owner's last typed prompt before it in
-  `prompt`, their RFC 3339 times, `ended` and a stable `ref`. Secrets are
-  masked with the same helpers as the owner's session text, and `cut` says the
-  text was longer than the 2,000 character limit. The chief, not agent-net,
-  decides from the text whether it is a question, an idle done or an FYI.
+  last assistant message in `text`, the input before it in `preceding_input`,
+  their RFC 3339 times in `at` and `preceding_input_at`, `ended` and a stable
+  `ref`. `preceding_input` is whatever the session stored as the user turn
+  before the reply, so it is not necessarily the owner's words: `input_source`
+  says who wrote it. It is `owner` when the user typed it in the session,
+  `peer` for a message agent-net delivered from another session, `agent_net`
+  for a notice agent-net wrote itself, and `unknown` for injected text whose
+  writer the read cannot tell. A peer message also carries `input_from` (the
+  sender name) and `input_session_id` when the stored text names them. A
+  delivered message is never reported as `owner`. Secrets are masked with the
+  same helpers as the owner's session text, and `cut` says the text was longer
+  than the 2,000 character limit. The chief, not agent-net, decides from the
+  text whether it is a question, an idle done or an FYI.
 - `import` with `session`, `turn` (the `ref` from list or read), `text` (the
   question in one line), optional `options` (at most four) and
   `recommendation` creates one `question` ask about the session, with the turn

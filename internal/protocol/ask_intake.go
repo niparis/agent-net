@@ -7,9 +7,10 @@ import (
 
 // Ask intake is the chief of staff's read of a session's last turn and its
 // import as an owner ask (decision 0114, part 3). It reads a session's last
-// assistant message and the owner's last typed prompt before it, with secrets
-// masked, and it may create one ask from that turn. Nothing in it sends input
-// to the session, answers an ask, or changes the session's state.
+// assistant message and the input before it, with secrets masked, and it may
+// create one ask from that turn. The input is labelled with its source: a
+// message another agent delivered is a peer's words, never the owner's. Nothing
+// in it sends input to the session, answers an ask, or changes the state.
 const (
 	// OpAskIntake is the agent tool agent_ask_intake. FrameAskIntake carries it
 	// from the daemon to the gateway.
@@ -45,6 +46,20 @@ const (
 	AskIntakeSourceRefPrefix  = "ask-intake:"
 	AskIntakeDefaultListLimit = 25
 	AskIntakeMaxListLimit     = 50
+)
+
+// The source of the input before the last assistant message. A harness stores
+// a delivered message as a user turn, so text alone does not say who spoke.
+// The read never calls a peer's message the owner's input.
+const (
+	// AskIntakeOwner is input the user typed in the session.
+	AskIntakeOwner = "owner"
+	// AskIntakePeer is a message agent-net delivered from another session.
+	AskIntakePeer = "peer"
+	// AskIntakeAgentNet is a notice agent-net wrote itself.
+	AskIntakeAgentNet = "agent_net"
+	// AskIntakeUnknown is injected text whose writer the read cannot tell.
+	AskIntakeUnknown = "unknown"
 )
 
 // AskIntakeSourceRef builds the stable source key of one turn: the session id
@@ -140,19 +155,25 @@ type AskIntakeSession struct {
 }
 
 // AskIntakeTurn is the exact last assistant turn of one session, with secrets
-// masked. Prompt is the owner's last typed prompt before it, as context. At
-// and PromptAt are RFC 3339 in UTC. Ref is stable for the same turn.
+// masked. PrecedingInput is the user-role input before it, as context; it is
+// not necessarily the owner's words, so InputSource says who wrote it. A peer
+// message carries InputFrom and InputSessionID when the stored text names
+// them. At and PrecedingInputAt are RFC 3339 in UTC. Ref is stable for the same
+// turn.
 type AskIntakeTurn struct {
-	Session  string `json:"session"`
-	State    string `json:"state"`
-	Reason   string `json:"reason,omitempty"`
-	Ref      string `json:"ref,omitempty"`
-	At       string `json:"at,omitempty"`
-	Text     string `json:"text,omitempty"`
-	Prompt   string `json:"prompt,omitempty"`
-	PromptAt string `json:"prompt_at,omitempty"`
-	Cut      bool   `json:"cut,omitempty"`
-	Ended    bool   `json:"ended,omitempty"`
+	Session          string `json:"session"`
+	State            string `json:"state"`
+	Reason           string `json:"reason,omitempty"`
+	Ref              string `json:"ref,omitempty"`
+	At               string `json:"at,omitempty"`
+	Text             string `json:"text,omitempty"`
+	PrecedingInput   string `json:"preceding_input,omitempty"`
+	PrecedingInputAt string `json:"preceding_input_at,omitempty"`
+	InputSource      string `json:"input_source,omitempty"`
+	InputFrom        string `json:"input_from,omitempty"`
+	InputSessionID   string `json:"input_session_id,omitempty"`
+	Cut              bool   `json:"cut,omitempty"`
+	Ended            bool   `json:"ended,omitempty"`
 }
 
 // AskIntakeAsk is the result of an import. Detail carries a short line about
@@ -184,15 +205,18 @@ type AskIntakeTurnRequest struct {
 // AskIntakeTurnAnswer is what the machine's daemon returns. State is "ok" or
 // "unavailable"; Ref is the harness's stable cursor, not a source key.
 type AskIntakeTurnAnswer struct {
-	Session  string `json:"session"`
-	Harness  string `json:"harness,omitempty"`
-	State    string `json:"state"`
-	Reason   string `json:"reason,omitempty"`
-	Ref      string `json:"ref,omitempty"`
-	At       string `json:"at,omitempty"`
-	Text     string `json:"text,omitempty"`
-	Prompt   string `json:"prompt,omitempty"`
-	PromptAt string `json:"prompt_at,omitempty"`
-	Cut      bool   `json:"cut,omitempty"`
-	Ended    bool   `json:"ended,omitempty"`
+	Session          string `json:"session"`
+	Harness          string `json:"harness,omitempty"`
+	State            string `json:"state"`
+	Reason           string `json:"reason,omitempty"`
+	Ref              string `json:"ref,omitempty"`
+	At               string `json:"at,omitempty"`
+	Text             string `json:"text,omitempty"`
+	PrecedingInput   string `json:"preceding_input,omitempty"`
+	PrecedingInputAt string `json:"preceding_input_at,omitempty"`
+	InputSource      string `json:"input_source,omitempty"`
+	InputFrom        string `json:"input_from,omitempty"`
+	InputSessionID   string `json:"input_session_id,omitempty"`
+	Cut              bool   `json:"cut,omitempty"`
+	Ended            bool   `json:"ended,omitempty"`
 }

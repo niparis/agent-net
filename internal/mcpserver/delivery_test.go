@@ -186,7 +186,8 @@ func TestDeliveryOutputSchemasMatchProtocol(t *testing.T) {
 				State: protocol.AskIntakeOK, LastTurn: "ask-intake:s_1:7:1", LastTurnAt: "2026-11-09T20:00:00Z",
 				Waiting: &protocol.AskIntakeWaiting{Kind: "explicit", Text: "q", Since: 1}, OpenAsk: "i_1"}},
 			Turn: &protocol.AskIntakeTurn{Session: "s_1", State: protocol.AskIntakeOK, Ref: "ask-intake:s_1:7:1",
-				At: "2026-11-09T20:00:00Z", Text: "a", Prompt: "p", PromptAt: "2026-11-09T19:59:00Z"},
+				At: "2026-11-09T20:00:00Z", Text: "a", PrecedingInput: "p", PrecedingInputAt: "2026-11-09T19:59:00Z",
+				InputSource: protocol.AskIntakePeer, InputFrom: "bob", InputSessionID: "s_bob"},
 			Ask: &protocol.AskIntakeAsk{ID: "i_1", State: protocol.AskIntakeCreated, Next: protocol.AskNextChief, Detail: "d"}},
 	} {
 		resolved, err := resolveCatalogSchema(catalogTool(name).OutputSchema)
