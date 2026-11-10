@@ -16,6 +16,7 @@ func TestAskSortArgsValidate(t *testing.T) {
 		{Ask: "i_1", Result: AskSortOwner, Priority: 3, WhyYou: "only you can decide", Reason: "decision"},
 		{Result: AskSortList},
 		{Ask: "i_1", Detail: "full"},
+		{Ask: "i_1", Result: AskSortUndo},
 		{Result: AskSortList, Sorter: "owner", Since: 10, Until: 20, FromID: 1, ToID: 9},
 	}
 	for _, a := range ok {
@@ -25,6 +26,7 @@ func TestAskSortArgsValidate(t *testing.T) {
 	}
 	bad := []AskSortArgs{
 		{Result: AskSortClose, Reason: "x"},
+		{Result: AskSortUndo},
 		{Ask: "i_1", Result: AskSortClose},
 		{Ask: "i_1", Result: "answer", Reason: "x"},
 		{Ask: "i_1", Result: AskSortMerge, Reason: "x"},

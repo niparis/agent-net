@@ -159,6 +159,9 @@ func (a AskSortArgs) Validate() error {
 		}
 		return nil
 	}
+	if a.Result == AskSortUndo {
+		return nil
+	}
 	if strings.TrimSpace(a.Reason) == "" {
 		return errors.New("reason is required: say why in one line")
 	}
@@ -183,7 +186,7 @@ func (a AskSortArgs) Validate() error {
 			return errors.New("owner needs why_you: why the owner must decide")
 		}
 	default:
-		return errors.New("result must be close, merge, send, owner or list")
+		return errors.New("result must be close, merge, send, owner, list or undo")
 	}
 	return nil
 }

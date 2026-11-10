@@ -100,7 +100,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), list asks and sort counts, or read an ask with detail full. Result hide (preview, apply, undo) hides sort history reversibly. Never answer for the owner.",
+    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), undo its own newest sort, list asks and sort counts, or read an ask with detail full. Result hide (preview, apply, undo) hides sort history reversibly. Never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
