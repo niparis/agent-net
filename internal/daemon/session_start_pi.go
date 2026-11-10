@@ -40,7 +40,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 	// Pi 1.5 defaults to tuiMode fullscreen, which turns mouse capture on and
 	// stops the terminal's own text selection, so copy-paste fails. Regular mode
 	// leaves the mouse to the terminal. This is the per-launch equivalent of
-	// CLAUDE_CODE_DISABLE_MOUSE=1 for Claude sessions (Pi has no env var for it).
+	// CLAUDE_CODE_DISABLE_MOUSE=0 for Claude sessions (Pi has no env var for it).
 	piArgs = append(piArgs, "--tui-mode", "regular")
 	timeout := d.workerSettings("").StartTimeout
 	plan := protocol.EnterPlan{Argv: piArgs, Dir: r.Path, Host: r.Hostname}

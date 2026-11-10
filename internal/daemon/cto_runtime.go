@@ -171,15 +171,20 @@ type ctoEnterCall struct {
 // Concurrent callers share the same startup result, including failures. Each
 // waiter can leave on its own deadline without starting another process.
 func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
-	return d.ctoEnterWithLocation(ctx, "", "")
+	return d.ctoEnterWithLocation(ctx, "", "", false)
 }
 
-func (d *Daemon) ctoEnterWithLocation(ctx context.Context, socket, pane string) (protocol.EnterPlan, error) {
+func (d *Daemon) ctoEnterWithLocation(ctx context.Context, socket, pane string, herdrClient bool) (protocol.EnterPlan, error) {
 	plan, err := d.ctoEnterBase(ctx)
 	if err != nil {
 		return plan, err
 	}
-	if !callerInHerdr(socket, pane) {
+	// A TUI inside this machine's herdr can see the pane it opens. A caller on
+	// another machine has a herdr client but no pane here: its terminal runs
+	// herdr --remote, so this machine opens or focuses the pane and sends its
+	// ID back (decision 0046). Without either, the attach plan is wrapped in
+	// ssh by the asking machine.
+	if !callerInHerdr(socket, pane) && !herdrClient {
 		return plan, nil
 	}
 	harness, native := "opencode", ""

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -519,6 +520,64 @@ func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
 		t.Fatalf("alias plan %+v", p)
 	}
 	requireHerdrOpened(t, localLog, "inter", "--remote", "me@box")
+}
+
+// The CTO on another machine opens the same way a session does: the CTO's
+// machine opens or focuses a pane in its own herdr, and this machine runs
+// herdr's remote client. Plain ssh loses the clipboard, so image paste into
+// the CTO fails (decision 0046).
+func TestEnterRemoteCTOUsesHerdrRemoteClient(t *testing.T) {
+	remoteBin, remoteLog := fakeOpenHerdr(t)
+	localBin, localLog := fakeOpenHerdr(t)
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	sessions, _ := useFakeClaude(t)
+	g := startGateway(t, t.TempDir(), "")
+	remote := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) {
+		c.ClaudeSessionsDir = sessions
+		c.HarnessPaths = map[string]string{"claude": os.Args[0], "herdr": remoteBin}
+	}})
+	cli := cliClient(t, remote)
+	harness := "claude"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	cli.mustCall("cto_enter", nil) // register the CTO on this machine
+	ctoID := remote.d.ctoSessionID()
+	if ctoID == "" {
+		t.Fatal("the CTO is not registered")
+	}
+	local := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.HarnessPaths = map[string]string{"herdr": localBin}
+	}})
+	waitSessionOnGateway(t, local, ctoID)
+
+	// A TUI in a plain terminal runs the remote client itself.
+	p := enterOf(t, local, ctoID, "")
+	if want := []string{localBin, "--remote", remote.cfg.Hostname}; !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("argv %v, want %v (plan %+v)", p.Argv, want, p)
+	}
+	if p.OpenedHerdr {
+		t.Fatalf("a TUI outside herdr got a pane it cannot see: %+v", p)
+	}
+	// The CTO's machine made the pane in its own herdr, titled like the local
+	// CTO pane, and ran the attach there.
+	raw, _ := os.ReadFile(remoteLog)
+	calls := string(raw)
+	if !strings.Contains(calls, "tab create --label CTO") || !strings.Contains(calls, "pane run") || !strings.Contains(calls, "attach") {
+		t.Fatalf("the CTO's machine did not open a pane: %s", calls)
+	}
+	if strings.Contains(strings.Join(p.Argv, " "), "ssh") || strings.Contains(calls, "ssh") {
+		t.Fatalf("ssh on the CTO path: argv %v calls %s", p.Argv, calls)
+	}
+
+	// A TUI inside this machine's herdr gets the remote client in a pane.
+	q := enterOfHerdr(t, local, ctoID, fakeHerdrSocket(localLog))
+	if !q.OpenedHerdr {
+		t.Fatalf("the remote client was not opened in herdr: %+v", q)
+	}
+	requireHerdrOpened(t, localLog, "CTO", localBin, "--remote", remote.cfg.Hostname)
+	raw, _ = os.ReadFile(localLog)
+	if strings.Contains(string(raw), "ssh") {
+		t.Fatalf("ssh on the CTO path: %s", raw)
+	}
 }
 
 // A TUI outside herdr (a plain terminal such as Ghostty) still enters a remote
