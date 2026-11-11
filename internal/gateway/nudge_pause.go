@@ -169,6 +169,11 @@ func (s *Store) PauseNudge(node string, r protocol.NudgePauseRequest) (protocol.
 	if err != nil {
 		return out, err
 	}
+	fires, followed, err := s.nudgeUseful(r.Kind, agent, team, s.now().Add(-24*time.Hour))
+	if err != nil {
+		return out, err
+	}
+	out.UsefulLine = nudgeUsefulLine(fires, followed)
 	if r.Mode == "preview" {
 		return out, nil
 	} // Rollback, including expiry: preview writes nothing.

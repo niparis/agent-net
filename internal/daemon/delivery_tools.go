@@ -28,7 +28,7 @@ import (
 // other methods.
 func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {
-	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind:
+	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind, protocol.OpNudgeStats:
 	default:
 		return nil, false, nil
 	}
@@ -100,6 +100,20 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 			}
 			err = d.deliveryCall(ctx, protocol.FrameNudgePausesFind, protocol.NudgePausesFindRequest{SessionID: sid}, &out)
 		}
+		return out, true, err
+	case protocol.OpNudgeStats:
+		if info.Worker != nil {
+			return nil, true, errors.New("a worker does not read the nudge firing log")
+		}
+		var a protocol.NudgeStatsArgs
+		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+			return nil, true, err
+		}
+		if err := a.Validate(); err != nil {
+			return nil, true, err
+		}
+		var out protocol.NudgeStatsResult
+		err := d.deliveryCall(ctx, protocol.FrameNudgeStats, a, &out)
 		return out, true, err
 	case protocol.OpAskSort:
 		if info.Worker != nil {

@@ -340,6 +340,9 @@ func (s *Store) storeCheck(a protocol.AgentView, day string, count, more int, no
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
 		return protocol.Message{}, err
 	}
+	if err = recordNudgeFire(tx, "idle_check", m.To, m.ID, m.CreatedAt); err != nil {
+		return protocol.Message{}, err
+	}
 	if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_day,check_day_count,check_task_hash)
 		VALUES(?,?,1,?,?,?,?)
 		ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=1,
@@ -542,6 +545,9 @@ func (s *Store) answerCheck(sessionID, task string) error {
 			if _, err = tx.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
 				VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body,
 				m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
+				return err
+			}
+			if err = recordNudgeFire(tx, "autonomy_continue", m.To, m.ID, m.CreatedAt); err != nil {
 				return err
 			}
 			s.event(tx, "msg.stored", "", m.From, m.ID, "type=notification by=agent-net wake")

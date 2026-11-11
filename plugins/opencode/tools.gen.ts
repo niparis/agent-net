@@ -1166,6 +1166,49 @@ export const TOOL_CATALOG = [
     "method": "nudge_resume"
   },
   {
+    "name": "agent_nudge_stats",
+    "description": "Read the automatic nudge firing log: fires, followed and useful rate per kind by agent and by team, over the last 24 hours by default. A nudge counts as followed when a tool call, announce, step evidence or a message that is not an ack comes from its recipient within 30 minutes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Earliest fire time as RFC 3339. Defaults to the last 24 hours."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "idle_check",
+            "autonomy_continue",
+            "reply_reminder",
+            "loop_tick",
+            "step_reminder",
+            "stuck_step",
+            "undelivered",
+            "waiting_notice",
+            "wake_failed",
+            "member_blocked"
+          ]
+        },
+        "team": {
+          "type": "string",
+          "description": "Team name or id."
+        },
+        "agent": {
+          "type": "string",
+          "description": "Agent name or id."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "nudge_stats"
+  },
+  {
     "name": "agent_owner_ask",
     "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. A new ask adds to your pending ones; replaces retires one. Use it when you stop for the owner.",
     "inputSchema": {

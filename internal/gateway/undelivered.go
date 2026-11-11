@@ -91,6 +91,9 @@ func (s *Store) undeliveredNotice(tx *sql.Tx, m protocol.Message, reason string,
 	if c, err := res.RowsAffected(); err != nil || c == 0 {
 		return none, false, err
 	}
+	if err := recordNudgeFire(tx, "undelivered", n.To, n.ID, n.CreatedAt); err != nil {
+		return none, false, err
+	}
 	s.event(tx, "msg.stored", "", n.From, n.ID, "type=notification by=agent-net undelivered="+m.ID)
 	return n, true, nil
 }

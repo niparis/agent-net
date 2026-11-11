@@ -164,6 +164,9 @@ func (s *Store) wakeFailureNotice(tx *sql.Tx, to, session, attempt, reason strin
 	if c, err := res.RowsAffected(); err != nil || c == 0 {
 		return none, false, err
 	}
+	if err := recordNudgeFire(tx, "wake_failed", n.To, n.ID, n.CreatedAt); err != nil {
+		return none, false, err
+	}
 	s.event(tx, "msg.stored", "", n.From, n.ID, "type=notification by=agent-net wake_failed="+session)
 	return n, true, nil
 }

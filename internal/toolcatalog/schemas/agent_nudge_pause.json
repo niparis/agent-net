@@ -52,6 +52,10 @@
       "id": {
         "type": "string"
       },
+      "useful_line": {
+        "type": "string",
+        "description": "Useful rate preview, for example useful 2 of 14 in 24h."
+      },
       "messages_24h": {
         "type": "integer"
       },

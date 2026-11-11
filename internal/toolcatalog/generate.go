@@ -26,6 +26,7 @@ var pluginMethods = map[string]string{
 	"agent_nudge_pause":       protocol.OpNudgePause,
 	"agent_nudge_resume":      protocol.OpNudgeResume,
 	"agent_nudge_pauses_find": protocol.OpNudgePausesFind,
+	"agent_nudge_stats":       protocol.OpNudgeStats,
 	"agent_sessions_find":     "sessions_find", "agent_session_get": "session_get",
 	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list",
@@ -41,6 +42,16 @@ var pluginMethods = map[string]string{
 	"agent_worker_rate": protocol.OpRate, "agent_handback": "worker_handback",
 	"agent_project_add": "project_add", "agent_mcp_test": "mcp_test",
 	"agent_change_submit": "change_submit", "agent_step_claim": "step_claim", "agent_step_report": "step_report", "agent_changes_find": "changes_find", "agent_ask_sort": protocol.OpAskSort, "agent_ask_intake": protocol.OpAskIntake,
+}
+
+// ToolMethods returns the daemon methods behind the catalog tools. The daemon
+// uses it to recognize an agent tool call for the nudge firing log.
+func ToolMethods() map[string]bool {
+	out := make(map[string]bool, len(pluginMethods))
+	for _, method := range pluginMethods {
+		out[method] = true
+	}
+	return out
 }
 
 // PluginTools returns the generated native-plugin view of the agent and worker

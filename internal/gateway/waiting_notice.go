@@ -103,6 +103,9 @@ func (s *Store) waitingNotice(tx *sql.Tx, id string) (protocol.Message, bool, er
 	if c, err := res.RowsAffected(); err != nil || c == 0 {
 		return none, false, err
 	}
+	if err := recordNudgeFire(tx, "waiting_notice", n.To, n.ID, n.CreatedAt); err != nil {
+		return none, false, err
+	}
 	s.event(tx, "msg.stored", "", n.From, n.ID, "type=notification by=agent-net waiting="+m.ID)
 	return n, true, nil
 }

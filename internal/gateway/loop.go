@@ -410,6 +410,9 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
 		return res, err
 	}
+	if err = recordNudgeFire(tx, "loop_tick", m.To, m.ID, m.CreatedAt); err != nil {
+		return res, err
+	}
 	s.event(tx, "msg.stored", "", m.From, m.ID, "type=notification by=agent-net loop")
 	if err := s.recordMemberTold(tx, changes.members.told); err != nil {
 		return res, err

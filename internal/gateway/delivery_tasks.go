@@ -987,6 +987,10 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 			tx.Rollback()
 			continue
 		}
+		if err := recordNudgeFire(tx, "stuck_step", m.To, m.ID, m.CreatedAt); err != nil {
+			tx.Rollback()
+			continue
+		}
 		if _, err := tx.Exec(`UPDATE delivery_step_tasks SET stuck_notified=1 WHERE step='verify' AND after_merge=1 AND change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`, it.changeID, it.revision, it.ref.Step, it.ref.For, boolInt(it.ref.AfterMerge)); err != nil {
 			tx.Rollback()
 			continue
@@ -1492,6 +1496,11 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body,
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
 		return protocol.Message{}, err
+	}
+	if strings.HasPrefix(m.Body, "[agent-net step task reminder") {
+		if err = recordNudgeFire(tx, "step_reminder", m.To, m.ID, m.CreatedAt); err != nil {
+			return protocol.Message{}, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return protocol.Message{}, err
