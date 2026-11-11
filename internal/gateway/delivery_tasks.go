@@ -1349,6 +1349,25 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			break
 		}
 	}
+	// Retire unclaimed work outside the ready steps and their paired partners. Claims stay
+	// with their current owner; retired tasks can be queued again when ready.
+	ready := p.NextSteps(c, evidence)
+	args := []any{c.ID, c.Revision}
+	query := `UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND claimed_by='' AND completed=0`
+	keep := append([]protocol.StepRef(nil), ready...)
+	for _, ref := range ready {
+		keep = append(keep, stepRun(p, c, evidence, ref)[1:]...)
+	}
+	for _, ref := range keep {
+		query += ` AND NOT (step=? AND for_step=? AND after_merge=?)`
+		args = append(args, ref.Step, ref.For, boolInt(ref.AfterMerge))
+	}
+	if _, err := tx.Exec(query, args...); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN (SELECT m.message_id FROM delivery_step_messages m JOIN delivery_step_tasks t ON t.change_id=m.change_id AND t.revision=m.revision AND t.step=m.step AND t.for_step=m.for_step AND t.after_merge=m.after_merge WHERE t.change_id=? AND t.revision=? AND t.completed=1 AND t.claimed_by='')`, c.ID, c.Revision); err != nil {
+		return err
+	}
 	for _, ref := range p.NextSteps(c, evidence) {
 		step, ok := p.Find(ref)
 		if !ok {
@@ -1424,9 +1443,8 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 	return nil
 }
 
-// discardCompletedStepTask is used only for a ready approval: a task marked
-// complete when a stricter rule replaced it may need to be queued again if
-// that rule is undone. Completed evidence itself is never removed.
+// discardCompletedStepTask removes a retired task so a newly ready step can
+// be queued again. Completed evidence itself is never removed.
 func discardCompletedStepTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef) error {
 	args := []any{c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)}
 	where := `change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`

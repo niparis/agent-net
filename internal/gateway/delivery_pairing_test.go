@@ -299,3 +299,72 @@ func TestStepPairAfterMergePairsOnlyNextStep(t *testing.T) {
 		t.Fatalf("verify task rows=%d want=0 err=%v", verifyTasks, err)
 	}
 }
+
+func TestStepTaskReleaseRequiresPassingTest(t *testing.T) {
+	r := newDeliveryRig(t)
+	callerNeedsSharedPipeline(t, r)
+	c := mergedChange(t, r, "feature/release-readiness", false)
+	assertTasks := func(want int) {
+		t.Helper()
+		var got int
+		if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step='release' AND completed=0`, c.ID).Scan(&got); err != nil || got != want {
+			t.Fatalf("active release tasks=%d want=%d err=%v", got, want, err)
+		}
+	}
+	// The ready test and its same-owner release partner are queued together.
+	assertTasks(1)
+	record := func(result string, at int64) {
+		t.Helper()
+		tx, err := r.s.db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		e := pairEvidence(c, ciTestRef, commitMerged, map[string]string{protocol.FieldSuite: protocol.SuiteFull}, at, r.worker)
+		e.Result = result
+		if err := insertEvidence(tx, e); err != nil {
+			t.Fatal(err)
+		}
+		p, err := r.s.deliveryPipeline(c.Project)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.s.queueSteps(tx, c, p, r.s.now().Unix()); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recentStepMessage(t, r, c.ID, releaseRef)
+	if _, err := r.s.db.Exec(`UPDATE messages SET state='dispatched' WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE change_id=? AND step='release')`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	record(protocol.StepResultFail, 4)
+	var activeMessages int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE state IN ('stored','dispatched') AND id IN (SELECT message_id FROM delivery_step_messages WHERE change_id=? AND step='release')`, c.ID).Scan(&activeMessages); err != nil || activeMessages != 0 {
+		t.Fatalf("active stale release messages=%d err=%v", activeMessages, err)
+	}
+
+	assertTasks(0)
+	r.g.dispatchStepTasks(context.Background())
+	r.g.flushStepTasks(r.caller)
+	for _, body := range callerMessages(t, r, c.ID) {
+		if strings.Contains(body, "step: release") || strings.Contains(body, "test, release") {
+			t.Fatalf("unready release reminder: %s", body)
+		}
+	}
+	record(protocol.StepResultPass, 5)
+	assertTasks(1)
+	r.g.dispatchStepTasks(context.Background())
+	r.g.flushStepTasks(r.caller)
+	found := false
+	for _, body := range callerMessages(t, r, c.ID) {
+		if strings.Contains(body, "step: release") || strings.Contains(body, "steps: release") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("ready release was not dispatched")
+	}
+}
