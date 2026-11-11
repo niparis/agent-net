@@ -90,21 +90,21 @@ func (g *Gateway) workerNotStarted(ctx context.Context, nc *nodeConn, p protocol
 func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	switch typ {
 	case "worker.judge.pick":
-		p, err := decode[protocol.DifficultyJudgePick](raw)
+		p, err := decodeOperator[protocol.DifficultyJudgePick](raw)
 		if err != nil {
-			return nil, reject("bad judge pick request")
+			return nil, err
 		}
 		return g.pickDifficultyJudge(nc.id, p)
 	case "worker.profile.list", "worker.profile.add", "worker.profile.remove":
-		p, err := decode[protocol.WorkerProfileFrame](raw)
+		p, err := decodeOperator[protocol.WorkerProfileFrame](raw)
 		if err != nil {
-			return nil, reject("bad worker profile request")
+			return nil, err
 		}
 		return g.workerProfileAction(nc.id, typ, p)
 	case "worker.start":
-		p, err := decode[protocol.WorkerStartFrame](raw)
+		p, err := decodeOperator[protocol.WorkerStartFrame](raw)
 		if err != nil {
-			return nil, reject("bad worker.start")
+			return nil, err
 		}
 		if err := protocol.ValidFixes(p.Fixes, p.FixesSeverity); err != nil {
 			return nil, reject("%v", err)
@@ -147,9 +147,9 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		return nil, g.workerStartReport(ctx, nc, p)
 
 	case "worker.stop":
-		p, err := decode[protocol.WorkerStopFrame](raw)
+		p, err := decodeOperator[protocol.WorkerStopFrame](raw)
 		if err != nil {
-			return nil, reject("bad worker.stop")
+			return nil, err
 		}
 		return g.workerStop(ctx, nc, p)
 

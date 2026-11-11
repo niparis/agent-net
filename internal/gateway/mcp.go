@@ -60,19 +60,22 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 	st := g.store
 	switch typ {
 	case "mcp.add":
-		p, err := decode[protocol.MCPAdd](raw)
+		p, err := decodeOperator[protocol.MCPAdd](raw)
 		if err != nil {
-			return nil, reject("bad mcp.add")
+			return nil, err
 		}
 		return g.mcpAdd(ctx, nc, p)
 
 	case "mcp.import":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			protocol.MCPImportRequest
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		if (p.Candidate == "") == (p.PlanID == "") {
@@ -84,12 +87,15 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		return g.applyMCPImport(ctx, p.PlanID, p.Actor, p.Owner)
 
 	case "mcp.native_remove":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			protocol.MCPNativeRemoveRequest
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		n := 0
@@ -132,9 +138,9 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		return map[string]any{"servers": srvs}, nil
 
 	case "mcp.remove":
-		p, err := decode[protocol.MCPName](raw)
+		p, err := decodeOperator[protocol.MCPName](raw)
 		if err != nil {
-			return nil, reject("bad mcp.remove")
+			return nil, err
 		}
 		if p.AddedBySession != "" && !validatingProposal(ctx) {
 			return nil, reject("shared MCP server changes are owner-only")
@@ -153,9 +159,9 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		return map[string]any{"removed": p.Name}, nil
 
 	case "mcp.enable":
-		p, err := decode[protocol.MCPSetEnabled](raw)
+		p, err := decodeOperator[protocol.MCPSetEnabled](raw)
 		if err != nil {
-			return nil, reject("bad mcp.enable")
+			return nil, err
 		}
 		srv, ok, err := st.MCPServer(p.Name)
 		if err != nil {
@@ -171,9 +177,9 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		return map[string]any{"name": p.Name, "enabled": p.Enabled}, nil
 
 	case "mcp.test":
-		p, err := decode[protocol.MCPName](raw)
+		p, err := decodeOperator[protocol.MCPName](raw)
 		if err != nil {
-			return nil, reject("bad mcp.test")
+			return nil, err
 		}
 		return g.mcpTest(ctx, p.Name)
 

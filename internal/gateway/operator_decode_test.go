@@ -25,6 +25,24 @@ func TestOperatorDecodeRefusesUnknownArgument(t *testing.T) {
 	}
 }
 
+// TestProtocolFrameKeepsUnknownArgument tests the other side of the split: a
+// frame the daemon and the gateway exchange every day still ignores a field it
+// does not know. During a rolling upgrade the machines run different versions
+// for minutes, and a newer daemon may add one.
+func TestDecodeProtocolFrameKeepsUnknownArgument(t *testing.T) {
+	r := newDeliveryRig(t)
+	raw, err := json.Marshal(map[string]any{
+		"type": "msg.send", "id": "3", "sender_session_id": r.caller, "recipient_session_id": r.sonnet,
+		"body": "hello", "preview": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.g.handle(context.Background(), &nodeConn{id: r.a}, "msg.send", raw); err != nil {
+		t.Fatalf("a protocol frame with an extra field was refused: %v", err)
+	}
+}
+
 // TestOperatorDecodeAcceptsKnownArguments keeps a correct call working, and
 // accepts the frame fields and daemon attribution that sit next to the method
 // arguments.

@@ -996,16 +996,27 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 	return nil
 }
 
+func decode[T any](raw []byte) (T, error) {
+	var v T
+	err := json.Unmarshal(raw, &v)
+	return v, err
+}
+
 // frameEnvelopeFields sit next to the method arguments in every flat frame.
 // The daemon also adds by as attribution; a method whose request struct has a
 // by argument keeps it.
 var frameEnvelopeFields = []string{"id", "type", "via", "by"}
 
-// decode reads one frame's method arguments into T. Unknown arguments are
-// refused and named: a caller must never believe a field such as dry_run
-// exists when the method would drop it. The frame's own fields and daemon
-// attribution are skipped, so only the method's arguments are checked.
-func decode[T any](raw []byte) (T, error) {
+// decodeOperator reads one operator method's arguments into T. Unknown
+// arguments are refused and named: a caller must never believe a field such
+// as dry_run exists when the method would drop it. The frame's own fields and
+// daemon attribution are skipped, so only the method's arguments are checked.
+//
+// Only the owner and CTO actions that reach the gateway through the operator
+// path use it. Every other frame keeps the tolerant decode: a newer daemon
+// may add a field while an older gateway still runs (a rolling upgrade), and
+// the extra map round trip must not run on the hot path.
+func decodeOperator[T any](raw []byte) (T, error) {
 	var v T
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -1257,7 +1268,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return map[string]string{"node_id": nc.id, "hostname": st.hostname(nc.id)}, nil
 
 	case "project.display.get", "project.display.set":
-		p, err := decode[protocol.ProjectDisplayRequest](raw)
+		p, err := decodeOperator[protocol.ProjectDisplayRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -1273,8 +1284,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return g.machineAction(ctx, nc, typ, raw)
 
 	case "node.rename.validate":
-		p, err := decode[protocol.NodeRename](raw)
-		if err != nil || p.NodeID == "" {
+		p, err := decodeOperator[protocol.NodeRename](raw)
+		if err != nil {
+			return nil, err
+		}
+		if p.NodeID == "" {
 			return nil, reject("bad node.rename")
 		}
 		_, _, err = st.checkNodeDisplayName(p.NodeID, p.Name)
@@ -1283,7 +1297,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, nil
 	case "node.rename":
-		p, err := decode[protocol.NodeRename](raw)
+		p, err := decodeOperator[protocol.NodeRename](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -1314,10 +1328,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return nil, st.SetInventory(nc.id, p)
 
 	case "gateway.backup":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			Path string `json:"path"`
 		}](raw)
-		if err != nil || p.Path == "" {
+		if err != nil {
+			return nil, err
+		}
+		if p.Path == "" {
 			return nil, reject("backup needs a path")
 		}
 		if err = g.Backup(p.Path); err != nil {
@@ -1326,47 +1343,62 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return map[string]bool{"ok": true}, nil
 
 	case "tools.toggle":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			protocol.ToolToggleRequest
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.toggleTool(ctx, p.ToolToggleRequest, p.Actor)
 	case "tools.new_projects":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			protocol.ToolNewProjectsRequest
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.setToolNewProjects(ctx, p.ToolNewProjectsRequest, p.Actor)
 	case "query.tools_projects":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return st.ToolProjectStates()
 	case "tools.plan":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			protocol.ToolPlanRequest
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.planTool(ctx, p.ToolPlanRequest, p.Actor)
 	case "tools.skill_details":
-		p, err := decode[protocol.ToolSkillScan](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		p, err := decodeOperator[protocol.ToolSkillScan](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.toolSkillDetails(ctx, p)
@@ -1381,22 +1413,28 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.ToolTargets(nc.id)
 
 	case "tools.apply":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			protocol.ToolPlanID
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.applyTool(ctx, p.ID, p.Actor)
 	case "tools.undo":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			protocol.ToolUndoRequest
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		if p.Item == "" {
@@ -1413,11 +1451,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return keys, nil
 	case "tools.accept":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			protocol.ToolAccept
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		if p.Key == "" || len(p.Key) > 512 {
@@ -1425,11 +1466,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.SetToolAccepted(p.Key, p.Accepted)
 	case "tools.history":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			protocol.ToolHistoryRequest
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		if p.Item == "" {
@@ -1441,8 +1485,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"events": events}, nil
 	case "tools.summary":
-		p, err := decode[protocol.SkillSummaryRequest](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		p, err := decodeOperator[protocol.SkillSummaryRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		summary, err := st.phraseCleaner.Summarize(ctx, p.AHash, p.BHash, p.A, p.B)
@@ -1451,67 +1498,91 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]string{"summary": summary}, nil
 	case "tools.read_file":
-		p, err := decode[protocol.SkillTextRequest](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		p, err := decodeOperator[protocol.SkillTextRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.readSkillText(ctx, p)
 	case "tools.keep_copy":
-		p, err := decode[protocol.ToolCopyChoice](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		p, err := decodeOperator[protocol.ToolCopyChoice](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.keepSkillCopy(ctx, p)
 	case "tools.save_changed":
-		p, err := decode[protocol.ToolSaveChanged](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		p, err := decodeOperator[protocol.ToolSaveChanged](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.saveChangedCopy(ctx, p)
 	case "tools.update_plan":
-		p, err := decode[protocol.ToolUpdateRequest](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		p, err := decodeOperator[protocol.ToolUpdateRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.skillUpdatePlan(p.Item)
 	case "tools.update_copies":
-		p, err := decode[protocol.ToolUpdateRequest](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		p, err := decodeOperator[protocol.ToolUpdateRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.updateSkillCopies(ctx, p)
 	case "tools.import_folder":
-		p, err := decode[protocol.ToolFolderImport](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		p, err := decodeOperator[protocol.ToolFolderImport](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.importSkillFolder(ctx, p)
 	case "tools.import":
-		p, err := decode[protocol.ToolImport](raw)
+		p, err := decodeOperator[protocol.ToolImport](raw)
 		if err != nil {
-			return nil, reject("invalid skill import")
+			return nil, err
 		}
 		return g.importSkill(ctx, p)
 
 	case "tools.versions":
-		p, err := decode[protocol.ToolVersionRequest](raw)
-		if err != nil || p.Item == "" {
+		p, err := decodeOperator[protocol.ToolVersionRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if p.Item == "" {
 			return nil, reject("versions needs an item")
 		}
 		return g.skillVersions(p.Item)
 	case "tools.export":
-		p, err := decode[protocol.ToolVersionRequest](raw)
-		if err != nil || p.Item == "" || p.Version == "" {
+		p, err := decodeOperator[protocol.ToolVersionRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if p.Item == "" || p.Version == "" {
 			return nil, reject("export needs an item and version")
 		}
 		return g.exportSkill(p.Item, p.Version)
 
 	case "query.inventory":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			Offset int `json:"offset"`
 		}](raw)
 		if err != nil {
-			return nil, reject("bad query.inventory")
+			return nil, err
 		}
 		reports, err := st.Inventories()
 		if err != nil {
@@ -1525,15 +1596,21 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return inventoryPage(reports, p.Offset)
 
 	case "query.mcp_import_candidates":
-		p, err := decode[protocol.MCPImportCandidatesRequest](raw)
-		if err != nil || p.Offset < 0 {
+		p, err := decodeOperator[protocol.MCPImportCandidatesRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if p.Offset < 0 {
 			return nil, reject("bad query.mcp_import_candidates")
 		}
 		return g.mcpImportCandidates(p)
 
 	case "query.tools_items":
-		p, err := decode[protocol.ToolsFilter](raw)
-		if err != nil || p.Offset < 0 {
+		p, err := decodeOperator[protocol.ToolsFilter](raw)
+		if err != nil {
+			return nil, err
+		}
+		if p.Offset < 0 {
 			return nil, reject("bad query.tools_items")
 		}
 		items, err := st.ToolsItems(p, func(id string) bool { return g.conn(id) != nil })
@@ -1542,10 +1619,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return toolsPage(items, p.Offset, g.opts.ToolsPageSize)
 	case "query.tools_item":
-		p, err := decode[struct {
+		p, err := decodeOperator[struct {
 			Item string `json:"item"`
 		}](raw)
-		if err != nil || p.Item == "" {
+		if err != nil {
+			return nil, err
+		}
+		if p.Item == "" {
 			return nil, reject("bad query.tools_item")
 		}
 		detail, err := st.ToolsItem(p.Item, func(id string) bool { return g.conn(id) != nil })
@@ -1770,9 +1850,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.sessionAgentOptions(nc.id, p.Owner)
 
 	case "session.agent.set":
-		p, err := decode[protocol.SessionAgentSetRequest](raw)
+		p, err := decodeOperator[protocol.SessionAgentSetRequest](raw)
 		if err != nil {
-			return nil, reject("bad session.agent.set")
+			return nil, err
 		}
 		if err = st.setSessionAgent(nc.id, p); err != nil {
 			return nil, err
@@ -1843,8 +1923,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.ArchiveSessions(p.SessionsArchiveRequest)
 
 	case "session.rename":
-		p, err := decode[protocol.SessionRenameRequest](raw)
-		if err != nil || p.SessionID == "" {
+		p, err := decodeOperator[protocol.SessionRenameRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if p.SessionID == "" {
 			return nil, reject("bad session.rename")
 		}
 		res, err := st.RenameSession(p.SessionID, p.Name)
@@ -1859,8 +1942,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return res, nil
 
 	case "session.trust":
-		p, err := decode[protocol.SessionTrust](raw)
-		if err != nil || p.SessionID == "" {
+		p, err := decodeOperator[protocol.SessionTrust](raw)
+		if err != nil {
+			return nil, err
+		}
+		if p.SessionID == "" {
 			return nil, reject("bad session.trust")
 		}
 		ok, err := st.setPeerTrust(p.SessionID, p.On, graphActor(raw))
@@ -1989,9 +2075,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		messages, err := st.HeldRequests()
 		return map[string]any{"messages": messages}, err
 	case "held.answer":
-		p, err := decode[protocol.HeldAnswer](raw)
+		p, err := decodeOperator[protocol.HeldAnswer](raw)
 		if err != nil {
-			return nil, reject("bad held.answer")
+			return nil, err
 		}
 		m, err := st.answerHeld(p.MessageID, p.Action, graphActor(raw))
 		if err != nil {
@@ -2018,7 +2104,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "cto.capabilities":
 		return map[string]bool{"attribution": true, "network_session": true, "graph_authority": true}, nil
 	case "team.write", "team.history":
-		q, err := decode[protocol.TeamWrite](raw)
+		q, err := decodeOperator[protocol.TeamWrite](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2030,7 +2116,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, st.WriteTeam(q, graphActor(raw))
 	case "graph.get":
-		p, err := decode[protocol.QueryGraph](raw)
+		p, err := decodeOperator[protocol.QueryGraph](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2075,9 +2161,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return res, nil
 	case "judgment.find":
-		q, err := decode[protocol.JudgmentsFindRequest](raw)
+		q, err := decodeOperator[protocol.JudgmentsFindRequest](raw)
 		if err != nil {
-			return nil, reject("bad judgment.find")
+			return nil, err
 		}
 		items, err := st.FindJudgments(q)
 		if err != nil {
@@ -2098,15 +2184,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return res, nil
 	case "judgment.add":
-		q, err := decode[protocol.JudgmentAddRequest](raw)
+		q, err := decodeOperator[protocol.JudgmentAddRequest](raw)
 		if err != nil {
-			return nil, reject("bad judgment.add")
+			return nil, err
 		}
 		return st.AddJudgment(q)
 	case "playbook.set":
-		p, err := decode[protocol.PlaybookSetRequest](raw)
+		p, err := decodeOperator[protocol.PlaybookSetRequest](raw)
 		if err != nil {
-			return nil, reject("bad playbook.set")
+			return nil, err
 		}
 		model, harness, note, err := protocol.CleanPlaybook(p.Model, p.Harness, p.Note)
 		if err != nil {
@@ -2126,9 +2212,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return protocol.PlaybookGetResult{Note: &protocol.PlaybookNote{SubjectKind: kind, Subject: model, Harness: harness,
 			Note: note, Source: protocol.PlaybookSourceOwner, Pinned: pinned}}, nil
 	case "playbook.get":
-		p, err := decode[protocol.PlaybookGetRequest](raw)
+		p, err := decodeOperator[protocol.PlaybookGetRequest](raw)
 		if err != nil {
-			return nil, reject("bad playbook.get")
+			return nil, err
 		}
 		note, _, err := st.PlaybookFor(p.Model, p.Harness)
 		if err != nil {
@@ -2136,13 +2222,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return protocol.PlaybookGetResult{Note: note}, nil
 	case "charter.validate":
-		p, err := decode[protocol.CharterSetRequest](raw)
+		p, err := decodeOperator[protocol.CharterSetRequest](raw)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]bool{"ok": true}, st.SetLevelCharter(p, "owner", true)
 	case "charter.set":
-		p, err := decode[protocol.CharterSetRequest](raw)
+		p, err := decodeOperator[protocol.CharterSetRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2161,7 +2247,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return result, nil
 	case "charter.history":
-		p, err := decode[protocol.GraphHistoryRequest](raw)
+		p, err := decodeOperator[protocol.GraphHistoryRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2173,7 +2259,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.CharterHistory(p.Node, p.Limit)
 	case "lead.set":
-		p, err := decode[protocol.LeadSetRequest](raw)
+		p, err := decodeOperator[protocol.LeadSetRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2186,7 +2272,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.requireGraphRefs(); err != nil {
 			return nil, err
 		}
-		p, err := decode[protocol.GraphLifecycleRequest](raw)
+		p, err := decodeOperator[protocol.GraphLifecycleRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2196,7 +2282,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		err = st.GraphLifecycle(typ, p, graphActor(raw), false)
 		return map[string]any{"ok": err == nil, "retained": "Charters, settings, offline sessions and run and delivery history remain attached; an archived repo keeps its owner. Active edges and assignments must first be removed."}, err
 	case "node.add", "node.remove":
-		p, err := decode[protocol.GraphNodeRequest](raw)
+		p, err := decodeOperator[protocol.GraphNodeRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2210,9 +2296,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, err
 	case "edge.validate":
-		p, err := decode[protocol.Edge](raw)
+		p, err := decodeOperator[protocol.Edge](raw)
 		if err != nil {
-			return nil, reject("bad edge request")
+			return nil, err
 		}
 		if p.FromRef != nil || p.ToRef != nil {
 			if err := st.requireGraphRefs(); err != nil {
@@ -2232,7 +2318,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, nil
 	case "edge.set", "edge.remove":
-		p, err := decode[protocol.Edge](raw)
+		p, err := decodeOperator[protocol.Edge](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2298,7 +2384,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		needs, err := st.MergerNeedsDefault(p.Project)
 		return map[string]bool{"needs_default": needs}, err
 	case "merger.set":
-		p, err := decode[protocol.MergerSetRequest](raw)
+		p, err := decodeOperator[protocol.MergerSetRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2317,7 +2403,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": err == nil}, err
 	case "delivery.owner.set":
-		p, err := decode[protocol.DeliveryOwnerSetRequest](raw)
+		p, err := decodeOperator[protocol.DeliveryOwnerSetRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2327,7 +2413,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, err
 	case "edge.history":
-		p, err := decode[protocol.GraphHistoryRequest](raw)
+		p, err := decodeOperator[protocol.GraphHistoryRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2336,7 +2422,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.EdgeHistory(p.Node, p.Limit)
 	case "graph.undo":
-		p, err := decode[protocol.GraphUndoFrame](raw)
+		p, err := decodeOperator[protocol.GraphUndoFrame](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2357,7 +2443,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.ResolveSettingsTarget(p)
 	case "settings.write":
-		p, err := decode[protocol.SettingsWrite](raw)
+		p, err := decodeOperator[protocol.SettingsWrite](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2373,7 +2459,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return result, err
 	case "settings.validate":
-		p, err := decode[protocol.SettingsWrite](raw)
+		p, err := decodeOperator[protocol.SettingsWrite](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2382,7 +2468,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.ValidateSettings(p.Changes, p.By)
 	case "settings.undo":
-		p, err := decode[protocol.SettingsUndo](raw)
+		p, err := decodeOperator[protocol.SettingsUndo](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2411,7 +2497,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.SettingsHistory(p.Key, p.Revision, p.Owner)
 	case "node.settings.get":
-		p, err := decode[protocol.NodeSettingsGetRequest](raw)
+		p, err := decodeOperator[protocol.NodeSettingsGetRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2420,7 +2506,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.NodeSettings(p.Node)
 	case "node.settings.set":
-		p, err := decode[protocol.NodeSettingsSetRequest](raw)
+		p, err := decodeOperator[protocol.NodeSettingsSetRequest](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2450,9 +2536,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "onboarding.get":
 		return st.Onboarding()
 	case "onboarding.set":
-		p, err := decode[protocol.OnboardingUpdate](raw)
+		p, err := decodeOperator[protocol.OnboardingUpdate](raw)
 		if err != nil {
-			return nil, reject("bad onboarding.set")
+			return nil, err
 		}
 		return st.UpdateOnboarding(p, false)
 	case "onboarding.restart":
@@ -2460,7 +2546,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "hidden.get":
 		return st.HiddenItems()
 	case "hidden.set":
-		p, err := decode[protocol.HiddenItems](raw)
+		p, err := decodeOperator[protocol.HiddenItems](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2473,7 +2559,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return items, nil
 
 	case "session.policy":
-		p, err := decode[protocol.SessionPolicy](raw)
+		p, err := decodeOperator[protocol.SessionPolicy](raw)
 		if err != nil {
 			return nil, err
 		}
@@ -2970,31 +3056,31 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.dailyBriefStatus(st.now())
 
 	case "chief.set":
-		p, err := decode[protocol.ChiefSetRequest](raw)
+		p, err := decodeOperator[protocol.ChiefSetRequest](raw)
 		if err != nil {
-			return nil, reject("bad chief.set")
+			return nil, err
 		}
 		return map[string]bool{"ok": true}, st.SetChief(p, graphActor(raw))
 
 	case "ask.history":
-		p, err := decode[protocol.AskHistoryRequest](raw)
+		p, err := decodeOperator[protocol.AskHistoryRequest](raw)
 		if err != nil {
-			return nil, reject("bad ask.history")
+			return nil, err
 		}
 		sorts, err := st.AskSortHistory(p.Ask)
 		return protocol.AskHistoryResult{Sorts: sorts}, err
 
 	case "ask.undo":
-		p, err := decode[protocol.AskUndoRequest](raw)
+		p, err := decodeOperator[protocol.AskUndoRequest](raw)
 		if err != nil {
-			return nil, reject("bad ask.undo")
+			return nil, err
 		}
 		return st.UndoAsk(p.Ask, graphActor(raw))
 
 	case "ask.mark":
-		p, err := decode[protocol.AskMarkRequest](raw)
+		p, err := decodeOperator[protocol.AskMarkRequest](raw)
 		if err != nil {
-			return nil, reject("bad ask.mark")
+			return nil, err
 		}
 		return map[string]bool{"ok": true}, st.MarkAsk(p, graphActor(raw))
 
