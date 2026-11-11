@@ -991,12 +991,14 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		} else if p.Detail != "" {
 			d.Logf("auto compaction %s %s: %s", ls.info.Harness, ls.info.NativeID, p.Detail)
 		}
+		d.mu.Lock()
 		if p.ContextTokens > 0 {
 			ls.contextTokens = p.ContextTokens
 		}
 		if p.ContextLimit > 0 {
 			ls.contextLimit = p.ContextLimit
 		}
+		d.mu.Unlock()
 		return nil, nil
 
 	case "turn_error", "turn_ok":
