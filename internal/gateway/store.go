@@ -1281,7 +1281,55 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, messagesPairGIDMigration}
+
+// messagesPairGIDMigration stores the thread key and its page index. pair_gid
+// is the unordered pair of parties, or the conversation id when one side is
+// agent-net. worker_lifecycle marks a worker start or difficulty notice that
+// the list skips, and blocked marks a message that reports a blocked action.
+// They are generated columns so every insert gets them, including the repair
+// and test inserts that name their columns. The covering
+// index lets the stored Messages list group and page one thread per pair from
+// the index alone, without reading the body of every message or sorting the
+// whole table. The columns are added in the migration loop only when absent,
+// so a replay is safe.
+const messagesPairGIDMigration = `
+-- Message pair grouping columns (the Messages tab's threads)
+ALTER TABLE messages ADD COLUMN pair_gid TEXT GENERATED ALWAYS AS (
+ CASE
+  WHEN sender = 'agent-net' OR recipient = 'agent-net' THEN conversation_id
+  WHEN sender < recipient THEN 'pair:' || sender || char(0) || recipient
+  ELSE 'pair:' || recipient || char(0) || sender END) STORED;
+ALTER TABLE messages ADD COLUMN worker_lifecycle INTEGER GENERATED ALWAYS AS (
+ CASE WHEN body LIKE '[agent-net worker notice]%' AND (
+  instr(body, char(10)||'status: started'||char(10)) > 0 OR
+  instr(body, char(10)||'status: difficulty'||char(10)) > 0 OR
+  instr(body, char(10)||'status: queued'||char(10)) > 0 OR
+  instr(body, char(10)||'status: not started'||char(10)) > 0) THEN 1 ELSE 0 END) STORED;
+ALTER TABLE messages ADD COLUMN blocked INTEGER GENERATED ALWAYS AS (
+ CASE WHEN body LIKE '%blocked on%' OR body LIKE '%blocked by%' OR body LIKE '%blocked:%'
+  OR body LIKE '%is blocked%' OR body LIKE '%I am blocked%' THEN 1 ELSE 0 END) STORED;
+CREATE INDEX IF NOT EXISTS messages_pair_gid ON messages
+ (pair_gid, created_at, conversation_id, worker_lifecycle, blocked, sender, owner_approved, id);
+-- The worker lookup runs on every conversations page. These partial indexes
+-- hold only the worker notices and task briefs, so a history without workers
+-- reads almost nothing.
+CREATE INDEX IF NOT EXISTS messages_worker_notices ON messages (sender)
+ WHERE body LIKE '[agent-net worker notice]%';
+CREATE INDEX IF NOT EXISTS messages_worker_briefs ON messages (recipient)
+ WHERE body LIKE '[agent-net worker brief]%';
+`
+
+// messagesThreadIndexes keeps the thread and worker indexes in place when the
+// migration replays on a database that already has the generated columns.
+const messagesThreadIndexes = `
+CREATE INDEX IF NOT EXISTS messages_pair_gid ON messages
+ (pair_gid, created_at, conversation_id, worker_lifecycle, blocked, sender, owner_approved, id);
+CREATE INDEX IF NOT EXISTS messages_worker_notices ON messages (sender)
+ WHERE body LIKE '[agent-net worker notice]%';
+CREATE INDEX IF NOT EXISTS messages_worker_briefs ON messages (recipient)
+ WHERE body LIKE '[agent-net worker brief]%';
+`
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.
@@ -1942,6 +1990,23 @@ func (s *Store) migrate() error {
 					result, err = tx.Exec(migrations[i])
 				} else {
 					result, err = tx.Exec(`SELECT 1`)
+				}
+			}
+		} else if strings.Contains(migrations[i], "Message pair grouping columns") {
+			var has int
+			// Generated columns are left out of pragma_table_info.
+			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_xinfo('messages')
+				WHERE name IN ('pair_gid','worker_lifecycle','blocked')`).Scan(&has)
+			if err == nil {
+				switch {
+				case has == 0:
+					result, err = tx.Exec(migrations[i])
+				case has == 3:
+					// A rewound database keeps the columns; only the indexes
+					// may still need creating.
+					result, err = tx.Exec(messagesThreadIndexes)
+				default:
+					err = fmt.Errorf("messages has only %d of the 3 thread columns", has)
 				}
 			}
 		} else {
@@ -4589,6 +4654,8 @@ func (s *Store) MessagesPage(nodeID string, q protocol.QueryMessages) ([]protoco
 // of its own: a start that is queued or has begun, or a start that never
 // became a worker, or a difficulty assessment. The list skips these messages
 // as rows and as activity, but the worker's conversation still shows them.
+// The generated worker_lifecycle column is the stored, indexed form of this
+// check; changing one means a new migration for the other.
 func workerNoticeLifecycleSQL(alias string) string {
 	return `(` + alias + `.body LIKE '[agent-net worker notice]%' AND (
 	instr(` + alias + `.body, char(10)||'status: started'||char(10)) > 0 OR
@@ -4607,7 +4674,7 @@ func (s *Store) workerSessionIDs() ([]string, error) {
 			AND instr(m.body, char(10)||'status: not started'||char(10)) = 0
 			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.sender)
 		UNION
-		SELECT m.recipient FROM messages m WHERE COALESCE(m.worker_task, m.body LIKE '[agent-net worker brief]%')
+		SELECT m.recipient FROM messages m WHERE m.body LIKE '[agent-net worker brief]%'
 			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.recipient)`)
 	if err != nil {
 		return nil, err
@@ -4638,13 +4705,105 @@ func workerValuesCTE(ids []string) (string, []any) {
 	return `WITH wid(id) AS MATERIALIZED (VALUES ` + strings.TrimSuffix(strings.Repeat("(?),", len(ids)), ",") + `)`, args
 }
 
-// ConversationsPage lists every stored conversation on the gateway, newest
-// activity first, with a keyset cursor. The caller is the owner, so it is not
-// limited to one machine's sessions (docs/security.md). Normal conversations
-// keep the indexed conversation_id query. Workers are grouped under
-// "worker:<session>" and read through the sender and recipient indexes, so a
-// worker with a started, a task and a hand-back notice has one row, not three.
-// The gateway does the grouping and filtering, never the screen.
+// conversationsNormalWhere is the stored-row filter for one alias. It drops
+// empty conversation ids and worker lifecycle notices, and, when the gateway
+// has workers, every conversation a worker took part in (those group under the
+// worker row instead).
+func conversationsNormalWhere(alias string, withWorkers bool) string {
+	where := alias + `.conversation_id <> '' AND ` + alias + `.worker_lifecycle = 0`
+	if withWorkers {
+		where += ` AND ` + alias + `.conversation_id NOT IN (
+			SELECT m2.conversation_id FROM messages m2
+			WHERE m2.sender IN (SELECT id FROM wid) OR m2.recipient IN (SELECT id FROM wid))`
+	}
+	return where
+}
+
+// conversationsPageSQL builds one keyset page of stored threads. It groups by
+// the generated pair_gid column, so messages_pair_gid supplies both the thread
+// order and the latest row of each page thread. The count and the flags read
+// only the page's thread ids, never the whole table, and no window function
+// walks every message. prefix is "WITH " or the worker CTE followed by ", ";
+// normalWhere filters alias m and systemWhere filters alias b, and both may use
+// the wid CTE.
+func conversationsPageSQL(prefix, normalWhere, systemWhere, cursor string, limit int) (string, []any) {
+	// COUNT(*) OVER () counts the groups before the cursor and the limit, so
+	// the same scan that orders the page also supplies its total.
+	sqlText := prefix + `page_groups AS MATERIALIZED (
+		SELECT m.pair_gid AS gid, MAX(m.created_at) AS last_at, COUNT(*) OVER () AS total
+		FROM messages m WHERE ` + normalWhere + `
+		GROUP BY m.pair_gid
+	),
+	page AS (
+		SELECT gid, last_at, total FROM page_groups`
+	args := []any{}
+	if at, id, ok := parseConversationCursor(cursor); ok {
+		sqlText += ` WHERE last_at < ? OR (last_at = ? AND gid < ?)`
+		args = append(args, at, at, id)
+	}
+	sqlText += ` ORDER BY last_at DESC, gid DESC LIMIT ?),
+	latest AS MATERIALIZED (
+		SELECT p.gid,
+			(SELECT m.rowid FROM messages m INDEXED BY messages_pair_gid
+				WHERE m.pair_gid = p.gid AND m.created_at = p.last_at AND ` + normalWhere + `
+				ORDER BY m.rowid DESC LIMIT 1) AS rid
+		FROM page p
+	),
+	totals AS MATERIALIZED (
+		SELECT m.pair_gid AS gid, COUNT(*) AS n, MAX(m.blocked) AS blocked,
+			MAX(CASE WHEN m.sender = 'agent-net' THEN 1 ELSE 0 END) AS system,
+			MAX(CASE WHEN m.owner_approved <> 0
+				OR m.sender IN (SELECT id FROM sessions WHERE harness = 'owner')
+				THEN 1 ELSE 0 END) AS direct_owner
+		FROM page p
+		CROSS JOIN messages m ON m.pair_gid = p.gid
+		WHERE ` + normalWhere + `
+		GROUP BY m.pair_gid
+	),
+	cited AS MATERIALIZED (
+		SELECT DISTINCT b.pair_gid AS gid
+		FROM charter_signals cs2 JOIN messages b ON b.id = cs2.message_id
+		WHERE cs2.prompt <> '' AND b.pair_gid IN (SELECT gid FROM page) AND ` + systemWhere + `
+	),
+	sys AS MATERIALIZED (
+		SELECT p.gid,
+			(SELECT b.body FROM messages b INDEXED BY messages_pair_gid
+				WHERE b.pair_gid = p.gid AND b.sender = 'agent-net'
+				AND ` + systemWhere + ` ORDER BY b.created_at DESC, b.rowid DESC LIMIT 1) AS body,
+			(SELECT b.recipient FROM messages b INDEXED BY messages_pair_gid
+				WHERE b.pair_gid = p.gid AND b.sender = 'agent-net'
+				AND ` + systemWhere + ` ORDER BY b.created_at DESC, b.rowid DESC LIMIT 1) AS recipient
+		FROM page p
+		WHERE p.gid IN (SELECT gid FROM totals WHERE system <> 0)
+	)
+	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type, t.n,
+		COALESCE(NULLIF(fp.name,''), fs.name, ''),
+		COALESCE(NULLIF(rp.name,''), rs.name, ''),
+		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id),
+		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''),
+		CASE WHEN t.direct_owner <> 0 OR c.gid IS NOT NULL THEN 1 ELSE 0 END, t.blocked, t.system,
+		COALESCE(s.body, ''), COALESCE(s.recipient, ''), p.total
+	FROM page p
+	JOIN latest l ON l.gid = p.gid
+	JOIN messages m ON m.rowid = l.rid
+	JOIN totals t ON t.gid = p.gid
+	LEFT JOIN cited c ON c.gid = p.gid
+	LEFT JOIN sys s ON s.gid = p.gid
+	LEFT JOIN sessions fs ON fs.id = m.sender
+	LEFT JOIN profiles fp ON fp.session_id = m.sender
+	LEFT JOIN sessions rs ON rs.id = m.recipient
+	LEFT JOIN profiles rp ON rp.session_id = m.recipient
+	ORDER BY p.last_at DESC, p.gid DESC`
+	return sqlText, append(args, limit)
+}
+
+// ConversationsPage lists every stored thread on the gateway, newest activity
+// first, with a keyset cursor. The caller is the owner, so it is not limited to
+// one machine's sessions (docs/security.md). Peer threads group by pair_gid
+// through messages_pair_gid. Workers are grouped under "worker:<session>" and
+// read through the sender and recipient indexes, so a worker with a started, a
+// task and a hand-back notice has one row, not three. The gateway does the
+// grouping and filtering, never the screen.
 func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.ConversationPage, error) {
 	page := protocol.ConversationPage{Conversations: []protocol.ConversationView{}}
 	if q.Limit <= 0 || q.Limit > 100 {
@@ -4656,77 +4815,31 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 	}
 	wid, widArgs := workerValuesCTE(workers)
 
-	normalWhere := `m.conversation_id <> '' AND NOT ` + workerNoticeLifecycleSQL("m")
-	if len(workers) > 0 {
-		normalWhere += ` AND m.conversation_id NOT IN (
-			SELECT m2.conversation_id FROM messages m2
-			WHERE m2.sender IN (SELECT id FROM wid) OR m2.recipient IN (SELECT id FROM wid))`
-	}
-	// A peer thread is one row per unordered pair of sessions, like the live
-	// feed. agent-net's own notices stay one row per conversation, so the
-	// System sub-tab can still group them by kind.
-	pairGID := `CASE
-		WHEN m.sender = 'agent-net' OR m.recipient = 'agent-net' THEN m.conversation_id
-		WHEN m.sender < m.recipient THEN 'pair:' || m.sender || char(0) || m.recipient
-		ELSE 'pair:' || m.recipient || char(0) || m.sender END`
+	normalWhere := conversationsNormalWhere("m", len(workers) > 0)
 	normalPrefix := "WITH "
 	if wid != "" {
 		normalPrefix = wid + ", "
 	}
-	normalCTE := normalPrefix + `normal AS MATERIALIZED (
-		SELECT m.rowid AS rid, m.id, m.conversation_id, m.created_at, m.sender, m.recipient,
-			m.type, m.body, m.state, m.sender_cto, m.owner_approved,
-			` + pairGID + ` AS gid
-		FROM messages m WHERE ` + normalWhere + `
-	)`
-	countSQL := normalCTE + ` SELECT COUNT(*) FROM (SELECT gid FROM normal GROUP BY gid)`
-	if err := s.db.QueryRow(countSQL, widArgs...).Scan(&page.Total); err != nil {
-		return page, err
-	}
-
-	sqlText := normalCTE + `, page AS (
-		SELECT gid, MAX(created_at) AS last_at FROM normal GROUP BY gid`
-	args := append([]any{}, widArgs...)
-	if at, id, ok := parseConversationCursor(q.Cursor); ok {
-		sqlText += ` HAVING last_at < ? OR (last_at = ? AND gid < ?)`
-		args = append(args, at, at, id)
-	}
-	sqlText += ` ORDER BY last_at DESC, gid DESC LIMIT ?),
-	latest AS MATERIALIZED (
-		SELECT gid, rid, id, sender, recipient, body, state, sender_cto, type, created_at,
-			COUNT(*) OVER (PARTITION BY gid) AS n,
-			ROW_NUMBER() OVER (PARTITION BY gid ORDER BY created_at DESC, rid DESC) AS rn
-		FROM normal
-	)
-	SELECT p.gid, p.last_at, l.id, l.sender, l.recipient, l.body, l.state, l.sender_cto, l.type, l.n,
-		COALESCE(NULLIF(fp.name,''), fs.name, ''),
-		COALESCE(NULLIF(rp.name,''), rs.name, ''),
-		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = l.id),
-		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''),
-		EXISTS(SELECT 1 FROM normal b LEFT JOIN sessions bs ON bs.id = b.sender
-			WHERE b.gid = p.gid AND (b.owner_approved <> 0 OR bs.harness = 'owner'
-				OR EXISTS(SELECT 1 FROM charter_signals cs2 WHERE cs2.message_id = b.id AND cs2.prompt <> ''))),
-		EXISTS(SELECT 1 FROM normal b WHERE b.gid = p.gid AND (
-			b.body LIKE '%blocked on%' OR b.body LIKE '%blocked by%' OR b.body LIKE '%blocked:%'
-			OR b.body LIKE '%is blocked%' OR b.body LIKE '%I am blocked%')),
-		EXISTS(SELECT 1 FROM normal b WHERE b.gid = p.gid AND b.sender = 'agent-net'),
-		COALESCE((SELECT b.body FROM normal b WHERE b.gid = p.gid AND b.sender = 'agent-net'
-			ORDER BY b.created_at DESC, b.rid DESC LIMIT 1), ''),
-		COALESCE((SELECT b.recipient FROM normal b WHERE b.gid = p.gid AND b.sender = 'agent-net'
-			ORDER BY b.created_at DESC, b.rid DESC LIMIT 1), '')
-	FROM page p
-	JOIN latest l ON l.gid = p.gid AND l.rn = 1
-	LEFT JOIN sessions fs ON fs.id = l.sender
-	LEFT JOIN profiles fp ON fp.session_id = l.sender
-	LEFT JOIN sessions rs ON rs.id = l.recipient
-	LEFT JOIN profiles rp ON rp.session_id = l.recipient
-	ORDER BY p.last_at DESC, p.gid DESC`
-	args = append(args, q.Limit+1)
-	normal, err := s.scanConversations(sqlText, args...)
+	sqlText, pageArgs := conversationsPageSQL(normalPrefix, normalWhere,
+		conversationsNormalWhere("b", len(workers) > 0), q.Cursor, q.Limit+1)
+	args := append(append([]any{}, widArgs...), pageArgs...)
+	normal, total, err := s.scanConversations(sqlText, args...)
 	if err != nil {
 		return page, err
 	}
-	if err := s.fillHourlySpread(normal, normalCTE, widArgs); err != nil {
+	page.Total = total
+	if total == 0 && q.Cursor != "" {
+		// The normal page ended before the worker rows did, so no row carried
+		// the thread count. Ask for it once, only on that boundary.
+		countSQL := `SELECT COUNT(DISTINCT m.pair_gid) FROM messages m WHERE ` + normalWhere
+		if wid != "" {
+			countSQL = wid + ` ` + countSQL
+		}
+		if err := s.db.QueryRow(countSQL, widArgs...).Scan(&page.Total); err != nil {
+			return page, err
+		}
+	}
+	if err := s.fillHourlySpread(normal, normalPrefix, normalWhere, widArgs); err != nil {
 		return page, err
 	}
 	rows := normal
@@ -4771,7 +4884,7 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 			EXISTS(SELECT 1 FROM wm b WHERE b.gid = p.gid AND (
 				b.body LIKE '%blocked on%' OR b.body LIKE '%blocked by%' OR b.body LIKE '%blocked:%'
 				OR b.body LIKE '%is blocked%' OR b.body LIKE '%I am blocked%')),
-			0, '', ''
+			0, '', '', 0
 		FROM page p
 		LEFT JOIN sessions fs ON fs.id = p.sender
 		LEFT JOIN profiles fp ON fp.session_id = p.sender
@@ -4779,7 +4892,7 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 		LEFT JOIN profiles rp ON rp.session_id = p.recipient
 		ORDER BY p.last_at DESC, p.gid DESC`
 		wargs = append(wargs, q.Limit+1)
-		workerRows, err := s.scanConversations(workerSQL, wargs...)
+		workerRows, _, err := s.scanConversations(workerSQL, wargs...)
 		if err != nil {
 			return page, err
 		}
@@ -4808,14 +4921,17 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 	return page, nil
 }
 
-// scanConversations reads the rows both conversation queries select.
-func (s *Store) scanConversations(sqlText string, args ...any) ([]protocol.ConversationView, error) {
+// scanConversations reads the rows both conversation queries select. The last
+// column is the total number of grouped rows, which the page query counts in
+// the same pass as the groups; the worker query passes 0.
+func (s *Store) scanConversations(sqlText string, args ...any) ([]protocol.ConversationView, int, error) {
 	rows, err := s.db.QueryContext(context.Background(), sqlText, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []protocol.ConversationView{}
+	var total int
 	for rows.Next() {
 		var v protocol.ConversationView
 		var at int64
@@ -4823,8 +4939,9 @@ func (s *Store) scanConversations(sqlText string, args ...any) ([]protocol.Conve
 		var typ string
 		if err := rows.Scan(&v.ID, &at, &v.LastMessageID, &v.From, &v.To, &v.LastLine, &v.State,
 			&senderCTO, &typ, &v.Count, &v.FromName, &v.ToName, &ownerInstruction,
-			&v.FromHarness, &v.ToHarness, &ownerNamed, &blocked, &system, &v.SystemLine, &v.SystemTo); err != nil {
-			return nil, err
+			&v.FromHarness, &v.ToHarness, &ownerNamed, &blocked, &system, &v.SystemLine, &v.SystemTo,
+			&total); err != nil {
+			return nil, 0, err
 		}
 		v.Type = typ
 		v.At = time.Unix(0, at).UTC()
@@ -4837,14 +4954,14 @@ func (s *Store) scanConversations(sqlText string, args ...any) ([]protocol.Conve
 		v.System = system != 0
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 // fillHourlySpread sets PeakHour and MedianHour on each row. The Messages tab
 // marks a burst when a thread's busiest hour holds at least 20 messages and is
 // more than three times its median hourly count. One read for the whole page,
 // never one per row.
-func (s *Store) fillHourlySpread(rows []protocol.ConversationView, normalCTE string, baseArgs []any) error {
+func (s *Store) fillHourlySpread(rows []protocol.ConversationView, prefix, normalWhere string, baseArgs []any) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -4860,17 +4977,20 @@ func (s *Store) fillHourlySpread(rows []protocol.ConversationView, normalCTE str
 	if len(ids) == 0 {
 		return nil
 	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	values := strings.TrimSuffix(strings.Repeat("(?),", len(ids)), ",")
 	args := append([]any{}, baseArgs...)
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	// created_at is nanoseconds; an hour is 3.6e12 of them. The normal CTE
-	// already carries the pair or conversation id, so the spread is over the
-	// same group the row shows.
-	query := normalCTE + ` SELECT gid, created_at / 3600000000000 AS hour, COUNT(*)
-		FROM normal WHERE gid IN (` + placeholders + `)
-		GROUP BY gid, hour`
+	// created_at is nanoseconds; an hour is 3.6e12 of them. pair_gid carries
+	// the pair or conversation id, so the spread is over the same group the
+	// row shows. The join seeks each page thread on the index; the IN-list form
+	// made SQLite sort every match in a temporary tree.
+	query := prefix + `ids(gid) AS (VALUES ` + values + `)
+		SELECT m.pair_gid, m.created_at / 3600000000000 AS hour, COUNT(*)
+		FROM ids JOIN messages m INDEXED BY messages_pair_gid ON m.pair_gid = ids.gid
+		WHERE ` + normalWhere + `
+		GROUP BY m.pair_gid, hour`
 	got, err := s.db.Query(query, args...)
 	if err != nil {
 		return err
@@ -4983,13 +5103,10 @@ func (s *Store) ConversationMessages(conversationID string, limit int) ([]protoc
 		sqlText = msgSelect + `
 			WHERE m.sender = ? OR m.recipient = ? ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`
 		args = []any{session, session, limit}
-	} else if pair, ok := strings.CutPrefix(conversationID, "pair:"); ok {
-		if a, b, ok := strings.Cut(pair, "\x00"); ok && a != "" && b != "" {
-			sqlText = msgSelect + `
-				WHERE ((m.sender = ? AND m.recipient = ?) OR (m.sender = ? AND m.recipient = ?))
-				ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`
-			args = []any{a, b, b, a, limit}
-		}
+	} else if strings.HasPrefix(conversationID, "pair:") {
+		sqlText = msgSelect + `
+			WHERE m.pair_gid = ? ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`
+		args = []any{conversationID, limit}
 	}
 	rows, err := s.db.QueryContext(context.Background(), sqlText, args...)
 	if err != nil {

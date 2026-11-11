@@ -266,6 +266,104 @@ func TestConversationsPageGroupsAPeerPairAndItsBurst(t *testing.T) {
 	}
 }
 
+func TestConversationsPageUsesThePairGIDIndex(t *testing.T) {
+	s, _ := newTestStore(t)
+	sqlText, args := conversationsPageSQL("WITH ", conversationsNormalWhere("m", false),
+		conversationsNormalWhere("b", false), "", 51)
+	rows, err := s.db.Query(`EXPLAIN QUERY PLAN `+sqlText, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan strings.Builder
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan.WriteString(detail)
+		plan.WriteString("\n")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	got := plan.String()
+	// The page walks the pair index in thread order, and each page thread's
+	// latest row is a direct seek on the same index. A full scan of messages
+	// or a scan of an unindexed CTE fails here.
+	if !strings.Contains(got, "SCAN m USING INDEX messages_pair_gid") {
+		t.Fatalf("the page does not walk messages_pair_gid:\n%s", got)
+	}
+	if !strings.Contains(got, "SEARCH m USING INDEX messages_pair_gid (pair_gid=? AND created_at=?)") {
+		t.Fatalf("the latest row is not a pair index seek:\n%s", got)
+	}
+	t.Logf("page query plan:\n%s", got)
+}
+
+func TestConversationsPageTwelveThousandMessagesStaysQuick(t *testing.T) {
+	s, c := newTestStore(t)
+	node, hub, _ := conversationFixture(t, s)
+	// 179 peers make 179 threads, so the first page of 50 holds about a
+	// quarter of the history, like the owner's gateway.
+	const peers, total = 179, 12449
+	peer := make([]string, peers)
+	for i := range peer {
+		id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: fmt.Sprintf("p%d", i), Name: fmt.Sprintf("peer %d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		peer[i] = id
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n := 0; n < total; n++ {
+		p := n % peers
+		id := fmt.Sprintf("m_%05d", n)
+		// About two messages per conversation id, as the real history has.
+		conv := fmt.Sprintf("c_%03d_%03d", p, n/(peers*2))
+		from, to := hub, peer[p]
+		if n%2 == 1 {
+			from, to = to, from
+		}
+		at := c.t.Add(-time.Duration(n) * time.Minute)
+		if _, err := tx.Exec(`INSERT INTO messages
+			(id, conversation_id, parent_id, sender, recipient, type, body, hop, idem_key, created_at, expires_at, state)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+			id, conv, "", from, to, protocol.TypeRequest, "line for "+id, 0, "k-"+id,
+			at.UnixNano(), at.Add(protocol.DefaultTTL).UnixNano(), protocol.StateStored); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	page, err := s.ConversationsPage(protocol.QueryConversations{Limit: 50})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warmStart := time.Now()
+	if _, err := s.ConversationsPage(protocol.QueryConversations{Limit: 50}); err != nil {
+		t.Fatal(err)
+	}
+	warm := time.Since(warmStart)
+	t.Logf("first page over %d messages in %d threads took %s (next page %s)", total, peers, elapsed, warm)
+	if page.Total != peers || len(page.Conversations) != 50 {
+		t.Fatalf("page total=%d rows=%d", page.Total, len(page.Conversations))
+	}
+	// The page must not fall back to scanning or sorting the whole table: the
+	// race detector and a busy CI runner get the same generous bound as the
+	// other history tests.
+	if elapsed > 2*time.Second {
+		t.Errorf("first page is too slow: %s", elapsed)
+	}
+}
+
 func TestConversationsPageHidesLifecycleOnlyWorkerConversations(t *testing.T) {
 	s, c := newTestStore(t)
 	node, alice, _ := conversationFixture(t, s)
