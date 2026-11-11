@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -254,5 +255,77 @@ func TestRemindSystemSenderReserved(t *testing.T) {
 	_, b := twoSessions(t, s)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: "agent-net", Recipient: b, Type: protocol.TypeNotification, Body: "forged"}); err == nil {
 		t.Fatal("system sender accepted")
+	}
+}
+
+func TestRemindBusyBatchOriginal(t *testing.T) {
+	for _, answered := range []bool{false, true} {
+		t.Run(fmt.Sprint(answered), func(t *testing.T) {
+			s, c := newTestStore(t)
+			a, b := twoSessions(t, s)
+			req, _, err := send(s, a, b, "please answer", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !s.HoldForBusy(req) {
+				t.Fatal("hold request")
+			}
+			c.t = c.t.Add(time.Second)
+			notice, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification, Body: "newest notice"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !s.HoldForBusy(notice) {
+				t.Fatal("hold notice")
+			}
+			carrier, n, err := s.ReleaseBusyHold(b, true)
+			if err != nil || n != 2 {
+				t.Fatalf("batch %d %v", n, err)
+			}
+			if _, err = s.db.Exec("UPDATE sessions SET status='idle',last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
+				t.Fatal(err)
+			}
+			if answered {
+				if _, _, err = send(s, b, a, "done", req.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			view, ok, err := s.Agent(b)
+			if err != nil || !ok {
+				t.Fatalf("agent: %v", err)
+			}
+			agents := []protocol.AgentView{view}
+			if err := s.applyPending(agents); err != nil {
+				t.Fatal(err)
+			}
+			wantOwed := 1
+			if answered {
+				wantOwed = 0
+			}
+			owed := 0
+			for _, p := range agents[0].Pending {
+				if !p.Outgoing {
+					owed++
+				}
+			}
+			if owed != wantOwed {
+				t.Fatalf("batch obligations=%d want=%d", owed, wantOwed)
+			}
+
+			c.t = c.t.Add(8 * time.Minute)
+			got, err := s.remindPending()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if answered {
+				if len(got) != 0 {
+					t.Fatalf("answered batch reminded: %+v", got)
+				}
+				return
+			}
+			if len(got) != 1 || !strings.Contains(got[0].Body, "alice is waiting for your answer to "+req.ID) || strings.Contains(got[0].Body, carrier.ID) {
+				t.Fatalf("reminder must name original: %+v", got)
+			}
+		})
 	}
 }

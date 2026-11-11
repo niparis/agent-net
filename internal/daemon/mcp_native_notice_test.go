@@ -51,7 +51,7 @@ func TestMCPNativeRemoveTellsRunningSessions(t *testing.T) {
 		return len(noticesFor(fa, "probe")) == 2
 	})
 	for _, m := range noticesFor(fa, "probe") {
-		if !strings.Contains(m.Body, "restart this session") || m.FromHarness != protocol.OwnerHarness {
+		if !strings.Contains(m.Body, "restart this session") || m.From != "agent-net" || m.FromHarness != "agent-net" || m.Type != protocol.TypeNotification {
 			t.Fatalf("notice: %+v", m)
 		}
 	}

@@ -4113,3 +4113,33 @@ mechanisms and defaults remain unchanged unless the chief applies a pause.
 Applying a pause also expires matching nudges already queued at the gateway.
 Delivery rechecks pauses before sending or waking a session, so a saved queue
 snapshot cannot replay an expired nudge after resume.
+
+An `agent_announce` answers the idle check for the session's current work. The
+check records its time and a fingerprint of the task, waiting field, owed
+request count and running worker count. It asks again only after that state
+changes. The idle interval and daily cap stay the same.
+
+Reply reminders follow the original requests in a busy-hold batch. The batch
+carrier never gets a reply reminder. Replying to an original message ID closes
+that request, and an unanswered request keeps its own sender and ID.
+
+Messages agent-net creates by itself use the `agent-net` sender. This includes
+native MCP removal restart notices, asynchronous session start failures and
+background phrasing worker tasks. Restart notices are notifications. Real
+owner sends, replies, worker briefs and Desk answers keep the owner sender.
+The reserved sender remains unavailable through public message sends.
+
+When a step reminder, stuck-step notice or reply reminder is due, agent-net
+sends one message containing the other eligible nudges for that session due
+within the next 60 minutes. Future nudges alone do not trigger a message.
+The step batch keeps the existing multi-change format. Each original notice
+keeps its audit record and is marked sent when included, so it is not sent
+again at its former due time. Verify reminders also record the covered due
+slot to preserve the 30m, 2h, 8h, 24h, then daily backoff. Cadences, settings
+and defaults do not change. Steps waiting on an event remain ineligible.
+
+A pause on one part of a queued nudge envelope removes only that part. Other
+eligible parts still arrive. Paused nudges cannot trigger the one-hour
+lookahead. Session-start failure notifications keep the complete actionable
+error text, including MCP server details, and use the agent-net sender even
+when the requesting session is the CTO.

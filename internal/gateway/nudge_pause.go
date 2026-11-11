@@ -122,7 +122,7 @@ var nudgePrefixes = map[string]string{
 // their reminder header identifies them, including batched reminders.
 func nudgeMessageMatch(kind string) (string, []any) {
 	if kind == "step_reminder" {
-		return `m.body LIKE '[agent-net step task reminder%'`, nil
+		return `m.idem_key GLOB 'step_*' AND m.body LIKE '[agent-net step task reminder%'`, nil
 	}
 	return `m.idem_key LIKE ?`, []any{nudgePrefixes[kind] + "%"}
 }
@@ -359,7 +359,7 @@ func (s *Store) nudgeLookup(q askDB, kind string) func(string) (bool, error) {
 // traffic. First step notices, step results, worker notices and chief wakes
 // have no matching key/header.
 func queuedNudgeKind(m protocol.Message) string {
-	if m.From != "agent-net" {
+	if m.From != "agent-net" || strings.HasPrefix(m.IdempotencyKey, "nudge:") {
 		return ""
 	}
 	if strings.HasPrefix(m.Body, "[agent-net step task reminder") {

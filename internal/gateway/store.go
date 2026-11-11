@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`}
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.
@@ -1703,6 +1703,37 @@ func (s *Store) migrate() error {
 				}
 				if has == 0 {
 					if _, err := tx.Exec(`ALTER TABLE worker_starts ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "nudge covered due column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivery_step_tasks') WHERE name='last_notice_due_at'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE delivery_step_tasks ADD COLUMN last_notice_due_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "idle announce fingerprint columns") {
+			for _, col := range []struct{ name, spec string }{
+				{"check_announced_at", "INTEGER NOT NULL DEFAULT 0"},
+				{"check_fingerprint", "TEXT NOT NULL DEFAULT ''"},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('session_checks') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE session_checks ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
 						tx.Rollback()
 						return err
 					}
@@ -3361,6 +3392,9 @@ func (s *Store) AnnounceNotify(nodeID string, p protocol.ProfileAnnounce) (proto
 	if err := s.answerCheck(p.SessionID, p.Task); err != nil {
 		return protocol.Profile{}, nil, err
 	}
+	if err := s.recordCheckAnnounce(p.SessionID, p.Waiting); err != nil {
+		return protocol.Profile{}, nil, err
+	}
 	if err := s.loopAnnounce(p.SessionID, p.Task); err != nil {
 		return protocol.Profile{}, nil, err
 	}
@@ -3944,7 +3978,13 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		if !ok {
 			return msg, false, reject("unknown parent message %q", p.ParentID)
 		}
-		if parent.To != p.Sender || parent.From != p.Recipient {
+		automaticTaskNotice := false
+		if p.WorkerNotice && parent.From == agentNetSender && protocol.IsWorkerTask(parent) && parent.To == p.Sender {
+			if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND json_valid(worker) AND json_extract(worker,'$.owner')=?)`, p.Sender, p.Recipient).Scan(&automaticTaskNotice); err != nil {
+				return msg, false, err
+			}
+		}
+		if parent.To != p.Sender || (parent.From != p.Recipient && !automaticTaskNotice) {
 			return msg, false, reject("a reply must come from the parent's recipient and go to its sender")
 		}
 		if p.Ack && parent.Type != protocol.TypeRequest {
@@ -4033,7 +4073,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			return msg, false, reject("an idle worker notice must be sent to the worker's owner")
 		}
 		var latestTask string
-		err := tx.QueryRow(`SELECT id FROM messages WHERE sender=? AND recipient=? AND type=? ORDER BY rowid DESC LIMIT 1`,
+		err := tx.QueryRow(`SELECT id FROM messages WHERE (sender=? OR (sender='agent-net' AND worker_task=1)) AND recipient=? AND type=? ORDER BY rowid DESC LIMIT 1`,
 			workerOwner, p.Sender, protocol.TypeRequest).Scan(&latestTask)
 		if err != nil {
 			if err == sql.ErrNoRows {
@@ -4369,6 +4409,13 @@ func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Messa
 	rows.Close()
 	filtered := out[:0]
 	for _, m := range out {
+		m, current, err := s.currentNudge(m)
+		if err != nil {
+			return nil, err
+		}
+		if !current {
+			continue
+		}
 		if needsReminderCheck(m) {
 			eligible, err := s.reminderEligible(m.ParentID)
 			if err != nil {

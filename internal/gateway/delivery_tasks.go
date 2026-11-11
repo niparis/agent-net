@@ -28,6 +28,8 @@ type nodeTaskTarget struct {
 	createdAt          int64
 	isReminder         bool
 	wasNotified        bool // Includes expired notices; a pause must not reclassify these as first notices.
+	pullForward        bool
+	noticeDue          int64
 }
 
 func taskDisplayOwner(owner string) string {
@@ -464,6 +466,10 @@ func verifyReminderDue(ready, last time.Time) time.Time {
 // stepMessageRecorded reports whether the step already has a live task notice
 // for this session that is newer than the reminder cutoff.
 func (s *Store) stepMessageRecorded(t nodeTaskTarget, cutoff int64) (bool, error) {
+	return s.stepMessageRecordedAt(t, cutoff, s.now())
+}
+
+func (s *Store) stepMessageRecordedAt(t nodeTaskTarget, cutoff int64, at time.Time) (bool, error) {
 	active, _, err := s.stepWaiting(t)
 	if err != nil || active {
 		return active, err
@@ -472,12 +478,12 @@ func (s *Store) stepMessageRecorded(t nodeTaskTarget, cutoff int64) (bool, error
 	if t.ref.AfterMerge && t.ref.Step == protocol.StepVerify && cutoff != 0 {
 		var ready, last int64
 		var claimed string
-		err := s.db.QueryRow(`SELECT created_at,last_notice_at,claimed_by FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=1`, t.id, t.revision, t.ref.Step, t.ref.For).Scan(&ready, &last, &claimed)
+		err := s.db.QueryRow(`SELECT created_at,MAX(last_notice_at,last_notice_due_at),claimed_by FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=1`, t.id, t.revision, t.ref.Step, t.ref.For).Scan(&ready, &last, &claimed)
 		if err != nil {
 			return false, err
 		}
 		if claimed == "" && last != 0 {
-			return s.now().Before(verifyReminderDue(time.Unix(ready, 0), time.Unix(0, last))), nil
+			return at.Before(verifyReminderDue(time.Unix(ready, 0), time.Unix(0, last))), nil
 		}
 	}
 	// Waiting retires undelivered notices. Keep their durable send time so
@@ -516,6 +522,10 @@ func (g *Gateway) flushStepTasks(session string) {
 // always). A timer that fired just before a new task re-armed the batch is
 // stale: sending then would cut the burst in two.
 func (g *Gateway) flushStepTasksArmed(session string, gen uint64) {
+	g.flushStepTasksArmedContext(context.Background(), session, gen)
+}
+
+func (g *Gateway) flushStepTasksArmedContext(ctx context.Context, session string, gen uint64) {
 	g.stepBatchesMu.Lock()
 	if g.stepBatches == nil {
 		g.stepBatchesMu.Unlock()
@@ -542,7 +552,7 @@ func (g *Gateway) flushStepTasksArmed(session string, gen uint64) {
 	if g.onStepBatchFlushed != nil {
 		g.onStepBatchFlushed(session)
 	}
-	g.sendStepTaskBatch(context.Background(), toSend)
+	g.sendStepTaskBatch(ctx, toSend)
 }
 
 func (g *Gateway) flushStepTaskBatches() {
@@ -580,7 +590,7 @@ func (g *Gateway) sendStepTaskBatch(ctx context.Context, targets []nodeTaskTarge
 			continue
 		}
 		if m.ID != "" {
-			g.dispatch(ctx, m)
+			g.dispatchNudge(ctx, m)
 			g.logStepSent(chunk)
 		}
 	}
@@ -605,6 +615,15 @@ func (g *Gateway) logStepSent(targets []nodeTaskTarget) {
 // Tasks are coalesced into batches per recipient when the session has recent activity
 // or reported the step before it.
 func (g *Gateway) dispatchStepTasks(ctx context.Context) {
+	g.nudgeMu.Lock()
+	defer g.nudgeMu.Unlock()
+	batch := &nudgeCollection{}
+	if seed, ok := ctx.Value(nudgeSeedKey{}).(protocol.Message); ok {
+		batch.messages = append(batch.messages, seed)
+	}
+	ctx = context.WithValue(ctx, nudgeCollectionKey{}, batch)
+	defer g.flushNudges(ctx, batch)
+
 	g.stepDispatchRuns.Add(1)
 	defer g.slowLoop("dispatchStepTasks", time.Now())
 	snap, err := g.store.SettingsSnapshot()
@@ -614,8 +633,11 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	}
 	reminderCutoff := g.store.stepReminderCutoff()
 
-	g.checkStuckStepTasks(ctx, stuckLimit)
 	g.wakeOfflineStepOwners(ctx, reminderCutoff)
+	candidateCutoff := reminderCutoff
+	if candidateCutoff != 0 {
+		candidateCutoff += int64(nudgeLookahead)
+	}
 	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,t.owner_node,s.id,t.urgent,t.created_at,
 		EXISTS(SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
 			WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
@@ -629,9 +651,9 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		 (t.owner_node=? AND EXISTS(SELECT 1 FROM delivery_step_delegates a WHERE a.change_id=t.change_id AND a.revision=t.revision
 		 AND a.step=t.step AND a.for_step=t.for_step AND a.after_merge=t.after_merge AND (a.node=`+sessionRepoSQL+` OR a.node='agent:'||COALESCE(s.agent_id,'')))))
 		AND s.harness NOT IN ('owner','bot','cto')
-		AND ((t.step='verify' AND t.after_merge=1 AND ?<>0) OR NOT EXISTS (SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
-		WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
-		AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired' AND (?=0 OR m.created_at>=?)))`, callerTaskOwner, delegateTaskOwner, reminderCutoff, reminderCutoff, reminderCutoff)
+        AND ((t.step='verify' AND t.after_merge=1 AND ?<>0) OR NOT EXISTS (SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
+        WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
+        AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired' AND (?=0 OR m.created_at>=?)))`, callerTaskOwner, delegateTaskOwner, candidateCutoff, candidateCutoff, candidateCutoff)
 	if err != nil {
 		g.logLine("error", "where", "step task targets", "err", err)
 		return
@@ -658,7 +680,26 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		g.logLine("error", "where", "step task targets", "err", err)
 		return
 	}
-	groups := map[string][]nodeTaskTarget{}
+
+	dueSessions, err := g.store.dueNudgeSessions(stuckLimit)
+	if err != nil {
+		g.logLine("error", "where", "nudge due sessions", "err", err)
+		return
+	}
+	forceFlush := map[string]bool{}
+	for session := range dueSessions {
+		forceFlush[session] = true
+	}
+	for _, m := range batch.messages {
+		forceFlush[m.To] = true
+		dueSessions[m.To] = true
+	}
+	candidates := map[string][]nodeTaskTarget{}
+	horizon := g.store.now().Add(nudgeLookahead)
+	futureCutoff := reminderCutoff
+	if futureCutoff != 0 {
+		futureCutoff += int64(nudgeLookahead)
+	}
 	pausedReminder := g.store.nudgeLookup(g.store.db, "step_reminder")
 	for _, target := range targets {
 		if target.isReminder || target.wasNotified {
@@ -669,14 +710,47 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 				continue
 			}
 		}
-		if target.ref.AfterMerge && target.ref.Step == protocol.StepVerify {
-			recorded, err := g.store.stepMessageRecorded(target, reminderCutoff)
-			if err != nil || recorded {
+		recorded, err := g.store.stepMessageRecorded(target, reminderCutoff)
+		if err != nil {
+			continue
+		}
+		if recorded {
+			future, err := g.store.stepMessageRecordedAt(target, futureCutoff, horizon)
+			if err != nil || future {
 				continue
 			}
+			target.pullForward = true
+		} else {
+			dueSessions[target.session] = true
+			if target.isReminder {
+				forceFlush[target.session] = true
+			}
 		}
-
-		groups[target.session] = append(groups[target.session], target)
+		if target.ref.AfterMerge && target.ref.Step == protocol.StepVerify {
+			var last int64
+			if err := g.store.db.QueryRow(`SELECT MAX(last_notice_at,last_notice_due_at) FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=1`, target.id, target.revision, target.ref.Step, target.ref.For).Scan(&last); err != nil {
+				continue
+			}
+			if last != 0 {
+				target.noticeDue = verifyReminderDue(time.Unix(target.createdAt, 0), time.Unix(0, last)).UnixNano()
+			}
+		}
+		candidates[target.session] = append(candidates[target.session], target)
+	}
+	groups := map[string][]nodeTaskTarget{}
+	for session, ts := range candidates {
+		if dueSessions[session] {
+			groups[session] = ts
+		}
+	}
+	ctx = context.WithValue(ctx, nudgeDueKey{}, dueSessions)
+	g.checkStuckStepTasks(ctx, stuckLimit)
+	reminders, err := g.store.remindPendingBefore(horizon, dueSessions)
+	if err != nil {
+		g.logLine("error", "where", "pending reminders", "err", err)
+	}
+	for _, m := range reminders {
+		g.dispatchNudge(ctx, m)
 	}
 
 	recentBySession := map[string]bool{}
@@ -774,7 +848,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		}
 		_ = g.store.clearTaskUrgent(t)
 		if m.ID != "" {
-			g.dispatch(ctx, m)
+			g.dispatchNudge(ctx, m)
 			g.logStepSent([]nodeTaskTarget{t})
 		}
 	}
@@ -785,12 +859,21 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 			continue
 		}
 		if m.ID != "" {
-			g.dispatch(ctx, m)
+			g.dispatchNudge(ctx, m)
 			g.logStepSent([]nodeTaskTarget{t})
 		}
 	}
 	for _, batch := range immediateBatches {
 		g.sendStepTaskBatch(ctx, batch)
+	}
+	for session := range forceFlush {
+		// A burst that already has a notice out stays in its quiet window.
+		// Flushing it here would cut the same burst into two step-task
+		// messages just because an unrelated nudge is due.
+		if recentBySession[session] {
+			continue
+		}
+		g.flushStepTasksArmedContext(ctx, session, 0)
 	}
 }
 
@@ -802,6 +885,10 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 	}
 	now := g.store.now()
 	cutoff := now.Add(-stuckLimit).Unix()
+	dueSessions, _ := ctx.Value(nudgeDueKey{}).(map[string]bool)
+	if dueSessions != nil {
+		cutoff += int64(nudgeLookahead / time.Second)
+	}
 	rows, err := g.store.db.Query(`SELECT t.change_id, t.revision, t.step, t.for_step, t.after_merge, t.owner_node, t.created_at, c.caller, c.title
 		FROM delivery_step_tasks t
 		JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
@@ -850,6 +937,9 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 			g.logLine("error", "where", "stuck step pause", "err", err)
 			continue
 		} else if paused {
+			continue
+		}
+		if dueSessions != nil && !dueSessions[it.caller] {
 			continue
 		}
 		idemKey := fmt.Sprintf("delivery:stuck:%s:%d:%s:%s:%d", it.changeID, it.revision, it.ref.Step, it.ref.For, boolInt(it.ref.AfterMerge))
@@ -906,7 +996,7 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 			continue
 		}
 		g.store.logMessage(m)
-		g.dispatch(ctx, m)
+		g.dispatchNudge(ctx, m)
 	}
 }
 
@@ -1136,6 +1226,16 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		if err != nil {
 			return protocol.Message{}, err
 		}
+		if recorded && t.pullForward {
+			futureCutoff := cutoff
+			if futureCutoff != 0 {
+				futureCutoff += int64(nudgeLookahead)
+			}
+			recorded, err = s.stepMessageRecordedAt(t, futureCutoff, s.now().Add(nudgeLookahead))
+			if err != nil {
+				return protocol.Message{}, err
+			}
+		}
 		if recorded {
 			continue
 		}
@@ -1345,7 +1445,7 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 				return protocol.Message{}, err
 			} else if n > 0 {
 				added = true
-				if _, err := tx.Exec(`UPDATE delivery_step_tasks SET last_notice_at=? WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`, s.now().UnixNano(), t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge)); err != nil {
+				if _, err := tx.Exec(`UPDATE delivery_step_tasks SET last_notice_at=?,last_notice_due_at=MAX(last_notice_due_at,?) WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`, s.now().UnixNano(), t.noticeDue, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge)); err != nil {
 					return protocol.Message{}, err
 				}
 			}

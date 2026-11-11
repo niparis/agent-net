@@ -43,6 +43,7 @@ func waitingDispatch(r *deliveryRig) {
 func TestWaitingVerifyReminder(t *testing.T) {
 	r, c, ref := waitingRig(t)
 	reportWaiting(t, r, c, ref, "")
+	waitAt := waitingRecordedAt(t, r, c)
 	n := len(taskBodies(t, r))
 	r.clk.t = r.clk.t.Add(23 * time.Hour)
 	waitingDispatch(r)
@@ -51,6 +52,7 @@ func TestWaitingVerifyReminder(t *testing.T) {
 	}
 	r.clk.t = r.clk.t.Add(time.Hour)
 	waitingDispatch(r)
+	assertWaitingExpiredWithoutRefresh(t, r, c, ref, waitAt)
 	bodies := taskBodies(t, r)
 	if len(bodies) != n+1 || !strings.Contains(bodies[len(bodies)-1], "was waiting on: owner opens console") {
 		t.Fatalf("resumed notices: %v", bodies)
@@ -77,6 +79,7 @@ func TestWaitingUntil(t *testing.T) {
 	r, c, ref := waitingRig(t)
 	start := r.clk.t
 	reportWaiting(t, r, c, ref, start.Add(48*time.Hour).Format(time.RFC3339))
+	waitAt := waitingRecordedAt(t, r, c)
 	n := len(taskBodies(t, r))
 	for _, h := range []int{47, 48, 71} {
 		r.clk.t = start.Add(time.Duration(h) * time.Hour)
@@ -87,6 +90,7 @@ func TestWaitingUntil(t *testing.T) {
 	}
 	r.clk.t = start.Add(72 * time.Hour)
 	waitingDispatch(r)
+	assertWaitingExpiredWithoutRefresh(t, r, c, ref, waitAt)
 	if len(taskBodies(t, r)) != n+1 {
 		t.Fatal("wait did not expire")
 	}
@@ -173,5 +177,25 @@ func TestWaitingOrdinaryReminderCadence(t *testing.T) {
 	waitingDispatch(r)
 	if len(taskBodies(t, r)) != n+1 {
 		t.Fatal("ordinary reminder did not resume on cadence")
+	}
+}
+
+func waitingRecordedAt(t *testing.T, r *deliveryRig, c protocol.Change) int64 {
+	t.Helper()
+	var at int64
+	if err := r.s.db.QueryRow(`SELECT waiting_at FROM delivery_step_tasks WHERE change_id=? AND step='verify' AND after_merge=1`, c.ID).Scan(&at); err != nil {
+		t.Fatal(err)
+	}
+	return at
+}
+
+func assertWaitingExpiredWithoutRefresh(t *testing.T, r *deliveryRig, c protocol.Change, ref protocol.StepRef, at int64) {
+	t.Helper()
+	if got := waitingRecordedAt(t, r, c); got != at {
+		t.Fatalf("batch refreshed waiting_at: %d want %d", got, at)
+	}
+	active, _, err := r.s.stepWaiting(nodeTaskTarget{id: c.ID, revision: c.Revision, ref: ref, session: r.caller})
+	if err != nil || active {
+		t.Fatalf("wait remains active after expiry: active=%v err=%v", active, err)
 	}
 }

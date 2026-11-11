@@ -344,8 +344,7 @@ func (g *Gateway) undoMCPNativeRemove(ctx context.Context, id, actor string) (pr
 // noticeNativeRemoved tells the running sessions that could still hold the
 // removed native entry to restart. They are the online sessions of the entry's
 // harness on its machine: all of them for a user-level entry, the sessions of
-// its project for a project-level one. Each gets one message from the owner
-// session. A failure to tell a session never fails the removal.
+// its project for a project-level one. Each gets one notification from agent-net. A failure to tell a session never fails the removal.
 func (g *Gateway) noticeNativeRemoved(ctx context.Context, c protocol.MCPImportCandidate, server, planID, owner string) []string {
 	if owner == "" {
 		return nil
@@ -364,7 +363,7 @@ func (g *Gateway) noticeNativeRemoved(ctx context.Context, c protocol.MCPImportC
 		"The agent-net tools keep working. No reply is needed.", server)
 	var told []string
 	for _, sid := range ids {
-		m, created, err := g.store.StoreMessage(protocol.MsgSend{Sender: owner, Recipient: sid, Type: protocol.TypeRequest, Body: body,
+		m, created, err := g.store.storeAutomaticMessage(protocol.MsgSend{Recipient: sid, Type: protocol.TypeNotification, Body: body,
 			IdempotencyKey: "native-remove:" + planID + ":" + sid})
 		if err != nil {
 			g.logLine("error", "where", "native remove notice", "session", sid, "err", err)

@@ -1167,7 +1167,7 @@ func (d *Daemon) worktreeHead(w *worker) string {
 // counts: a notice, or another session, does not.
 func (d *Daemon) noteAsk(m protocol.Message) {
 	w := d.workerBySession(m.To)
-	if w == nil || m.From != w.owner {
+	if w == nil || (m.From != w.owner && !(m.From == "agent-net" && protocol.IsWorkerTask(m))) {
 		return
 	}
 	isAsk := m.Type == protocol.TypeRequest

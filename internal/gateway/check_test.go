@@ -114,6 +114,9 @@ func TestCheckAnswerDone(t *testing.T) {
 	if c.t = c.t.Add(21 * time.Minute); len(checks(t, s)) != 0 {
 		t.Fatal("done did not stop checks until new activity")
 	}
+	if _, _, err := send(s, a, b, "new work after done", ""); err != nil {
+		t.Fatal(err)
+	}
 	activity(t, s, b, "pi", "nb")
 	c.t = c.t.Add(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
@@ -216,14 +219,14 @@ func TestCheckMoreWaitsForANewTaskLine(t *testing.T) {
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("check after the same more line: %+v", got)
 	}
-	// Progress does not change the line either.
+	// Answering an owed request changes the fingerprint even with the same line.
 	if _, _, err := send(s, b, a, "reply", req.ID); err != nil {
 		t.Fatal(err)
 	}
 	c.t = c.t.Add(time.Minute)
 	activity(t, s, b, "pi", "nb")
 	c.t = c.t.Add(21 * time.Minute)
-	if got := checks(t, s); len(got) != 0 {
+	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check after progress with the same more line: %+v", got)
 	}
 	c.t = c.t.Add(time.Minute)
@@ -233,8 +236,8 @@ func TestCheckMoreWaitsForANewTaskLine(t *testing.T) {
 	c.t = c.t.Add(time.Minute)
 	activity(t, s, b, "pi", "nb")
 	c.t = c.t.Add(21 * time.Minute)
-	if got := checks(t, s); len(got) != 1 {
-		t.Fatalf("check after the task changed = %+v", got)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("fresh announce after the task changed = %+v", got)
 	}
 }
 
@@ -378,10 +381,8 @@ func TestCheckNotRepeatedAfterSameAnswerSameTask(t *testing.T) {
 	if _, _, err := send(s, a, b, "req", ""); err != nil {
 		t.Fatal(err)
 	}
-	task := "blocked on Nicolas: cleanup batch"
-	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: task}); err != nil {
-		t.Fatal(err)
-	}
+	task := "blocked on the owner: cleanup batch"
+	seedCheckTask(t, s, b, task)
 	idleSince(t, s, c, b, 21*time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("first check = %+v", got)
@@ -410,9 +411,7 @@ func TestCheckNotRepeatedAfterDone(t *testing.T) {
 	s, c := newTestStore(t)
 	_, b := twoSessions(t, s)
 	node := mustNode(t, s, b)
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "writing the migration"}); err != nil {
-		t.Fatal(err)
-	}
+	seedCheckTask(t, s, b, "writing the migration")
 	idleSince(t, s, c, b, 21*time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("first check = %+v", got)
@@ -442,15 +441,13 @@ func TestCheckTaskChangeAllowsNewCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	node := mustNode(t, s, b)
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "blocked on Nicolas: cleanup"}); err != nil {
-		t.Fatal(err)
-	}
+	seedCheckTask(t, s, b, "blocked on the owner: cleanup")
 	idleSince(t, s, c, b, 21*time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("first check = %+v", got)
 	}
 	c.t = c.t.Add(time.Minute)
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "blocked on Nicolas: cleanup"}); err != nil {
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "blocked on the owner: cleanup"}); err != nil {
 		t.Fatal(err)
 	}
 	c.t = c.t.Add(21 * time.Minute)
@@ -460,9 +457,7 @@ func TestCheckTaskChangeAllowsNewCheck(t *testing.T) {
 		t.Fatalf("check with the same task: %+v", got)
 	}
 	c.t = c.t.Add(time.Minute)
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "writing the migration"}); err != nil {
-		t.Fatal(err)
-	}
+	seedCheckTask(t, s, b, "writing the migration")
 	activity(t, s, b, "pi", "nb")
 	c.t = c.t.Add(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
@@ -478,11 +473,8 @@ func TestCheckDailyCapHoldsWhenTaskChanges(t *testing.T) {
 	if _, _, err := send(s, a, b, "req", ""); err != nil {
 		t.Fatal(err)
 	}
-	node := mustNode(t, s, b)
 	for i := 0; i < idleCheckDailyCap; i++ {
-		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: fmt.Sprintf("step %d", i)}); err != nil {
-			t.Fatal(err)
-		}
+		seedCheckTask(t, s, b, fmt.Sprintf("step %d", i))
 		activity(t, s, b, "pi", "nb")
 		c.t = c.t.Add(21 * time.Minute)
 		if got := checks(t, s); len(got) != 1 {
@@ -490,9 +482,7 @@ func TestCheckDailyCapHoldsWhenTaskChanges(t *testing.T) {
 		}
 		c.t = c.t.Add(time.Minute)
 	}
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "step last"}); err != nil {
-		t.Fatal(err)
-	}
+	seedCheckTask(t, s, b, "step last")
 	activity(t, s, b, "pi", "nb")
 	c.t = c.t.Add(21 * time.Minute)
 	if got := checks(t, s); len(got) != 0 {
@@ -518,9 +508,9 @@ func TestCheckNotRepeatedAfterMoreWithSameTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
-		// A new message changes the progress markers, and a turn is activity.
+		// A notification and a turn do not change the work fingerprint.
 		c.t = c.t.Add(time.Minute)
-		if _, _, err := send(s, a, b, fmt.Sprintf("note-%d", i), ""); err != nil {
+		if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: fmt.Sprintf("note-%d", i), Type: protocol.TypeNotification}); err != nil {
 			t.Fatal(err)
 		}
 		c.t = c.t.Add(time.Minute)
@@ -591,5 +581,83 @@ func TestCheckWakeSessionAfterMoreWithProgressGetsItsNextCheck(t *testing.T) {
 	c.t = c.t.Add(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("wake session check after more with progress = %+v, want 1", got)
+	}
+}
+
+func TestCheckAnnounceFingerprint(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	announce(t, s, b, protocol.ProfileAnnounce{Task: "implement the fix"})
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("unchanged announce checked: %+v", got)
+	}
+	c.t = c.t.Add(25 * time.Hour)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("unchanged announce expired: %+v", got)
+	}
+	if _, _, err := send(s, a, b, "new request", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("changed owed count: %+v", got)
+	}
+	announce(t, s, b, protocol.ProfileAnnounce{Task: "implement the fix"})
+	c.t = c.t.Add(21 * time.Minute)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("fresh announce checked again: %+v", got)
+	}
+	if _, _, err := send(s, a, b, "another request", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := checks(t, s); len(got) != 1 {
+		t.Fatalf("second owed count change: %+v", got)
+	}
+}
+
+func TestCheckAnnounceClearsPreviousWaitingFingerprint(t *testing.T) {
+	s, c := newTestStore(t)
+	_, b := twoSessions(t, s)
+	if _, err := s.db.Exec(`UPDATE sessions SET waiting='{"kind":"question","text":"Continue?","since":1}' WHERE id=?`, b); err != nil {
+		t.Fatal(err)
+	}
+	announce(t, s, b, protocol.ProfileAnnounce{Task: "continuing the fix"})
+	// The daemon reports the cleared wait after profile.announce returns.
+	if _, err := s.db.Exec(`UPDATE sessions SET waiting='' WHERE id=?`, b); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("announce recorded the old waiting state: %+v", got)
+	}
+}
+
+// seedCheckTask models a stored task without a fresh announce, including a
+// task retained across the fingerprint migration.
+func seedCheckTask(t *testing.T, s *Store, id, task string) {
+	t.Helper()
+	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,task,updated_at) VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET task=excluded.task,updated_at=excluded.updated_at`, id, task, s.now().UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckAnnounceWorkerEndedChangesFingerprint(t *testing.T) {
+	s, c := newTestStore(t)
+	_, b := twoSessions(t, s)
+	node := mustNode(t, s, b)
+	worker, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "owned-worker", Worker: &protocol.WorkerInfo{ID: "w_test", Owner: b}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	announce(t, s, b, protocol.ProfileAnnounce{Task: "finish the worker's change"})
+	idleSince(t, s, c, b, 21*time.Minute)
+	if got := checks(t, s); len(got) != 0 {
+		t.Fatalf("fresh announce checked: %+v", got)
+	}
+	if err := s.SetWorkerSessionEnded(node, worker); err != nil {
+		t.Fatal(err)
+	}
+	if got := checks(t, s); len(got) != 1 || got[0].To != b {
+		t.Fatalf("worker ending did not re-arm check: %+v", got)
 	}
 }
