@@ -638,8 +638,12 @@ func TestConversationsPageTwelveThousandMessagesStaysQuick(t *testing.T) {
 	// About 25 ms on the author's machine and 750 ms before the page read
 	// only the indexes; the bound leaves room for a busy CI runner and still
 	// catches a page that reads the message bodies again.
-	if elapsed > 200*time.Millisecond {
-		t.Errorf("first page is too slow: %s", elapsed)
+	limit := 200 * time.Millisecond
+	if raceEnabled {
+		limit *= 50
+	}
+	if elapsed > limit {
+		t.Errorf("first page is too slow: %s (limit %s)", elapsed, limit)
 	}
 }
 
