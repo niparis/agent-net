@@ -72,15 +72,7 @@ func (d *Daemon) ctoSessionControl(ctx context.Context, concrete string, raw jso
 		out.Start = &start
 		out.Note = "Resumed " + out.Name + " in the background. Press Enter on it in the Sessions tab to open it."
 	case "restart":
-		if view.Online {
-			if _, err := d.sessionStop(ctx, id); err != nil {
-				return nil, err
-			}
-			if err := d.waitSessionEnded(ctx, id); err != nil {
-				return nil, err
-			}
-		}
-		start, err := d.ctoResume(ctx, id)
+		start, err := d.restartSession(ctx, id, view.Online)
 		if err != nil {
 			return nil, err
 		}
@@ -90,6 +82,21 @@ func (d *Daemon) ctoSessionControl(ctx context.Context, concrete string, raw jso
 		return nil, fmt.Errorf("unknown session control %q", concrete)
 	}
 	return out, nil
+}
+
+// restartSession stops a live session, waits until it is reported ended, then
+// resumes it in the background. The CTO restart action and the MCP repair share
+// this one path.
+func (d *Daemon) restartSession(ctx context.Context, id string, online bool) (protocol.StartedSession, error) {
+	if online {
+		if _, err := d.sessionStop(ctx, id); err != nil {
+			return protocol.StartedSession{}, err
+		}
+		if err := d.waitSessionEnded(ctx, id); err != nil {
+			return protocol.StartedSession{}, err
+		}
+	}
+	return d.ctoResume(ctx, id)
 }
 
 // ctoResume resumes the session with no herdr location, so no view opens, and

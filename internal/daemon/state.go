@@ -41,7 +41,7 @@ func openState(dir string) (*state, error) {
 	_, err = db.Exec(`
 CREATE TABLE IF NOT EXISTS notification_sent (session_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS claude_mouse_notice (key TEXT PRIMARY KEY, at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS mcp_desk_notice (native TEXT PRIMARY KEY, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS mcp_repair (native TEXT PRIMARY KEY, restarted_at INTEGER NOT NULL DEFAULT 0, posted_at INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS settings_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), received_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS owner_preferences (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);
@@ -333,19 +333,44 @@ func (s *state) setMouseNotice(key string, at time.Time) error {
 	return err
 }
 
-// mcpDeskPosted reports whether the one Desk item for a Claude session was
-// already sent, across daemon restarts.
-func (s *state) mcpDeskPosted(native string) bool {
-	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM mcp_desk_notice WHERE native=?`, native).Scan(&n); err != nil {
-		return false
+// mcpRepairs reads every session the daemon already restarted or reported, so
+// a daemon restart neither restarts nor reports it again.
+func (s *state) mcpRepairs() (map[string]*mcpRepairState, error) {
+	rows, err := s.db.Query(`SELECT native,restarted_at,posted_at FROM mcp_repair`)
+	if err != nil {
+		return nil, err
 	}
-	return n > 0
+	defer rows.Close()
+	out := map[string]*mcpRepairState{}
+	for rows.Next() {
+		var native string
+		var restarted, posted int64
+		if err := rows.Scan(&native, &restarted, &posted); err != nil {
+			return nil, err
+		}
+		repair := &mcpRepairState{}
+		if restarted > 0 {
+			repair.restartedAt = time.Unix(restarted, 0)
+		}
+		if posted > 0 {
+			repair.posted = true
+		}
+		out[native] = repair
+	}
+	return out, rows.Err()
 }
 
-// setMCPDeskPosted records the item so a daemon restart does not raise it again.
-func (s *state) setMCPDeskPosted(native string, at time.Time) error {
-	_, err := s.db.Exec(`INSERT INTO mcp_desk_notice(native,at) VALUES(?,?) ON CONFLICT(native) DO UPDATE SET at=excluded.at`, native, at.Unix())
+// setMCPRestarted records the one restart attempt before it starts, so a
+// daemon that dies during it does not try a second time.
+func (s *state) setMCPRestarted(native string, at time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO mcp_repair(native,restarted_at) VALUES(?,?) ON CONFLICT(native) DO UPDATE SET restarted_at=excluded.restarted_at`, native, at.Unix())
+	return err
+}
+
+// setMCPRepairPosted records the one Desk item, so a daemon restart does not
+// raise it again.
+func (s *state) setMCPRepairPosted(native string, at time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO mcp_repair(native,posted_at) VALUES(?,?) ON CONFLICT(native) DO UPDATE SET posted_at=excluded.posted_at`, native, at.Unix())
 	return err
 }
 
