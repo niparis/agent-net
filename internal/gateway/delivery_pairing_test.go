@@ -288,14 +288,14 @@ func TestStepPairAfterMergePairsOnlyNextStep(t *testing.T) {
 	if len(bodies) != 1 {
 		t.Fatalf("caller got %d messages, want 1: %v", len(bodies), bodies)
 	}
-	if !strings.Contains(bodies[0], "steps: test, release (after merge)") {
+	if !strings.Contains(bodies[0], "step: test after merge") {
 		t.Fatalf("pair line missing from:\n%s", bodies[0])
 	}
-	if !strings.Contains(bodies[0], "Claim and report each step in order: test, then release.") {
+	if strings.Contains(bodies[0], "then release") {
 		t.Fatalf("order guidance missing from:\n%s", bodies[0])
 	}
 	var verifyTasks int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step='verify'`, c.ID).Scan(&verifyTasks); err != nil || verifyTasks != 0 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step IN ('release','verify') AND completed=0`, c.ID).Scan(&verifyTasks); err != nil || verifyTasks != 0 {
 		t.Fatalf("verify task rows=%d want=0 err=%v", verifyTasks, err)
 	}
 }

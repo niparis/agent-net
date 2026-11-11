@@ -928,6 +928,9 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int6
 // ref. Steps left out of this change's pipeline do not break the pairing, but
 // the pair never crosses the merge.
 func stepRun(p protocol.Pipeline, c protocol.Change, evidence []protocol.Evidence, ref protocol.StepRef) []protocol.StepRef {
+	if ref.Step == protocol.StepTest {
+		return []protocol.StepRef{ref}
+	}
 	status := p.Status(c, evidence)
 	start := -1
 	for i := range p.Steps {
@@ -1347,6 +1350,26 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 		if step.Owner.Kind != protocol.OwnerCaller && step.Owner.Kind != protocol.OwnerNone {
 			shared = true
 			break
+		}
+	}
+	ready := p.NextSteps(c, evidence)
+	for _, step := range p.Steps {
+		found := false
+		for _, ref := range ready {
+			if ref == step.StepRef {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		args := []any{c.ID, c.Revision, step.Step, step.For, boolInt(step.AfterMerge)}
+		if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND claimed_by='' AND completed=0`, args...); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN (SELECT m.message_id FROM delivery_step_messages m JOIN delivery_step_tasks t ON t.change_id=m.change_id AND t.revision=m.revision AND t.step=m.step AND t.for_step=m.for_step AND t.after_merge=m.after_merge WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.completed=1 AND t.claimed_by='')`, args...); err != nil {
+			return err
 		}
 	}
 	for _, ref := range p.NextSteps(c, evidence) {
