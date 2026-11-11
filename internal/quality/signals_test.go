@@ -87,6 +87,56 @@ func TestTestTimingSignal(t *testing.T) {
 	}
 }
 
+// A select timeout that waits seconds for something that should happen is
+// ordinary test structure: it proves a frame arrived, not that nothing did.
+func TestTestTimingSignalIgnoresLongSelectTimeout(t *testing.T) {
+	diff := addedDiff(map[string][]string{
+		"internal/gateway/ack_test.go": {
+			"\tselect {",
+			"\tcase <-time.After(5 * time.Second):",
+			"\t\tt.Fatal(\"no ack\")",
+			"\t}",
+			"\tcase <-time.After(waitFor):",
+		},
+	})
+	if got := Signals(diff, "normal"); len(got) != 0 {
+		t.Fatalf("signals = %+v", got)
+	}
+}
+
+// A literal timeout under a second usually proves nothing happened.
+func TestTestTimingSignalFiresOnShortTimer(t *testing.T) {
+	diff := addedDiff(map[string][]string{
+		"internal/gateway/ack_test.go": {
+			"\tcase <-time.After(50 * time.Millisecond):",
+		},
+	})
+	got := Signals(diff, "normal")
+	if len(got) != 1 || got[0].Code != protocol.SignalTestTiming || got[0].Strength != protocol.SignalStrong {
+		t.Fatalf("signals = %+v", got)
+	}
+	if !strings.Contains(got[0].Evidence, "test timing ×1") || !strings.Contains(got[0].Evidence, "ack_test.go") {
+		t.Fatalf("evidence %q", got[0].Evidence)
+	}
+}
+
+// Every new sleep counts, whatever its duration: it slows the suite.
+func TestTestTimingSignalFiresOnSleep(t *testing.T) {
+	diff := addedDiff(map[string][]string{
+		"internal/gateway/ack_test.go": {
+			"\ttime.Sleep(2 * time.Second)",
+			"\ttime.Sleep(waitFor)",
+		},
+	})
+	got := Signals(diff, "normal")
+	if len(got) != 1 || got[0].Code != protocol.SignalTestTiming {
+		t.Fatalf("signals = %+v", got)
+	}
+	if !strings.Contains(got[0].Evidence, "test timing ×2") {
+		t.Fatalf("evidence %q", got[0].Evidence)
+	}
+}
+
 func TestOutOfProportionSignalFollowsDifficulty(t *testing.T) {
 	var lines []string
 	for i := 0; i < linesTrivial+1; i++ {

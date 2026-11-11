@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -36,8 +38,13 @@ const (
 )
 
 var (
-	testTimingPattern = regexp.MustCompile(`\btime\.(?:Sleep|After|NewTimer)\(`)
-	testHelperPattern = regexp.MustCompile(`^\+func\s+(?:\([^)]*\)\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+	// testTimingPattern finds a timer call on an added test line. Only some of
+	// them count: see testTiming.
+	testTimingPattern = regexp.MustCompile(`\b(?:time\.(?:Sleep|After|NewTimer)|context\.WithTimeout)\(`)
+	// durationLiteralPattern is a literal duration such as 50*time.Millisecond
+	// or 200 * time.Millisecond. A variable or a named constant does not match.
+	durationLiteralPattern = regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*\*\s*time\.(Nanosecond|Microsecond|Millisecond|Second|Minute|Hour)$`)
+	testHelperPattern      = regexp.MustCompile(`^\+func\s+(?:\([^)]*\)\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 )
 
 // Signals reads one `git diff -U0 base head` and returns the signals that
@@ -71,7 +78,7 @@ func Signals(diff, difficulty string) []protocol.QualitySignal {
 		if strings.HasSuffix(file, "_test.go") {
 			testLines++
 			body := strings.TrimSpace(strings.TrimPrefix(line, "+"))
-			if testTimingPattern.MatchString(body) {
+			if testTiming(body) {
 				timingLines = append(timingLines, body)
 				timingFiles = append(timingFiles, path.Base(file))
 			}
@@ -143,6 +150,95 @@ func repeatedSignal(repeated map[string]*repeat, order []string) *protocol.Quali
 	r := repeated[best]
 	return &protocol.QualitySignal{Code: protocol.SignalRepeatedLine, Strength: protocol.SignalStrong,
 		Evidence: clipEvidence(fmt.Sprintf("repeated line ×%d: %s in %s", r.count, best, strings.Join(r.fileOrder, ", ")))}
+}
+
+// testTiming reports whether an added test line uses a timer that proves
+// nothing happened. Every sleep counts: it slows the suite and asserts
+// nothing. A timeout counts only when its duration is a literal under one
+// second, such as 50*time.Millisecond. A variable or a named constant is a
+// deliberate wait for something to happen, usually the timeout arm of a
+// select, so it does not count. The owner's wording: "a short
+// time.After/timeout used to prove nothing happened".
+func testTiming(line string) bool {
+	for _, loc := range testTimingPattern.FindAllStringIndex(line, -1) {
+		call := line[loc[0]:]
+		args, ok := callArgs(line, loc[1]-1)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(call, "time.Sleep") {
+			return true
+		}
+		arg := 0
+		if strings.HasPrefix(call, "context.WithTimeout") {
+			arg = 1
+		}
+		if arg >= len(args) {
+			continue
+		}
+		if d, ok := literalDuration(args[arg]); ok && d < time.Second {
+			return true
+		}
+	}
+	return false
+}
+
+// callArgs splits the arguments of the call whose '(' is at open. It reads one
+// line only.
+func callArgs(line string, open int) ([]string, bool) {
+	if open < 0 || open >= len(line) || line[open] != '(' {
+		return nil, false
+	}
+	depth, start := 0, open+1
+	var args []string
+	for i := open; i < len(line); i++ {
+		switch line[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return append(args, strings.TrimSpace(line[start:i])), true
+			}
+		case ',':
+			if depth == 1 {
+				args = append(args, strings.TrimSpace(line[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	return nil, false
+}
+
+// literalDuration reads a duration written as a number times a time unit. A
+// variable or a named constant returns false.
+func literalDuration(expr string) (time.Duration, bool) {
+	m := durationLiteralPattern.FindStringSubmatch(strings.TrimSpace(expr))
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		return 0, false
+	}
+	var unit time.Duration
+	switch m[2] {
+	case "Nanosecond":
+		unit = time.Nanosecond
+	case "Microsecond":
+		unit = time.Microsecond
+	case "Millisecond":
+		unit = time.Millisecond
+	case "Second":
+		unit = time.Second
+	case "Minute":
+		unit = time.Minute
+	case "Hour":
+		unit = time.Hour
+	default:
+		return 0, false
+	}
+	return time.Duration(n * float64(unit)), true
 }
 
 func timingSignal(lines, files []string) *protocol.QualitySignal {
