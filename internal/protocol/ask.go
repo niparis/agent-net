@@ -51,6 +51,9 @@ const (
 	AskReasonAnswered     = "answered"           // the escalated request was answered later
 	AskReasonMovedToLog   = "moved_to_log"
 	AskReasonGrouped      = "grouped" // a per-field charter draft ask folded into the one ask of its node
+	// AskReasonSignedIn closes a sign_in ask after its provider's quota check
+	// no longer reports the login remedy.
+	AskReasonSignedIn = "signed_in"
 )
 
 // Ask kinds name the source and so the owner's actions on a row.
@@ -74,6 +77,10 @@ const (
 	// AskKindBrief is the chief of staff's daily brief: information for the
 	// owner, dismissed when read. It never asks for an answer.
 	AskKindBrief = "brief"
+	// AskKindSignIn is an owner-only ask to open a CLI's interactive login in
+	// a herdr pane. Its provider is in Ref; the command comes from the fixed
+	// allowlist in signin.go, never from an agent.
+	AskKindSignIn = "sign_in"
 )
 
 // Ask is one row of the Desk. It has the shape of a delivery step: who waits,

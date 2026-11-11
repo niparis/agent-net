@@ -563,6 +563,12 @@ func (s *Store) reconcileAsks() error {
 func (s *Store) OpenExternalAsk(node string, a protocol.AskOpen) (protocol.Ask, error) {
 	switch a.Kind {
 	case protocol.AskKindProposal, protocol.AskKindCheck:
+	case protocol.AskKindSignIn:
+		// The ref is the provider key, never a command. An unknown provider
+		// has no allowlisted login, so it cannot open a pane.
+		if _, ok := protocol.SignInProvider(a.Ref); !ok {
+			return protocol.Ask{}, reject("unknown sign-in provider")
+		}
 	default:
 		return protocol.Ask{}, reject("invalid ask kind")
 	}
@@ -571,7 +577,7 @@ func (s *Store) OpenExternalAsk(node string, a protocol.AskOpen) (protocol.Ask, 
 	}
 	ref := node + ":" + a.Ref
 	fromKind := protocol.AskFromCTO
-	if a.Kind == protocol.AskKindCheck {
+	if a.Kind == protocol.AskKindCheck || a.Kind == protocol.AskKindSignIn {
 		fromKind = protocol.AskFromGateway
 	}
 	item, err := s.createInboxItem(s.db, protocol.InboxItem{
@@ -589,7 +595,7 @@ func (s *Store) CloseExternalAsk(node string, c protocol.AskClose) error {
 	if c.Reason == "" {
 		c.Reason = protocol.AskReasonResolved
 	}
-	for _, kind := range []string{protocol.AskKindProposal, protocol.AskKindCheck} {
+	for _, kind := range []string{protocol.AskKindProposal, protocol.AskKindCheck, protocol.AskKindSignIn} {
 		if err := s.closeAskRef(s.db, kind+":"+node+":"+c.Ref, c.Reason); err != nil {
 			return err
 		}

@@ -90,7 +90,7 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	switch item.Kind {
 	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
 		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindPermission, protocol.AskKindStep, protocol.AskKindWaiting,
-		protocol.AskKindBrief:
+		protocol.AskKindBrief, protocol.AskKindSignIn:
 	default:
 		return item, reject("invalid inbox kind")
 	}
