@@ -195,6 +195,9 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 				}
 				d.mu.Unlock()
 				if r.SessionID != "" {
+					// An OpenCode session that could not be opened under the old
+					// native ID is a new conversation: move the old work to it.
+					d.adoptResumedSession(wait, r.Resumes, r.SessionID)
 					return
 				}
 				select {

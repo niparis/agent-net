@@ -23,6 +23,8 @@ const (
 	FrameSessionResume             = "session.resume"
 	FrameSessionWake               = "session.wake"
 	FrameSessionWakeRebind         = "session.wake_rebind"
+	FrameSessionResumeRebind       = "session.resume_rebind"
+	FrameSessionReplace            = "session.replace"
 	FrameSessionStop               = "session.stop"
 	FrameSessionGet                = "session.get"
 	FrameSessionOwnerStart         = "session.owner_start"
@@ -173,7 +175,10 @@ type StartedSession struct {
 	Model           string          `json:"model,omitempty"`
 	// EnterNote says how Enter reaches a session on another machine, for the
 	// result line after a start with a first message. Empty on this machine.
-	EnterNote string     `json:"enter_note,omitempty"`
+	EnterNote string `json:"enter_note,omitempty"`
+	// Resumes is the session a resume started from. It is local bookkeeping
+	// for the restart that must keep the session ID, and is never sent.
+	Resumes   string     `json:"-"`
 	StartedAt int64      `json:"started_at"`
 	JobID     string     `json:"job_id,omitempty"`
 	NativeID  string     `json:"native_id,omitempty"`
@@ -208,6 +213,21 @@ type SessionResumeRequest struct {
 // SessionStopResult describes the harness stop without removing the conversation.
 type SessionStopResult struct {
 	Note string `json:"note"`
+}
+
+// SessionResumeRebind keeps the gateway record of a resumed session when the
+// harness gave the resumed conversation a new native ID. The session ID stays;
+// only the harness handle moves.
+type SessionResumeRebind struct {
+	SessionID string `json:"session_id"`
+	NativeID  string `json:"native_id"`
+}
+
+// SessionReplace moves a restarted session's work to the session a new
+// conversation registered, when keeping the old ID is not possible.
+type SessionReplace struct {
+	SessionID    string `json:"session_id"`
+	NewSessionID string `json:"new_session_id"`
 }
 
 // SessionAgentReservation is an owner-authorized selection for a future session.

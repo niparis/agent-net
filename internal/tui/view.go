@@ -169,7 +169,7 @@ func runText(a protocol.AgentView) string {
 
 func statusShort(s string) string {
 	switch s {
-	case "idle", "busy", "shell", "exited":
+	case "idle", "busy", "shell", "exited", "replaced":
 		return s
 	case protocol.StatusDormant:
 		return "dorm"

@@ -126,6 +126,11 @@ func waitingStatus(a protocol.AgentView) string {
 
 // statusCell is the STATUS cell of the table; statusStyle has its colour.
 func (m Model) statusCell(a protocol.AgentView) string {
+	// A restarted conversation keeps one live record; the old one says only
+	// that something replaced it.
+	if a.ReplacedBy != "" {
+		return "replaced"
+	}
 	if a.Worker == nil && a.StalledSince > 0 {
 		return "stalled " + needsAge(m.now(), a.StalledSince)
 	}

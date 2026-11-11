@@ -3087,6 +3087,32 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, g.rebindWake(nc.id, p)
 
+	case protocol.FrameSessionResumeRebind:
+		// A restart that resumed the same conversation under a new native ID
+		// keeps the session ID, so all its work stays where it is.
+		var p protocol.SessionResumeRebind
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad resume rebind")
+		}
+		kept, err := st.RebindResumedSession(nc.id, p.SessionID, p.NativeID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"kept": kept}, nil
+
+	case protocol.FrameSessionReplace:
+		// A new conversation could not keep the session ID, so the old
+		// session's work moves to it in one transaction.
+		var p protocol.SessionReplace
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad session replace")
+		}
+		moved, err := st.ReplaceSession(nc.id, p.SessionID, p.NewSessionID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"moved": moved}, nil
+
 	case "query.agent":
 		p, err := decode[protocol.QueryAgent](raw)
 		if err != nil {

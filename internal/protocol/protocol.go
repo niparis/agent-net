@@ -399,6 +399,9 @@ type AgentView struct {
 	LimitedReason string `json:"limited_reason,omitempty"`
 	// StalledSince is the time of the last observed harness activity during a stall.
 	StalledSince int64 `json:"stalled_since,omitempty"`
+	// ReplacedBy is the session that took over this conversation when a
+	// restart could not keep the session ID. Empty for every normal session.
+	ReplacedBy string `json:"replaced_by,omitempty"`
 	// TaskStarted is when the announced task last changed, in Unix seconds. It
 	// is for the read tools; the old list tools keep their output unchanged.
 	TaskStarted int64   `json:"-"`

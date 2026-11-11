@@ -89,7 +89,9 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		return clip("  "+sDim.Render(cell(label, lw))+" "+sanitize(value), w)
 	}
 	title := "  " + sBold.Render(clip(sanitize(dashIfEmpty(a.Profile.Name)), 26)) + "  " + sanitize(a.Harness)
-	if a.StalledSince > 0 && a.Worker == nil {
+	if a.ReplacedBy != "" {
+		title += "  " + sBad.Render("replaced by "+m.feedName(a.ReplacedBy))
+	} else if a.StalledSince > 0 && a.Worker == nil {
 		title += "  " + sNeeds.Render(m.statusCell(a))
 	} else if a.Online {
 		title += "  " + statusStyle(a.Status).Render(statusShort(a.Status))
@@ -154,7 +156,11 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		}
 		out = append(out, line)
 	}
-	if !a.Online || a.Status == protocol.StatusDormant {
+	// A replaced record is history: resuming it would start a second copy of a
+	// conversation that is already running under the session that replaced it.
+	if a.ReplacedBy != "" {
+		out = append(out, wrap("  This session was restarted as "+m.feedName(a.ReplacedBy)+". Open that session instead.", w)...)
+	} else if !a.Online || a.Status == protocol.StatusDormant {
 		out = append(out, wrap("  "+resumeHint(a), w)...)
 	}
 	out = append(out,

@@ -238,6 +238,17 @@ func (s *state) workerNativeKnown(harness, native string) bool {
 	return n > 0
 }
 
+// moveWorkerOwner moves the caller of every worker this daemon holds or still
+// has queued, so a restart that gave the caller a new session ID does not send
+// hand-backs and step tasks to the old one.
+func (s *state) moveWorkerOwner(sessionID, newSessionID string) error {
+	if _, err := s.db.Exec(`UPDATE workers SET owner=? WHERE owner=?`, newSessionID, sessionID); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE worker_queue SET owner=? WHERE owner=?`, newSessionID, sessionID)
+	return err
+}
+
 func (s *state) deleteWorker(id string) error {
 	if err := s.deleteWorkerIdleNotice(id); err != nil {
 		return err
