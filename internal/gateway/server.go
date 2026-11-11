@@ -666,6 +666,7 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/difficulty", g.handleDifficulty)
 	mux.HandleFunc("PUT /v1/difficulty", g.handleDifficulty)
 	mux.HandleFunc("GET /v1/scores", g.handleScoresGet)
+	mux.HandleFunc("GET /v1/scores-weekly", g.handleScoresWeekly)
 	mux.HandleFunc("PUT /v1/scores", g.handleScoresSet)
 	mux.HandleFunc("GET /v1/worker-rotation", g.handleWorkerRotation)
 	mux.HandleFunc("GET /v1/picker", g.handlePicker)

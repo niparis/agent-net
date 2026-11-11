@@ -578,6 +578,9 @@ func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
 		// they read it when it comes back on screen.
 		m.pickerWanted = true
 	}
+	if m.qualityDetail {
+		m.weeklyWanted = true
+	}
 	return m, nil
 }
 

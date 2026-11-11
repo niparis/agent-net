@@ -50,6 +50,9 @@ func pickerLeftWidth(labelWidth int) int {
 // qualityDetailsView is the whole subtab. It includes the title and the
 // subtabs line, and returns exactly h rows.
 func (m Model) qualityDetailsView(w, h int) []string {
+	if m.showWeekly {
+		return m.qualityWeeklyView(w, h)
+	}
 	out := []string{m.titleLine(w), m.quotasSubtabs(w)}
 	if !m.pickerLoaded {
 		body := []string{sDim.Render("Reading the picker table...")}

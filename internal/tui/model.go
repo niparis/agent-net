@@ -123,6 +123,11 @@ type Model struct {
 	pickerSelModel    int
 	pickerSelBucket   int
 	pickerShowOlder   bool
+	weeklyScores      []protocol.ScoresWeeklyRow
+	weeklyLoaded      bool
+	weeklyErr         string
+	weeklyWanted      bool
+	showWeekly        bool
 	messageShowEvents bool
 	hideWorkerThreads bool
 
@@ -367,6 +372,9 @@ type fetchedMsg struct {
 	pickerAsked          bool
 	picker               protocol.PickerAnalysis
 	pickerErr            error
+	weeklyAsked          bool
+	weekly               []protocol.ScoresWeeklyRow
+	weeklyErr            error
 	onboarding           protocol.Onboarding
 	onboardingErr        error
 	onboardingAsked      bool
@@ -512,6 +520,7 @@ func (m Model) fetchCmd() tea.Cmd {
 	deskLogOpen := m.deskLogOpen
 	wantWorkerLog := m.tab == quotasTab && m.workersLog
 	wantPicker := m.tab == quotasTab && !m.workersLog && m.pickerWanted
+	wantWeekly := m.tab == quotasTab && m.qualityDetail && (m.weeklyWanted || !m.weeklyLoaded)
 	now := m.now
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
@@ -564,6 +573,23 @@ func (m Model) fetchCmd() tea.Cmd {
 					res.pickerErr = err
 				} else {
 					res.pickerErr = ErrTooOld
+				}
+			})
+		}
+
+		if wantWeekly {
+			res.weeklyAsked = true
+			group(func(ctx context.Context) {
+				if caller, ok := src.(interface {
+					Call(context.Context, string, any) (json.RawMessage, error)
+				}); ok {
+					raw, err := caller.Call(ctx, protocol.OpScoresWeekly, nil)
+					if err == nil {
+						err = json.Unmarshal(raw, &res.weekly)
+					}
+					res.weeklyErr = err
+				} else {
+					res.weeklyErr = ErrTooOld
 				}
 			})
 		}
@@ -1183,6 +1209,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.clampPickerSelection()
 			}
 		}
+		if msg.weeklyAsked {
+			m.weeklyWanted = false
+			if msg.weeklyErr != nil {
+				m.weeklyErr = sanitize(msg.weeklyErr.Error())
+			} else {
+				m.weeklyScores, m.weeklyErr = msg.weekly, ""
+				m.weeklyLoaded = true
+			}
+		}
 		if msg.err == nil && msg.snap.Connected {
 			m.inboxSeen = inboxMarkerOf(m.snap)
 		}
@@ -1705,8 +1740,16 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "older":
 			m.pickerShowOlder = !m.pickerShowOlder
 			m.clampPickerSelection()
+		case "weekly":
+			m.showWeekly = !m.showWeekly
+			m.weeklyWanted = true
+			if !m.fetching {
+				m.fetching = true
+				return m, m.fetchCmd()
+			}
 		case "refresh":
 			m.pickerWanted = true
+			m.weeklyWanted = true
 			if !m.fetching {
 				m.fetching = true
 				return m, m.fetchCmd()
