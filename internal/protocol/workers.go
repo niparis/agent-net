@@ -191,7 +191,7 @@ func WorkerStartReportText(status, project, harness, startID, note string) strin
 
 // WorkerAcceptedStartText is the notice for a start that was accepted without
 // an answer and then became a worker. status is "started" or "starting".
-func WorkerAcceptedStartText(startID, status, session, harness, model, project, host, worktree, branch, ownerLine string, why ...string) string {
+func WorkerAcceptedStartText(startID, status, session, harness, model, project, host, worktree, branch, ownerLine, why string) string {
 	note := "the accepted start has begun; the task has been sent to the worker"
 	if status == "starting" {
 		note = "the accepted start has begun; the worker is being set up and gets its task when it is ready"
@@ -210,8 +210,8 @@ func WorkerAcceptedStartText(startID, status, session, harness, model, project, 
 	if ownerLine != "" {
 		b += "\n" + ownerLine
 	}
-	if len(why) > 0 && why[0] != "" {
-		b += "\nwhy: " + why[0]
+	if why != "" {
+		b += "\nwhy: " + why
 		b += "\nfull: agent_workers_find {worker, detail:full}"
 	}
 	return b + "\n"

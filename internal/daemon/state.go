@@ -216,7 +216,7 @@ CREATE TABLE IF NOT EXISTS workers (
 	}
 	// base and record_task keep a continued or based start in the queue. A
 	// queue table from an older version does not have them.
-	for _, col := range []string{"base", "record_task", "title", "permissions", "difficulty_asked", "difficulty_used", "touches", "task_id", "assessment", "change_id", "mcp_servers", "fixes", "resume_session"} {
+	for _, col := range []string{"base", "record_task", "title", "permissions", "difficulty_asked", "difficulty_used", "touches", "task_id", "assessment", "change_id", "mcp_servers", "fixes", "resume_session", "why", "not_family"} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = ?`, col).Scan(&has)
 		if has == 0 {

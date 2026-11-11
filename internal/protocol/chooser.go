@@ -41,6 +41,30 @@ type WorkerModelChoice struct {
 	Fallback bool
 	// Why is the short explanation for the chosen model (at most 2 lines).
 	Why string
+	// LeftOut lists the candidates the chooser dropped, when it found no model.
+	// The picker records each reason where it drops the candidate, so a roster
+	// only has to print the list.
+	LeftOut []WorkerLeftOut
+}
+
+// Ranks for WorkerLeftOut, closest to qualifying first.
+const (
+	// LeftOutAllowed is a candidate the rules allowed but did not choose.
+	LeftOutAllowed = 1
+	// LeftOutFit is a candidate too weak or too strong for the task.
+	LeftOutFit = 2
+	// LeftOutQuota is a candidate whose provider is out of quota.
+	LeftOutQuota = 3
+	// LeftOutNoScore is a candidate with no benchmark or rating.
+	LeftOutNoScore = 4
+)
+
+// WorkerLeftOut is one candidate a picker left out: its name, the reason it
+// was dropped, and a rank where a lower number is closer to qualifying.
+type WorkerLeftOut struct {
+	Name   string
+	Reason string
+	Rank   int
 }
 
 // WorkerRotation is the smooth weighted round robin state of automatic worker
@@ -194,6 +218,7 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 	}
 	var eligible []rankedChoice
 	var reasons []string
+	var leftOut []WorkerLeftOut
 	for _, c := range candidates {
 		score, fit, isAdequate, ok := WorkerCandidateFit(c, level, scores, minimums)
 		name := c.Name
@@ -202,6 +227,7 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		}
 		if !ok {
 			reasons = append(reasons, name+" (max unknown: unscored)")
+			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: "unscored (no benchmark or rating)", Rank: LeftOutNoScore})
 			continue
 		}
 		scoreText := fmt.Sprintf("%g", score)
@@ -210,6 +236,7 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		}
 		reasons = append(reasons, fmt.Sprintf("%s (max %s, score %s, %s)", name, WorkerMaximumLevel(score, minimums), scoreText, fit))
 		if !isAdequate {
+			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: fmt.Sprintf("max %s, score %g, %s", WorkerMaximumLevel(score, minimums), score, fit), Rank: LeftOutFit})
 			continue
 		}
 		provider := c.Provider
@@ -218,6 +245,11 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		}
 		room, note, measured, blocked := workerQuotaRoom(quotas, provider, c.Model)
 		if blocked {
+			reason := "out of quota"
+			if note != "" {
+				reason += " (" + note + ")"
+			}
+			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: reason, Rank: LeftOutQuota})
 			continue
 		}
 		servedRoom := room
@@ -239,7 +271,7 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		if roster == "" {
 			roster = "none"
 		}
-		return WorkerModelChoice{}, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
+		return WorkerModelChoice{LeftOut: leftOut}, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
 	}
 	return rotateRanked(state, level, eligible)
 }
@@ -471,11 +503,6 @@ func WorkerRotationShares(level string, candidates []WorkerModelCandidate, rotat
 		names[WorkerModelKey(c)] = name
 	}
 	return rotationShareNote(level, names, state.Recent)
-}
-
-// WorkerQuotaRoom returns the room, note, measured flag and blocked flag for a model.
-func WorkerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, bool) {
-	return workerQuotaRoom(q, provider, model)
 }
 
 func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, bool) {
