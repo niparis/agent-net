@@ -128,6 +128,24 @@ func TestWorkerTaskBody(t *testing.T) {
 	}
 }
 
+func TestWorkerBriefQualityRules(t *testing.T) {
+	for _, brief := range []string{WorkerPreamble, WorkerPreambleCodex} {
+		for _, want := range []string{
+			"Reuse the package's existing test helpers",
+			"Put shared setup in one helper",
+			"One test per behaviour",
+			`Do not prove "nothing happened" with sleeps`,
+			"Comments say why, never restate the code",
+			"Put a check in one place, at the entry point",
+			"The project's own AGENTS.md wins where it conflicts",
+		} {
+			if !strings.Contains(brief, want) {
+				t.Errorf("brief lacks %q", want)
+			}
+		}
+	}
+}
+
 func TestWorkerTaskSummary(t *testing.T) {
 	body := WorkerTaskBody("write the tests\nthen commit", "", "")
 	if got := WorkerTaskSummary(body); got != "write the tests" {
