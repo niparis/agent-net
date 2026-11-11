@@ -66,6 +66,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("session_resume", "Resume an offline agent session in the background.", map[string]ctoField{"session_id": sid})
 	add("session_restart", "Stop an agent session, then resume it.", map[string]ctoField{"session_id": sid})
 	add("session_rename", "Rename a session for the owner.", map[string]ctoField{"session_id": sid, "name": s("Name; empty resets.")})
+	add("session_replace", "Move an old session's work to the session that replaced it.", map[string]ctoField{"old_session": sid, "new_session": s("Session that replaced it.")})
 	add("session_trust", "Set session peer trust, or trust a project or path folder for Claude Code.", map[string]ctoField{"session_id": sid, "on": b("Enable."), "project": s("Registered project to trust for Claude Code."), "path": s("Existing folder to trust for Claude Code."), "node_id": s("Machine; omit for this machine.")})
 	add("folder_mcp", "Approve or disable the .mcp.json servers Claude Code would load in a project or path folder, so a Claude session start does not stop on the approval prompt.", map[string]ctoField{"project": s("Registered project."), "path": s("Existing folder."), "node_id": s("Machine; omit for this machine."), "mcp_servers": en("Choice.", "approve", "disable")})
 	add("session_policy", "Set policy; read get first.", map[string]ctoField{"session_id": sid, "scope": en("Default session.", "session", "project"), "policy": obj("Policy."), "dry_run": b("Preview.")})

@@ -19,7 +19,7 @@ func runOwnerOperation(method string, args json.RawMessage, reason string, call 
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(args, &fields)
 	target := ""
-	for _, key := range []string{"session_id", "project", "team_id", "item", "id", "node_id"} {
+	for _, key := range []string{"session_id", "old_session", "project", "team_id", "item", "id", "node_id"} {
 		var value string
 		if json.Unmarshal(fields[key], &value) == nil && cleanLine(value) != "" {
 			target = " " + cleanLine(value)

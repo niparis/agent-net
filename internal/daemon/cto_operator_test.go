@@ -368,3 +368,50 @@ func TestCTOOperatorArchivePreviewHasNoUndo(t *testing.T) {
 		}
 	}
 }
+
+// The CTO reaches the owner's session_replace through its operator path and
+// moves a restart's orphaned work to the session that replaced it.
+func TestCTOOperatorSessionReplaceAllowed(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st := g.gw.Store()
+	demo := protocol.RepoInfo{Root: "/code/demo", Project: "demo"}
+	old, err := st.UpsertSession(n.d.NodeID(), protocol.SessionInfo{Harness: "pi", NativeID: "old", Name: "old", Repo: demo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := st.UpsertSession(n.d.NodeID(), protocol.SessionInfo{Harness: "pi", NativeID: "fresh", Name: "fresh", Repo: demo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]any{"area": "operator", "method": "session_replace",
+		"arguments": map[string]string{"old_session": old, "new_session": fresh}})
+	if _, err := n.d.runCTOTool(ctx, "settings_change", raw); err != nil {
+		t.Fatalf("the CTO could not replace a session: %v", err)
+	}
+	a, ok, err := st.Agent(old)
+	if err != nil || !ok || a.ReplacedBy != fresh {
+		t.Fatalf("the old session is not replaced: %+v %v", a, err)
+	}
+	log, err := st.DeskLog(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range log {
+		if entry.Source == "cto" && strings.Contains(entry.Text, old) && strings.Contains(entry.Text, fresh) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no Desk line says the CTO moved %s to %s: %+v", old, fresh, log)
+	}
+	var audited int
+	if err := n.d.st.db.QueryRow(`SELECT COUNT(*) FROM cto_actions WHERE text LIKE '%session_replace%'`).Scan(&audited); err != nil || audited != 1 {
+		t.Fatalf("audit lines: %d %v", audited, err)
+	}
+}

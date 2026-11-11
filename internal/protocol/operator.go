@@ -67,6 +67,12 @@ const (
 	// only: no agent tool sets it.
 	OpSessionRename = "session_rename" // takes SessionRenameRequest, answers SessionRenameResult
 
+	// OpSessionReplace repairs a restart that already orphaned a session: it
+	// moves the old session's work to the session its new conversation
+	// registered (decision 0132). Owner only through the command line or TUI,
+	// and the CTO through its checked operator path.
+	OpSessionReplace = "session_replace" // takes SessionReplaceRequest, answers SessionReplaceResult
+
 	// Project display names are set and read by the owner.
 	OpProjectDisplayGet = "project_display_get"
 	OpProjectDisplaySet = "project_display_set"
@@ -639,6 +645,24 @@ type SessionRenameRequest struct {
 type SessionRenameResult struct {
 	SessionID string `json:"session_id"`
 	Name      string `json:"name"`
+}
+
+// SessionReplaceRequest is OpSessionReplace: an old session whose restart
+// orphaned its work, and the session the new conversation registered.
+type SessionReplaceRequest struct {
+	OldSession string `json:"old_session"`
+	NewSession string `json:"new_session"`
+}
+
+// SessionReplaceResult answers OpSessionReplace. Moved is false when the old
+// session was already replaced or is still working, because neither is a
+// restart that left work behind.
+type SessionReplaceResult struct {
+	Moved      bool   `json:"moved"`
+	OldSession string `json:"old_session"`
+	NewSession string `json:"new_session"`
+	OldName    string `json:"old_name,omitempty"`
+	NewName    string `json:"new_name,omitempty"`
 }
 
 // NodeRenameRequest is OpNodeRename. An empty Name clears the display name.

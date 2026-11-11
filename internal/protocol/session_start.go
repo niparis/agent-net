@@ -25,6 +25,7 @@ const (
 	FrameSessionWakeRebind         = "session.wake_rebind"
 	FrameSessionResumeRebind       = "session.resume_rebind"
 	FrameSessionReplace            = "session.replace"
+	FrameSessionOwnerReplace       = "session.owner_replace"
 	FrameSessionStop               = "session.stop"
 	FrameSessionGet                = "session.get"
 	FrameSessionOwnerStart         = "session.owner_start"
@@ -228,6 +229,16 @@ type SessionResumeRebind struct {
 type SessionReplace struct {
 	SessionID    string `json:"session_id"`
 	NewSessionID string `json:"new_session_id"`
+}
+
+// SessionOwnerReplace asks the gateway to repair a restart that already
+// orphaned a session. The gateway uses the old session's own node, so the
+// owner's command line may be on any machine. Actor is "cto" when the CTO
+// asked, so the Desk line says who moved the work.
+type SessionOwnerReplace struct {
+	OldSession string `json:"old_session"`
+	NewSession string `json:"new_session"`
+	Actor      string `json:"actor,omitempty"`
 }
 
 // SessionAgentReservation is an owner-authorized selection for a future session.

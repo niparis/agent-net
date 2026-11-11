@@ -732,7 +732,7 @@ var ctoOwnerMethods = map[string]bool{
 	"notification_settings": true, "onboarding_restart": true,
 	"mcp_import": true, "mcp_native_remove": true, "tools_toggle": true, "tools_new_projects": true, "tools_plan": true, "tools_apply": true, "tools_undo": true,
 	"inbox_answer": true, "outcome_overrule": true,
-	"sessions_archive": true, "session_trust": true, "folder_trust": true, "folder_mcp": true, "process_stop": true, "session_policy": true, "session_rename": true, "node_rename": true, "machine_remove": true, "machine_rotate": true, "project_display_set": true, "integrations_set": true,
+	"sessions_archive": true, "session_trust": true, "folder_trust": true, "folder_mcp": true, "process_stop": true, "session_policy": true, "session_rename": true, "session_replace": true, "node_rename": true, "machine_remove": true, "machine_rotate": true, "project_display_set": true, "integrations_set": true,
 	"held_answer":  true,
 	"judgment_add": true,
 	"playbook_set": true, "cto_settings": true, "cto_send": true, "cto_new": true,
