@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -54,4 +55,106 @@ func TestStartUsesLiveListAndExplainsFailure(t *testing.T) {
 		t.Fatalf("failure does not explain the live lookup: %v", err)
 	}
 	os.Unsetenv("FAKE_OC_EXIT")
+}
+
+// A failed live read keeps the harness's own words for the owner, and the
+// failure is not cached: the next call runs the harness again, so a login the
+// owner just finished is seen at once. The fake harness is a small script, so
+// the real opencode is never run and no model call is made. No sleep is needed:
+// the two reads happen in the test's own order.
+func TestStartExplainsHarnessModelErrorAndDoesNotCache(t *testing.T) {
+	dir := t.TempDir()
+	stateFile := filepath.Join(dir, "models-read")
+	t.Setenv("FAKE_MODELS_STATE", stateFile)
+	bin := filepath.Join(dir, "opencode")
+	// The script uses only shell builtins: the harness runs with a narrow PATH,
+	// so commands such as cat and sed are not there.
+	script := `#!/bin/sh
+if [ "$1" = models ]; then
+	n=0
+	[ -f "$FAKE_MODELS_STATE" ] && read n < "$FAKE_MODELS_STATE"
+	echo $((n+1)) > "$FAKE_MODELS_STATE"
+	if [ "$n" = 0 ]; then
+		echo 'please run opencode auth login' >&2
+		exit 1
+	fi
+	echo 'fake/m1'
+	exit 0
+fi
+exit 3
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNodeWithDetect(t, g, shortSet,
+		inventoryWithModels("opencode", []string{"fake/m1"}),
+		func(c *Config) {
+			// The daemon reads the harness itself here, so ListModels and its
+			// error plumbing are exercised, not a fake ListModels.
+			c.ListModels = nil
+			c.HarnessPaths = map[string]string{"opencode": bin}
+		})
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+
+	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m2", Task: "x"})
+	if err == nil {
+		t.Fatal("the fake harness failure did not reach the caller")
+	}
+	if !strings.Contains(err.Error(), "please run opencode auth login") {
+		t.Fatalf("failure does not carry the harness's own error: %v", err)
+	}
+
+	// A failed read must not be cached: this one runs the harness again and
+	// sees the list it now prints.
+	next := w.d.listModelsLive(context.Background(), "opencode", "fake/m1")
+	if len(next.Harnesses) != 1 || next.Harnesses[0].Cached || next.Harnesses[0].Error != "" || len(next.Harnesses[0].Models) != 1 {
+		t.Fatalf("the failed read was cached: %+v", next)
+	}
+	raw, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != "2" {
+		t.Fatalf("harness read %q times, want 2", got)
+	}
+}
+
+// testModel must hand an effort to opencode as its variant, the way the worker
+// launcher does; opencode does not accept "model:high". A tiny fake harness
+// prints its argv, so the real opencode is never run and no model call is made.
+func TestModelTestOpencodeEffortIsVariant(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "opencode")
+	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{HarnessPaths: map[string]string{"opencode": bin}}}
+	const model = "alibaba-token-plan/deepseek-v4.1-flash-1017"
+	res := d.testModel(context.Background(), protocol.ModelTestRequest{Harness: "opencode", Model: model, Effort: "high"})
+	if !res.OK {
+		t.Fatalf("the fake harness did not run: %s", res.Output)
+	}
+	lines := strings.Split(res.Output, "\n")
+	has := func(want string) bool {
+		for _, line := range lines {
+			if line == want {
+				return true
+			}
+		}
+		return false
+	}
+	for _, line := range lines {
+		if strings.Contains(line, ":high") {
+			t.Fatalf("the model id carries the effort, which opencode does not take: %q", line)
+		}
+	}
+	if !has("--model") || !has(model) {
+		t.Fatalf("argv does not name the model: %q", res.Output)
+	}
+	if !has("--variant") || !has("high") {
+		t.Fatalf("argv does not carry the effort as the variant: %q", res.Output)
+	}
 }

@@ -25,8 +25,8 @@ type gatewayModelCacheEntry struct {
 
 // liveModels asks one machine's daemon for its harness model list now. It never
 // reads the last reported inventory: an offline machine has no live answer. A
-// read is reused for ModelListTTL, so a profile add followed by a picker does
-// not run the harness twice.
+// read with models is reused for ModelListTTL, so a profile add followed by a
+// picker does not run the harness twice. A failed or empty read is not reused.
 func (g *Gateway) liveModels(ctx context.Context, node protocol.NodeView, harness, filter string) (protocol.ModelListResult, error) {
 	key := node.NodeID + "\x00" + strings.ToLower(harness)
 	g.modelMu.Lock()
@@ -53,13 +53,31 @@ func (g *Gateway) liveModels(ctx context.Context, node protocol.NodeView, harnes
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return protocol.ModelListResult{}, fmt.Errorf("machine %s answered with a bad live model list: %v", node.Hostname, err)
 	}
-	g.modelMu.Lock()
-	if g.modelCache == nil {
-		g.modelCache = map[string]gatewayModelCacheEntry{}
+	// A failed or empty read is never cached: the next call asks the machine
+	// again, so a login or quota that was just fixed is seen at once.
+	if cacheableModels(out) {
+		g.modelMu.Lock()
+		if g.modelCache == nil {
+			g.modelCache = map[string]gatewayModelCacheEntry{}
+		}
+		g.modelCache[key] = gatewayModelCacheEntry{result: out, at: time.Now()}
+		g.modelMu.Unlock()
 	}
-	g.modelCache[key] = gatewayModelCacheEntry{result: out, at: time.Now()}
-	g.modelMu.Unlock()
 	return filterModels(out, filter), nil
+}
+
+// cacheableModels reports whether a live answer may be reused. An answer with
+// an error or no models is a failed read, not a list.
+func cacheableModels(out protocol.ModelListResult) bool {
+	if len(out.Harnesses) == 0 {
+		return false
+	}
+	for _, h := range out.Harnesses {
+		if h.Error != "" || len(h.Models) == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func filterModels(in protocol.ModelListResult, filter string) protocol.ModelListResult {

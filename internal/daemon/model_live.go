@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,11 @@ func (d *Daemon) modelsForHarness(ctx context.Context, name string) ([]string, b
 	if err != nil {
 		return nil, false, err
 	}
+	if len(models) == 0 {
+		// A failed or empty read is never cached: the next call asks the
+		// harness again, so a login or quota that was just fixed is seen.
+		return nil, false, nil
+	}
 	d.modelMu.Lock()
 	if d.modelCache == nil {
 		d.modelCache = map[string]modelCacheEntry{}
@@ -94,7 +100,7 @@ func (d *Daemon) readHarnessModels(ctx context.Context, name string) ([]string, 
 	if d.cfg.HarnessSearch != nil {
 		opts = *d.cfg.HarnessSearch
 	}
-	return harnesses.ListModels(ctx, name, path, opts), nil
+	return harnesses.ListModels(ctx, name, path, opts)
 }
 
 // explainStartFailure adds the harness's own error and one live model lookup
@@ -127,6 +133,48 @@ func (d *Daemon) explainStartFailure(ctx context.Context, harness, model string,
 	return fmt.Errorf("%w; %s", err, detail)
 }
 
+// modelTestArgs builds one small test turn. The effort is built through
+// protocol.ModelSelection.Arguments, the same helper each worker launcher uses
+// (worker_claude.go, worker_opencode.go, worker_codex.go): no harness takes it
+// glued to the model id.
+func modelTestArgs(harness, model, effort string) ([]string, error) {
+	selection := protocol.ParseModelSelection(harness, "", model, effort)
+	switch harness {
+	case "claude":
+		modelArgs, err := selection.Arguments(nil)
+		if err != nil {
+			return nil, err
+		}
+		return append([]string{"-p"}, append(modelArgs, "Reply with OK.")...), nil
+	case "opencode":
+		modelArgs, err := selection.Arguments(nil)
+		if err != nil {
+			return nil, err
+		}
+		// The launcher sends the effort as the session variant, and
+		// `opencode run` takes that as --variant.
+		args := []string{"run", "--model", modelArgs[0]}
+		if modelArgs[1] != "" {
+			args = append(args, "--variant", modelArgs[1])
+		}
+		return append(args, "Reply with OK."), nil
+	case "codex":
+		modelArgs, err := selection.Arguments(nil)
+		if err != nil {
+			return nil, err
+		}
+		// The launcher splits "model:effort" and sends the effort on
+		// turn/start; `codex exec` takes it as its reasoning-effort config.
+		name, level := splitCodexModel(modelArgs[0])
+		args := []string{"exec", "--model", name, "--skip-git-repo-check"}
+		if level != "" {
+			args = append(args, "-c", "model_reasoning_effort="+strconv.Quote(level))
+		}
+		return append(args, "Reply with OK."), nil
+	}
+	return nil, fmt.Errorf("a test start is not supported for %s", harness)
+}
+
 // testModel runs one small harness turn with a model. It is the optional real
 // test of a profile add. The output is the harness's own, trimmed.
 func (d *Daemon) testModel(ctx context.Context, p protocol.ModelTestRequest) protocol.ModelTestResult {
@@ -134,20 +182,9 @@ func (d *Daemon) testModel(ctx context.Context, p protocol.ModelTestRequest) pro
 	if err != nil {
 		return protocol.ModelTestResult{Output: err.Error()}
 	}
-	var args []string
-	model := p.Model
-	if p.Effort != "" {
-		model += ":" + p.Effort
-	}
-	switch p.Harness {
-	case "claude":
-		args = []string{"-p", "--model", model, "Reply with OK."}
-	case "opencode":
-		args = []string{"run", "--model", model, "Reply with OK."}
-	case "codex":
-		args = []string{"exec", "--model", model, "--skip-git-repo-check", "Reply with OK."}
-	default:
-		return protocol.ModelTestResult{Output: "a test start is not supported for " + p.Harness}
+	args, err := modelTestArgs(p.Harness, p.Model, p.Effort)
+	if err != nil {
+		return protocol.ModelTestResult{Output: err.Error()}
 	}
 	cctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()

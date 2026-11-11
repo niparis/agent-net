@@ -25,6 +25,22 @@ func fakeModelNode(t *testing.T, models []string) (*nodeConn, *atomic.Int32) {
 
 func fakeModelNodeFor(t *testing.T, byHarness map[string][]string) (*nodeConn, *atomic.Int32) {
 	t.Helper()
+	return fakeModelNodeAnswer(t, func(req protocol.ModelListRequest) []protocol.HarnessModels {
+		var list []protocol.HarnessModels
+		for name, models := range byHarness {
+			if req.Harness != "" && name != req.Harness {
+				continue
+			}
+			list = append(list, protocol.HarnessModels{Name: name, Models: models})
+		}
+		sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+		return list
+	})
+}
+
+// fakeModelNodeAnswer is fakeModelNodeFor with full rows, errors included.
+func fakeModelNodeAnswer(t *testing.T, answer func(protocol.ModelListRequest) []protocol.HarnessModels) (*nodeConn, *atomic.Int32) {
+	t.Helper()
 	var calls atomic.Int32
 	conns := make(chan *websocket.Conn, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,18 +84,12 @@ func fakeModelNodeFor(t *testing.T, byHarness map[string][]string) (*nodeConn, *
 			}
 			switch h.Type {
 			case protocol.FrameNodeModels:
+				// Requests are flat: the params sit next to type and id, not
+				// under data.
 				var req protocol.ModelListRequest
-				json.Unmarshal(h.Data, &req)
+				json.Unmarshal(raw, &req)
 				calls.Add(1)
-				var list []protocol.HarnessModels
-				for name, models := range byHarness {
-					if req.Harness != "" && name != req.Harness {
-						continue
-					}
-					list = append(list, protocol.HarnessModels{Name: name, Models: models})
-				}
-				sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
-				out := protocol.ModelListResult{Harnesses: list}
+				out := protocol.ModelListResult{Harnesses: answer(req)}
 				res, err := protocol.EncodeResult(h.ID, out, nil)
 				if err == nil {
 					server.Write(ctx, websocket.MessageText, res)
@@ -121,6 +131,66 @@ func TestMachineGetModelsIsLiveAndCached(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("harness listed %d times, want 1 within the five minute cache", got)
+	}
+}
+
+// A failed or empty live read is not cached at the gateway either, so a
+// profile add after a login is accepted at once. No sleep: the calls run in
+// this test's own order.
+func TestModelFailureIsNotCached(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("research", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var opencodeReads, piReads atomic.Int32
+	nc, calls := fakeModelNodeAnswer(t, func(req protocol.ModelListRequest) []protocol.HarnessModels {
+		switch req.Harness {
+		case "opencode":
+			if opencodeReads.Add(1) == 1 {
+				return []protocol.HarnessModels{{Name: "opencode", Error: "please run opencode auth login"}}
+			}
+			return []protocol.HarnessModels{{Name: "opencode", Models: []string{"provider/model"}}}
+		case "pi":
+			if piReads.Add(1) == 1 {
+				return []protocol.HarnessModels{{Name: "pi"}}
+			}
+			return []protocol.HarnessModels{{Name: "pi", Models: []string{"provider/model"}}}
+		}
+		return nil
+	})
+	nc.id = node
+	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0), conns: map[string]*nodeConn{node: nc}}
+	view := protocol.NodeView{NodeID: node, Hostname: "research"}
+
+	first, err := g.liveModels(context.Background(), view, "opencode", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Harnesses) != 1 || first.Harnesses[0].Error == "" {
+		t.Fatalf("the failed read: %+v", first.Harnesses)
+	}
+	second, err := g.liveModels(context.Background(), view, "opencode", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Harnesses) != 1 || len(second.Harnesses[0].Models) != 1 {
+		t.Fatalf("the failed read was cached: %+v", second.Harnesses)
+	}
+
+	// An empty read is not a list either.
+	if _, err := g.liveModels(context.Background(), view, "pi", ""); err != nil {
+		t.Fatal(err)
+	}
+	pi, err := g.liveModels(context.Background(), view, "pi", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pi.Harnesses) != 1 || len(pi.Harnesses[0].Models) != 1 {
+		t.Fatalf("the empty read was cached: %+v", pi.Harnesses)
+	}
+	if got := calls.Load(); got != 4 {
+		t.Fatalf("machine read %d times, want 4", got)
 	}
 }
 
