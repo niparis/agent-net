@@ -653,6 +653,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil {
 		return none, err
 	}
+	// The subscriptions belong to the owner, not to one machine: read them
+	// once, and let every quota decision of this start use that one reading.
+	quotas := g.ownerQuotas(pick.NodeID)
 	automatic := p.Model == "" || strings.EqualFold(p.Model, "auto")
 	var automaticNote, harnessNote string
 	if automatic && p.Precheck {
@@ -661,7 +664,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		// run. Only what needs no level is checked: a named harness whose
 		// whole account has no allowance left.
 		if p.Harness != "" {
-			if reason := protocol.QuotaHarnessRefusal(g.nodeQuotas(pick.NodeID), p.Harness); reason != "" {
+			if reason := protocol.QuotaHarnessRefusal(quotas, p.Harness); reason != "" {
 				return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
 			}
 		}
@@ -673,7 +676,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if err != nil {
 			return none, err
 		}
-		quotas := g.nodeQuotas(pick.NodeID)
 		scores, err := g.store.scores()
 		if err != nil {
 			return none, err
@@ -763,7 +765,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if p.Model == "" {
 			p.Harness = "opencode"
 		} else {
-			harness, err := g.chooseWorkerHarness(node, p.Model, p.RequireReadOnly)
+			harness, err := g.chooseWorkerHarness(node, p.Model, p.RequireReadOnly, quotas)
 			if err != nil {
 				return none, err
 			}
@@ -791,13 +793,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	lead := workerDifficultyLead(p.Assessment, difficultyUsed)
 
-	quotas := g.nodeQuotas(pick.NodeID)
 	var modelNote string
 	if automatic {
 		modelNote = lead + " -> " + p.Harness + " " + p.Model + " " + automaticNote
 	} else {
 		var resolveNote string
-		p.Model, resolveNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, "", p.Effort)
+		p.Model, resolveNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, "", quotas, p.Effort)
 		if err != nil {
 			return none, err
 		}
@@ -1053,8 +1054,9 @@ func (g *Gateway) recordWorkerPickerNote(a *protocol.WorkerAssessment, sessionID
 	}
 }
 
-// resolveWorkerModel applies the machine's model inventory and ranking to an explicit name.
-func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.HarnessInfo, harness, model, modelNote string, effortOverride ...string) (string, string, error) {
+// resolveWorkerModel applies the machine's model inventory and ranking to an
+// explicit name. quotas is the start's owner-wide reading.
+func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.HarnessInfo, harness, model, modelNote string, quotas *protocol.Quotas, effortOverride ...string) (string, string, error) {
 	profiles, err := g.store.WorkerProfiles()
 	if err != nil {
 		return "", "", err
@@ -1110,7 +1112,6 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 			return result, modelNote, nil
 		}
 	}
-	quotas := g.nodeQuotas(node.NodeID)
 	if model != "" && len(hi.Models) > 0 {
 		usage, err := g.store.ModelUsage(node.NodeID, harness, time.Duration(protocol.ModelUsageDays)*24*time.Hour)
 		if err != nil {
@@ -1193,8 +1194,8 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 // named none. It resolves the model against every harness that reported a list
 // and prefers a subscription-backed harness over a pay-per-use one (decision
 // 0026, amendment). A bare name that only matches a pay-per-use provider is
-// refused with the full id to use.
-func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, requireReadOnly bool) (string, error) {
+// refused with the full id to use. quotas is the start's owner-wide reading.
+func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, requireReadOnly bool, quotas *protocol.Quotas) (string, error) {
 	type candidate struct {
 		harness      string
 		signedIn     bool
@@ -1214,7 +1215,6 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 			break
 		}
 	}
-	quotas := g.nodeQuotas(node.NodeID)
 	var cands []candidate
 	var payErr, opencodeErr, firstErr error
 	for i := range node.Harnesses {
@@ -1225,7 +1225,7 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 		if requireReadOnly && !protocol.WorkerReadOnlySupported(h.Name) {
 			continue
 		}
-		resolved, _, err := g.resolveWorkerModel(node, h, h.Name, model, "")
+		resolved, _, err := g.resolveWorkerModel(node, h, h.Name, model, "", quotas)
 		if err != nil {
 			var pe *protocol.PayPerUseModelError
 			if errors.As(err, &pe) && payErr == nil {
@@ -1319,6 +1319,9 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if target == nil {
 		return none, reject("machine %s is offline, so worker %s cannot be continued", old.Hostname, old.SessionID)
 	}
+	// A continued worker starts a process too: its model resolution and its
+	// pay-per-use note read the same owner-wide quotas as a new start.
+	quotas := g.ownerQuotas(old.NodeID)
 	if p.Effort != "" || p.Provider != "" {
 		harness := p.Harness
 		if harness == "" {
@@ -1349,7 +1352,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 				if hi.Name != harness {
 					continue
 				}
-				p.Model, _, err = g.resolveWorkerModel(node, hi, harness, p.Model, "")
+				p.Model, _, err = g.resolveWorkerModel(node, hi, harness, p.Model, "", quotas)
 				if err != nil {
 					return none, err
 				}
@@ -1402,7 +1405,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 			c.Track, c.Playbooks = track, books
 		}
 		modelNote = workerDifficultyLead(c.Assessment, protocol.WorkerLevel(c.Assessment))
-		if c.Model != "" && protocol.PayPerUseProvider(c.Harness, c.Model, g.nodeQuotas(old.NodeID)) {
+		if c.Model != "" && protocol.PayPerUseProvider(c.Harness, c.Model, quotas) {
 			modelNote = appendModelNote(modelNote, fmt.Sprintf("uses pay-per-use provider (%s)", protocol.ProfileProvider(c.Harness, c.Model)))
 		}
 	}

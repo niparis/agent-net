@@ -99,3 +99,62 @@ func TestCheckWorkerFloor(t *testing.T) {
 		t.Errorf("floor 0 gave under=%v, note=%q, noReading=%v", under, note, noReading)
 	}
 }
+
+func TestQuotaWorkerFloorsMonthlyWindow(t *testing.T) {
+	floors := WorkerFloors{
+		Floors: map[string]int{
+			"opencode-go": 10,
+		},
+	}
+
+	// 1. A provider with a monthly window at 99% and other windows low is skipped, with the monthly reason.
+	// Even if rolling window is also under floor (e.g. 8% left), the more constrained monthly window (1% left) wins.
+	qMonthly := &Quotas{
+		Providers: []QuotaProvider{
+			{
+				Provider: "opencode-go",
+				Windows: []QuotaWindow{
+					{ID: "rolling", Label: "rolling", Kind: "rolling", PercentUsed: 92},      // 8% left (< 10%)
+					{ID: "weekly", Label: "weekly", Kind: "weekly", PercentUsed: 10},         // 90% left
+					{ID: "included_usage", Label: "month", Kind: "monthly", PercentUsed: 99}, // 1% left (< 10%, most constrained)
+				},
+			},
+		},
+	}
+
+	under, note, noReading := CheckWorkerFloor(qMonthly, floors, "opencode", "opencode-go/deepseek-v4.1-flash")
+	if !under {
+		t.Fatalf("expected monthly at 99%% to be under floor, got under=false")
+	}
+	if noReading {
+		t.Fatalf("expected reading present, got noReading=true")
+	}
+	wantSentence := "opencode-go has 1% left in its monthly window, under your 10% worker floor"
+	if note != wantSentence {
+		t.Errorf("note = %q, want %q", note, wantSentence)
+	}
+
+	// 2. A provider with all windows above the floor is still a candidate.
+	qAbove := &Quotas{
+		Providers: []QuotaProvider{
+			{
+				Provider: "opencode-go",
+				Windows: []QuotaWindow{
+					{ID: "rolling", Label: "rolling", Kind: "rolling", PercentUsed: 5},
+					{ID: "weekly", Label: "weekly", Kind: "weekly", PercentUsed: 10},
+					{ID: "included_usage", Label: "month", Kind: "monthly", PercentUsed: 40},
+				},
+			},
+		},
+	}
+	under, note, noReading = CheckWorkerFloor(qAbove, floors, "opencode", "opencode-go/deepseek-v4.1-flash")
+	if under {
+		t.Fatalf("expected above floor, got under=true (note=%s)", note)
+	}
+	if noReading {
+		t.Fatalf("expected reading present")
+	}
+	if note != "" {
+		t.Errorf("note = %q, want empty", note)
+	}
+}
