@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
 
@@ -36,8 +38,12 @@ func TestIdleCompact(t *testing.T) {
 	for _, tc := range []struct {
 		name, status, kind                             string
 		tokens                                         int
+		model                                          string
 		age                                            time.Duration
 		attached, noPrompt, disabled, scanError, noJob bool
+		worker                                         bool
+		repo                                           string
+		repoThreshold                                  int
 		clients                                        string // ps output; the clients' pids are asked to the host
 		viewing                                        bool   // the host says the client's herdr pane is focused, or outside herdr
 		wantLog                                        string
@@ -45,12 +51,16 @@ func TestIdleCompact(t *testing.T) {
 		want                                           int
 	}{
 		{name: "eligible", status: "idle", kind: "bg", tokens: 200000, age: 50 * time.Minute, want: 1},
+		{name: "fill before idle", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "repo threshold blocks fill", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, repo: "shop", repoThreshold: 90},
+		{name: "repo threshold allows fill", status: "idle", kind: "bg", tokens: 750000, model: "claude-sonnet-5", age: 4 * time.Minute, repo: "shop", repoThreshold: 70, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "worker is never compacted", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, worker: true},
 		{name: "busy", status: "busy", kind: "bg", tokens: 300000, age: time.Hour},
 		{name: "shell", status: "shell", kind: "bg", tokens: 300000, age: time.Hour},
 		{name: "interactive", status: "idle", kind: "interactive", tokens: 300000, age: time.Hour},
 		{name: "attached", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true},
 		{name: "small", status: "idle", kind: "bg", tokens: 199999, age: time.Hour},
-		{name: "recent", status: "idle", kind: "bg", tokens: 300000, age: 49 * time.Minute},
+		{name: "recent", status: "idle", kind: "bg", tokens: 300000, age: 4 * time.Minute},
 		{name: "disabled", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, disabled: true},
 		{name: "process scan failure", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, scanError: true},
 		{name: "missing job ID", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, noJob: true},
@@ -72,7 +82,7 @@ func TestIdleCompact(t *testing.T) {
 				t.Fatal(err)
 			}
 			transcript := filepath.Join(td, "test.jsonl")
-			before := fmt.Sprintf("{\"type\":\"system\",\"subtype\":\"compact_boundary\"}\n{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":20,\"cache_read_input_tokens\":%d}}}\n", tc.tokens-30)
+			before := fmt.Sprintf("{\"type\":\"system\",\"subtype\":\"compact_boundary\"}\n{\"type\":\"assistant\",\"message\":{\"model\":%q,\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":20,\"cache_read_input_tokens\":%d}}}\n", tc.model, tc.tokens-30)
 			if err := os.WriteFile(transcript, []byte(before), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -112,6 +122,13 @@ func TestIdleCompact(t *testing.T) {
 				h.snap.Values = []settings.Value{{Key: "sessions.idle_compaction", Level: "network", Scope: "network", Value: []byte("false")}}
 			}
 			a := New(Config{SessionsDir: sessions, ProjectsDir: projects})
+			h.worker = tc.worker
+			h.where = settings.Where{Repo: tc.repo}
+			if tc.repoThreshold > 0 {
+				h.snap.Values = append(h.snap.Values,
+					settings.Value{Key: "sessions.compaction_threshold_percent", Level: "network", Scope: "network", Value: []byte("80")},
+					settings.Value{Key: "sessions.compaction_threshold_percent", Level: "repo", Scope: tc.repo, Value: []byte(strconv.Itoa(tc.repoThreshold))})
+			}
 			a.host = h
 			a.compactNow = func() time.Time { return now }
 			a.compactBinary = bin
@@ -173,8 +190,16 @@ func TestIdleCompact(t *testing.T) {
 					t.Errorf("%d event lines for one idle stretch, want 1; logs=%v", n, h.logs)
 				}
 				if tc.want > 0 {
-					if got := h.current()[0].IdleCompactedAt; got != started.Unix() {
+					if got := h.current()[0].LastCompactedAt; got != started.Unix() {
 						t.Fatalf("note timestamp=%d", got)
+					}
+					wantReason := "idle"
+					if tc.model != "" {
+						fill, _ := protocol.ContextFill(int64(tc.tokens), protocol.ClaudeContextLimit(tc.model))
+						wantReason = fmt.Sprintf("fill %d%%", fill)
+					}
+					if got := h.current()[0].LastCompactedReason; got != wantReason {
+						t.Fatalf("note reason=%q, want %q", got, wantReason)
 					}
 					// A real busy observation starts a new stretch; polling idle alone did not.
 					// A busy turn writes to the transcript, so write one too: the
@@ -215,7 +240,20 @@ type compactHost struct {
 	*fakeHost
 	snap    settings.Snapshot
 	viewing map[int]bool
+	worker  bool
+	where   settings.Where
 	scans   int // calls of AttachClientsViewing: one per scan
+}
+
+func (h *compactHost) SettingsWhere(harness, nativeID string) settings.Where {
+	if harness == "claude" && nativeID == "test" {
+		return h.where
+	}
+	return settings.Where{}
+}
+
+func (h *compactHost) IsWorkerSession(harness, nativeID string) bool {
+	return h.worker && harness == "claude" && nativeID == "test"
 }
 
 func (h *compactHost) AttachClientsViewing(pids []int) map[int]bool {

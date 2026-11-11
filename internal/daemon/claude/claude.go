@@ -234,7 +234,8 @@ func (a *Adapter) poll() {
 	a.mu.Lock()
 	for id, f := range byNative {
 		a.observeCompactStateLocked(f.info)
-		f.info.IdleCompactedAt = a.compactStates[id].at
+		f.info.LastCompactedAt = a.compactStates[id].at
+		f.info.LastCompactedReason = a.compactStates[id].reason
 		byNative[id] = f
 	}
 	for id := range a.compactStates {
@@ -243,7 +244,8 @@ func (a *Adapter) poll() {
 		}
 	}
 	for i := range infos {
-		infos[i].IdleCompactedAt = a.compactStates[infos[i].NativeID].at
+		infos[i].LastCompactedAt = a.compactStates[infos[i].NativeID].at
+		infos[i].LastCompactedReason = a.compactStates[infos[i].NativeID].reason
 	}
 	a.byNative, a.bySock = byNative, bySock
 	a.mu.Unlock()

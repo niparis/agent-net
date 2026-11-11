@@ -34,3 +34,15 @@ loop controls OpenCode only, so no Claude CTO session is already covered by it.
 
 Tests use a fake attach binary and temporary session files and transcripts.
 No test attaches to an owner's session or uses model credits.
+
+## 2026-11-11: one fill setting for every persistent session
+
+The owner replaced the separate idle rules with one primary key,
+`sessions.compaction_threshold_percent` (default 80, levels network, team, repo
+and agent). The fill trigger fires at that percentage of the model's context.
+The idle trigger now uses the provider's prompt cache window from
+`sessions.cache_window_seconds` (default 300 seconds) minus 30 seconds. The old
+`sessions.idle_compaction_after` is gone; an explicit value in it and the old
+CTO cache window are migrated into the new key. `sessions.idle_compaction` and
+`sessions.idle_compaction_min_tokens` stay as documented idle-only controls.
+See decision 0132.

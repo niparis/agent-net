@@ -437,22 +437,31 @@ settings:
     levels: [network]
     default: Agent-Net-Caller
     live: true
+  - key: sessions.compaction_threshold_percent
+    description: Compact a persistent non-worker session when its context fill reaches this percent. Claude and OpenCode (including the CTO) support compaction; Codex and pi do not.
+    kind: advice
+    type: int
+    min: 1
+    max: 100
+    levels: [network, team, repo, agent]
+    default: 80
+    live: true
+  - key: sessions.cache_window_seconds
+    description: Prompt cache lifetime per provider in seconds, as a JSON object such as {"anthropic":300}; the idle trigger fires shortly before the cache expires.
+    kind: advice
+    type: map
+    levels: [network]
+    default: {default: 300}
+    live: true
   - key: sessions.idle_compaction
-    description: Compact unattached idle background Claude sessions.
+    description: Enable the idle trigger for persistent sessions. It is separate from the fill trigger.
     kind: advice
     type: bool
     levels: [network]
     default: true
     live: true
-  - key: sessions.idle_compaction_after
-    description: Idle time before background Claude compaction.
-    kind: advice
-    type: duration
-    levels: [network]
-    default: 50m
-    live: true
   - key: sessions.idle_compaction_min_tokens
-    description: Minimum context tokens for idle Claude compaction.
+    description: Skip the idle trigger for Claude sessions smaller than this many context tokens. It does not affect the fill trigger.
     kind: advice
     type: int
     levels: [network]

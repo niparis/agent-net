@@ -201,12 +201,14 @@ type SessionInfo struct {
 	// started. It is not the time the daemon last saw the session alive.
 	// Empty from an older daemon.
 	LastActive int64 `json:"last_active,omitempty"`
-	// IdleCompactedAt is the last automatic idle compaction in Unix seconds.
-	// Discovery clears it on the next busy stretch.
-	IdleCompactedAt int64 `json:"idle_compacted_at,omitempty"`
-	OwnerUsedAt     int64 `json:"owner_used_at,omitempty"`
-	OwnerUses       int   `json:"owner_uses,omitempty"`
-	PinnedAt        int64 `json:"pinned_at,omitempty"`
+	// LastCompactedAt is the last automatic compaction in Unix seconds and
+	// LastCompactedReason says why: "fill N%" or "idle". Discovery clears both
+	// on the next busy stretch.
+	LastCompactedAt     int64  `json:"last_compacted_at,omitempty"`
+	LastCompactedReason string `json:"last_compacted_reason,omitempty"`
+	OwnerUsedAt         int64  `json:"owner_used_at,omitempty"`
+	OwnerUses           int    `json:"owner_uses,omitempty"`
+	PinnedAt            int64  `json:"pinned_at,omitempty"`
 	// HarnessActivity is the last observed output, state change or delivery acknowledgement.
 	HarnessActivity int64 `json:"harness_activity,omitempty"`
 	// LimitedUntil is when the session's provider usage limit ends, in Unix
@@ -387,12 +389,14 @@ type AgentView struct {
 	// LastActive is when the session last did something, in Unix seconds.
 	// It is not when its daemon last reported it. 0 from an older gateway.
 	LastActive int64 `json:"last_active,omitempty"`
-	// IdleCompactedAt is the last automatic idle compaction in Unix seconds.
-	// Discovery clears it on the next busy stretch.
-	IdleCompactedAt int64 `json:"idle_compacted_at,omitempty"`
-	OwnerUsedAt     int64 `json:"owner_used_at,omitempty"`
-	OwnerUses       int   `json:"owner_uses,omitempty"`
-	PinnedAt        int64 `json:"pinned_at,omitempty"`
+	// LastCompactedAt is the last automatic compaction in Unix seconds and
+	// LastCompactedReason says why: "fill N%" or "idle". Discovery clears both
+	// on the next busy stretch.
+	LastCompactedAt     int64  `json:"last_compacted_at,omitempty"`
+	LastCompactedReason string `json:"last_compacted_reason,omitempty"`
+	OwnerUsedAt         int64  `json:"owner_used_at,omitempty"`
+	OwnerUses           int    `json:"owner_uses,omitempty"`
+	PinnedAt            int64  `json:"pinned_at,omitempty"`
 	// LimitedUntil and LimitedReason: see SessionInfo. A past time means the
 	// limit is over. Empty from an older gateway.
 	LimitedUntil  int64  `json:"limited_until,omitempty"`

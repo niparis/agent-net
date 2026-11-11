@@ -22,6 +22,7 @@ import (
 type idleCompactState struct {
 	attempted, running, awaitingIdle bool
 	at                               int64
+	reason                           string // "fill N%" or "idle"
 	skipLogged                       string // last skip reason logged in this idle stretch
 }
 
@@ -36,6 +37,18 @@ type compactSettingsHost interface{ SettingsSnapshot() settings.Snapshot }
 // viewers. One call is one scan, so it asks herdr once for all clients.
 type compactViewHost interface {
 	AttachClientsViewing(pids []int) map[int]bool
+}
+
+// compactWorkerHost says whether agent-net started a session as a worker.
+// Workers are never compacted.
+type compactWorkerHost interface {
+	IsWorkerSession(harness, nativeID string) bool
+}
+
+// compactWhereHost gives the repo, team and agent that apply to a session,
+// so settings resolve at every level.
+type compactWhereHost interface {
+	SettingsWhere(harness, nativeID string) settings.Where
 }
 
 // viewedJobs returns a function that says whether the owner is viewing a job.
@@ -135,38 +148,66 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 	if h, ok := a.host.(compactSettingsHost); ok {
 		snap = h.SettingsSnapshot()
 	}
-	if !snap.Bool("sessions.idle_compaction", settings.Where{}) {
-		return
+	whereFor := func(nativeID string) settings.Where {
+		if h, ok := a.host.(compactWhereHost); ok {
+			return h.SettingsWhere("claude", nativeID)
+		}
+		return settings.Where{}
 	}
+	workers, _ := a.host.(compactWorkerHost)
 	now := time.Now()
 	if a.compactNow != nil {
 		now = a.compactNow()
 	}
 	viewed, err := a.viewedJobs(ctx, 0)
 	if err != nil {
-		a.host.Logf("claude idle compaction: cannot check attached clients: %v", err)
+		a.host.Logf("claude compaction: cannot check attached clients: %v", err)
 		return
 	}
 	a.mu.Lock()
 	var candidates []found
 	for _, f := range a.byNative {
 		s := a.compactStates[f.info.NativeID]
-		if f.kind == "bg" && f.job != "" && f.info.Status == "idle" && !s.attempted && f.info.LastActive > 0 && now.Sub(time.Unix(f.info.LastActive, 0)) >= snap.Duration("sessions.idle_compaction_after", settings.Where{}) {
-			candidates = append(candidates, f)
+		if f.kind != "bg" || f.job == "" || f.info.Status != "idle" || s.attempted || f.info.LastActive <= 0 {
+			continue
 		}
+		if f.info.Worker != nil || (workers != nil && workers.IsWorkerSession("claude", f.info.NativeID)) {
+			continue
+		}
+		candidates = append(candidates, f)
 	}
 	a.mu.Unlock()
 	for _, f := range candidates {
 		if ctx.Err() != nil {
 			return
 		}
+		where := whereFor(f.info.NativeID)
+		threshold := snap.Int("sessions.compaction_threshold_percent", where)
+		if threshold <= 0 {
+			threshold = 80
+		}
+		idleEnabled := snap.Bool("sessions.idle_compaction", where)
+		minTokens := int64(snap.Int("sessions.idle_compaction_min_tokens", where))
+		windows := snap.Map("sessions.cache_window_seconds", where)
 		path := a.models.transcript(f.info.NativeID, f.info.Cwd)
 		if noTurnSinceCompact(path) {
 			a.compactSkip(f.info.NativeID, "no_activity_since_compact")
 			continue
 		}
-		if contextTokens(path) < int64(snap.Int("sessions.idle_compaction_min_tokens", settings.Where{})) {
-			a.compactSkip(f.info.NativeID, "small_context")
+		tokens := contextTokens(path)
+		limit := protocol.ClaudeContextLimit(a.models.Model(f.info.NativeID, f.info.Cwd))
+		fill, known := protocol.ContextFill(tokens, limit)
+		reason := ""
+		idleDue := idleEnabled && now.Sub(time.Unix(f.info.LastActive, 0)) >= protocol.CacheWindow(windows, "anthropic")-30*time.Second
+		if known && tokens*100 >= limit*int64(threshold) {
+			reason = fmt.Sprintf("fill %d%%", fill)
+		} else if idleDue && tokens >= minTokens {
+			reason = "idle"
+		}
+		if reason == "" {
+			if idleDue && tokens < minTokens {
+				a.compactSkip(f.info.NativeID, "small_context")
+			}
 			continue
 		}
 		if viewed(f.job) {
@@ -183,6 +224,7 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 		}
 		s.attempted = true
 		s.running = true
+		s.reason = reason
 		a.compactStates[f.info.NativeID] = s
 		a.mu.Unlock()
 		err := a.compactSession(ctx, f, path)
@@ -195,15 +237,16 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 				completed = a.compactNow()
 			}
 			s.at = completed.Unix()
+			s.reason = reason
 			s.awaitingIdle = true
 		}
 		a.compactStates[f.info.NativeID] = s
 		a.mu.Unlock()
 		if err != nil {
-			a.host.Logf("claude idle compaction %s: %v", f.info.NativeID, err)
+			a.host.Logf("claude compaction %s: %v", f.info.NativeID, err)
 			a.compactEvent(f.info.NativeID, "error")
 		} else {
-			a.host.Logf("claude idle compaction %s: compacted while idle", f.info.NativeID)
+			a.host.Logf("claude compaction %s: compacted (%s)", f.info.NativeID, reason)
 			a.compactEvent(f.info.NativeID, "ok")
 		}
 	}

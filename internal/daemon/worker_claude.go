@@ -413,26 +413,8 @@ func claudeTranscriptStats(projectsDir, session string) workerStats {
 	return st
 }
 
-// claudeContextLimit is the context window of a Claude model, by family. The
-// values are the ones in Claude Code 2.1.314's model list: the 5 series and
-// Opus 4.7 and later have 1M, the rest have 200k. An unknown model has no
-// limit (0), so the views show no percentage.
-func claudeContextLimit(model string) int64 {
-	m := strings.ToLower(model)
-	switch {
-	case strings.HasPrefix(m, "claude-haiku-5"),
-		strings.HasPrefix(m, "claude-sonnet-5"),
-		strings.HasPrefix(m, "claude-opus-5"),
-		strings.HasPrefix(m, "claude-opus-4-7"),
-		strings.HasPrefix(m, "claude-opus-4-8"),
-		strings.HasPrefix(m, "claude-fable-5"),
-		strings.HasPrefix(m, "claude-mythos-5"):
-		return 1_000_000
-	case strings.HasPrefix(m, "claude-"):
-		return 200_000
-	}
-	return 0
-}
+// claudeContextLimit is the context window of a Claude model, by family.
+func claudeContextLimit(model string) int64 { return protocol.ClaudeContextLimit(model) }
 
 var claudeDirBad = regexp.MustCompile(`[^A-Za-z0-9]`)
 

@@ -71,8 +71,19 @@ func TestSettingsTargetAmbiguousAndUnknown(t *testing.T) {
 	if _, err = s.ResolveSettingsTarget(protocol.SettingsTarget{Level: "network", Name: "shop"}); err == nil {
 		t.Fatal("network with a name accepted")
 	}
-	if _, err = s.ResolveSettingsTarget(protocol.SettingsTarget{Level: "team", Name: "shop"}); err == nil {
-		t.Fatal("unknown level accepted")
+	if _, err = s.ResolveSettingsTarget(protocol.SettingsTarget{Level: "team", Name: "shop"}); err == nil || !strings.Contains(err.Error(), "unknown team") {
+		t.Fatalf("unknown team: %v", err)
+	}
+}
+
+func TestSettingsTargetTeam(t *testing.T) {
+	s, _ := targetNamesakes(t)
+	if _, err := s.db.Exec(`INSERT INTO teams(id,name,created_at,updated_at) VALUES('forge','forge',0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	team, err := s.ResolveSettingsTarget(protocol.SettingsTarget{Level: "team", Name: "forge"})
+	if err != nil || team.Target == nil || team.Target.Kind != "team" || team.Target.ID != "forge" || team.Target.Token == "" {
+		t.Fatalf("team: %+v %v", team, err)
 	}
 }
 

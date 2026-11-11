@@ -217,8 +217,8 @@ line is:
 /compact Keep: the current task and its goal; open questions to the owner and to other agents; every agent-net ID (sessions s_, workers, changes ch_, messages, asks); branches, worktree paths and full commit shas; decisions made; the next step.
 ```
 
-The cache-expiry setting is ignored for that harness. The idle Claude rules are
-set by the `sessions.idle_compaction` settings.
+Claude uses the same fill threshold and cache-window idle trigger as every other
+persistent session. `sessions.idle_compaction` turns only the idle trigger off.
 
 The daemon asks OpenCode 2.2.0 to compact with
 `POST /api/session/{id}/compact` and `{"delivery":"steer"}`, which runs at the
@@ -3996,37 +3996,63 @@ free pages may remain allocated, so database file sizes may not shrink.
 
 When a live session's provider says its usage or rate limit is hit, the daemon reports `limited_until` (Unix seconds) and `limited_reason` (for example `ChatGPT usage limit`) with the session. The reset time comes from the error text ("try again in ~102 min", "resets 8am (UTC)", a retry-after number); without one it is one hour from the error. The limit ends when that time passes or when the session completes a turn. Pi (turn errors), OpenCode (failed run events) and Codex (`turn/completed`) report it to the daemon; Claude Code's transcript is read for an API error entry. All use the same classifier as the worker failure check (`internal/providererr`). A message to a limited session is still delivered, and its receipt adds the line `<name> hit its usage limit; it can answer after HH:MM UTC`. Nothing else is blocked.
 
-### Idle compaction of background Claude sessions
+### Auto-compaction of persistent sessions
 
-See [decision 0078](decisions/0078-idle-compaction-for-background-sessions.md).
+See [decision 0078](decisions/0078-idle-compaction-for-background-sessions.md)
+and [decision 0132](decisions/0132-one-fill-compaction-setting.md).
 
-The daemon checks once a minute for unattached background Claude sessions with
-an idle status. Settings exposes three live values: `sessions.idle_compaction`
-(default `true`), `sessions.idle_compaction_after` (default `"50m"`), and
-`sessions.idle_compaction_min_tokens` (default `200000`). The CTO can read and
-apply these advice settings immediately, without owner approval.
+One live advice setting controls automatic compaction:
+`sessions.compaction_threshold_percent` (default `80`, range 1 to 100). It can
+be set at the network, team, repo and agent levels. A session resolves the value
+that applies to its repo, its repo's agent and that agent's team. Workers are
+never compacted. The CTO reads the same key at its agent level, where the
+migration sets `50` so its old behaviour stays.
 
-Idle time starts at the latest session-file or transcript write. Context tokens
-are the latest assistant usage: input plus cache read plus cache creation.
-A running `claude attach <jobId>` process, found through `ps`, prevents automatic
-compaction only when the owner can be looking at it: the client runs outside
-herdr, or in a herdr pane that `herdr pane list` reports as `focused: true`.
-A client in an unfocused herdr pane does not block, so tabs left open for days
-do not stop compaction. If herdr cannot say where a client runs, it counts as
-viewed. One scan runs `herdr pane list` once per herdr server and `herdr pane process-info` at most once per pane, and only when a session has passed the token check. The daemon checks again before typing, excluding its own client.
+Two settings are secondary controls for the idle trigger only.
+`sessions.idle_compaction` (default `true`) turns the idle trigger on or off.
+`sessions.idle_compaction_min_tokens` (default `200000`) skips the idle trigger
+for a Claude session below that size. Neither affects the fill trigger.
+
+The fill trigger fires when context tokens reach the threshold percentage of
+the model's window. Context tokens are the latest assistant usage: input plus
+cache read plus cache creation. The idle trigger fires when a session has been
+idle for its provider's prompt cache window minus 30 seconds.
+`sessions.cache_window_seconds` (default `{"default":300}`) maps a provider to
+its window in seconds. Whichever comes first wins. Neither runs mid-turn, while
+a client is attached, or after the session already compacted in this idle
+stretch. A busy turn resets that guard. The guard is in daemon memory and resets
+on daemon restart.
+
+Claude Code has no compaction API. The daemon compacts an idle background
+session by attaching with `claude attach <jobId>` and typing `/compact` with
+fixed focus instructions. A running `claude attach <jobId>` process, found
+through `ps`, prevents automatic compaction only when the owner can be looking
+at it: the client runs outside herdr, or in a herdr pane that
+`herdr pane list` reports as `focused: true`. A client in an unfocused herdr
+pane does not block, so tabs left open for days do not stop compaction. If
+herdr cannot say where a client runs, it counts as viewed. One scan runs
+`herdr pane list` once per herdr server and `herdr pane process-info` at most
+once per pane. The daemon checks again before typing, excluding its own client.
 If the process scan fails it skips compaction.
 
 The daemon opens its own attach client in a pseudo-terminal, waits up to 30
 seconds for the prompt, sends `/compact` and Enter, then waits up to five minutes
 for a new `compact_boundary` transcript record. It closes and reaps the attach
-client and checks that the background process is alive. Each idle stretch gets
-one attempt, including failures; a later busy turn resets it. This guard resets
-when the daemon restarts. Logs record the outcome. Each attempt or skip decision
-writes one line, `event=idle_compact session=<id> result=<ok|skipped:reason|error>`,
-with the reasons `small_context` and `viewing`; the same skip reason is logged
-once per session in an idle stretch. After success the Sessions
-row says `compacted while idle HH:MM`, in your display time zone, until a new turn.
-The separate CTO compaction loop handles OpenCode, so it does not overlap.
+client and checks that the background process is alive. Logs record the outcome.
+Each attempt or skip decision writes one line,
+`event=idle_compact session=<id> result=<ok|skipped:reason|error>`, with the
+reasons `small_context` and `viewing`; the same skip reason is logged once per
+session in an idle stretch.
+
+OpenCode compacts through `POST /api/session/{id}/compact` with
+`{"delivery":"steer"}`. This is the same call the CTO loop uses. The first reply
+after a compaction reports the context after it; the CTO chat shows one line
+such as `compacted: 182k -> 14k tokens`.
+
+Codex and pi have no compaction command yet. Setting the key does not attempt a
+compaction for them, and the setting description says so. The Sessions row shows
+`compacted HH:MM (fill N%)` or `compacted HH:MM (idle)` in your display time
+zone after a successful compaction, until a new turn clears it.
 
 ### Ending a stopped background Claude tree
 

@@ -42,10 +42,6 @@ func runCTOCommand(ctx context.Context, op graphCaller, out io.Writer, args []st
 	if err := json.Unmarshal(raw, &settings); err != nil {
 		return err
 	}
-	b, err := json.Marshal(settings.Compaction)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "harness: %s\nmodel: %s\ncompaction: %s\n", settings.Harness, settings.Model, b)
+	fmt.Fprintf(out, "harness: %s\nmodel: %s\n", settings.Harness, settings.Model)
 	return nil
 }

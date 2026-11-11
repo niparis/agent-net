@@ -877,6 +877,11 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			// The tools state comes from the session's MCP hello. Discovery
 			// does not know it, and must not erase it.
 			in.ToolsVersion, in.ToolsOld = ls.info.ToolsVersion, ls.info.ToolsOld
+			// Auto-compaction records its note on the daemon's session.
+			// Discovery keeps it until a busy stretch starts.
+			if in.LastCompactedAt == 0 && in.Status != "busy" {
+				in.LastCompactedAt, in.LastCompactedReason = ls.info.LastCompactedAt, ls.info.LastCompactedReason
+			}
 			in = d.toolsLinkInfoLocked(ls, in, time.Now())
 			if ls.lastActive.After(candidate) {
 				candidate = ls.lastActive
@@ -1016,6 +1021,41 @@ func (d *Daemon) infoOf(ls *localSession) protocol.SessionInfo {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.infoLocked(ls)
+}
+
+// IsWorkerSession says whether agent-net started this harness session as a
+// worker. Auto-compaction never touches a worker.
+func (d *Daemon) IsWorkerSession(harness, nativeID string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	ls := d.sessions[key(harness, nativeID)]
+	return ls != nil && ls.info.Worker != nil
+}
+
+// SettingsWhere gives the repo, team and agent that apply to a session. The
+// snapshot derives the team and agent from the repo.
+func (d *Daemon) SettingsWhere(harness, nativeID string) settings.Where {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if ls := d.sessions[key(harness, nativeID)]; ls != nil {
+		return settings.Where{Repo: ls.info.Repo.Project}
+	}
+	return settings.Where{}
+}
+
+// noteCompacted records the last automatic compaction on a session and tells
+// the gateway. Discovery keeps the note until the next busy stretch.
+func (d *Daemon) noteCompacted(harness, nativeID string, at int64, reason string) {
+	d.mu.Lock()
+	ls := d.sessions[key(harness, nativeID)]
+	if ls != nil {
+		ls.info.LastCompactedAt = at
+		ls.info.LastCompactedReason = reason
+	}
+	d.mu.Unlock()
+	if ls != nil {
+		d.goBackground(func() { d.pushSession(ls) })
+	}
 }
 
 func (d *Daemon) infoLocked(ls *localSession) protocol.SessionInfo {

@@ -127,7 +127,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("settings_values_undo", "Undo a settings revision.", map[string]ctoField{"revision": n("Revision.")})
 	add("integrations_set", "Set integrations.", map[string]ctoField{"peer_messages": b("Messages."), "codex_tools": b("Codex."), "hint_hook": b("Hints."), "policy_hook": b("Policy."), "needs_hook": b("Needs you."), "workers_mod": b("Workers."), "quota_axi": b("Quotas.")})
 	add("notification_settings", "Set notifications.", map[string]ctoField{"disabled": b("Off if true.")})
-	add("cto_settings", "Set CTO settings.", map[string]ctoField{"title": s("Name on screens."), "harness": en("Harness.", "opencode", "claude"), "model": model, "compaction": obj("Compaction.")})
+	add("cto_settings", "Set CTO settings.", map[string]ctoField{"title": s("Name on screens."), "harness": en("Harness.", "opencode", "claude"), "model": model})
 	add("protected_providers_set", "Set protected providers.", map[string]ctoField{"protected_providers": arr("Provider IDs."), "reason": s("Reason.")})
 	add("worker_providers_set", "Set worker providers.", map[string]ctoField{"providers": arr("IDs; omit for defaults.")})
 	add("score_set", "Set a model score.", map[string]ctoField{"model": s("Model or pattern."), "score": {typ: "number", desc: "0-100; omit to clear."}})
@@ -174,11 +174,6 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 		"command": property("string", "Command."), "args": stringsArray("No secrets."), "env": stringsArray("Names, not values."),
 		"url": property("string", "Endpoint."), "timeout_sec": property("integer", "Seconds."),
 		"headers": map[string]any{"type": "array", "description": "Headers.", "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"name": property("string", "Name."), "env": property("string", "Env."), "file": property("string", "Path.")}}},
-	})
-	setProperties("cto_settings", "compaction", map[string]any{
-		"threshold_percent":    property("integer", "Percent."),
-		"cache_expiry_enabled": property("boolean", "Default true."),
-		"cache_window_seconds": map[string]any{"type": "object", "description": "Seconds per provider.", "additionalProperties": map[string]any{"type": "integer"}},
 	})
 	return out
 }()

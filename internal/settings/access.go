@@ -39,6 +39,16 @@ func (s Snapshot) Strings(key string, w Where) []string {
 	return v
 }
 
+func (s Snapshot) Map(key string, w Where) map[string]int64 {
+	e, err := s.Resolve(key, w)
+	if err != nil {
+		return nil
+	}
+	var v map[string]int64
+	_ = json.Unmarshal(e.Value, &v)
+	return v
+}
+
 func (s Snapshot) Int(key string, w Where) int {
 	e, err := s.Resolve(key, w)
 	if err != nil {
