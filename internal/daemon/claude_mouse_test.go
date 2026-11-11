@@ -54,7 +54,7 @@ func TestClaudeMouseSettingMergesAndReapplies(t *testing.T) {
 	}
 	d := &Daemon{log: log.New(io.Discard, "", 0)}
 	d.cfg.claudeSettingsPath = path
-	d.ensureClaudeMouseSetting()
+	d.ensureClaudeMouseSetting(context.Background())
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestClaudeMouseSettingMergesAndReapplies(t *testing.T) {
 	if err := os.WriteFile(path, []byte(drifted), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	d.ensureClaudeMouseSetting()
+	d.ensureClaudeMouseSetting(context.Background())
 	value, present, err := claudesettings.MouseValue(path)
 	if err != nil || !present || value != claudesettings.MouseOn {
 		t.Fatalf("after drift value=%q present=%v err=%v", value, present, err)
@@ -89,7 +89,7 @@ func TestClaudeMouseSettingLeavesInvalidJSON(t *testing.T) {
 	var lines []string
 	d := mouseTestDaemon(t, &lines)
 	d.cfg.claudeSettingsPath = path
-	d.ensureClaudeMouseSetting()
+	d.ensureClaudeMouseSetting(context.Background())
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != string(bad) {
 		t.Fatalf("file changed: %q %v", got, err)
@@ -119,7 +119,7 @@ func TestClaudeMouseDriftReportsLiveSessionsOnceADay(t *testing.T) {
 		key("claude", "cto"): {info: protocol.SessionInfo{Harness: "claude", NativeID: "cto", Name: "agent-net-cto", PID: os.Getpid()}},
 	}
 	d.claudeCTO.session = "cto"
-	d.checkClaudeMouseSessions(time.Now())
+	d.checkClaudeMouseSessions(context.Background(), time.Now())
 	if len(lines) != 2 {
 		t.Fatalf("reports = %v", lines)
 	}
@@ -127,7 +127,7 @@ func TestClaudeMouseDriftReportsLiveSessionsOnceADay(t *testing.T) {
 	if lines[0] != want && lines[1] != want {
 		t.Fatalf("reports = %v, want %q", lines, want)
 	}
-	d.checkClaudeMouseSessions(time.Now())
+	d.checkClaudeMouseSessions(context.Background(), time.Now())
 	if len(lines) != 2 {
 		t.Fatalf("repeated a report the same day: %v", lines)
 	}
@@ -153,7 +153,7 @@ func TestClaudeMouseDriftIgnoresSessionsThatReadTheSetting(t *testing.T) {
 	d.sessions = map[string]*localSession{
 		key("claude", "abc"): {info: protocol.SessionInfo{Harness: "claude", NativeID: "abc", Name: "garden", PID: os.Getpid()}},
 	}
-	d.checkClaudeMouseSessions(time.Now())
+	d.checkClaudeMouseSessions(context.Background(), time.Now())
 	if len(lines) != 0 {
 		t.Fatalf("reported a session that is fine: %v", lines)
 	}
@@ -228,16 +228,64 @@ func TestClaudeMouseServiceWaitsWithLiveSessions(t *testing.T) {
 		t.Fatalf("reports = %v", lines)
 	}
 
-	// No live session: the service is stopped and the next launch is clean.
+	// The same day, the last session ends: the service is stopped now, and the
+	// report it already made does not hide the stop.
 	writeRoster(`{}`)
-	lines = nil
-	d = mouseTestDaemon(t, &lines)
-	d.cfg.HarnessPaths = map[string]string{"claude": "/bin/true"}
 	d.checkClaudeMouseService(context.Background(), time.Now())
 	if stops != 1 {
 		t.Fatalf("stops = %d, want 1", stops)
 	}
-	if len(lines) != 1 || !strings.Contains(lines[0], "it was restarted") {
+	if len(lines) != 2 || !strings.Contains(lines[1], "it was stopped") {
+		t.Fatalf("reports = %v", lines)
+	}
+	// A repeated pass does not stop the same service twice a day.
+	d.checkClaudeMouseService(context.Background(), time.Now())
+	if stops != 1 {
+		t.Fatalf("stops = %d after a repeated pass, want 1", stops)
+	}
+}
+
+func TestClaudeMouseServiceDoesNotStopWithoutAFreshRoster(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	rosterDir := filepath.Join(dir, "daemon")
+	if err := os.MkdirAll(rosterDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// An old roster that lists no session proves nothing: a session may have
+	// started since. The service is reported and left alone.
+	raw := `{"supervisorPid":1234,"updatedAt":` + fmt.Sprint(time.Now().Add(-time.Hour).UnixMilli()) + `,"workers":{}}`
+	if err := os.WriteFile(filepath.Join(rosterDir, "roster.json"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldList, oldArgs := processList, processArgs
+	processList = func() []int { return []int{1234} }
+	processArgs = func(pid int) []string {
+		if pid == 1234 {
+			return []string{"/home/someone/.local/bin/claude", "daemon", "run"}
+		}
+		return nil
+	}
+	oldStop := claudeDaemonStop
+	stops := 0
+	claudeDaemonStop = func(context.Context, string) error {
+		stops++
+		return nil
+	}
+	t.Cleanup(func() {
+		processList, processArgs = oldList, oldArgs
+		claudeDaemonStop = oldStop
+	})
+	fakeProcessEnv(t, "CLAUDE_CODE_DISABLE_MOUSE=1")
+
+	var lines []string
+	d := mouseTestDaemon(t, &lines)
+	d.cfg.HarnessPaths = map[string]string{"claude": "/bin/true"}
+	d.checkClaudeMouseService(context.Background(), time.Now())
+	if stops != 0 {
+		t.Fatalf("stopped a service without a fresh roster")
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "will be restarted when it has no live sessions") {
 		t.Fatalf("reports = %v", lines)
 	}
 }

@@ -34,12 +34,14 @@ var mouseProcView = readProcView
 
 // claudeDaemonStop stops Claude Code's background service. It is a variable so
 // tests never run the real command. The supported command is
-// `claude daemon stop --any` (see `claude daemon --help`); it also ends the
-// background sessions, so callers must prove there are none first.
+// `claude daemon stop --any --keep-workers` (see `claude daemon --help`).
+// `stop` also ends the background sessions; `--keep-workers` leaves a detached
+// session running, so even a session that started between the roster read and
+// the stop is never killed.
 var claudeDaemonStop = func(ctx context.Context, bin string) error {
 	cctx, cancel := context.WithTimeout(ctx, claudeDaemonStopTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(cctx, bin, "daemon", "stop", "--any").CombinedOutput()
+	out, err := exec.CommandContext(cctx, bin, "daemon", "stop", "--any", "--keep-workers").CombinedOutput()
 	if err != nil {
 		if detail := strings.TrimSpace(string(out)); detail != "" {
 			return fmt.Errorf("%v: %s", err, detail)
@@ -62,15 +64,15 @@ func (d *Daemon) claudeSettingsFile() string {
 // start and from the integrations loop every minute: no timer of its own.
 func (d *Daemon) claudeMouseMaintenance(ctx context.Context) {
 	now := time.Now()
-	d.ensureClaudeMouseSetting()
-	d.checkClaudeMouseSessions(now)
+	d.ensureClaudeMouseSetting(ctx)
+	d.checkClaudeMouseSessions(ctx, now)
 	d.checkClaudeMouseService(ctx, now)
 }
 
 // ensureClaudeMouseSetting writes the choice when the file does not carry it.
 // It never touches another key, and never writes a file that is not valid
 // JSON: that file is reported instead.
-func (d *Daemon) ensureClaudeMouseSetting() {
+func (d *Daemon) ensureClaudeMouseSetting(ctx context.Context) {
 	path := d.claudeSettingsFile()
 	if path == "" {
 		return
@@ -78,7 +80,7 @@ func (d *Daemon) ensureClaudeMouseSetting() {
 	changed, err := claudesettings.EnsureMouseOn(path)
 	if err != nil {
 		if claudesettings.IsNotJSON(err) {
-			d.reportMouseNotice("settings:"+path, fmt.Sprintf(
+			d.reportMouseNotice(ctx, "settings:"+path, fmt.Sprintf(
 				"Claude settings %s is not valid JSON; the wheel setting was not applied", path))
 			return
 		}
@@ -94,7 +96,7 @@ func (d *Daemon) ensureClaudeMouseSetting() {
 // the choice. The user settings file applies from the moment Claude reads it,
 // which is when the session starts; a file written after that did not reach a
 // running session, so its inherited environment still decides.
-func (d *Daemon) checkClaudeMouseSessions(now time.Time) {
+func (d *Daemon) checkClaudeMouseSessions(ctx context.Context, now time.Time) {
 	d.mu.Lock()
 	sessions := make([]protocol.SessionInfo, 0, len(d.sessions))
 	for _, ls := range d.sessions {
@@ -130,7 +132,7 @@ func (d *Daemon) checkClaudeMouseSessions(now time.Time) {
 		if name == "" {
 			name = s.NativeID
 		}
-		d.reportMouseNotice("session:"+key(s.Harness, s.NativeID), fmt.Sprintf(
+		d.reportMouseNotice(ctx, "session:"+key(s.Harness, s.NativeID), fmt.Sprintf(
 			"%s on %s: wheel off (mouse tracking disabled); it scrolls after its next restart",
 			name, d.hostName()))
 	}
@@ -159,9 +161,10 @@ func (d *Daemon) claudeSessionMouseOff(s protocol.SessionInfo, path string) bool
 }
 
 // mouseValueOff tells whether a value of CLAUDE_CODE_DISABLE_MOUSE turns mouse
-// tracking off. Unset, "0" and "false" keep it on.
+// tracking off. Unset and "0" keep it on; every other value is not the choice
+// agent-net makes (decision 0128).
 func mouseValueOff(value string) bool {
-	return value != "" && value != "0" && !strings.EqualFold(value, "false")
+	return value != "" && value != "0"
 }
 
 // ---- Claude Code's background service ----
@@ -196,7 +199,7 @@ func claudeDaemonServicePIDs() []int {
 		if len(args) < 3 {
 			continue
 		}
-		if filepath.Base(args[0]) == "claude" && args[1] == "daemon" && args[2] == "run" {
+		if claudeProgram(args[0]) && args[1] == "daemon" && args[2] == "run" {
 			out = append(out, pid)
 		}
 	}
@@ -206,7 +209,9 @@ func claudeDaemonServicePIDs() []int {
 // checkClaudeMouseService finds a background service that still carries the
 // old value. A service with live sessions is reported once and left alone; a
 // service with no live sessions is stopped, and the next launch starts a new
-// one with the current environment.
+// one with the current environment. The two cases keep their own once-a-day
+// record, so a service reported as busy is still stopped when it later has no
+// live session, without waiting for the next report window.
 func (d *Daemon) checkClaudeMouseService(ctx context.Context, now time.Time) {
 	for _, pid := range claudeDaemonServicePIDs() {
 		value := processEnvVar(pid, claudesettings.MouseKey)
@@ -218,8 +223,8 @@ func (d *Daemon) checkClaudeMouseService(ctx context.Context, now time.Time) {
 		}
 		switch claudeMouseServiceAction(value, live) {
 		case claudeMouseRestartService:
-			key := "service:" + fmt.Sprint(pid)
-			if !d.mouseNoticeDue(key, now) {
+			// One stop per service per day, even when the stop keeps failing.
+			if !d.mouseNoticeDue("stop:"+fmt.Sprint(pid), now) {
 				continue
 			}
 			bin, err := d.harnessBinary("claude")
@@ -231,18 +236,13 @@ func (d *Daemon) checkClaudeMouseService(ctx context.Context, now time.Time) {
 				d.Logf("claude mouse: stop background service %d: %v", pid, err)
 				continue
 			}
+			d.markMouseNotice("stop:"+fmt.Sprint(pid), now)
 			d.Logf("claude mouse: stopped background service %d with no live sessions; the next launch starts a clean one", pid)
-			d.markMouseNotice(key, now)
-			d.showMouseNotice(fmt.Sprintf(
-				"%s: Claude's background service had mouse tracking off and no live sessions; it was restarted",
+			d.reportMouseNotice(ctx, "service-stop:"+fmt.Sprint(pid), fmt.Sprintf(
+				"%s: Claude's background service had mouse tracking off and no live sessions; it was stopped, and the next launch starts a clean one",
 				d.hostName()))
 		case claudeMouseWaitService:
-			key := "service:" + fmt.Sprint(pid)
-			if !d.mouseNoticeDue(key, now) {
-				continue
-			}
-			d.markMouseNotice(key, now)
-			d.showMouseNotice(fmt.Sprintf(
+			d.reportMouseNotice(ctx, "service:"+fmt.Sprint(pid), fmt.Sprintf(
 				"%s: Claude's background service has mouse tracking off; it will be restarted when it has no live sessions",
 				d.hostName()))
 		}
@@ -272,19 +272,21 @@ func (d *Daemon) claudeServiceLiveSessions(now time.Time) int {
 
 // reportMouseNotice shows one line in the owner's TUI and writes it to the
 // Desk log. It keeps to one report per key per day.
-func (d *Daemon) reportMouseNotice(key, text string) {
+func (d *Daemon) reportMouseNotice(ctx context.Context, key, text string) {
 	now := time.Now()
 	if !d.mouseNoticeDue(key, now) {
 		return
 	}
 	d.markMouseNotice(key, now)
-	d.showMouseNotice(text)
+	d.showMouseNotice(ctx, text)
 }
 
 // showMouseNotice sends the line to the local TUIs and the Desk log.
-func (d *Daemon) showMouseNotice(text string) {
+func (d *Daemon) showMouseNotice(ctx context.Context, text string) {
 	d.broadcastCTOUI(protocol.UIRequest{Text: text, DaemonNotice: true})
-	if _, err := d.call(context.Background(), "desk.note", protocol.DeskNote{Text: text}); err != nil {
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text}); err != nil {
 		d.Logf("claude mouse: desk log: %v", err)
 	}
 }
