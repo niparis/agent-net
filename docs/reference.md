@@ -4190,3 +4190,27 @@ eligible parts still arrive. Paused nudges cannot trigger the one-hour
 lookahead. Session-start failure notifications keep the complete actionable
 error text, including MCP server details, and use the agent-net sender even
 when the requesting session is the CTO.
+
+### Nudge firing log
+
+Every automatic nudge in the table above writes one row to `nudge_fires` with
+its kind, recipient session, the session's agent and team at fire time, message
+id and time. A batched envelope has one row per original nudge message.
+
+A nudge counts as followed when the first of these comes from the recipient
+within 30 minutes after it fired: an agent-net tool call, an announce, step
+evidence, or a message that is not an ack. The 30 minute window is a code
+constant, not a setting. A tool call marks matching rows at once; the other
+signals are marked when the stats are read, using indexed lookups rather than a
+message scan.
+
+`agent_nudge_stats {since?, kind?, team?, agent?}` returns fires, followed and
+the useful rate per kind by agent and per kind by team, most fires first. The
+window defaults to the last 24 hours; `since` is an RFC3339 time. The chief has
+the tool through the normal agent role. The CTO tool list is at its schema
+budget, so the CTO reads the same numbers in the TUI.
+
+The TUI Settings tab has a Nudges section with the total and the five kinds
+with the most fires. `agent_nudge_pause` in preview mode also returns a
+`useful_line`, for example `useful 2 of 14 in 24h`; preview still writes
+nothing. No nudge behaviour, default or setting changes.

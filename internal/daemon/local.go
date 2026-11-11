@@ -804,6 +804,13 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		}
 		return lc.ctoTool(ctx, raw)
 	}
+	// A tool call from a bound session is work for the nudge firing log. It is
+	// recorded before the tool runs, so a slow or failed tool still counts.
+	if ls != nil && agentToolMethods[method] {
+		if id, err := lc.boundID(); err == nil && id != "" {
+			d.touchToolWork(id)
+		}
+	}
 	if res, ok, err := lc.dispatchOperator(ctx, method, raw); ok {
 		return res, err
 	}

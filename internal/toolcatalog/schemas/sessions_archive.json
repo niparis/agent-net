@@ -4,7 +4,7 @@
     "properties": {
       "reason": {
         "type": "string",
-        "description": "Reason for the action, decision or proposal."
+        "description": "Reason."
       },
       "ids": {
         "type": "array",

@@ -113,6 +113,9 @@ func (s *Store) remindPendingBefore(before time.Time, sessions map[string]bool) 
    VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
 			return nil, err
 		}
+		if err = recordNudgeFire(tx, "reply_reminder", m.To, m.ID, m.CreatedAt); err != nil {
+			return nil, err
+		}
 		// 2 records a reminder pulled forward before its normal grace. Only
 		// that reminder can bypass the age checks during queued dispatch.
 		flag := 1

@@ -148,7 +148,35 @@ func (m Model) settingsItems() []settingsItem {
 		}
 		items = append(items, settingsItem{7, "setting-value", i, label})
 	}
+	items = append(items, m.nudgeStatItems()...)
 	return items
+}
+
+// nudgeStatItems is the small Settings table of automatic nudge usefulness.
+// It is sorted by most fires and capped, so a busy network does not push the
+// working rules off the screen.
+const nudgeStatRows = 5
+
+func (m Model) nudgeStatItems() []settingsItem {
+	total := "Nudges (24h): not read yet"
+	if m.nudgeStatsErr != nil {
+		total = "Nudges (24h): unavailable"
+	} else if m.nudgeStats.Since != "" {
+		total = fmt.Sprintf("Nudges (24h): useful %d of %d (%s)", m.nudgeStats.Followed, m.nudgeStats.Fires, nudgePercent(m.nudgeStats.UsefulRate))
+	}
+	items := []settingsItem{{8, "nudge", 0, total}}
+	for i, row := range m.nudgeStats.Kinds {
+		if i >= nudgeStatRows {
+			break
+		}
+		items = append(items, settingsItem{8, "nudge-row", i, fmt.Sprintf("  %-18s %-16s %d/%d  %s",
+			cellDots(row.Kind, 18), cellDots(row.AgentName, 16), row.Followed, row.Fires, nudgePercent(row.UsefulRate))})
+	}
+	return items
+}
+
+func nudgePercent(rate float64) string {
+	return fmt.Sprintf("%.0f%%", rate*100)
 }
 
 func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -175,7 +203,7 @@ func (m Model) settingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if keyAction(contextSettings, k.String()) == "previous section" {
 			step = -1
 		}
-		section := (item.section + step + 8) % 8
+		section := (item.section + step + 9) % 9
 		if i, ok := settingsSection(items, section); ok {
 			m.settingsRow = i
 		}
@@ -480,8 +508,8 @@ func (m Model) settingsView(w, h int) []string {
 	case modeApps:
 		return append(out, m.appsView(w, max(h-1, 1))...)
 	}
-	names := []string{"Connected apps", "Integrations", "Machines", "Time zone", "Notifications", "Tips", "CTO standing orders", "Working rules and guidance"}
-	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips.", "Your lasting instructions to the CTO. It reads them at the start of every conversation.", "Change network values and review their history."}
+	names := []string{"Connected apps", "Integrations", "Machines", "Time zone", "Notifications", "Tips", "CTO standing orders", "Working rules and guidance", "Nudges"}
+	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips.", "Your lasting instructions to the CTO. It reads them at the start of every conversation.", "Change network values and review their history.", "Automatic nudges in the last 24 hours, by kind and agent, most fires first."}
 	items := m.settingsItems()
 	selected := min(max(m.settingsRow, 0), len(items)-1)
 	if !settingsSelectable(items[selected]) {
@@ -631,6 +659,35 @@ func settingSource(v protocol.SettingView) string {
 	}
 	return v.Source
 }
+
+type nudgeStatsMsg struct {
+	stats protocol.NudgeStatsResult
+	err   error
+}
+
+// loadNudgeStats reads the automatic nudge firing log for the Settings table.
+// It is read when the tab opens, not on every refresh: the lazy follow pass
+// writes only the rows that just crossed their window.
+func (m Model) loadNudgeStats() tea.Cmd {
+	src, ok := m.src.(inboxCaller)
+	return func() tea.Msg {
+		if !ok {
+			return nudgeStatsMsg{err: fmt.Errorf("unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		raw, err := src.Call(ctx, protocol.OpNudgeStats, protocol.NudgeStatsArgs{})
+		if err != nil {
+			return nudgeStatsMsg{err: err}
+		}
+		var stats protocol.NudgeStatsResult
+		if err = json.Unmarshal(raw, &stats); err != nil {
+			return nudgeStatsMsg{err: err}
+		}
+		return nudgeStatsMsg{stats: stats}
+	}
+}
+
 func (m Model) loadSettingValues() tea.Cmd {
 	src, ok := m.src.(inboxCaller)
 	repo := m.settingRepo

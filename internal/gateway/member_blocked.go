@@ -301,6 +301,9 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
 		return nil, err
 	}
+	if err = recordNudgeFire(tx, "member_blocked", m.To, m.ID, m.CreatedAt); err != nil {
+		return nil, err
+	}
 	s.event(tx, "msg.stored", "", m.From, m.ID, "type=notification by=agent-net member_blocked")
 	if err := record(tx); err != nil {
 		return nil, err

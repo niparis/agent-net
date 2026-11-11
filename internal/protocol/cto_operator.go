@@ -22,7 +22,7 @@ session_agent_list integrations_get hidden_get onboarding_get quality_get timezo
 protected_providers_get worker_floors_get worker_providers_get difficulty_get scores_get scores_weekly
 worker_rotation_get difficulty_judge_pick cto_events cto_graph_history held_list team_history
 graph_get charter_history edge_history node_settings_get settings_owner_read changes_owner_find playbook_get picker_get
-sign_in_list`
+sign_in_list nudge_stats`
 
 const CTOOperatorChanges = `operator_undo sessions_archive cto_enter cto_send session_enter apps.public.restore session_pin apps.refuse apps.public.url tools_keep_copy tools_save_changed tools_update_copies tools_import_folder
 mcp_coverage_plan mcp_coverage_apply mcp_coverage_undo tools_accept tools_import tools_export gateway_backup

@@ -202,6 +202,9 @@ type Model struct {
 	showHiddenNodes           bool
 	settingsRow               int
 	settingValues             []protocol.SettingView
+	nudgeStats                protocol.NudgeStatsResult
+	nudgeStatsAt              time.Time
+	nudgeStatsErr             error
 	standing                  []protocol.StandingOrder
 	standingRemoved           *protocol.StandingOrder
 	settingEdit               int
@@ -1387,6 +1390,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case standingMsg:
 		return m.onStanding(msg)
+	case nudgeStatsMsg:
+		m.nudgeStatsAt = m.now()
+		if msg.err != nil {
+			m.nudgeStatsErr = msg.err
+			return m, nil
+		}
+		m.nudgeStatsErr = nil
+		if msg.stats.Since != "" {
+			m.nudgeStats = msg.stats
+		}
+		return m, nil
 	case settingValuesMsg:
 		if msg.err != nil {
 			m.fail("Settings: " + explain(msg.err))
@@ -1408,7 +1422,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		next, cmd := m.onAppsResult(msg)
 		if next.tab == settingsTab && msg.op == "apps.list" {
-			cmd = tea.Batch(cmd, next.loadSettingValues(), next.loadStandingOrders())
+			cmd = tea.Batch(cmd, next.loadSettingValues(), next.loadStandingOrders(), next.loadNudgeStats())
 		}
 		if next.tab == settingsTab {
 			items := next.settingsItems()

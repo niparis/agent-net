@@ -399,9 +399,13 @@ type Daemon struct {
 	// native ID. It is loaded from the state database so a restart cannot make
 	// an idle session look active. Guarded by mu.
 	activity map[string]time.Time
-	adapters map[string]Adapter
-	inflight map[string]chan struct{}
-	lk       *link
+	// toolTouches is the last nudge work touch sent per session. It keeps a
+	// burst of tool calls from sending a frame each; the follow window is 30
+	// minutes, so one per second is plenty. Guarded by mu.
+	toolTouches map[string]time.Time
+	adapters    map[string]Adapter
+	inflight    map[string]chan struct{}
+	lk          *link
 	// connecting is true between a successful dial and the end of the handshake.
 	connecting bool
 	// upserting counts session.upsert calls in flight. The gateway may push a

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -79,6 +80,29 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		data, err = g.store.FindNudgePauses(nc.id, q.SessionID)
+	case protocol.FrameNudgeStats:
+		q, derr := decode[protocol.NudgeStatsArgs](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.NudgeStats(q)
+	case protocol.FrameNudgeTouch:
+		q, derr := decode[protocol.NudgeTouchRequest](raw)
+		if derr != nil || q.SessionID == "" {
+			return nil, true, reject("bad %s", typ)
+		}
+		owner, oerr := g.store.SessionNode(q.SessionID)
+		if oerr != nil {
+			return nil, true, oerr
+		}
+		if owner != nc.id {
+			return nil, true, reject("that session is not on this machine")
+		}
+		if q.At <= 0 || q.At > g.store.now().UnixNano()+int64(time.Minute) {
+			return nil, true, reject("bad %s time", typ)
+		}
+		err = g.store.TouchNudgeWork(q.SessionID, q.At)
+		data = map[string]bool{"ok": err == nil}
 	case protocol.FrameAskSort:
 		q, derr := decode[protocol.AskSortRequest](raw)
 		if derr != nil {

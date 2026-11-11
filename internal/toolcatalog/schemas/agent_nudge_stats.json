@@ -1,0 +1,132 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "since": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Earliest fire time as RFC 3339. Defaults to the last 24 hours."
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "idle_check",
+          "autonomy_continue",
+          "reply_reminder",
+          "loop_tick",
+          "step_reminder",
+          "stuck_step",
+          "undelivered",
+          "waiting_notice",
+          "wake_failed",
+          "member_blocked"
+        ]
+      },
+      "team": {
+        "type": "string",
+        "description": "Team name or id."
+      },
+      "agent": {
+        "type": "string",
+        "description": "Agent name or id."
+      }
+    },
+    "required": [],
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "since": {
+        "type": "string"
+      },
+      "fires": {
+        "type": "integer"
+      },
+      "followed": {
+        "type": "integer"
+      },
+      "useful_rate": {
+        "type": "number"
+      },
+      "kinds": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "agent": {
+              "type": "string"
+            },
+            "agent_name": {
+              "type": "string"
+            },
+            "fires": {
+              "type": "integer"
+            },
+            "followed": {
+              "type": "integer"
+            },
+            "useful_rate": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "fires",
+            "followed",
+            "useful_rate"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "teams": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "team": {
+              "type": "string"
+            },
+            "team_name": {
+              "type": "string"
+            },
+            "fires": {
+              "type": "integer"
+            },
+            "followed": {
+              "type": "integer"
+            },
+            "useful_rate": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "fires",
+            "followed",
+            "useful_rate"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "note": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "since",
+      "fires",
+      "followed",
+      "useful_rate",
+      "kinds",
+      "teams"
+    ],
+    "additionalProperties": false
+  }
+}

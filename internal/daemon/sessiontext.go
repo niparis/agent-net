@@ -59,6 +59,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpPlaybookGet: true, protocol.OpPlaybookSet: true,
 	protocol.OpPermissionUndo: true,
 	protocol.OpNudgeUndo:      true,
+	protocol.OpNudgeStats:     true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -628,6 +629,15 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("bad desk_log request")
 		}
 		res, err = d.call(ctx, "desk.log", p)
+	case protocol.OpNudgeStats:
+		var p protocol.NudgeStatsArgs
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad nudge_stats request")
+		}
+		if err = p.Validate(); err != nil {
+			return nil, true, err
+		}
+		res, err = d.call(ctx, protocol.FrameNudgeStats, p)
 	case "learned_list", "learned_answer", "learned_view":
 		var p struct {
 			ID        int64  `json:"suggestion_id"`
