@@ -2726,10 +2726,19 @@ func (s *Store) upsertSession(q interface {
 		}
 	}
 	lastActive := in.LastActive * int64(time.Second)
+	// An exited harness has no live harness even when its process and session
+	// file survive: a Claude background session keeps both after /exit, so
+	// discovery still lists it. Nothing can be delivered or attached to it,
+	// and the owner resumes it from that offline row. This is the one place a
+	// session's online flag is set from the status its harness reports.
+	online := 1
+	if in.Status == "exited" {
+		online = 0
+	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, worker_title, repo_description, worker_started,
 		tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at, limited_until, limited_reason)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid,
 		-- A worker whose run is over stays ended. A late session sync from its
@@ -2742,7 +2751,7 @@ func (s *Store) upsertSession(q interface {
 		last_seen=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
 			THEN sessions.last_seen ELSE excluded.last_seen END,
 		online=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
-			THEN 0 ELSE 1 END, archived_at=0,
+			THEN 0 ELSE excluded.online END, archived_at=0,
 		last_active=MAX(sessions.last_active, excluded.last_active),
 		harness_activity=MAX(sessions.harness_activity, ?,
 			CASE WHEN excluded.status='busy' AND sessions.status<>'busy' THEN excluded.last_seen ELSE 0 END),
@@ -2755,8 +2764,8 @@ func (s *Store) upsertSession(q interface {
 		no_project=excluded.no_project, idle_compacted_at=excluded.idle_compacted_at,
 		limited_until=excluded.limited_until, limited_reason=excluded.limited_reason,
 		worker_run_active=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
-			THEN 0 WHEN sessions.online=0 THEN 1 ELSE sessions.worker_run_active END`,
-		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive,
+			THEN 0 WHEN sessions.online=0 AND excluded.online=1 THEN 1 ELSE sessions.worker_run_active END`,
+		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive, online,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, workerTitle,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
 		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject),

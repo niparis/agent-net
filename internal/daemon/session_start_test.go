@@ -297,9 +297,9 @@ func seedClaudeSessionFile(t *testing.T, sessions string, pid int, native, cwd, 
 }
 
 // An exited Claude background session keeps its process and its session file,
-// so discovery still lists it and the gateway holds it online. Nothing can be
-// delivered or attached to it, so resume is the only way back and must not be
-// refused as a double start.
+// so discovery still lists it. The gateway records that row offline, because
+// nothing can be delivered or attached to it: resume is the only way back and
+// must not be refused as a double start.
 func TestSessionResumeExitedClaudeSession(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)
@@ -317,8 +317,8 @@ func TestSessionResumeExitedClaudeSession(t *testing.T) {
 		return id != ""
 	})
 	a := c.agentOf(t, id)
-	if a == nil || !a.Online || a.Status != "exited" {
-		t.Fatalf("the record that made resume refuse: %+v", a)
+	if a == nil || a.Online || a.Status != "exited" {
+		t.Fatalf("an exited session must be offline: %+v", a)
 	}
 	raw, err := c.cli.call("session_resume", map[string]string{"session_id": id})
 	if err != nil {
