@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/quality"
 )
 
 // dispatchDelivery serves the delivery tool methods. handled is false for
@@ -602,6 +603,9 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	if base != "" {
 		if stat, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil {
 			q.DiffStat = deliveryDiffStat(stat)
+		}
+		if patch, err := gitOut(ctx, dir, "diff", "-U0", base, head, "--"); err == nil {
+			q.Signals = quality.Signals(patch, difficulty)
 		}
 	}
 	if model != "" {

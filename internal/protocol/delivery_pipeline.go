@@ -1521,6 +1521,9 @@ type ChangeSubmitRequest struct {
 	SensitivePath string       `json:"sensitive_path,omitempty"`
 	Title         string       `json:"title,omitempty"`
 	DiffStat      string       `json:"diff_stat,omitempty"`
+	// Signals are the free quality signals the daemon computed from the
+	// commit range. The gateway stores them with this revision.
+	Signals []QualitySignal `json:"signals,omitempty"`
 	// Fixes names a shipped change this new change fixes, and FixesSeverity
 	// (1 to 4, default 2) is the defect agent-net records on that change's
 	// worker. They count only when the submit creates the change.
@@ -1549,6 +1552,14 @@ func (q ChangeSubmitRequest) Validate() error {
 			return errors.New("diff stat holds a control character")
 		}
 	}
+	if len(q.Signals) > MaxQualitySignals {
+		return fmt.Errorf("more than %d quality signals", MaxQualitySignals)
+	}
+	for _, s := range q.Signals {
+		if err := s.Validate(); err != nil {
+			return err
+		}
+	}
 	return Change{Project: q.Project, Branch: q.Branch, TargetBranch: q.TargetBranch, BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Origin: q.Origin, Difficulty: q.Difficulty, Risk: q.Risk, SensitivePath: q.SensitivePath, Title: q.Title}.validateWork()
 }
 
@@ -1562,6 +1573,9 @@ type ChangeView struct {
 	Pipeline  *Pipeline    `json:"pipeline,omitempty"`
 	Revisions []Revision   `json:"revisions,omitempty"`
 	Evidence  []Evidence   `json:"evidence,omitempty"`
+	// Signals are the free quality signals of the revision in Change. They
+	// inform the caller and the owner; nothing uses them to block a step.
+	Signals []QualitySignal `json:"signals,omitempty"`
 }
 
 // ChangeSubmitResult answers change.submit.

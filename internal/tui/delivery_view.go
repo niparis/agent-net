@@ -617,6 +617,16 @@ func deliveryRowFinding(ch deliveryChange) string {
 	return outcome
 }
 
+// deliverySignalLines is the change's quality signals, one line per signal:
+// strength and evidence, as the gateway stored them.
+func deliverySignalLines(signals []protocol.QualitySignal) []string {
+	out := make([]string, 0, len(signals))
+	for _, s := range signals {
+		out = append(out, sanitize(s.Line()))
+	}
+	return out
+}
+
 // deliveryCheckText is what the owner has to check, from the verify step's
 // needs_owner note: the sentence that starts with "Owner:" when there is one,
 // otherwise the note's last sentence.
@@ -743,6 +753,14 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 	facts := "head: " + firstNonEmpty(sanitize(ch.Head[:min(len(ch.Head), 12)]), "-") + "  revision: " + revision + "  state: " + firstNonEmpty(sanitize(ch.State), "-") + "  step: " + firstNonEmpty(sanitize(ch.Step), "-") + "  owner: " + firstNonEmpty(sanitize(ch.StepOwner), "-") + "  status: " + sanitize(status) + "  waiting: " + deliveryWaitText(ch.Waiting)
 	for _, l := range wrap(facts, inner) {
 		head = append(head, sDim.Render(l))
+	}
+	if lines := deliverySignalLines(ch.Signals); len(lines) > 0 {
+		head = append(head, sBold.Render("Quality signals"))
+		for _, line := range lines {
+			for _, l := range wrap(line, inner) {
+				head = append(head, sDim.Render(l))
+			}
+		}
 	}
 	head = append(head, deliveryStrip(deliveryStripStates(ch), spaced))
 	head = append(head, deliveryLegend(inner)...)
