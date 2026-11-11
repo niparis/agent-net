@@ -673,7 +673,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// returns the list and starts nothing.
 	var briefNote string
 	if !(len(validate) > 0 && validate[0]) && !g.opts.TestNoBriefChecks && !p.RequireReadOnly {
-		failures, err := g.store.checkWorkerBrief(p, pick.Name, difficultyUsed)
+		failures, err := g.store.checkWorkerBrief(p, pick.Name)
 		if err != nil {
 			return none, err
 		}

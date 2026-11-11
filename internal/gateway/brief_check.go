@@ -19,9 +19,12 @@ const briefRetryWindow = 24 * time.Hour
 // text checks in protocol.CheckWorkerBrief. Overlap compares the paths named
 // in this brief with the briefs of running workers in the same project and the
 // changed files of open changes there. A brief that says "overlap ok: reason"
-// passes the overlap check.
-func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project, level string) ([]string, error) {
-	failures := protocol.CheckWorkerBrief(p.Task, level, p.Model, p.NotFamily)
+// passes the overlap check. A change or worker this start itself targets is
+// not an overlap: the change's id or the worker's id named in the brief, an
+// open change whose branch is the start's base, or the continue or fixes
+// target. A fix round starts from its own change's branch and names its files.
+func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string) ([]string, error) {
+	failures := protocol.CheckWorkerBrief(p.Task)
 	if _, ok := protocol.BriefOverlapAllowed(p.Task); ok {
 		return failures, nil
 	}
@@ -29,6 +32,13 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project, level str
 	if len(mine) == 0 {
 		return failures, nil
 	}
+	targets := protocol.BriefTargetIDs(p.Task)
+	for _, id := range []string{p.Continue, p.Fixes} {
+		if id = strings.TrimSpace(id); id != "" {
+			targets[strings.ToLower(id)] = true
+		}
+	}
+	base := strings.TrimSpace(p.Base)
 	running, err := s.runningWorkerBriefs(project)
 	if err != nil {
 		return nil, err
@@ -40,6 +50,9 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project, level str
 	var overlaps []string
 	seen := map[string]bool{}
 	for _, other := range append(running, changes...) {
+		if targets[strings.ToLower(other.id)] || (base != "" && other.kind == "open change" && other.branch == base) {
+			continue
+		}
 		for _, a := range mine {
 			for _, b := range other.paths {
 				if !protocol.BriefPathsShare(a, b) {
@@ -62,9 +75,10 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project, level str
 }
 
 type briefOverlap struct {
-	kind  string
-	id    string
-	paths []string
+	kind   string
+	id     string
+	branch string
+	paths  []string
 }
 
 // runningWorkerBriefs reads the full task text of the running workers in one
@@ -114,10 +128,10 @@ func (s *Store) workerBriefTask(session string) (string, error) {
 	return body, nil
 }
 
-// openChangeBriefs reads the changed files of the open changes in one project,
-// from the diff stat stored for the current revision.
+// openChangeBriefs reads the branch and changed files of the open changes in
+// one project, from the diff stat stored for the current revision.
 func (s *Store) openChangeBriefs(project string) ([]briefOverlap, error) {
-	rows, err := s.db.Query(`SELECT c.id, COALESCE(st.diff_stat,'')
+	rows, err := s.db.Query(`SELECT c.id, c.branch, COALESCE(st.diff_stat,'')
 		FROM delivery_changes c
 		LEFT JOIN delivery_revision_stats st ON st.change_id=c.id AND st.revision=c.revision
 		WHERE c.project=? AND c.state='open' ORDER BY c.id`, project)
@@ -127,15 +141,15 @@ func (s *Store) openChangeBriefs(project string) ([]briefOverlap, error) {
 	defer rows.Close()
 	var out []briefOverlap
 	for rows.Next() {
-		var id, stat string
-		if err := rows.Scan(&id, &stat); err != nil {
+		var id, branch, stat string
+		if err := rows.Scan(&id, &branch, &stat); err != nil {
 			return nil, err
 		}
 		paths := protocol.BriefPaths(stat)
 		if len(paths) == 0 {
 			continue
 		}
-		out = append(out, briefOverlap{kind: "open change", id: id, paths: paths})
+		out = append(out, briefOverlap{kind: "open change", id: id, branch: branch, paths: paths})
 	}
 	return out, rows.Err()
 }

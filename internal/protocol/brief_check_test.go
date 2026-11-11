@@ -18,7 +18,7 @@ Evidence:
 `
 
 func TestBriefChecksPassACompleteBrief(t *testing.T) {
-	if got := CheckWorkerBrief(completeBrief, "normal", "", nil); len(got) != 0 {
+	if got := CheckWorkerBrief(completeBrief); len(got) != 0 {
 		t.Fatalf("complete brief failed: %v", got)
 	}
 }
@@ -39,7 +39,7 @@ func TestBriefChecksNameEachMissingItem(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			failures := CheckWorkerBrief(tc.task, "normal", "", nil)
+			failures := CheckWorkerBrief(tc.task)
 			joined := strings.Join(failures, "\n")
 			if !strings.Contains(joined, tc.want) {
 				t.Fatalf("failures %q do not name %q", joined, tc.want)
@@ -56,7 +56,7 @@ func TestBriefChecksSeeMarkdownLabels(t *testing.T) {
 		"- **Definition of done:** the test passes\n" +
 		"- **How you are graded:** the caller runs it\n" +
 		"### Evidence\n- one\n- two\n- three\n"
-	if got := CheckWorkerBrief(task, "normal", "", nil); len(got) != 0 {
+	if got := CheckWorkerBrief(task); len(got) != 0 {
 		t.Fatalf("markdown brief failed: %v", got)
 	}
 	numbered := "1. **Goal:** the owner asked \"fix it\"\n" +
@@ -65,25 +65,8 @@ func TestBriefChecksSeeMarkdownLabels(t *testing.T) {
 		"4. **Definition of done:** the test passes\n" +
 		"5. **How you are graded:** the caller runs it\n" +
 		"6. **Evidence:**\n- one\n- two\n- three\n"
-	if got := CheckWorkerBrief(numbered, "normal", "", nil); len(got) != 0 {
+	if got := CheckWorkerBrief(numbered); len(got) != 0 {
 		t.Fatalf("numbered markdown brief failed: %v", got)
-	}
-}
-
-func TestBriefModelRuleForSimpleTasks(t *testing.T) {
-	failures := CheckWorkerBrief(completeBrief, "simple", "", nil)
-	if len(failures) != 1 || failures[0] != BriefFailModel {
-		t.Fatalf("simple task with no model: %v", failures)
-	}
-	if got := CheckWorkerBrief(completeBrief, "simple", "opencode-go/deepseek-v4.1-flash", nil); len(got) != 0 {
-		t.Fatalf("simple task with a model failed: %v", got)
-	}
-	if got := CheckWorkerBrief(completeBrief, "simple", "", []string{"anthropic"}); len(got) != 0 {
-		t.Fatalf("simple task with not_family failed: %v", got)
-	}
-	// A normal task needs neither.
-	if got := CheckWorkerBrief(completeBrief, "normal", "", nil); len(got) != 0 {
-		t.Fatalf("normal task with no model failed: %v", got)
 	}
 }
 

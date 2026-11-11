@@ -26,7 +26,6 @@ const (
 	BriefFailDefinition = "Definition of done: add this line"
 	BriefFailGraded     = "How you are graded: add this line"
 	BriefFailEvidence   = "Evidence: add this section with at least 3 lines"
-	BriefFailModel      = "simple task: name a model or exclude families"
 )
 
 // WorkerStartModeCheck is the mode value that runs the brief checks and
@@ -42,12 +41,13 @@ var (
 	briefPathRE    = regexp.MustCompile(`[A-Za-z0-9_.@+~\-]+(?:/[A-Za-z0-9_.@+~\-]+)+`)
 	briefFileRE    = regexp.MustCompile(`(?i)\b[A-Za-z0-9_\-]+\.(go|ts|tsx|js|jsx|mjs|cjs|md|markdown|py|rs|sql|sh|bash|json|yaml|yml|toml|html|css|scss|c|cc|cpp|h|hpp|java|kt|rb|php|swift)\b`)
 	briefOverlapRE = regexp.MustCompile(`(?i)overlap\s+ok\s*:\s*([^\n]+)`)
+	briefTargetID  = regexp.MustCompile(`(?i)\b(?:ch|w|s)_[0-9a-z]{6,}\b`)
 )
 
 // CheckWorkerBrief runs the checks that need no store: goal, files or areas,
-// limits, done and graded, evidence, and the model rule for a trivial or
-// simple task. It returns one line per failed item, in a stable order.
-func CheckWorkerBrief(task, level, model string, notFamily []string) []string {
+// limits, done and graded, and evidence. It returns one line per failed item,
+// in a stable order.
+func CheckWorkerBrief(task string) []string {
 	var failures []string
 	if !briefNamesRequester(briefGoalLine(task)) {
 		failures = append(failures, BriefFailGoal)
@@ -70,22 +70,17 @@ func CheckWorkerBrief(task, level, model string, notFamily []string) []string {
 	} else if n < 3 {
 		failures = append(failures, fmt.Sprintf("Evidence: at least 3 lines (found %d)", n))
 	}
-	s := strings.ToLower(strings.TrimSpace(level))
-	if s == "trivial" || s == "simple" {
-		named := strings.TrimSpace(model)
-		automated := named == "" || strings.EqualFold(named, "auto")
-		excluded := false
-		for _, family := range notFamily {
-			if strings.TrimSpace(family) != "" {
-				excluded = true
-				break
-			}
-		}
-		if automated && !excluded {
-			failures = append(failures, BriefFailModel)
-		}
-	}
 	return failures
+}
+
+// BriefTargetIDs returns the change, worker and session ids a brief names. A
+// start that targets a change or worker is not refused for overlapping it.
+func BriefTargetIDs(text string) map[string]bool {
+	ids := map[string]bool{}
+	for _, id := range briefTargetID.FindAllString(text, -1) {
+		ids[strings.ToLower(id)] = true
+	}
+	return ids
 }
 
 // BriefPaths returns the repository paths a brief names, normalized and

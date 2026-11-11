@@ -6,8 +6,7 @@ Status: Built.
 ## Context
 
 The owner ordered checks on every worker brief. The briefs that caused today's
-brief defects missed obvious things: no family exclusion on a simple task, so
-the picker sent it to Claude Sonnet; three workers on the same file; a literal
+brief defects missed obvious things: three workers on the same file; a literal
 `$(cat)` instead of task text. The difficulty judge already read every brief,
 but it only rates the work. Nothing refused a brief that was incomplete.
 
@@ -32,7 +31,10 @@ The owner's rules (message m_ddd4d47fed6f4bf3):
 - The store checks live in `internal/gateway`: `checkWorkerBrief` compares the
   brief's paths with the full task text of running workers in the same project
   (the task message, not the truncated summary) and the changed files of open
-  changes there, from each change's current diff stat.
+  changes there, from each change's current diff stat. A change or worker the
+  start itself targets is skipped: its id in the brief, an open change whose
+  branch is the start's base, or the start's continue or fixes target. Without
+  that, every fix round would be refused for overlapping its own change.
 - The gateway runs the checks after the judge, before it picks a model or
   launches. A validation-only call skips them and starts nothing.
 - A refusal is one line per failed item. It is stored in
@@ -57,8 +59,9 @@ gate.
 ## Tests
 
 `internal/protocol/brief_check_test.go` covers each text check, the markdown
-forms, the model rule, path extraction, the overlap statement and the task key.
+forms, path extraction, the overlap statement and the task key.
 `internal/gateway/brief_check_test.go` covers a complete brief, overlap with a
-running worker and with an open change, the 24-hour count, the third attempt
-that starts and records one defect, and check mode that starts nothing.
+running worker and with an open change, a fix round on its own change, the
+24-hour count, the third attempt that starts and records one defect, and check
+mode that starts nothing.
 `internal/toolcatalog/brief_test.go` holds the description and schema.

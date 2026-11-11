@@ -26,7 +26,7 @@ func briefFrame(task string) protocol.WorkerStartFrame {
 
 func TestWorkerBriefPassesACompleteBrief(t *testing.T) {
 	s, _ := newTestStore(t)
-	failures, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop", "normal")
+	failures, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestWorkerBriefOverlapsRunningWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	failures, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop", "normal")
+	failures, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestWorkerBriefOverlapsRunningWorker(t *testing.T) {
 	// The same brief passes when it states the overlap and why.
 	ok := gatewayBrief("internal/gateway/brief.go")
 	ok = strings.Replace(ok, "Evidence:", "Overlap ok: the other worker is only reading the file.\nEvidence:", 1)
-	failures, err = s.checkWorkerBrief(briefFrame(ok), "shop", "normal")
+	failures, err = s.checkWorkerBrief(briefFrame(ok), "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,18 +64,26 @@ func TestWorkerBriefOverlapsRunningWorker(t *testing.T) {
 	}
 }
 
-func TestWorkerBriefOverlapsOpenChange(t *testing.T) {
-	s, _ := newTestStore(t)
+// insertOpenChange adds an open change on branch that touches path, as the
+// delivery code stores it: the change row and its current diff stat.
+func insertOpenChange(t *testing.T, s *Store, id, branch, path string) {
+	t.Helper()
 	if _, err := s.db.Exec(`INSERT INTO delivery_changes
 		(id,project,machine,branch,target_branch,base_commit,head_commit,uncommitted,revision,origin,caller,title,difficulty,state,merged_commit,created_at,updated_at)
-		VALUES('ch_open','shop','','agent-net/x','','','` + strings.Repeat("a", 40) + `',0,1,'{}','s_caller','parser','','open','',1,1)`); err != nil {
+		VALUES(?,'shop','',?,'','',?,0,1,'{}','s_caller','parser','','open','',1,1)`,
+		id, branch, strings.Repeat("a", 40)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO delivery_revision_stats(change_id,revision,diff_stat) VALUES('ch_open',1,?)`,
-		" internal/gateway/brief.go | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO delivery_revision_stats(change_id,revision,diff_stat) VALUES(?,1,?)`,
+		id, " "+path+" | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"); err != nil {
 		t.Fatal(err)
 	}
-	failures, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop", "normal")
+}
+
+func TestWorkerBriefOverlapsOpenChange(t *testing.T) {
+	s, _ := newTestStore(t)
+	insertOpenChange(t, s, "ch_open", "agent-net/x", "internal/gateway/brief.go")
+	failures, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,20 +93,69 @@ func TestWorkerBriefOverlapsOpenChange(t *testing.T) {
 	}
 }
 
-func TestWorkerBriefSimpleTaskNeedsAModel(t *testing.T) {
+// A fix round starts from its own change's branch and names the same files, so
+// the change it fixes is open. The change this start targets, by its branch,
+// its id in the brief, or the worker it continues, is not an overlap.
+func TestWorkerBriefFixRoundDoesNotOverlapItsOwnChange(t *testing.T) {
+	const change, branch = "ch_8c5cf62b1a765790", "agent-net/w_299d8f5860a0fa4a"
 	s, _ := newTestStore(t)
+	insertOpenChange(t, s, change, branch, "internal/gateway/brief.go")
+
+	// The start's base is the branch of the change it fixes.
 	frame := briefFrame(gatewayBrief("internal/gateway/brief.go"))
-	frame.Model = ""
-	failures, err := s.checkWorkerBrief(frame, "shop", "simple")
+	frame.Base = branch
+	failures, err := s.checkWorkerBrief(frame, "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(failures) != 1 || failures[0] != protocol.BriefFailModel {
-		t.Fatalf("failures = %v", failures)
+	if len(failures) != 0 {
+		t.Fatalf("fix round on its own change failed: %v", failures)
 	}
-	frame.NotFamily = []string{"anthropic"}
-	if failures, err = s.checkWorkerBrief(frame, "shop", "simple"); err != nil || len(failures) != 0 {
-		t.Fatalf("not_family did not pass: %v %v", failures, err)
+
+	// A brief that names the change's id targets it too.
+	frame = briefFrame(gatewayBrief("internal/gateway/brief.go") + "Change: " + change + "\n")
+	failures, err = s.checkWorkerBrief(frame, "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("brief naming its own change failed: %v", failures)
+	}
+
+	// Continuing the worker that made the change targets it as well.
+	node, _, _ := s.CreateNode("mac", "linux")
+	worker, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "w1", Worker: &protocol.WorkerInfo{
+		ID: "w_1", Owner: "s_owner", Project: "shop", Task: "Fix internal/gateway/brief.go and its tests."}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame = briefFrame(gatewayBrief("internal/gateway/brief.go"))
+	frame.Base = branch
+	frame.Continue = worker
+	failures, err = s.checkWorkerBrief(frame, "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("continued fix round failed: %v", failures)
+	}
+}
+
+// The exemption is only for the change this start targets. A different open
+// change on the same project is still an overlap.
+func TestWorkerBriefOverlapsADifferentOpenChange(t *testing.T) {
+	s, _ := newTestStore(t)
+	insertOpenChange(t, s, "ch_8c5cf62b1a765790", "agent-net/w_299d8f5860a0fa4a", "internal/gateway/brief.go")
+	insertOpenChange(t, s, "ch_0f1e2d3c4b5a6978", "agent-net/w_1111222233334444", "internal/tui/other.go")
+	frame := briefFrame(gatewayBrief("internal/tui/other.go"))
+	frame.Base = "agent-net/w_299d8f5860a0fa4a"
+	failures, err := s.checkWorkerBrief(frame, "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "overlaps open change ch_0f1e2d3c4b5a6978 on internal/tui/other.go"
+	if !strings.Contains(strings.Join(failures, "\n"), want) {
+		t.Fatalf("failures %q do not say %q", failures, want)
 	}
 }
 

@@ -22,11 +22,10 @@ Use `mode: "check"` to run the checks and start nothing.
 5. **Evidence:** an `Evidence:` section with at least three lines.
 6. **Overlap:** no file shared with a running worker's brief or an open
    change's changed files in the same project. If the overlap is intended,
-   say `overlap ok: <reason>`.
-
-A simple or trivial task from the difficulty judge must also name a model or
-pass `not_family`; otherwise the start is refused with
-`simple task: name a model or exclude families`.
+   say `overlap ok: <reason>`. A change or worker the start itself targets is
+   not an overlap: its id in the brief, an open change whose branch is the
+   start's `base`, or the `continue` or `fixes` target. A fix round on the
+   change's own branch therefore passes.
 
 ## Example
 
