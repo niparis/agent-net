@@ -99,22 +99,28 @@ func (g *Gateway) nodeQuotas(nodeID string) *protocol.Quotas {
 	return protocol.WithQuotaBlocks(q, blocks, now)
 }
 
-// floorQuotas returns the readings a worker floor check uses for a machine.
-// The subscription belongs to the owner, not to the machine that runs the
+// ownerQuotas returns the one quota reading that a worker start decides on.
+// The subscriptions belong to the owner, not to the machine that runs the
 // worker, and quota-axi cannot read every login on every machine: on
 // 2026-11-11 the opencode-go monthly window was readable only on the Mac while
-// workers ran on research, so the floor saw no reading and started workers into
+// workers ran on research, so the start saw no reading and workers went into
 // the limit. A provider this machine cannot read takes a usable reading from
-// another fresh report. The machine's own usable reading wins, so two accounts
+// another fresh report, and a machine with no report at all falls back to the
+// others. The machine's own usable reading wins for a provider, so two accounts
 // of one provider never exclude each other.
-func (g *Gateway) floorQuotas(nodeID string) *protocol.Quotas {
+//
+// Build it once per start and pass it to every quota decision of that start:
+// the provider allowlist, model resolution, the floor, the chooser's room and
+// the exhaustion refusal.
+func (g *Gateway) ownerQuotas(nodeID string) *protocol.Quotas {
 	own := g.nodeQuotas(nodeID)
-	if own == nil {
-		return nil
-	}
-	chosen := make(map[string]protocol.QuotaProvider, len(own.Providers))
-	for _, p := range own.Providers {
-		chosen[p.Provider] = p
+	var out protocol.Quotas
+	chosen := map[string]protocol.QuotaProvider{}
+	if own != nil {
+		out.GeneratedAt, out.Copy = own.GeneratedAt, own.Copy
+		for _, p := range own.Providers {
+			chosen[p.Provider] = p
+		}
 	}
 	now := g.store.now()
 	for id, e := range g.usage.all() {
@@ -122,26 +128,35 @@ func (g *Gateway) floorQuotas(nodeID string) *protocol.Quotas {
 			continue
 		}
 		for _, p := range e.rep.Quotas.Providers {
-			if !quotaCanDecideFloor(p) {
+			if !quotaReadingUsable(p) {
 				continue
 			}
-			if existing, ok := chosen[p.Provider]; ok && quotaCanDecideFloor(existing) {
+			if existing, ok := chosen[p.Provider]; ok && quotaReadingUsable(existing) {
 				continue
 			}
 			chosen[p.Provider] = p
 		}
+		// A machine with no reading of its own takes the newest generated time
+		// of the reports it borrows, so the chooser can still measure pace.
+		if own == nil && e.rep.Quotas.GeneratedAt > out.GeneratedAt {
+			out.GeneratedAt = e.rep.Quotas.GeneratedAt
+		}
 	}
-	out := &protocol.Quotas{GeneratedAt: own.GeneratedAt, Copy: own.Copy, Providers: make([]protocol.QuotaProvider, 0, len(chosen))}
+	if own == nil && len(chosen) == 0 {
+		return nil
+	}
+	out.Providers = make([]protocol.QuotaProvider, 0, len(chosen))
 	for _, p := range chosen {
 		out.Providers = append(out.Providers, p)
 	}
 	sort.Slice(out.Providers, func(i, j int) bool { return out.Providers[i].Provider < out.Providers[j].Provider })
-	return out
+	return &out
 }
 
-// quotaCanDecideFloor tells whether a provider reading can decide a floor. It
-// matches what CheckWorkerFloor needs: a fresh entry with windows.
-func quotaCanDecideFloor(p protocol.QuotaProvider) bool {
+// quotaReadingUsable tells whether a provider reading can decide a worker
+// start. Every decision needs the same thing: a fresh entry with windows. A
+// stale or failed reading decides nothing.
+func quotaReadingUsable(p protocol.QuotaProvider) bool {
 	return !p.Stale && p.Error == "" && len(p.Windows) > 0
 }
 

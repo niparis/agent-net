@@ -379,3 +379,89 @@ func TestWorkerFloorPickerMonthlyWindowAboveFloorKept(t *testing.T) {
 		t.Fatalf("workerStart opencode auto: %v", err)
 	}
 }
+
+// A spent window refuses a start even when the owner set no floor for that
+// provider: exhaustion is one of the quota decisions of the same start, and it
+// must read the same owner-wide quotas as the floor. On 2026-11-11 opencode-go's
+// monthly window was at 100% used on the Mac, the machine that ran the workers
+// could not read that login, and the picker started three workers into it.
+func TestWorkerPickerMonthlyExhaustedOnAnotherMachineRefused(t *testing.T) {
+	g, node, owner, _, c := setupFloorGateway(t)
+	nc := g.conns[node]
+
+	// No opencode-go floor. The allowlist leaves only the opencode-go profile,
+	// so the picker has to decide on that provider.
+	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["opencode-go"]}`); err != nil {
+		t.Fatal(err)
+	}
+	// The start machine reports its other subscriptions but cannot read
+	// opencode-go.
+	g.usage.set(node, c.now(), protocol.UsageReport{Quotas: &protocol.Quotas{
+		GeneratedAt: c.now().Unix(),
+		Providers: []protocol.QuotaProvider{
+			{Provider: "deepseek", Windows: []protocol.QuotaWindow{quotaAXIWindow("5h", "5h", "session", 30)}},
+		},
+	}})
+	// The Mac reads the same opencode-go subscription, and its month is spent.
+	mac, _, err := g.store.CreateNode("mac", "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.usage.set(mac, c.now(), protocol.UsageReport{Quotas: &protocol.Quotas{
+		GeneratedAt: c.now().Unix(),
+		Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Windows: []protocol.QuotaWindow{
+			quotaAXIWindow("rolling", "rolling", "rolling", 95),
+			quotaAXIWindow("weekly", "weekly", "weekly", 90),
+			quotaAXIWindow("included_usage", "month", "monthly", 0),
+		}}},
+	}})
+
+	_, err = g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{
+		Owner:              owner,
+		Level:              "hard",
+		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "opencode", Model: "auto"},
+	}, true)
+	if err == nil || !strings.Contains(err.Error(), "out of quota") {
+		t.Fatalf("workerStart = %v, want a refusal because opencode-go is out of quota", err)
+	}
+}
+
+// A machine that reports nothing at all is not a machine with quota to spare:
+// the owner's subscriptions live wherever they are read, so the start falls back
+// to the other machines' fresh reports before it applies the floor.
+func TestWorkerPickerNoOwnReportUsesAnotherMachineFloor(t *testing.T) {
+	g, node, owner, _, c := setupFloorGateway(t)
+	nc := g.conns[node]
+
+	// opencode-go floor 10%. The allowlist leaves only that profile.
+	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10}}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["opencode-go"]}`); err != nil {
+		t.Fatal(err)
+	}
+	// The start machine sends no usage report here. The Mac reads the same
+	// opencode-go subscription: the month has 1% left.
+	mac, _, err := g.store.CreateNode("mac", "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.usage.set(mac, c.now(), protocol.UsageReport{Quotas: &protocol.Quotas{
+		GeneratedAt: c.now().Unix(),
+		Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Windows: []protocol.QuotaWindow{
+			quotaAXIWindow("rolling", "rolling", "rolling", 95),
+			quotaAXIWindow("weekly", "weekly", "weekly", 90),
+			quotaAXIWindow("included_usage", "month", "monthly", 1),
+		}}},
+	}})
+
+	_, err = g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{
+		Owner:              owner,
+		Level:              "hard",
+		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "opencode", Model: "auto"},
+	}, true)
+	wantNote := "skipped deepseek opencode: opencode-go has 1% left in its monthly window, under your 10% worker floor"
+	if err == nil || !strings.Contains(err.Error(), wantNote) {
+		t.Fatalf("workerStart = %v, want a refusal containing %q", err, wantNote)
+	}
+}

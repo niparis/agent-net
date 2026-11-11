@@ -18,7 +18,7 @@ func TestWorkerModelHarnessSignIn(t *testing.T) {
 			s, _ := newTestStore(t)
 			g := &Gateway{store: s, logger: log.New(io.Discard, "", 0)}
 			n := &protocol.NodeView{NodeID: "test", Hostname: "host", Harnesses: []protocol.HarnessInfo{{Name: "opencode", SignedIn: tc.oc, Models: []string{"openai/gpt-6.1-sol"}}, {Name: "codex", SignedIn: tc.codex, Models: []string{"gpt-6.1-sol"}}}}
-			got, err := g.chooseWorkerHarness(n, "gpt-6.1-sol:medium", false)
+			got, err := g.chooseWorkerHarness(n, "gpt-6.1-sol:medium", false, nil)
 			if got != tc.want || (err != nil) != (tc.want == "") {
 				t.Fatalf("got %q, %v; want %q", got, err, tc.want)
 			}
@@ -33,11 +33,11 @@ func TestWorkerModelProfileName(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := &protocol.NodeView{NodeID: "test", Hostname: "host", Harnesses: []protocol.HarnessInfo{{Name: "opencode", Models: []string{"openai/gpt-6.1-sol"}}, {Name: "codex", Models: []string{"gpt-6.1-sol"}}}}
-	h, err := g.chooseWorkerHarness(n, "sOL cODEX", false)
+	h, err := g.chooseWorkerHarness(n, "sOL cODEX", false, nil)
 	if err != nil || h != "codex" {
 		t.Fatalf("harness %q: %v", h, err)
 	}
-	got, note, err := g.resolveWorkerModel(n, &n.Harnesses[1], h, "sOL cODEX", "")
+	got, note, err := g.resolveWorkerModel(n, &n.Harnesses[1], h, "sOL cODEX", "", nil)
 	if err != nil || got != "gpt-6.1-sol:medium" || !strings.Contains(note, "Sol Codex") {
 		t.Fatalf("model %q note %q: %v", got, note, err)
 	}
@@ -61,22 +61,22 @@ func TestWorkerModelAuthFailure(t *testing.T) {
 			clock.t = clock.t.Add(48 * time.Hour)
 			only := *n
 			only.Harnesses = n.Harnesses[:1]
-			if got, err := g.chooseWorkerHarness(&only, "gpt-6.1-sol", false); err == nil {
+			if got, err := g.chooseWorkerHarness(&only, "gpt-6.1-sol", false, nil); err == nil {
 				t.Errorf("auth-failed harness selected: %q", got)
 			}
 			for _, model := range []string{"gpt-6.1-sol", "gpt-6-luna"} {
-				got, err := g.chooseWorkerHarness(n, model, false)
+				got, err := g.chooseWorkerHarness(n, model, false, nil)
 				if err != nil || got != "codex" {
 					t.Errorf("%s chose %q: %v", model, got, err)
 				}
 			}
-			if got, err := g.chooseWorkerHarness(n, "other/model", false); err != nil || got != "opencode" {
+			if got, err := g.chooseWorkerHarness(n, "other/model", false, nil); err != nil || got != "opencode" {
 				t.Fatalf("other provider: %q %v", got, err)
 			}
 			if err := s.RecordModelSuccess(node, "opencode", "openai/gpt-6-luna"); err != nil {
 				t.Fatal(err)
 			}
-			if got, err := g.chooseWorkerHarness(n, "gpt-6.1-sol", false); err != nil || got != "opencode" {
+			if got, err := g.chooseWorkerHarness(n, "gpt-6.1-sol", false, nil); err != nil || got != "opencode" {
 				t.Fatalf("after success: %q %v", got, err)
 			}
 		})
@@ -146,7 +146,7 @@ func TestWorkerModelProfileEffortOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := &protocol.NodeView{NodeID: "test", Hostname: "host", Harnesses: []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-sol"}}}}
-	got, _, err := g.resolveWorkerModel(n, &n.Harnesses[0], "codex", "Sol Codex:high", "")
+	got, _, err := g.resolveWorkerModel(n, &n.Harnesses[0], "codex", "Sol Codex:high", "", nil)
 	if err != nil || got != "gpt-6.1-sol:high" {
 		t.Fatalf("got %q, %v", got, err)
 	}
@@ -158,12 +158,12 @@ func TestWorkerAgyEffortInventory(t *testing.T) {
 	n := &protocol.NodeView{NodeID: "test", Hostname: "host"}
 	hi := &protocol.HarnessInfo{Name: "agy", Models: []string{"gemini-4-argon-low", "gemini-4-argon-high"}}
 	for _, query := range []string{"argon:high", "gemini-4-argon-high"} {
-		got, _, err := g.resolveWorkerModel(n, hi, "agy", query, "")
+		got, _, err := g.resolveWorkerModel(n, hi, "agy", query, "", nil)
 		if err != nil || got != "gemini-4-argon-high" {
 			t.Fatalf("%s got %q, %v", query, got, err)
 		}
 	}
-	_, _, err := g.resolveWorkerModel(n, hi, "agy", "gemini-4-argon:xhigh", "")
+	_, _, err := g.resolveWorkerModel(n, hi, "agy", "gemini-4-argon:xhigh", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "high, low") {
 		t.Fatalf("got %v", err)
 	}
