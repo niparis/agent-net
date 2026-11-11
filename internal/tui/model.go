@@ -1846,7 +1846,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if i == settingsTab {
 				m.settingsRow = 0
 				m.apps = appsForm{loading: true}
-				return m, tea.Batch(m.appsCall("apps.list", struct{}{}), m.loadNudgeStats())
+				return m, m.appsCall("apps.list", struct{}{})
 			}
 			if i == messagesTab {
 				m.focus = focusFeed
