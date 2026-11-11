@@ -409,6 +409,12 @@ type (
 		// and model, and the fresh notes about it (decision 0022).
 		Track     *TrackRecord   `json:"track,omitempty"`
 		Playbooks []PlaybookNote `json:"playbooks,omitempty"`
+		// Checked means the start was mode "check": the brief checks ran and
+		// no worker started.
+		Checked bool `json:"checked,omitempty"`
+		// BriefFailures lists the failed brief items of a check, one per line
+		// when it is shown. Empty means the brief passed.
+		BriefFailures []string `json:"brief_failures,omitempty"`
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {

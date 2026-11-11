@@ -78,6 +78,9 @@ type Options struct {
 	// StepTaskBatchCap is the maximum number of task lines in one batch message.
 	// Default 25.
 	StepTaskBatchCap int
+	// TestNoBriefChecks turns off the worker brief checks. Only tests that
+	// exercise other worker behavior set it; production never does.
+	TestNoBriefChecks bool
 }
 
 type Gateway struct {

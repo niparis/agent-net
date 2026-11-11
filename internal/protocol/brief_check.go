@@ -1,0 +1,304 @@
+package protocol
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+// The six items of a worker brief. The worker start tool reads these names, so
+// a caller sees the same words in the format and in a refusal.
+const (
+	BriefItemGoal     = "Goal"
+	BriefItemFiles    = "Files or areas"
+	BriefItemLimits   = "Limits"
+	BriefItemDone     = "Definition of done"
+	BriefItemGraded   = "How you are graded"
+	BriefItemEvidence = "Evidence"
+	BriefItemOverlap  = "Overlap"
+)
+
+// One line per failed item. The text names the item and what to add.
+const (
+	BriefFailGoal       = "Goal: name who asked, with a quote, a message id (m_...), or owner"
+	BriefFailFiles      = "Files or areas: name at least one repo path, such as internal/gateway/brief.go"
+	BriefFailLimits     = "Limits: add a Limits: section, or state the test scope and the real setup"
+	BriefFailDefinition = "Definition of done: add this line"
+	BriefFailGraded     = "How you are graded: add this line"
+	BriefFailEvidence   = "Evidence: add this section with at least 3 lines"
+)
+
+// WorkerStartModeCheck is the mode value that runs the brief checks and
+// starts nothing.
+const (
+	WorkerStartModeCheck = "check"
+)
+
+var (
+	briefMessageID = regexp.MustCompile(`(?i)\bm_[0-9a-z]{6,}\b`)
+	briefQuote     = regexp.MustCompile(`"[^"\n]{2,}"|“[^”\n]{2,}”|‘[^’\n]{2,}’`)
+	briefGraded    = regexp.MustCompile(`(?i)\bgraded\b`)
+	briefPathRE    = regexp.MustCompile(`[A-Za-z0-9_.@+~\-]+(?:/[A-Za-z0-9_.@+~\-]+)+`)
+	briefFileRE    = regexp.MustCompile(`(?i)\b[A-Za-z0-9_\-]+\.(go|ts|tsx|js|jsx|mjs|cjs|md|markdown|py|rs|sql|sh|bash|json|yaml|yml|toml|html|css|scss|c|cc|cpp|h|hpp|java|kt|rb|php|swift)\b`)
+	briefOverlapRE = regexp.MustCompile(`(?i)overlap\s+ok\s*:\s*([^\n]+)`)
+	briefTargetID  = regexp.MustCompile(`(?i)\b(?:ch|w|s)_[0-9a-z]{6,}\b`)
+)
+
+// CheckWorkerBrief runs the checks that need no store: goal, files or areas,
+// limits, done and graded, and evidence. It returns one line per failed item,
+// in a stable order.
+func CheckWorkerBrief(task string) []string {
+	var failures []string
+	if !briefNamesRequester(briefGoalLine(task)) {
+		failures = append(failures, BriefFailGoal)
+	}
+	if len(BriefPaths(task)) == 0 {
+		failures = append(failures, BriefFailFiles)
+	}
+	if !briefHasLimits(task) {
+		failures = append(failures, BriefFailLimits)
+	}
+	lower := strings.ToLower(task)
+	if !strings.Contains(lower, "definition of done") {
+		failures = append(failures, BriefFailDefinition)
+	}
+	if !briefGraded.MatchString(task) {
+		failures = append(failures, BriefFailGraded)
+	}
+	if n, ok := briefEvidenceLines(task); !ok {
+		failures = append(failures, BriefFailEvidence)
+	} else if n < 3 {
+		failures = append(failures, fmt.Sprintf("Evidence: at least 3 lines (found %d)", n))
+	}
+	return failures
+}
+
+// BriefTargetIDs returns the change, worker and session ids a brief names. A
+// start that targets a change or worker is not refused for overlapping it.
+func BriefTargetIDs(text string) map[string]bool {
+	ids := map[string]bool{}
+	for _, id := range briefTargetID.FindAllString(text, -1) {
+		ids[strings.ToLower(id)] = true
+	}
+	return ids
+}
+
+// BriefPaths returns the repository paths a brief names, normalized and
+// deduplicated in the order they appear. A URL is not a repository path.
+func BriefPaths(text string) []string {
+	type span struct{ start, end int }
+	var pathSpans []span
+	seen := map[string]bool{}
+	var out []string
+	add := func(raw string) {
+		path := normalizeBriefPath(raw)
+		if path == "" || seen[path] {
+			return
+		}
+		seen[path] = true
+		out = append(out, path)
+	}
+	for _, idx := range briefPathRE.FindAllStringIndex(text, -1) {
+		if briefURLContext(text, idx[0]) {
+			continue
+		}
+		raw := text[idx[0]:idx[1]]
+		if briefPathStop(raw) {
+			continue
+		}
+		add(raw)
+		pathSpans = append(pathSpans, span{idx[0], idx[1]})
+	}
+	for _, idx := range briefFileRE.FindAllStringIndex(text, -1) {
+		inside := false
+		for _, p := range pathSpans {
+			if idx[0] >= p.start && idx[1] <= p.end {
+				inside = true
+				break
+			}
+		}
+		if inside || briefURLContext(text, idx[0]) {
+			continue
+		}
+		add(text[idx[0]:idx[1]])
+	}
+	return out
+}
+
+func briefURLContext(text string, start int) bool {
+	from := start - 9
+	if from < 0 {
+		from = 0
+	}
+	return strings.Contains(text[from:start], "://") || strings.HasPrefix(strings.ToLower(text[start:]), "www.")
+}
+
+func briefPathStop(raw string) bool {
+	switch strings.ToLower(strings.Trim(raw, `.'"`+"`")) {
+	case "and/or", "either/or", "n/a", "w/o", "24/7":
+		return true
+	}
+	return false
+}
+
+func normalizeBriefPath(raw string) string {
+	path := strings.TrimSpace(raw)
+	path = strings.Trim(path, " \t\r\n`'\"()[]{}<>,.;:!?")
+	path = strings.TrimPrefix(path, "./")
+	path = strings.TrimSuffix(path, "/")
+	if len(path) < 4 || !strings.ContainsAny(path, "/.") {
+		return ""
+	}
+	return strings.ToLower(path)
+}
+
+// BriefOverlapAllowed returns the reason after "overlap ok:". The reason must
+// not be empty.
+func BriefOverlapAllowed(task string) (string, bool) {
+	m := briefOverlapRE.FindStringSubmatch(task)
+	if m == nil {
+		return "", false
+	}
+	reason := strings.TrimSpace(strings.Trim(m[1], "*_` "))
+	if reason == "" {
+		return "", false
+	}
+	return reason, true
+}
+
+// BriefTaskKey identifies retries of one task within a day: the caller, the
+// project, and the title or the first 200 characters of the goal line.
+func BriefTaskKey(caller, project, title, task string) string {
+	base := strings.TrimSpace(title)
+	if base == "" {
+		base = briefGoalLine(task)
+	}
+	base = strings.ToLower(strings.Join(strings.Fields(base), " "))
+	r := []rune(base)
+	if len(r) > 200 {
+		base = string(r[:200])
+	}
+	return caller + "\x1f" + project + "\x1f" + base
+}
+
+// briefGoalLine returns the text after a Goal label, or the first non-empty
+// line when the brief has no Goal line. Markdown decoration is ignored.
+func briefGoalLine(task string) string {
+	var first string
+	for _, line := range strings.Split(task, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		label, rest := briefLineLabel(line)
+		if label == "goal" {
+			return rest
+		}
+		if first == "" {
+			first = strings.TrimSpace(line)
+		}
+	}
+	return first
+}
+
+// briefLineLabel splits a markdown line into its label and the text after it.
+// "## **Goal:** text" gives "goal" and "text".
+func briefLineLabel(line string) (label, rest string) {
+	s := strings.TrimSpace(line)
+	s = strings.TrimLeft(s, " \t>#")
+	// A numbered list marker such as "1. " or "2) ".
+	if i := 0; i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i < len(s) && (s[i] == '.' || s[i] == ')') {
+			s = strings.TrimLeft(s[i+1:], " \t")
+		}
+	}
+	s = strings.TrimLeft(s, "-*+_ \t")
+	s = strings.TrimLeft(s, "*_ \t")
+	if i := strings.IndexAny(s, ":："); i >= 0 {
+		label = strings.Trim(s[:i], "*_# \t")
+		rest = strings.TrimLeft(s[i+1:], "*_ \t")
+	} else {
+		label = strings.Trim(s, "*_# \t")
+	}
+	return strings.ToLower(strings.TrimSpace(label)), strings.TrimSpace(rest)
+}
+
+var briefSectionLabels = map[string]bool{
+	"goal": true, "files or areas": true, "files": true, "areas": true,
+	"limits": true, "definition of done": true, "how you are graded": true,
+	"evidence": true, "overlap": true, "report": true, "task": true,
+	"repo": true, "base": true, "branch": true, "worktree": true,
+	"project": true, "setup": true, "environment": true,
+}
+
+// briefSection returns the non-empty lines of a section and whether the
+// section exists. It stops at the next known section label or markdown heading.
+func briefSection(task, name string) ([]string, bool) {
+	found := false
+	var lines []string
+	for _, line := range strings.Split(task, "\n") {
+		label, rest := briefLineLabel(line)
+		if !found {
+			if label == name {
+				found = true
+				if rest != "" {
+					lines = append(lines, rest)
+				}
+			}
+			continue
+		}
+		if briefSectionLabels[label] || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			break
+		}
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, strings.TrimSpace(line))
+		}
+	}
+	return lines, found
+}
+
+func briefEvidenceLines(task string) (int, bool) {
+	lines, ok := briefSection(task, "evidence")
+	return len(lines), ok
+}
+
+func briefNamesRequester(goal string) bool {
+	if strings.TrimSpace(goal) == "" {
+		return false
+	}
+	lower := strings.ToLower(goal)
+	return strings.Contains(lower, "owner") || briefMessageID.MatchString(goal) || briefQuote.MatchString(goal)
+}
+
+func briefHasLimits(task string) bool {
+	if _, ok := briefSection(task, "limits"); ok {
+		return true
+	}
+	lower := strings.ToLower(task)
+	return anyBriefPhrase(lower, []string{"temp dir", "temp folder", "temporary dir", "test dir", "tests use", "test-only", "test scope", "fakes only", "fake harness", "in /tmp"}) &&
+		anyBriefPhrase(lower, []string{"real setup", "real user setup", "never touch", "do not touch", "does not touch", "no real", "not the real"})
+}
+
+func anyBriefPhrase(text string, phrases []string) bool {
+	for _, phrase := range phrases {
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// BriefPathsShare reports whether two brief paths name the same file or a
+// folder that holds the other.
+func BriefPathsShare(a, b string) bool {
+	a, b = normalizeBriefPath(a), normalizeBriefPath(b)
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	return strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a)
+}

@@ -145,7 +145,9 @@ func startGatewayWith(t *testing.T, dir, addr string, size int, mutate func(*gat
 	opts := gateway.Options{DataDir: dir, ToolsPageSize: size, OfflineGrace: 200 * time.Millisecond,
 		Logger: log.New(logs, "", 0),
 		// The test sessions live in the test's own temporary folders.
-		TempFolders: []string{}}
+		TempFolders: []string{},
+		// These tests exercise other worker behavior with short fake tasks.
+		TestNoBriefChecks: true}
 	if mutate != nil {
 		mutate(&opts)
 	}

@@ -351,6 +351,14 @@ func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequ
 	if err := claudeStartChoiceValid(p.MCPServers); err != nil {
 		return p, err
 	}
+	switch p.Mode {
+	case "", protocol.WorkerStartModeCheck:
+	default:
+		return p, fmt.Errorf("mode can be %q or empty, not %q", protocol.WorkerStartModeCheck, p.Mode)
+	}
+	if p.Mode == protocol.WorkerStartModeCheck && p.Continue != "" {
+		return p, errors.New("mode check needs a task, not continue")
+	}
 	if p.MCPServers != "" {
 		if p.Continue != "" {
 			return p, errors.New("mcp_servers cannot be used with continue: a continued worker copies the choice of the main checkout; set it with session_change action mcp_servers")
@@ -377,7 +385,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return nil, err
 	}
 	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto}
-	if p.Continue == "" {
+	if p.Continue == "" && p.Mode != protocol.WorkerStartModeCheck {
 		// Everything that needs no judge is checked first, in a moment: the
 		// project, the machine, the named model and its provider's allowance.
 		end := ph.begin("precheck")
@@ -390,7 +398,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	run := func(ctx context.Context) (*protocol.WorkerStartResult, error) {
 		return d.runWorkerStartCall(ctx, caller, p, frame, callerPath, cto, ph)
 	}
-	if early, _ := ctx.Value(answerEarlyKey{}).(bool); !early || cto || p.Continue != "" {
+	if early, _ := ctx.Value(answerEarlyKey{}).(bool); !early || cto || p.Continue != "" || p.Mode == protocol.WorkerStartModeCheck {
 		return run(ctx)
 	}
 	return d.startWithinBudget(ctx, caller, p, ph, run)
@@ -424,10 +432,18 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 		return nil, tooOldGateway(err)
 	}
 	var ans protocol.WorkerStartAnswer
-	if err := json.Unmarshal(data, &ans); err != nil || (ans.SessionID == "" && !ans.Queued) {
+	if err := json.Unmarshal(data, &ans); err != nil || (ans.SessionID == "" && !ans.Queued && !ans.Checked) {
 		return nil, errors.New("the gateway answered without a worker session")
 	}
 	ph.note("gateway", ans.Phases)
+	if ans.Checked {
+		note := "brief ok"
+		if len(ans.BriefFailures) > 0 {
+			note = strings.Join(ans.BriefFailures, "\n")
+		}
+		return &protocol.WorkerStartResult{Status: "checked", NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project,
+			Path: ans.Path, Harness: ans.Harness, Model: ans.Model, BriefFailures: ans.BriefFailures, Note: note}, nil
+	}
 	selected := protocol.ParseModelSelection(ans.Harness, ans.Provider, ans.Model, ans.Effort)
 	ans.Provider, ans.Effort = selected.Provider, selected.Effort
 	if ans.Provider == "" {
