@@ -112,3 +112,40 @@ func TestCTOSignInRaiseForMachineAndList(t *testing.T) {
 		t.Fatalf("sign-in list: %#v", out)
 	}
 }
+
+// The prepare frame opens a login pane, so it needs the owner's authority
+// before any frame goes to the target machine. A read of provider and host
+// needs no owner and opens nothing.
+func TestSignInPrepareNeedsOwnerBeforeTargetFrame(t *testing.T) {
+	s, _ := newTestStore(t)
+	requester, _, _ := s.CreateNode("research", "linux")
+	target, _, _ := s.CreateNode("mac", "darwin")
+	ask, err := s.RaiseSignIn(target, "alibaba", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetConn := &nodeConn{id: target}
+	g := &Gateway{store: s, conns: map[string]*nodeConn{target: targetConn}}
+	raw, _ := json.Marshal(protocol.SignInQuery{AskID: ask.ID, Owner: "s_not_the_owner"})
+	if _, err := g.signInPrepare(context.Background(), &nodeConn{id: requester}, raw); err == nil || !strings.Contains(err.Error(), "owner authority required") {
+		t.Fatalf("prepare without an owner: %v", err)
+	}
+	targetConn.pmu.Lock()
+	sent := targetConn.nextID
+	targetConn.pmu.Unlock()
+	if sent != 0 {
+		t.Fatalf("a refused prepare sent %d frame(s) to the target", sent)
+	}
+	ownerID, err := s.UpsertSession(requester, owner("research"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = json.Marshal(protocol.SignInQuery{AskID: ask.ID, Owner: ownerID})
+	_, _ = g.signInPrepare(context.Background(), &nodeConn{id: requester}, raw)
+	targetConn.pmu.Lock()
+	sent = targetConn.nextID
+	targetConn.pmu.Unlock()
+	if sent != 1 {
+		t.Fatalf("the owner's prepare did not reach the target: %d frame(s)", sent)
+	}
+}

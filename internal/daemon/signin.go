@@ -153,7 +153,7 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 	if target.NodeID == "" || target.NodeID == d.NodeID() {
 		return d.openSignInPane(info, q.HerdrSocket, q.HerdrPaneID)
 	}
-	raw, err = d.call(ctx, "query.sign_in_prepare", protocol.SignInQuery{AskID: q.AskID})
+	raw, err = d.call(ctx, "query.sign_in_prepare", protocol.SignInQuery{AskID: q.AskID, Owner: d.ownerSessionID()})
 	if err != nil {
 		return protocol.EnterPlan{}, err
 	}

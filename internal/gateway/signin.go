@@ -93,6 +93,7 @@ func (s *Store) CloseSignIn(node, provider, reason string) error {
 }
 
 // signInTarget answers query.sign_in for the daemon the owner clicked from.
+// This is a read of the provider and host only; it opens no pane.
 func (g *Gateway) signInTarget(raw []byte) (json.RawMessage, error) {
 	var q protocol.SignInQuery
 	if json.Unmarshal(raw, &q) != nil || q.AskID == "" {
@@ -110,11 +111,15 @@ func (g *Gateway) signInTarget(raw []byte) (json.RawMessage, error) {
 }
 
 // signInPrepare asks the machine the ask names to open the login in its own
-// herdr. It runs only from an ask the owner clicked.
-func (g *Gateway) signInPrepare(ctx context.Context, raw []byte) (json.RawMessage, error) {
+// herdr. It runs only from an ask the owner clicked, so it checks owner
+// authority before any frame goes to the target machine.
+func (g *Gateway) signInPrepare(ctx context.Context, nc *nodeConn, raw []byte) (json.RawMessage, error) {
 	var q protocol.SignInQuery
 	if json.Unmarshal(raw, &q) != nil || q.AskID == "" {
 		return nil, reject("bad sign-in prepare")
+	}
+	if !g.validToolOwner(nc, q.Owner) {
+		return nil, reject("owner authority required")
 	}
 	a, provider, err := g.store.SignInAsk(q.AskID)
 	if err != nil {

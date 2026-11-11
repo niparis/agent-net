@@ -69,9 +69,11 @@ func SignInNeeded(provider, errText string) bool {
 }
 
 // SignInQuery asks the gateway which machine and provider an open sign-in ask
-// names. Only the ask's ID comes from the caller.
+// names. Only the ask's ID comes from the caller. A prepare also names the
+// owner session that clicked, so the gateway can check owner authority.
 type SignInQuery struct {
 	AskID string `json:"ask_id"`
+	Owner string `json:"owner,omitempty"`
 }
 
 // SignInTarget is the gateway's answer to SignInQuery.

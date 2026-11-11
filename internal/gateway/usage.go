@@ -293,7 +293,7 @@ func (g *Gateway) serveRelay(ctx context.Context, nc *nodeConn, h protocol.Heade
 	} else if h.Type == "query.owner_message" {
 		data, err = g.relayMessageBody(ctx, raw)
 	} else if h.Type == "query.sign_in_prepare" {
-		data, err = g.signInPrepare(ctx, raw)
+		data, err = g.signInPrepare(ctx, nc, raw)
 	} else if h.Type == "query.proposal_list" || h.Type == "query.proposal_answer" {
 		var q protocol.CTOProposalAnswer
 		if json.Unmarshal(raw, &q) != nil || q.NodeID == "" {

@@ -2695,6 +2695,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return protocol.AsksResult{Asks: asks}, err
 
 	case "query.sign_in":
+		// A read of the provider and host only; it opens no pane.
 		return g.signInTarget(raw)
 
 	case "sign_in.list":
