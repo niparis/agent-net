@@ -21,18 +21,18 @@ func TestMessageConversationsGroupAndSort(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{
 		{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0.Add(-3 * time.Minute)}, ConversationID: "a", From: "s_0000000000000001", To: "s_0000000000000002", Type: "request"},
-		{Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "two", Time: t0.Add(-2 * time.Minute)}, ConversationID: "b", From: "s_0000000000000001", To: "s_0000000000000002", Type: "notification"},
+		{Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "two", Time: t0.Add(-2 * time.Minute)}, ConversationID: "b", From: "s_0000000000000001", To: "s_0000000000000003", Type: "notification"},
 		{Event: protocol.Event{ID: 3, Kind: "msg.stored", MessageID: "three", Time: t0.Add(-time.Minute)}, ConversationID: "a", Parent: "one", From: "s_0000000000000002", To: "s_0000000000000001", Type: "reply"},
 	})
 	m.feed.byMsg["one"].Snippet = "first topic"
 	m.feed.byMsg["two"].Snippet = "second topic"
 	m.feed.byMsg["three"].Snippet = "latest topic"
 	rows := m.messageConversations()
-	if len(rows) != 2 || rows[0].id != "a" || len(rows[0].items) != 2 {
+	if len(rows) != 2 || len(rows[0].items) != 2 {
 		t.Fatalf("rows: %+v", rows)
 	}
 	v := ansi.Strip(strings.Join(m.messagesView(120, 20), "\n"))
-	if !strings.Contains(v, "la…") || !strings.Contains(v, "secon…") {
+	if !strings.Contains(v, "la…") || !strings.Contains(v, "second topic") {
 		t.Fatal(v)
 	}
 }
@@ -252,12 +252,13 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 		agent(owner, "n", "Mac", "owner", "you", nil),
 		agent(a, "n", "Mac", "claude", "a2a-ocs", nil),
 		agent(b, "n", "Mac", "pi", "reviewer", nil),
+		agent("s_third", "n", "Mac", "claude", "third", nil),
 		agent(worker, "n", "Mac", "opencode", "shop worker 6", func(a *protocol.AgentView) { a.Worker = &protocol.WorkerInfo{ID: "w_6", Owner: owner} }),
 	}}
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{
 		ev(1, -10*time.Minute, "msg.stored", "instruction", owner, a, "request", func(e *protocol.FeedEvent) { e.ConversationID = "instruction" }),
-		ev(2, -2*time.Minute, "msg.stored", "older", a, b, "notification", func(e *protocol.FeedEvent) { e.ConversationID = "older" }),
+		ev(2, -2*time.Minute, "msg.stored", "older", a, "s_third", "notification", func(e *protocol.FeedEvent) { e.ConversationID = "older" }),
 		ev(3, -time.Minute, "msg.stored", "recent", a, b, "request", func(e *protocol.FeedEvent) { e.ConversationID = "recent" }),
 		ev(4, -time.Second, "msg.stored", "worker-task", owner, worker, "request", func(e *protocol.FeedEvent) { e.ConversationID = "worker-task" }),
 	})
@@ -266,7 +267,7 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 	m.feed.byMsg["older"].Snippet = "Older agent note"
 	m.feed.byMsg["recent"].Snippet = "Waiting on test"
 	rows := m.messageConversations()
-	if len(rows) != 3 || rows[0].id != "instruction" || rows[1].id != "recent" || rows[2].id != "older" {
+	if len(rows) != 3 || !rows[0].ownerInstruction || rows[1].to != b || rows[2].to != "s_third" {
 		t.Fatalf("instruction, then recent and older agent threads expected: %+v", rows)
 	}
 	m.messageSubtab = messageWorkers

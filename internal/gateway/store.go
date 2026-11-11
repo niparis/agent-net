@@ -4662,59 +4662,71 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 			SELECT m2.conversation_id FROM messages m2
 			WHERE m2.sender IN (SELECT id FROM wid) OR m2.recipient IN (SELECT id FROM wid))`
 	}
-	countSQL := wid + ` SELECT COUNT(*) FROM (
-		SELECT m.conversation_id FROM messages m WHERE ` + normalWhere + ` GROUP BY m.conversation_id)`
-	if err := s.db.QueryRow(countSQL, widArgs...).Scan(&page.Total); err != nil {
-		return page, err
-	}
-
+	// A peer thread is one row per unordered pair of sessions, like the live
+	// feed. agent-net's own notices stay one row per conversation, so the
+	// System sub-tab can still group them by kind.
+	pairGID := `CASE
+		WHEN m.sender = 'agent-net' OR m.recipient = 'agent-net' THEN m.conversation_id
+		WHEN m.sender < m.recipient THEN 'pair:' || m.sender || char(0) || m.recipient
+		ELSE 'pair:' || m.recipient || char(0) || m.sender END`
 	normalPrefix := "WITH "
 	if wid != "" {
 		normalPrefix = wid + ", "
 	}
-	sqlText := normalPrefix + `page AS (
-		SELECT m.conversation_id AS gid, MAX(m.created_at) AS last_at
+	normalCTE := normalPrefix + `normal AS MATERIALIZED (
+		SELECT m.rowid AS rid, m.id, m.conversation_id, m.created_at, m.sender, m.recipient,
+			m.type, m.body, m.state, m.sender_cto, m.owner_approved,
+			` + pairGID + ` AS gid
 		FROM messages m WHERE ` + normalWhere + `
-		GROUP BY m.conversation_id`
+	)`
+	countSQL := normalCTE + ` SELECT COUNT(*) FROM (SELECT gid FROM normal GROUP BY gid)`
+	if err := s.db.QueryRow(countSQL, widArgs...).Scan(&page.Total); err != nil {
+		return page, err
+	}
+
+	sqlText := normalCTE + `, page AS (
+		SELECT gid, MAX(created_at) AS last_at FROM normal GROUP BY gid`
 	args := append([]any{}, widArgs...)
 	if at, id, ok := parseConversationCursor(q.Cursor); ok {
 		sqlText += ` HAVING last_at < ? OR (last_at = ? AND gid < ?)`
 		args = append(args, at, at, id)
 	}
-	sqlText += ` ORDER BY last_at DESC, gid DESC LIMIT ?)
-	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type,
-		(SELECT COUNT(*) FROM messages c WHERE c.conversation_id = p.gid
-			AND NOT ` + workerNoticeLifecycleSQL("c") + `),
+	sqlText += ` ORDER BY last_at DESC, gid DESC LIMIT ?),
+	latest AS MATERIALIZED (
+		SELECT gid, rid, id, sender, recipient, body, state, sender_cto, type, created_at,
+			COUNT(*) OVER (PARTITION BY gid) AS n,
+			ROW_NUMBER() OVER (PARTITION BY gid ORDER BY created_at DESC, rid DESC) AS rn
+		FROM normal
+	)
+	SELECT p.gid, p.last_at, l.id, l.sender, l.recipient, l.body, l.state, l.sender_cto, l.type, l.n,
 		COALESCE(NULLIF(fp.name,''), fs.name, ''),
 		COALESCE(NULLIF(rp.name,''), rs.name, ''),
-		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id),
+		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = l.id),
 		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''),
-		EXISTS(SELECT 1 FROM messages b LEFT JOIN sessions bs ON bs.id = b.sender
-			WHERE b.conversation_id = p.gid AND (b.owner_approved <> 0 OR bs.harness = 'owner'
+		EXISTS(SELECT 1 FROM normal b LEFT JOIN sessions bs ON bs.id = b.sender
+			WHERE b.gid = p.gid AND (b.owner_approved <> 0 OR bs.harness = 'owner'
 				OR EXISTS(SELECT 1 FROM charter_signals cs2 WHERE cs2.message_id = b.id AND cs2.prompt <> ''))),
-		EXISTS(SELECT 1 FROM messages b WHERE b.conversation_id = p.gid AND (
+		EXISTS(SELECT 1 FROM normal b WHERE b.gid = p.gid AND (
 			b.body LIKE '%blocked on%' OR b.body LIKE '%blocked by%' OR b.body LIKE '%blocked:%'
 			OR b.body LIKE '%is blocked%' OR b.body LIKE '%I am blocked%')),
-		EXISTS(SELECT 1 FROM messages b WHERE b.conversation_id = p.gid AND b.sender = 'agent-net'),
-		COALESCE((SELECT b.body FROM messages b WHERE b.conversation_id = p.gid AND b.sender = 'agent-net'
-			ORDER BY b.created_at DESC, b.rowid DESC LIMIT 1), ''),
-		COALESCE((SELECT b.recipient FROM messages b WHERE b.conversation_id = p.gid AND b.sender = 'agent-net'
-			ORDER BY b.created_at DESC, b.rowid DESC LIMIT 1), '')
+		EXISTS(SELECT 1 FROM normal b WHERE b.gid = p.gid AND b.sender = 'agent-net'),
+		COALESCE((SELECT b.body FROM normal b WHERE b.gid = p.gid AND b.sender = 'agent-net'
+			ORDER BY b.created_at DESC, b.rid DESC LIMIT 1), ''),
+		COALESCE((SELECT b.recipient FROM normal b WHERE b.gid = p.gid AND b.sender = 'agent-net'
+			ORDER BY b.created_at DESC, b.rid DESC LIMIT 1), '')
 	FROM page p
-	JOIN messages m ON m.conversation_id = p.gid AND m.created_at = p.last_at
-		AND m.rowid = (SELECT MAX(m2.rowid) FROM messages m2
-			WHERE m2.conversation_id = p.gid AND m2.created_at = p.last_at)
-	LEFT JOIN sessions fs ON fs.id = m.sender
-	LEFT JOIN profiles fp ON fp.session_id = m.sender
-	LEFT JOIN sessions rs ON rs.id = m.recipient
-	LEFT JOIN profiles rp ON rp.session_id = m.recipient
+	JOIN latest l ON l.gid = p.gid AND l.rn = 1
+	LEFT JOIN sessions fs ON fs.id = l.sender
+	LEFT JOIN profiles fp ON fp.session_id = l.sender
+	LEFT JOIN sessions rs ON rs.id = l.recipient
+	LEFT JOIN profiles rp ON rp.session_id = l.recipient
 	ORDER BY p.last_at DESC, p.gid DESC`
 	args = append(args, q.Limit+1)
 	normal, err := s.scanConversations(sqlText, args...)
 	if err != nil {
 		return page, err
 	}
-	if err := s.fillHourlySpread(normal); err != nil {
+	if err := s.fillHourlySpread(normal, normalCTE, widArgs); err != nil {
 		return page, err
 	}
 	rows := normal
@@ -4832,7 +4844,7 @@ func (s *Store) scanConversations(sqlText string, args ...any) ([]protocol.Conve
 // marks a burst when a thread's busiest hour holds at least 20 messages and is
 // more than three times its median hourly count. One read for the whole page,
 // never one per row.
-func (s *Store) fillHourlySpread(rows []protocol.ConversationView) error {
+func (s *Store) fillHourlySpread(rows []protocol.ConversationView, normalCTE string, baseArgs []any) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -4849,14 +4861,16 @@ func (s *Store) fillHourlySpread(rows []protocol.ConversationView) error {
 		return nil
 	}
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
+	args := append([]any{}, baseArgs...)
+	for _, id := range ids {
+		args = append(args, id)
 	}
-	// created_at is nanoseconds; an hour is 3.6e12 of them.
-	query := `SELECT conversation_id, created_at / 3600000000000 AS hour, COUNT(*)
-		FROM messages WHERE conversation_id IN (` + placeholders + `)
-		GROUP BY conversation_id, hour`
+	// created_at is nanoseconds; an hour is 3.6e12 of them. The normal CTE
+	// already carries the pair or conversation id, so the spread is over the
+	// same group the row shows.
+	query := normalCTE + ` SELECT gid, created_at / 3600000000000 AS hour, COUNT(*)
+		FROM normal WHERE gid IN (` + placeholders + `)
+		GROUP BY gid, hour`
 	got, err := s.db.Query(query, args...)
 	if err != nil {
 		return err
@@ -4969,6 +4983,13 @@ func (s *Store) ConversationMessages(conversationID string, limit int) ([]protoc
 		sqlText = msgSelect + `
 			WHERE m.sender = ? OR m.recipient = ? ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`
 		args = []any{session, session, limit}
+	} else if pair, ok := strings.CutPrefix(conversationID, "pair:"); ok {
+		if a, b, ok := strings.Cut(pair, "\x00"); ok && a != "" && b != "" {
+			sqlText = msgSelect + `
+				WHERE ((m.sender = ? AND m.recipient = ?) OR (m.sender = ? AND m.recipient = ?))
+				ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`
+			args = []any{a, b, b, a, limit}
+		}
 	}
 	rows, err := s.db.QueryContext(context.Background(), sqlText, args...)
 	if err != nil {

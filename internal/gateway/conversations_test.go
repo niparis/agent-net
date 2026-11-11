@@ -45,19 +45,18 @@ func insertConversationMessage(t *testing.T, s *Store, id, conv, from, to, body 
 func TestConversationsPageCursorTotalAndOrder(t *testing.T) {
 	s, c := newTestStore(t)
 	_, alice, bob := conversationFixture(t, s)
+	// Two sessions of another node are part of the owner's gateway history:
+	// the list is not limited to this node.
+	other, _, _ := s.CreateNode("h2", "linux")
+	carol, _ := s.UpsertSession(other, protocol.SessionInfo{Harness: "pi", NativeID: "nc", Name: "carol"})
+	dave, _ := s.UpsertSession(other, protocol.SessionInfo{Harness: "pi", NativeID: "nd", Name: "dave"})
 
 	base := c.t
 	insertConversationMessage(t, s, "m_c1a", "c_old", alice, bob, "old first line\nsecond line", base.Add(-3*time.Hour))
 	insertConversationMessage(t, s, "m_c1b", "c_old", bob, alice, "old reply", base.Add(-2*time.Hour))
-	insertConversationMessage(t, s, "m_c2", "c_mid", alice, bob, "middle message", base.Add(-time.Hour))
-	insertConversationMessage(t, s, "m_c3a", "c_new", bob, alice, "newest message\nmore", base.Add(-2*time.Minute))
-	insertConversationMessage(t, s, "m_c3b", "c_new", alice, bob, "newest reply", base.Add(-time.Minute))
-
-	// A conversation between two sessions of another node is part of the
-	// owner's gateway history: the list is not limited to this node.
-	other, _, _ := s.CreateNode("h2", "linux")
-	carol, _ := s.UpsertSession(other, protocol.SessionInfo{Harness: "pi", NativeID: "nc", Name: "carol"})
-	dave, _ := s.UpsertSession(other, protocol.SessionInfo{Harness: "pi", NativeID: "nd", Name: "dave"})
+	insertConversationMessage(t, s, "m_c2", "c_mid", alice, carol, "middle message", base.Add(-time.Hour))
+	insertConversationMessage(t, s, "m_c3a", "c_new", bob, dave, "newest message\nmore", base.Add(-2*time.Minute))
+	insertConversationMessage(t, s, "m_c3b", "c_new", dave, bob, "newest reply", base.Add(-time.Minute))
 	insertConversationMessage(t, s, "m_other", "c_other", carol, dave, "elsewhere", base)
 
 	page, err := s.ConversationsPage(protocol.QueryConversations{Limit: 2})
@@ -70,15 +69,18 @@ func TestConversationsPageCursorTotalAndOrder(t *testing.T) {
 	if len(page.Conversations) != 2 {
 		t.Fatalf("first page has %d rows, want 2", len(page.Conversations))
 	}
-	if page.Conversations[0].ID != "c_other" || page.Conversations[1].ID != "c_new" {
-		t.Fatalf("first page order = %s, %s", page.Conversations[0].ID, page.Conversations[1].ID)
+	if page.Conversations[0].From != carol || page.Conversations[0].To != dave {
+		t.Fatalf("first page order starts with %s/%s", page.Conversations[0].From, page.Conversations[0].To)
+	}
+	if page.Conversations[1].From != dave || page.Conversations[1].To != bob {
+		t.Fatalf("first page second row = %s/%s", page.Conversations[1].From, page.Conversations[1].To)
 	}
 	if page.Next == "" {
 		t.Fatal("first page did not give a cursor")
 	}
 	first := page.Conversations[1]
-	if first.From != alice || first.To != bob || first.FromName != "alice" || first.ToName != "bob" {
-		t.Errorf("sides = %s/%s (%s/%s)", first.From, first.To, first.FromName, first.ToName)
+	if first.FromName != "dave" || first.ToName != "bob" {
+		t.Errorf("names = %s/%s", first.FromName, first.ToName)
 	}
 	if first.Count != 2 {
 		t.Errorf("count = %d, want 2", first.Count)
@@ -103,8 +105,11 @@ func TestConversationsPageCursorTotalAndOrder(t *testing.T) {
 	if next.Total != 4 || next.Next != "" {
 		t.Fatalf("second page total=%d next=%q", next.Total, next.Next)
 	}
-	if len(next.Conversations) != 2 || next.Conversations[0].ID != "c_mid" || next.Conversations[1].ID != "c_old" {
+	if len(next.Conversations) != 2 {
 		t.Fatalf("second page = %+v", next.Conversations)
+	}
+	if next.Conversations[0].From != alice || next.Conversations[0].To != carol {
+		t.Fatalf("second page first row = %s/%s", next.Conversations[0].From, next.Conversations[0].To)
 	}
 	if next.Conversations[1].LastLine != "old reply" {
 		t.Errorf("last line = %q", next.Conversations[1].LastLine)
@@ -148,11 +153,10 @@ func TestConversationsPageReportsThreadFlags(t *testing.T) {
 	}
 	var burst, sys *protocol.ConversationView
 	for i := range page.Conversations {
-		switch page.Conversations[i].ID {
-		case "c_burst":
-			burst = &page.Conversations[i]
-		case "c_sys":
+		if page.Conversations[i].System {
 			sys = &page.Conversations[i]
+		} else {
+			burst = &page.Conversations[i]
 		}
 	}
 	if burst == nil || sys == nil {
@@ -215,9 +219,50 @@ func TestConversationsPageGroupsAnEndedWorkerAndNamesItFromTheTask(t *testing.T)
 		t.Errorf("worker row moved to %s at %v, want the hand-back", got.LastMessageID, got.At)
 	}
 	normal := page.Conversations[1]
-	if normal.ID != "c_normal" || normal.Count != 1 || normal.LastLine != "normal agent message" ||
+	if !strings.HasPrefix(normal.ID, "pair:") || normal.Count != 1 || normal.LastLine != "normal agent message" ||
 		normal.From != alice || normal.To != bob || normal.FromName != "alice" || normal.ToName != "bob" {
 		t.Fatalf("normal conversation changed: %+v", normal)
+	}
+}
+
+func TestConversationsPageGroupsAPeerPairAndItsBurst(t *testing.T) {
+	s, c := newTestStore(t)
+	_, alice, bob := conversationFixture(t, s)
+	base := c.t
+	// 36 conversations between the same two parties. 22 messages fall in one
+	// hour and 14 fall in 14 other hours, so the pair is one row with a peak of
+	// 22 and a median of 1.
+	for i := 0; i < 22; i++ {
+		insertConversationMessage(t, s, fmt.Sprintf("m_busy_%d", i), fmt.Sprintf("c_busy_%d", i),
+			alice, bob, "busy", base.Add(-time.Hour+time.Duration(i)*time.Minute))
+	}
+	for i := 0; i < 14; i++ {
+		insertConversationMessage(t, s, fmt.Sprintf("m_quiet_%d", i), fmt.Sprintf("c_quiet_%d", i),
+			bob, alice, "quiet", base.Add(-time.Duration(i+2)*time.Hour))
+	}
+	page, err := s.ConversationsPage(protocol.QueryConversations{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Conversations) != 1 {
+		t.Fatalf("total=%d rows=%d, want one pair row", page.Total, len(page.Conversations))
+	}
+	row := page.Conversations[0]
+	if !strings.HasPrefix(row.ID, "pair:") {
+		t.Fatalf("row id = %q, want a pair id", row.ID)
+	}
+	if row.Count != 36 {
+		t.Errorf("count = %d, want 36", row.Count)
+	}
+	if row.PeakHour != 22 || row.MedianHour != 1 {
+		t.Errorf("spread = %d/%d, want 22/1", row.PeakHour, row.MedianHour)
+	}
+	msgs, err := s.ConversationMessages(row.ID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 36 {
+		t.Fatalf("opening the pair returned %d messages, want 36", len(msgs))
 	}
 }
 
@@ -261,6 +306,7 @@ func TestConversationsPageGroupsWorkerPagesAndTotals(t *testing.T) {
 	insertConversationMessage(t, s, "m_plain", "c_plain", alice, bob, "a normal message", base.Add(-time.Minute))
 
 	seen := map[string]bool{}
+	normalSeen := false
 	var cursor string
 	for {
 		page, err := s.ConversationsPage(protocol.QueryConversations{Cursor: cursor, Limit: 2})
@@ -281,6 +327,12 @@ func TestConversationsPageGroupsWorkerPagesAndTotals(t *testing.T) {
 			if strings.HasPrefix(v.ID, "worker:") && v.Count != 2 {
 				t.Errorf("row %s count = %d, want task and hand-back only", v.ID, v.Count)
 			}
+			if !strings.HasPrefix(v.ID, "worker:") {
+				normalSeen = true
+				if v.Count != 1 {
+					t.Errorf("normal row count = %d, want 1", v.Count)
+				}
+			}
 		}
 		cursor = page.Next
 		if cursor == "" {
@@ -295,7 +347,7 @@ func TestConversationsPageGroupsWorkerPagesAndTotals(t *testing.T) {
 			t.Errorf("worker group %s missing", id)
 		}
 	}
-	if !seen["c_plain"] {
+	if !normalSeen {
 		t.Error("normal conversation missing")
 	}
 }

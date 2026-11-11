@@ -66,18 +66,37 @@ func (m Model) feedConversations() []messageConversation {
 		}
 		workerSession, workerOwner, worker := m.workerPair(it, workers)
 		id := ""
+		system := false
 		if worker {
 			id = "worker:" + workerSession
 		} else {
-			id = it.ConversationID
-			if id == "" {
-				id = parentIDs[it.Parent]
+			system = it.From == "agent-net"
+			if !system {
+				if k, ok := classifySystemMessage(it.From, it.Body); ok && k == systemNativeMCPRemoved {
+					system = true
+				}
 			}
-			if id == "" {
+			if system {
+				id = it.ConversationID
+				if id == "" {
+					id = parentIDs[it.Parent]
+				}
+				if id == "" {
+					id = it.MsgID
+				}
+			} else {
+				// A peer thread is one row per unordered pair, even when the
+				// messages were stored under several conversation ids.
 				id = messagePairID(it.From, it.To)
-			}
-			if id == "" {
-				id = it.MsgID
+				if id == "" {
+					id = it.ConversationID
+				}
+				if id == "" {
+					id = parentIDs[it.Parent]
+				}
+				if id == "" {
+					id = it.MsgID
+				}
 			}
 		}
 		parentIDs[it.MsgID] = id
@@ -86,7 +105,7 @@ func (m Model) feedConversations() []messageConversation {
 			g = &messageConversation{id: id, worker: worker, workerSession: workerSession, workerOwner: workerOwner}
 			groups[id] = g
 		}
-		if it.ConversationID != "" {
+		if it.ConversationID != "" && !strings.HasPrefix(id, "pair:") {
 			g.convID = it.ConversationID
 		}
 		if g.from == "" {
@@ -115,6 +134,9 @@ func (m Model) feedConversations() []messageConversation {
 			continue
 		}
 		g.fromHarness, g.toHarness = m.partyHarness(g.from), m.partyHarness(g.to)
+		if strings.HasPrefix(g.id, "pair:") {
+			g.convID = g.id
+		}
 		g.ownerNamed = g.ownerInstruction
 		g.burst = m.threadBurst(*g)
 		g.links = m.threadLinks(*g)

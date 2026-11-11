@@ -253,6 +253,24 @@ func TestThreadFlagsAndBurstRule(t *testing.T) {
 	}
 }
 
+func TestStoredPairRowShowsTheBurstFlag(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab, m.focus = messagesTab, focusFeed
+	row := messageConversation{
+		id: "pair:s_a\x00s_b", from: "s_a", to: "s_b", fromName: "tenebrae-strats", toName: "tenebrae 3",
+		lastLine: "busy", count: 36, peakHour: 22, medianHour: 1, at: t0.Add(-time.Minute),
+	}
+	line := ansi.Strip(m.messageConversationLine(row, 120, false))
+	if !strings.Contains(line, "burst 22/h") {
+		t.Fatalf("stored pair row does not show its burst: %q", line)
+	}
+	row.peakHour, row.medianHour = 19, 1
+	line = ansi.Strip(m.messageConversationLine(row, 120, false))
+	if strings.Contains(line, "burst") {
+		t.Fatalf("19 messages in an hour is not a burst: %q", line)
+	}
+}
+
 func TestThreadProjectTeamFilterAndSearch(t *testing.T) {
 	const a, b, c, d = "s_a", "s_b", "s_c", "s_d"
 	m := newModel(120, 34)
@@ -282,19 +300,19 @@ func TestThreadProjectTeamFilterAndSearch(t *testing.T) {
 
 	m.threadProject = "agent-net"
 	rows := m.messageConversations()
-	if len(rows) != 1 || rows[0].id != "one" {
+	if len(rows) != 1 || rows[0].from != a || rows[0].to != b {
 		t.Fatalf("project filter: %+v", rows)
 	}
 	m.threadProject = ""
 	m.threadTeam = "tenebrae"
 	rows = m.messageConversations()
-	if len(rows) != 1 || rows[0].id != "one" {
+	if len(rows) != 1 || rows[0].from != a || rows[0].to != b {
 		t.Fatalf("team filter: %+v", rows)
 	}
 	m.threadTeam = ""
 	m.filter = "restock"
 	rows = m.messageConversations()
-	if len(rows) != 1 || rows[0].id != "two" {
+	if len(rows) != 1 || rows[0].from != c || rows[0].to != d {
 		t.Fatalf("text search: %+v", rows)
 	}
 	m.filter = ""

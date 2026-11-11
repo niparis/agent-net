@@ -73,7 +73,7 @@ func messageScene(t *testing.T, w, h int) Model {
 	now := t0
 	src.convFirst = protocol.ConversationPage{Total: 14, Conversations: []protocol.ConversationView{
 		{
-			ID: "c_burst", From: strats, To: teneb, FromName: "tenebrae-strats", ToName: "tenebrae 3",
+			ID: messagePairID(strats, teneb), From: strats, To: teneb, FromName: "tenebrae-strats", ToName: "tenebrae 3",
 			Count: 24, LastLine: "blocked on the migration: PR #182 needs review", Type: protocol.TypeRequest,
 			State: protocol.StateStored, LastMessageID: "m_scene_1", At: now.Add(-2 * time.Minute),
 			FromHarness: "claude", ToHarness: "pi", OwnerNamed: true, Blocked: true,
@@ -86,10 +86,10 @@ func messageScene(t *testing.T, w, h int) Model {
 			FromHarness: "bot", ToHarness: "claude", OwnerNamed: true,
 		},
 		{
-			ID: "c_quiet", From: strats, To: teneb, FromName: "tenebrae-strats", ToName: "tenebrae 3",
+			ID: messagePairID(teneb, agentnt), From: teneb, To: agentnt, FromName: "tenebrae 3", ToName: "agent-net 2",
 			Count: 5, LastLine: "T8 registration is ready; see ch_8c3bc9d80f8dd4aa", Type: protocol.TypeRequest,
 			State: protocol.StateStored, LastMessageID: "m_scene_3", At: now.Add(-12 * time.Minute),
-			FromHarness: "claude", ToHarness: "pi",
+			FromHarness: "pi", ToHarness: "claude",
 		},
 		{
 			ID: "worker:" + worker, From: strats, To: worker, FromName: "tenebrae-strats",
@@ -132,7 +132,7 @@ func messageScene(t *testing.T, w, h int) Model {
 	}
 	src.messages = map[string]protocol.Message{
 		"m_scene_1": {
-			ID: "m_scene_1", ConversationID: "c_burst", From: strats, To: teneb, Type: protocol.TypeRequest,
+			ID: "m_scene_1", ConversationID: messagePairID(strats, teneb), From: strats, To: teneb, Type: protocol.TypeRequest,
 			Body:      "The migration is blocked on the review of PR #182. Change ch_8c3bc9d80f8dd4aa holds the fix, and the Desk ask i_4d2a91c0d4e5 waits for your answer. This paragraph is long on purpose so the conversation panel has to wrap it over several lines instead of cutting it with an ellipsis.",
 			CreatedAt: t0.Add(-2 * time.Minute),
 		},
