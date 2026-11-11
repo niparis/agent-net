@@ -17,7 +17,7 @@ const reminderGrace = 2 * time.Minute
 const remindableRequest = ` FROM messages q
  JOIN sessions src ON src.id=q.sender JOIN sessions dst ON dst.id=q.recipient
  LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
- WHERE q.type='request' AND q.state IN ('stored','dispatched','delivered')
+ WHERE q.type='request' AND q.batch_json='' AND q.held_for_busy=0 AND q.state IN ('stored','dispatched','delivered')
  AND q.created_at>=? AND q.created_at<? AND q.expires_at>?
  AND dst.status='idle' AND dst.last_active>0 AND dst.last_active<?
  AND src.harness<>'owner' AND dst.harness NOT IN ('owner','cto')

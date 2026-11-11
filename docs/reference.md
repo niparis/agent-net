@@ -4118,3 +4118,7 @@ An `agent_announce` answers the idle check for the session's current work. The
 check records its time and a fingerprint of the task, waiting field, owed
 request count and running worker count. It asks again only after that state
 changes. The idle interval and daily cap stay the same.
+
+Reply reminders follow the original requests in a busy-hold batch. The batch
+carrier never gets a reply reminder. Replying to an original message ID closes
+that request, and an unanswered request keeps its own sender and ID.
