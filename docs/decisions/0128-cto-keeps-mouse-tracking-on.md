@@ -62,3 +62,36 @@ variable from its environment, and the attach plan no longer carries it. The
 wheel scrolls the conversation in every session. Selecting text then needs
 Shift while dragging (Option on some terminals), because a plain drag is a
 mouse event for the session.
+
+## Note (2026-11-11) - one mechanism at the user level
+
+The owner asked for one mechanism, not a fix per window or per machine:
+
+1. agent-net owns the wheel choice: the daemon writes
+   `CLAUDE_CODE_DISABLE_MOUSE=0` to `env` in the user's Claude settings
+   (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`). It
+   merges only that key, keeps every other key and the file mode, writes
+   through a temp file and a rename, and writes again when the value drifts.
+   Setup writes it on a new machine. Uninstall removes it, and only while its
+   value is still `"0"`. A file that is not valid JSON is never overwritten; it
+   is reported.
+2. The per-launch `0` that the v0.5.16 change added to managed sessions and
+   workers is gone: `claudeMouseOn`, the worker settings entry and the launch
+   command filter. The user setting is the one mechanism. The CTO keeps its
+   own launch settings exception, which take priority.
+3. The daemon reports a live Claude session whose inherited environment still
+   turns the wheel off, at most once per session per day, in the owner TUI and
+   the Desk log: "<session> on <machine>: wheel off (mouse tracking disabled);
+   it scrolls after its next restart". The check reads the process environment
+   from `/proc/<pid>/environ` on Linux and `sysctl kern.procargs2` on macOS,
+   and compares the file's write time with the process start time, because
+   Claude Code reads the user setting only at start. It is a report, not a gate.
+4. A Claude background service (`claude daemon run`) that carries `1` is
+   reported once. The daemon stops it with the supported
+   `claude daemon stop --any` only when Claude's fresh roster lists no live
+   session, so the next launch starts a clean service. Otherwise it waits and
+   reports once. It never kills or restarts a service with live sessions.
+
+The wheel behaves the same in every session however it was started, and the
+owner has nothing to do per window; a running session picks the setting up at
+its next restart.

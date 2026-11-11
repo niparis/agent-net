@@ -75,8 +75,8 @@ func TestSessionResumePiHerdr(t *testing.T) {
 
 // Pi's fullscreen TUI captures the mouse, which stops the terminal's own text
 // selection, so copy-paste stops working. Every Pi TUI agent-net starts or
-// resumes asks for regular mode, the way Claude sessions get
-// CLAUDE_CODE_DISABLE_MOUSE=1.
+// resumes asks for regular mode. Claude sessions instead get mouse tracking on
+// from the user's Claude settings (decisions 0128).
 func TestSessionStartAndResumePiRunInRegularTuiMode(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")

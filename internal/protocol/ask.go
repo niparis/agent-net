@@ -144,6 +144,13 @@ type DeskLogResult struct {
 	Entries []DeskLogEntry `json:"entries"`
 }
 
+// DeskNote adds one line to the Desk's event log. The daemon uses it for a
+// report that needs no answer, such as a Claude session whose wheel is off.
+type DeskNote struct {
+	Text   string `json:"text"`
+	Detail string `json:"detail,omitempty"`
+}
+
 // AskOpen is a source outside the gateway that opens or closes an ask, for
 // example the daemon for a CTO proposal. Ref is the source's own key and makes
 // the call safe to repeat.

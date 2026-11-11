@@ -40,6 +40,7 @@ func openState(dir string) (*state, error) {
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`
 CREATE TABLE IF NOT EXISTS notification_sent (session_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS claude_mouse_notice (key TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS settings_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), received_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS owner_preferences (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);
@@ -311,6 +312,25 @@ CREATE TABLE IF NOT EXISTS workers (
 }
 
 func (s *state) close() error { return s.db.Close() }
+
+// mouseNoticeAt is when the Claude mouse problem key was last reported.
+func (s *state) mouseNoticeAt(key string) (time.Time, bool, error) {
+	var at int64
+	err := s.db.QueryRow(`SELECT at FROM claude_mouse_notice WHERE key=?`, key).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return time.Unix(at, 0), true, nil
+}
+
+// setMouseNotice records the report across daemon restarts.
+func (s *state) setMouseNotice(key string, at time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO claude_mouse_notice(key,at) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET at=excluded.at`, key, at.Unix())
+	return err
+}
 
 // inventoryScanVersion is the agent-net version that produced the last
 // inventory scan on this machine. An upgrade changes it, which forces a fresh

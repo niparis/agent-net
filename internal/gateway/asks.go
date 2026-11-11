@@ -67,6 +67,12 @@ func (s *Store) deskLog(q askDB, source, aboutKind, aboutID, text, detail string
 	return nil
 }
 
+// AddDeskNote adds one line to the event log from a machine's daemon. It is a
+// report, not an ask: nothing waits for an answer.
+func (s *Store) AddDeskNote(nodeID, text, detail string) error {
+	return s.deskLog(s.db, "daemon", "node", nodeID, text, detail, nil)
+}
+
 // DeskLog returns the newest log lines, newest first.
 func (s *Store) DeskLog(limit int) ([]protocol.DeskLogEntry, error) {
 	if limit <= 0 {

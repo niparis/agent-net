@@ -122,7 +122,7 @@ func TestSessionStartClaude(t *testing.T) {
 				}
 			}
 			settingsEnv, _ := rec.Settings["env"].(map[string]any)
-			if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || rec.Env["AGENT_NET_WORKER"] != "" {
+			if _, set := settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"]; set || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "" || rec.Env["AGENT_NET_WORKER"] != "" {
 				t.Errorf("owner environment: settings %v session %v", rec.Settings, rec.Env)
 			}
 			if rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
@@ -178,11 +178,11 @@ func TestSessionStartClaude(t *testing.T) {
 	}
 }
 
-// Decision 0128: the wheel scrolls every Claude session agent-net starts. The
-// setting must be in the launch settings, because Claude's background service
-// gives every session it starts later its own environment. The launch command
-// must not carry it either way.
-func TestClaudeSessionLaunchSettingsKeepMouseTrackingOn(t *testing.T) {
+// Decision 0128: one mechanism decides mouse tracking, the user's Claude
+// settings file that the daemon owns. A managed launch must not carry its own
+// copy, so a service that started with the variable on cannot change the rule,
+// and the launch command must not filter the variable either.
+func TestClaudeSessionLaunchLeavesMouseToUserSettings(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_DISABLE_MOUSE", "1") // the background service has it off
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)
@@ -202,14 +202,14 @@ func TestClaudeSessionLaunchSettingsKeepMouseTrackingOn(t *testing.T) {
 	})
 	rec := readClaude(t, repo)
 	settingsEnv, _ := rec.Settings["env"].(map[string]any)
-	if settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "0" {
-		t.Fatalf("launch settings must turn mouse tracking on: %v", rec.Settings)
+	if _, set := settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"]; set {
+		t.Fatalf("a managed launch must not carry the mouse choice: %v", rec.Settings)
 	}
-	if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" {
-		t.Fatalf("session mouse setting = %q, want 0", rec.Env["CLAUDE_CODE_DISABLE_MOUSE"])
+	if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" {
+		t.Fatalf("the launch must not change the inherited mouse value: %q", rec.Env["CLAUDE_CODE_DISABLE_MOUSE"])
 	}
-	if rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
-		t.Fatalf("launch command must not pass the variable on: %q", rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"])
+	if rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "1" {
+		t.Fatalf("the launch command must not filter the mouse value: %q", rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"])
 	}
 }
 
@@ -255,7 +255,7 @@ func TestSessionResumeClaude(t *testing.T) {
 				t.Fatalf("resume %+v record %+v", r, rec)
 			}
 			settingsEnv, _ := rec.Settings["env"].(map[string]any)
-			if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || rec.Env["AGENT_NET_WORKER"] != "" || argValue(rec.Args, "--mcp-config") != "" {
+			if _, set := settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"]; set || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "" || rec.Env["AGENT_NET_WORKER"] != "" || argValue(rec.Args, "--mcp-config") != "" {
 				t.Fatalf("owner settings: %+v", rec)
 			}
 			if rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {

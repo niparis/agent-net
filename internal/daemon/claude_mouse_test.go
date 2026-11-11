@@ -1,0 +1,263 @@
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/niparis/agent-net/internal/claudesettings"
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+// mouseTestDaemon is a daemon that records Desk log lines instead of calling
+// the gateway.
+func mouseTestDaemon(t *testing.T, lines *[]string) *Daemon {
+	t.Helper()
+	d := &Daemon{log: log.New(io.Discard, "", 0)}
+	d.cfg.Hostname = "research"
+	d.cfg.testGatewayCall = func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
+		if typ != "desk.note" {
+			return nil, false, nil
+		}
+		*lines = append(*lines, params.(protocol.DeskNote).Text)
+		return json.RawMessage(`{"ok":true}`), true, nil
+	}
+	return d
+}
+
+func fakeProcessEnv(t *testing.T, env ...string) {
+	t.Helper()
+	old := processEnviron
+	processEnviron = func(int) []string { return env }
+	t.Cleanup(func() { processEnviron = old })
+}
+
+func fakeMouseStart(t *testing.T, at time.Time) {
+	t.Helper()
+	old := mouseProcView
+	mouseProcView = func(pid int) (procView, error) { return procView{PID: pid, Started: at}, nil }
+	t.Cleanup(func() { mouseProcView = old })
+}
+
+func TestClaudeMouseSettingMergesAndReapplies(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(path, []byte(`{"theme":"dark","env":{"OTHER":"kept","CLAUDE_CODE_DISABLE_MOUSE":"1"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{log: log.New(io.Discard, "", 0)}
+	d.cfg.claudeSettingsPath = path
+	d.ensureClaudeMouseSetting()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	env, _ := doc["env"].(map[string]any)
+	if doc["theme"] != "dark" || env["OTHER"] != "kept" || env[claudesettings.MouseKey] != claudesettings.MouseOn {
+		t.Fatalf("merged file: %s", raw)
+	}
+	// Drift is repaired on the next pass.
+	drifted := strings.Replace(string(raw), `"0"`, `"1"`, 1)
+	if err := os.WriteFile(path, []byte(drifted), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.ensureClaudeMouseSetting()
+	value, present, err := claudesettings.MouseValue(path)
+	if err != nil || !present || value != claudesettings.MouseOn {
+		t.Fatalf("after drift value=%q present=%v err=%v", value, present, err)
+	}
+}
+
+func TestClaudeMouseSettingLeavesInvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	bad := []byte("{ not json ")
+	if err := os.WriteFile(path, bad, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	d := mouseTestDaemon(t, &lines)
+	d.cfg.claudeSettingsPath = path
+	d.ensureClaudeMouseSetting()
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(bad) {
+		t.Fatalf("file changed: %q %v", got, err)
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "is not valid JSON") {
+		t.Fatalf("report %v", lines)
+	}
+}
+
+func TestClaudeMouseDriftReportsLiveSessionsOnceADay(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	path := claudesettings.File()
+	if _, err := claudesettings.EnsureMouseOn(path); err != nil {
+		t.Fatal(err)
+	}
+	// The session started before the file was written, so Claude did not read
+	// the user setting; its inherited environment still decides.
+	fakeMouseStart(t, time.Now().Add(-time.Hour))
+	fakeProcessEnv(t, "CLAUDE_CODE_DISABLE_MOUSE=1")
+
+	var lines []string
+	d := mouseTestDaemon(t, &lines)
+	d.sessions = map[string]*localSession{
+		key("claude", "abc"): {info: protocol.SessionInfo{Harness: "claude", NativeID: "abc", Name: "garden", PID: os.Getpid()}},
+		key("claude", "def"): {info: protocol.SessionInfo{Harness: "claude", NativeID: "def", Name: "shop", PID: os.Getpid()}},
+		// The CTO keeps its own launch settings, so it is never reported.
+		key("claude", "cto"): {info: protocol.SessionInfo{Harness: "claude", NativeID: "cto", Name: "agent-net-cto", PID: os.Getpid()}},
+	}
+	d.claudeCTO.session = "cto"
+	d.checkClaudeMouseSessions(time.Now())
+	if len(lines) != 2 {
+		t.Fatalf("reports = %v", lines)
+	}
+	want := "garden on research: wheel off (mouse tracking disabled); it scrolls after its next restart"
+	if lines[0] != want && lines[1] != want {
+		t.Fatalf("reports = %v, want %q", lines, want)
+	}
+	d.checkClaudeMouseSessions(time.Now())
+	if len(lines) != 2 {
+		t.Fatalf("repeated a report the same day: %v", lines)
+	}
+}
+
+func TestClaudeMouseDriftIgnoresSessionsThatReadTheSetting(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	path := claudesettings.File()
+	if _, err := claudesettings.EnsureMouseOn(path); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The session started after the file was written, so Claude applied "0"
+	// even though the inherited environment still has "1".
+	fakeMouseStart(t, info.ModTime().Add(time.Minute))
+	fakeProcessEnv(t, "CLAUDE_CODE_DISABLE_MOUSE=1")
+
+	var lines []string
+	d := mouseTestDaemon(t, &lines)
+	d.sessions = map[string]*localSession{
+		key("claude", "abc"): {info: protocol.SessionInfo{Harness: "claude", NativeID: "abc", Name: "garden", PID: os.Getpid()}},
+	}
+	d.checkClaudeMouseSessions(time.Now())
+	if len(lines) != 0 {
+		t.Fatalf("reported a session that is fine: %v", lines)
+	}
+}
+
+func TestClaudeMouseServiceRestartDecision(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+		live int
+		want claudeMouseAction
+	}{
+		{"no live sessions", "1", 0, claudeMouseRestartService},
+		{"one live session", "1", 1, claudeMouseWaitService},
+		{"several live sessions", "1", 3, claudeMouseWaitService},
+		{"value on", "0", 0, claudeMouseNothing},
+		{"unset", "", 0, claudeMouseNothing},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := claudeMouseServiceAction(c.env, c.live); got != c.want {
+				t.Fatalf("value %q with %d live sessions: got %v, want %v", c.env, c.live, got, c.want)
+			}
+		})
+	}
+}
+
+func TestClaudeMouseServiceWaitsWithLiveSessions(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	rosterDir := filepath.Join(dir, "daemon")
+	if err := os.MkdirAll(rosterDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeRoster := func(workers string) {
+		t.Helper()
+		raw := `{"supervisorPid":1234,"updatedAt":` + fmt.Sprint(time.Now().UnixMilli()) + `,"workers":` + workers + `}`
+		if err := os.WriteFile(filepath.Join(rosterDir, "roster.json"), []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldList, oldArgs := processList, processArgs
+	processList = func() []int { return []int{1234} }
+	processArgs = func(pid int) []string {
+		if pid == 1234 {
+			return []string{"/home/someone/.local/bin/claude", "daemon", "run"}
+		}
+		return nil
+	}
+	oldStop := claudeDaemonStop
+	stops := 0
+	claudeDaemonStop = func(context.Context, string) error {
+		stops++
+		return nil
+	}
+	t.Cleanup(func() {
+		processList, processArgs = oldList, oldArgs
+		claudeDaemonStop = oldStop
+	})
+	fakeProcessEnv(t, "CLAUDE_CODE_DISABLE_MOUSE=1")
+
+	// One live session: the service is left alone and the owner is told.
+	writeRoster(`{"abc":{"pid":` + fmt.Sprint(os.Getpid()) + `}}`)
+	var lines []string
+	d := mouseTestDaemon(t, &lines)
+	d.cfg.HarnessPaths = map[string]string{"claude": "/bin/true"}
+	d.checkClaudeMouseService(context.Background(), time.Now())
+	if stops != 0 {
+		t.Fatalf("stopped a service with a live session")
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "will be restarted when it has no live sessions") {
+		t.Fatalf("reports = %v", lines)
+	}
+
+	// No live session: the service is stopped and the next launch is clean.
+	writeRoster(`{}`)
+	lines = nil
+	d = mouseTestDaemon(t, &lines)
+	d.cfg.HarnessPaths = map[string]string{"claude": "/bin/true"}
+	d.checkClaudeMouseService(context.Background(), time.Now())
+	if stops != 1 {
+		t.Fatalf("stops = %d, want 1", stops)
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "it was restarted") {
+		t.Fatalf("reports = %v", lines)
+	}
+}
+
+func TestClaudeMouseFindsTheBackgroundService(t *testing.T) {
+	oldList, oldArgs := processList, processArgs
+	processList = func() []int { return []int{10, 11, 12} }
+	processArgs = func(pid int) []string {
+		switch pid {
+		case 10:
+			return []string{"/home/someone/.local/bin/claude", "daemon", "run", "--origin", "transient"}
+		case 11:
+			return []string{"/home/someone/.local/bin/claude", "daemon", "stop", "--any"}
+		default:
+			return []string{"claude", "--bg"}
+		}
+	}
+	t.Cleanup(func() { processList, processArgs = oldList, oldArgs })
+	got := claudeDaemonServicePIDs()
+	if len(got) != 1 || got[0] != 10 {
+		t.Fatalf("service pids = %v", got)
+	}
+}

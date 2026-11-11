@@ -99,6 +99,9 @@ type Config struct {
 	// claudeRosterPath replaces the Claude roster file that a process stop
 	// reads (process_stop_claude.go). Empty uses the user's Claude folder.
 	claudeRosterPath string
+	// claudeSettingsPath replaces the user's Claude settings file that the
+	// mouse choice lives in. Empty uses $CLAUDE_CONFIG_DIR or ~/.claude.
+	claudeSettingsPath string
 	// testClaudeProcs replaces the process table of the Claude end-of-job
 	// check, so its tests never look at a real process.
 	testClaudeProcs func() []claudeBgProc
@@ -339,33 +342,37 @@ type Daemon struct {
 	ownerWorktrees      map[string]bool                    // folder -> true, guarded by mu
 	notify              notificationTracker
 	notifySend          func()
-	toolsMu             sync.Mutex
-	toolsReport         protocol.InventoryReport
-	toolsWake           chan struct{}
-	outboxWake          chan struct{} // a queued message wakes the link's outbox loop
-	skillConflicts      map[string]string
-	toolsPlanKeyOnce    sync.Once
-	toolsPlanKey        [32]byte
-	toolsPlanKeyErr     error
-	toolsLogMu          sync.Mutex
-	toolsConflictLog    map[toolConflictKey]time.Time
-	toolsSummaryAt      time.Time
-	ctoDispatchMu       ctoDispatchLock
-	ctoPresenceMu       sync.Mutex
-	ctoEnterMu          sync.Mutex
-	ctoEntering         *ctoEnterCall
-	herdrOpenMu         sync.Mutex
-	herdrOpened         map[string]herdrOpenedPane
-	cto                 ctoRuntime
-	claudeCTO           claudeCTOState
-	ctoTranscript       ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
-	layoutMu            sync.Mutex
-	layoutCache         *protocol.MachineLayout
-	layoutTime          time.Time
-	cfg                 Config
-	log                 *log.Logger
-	st                  *state
-	client              *http.Client
+	// mouseMu guards mouseNotices, the last report of each Claude mouse
+	// problem (claude_mouse.go), when the daemon has no state database.
+	mouseMu          sync.Mutex
+	mouseNotices     map[string]time.Time
+	toolsMu          sync.Mutex
+	toolsReport      protocol.InventoryReport
+	toolsWake        chan struct{}
+	outboxWake       chan struct{} // a queued message wakes the link's outbox loop
+	skillConflicts   map[string]string
+	toolsPlanKeyOnce sync.Once
+	toolsPlanKey     [32]byte
+	toolsPlanKeyErr  error
+	toolsLogMu       sync.Mutex
+	toolsConflictLog map[toolConflictKey]time.Time
+	toolsSummaryAt   time.Time
+	ctoDispatchMu    ctoDispatchLock
+	ctoPresenceMu    sync.Mutex
+	ctoEnterMu       sync.Mutex
+	ctoEntering      *ctoEnterCall
+	herdrOpenMu      sync.Mutex
+	herdrOpened      map[string]herdrOpenedPane
+	cto              ctoRuntime
+	claudeCTO        claudeCTOState
+	ctoTranscript    ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
+	layoutMu         sync.Mutex
+	layoutCache      *protocol.MachineLayout
+	layoutTime       time.Time
+	cfg              Config
+	log              *log.Logger
+	st               *state
+	client           *http.Client
 	// ctoNow and ctoCompactEvery are replaced in tests with a fake clock and
 	// no background loop.
 	ctoNow          func() time.Time

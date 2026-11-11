@@ -2702,6 +2702,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		entries, err := st.DeskLog(p.Limit)
 		return protocol.DeskLogResult{Entries: entries}, err
 
+	case "desk.note":
+		var p protocol.DeskNote
+		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Text) == "" {
+			return nil, reject("bad desk.note")
+		}
+		return map[string]bool{"ok": true}, st.AddDeskNote(nc.id, p.Text, p.Detail)
+
 	case "desk.settle":
 		var p struct {
 			ID int64 `json:"id"`
