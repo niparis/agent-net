@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/niparis/agent-net/internal/ptyproxy"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -137,6 +138,41 @@ func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {
 	m, _ = press2(m, (*done)(errors.New("exit status 1")))
 	if !strings.Contains(m.testView(), "Left tenebrae (Mac): exit status 1. Press ctrl+b q to come back.") {
 		t.Errorf("after a failed session:\n%s", m.testView())
+	}
+}
+
+// runProxy is the terminal hand-over for a test that runs the real proxy on
+// pipes, so the entered command's output goes through it as on a terminal.
+func runProxy(c tea.ExecCommand, cb tea.ExecCallback) tea.Cmd {
+	proxy, ok := c.(*ptyproxy.Proxy)
+	if !ok {
+		panic("enter command is not proxied")
+	}
+	proxy.SetStdin(strings.NewReader(""))
+	proxy.SetStdout(io.Discard)
+	return func() tea.Msg { return cb(proxy.Run()) }
+}
+
+// A command that fails says why on the terminal it was handed, and the TUI
+// used to show only its exit status after taking the screen back. herdr's
+// reason (an attach is already open) was lost this way.
+func TestEnterFailureShowsWhatTheCommandPrinted(t *testing.T) {
+	m, src := workerModel(160, 30)
+	m = selectID(m, workerID)
+	src.enterPlan = protocol.EnterPlan{
+		Argv: []string{"sh", "-c", "printf 'error: terminal already has an attached client\\n' >&2; exit 1"},
+		Note: "Press ctrl+] to come back here; tenebrae (Mac) keeps running.",
+	}
+	m.execProcess = runProxy
+	m, cmd := pressE(m)
+	m, cmd = press2(m, cmd())
+	if cmd == nil {
+		t.Fatal("the plan did not lead to a command")
+	}
+	m, _ = press2(m, cmd())
+	want := "Left tenebrae (Mac): error: terminal already has an attached client (exit status 1). Press ctrl+] to come back here; tenebrae (Mac) keeps running."
+	if got := m.notice.text; !strings.Contains(got, want) {
+		t.Fatalf("notice %q, want %q", got, want)
 	}
 }
 

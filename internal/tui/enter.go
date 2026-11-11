@@ -34,6 +34,7 @@ type enterDoneMsg struct {
 	err       error
 	fallback  string // the manual way, when the plan uses ssh
 	target    string // the ssh target of the plan, or ""
+	output    string // the last lines the command printed, when it failed
 	ctoNotice string
 }
 
@@ -207,7 +208,11 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 		ctoNotice = r.plan.Note
 	}
 	return m, run(proxy, func(err error) tea.Msg {
-		return enterDoneMsg{name: name, err: err, fallback: fallback, target: target, ctoNotice: ctoNotice}
+		done := enterDoneMsg{name: name, err: err, fallback: fallback, target: target, ctoNotice: ctoNotice}
+		if err != nil {
+			done.output = proxy.LastLines(2)
+		}
+		return done
 	})
 }
 
@@ -242,14 +247,27 @@ func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 		m.fail("Could not ssh to " + target + ". Set enter_ssh_hosts in node.json, or " + lowerFirst(sanitize(r.fallback)) + herdrFallbackSuffix(m.enterNote))
 	default:
 		// The note holds the way back and the usual cause (herdr: an attach is
-		// already open), which the screen of the entered command hid.
-		m.fail("Left " + r.name + ": " + explain(r.err) + noteSuffix(m.enterNote))
+		// already open), which the screen of the entered command hid. The
+		// command's own last lines say why it failed; the TUI took their screen
+		// away, so repeat them here.
+		m.fail("Left " + r.name + ": " + exitReason(r.err, r.output) + noteSuffix(m.enterNote))
 	}
 	if !m.fetching {
 		m.fetching = true
 		return m, m.fetchCmd()
 	}
 	return m, nil
+}
+
+// exitReason is why the entered command ended. What it printed last comes
+// first when there is anything, then the exit status. A command that failed
+// without printing keeps the plain exit status.
+func exitReason(err error, output string) string {
+	status := explain(err)
+	if output = sanitize(strings.TrimSpace(output)); output != "" {
+		return output + " (" + status + ")"
+	}
+	return status
 }
 
 func herdrFallbackSuffix(note string) string {
