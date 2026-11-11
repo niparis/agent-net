@@ -34,7 +34,7 @@ func TestTimedOutCallIsReportedToTheDaemon(t *testing.T) {
 	})
 	c := New(path)
 	c.SetScreen("desk")
-	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	ctx, cancel := WithTimeout(context.Background(), 80*time.Millisecond)
 	defer cancel()
 	if _, err := c.Call(ctx, "proposal_list", nil); err == nil {
 		t.Fatal("expected a timeout")
@@ -157,5 +157,38 @@ func TestOldPeerAnswersAreNotReported(t *testing.T) {
 				t.Fatalf("%q: an old-peer answer was reported (calls %v)", answer, calls)
 			}
 		}
+	}
+}
+
+// A timed-out call reports the configured timeout of the call, even when time
+// elapsed before the call began.
+func TestConfiguredTimeoutIsReportedWhenTimeElapsed(t *testing.T) {
+	fake, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
+		if method == "slow" {
+			time.Sleep(time.Hour)
+		}
+		return map[string]any{}, ""
+	})
+	c := New(path)
+	ctx, cancel := WithTimeout(context.Background(), 80*time.Millisecond)
+	defer cancel()
+	time.Sleep(5 * time.Millisecond)
+	if _, err := c.Call(ctx, "slow", nil); err == nil {
+		t.Fatal("expected a timeout")
+	}
+	waitFor(t, "client_error report", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.params[protocol.OpClientError] != nil
+	})
+	fake.mu.Lock()
+	raw := fake.params[protocol.OpClientError]
+	fake.mu.Unlock()
+	var got protocol.ClientError
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TimeoutMs != 80 {
+		t.Fatalf("got TimeoutMs = %d, want 80", got.TimeoutMs)
 	}
 }

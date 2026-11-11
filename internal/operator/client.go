@@ -110,6 +110,29 @@ func (s *Client) Call(ctx context.Context, method string, params any) (json.RawM
 	return raw, err
 }
 
+func roundUpMs(d time.Duration) int64 {
+	if d <= 0 {
+		return 0
+	}
+	return int64((d + time.Millisecond - 1) / time.Millisecond)
+}
+
+type timeoutKey struct{}
+
+// WithTimeout sets a deadline on parent and records the configured duration
+// in the context so a timed-out call reports the exact timeout chosen by the
+// caller rather than time remaining.
+func WithTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	return context.WithValue(ctx, timeoutKey{}, timeout), cancel
+}
+
+// TimeoutFromContext returns the configured timeout carried in ctx, if any.
+func TimeoutFromContext(ctx context.Context) (time.Duration, bool) {
+	d, ok := ctx.Value(timeoutKey{}).(time.Duration)
+	return d, ok
+}
+
 // reportFailure tells the daemon that a call failed on this side. The daemon
 // cannot see a timeout that this side ended, so without the report it would
 // leave no trace. It is not sent when there is nobody to tell (the daemon is
@@ -126,10 +149,12 @@ func (s *Client) reportFailure(ctx context.Context, method string, start time.Ti
 	text := err.Error()
 	report := protocol.ClientError{Method: method, Ms: time.Since(start).Milliseconds(), Screen: s.screenName(), Err: text,
 		Timeout: errors.Is(err, context.DeadlineExceeded) || strings.Contains(text, "deadline exceeded")}
-	if deadline, ok := ctx.Deadline(); ok {
-		// The deadline was set a moment before start; the nearest millisecond
-		// gives the timeout the caller chose.
-		report.TimeoutMs = max(deadline.Sub(start).Round(time.Millisecond).Milliseconds(), 0)
+	if d, ok := TimeoutFromContext(ctx); ok {
+		report.TimeoutMs = max(d.Milliseconds(), 0)
+	} else if deadline, ok := ctx.Deadline(); ok {
+		// The deadline was set a moment before start; round up so elapsed time
+		// before start does not reduce the reported timeout by 1 ms.
+		report.TimeoutMs = max(roundUpMs(deadline.Sub(start)), 0)
 	}
 	go func() {
 		rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -266,7 +291,7 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 			callCtx := ctx
 			cancel := func() {}
 			if !c.required {
-				callCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
+				callCtx, cancel = WithTimeout(ctx, 3*time.Second)
 			}
 			defer cancel()
 			c.raw, c.err = s.Call(callCtx, c.method, c.params)
