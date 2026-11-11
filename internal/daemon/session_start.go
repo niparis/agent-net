@@ -527,6 +527,11 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex") {
 		return protocol.StartedSession{}, errors.New("Cannot resume this conversation here. Open it in the harness directly.")
 	}
+	// The gateway records a session whose harness reports status exited as
+	// offline: a Claude background session keeps its process and session file
+	// after /exit, but nothing can be attached to or delivered to it. Resume is
+	// the only way back, and a live session stays refused so its conversation
+	// never starts twice.
 	if a.Online {
 		return protocol.StartedSession{}, errors.New("session is already online")
 	}

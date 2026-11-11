@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -262,6 +263,113 @@ func TestSessionResumeClaude(t *testing.T) {
 				t.Fatalf("launch command carries the mouse setting: %v", rec.CommandEnv)
 			}
 		})
+	}
+}
+
+// fakeClaudeProcess starts a process that stands in for the Claude background
+// service of an exited session: discovery asks only whether its PID is alive.
+func fakeClaudeProcess(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	})
+	return cmd.Process.Pid
+}
+
+// seedClaudeSessionFile writes the session file of a Claude background
+// session, as Claude Code leaves it: status exited says the harness ended,
+// while the process and the file may still be there.
+func seedClaudeSessionFile(t *testing.T, sessions string, pid int, native, cwd, status string) {
+	t.Helper()
+	sf := map[string]any{"pid": pid, "sessionId": native, "cwd": cwd, "name": "shop", "status": status, "kind": "bg", "jobId": "old-job"}
+	raw, err := json.Marshal(sf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessions, fmt.Sprintf("%d.json", pid)), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An exited Claude background session keeps its process and its session file,
+// so discovery still lists it. The gateway records that row offline, because
+// nothing can be delivered or attached to it: resume is the only way back and
+// must not be refused as a double start.
+func TestSessionResumeExitedClaudeSession(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	native := "22222222-0000-4000-8000-000000000000"
+	seedClaudeSessionFile(t, c.sessions, fakeClaudeProcess(t), native, repo, "exited")
+	var id string
+	eventually(t, "exited session registered", func() bool {
+		for _, s := range c.d.Sessions() {
+			if s.NativeID == native {
+				id = s.SessionID
+			}
+		}
+		return id != ""
+	})
+	a := c.agentOf(t, id)
+	if a == nil || a.Online || a.Status != "exited" {
+		t.Fatalf("an exited session must be offline: %+v", a)
+	}
+	raw, err := c.cli.call("session_resume", map[string]string{"session_id": id})
+	if err != nil {
+		t.Fatalf("resume of an exited session: %v", err)
+	}
+	var r sessionStartTestResult
+	if err := json.Unmarshal(raw, &r); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { killFakeClaude(t, repo) })
+	eventually(t, "resumed session", func() bool {
+		mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+		if r.Status == "failed" {
+			t.Fatalf("resume: %+v", r)
+		}
+		return r.Status == "started"
+	})
+	rec := readClaude(t, repo)
+	if argValue(rec.Args, "--resume") != native || r.NativeID != native {
+		t.Fatalf("resume %+v record %+v", r, rec)
+	}
+}
+
+// A live session is still refused: resume must not start its conversation
+// twice.
+func TestSessionResumeLiveClaudeSessionRefused(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	native := "33333333-0000-4000-8000-000000000000"
+	seedClaudeSessionFile(t, c.sessions, fakeClaudeProcess(t), native, repo, "idle")
+	var id string
+	eventually(t, "live session registered", func() bool {
+		for _, s := range c.d.Sessions() {
+			if s.NativeID == native {
+				id = s.SessionID
+			}
+		}
+		return id != ""
+	})
+	a := c.agentOf(t, id)
+	if a == nil || !a.Online || a.Status != "idle" {
+		t.Fatalf("live record: %+v", a)
+	}
+	_, err := c.cli.call("session_resume", map[string]string{"session_id": id})
+	if err == nil || !strings.Contains(err.Error(), "session is already online") {
+		t.Fatalf("live session resume: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "fake-claude.json")); !os.IsNotExist(err) {
+		t.Fatalf("resume started a live session twice: %v", err)
 	}
 }
 
