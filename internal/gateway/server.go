@@ -145,6 +145,7 @@ type Gateway struct {
 	stepTaskQuietWindow  time.Duration
 	stepTaskRecentWindow time.Duration
 	stepTaskBatchCap     int
+	nudgeMu              sync.Mutex
 	stepBatchesMu        sync.Mutex
 	stepBatches          map[string]*stepTaskBatch
 	stepBatchGen         uint64 // under stepBatchesMu
@@ -514,16 +515,6 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				g.flushLeadRequests(ctx)
 				if err := g.store.samplePendingStalls(); err != nil {
 					g.logLine("error", "where", "pending sample", "err", err)
-				}
-				reminders, err := g.store.remindPending()
-				if err != nil {
-					g.logLine("error", "where", "pending reminders", "err", err)
-				}
-				for _, m := range reminders {
-					g.dispatch(ctx, m)
-				}
-				if len(reminders) > 0 {
-					_ = g.store.deskLog(g.store.db, "gateway", "", "", fmt.Sprintf("Reminded %d sessions about messages they have not answered", len(reminders)), "", nil)
 				}
 				g.loopTick(ctx)
 				checks, err := g.store.checkIdle()
@@ -3214,6 +3205,12 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 
 func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol.Message, released bool) {
 	if allowed, err := g.store.allowNudgeDelivery(m); err != nil || !allowed {
+		return
+	}
+	var current bool
+	var err error
+	m, current, err = g.store.currentNudge(m)
+	if err != nil || !current {
 		return
 	}
 	if m.HeldForBusy {

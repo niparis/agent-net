@@ -18,8 +18,8 @@ const remindableRequest = ` FROM messages q
  JOIN sessions src ON src.id=q.sender JOIN sessions dst ON dst.id=q.recipient
  LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
  WHERE q.type='request' AND q.batch_json='' AND q.held_for_busy=0 AND q.state IN ('stored','dispatched','delivered')
- AND q.created_at>=? AND q.created_at<? AND q.expires_at>?
- AND dst.status='idle' AND dst.last_active>0 AND dst.last_active<?
+ AND q.created_at>=? AND (q.created_at<? OR q.reminded=2) AND q.expires_at>?
+ AND dst.status='idle' AND dst.last_active>0 AND (dst.last_active<? OR q.reminded=2)
  AND src.harness<>'owner' AND dst.harness NOT IN ('owner','cto')
  AND NOT EXISTS (SELECT 1 FROM owner_settings c WHERE c.key='cto_session' AND c.value=q.recipient)
  AND NOT EXISTS (SELECT 1 FROM messages r WHERE r.conversation_id=q.conversation_id AND r.type IN ` + answeredTypesSQL + ` AND r.created_at>=q.created_at)
@@ -49,6 +49,10 @@ func (s *Store) reminderEligible(id string) (bool, error) {
 // remindPending stores the notification and the sole durable flag atomically.
 // The normal message queue supplies delivery and its existing audit history.
 func (s *Store) remindPending() ([]protocol.Message, error) {
+	return s.remindPendingBefore(s.now(), nil)
+}
+
+func (s *Store) remindPendingBefore(before time.Time, sessions map[string]bool) ([]protocol.Message, error) {
 	s.reminderMu.Lock()
 	defer s.reminderMu.Unlock()
 	tx, err := s.db.Begin()
@@ -56,20 +60,23 @@ func (s *Store) remindPending() ([]protocol.Message, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT q.id,q.conversation_id,q.recipient,q.created_at,dst.online,
- COALESCE(NULLIF(sp.name,''),NULLIF(src.name,''),q.sender)`+remindableRequest+" AND q.reminded=0", s.reminderArgs()...)
+	args := s.reminderArgs()
+	args[1] = before.Add(-reminderGrace).UnixNano()
+	args[3] = before.Add(-reminderGrace).UnixNano()
+	rows, err := tx.Query(`SELECT q.id,q.conversation_id,q.recipient,q.created_at,dst.online,dst.last_active,
+ COALESCE(NULLIF(sp.name,''),NULLIF(src.name,''),q.sender)`+remindableRequest+" AND q.reminded=0", args...)
 	if err != nil {
 		return nil, err
 	}
 	type candidate struct {
 		id, conv, to, name string
-		at                 int64
+		at, lastActive     int64
 		online             bool
 	}
 	var candidates []candidate
 	for rows.Next() {
 		var c candidate
-		if err = rows.Scan(&c.id, &c.conv, &c.to, &c.at, &c.online, &c.name); err != nil {
+		if err = rows.Scan(&c.id, &c.conv, &c.to, &c.at, &c.online, &c.lastActive, &c.name); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -94,6 +101,9 @@ func (s *Store) remindPending() ([]protocol.Message, error) {
 			s.reminderOffline[c.id] = true
 			continue
 		}
+		if sessions != nil && !sessions[c.to] {
+			continue
+		}
 		now := s.now()
 		m := protocol.Message{ID: protocol.NewID("m"), ConversationID: c.conv, ParentID: c.id,
 			From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: c.to, Type: protocol.TypeNotification,
@@ -103,7 +113,13 @@ func (s *Store) remindPending() ([]protocol.Message, error) {
    VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
 			return nil, err
 		}
-		if _, err = tx.Exec("UPDATE messages SET reminded=1 WHERE id=?", c.id); err != nil {
+		// 2 records a reminder pulled forward before its normal grace. Only
+		// that reminder can bypass the age checks during queued dispatch.
+		flag := 1
+		if c.at >= now.Add(-reminderGrace).UnixNano() || c.lastActive >= now.Add(-reminderGrace).UnixNano() {
+			flag = 2
+		}
+		if _, err = tx.Exec("UPDATE messages SET reminded=? WHERE id=?", flag, c.id); err != nil {
 			return nil, err
 		}
 		s.event(tx, "msg.stored", "", m.From, m.ID, "type=notification by=agent-net reminder")

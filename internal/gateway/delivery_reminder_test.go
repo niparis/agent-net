@@ -221,28 +221,28 @@ func TestDeliveryStepStuckNotice(t *testing.T) {
 
 	r.g.dispatchStepTasks(context.Background())
 
-	// Advance clock by 11 hours (< 12h default step_stuck): no stuck notice yet.
+	// At 11h a due step reminder pulls the 12h stuck notice forward.
 	r.clk.t = r.clk.t.Add(11 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
 	var stuckCount int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckCount); err != nil || stuckCount != 0 {
-		t.Fatalf("stuck notice count after 11h=%d want=0 err=%v", stuckCount, err)
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND idem_key LIKE 'delivery:stuck:%' AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckCount); err != nil || stuckCount != 1 {
+		t.Fatalf("stuck notice count after 11h=%d want=1 err=%v", stuckCount, err)
 	}
 
 	// Advance clock by 2 hours (total 13h > 12h): stuck notice should be sent to caller.
 	r.clk.t = r.clk.t.Add(2 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckCount); err != nil || stuckCount != 1 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND idem_key LIKE 'delivery:stuck:%' AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckCount); err != nil || stuckCount != 1 {
 		t.Fatalf("stuck notice count after 13h=%d want=1 err=%v", stuckCount, err)
 	}
 
 	var stuckBody string
-	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE recipient=? AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckBody); err != nil {
+	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE recipient=? AND idem_key LIKE 'delivery:stuck:%' AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckBody); err != nil {
 		t.Fatal(err)
 	}
-	wantBody := "Fix login crash (" + cid + "): accept has waited 13h for caller; nobody claimed it."
+	wantBody := "Fix login crash (" + cid + "): accept has waited 11h for caller; nobody claimed it."
 	if stuckBody != wantBody {
 		t.Fatalf("stuck notice body=%q want=%q", stuckBody, wantBody)
 	}
@@ -251,7 +251,7 @@ func TestDeliveryStepStuckNotice(t *testing.T) {
 	r.clk.t = r.clk.t.Add(2 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckCount); err != nil || stuckCount != 1 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND idem_key LIKE 'delivery:stuck:%' AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckCount); err != nil || stuckCount != 1 {
 		t.Fatalf("stuck notice count on second dispatch=%d want=1 err=%v", stuckCount, err)
 	}
 
@@ -348,7 +348,7 @@ func TestVerifyStuckNoticeSurvivesPruning(t *testing.T) {
 	r.clk.t = r.clk.t.Add(12 * time.Hour)
 	r.g.checkStuckStepTasks(context.Background(), 12*time.Hour)
 	var count int
-	if err := r.s.db.QueryRow("SELECT count(*) FROM messages WHERE body LIKE '%nobody claimed%'").Scan(&count); err != nil || count != 1 {
+	if err := r.s.db.QueryRow("SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:stuck:%' AND body LIKE '%nobody claimed%'").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("first notice=%d err=%v", count, err)
 	}
 	if _, err := r.s.db.Exec("DELETE FROM messages"); err != nil {
@@ -356,7 +356,7 @@ func TestVerifyStuckNoticeSurvivesPruning(t *testing.T) {
 	}
 	r.clk.t = r.clk.t.Add(24 * time.Hour)
 	r.g.checkStuckStepTasks(context.Background(), 12*time.Hour)
-	if err := r.s.db.QueryRow("SELECT count(*) FROM messages WHERE body LIKE '%nobody claimed%'").Scan(&count); err != nil || count != 0 {
+	if err := r.s.db.QueryRow("SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:stuck:%' AND body LIKE '%nobody claimed%'").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("repeated notice=%d err=%v", count, err)
 	}
 }

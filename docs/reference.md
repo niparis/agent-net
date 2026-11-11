@@ -4128,3 +4128,12 @@ native MCP removal restart notices, asynchronous session start failures and
 background phrasing worker tasks. Restart notices are notifications. Real
 owner sends, replies, worker briefs and Desk answers keep the owner sender.
 The reserved sender remains unavailable through public message sends.
+
+When a step reminder, stuck-step notice or reply reminder is due, agent-net
+sends one message containing the other eligible nudges for that session due
+within the next 60 minutes. Future nudges alone do not trigger a message.
+The step batch keeps the existing multi-change format. Each original notice
+keeps its audit record and is marked sent when included, so it is not sent
+again at its former due time. Verify reminders also record the covered due
+slot to preserve the 30m, 2h, 8h, 24h, then daily backoff. Cadences, settings
+and defaults do not change. Steps waiting on an event remain ineligible.
