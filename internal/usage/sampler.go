@@ -129,6 +129,22 @@ func (s *series) avgSince(cut time.Time) (float64, int) {
 	return sum / float64(n), n
 }
 
+// avgLast is the average of the newest n values, or of all of them when there
+// are fewer.
+func (s *series) avgLast(n int) float64 {
+	if len(s.pts) == 0 {
+		return 0
+	}
+	if n <= 0 || n > len(s.pts) {
+		n = len(s.pts)
+	}
+	sum := 0.0
+	for _, p := range s.pts[len(s.pts)-n:] {
+		sum += p.v
+	}
+	return sum / float64(n)
+}
+
 // Life is the figures of a tree over everything the sampler saw of it, not
 // only the last window. CPU is a percent of one core, RSS is in bytes.
 type Life struct {
@@ -434,6 +450,17 @@ func (s *Sampler) Averages(d time.Duration) Averages {
 	a.MemUsed, a.MemSamples = s.mem.avgSince(cut)
 	a.MemTotal, a.Cores = s.machine.MemTotal, s.machine.Cores
 	return a
+}
+
+// RecentCPU is the whole-machine CPU busy percent (0-100) over the newest n
+// samples, or the newest one when there are fewer. The samples come every
+// DefaultInterval (5 seconds), so two of them cover about the last ten
+// seconds. It is the current use: a job that just ended does not stay in it,
+// unlike the 1- and 5-minute averages.
+func (s *Sampler) RecentCPU(n int) float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cpu.avgLast(n)
 }
 
 func (s *Sampler) treeStat(pid int, ts *treeState) TreeStat {

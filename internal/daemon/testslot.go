@@ -60,6 +60,11 @@ func (d *Daemon) testAdmissionCost(snap settings.Snapshot) WorkerCost {
 // testParallel is how many packages a suite may build or test at once: the
 // free cores under the CPU target, after the workers that started in the last
 // five minutes, at least 1 and with no fixed cap.
+//
+// It sizes from the recent CPU figure, not the 5-minute average: a suite that
+// just ended keeps that average high for minutes, and sizing from it would
+// give the next suite one core. Only one suite runs per machine and this one
+// holds the free slot, so no subtraction for a running suite is needed.
 func testParallel(load MachineLoad, target, pendingCores float64) int {
 	if load.Cores <= 0 {
 		return 1
@@ -67,7 +72,7 @@ func testParallel(load MachineLoad, target, pendingCores float64) int {
 	if target <= 0 {
 		target = 75
 	}
-	free := float64(load.Cores)*(target-load.CPU5)/100 - pendingCores
+	free := float64(load.Cores)*(target-load.CPU10s)/100 - pendingCores
 	n := int(math.Floor(free))
 	if n < 1 {
 		return 1

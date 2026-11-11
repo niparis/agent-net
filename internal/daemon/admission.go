@@ -25,6 +25,10 @@ type MachineLoad struct {
 	// CPU1 and CPU5 are the whole-machine CPU busy percent (0-100), averaged
 	// over the last 1 and 5 minutes. They are not the load average.
 	CPU1, CPU5 float64
+	// CPU10s is the whole-machine CPU busy percent (0-100) over the last two
+	// samples, about 10 seconds. It is the current use: a job that just ended
+	// leaves the 5-minute average high for minutes, but not this figure.
+	CPU10s float64
 	// Avail5 is the memory available for a new process, averaged over 5
 	// minutes, in bytes. Total is the machine's RAM.
 	Avail5 float64
@@ -36,6 +40,11 @@ type MachineLoad struct {
 // minLoadSamples is how many CPU samples (5 seconds each) the daemon needs
 // before it trusts its averages.
 const minLoadSamples = 2
+
+// recentLoadSamples is how many 5-second CPU samples the recent figure covers:
+// about 10 seconds. The test slot sizes a suite from it, so a suite that just
+// ended does not size the next one from the load it left in the average.
+const recentLoadSamples = 2
 
 // workerGapHoldMinAge is how long a worker must have run for its start to hold
 // the start gap. A start that failed, or a worker that ended sooner, did not
@@ -63,6 +72,7 @@ func loadFromSampler(s *usage.Sampler) MachineLoad {
 	}
 	a1 := s.Averages(time.Minute)
 	l := MachineLoad{Known: true, Cores: a5.Cores, CPU5: a5.CPU, CPU1: a1.CPU, Total: a5.MemTotal, Samples: a5.Samples}
+	l.CPU10s = s.RecentCPU(recentLoadSamples)
 	if a1.Samples == 0 {
 		l.CPU1 = a5.CPU
 	}

@@ -65,9 +65,9 @@ func TestTestSlotParallelFollowsFreeCores(t *testing.T) {
 		want    int
 	}{
 		{"roomy eight cores", roomyLoad(), 75, 0, 5},
-		{"sixteen idle cores", MachineLoad{Cores: 16, CPU5: 0}, 75, 0, 12},
-		{"two idle cores", MachineLoad{Cores: 2, CPU5: 0}, 75, 0, 1},
-		{"near the target", MachineLoad{Cores: 8, CPU5: 74}, 75, 0, 1},
+		{"sixteen idle cores", MachineLoad{Cores: 16, CPU10s: 0}, 75, 0, 12},
+		{"two idle cores", MachineLoad{Cores: 2, CPU10s: 0}, 75, 0, 1},
+		{"near the target", MachineLoad{Cores: 8, CPU10s: 74}, 75, 0, 1},
 		{"pending workers", roomyLoad(), 75, 5, 1},
 		{"unknown core count", MachineLoad{}, 75, 0, 1},
 		{"higher target", roomyLoad(), 100, 0, 7},
@@ -76,6 +76,21 @@ func TestTestSlotParallelFollowsFreeCores(t *testing.T) {
 		if got := testParallel(c.load, c.target, c.pending); got != c.want {
 			t.Errorf("%s: %d, want %d", c.name, got, c.want)
 		}
+	}
+}
+
+// A suite sizes the next one from the machine's current use, not the
+// 5-minute average: a suite that just ended keeps CPU5 high for minutes, but
+// the last ten seconds show the machine idle again.
+func TestTestSlotParallelUsesRecentCPU(t *testing.T) {
+	// 16 cores at target 75: the busy budget is 12 cores.
+	justEnded := MachineLoad{Cores: 16, CPU5: 90, CPU10s: 10}
+	if got := testParallel(justEnded, 75, 0); got != 10 {
+		t.Fatalf("after a suite ended, recent CPU 10%%: %d, want 10 of the 12-core budget", got)
+	}
+	busy := MachineLoad{Cores: 16, CPU5: 90, CPU10s: 90}
+	if got := testParallel(busy, 75, 0); got >= 10 {
+		t.Fatalf("while the machine is busy, recent CPU 90%%: %d, want fewer than 10", got)
 	}
 }
 
