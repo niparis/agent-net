@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"time"
@@ -58,7 +59,12 @@ func (d *Daemon) harnessUpdateLoop(ctx context.Context) {
 						continue
 					}
 					delete(pending, h.Name)
-					d.updateHarness(ctx, h)
+					if d.updateHarness(ctx, h) {
+						// A probe that timed out is retried next round; the
+						// harness stays pending so it is not forgotten until
+						// the next daily check.
+						pending[h.Name] = true
+					}
 				}
 				if len(pending) == 0 || !d.harnessUpdatesAllowed() {
 					break
@@ -144,21 +150,43 @@ func updateLogDetail(detail string) string {
 	return ": " + detail
 }
 
-func (d *Daemon) updateHarness(ctx context.Context, h protocol.HarnessInfo) {
+func (d *Daemon) updateHarness(ctx context.Context, h protocol.HarnessInfo) (retry bool) {
 	var opts harnesses.Options
 	if d.cfg.HarnessSearch != nil {
 		opts = *d.cfg.HarnessSearch
 	}
 	timeout := updateDelay(d.cfg.HarnessUpdateTimeout, 5*time.Minute)
+	bin, args := h.Path, updateArgs(h.Name)
+	usedBrew := false
+	if brewInstall(h.Path) {
+		// A Homebrew copy is upgraded by Homebrew. Its own updater defers to
+		// the package manager and leaves the version alone.
+		brew := harnesses.Executable(ctx, "brew", opts)
+		if brew == "" {
+			d.setHarnessUpdate(ctx, h.Name, &protocol.HarnessUpdate{
+				CheckedAt: time.Now().UTC(), Before: h.Version, After: h.Version,
+				Result: "failed", Detail: "a Homebrew install, but brew was not found",
+			})
+			return false
+		}
+		bin, args = brew, brewUpgradeArgs(h.Name, h.Path)
+		usedBrew = true
+	}
+	if bin == "" || args == nil {
+		return false
+	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	out, err := harnesses.RunUpdate(runCtx, h.Path, opts, updateArgs(h.Name)...)
+	out, err := harnesses.RunUpdate(runCtx, bin, opts, args...)
 	timedOut := runCtx.Err() == context.DeadlineExceeded
 	cancel()
 	if ctx.Err() != nil {
-		return
+		return false
 	}
 	// The regular probe refreshes models, sign-in and version as well as inventory.
 	d.refreshHarnessInventory(ctx)
+	if ctx.Err() != nil {
+		return false
+	}
 	hs, _ := d.inventory()
 	after := ""
 	for _, current := range hs {
@@ -167,41 +195,115 @@ func (d *Daemon) updateHarness(ctx context.Context, h protocol.HarnessInfo) {
 			break
 		}
 	}
+	// The inventory probe can come back empty under load. Probe once more so
+	// the report can tell a timeout from a probe that ran and failed.
+	var probeErr error
+	if after == "" && h.Path != "" {
+		after, probeErr = harnesses.VersionProbe(ctx, h.Path, opts)
+		if ctx.Err() != nil {
+			return false
+		}
+	}
 	u := &protocol.HarnessUpdate{CheckedAt: time.Now().UTC(), Before: h.Version, After: after}
 	lower := strings.ToLower(out)
 	switch {
 	case timedOut:
 		u.Result = "failed"
 		u.Detail = "timed out"
-	case h.Name == "opencode" && brewInstall(h.Path) && (strings.Contains(lower, "may be managed by a package manager") || strings.Contains(lower, "installation method not found")):
-		u.Result = "update by hand"
-		u.Detail = "brew upgrade opencode"
-	case err != nil || strings.Contains(lower, "upgrade failed") || strings.Contains(lower, "may be managed by a package manager"):
-		u.Result = "failed"
-		u.Detail = lastUpdateLine(out)
-		if u.Detail == "" && err != nil {
-			u.Detail = err.Error()
+	case err != nil || strings.Contains(lower, "upgrade failed") || strings.Contains(lower, "update failed"):
+		detail := lastUpdateLine(out)
+		if detail == "" && err != nil {
+			detail = err.Error()
 		}
-		if u.Detail == "" {
-			u.Detail = "update failed"
+		if detail == "" {
+			detail = "update failed"
 		}
-	case h.Version == "" || after == "":
 		u.Result = "failed"
-		u.Detail = "version probe failed"
+		u.Detail = detail
+	case !usedBrew && packageManagerOutput(lower):
+		// The self-updater did nothing because a package manager owns the
+		// install. Report what happened instead of "already current".
+		u.Result = "failed"
+		u.Detail = firstNonEmpty(lastUpdateLine(out), "installed by a package manager")
+	case after == "":
+		u.Result, u.Detail = probeFailureResult(probeErr)
+		retry = u.Result == "timed out, retrying"
 	case h.Version != after:
 		u.Result = "updated"
 	default:
 		u.Result = "already current"
 	}
 	d.setHarnessUpdate(ctx, h.Name, u)
+	return retry
+}
+
+// probeFailureResult says what an empty version probe means. A probe stopped by
+// its deadline is retried on the next round, because load is not a broken
+// harness. A probe that ran and failed, or printed nothing, is a failure.
+func probeFailureResult(err error) (result, detail string) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timed out, retrying", "version probe timed out"
+	}
+	return "failed", "version probe failed"
+}
+
+// packageManagerOutput says whether an updater deferred to a package manager,
+// from its own words. agent-net upgrades those copies with brew instead.
+func packageManagerOutput(lower string) bool {
+	for _, marker := range []string{
+		"package manager",
+		"brew upgrade",
+		"installed by homebrew",
+		"installed via homebrew",
+		"managed by homebrew",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// brewUpgradeArgs is the Homebrew command that upgrades one harness. Claude
+// Code's cask and formula are both named claude-code.
+func brewUpgradeArgs(name, path string) []string {
+	pkg := name
+	if name == "claude" {
+		pkg = "claude-code"
+	}
+	if brewCask(name, path) {
+		return []string{"upgrade", "--cask", pkg}
+	}
+	return []string{"upgrade", pkg}
+}
+
+// brewCask says whether path belongs to a Homebrew cask. A plain Homebrew
+// prefix with no Cellar or Caskroom in the resolved path is the cask for
+// Claude Code, which is the documented install, and a formula for the others.
+func brewCask(name, path string) bool {
+	real := realPath(path)
+	if strings.Contains(real, "/Caskroom/") {
+		return true
+	}
+	if strings.Contains(real, "/Cellar/") {
+		return false
+	}
+	return name == "claude"
+}
+
+func realPath(path string) string {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		return real
+	}
+	return path
 }
 
 func brewInstall(path string) bool {
-	real, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		real = path
+	real := realPath(path)
+	if strings.Contains(real, "/Cellar/") || strings.Contains(real, "/Caskroom/") {
+		return true
 	}
-	return strings.Contains(real, "/Cellar/opencode/") || strings.HasPrefix(path, "/opt/homebrew/") || strings.HasPrefix(path, "/usr/local/Homebrew/") || strings.HasPrefix(path, "/home/linuxbrew/")
+	return strings.HasPrefix(path, "/opt/homebrew/") || strings.HasPrefix(path, "/usr/local/Homebrew/") || strings.HasPrefix(path, "/home/linuxbrew/")
 }
 
 func lastUpdateLine(out string) string {

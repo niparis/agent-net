@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -161,8 +162,13 @@ func TestHarnessUpdateCommandsAndSearchPATH(t *testing.T) {
 	}
 }
 
-func TestHarnessUpdateBrewManualWhenUnsupported(t *testing.T) {
-	d, dir := updateFixture(t, map[string]string{"opencode": `case "$1" in --version) echo 1 ;; upgrade) echo 'installation method not found'; exit 1 ;; esac`})
+// A Homebrew-managed copy is upgraded by Homebrew, not by the harness's own
+// updater. agent-net is the only updater (owner's order), so it runs brew.
+func TestHarnessUpdateBrewFormulaOpencode(t *testing.T) {
+	d, dir := updateFixture(t, map[string]string{
+		"opencode": `case "$1" in --version) echo 1 ;; upgrade) touch "$(dirname "$0")/self-update-ran" ;; esac`,
+		"brew":     `printf '%s' "$*" > "$(dirname "$0")/brew-args"`,
+	})
 	cellar := filepath.Join(dir, "Cellar", "opencode", "1", "bin")
 	if err := os.MkdirAll(cellar, 0755); err != nil {
 		t.Fatal(err)
@@ -174,9 +180,99 @@ func TestHarnessUpdateBrewManualWhenUnsupported(t *testing.T) {
 		t.Fatal(err)
 	}
 	startHarnessUpdateTest(t, d)
-	eventually(t, "manual brew", func() bool { u := updateResult(d, "opencode"); return u != nil && u.Result == "update by hand" })
-	if u := updateResult(d, "opencode"); u.Detail != "brew upgrade opencode" {
-		t.Fatalf("manual update: %+v", u)
+	eventually(t, "brew formula upgrade", func() bool {
+		b, err := os.ReadFile(filepath.Join(dir, "brew-args"))
+		return err == nil && string(b) == "upgrade opencode"
+	})
+	if _, err := os.Stat(filepath.Join(dir, "self-update-ran")); !os.IsNotExist(err) {
+		t.Fatalf("the harness updated itself: %v", err)
+	}
+	eventually(t, "brew formula result", func() bool {
+		u := updateResult(d, "opencode")
+		return u != nil && u.Result == "already current"
+	})
+}
+
+func TestHarnessUpdateBrewCaskClaude(t *testing.T) {
+	d, dir := updateFixture(t, map[string]string{
+		"claude": `case "$1" in --version) echo 2.1.289 ;; update) touch "$(dirname "$0")/self-update-ran" ;; esac`,
+		"brew":   `printf '%s' "$*" > "$(dirname "$0")/brew-args"`,
+	})
+	cask := filepath.Join(dir, "Caskroom", "claude-code", "2.1.289", "claude")
+	if err := os.MkdirAll(filepath.Dir(cask), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(dir, "claude"), cask); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(cask, filepath.Join(dir, "claude")); err != nil {
+		t.Fatal(err)
+	}
+	startHarnessUpdateTest(t, d)
+	eventually(t, "brew cask upgrade", func() bool {
+		b, err := os.ReadFile(filepath.Join(dir, "brew-args"))
+		return err == nil && string(b) == "upgrade --cask claude-code"
+	})
+	if _, err := os.Stat(filepath.Join(dir, "self-update-ran")); !os.IsNotExist(err) {
+		t.Fatalf("the cask updated itself with claude update: %v", err)
+	}
+}
+
+// A self-updater that defers to a package manager must not read as "already
+// current": the version did not change because nothing updated it.
+func TestHarnessUpdatePackageManagerOutputIsNotCurrent(t *testing.T) {
+	d, _ := updateFixture(t, map[string]string{"opencode": `case "$1" in
+ --version) echo 1 ;;
+ upgrade) echo 'opencode is managed by a package manager. Run brew upgrade opencode.' ;;
+esac`})
+	startHarnessUpdateTest(t, d)
+	eventually(t, "package manager output", func() bool { return updateResult(d, "opencode") != nil })
+	if u := updateResult(d, "opencode"); u.Result == "already current" || !strings.Contains(strings.ToLower(u.Detail), "package manager") {
+		t.Fatalf("package manager output: %+v", u)
+	}
+}
+
+// A version probe stopped by its deadline is not a failed update: the harness
+// stays pending and its probe runs again on the next round.
+func TestHarnessUpdateTimedOutProbeRetries(t *testing.T) {
+	d, dir := updateFixture(t, map[string]string{"claude": `case "$1" in
+ --version) if [ -f "$(dirname "$0")/slow" ]; then exec /bin/sleep 1; fi; echo 1 ;;
+ update) exit 0 ;;
+esac`})
+	if err := os.WriteFile(filepath.Join(dir, "slow"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	opts := *d.cfg.HarnessSearch
+	opts.VersionTimeout = 50 * time.Millisecond
+	d.cfg.HarnessSearch = &opts
+	d.cfg.DetectHarnesses = func(ctx context.Context) []protocol.HarnessInfo { return harnesses.Detect(ctx, opts) }
+	d.refreshHarnessInventory(context.Background())
+	startHarnessUpdateTest(t, d)
+	eventually(t, "probe timeout", func() bool {
+		u := updateResult(d, "claude")
+		return u != nil && u.Result == "timed out, retrying"
+	})
+	if err := os.Remove(filepath.Join(dir, "slow")); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "probe retried", func() bool {
+		u := updateResult(d, "claude")
+		return u != nil && u.After == "1" && u.Result != "timed out, retrying"
+	})
+}
+
+func TestProbeFailureResult(t *testing.T) {
+	if result, _ := probeFailureResult(context.DeadlineExceeded); result != "timed out, retrying" {
+		t.Fatalf("deadline result = %q", result)
+	}
+	if result, detail := probeFailureResult(context.Canceled); result != "failed" || detail != "version probe failed" {
+		t.Fatalf("cancel result = %q %q", result, detail)
+	}
+	if result, detail := probeFailureResult(errors.New("exit status 1")); result != "failed" || detail != "version probe failed" {
+		t.Fatalf("error result = %q %q", result, detail)
+	}
+	if result, detail := probeFailureResult(nil); result != "failed" || detail != "version probe failed" {
+		t.Fatalf("empty result = %q %q", result, detail)
 	}
 }
 
