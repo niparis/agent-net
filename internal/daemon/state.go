@@ -41,6 +41,7 @@ func openState(dir string) (*state, error) {
 	_, err = db.Exec(`
 CREATE TABLE IF NOT EXISTS notification_sent (session_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS claude_mouse_notice (key TEXT PRIMARY KEY, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS mcp_desk_notice (native TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS settings_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), received_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS owner_preferences (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);
@@ -329,6 +330,22 @@ func (s *state) mouseNoticeAt(key string) (time.Time, bool, error) {
 // setMouseNotice records the report across daemon restarts.
 func (s *state) setMouseNotice(key string, at time.Time) error {
 	_, err := s.db.Exec(`INSERT INTO claude_mouse_notice(key,at) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET at=excluded.at`, key, at.Unix())
+	return err
+}
+
+// mcpDeskPosted reports whether the one Desk item for a Claude session was
+// already sent, across daemon restarts.
+func (s *state) mcpDeskPosted(native string) bool {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM mcp_desk_notice WHERE native=?`, native).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
+}
+
+// setMCPDeskPosted records the item so a daemon restart does not raise it again.
+func (s *state) setMCPDeskPosted(native string, at time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO mcp_desk_notice(native,at) VALUES(?,?) ON CONFLICT(native) DO UPDATE SET at=excluded.at`, native, at.Unix())
 	return err
 }
 

@@ -75,7 +75,10 @@ type Config struct {
 	// MCPLinkGrace is how long a Claude session may have no `agent-net mcp`
 	// connection before it is reported as tools: disconnected (default 1 minute).
 	MCPLinkGrace time.Duration
-	testFreePort func() (int, error) // deterministic collision tests
+	// testMCPDeskAfter shortens how long a Claude session may go without an
+	// MCP hello before its one Desk item is raised.
+	testMCPDeskAfter time.Duration
+	testFreePort     func() (int, error) // deterministic collision tests
 	// testDeliveryRecordTimeout replaces deliveryRecordTimeout, how long a
 	// hand-back waits for the gateway to record its change.
 	testDeliveryRecordTimeout time.Duration
@@ -492,6 +495,11 @@ type Daemon struct {
 	// mcpHello is when the MCP server of each Claude session first said hello.
 	// A Claude worker waits for it before it gets its task.
 	mcpHello map[string]time.Time
+	// mcpDesk tracks the one Desk item raised for a Claude session whose MCP
+	// server never said hello, and pendingMCPDesk holds the items waiting for
+	// the discovery lock to be released. Both are protected by d.mu.
+	mcpDesk        map[string]*mcpDeskReport
+	pendingMCPDesk []mcpDeskAsk
 
 	repo *repoinfo.Resolver
 
@@ -599,7 +607,7 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	d := &Daemon{startedAt: time.Now(), cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
 		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1), outboxWake: make(chan struct{}, 1),
-		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
+		mcpHello: map[string]time.Time{}, mcpDesk: map[string]*mcpDeskReport{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}, "agy": agyLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]chan struct{}{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
@@ -947,6 +955,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		}
 	}
 	d.mu.Unlock()
+	d.sendMCPDesk()
 	for _, u := range updates {
 		d.saveActivity(u.harness, u.native, u.at)
 	}
