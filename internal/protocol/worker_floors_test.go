@@ -98,60 +98,6 @@ func TestCheckWorkerFloor(t *testing.T) {
 	if under || noReading || note != "" {
 		t.Errorf("floor 0 gave under=%v, note=%q, noReading=%v", under, note, noReading)
 	}
-
-	// 5. Monthly window at 99% used with low rolling/weekly windows is skipped with monthly reason
-	qMonthly := &Quotas{
-		Providers: []QuotaProvider{
-			{
-				Provider: "opencode-go",
-				Windows: []QuotaWindow{
-					{ID: "rolling", Label: "rolling", Kind: "rolling", PercentUsed: 5},
-					{ID: "weekly", Label: "weekly", Kind: "weekly", PercentUsed: 10},
-					{ID: "included_usage", Label: "month", Kind: "monthly", PercentUsed: 99},
-				},
-			},
-		},
-	}
-	floorsOpencodeGo := WorkerFloors{
-		Floors: map[string]int{
-			"opencode-go": 10,
-		},
-	}
-	under, note, noReading = CheckWorkerFloor(qMonthly, floorsOpencodeGo, "opencode", "opencode-go/deepseek-v4.1-flash")
-	if !under {
-		t.Fatalf("expected monthly at 99%% to be under floor, got under=false")
-	}
-	if noReading {
-		t.Fatalf("expected reading present")
-	}
-	wantMonthlySentence := "opencode-go has 1% left in its monthly window, under your 10% worker floor"
-	if note != wantMonthlySentence {
-		t.Errorf("note = %q, want %q", note, wantMonthlySentence)
-	}
-
-	// 6. Provider with all windows above floor is kept
-	qMonthlyAbove := &Quotas{
-		Providers: []QuotaProvider{
-			{
-				Provider: "opencode-go",
-				Windows: []QuotaWindow{
-					{ID: "rolling", Label: "rolling", Kind: "rolling", PercentUsed: 5},
-					{ID: "weekly", Label: "weekly", Kind: "weekly", PercentUsed: 10},
-					{ID: "included_usage", Label: "month", Kind: "monthly", PercentUsed: 40},
-				},
-			},
-		},
-	}
-	under, note, noReading = CheckWorkerFloor(qMonthlyAbove, floorsOpencodeGo, "opencode", "opencode-go/deepseek-v4.1-flash")
-	if under {
-		t.Fatalf("expected all windows above floor to be kept, got under=true (note=%s)", note)
-	}
-	if noReading {
-		t.Fatalf("expected reading present")
-	}
-	if note != "" {
-		t.Errorf("note = %q, want empty", note)
-	}
 }
 
 func TestQuotaWorkerFloorsMonthlyWindow(t *testing.T) {

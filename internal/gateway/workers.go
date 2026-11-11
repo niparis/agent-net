@@ -653,6 +653,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil {
 		return none, err
 	}
+	// The floor protects the owner's subscription, wherever its reading is.
+	floorReading := g.floorQuotas(pick.NodeID)
 	automatic := p.Model == "" || strings.EqualFold(p.Model, "auto")
 	var automaticNote, harnessNote string
 	if automatic && p.Precheck {
@@ -705,7 +707,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 			var allowedCandidates []protocol.WorkerModelCandidate
 			for _, c := range candidates {
-				under, floorSentence, noReading := protocol.CheckWorkerFloor(quotas, floors, c.Harness, c.Model)
+				under, floorSentence, noReading := protocol.CheckWorkerFloor(floorReading, floors, c.Harness, c.Model)
 				if under {
 					name := c.Name
 					if name == "" {
@@ -849,7 +851,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		modelNote += fmt.Sprintf("uses protected provider (%s), saved for your orchestrator", protocol.ProfileProvider(p.Harness, p.Model))
 	}
 	if !automatic {
-		if under, floorSentence, _ := protocol.CheckWorkerFloor(quotas, floors, p.Harness, p.Model); under {
+		if under, floorSentence, _ := protocol.CheckWorkerFloor(floorReading, floors, p.Harness, p.Model); under {
 			isOwner := protocol.IsOwner(owner.Harness) && !p.FromCTO
 			if !isOwner {
 				return none, g.refuseWithAlternative(ctx, nc, p, floorSentence)

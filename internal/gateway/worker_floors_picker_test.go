@@ -246,6 +246,59 @@ func TestWorkerFloorOwnerOverride(t *testing.T) {
 	}
 }
 
+// quotaAXIWindow builds a window as quota-axi reports it: a share remaining,
+// not a share used. The opencode-go monthly window is id included_usage, label
+// month, kind monthly on the live board (2026-11-11).
+func quotaAXIWindow(id, label, kind string, remaining float64) protocol.QuotaWindow {
+	return protocol.QuotaWindow{ID: id, Label: label, Kind: kind, PercentUsed: 100 - remaining}
+}
+
+// A worker must not start into a window that another machine can read for the
+// same subscription. On 2026-11-11 the Mac read opencode-go's monthly window at
+// 1% left while the machine that ran the workers could not read that login, so
+// the picker saw no reading and started three workers into the limit.
+func TestWorkerFloorPickerReadsMonthlyWindowFromAnotherMachine(t *testing.T) {
+	g, node, owner, _, c := setupFloorGateway(t)
+	nc := g.conns[node]
+
+	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10,"anthropic":50,"openai":50,"deepseek":50}}`); err != nil {
+		t.Fatal(err)
+	}
+	// The start machine reads every other subscription but not opencode-go.
+	g.usage.set(node, c.now(), protocol.UsageReport{Quotas: &protocol.Quotas{
+		GeneratedAt: c.now().Unix(),
+		Providers: []protocol.QuotaProvider{
+			{Provider: "claude", Windows: []protocol.QuotaWindow{quotaAXIWindow("seven_day", "week", "weekly", 30)}},
+			{Provider: "codex", Windows: []protocol.QuotaWindow{quotaAXIWindow("five_hour", "session", "session", 0)}},
+			{Provider: "deepseek", Windows: []protocol.QuotaWindow{quotaAXIWindow("5h", "5h", "session", 30)}},
+		},
+	}})
+	// Another machine reads the same opencode-go subscription: rolling and
+	// weekly are low, the monthly window has 1% left.
+	mac, _, err := g.store.CreateNode("mac", "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.usage.set(mac, c.now(), protocol.UsageReport{Quotas: &protocol.Quotas{
+		GeneratedAt: c.now().Unix(),
+		Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Windows: []protocol.QuotaWindow{
+			quotaAXIWindow("rolling", "rolling", "rolling", 95),
+			quotaAXIWindow("weekly", "weekly", "weekly", 90),
+			quotaAXIWindow("included_usage", "month", "monthly", 1),
+		}}},
+	}})
+
+	_, err = g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{
+		Owner:              owner,
+		Level:              "hard",
+		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "opencode", Model: "auto"},
+	}, true)
+	wantNote := "skipped deepseek opencode: opencode-go has 1% left in its monthly window, under your 10% worker floor"
+	if err == nil || !strings.Contains(err.Error(), wantNote) {
+		t.Fatalf("workerStart = %v, want a refusal containing %q", err, wantNote)
+	}
+}
+
 func TestWorkerFloorPickerMonthlyWindowUnderFloorExcluded(t *testing.T) {
 	g, node, owner, _, c := setupFloorGateway(t)
 	nc := g.conns[node]
