@@ -61,23 +61,105 @@ func (d *Daemon) testAdmissionCost(snap settings.Snapshot) WorkerCost {
 // free cores under the CPU target, after the workers that started in the last
 // five minutes, at least 1 and with no fixed cap.
 //
-// It sizes from the recent CPU figure, not the 5-minute average: a suite that
-// just ended keeps that average high for minutes, and sizing from it would
-// give the next suite one core. Only one suite runs per machine and this one
+// The machine figure is its 5-minute average, the same samples the usage view
+// and worker admission use. A suite that just ended stays in that average for
+// minutes, and the tree that ran it belongs to the calling session, so those
+// averaged cores are added back. Only one suite runs per machine and this one
 // holds the free slot, so no subtraction for a running suite is needed.
-func testParallel(load MachineLoad, target, pendingCores float64) int {
+func testParallel(load MachineLoad, target, pendingCores, ownCores float64) int {
 	if load.Cores <= 0 {
 		return 1
 	}
 	if target <= 0 {
 		target = 75
 	}
-	free := float64(load.Cores)*(target-load.CPU10s)/100 - pendingCores
+	free := float64(load.Cores)*(target-load.CPU5)/100 - pendingCores + ownCores
 	n := int(math.Floor(free))
 	if n < 1 {
 		return 1
 	}
 	return n
+}
+
+// callerTreeCores is the averaged CPU, in cores, of the process trees that
+// belong to the session that asked for the slot: its own tree, which holds the
+// suite it ran before, and the workers it started. Crediting that share keeps
+// the caller's own finished work from sizing its next suite down. A caller
+// that maps to no session credits nothing.
+func (d *Daemon) callerTreeCores(lc *localConn) float64 {
+	s := d.cfg.UsageSampler
+	if s == nil {
+		return 0
+	}
+	lc.mu.Lock()
+	pid := lc.peerPID
+	lc.mu.Unlock()
+	root, owned := d.callerSession(pid)
+	if root <= 0 {
+		return 0
+	}
+	trees := s.Trees()
+	var cores float64
+	if t, ok := trees[root]; ok {
+		cores += t.CPU.Avg / 100
+	}
+	d.wmu.Lock()
+	pids := make([]int, 0, len(d.workers))
+	for _, w := range d.workers {
+		if w.pid > 1 && w.pid != root && owned[w.owner] {
+			pids = append(pids, w.pid)
+		}
+	}
+	d.wmu.Unlock()
+	for _, wpid := range pids {
+		if t, ok := trees[wpid]; ok {
+			cores += t.CPU.Avg / 100
+		}
+	}
+	return cores
+}
+
+// callerSession walks pid's parents to the first known session or worker root,
+// as insideSession does for the owner gate. It returns that root and the
+// session IDs it hosts; a pid that maps to no session returns 0.
+func (d *Daemon) callerSession(pid int) (int, map[string]bool) {
+	if pid <= 0 {
+		return 0, nil
+	}
+	roots := map[int]map[string]bool{}
+	add := func(root int, id string) {
+		if root <= 1 {
+			return
+		}
+		if roots[root] == nil {
+			roots[root] = map[string]bool{}
+		}
+		if id != "" {
+			roots[root][id] = true
+		}
+	}
+	d.mu.Lock()
+	for _, ls := range d.sessions {
+		add(ls.info.PID, ls.sessionID)
+	}
+	d.mu.Unlock()
+	// A worker's process counts from its start, before its plugin says hello.
+	d.wmu.Lock()
+	for _, w := range d.workers {
+		add(w.pid, w.sessionID)
+	}
+	d.wmu.Unlock()
+	for p, depth := pid, 0; p > 1 && depth < 64; depth++ {
+		if ids, ok := roots[p]; ok {
+			return p, ids
+		}
+		parent, err := parentPID(p)
+		if err != nil {
+			return 0, nil
+		}
+		p = parent
+	}
+	return 0, nil
 }
 
 // testTimeout is the merger.test_timeout value for a repo, or its network
@@ -135,7 +217,7 @@ func (d *Daemon) acquireTestSlot(lc *localConn, cwd string) protocol.TestSlotRes
 	snap := d.SettingsSnapshot()
 	load := d.load()
 	set := d.workerSettingsWith(snap, "")
-	parallel := testParallel(load, set.CPUTarget, d.pendingWorkerCores(load.Total, snap))
+	parallel := testParallel(load, set.CPUTarget, d.pendingWorkerCores(load.Total, snap), d.callerTreeCores(lc))
 	cost := d.testAdmissionCost(snap)
 	cost.Cores = float64(parallel)
 

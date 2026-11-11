@@ -17,7 +17,7 @@ import (
 
 // A machine with room: 16 GB, 8 GB available, 10 percent CPU.
 func roomyLoad() MachineLoad {
-	return MachineLoad{Known: true, Cores: 8, CPU1: 10, CPU5: 10, CPU10s: 10, Avail5: 8 << 30, Total: 16 << 30, Samples: 60}
+	return MachineLoad{Known: true, Cores: 8, CPU1: 10, CPU5: 10, Avail5: 8 << 30, Total: 16 << 30, Samples: 60}
 }
 
 func TestAdmitRules(t *testing.T) {

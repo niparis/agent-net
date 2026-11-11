@@ -50,41 +50,6 @@ func TestSamplerAveragesBeforeAnySample(t *testing.T) {
 	}
 }
 
-// The recent CPU figure is the last two samples, so work that ended shows the
-// machine idle again at once. With one sample it is that sample.
-func TestSamplerRecentCPUTakesTheLastTwoSamples(t *testing.T) {
-	// Busy 100% for two intervals, then idle for two.
-	s, _ := newFake(
-		snapAt(0, 0, 100, [4]float64{}, [4]uint64{}),
-		snapAt(10, 100, 200, [4]float64{}, [4]uint64{}),
-		snapAt(20, 200, 300, [4]float64{}, [4]uint64{}),
-		snapAt(30, 200, 400, [4]float64{}, [4]uint64{}),
-		snapAt(40, 200, 500, [4]float64{}, [4]uint64{}),
-	)
-	ctx := context.Background()
-	s.Sample(ctx)
-	if got := s.RecentCPU(2); got != 0 {
-		t.Fatalf("before any CPU interval: %v, want 0", got)
-	}
-	s.Sample(ctx)
-	if got := s.RecentCPU(2); got != 100 {
-		t.Fatalf("one busy interval: %v, want 100", got)
-	}
-	s.Sample(ctx)
-	if got := s.RecentCPU(2); got != 100 {
-		t.Fatalf("two busy intervals: %v, want 100", got)
-	}
-	s.Sample(ctx)
-	// The newest interval is idle but the one before is busy.
-	if got := s.RecentCPU(2); got != 50 {
-		t.Fatalf("one idle interval after a busy one: %v, want 50", got)
-	}
-	s.Sample(ctx)
-	if got := s.RecentCPU(2); got != 0 {
-		t.Fatalf("two idle intervals: %v, want 0", got)
-	}
-}
-
 // A followed tree keeps its whole-life average and peak, not only the window.
 func TestSamplerKeepsLifeAverageAndPeakOfATree(t *testing.T) {
 	s, _ := newFake(
