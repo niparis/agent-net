@@ -102,9 +102,14 @@ func TestDeliveryStepReminder(t *testing.T) {
 // the quiet window instead of being sent immediately.
 func recentStepMessage(t *testing.T, r *deliveryRig, change string, ref protocol.StepRef) {
 	t.Helper()
+	recentStepMessageTo(t, r, r.caller, change, ref)
+}
+
+func recentStepMessageTo(t *testing.T, r *deliveryRig, session, change string, ref protocol.StepRef) {
+	t.Helper()
 	now := r.s.now().UTC()
 	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"),
-		From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: r.caller,
+		From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: session,
 		Type: protocol.TypeNotification, Body: "recent step activity", IdempotencyKey: protocol.NewID("step"),
 		CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored}
 	if _, err := r.s.db.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
@@ -113,8 +118,60 @@ func recentStepMessage(t *testing.T, r *deliveryRig, change string, ref protocol
 		t.Fatal(err)
 	}
 	if _, err := r.s.db.Exec(`INSERT INTO delivery_step_messages(change_id,revision,step,for_step,after_merge,session_id,message_id)
-		VALUES(?,?,?,?,?,?,?)`, change, 1, ref.Step, ref.For, boolInt(ref.AfterMerge), r.caller, m.ID); err != nil {
+		VALUES(?,?,?,?,?,?,?)`, change, 1, ref.Step, ref.For, boolInt(ref.AfterMerge), session, m.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A step claimed after its reminder batch was selected must not appear in the
+// notice built when that batch flushes. Merge waits on test, so the leftover
+// task must not be announced as ready either.
+func TestDeliveryStepReminderSkipsClaimedStepInBatch(t *testing.T) {
+	r := setupMergerRig(t)
+	res := r.submit(r.a, r.workerSubmit("feature/claimed-batch", commitA))
+	c := res.Change.Change
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept,
+		Result: protocol.StepResultPass, Commit: commitA})
+
+	// The first notice hands out test and merge as one pair.
+	r.g.dispatchStepTasks(context.Background())
+	var first string
+	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE recipient=? AND body LIKE '[agent-net step task%'`, r.sonnet).Scan(&first); err != nil {
+		t.Fatalf("pair notice: %v", err)
+	}
+	if !strings.Contains(first, "steps: test, merge") {
+		t.Fatalf("pair notice does not name both steps:\n%s", first)
+	}
+
+	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	// Recent, unrelated activity keeps the due reminders in the quiet window.
+	recentStepMessageTo(t, r, r.sonnet, c.ID, stepAccept)
+	r.g.dispatchStepTasks(context.Background())
+
+	// The merger claims test while the reminder batch waits.
+	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.sonnet, ChangeID: c.ID,
+		StepRef: protocol.StepRef{Step: protocol.StepTest}, Commit: commitA}); err != nil {
+		t.Fatal(err)
+	}
+	r.g.flushStepTasks(r.sonnet)
+
+	var count int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND body LIKE '[agent-net step task%'`, r.sonnet).Scan(&count); err != nil || count > 2 {
+		t.Fatalf("merger got %d step notices, want at most a pair and one reminder: %v", count, err)
+	}
+	if count == 2 {
+		var last string
+		if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE recipient=? ORDER BY created_at DESC, rowid DESC LIMIT 1`, r.sonnet).Scan(&last); err != nil {
+			t.Fatal(err)
+		}
+		for _, bad := range []string{"ready since", ", not claimed", "steps: test", "step: test"} {
+			if strings.Contains(last, bad) {
+				t.Fatalf("reminder repeats a claimed step (%q):\n%s", bad, last)
+			}
+		}
+		if !strings.Contains(last, "then merge (not ready yet)") {
+			t.Fatalf("reminder does not name merge as a then step:\n%s", last)
+		}
 	}
 }
 
@@ -201,6 +258,10 @@ func TestDeliveryStepPairReadyTogetherNoEarlyReminder(t *testing.T) {
 	}
 	if !strings.HasPrefix(bodies[1], "[agent-net step task reminder]") {
 		t.Fatalf("second message is not a reminder:\n%s", bodies[1])
+	}
+	// Only the first step is ready. The later step is named as a then step.
+	if !strings.Contains(bodies[1], ", not claimed, then verify (not ready yet)") {
+		t.Fatalf("grouped reminder does not mark verify as a then step:\n%s", bodies[1])
 	}
 
 	// A further dispatch must not repeat the reminder.
