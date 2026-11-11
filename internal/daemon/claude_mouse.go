@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -281,14 +282,53 @@ func (d *Daemon) reportMouseNotice(ctx context.Context, key, text string) {
 	d.showMouseNotice(ctx, text)
 }
 
-// showMouseNotice sends the line to the local TUIs and the Desk log.
+// showMouseNotice sends the line to the local TUIs and the Desk log. If the
+// gateway link is not connected yet, the Desk note stays pending and is sent
+// once the link is up.
 func (d *Daemon) showMouseNotice(ctx context.Context, text string) {
 	d.broadcastCTOUI(protocol.UIRequest{Text: text, DaemonNotice: true})
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if _, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text}); err != nil {
-		d.Logf("claude mouse: desk log: %v", err)
+	_, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text})
+	cancel()
+	if err == nil {
+		return
 	}
+	if !isMouseNoticeOffline(err) {
+		d.Logf("claude mouse: desk log: %v", err)
+		return
+	}
+	bctx := ctx
+	if d.ctoCtx != nil {
+		bctx = d.ctoCtx
+	}
+	if bctx == nil {
+		bctx = context.Background()
+	}
+	d.goBackground(func() {
+		tick := time.NewTicker(25 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-bctx.Done():
+				return
+			case <-tick.C:
+			}
+			cctx, cancel := context.WithTimeout(bctx, 10*time.Second)
+			_, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text})
+			cancel()
+			if err == nil {
+				return
+			}
+			if !isMouseNoticeOffline(err) {
+				d.Logf("claude mouse: desk log: %v", err)
+				return
+			}
+		}
+	})
+}
+
+func isMouseNoticeOffline(err error) bool {
+	return errors.Is(err, errNotConnected) || (err != nil && strings.Contains(err.Error(), "not connected to the gateway"))
 }
 
 // mouseNoticeDue says whether key may be reported. The record survives a
