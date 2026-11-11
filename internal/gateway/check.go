@@ -267,6 +267,11 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 		if count >= idleCheckDailyCap {
 			continue
 		}
+		if paused, err := s.nudgePaused(s.db, "idle_check", a.SessionID); err != nil {
+			return nil, err
+		} else if paused {
+			continue
+		}
 		m, err := s.storeCheck(a, today, count+1, st.more, now)
 		if err != nil {
 			return nil, err
@@ -489,7 +494,11 @@ func (s *Store) answerCheck(sessionID, task string) error {
 			wakeCount = 0
 		}
 		wake, stopRow, fallbackRow := false, false, false
-		if autonomy == protocol.AutonomyWake && online {
+		paused, err := s.nudgePaused(s.db, "autonomy_continue", sessionID)
+		if err != nil {
+			return err
+		}
+		if autonomy == protocol.AutonomyWake && online && !paused {
 			// Progress since the last wake resets the no-progress streak.
 			if wakeStreak > 0 && (open != st.wakeOpen || msgs != st.wakeMsgs) {
 				wakeStreak = 0
@@ -551,7 +560,7 @@ func (s *Store) answerCheck(sessionID, task string) error {
 			sessionID, active, streak, open, msgs, moreHash); err != nil {
 			return err
 		}
-		if wake || st.wakeDay != "" {
+		if !paused && (wake || st.wakeDay != "") {
 			if _, err = tx.Exec(`INSERT INTO session_wakes(session_id,wake_day,wake_day_count,wake_streak,wake_open,wake_msgs)
 				VALUES(?,?,?,?,?,?)
 				ON CONFLICT(session_id) DO UPDATE SET wake_day=excluded.wake_day,wake_day_count=excluded.wake_day_count,

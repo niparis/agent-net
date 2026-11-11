@@ -1815,3 +1815,9 @@ A delivery step's waiting report uses the same session eligibility as a claim.
 It takes no claim and records no evidence. The reminder pause expires after
 24 hours, or 24 hours after its optional RFC 3339 `until`, and new evidence
 on the change ends it earlier.
+
+The nudge pause tools (`agent_nudge_pause`, `agent_nudge_resume`, and
+`agent_nudge_pauses_find`) require the registered live chief of staff session
+on its authenticated machine. Other agents, workers and the CTO cannot call
+them. Only the owner can use their Desk Undo receipts. Pauses affect automatic
+nudges only; owner messages and peer requests and replies keep normal delivery.

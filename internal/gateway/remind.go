@@ -82,6 +82,11 @@ func (s *Store) remindPending() ([]protocol.Message, error) {
 	}
 	var out []protocol.Message
 	for _, c := range candidates {
+		if paused, err := s.nudgePaused(tx, "reply_reminder", c.to); err != nil {
+			return nil, err
+		} else if paused {
+			continue
+		}
 		if !c.online {
 			if s.reminderOffline == nil {
 				s.reminderOffline = map[string]bool{}

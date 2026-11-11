@@ -305,6 +305,11 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 	if !ok {
 		return skip(protocol.LoopSkippedNone, "")
 	}
+	if paused, err := s.nudgePaused(s.db, "loop_tick", target.SessionID); err != nil {
+		return res, err
+	} else if paused {
+		return res, nil
+	}
 	name := firstNonEmpty(target.Profile.Name, target.Title, target.SessionID)
 	// Judge the last tick, if it has not been judged yet. A new announce
 	// judged it already.

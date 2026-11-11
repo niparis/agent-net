@@ -61,6 +61,24 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		data, err = g.store.ClaimStep(nc.id, q)
+	case protocol.FrameNudgePause:
+		q, derr := decode[protocol.NudgePauseRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.PauseNudge(nc.id, q)
+	case protocol.FrameNudgeResume:
+		q, derr := decode[protocol.NudgeResumeRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.ResumeNudge(nc.id, q)
+	case protocol.FrameNudgePausesFind:
+		q, derr := decode[protocol.NudgePausesFindRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.FindNudgePauses(nc.id, q.SessionID)
 	case protocol.FrameAskSort:
 		q, derr := decode[protocol.AskSortRequest](raw)
 		if derr != nil {

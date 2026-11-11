@@ -139,6 +139,11 @@ func (s *Store) wakeFailureNotice(tx *sql.Tx, to, session, attempt, reason strin
 	if harness == "bot" || protocol.IsOwner(harness) {
 		return none, false, nil
 	}
+	if paused, err := s.nudgePaused(tx, "wake_failed", to); err != nil {
+		return none, false, err
+	} else if paused {
+		return none, false, nil
+	}
 	name, err := wakeNoticeName(tx, session)
 	if err != nil {
 		return none, false, err
