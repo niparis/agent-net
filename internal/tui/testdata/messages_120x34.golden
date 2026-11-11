@@ -1,30 +1,30 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online · 1 busy                 updated 14:05:00
-you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages──────────────────────────────────────filter: all  (l)─╮╭─Conversation───────────────────────────────────────╮
-│   tenebrae-53 ↔ ended session · Which environm… 1m ago · 1 msg ││ ▸ 13:56 tenebrae-53                                │
-│   ci-runner ↔ tenebrae-53 · Rollback is ready… 2m ago · 2 msgs ││ Can you check the latest deployment plan?          │
-│ ▸ tenebrae-53 ↔ strategies · The deployment p… 8m ago · 2 msgs ││ The release is planned for tonight.                │
-│                                                                ││   13:57 strategies                                 │
-│                                                                ││ The deployment plan looks good.                    │
-│                                                                ││ I checked the rollback steps too.                  │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│ 1 system event                                                 ││                                                    │
-╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
+[ Agents ]    Workers      System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
+│   ~ tenebrae-53 ↔ ended session · … 1m ago · 1 msg ││ tenebrae-53 ↔ strategies                                       │
+│   ! ci-runner ↔ tenebrae-53 · Rol… 2m ago · 2 msgs ││ ▸ 13:56 tenebrae-53                                            │
+│ ▸ ✓ tenebrae-53 ↔ strategies · Th… 8m ago · 2 msgs ││ Can you check the latest deployment plan?                      │
+│                                                    ││ The release is planned for tonight.                            │
+│                                                    ││   13:57 strategies                                             │
+│                                                    ││ The deployment plan looks good.                                │
+│                                                    ││ I checked the rollback steps too.                              │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│ 3 threads · 1 system event                         ││                                                                │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

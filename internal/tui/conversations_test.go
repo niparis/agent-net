@@ -123,7 +123,11 @@ func TestMessageListLoadsTheNextPageWhenTheCursorNearsTheEnd(t *testing.T) {
 	if len(src.convCalls) < 2 || src.convCalls[len(src.convCalls)-1].Cursor != "p2" {
 		t.Fatalf("next page was not asked with the cursor: %+v", src.convCalls)
 	}
-	if view := ansi.Strip(strings.Join(m.messagesView(120, 40), "\n")); !strings.Contains(view, "second page 7") {
+	rows := m.messageConversations()
+	if len(rows) != 8 || rows[len(rows)-1].lastLine != "second page 7" {
+		t.Fatalf("the second page is not in the list: %+v", rows)
+	}
+	if view := ansi.Strip(strings.Join(m.messagesView(120, 40), "\n")); !strings.Contains(view, "8 threads") {
 		t.Fatalf("the second page is not on screen:\n%s", view)
 	}
 }
@@ -169,6 +173,7 @@ func TestWorkerConversationRowShowsTheTaskLine(t *testing.T) {
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m.tab, m.focus = messagesTab, focusFeed
+	m.messageSubtab = messageWorkers
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = refreshAndRun(t, m, src)
 
@@ -177,11 +182,11 @@ func TestWorkerConversationRowShowsTheTaskLine(t *testing.T) {
 		t.Fatalf("worker row not found: %+v", rows)
 	}
 	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
-	if !strings.Contains(line, "worker: Polish the sessions panel") {
+	if !strings.Contains(line, "worker 8: Polish the sessions panel") {
 		t.Fatalf("worker row does not show the task: %q", line)
 	}
-	if strings.Contains(line, "worker 8") {
-		t.Fatalf("worker row still shows only the old worker number: %q", line)
+	if !strings.Contains(line, "opencode") {
+		t.Fatalf("worker row does not show the harness: %q", line)
 	}
 }
 
@@ -202,6 +207,7 @@ func TestWorkerConversationRowShowsTheTitle(t *testing.T) {
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m.tab, m.focus = messagesTab, focusFeed
+	m.messageSubtab = messageWorkers
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = refreshAndRun(t, m, src)
 
@@ -210,7 +216,7 @@ func TestWorkerConversationRowShowsTheTitle(t *testing.T) {
 		t.Fatalf("worker row not found: %+v", rows)
 	}
 	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
-	if !strings.Contains(line, "worker: Fix the band") {
+	if !strings.Contains(line, "worker 8: Fix the band") {
 		t.Fatalf("worker row does not show the title: %q", line)
 	}
 	if strings.Contains(line, "Polish the sessions panel") {
@@ -230,6 +236,7 @@ func TestEndedWorkerRowUsesTheTaskAndCallerFromTheGateway(t *testing.T) {
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m.tab, m.focus = messagesTab, focusFeed
+	m.messageSubtab = messageWorkers
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = refreshAndRun(t, m, src)
 
@@ -282,6 +289,7 @@ func TestConversationEndedWorkerScreens(t *testing.T) {
 		m := New(src)
 		m.loc, m.now = time.UTC, func() time.Time { return t0 }
 		m.tab, m.focus = messagesTab, focusFeed
+		m.messageSubtab = messageWorkers
 		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		m = refreshAndRun(t, m, src)
 		golden(t, fmt.Sprintf("messages_ended_workers_%dx%d", size[0], size[1]), m.testView())

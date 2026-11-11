@@ -124,6 +124,10 @@ type Model struct {
 	pickerShowOlder   bool
 	messageShowEvents bool
 	hideWorkerThreads bool
+	messageSubtab     messageSubtab
+	threadProject     string
+	threadTeam        string
+	threadExpanded    map[string]bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap                   Snapshot
@@ -174,6 +178,7 @@ type Model struct {
 	convLoading       bool
 	convErr           string
 	convSel           int
+	convAutoPages     int
 	convDetail        map[string]convDetail
 	convDetailLoading map[string]bool
 
@@ -1961,6 +1966,45 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.tab == messagesTab {
 			return m.cycleMessageFilter()
 		}
+	case "next message subtab":
+		if m.tab == messagesTab {
+			return m.setMessageSubtab((m.messageSubtab + 1) % 3)
+		}
+	case "previous message subtab":
+		if m.tab == messagesTab {
+			next := m.messageSubtab - 1
+			if next < 0 {
+				next = 2
+			}
+			return m.setMessageSubtab(next)
+		}
+	case "thread project":
+		if m.tab == messagesTab {
+			return m.cycleThreadProject()
+		}
+	case "thread team":
+		if m.tab == messagesTab {
+			return m.cycleThreadTeam()
+		}
+	case "open thread link":
+		if m.tab == messagesTab {
+			return m.threadLinkJump()
+		}
+	case "expand worker":
+		if m.tab == messagesTab {
+			rows := m.messageConversations()
+			if len(rows) > 0 {
+				row := rows[m.selectedConversationIndex(rows)]
+				if row.worker {
+					if m.threadExpanded == nil {
+						m.threadExpanded = map[string]bool{}
+					}
+					m.threadExpanded[row.id] = !m.threadExpanded[row.id]
+					return m, nil
+				}
+			}
+			return m, nil
+		}
 	case "stop worker":
 		if a, ok := m.selectedAgent(); ok && a.Harness == "bot" && (a.Online || m.tab != sessionsTab) {
 			m.mode = modeApps
@@ -1997,6 +2041,12 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.rebuildConversations()
 			m.ensureSelection()
 			m.fixScroll()
+		}
+		if m.tab == messagesTab && (m.threadProject != "" || m.threadTeam != "") {
+			m.threadProject, m.threadTeam = "", ""
+			if m.convLoaded {
+				m.rebuildConversations()
+			}
 		}
 	case "archive offline":
 		if m.tab == sessionsTab && m.showOffline {

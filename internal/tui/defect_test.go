@@ -34,7 +34,7 @@ func defectMessagesModel(t *testing.T, w, h int) (Model, *fakeSource) {
 	m = send(m, tea.WindowSizeMsg{Width: w, Height: h})
 	m = refresh(m, src)
 	m = drainSnippets(t, m)
-	m = keys(m, "4")
+	m = keys(m, "4", "tab")
 	for _, row := range m.messageConversations() {
 		if row.worker {
 			m.feedCur = row.items[0]

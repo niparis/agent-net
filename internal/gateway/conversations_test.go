@@ -126,6 +126,55 @@ func endedWorker(t *testing.T, s *Store, node, owner, native, task string) strin
 	return worker
 }
 
+func TestConversationsPageReportsThreadFlags(t *testing.T) {
+	s, c := newTestStore(t)
+	_, alice, bob := conversationFixture(t, s)
+	base := c.t
+	// One busy hour and three quiet hours: peak 25, median 1.
+	insertConversationMessage(t, s, "m_burst0", "c_burst", alice, bob, "blocked on the deploy", base.Add(-3*time.Hour))
+	for i := 1; i <= 24; i++ {
+		insertConversationMessage(t, s, fmt.Sprintf("m_burst%d", i), "c_burst", alice, bob, "line", base.Add(-3*time.Hour+time.Duration(i)*time.Minute))
+	}
+	insertConversationMessage(t, s, "m_quiet1", "c_burst", alice, bob, "quiet", base.Add(-5*time.Hour))
+	insertConversationMessage(t, s, "m_quiet2", "c_burst", alice, bob, "quiet", base.Add(-6*time.Hour))
+	if _, err := s.db.Exec(`UPDATE messages SET owner_approved=1 WHERE id='m_burst0'`); err != nil {
+		t.Fatal(err)
+	}
+	insertConversationMessage(t, s, "m_sys", "c_sys", "agent-net", alice, "[agent-net] check: is your task done?", base.Add(-time.Minute))
+
+	page, err := s.ConversationsPage(protocol.QueryConversations{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var burst, sys *protocol.ConversationView
+	for i := range page.Conversations {
+		switch page.Conversations[i].ID {
+		case "c_burst":
+			burst = &page.Conversations[i]
+		case "c_sys":
+			sys = &page.Conversations[i]
+		}
+	}
+	if burst == nil || sys == nil {
+		t.Fatalf("rows: %+v", page.Conversations)
+	}
+	if burst.FromHarness != "claude" || burst.ToHarness != "pi" {
+		t.Errorf("harness = %q/%q", burst.FromHarness, burst.ToHarness)
+	}
+	if !burst.OwnerNamed {
+		t.Error("owner approval was not reported")
+	}
+	if !burst.Blocked {
+		t.Error("a blocked action was not reported")
+	}
+	if burst.PeakHour != 25 || burst.MedianHour != 1 {
+		t.Errorf("spread = %d/%d, want 25/1", burst.PeakHour, burst.MedianHour)
+	}
+	if !sys.System || !strings.HasPrefix(sys.SystemLine, "[agent-net] check:") || sys.SystemTo != alice {
+		t.Errorf("system row = %+v", sys)
+	}
+}
+
 func TestConversationsPageGroupsAnEndedWorkerAndNamesItFromTheTask(t *testing.T) {
 	s, c := newTestStore(t)
 	node, alice, bob := conversationFixture(t, s)

@@ -1,18 +1,18 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 6 online
-you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages─────────────────────────────────────filter: with system events  (l)─╮
-│ ▸ tenebrae-53 ↔ strategies · The deploy is ready.                 6m · 1 msg │
-│   tenebrae-53 → worker: Polish the sessions panel          4 messages · done │
+  Agents      Workers    [ System ]
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
 │   14:00 build disconnected                                                   │
 │   13:55 build connected                                                      │
 │                                                                              │
 │                                                                              │
-│ 2 system events                                                              │
+│                                                                              │
+│ 2 threads · 2 system events                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
-│ ▸ 13:59 tenebrae-53                                                          │
-│ The deploy is ready.                                                         │
+│ System event                                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
 
 
 

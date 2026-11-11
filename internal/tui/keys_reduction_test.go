@@ -46,18 +46,15 @@ func TestSessionsViewCyclesWithOneKey(t *testing.T) {
 	}
 }
 
-// l is the only Messages filter key: all, without worker threads, with system
-// events.
+// l cycles the three Messages sub-tabs: Agents, Workers, System.
 func TestMessagesFilterCyclesWithOneKey(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = messagesTab
 	if keyAction(contextMessages, "l") != "cycle message filter" {
 		t.Fatal("l is not the message filter key")
 	}
-	for _, key := range []string{"w", "e"} {
-		if got := keyAction(contextMessages, key); got != "" {
-			t.Errorf("removed Messages key %q still does %q", key, got)
-		}
+	if got := keyAction(contextMessages, "w"); got != "" {
+		t.Errorf("removed Messages key %q still does %q", "w", got)
 	}
 	m = keys(m, "l")
 	if !m.hideWorkerThreads || m.messageShowEvents {
@@ -71,8 +68,8 @@ func TestMessagesFilterCyclesWithOneKey(t *testing.T) {
 	if m.hideWorkerThreads || m.messageShowEvents {
 		t.Fatalf("third l: workers hidden %v events %v", m.hideWorkerThreads, m.messageShowEvents)
 	}
-	if !strings.Contains(ansi.Strip(strings.Join(m.messagesView(120, 12), "\n")), "filter: all") {
-		t.Fatalf("the Messages title does not name the filter:\n%s", ansi.Strip(strings.Join(m.messagesView(120, 12), "\n")))
+	if !strings.Contains(ansi.Strip(strings.Join(m.messagesView(120, 12), "\n")), "[ Agents ]") {
+		t.Fatalf("the Messages sub-tabs do not name the active view:\n%s", ansi.Strip(strings.Join(m.messagesView(120, 12), "\n")))
 	}
 }
 
@@ -229,9 +226,9 @@ func TestRemovedDirectKeysDoNothing(t *testing.T) {
 	}
 	msg := newModel(120, 34)
 	msg.tab = messagesTab
-	msg = keys(msg, "w", "e")
+	msg = keys(msg, "w")
 	if msg.hideWorkerThreads || msg.messageShowEvents {
-		t.Fatalf("removed Messages keys still acted: workers %v events %v", msg.hideWorkerThreads, msg.messageShowEvents)
+		t.Fatalf("removed Messages key w still acted: workers %v events %v", msg.hideWorkerThreads, msg.messageShowEvents)
 	}
 }
 

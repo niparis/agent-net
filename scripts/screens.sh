@@ -16,5 +16,9 @@ for scene in "$out"/$pattern.ansi; do
   if [ -n "${SCREENS_FONT_FILE:-}" ]; then
     set -- "$@" --font.file "$SCREENS_FONT_FILE"
   fi
+  if [ -n "${AGENT_NET_SCREEN_LIGHT:-}" ]; then
+    # The light palette has dark text; give the image a light page too.
+    set -- "$@" --background "#f7f9fb"
+  fi
   go run github.com/charmbracelet/freeze@v0.2.2 "$@" --output "${scene%.ansi}.png" "$scene"
 done

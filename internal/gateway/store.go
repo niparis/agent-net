@@ -4664,7 +4664,19 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 			AND NOT ` + workerNoticeLifecycleSQL("c") + `),
 		COALESCE(NULLIF(fp.name,''), fs.name, ''),
 		COALESCE(NULLIF(rp.name,''), rs.name, ''),
-		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id)
+		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id),
+		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''),
+		EXISTS(SELECT 1 FROM messages b LEFT JOIN sessions bs ON bs.id = b.sender
+			WHERE b.conversation_id = p.gid AND (b.owner_approved <> 0 OR bs.harness = 'owner'
+				OR EXISTS(SELECT 1 FROM charter_signals cs2 WHERE cs2.message_id = b.id AND cs2.prompt <> ''))),
+		EXISTS(SELECT 1 FROM messages b WHERE b.conversation_id = p.gid AND (
+			b.body LIKE '%blocked on%' OR b.body LIKE '%blocked by%' OR b.body LIKE '%blocked:%'
+			OR b.body LIKE '%is blocked%' OR b.body LIKE '%I am blocked%')),
+		EXISTS(SELECT 1 FROM messages b WHERE b.conversation_id = p.gid AND b.sender = 'agent-net'),
+		COALESCE((SELECT b.body FROM messages b WHERE b.conversation_id = p.gid AND b.sender = 'agent-net'
+			ORDER BY b.created_at DESC, b.rowid DESC LIMIT 1), ''),
+		COALESCE((SELECT b.recipient FROM messages b WHERE b.conversation_id = p.gid AND b.sender = 'agent-net'
+			ORDER BY b.created_at DESC, b.rowid DESC LIMIT 1), '')
 	FROM page p
 	JOIN messages m ON m.conversation_id = p.gid AND m.created_at = p.last_at
 		AND m.rowid = (SELECT MAX(m2.rowid) FROM messages m2
@@ -4677,6 +4689,9 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 	args = append(args, q.Limit+1)
 	normal, err := s.scanConversations(sqlText, args...)
 	if err != nil {
+		return page, err
+	}
+	if err := s.fillHourlySpread(normal); err != nil {
 		return page, err
 	}
 	rows := normal
@@ -4716,7 +4731,12 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 		SELECT p.gid, p.last_at, p.id, p.sender, p.recipient, p.body, p.state, p.sender_cto, p.type, p.n,
 			COALESCE(NULLIF(fp.name,''), fs.name, ''),
 			COALESCE(NULLIF(rp.name,''), rs.name, ''),
-			EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = p.id)
+			EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = p.id),
+			COALESCE(fs.harness, ''), COALESCE(rs.harness, ''), 0,
+			EXISTS(SELECT 1 FROM wm b WHERE b.gid = p.gid AND (
+				b.body LIKE '%blocked on%' OR b.body LIKE '%blocked by%' OR b.body LIKE '%blocked:%'
+				OR b.body LIKE '%is blocked%' OR b.body LIKE '%I am blocked%')),
+			0, '', ''
 		FROM page p
 		LEFT JOIN sessions fs ON fs.id = p.sender
 		LEFT JOIN profiles fp ON fp.session_id = p.sender
@@ -4764,20 +4784,95 @@ func (s *Store) scanConversations(sqlText string, args ...any) ([]protocol.Conve
 	for rows.Next() {
 		var v protocol.ConversationView
 		var at int64
-		var senderCTO, ownerInstruction int
+		var senderCTO, ownerInstruction, ownerNamed, blocked, system int
 		var typ string
 		if err := rows.Scan(&v.ID, &at, &v.LastMessageID, &v.From, &v.To, &v.LastLine, &v.State,
-			&senderCTO, &typ, &v.Count, &v.FromName, &v.ToName, &ownerInstruction); err != nil {
+			&senderCTO, &typ, &v.Count, &v.FromName, &v.ToName, &ownerInstruction,
+			&v.FromHarness, &v.ToHarness, &ownerNamed, &blocked, &system, &v.SystemLine, &v.SystemTo); err != nil {
 			return nil, err
 		}
 		v.Type = typ
 		v.At = time.Unix(0, at).UTC()
 		v.LastLine = conversationLine(v.LastLine)
+		v.SystemLine = conversationLine(v.SystemLine)
 		v.FromCTO = senderCTO != 0
 		v.OwnerInstruction = ownerInstruction != 0
+		v.OwnerNamed = ownerNamed != 0
+		v.Blocked = blocked != 0
+		v.System = system != 0
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+// fillHourlySpread sets PeakHour and MedianHour on each row. The Messages tab
+// marks a burst when a thread's busiest hour holds at least 20 messages and is
+// more than three times its median hourly count. One read for the whole page,
+// never one per row.
+func (s *Store) fillHourlySpread(rows []protocol.ConversationView) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(rows))
+	seen := map[string]bool{}
+	for _, r := range rows {
+		if r.ID == "" || seen[r.ID] {
+			continue
+		}
+		seen[r.ID] = true
+		ids = append(ids, r.ID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	// created_at is nanoseconds; an hour is 3.6e12 of them.
+	query := `SELECT conversation_id, created_at / 3600000000000 AS hour, COUNT(*)
+		FROM messages WHERE conversation_id IN (` + placeholders + `)
+		GROUP BY conversation_id, hour`
+	got, err := s.db.Query(query, args...)
+	if err != nil {
+		return err
+	}
+	defer got.Close()
+	counts := map[string][]int{}
+	for got.Next() {
+		var id string
+		var hour, n int64
+		if err := got.Scan(&id, &hour, &n); err != nil {
+			return err
+		}
+		counts[id] = append(counts[id], int(n))
+	}
+	if err := got.Err(); err != nil {
+		return err
+	}
+	for i := range rows {
+		hours := counts[rows[i].ID]
+		rows[i].PeakHour, rows[i].MedianHour = hourlySpread(hours)
+	}
+	return nil
+}
+
+// hourlySpread returns the busiest hour's count and the median hourly count.
+func hourlySpread(hours []int) (peak, median int) {
+	if len(hours) == 0 {
+		return 0, 0
+	}
+	sorted := append([]int(nil), hours...)
+	sort.Ints(sorted)
+	peak = sorted[len(sorted)-1]
+	mid := len(sorted) / 2
+	if len(sorted)%2 == 1 {
+		median = sorted[mid]
+	} else {
+		median = (sorted[mid-1] + sorted[mid]) / 2
+	}
+	return peak, median
 }
 
 // workerRow fills the caller and task of a worker row from messages that

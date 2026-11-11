@@ -1,22 +1,22 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
-you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages────────────────────────────────────────────────────filter: all  (l)─╮
-│ ▸ tenebrae-53 → worker: Polish the sessions panel and ma… 2 messages · ended │
-│   tenebrae-53 → worker: Review the deploy                  1 message · ended │
-│   strategies ↔ web · A conversation whose sides are still here.  30m · 1 msg │
-│ 0 system events                                                              │
+  Agents    [ Workers ]    System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
+│ ▸ tenebrae-53 → worker: Polish the sessions panel and make the lo… ended · 2 │
+│   tenebrae-53 → worker: Review the deploy                          ended · 1 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ 2 threads · 0 system events                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ tenebrae-53 ↔ ended session · Polish the sessions panel and make the long    │
+│ list readable                                                                │
 │   13:55 tenebrae-53                                                          │
-│ [agent-net worker brief] Another agent started you through agent-net to do … │
+│ [agent-net worker brief] Another agent started you through agent-net to do   │
+│ the one task below. That agent will check your work and relay the result to  │
+│ its user. Nobody watches this session.                                       │
 │ - Do the whole task. Do not gold-plate it, and do not stop halfway.          │
-│ - Do it yourself. Do not pass the whole task to another agent. You cannot s… │
-│ …                                                                            │
-│   14:00 ended worker                                                         │
-│ ✗ started                                                                    │
-│   14:03 ended worker                                                         │
-│ ✓ done · 12m                                                                 │
-╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

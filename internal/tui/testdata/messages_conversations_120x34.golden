@@ -1,30 +1,30 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 6 online · 2 busy · 1 worker
-you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages──────────────────────────────────────filter: all  (l)─╮╭─Conversation───────────────────────────────────────╮
-│   tenebrae-53 ↔ strategies · The deploy is rea… 6m ago · 1 msg ││   13:56 tenebrae-53                                │
-│ ▸ tenebrae-53 → worker: Polish the sessions… 4 messages · done ││ Review the change                                  │
-│                                                                ││ Check the tests.                                   │
-│                                                                ││   13:58 worker 8                                   │
-│                                                                ││ ✓ done · 1h5m · 15 files                           │
-│                                                                ││   14:02 tenebrae-53                                │
-│                                                                ││ Polish the sessions panel                          │
-│                                                                ││ Run the checks.                                    │
-│                                                                ││ ▸ 14:04 worker 8                                   │
-│                                                                ││ ✓ done · 12m · 3 files                             │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│ 2 system events                                                ││                                                    │
-╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
+  Agents    [ Workers ]    System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
+│ ▸ tenebrae-53 → worker 8:… done · 4 · claude · 12m ││ tenebrae-53 ↔ worker 8 (worker) · Polish the sessions panel    │
+│                                                    ││   13:56 tenebrae-53                                            │
+│                                                    ││ Review the change                                              │
+│                                                    ││ Check the tests.                                               │
+│                                                    ││   13:58 worker 8                                               │
+│                                                    ││ ✓ done · 1h5m · 15 files                                       │
+│                                                    ││   14:02 tenebrae-53                                            │
+│                                                    ││ Polish the sessions panel                                      │
+│                                                    ││ Run the checks.                                                │
+│                                                    ││ ▸ 14:04 worker 8                                               │
+│                                                    ││ ✓ done · 12m · 3 files                                         │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│ 1 thread · 2 system events                         ││                                                                │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

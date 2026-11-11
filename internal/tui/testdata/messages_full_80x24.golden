@@ -1,16 +1,16 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 6 online
-you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages────────────────────────────────────────────────────filter: all  (l)─╮
-│ ▸ tenebrae-53 ↔ strategies · Stored conversation 00: keep the l… now · 1 msg │
-│   tenebrae-53 ↔ strategies · Stored conversation 01: keep the l… 7m · 2 msgs │
-│   you → worker: Polish the sessions panel and make the… 3 messages · running │
-│   tenebrae-53 ↔ strategies · Stored conversation 03: keep the … 21m · 4 msgs │
-│   tenebrae-53 ↔ strategies · Stored conversation 04: keep the … 28m · 5 msgs │
-│   tenebrae-53 ↔ strategies · Stored conversation 05: keep the l… 35m · 1 msg │
-│   tenebrae-53 ↔ strategies · Stored conversation 06: keep the … 42m · 2 msgs │
-│ 0 system events                                                              │
+[ Agents ]    Workers      System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
+│ ▸ ! tenebrae-53 ↔ strategies · Stored conversation 00: keep the… now · 1 msg │
+│   ✓ tenebrae-53 ↔ strategies · Stored conversation 01: keep the… 7m · 2 msgs │
+│   ✓ tenebrae-53 ↔ strategies · Stored conversation 03: keep th… 21m · 4 msgs │
+│   ✓ tenebrae-53 ↔ strategies · Stored conversation 04: keep th… 28m · 5 msgs │
+│   ✓ tenebrae-53 ↔ strategies · Stored conversation 05: keep the… 35m · 1 msg │
+│ 29 threads · 0 system events                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ tenebrae-53 ↔ strategies                                                     │
 │   14:03 tenebrae-53                                                          │
 │ Show the whole stored history of this conversation.                          │
 │   14:04 strategies                                                           │

@@ -265,6 +265,28 @@ type ConversationView struct {
 	// Task is the first line of the task the caller sent the worker, cleaned
 	// and cut for a list row.
 	Task string `json:"task,omitempty"`
+	// FromHarness and ToHarness are the two sessions' harness names, so the
+	// Messages tab can show a sender's type (session, worker, app, system)
+	// without another read. Empty for a session whose record is gone.
+	FromHarness string `json:"from_harness,omitempty"`
+	ToHarness   string `json:"to_harness,omitempty"`
+	// OwnerNamed is true when any message in the conversation was sent by the
+	// owner session, carries the owner's approval, or cites the owner's words.
+	OwnerNamed bool `json:"owner_named,omitempty"`
+	// Blocked is true when any message reports a blocked action.
+	Blocked bool `json:"blocked,omitempty"`
+	// System is true when agent-net sent a message in this conversation.
+	// SystemLine is that message's body, so the screen can classify the
+	// notice by its first marker even when the agent answered last. SystemTo
+	// is that message's recipient, which is the agent the notice was for.
+	System     bool   `json:"system,omitempty"`
+	SystemLine string `json:"system_line,omitempty"`
+	SystemTo   string `json:"system_to,omitempty"`
+	// PeakHour and MedianHour are the busiest hour's message count and the
+	// median hourly count over the conversation's life. The screen marks a
+	// burst when PeakHour is at least 20 and more than 3 times MedianHour.
+	PeakHour   int `json:"peak_hour,omitempty"`
+	MedianHour int `json:"median_hour,omitempty"`
 }
 
 // ConversationPage answers OpConversations. Total counts every stored

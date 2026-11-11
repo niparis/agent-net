@@ -36,6 +36,21 @@ type messageConversation struct {
 	typ       string
 	lastMsgID string
 	stored    bool
+	// The subtab and flags below are display facts. They come from the feed,
+	// the stored row, or the one page the TUI already holds.
+	system      bool
+	systemKind  systemKind
+	recipient   string
+	today       int
+	fromHarness string
+	toHarness   string
+	ownerNamed  bool
+	blocked     bool
+	burst       bool
+	peakHour    int
+	medianHour  int
+	links       []string
+	systemLines []string
 }
 
 // feedConversations groups the live feed into conversations. The Messages tab
@@ -79,6 +94,7 @@ func (m Model) feedConversations() []messageConversation {
 		}
 		g.items = append(g.items, i)
 		g.ownerInstruction = g.ownerInstruction || it.OwnerInstruction != ""
+		g.blocked = g.blocked || reportsBlocked(it.Body)
 		if g.task == "" && protocol.IsWorkerTask(protocol.Message{WorkerTask: it.WorkerTask, Type: it.Type, ParentID: it.Parent, Body: it.Body}) {
 			g.task = sanitize(protocol.WorkerTaskSummary(it.Body))
 		}
@@ -94,37 +110,34 @@ func (m Model) feedConversations() []messageConversation {
 		}
 		g.cto = g.cto || it.FromCTO
 	}
+	for id, g := range groups {
+		if g.count == 0 {
+			continue
+		}
+		g.fromHarness, g.toHarness = m.partyHarness(g.from), m.partyHarness(g.to)
+		g.ownerNamed = g.ownerInstruction
+		g.burst = m.threadBurst(*g)
+		g.links = m.threadLinks(*g)
+		g.systemKind, g.recipient, g.system = m.groupSystemKind(*g)
+		if g.system {
+			if g.recipient == "" {
+				g.recipient = g.to
+			}
+			for _, i := range g.items {
+				if it := m.feedItemAt(i); it != nil && it.isMessage() && m.sameDay(it.At, m.now()) {
+					g.today++
+				}
+			}
+		}
+		groups[id] = g
+	}
 	out := make([]messageConversation, 0, len(groups))
 	for _, g := range groups {
 		if g.count == 0 {
 			// Only lifecycle notices: they do not make a row.
 			continue
 		}
-		if g.worker && m.hideWorkerThreads {
-			continue
-		}
-		if firstNonEmpty(m.uiFilter, m.filter) != "" {
-			var b strings.Builder
-			for _, i := range g.items {
-				it := m.feed.items[i]
-				fmt.Fprintf(&b, "%s %s %s %s %s %s %s ", it.From, it.To, m.conversationName(it.From), m.conversationName(it.To), it.Snippet, it.Type, it.Body)
-			}
-			if !strings.Contains(strings.ToLower(b.String()), strings.ToLower(firstNonEmpty(m.uiFilter, m.filter))) {
-				continue
-			}
-		}
 		out = append(out, *g)
-	}
-	if m.messageShowEvents {
-		for i, it := range m.feed.items {
-			if it.isMessage() {
-				continue
-			}
-			if firstNonEmpty(m.uiFilter, m.filter) != "" && !strings.Contains(strings.ToLower(m.infoText(it)), strings.ToLower(firstNonEmpty(m.uiFilter, m.filter))) {
-				continue
-			}
-			out = append(out, messageConversation{id: fmt.Sprintf("event-%d", i), items: []int{i}, at: it.At, event: true})
-		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		rank := func(c messageConversation) int {
@@ -214,6 +227,9 @@ func messagePairID(from, to string) string {
 }
 
 func (m Model) messageConversationLine(c messageConversation, w int, selected bool) string {
+	if c.system {
+		return m.systemConversationLine(c, w, selected)
+	}
 	if c.worker {
 		return m.workerConversationLine(c, w, selected)
 	}
@@ -229,6 +245,9 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	fromName, toName := c.fromName, c.toName
 	topic, state, typ := c.lastLine, c.state, c.typ
 	cto, ownerInstruction := c.cto, c.ownerInstruction
+	ownerNamed, blocked := c.ownerNamed, c.blocked
+	burst := c.burst || m.threadBurst(c)
+	fromHarness, toHarness := c.fromHarness, c.toHarness
 	if len(c.items) > 0 {
 		first := m.feed.items[c.items[0]]
 		latest := m.feed.items[c.items[len(c.items)-1]]
@@ -252,17 +271,24 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		}
 		cto = cto || latest.FromCTO
 		ownerInstruction = ownerInstruction || latest.OwnerInstruction != ""
+		ownerNamed = ownerNamed || latest.OwnerInstruction != ""
+		blocked = blocked || reportsBlocked(latest.Body)
 	}
 	fromName = m.partyName(from, fromName)
+	fromTag := m.typeTag(from, fromHarness)
 	if cto {
 		fromName = m.ctoTitle()
 	}
 	toName = m.partyName(to, toName)
+	toTag := m.typeTag(to, toHarness)
 	if w <= 80 {
 		// Two long peer names leave no room for the preview at 80 columns.
 		fromName = ansi.Truncate(fromName, 14, "…")
 		toName = ansi.Truncate(toName, 14, "…")
 	}
+	// The type tag stays after the cut, so "app" or "worker" is never lost.
+	fromName += fromTag
+	toName += toTag
 	names := fromName + " ↔ " + toName
 	age := m.now().Sub(c.at)
 	if age < 0 {
@@ -296,16 +322,37 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		}
 		suffix = fmt.Sprintf("%s · %d %s", ageText, count, messageWord)
 	}
+	state = m.threadState(c)
+	if w > 80 && state != "" {
+		suffix += " · " + state
+	}
+	if burst {
+		if w > 80 {
+			suffix += fmt.Sprintf(" · burst %d/h", max(c.peakHour, 20))
+		} else {
+			suffix = "⚡" + suffix
+		}
+	}
+	if blocked {
+		if w > 80 {
+			suffix += " · blocked"
+		} else {
+			suffix = "!" + suffix
+		}
+	}
 	marker := ""
-	if ownerInstruction {
+	if ownerInstruction || ownerNamed {
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("you→ ")
+	}
+	if w <= 80 {
+		marker += stateMark(state)
 	}
 	style := lipgloss.NewStyle().Foreground(roleText)
 	if cto {
 		style = lipgloss.NewStyle().Foreground(roleCTO)
-	} else if state == protocol.StateFailed || state == protocol.StateExpired {
+	} else if state == "failed" || state == "timed out" {
 		style = lipgloss.NewStyle().Foreground(roleError)
-	} else if typ == protocol.TypeRequest && state != protocol.StateReplied && state != protocol.StateAcknowledged {
+	} else if state == "waiting" || strings.HasPrefix(state, "gw ") {
 		style = lipgloss.NewStyle().Foreground(roleWarning)
 	}
 	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(marker)-ansi.StringWidth(suffix)-1, 0)
@@ -314,6 +361,24 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		line = selectedRow(line)
 	}
 	return clip(line, w)
+}
+
+// stateMark is the compact state at 80 columns, where the full word would
+// crowd out the last line. The legend explains the marks.
+func stateMark(state string) string {
+	switch {
+	case state == "waiting":
+		return lipgloss.NewStyle().Foreground(roleWarning).Render("~ ")
+	case state == "answered":
+		return lipgloss.NewStyle().Foreground(roleGood).Render("✓ ")
+	case strings.HasPrefix(state, "gw "):
+		return lipgloss.NewStyle().Foreground(roleWarning).Render("gw ")
+	case state == "failed":
+		return lipgloss.NewStyle().Foreground(roleError).Render("! ")
+	case state == "timed out":
+		return lipgloss.NewStyle().Foreground(roleError).Render("⌛ ")
+	}
+	return ""
 }
 
 func (m Model) workerConversationLine(c messageConversation, w int, selected bool) string {
@@ -326,12 +391,15 @@ func (m Model) workerConversationLine(c messageConversation, w int, selected boo
 	if status != "done" && status != "failed" && status != "blocked" && status != "timed out" && len(c.items) > 0 && c.typ == protocol.TypeRequest && c.state != protocol.StateReplied && c.state != protocol.StateAcknowledged && c.state != protocol.StateFailed && c.state != protocol.StateExpired {
 		statusStyle = lipgloss.NewStyle().Foreground(roleWarning)
 	}
-	caller := m.partyName(c.workerOwner, c.fromName)
-	content := caller + " → worker"
-	if task := firstNonEmpty(c.task, m.workerTaskLine(c.workerSession)); task != "" {
+	caller := m.partyName(c.workerOwner, c.fromName) + m.typeTag(c.workerOwner, c.fromHarness)
+	workerName := m.conversationName(c.workerSession)
+	if workerName == "ended session" {
+		workerName = "worker"
+	}
+	content := caller + " → " + workerName
+	task := firstNonEmpty(c.task, m.workerTaskLine(c.workerSession))
+	if task != "" {
 		content += ": " + task
-	} else if name := m.conversationName(c.workerSession); name != "ended session" {
-		content = caller + " → " + name
 	}
 	count := c.count
 	if count == 0 {
@@ -341,8 +409,126 @@ func (m Model) workerConversationLine(c messageConversation, w int, selected boo
 	if count == 1 {
 		messageWord = "message"
 	}
-	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(fmt.Sprintf("%d %s · ", count, messageWord))-ansi.StringWidth(status)-1, 0)
-	line := lead + padStyled(clip(content, room), room) + " " + sDim.Render(fmt.Sprintf("%d %s · ", count, messageWord)) + statusStyle.Render(status)
+	if w <= 80 {
+		messageWord = "msgs"
+		if count == 1 {
+			messageWord = "msg"
+		}
+	}
+	parts := []string{fmt.Sprintf("%d %s", count, messageWord)}
+	if w <= 80 {
+		parts[0] = fmt.Sprintf("%d", count)
+	}
+	if harness := m.partyHarness(c.workerSession); harness != "" {
+		parts = append(parts, harness)
+	}
+	if run := m.workerRunTime(c); run != "" {
+		parts = append(parts, run)
+	}
+	if pr := m.workerPR(c); pr != "" {
+		parts = append(parts, pr)
+	}
+	suffix := strings.Join(parts, " · ")
+	var tail string
+	if w <= 80 {
+		// At 80 columns the status is the first thing after the name, so the
+		// cut cannot take "done" away.
+		tail = statusStyle.Render(status)
+		if suffix != "" {
+			tail += sDim.Render(" · " + suffix)
+		}
+	} else {
+		tail = sDim.Render(suffix + " · " + status)
+	}
+	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(tail)-1, 0)
+	line := lead + padStyled(lipgloss.NewStyle().Foreground(roleText).Render(clip(content, room)), room) + " " + tail
+	if selected {
+		line = selectedRow(line)
+	}
+	return clip(line, w)
+}
+
+// workerRunTime is the run time the latest worker notice reported, or the time
+// since the worker started when the notice is not in the feed.
+func (m Model) workerRunTime(c messageConversation) string {
+	for i := len(c.items) - 1; i >= 0; i-- {
+		it := m.feedItemAt(c.items[i])
+		if it == nil {
+			continue
+		}
+		for _, line := range strings.Split(it.Body, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "run time: ") {
+				return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "run time: "))
+			}
+		}
+	}
+	if a, ok := m.agentByID(c.workerSession); ok && a.Worker != nil && a.Worker.StartedAt > 0 {
+		d := m.now().Sub(time.Unix(a.Worker.StartedAt, 0))
+		if d < 0 {
+			d = 0
+		}
+		return shortDuration(d)
+	}
+	return ""
+}
+
+// shortDuration writes a run time in the list's small form.
+func shortDuration(d time.Duration) string {
+	if d < time.Minute {
+		return "now"
+	}
+	d = d.Truncate(time.Minute)
+	if d < time.Hour {
+		return fmt.Sprintf("%d min", int(d.Minutes()))
+	}
+	h, min := int(d.Hours()), int(d.Minutes())%60
+	if min == 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dh%02d", h, min)
+}
+
+// workerPR is the first PR named in the worker's task or notices.
+func (m Model) workerPR(c messageConversation) string {
+	texts := []string{c.task, c.lastLine}
+	for _, i := range c.items {
+		if it := m.feedItemAt(i); it != nil {
+			texts = append(texts, it.Snippet, it.Body)
+		}
+	}
+	for _, text := range texts {
+		if u := prURLRE.FindString(text); u != "" {
+			return "PR " + u[strings.LastIndex(u, "/")+1:]
+		}
+		if mm := prNumberRE.FindStringSubmatch(text); len(mm) > 1 {
+			return "PR #" + mm[1]
+		}
+	}
+	return ""
+}
+
+// systemConversationLine is one grouped system row: kind, recipient, and how
+// many arrived today.
+func (m Model) systemConversationLine(c messageConversation, w int, selected bool) string {
+	lead := "  "
+	if selected {
+		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
+	}
+	label := c.systemKind.label(true)
+	if label == "" {
+		label = "notices"
+	}
+	recipient := m.partyName(c.to, c.toName) + m.typeTag(c.to, c.toHarness)
+	content := label + " → " + recipient
+	count := c.today
+	word := "today"
+	if count == 0 {
+		count = max(c.count, 1)
+		word = "total"
+	}
+	suffix := fmt.Sprintf("%d %s", count, word)
+	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(suffix)-1, 0)
+	line := lead + padStyled(lipgloss.NewStyle().Foreground(roleText).Render(clip(content, room)), room) + " " + sDim.Render(suffix)
 	if selected {
 		line = selectedRow(line)
 	}
@@ -482,7 +668,38 @@ func (m Model) conversationChat(c messageConversation, w int) []string {
 	if c.event {
 		return []string{sDim.Render("System event")}
 	}
+	if c.system {
+		return m.systemConversationLines(c, w)
+	}
 	return m.conversationLines(c, w)
+}
+
+// systemConversationLines shows the messages of one system group. The newest
+// conversation's full messages come from the normal detail read; the older
+// rows keep their stored last line, which is what the page holds.
+func (m Model) systemConversationLines(c messageConversation, w int) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	if d, ok := m.convDetail[c.convID]; ok && d.err == "" {
+		for i := len(d.msgs) - 1; i >= 0; i-- {
+			msg := d.msgs[i]
+			if msg.ID == "" || seen[msg.ID] {
+				continue
+			}
+			seen[msg.ID] = true
+			out = append(out, m.messageLines(msg.From, "", msg.FromCTO, msg.OwnerInstruction,
+				m.clock(msg.CreatedAt), msg.Body, false, w)...)
+		}
+	}
+	for _, line := range c.systemLines {
+		for _, wrapped := range wrap(line, w) {
+			out = append(out, sDim.Render(wrapped))
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, sDim.Render("loading messages"))
+	}
+	return out
 }
 
 func (m Model) selectedConversationItem() *feedItem {
