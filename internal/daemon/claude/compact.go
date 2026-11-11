@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/niparis/agent-net/internal/claudelaunch"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
@@ -384,7 +385,7 @@ func (a *Adapter) compactSession(ctx context.Context, f found, path string) (res
 	}
 	cmd := exec.Command(bin, "attach", f.job)
 	cmd.Dir = f.info.Cwd
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = claudelaunch.Env(append(os.Environ(), "TERM=xterm-256color"))
 	terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 160, Rows: 40})
 	if err != nil {
 		return fmt.Errorf("attach: %w", err)

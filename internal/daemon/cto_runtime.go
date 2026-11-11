@@ -179,6 +179,11 @@ func (d *Daemon) ctoEnterWithLocation(ctx context.Context, socket, pane string, 
 	if err != nil {
 		return plan, err
 	}
+	if len(plan.Argv) > 2 && plan.Argv[1] == "attach" {
+		plan = claudePlanEnvAlways(plan)
+	} else {
+		plan = claudePlanEnv(plan)
+	}
 	// A TUI inside this machine's herdr can see the pane it opens. A caller on
 	// another machine has a herdr client but no pane here: its terminal runs
 	// herdr --remote, so this machine opens or focuses the pane and sends its

@@ -189,6 +189,7 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 // It runs the argv from the table, never a value from an ask or an agent.
 func (d *Daemon) openSignInPane(info protocol.SignInProviderInfo, socket, callerPane string) (protocol.EnterPlan, error) {
 	plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
+	plan = claudePlanEnv(plan)
 	opened := d.openInHerdr("signin:"+info.Provider, "sign in: "+info.Label, socket, callerPane, plan)
 	if !opened.OpenedHerdr {
 		return protocol.EnterPlan{Host: d.hostName(), Note: firstNonEmpty(opened.Note, herdrInstallNote)}, nil

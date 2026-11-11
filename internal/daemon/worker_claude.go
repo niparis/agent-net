@@ -747,7 +747,7 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, a
 		}
 		filtered = append(filtered, item)
 	}
-	cmd.Env = workerEnv(filtered, extraEnv)
+	cmd.Env = claudeLaunchEnv(workerEnv(filtered, extraEnv))
 	out, err := cmd.CombinedOutput()
 	if logPath != "" {
 		logf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)

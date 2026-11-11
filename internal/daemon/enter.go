@@ -192,6 +192,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 	if err != nil {
 		return base, err
 	}
+	base = claudePlanEnv(base)
 	// A TUI outside herdr cannot see a herdr pane: hand over its terminal.
 	if !viaGateway && !insideHerdr {
 		return base, nil
@@ -348,6 +349,7 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		// Claude Code ignores the mouse variable on the attach client; the
 		// user's Claude settings carry it (decision 0128).
 		plan.Argv = []string{bin, "attach", id}
+		plan = claudePlanEnvAlways(plan)
 		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 		return plan, nil
 	case "opencode":

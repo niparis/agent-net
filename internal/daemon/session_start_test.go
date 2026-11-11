@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudesettings"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -127,6 +128,9 @@ func TestSessionStartClaude(t *testing.T) {
 			}
 			if rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
 				t.Errorf("launch command carries the mouse setting: %v", rec.CommandEnv)
+			}
+			if rec.CommandEnv[claudesettings.AutoUpdateKey] != claudesettings.AutoUpdateOff {
+				t.Errorf("owner launch env must disable Claude's own updater: %v", rec.CommandEnv)
 			}
 			noFlagThatSkipsPermissions(t, rec.Args)
 			a := c.agentOf(t, r.SessionID)
