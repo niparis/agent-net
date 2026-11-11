@@ -172,9 +172,25 @@ func TestMergerFirstMessageContracts(t *testing.T) {
 }
 
 func TestMergerFirstMessageBatchRules(t *testing.T) {
-	for _, rule := range []string{"merge-batch-<n>", "git diff --name-only", "--no-ff", "batch tip", "change head", "one at a time", "sensitive paths", "depend on each other", "CI link", "train mode", "Run CI once on the train tip", "Cite that one run for every change in the train", "bisect locally to find the culprit before you re-push"} {
+	for _, rule := range []string{"merge-batch-<n>", "git diff --name-only", "--no-ff", "batch tip", "change head", "one at a time", "sensitive paths", "depend on each other", "CI link"} {
 		if !strings.Contains(MergerFirstMessage, rule) {
 			t.Errorf("missing batch rule %q", rule)
+		}
+	}
+}
+
+// The merger prompt carries the train rule, including the local bisect before
+// any re-push. It stays out of the shared guidance block.
+func TestMergerFirstMessageMergeTrain(t *testing.T) {
+	for _, rule := range []string{
+		"train mode",
+		"test each change locally with the targeted packages",
+		"Run CI once on the train tip",
+		"Cite that one run for every change in the train",
+		"bisect locally to find the culprit before you re-push",
+	} {
+		if !strings.Contains(MergerFirstMessage, rule) {
+			t.Errorf("missing train rule %q", rule)
 		}
 	}
 }

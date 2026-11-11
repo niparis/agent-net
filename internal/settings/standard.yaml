@@ -1034,14 +1034,6 @@ settings:
     levels: [network]
     default: "- **Report a defect found later.** agent-net records some defects by itself: a failed verify after merge (severity 3, or the `severity` field of the report), a failed test before merge (severity 1, once per revision, not for a flake) and a fix for a shipped change (set `fixes` to its change ID in `agent_worker_start` or `agent_change_submit`; severity is `fixes_severity`, default 2). Do not file those again. File only what agent-net cannot see: if a defect shows up after the worker's hand-back or after merge in another way, call `agent_worker_rate` with `kind: \"defect_found_later\"`, the worker's session ID, a severity from 1 to 4 (1 cosmetic or test-only, caught before release; 2 a visible annoyance or a latent performance problem that had not hit the owner yet; 3 a broken feature or a real performance regression in a release; 4 an outage, data loss or a security problem) and one line on what is wrong. Each report adds its severity in points of rework to that worker's task, and you may report more than once. Do not leave a late defect uncounted."
     live: true
-  - key: guidance.merge_train
-    rows: [19]
-    description: Guidance for the merger's CI in train mode.
-    kind: advice
-    type: text
-    levels: [network]
-    default: "- **Merging a train:** in train mode, test each change locally with the targeted packages. Run CI once on the train tip. Cite that one run for every change in the train. When the tip fails, bisect locally to find the culprit before you re-push."
-    live: true
   - key: guidance.worker_brief_precedence
     rows: [20]
     description: Guidance for worker brief precedence.
@@ -1148,7 +1140,7 @@ ledger:
   - {row: 16, keys: [guidance.start_workers_when_asked], step: 4}
   - {row: 17, keys: [guidance.start_workers_when_asked], step: 4}
   - {row: 18, keys: [guidance.wait_for_worker_notice], step: 4}
-  - {row: 19, keys: [guidance.report_late_defects, guidance.merge_train], step: 4}
+  - {row: 19, keys: [guidance.report_late_defects], step: 4}
   - {row: 20, keys: [guidance.worker_brief_precedence], step: 4}
   - {row: 21, keys: [delegation.mode]}
   - {row: 22, keys: [delegation.native_unsupported_fallback]}

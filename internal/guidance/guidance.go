@@ -40,7 +40,7 @@ func Block(variant string) string { return BlockWithSnapshot(variant, settings.S
 
 // BlockWithSnapshot renders network guidance from a settings snapshot.
 func BlockWithSnapshot(variant string, snapshot settings.Snapshot) string {
-	keys := []string{"intro_text", "peer_help_direct", "decide_not_defer", "owner_check_triggers", "cto_note_trust", "peer_contact_triggers", "ask_peer_after_tries", "relay_unedited", "message_style", "announce_task", "mcp_and_secret_hygiene", "register_projects_when_asked", "start_workers_when_asked", "wait_for_worker_notice", "report_late_defects", "merge_train", "worker_brief_precedence"}
+	keys := []string{"intro_text", "peer_help_direct", "decide_not_defer", "owner_check_triggers", "cto_note_trust", "peer_contact_triggers", "ask_peer_after_tries", "relay_unedited", "message_style", "announce_task", "mcp_and_secret_hygiene", "register_projects_when_asked", "start_workers_when_asked", "wait_for_worker_notice", "report_late_defects", "worker_brief_precedence"}
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
 		e, err := snapshot.Resolve("guidance."+key, settings.Where{})
