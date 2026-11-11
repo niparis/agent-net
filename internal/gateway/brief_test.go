@@ -246,7 +246,7 @@ func TestDailyBriefHandlesDST(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.LastDateSent != "2026-03-29" || status.NextRunLocal != "2026-03-30 09:00" || status.NextRunUTC != "2026-03-30T07:00:00Z" {
+	if status.LastWakeDate != "2026-03-29" || status.NextRunLocal != "2026-03-30 09:00" || status.NextRunUTC != "2026-03-30T07:00:00Z" {
 		t.Fatalf("after the spring send = %+v", status)
 	}
 
@@ -261,8 +261,11 @@ func TestDailyBriefHandlesDST(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.LastDateSent != "2026-10-25" || status.NextRunUTC != "2026-10-26T08:00:00Z" {
+	if status.LastWakeDate != "2026-10-25" || status.NextRunUTC != "2026-10-26T08:00:00Z" {
 		t.Fatalf("after the fall send = %+v", status)
+	}
+	if status.LastDateSent != "" {
+		t.Fatalf("a wake reported a sent date: %+v", status)
 	}
 	if got := briefMessages(t, s, chief); len(got) != 3 {
 		t.Fatalf("messages over both DST dates = %v", got)
@@ -385,6 +388,86 @@ func TestOwnerBriefCreatesInformationalItemAndReplacesSameDate(t *testing.T) {
 	// The owner may dismiss it; that is its only action.
 	if _, err := s.AnswerInbox(first.ItemID, "dismiss"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A wake is not a delivery. The receipt keeps the date of the last delivered
+// brief, and a wake for a newer date does not claim that date was sent.
+func TestDailyBriefWakeIsNotAReportedDelivery(t *testing.T) {
+	s, _, chief, _ := briefRig(t)
+	setBriefZone(t, s, "Europe/Paris")
+	setBriefTime(t, s, "09:00")
+
+	day1 := time.Date(2026, 11, 9, 8, 0, 0, 0, time.UTC) // 09:00 in Paris
+	first, err := s.putOwnerBrief(chief, protocol.OwnerBriefArgs{Body: "Monday, one line.", Date: "2026-11-09"}, day1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day2 := day1.AddDate(0, 0, 1)
+	if _, sent, err := s.checkDailyBrief(day2); err != nil || !sent {
+		t.Fatalf("wake for 10 Nov: sent=%v err=%v", sent, err)
+	}
+	status, err := s.dailyBriefStatus(day2.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastDateSent != "2026-11-09" {
+		t.Fatalf("the wake for 10 Nov reported a sent date: %+v", status)
+	}
+	if status.LastWakeDate != "2026-11-10" {
+		t.Fatalf("last wake = %q, want 2026-11-10", status.LastWakeDate)
+	}
+	if status.LastItemID != first.ItemID {
+		t.Fatalf("last item = %q, want Monday's %q", status.LastItemID, first.ItemID)
+	}
+
+	second, err := s.putOwnerBrief(chief, protocol.OwnerBriefArgs{Body: "Tuesday, one line.", Date: "2026-11-10"}, day2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = s.dailyBriefStatus(day2.Add(2 * time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastDateSent != "2026-11-10" || status.LastItemID != second.ItemID {
+		t.Fatalf("after the delivery = %+v", status)
+	}
+	if status.LastWakeDate != "2026-11-10" {
+		t.Fatalf("after the delivery, last wake = %q", status.LastWakeDate)
+	}
+}
+
+// An older gateway wrote the wake date to chief.brief_last_sent. On upgrade
+// that value is read as the wake date, so the same date does not wake twice.
+func TestDailyBriefUpgradeReadsOldSentKeyAsWake(t *testing.T) {
+	s, _, chief, _ := briefRig(t)
+	setBriefZone(t, s, "Europe/Paris")
+	setBriefTime(t, s, "09:00")
+
+	day := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC) // 09:00 in Paris
+	if err := s.setOwnerSetting(s.db, protocol.BriefLastSentKey, "2026-11-10", day); err != nil {
+		t.Fatal(err)
+	}
+	if _, sent, err := s.checkDailyBrief(day); err != nil || sent {
+		t.Fatalf("upgrade woke the chief again on the same date: sent=%v err=%v", sent, err)
+	}
+	if got := briefMessages(t, s, chief); len(got) != 0 {
+		t.Fatalf("messages after the upgrade = %v", got)
+	}
+	status, err := s.dailyBriefStatus(day.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastWakeDate != "2026-11-10" {
+		t.Fatalf("last wake after the upgrade = %q", status.LastWakeDate)
+	}
+	if status.LastDateSent != "" {
+		t.Fatalf("an upgrade woke the chief and reported a sent date: %+v", status)
+	}
+
+	next := day.AddDate(0, 0, 1)
+	if _, sent, err := s.checkDailyBrief(next); err != nil || !sent {
+		t.Fatalf("the next date: sent=%v err=%v", sent, err)
 	}
 }
 
