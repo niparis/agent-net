@@ -169,15 +169,15 @@ func TestDeliveryStepPairReadyTogetherNoEarlyReminder(t *testing.T) {
 	if len(bodies) != 1 {
 		t.Fatalf("caller got %d task messages, want 1: %v", len(bodies), bodies)
 	}
-	if !strings.Contains(bodies[0], "steps: release, verify (after merge)") {
+	if !strings.Contains(bodies[0], "step: release after merge") {
 		t.Fatalf("pair line missing from:\n%s", bodies[0])
 	}
 
 	// Every step named in the message has its delivery_step_messages row.
 	var rows int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE change_id=? AND session_id=?`,
-		c.ID, r.caller).Scan(&rows); err != nil || rows != 3 {
-		t.Fatalf("step message rows=%d want=3 (recent + release + verify) err=%v", rows, err)
+		c.ID, r.caller).Scan(&rows); err != nil || rows != 2 {
+		t.Fatalf("step message rows=%d want=2 (recent + release) err=%v", rows, err)
 	}
 
 	// Dispatch several times inside the reminder interval. Nothing new may go out.

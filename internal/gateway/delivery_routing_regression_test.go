@@ -118,8 +118,8 @@ func TestDeliveryStepTaskBatch(t *testing.T) {
 	r.g.flushStepTasks(r.caller)
 	check(1)
 	var listed int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&listed); err != nil || listed != 5 {
-		t.Fatalf("listed=%d want=5 err=%v", listed, err)
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&listed); err != nil || listed != 4 {
+		t.Fatalf("listed=%d want=4 err=%v", listed, err)
 	}
 }
 

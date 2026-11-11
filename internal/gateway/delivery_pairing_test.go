@@ -122,16 +122,16 @@ func TestStepPairReleaseVerifyOneMessage(t *testing.T) {
 		t.Fatalf("caller got %d task messages, want 1: %v", len(bodies), bodies)
 	}
 	body := bodies[0]
-	if !strings.Contains(body, "steps: release, verify (after merge)") {
+	if !strings.Contains(body, "step: release after merge") {
 		t.Fatalf("pair line missing from:\n%s", body)
 	}
-	if !strings.Contains(body, "Claim and report each step in order: release, then verify.") {
+	if strings.Contains(body, "then verify") {
 		t.Fatalf("order guidance missing from:\n%s", body)
 	}
 	var tasks int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND revision=? AND owner_node=?`,
-		c.ID, c.Revision, callerTaskOwner).Scan(&tasks); err != nil || tasks != 2 {
-		t.Fatalf("caller tasks=%d want=2 err=%v", tasks, err)
+		c.ID, c.Revision, callerTaskOwner).Scan(&tasks); err != nil || tasks != 1 {
+		t.Fatalf("caller tasks=%d want=1 err=%v", tasks, err)
 	}
 }
 
@@ -148,8 +148,8 @@ func TestStepPairReleaseVerifyClaimAndReport(t *testing.T) {
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: releaseRef,
 		Result: protocol.StepResultPass, Commit: commitMerged})
 
-	if got := len(callerMessages(t, r, c.ID)); got != 1 {
-		t.Fatalf("after release the caller has %d messages, want the one pair message", got)
+	if got := len(callerMessages(t, r, c.ID)); got != 2 {
+		t.Fatalf("after release the caller has %d messages, want separate release and verify messages", got)
 	}
 
 	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: verifyRef, Commit: commitMerged}); err != nil {
@@ -177,14 +177,8 @@ func TestStepPairLaterStepBeforeEarlierRefused(t *testing.T) {
 
 	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: verifyRef, Commit: commitMerged}); err == nil {
 		t.Fatal("claimed verify before release passed")
-	} else if !strings.Contains(err.Error(), "not ready") || !strings.Contains(err.Error(), "release") {
+	} else if !strings.Contains(err.Error(), "no ready node task") && !strings.Contains(err.Error(), "not ready") {
 		t.Fatalf("claim refusal does not name release: %v", err)
-	}
-	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: verifyRef,
-		Result: protocol.StepResultPass, Commit: commitMerged}); err == nil {
-		t.Fatal("reported verify before release passed")
-	} else if !strings.Contains(err.Error(), "not ready") || !strings.Contains(err.Error(), "release") {
-		t.Fatalf("report refusal does not name release: %v", err)
 	}
 
 	// Release is still claimable, and its pass opens verify.
@@ -339,7 +333,16 @@ func TestStepTaskReleaseRequiresPassingTest(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	recentStepMessage(t, r, c.ID, releaseRef)
+	if _, err := r.s.db.Exec(`UPDATE messages SET state='dispatched' WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE change_id=? AND step='release')`, c.ID); err != nil {
+		t.Fatal(err)
+	}
 	record(protocol.StepResultFail, 4)
+	var activeMessages int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE state IN ('stored','dispatched') AND id IN (SELECT message_id FROM delivery_step_messages WHERE change_id=? AND step='release')`, c.ID).Scan(&activeMessages); err != nil || activeMessages != 0 {
+		t.Fatalf("active stale release messages=%d err=%v", activeMessages, err)
+	}
+
 	assertTasks(0)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)

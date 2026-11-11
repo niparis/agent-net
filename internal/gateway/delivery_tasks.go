@@ -928,9 +928,6 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int6
 // ref. Steps left out of this change's pipeline do not break the pairing, but
 // the pair never crosses the merge.
 func stepRun(p protocol.Pipeline, c protocol.Change, evidence []protocol.Evidence, ref protocol.StepRef) []protocol.StepRef {
-	if ref.Step == protocol.StepTest {
-		return []protocol.StepRef{ref}
-	}
 	status := p.Status(c, evidence)
 	start := -1
 	for i := range p.Steps {
@@ -1352,6 +1349,8 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			break
 		}
 	}
+	// Retire unclaimed work whose requirements no longer hold. Claims stay
+	// with their current owner; retired tasks can be queued again when ready.
 	ready := p.NextSteps(c, evidence)
 	args := []any{c.ID, c.Revision}
 	query := `UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND claimed_by='' AND completed=0`
@@ -1427,22 +1426,13 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			// now is its own task, not another partner for an old notice.
 			continue
 		}
-		// Hand the next step out with this one when it needs only this step.
-		// Each step keeps its own task row, evidence and order.
-		for _, next := range stepRun(p, c, evidence, ref)[1:] {
-			if _, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks
-				(change_id,revision,step,for_step,after_merge,owner_node,created_at) VALUES(?,?,?,?,?,?,?)`,
-				c.ID, c.Revision, next.Step, next.For, boolInt(next.AfterMerge), ownerNode, now); err != nil {
-				return err
-			}
-		}
+
 	}
 	return nil
 }
 
-// discardCompletedStepTask is used only for a ready approval: a task marked
-// complete when a stricter rule replaced it may need to be queued again if
-// that rule is undone. Completed evidence itself is never removed.
+// discardCompletedStepTask removes a retired task so a newly ready step can
+// be queued again. Completed evidence itself is never removed.
 func discardCompletedStepTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef) error {
 	args := []any{c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)}
 	where := `change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`
