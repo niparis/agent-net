@@ -30,13 +30,15 @@ const (
 )
 
 type checkState struct {
-	active  int64
-	waiting bool
-	more    int
-	open    int
-	msgs    int
-	day     string
-	count   int
+	announcedAt int64
+	fingerprint string
+	active      int64
+	waiting     bool
+	more        int
+	open        int
+	msgs        int
+	day         string
+	count       int
 	// taskHash is a short hash of the task the last check was about, or of
 	// the "blocked" answer to it. The task text itself is never stored. It is
 	// empty after "done" or "more" (the no-progress streak governs those) and
@@ -54,11 +56,11 @@ type checkState struct {
 func (s *Store) readCheckState(id string) (checkState, error) {
 	var st checkState
 	var waiting int
-	err := s.db.QueryRow(`SELECT c.check_active,c.check_waiting,c.check_more,c.check_open,c.check_msgs,c.check_day,c.check_day_count,c.check_task_hash,
+	err := s.db.QueryRow(`SELECT c.check_active,c.check_waiting,c.check_more,c.check_open,c.check_msgs,c.check_day,c.check_day_count,c.check_task_hash,c.check_announced_at,c.check_fingerprint,
 		COALESCE(w.wake_day,''),COALESCE(w.wake_day_count,0),COALESCE(w.wake_streak,0),
 		COALESCE(w.wake_open,0),COALESCE(w.wake_msgs,0)
 		FROM session_checks c LEFT JOIN session_wakes w ON w.session_id=c.session_id WHERE c.session_id=?`, id).
-		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count, &st.taskHash,
+		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count, &st.taskHash, &st.announcedAt, &st.fingerprint,
 			&st.wakeDay, &st.wakeCount, &st.wakeStreak, &st.wakeOpen, &st.wakeMsgs)
 	if errors.Is(err, sql.ErrNoRows) {
 		return checkState{}, nil
@@ -240,8 +242,12 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 			}
 			continue
 		}
-		// Only new activity resets the one-check limit.
-		if a.LastActive <= st.active {
+		// An announce answers for this state until the work changes.
+		if st.fingerprint != "" && st.fingerprint == checkFingerprint(a, workers[a.SessionID]) {
+			continue
+		}
+		// New work after an announce can re-arm the check without a turn.
+		if a.LastActive <= st.active && (st.announcedAt == 0 || st.waiting) {
 			continue
 		}
 		if st.more >= 2 {
@@ -261,7 +267,7 @@ func (s *Store) checkIdle() ([]protocol.Message, error) {
 		// A session that was asked about this task today is not asked again
 		// until the task text changes. Announcing the same task after the
 		// answer is not new work. The daily cap below still applies.
-		if hash := checkTaskHash(a.Profile.Task); hash != "" && hash == st.taskHash && st.day == today {
+		if hash := checkTaskHash(a.Profile.Task); st.fingerprint == "" && hash != "" && hash == st.taskHash && st.day == today {
 			continue
 		}
 		if count >= idleCheckDailyCap {
@@ -666,4 +672,44 @@ func (s *Store) checkCounts(c *protocol.SessionCounts) error {
 	rows.Close()
 	return s.db.QueryRow(`SELECT COALESCE(SUM(wake_day_count),0) FROM session_wakes WHERE wake_day=?`,
 		s.now().UTC().Format(idleCheckDay)).Scan(&c.WakeUpsToday)
+}
+
+// checkFingerprint keeps task content out of durable check state. Only the
+// owed request count matters; outgoing requests are somebody else's work.
+func checkFingerprint(a protocol.AgentView, workers int) string {
+	owed := 0
+	for _, p := range a.Pending {
+		if !p.Outgoing {
+			owed++
+		}
+	}
+	waitingState := protocol.CleanWaiting(a.Waiting)
+	if waitingState != nil {
+		copy := *waitingState
+		copy.Since = 0
+		waitingState = &copy
+	}
+	waiting, _ := json.Marshal(waitingState)
+	return checkTaskHash(fmt.Sprintf("%s:%s:%d:%d", checkTaskHash(a.Profile.Task), waiting, owed, workers))
+}
+
+func (s *Store) recordCheckAnnounce(id string, waiting *protocol.Waiting) error {
+	s.checkMu.Lock()
+	defer s.checkMu.Unlock()
+	a, ok, err := s.Agent(id)
+	if err != nil || !ok {
+		return err
+	}
+	a.Waiting = protocol.CleanWaiting(waiting)
+	agents := []protocol.AgentView{a}
+	if err := s.applyPending(agents); err != nil {
+		return err
+	}
+	workers, err := s.owningWorkerCount(id)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO session_checks(session_id,check_announced_at,check_fingerprint)
+ VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET check_announced_at=excluded.check_announced_at,check_fingerprint=excluded.check_fingerprint`, id, s.now().UnixNano(), checkFingerprint(agents[0], workers))
+	return err
 }

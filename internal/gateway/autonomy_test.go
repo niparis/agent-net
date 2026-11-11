@@ -210,7 +210,7 @@ func TestWakeDailyCapIsSeparateFromTheCheckCap(t *testing.T) {
 		}
 		// A new message is progress, so the wake streak and the check streak reset.
 		c.t = c.t.Add(time.Minute)
-		if _, _, err := send(s, b, a, fmt.Sprintf("progress-%d", i), ""); err != nil {
+		if _, _, err := send(s, a, b, fmt.Sprintf("new-work-%d", i), ""); err != nil {
 			t.Fatal(err)
 		}
 		c.t = c.t.Add(21 * time.Minute)
@@ -251,7 +251,9 @@ func TestTwoWakeUpsWithoutProgressStopWakingWithOneRow(t *testing.T) {
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: first step"}); err != nil {
 		t.Fatal(err)
 	}
-	// A turn is activity, but it changes no message and no open work.
+	// A task change without a fresh announce re-arms the check, while
+	// the open-work and message counters still show no progress.
+	seedCheckTask(t, s, b, "first step, still unfinished")
 	c.t = c.t.Add(time.Minute)
 	activity(t, s, b, "pi", "nb")
 	c.t = c.t.Add(21 * time.Minute)

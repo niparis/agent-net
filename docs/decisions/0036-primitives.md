@@ -96,3 +96,10 @@ The owner sees agents with a kind badge, projects and Needs you. The Graph shows
 ## Display names
 
 Screens may use names other than the fixed internal terms. The custom CTO title is the first case. A future objective, not yet built, is themes that rename primitives on screen only. A Rome theme might call the CTO Imperator and an agent Centurion. A Matrix theme might call the CTO Oracle. Agents always see the fixed terms.
+
+### 2026-11-11: an announce answers the idle check
+
+A fresh announce is the answer for its current state, with no daily expiry.
+Remember the announce time and a fingerprint of the task text hash, waiting
+field, owed requests and running workers. A changed state can re-arm the
+check. The idle interval, daily cap and autonomy settings stay as they are.

@@ -4113,3 +4113,8 @@ mechanisms and defaults remain unchanged unless the chief applies a pause.
 Applying a pause also expires matching nudges already queued at the gateway.
 Delivery rechecks pauses before sending or waking a session, so a saved queue
 snapshot cannot replay an expired nudge after resume.
+
+An `agent_announce` answers the idle check for the session's current work. The
+check records its time and a fingerprint of the task, waiting field, owed
+request count and running worker count. It asks again only after that state
+changes. The idle interval and daily cap stay the same.
