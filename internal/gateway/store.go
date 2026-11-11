@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`}
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.
@@ -1748,6 +1748,19 @@ func (s *Store) migrate() error {
 			}
 			if has == 0 {
 				if _, err := tx.Exec(`ALTER TABLE delivery_step_tasks ADD COLUMN last_notice_due_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "replaced session column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='replaced_by'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN replaced_by TEXT NOT NULL DEFAULT ''`); err != nil {
 					tx.Rollback()
 					return err
 				}
@@ -2667,9 +2680,9 @@ func (s *Store) upsertSession(q interface {
 			return "", false, err
 		}
 	}
-	var knownID, knownName, knownWaiting, knownStatus string
-	err = q.QueryRow(`SELECT id, name, waiting, status FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
-		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName, &knownWaiting, &knownStatus)
+	var knownID, knownName, knownWaiting, knownStatus, knownReplaced string
+	err = q.QueryRow(`SELECT id, name, waiting, status, replaced_by FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
+		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName, &knownWaiting, &knownStatus, &knownReplaced)
 	known := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
@@ -2738,7 +2751,7 @@ func (s *Store) upsertSession(q interface {
 		name = "CTO"
 	} else if protocol.IsOwner(in.Harness) {
 		name = protocol.CleanModel(in.Name)
-	} else if name, err = chooseSessionName(q, nodeID, knownID, knownName, in); err != nil {
+	} else if name, err = chooseSessionName(q, nodeID, knownID, knownName, knownReplaced != "", in); err != nil {
 		return "", false, err
 	}
 	title := protocol.CleanModel(in.Name)
@@ -2953,10 +2966,14 @@ func isAutomaticName(name, base string, worker bool) bool {
 // chooseSessionName gives a session its name. A live session keeps the name it
 // has while it fits its project. A new session, or one whose name another live
 // session took while it was away, gets the lowest free number. Only live
-// sessions hold a name (decision 0024).
+// sessions hold a name (decision 0024). A replaced record keeps its name: it
+// is history for the session that took over, not another session.
 func chooseSessionName(q interface {
 	Query(string, ...any) (*sql.Rows, error)
-}, nodeID, sessionID, current string, in protocol.SessionInfo) (string, error) {
+}, nodeID, sessionID, current string, replaced bool, in protocol.SessionInfo) (string, error) {
+	if replaced && current != "" {
+		return current, nil
+	}
 	base, worker := sessionBaseName(in), in.Worker != nil
 	used := map[string]bool{"CTO": true}
 	rows, err := q.Query(`SELECT COALESCE(NULLIF(p.name,''), s.name), s.online,
@@ -3499,7 +3516,7 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
  @STALL@
  @HELD@
  @INSESSION@
- s.limited_until, s.limited_reason
+ s.limited_until, s.limited_reason, s.replaced_by
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id@JOINS@`
 
 // agentListTables are the tables agentListSelect and its joins read, with the
@@ -3551,7 +3568,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.IdleCompactedAt, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.IdleCompactedAt, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.ReplacedBy)
 	if err != nil {
 		return a, err
 	}

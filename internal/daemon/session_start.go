@@ -539,7 +539,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil || !info.IsDir() {
 		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
 	}
-	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: firstNonEmpty(a.Profile.Name, a.Title, a.NativeID), Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
+	r := protocol.StartedSession{Resumes: a.SessionID, ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: firstNonEmpty(a.Profile.Name, a.Title, a.NativeID), Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
 	if a.Harness == "opencode" {
 		return d.resumeOwnerOpenCode(ctx, r, socket, pane)
 	}
@@ -607,6 +607,15 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		defer cancel()
 		d.claudeStartMu.Lock()
 		sf, err := d.launchClaudeBackground(cctx, bin, r.Path, args, "", resume, nil, nil)
+		if err == nil && r.Resumes != "" && sf.SessionID != "" && sf.SessionID != resume {
+			// Claude gives a resumed background conversation a new native ID.
+			// Keep the gateway record, and with it every worker, change and
+			// message that belongs to the session. Discovery takes this lock,
+			// so it cannot register the copy first.
+			if rerr := d.rebindResumedSession(cctx, r.Resumes, sf.SessionID); rerr != nil {
+				d.Logf("session resume: could not keep the session ID of %s: %v", r.Resumes, rerr)
+			}
+		}
 		d.claudeStartMu.Unlock()
 		if err == nil {
 			r.NativeID, r.JobID = sf.SessionID, sf.JobID
@@ -641,6 +650,11 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 					break
 				}
 			}
+		}
+		if err == nil {
+			// A new conversation that could not keep the old ID hands its work
+			// over to the record it registered.
+			d.adoptResumedSession(cctx, r.Resumes, r.SessionID)
 		}
 		if err == nil {
 			err = d.checkStartAgent(cctx, r)

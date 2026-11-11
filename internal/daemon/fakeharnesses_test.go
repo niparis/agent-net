@@ -406,6 +406,11 @@ func fakeClaudeSession() {
 	if resumed := argValue(in.Args, "--resume"); resumed != "" && os.Getenv("FAKE_CLAUDE_NEW_RESUME_ID") == "" {
 		session = resumed // the same conversation, a new background job
 	}
+	// A test can name the copy's conversation, so a record with that native
+	// ID can stand for a new conversation a harness started first.
+	if copyID := os.Getenv("FAKE_CLAUDE_COPY_ID"); copyID != "" && argValue(in.Args, "--resume") != "" {
+		session = copyID
+	}
 	sock := filepath.Join(os.Getenv(envFakeClaudeSockets), "fc-"+id+".sock")
 	os.Remove(sock)
 	ln, err := net.Listen("unix", sock)

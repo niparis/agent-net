@@ -81,7 +81,7 @@ func (s *Store) RenameSession(sessionID, name string, validate ...bool) (protoco
 			worker = &protocol.WorkerInfo{}
 			json.Unmarshal([]byte(workerJSON), worker)
 		}
-		next, err := chooseSessionName(s.db, "", sessionID, auto, protocol.SessionInfo{Cwd: cwd,
+		next, err := chooseSessionName(s.db, "", sessionID, auto, false, protocol.SessionInfo{Cwd: cwd,
 			Repo: protocol.RepoInfo{Project: project}, Worker: worker})
 		if err != nil {
 			return res, err
