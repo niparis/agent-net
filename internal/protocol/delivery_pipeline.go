@@ -448,6 +448,10 @@ type ChangeOrigin struct {
 	Person      string `json:"person,omitempty"`
 	Model       string `json:"model,omitempty"`
 	ModelFamily string `json:"model_family,omitempty"`
+	// Struggle is the run's sign count at a worker hand-back, so the accept
+	// step task can show it before the run row reaches the gateway. Empty for
+	// a session submit or a harness with no trace (decision 0133).
+	Struggle *Struggle `json:"struggle,omitempty"`
 }
 
 // Change is one unit of delivery: a project, the machine that holds the

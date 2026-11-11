@@ -1336,6 +1336,7 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			if t.isReminder {
 				line += fmt.Sprintf(" | ready since %s, not claimed", readySinceStr)
 			}
+			stLine := s.changeStruggleLine(c, []protocol.StepRef{t.ref})
 			var body string
 			if !isBatch {
 				encoded, err := json.Marshal(d.evidence)
@@ -1370,6 +1371,10 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			waitNote := s.wasWaiting(group)
 			body += waitNote
 			line += waitNote
+			if stLine != "" {
+				body += "\n" + stLine
+				line += " | " + stLine
+			}
 			notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContract(c.Project, t.ref.Step), isReminder: t.isReminder})
 			continue
 		}
@@ -1430,6 +1435,10 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		waitNote := s.wasWaiting(group)
 		body += waitNote
 		line += waitNote
+		if stLine := s.changeStruggleLine(c, run); stLine != "" {
+			body += "\n" + stLine
+			line += " | " + stLine
+		}
 		notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContracts(c.Project, run), order: order, isReminder: isReminder})
 	}
 	if len(notices) == 0 {
@@ -1774,6 +1783,48 @@ func (s *Store) queueOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.S
 	_, err = tx.Exec(`INSERT INTO delivery_step_inbox(change_id,revision,step,for_step,after_merge,commit_hash,item_id) VALUES(?,?,?,?,?,?,?)`,
 		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), commit, item.ID)
 	return err
+}
+
+// changeStruggleLine is the struggle line the caller's accept task carries.
+// The hand-back carries the counts in the change origin; a run row is the
+// fallback for a change recorded before this field existed. It is empty for
+// every other step, for a clean run and for a harness with no trace.
+func (s *Store) changeStruggleLine(c protocol.Change, refs []protocol.StepRef) string {
+	accept := false
+	for _, ref := range refs {
+		if ref.Step == protocol.StepAccept {
+			accept = true
+			break
+		}
+	}
+	if !accept {
+		return ""
+	}
+	return protocol.StruggleLine(s.changeStruggle(c))
+}
+
+// changeStruggle returns the run's sign count for a change, or nil.
+func (s *Store) changeStruggle(c protocol.Change) *protocol.Struggle {
+	if c.Origin.Struggle != nil {
+		return c.Origin.Struggle
+	}
+	if c.Origin.SessionID == "" {
+		return nil
+	}
+	var st protocol.Struggle
+	var top string
+	var capped int
+	err := s.db.QueryRow(`SELECT struggle_failed, struggle_repeats, struggle_retries, struggle_exploration, struggle_env, struggle_top, struggle_trace, struggle_capped
+		FROM worker_runs WHERE session_id=? ORDER BY id DESC LIMIT 1`, c.Origin.SessionID).Scan(
+		&st.Failed, &st.Repeats, &st.Retries, &st.Exploration, &st.EnvErrors, &top, &st.Trace, &capped)
+	if err != nil {
+		return nil
+	}
+	if top != "" {
+		st.Top = strings.Split(top, "; ")
+	}
+	st.Capped = capped != 0
+	return &st
 }
 
 // stepTaskQueued reports whether a task row already exists for ref on this

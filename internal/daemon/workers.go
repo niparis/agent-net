@@ -233,6 +233,10 @@ type worker struct {
 	// the chooser used. They are kept for the difficulty calibration.
 	difficultyAsked, difficultyUsed string
 	touches                         string
+	// struggle is the sign count of this run, read once at run end from the
+	// harness's own trace (decision 0133). struggleDone says it was read.
+	struggle     protocol.Struggle
+	struggleDone bool
 	// taskFull is the full first task (at most 64 KiB), kept in the record so
 	// that a new worker can continue it.
 	taskFull string
@@ -331,6 +335,14 @@ type resumer interface {
 	resume(ctx context.Context, d *Daemon, w *worker) error
 }
 
+// struggler is a launcher that can count the signs that a run fought its
+// instructions or its environment, from the harness's own tool record. A
+// harness without a tool-call record the daemon reads does not implement it,
+// and the run is reported as "no trace" (decision 0133).
+type struggler interface {
+	struggle(ctx context.Context, d *Daemon, w *worker) protocol.Struggle
+}
+
 func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
@@ -349,6 +361,10 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	next.AutoContinue = w.autoContinueCount
 	next.DifficultyAsked, next.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
 	next.Touches = splitTouches(w.touches)
+	if w.struggleDone {
+		st := w.struggle
+		next.Struggle = &st
+	}
 	w.info = &next
 	// A copy: the agent list and the session info may outlive this call, and
 	// noteAsk replaces the task under wmu. No one changes a value that a
@@ -592,7 +608,18 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 		AutoContinue: w.autoContinue, AutoContinueCount: w.autoContinueCount, AutoContinueRun: w.autoContinueRun,
 		PendingHandback: w.pendingHandback, PendingPartial: w.pendingPartial,
 		DifficultyAsked: w.difficultyAsked, DifficultyUsed: w.difficultyUsed, Touches: w.touches,
-		TaskID: w.taskID, MidrunCount: w.midrunCount, MidrunRun: w.midrunRun, NoticeSinceRequest: w.noticeSinceRequest, MidrunSeen: w.midrunSeen, Failure: w.failure, ChangeID: w.changeID}
+		TaskID: w.taskID, MidrunCount: w.midrunCount, MidrunRun: w.midrunRun, NoticeSinceRequest: w.noticeSinceRequest, MidrunSeen: w.midrunSeen, Failure: w.failure, ChangeID: w.changeID,
+		Struggle: w.runStruggle()}
+}
+
+// runStruggle returns the run's sign count, or nil before it was read.
+// Callers hold d.wmu.
+func (w *worker) runStruggle() *protocol.Struggle {
+	if !w.struggleDone {
+		return nil
+	}
+	st := w.struggle
+	return &st
 }
 
 // ---- starting ----
@@ -1089,6 +1116,9 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 	var stats workerStats
 	if sendNotice {
 		stats = d.workerStats(w)
+		// Read the run's trace before the harness process goes, so the notice
+		// and the run record carry the same counts (decision 0133).
+		d.noteWorkerStruggle(context.Background(), w)
 	}
 	// What the worker cost is read before the process goes (decision 0018).
 	if life, ok := d.treeLife(w.pid); ok {
@@ -1216,7 +1246,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix(),
 			Continue: r.Continue, Fix: r.Fix, ContinueRun: r.ContinueRun, FixRun: r.FixRun,
 			AutoContinue: r.AutoContinueCount, AutoContinueRun: r.AutoContinueRun,
-			DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches), TaskID: r.TaskID, MidrunRun: r.MidrunRun})
+			DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches), TaskID: r.TaskID, MidrunRun: r.MidrunRun, Struggle: r.Struggle})
 		cancel()
 		var re RemoteError
 		switch {

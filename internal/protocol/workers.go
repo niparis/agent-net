@@ -299,6 +299,9 @@ type WorkerInfo struct {
 	DifficultyAsked string   `json:"difficulty_asked,omitempty"`
 	DifficultyUsed  string   `json:"difficulty_used,omitempty"`
 	Touches         []string `json:"touches,omitempty"`
+	// Struggle is the sign count of the worker's latest run, computed at its
+	// end from the run's own tool record (decision 0133).
+	Struggle *Struggle `json:"struggle,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -584,6 +587,9 @@ type (
 		DifficultyAsked string   `json:"difficulty_asked,omitempty"`
 		DifficultyUsed  string   `json:"difficulty_used,omitempty"`
 		Touches         []string `json:"touches,omitempty"`
+		// Struggle counts the signs that this run fought its environment or
+		// its instructions, from the run's own tool record (decision 0133).
+		Struggle *Struggle `json:"struggle,omitempty"`
 	}
 )
 
@@ -977,6 +983,10 @@ type WorkerNotice struct {
 	// Empty when nothing overlaps or the start already named `fixes`.
 	DefectHint string
 
+	// Struggle counts what the run's own tool record showed (decision 0133).
+	// Empty for a run with no trace or a harness the daemon cannot read.
+	Struggle *Struggle
+
 	// OSSandbox is the OS wrapper the worker ran in ("bubblewrap"), or "".
 	OSSandbox string
 
@@ -1035,6 +1045,9 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 	}
 	if n.AutoContinue > 0 {
 		b.WriteString(fmt.Sprintf("auto-continues: %d\n", n.AutoContinue))
+	}
+	if line := StruggleLine(n.Struggle); line != "" {
+		b.WriteString(line + "\n")
 	}
 	if n.Worktree != "" {
 		b.WriteString("worktree: " + n.Worktree + " (branch " + n.Branch + ")\n")

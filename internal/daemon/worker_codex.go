@@ -422,6 +422,23 @@ func (codexLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerStat
 	return w.codex.stats()
 }
 
+// struggle reads the thread's rollout file once and counts the run's struggle
+// signs (decision 0133). Codex writes each function call and its output there.
+func (codexLauncher) struggle(_ context.Context, d *Daemon, w *worker) protocol.Struggle {
+	home := d.cfg.CodexHome
+	if home == "" {
+		home = os.Getenv("CODEX_HOME")
+	}
+	if home == "" {
+		home = defaultCodexHome()
+	}
+	path := codexRolloutPath(home, w.nativeID)
+	if path == "" {
+		return protocol.Struggle{Trace: protocol.StruggleNoTrace}
+	}
+	return readCodexStruggle(path)
+}
+
 // registerCodexSession makes the thread a session of the daemon, with the
 // worker flag. At a start it waits until the gateway has given it an ID. After
 // a restart it does not wait: the link may not be up yet, and the daemon sends

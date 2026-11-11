@@ -75,6 +75,9 @@ type WorkerRun struct {
 	Difficulty      string   `json:"difficulty,omitempty"`
 	DifficultyUsed  string   `json:"difficulty_used,omitempty"`
 	Touches         []string `json:"touches,omitempty"`
+	// Struggle counts the signs that this run fought its environment or its
+	// instructions, from the run's own tool record (decision 0133).
+	Struggle *Struggle `json:"struggle,omitempty"`
 }
 
 // TrackRecord is what the gateway learned about one harness and model.

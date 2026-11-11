@@ -692,6 +692,7 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	cont, fix := w.continueCount, w.fixCount
 	auto := w.autoContinueCount
 	asked, used := w.difficultyAsked, w.difficultyUsed
+	struggle := w.runStruggle()
 	d.wmu.Unlock()
 	if model == "" {
 		model = st.Model
@@ -702,7 +703,7 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	}
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project, Title: title, Permissions: permissions, OSSandbox: osSandbox,
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
-		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, AutoContinue: auto, Difficulty: difficulty}
+		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, AutoContinue: auto, Difficulty: difficulty, Struggle: struggle}
 	d.wmu.Lock()
 	n.Evidence = w.evidence
 	d.wmu.Unlock()
@@ -1001,6 +1002,9 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 		return &protocol.WorkerHandbackResult{Status: req.Status, Complete: false, AutoContinued: true}, nil
 	}
 	complete := req.Status == protocol.StatusDone && req.IsComplete()
+	// Read the run's own trace once, before the harness may be stopped, so
+	// the notice and the delivery record carry the same counts.
+	d.noteWorkerStruggle(ctx, w)
 	d.captureWorkerEvidence(w, &complete)
 	committed := d.commitAtHandback(w, req)
 	wipDetail := ""
@@ -1291,6 +1295,7 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 		sessionID: r.SessionID, startedAt: r.StartedAt, taskMsg: r.TaskMsg, mainPath: r.MainPath, worktree: r.Worktree,
 		branch: r.Branch, base: r.Base, title: r.Title}
 	status, note := d.noticeFor(protocol.StopLost)
+	d.noteWorkerStruggle(ctx, w)
 	unlock := d.lockWorktree(w.worktree)
 	result := commitWorkerEndWIP(ctx, w.worktree, w.branch, protocol.StopLost)
 	unlock()
