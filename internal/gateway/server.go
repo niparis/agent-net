@@ -95,12 +95,16 @@ type Gateway struct {
 	// tsChoice is the owner's own-node choice (decision 0058); nil keeps the
 	// machine's Tailscale node. tsNode and tsServer are that node and the
 	// server on its Funnel listener. All three are guarded by publicMu.
-	tsChoice        *tsnode.Choice
-	tsNode          tsnode.Node
-	tsServer        *http.Server
-	limiter         *ratelimit.Limiter
-	opts            Options
-	store           *Store
+	tsChoice *tsnode.Choice
+	tsNode   tsnode.Node
+	tsServer *http.Server
+	limiter  *ratelimit.Limiter
+	opts     Options
+	store    *Store
+	// modelMu guards modelCache, the short-lived live model reads that keep a
+	// burst of MachineGet calls from running a harness each time.
+	modelMu         sync.Mutex
+	modelCache      map[string]gatewayModelCacheEntry
 	skillsMu        sync.Mutex
 	skillProjectsMu sync.Mutex
 	// standing* run addNewSkillProjects in the background, one run at a time.

@@ -153,7 +153,7 @@ func TestNewDaemonAgainstOldGateway(t *testing.T) {
 	cfg := Config{GatewayURL: url, NodeID: "n_old", Token: "t", Hostname: "newbox", StateDir: seededStateDir(t),
 		WorkerGoCache: t.TempDir(), WorkerGoTmp: t.TempDir(),
 		SocketPath: filepath.Join(shortDir(t), "d.sock"), BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
-		Adapters: []Adapter{fa}, HarnessInterval: 50 * time.Millisecond,
+		Adapters: []Adapter{fa},
 		DetectHarnesses: func(context.Context) []protocol.HarnessInfo {
 			select {
 			case detected <- struct{}{}:
@@ -172,13 +172,11 @@ func TestNewDaemonAgainstOldGateway(t *testing.T) {
 	eventually(t, "connected to the old gateway", d.Connected)
 	fa.setSessions(fakeSession("na", "alice"))
 	eventually(t, "session registered", func() bool { return fa.host.SessionID("fake", "na") == "s_old" })
-	// Several detections run; each update is refused and the link stays up.
-	for i := 0; i < 3; i++ {
-		select {
-		case <-detected:
-		case <-time.After(scaled(2 * time.Second)):
-			t.Fatal("detection did not run again")
-		}
+	// Detection runs once. Its update is refused and the link stays up.
+	select {
+	case <-detected:
+	case <-time.After(scaled(2 * time.Second)):
+		t.Fatal("detection did not run")
 	}
 	time.Sleep(100 * time.Millisecond)
 	if !d.Connected() {

@@ -591,6 +591,11 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 		if err = json.Unmarshal(raw, &p); err == nil {
 			data, err = d.resumeWorkerSession(ctx, p.Session, p.Requester)
 		}
+	case protocol.FrameModelTest:
+		var p protocol.ModelTestRequest
+		if err = json.Unmarshal(raw, &p); err == nil {
+			data = d.testModel(ctx, p)
+		}
 	}
 	if res, eerr := protocol.EncodeResult(h.ID, data, err); eerr == nil {
 		l.write(ctx, res)

@@ -7,12 +7,16 @@ import (
 
 // WorkerProfile is a named model and harness in the network's worker roster.
 type WorkerProfile struct {
-	Name                string                             `json:"name"`
-	Harness             string                             `json:"harness"`
-	Model               string                             `json:"model"`
-	Effort              string                             `json:"effort,omitempty"`
-	AddedBy             string                             `json:"added_by"`
-	AddedAt             int64                              `json:"added_at"`
+	Name    string `json:"name"`
+	Harness string `json:"harness"`
+	Model   string `json:"model"`
+	Effort  string `json:"effort,omitempty"`
+	AddedBy string `json:"added_by"`
+	AddedAt int64  `json:"added_at"`
+	// Machines are the machines this profile is configured for. Empty means
+	// any machine with the harness. Availability also counts machines where
+	// the profile already started a worker successfully.
+	Machines            []string                           `json:"machines,omitempty"`
 	Available           *bool                              `json:"available,omitempty"`
 	Closest             []string                           `json:"closest,omitempty"`
 	MachinesChecked     []string                           `json:"machines_checked,omitempty"`
@@ -70,6 +74,12 @@ type WorkerProfileRequest struct {
 	Harness string `json:"harness,omitempty"`
 	Model   string `json:"model,omitempty"`
 	Effort  string `json:"effort,omitempty"`
+	// Machines limits the profile to these machines. Empty means any machine
+	// with the harness.
+	Machines []string `json:"machines,omitempty"`
+	// Test asks for a short real start with the model before the profile is
+	// saved.
+	Test bool `json:"test,omitempty"`
 }
 type WorkerProfileFrame struct {
 	WorkerProfileRequest

@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -20,59 +19,23 @@ func (d *Daemon) inventory() ([]protocol.HarnessInfo, int) {
 	return append([]protocol.HarnessInfo{}, d.installed...), d.hgen
 }
 
-// harnessLoop detects the installed harnesses at start and then every
-// HarnessInterval, retrying empty model probes sooner, and tells the gateway
-// after each run. Detection can take
-// seconds (it runs `opencode models`), so it never blocks start-up: hello
-// carries the inventory when it is ready, and an update follows when it is not.
+// harnessLoop detects the installed harnesses once at start and tells the
+// gateway. There is no periodic model scan: a model list is read from the
+// harness live when someone asks for one. Detection still runs when a harness
+// update check needs it (harness_update.go).
 func (d *Daemon) harnessLoop(ctx context.Context) {
-	retry := d.cfg.HarnessRetryDelay
-	if retry <= 0 {
-		retry = time.Minute
-	}
-	nextRetry := retry
-	for {
-		_, incomplete := d.refreshHarnessInventory(ctx)
-		if ctx.Err() != nil {
-			return
-		}
-		delay := d.cfg.HarnessInterval
-		if incomplete {
-			delay = min(nextRetry, d.cfg.HarnessInterval)
-			if nextRetry < 30*time.Minute {
-				nextRetry *= 2
-				if nextRetry > 30*time.Minute {
-					nextRetry = 30 * time.Minute
-				}
-			}
-		} else {
-			nextRetry = retry
-		}
-		t := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			t.Stop()
-			return
-		case <-t.C:
-		}
-	}
+	d.refreshHarnessInventory(ctx)
 }
 
-func (d *Daemon) refreshHarnessInventory(ctx context.Context) ([]protocol.HarnessInfo, bool) {
+func (d *Daemon) refreshHarnessInventory(ctx context.Context) []protocol.HarnessInfo {
 	d.hdetectMu.Lock()
 	defer d.hdetectMu.Unlock()
 	list := d.cfg.DetectHarnesses(ctx)
 	if ctx.Err() != nil {
-		return nil, false
+		return nil
 	}
 	if list == nil {
 		list = []protocol.HarnessInfo{}
-	}
-	incomplete := false
-	for _, h := range list {
-		if h.Path != "" && modelsProbed(h.Name) && len(h.Models) == 0 {
-			incomplete = true
-		}
 	}
 	d.hmu.Lock()
 	list = keepMissingHarnesses(d.installed, list, d.Logf)
@@ -95,7 +58,7 @@ func (d *Daemon) refreshHarnessInventory(ctx context.Context) ([]protocol.Harnes
 	}
 	d.Logf("harnesses: %s", strings.Join(names, ","))
 	d.publishHarnesses(ctx)
-	return list, incomplete
+	return list
 }
 
 func modelsProbed(name string) bool { return name == "opencode" || name == "pi" || name == "agy" }

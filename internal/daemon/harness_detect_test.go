@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -59,42 +58,28 @@ func TestHarnessDetectionKeepsClaudeWhenProbeMisses(t *testing.T) {
 	bin := fakeHarnessScript(t, dir, "claude")
 	logs := &logBuf{}
 	var runs atomic.Int32
-	var once sync.Once
-	missed := make(chan struct{})
 	detect := func(context.Context) []protocol.HarnessInfo {
 		if runs.Add(1) == 1 {
 			return []protocol.HarnessInfo{{Name: "claude", Path: bin, Version: "2.1.0"}}
 		}
-		once.Do(func() { close(missed) })
 		// The claude probe failed or timed out, so this run does not report it.
 		return []protocol.HarnessInfo{{Name: "opencode", Path: bin, Version: "fake"}}
 	}
 	logger := log.New(logs, "", 0)
-	d := &Daemon{cfg: Config{DetectHarnesses: detect, HarnessInterval: 20 * time.Millisecond, Logger: logger}, log: logger}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		d.harnessLoop(ctx)
-	}()
-	select {
-	case <-missed:
-	case <-time.After(2 * time.Second):
-		cancel()
-		<-done
-		t.Fatal("the second detection run did not happen")
-	}
-	eventually(t, "the previous claude entry is kept", func() bool {
-		list, _ := d.inventory()
-		for _, h := range list {
-			if h.Name == "claude" && h.Path == bin {
-				return true
-			}
+	d := &Daemon{cfg: Config{DetectHarnesses: detect, Logger: logger}, log: logger}
+	ctx := context.Background()
+	d.refreshHarnessInventory(ctx)
+	d.refreshHarnessInventory(ctx)
+	list, _ := d.inventory()
+	found := false
+	for _, h := range list {
+		if h.Name == "claude" && h.Path == bin {
+			found = true
 		}
-		return false
-	})
-	cancel()
-	<-done
+	}
+	if !found {
+		t.Fatalf("the previous claude entry was not kept: %+v", list)
+	}
 	if len(logs.lines("claude")) == 0 {
 		t.Fatalf("the missed probe was not logged:\n%s", logs.b.String())
 	}
@@ -125,37 +110,25 @@ func TestHarnessBinaryMissingGivesClearMessage(t *testing.T) {
 	}
 }
 
-// TestHarnessDetectionRetriesEmptyModels verifies a failed probe retries quickly
-// and a successful retry returns to the normal interval.
-func TestHarnessDetectionRetriesEmptyModels(t *testing.T) {
+// TestHarnessLoopListsModelsOnce verifies the loop detects the harness once and
+// never runs a periodic model scan again.
+func TestHarnessLoopListsModelsOnce(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	var runs atomic.Int32
 	detect := func(context.Context) []protocol.HarnessInfo {
-		n := runs.Add(1)
-		h := protocol.HarnessInfo{Name: "opencode", Path: "/fake/opencode"}
-		if n > 1 {
-			h.Models = []string{"provider/model"}
-		}
-		return []protocol.HarnessInfo{h}
+		runs.Add(1)
+		return []protocol.HarnessInfo{{Name: "opencode", Path: "/fake/opencode", Models: []string{"provider/model"}}}
 	}
 	logger := log.New(&logBuf{}, "", 0)
-	d := &Daemon{cfg: Config{DetectHarnesses: detect, HarnessInterval: 6 * time.Hour, HarnessRetryDelay: 20 * time.Millisecond, Logger: logger}, log: logger}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); d.harnessLoop(ctx) }()
-	defer func() { cancel(); <-done }()
-	eventually(t, "retry publishes models", func() bool {
-		list, _ := d.inventory()
-		return len(list) == 1 && len(list[0].Models) == 1
-	})
-	// Wait longer than the retry delay without delaying the test for the normal interval.
-	select {
-	case <-time.After(100 * time.Millisecond):
-	case <-done:
-		t.Fatal("detection loop stopped")
+	d := &Daemon{cfg: Config{DetectHarnesses: detect, Logger: logger}, log: logger}
+	d.harnessLoop(context.Background())
+	time.Sleep(100 * time.Millisecond)
+	if got := runs.Load(); got != 1 {
+		t.Fatalf("detection ran %d times, want exactly 1 (no periodic model scan)", got)
 	}
-	if got := runs.Load(); got != 2 {
-		t.Fatalf("detection ran %d times, want 2 after a complete run", got)
+	list, _ := d.inventory()
+	if len(list) != 1 || len(list[0].Models) != 1 {
+		t.Fatalf("inventory after the one detection: %+v", list)
 	}
 }
 

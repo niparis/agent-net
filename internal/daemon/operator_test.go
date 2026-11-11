@@ -39,7 +39,7 @@ func startNodeCfg(t *testing.T, g *testGateway, o nodeOpts, mutate func(*Config)
 	if o.adapter != nil {
 		cfg.Adapters = []Adapter{o.adapter}
 	}
-	cfg.DetectHarnesses, cfg.HarnessInterval = o.detect, o.interval
+	cfg.DetectHarnesses = o.detect
 	// A test must never find a harness of the machine it runs on. A test that
 	// wants the direct lookup sets HarnessSearch itself.
 	cfg.HarnessSearch = &harnesses.Options{PATH: t.TempDir(), Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }}

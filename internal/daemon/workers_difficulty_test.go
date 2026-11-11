@@ -70,7 +70,7 @@ func TestWorkerAutomaticProfileResolvesProviderPerMachine(t *testing.T) {
 	}
 }
 
-func TestWorkerAutomaticSkipsStaleProfileWithReason(t *testing.T) {
+func TestWorkerAutomaticTriesProfileMissingFromStoredList(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
@@ -78,19 +78,16 @@ func TestWorkerAutomaticSkipsStaleProfileWithReason(t *testing.T) {
 	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "terra pi", Harness: "opencode", Model: "fake/deleted", AddedBy: w.ownerID()}); err != nil {
 		t.Fatal(err)
 	}
-	score := 42.3
-	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
-	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "fake/m1"})
+	score := 42.3
+	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/deleted", Score: &score})
 
 	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Task: "x"})
-	if err != nil || res.Model != "fake/m1" {
-		t.Fatalf("choice: %+v, %v", res, err)
+	if err != nil || res.Model != "fake/deleted" {
+		t.Fatalf("a profile missing from the stored list was skipped: %+v, %v", res, err)
 	}
-	for _, want := range []string{"stale profile", "terra pi", "fake/deleted", "not listed"} {
-		if !strings.Contains(res.ModelNote, want) {
-			t.Errorf("model note %q does not explain stale profile %q", res.ModelNote, want)
-		}
+	if strings.Contains(res.ModelNote, "stale profile") {
+		t.Fatalf("model note still calls the profile stale: %q", res.ModelNote)
 	}
 }
 

@@ -75,7 +75,9 @@ func TestMachineGetListsModelScores(t *testing.T) {
 	if _, err := s.SetNodeHarnesses(node, []protocol.HarnessInfo{{Name: "claude", Models: []string{"claude-haiku-5-5", "unscored-model"}}}); err != nil {
 		t.Fatal(err)
 	}
-	g := &Gateway{store: s, conns: map[string]*nodeConn{node: {id: node}}}
+	nc, _ := fakeModelNodeFor(t, map[string][]string{"claude": {"claude-haiku-5-5", "unscored-model"}})
+	nc.id = node
+	g := &Gateway{store: s, conns: map[string]*nodeConn{node: nc}}
 
 	out, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "host", Include: []string{"models"}})
 	if err != nil {

@@ -29,8 +29,8 @@ func TestWorkerProfileAvailability(t *testing.T) {
 	if len(got[0].MachinesChecked) != 1 || got[0].MachinesChecked[0] != "pi-host" {
 		t.Errorf("profile machine checks: %+v", got[0])
 	}
-	if got[1].Available != nil || len(got[1].MachinesChecked) != 0 {
-		t.Errorf("offline-only harness should be unknown: %+v", got[1])
+	if got[1].Available == nil || *got[1].Available || len(got[1].MachinesChecked) != 1 || got[1].MachinesChecked[0] != "offline-host" {
+		t.Errorf("offline-only harness should be known but unavailable: %+v", got[1])
 	}
 	if got[2].Available == nil || *got[2].Available != available || len(got[2].Closest) != 0 || got[2].MachinesChecked[0] != "oc-host" {
 		t.Errorf("available profile: %+v", got[2])
@@ -52,14 +52,14 @@ func TestWorkerProfileAvailabilityResolvesAcrossProviders(t *testing.T) {
 	if got[0].Available == nil || !*got[0].Available || len(got[0].MachineAvailability) != 3 {
 		t.Fatalf("profile should resolve on both provider variants: %+v", got[0])
 	}
-	if got[0].MachineAvailability[0].Machine != "ambiguous" || got[0].MachineAvailability[0].Available ||
+	if got[0].MachineAvailability[0].Machine != "ambiguous" || !got[0].MachineAvailability[0].Available ||
 		got[0].MachineAvailability[1].Machine != "mac" || !got[0].MachineAvailability[1].Available ||
 		got[0].MachineAvailability[2].Machine != "research" || !got[0].MachineAvailability[2].Available ||
 		got[0].MachineAvailability[2].ResolvedModel != "openai/gpt-6.1-terra" {
 		t.Fatalf("per-machine provider resolution: %+v", got[0].MachineAvailability)
 	}
-	if got[1].Available == nil || *got[1].Available || len(got[1].MachineAvailability) != 3 {
-		t.Fatalf("ambiguous name should resolve nowhere: %+v", got[1])
+	if got[1].Available == nil || !*got[1].Available || len(got[1].MachineAvailability) != 3 {
+		t.Fatalf("availability comes from the machine, not a stored model list: %+v", got[1])
 	}
 	var ambiguous []string
 	for _, machine := range got[1].MachineAvailability {
@@ -97,6 +97,33 @@ func TestWorkerProfileRoster(t *testing.T) {
 	profiles, err = s.WorkerProfiles()
 	if err != nil || len(profiles) != 0 {
 		t.Fatalf("after removal %+v %v", profiles, err)
+	}
+}
+
+func TestWorkerProfileAvailabilityFromConfigAndHistory(t *testing.T) {
+	profiles := []protocol.WorkerProfile{
+		{Name: "configured", Harness: "opencode", Model: "m", Machines: []string{"build"}},
+		{Name: "history", Harness: "opencode", Model: "m"},
+	}
+	nodes := []protocol.NodeView{
+		{NodeID: "n_build", Hostname: "build", Online: true, Harnesses: []protocol.HarnessInfo{{Name: "opencode"}}},
+		{NodeID: "n_other", Hostname: "other", Online: true, Harnesses: []protocol.HarnessInfo{{Name: "opencode"}}},
+		{NodeID: "n_old", Hostname: "old", Online: false, Harnesses: []protocol.HarnessInfo{{Name: "opencode"}}},
+	}
+	history := map[string]map[string]bool{"history": {"n_old": true}}
+	got := withWorkerProfileAvailability(profiles, nodes, nil, history)
+	if len(got[0].MachinesChecked) != 1 || got[0].MachinesChecked[0] != "build" || got[0].Available == nil || !*got[0].Available {
+		t.Fatalf("configured machine: %+v", got[0])
+	}
+	if len(got[1].MachinesChecked) != 3 || got[1].Available == nil || !*got[1].Available {
+		t.Fatalf("history machine: %+v", got[1])
+	}
+	seen := map[string]bool{}
+	for _, m := range got[1].MachineAvailability {
+		seen[m.Machine] = m.Available
+	}
+	if !seen["other"] || seen["old"] {
+		t.Fatalf("per-machine availability: %+v", got[1].MachineAvailability)
 	}
 }
 

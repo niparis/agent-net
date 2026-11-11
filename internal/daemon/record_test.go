@@ -221,6 +221,9 @@ func TestHarnessInventoryReachesGateway(t *testing.T) {
 	current = []protocol.HarnessInfo{{Name: "claude", Path: "/u/claude", Version: "2.2.0 (Claude Code)"},
 		{Name: "opencode", Path: "/u/opencode", Version: "v2", Models: []string{"openai/gpt-x"}}}
 	mu.Unlock()
+	// Detection is no longer periodic. A harness update or a start can run it
+	// again, and the gateway gets the change as a node.harnesses update.
+	n.d.refreshHarnessInventory(context.Background())
 	eventually(t, "new inventory", func() bool {
 		ns := nodes()
 		return len(ns) == 1 && len(ns[0].Harnesses) == 2
@@ -229,11 +232,6 @@ func TestHarnessInventoryReachesGateway(t *testing.T) {
 	if ns[0].Harnesses[1].Name != "opencode" || ns[0].Harnesses[1].Models[0] != "openai/gpt-x" || ns[0].Harnesses[0].Version != "2.2.0 (Claude Code)" {
 		t.Fatalf("stored: %+v", ns[0].Harnesses)
 	}
-	// Let it run a few more times with no change.
-	mu.Lock()
-	seen := runs
-	mu.Unlock()
-	eventually(t, "more runs", func() bool { mu.Lock(); defer mu.Unlock(); return runs >= seen+2 })
 	if n := len(g.logs.lines("event=node.harnesses")); n != 2 {
 		t.Fatalf("change lines: %d, want 2 (first report and the change): %v", n, g.logs.lines("event=node.harnesses"))
 	}

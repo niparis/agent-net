@@ -126,9 +126,10 @@ func TestWorkerModelIsResolved(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "openai/m1, openai/m2") {
 		t.Errorf("tie: %v", err)
 	}
-	// Claude has no list: the alias passes through.
+	// Claude has no list: the alias passes through. The fake harness still
+	// fails to run, but no stored-list refusal happens before the launch.
 	if _, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Model: "sonnet", Task: "x"}); err != nil &&
-		strings.Contains(err.Error(), "model") {
+		strings.Contains(err.Error(), "no claude model matches") {
 		t.Errorf("claude alias: %v", err)
 	}
 }

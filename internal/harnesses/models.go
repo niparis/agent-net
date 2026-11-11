@@ -212,6 +212,41 @@ func readCodexAnswer(sc *bufio.Scanner, id int) (json.RawMessage, bool) {
 	return nil, false
 }
 
+// ListModels reads a harness's model list right now, with the same bounded
+// probe the detector uses. An empty result means no list could be read. Claude
+// has a fixed list. The caller's context bounds the opencode, pi, agy and codex
+// reads with ModelsTimeout.
+func ListModels(ctx context.Context, name, path string, o Options) []string {
+	s := prepare(ctx, &o)
+	switch name {
+	case "claude":
+		return ClaudeModels()
+	case "opencode":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		if out, err := o.Run(mctx, path, "models"); err == nil {
+			return ParseModels(out)
+		}
+	case "pi":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		if out, err := o.Run(mctx, path, "--list-models"); err == nil {
+			return ParsePiModels(out)
+		}
+	case "agy":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		models, _ := agyModels(mctx, path, s.path)
+		return models
+	case "codex":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		models, _ := codexModels(mctx, path, s.path)
+		return models
+	}
+	return nil
+}
+
 // ParseAgyModels reads the output of `agy models`: a first line "Fetching
 // available models...", then one "<id>\t<label>" per line. The id is kept as
 // printed: the effort is part of it (gemini-3.8-flash-low), not a suffix.
