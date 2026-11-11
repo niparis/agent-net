@@ -2264,6 +2264,16 @@ func (s *Store) migrate() error {
 					result, err = tx.Exec(`SELECT 1`)
 				}
 			}
+		} else if strings.Contains(migrations[i], "Why the session was last compacted") {
+			var has int
+			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='last_compacted_reason'`).Scan(&has)
+			if err == nil {
+				if has == 0 {
+					result, err = tx.Exec(migrations[i])
+				} else {
+					result, err = tx.Exec(`SELECT 1`)
+				}
+			}
 		} else if strings.Contains(migrations[i], "Worker run generations fence") {
 			var has int
 			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='worker_run_generation'`).Scan(&has)

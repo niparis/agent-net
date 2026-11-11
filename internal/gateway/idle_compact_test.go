@@ -37,6 +37,48 @@ func TestCompactionCacheWindowMigration(t *testing.T) {
 	}
 }
 
+// TestSessionCompactionCutoverWithoutRevisionRow covers an old database that
+// reaches the compaction cutover with no setting_revision row, as a fixture or
+// a replay that starts before the settings schema does. The cutover creates the
+// row and still writes the CTO's 50 percent threshold, and a second replay
+// leaves it alone.
+func TestSessionCompactionCutoverWithoutRevisionRow(t *testing.T) {
+	s, _ := newTestStore(t)
+	// An old database: no revision row and none of the values this cutover
+	// writes, so the checks below prove the cutover wrote them.
+	for _, q := range []string{
+		`DELETE FROM setting_revision`,
+		`DELETE FROM setting_values WHERE key IN ('sessions.compaction_threshold_percent','sessions.cache_window_seconds')`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rewind := migrationVersion(t, "Session compaction settings cutover") - 1
+	for i := 0; i < 2; i++ {
+		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.migrate(); err != nil {
+			t.Fatalf("replay %d: %v", i, err)
+		}
+	}
+	var threshold int
+	if err := s.db.QueryRow(`SELECT value FROM setting_values WHERE key='sessions.compaction_threshold_percent' AND level='agent' AND scope='cto' AND item=''`).Scan(&threshold); err != nil {
+		t.Fatal(err)
+	}
+	if threshold != 50 {
+		t.Fatalf("CTO threshold=%d, want 50", threshold)
+	}
+	var revisions int
+	if err := s.db.QueryRow(`SELECT count(*) FROM setting_revision WHERE id=1`).Scan(&revisions); err != nil {
+		t.Fatal(err)
+	}
+	if revisions != 1 {
+		t.Fatalf("revision rows=%d, want 1", revisions)
+	}
+}
+
 func TestCompactionThresholdTeamAndAgentLevels(t *testing.T) {
 	s, _ := newTestStore(t)
 	for _, q := range []string{

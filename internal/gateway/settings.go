@@ -250,6 +250,13 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 // cutoverSessionCompactionTx folds the old CTO compaction controls into the
 // shared session keys (decision 0132). It runs once, from the schema migration.
 func (s *Store) cutoverSessionCompactionTx(tx *sql.Tx) error {
+	// A replay can reach this migration on a database that has no revision row
+	// yet: an old fixture, or a rewind into the migrations before the settings
+	// schema. Create it the way the schema does so the cutover still writes the
+	// CTO threshold.
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO setting_revision (id, revision) VALUES (1, 0)`); err != nil {
+		return err
+	}
 	var revision int64
 	if err := tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&revision); err != nil {
 		return err
@@ -270,20 +277,21 @@ func (s *Store) cutoverSessionCompactionTx(tx *sql.Tx) error {
 	// have no entry. The default key covers providers without their own value.
 	windows := map[string]int64{}
 	var rawWindow string
-	err = tx.QueryRow(`SELECT value FROM setting_values WHERE key='sessions.idle_compaction_after' AND level='network' AND scope='network' AND item=''`).Scan(&rawWindow)
-	if err == nil {
+	switch err := tx.QueryRow(`SELECT value FROM setting_values WHERE key='sessions.idle_compaction_after' AND level='network' AND scope='network' AND item=''`).Scan(&rawWindow); err {
+	case nil:
 		var text string
 		if json.Unmarshal([]byte(rawWindow), &text) == nil {
 			if d, derr := time.ParseDuration(text); derr == nil && d > 0 {
 				windows["default"] = int64(d / time.Second)
 			}
 		}
-	} else if err != sql.ErrNoRows {
+	case sql.ErrNoRows:
+	default:
 		return err
 	}
 	var legacy string
-	err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_settings'`).Scan(&legacy)
-	if err == nil {
+	switch err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_settings'`).Scan(&legacy); err {
+	case nil:
 		var old struct {
 			Compaction struct {
 				CacheWindowSeconds map[string]int `json:"cache_window_seconds"`
@@ -296,12 +304,13 @@ func (s *Store) cutoverSessionCompactionTx(tx *sql.Tx) error {
 				}
 			}
 		}
-	} else if err != sql.ErrNoRows {
+	case sql.ErrNoRows:
+	default:
 		return err
 	}
 	if len(windows) > 0 {
 		var existing string
-		err = tx.QueryRow(`SELECT value FROM setting_values WHERE key='sessions.cache_window_seconds' AND level='network' AND scope='network' AND item=''`).Scan(&existing)
+		err := tx.QueryRow(`SELECT value FROM setting_values WHERE key='sessions.cache_window_seconds' AND level='network' AND scope='network' AND item=''`).Scan(&existing)
 		if err == nil {
 			var have map[string]int64
 			if json.Unmarshal([]byte(existing), &have) == nil {
@@ -324,9 +333,11 @@ func (s *Store) cutoverSessionCompactionTx(tx *sql.Tx) error {
 		changed = true
 	}
 	if changed {
-		_, err = tx.Exec(`UPDATE setting_revision SET revision=revision+1 WHERE id=1`)
+		if _, err := tx.Exec(`UPDATE setting_revision SET revision=revision+1 WHERE id=1`); err != nil {
+			return err
+		}
 	}
-	return err
+	return nil
 }
 
 // settingsCutoverActor identifies an internal migration in history. It is
