@@ -50,7 +50,7 @@ func SubscriptionProvider(harness, model string, quotas *Quotas) bool {
 	switch {
 	case harness == "claude" || harness == "codex" || harness == "agy":
 		return true
-	case p == "codex" || p == "opencode-go":
+	case p == "codex" || p == "opencode-go" || p == "alibaba":
 		return true
 	}
 	reading, ok := quotas.Provider(p)

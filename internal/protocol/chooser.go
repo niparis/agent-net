@@ -171,7 +171,11 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 			reasons = append(reasons, name+" (max unknown: unscored)")
 			continue
 		}
-		reasons = append(reasons, fmt.Sprintf("%s (max %s, score %g, %s)", name, WorkerMaximumLevel(score, minimums), score, fit))
+		scoreText := fmt.Sprintf("%g", score)
+		if s, sOk := workerCandidateScore(c, scores); sOk && s.FallbackEffort != "" {
+			scoreText = fmt.Sprintf("%g via %s", score, s.FallbackEffort)
+		}
+		reasons = append(reasons, fmt.Sprintf("%s (max %s, score %s, %s)", name, WorkerMaximumLevel(score, minimums), scoreText, fit))
 		if !isAdequate {
 			continue
 		}

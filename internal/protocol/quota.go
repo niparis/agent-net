@@ -182,7 +182,7 @@ func QuotaProviderForModelProvider(modelProvider string) string {
 		return "zai"
 	case "google", "gemini", "agy", "antigravity":
 		return "agy"
-	case "alibaba", "qwen":
+	case "alibaba", "qwen", "alibaba-token-plan":
 		return "alibaba"
 	case "minimax":
 		return "minimax"

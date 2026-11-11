@@ -451,3 +451,20 @@ func TestQuotaRefusalAgyPerFamily(t *testing.T) {
 		t.Fatalf("flash warned: %s", w)
 	}
 }
+
+func TestWorkerCandidateFallbackRoster(t *testing.T) {
+	c := WorkerModelCandidate{
+		Name:    "deepseek alibaba high",
+		Harness: "opencode",
+		Model:   "alibaba-token-plan/deepseek-v4.1-flash-1017",
+		Effort:  "high",
+	}
+	_, err := ChooseWorkerModel([]WorkerModelCandidate{c}, "hard", nil, nil, nil, nil, &WorkerRotation{})
+	if err == nil {
+		t.Fatal("expected error for hard level, got nil")
+	}
+	want := "deepseek alibaba high (max normal, score 32.5 via max, poor)"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("roster text %q does not contain %q", err.Error(), want)
+	}
+}

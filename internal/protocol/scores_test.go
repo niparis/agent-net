@@ -11,7 +11,7 @@ func TestModelScore(t *testing.T) {
 		ok        bool
 	}{
 		{"deepseek/deepseek-v4.1-flash:max", nil, 32.5, "artificialanalysis", true},
-		{"deepseek/deepseek-v4.1-flash:high", nil, 0, "", false},
+		{"deepseek/deepseek-v4.1-flash:high", nil, 32.5, "artificialanalysis", true},
 		{"unknown", nil, 0, "", false},
 		{"deepseek/deepseek-v4.1-flash:high", []ModelScore{{Match: "deepseek-v4.1-flash", Score: 45, Source: "owner"}}, 45, "owner", true},
 		{"p/model:high", []ModelScore{{Match: "model", Score: 20, Source: "owner"}, {Match: "p/model:high", Score: 50, Source: "owner"}}, 50, "owner", true},
@@ -86,7 +86,7 @@ func TestScoreEffort(t *testing.T) {
 		score float64
 		ok    bool
 	}{
-		{"gpt-6.1-terra:high", 42.3, true}, {"gpt-6.1-terra:low", 29.2, true}, {"gpt-6.1-terra", 38.1, true}, {"gpt-6.1-terra:ultra", 0, false}, {"kimi-k3.1-pro", 46, true},
+		{"gpt-6.1-terra:high", 42.3, true}, {"gpt-6.1-terra:low", 29.2, true}, {"gpt-6.1-terra", 38.1, true}, {"gpt-6.1-terra:ultra", 51, true}, {"kimi-k3.1-pro", 46, true},
 		// agy names the effort after a dash.
 		{"gemini-4-argon-high", 50.4, true}, {"claude-opus-5-5-high", 51.7, true}, {"gemini-3.8-flash-low", 22.3, true},
 	} {
@@ -107,7 +107,7 @@ func TestScoreHarnessDefaultEffort(t *testing.T) {
 		effort string
 		score  float64
 		ok     bool
-	}{{"high", 42.3, true}, {"", 38.1, true}, {"max", 51, true}, {"ultra", 0, false}} {
+	}{{"high", 42.3, true}, {"", 38.1, true}, {"max", 51, true}, {"ultra", 51, true}} {
 		got, ok := LookupModelScoreWithDefaultEffort("gpt-6.1-terra", tt.effort, nil)
 		if ok != tt.ok || ok && got.Score != tt.score {
 			t.Errorf("%s: %+v %v", tt.effort, got, ok)
@@ -137,5 +137,28 @@ func TestRegisteredProfileScores(t *testing.T) {
 		if !ok || (tt.score != 0 && got.Score != tt.score) {
 			t.Errorf("%s: %+v %v", tt.model, got, ok)
 		}
+	}
+}
+
+func TestScoreProviderPrefixedBaseModel(t *testing.T) {
+	// Provider-prefixed model id resolves to base model score
+	got, ok := LookupModelScoreWithDefaultEffort("alibaba-token-plan/deepseek-v4.1-flash-1017", "max", nil)
+	if !ok || got.Score != 32.5 {
+		t.Fatalf("provider-prefixed base model score: got %+v %v, want 32.5", got, ok)
+	}
+
+	// Effort fallback to nearest higher effort
+	got, ok = LookupModelScoreWithDefaultEffort("alibaba-token-plan/deepseek-v4.1-flash-1017", "high", nil)
+	if !ok || got.Score != 32.5 || got.FallbackEffort != "max" {
+		t.Fatalf("effort fallback: got %+v %v, want 32.5 via max", got, ok)
+	}
+
+	// Falls back to base model deepseek-v4.1-flash when exact build has none
+	overrides := []ModelScore{
+		{Match: "deepseek-v4.1-flash", Effort: "high", Score: 30, Source: "test"},
+	}
+	got, ok = LookupModelScoreWithDefaultEffort("alibaba-token-plan/deepseek-v4.1-flash-9999", "high", overrides)
+	if !ok || got.Score != 30 {
+		t.Fatalf("fallback to base model when build has none: got %+v %v, want 30", got, ok)
 	}
 }
