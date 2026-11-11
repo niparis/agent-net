@@ -266,22 +266,16 @@ func TestConversationsPageGroupsAPeerPairAndItsBurst(t *testing.T) {
 	}
 }
 
-// TestMessagesPairGIDMigrationUpgradesPopulatedDatabase builds the messages
-// table as it is on a gateway that predates the thread columns, fills it with
-// history, and then upgrades it through OpenStore. SQLite refuses to add a
-// STORED generated column to a table that already exists, so the first
-// migration adds the columns as VIRTUAL, and the next one rewrites them as the
-// plain columns the Messages page reads. This test walks that upgrade and the
-// values it fills.
-func TestMessagesPairGIDMigrationUpgradesPopulatedDatabase(t *testing.T) {
-	path := seededStorePath(t, "gw.db")
-	s, err := OpenStore(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Strip the thread columns, their triggers and their indexes, and step the
-	// version back one, so the file looks like one written before the last
-	// migration.
+// preThreadVersion is the schema version v0.5.25 ships: the last migration
+// before the message thread columns. Every real gateway upgrades straight from
+// it, so the Messages page must work after an upgrade from this version.
+const preThreadVersion = 174
+
+// stripMessagesThreadSchema removes the stored thread columns, their triggers
+// and their indexes, so a test can reopen the file as a gateway written before
+// the thread migration.
+func stripMessagesThreadSchema(t *testing.T, s *Store) {
+	t.Helper()
 	for _, stmt := range []string{
 		`DROP TRIGGER IF EXISTS messages_thread_ai`,
 		`DROP TRIGGER IF EXISTS messages_thread_au`,
@@ -298,11 +292,105 @@ func TestMessagesPairGIDMigrationUpgradesPopulatedDatabase(t *testing.T) {
 		`ALTER TABLE messages DROP COLUMN worker_lifecycle`,
 		`ALTER TABLE messages DROP COLUMN blocked`,
 		`ALTER TABLE messages DROP COLUMN worker_side`,
-		`DELETE FROM schema_version WHERE version = (SELECT MAX(version) FROM schema_version)`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
 		}
+	}
+}
+
+// TestMessagesThreadMigrationUpgradesV0525Database walks the upgrade every real
+// gateway makes: the file is at the v0.5.25 schema, which has no thread
+// columns, and OpenStore must add them and page the history. The migration
+// loop only runs migrations above the stored version, so this test caught the
+// release where migration 173 was reused and the page then failed with "no
+// such index: messages_normal_threads".
+func TestMessagesThreadMigrationUpgradesV0525Database(t *testing.T) {
+	path := seededStorePath(t, "gw.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Build the v0.5.25 messages schema: no thread columns, and the version it
+	// shipped with, so only the thread migration can add them.
+	stripMessagesThreadSchema(t, s)
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version > ?`, preThreadVersion); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	insertConversationMessage(t, s, "m_system", "c_system", "agent-net", "s_a", "a system notice", base.Add(-5*time.Minute))
+	insertConversationMessage(t, s, "m_pair_one", "c_one", "s_b", "s_a", "first line", base.Add(-4*time.Minute))
+	insertConversationMessage(t, s, "m_pair_two", "c_two", "s_a", "s_b", "a reply", base.Add(-3*time.Minute))
+	insertConversationMessage(t, s, "m_started", "c_started", "s_w", "s_a",
+		"[agent-net worker notice]\nstatus: started\n", base.Add(-2*time.Minute))
+	insertConversationMessage(t, s, "m_blocked", "c_three", "s_a", "s_b", "I am blocked on the merge", base.Add(-time.Minute))
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = OpenStore(path)
+	if err != nil {
+		t.Fatalf("upgrading a v0.5.25 gateway: %v", err)
+	}
+	defer s.Close()
+	checkThreadColumns(t, s)
+	page, err := s.ConversationsPage(protocol.QueryConversations{Limit: 50})
+	if err != nil {
+		t.Fatalf("page after upgrading a v0.5.25 gateway: %v", err)
+	}
+	// The two messages between s_a and s_b and the blocked one are one thread,
+	// whatever conversation id each was sent with, and the started notice is
+	// not a normal thread.
+	if page.Total != 2 {
+		t.Fatalf("total = %d, want 2 threads: %+v", page.Total, page.Conversations)
+	}
+	var pair *protocol.ConversationView
+	for i := range page.Conversations {
+		if !page.Conversations[i].System {
+			pair = &page.Conversations[i]
+		}
+	}
+	if pair == nil {
+		t.Fatalf("no peer thread in %+v", page.Conversations)
+	}
+	if pair.ID != "pair:s_a\x00s_b" || pair.Count != 3 || !pair.Blocked {
+		t.Errorf("pair thread = %q count=%d blocked=%v, want pair:s_a/s_b count=3 blocked=true",
+			pair.ID, pair.Count, pair.Blocked)
+	}
+	if pair.LastLine != "I am blocked on the merge" {
+		t.Errorf("last line = %q", pair.LastLine)
+	}
+}
+
+// TestMessagesPairGIDMigrationUpgradesPopulatedDatabase builds the messages
+// table as the first, unreleased draft of the thread migration left it: the
+// three VIRTUAL generated columns and their index. A database like that exists
+// only on development machines, but it must end in the same schema as a
+// v0.5.25 upgrade.
+func TestMessagesPairGIDMigrationUpgradesPopulatedDatabase(t *testing.T) {
+	path := seededStorePath(t, "gw.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stripMessagesThreadSchema(t, s)
+	for _, col := range []struct{ name, typ, expr string }{
+		{"pair_gid", "TEXT", messagePairGIDSQL},
+		{"worker_lifecycle", "INTEGER", messageWorkerLifecycleSQL},
+		{"blocked", "INTEGER", messageBlockedSQL},
+	} {
+		if _, err := s.db.Exec(`ALTER TABLE messages ADD COLUMN ` + col.name + ` ` + col.typ +
+			` GENERATED ALWAYS AS (` + col.expr + `) VIRTUAL`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.db.Exec(`CREATE INDEX messages_pair_gid ON messages
+		(pair_gid, created_at, conversation_id, worker_lifecycle, blocked, sender, owner_approved, id)`); err != nil {
+		t.Fatal(err)
+	}
+	// The draft ran as version 173, before the two v0.5.25 migrations landed.
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version > 173`); err != nil {
+		t.Fatal(err)
 	}
 	base := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 	insertConversationMessage(t, s, "m_system", "c_system", "agent-net", "s_a", "a system notice", base.Add(-5*time.Minute))
@@ -319,42 +407,7 @@ func TestMessagesPairGIDMigrationUpgradesPopulatedDatabase(t *testing.T) {
 		t.Fatalf("upgrading a populated gateway: %v", err)
 	}
 	defer s.Close()
-	// xinfo hidden=0 marks a plain column, 2 a VIRTUAL generated one and 3 a
-	// STORED one. The page index only covers the read when the columns are
-	// plain.
-	rows, err := s.db.Query(`SELECT name, hidden FROM pragma_table_xinfo('messages')
-		WHERE name IN ('pair_gid','worker_lifecycle','blocked','worker_side') ORDER BY name`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	hidden := map[string]int{}
-	for rows.Next() {
-		var name string
-		var h int
-		if err := rows.Scan(&name, &h); err != nil {
-			t.Fatal(err)
-		}
-		hidden[name] = h
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"pair_gid", "worker_lifecycle", "blocked", "worker_side"} {
-		if hidden[name] != 0 {
-			t.Errorf("%s hidden = %d, want 0 (plain column)", name, hidden[name])
-		}
-	}
-	for _, index := range []string{"messages_pair_gid", "messages_worker_side", "messages_worker_conversations"} {
-		var count int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master
-			WHERE type='index' AND name=?`, index).Scan(&count); err != nil {
-			t.Fatal(err)
-		}
-		if count != 1 {
-			t.Errorf("%s index count = %d, want 1", index, count)
-		}
-	}
+	checkThreadColumns(t, s)
 	want := map[string]struct {
 		gid       string
 		lifecycle int
@@ -393,6 +446,53 @@ func TestMessagesPairGIDMigrationUpgradesPopulatedDatabase(t *testing.T) {
 	}
 	if seen != len(want) {
 		t.Errorf("read %d rows, want %d", seen, len(want))
+	}
+	page, err := s.ConversationsPage(protocol.QueryConversations{Limit: 50})
+	if err != nil {
+		t.Fatalf("page after upgrading a populated gateway: %v", err)
+	}
+	if page.Total != 2 {
+		t.Errorf("total = %d, want 2 threads", page.Total)
+	}
+}
+
+// checkThreadColumns asserts the upgrade ended in the schema the page reads:
+// plain columns, not the generated ones (xinfo hidden=0) and the thread
+// indexes.
+func checkThreadColumns(t *testing.T, s *Store) {
+	t.Helper()
+	rows, err := s.db.Query(`SELECT name, hidden FROM pragma_table_xinfo('messages')
+		WHERE name IN ('pair_gid','worker_lifecycle','blocked','worker_side') ORDER BY name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	hidden := map[string]int{}
+	for rows.Next() {
+		var name string
+		var h int
+		if err := rows.Scan(&name, &h); err != nil {
+			t.Fatal(err)
+		}
+		hidden[name] = h
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"pair_gid", "worker_lifecycle", "blocked", "worker_side"} {
+		if hidden[name] != 0 {
+			t.Errorf("%s hidden = %d, want 0 (plain column)", name, hidden[name])
+		}
+	}
+	for _, index := range []string{"messages_pair_gid", "messages_worker_side", "messages_worker_conversations", "messages_normal_threads"} {
+		var count int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master
+			WHERE type='index' AND name=?`, index).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Errorf("%s index count = %d, want 1", index, count)
+		}
 	}
 }
 

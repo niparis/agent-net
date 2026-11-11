@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, messagesPairGIDMigration, messagesThreadPlainMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, messagesThreadMigration}
 
 // messagePairGIDSQL is the thread key of one message: the unordered pair of
 // parties, or the conversation id when one side is agent-net.
@@ -1303,39 +1303,14 @@ const messageBlockedSQL = `CASE WHEN body LIKE '%blocked on%' OR body LIKE '%blo
  OR body LIKE '%blocked:%' OR body LIKE '%is blocked%' OR body LIKE '%I am blocked%'
  THEN 1 ELSE 0 END`
 
-// messagesPairGIDMigration stores the thread key and its page index on
-// databases written before the stored Messages list grouped by thread. It runs
-// first on every such gateway; messagesThreadPlainMigration then turns the
-// three VIRTUAL generated columns into the plain ones the page reads, because
-// SQLite seeks the row for a generated value even when an index holds it.
-// The columns are added in the migration loop only when absent, so a replay is
-// safe.
-const messagesPairGIDMigration = `
--- Message pair grouping columns (the Messages tab's threads)
-ALTER TABLE messages ADD COLUMN pair_gid TEXT GENERATED ALWAYS AS (
- CASE
-  WHEN sender = 'agent-net' OR recipient = 'agent-net' THEN conversation_id
-  WHEN sender < recipient THEN 'pair:' || sender || char(0) || recipient
-  ELSE 'pair:' || recipient || char(0) || sender END) VIRTUAL;
-ALTER TABLE messages ADD COLUMN worker_lifecycle INTEGER GENERATED ALWAYS AS (
- CASE WHEN body LIKE '[agent-net worker notice]%' AND (
-  instr(body, char(10)||'status: started'||char(10)) > 0 OR
-  instr(body, char(10)||'status: difficulty'||char(10)) > 0 OR
-  instr(body, char(10)||'status: queued'||char(10)) > 0 OR
-  instr(body, char(10)||'status: not started'||char(10)) > 0) THEN 1 ELSE 0 END) VIRTUAL;
-ALTER TABLE messages ADD COLUMN blocked INTEGER GENERATED ALWAYS AS (
- CASE WHEN body LIKE '%blocked on%' OR body LIKE '%blocked by%' OR body LIKE '%blocked:%'
-  OR body LIKE '%is blocked%' OR body LIKE '%I am blocked%' THEN 1 ELSE 0 END) VIRTUAL;
-CREATE INDEX IF NOT EXISTS messages_pair_gid ON messages
- (pair_gid, created_at, conversation_id, worker_lifecycle, blocked, sender, owner_approved, id);
--- The worker lookup runs on every conversations page. These partial indexes
--- hold only the worker notices and task briefs, so a history without workers
--- reads almost nothing.
-CREATE INDEX IF NOT EXISTS messages_worker_notices ON messages (sender)
- WHERE body LIKE '[agent-net worker notice]%';
-CREATE INDEX IF NOT EXISTS messages_worker_briefs ON messages (recipient)
- WHERE body LIKE '[agent-net worker brief]%';
-`
+// messagesThreadMigration stores the thread key and the worker side as plain
+// columns and builds the indexes the Messages page reads. It is one migration
+// because the earlier pair-column and plain-column migrations were never
+// released: a gateway upgrading from v0.5.25 arrives with no thread columns at
+// all, while a development database may still hold the VIRTUAL generated
+// columns the first draft added. storeThreadColumnsPlain handles both, and the
+// column check makes a replay safe.
+const messagesThreadMigration = `SELECT 1 /* Message thread columns stored as plain columns */;`
 
 // storeThreadColumnsPlain rewrites the message thread columns as plain
 // columns and fills them. A VIRTUAL generated column makes SQLite fetch the
@@ -1381,17 +1356,36 @@ func storeThreadColumnsPlain(tx *sql.Tx) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`UPDATE messages SET pair_gid = ` + messagePairGIDSQL +
+	// The worker side asks whether either party is a worker. Asking the full
+	// rule of every message row makes a ghost party scan its own messages, which
+	// costs seconds on a real gateway: build the worker ids once, from the same
+	// rule, then read them per row.
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS temp.messages_worker_ids;
+		CREATE TEMP TABLE messages_worker_ids (id TEXT PRIMARY KEY);
+		INSERT OR IGNORE INTO messages_worker_ids SELECT id FROM sessions WHERE worker <> '';
+		INSERT OR IGNORE INTO messages_worker_ids SELECT DISTINCT m.sender FROM messages m
+			WHERE m.body LIKE '[agent-net worker notice]%'
+			AND instr(m.body, char(10)||'status: not started'||char(10)) = 0
+			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.sender);
+		INSERT OR IGNORE INTO messages_worker_ids SELECT DISTINCT m.recipient FROM messages m
+			WHERE m.body LIKE '[agent-net worker brief]%'
+			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.recipient);
+		UPDATE messages SET pair_gid = ` + messagePairGIDSQL +
 		`, worker_lifecycle = ` + messageWorkerLifecycleSQL +
 		`, blocked = ` + messageBlockedSQL +
-		`, worker_side = ` + messageWorkerSideSQL("messages")); err != nil {
+		`, worker_side = CASE
+			WHEN sender IN (SELECT id FROM messages_worker_ids) THEN sender
+			WHEN recipient IN (SELECT id FROM messages_worker_ids) THEN recipient
+			ELSE '' END;
+		DROP TABLE messages_worker_ids;`); err != nil {
 		return err
 	}
 	// Replace the indexes so the page reads only the index, then start the
 	// triggers that keep the plain values current.
 	if _, err := tx.Exec(`DROP INDEX IF EXISTS messages_pair_gid;
 		DROP INDEX IF EXISTS messages_worker_side;
-		DROP INDEX IF EXISTS messages_worker_conversations;`); err != nil {
+		DROP INDEX IF EXISTS messages_worker_conversations;
+		DROP INDEX IF EXISTS messages_normal_threads;`); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(messagesThreadIndexesSQL); err != nil {
@@ -1400,25 +1394,6 @@ func storeThreadColumnsPlain(tx *sql.Tx) error {
 	_, err := tx.Exec(messagesThreadTriggersSQL())
 	return err
 }
-
-// messagesThreadIndexes keeps the thread and worker indexes in place when the
-// migration replays on a database that already has the generated columns.
-const messagesThreadIndexes = `
-CREATE INDEX IF NOT EXISTS messages_pair_gid ON messages
- (pair_gid, created_at, conversation_id, worker_lifecycle, blocked, sender, owner_approved, id);
-CREATE INDEX IF NOT EXISTS messages_worker_notices ON messages (sender)
- WHERE body LIKE '[agent-net worker notice]%';
-CREATE INDEX IF NOT EXISTS messages_worker_briefs ON messages (recipient)
- WHERE body LIKE '[agent-net worker brief]%';
-`
-
-// messagesThreadPlainMigration rewrites the thread columns as plain columns,
-// filled at insert time by messagesThreadTriggersSQL. A VIRTUAL generated
-// column makes SQLite fetch the row even when an index holds its value, so the
-// page index could never cover the read and the Messages page read every
-// message body twice. The migration loop does the rewrite only when needed, so
-// a replay is safe.
-const messagesThreadPlainMigration = `SELECT 1 /* Message thread columns stored as plain columns */;`
 
 // messageWorkerSideSQL is the worker session of one message row: the sender
 // when it is a worker, else the recipient. A worker is a session marked worker,
@@ -1989,6 +1964,37 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		if strings.Contains(migrations[i], "idle announce fingerprint columns") {
+			for _, col := range []struct{ name, spec string }{
+				{"check_announced_at", "INTEGER NOT NULL DEFAULT 0"},
+				{"check_fingerprint", "TEXT NOT NULL DEFAULT ''"},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('session_checks') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE session_checks ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "nudge covered due column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivery_step_tasks') WHERE name='last_notice_due_at'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE delivery_step_tasks ADD COLUMN last_notice_due_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
+		}
 		// Message thread columns stored as plain columns: SQLite cannot add a
 		// STORED generated column to a table that already exists, and a VIRTUAL
 		// one makes the page index useless for covering a read, so the columns
@@ -2155,23 +2161,6 @@ func (s *Store) migrate() error {
 					result, err = tx.Exec(migrations[i])
 				} else {
 					result, err = tx.Exec(`SELECT 1`)
-				}
-			}
-		} else if strings.Contains(migrations[i], "Message pair grouping columns") {
-			var has int
-			// Generated columns are left out of pragma_table_info.
-			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_xinfo('messages')
-				WHERE name IN ('pair_gid','worker_lifecycle','blocked')`).Scan(&has)
-			if err == nil {
-				switch {
-				case has == 0:
-					result, err = tx.Exec(migrations[i])
-				case has == 3:
-					// A rewound database keeps the columns; only the indexes
-					// may still need creating.
-					result, err = tx.Exec(messagesThreadIndexes)
-				default:
-					err = fmt.Errorf("messages has only %d of the 3 thread columns", has)
 				}
 			}
 		} else {
