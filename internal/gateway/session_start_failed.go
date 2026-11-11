@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -41,7 +42,17 @@ func (s *Store) sessionStartFailureNotice(p protocol.SessionStartFailure) (proto
 	if p.ErrorCode != "" {
 		body += "Reason code: " + protocol.CleanWaitingText(p.ErrorCode) + ". "
 	}
-	reason := protocol.CleanWaitingText(p.Error)
+	// Failure details contain the server, file and recovery action. They are
+	// message content, so the waiting-field limit must not truncate them.
+	reason := strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		if unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, p.Error)), " ")
 	if reason == "" {
 		reason = "no reason was reported"
 	}

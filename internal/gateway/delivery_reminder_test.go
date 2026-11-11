@@ -118,10 +118,11 @@ func recentStepMessage(t *testing.T, r *deliveryRig, change string, ref protocol
 	}
 }
 
+// Count original step notice parts once; an envelope repeats their bodies.
 func taskBodies(t *testing.T, r *deliveryRig) []string {
 	t.Helper()
 	rows, err := r.s.db.Query(`SELECT body FROM messages WHERE recipient=? AND sender='agent-net'
-		AND (body LIKE '[agent-net step task%') ORDER BY rowid`, r.caller)
+		AND idem_key NOT LIKE 'nudge:%' AND (body LIKE '[agent-net step task%') ORDER BY rowid`, r.caller)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -264,7 +264,7 @@ func TestSessionStartBlockedOnMCPApprovalIsReportedToTheRequester(t *testing.T) 
 			return false
 		}
 		for _, m := range msgs {
-			if m.To == cto && strings.Contains(m.Body, "mcp_approval_needed") && strings.Contains(m.Body, r.ID) && strings.Contains(m.Body, "tenebrae-library") {
+			if m.To == cto && m.From == "agent-net" && m.Type == protocol.TypeNotification && strings.Contains(m.Body, "mcp_approval_needed") && strings.Contains(m.Body, r.ID) && strings.Contains(m.Body, "tenebrae-library") {
 				return true
 			}
 		}

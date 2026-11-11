@@ -1826,3 +1826,7 @@ Gateway-created worker tasks use the reserved `agent-net` sender. A worker
 notice may reply to such a task while going to the worker's recorded owner.
 The gateway checks the task marker, its recipient and the stored worker owner.
 Public message sends still cannot use the reserved sender.
+
+Session-start failure notices to the requesting CTO use the gateway's reserved
+sender path. Public agent sends still cannot use that sender or start CTO
+conversations. Failure details are message text, not the capped waiting field.

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"github.com/niparis/agent-net/internal/protocol"
+	"strings"
 	"testing"
 )
 
@@ -67,5 +68,19 @@ func TestAutomaticWorkerTaskRejectsEndedWorker(t *testing.T) {
 	}
 	if _, _, err := s.storeAutomaticMessage(protocol.MsgSend{Recipient: worker, Type: protocol.TypeRequest, Body: "automatic task", WorkerTask: true}); err == nil {
 		t.Fatal("stored task for ended worker")
+	}
+}
+
+func TestSessionStartFailureNoticeKeepsMCPDetails(t *testing.T) {
+	s, _ := newTestStore(t)
+	_, requester := twoSessions(t, s)
+	owner := ownerSession(t, s)
+	detail := strings.Repeat("long launch path/", 20) + "tenebrae-library blockedjob mcp_servers"
+	m, err := s.sessionStartFailureNotice(protocol.SessionStartFailure{Owner: owner, Requester: requester, StartID: "start_mcp", ErrorCode: protocol.StartErrorMCPApprovalNeeded, Error: detail})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.From != "agent-net" || !strings.Contains(m.Body, "tenebrae-library blockedjob mcp_servers") {
+		t.Fatalf("failure notice lost actionable details: %q", m.Body)
 	}
 }

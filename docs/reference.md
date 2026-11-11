@@ -4137,3 +4137,9 @@ keeps its audit record and is marked sent when included, so it is not sent
 again at its former due time. Verify reminders also record the covered due
 slot to preserve the 30m, 2h, 8h, 24h, then daily backoff. Cadences, settings
 and defaults do not change. Steps waiting on an event remain ineligible.
+
+A pause on one part of a queued nudge envelope removes only that part. Other
+eligible parts still arrive. Paused nudges cannot trigger the one-hour
+lookahead. Session-start failure notifications keep the complete actionable
+error text, including MCP server details, and use the agent-net sender even
+when the requesting session is the CTO.

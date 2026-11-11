@@ -38,6 +38,16 @@ func (s *Store) dueNudgeSessions(stuck time.Duration) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
+	pausedReply := s.nudgeLookup(s.db, "reply_reminder")
+	for id := range out {
+		paused, err := pausedReply(id)
+		if err != nil {
+			return nil, err
+		}
+		if paused {
+			delete(out, id)
+		}
+	}
 	if stuck <= 0 {
 		return out, nil
 	}
@@ -49,15 +59,32 @@ func (s *Store) dueNudgeSessions(stuck time.Duration) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	var stuckSessions []string
 	for rows.Next() {
 		var id string
-		if err := rows.Scan(&id); err != nil {
+		if err = rows.Scan(&id); err != nil {
+			break
+		}
+		stuckSessions = append(stuckSessions, id)
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	pausedStuck := s.nudgeLookup(s.db, "stuck_step")
+	for _, id := range stuckSessions {
+		paused, err := pausedStuck(id)
+		if err != nil {
 			return nil, err
 		}
-		out[id] = true
+		if !paused {
+			out[id] = true
+		}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (g *Gateway) dispatchNudge(ctx context.Context, m protocol.Message) {

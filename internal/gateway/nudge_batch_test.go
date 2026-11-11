@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -211,5 +212,105 @@ func TestRemindOfflineCountWithoutDueNudge(t *testing.T) {
 	}
 	if counts.PendingRemindersOffline != 1 {
 		t.Fatalf("offline count=%d want=1", counts.PendingRemindersOffline)
+	}
+}
+
+func TestNudgeWaitingStepNotPulledForward(t *testing.T) {
+	r, c, ref := waitingRig(t)
+	reportWaiting(t, r, c, ref, "")
+	var waitingAt, lastNotice int64
+	if err := r.s.db.QueryRow(`SELECT waiting_at,last_notice_at FROM delivery_step_tasks WHERE change_id=? AND step='verify'`, c.ID).Scan(&waitingAt, &lastNotice); err != nil {
+		t.Fatal(err)
+	}
+	r.clk.t = r.clk.t.Add(10 * time.Minute)
+	req, _, err := send(r.s, r.sonnet, r.caller, "please reply", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, r.s, r.clk, r.caller, 3*time.Minute)
+	r.clk.t = r.clk.t.Add(3 * time.Minute)
+	waitingDispatch(r)
+	got := nudgeMessages(t, r)
+	if len(got) != 1 || !strings.Contains(got[0].Body, req.ID) || strings.Contains(got[0].Body, c.ID) {
+		t.Fatalf("waiting step pulled forward: %+v", got)
+	}
+	var at, notice int64
+	if err := r.s.db.QueryRow(`SELECT waiting_at,last_notice_at FROM delivery_step_tasks WHERE change_id=? AND step='verify'`, c.ID).Scan(&at, &notice); err != nil {
+		t.Fatal(err)
+	}
+	if at != waitingAt || notice != lastNotice {
+		t.Fatalf("waiting state changed: at=%d/%d notice=%d/%d", at, waitingAt, notice, lastNotice)
+	}
+}
+
+func TestNudgeEnvelopeExcludesPausedParts(t *testing.T) {
+	for _, kind := range []string{"step_reminder", "reply_reminder"} {
+		for _, after := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/after=%v", kind, after), func(t *testing.T) {
+				r := setupMergerRig(t)
+				if err := r.s.SetChief(protocol.ChiefSetRequest{SessionID: r.sonnet}, "owner"); err != nil {
+					t.Fatal(err)
+				}
+				nudgeAgent(t, r.s, r.caller, "envelope-agent")
+				change := r.submit(r.a, r.workerSubmit("feature/paused-envelope", commitA)).Change.Change.ID
+				r.g.flushStepTasks(r.caller)
+				if _, err := r.s.db.Exec(`UPDATE messages SET state='delivered' WHERE recipient=?`, r.caller); err != nil {
+					t.Fatal(err)
+				}
+				req, _, err := send(r.s, r.sonnet, r.caller, "please reply", "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				idleSince(t, r.s, r.clk, r.caller, 3*time.Minute)
+				r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+				apply := func() { nudgeApply(t, r.s, r.sonnet, map[string]any{"kind": kind, "agent": "envelope-agent"}) }
+				if !after {
+					apply()
+				}
+				waitingDispatch(r)
+				if after {
+					got := nudgeMessages(t, r)
+					if len(got) != 1 || len(got[0].Batch) != 2 {
+						t.Fatalf("expected envelope before pause: %+v", got)
+					}
+					apply()
+				}
+				got := nudgeMessages(t, r)
+				if len(got) != 1 {
+					t.Fatalf("want one remaining nudge: %+v", got)
+				}
+				held, allowed := change, req.ID
+				if kind == "reply_reminder" {
+					held, allowed = req.ID, change
+				}
+				if strings.Contains(got[0].Body, held) || !strings.Contains(got[0].Body, allowed) {
+					t.Fatalf("paused part included: %s", got[0].Body)
+				}
+			})
+		}
+	}
+}
+
+func TestNudgePausedReplyDoesNotTriggerLookahead(t *testing.T) {
+	r := setupMergerRig(t)
+	if err := r.s.SetChief(protocol.ChiefSetRequest{SessionID: r.sonnet}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	nudgeAgent(t, r.s, r.caller, "lookahead-agent")
+	r.submit(r.a, r.workerSubmit("feature/paused-trigger", commitA))
+	r.g.flushStepTasks(r.caller)
+	if _, err := r.s.db.Exec(`UPDATE messages SET state='delivered' WHERE recipient=?`, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	r.clk.t = r.clk.t.Add(100 * time.Minute)
+	if _, _, err := send(r.s, r.sonnet, r.caller, "please reply", ""); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, r.s, r.clk, r.caller, 3*time.Minute)
+	r.clk.t = r.clk.t.Add(3 * time.Minute)
+	nudgeApply(t, r.s, r.sonnet, map[string]any{"kind": "reply_reminder", "agent": "lookahead-agent"})
+	waitingDispatch(r)
+	if got := nudgeMessages(t, r); len(got) != 0 {
+		t.Fatalf("paused request triggered future step reminder: %+v", got)
 	}
 }
