@@ -907,10 +907,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "settings.undo", q)
 	case protocol.OpNudgeUndo:
 		var q protocol.NudgeUndoArgs
-		if json.Unmarshal(raw, &q) != nil || q.ID == "" || q.Receipt == "" {
+		if json.Unmarshal(raw, &q) != nil || q.Pause() == "" || q.Receipt == "" {
 			return nil, true, errors.New("nudge_undo needs id and receipt")
 		}
-		res, err = d.call(ctx, protocol.FrameNudgeUndo, protocol.NudgeUndoRequest{NudgeUndoArgs: q, Owner: d.ownerSessionID()})
+		res, err = d.call(ctx, protocol.FrameNudgeUndo, protocol.NudgeUndoRequest{PauseID: q.Pause(), Receipt: q.Receipt, Owner: d.ownerSessionID()})
 	case protocol.OpPermissionUndo:
 		var q protocol.PermissionUndoRequest
 		if json.Unmarshal(raw, &q) != nil || q.ID == "" {
