@@ -1286,7 +1286,8 @@ CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (
 -- compaction threshold into the shared sessions key.
 `, `
 -- Why the session was last compacted: fill N% or idle (decision 0132).
-ALTER TABLE sessions ADD COLUMN last_compacted_reason TEXT NOT NULL DEFAULT '';
+-- The column is added in the migration loop so replaying is safe.
+SELECT 1 /* last compacted reason column */;
 `, `
 -- Team level settings targets (decision 0132).
 DROP TRIGGER IF EXISTS settings_target_identity_repo_delete;
@@ -2116,6 +2117,19 @@ func (s *Store) migrate() error {
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
+		if strings.Contains(migrations[i], "last compacted reason column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='last_compacted_reason'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN last_compacted_reason TEXT NOT NULL DEFAULT ''`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
 		var result sql.Result
 		if strings.Contains(migrations[i], "ALTER TABLE repo_leads ADD COLUMN lead_session") {
 			for _, table := range []string{"repo_leads", "teams"} {
@@ -2257,16 +2271,6 @@ func (s *Store) migrate() error {
 		} else if strings.Contains(migrations[i], "Message hand-off: the lead who passed") {
 			var has int
 			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name='handed_off_by'`).Scan(&has)
-			if err == nil {
-				if has == 0 {
-					result, err = tx.Exec(migrations[i])
-				} else {
-					result, err = tx.Exec(`SELECT 1`)
-				}
-			}
-		} else if strings.Contains(migrations[i], "Why the session was last compacted") {
-			var has int
-			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='last_compacted_reason'`).Scan(&has)
 			if err == nil {
 				if has == 0 {
 					result, err = tx.Exec(migrations[i])
