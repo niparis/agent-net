@@ -197,6 +197,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.askCTOTitle(ctx)
 	r.claudeMCP()
 	r.claudeMouseSettings()
+	r.claudeAutoUpdateSettings()
 	r.claudePeerMessages()
 	r.codexMCP()
 	r.claudeHintHook()

@@ -20,6 +20,7 @@ func settingsMatch(t *testing.T, got, want string) bool {
 		}
 		if env, ok := doc["env"].(map[string]any); ok {
 			delete(env, claudesettings.MouseKey)
+			delete(env, claudesettings.AutoUpdateKey)
 			if len(env) == 0 {
 				delete(doc, "env")
 			}

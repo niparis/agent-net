@@ -60,11 +60,13 @@ func (d *Daemon) claudeSettingsFile() string {
 	return claudesettings.File()
 }
 
-// claudeMouseMaintenance is one pass of the mouse work. The daemon runs it at
-// start and from the integrations loop every minute: no timer of its own.
+// claudeMouseMaintenance is one pass of the Claude user settings and session
+// work. The daemon runs it at start and from the integrations loop every
+// minute: no timer of its own.
 func (d *Daemon) claudeMouseMaintenance(ctx context.Context) {
 	now := time.Now()
 	d.ensureClaudeMouseSetting(ctx)
+	d.ensureClaudeAutoUpdateSetting(ctx)
 	d.checkClaudeMouseSessions(ctx, now)
 	d.checkClaudeMouseService(ctx, now)
 }
