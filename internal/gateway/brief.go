@@ -74,13 +74,29 @@ func (s *Store) briefSchedule() (briefSchedule, error) {
 	return out, nil
 }
 
-func (s *Store) ownerSetting(key string) (string, error) {
+func ownerSetting(q askDB, key string) (string, error) {
 	var value string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, key).Scan(&value)
+	err := q.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	return value, err
+}
+
+func (s *Store) ownerSetting(key string) (string, error) {
+	return ownerSetting(s.db, key)
+}
+
+// briefLastWake is the owner-local date of the last wake. Before the wake had
+// its own key, an older gateway wrote it to BriefLastSentKey; read that value
+// as the wake date when the new key is empty, so an upgrade does not wake the
+// chief twice on the same day.
+func briefLastWake(q askDB) (string, error) {
+	wake, err := ownerSetting(q, protocol.BriefLastWakeKey)
+	if err != nil || wake != "" {
+		return wake, err
+	}
+	return ownerSetting(q, protocol.BriefLastSentKey)
 }
 
 func (s *Store) setOwnerSetting(q askDB, key, value string, now time.Time) error {
@@ -91,18 +107,18 @@ func (s *Store) setOwnerSetting(q askDB, key, value string, now time.Time) error
 
 // briefDue says whether the brief of the current owner-local date is due and
 // has not gone out.
-func briefDue(now time.Time, loc *time.Location, hour, minute int, lastSent string) bool {
+func briefDue(now time.Time, loc *time.Location, hour, minute int, lastWake string) bool {
 	local := now.In(loc)
 	today := time.Date(local.Year(), local.Month(), local.Day(), hour, minute, 0, 0, loc)
-	return !local.Before(today) && lastSent != local.Format("2006-01-02")
+	return !local.Before(today) && lastWake != local.Format("2006-01-02")
 }
 
 // nextBriefRun is the next time the timer would send. When the brief is due
 // today and has not gone out, it is the next minute tick.
-func nextBriefRun(now time.Time, loc *time.Location, hour, minute int, lastSent string) time.Time {
+func nextBriefRun(now time.Time, loc *time.Location, hour, minute int, lastWake string) time.Time {
 	local := now.In(loc)
 	today := time.Date(local.Year(), local.Month(), local.Day(), hour, minute, 0, 0, loc)
-	if lastSent == local.Format("2006-01-02") {
+	if lastWake == local.Format("2006-01-02") {
 		return today.AddDate(0, 0, 1)
 	}
 	if local.Before(today) {
@@ -123,7 +139,7 @@ func (s *Store) checkDailyBrief(now time.Time) (protocol.Message, bool, error) {
 	if err != nil || chief == "" {
 		return protocol.Message{}, false, err
 	}
-	last, err := s.ownerSetting(protocol.BriefLastSentKey)
+	last, err := briefLastWake(s.db)
 	if err != nil || !briefDue(now, sch.loc, sch.hour, sch.minute, last) {
 		return protocol.Message{}, false, err
 	}
@@ -134,11 +150,9 @@ func (s *Store) checkDailyBrief(now time.Time) (protocol.Message, bool, error) {
 	defer tx.Rollback()
 	// Re-read inside the transaction: a tick cannot send twice even if two
 	// callers race.
-	if err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, protocol.BriefLastSentKey).Scan(&last); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return protocol.Message{}, false, err
-		}
-		last = ""
+	last, err = briefLastWake(tx)
+	if err != nil {
+		return protocol.Message{}, false, err
 	}
 	date := now.In(sch.loc).Format("2006-01-02")
 	if !briefDue(now, sch.loc, sch.hour, sch.minute, last) {
@@ -149,7 +163,7 @@ func (s *Store) checkDailyBrief(now time.Time) (protocol.Message, bool, error) {
 	if err != nil {
 		return protocol.Message{}, false, err
 	}
-	if err = s.setOwnerSetting(tx, protocol.BriefLastSentKey, date, now); err != nil {
+	if err = s.setOwnerSetting(tx, protocol.BriefLastWakeKey, date, now); err != nil {
 		return protocol.Message{}, false, err
 	}
 	return m, true, tx.Commit()
@@ -165,8 +179,27 @@ func (s *Store) dailyBriefStatus(now time.Time) (protocol.OwnerBriefResult, erro
 	if out.LastDateSent, err = s.ownerSetting(protocol.BriefLastSentKey); err != nil {
 		return out, err
 	}
+	if out.LastWakeDate, err = briefLastWake(s.db); err != nil {
+		return out, err
+	}
 	if out.LastItemID, err = s.ownerSetting(protocol.BriefLastItemKey); err != nil {
 		return out, err
+	}
+	// An older gateway wrote the wake date to BriefLastSentKey. A delivered
+	// date always has its brief item, so report the newest item's date when
+	// the stored date has no item of its own.
+	if out.LastDateSent != "" {
+		delivered := ""
+		if out.LastItemID != "" {
+			var ref string
+			if err := s.db.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=?`, out.LastItemID).Scan(&ref); err != nil {
+				return out, err
+			}
+			delivered = strings.TrimPrefix(ref, protocol.BriefSourceRef(""))
+		}
+		if delivered != out.LastDateSent {
+			out.LastDateSent = delivered
+		}
 	}
 	if !sch.zoneSet {
 		out.Status = protocol.BriefStatusWaitingZone
@@ -185,7 +218,7 @@ func (s *Store) dailyBriefStatus(now time.Time) (protocol.OwnerBriefResult, erro
 		return out, nil
 	}
 	out.Status = protocol.BriefStatusActive
-	next := nextBriefRun(now, sch.loc, sch.hour, sch.minute, out.LastDateSent)
+	next := nextBriefRun(now, sch.loc, sch.hour, sch.minute, out.LastWakeDate)
 	out.NextRunLocal = next.In(sch.loc).Format("2006-01-02 15:04")
 	out.NextRunUTC = next.UTC().Format(time.RFC3339)
 	return out, nil
@@ -241,6 +274,9 @@ func (s *Store) putOwnerBrief(session string, a protocol.OwnerBriefArgs, now tim
 		return protocol.OwnerBriefResult{}, err
 	}
 	if err = s.setOwnerSetting(tx, protocol.BriefLastItemKey, id, now); err != nil {
+		return protocol.OwnerBriefResult{}, err
+	}
+	if err = s.setOwnerSetting(tx, protocol.BriefLastSentKey, date, now); err != nil {
 		return protocol.OwnerBriefResult{}, err
 	}
 	if err = tx.Commit(); err != nil {

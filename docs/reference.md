@@ -2910,10 +2910,15 @@ gateway never stands in UTC. The zone is resolved again on each tick, so a
 machine that reports its zone later starts the timer. The gateway checks on its minute tick and
 sends the chief one message from `agent-net` on the first tick of each
 owner-local date at or after that time: `Daily brief due for <local date>.
-Write it and deliver it with agent_owner_brief.` The date is stored in
-`owner_settings` (`chief.brief_last_sent`), so a gateway or daemon restart does
+Write it and deliver it with agent_owner_brief.` The wake date is stored in
+`owner_settings` (`chief.brief_last_wake`), so a gateway or daemon restart does
 not send twice, and a tick missed while the gateway was down still sends once
-later that day. The send wakes the chief like any other message.
+later that day. A wake is not a delivery: the delivered date is stored on its
+own, in `chief.brief_last_sent`, and only a delivered brief sets it. An older
+gateway wrote the wake date to `chief.brief_last_sent`; when
+`chief.brief_last_wake` is empty, that older value is read as the wake date, so
+an upgrade does not wake the chief twice on the same day. The send wakes the
+chief like any other message.
 
 **`agent_owner_brief {body, date}`** (any agent session; only the live chief may
 call it, others are refused). `body` is the brief, at most 15 lines, and `date`
@@ -2929,10 +2934,12 @@ agent_owner_brief {"body":"Handled the deploy fix and two reviews.\nDecisions wa
 
 **`agent_owner_brief {}`** reads the schedule instead. It returns `brief_time`,
 the resolved IANA `time_zone`, `next_run_local`, `next_run_utc`,
-`last_date_sent`, `last_item_id` and `status` (`active`, `waiting for the
-owner's time zone` or `no chief of staff`). The next run follows the local
-clock across daylight saving time. The last brief id is also stored in
-`owner_settings` (`chief.brief_last_item`).
+`last_date_sent`, `last_wake_date`, `last_item_id` and `status` (`active`,
+`waiting for the owner's time zone` or `no chief of staff`). `last_date_sent`
+is the owner-local date of the last brief that was actually delivered;
+`last_wake_date` is the date of the last wake, which may have no brief yet. The
+next run follows the local clock across daylight saving time. The last brief id
+is also stored in `owner_settings` (`chief.brief_last_item`).
 
 **`ask_history` `{ask}`** (operator `ask_history`, gateway `ask.history`) returns
 `{"sorts": [...]}`, oldest first. Each sort has `at`, `sorter`, `result`,

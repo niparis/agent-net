@@ -23,9 +23,11 @@ const (
 	BriefStatusLooksInvalid = "invalid chief.brief_time"
 )
 
-// Owner settings for the daily brief schedule and its delivery receipt.
+// Owner settings for the daily brief schedule and its delivery receipt. The
+// wake date and the delivered date are separate: a wake is not a delivery.
 const (
 	BriefLastSentKey  = "chief.brief_last_sent"
+	BriefLastWakeKey  = "chief.brief_last_wake"
 	BriefLastItemKey  = "chief.brief_last_item"
 	briefSourcePrefix = "brief:"
 )
@@ -93,6 +95,7 @@ type OwnerBriefResult struct {
 	NextRunLocal string `json:"next_run_local,omitempty"`
 	NextRunUTC   string `json:"next_run_utc,omitempty"`
 	LastDateSent string `json:"last_date_sent,omitempty"`
+	LastWakeDate string `json:"last_wake_date,omitempty"`
 	LastItemID   string `json:"last_item_id,omitempty"`
 	Status       string `json:"status"`
 }
