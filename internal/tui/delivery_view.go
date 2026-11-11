@@ -385,6 +385,9 @@ func (m Model) deliveryStatusText(ch deliveryChange) (string, lipgloss.Style) {
 	case protocol.StepStateSkipped:
 		return "not needed", sDim
 	case protocol.StepStateWaiting:
+		if ch.Wait != "" {
+			return sanitize(ch.Wait), sDim
+		}
 		return "blocked", sDim
 	case protocol.StepStateNeedsOwner:
 		if ch.Group == groupToTry {

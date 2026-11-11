@@ -463,6 +463,11 @@ func verifyReminderDue(ready, last time.Time) time.Time {
 // stepMessageRecorded reports whether the step already has a live task notice
 // for this session that is newer than the reminder cutoff.
 func (s *Store) stepMessageRecorded(t nodeTaskTarget, cutoff int64) (bool, error) {
+	active, _, err := s.stepWaiting(t)
+	if err != nil || active {
+		return active, err
+	}
+
 	if t.ref.AfterMerge && t.ref.Step == protocol.StepVerify && cutoff != 0 {
 		var ready, last int64
 		var claimed string
@@ -474,8 +479,20 @@ func (s *Store) stepMessageRecorded(t nodeTaskTarget, cutoff int64) (bool, error
 			return s.now().Before(verifyReminderDue(time.Unix(ready, 0), time.Unix(0, last))), nil
 		}
 	}
+	// Waiting retires undelivered notices. Keep their durable send time so
+	// ending the wait cannot bring an ordinary reminder forward or bypass 0s.
+	if !t.ref.AfterMerge || t.ref.Step != protocol.StepVerify || cutoff == 0 {
+		var last int64
+		err := s.db.QueryRow(`SELECT last_notice_at FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND waiting_reason<>''`, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge)).Scan(&last)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
+		if last != 0 && (cutoff == 0 || last >= cutoff) {
+			return true, nil
+		}
+	}
 	var recorded int
-	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
+	err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
 		WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=? AND d.session_id=?
 		AND m.state<>'expired' AND (?=0 OR m.created_at>=?))`,
 		t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session, cutoff, cutoff).Scan(&recorded)
@@ -604,7 +621,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 			AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired')
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
 		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
-		WHERE t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
+		WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
 		AND ((t.owner_node='/merger' AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)) OR (t.owner_node=? AND s.id=c.caller) OR `+sessionRepoSQL+`=t.owner_node OR
 		 (t.owner_node=? AND EXISTS(SELECT 1 FROM delivery_step_delegates a WHERE a.change_id=t.change_id AND a.revision=t.revision
 		 AND a.step=t.step AND a.for_step=t.for_step AND a.after_merge=t.after_merge AND (a.node=`+sessionRepoSQL+` OR a.node='agent:'||COALESCE(s.agent_id,'')))))
@@ -776,7 +793,7 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 	rows, err := g.store.db.Query(`SELECT t.change_id, t.revision, t.step, t.for_step, t.after_merge, t.owner_node, t.created_at, c.caller, c.title
 		FROM delivery_step_tasks t
 		JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
-		WHERE t.completed=0 AND t.claimed_by='' AND (t.step<>'verify' OR t.after_merge=0 OR t.stuck_notified=0)
+		WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by='' AND (t.step<>'verify' OR t.after_merge=0 OR t.stuck_notified=0)
 		AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
 		AND c.caller <> ''
 		AND t.created_at <= ?
@@ -883,7 +900,7 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int6
 	rows, err := g.store.db.Query(`SELECT DISTINCT s.id
   FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
   JOIN sessions s ON s.online=0 AND s.harness='claude' AND s.worker=''
-  WHERE t.completed=0 AND t.claimed_by=''
+  WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by=''
   AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
   AND ((t.owner_node=? AND s.id=c.caller) OR (t.owner_node=? AND EXISTS
    (SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)))
@@ -1184,6 +1201,9 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 					header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String()+"\n"+s.stepContract(c.Project, t.ref.Step), protocol.NeutralizeMarkers(displayOwner),
 					protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(d.pipeline.ReportFields(t.ref), ", "))
 			}
+			waitNote := s.wasWaiting(group)
+			body += waitNote
+			line += waitNote
 			notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContract(c.Project, t.ref.Step), isReminder: t.isReminder})
 			continue
 		}
@@ -1234,6 +1254,9 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		body := fmt.Sprintf("%s%s\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nsteps: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields:\n%s\nClaim and report each step in order: %s.",
 			header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, steps+"\n"+s.stepContracts(c.Project, run), protocol.NeutralizeMarkers(displayOwner),
 			protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(fields, "\n"), order)
+		waitNote := s.wasWaiting(group)
+		body += waitNote
+		line += waitNote
 		notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContracts(c.Project, run), order: order, isReminder: isReminder})
 	}
 	if len(notices) == 0 {
@@ -1607,6 +1630,10 @@ func checkStepReady(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, ref prot
 // claimNodeTask awards a queued task to the first eligible claimant or
 // reporter. found is false when no node task exists for this step.
 func claimNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session, machine string, complete bool) (found bool, err error) {
+	return checkNodeTask(tx, c, ref, session, machine, complete, true)
+}
+
+func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session, machine string, complete, claim bool) (found bool, err error) {
 	var owner, claimed string
 	var completed int
 	err = tx.QueryRow(`SELECT owner_node,claimed_by,completed FROM delivery_step_tasks
@@ -1662,6 +1689,9 @@ func claimNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	}
 	if node != machine || !allowedOwner || worker != "" || online == 0 || harness == "owner" || harness == "bot" || harness == "cto" || (claimed != "" && claimed != session) {
 		return true, reject("%s is owned by node %s", ref, owner)
+	}
+	if !claim {
+		return true, nil
 	}
 	_, err = tx.Exec(`UPDATE delivery_step_tasks SET claimed_by=?,completed=?
 		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,

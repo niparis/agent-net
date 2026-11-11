@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`}
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.
@@ -2304,6 +2304,29 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		if strings.Contains(migrations[i], "delivery step waiting") {
+			for _, column := range []struct{ name, decl string }{{"waiting_reason", "TEXT NOT NULL DEFAULT ''"}, {"waiting_at", "INTEGER NOT NULL DEFAULT 0"}, {"waiting_until", "INTEGER NOT NULL DEFAULT 0"}} {
+				var has int
+				if err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info('delivery_step_tasks') WHERE name=?", column.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec("ALTER TABLE delivery_step_tasks ADD COLUMN " + column.name + " " + column.decl); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+			// Evidence is stored in whole seconds. Clearing the active wait at
+			// insertion also handles evidence recorded in the report's second.
+			if _, err := tx.Exec(`CREATE TRIGGER IF NOT EXISTS delivery_evidence_ends_wait AFTER INSERT ON delivery_evidence
+            BEGIN UPDATE delivery_step_tasks SET waiting_at=0 WHERE change_id=NEW.change_id AND waiting_at<>0; END;`); err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+
 		if strings.Contains(migrations[i], "verify reminder state") {
 			for _, column := range []string{"last_notice_at", "stuck_notified"} {
 				var has int

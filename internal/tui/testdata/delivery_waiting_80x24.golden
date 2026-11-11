@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
+Desk · chief of staff · sorted 0 asks today · log closed (l opens it)
+╭─Needs you · 0────────────────────────────────────────────────────────────────╮
+│ Nothing is waiting for you.                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─In flight · 1────────────────────────────────────────────────────────────────╮
+│   TITLE                      STEP     STATUS                    AGE    DONE  │
+│ ▸ Say what a delivery row w… verify   waiting on owner opens c… 6m     ●●○○○ │
+│     merged: abcdef1                                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Handled for you · 0──────────────────────────────────────────────────────────╮
+│ The chief of staff sorted nothing in the last day.                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Change c_2───────────────────────────────────────────────────────────────────╮
+│ Say what a delivery row waits for                                            │
+│ step verify: waiting on owner opens console (until 2026-11-12T08:00:00Z)     │
+│ with ci-runner (online)                                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter open the change  v show all changes  R refresh  ↑↓ select  ? help

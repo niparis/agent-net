@@ -918,6 +918,11 @@ func hasHint(hints []hint, key string) bool {
 
 func TestDeliveryGoldens(t *testing.T) {
 	scenes := deliveryScenes()
+	waiting := scenes[1]
+	waiting.Step, waiting.StepState = protocol.StepVerify, protocol.StepStateWaiting
+	waiting.Wait = "waiting on owner opens console (until 2026-11-12T08:00:00Z)"
+	waiting.Steps = []deliveryStep{{Name: "verify (after merge)", State: protocol.StepStateWaiting, Note: waiting.Wait}}
+
 	type scene struct {
 		name   string
 		src    *fakeDelivery
@@ -926,6 +931,7 @@ func TestDeliveryGoldens(t *testing.T) {
 		all    bool
 	}
 	for _, s := range []scene{
+		{"delivery_waiting", &fakeDelivery{changes: []deliveryChange{waiting}}, "", false, false},
 		{"delivery_empty", &fakeDelivery{}, "", false, false},
 		{"delivery_error", &fakeDelivery{err: errors.New("the gateway did not type answer in time")}, "", false, false},
 		{"delivery_list", &fakeDelivery{changes: scenes}, "", false, false},

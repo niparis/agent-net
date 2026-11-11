@@ -82,3 +82,14 @@ whether the daemon commits at hand-back, branches on other machines, a direct
 owner approval under `delegated`, and who approves a deploy under `ask`. The
 CTO gets `agent_changes_find` once its tool list has room under its 32 KiB
 schema budget.
+
+## 2026-11-11: steps waiting on events
+
+The owner asked for a step owner to report "waiting on <event>" without
+claiming the task or recording evidence. A waiting step sends no reminders,
+offline wakes or stuck notice. Any new evidence on the change ends the wait,
+regardless of step or revision. Otherwise it expires after 24 hours. With an
+RFC 3339 `until`, that period starts when evidence can first exist. A later
+waiting report replaces the old wait. Normal cadence resumes without replaying
+missed notices. The step task stores the reason and times; step rows and the
+Desk show them. Defaults and settings stay the same.

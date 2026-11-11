@@ -45,6 +45,7 @@ type StepReportArgs struct {
 	Fields map[string]string `json:"fields,omitempty"`
 	DoneBy string            `json:"done_by,omitempty"`
 	Note   string            `json:"note,omitempty"`
+	Until  string            `json:"until,omitempty"`
 }
 
 // OpChangesOwnerFind is the owner's read of the same data, for the TUI: it
