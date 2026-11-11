@@ -240,6 +240,54 @@ func TestChangeSubmitCarriesFixes(t *testing.T) {
 	}
 }
 
+// The hand-back computes the free signals from the committed diff range and
+// sends them with the change. Nothing here can block the hand-back.
+func TestDeliveryHandbackComputesQualitySignals(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	f.answer(protocol.FrameDeliveryNeedsPush, func(json.RawMessage) (any, error) {
+		return protocol.DeliveryNeedsPushResult{}, nil
+	})
+	repo, wt := deliveryWorktree(t)
+	line := "\tif p.Ack || p.Type == protocol.TypeAck {\n\t\treturn\n\t}\n"
+	if err := os.WriteFile(filepath.Join(wt, "server.go"), []byte("package demo\n\nfunc a(p packet) {\n"+line+"}\n\nfunc b(p packet) {\n"+line+"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "workers.go"), []byte("package demo\n\nfunc c(p packet) {\n"+line+"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "signals_test.go"), []byte("package demo\n\nimport (\n\t\"testing\"\n\t\"time\"\n)\n\nfunc helperForSignals(t *testing.T) {\n\t<-time.After(5 * time.Millisecond)\n}\n\nfunc TestSignal(t *testing.T) {\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", ".")
+	gitIn(t, wt, "commit", "-qm", "signals")
+	w := &worker{id: "w_signals", worktree: wt, branch: "feat/x", base: gitHead(t, repo, "main"), owner: "s_owner", sessionID: "s_worker", project: "demo", difficultyUsed: "normal"}
+	id, problem := n.d.recordHandbackChange(context.Background(), w)
+	if id == "" || problem != "" {
+		t.Fatalf("id=%q problem=%q", id, problem)
+	}
+	frames := f.frames(protocol.FrameChangeSubmit)
+	if len(frames) != 1 {
+		t.Fatalf("frames=%d", len(frames))
+	}
+	var q protocol.ChangeSubmitRequest
+	if err := json.Unmarshal(frames[0], &q); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range q.Signals {
+		got = append(got, s.Code)
+	}
+	want := []string{protocol.SignalRepeatedLine, protocol.SignalTestTiming, protocol.SignalTestHelpers}
+	if len(got) != len(want) {
+		t.Fatalf("signals = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("signals = %v, want %v", got, want)
+		}
+	}
+}
+
 // A submit for a branch checked out in another worktree takes that branch's
 // head, and the changes of that worktree, not of the session's folder.
 func TestChangeSubmitOtherBranchOfTheRepository(t *testing.T) {

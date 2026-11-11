@@ -1163,6 +1163,17 @@ func (s *Store) storeStepTaskMessages(targets []nodeTaskTarget) (protocol.Messag
 	return s.storeStepTaskMessagesInternal(targets, false)
 }
 
+// stepSignalBlock is the step task's quality-signal block, one line per
+// signal, or "" when the revision has none. It shows the same lines as the
+// TUI: strength and evidence, never a reason to block.
+func (s *Store) stepSignalBlock(id string, revision int) (string, error) {
+	signals, err := changeSignals(s.db, id, revision)
+	if err != nil || len(signals) == 0 {
+		return "", err
+	}
+	return "quality signals:\n" + strings.Join(protocol.SignalLines(signals), "\n"), nil
+}
+
 func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBatch bool) (protocol.Message, error) {
 	type notice struct {
 		targets    []nodeTaskTarget
@@ -1339,6 +1350,13 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 				if stat == "" {
 					stat = "not available"
 				}
+				signalText, err := s.stepSignalBlock(c.ID, t.revision)
+				if err != nil {
+					return protocol.Message{}, err
+				}
+				if signalText != "" {
+					stat += "\n" + signalText
+				}
 				header := "[agent-net step task]"
 				reminderNote := ""
 				if t.isReminder {
@@ -1378,6 +1396,13 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		}
 		if stat == "" {
 			stat = "not available"
+		}
+		signalText, err := s.stepSignalBlock(c.ID, t.revision)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		if signalText != "" {
+			stat += "\n" + signalText
 		}
 		var fields []string
 		for _, ref := range run {
