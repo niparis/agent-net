@@ -42,7 +42,7 @@ var parallelFrames = map[string]bool{
 	"query.tools_items": true, "query.tools_item": true,
 	"query.usage": true, "query.counts": true, "query.machine_get": true,
 	"learned.list": true, "signal.list": true,
-	"inbox.list": true, "asks.list": true, "desk.log": true, "held.list": true,
+	"inbox.list": true, "asks.list": true, "sign_in.list": true, "query.sign_in": true, "desk.log": true, "held.list": true,
 	"hidden.get": true, "settings.snapshot": true, "node.settings.get": true,
 	"onboarding.get": true, "playbook.get": true,
 	"cto.graph_latest": true, "cto.graph_history": true,

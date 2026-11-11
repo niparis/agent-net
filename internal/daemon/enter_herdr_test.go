@@ -704,3 +704,94 @@ func TestSessionStopPiHerdrPane(t *testing.T) {
 		t.Fatalf("calls: %s", f.calls(t))
 	}
 }
+
+// A sign-in ask opens the allowlisted login command in a herdr pane on this
+// machine. No ask or agent supplies the argv.
+func TestSignInOpenLocalPaneRunsAllowlistedArgv(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	call := func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+		if typ != "query.sign_in" {
+			return nil, false, nil
+		}
+		b, _ := json.Marshal(protocol.SignInTarget{AskID: "i_signin", Provider: "alibaba", Label: "Alibaba Bailian CLI", NodeID: "n_research", Hostname: "research"})
+		return b, true, nil
+	}
+	d := &Daemon{cfg: Config{NodeID: "n_research", Hostname: "research", testGatewayCall: func(ctx context.Context, typ string, p any) (json.RawMessage, bool, error) {
+		return call(ctx, typ, p)
+	}}}
+	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.OpenedHerdr || plan.HerdrPane != "w1:p1" {
+		t.Fatalf("plan %+v", plan)
+	}
+	calls := string(mustRead(t, log))
+	for _, want := range []string{"tab create --label sign in: Alibaba Bailian CLI", "pane run w1:p1", "bl auth login --console"} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("herdr calls %q missing %q", calls, want)
+		}
+	}
+	if strings.Contains(calls, "ssh") {
+		t.Errorf("a local sign-in used ssh: %q", calls)
+	}
+}
+
+// A sign-in ask for another machine opens its pane there and comes back as
+// herdr --remote. It never falls back to ssh.
+func TestSignInOpenRemoteUsesHerdrRemoteNeverSSH(t *testing.T) {
+	bin, _ := fakeOpenHerdr(t)
+	call := func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+		switch typ {
+		case "query.sign_in":
+			b, _ := json.Marshal(protocol.SignInTarget{AskID: "i_signin", Provider: "alibaba", Label: "Alibaba Bailian CLI", NodeID: "n_mac", Hostname: "Nicolas-MBP"})
+			return b, true, nil
+		case "query.sign_in_prepare":
+			b, _ := json.Marshal(protocol.SignInPrepareResult{Opened: true, Host: "Nicolas-MBP", Pane: "w1:p7", Note: "opened sign in: Alibaba Bailian CLI in herdr"})
+			return b, true, nil
+		}
+		return nil, false, nil
+	}
+	d := &Daemon{cfg: Config{NodeID: "n_research", Hostname: "research", testGatewayCall: func(ctx context.Context, typ string, p any) (json.RawMessage, bool, error) {
+		return call(ctx, typ, p)
+	}}}
+	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{bin, "--remote", "Nicolas-MBP"}
+	if !reflect.DeepEqual(plan.Argv, want) {
+		t.Fatalf("remote plan %+v, want argv %v", plan, want)
+	}
+	for _, arg := range plan.Argv {
+		if arg == "ssh" {
+			t.Fatalf("remote sign-in fell back to ssh: %v", plan.Argv)
+		}
+	}
+	if !strings.Contains(plan.Note, "w1:p7") {
+		t.Fatalf("the remote pane is not named: %q", plan.Note)
+	}
+}
+
+// The target daemon opens the pane from a provider key only. A command, or an
+// unknown provider, is refused at that boundary.
+func TestSignInPrepareOpensAllowlistedArgv(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	d := &Daemon{cfg: Config{NodeID: "n_mac", Hostname: "Nicolas-MBP"}}
+	raw, _ := json.Marshal(protocol.SignInPrepare{AskID: "i_signin", Provider: "alibaba"})
+	res, err := d.signInPrepare(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Opened || res.Host != "Nicolas-MBP" || res.Pane != "w1:p1" {
+		t.Fatalf("prepare result %+v", res)
+	}
+	calls := string(mustRead(t, log))
+	if !strings.Contains(calls, "tab create --label sign in: Alibaba Bailian CLI") || !strings.Contains(calls, "bl auth login --console") || strings.Contains(calls, "ssh") {
+		t.Fatalf("herdr calls %q", calls)
+	}
+	bad, _ := json.Marshal(protocol.SignInPrepare{AskID: "i_signin", Provider: "sh -c curl"})
+	if _, err := d.signInPrepare(bad); err == nil {
+		t.Fatal("an unknown provider was accepted")
+	}
+}

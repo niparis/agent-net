@@ -52,6 +52,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpWorkerRotationGet: true, protocol.OpPickerGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
+	protocol.OpSignInOpen: true, "sign_in_list": true, "sign_in_raise": true,
 	protocol.OpLeadSet: true, protocol.OpTeamWrite: true, protocol.OpTeamHistory: true, protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpDeliveryOwnerSet: true, protocol.OpMergerSet: true, protocol.OpGraphUndo: true, protocol.OpRepoCreate: true, protocol.OpRepoArchive: true, protocol.OpAgentCreate: true, protocol.OpAgentTombstone: true,
 	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
 	"settings_write": true, "settings_undo": true, "settings_owner_read": true, protocol.OpChangesOwnerFind: true, protocol.OpChangesOwnerReport: true,
@@ -568,6 +569,23 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "inbox.list", struct{}{})
 	case protocol.OpAsksList:
 		res, err = d.call(ctx, "asks.list", struct{}{})
+	case protocol.OpSignInOpen:
+		var p protocol.SignInOpenRequest
+		if json.Unmarshal(raw, &p) != nil || p.AskID == "" {
+			return nil, true, errors.New("sign_in_open needs an ask")
+		}
+		res, err = d.signInOpen(ctx, p)
+	case "sign_in_list":
+		res, err = d.call(ctx, "sign_in.list", struct{}{})
+	case "sign_in_raise":
+		var p protocol.SignInRaise
+		if json.Unmarshal(raw, &p) != nil || p.Provider == "" {
+			return nil, true, errors.New("sign_in_raise needs a provider")
+		}
+		if len(p.Command) != 0 {
+			return nil, true, errors.New("sign_in_raise takes a provider, never a command")
+		}
+		res, err = d.call(ctx, "sign_in.raise", p)
 	case protocol.OpChiefGet:
 		res, err = d.call(ctx, "chief.get", struct{}{})
 	case protocol.OpChiefSet:
@@ -1430,6 +1448,10 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 			q.HerdrSocket, q.HerdrPaneID = "", "" // the asker's terminal means nothing here
 			data, err = d.localEnter(ctx, q, true)
 		}
+	case protocol.FrameSignInPrepare:
+		// The gateway sends this only after the owner clicked the ask. It names
+		// a provider key; the argv comes from the allowlist.
+		data, err = d.signInPrepare(raw)
 	case "node.session_text":
 		var q protocol.TextQuery
 		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {

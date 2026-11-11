@@ -208,6 +208,23 @@ it only after the owner's answer, with an HTTPS-only browser opener. Approval
 in the browser remains the owner's action. The gateway retries the requested
 public switch and closes the ask on success; switching off withdraws it.
 
+**Sign-in asks.** A `sign_in` ask names a machine, a provider key and the reason
+a CLI needs the owner's interactive login. The command never travels with the
+ask: `protocol.SignInProviders` in `internal/protocol/signin.go` is the fixed
+allowlist, and only its exact argv runs. For now the table has one entry,
+`alibaba` -> `bl auth login --console` for the Alibaba Bailian CLI. The daemon
+raises the ask from a quota error whose remedy is a known login, one per
+machine and provider, and closes it with `signed_in` when that error clears.
+The CTO may call `sign_in_raise` with a provider key and a machine; a command
+field is refused. It may list sign-in asks with `sign_in_list`. Raising grants
+nothing. Only the owner's click (`sign_in_open`) opens a pane, and the CTO
+cannot call that owner-only method. The pane runs on the machine the ask names:
+a local herdr pane, or the target machine's herdr pane shown here with
+`herdr --remote`. There is no ssh fallback, and a machine without herdr answers
+with a note instead. The gateway relay carries only the ask ID and provider
+key, so a compromised machine cannot make another machine run a command of its
+choosing.
+
 **Owner UI and invites.** Session/CTO entry relays an identifier-only request
 to one connected owner TUI, which retains its own herdr context and existing
 entry rules. It cannot carry a command, start plan or terminal flags. A missing

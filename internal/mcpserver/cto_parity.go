@@ -121,7 +121,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("apps.revoke", "Revoke an app and its credentials; cannot be undone.", map[string]ctoField{"id": s("App ID.")})
 	add("mcp_call", "Call an MCP tool.", map[string]ctoField{"server": s("Server name."), "tool": s("Tool."), "arguments": obj("Arguments.")})
 
-	add("owner_operation", "Run an owner operation.", map[string]ctoField{"method": en("Owner method.", strings.Fields(protocol.CTOOperatorReads+" "+protocol.CTOOperatorChanges)...), "arguments": obj("Owner method arguments.")})
+	add("owner_operation", "Run an owner op.", map[string]ctoField{"method": en("Method.", strings.Fields(protocol.CTOOperatorReads+" "+protocol.CTOOperatorChanges)...), "arguments": obj("Arguments.")})
 	add("settings_values_write", "Write setting values.", map[string]ctoField{"changes": settingsChangesField(), "reason": s("Reason.")})
 	add("settings_values_undo", "Undo a settings revision.", map[string]ctoField{"revision": n("Revision.")})
 	add("integrations_set", "Set integrations.", map[string]ctoField{"peer_messages": b("Messages."), "codex_tools": b("Codex."), "hint_hook": b("Hints."), "policy_hook": b("Policy."), "needs_hook": b("Needs you."), "workers_mod": b("Workers."), "quota_axi": b("Quotas.")})

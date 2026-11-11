@@ -59,6 +59,9 @@ type quotaState struct {
 	// note is why no reading can be made yet, for example missing Node. It is
 	// shown only in the empty state of the TUI Quotas tab.
 	note string
+	// path is the quota-axi that produced the last reading. A sign-in recheck
+	// runs it again once the login pane closes.
+	path string
 }
 
 func (q *quotaState) lock()   { q.mu.Lock() }
@@ -83,6 +86,18 @@ func (q *quotaState) set(p *protocol.Quotas) {
 	q.lock()
 	defer q.unlock()
 	q.last, q.at, q.err = p, time.Now(), ""
+}
+
+func (q *quotaState) setPath(path string) {
+	q.lock()
+	defer q.unlock()
+	q.path = path
+}
+
+func (q *quotaState) pathText() string {
+	q.lock()
+	defer q.unlock()
+	return q.path
 }
 
 // fail keeps the last good reading and records why the newest run failed.
@@ -255,6 +270,10 @@ func (d *Daemon) refreshQuota(ctx context.Context, path string) *protocol.Quotas
 		}
 	}
 	d.quota.set(q)
+	d.quota.setPath(path)
+	// A provider whose remedy is a known login raises one Desk ask, and the ask
+	// closes itself when that error clears (decision 0132).
+	d.syncSignInAsks(ctx, q)
 	return q
 }
 

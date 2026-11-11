@@ -262,7 +262,7 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 	if err == nil {
 		err = s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE status='open'
    AND (next_who='' OR next_who='owner')
-   AND kind IN ('question','approval','step','waiting','held','rejection','escalation','proposal','draft','learned','check','session_stall')`).Scan(&c.ConsoleAsks)
+   AND kind IN ('question','approval','step','waiting','held','rejection','escalation','proposal','draft','learned','check','session_stall','sign_in')`).Scan(&c.ConsoleAsks)
 	}
 	s.pendingMu.Lock()
 	c.PendingStalls = s.pendingStalls
@@ -278,7 +278,7 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 
 // isRelay tells whether a frame is a request that waits for another node.
 func isRelay(typ string) bool {
-	return typ == "query.machine_log" || typ == "query.owner_message" || typ == "query.usage_top" || typ == "query.session_text" || typ == "query.session_enter" || typ == "query.proposal_list" || typ == "query.proposal_answer"
+	return typ == "query.machine_log" || typ == "query.owner_message" || typ == "query.usage_top" || typ == "query.session_text" || typ == "query.session_enter" || typ == "query.sign_in_prepare" || typ == "query.proposal_list" || typ == "query.proposal_answer"
 }
 
 // serveRelay answers a relayed request. It runs in its own goroutine because
@@ -292,6 +292,8 @@ func (g *Gateway) serveRelay(ctx context.Context, nc *nodeConn, h protocol.Heade
 		data, err = g.relayMachineLog(ctx, raw)
 	} else if h.Type == "query.owner_message" {
 		data, err = g.relayMessageBody(ctx, raw)
+	} else if h.Type == "query.sign_in_prepare" {
+		data, err = g.signInPrepare(ctx, raw)
 	} else if h.Type == "query.proposal_list" || h.Type == "query.proposal_answer" {
 		var q protocol.CTOProposalAnswer
 		if json.Unmarshal(raw, &q) != nil || q.NodeID == "" {

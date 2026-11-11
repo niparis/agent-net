@@ -32,18 +32,35 @@ var SignInProviders = map[string]SignInProviderInfo{
 
 // SignInProvider returns the allowlisted CLI for provider.
 func SignInProvider(provider string) (SignInProviderInfo, bool) {
-	info, ok := SignInProviders[provider]
+	info, ok := SignInProviders[strings.ToLower(strings.TrimSpace(provider))]
 	return info, ok
+}
+
+// SignInProviderKey returns the allowlist key for a quota provider id such as
+// "alibaba" or "alibaba-bl". Only a key that is in the allowlist is returned.
+// A caller never gets to name an argv from this.
+func SignInProviderKey(id string) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(id))
+	if _, ok := SignInProviders[key]; ok {
+		return key, true
+	}
+	for known := range SignInProviders {
+		if strings.HasPrefix(key, known+"-") || strings.HasPrefix(key, known+"_") {
+			return known, true
+		}
+	}
+	return "", false
 }
 
 // SignInNeeded says whether a provider error is the known "sign in" remedy.
 // The markers are the ones quota-axi reports for the alibaba CLI.
 func SignInNeeded(provider, errText string) bool {
-	if _, ok := SignInProvider(provider); !ok {
+	key, ok := SignInProviderKey(provider)
+	if !ok {
 		return false
 	}
 	text := strings.ToLower(errText)
-	switch provider {
+	switch key {
 	case "alibaba":
 		return strings.Contains(text, "no console access token found") ||
 			strings.Contains(text, "bl auth login --console")
@@ -72,7 +89,7 @@ type SignInTarget struct {
 const FrameSignInPrepare = "node.sign_in_prepare"
 
 // SignInPrepare asks the target machine's daemon to open the login pane in its
-// own herdr. The gateway sends it with an ask the owner already clicked.
+// own herdr. It names a provider key only: there is no argv field.
 type SignInPrepare struct {
 	AskID    string `json:"ask_id"`
 	Provider string `json:"provider"`
@@ -87,14 +104,21 @@ type SignInPrepareResult struct {
 	Note   string `json:"note,omitempty"`
 }
 
-// SignInRaise is the CTO operation sign_in_raise: raise one sign-in ask for a
-// known provider on a machine. Command is present only so an attempt to send
-// one is refused instead of ignored.
+// SignInRaise is the CTO operation sign_in_raise and the daemon's own raise:
+// raise one sign-in ask for a known provider on a machine. Command is present
+// only so an attempt to send one is refused instead of ignored.
 type SignInRaise struct {
 	Provider string   `json:"provider"`
 	Machine  string   `json:"machine"`
 	Reason   string   `json:"reason,omitempty"`
 	Command  []string `json:"command,omitempty"`
+}
+
+// SignInClose closes the open sign-in ask of one provider on the machine that
+// sends it, once its login remedy is gone.
+type SignInClose struct {
+	Provider string `json:"provider"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // SignInOpenRequest is the owner action on a sign_in ask. It carries no

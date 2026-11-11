@@ -243,6 +243,7 @@ var keyBindings = []keyBinding{
 	bind(contextInbox, "A", "approve all", "approve all changes", 1),
 	bind(contextInbox, "t", "answer", "type answer", 1),
 	bind(contextInbox, "x", "dismiss", "dismiss the ask", 1),
+	withHelp(bind(contextInbox, "i", "signin", "Open sign-in", 1), "on a sign-in ask: open that CLI's login in a herdr pane on the machine that needs it"),
 	bind(contextInbox, "u", "undo", "undo", 1),
 	withHelp(bind(contextInbox, "n", "didnt_need", "didn't need me", 1), "on an ask that reached you: the chief did not need to send it. Type one optional line of why; the chief reads it in its next batch."),
 	withHelp(bind(contextInbox, "m", "should_have_asked", "should have asked me", 1), "on a handled ask: the chief should have asked you. Type one optional line of why; the chief reads it in its next batch."),

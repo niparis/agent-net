@@ -174,6 +174,11 @@ func (m Model) askRow(a protocol.Ask) (inboxRow, bool) {
 		// One informational item a day, labelled with its owner-local date.
 		row.group, row.key, row.kind = inboxNotice, "brief:"+a.ID, "brief"
 		row.name, row.text = firstNonEmpty(a.From, "Daily brief"), inboxFirstLine(a.Question)
+	case protocol.AskKindSignIn:
+		// The one action opens the CLI's own login in a herdr pane on the
+		// machine the ask names. The row never shows a command to type.
+		row.group, row.key, row.kind = inboxApproval, "signin:"+a.ID, "signin"
+		row.name, row.text = firstNonEmpty(a.From, "agent-net"), inboxFirstLine(a.Question)
 	default:
 		return inboxRow{}, false
 	}
@@ -1092,6 +1097,12 @@ func (m Model) inboxDetailLines(row inboxRow) []string {
 			out = append(out, "", "Related change: "+sanitize(row.item.ChangeTitle))
 		}
 
+	case "signin":
+		out = append(out, sanitize(row.text))
+		if row.ask.Detail != "" {
+			out = append(out, "", sanitizeBody(row.ask.Detail))
+		}
+		out = append(out, "", "Press i to open the sign-in pane on the machine.")
 	case "waiting":
 		out = append(out, "Session: "+sanitize(m.inboxSessionName(row.session)), sanitize(row.text))
 	}
@@ -1101,6 +1112,36 @@ func (m Model) inboxDetailLines(row inboxRow) []string {
 type inboxAnswerMsg struct {
 	id  string
 	err error
+}
+
+type inboxSignInMsg struct {
+	name string
+	plan protocol.EnterPlan
+	err  error
+}
+
+// inboxSignIn is the owner's one action on a sign-in ask. The daemon opens the
+// CLI's login in a herdr pane on the machine the ask names.
+func (m Model) inboxSignIn(row inboxRow) tea.Cmd {
+	c, ok := m.src.(inboxCaller)
+	askID := row.ask.ID
+	hsock, hpane := m.herdrSocket, m.herdrPaneID
+	return func() tea.Msg {
+		if !ok {
+			return inboxSignInMsg{err: fmt.Errorf("sign-in is unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		raw, err := c.Call(ctx, protocol.OpSignInOpen, protocol.SignInOpenRequest{AskID: askID, HerdrSocket: hsock, HerdrPaneID: hpane})
+		if err != nil {
+			return inboxSignInMsg{err: err}
+		}
+		var plan protocol.EnterPlan
+		if err := json.Unmarshal(raw, &plan); err != nil {
+			return inboxSignInMsg{err: fmt.Errorf("bad sign-in answer")}
+		}
+		return inboxSignInMsg{name: "sign in", plan: plan}
+	}
 }
 
 func (m Model) inboxAnswer(id, answer string) tea.Cmd {
@@ -1283,7 +1324,7 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case actPageDown:
 			m.inboxDetailScroll = min(m.inboxDetailScroll+max(m.height-8, 1), limit)
 			return m, nil
-		case "answer", "approve", "refuse", "dismiss":
+		case "answer", "approve", "refuse", "dismiss", "signin":
 		default:
 			return m, nil
 		}
@@ -1352,6 +1393,10 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "didnt_need":
 		if row.ask.ID != "" {
 			return m.deskMarkStart(row.ask.ID, protocol.MarkDidntNeedMe), nil
+		}
+	case "signin":
+		if row.kind == "signin" {
+			return m, m.inboxSignIn(row)
 		}
 	case "approve", "refuse":
 		return m.inboxDecide(row, key == "approve")
@@ -1544,6 +1589,8 @@ func (m Model) inboxItemHints(row inboxRow) []hint {
 		return keepChoices([]hint{{key: "x", label: "dismiss the notice", prio: 1}})
 	case "brief":
 		return keepChoices([]hint{{key: "x", label: "dismiss the brief", prio: 1}})
+	case "signin":
+		return keepChoices([]hint{{key: "i", label: "Open sign-in", prio: 1}})
 	}
 	return nil
 }
