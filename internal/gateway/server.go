@@ -928,6 +928,9 @@ func (g *Gateway) msgSendMayResume(raw []byte) bool {
 	if json.Unmarshal(raw, &p) != nil || p.Recipient == "" {
 		return false
 	}
+	if p.Ack || p.Type == protocol.TypeAck {
+		return false
+	}
 	a, ok, err := g.store.workerForContinue(p.Recipient, p.Sender)
 	return err == nil && ok && a.Worker != nil
 }
@@ -2897,7 +2900,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		var queueNote string
-		if !workerTask {
+		if !workerTask && !p.Ack && p.Type != protocol.TypeAck {
 			queueNote, err = g.resumeEndedWorker(ctx, nc, p)
 		}
 		if err != nil {
@@ -3181,7 +3184,7 @@ func (g *Gateway) flushLeadRequests(ctx context.Context) {
 func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) bool {
 	// An ack closes a request without a delivery: nothing is sent and nothing
 	// is woken.
-	if m.Type == protocol.TypeAck {
+	if m.Type == protocol.TypeAck || m.State == protocol.StateAcknowledged {
 		return false
 	}
 	a, ok, err := g.store.Agent(m.To)

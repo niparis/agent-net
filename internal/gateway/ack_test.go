@@ -2,10 +2,14 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -151,4 +155,327 @@ func TestAckDoesNotWakeTheSender(t *testing.T) {
 		t.Fatal("dispatch reported a wake for an ack")
 	}
 	p.expectNoWake(t)
+}
+
+func connectTestNode(t *testing.T, g *Gateway, nodeID string) (*websocket.Conn, chan []byte) {
+	t.Helper()
+	ctx := t.Context()
+	accepted := make(chan *websocket.Conn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Errorf("accept: %v", err)
+			return
+		}
+		accepted <- ws
+	}))
+	t.Cleanup(server.Close)
+
+	client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close(websocket.StatusNormalClosure, "") })
+
+	ws := <-accepted
+	cancelCtx, cancel := context.WithCancel(ctx)
+	t.Cleanup(cancel)
+	nc := &nodeConn{id: nodeID, ws: ws, dead: make(chan struct{}), cancel: cancel}
+	g.mu.Lock()
+	g.conns[nodeID] = nc
+	g.mu.Unlock()
+
+	received := make(chan []byte, 100)
+	go func() {
+		for {
+			_, raw, e := client.Read(cancelCtx)
+			if e != nil {
+				return
+			}
+			received <- raw
+			var h protocol.Header
+			if json.Unmarshal(raw, &h) == nil && h.Type == "worker.resume" {
+				res, _ := protocol.EncodeResult(h.ID, protocol.WorkerResumeResult{}, nil)
+				_ = client.Write(cancelCtx, websocket.MessageText, res)
+			}
+		}
+	}()
+	go func() {
+		for {
+			_, raw, e := ws.Read(cancelCtx)
+			if e != nil {
+				return
+			}
+			var h protocol.Header
+			if json.Unmarshal(raw, &h) == nil && h.Type == "result" {
+				nc.answer(h)
+			}
+		}
+	}()
+	return client, received
+}
+
+// An ack to a request whose sender is an ended worker leaves the worker ended:
+// no resume, and no delivery frame to it.
+func TestAckToEndedWorkerLeavesWorkerEndedNoResume(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { g.Close() })
+
+	node, _, err := g.store.CreateNode("host1", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, received := connectTestNode(t, g, node)
+
+	ownerID, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerID, err := g.store.UpsertSession(node, protocol.SessionInfo{
+		Harness:  "opencode",
+		NativeID: "worker1",
+		Worker:   &protocol.WorkerInfo{ID: "w_1", Owner: ownerID, RunGeneration: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, _, err := g.store.StoreMessage(protocol.MsgSend{
+		Sender:    workerID,
+		Recipient: ownerID,
+		Type:      protocol.TypeRequest,
+		Body:      "need guidance",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.store.SetWorkerSessionEnded(node, workerID, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	a, ok, err := g.store.Agent(workerID)
+	if err != nil || !ok || a.Online || a.Status != "ended" {
+		t.Fatalf("worker before ack: online=%v status=%q ok=%v err=%v", a.Online, a.Status, ok, err)
+	}
+
+	// Drain any messages received during setup.
+	for len(received) > 0 {
+		<-received
+	}
+
+	raw, _ := json.Marshal(protocol.MsgSend{
+		Sender:    ownerID,
+		Recipient: workerID,
+		ParentID:  req.ID,
+		Ack:       true,
+	})
+	g.mu.Lock()
+	nc := g.conns[node]
+	g.mu.Unlock()
+
+	res, err := g.handle(t.Context(), nc, "msg.send", raw)
+	if err != nil {
+		t.Fatalf("msg.send ack: %v", err)
+	}
+	m := res.(map[string]any)["message"].(protocol.Message)
+	if m.State != protocol.StateAcknowledged {
+		t.Fatalf("ack state = %q; want %q", m.State, protocol.StateAcknowledged)
+	}
+
+	// Worker must remain ended and inactive.
+	a, ok, err = g.store.Agent(workerID)
+	if err != nil || !ok || a.Online || a.Status != "ended" {
+		t.Fatalf("worker after ack: online=%v status=%q", a.Online, a.Status)
+	}
+	var active int
+	if err := g.store.db.QueryRow("SELECT worker_run_active FROM sessions WHERE id=?", workerID).Scan(&active); err != nil || active != 0 {
+		t.Fatalf("worker_run_active = %d, want 0 (err=%v)", active, err)
+	}
+
+	// No worker.resume or delivery frame was sent.
+	select {
+	case frame := <-received:
+		t.Fatalf("unexpected frame sent to node: %s", string(frame))
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// An ack closes the request: no reply reminder later.
+func TestAckToEndedWorkerClosesRequestNoReminder(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("host1", "linux")
+	ownerID, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "owner", Status: "idle"})
+	workerID, _ := s.UpsertSession(node, protocol.SessionInfo{
+		Harness:  "opencode",
+		NativeID: "worker1",
+		Worker:   &protocol.WorkerInfo{ID: "w_1", Owner: ownerID, RunGeneration: 1},
+	})
+
+	req, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender:    workerID,
+		Recipient: ownerID,
+		Type:      protocol.TypeRequest,
+		Body:      "need guidance",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SetWorkerSessionEnded(node, workerID, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	c.t = c.t.Add(3 * time.Minute)
+
+	if _, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender:    ownerID,
+		Recipient: workerID,
+		ParentID:  req.ID,
+		Ack:       true,
+	}); err != nil {
+		t.Fatalf("store ack: %v", err)
+	}
+
+	got, _, err := s.Message(req.ID)
+	if err != nil || got.State != protocol.StateAcknowledged {
+		t.Fatalf("request state = %q; want %q", got.State, protocol.StateAcknowledged)
+	}
+
+	reminders, err := s.remindPending()
+	if err != nil || len(reminders) != 0 {
+		t.Fatalf("reminders after ack: %+v, %v", reminders, err)
+	}
+
+	// Batch message carrier attributed to ended worker also closed on ack.
+	carrier, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender:    workerID,
+		Recipient: ownerID,
+		Type:      protocol.TypeRequest,
+		Body:      "batch carrier",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender:    workerID,
+		Recipient: ownerID,
+		Type:      protocol.TypeRequest,
+		Body:      "child request",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("UPDATE messages SET batch_id=? WHERE id=?", carrier.ID, child.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	c.t = c.t.Add(3 * time.Minute)
+	if _, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender:    ownerID,
+		Recipient: workerID,
+		ParentID:  carrier.ID,
+		Ack:       true,
+	}); err != nil {
+		t.Fatalf("store batch carrier ack: %v", err)
+	}
+
+	childGot, _, err := s.Message(child.ID)
+	if err != nil || childGot.State != protocol.StateAcknowledged {
+		t.Fatalf("child request state = %q; want %q", childGot.State, protocol.StateAcknowledged)
+	}
+
+	reminders, err = s.remindPending()
+	if err != nil || len(reminders) != 0 {
+		t.Fatalf("reminders after batch ack: %+v, %v", reminders, err)
+	}
+}
+
+// A real reply with a body to an ended worker still resumes it, as today.
+func TestRealReplyToEndedWorkerResumesWorker(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { g.Close() })
+
+	node, _, err := g.store.CreateNode("host1", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, received := connectTestNode(t, g, node)
+
+	ownerID, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerID, err := g.store.UpsertSession(node, protocol.SessionInfo{
+		Harness:  "opencode",
+		NativeID: "worker1",
+		Worker:   &protocol.WorkerInfo{ID: "w_1", Owner: ownerID, RunGeneration: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, _, err := g.store.StoreMessage(protocol.MsgSend{
+		Sender:    workerID,
+		Recipient: ownerID,
+		Type:      protocol.TypeRequest,
+		Body:      "need guidance",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.store.SetWorkerSessionEnded(node, workerID, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	// Drain any messages received during setup.
+	for len(received) > 0 {
+		<-received
+	}
+
+	raw, _ := json.Marshal(protocol.MsgSend{
+		Sender:    ownerID,
+		Recipient: workerID,
+		ParentID:  req.ID,
+		Body:      "here is the guidance to continue",
+	})
+	g.mu.Lock()
+	nc := g.conns[node]
+	g.mu.Unlock()
+
+	res, err := g.handle(t.Context(), nc, "msg.send", raw)
+	if err != nil {
+		t.Fatalf("msg.send reply: %v", err)
+	}
+	m := res.(map[string]any)["message"].(protocol.Message)
+	if m.State != protocol.StateStored {
+		t.Fatalf("reply state = %q; want %q", m.State, protocol.StateStored)
+	}
+
+	// Worker must have been resumed.
+	select {
+	case frame := <-received:
+		var h protocol.Header
+		if err := json.Unmarshal(frame, &h); err != nil || h.Type != "worker.resume" {
+			t.Fatalf("unexpected frame: %s", string(frame))
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected worker.resume frame, none received")
+	}
+
+	var active int
+	if err := g.store.db.QueryRow("SELECT worker_run_active FROM sessions WHERE id=?", workerID).Scan(&active); err != nil || active != 1 {
+		t.Fatalf("worker_run_active = %d, want 1 (err=%v)", active, err)
+	}
 }

@@ -1679,6 +1679,9 @@ func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView,
 // When the machine is at its worker cap, the restart is queued and returns
 // the queue reason with no error.
 func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protocol.MsgSend) (string, error) {
+	if p.Ack || p.Type == protocol.TypeAck {
+		return "", nil
+	}
 	a, ok, err := g.store.workerForContinue(p.Recipient, p.Sender)
 	if err != nil || !ok || a.Worker == nil || a.SessionID != p.Recipient {
 		return "", err
@@ -1733,6 +1736,9 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 // notifyResumeRefusal reports a failed restart even when the original send
 // was queued while its sender was disconnected from the gateway.
 func (g *Gateway) notifyResumeRefusal(ctx context.Context, p protocol.MsgSend, reason error) {
+	if p.Ack || p.Type == protocol.TypeAck {
+		return
+	}
 	a, ok, err := g.store.Agent(p.Recipient)
 	if err != nil || !ok || a.Worker == nil || a.Worker.Owner != p.Sender {
 		return
