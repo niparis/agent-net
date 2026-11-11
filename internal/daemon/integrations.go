@@ -31,6 +31,7 @@ func (d *Daemon) integrationsLoop(ctx context.Context) {
 		interval = defaultIntegrationsInterval
 	}
 	d.applyNetworkIntegrations(ctx)
+	d.claudeMouseMaintenance(ctx)
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -41,6 +42,7 @@ func (d *Daemon) integrationsLoop(ctx context.Context) {
 		case <-d.intgWake:
 		}
 		d.applyNetworkIntegrations(ctx)
+		d.claudeMouseMaintenance(ctx)
 	}
 }
 

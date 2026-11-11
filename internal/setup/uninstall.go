@@ -93,6 +93,7 @@ func Uninstall(o Options) error {
 		r.step("Claude CTO trust", "", err)
 	}
 	r.removeClaudeMCP()
+	r.removeClaudeMouseSettings()
 	r.removePeerMessages()
 	r.removeCodexMCP()
 	r.removeHintHook()

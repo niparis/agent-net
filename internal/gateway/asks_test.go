@@ -389,6 +389,26 @@ func TestNoticesGoToTheLogNotTheQueue(t *testing.T) {
 	}
 }
 
+// A daemon report needs no answer: it is one line in the event log.
+func TestDeskNoteAppendsAReport(t *testing.T) {
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s}
+	raw, _ := json.Marshal(protocol.DeskNote{Text: "garden on research: wheel off (mouse tracking disabled); it scrolls after its next restart"})
+	if _, err := g.handle(context.Background(), &nodeConn{id: "research"}, "desk.note", raw); err != nil {
+		t.Fatal(err)
+	}
+	log, err := s.DeskLog(5)
+	if err != nil || len(log) != 1 {
+		t.Fatalf("log: %+v %v", log, err)
+	}
+	if log[0].Source != "daemon" || log[0].AboutKind != "node" || log[0].AboutID != "research" || !strings.Contains(log[0].Text, "wheel off") {
+		t.Fatalf("entry: %+v", log[0])
+	}
+	if _, err := g.handle(context.Background(), &nodeConn{id: "research"}, "desk.note", []byte(`{"detail":"x"}`)); err == nil {
+		t.Fatal("empty text accepted")
+	}
+}
+
 // The log lists newest first, caps its size, and the RPC returns it.
 func TestDeskLogNewestFirstAndBounded(t *testing.T) {
 	s, _ := newTestStore(t)

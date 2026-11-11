@@ -100,13 +100,13 @@ func TestHintHookOffAndNeverAsksTwice(t *testing.T) {
 	writeSettings(t, f, otherKeys)
 	answer(t, "n\n")
 	runAsking(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
-	if readSettingsFile(t, f) != otherKeys {
+	if !settingsMatch(t, readSettingsFile(t, f), otherKeys) {
 		t.Fatalf("settings changed on a no:\n%s", readSettingsFile(t, f))
 	}
 	// Answered once: now even a "yes" on the terminal is not used.
 	answer(t, "y\n")
 	runAsking(t, Options{PeerMessages: PeerMessagesNo})
-	if readSettingsFile(t, f) != otherKeys {
+	if !settingsMatch(t, readSettingsFile(t, f), otherKeys) {
 		t.Fatal("asked a second time")
 	}
 }
@@ -117,7 +117,7 @@ func TestHintHookWithoutTerminalAndFlags(t *testing.T) {
 	writeSettings(t, f, otherKeys)
 	noTTY(t)
 	out := runAsking(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
-	if !strings.Contains(out, "claude hint hook off") || readSettingsFile(t, f) != otherKeys {
+	if !strings.Contains(out, "claude hint hook off") || !settingsMatch(t, readSettingsFile(t, f), otherKeys) {
 		t.Fatalf("no tty:\n%s", out)
 	}
 	runAsking(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookYes})

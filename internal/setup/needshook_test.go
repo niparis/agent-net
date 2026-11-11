@@ -62,12 +62,12 @@ func TestNeedsHookOffAndNeverAsksTwice(t *testing.T) {
 	writeSettings(t, f, otherKeys)
 	answer(t, "n\n")
 	runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
-	if readSettingsFile(t, f) != otherKeys {
+	if !settingsMatch(t, readSettingsFile(t, f), otherKeys) {
 		t.Fatalf("settings changed on a no:\n%s", readSettingsFile(t, f))
 	}
 	answer(t, "y\n")
 	runAskingAll(t, Options{PeerMessages: PeerMessagesNo})
-	if readSettingsFile(t, f) != otherKeys {
+	if !settingsMatch(t, readSettingsFile(t, f), otherKeys) {
 		t.Fatal("asked a second time")
 	}
 }
@@ -78,7 +78,7 @@ func TestNeedsHookWithoutTerminalAndFlag(t *testing.T) {
 	writeSettings(t, f, otherKeys)
 	noTTY(t)
 	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
-	if !strings.Contains(out, "claude needs hook off") || readSettingsFile(t, f) != otherKeys {
+	if !strings.Contains(out, "claude needs hook off") || !settingsMatch(t, readSettingsFile(t, f), otherKeys) {
 		t.Fatalf("no tty:\n%s", out)
 	}
 	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, NeedsHook: NeedsHookYes})

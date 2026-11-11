@@ -196,6 +196,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.chooseIntegrations(ctx)
 	r.askCTOTitle(ctx)
 	r.claudeMCP()
+	r.claudeMouseSettings()
 	r.claudePeerMessages()
 	r.codexMCP()
 	r.claudeHintHook()

@@ -62,3 +62,46 @@ variable from its environment, and the attach plan no longer carries it. The
 wheel scrolls the conversation in every session. Selecting text then needs
 Shift while dragging (Option on some terminals), because a plain drag is a
 mouse event for the session.
+
+## Note (2026-11-11) - one mechanism at the user level
+
+The owner asked for one mechanism, not a fix per window or per machine:
+
+1. agent-net owns the wheel choice: the daemon writes
+   `CLAUDE_CODE_DISABLE_MOUSE=0` to `env` in the user's Claude settings
+   (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`). It
+   merges only that key, keeps every other key and the file mode, writes
+   through a temp file and a rename, and writes again when the value drifts.
+   Setup writes it on a new machine. Uninstall removes it, and only while its
+   value is still `"0"`. A file that is not valid JSON is never overwritten; it
+   is reported.
+2. The per-launch `0` that the v0.5.16 change added to managed sessions and
+   workers is gone: `claudeMouseOn`, the worker settings entry and the launch
+   command filter. The user setting is the one mechanism. The CTO keeps its
+   own launch settings exception, which take priority.
+3. The daemon reports a live Claude session whose inherited environment still
+   turns the wheel off, at most once per session per day, in the owner TUI and
+   the Desk log: "<session> on <machine>: wheel off (mouse tracking disabled);
+   it scrolls after its next restart". The check reads the process environment
+   from `/proc/<pid>/environ` on Linux and `sysctl kern.procargs2` on macOS,
+   and compares the file's write time with the process start time, because
+   Claude Code reads the user setting only at start. It is a report, not a gate.
+4. A Claude background service (`claude daemon run`) that carries a value
+   other than `0` is reported once. The daemon stops it with the supported
+   `claude daemon stop --any --keep-workers` only when Claude's fresh roster
+   lists no live session, so the next launch starts a clean service. Otherwise it waits and
+   reports once, and still stops it the same day if the last session ends. It
+   never kills or restarts a service with live sessions. `claude daemon --help`
+   (2.1.322) says of `stop`: "Shut down the supervisor and terminate background
+   sessions", `--any` "also stop a transient (non-service) daemon", and
+   `--keep-workers` "leave detached sessions running", so the daemon passes
+   `--any --keep-workers` and a session that starts between the roster read and
+   the stop survives. There is no separate restart command, and the supervisor
+   runs on demand, so a stop is followed by a fresh one at the next launch. A
+   roster that is missing or older than a minute is never evidence that a
+   service is quiet, so such a service is reported and left alone; Claude Code
+   writes the roster whenever a session comes or goes.
+
+The wheel behaves the same in every session however it was started, and the
+owner has nothing to do per window; a running session picks the setting up at
+its next restart.

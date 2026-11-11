@@ -78,13 +78,13 @@ func TestPeerMessagesPromptNo(t *testing.T) {
 	if !strings.Contains(out, "claude peer messages off") {
 		t.Errorf("output:\n%s", out)
 	}
-	if got := readSettingsFile(t, f); got != otherKeys {
+	if got := readSettingsFile(t, f); !settingsMatch(t, got, otherKeys) {
 		t.Errorf("settings changed:\n%s", got)
 	}
 	// The owner answered once: a rerun does not ask again, even on a terminal.
 	answer(t, "y\n")
 	out = run(t, Options{Join: f.newJoin(t)})
-	if strings.Contains(out, "[y/N]") || readSettingsFile(t, f) != otherKeys {
+	if strings.Contains(out, "[y/N]") || !settingsMatch(t, readSettingsFile(t, f), otherKeys) {
 		t.Errorf("asked again or changed:\n%s", out)
 	}
 }
@@ -110,7 +110,7 @@ func TestPeerMessagesNoTTY(t *testing.T) {
 	if !strings.Contains(out, "claude peer messages off") {
 		t.Errorf("output:\n%s", out)
 	}
-	if readSettingsFile(t, f) != otherKeys {
+	if !settingsMatch(t, readSettingsFile(t, f), otherKeys) {
 		t.Error("settings changed without a terminal")
 	}
 	if _, err := os.Stat(peerStatePath()); err == nil {
@@ -130,15 +130,15 @@ func TestPeerMessagesFlags(t *testing.T) {
 	if !strings.Contains(out, "claude peer messages off") {
 		t.Errorf("no flag:\n%s", out)
 	}
-	if _, err := os.Stat(settingsFile(f)); err == nil {
-		t.Error("--no-accept-peer-messages wrote settings")
+	if got := readSettingsFile(t, f); strings.Contains(got, "crossSessionInbound") {
+		t.Errorf("--no-accept-peer-messages wrote the peer setting:\n%s", got)
 	}
 	// A missing settings file is created, with only the one key.
 	out = run(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesAccept})
 	if !strings.Contains(out, "accept (set by agent-net)") {
 		t.Errorf("accept flag:\n%s", out)
 	}
-	if got := readSettingsFile(t, f); got != "{\n  \"crossSessionInbound\": \"accept\"\n}\n" {
+	if got := readSettingsFile(t, f); !settingsMatch(t, got, "{\n  \"crossSessionInbound\": \"accept\"\n}\n") {
 		t.Errorf("settings:\n%s", got)
 	}
 	// A rerun reports the value as agent-net's.
@@ -168,7 +168,7 @@ func TestPeerMessagesExistingValueLeftAlone(t *testing.T) {
 			if !strings.Contains(out, "claude peer messages "+c.shown) {
 				t.Errorf("%s flag=%q:\n%s", c.raw, flag, out)
 			}
-			if got := readSettingsFile(t, f); got != orig {
+			if got := readSettingsFile(t, f); !settingsMatch(t, got, orig) {
 				t.Errorf("%s flag=%q: settings changed:\n%s", c.raw, flag, got)
 			}
 		}
@@ -236,7 +236,7 @@ func TestUninstallRemovesOnlyWhatAgentNetSet(t *testing.T) {
 	if !strings.Contains(out, "claude peer messages ok (removed crossSessionInbound)") {
 		t.Errorf("output:\n%s", out)
 	}
-	if got := readSettingsFile(t, f); got != otherKeys {
+	if got := readSettingsFile(t, f); !settingsMatch(t, got, otherKeys) {
 		t.Errorf("settings not restored:\n%s", got)
 	}
 	if _, err := os.Stat(peerStatePath()); err == nil {
@@ -250,7 +250,7 @@ func TestUninstallRemovesOnlyWhatAgentNetSet(t *testing.T) {
 	writeSettings(t, f, owner)
 	run(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesAccept})
 	out = uninstall(t)
-	if !strings.Contains(out, "not set by agent-net") || readSettingsFile(t, f) != owner {
+	if !strings.Contains(out, "not set by agent-net") || !settingsMatch(t, readSettingsFile(t, f), owner) {
 		t.Errorf("owner value removed:\n%s\n%s", out, readSettingsFile(t, f))
 	}
 
@@ -271,7 +271,7 @@ func TestUninstallRemovesOnlyWhatAgentNetSet(t *testing.T) {
 	writeSettings(t, f, otherKeys)
 	run(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
 	uninstall(t)
-	if readSettingsFile(t, f) != otherKeys {
+	if !settingsMatch(t, readSettingsFile(t, f), otherKeys) {
 		t.Error("uninstall changed settings after a no")
 	}
 }

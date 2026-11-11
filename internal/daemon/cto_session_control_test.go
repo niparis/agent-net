@@ -108,8 +108,9 @@ func TestCTOSessionResumeRelaysToTheRightMachine(t *testing.T) {
 	if f.cto.d.sessionByID(live) != nil {
 		t.Fatal("the session started on the CTO's machine")
 	}
-	if rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" {
-		t.Fatalf("not a background owner launch with the wheel on: %+v", rec)
+	settingsEnv, _ := rec.Settings["env"].(map[string]any)
+	if _, set := settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"]; set || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
+		t.Fatalf("a managed owner launch must leave mouse tracking to the user settings: %+v", rec)
 	}
 	items, err := inboxAndLog(f.g.gw.Store())
 	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, "resume") || len(items[0].Options) != 0 {

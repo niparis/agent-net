@@ -278,32 +278,6 @@ func claudeLaunchMCPAnswers(dir string) (enabled, disabled []string) {
 	return enabled, disabled
 }
 
-// claudeMouseOn adds CLAUDE_CODE_DISABLE_MOUSE=0 to a --settings JSON string.
-// Claude Code reads the variable inside the session, from its settings env and
-// from the environment of Claude's background service. The service's copy wins
-// nothing over this one, so the wheel scrolls even when something started the
-// service with the variable on (decision 0128).
-func claudeMouseOn(settings string) string {
-	doc := map[string]any{}
-	if strings.TrimSpace(settings) != "" && json.Unmarshal([]byte(settings), &doc) != nil {
-		return settings
-	}
-	if doc == nil {
-		doc = map[string]any{}
-	}
-	env, _ := doc["env"].(map[string]any)
-	if env == nil {
-		env = map[string]any{}
-	}
-	env["CLAUDE_CODE_DISABLE_MOUSE"] = "0"
-	doc["env"] = env
-	out, err := json.Marshal(doc)
-	if err != nil {
-		return settings
-	}
-	return string(out)
-}
-
 // claudeSettingsWithMCPAnswers adds the answers for dir to a --settings JSON
 // string. An empty string means a launch without --settings, when there is
 // nothing to carry. Other keys of the JSON stay as they are.
