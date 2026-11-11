@@ -104,6 +104,7 @@ type codexRPCResult struct {
 // list. The caller's context bounds the whole call.
 func codexModels(ctx context.Context, path, searchPATH string) ([]string, map[string]string) {
 	cmd := exec.CommandContext(ctx, path, "app-server")
+	cmd.Dir = os.TempDir()
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+searchPATH)
 	cmd.WaitDelay = 500 * time.Millisecond // as in runProgram
 	var stderr bytes.Buffer

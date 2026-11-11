@@ -152,6 +152,7 @@ func Executable(ctx context.Context, name string, o Options) string {
 func RunUpdate(ctx context.Context, path string, o Options, args ...string) (string, error) {
 	s := prepare(ctx, &o)
 	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Dir = os.TempDir()
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+s.path, "CI=1", "TERM=dumb", "GIT_TERMINAL_PROMPT=0")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }

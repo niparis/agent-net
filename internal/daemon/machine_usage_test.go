@@ -218,4 +218,7 @@ func TestMachineGetUsageThroughGateway(t *testing.T) {
 	if err != nil || cat.Usage != nil {
 		t.Errorf("a category call must not carry the usage block: err=%v usage=%+v", err, cat.Usage)
 	}
+	if _, err := os.Stat("fake-codex.json"); !os.IsNotExist(err) {
+		t.Fatalf("test left fake-codex.json in package folder: %v", err)
+	}
 }
