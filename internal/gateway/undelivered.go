@@ -33,9 +33,9 @@ func needsReminderCheck(m protocol.Message) bool {
 // final failed state: "message to X was not delivered: reason". When the
 // message may have arrived, it says "may not have arrived" instead. No notice
 // is stored for agent-net's own messages (so a failed notice never makes
-// another), for the owner and connected apps (the TUI and the app show the
-// state), or when the notice was stored already. The notice waits in the
-// queue like any message while the sender is offline.
+// another), for an ended or offline worker, for the owner and connected apps
+// (the TUI and the app show the state), or when the notice was stored already.
+// The notice waits in the queue like any message while the sender is offline.
 func (s *Store) undeliveredNotice(tx *sql.Tx, m protocol.Message, reason string, uncertain bool) (protocol.Message, bool, error) {
 	var none protocol.Message
 	if m.From == "agent-net" {
@@ -50,6 +50,13 @@ func (s *Store) undeliveredNotice(tx *sql.Tx, m protocol.Message, reason string,
 		return none, false, err
 	}
 	if harness == "bot" || protocol.IsOwner(harness) {
+		return none, false, nil
+	}
+	var ended int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND worker<>'' AND (worker_run_active=0 OR online=0)`, m.To).Scan(&ended); err != nil {
+		return none, false, err
+	}
+	if ended != 0 {
 		return none, false, nil
 	}
 	var name string

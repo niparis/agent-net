@@ -1130,7 +1130,8 @@ the first line of the body (at most 200 characters). An expiry gives the reason
 `expired after 24 hours`, plus the last error if there was one. When the
 message may have arrived (the daemon stopped while delivering, a write failed
 after connecting, or it expired while dispatched with no report), the notice
-says `may not have arrived` instead. A delivered message gets no notice.
+says `may not have arrived` instead. A delivered message gets no notice. A
+message to an ended or offline worker also gets no notice.
 
 The gateway stores the notice as a normal message with the idempotency key
 `undelivered:<message id>`, so each message gets at most one, also after a

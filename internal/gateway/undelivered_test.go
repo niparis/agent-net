@@ -341,3 +341,64 @@ func TestUndeliveredNoticeWaitsForOfflineSender(t *testing.T) {
 		t.Fatalf("pending after reconnect: %+v %v", pending, err)
 	}
 }
+
+func TestUndeliveredExpirySkipsEndedWorker(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		worker     string
+		online     int
+		active     int
+		wantNotice bool
+	}{
+		{"ended worker", `{"id":"w1"}`, 1, 0, false},
+		{"offline worker", `{"id":"w1"}`, 0, 1, false},
+		{"running worker", `{"id":"w1"}`, 1, 1, true},
+		{"live non-worker", "", 1, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, c := newTestStore(t)
+			a, b := twoSessions(t, s)
+			m := sendBody(t, s, a, b, "expiry", "please review")
+			if _, err := s.db.Exec(`UPDATE sessions SET worker=?,online=?,worker_run_active=? WHERE id=?`, tc.worker, tc.online, tc.active, b); err != nil {
+				t.Fatal(err)
+			}
+			c.t = m.ExpiresAt.Add(time.Second)
+			if _, err := s.Expire(); err != nil {
+				t.Fatal(err)
+			}
+			got := notices(t, s, a)
+			if (len(got) == 1) != tc.wantNotice || len(got) > 1 {
+				t.Fatalf("expiry notices = %+v, want notice %t", got, tc.wantNotice)
+			}
+			if len(got) == 1 && got[0].ParentID != m.ID {
+				t.Fatalf("notice parent = %q, want %q", got[0].ParentID, m.ID)
+			}
+		})
+	}
+}
+
+func TestUndeliveredFailureSkipsEndedWorker(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		worker     string
+		wantNotice bool
+	}{
+		{"ended worker", `{"id":"w1"}`, false},
+		{"live non-worker", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			a, b := twoSessions(t, s)
+			m := sendBody(t, s, a, b, "failure", "please review")
+			if _, err := s.db.Exec(`UPDATE sessions SET worker=?,worker_run_active=0 WHERE id=?`, tc.worker, b); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.ApplyDelivery(m.ID, protocol.StateFailed, "permanent failure"); err != nil {
+				t.Fatal(err)
+			}
+			if got := notices(t, s, a); (len(got) == 1) != tc.wantNotice || len(got) > 1 {
+				t.Fatalf("failure notices = %+v, want notice %t", got, tc.wantNotice)
+			}
+		})
+	}
+}
