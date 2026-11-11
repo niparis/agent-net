@@ -48,6 +48,8 @@ type queuedStart struct {
 	// AutoContinue is the start's automatic-continue setting.
 	AutoContinue bool
 	QueuedAt     time.Time
+	Why          string
+	NotFamily    []string
 	// ResumeSession is set when this queued entry restarts an ended worker session.
 	ResumeSession string
 }

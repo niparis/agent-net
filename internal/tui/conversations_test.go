@@ -270,7 +270,7 @@ func TestConversationEndedWorkerScreens(t *testing.T) {
 			{ID: "m_done_one", ConversationID: "c_done_one", From: first, To: caller, Type: protocol.TypeReply,
 				Body: "[agent-net worker notice]\nstatus: done\nrun time: 12m\n", CreatedAt: t0.Add(-2 * time.Minute)},
 			{ID: "m_started_one", ConversationID: "c_started_one", From: first, To: caller, Type: protocol.TypeNotification,
-				Body: protocol.WorkerStartedText(first, "opencode", "m1", "shop", "mac", time.Minute), CreatedAt: t0.Add(-5 * time.Minute)},
+				Body: protocol.WorkerStartedText(first, "opencode", "m1", "shop", "mac", time.Minute, ""), CreatedAt: t0.Add(-5 * time.Minute)},
 			{ID: "m_task_one", ConversationID: "c_task_one", From: caller, To: first, Type: protocol.TypeRequest,
 				Body: protocol.WorkerTaskBody("Polish the sessions panel and make the long list readable", "", ""), CreatedAt: t0.Add(-10 * time.Minute)},
 		},

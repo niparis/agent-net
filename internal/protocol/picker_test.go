@@ -812,3 +812,37 @@ func TestPickerBPrimeExplorationStateSurvivesAClone(t *testing.T) {
 		t.Fatalf("picks: %v", counts)
 	}
 }
+
+func TestStartedNoticeContainsWhyWithChosenProfileAndGroupedReasons(t *testing.T) {
+	tasks := append(pickTasks("good", 1.9, repeat(10, 1)...), pickTasks("other", 1.9, repeat(10, 1)...)...)
+	tasks = append(tasks, pickTasks("thin1", 1.9, 1)...)
+	tasks = append(tasks, pickTasks("thin2", 1.9, 1)...)
+	scores := pickScores(map[string]float64{"good": 45, "other": 44, "thin1": 30, "thin2": 30})
+	in := &PickerInput{D: 1.9, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	candidates := []WorkerModelCandidate{
+		{Name: "good agy", Harness: "agy", Model: "good", Provider: "anthropic"},
+		{Name: "other agy", Harness: "agy", Model: "other", Provider: "anthropic"},
+		{Name: "flash agy", Harness: "agy", Model: "thin1", Provider: "google"},
+		{Name: "opus agy", Harness: "agy", Model: "thin2", Provider: "google"},
+		{Name: "unscored model", Harness: "codex", Model: "unscored", Provider: "openai"},
+	}
+	choice, err := ChooseWorkerModel(candidates, "simple", scores, nil, nil, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if choice.Why == "" {
+		t.Fatal("choice.Why is empty")
+	}
+	for _, want := range []string{"simple", "D 1.90", "good agy", "qualifying", "left out:", "flash agy, opus agy (explore is up only)"} {
+		if !strings.Contains(choice.Why, want) {
+			t.Errorf("choice.Why lacks %q: %s", want, choice.Why)
+		}
+	}
+	notice := WorkerStartedText("s_123", choice.Harness, choice.Model, "shop", "mac", 0, choice.Why)
+	if !strings.Contains(notice, "\nwhy: "+choice.Why) {
+		t.Errorf("notice lacks why: %s", notice)
+	}
+	if !strings.Contains(notice, "\nfull: agent_workers_find {worker, detail:full}") {
+		t.Errorf("notice lacks full tool line: %s", notice)
+	}
+}

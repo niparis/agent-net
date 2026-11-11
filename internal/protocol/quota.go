@@ -86,6 +86,11 @@ func (q *Quotas) Provider(name string) (QuotaProvider, bool) {
 	return QuotaProvider{}, false
 }
 
+// Usable tells whether a provider's reading may decide a model choice.
+func (p QuotaProvider) Usable() bool {
+	return p.usable()
+}
+
 // usable tells whether a provider's reading may decide a model choice.
 func (p QuotaProvider) usable() bool {
 	return !p.Stale && p.Error == ""

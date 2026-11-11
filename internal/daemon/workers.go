@@ -220,6 +220,8 @@ type worker struct {
 	// the failure text of a failed run, so worker.stopped carries the provider
 	// error a failed Codex turn reports (decision 0145). It is not persisted.
 	handbackReport string
+	why            string
+	notFamily      []string
 	// donePartial is true when the last hand-back said complete:false.
 	donePartial bool
 	evidence    *protocol.WorkerEvidence
@@ -359,7 +361,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	defer d.wmu.Unlock()
 	if w.info == nil {
 		w.info = &protocol.WorkerInfo{ID: w.id, StartRef: w.startRef, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText, Title: w.title,
-			Permissions: protocol.WorkerPermissionsOrDefault(w.permissions)}
+			Permissions: protocol.WorkerPermissionsOrDefault(w.permissions), NotFamily: w.notFamily}
 	}
 	// The figures follow the info value, so every reader sees one version.
 	// w.info may already be held by a session that another goroutine is
@@ -376,6 +378,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 		st := w.struggle
 		next.Struggle = &st
 	}
+	next.NotFamily = w.notFamily
 	w.info = &next
 	// A copy: the agent list and the session info may outlive this call, and
 	// noteAsk replaces the task under wmu. No one changes a value that a
@@ -773,7 +776,8 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		title:       l.Title,
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
 		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed, touches: strings.Join(l.Touches, ","),
-		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue), changeID: l.ChangeID, fixes: l.Fixes, mcpServers: l.MCPServers}
+		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue), changeID: l.ChangeID, fixes: l.Fixes, mcpServers: l.MCPServers,
+		why: l.Why, notFamily: l.NotFamily}
 	if l.TaskID != "" {
 		w.taskID = l.TaskID
 		if l.ContinuationPartial {
@@ -819,7 +823,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 				err = fmt.Errorf("the gateway did not reserve worker session %s", sid)
 				d.endWorker(w, protocol.StopStartFails)
 			}
-			e := queuedStart{ID: l.StartRef, Owner: l.Owner, Project: l.Project, Harness: l.Harness, Model: l.Model, Task: l.Task, Permissions: l.Permissions, FromCTO: l.FromCTO, QueuedAt: w.startedAt}
+			e := queuedStart{ID: l.StartRef, Owner: l.Owner, Project: l.Project, Harness: l.Harness, Model: l.Model, Task: l.Task, Permissions: l.Permissions, FromCTO: l.FromCTO, QueuedAt: w.startedAt, Why: l.Why, NotFamily: l.NotFamily}
 			if err != nil {
 				d.clearStartReservation()
 				d.notStarted(d.ctoCtx, e, err.Error())
@@ -835,7 +839,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 				d.notStarted(d.ctoCtx, e, "the worker started, but its task could not be sent: "+err.Error())
 				return
 			}
-			body := protocol.WorkerStartedText(out.SessionID, l.Harness, l.Model, l.Project, d.hostName(), time.Since(w.startedAt)) + protocol.WorkerPermissionsLine(l.Permissions, l.Harness, out.OSSandbox) + "\n"
+			body := protocol.WorkerStartedText(out.SessionID, l.Harness, l.Model, l.Project, d.hostName(), time.Since(w.startedAt), l.Why) + protocol.WorkerPermissionsLine(l.Permissions, l.Harness, out.OSSandbox) + "\n"
 			if _, err := d.send(d.ctoCtx, protocol.MsgSend{Sender: out.SessionID, Recipient: l.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 				d.Logf("worker %s: started notice: %v", w.id, err)
 			}

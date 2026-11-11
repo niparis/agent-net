@@ -289,7 +289,106 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 	if len(quotaExcluded) > 0 {
 		picked.PickNote += "; " + strings.Join(quotaExcluded, "; ")
 	}
+	picked.Why = pickerShortWhy(level, in.D, chosen, len(qualified), entries, quotaExcluded)
 	return picked, ""
+}
+
+// pickerShortWhy builds the short why line (at most 2 lines):
+// the difficulty and D; the chosen profile with its record (rate, n) or its score;
+// the count of qualifying alternatives; and the top reasons others were left out, grouped.
+func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCount int, entries []*pickerEntry, quotaExcluded []string) string {
+	parts := []string{fmt.Sprintf("difficulty %s (D %.2f)", level, d)}
+	if chosen != nil {
+		if chosen.cell.N > 0 {
+			parts = append(parts, fmt.Sprintf("%s %.2f (n%d)", chosen.name, chosen.cell.Score, chosen.cell.N))
+		} else if chosen.scored && chosen.bench > 0 {
+			parts = append(parts, fmt.Sprintf("%s (score %.1f)", chosen.name, chosen.bench))
+		} else {
+			parts = append(parts, chosen.name)
+		}
+	}
+	altCount := qualifyingCount
+	if chosen != nil && chosen.qualified && altCount > 0 {
+		altCount--
+	}
+	if altCount == 1 {
+		parts = append(parts, "1 qualifying")
+	} else {
+		parts = append(parts, fmt.Sprintf("%d qualifying", altCount))
+	}
+
+	type leftOutItem struct {
+		name     string
+		provider string
+		reason   string
+	}
+	var leftItems []leftOutItem
+	for _, e := range entries {
+		if e == chosen {
+			continue
+		}
+		if e.reason != "" {
+			provider := e.c.Provider
+			if provider == "" {
+				provider = QuotaProviderForStart(e.c.Harness, e.c.Model)
+			}
+			leftItems = append(leftItems, leftOutItem{name: e.name, provider: provider, reason: e.reason})
+		}
+	}
+	for _, qe := range quotaExcluded {
+		name := qe
+		reason := "out of quota"
+		if idx := strings.Index(qe, " left out (quota: "); idx >= 0 {
+			name = qe[:idx]
+			reason = strings.TrimSuffix(qe[idx+len(" left out (quota: "):], ")")
+		}
+		provider := ""
+		for _, e := range entries {
+			if e.name == name {
+				provider = e.c.Provider
+				if provider == "" {
+					provider = QuotaProviderForStart(e.c.Harness, e.c.Model)
+				}
+				break
+			}
+		}
+		leftItems = append(leftItems, leftOutItem{name: name, provider: provider, reason: reason})
+	}
+
+	if len(leftItems) > 0 {
+		reasonOrder := []string{}
+		reasonGroups := map[string][]leftOutItem{}
+		for _, it := range leftItems {
+			if _, exists := reasonGroups[it.reason]; !exists {
+				reasonOrder = append(reasonOrder, it.reason)
+			}
+			reasonGroups[it.reason] = append(reasonGroups[it.reason], it)
+		}
+		var groups []string
+		for _, r := range reasonOrder {
+			items := reasonGroups[r]
+			sameProvider := items[0].provider != ""
+			for _, it := range items {
+				if it.provider != items[0].provider {
+					sameProvider = false
+					break
+				}
+			}
+			if sameProvider && len(items) >= 2 {
+				groups = append(groups, fmt.Sprintf("%s profiles (%s)", items[0].provider, r))
+			} else {
+				names := make([]string, len(items))
+				for i, it := range items {
+					names[i] = it.name
+				}
+				groups = append(groups, fmt.Sprintf("%s (%s)", strings.Join(names, ", "), r))
+			}
+		}
+		if len(groups) > 0 {
+			parts = append(parts, "left out: "+strings.Join(groups, "; "))
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // exploreIsUp tells whether the task is a step up for a thin cell (decision

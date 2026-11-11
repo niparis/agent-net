@@ -542,3 +542,111 @@ func TestNotStartedStorageErrorIsMarkedRetryable(t *testing.T) {
 		t.Errorf("refusal: err=%v frame=%s", err, b)
 	}
 }
+
+func TestNotStartedNoticeListsFilteredProfilesWithoutTruncation(t *testing.T) {
+	f := newStartsFixture(t)
+	// Register profiles:
+	// 1. flash: agy, gemini-2.5-flash (Google family) -> will be filtered by not_family: ["google"]
+	// 2. deepseek: opencode, deepseek/deepseek-v4.1-flash -> provider deepseek has no quota reading (unknown quota)
+	// 3. opus: claude, claude-opus-5-5 -> anthropic quota 0% left
+	profiles := []protocol.WorkerProfile{
+		{Name: "flash", Harness: "agy", Model: "gemini-2.5-flash", Effort: "high"},
+		{Name: "deepseek", Harness: "opencode", Model: "deepseek/deepseek-v4.1-flash", Effort: "high"},
+		{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"},
+	}
+	if err := f.s.saveWorkerProfiles(profiles); err != nil {
+		t.Fatal(err)
+	}
+	harnesses := []protocol.HarnessInfo{
+		{Name: "agy", Models: []string{"gemini-2.5-flash-high"}},
+		{Name: "opencode", Models: []string{"deepseek/deepseek-v4.1-flash"}},
+		{Name: "claude", Models: []string{"claude-opus-5-5"}},
+	}
+	if _, err := f.s.SetNodeHarnesses(f.nodeA, harnesses); err != nil {
+		t.Fatal(err)
+	}
+	launch := true
+	if err := f.s.SetNodeLaunch(f.nodeA, &launch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES(?,?,?,0,0)`, f.nodeA, "/repo/shop", "shop"); err != nil {
+		t.Fatal(err)
+	}
+	scoresJSON := `[{"match":"gemini-2.5-flash","score":60},{"match":"deepseek/deepseek-v4.1-flash","score":50},{"match":"claude-opus-5-5","score":40}]`
+	if _, err := f.s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, scoresKey, scoresJSON); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["google","deepseek","anthropic"]}`); err != nil {
+		t.Fatal(err)
+	}
+	// Anthropic has 0% left (100% used). Deepseek has no quota reading at all.
+	quotas := &protocol.Quotas{
+		GeneratedAt: f.clock.now().Unix(),
+		Providers: []protocol.QuotaProvider{
+			{
+				Provider: "claude",
+				Windows:  []protocol.QuotaWindow{{ID: "5h", PercentUsed: 100}},
+			},
+		},
+	}
+	f.g.usage.set(f.nodeA, f.clock.now(), protocol.UsageReport{Quotas: quotas})
+	if err := f.s.SetNodeHello(f.nodeA, "h1", "1"); err != nil {
+		t.Fatal(err)
+	}
+	nc := &nodeConn{id: f.nodeA}
+	f.g.mu.Lock()
+	f.g.conns[f.nodeA] = nc
+	f.g.mu.Unlock()
+
+	// Track start for q_1
+	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.a, "shop", "claude", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Try workerStart with not_family: ["google"] - should fail because flash is excluded by family, deepseek is quota unknown, opus is quota exhausted
+	_, err := f.g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{
+		Owner: f.a,
+		Level: "hard",
+		WorkerStartRequest: protocol.WorkerStartRequest{
+			Project:   "shop",
+			Task:      "test task",
+			Harness:   "claude",
+			Model:     "auto",
+			NotFamily: []string{"google"},
+		},
+	}, true)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Report the failure via worker.not_started
+	if err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{
+		Ref:    "q_1",
+		Reason: err.Error(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ns := f.notices(t, f.a)
+	if len(ns) != 1 {
+		t.Fatalf("expected 1 notice, got %d", len(ns))
+	}
+	body := ns[0].Body
+
+	// Notice must not be truncated with "..."
+	if strings.Contains(body, "...") {
+		t.Fatalf("not-started notice was truncated with '...':\n%s", body)
+	}
+	// Notice must contain the profile removed by family filter
+	if !strings.Contains(body, "flash: removed by family filter") {
+		t.Fatalf("not-started notice missing family filter reason:\n%s", body)
+	}
+	// Notice must contain the profile whose provider quota is unknown
+	if !strings.Contains(body, "deepseek: quota unknown") {
+		t.Fatalf("not-started notice missing quota unknown reason:\n%s", body)
+	}
+	// Notice must contain all registered profiles
+	if !strings.Contains(body, "opus:") {
+		t.Fatalf("not-started notice missing opus profile:\n%s", body)
+	}
+}

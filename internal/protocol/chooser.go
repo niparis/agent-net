@@ -39,6 +39,8 @@ type WorkerModelChoice struct {
 	// Fallback is true when no profile was allowed by its cell and the old level
 	// rule chose the model.
 	Fallback bool
+	// Why is the short explanation for the chosen model (at most 2 lines).
+	Why string
 }
 
 // WorkerRotation is the smooth weighted round robin state of automatic worker
@@ -146,10 +148,17 @@ func chooseWorkerModelRanked(candidates []WorkerModelCandidate, level string, sc
 		choice, err := chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
 		if err == nil {
 			choice.PickNote, choice.Fallback = fallback, true
+			if choice.Why == "" {
+				choice.Why = fmt.Sprintf("difficulty %s (D %.2f): %s (fallback to level rule, score %.1f)", level, pick[0].D, choice.Model, choice.Score)
+			}
 		}
 		return choice, err
 	}
-	return chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
+	choice, err := chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
+	if err == nil && choice.Why == "" {
+		choice.Why = fmt.Sprintf("difficulty %s: %s (score %.1f)", level, choice.Model, choice.Score)
+	}
+	return choice, err
 }
 
 // chooseWorkerModelBand is the level rule: it picks an adequate model by weighted
@@ -462,6 +471,11 @@ func WorkerRotationShares(level string, candidates []WorkerModelCandidate, rotat
 		names[WorkerModelKey(c)] = name
 	}
 	return rotationShareNote(level, names, state.Recent)
+}
+
+// WorkerQuotaRoom returns the room, note, measured flag and blocked flag for a model.
+func WorkerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, bool) {
+	return workerQuotaRoom(q, provider, model)
 }
 
 func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, bool) {

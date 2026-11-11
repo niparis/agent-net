@@ -191,7 +191,7 @@ func WorkerStartReportText(status, project, harness, startID, note string) strin
 
 // WorkerAcceptedStartText is the notice for a start that was accepted without
 // an answer and then became a worker. status is "started" or "starting".
-func WorkerAcceptedStartText(startID, status, session, harness, model, project, host, worktree, branch, ownerLine string) string {
+func WorkerAcceptedStartText(startID, status, session, harness, model, project, host, worktree, branch, ownerLine string, why ...string) string {
 	note := "the accepted start has begun; the task has been sent to the worker"
 	if status == "starting" {
 		note = "the accepted start has begun; the worker is being set up and gets its task when it is ready"
@@ -210,6 +210,10 @@ func WorkerAcceptedStartText(startID, status, session, harness, model, project, 
 	if ownerLine != "" {
 		b += "\n" + ownerLine
 	}
+	if len(why) > 0 && why[0] != "" {
+		b += "\nwhy: " + why[0]
+		b += "\nfull: agent_workers_find {worker, detail:full}"
+	}
 	return b + "\n"
 }
 
@@ -220,7 +224,7 @@ func WorkerNotStartedText(project, harness, why string) string {
 }
 
 // WorkerStartedText is the notice for a queued start that has become a worker.
-func WorkerStartedText(session, harness, model, project, host string, waited time.Duration, title ...string) string {
+func WorkerStartedText(session, harness, model, project, host string, waited time.Duration, why string, title ...string) string {
 	b := "[agent-net worker notice]\nstatus: started\nnote: the queued start has begun; the task is being sent to the worker\nworker: " +
 		session + " (" + harness
 	if model != "" {
@@ -231,6 +235,10 @@ func WorkerStartedText(session, harness, model, project, host string, waited tim
 		b += " · " + strings.TrimSpace(title[0])
 	}
 	b += "\nmodel: " + ParseModelSelection(harness, "", model, "").Display()
+	if why != "" {
+		b += "\nwhy: " + why
+		b += "\nfull: agent_workers_find {worker, detail:full}"
+	}
 	b += "\nqueue wait: " + waited.Round(time.Second).String() + "\n"
 	return b
 }
@@ -305,7 +313,8 @@ type WorkerInfo struct {
 	Struggle *Struggle `json:"struggle,omitempty"`
 	// Cause is the recorded reason for the latest run's failure or rework,
 	// one of the Cause constants (decision 0145). Empty when none is known.
-	Cause string `json:"cause,omitempty"`
+	Cause     string   `json:"cause,omitempty"`
+	NotFamily []string `json:"not_family,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -377,6 +386,8 @@ type (
 		// "deepseek 4.1 -> opencode-go/deepseek-v4.1-flash". Empty when the
 		// name was used as it was.
 		ModelNote string `json:"model_note,omitempty"`
+		// Why is the short explanation for the chosen model.
+		Why string `json:"why,omitempty"`
 		// Worktree and Branch are set when the worker got its own worktree.
 		Worktree string `json:"worktree,omitempty"`
 		Branch   string `json:"branch,omitempty"`
@@ -484,6 +495,10 @@ type (
 		// MCPServers is the worker start's "approve" or "disable" for the
 		// .mcp.json servers of a Claude worker's folder.
 		MCPServers string `json:"mcp_servers,omitempty"`
+		// Why is the short explanation for the chosen model.
+		Why string `json:"why,omitempty"`
+		// NotFamily contains model families excluded by the caller.
+		NotFamily []string `json:"not_family,omitempty"`
 	}
 	// WorkerLaunched answers "worker.launch". When the machine queued the
 	// start, Queued is true and SessionID is empty.

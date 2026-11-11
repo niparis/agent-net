@@ -37,7 +37,8 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 	q := queuedStart{ID: queueIDFor(l), Owner: l.Owner, OwnerName: l.OwnerName, Project: l.Project, Path: l.Path, Harness: l.Harness,
 		Model: l.Model, Task: l.Task, Title: l.Title, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions,
 		DifficultyAsked: l.DifficultyAsked, DifficultyUsed: l.DifficultyUsed, Touches: strings.Join(l.Touches, ","), FromCTO: l.FromCTO, QueuedAt: time.Now(),
-		Assessment: l.Assessment, AutoContinue: protocol.AutoContinueEnabled(l.AutoContinue), TaskID: l.TaskID, ContinuationPartial: l.ContinuationPartial, ChangeID: l.ChangeID, MCPServers: l.MCPServers, Fixes: l.Fixes}
+		Assessment: l.Assessment, AutoContinue: protocol.AutoContinueEnabled(l.AutoContinue), TaskID: l.TaskID, ContinuationPartial: l.ContinuationPartial, ChangeID: l.ChangeID, MCPServers: l.MCPServers, Fixes: l.Fixes,
+		Why: l.Why, NotFamily: l.NotFamily}
 	if err := d.st.addQueued(q); err != nil {
 		// Without a queue the old behaviour is the safe one: refuse.
 		return &protocol.WorkerLaunched{Reason: "cannot queue: " + err.Error()}
@@ -233,7 +234,8 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	l := protocol.WorkerLaunch{StartRef: e.ID, Project: e.Project, Path: e.Path, Harness: e.Harness, Model: e.Model, Owner: e.Owner, OwnerName: e.OwnerName,
 		Task: e.Task, Title: e.Title, Isolation: e.Isolation, Base: e.Base, RecordTask: e.RecordTask, Permissions: e.Permissions,
 		DifficultyAsked: e.DifficultyAsked, DifficultyUsed: e.DifficultyUsed, Touches: splitTouches(e.Touches), Assessment: e.Assessment,
-		AutoContinue: &e.AutoContinue, TaskID: e.TaskID, ContinuationPartial: e.ContinuationPartial, ChangeID: e.ChangeID, MCPServers: e.MCPServers, Fixes: e.Fixes}
+		AutoContinue: &e.AutoContinue, TaskID: e.TaskID, ContinuationPartial: e.ContinuationPartial, ChangeID: e.ChangeID, MCPServers: e.MCPServers, Fixes: e.Fixes,
+		Why: e.Why, NotFamily: e.NotFamily}
 	out, err := d.runWorkerStart(ctx, l)
 	if err != nil {
 		d.clearStartReservation()
@@ -275,7 +277,7 @@ func (d *Daemon) finishQueuedStart(ctx context.Context, e queuedStart, out proto
 		return
 	}
 	if w != nil {
-		body := protocol.WorkerStartedText(out.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited, e.Title) + protocol.WorkerPermissionsLine(e.Permissions, e.Harness, out.OSSandbox) + "\n"
+		body := protocol.WorkerStartedText(out.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited, e.Why, e.Title) + protocol.WorkerPermissionsLine(e.Permissions, e.Harness, out.OSSandbox) + "\n"
 		if _, err := d.send(ctx, protocol.MsgSend{Sender: out.SessionID, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 			d.Logf("worker %s: started notice: %v", w.id, err)
 		}
@@ -348,7 +350,7 @@ func (d *Daemon) finishQueuedResume(ctx context.Context, e queuedStart, row work
 		return
 	}
 	if w != nil {
-		body := protocol.WorkerStartedText(row.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited, e.Title) + protocol.WorkerPermissionsLine(e.Permissions, e.Harness, w.osSandbox) + "\n"
+		body := protocol.WorkerStartedText(row.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited, e.Why, e.Title) + protocol.WorkerPermissionsLine(e.Permissions, e.Harness, w.osSandbox) + "\n"
 		if _, err := d.send(ctx, protocol.MsgSend{Sender: row.SessionID, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 			d.Logf("worker %s: started notice: %v", w.id, err)
 		}
