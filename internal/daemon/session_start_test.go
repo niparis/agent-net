@@ -829,3 +829,20 @@ func TestSessionResumeCodexRegistered(t *testing.T) {
 		t.Fatalf("home missing: %+v", r.EnterPlan)
 	}
 }
+
+func TestSessionStartFailureSenderAgentNet(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startWorkerNode(t, g, shortSet, nil)
+	requester, err := g.gw.Store().UpsertSession(n.d.NodeID(), protocol.SessionInfo{Harness: "claude", NativeID: "requester"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.d.startFailed(protocol.StartedSession{ID: "start_test", Project: "garden", Harness: "claude", Requester: requester, Error: "failed to launch", ErrorCode: "launch_failed"}, false)
+	messages, err := g.gw.Store().Messages(n.d.NodeID(), protocol.QueryMessages{SessionID: requester})
+	if err != nil || len(messages) != 1 {
+		t.Fatalf("messages: %+v %v", messages, err)
+	}
+	if m := messages[0]; m.From != "agent-net" || m.Type != protocol.TypeNotification || !strings.Contains(m.Body, "launch_failed") {
+		t.Fatalf("failure notice: %+v", m)
+	}
+}

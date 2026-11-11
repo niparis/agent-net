@@ -819,43 +819,18 @@ func (d *Daemon) startFailed(r protocol.StartedSession, notify bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := d.call(ctx, "session.start.failed", protocol.SessionStartFailure{Owner: d.ownerSessionID(), StartID: r.ID,
-		Project: r.Project, Harness: r.Harness, Error: r.Error})
+		Project: r.Project, Harness: r.Harness, Error: r.Error, Requester: r.Requester, ErrorCode: r.ErrorCode, Hostname: r.Hostname})
 	if err != nil {
 		d.Logf("session start %s: the gateway did not record the failure: %v", r.ID, err)
 	}
 	if notify {
 		d.notifySessionStartFailed(r)
 	}
-	d.notifyRequesterStartFailed(r.Requester, r)
 }
 
 // startRequesterKey carries the session that asked for a start (the CTO) to
 // the place where the start fails, which can be long after the call returned.
 type startRequesterKey struct{}
-
-// notifyRequesterStartFailed tells the session that asked for a start that it
-// failed, with the reason code and the words. The start call returned
-// "starting" long before, so a message is the only way the caller learns of it.
-func (d *Daemon) notifyRequesterStartFailed(requester string, r protocol.StartedSession) {
-	owner := d.ownerSessionID()
-	if requester == "" || owner == "" || requester == owner {
-		return
-	}
-	name := cleanLine(r.Project)
-	if host := cleanLine(r.Hostname); host != "" {
-		name += " on " + host
-	}
-	body := "[agent-net] Session start failed: " + name + " (start " + r.ID + "). "
-	if r.ErrorCode != "" {
-		body += "Reason code: " + r.ErrorCode + ". "
-	}
-	body += firstNonEmpty(cleanLine(r.Error), "no reason was reported")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := d.send(ctx, protocol.MsgSend{Sender: owner, Recipient: requester, Type: protocol.TypeNotification, Body: body, IdempotencyKey: "start-failed-" + r.ID}); err != nil {
-		d.Logf("session start %s: the requester %s was not told of the failure: %v", r.ID, requester, err)
-	}
-}
 
 // repoStartReservation returns a structured refusal so the caller can offer a
 // settings change without parsing an error string.
@@ -884,5 +859,19 @@ func (d *Daemon) releaseRepoStart(r protocol.StartedSession) {
 	_, err := d.repoStartReservation(ctx, protocol.RepoStartReservation{Owner: d.ownerSessionID(), Ref: r.ID, Release: true})
 	if err != nil {
 		d.Logf("release Repo start reservation %s: %v", r.ID, err)
+	}
+}
+
+// notifyRequesterStartFailed asks the gateway to send its own failure notice.
+// The machine that ran a remote start already recorded the failure event.
+func (d *Daemon) notifyRequesterStartFailed(requester string, r protocol.StartedSession) {
+	if requester == "" || requester == d.ownerSessionID() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := d.call(ctx, "session.start.failed", protocol.SessionStartFailure{Owner: d.ownerSessionID(), StartID: r.ID, Project: r.Project, Harness: r.Harness, Error: r.Error, ErrorCode: r.ErrorCode, Hostname: r.Hostname, Requester: requester, NoticeOnly: true})
+	if err != nil {
+		d.Logf("session start %s: requester was not told of failure: %v", r.ID, err)
 	}
 }

@@ -3965,7 +3965,13 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		if !ok {
 			return msg, false, reject("unknown parent message %q", p.ParentID)
 		}
-		if parent.To != p.Sender || parent.From != p.Recipient {
+		automaticTaskNotice := false
+		if p.WorkerNotice && parent.From == agentNetSender && protocol.IsWorkerTask(parent) && parent.To == p.Sender {
+			if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND json_valid(worker) AND json_extract(worker,'$.owner')=?)`, p.Sender, p.Recipient).Scan(&automaticTaskNotice); err != nil {
+				return msg, false, err
+			}
+		}
+		if parent.To != p.Sender || (parent.From != p.Recipient && !automaticTaskNotice) {
 			return msg, false, reject("a reply must come from the parent's recipient and go to its sender")
 		}
 		if p.Ack && parent.Type != protocol.TypeRequest {
@@ -4054,7 +4060,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			return msg, false, reject("an idle worker notice must be sent to the worker's owner")
 		}
 		var latestTask string
-		err := tx.QueryRow(`SELECT id FROM messages WHERE sender=? AND recipient=? AND type=? ORDER BY rowid DESC LIMIT 1`,
+		err := tx.QueryRow(`SELECT id FROM messages WHERE (sender=? OR (sender='agent-net' AND worker_task=1)) AND recipient=? AND type=? ORDER BY rowid DESC LIMIT 1`,
 			workerOwner, p.Sender, protocol.TypeRequest).Scan(&latestTask)
 		if err != nil {
 			if err == sql.ErrNoRows {

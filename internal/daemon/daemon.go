@@ -1447,7 +1447,7 @@ retryWorker:
 	firstPiTask := false
 	if targetWorker != nil && targetWorker.harness == "pi" {
 		d.wmu.Lock()
-		firstPiTask = targetWorker.taskMsg == "" && m.From == targetWorker.owner && m.Type == protocol.TypeRequest
+		firstPiTask = targetWorker.taskMsg == "" && (m.From == targetWorker.owner || (m.From == "agent-net" && protocol.IsWorkerTask(m))) && m.Type == protocol.TypeRequest
 		d.wmu.Unlock()
 	}
 	d.touchWorker(m.To, m.From)

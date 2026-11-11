@@ -1821,3 +1821,8 @@ The nudge pause tools (`agent_nudge_pause`, `agent_nudge_resume`, and
 on its authenticated machine. Other agents, workers and the CTO cannot call
 them. Only the owner can use their Desk Undo receipts. Pauses affect automatic
 nudges only; owner messages and peer requests and replies keep normal delivery.
+
+Gateway-created worker tasks use the reserved `agent-net` sender. A worker
+notice may reply to such a task while going to the worker's recorded owner.
+The gateway checks the task marker, its recipient and the stored worker owner.
+Public message sends still cannot use the reserved sender.

@@ -4122,3 +4122,9 @@ changes. The idle interval and daily cap stay the same.
 Reply reminders follow the original requests in a busy-hold batch. The batch
 carrier never gets a reply reminder. Replying to an original message ID closes
 that request, and an unanswered request keeps its own sender and ID.
+
+Messages agent-net creates by itself use the `agent-net` sender. This includes
+native MCP removal restart notices, asynchronous session start failures and
+background phrasing worker tasks. Restart notices are notifications. Real
+owner sends, replies, worker briefs and Desk answers keep the owner sender.
+The reserved sender remains unavailable through public message sends.

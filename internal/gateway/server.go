@@ -1583,6 +1583,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.RecordSessionStartFailure(nc.id, p); err != nil {
 			return nil, err
 		}
+		if m, err := st.sessionStartFailureNotice(p); err != nil {
+			g.logLine("error", "where", "session start failure notice", "err", err)
+		} else if m.ID != "" {
+			g.dispatch(ctx, m)
+		}
 		g.logLine("session.start_failed", "node", nc.id, "host", st.hostname(nc.id), "owner", p.Owner,
 			"start", p.StartID, "project", p.Project, "harness", p.Harness, "error", p.Error)
 		return struct{}{}, nil

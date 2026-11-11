@@ -17,10 +17,34 @@ func (s *Store) RecordSessionStartFailure(node string, p protocol.SessionStartFa
 	if !allowed {
 		return reject("session start failure requires the owner of this machine")
 	}
+	if p.NoticeOnly {
+		return nil
+	}
 	if len(p.Error) > 300 {
 		p.Error = p.Error[:300]
 	}
 	detail := strings.TrimPrefix(pairs("start", p.StartID, "project", p.Project, "harness", p.Harness, "error", p.Error), " ")
 	s.Event("session.start_failed", node, "", "", detail)
 	return nil
+}
+
+// sessionStartFailureNotice runs only after the machine's owner was verified.
+func (s *Store) sessionStartFailureNotice(p protocol.SessionStartFailure) (protocol.Message, error) {
+	if p.Requester == "" || p.Requester == p.Owner {
+		return protocol.Message{}, nil
+	}
+	name := protocol.CleanWaitingText(p.Project)
+	if host := protocol.CleanWaitingText(p.Hostname); host != "" {
+		name += " on " + host
+	}
+	body := "[agent-net] Session start failed: " + name + " (start " + p.StartID + "). "
+	if p.ErrorCode != "" {
+		body += "Reason code: " + protocol.CleanWaitingText(p.ErrorCode) + ". "
+	}
+	reason := protocol.CleanWaitingText(p.Error)
+	if reason == "" {
+		reason = "no reason was reported"
+	}
+	m, _, err := s.storeAutomaticMessage(protocol.MsgSend{Recipient: p.Requester, Type: protocol.TypeNotification, Body: body + reason, IdempotencyKey: "start-failed-" + p.StartID})
+	return m, err
 }

@@ -227,11 +227,15 @@ type SessionAgentReservation struct {
 // SessionStartFailure is the daemon's report that a start it answered as
 // starting did not start. The gateway records it as an event.
 type SessionStartFailure struct {
-	Owner   string `json:"owner_session"`
-	StartID string `json:"start_id"`
-	Project string `json:"project,omitempty"`
-	Harness string `json:"harness,omitempty"`
-	Error   string `json:"error,omitempty"`
+	NoticeOnly bool   `json:"notice_only,omitempty"`
+	Requester  string `json:"requester,omitempty"`
+	ErrorCode  string `json:"error_code,omitempty"`
+	Hostname   string `json:"hostname,omitempty"`
+	Owner      string `json:"owner_session"`
+	StartID    string `json:"start_id"`
+	Project    string `json:"project,omitempty"`
+	Harness    string `json:"harness,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // RepoStartReservation reserves a place during an agent-net session launch.
