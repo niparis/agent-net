@@ -2031,7 +2031,7 @@ func (m Model) sessionTaskText(a protocol.AgentView) string {
 			}
 		}
 	}
-	if a.Worker == nil && !protocol.CompactionSupported(a.Harness) && a.Status != "ended" && a.Status != "offline" {
+	if a.Worker == nil && protocol.CompactionHarness(a.Harness) && !protocol.CompactionSupported(a.Harness) && a.Status != "ended" && a.Status != "offline" {
 		return "compaction not supported for " + a.Harness
 	}
 	return ""

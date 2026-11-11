@@ -350,6 +350,10 @@ type helloParams struct {
 	// session open (foreground, background or unknown) and which model it runs.
 	Mode  string `json:"mode"`
 	Model string `json:"model"`
+	// ContextTokens and ContextLimit are the harness's estimate of the current
+	// context and the model window. Pi reports both; other plugins may omit them.
+	ContextTokens int64 `json:"context_tokens"`
+	ContextLimit  int64 `json:"context_limit"`
 	// Name is optional. It is the name (title) the harness gives the session,
 	// shown in the TASK column until the agent announces a task; it is not the
 	// session's network name, which the gateway takes from the project.
@@ -537,7 +541,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		}
 		repo, noProject := d.sessionRepo(p.Cwd, true)
 		token, _ := procToken(pid)
-		ls := &localSession{stopToken: token, conn: lc, info: protocol.SessionInfo{
+		ls := &localSession{stopToken: token, conn: lc, contextTokens: p.ContextTokens, contextLimit: p.ContextLimit, info: protocol.SessionInfo{
 			OpenCodeActivity: p.OpenCodeActivity, Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: title,
 			Status: status, Delivery: "plugin", Repo: repo, NoProject: noProject,
 			Mode: p.Mode, Model: protocol.CleanModel(p.Model), Worker: winfo}}
@@ -867,12 +871,14 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	case "status":
 		// Status, mode and model are all optional; the ones present change.
 		var p struct {
-			Status string  `json:"status"`
-			Mode   *string `json:"mode"`
-			Model  *string `json:"model"`
-			Name   *string `json:"name"`
+			Status        string  `json:"status"`
+			Mode          *string `json:"mode"`
+			Model         *string `json:"model"`
+			Name          *string `json:"name"`
+			ContextTokens *int64  `json:"context_tokens"`
+			ContextLimit  *int64  `json:"context_limit"`
 		}
-		if json.Unmarshal(raw, &p) != nil || (p.Status == "" && p.Mode == nil && p.Model == nil && p.Name == nil) ||
+		if json.Unmarshal(raw, &p) != nil || (p.Status == "" && p.Mode == nil && p.Model == nil && p.Name == nil && p.ContextTokens == nil && p.ContextLimit == nil) ||
 			(p.Status != "" && !validStatus(p.Status)) {
 			return nil, errors.New("status must be idle, busy, shell, dormant or unknown")
 		}
@@ -905,6 +911,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			if p.Status == "busy" {
 				// Working again: the user answered, or the session moved on.
 				ls.info.Waiting = nil
+				ls.info.LastCompactedAt, ls.info.LastCompactedReason = 0, ""
 				ls.turnStartedLocked()
 			} else if p.Status == "idle" && previousStatus == "busy" {
 				ls.turnIdleLocked()
@@ -921,6 +928,12 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		}
 		if p.Model != nil {
 			ls.info.Model = protocol.CleanModel(*p.Model)
+		}
+		if p.ContextTokens != nil {
+			ls.contextTokens = *p.ContextTokens
+		}
+		if p.ContextLimit != nil {
+			ls.contextLimit = *p.ContextLimit
 		}
 		if p.Name != nil && ls.info.Worker == nil {
 			ls.info.Name = d.pluginTitle(*p.Name, ls.info.Cwd)
@@ -950,6 +963,40 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		ls.info.Repo = repo
 		d.mu.Unlock()
 		d.pushSession(ls)
+		return nil, nil
+
+	case "compacted":
+		// A plugin reports that an automatic compaction finished. Pi is the
+		// only harness that runs it inside the session process.
+		var p struct {
+			OK            bool   `json:"ok"`
+			Reason        string `json:"reason"`
+			At            int64  `json:"at"`
+			Detail        string `json:"detail"`
+			ContextTokens int64  `json:"context_tokens"`
+			ContextLimit  int64  `json:"context_limit"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad compacted params")
+		}
+		if ls == nil || ls.conn != lc {
+			return nil, errors.New("only plugin clients report a compaction")
+		}
+		if p.OK && p.Reason != "" {
+			at := p.At
+			if at == 0 {
+				at = time.Now().Unix()
+			}
+			d.noteCompacted(ls.info.Harness, ls.info.NativeID, at, p.Reason)
+		} else if p.Detail != "" {
+			d.Logf("auto compaction %s %s: %s", ls.info.Harness, ls.info.NativeID, p.Detail)
+		}
+		if p.ContextTokens > 0 {
+			ls.contextTokens = p.ContextTokens
+		}
+		if p.ContextLimit > 0 {
+			ls.contextLimit = p.ContextLimit
+		}
 		return nil, nil
 
 	case "turn_error", "turn_ok":

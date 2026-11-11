@@ -305,6 +305,8 @@ type localSession struct {
 	limitUntil  int64
 	limitReason string
 	turnErrored bool
+	// contextTokens and contextLimit are what the Pi extension last reported.
+	contextTokens, contextLimit int64
 	// owned is set for a session the daemon registered itself (a Codex worker
 	// in its private server). Discovery of a harness never removes it.
 	owned bool
@@ -380,6 +382,11 @@ type Daemon struct {
 	ctoCompactEvery time.Duration
 	ctoCtx          context.Context
 	testCleanupNow  func() time.Time
+
+	autoCompactMu    sync.Mutex
+	autoCompact      map[string]*autoCompactState
+	autoCompactEvery time.Duration
+	autoCompactNow   func() time.Time
 
 	cleanupLogMu        sync.Mutex
 	cleanupProjectLogs  map[string]time.Time
@@ -602,6 +609,7 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{startedAt: time.Now(), cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
+		autoCompact: map[string]*autoCompactState{}, autoCompactEvery: time.Minute,
 		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1), outboxWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}, "agy": agyLauncher{}},
@@ -675,6 +683,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		a.Start(ctx, d)
 	}
 	d.startUsage(ctx)
+	d.startAutoCompactionLoop(ctx)
 	if d.cfg.ApplyIntegrations != nil {
 		d.wg.Add(1)
 		go func() { defer d.wg.Done(); d.integrationsLoop(ctx) }()

@@ -438,7 +438,7 @@ settings:
     default: Agent-Net-Caller
     live: true
   - key: sessions.compaction_threshold_percent
-    description: Compact a persistent non-worker session when its context fill reaches this percent. Claude and OpenCode (including the CTO) support compaction; Codex and pi do not.
+    description: Compact a persistent non-worker session when its context fill reaches this percent. Claude, OpenCode (including the CTO), Codex and pi support compaction. A harness with no compaction command is reported on its session row.
     kind: advice
     type: int
     min: 1
@@ -461,7 +461,7 @@ settings:
     default: true
     live: true
   - key: sessions.idle_compaction_min_tokens
-    description: Skip the idle trigger for Claude sessions smaller than this many context tokens. It does not affect the fill trigger.
+    description: Skip the idle trigger for a session smaller than this many context tokens. It does not affect the fill trigger or the CTO.
     kind: advice
     type: int
     levels: [network]

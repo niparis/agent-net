@@ -25,8 +25,10 @@ their descriptions say they control only the idle trigger.
 
 Claude compacts through `/compact` typed into its own attach client. OpenCode
 compacts through its compaction API; the CTO loop and persistent OpenCode
-sessions share that call. Codex and pi have no compaction command yet, so the
-setting description says so and nothing is attempted for them.
+sessions share that call. Codex compacts through the shared app server's
+`thread/compact/start`. Pi runs its own compaction when the daemon pushes
+`compact` to the extension. A harness with no compaction command is reported on
+the session row and not attempted.
 
 Each session row carries `last_compacted_at` and `last_compacted_reason`, where
 the reason is `fill N%` or `idle`. The Sessions row shows both, and

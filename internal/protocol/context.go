@@ -40,7 +40,17 @@ func ContextFill(tokens, limit int64) (int, bool) {
 // for a harness. A harness with no mechanism is reported, never faked.
 func CompactionSupported(harness string) bool {
 	switch harness {
-	case "claude", "opencode", "cto":
+	case "claude", "opencode", "codex", "pi", "cto":
+		return true
+	}
+	return false
+}
+
+// CompactionHarness says whether a harness is a coding agent session that the
+// owner may expect auto-compaction for. Owner, CTO and bot rows are not.
+func CompactionHarness(harness string) bool {
+	switch harness {
+	case "claude", "opencode", "codex", "pi", "agy":
 		return true
 	}
 	return false

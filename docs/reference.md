@@ -4011,7 +4011,8 @@ migration sets `50` so its old behaviour stays.
 Two settings are secondary controls for the idle trigger only.
 `sessions.idle_compaction` (default `true`) turns the idle trigger on or off.
 `sessions.idle_compaction_min_tokens` (default `200000`) skips the idle trigger
-for a Claude session below that size. Neither affects the fill trigger.
+for a session below that size. Neither affects the fill trigger. The CTO ignores
+the minimum to keep its old behaviour.
 
 The fill trigger fires when context tokens reach the threshold percentage of
 the model's window. Context tokens are the latest assistant usage: input plus
@@ -4049,10 +4050,24 @@ OpenCode compacts through `POST /api/session/{id}/compact` with
 after a compaction reports the context after it; the CTO chat shows one line
 such as `compacted: 182k -> 14k tokens`.
 
-Codex and pi have no compaction command yet. Setting the key does not attempt a
-compaction for them, and the setting description says so. The Sessions row shows
-`compacted HH:MM (fill N%)` or `compacted HH:MM (idle)` in your display time
-zone after a successful compaction, until a new turn clears it.
+Codex compacts through the shared app server's `thread/compact/start` with the
+thread ID. The daemon reads the thread's context and window from the last
+`token_count` entry in its rollout file. It compacts only threads the app server
+reports as background; a thread opened by the CLI or an IDE is left alone
+because the app server does not say whether a client is attached.
+
+Pi runs its own `/compact` entry point when the daemon pushes `compact` to its
+extension. The extension reports the context estimate on every settled turn and
+sends the result back, so the row note is written only after Pi confirms the
+compaction. A Pi TUI is attached by definition and is never compacted; RPC, JSON
+and print sessions can be.
+
+OpenCode reports no attached-client signal, so the daemon relies on its idle and
+busy state and treats a foreground mode as attached when a plugin can say it.
+The Sessions row shows `compacted HH:MM (fill N%)` or `compacted HH:MM (idle)`
+in your display time zone after a successful compaction, until a new turn
+clears it. A harness with no compaction command shows
+`compaction not supported for <harness>`.
 
 ### Ending a stopped background Claude tree
 

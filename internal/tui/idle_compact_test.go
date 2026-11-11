@@ -9,13 +9,17 @@ import (
 
 func TestCompactionUnsupportedRowNote(t *testing.T) {
 	m := Model{loc: time.UTC}
-	a := protocol.AgentView{Harness: "codex", Status: "idle"}
-	if got := m.sessionTaskText(a); got != "compaction not supported for codex" {
+	a := protocol.AgentView{Harness: "agy", Status: "idle"}
+	if got := m.sessionTaskText(a); got != "compaction not supported for agy" {
 		t.Fatalf("note=%q", got)
 	}
-	a.Harness = "claude"
+	a.Harness = "codex"
 	if got := m.sessionTaskText(a); got != "" {
 		t.Fatalf("supported harness note=%q", got)
+	}
+	a.Harness = "owner"
+	if got := m.sessionTaskText(a); got != "" {
+		t.Fatalf("owner row note=%q", got)
 	}
 }
 
