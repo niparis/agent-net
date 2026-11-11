@@ -1287,28 +1287,29 @@ CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (
 // is the unordered pair of parties, or the conversation id when one side is
 // agent-net. worker_lifecycle marks a worker start or difficulty notice that
 // the list skips, and blocked marks a message that reports a blocked action.
-// They are generated columns so every insert gets them, including the repair
-// and test inserts that name their columns. The covering
-// index lets the stored Messages list group and page one thread per pair from
-// the index alone, without reading the body of every message or sorting the
-// whole table. The columns are added in the migration loop only when absent,
-// so a replay is safe.
+// They are VIRTUAL generated columns, because SQLite refuses to add a STORED
+// generated column to a table that already exists, and every existing gateway
+// runs this as an ALTER. The index gives the stored Messages list its thread
+// order and the page's keys, so it does not sort the whole table. SQLite seeks
+// the row for a generated value even when the index holds it, so the values
+// themselves come from the row. The columns are added in the migration loop
+// only when absent, so a replay is safe.
 const messagesPairGIDMigration = `
 -- Message pair grouping columns (the Messages tab's threads)
 ALTER TABLE messages ADD COLUMN pair_gid TEXT GENERATED ALWAYS AS (
  CASE
   WHEN sender = 'agent-net' OR recipient = 'agent-net' THEN conversation_id
   WHEN sender < recipient THEN 'pair:' || sender || char(0) || recipient
-  ELSE 'pair:' || recipient || char(0) || sender END) STORED;
+  ELSE 'pair:' || recipient || char(0) || sender END) VIRTUAL;
 ALTER TABLE messages ADD COLUMN worker_lifecycle INTEGER GENERATED ALWAYS AS (
  CASE WHEN body LIKE '[agent-net worker notice]%' AND (
   instr(body, char(10)||'status: started'||char(10)) > 0 OR
   instr(body, char(10)||'status: difficulty'||char(10)) > 0 OR
   instr(body, char(10)||'status: queued'||char(10)) > 0 OR
-  instr(body, char(10)||'status: not started'||char(10)) > 0) THEN 1 ELSE 0 END) STORED;
+  instr(body, char(10)||'status: not started'||char(10)) > 0) THEN 1 ELSE 0 END) VIRTUAL;
 ALTER TABLE messages ADD COLUMN blocked INTEGER GENERATED ALWAYS AS (
  CASE WHEN body LIKE '%blocked on%' OR body LIKE '%blocked by%' OR body LIKE '%blocked:%'
-  OR body LIKE '%is blocked%' OR body LIKE '%I am blocked%' THEN 1 ELSE 0 END) STORED;
+  OR body LIKE '%is blocked%' OR body LIKE '%I am blocked%' THEN 1 ELSE 0 END) VIRTUAL;
 CREATE INDEX IF NOT EXISTS messages_pair_gid ON messages
  (pair_gid, created_at, conversation_id, worker_lifecycle, blocked, sender, owner_approved, id);
 -- The worker lookup runs on every conversations page. These partial indexes

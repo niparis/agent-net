@@ -266,6 +266,120 @@ func TestConversationsPageGroupsAPeerPairAndItsBurst(t *testing.T) {
 	}
 }
 
+// TestMessagesPairGIDMigrationUpgradesPopulatedDatabase builds the messages
+// table as it is on a gateway that predates the thread columns, fills it with
+// history, and then upgrades it through OpenStore. SQLite refuses to add a
+// STORED generated column to a table that already exists, so this is the
+// upgrade every existing gateway runs; it only passes when the columns are
+// VIRTUAL.
+func TestMessagesPairGIDMigrationUpgradesPopulatedDatabase(t *testing.T) {
+	path := seededStorePath(t, "gw.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Strip the thread columns and their indexes, and step the version back
+	// one, so the file looks like one written before the migration.
+	for _, stmt := range []string{
+		`DROP INDEX IF EXISTS messages_pair_gid`,
+		`DROP INDEX IF EXISTS messages_worker_notices`,
+		`DROP INDEX IF EXISTS messages_worker_briefs`,
+		`ALTER TABLE messages DROP COLUMN pair_gid`,
+		`ALTER TABLE messages DROP COLUMN worker_lifecycle`,
+		`ALTER TABLE messages DROP COLUMN blocked`,
+		`DELETE FROM schema_version WHERE version = (SELECT MAX(version) FROM schema_version)`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	base := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	insertConversationMessage(t, s, "m_system", "c_system", "agent-net", "s_a", "a system notice", base.Add(-5*time.Minute))
+	insertConversationMessage(t, s, "m_pair", "c_pair", "s_b", "s_a", "a normal message", base.Add(-4*time.Minute))
+	insertConversationMessage(t, s, "m_started", "c_started", "s_w", "s_a",
+		"[agent-net worker notice]\nstatus: started\n", base.Add(-3*time.Minute))
+	insertConversationMessage(t, s, "m_blocked", "c_blocked", "s_a", "s_b", "I am blocked on the merge", base.Add(-2*time.Minute))
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = OpenStore(path)
+	if err != nil {
+		t.Fatalf("upgrading a populated gateway: %v", err)
+	}
+	defer s.Close()
+	// xinfo hidden=2 marks a VIRTUAL generated column and 3 a STORED one.
+	rows, err := s.db.Query(`SELECT name, hidden FROM pragma_table_xinfo('messages')
+		WHERE name IN ('pair_gid','worker_lifecycle','blocked') ORDER BY name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	hidden := map[string]int{}
+	for rows.Next() {
+		var name string
+		var h int
+		if err := rows.Scan(&name, &h); err != nil {
+			t.Fatal(err)
+		}
+		hidden[name] = h
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"pair_gid", "worker_lifecycle", "blocked"} {
+		if hidden[name] != 2 {
+			t.Errorf("%s hidden = %d, want 2 (VIRTUAL generated)", name, hidden[name])
+		}
+	}
+	var index int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master
+		WHERE type='index' AND name='messages_pair_gid'`).Scan(&index); err != nil {
+		t.Fatal(err)
+	}
+	if index != 1 {
+		t.Errorf("messages_pair_gid index count = %d, want 1", index)
+	}
+	want := map[string]struct {
+		gid       string
+		lifecycle int
+		blocked   int
+	}{
+		"m_system":  {"c_system", 0, 0},
+		"m_pair":    {"pair:s_a\x00s_b", 0, 0},
+		"m_started": {"pair:s_a\x00s_w", 1, 0},
+		"m_blocked": {"pair:s_a\x00s_b", 0, 1},
+	}
+	got, err := s.db.Query(`SELECT id, pair_gid, worker_lifecycle, blocked FROM messages ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Close()
+	seen := 0
+	for got.Next() {
+		var id, gid string
+		var lifecycle, blocked int
+		if err := got.Scan(&id, &gid, &lifecycle, &blocked); err != nil {
+			t.Fatal(err)
+		}
+		w, ok := want[id]
+		if !ok {
+			t.Fatalf("unexpected row %s", id)
+		}
+		if gid != w.gid || lifecycle != w.lifecycle || blocked != w.blocked {
+			t.Errorf("%s = (%q, %d, %d), want (%q, %d, %d)",
+				id, gid, lifecycle, blocked, w.gid, w.lifecycle, w.blocked)
+		}
+		seen++
+	}
+	if err := got.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if seen != len(want) {
+		t.Errorf("read %d rows, want %d", seen, len(want))
+	}
+}
+
 func TestConversationsPageUsesThePairGIDIndex(t *testing.T) {
 	s, _ := newTestStore(t)
 	sqlText, args := conversationsPageSQL("WITH ", conversationsNormalWhere("m", false),
