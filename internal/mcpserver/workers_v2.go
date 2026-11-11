@@ -69,7 +69,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if in.Harness == "" && in.Model != "" && in.Model != "auto" {
 			in.Harness = "opencode"
 		}
-		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue})
+		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Mode: str("mode"), Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue})
 		if err != nil {
 			return nil, err
 		}
@@ -86,9 +86,20 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if r, ok := m["reminder"].(string); ok && r != "" {
 			out["reminder"] = r
 		}
-		if status, _ := m["status"].(string); status == "accepted" {
+		status, _ := m["status"].(string)
+		if status == "accepted" {
 			// The judge and the launch go on in the daemon. A notice follows.
 			out["accepted"] = map[string]any{"start_id": m["start_id"], "note": m["note"]}
+			return out, nil
+		}
+		if status == "checked" {
+			// mode check: nothing started. The list is the same one a refusal
+			// gives, so a caller can fix the brief before it starts a worker.
+			out["brief"] = "ok"
+			if failures, ok := m["brief_failures"].([]any); ok && len(failures) > 0 {
+				out["brief"] = "refused"
+				out["missing"] = failures
+			}
 			return out, nil
 		}
 		if q, ok := m["queue_id"].(string); ok {

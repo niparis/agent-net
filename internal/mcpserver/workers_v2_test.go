@@ -235,6 +235,47 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 
 func mustJSON(v any) string { b, _ := json.Marshal(v); return fmt.Sprint(string(b)) }
 
+// mode check answers with the brief list and starts nothing.
+func TestAgentWorkerStartCheckModeReturnsTheBriefList(t *testing.T) {
+	calls := 0
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "worker_start" {
+			in, _ := params.(protocol.WorkerStartRequest)
+			if in.Mode != "check" {
+				t.Fatalf("mode did not reach the daemon: %q", in.Mode)
+			}
+			calls++
+			if calls == 1 {
+				return json.RawMessage(`{"status":"checked","project":"shop","brief_failures":["Evidence: add this section with at least 3 lines"]}`), nil
+			}
+			return json.RawMessage(`{"status":"checked","project":"shop"}`), nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start",
+		Arguments: map[string]any{"task": "do it", "mode": "check"}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_start: %v %+v", err, res)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	if out["brief"] != "refused" {
+		t.Fatalf("brief = %v", out["brief"])
+	}
+	missing, _ := out["missing"].([]any)
+	if len(missing) != 1 {
+		t.Fatalf("missing = %v", out["missing"])
+	}
+	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start",
+		Arguments: map[string]any{"task": "do it", "mode": "check"}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_start ok: %v %+v", err, res)
+	}
+	out, _ = res.StructuredContent.(map[string]any)
+	if out["brief"] != "ok" {
+		t.Fatalf("brief = %v", out["brief"])
+	}
+}
+
 func findCatalogTool(name string) *toolcatalog.Tool {
 	for i := range toolcatalog.Tools {
 		if toolcatalog.Tools[i].Name == name {

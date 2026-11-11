@@ -381,6 +381,9 @@ type WorkerStartRequest struct {
 	// top of the choice copied from the project's main checkout. Empty records
 	// nothing. Not allowed with Continue.
 	MCPServers string `json:"mcp_servers,omitempty"`
+	// Mode "check" runs the brief checks and starts nothing. Empty starts a
+	// worker.
+	Mode string `json:"mode,omitempty"`
 }
 
 // WorkerStartResult answers OpWorkerStart.
@@ -425,7 +428,10 @@ type WorkerStartResult struct {
 	Title string `json:"title,omitempty"`
 	// Queued is true when the task message waits in the outbox.
 	Queued bool `json:"queued,omitempty"`
-	// Status is "starting", "started" or "queued". A starting worker has a
+	// BriefFailures lists the brief items that were missing or wrong in a
+	// mode "check" request.
+	BriefFailures []string `json:"brief_failures,omitempty"`
+	// Status is "starting", "started", "queued" or "checked". A starting worker has a
 	// session ID and receives its task after checkout and launch. A queued
 	// start has no SessionID yet:
 	// the machine has no room now, QueueID names the start (agent_worker_stop takes

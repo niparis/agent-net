@@ -1281,7 +1281,22 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, workerBriefRejectionMigration}
+
+// workerBriefRejectionMigration stores every refused worker brief, so retries
+// of one task can be counted and the weekly table can show rejections per
+// caller. The migration loop adds any missing column, so replaying it is safe.
+const workerBriefRejectionMigration = `
+-- Refused worker briefs: caller, normalized task key, missing items, time.
+CREATE TABLE IF NOT EXISTS worker_brief_rejections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  caller TEXT NOT NULL DEFAULT '',
+  task_key TEXT NOT NULL DEFAULT '',
+  failures TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS worker_brief_rejections_task ON worker_brief_rejections(caller, task_key, at);
+CREATE INDEX IF NOT EXISTS worker_brief_rejections_caller ON worker_brief_rejections(caller, at);
+`
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.
@@ -1705,6 +1720,33 @@ func (s *Store) migrate() error {
 					if _, err := tx.Exec(`ALTER TABLE worker_starts ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
 						tx.Rollback()
 						return err
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker_brief_rejections") {
+			var exists int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='worker_brief_rejections'`).Scan(&exists); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if exists > 0 {
+				for _, col := range []struct{ name, spec string }{
+					{"caller", `TEXT NOT NULL DEFAULT ''`},
+					{"task_key", `TEXT NOT NULL DEFAULT ''`},
+					{"failures", `TEXT NOT NULL DEFAULT ''`},
+					{"at", `INTEGER NOT NULL DEFAULT 0`},
+				} {
+					var has int
+					if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_brief_rejections') WHERE name=?`, col.name).Scan(&has); err != nil {
+						tx.Rollback()
+						return err
+					}
+					if has == 0 {
+						if _, err := tx.Exec(`ALTER TABLE worker_brief_rejections ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+							tx.Rollback()
+							return err
+						}
 					}
 				}
 			}

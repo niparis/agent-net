@@ -667,6 +667,43 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		}
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path}, nil
 	}
+	// The brief checks run after the judge's pass and before any pick or
+	// launch. Validation calls and internal read-only phrasing workers skip
+	// them: they start no caller worker and count no rejection. A check mode
+	// returns the list and starts nothing.
+	var briefNote string
+	if !(len(validate) > 0 && validate[0]) && !g.opts.TestNoBriefChecks && !p.RequireReadOnly {
+		failures, err := g.store.checkWorkerBrief(p, pick.Name, difficultyUsed)
+		if err != nil {
+			return none, err
+		}
+		if p.Mode == protocol.WorkerStartModeCheck {
+			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: failures, NodeID: pick.NodeID, Hostname: pick.Hostname,
+				Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model}, nil
+		}
+		if len(failures) > 0 {
+			key := protocol.BriefTaskKey(p.Owner, pick.Name, p.Title, p.Task)
+			rejected, err := g.store.briefRejectionCount(p.Owner, key, g.store.now().Add(-briefRetryWindow).Unix())
+			if err != nil {
+				return none, err
+			}
+			if rejected >= 2 {
+				// The third attempt starts anyway. The remaining failures are
+				// recorded once against the caller, for the weekly table.
+				if rejected == 2 {
+					if err := g.store.recordBriefDefectFromBrief(p.Owner, failures); err != nil {
+						return none, err
+					}
+				}
+				briefNote = fmt.Sprintf("brief started after %d refusals: %s", rejected, strings.Join(failures, "; "))
+			} else {
+				if err := g.store.recordBriefRejection(p.Owner, key, failures); err != nil {
+					return none, err
+				}
+				return none, reject("brief refused (attempt %d of 3, the third starts anyway):\n%s", rejected+1, strings.Join(failures, "\n"))
+			}
+		}
+	}
 	if automatic {
 		difficulty := difficultyUsed
 		providers, err := g.store.workerProviders()
@@ -802,6 +839,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, err
 		}
 		modelNote = appendModelNote(appendModelNote(lead, harnessNote), resolveNote)
+	}
+	if briefNote != "" {
+		if modelNote != "" {
+			modelNote += "; "
+		}
+		modelNote += briefNote
 	}
 	if !automatic && len(p.NotFamily) > 0 {
 		if _, _, err := filterWorkerFamilies([]protocol.WorkerModelCandidate{{Harness: p.Harness, Model: p.Model}}, p.NotFamily); err != nil {
