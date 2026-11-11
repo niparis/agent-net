@@ -116,9 +116,9 @@ func (r *treeReader) Read(context.Context) (usage.Snapshot, error) {
 
 func (r *treeReader) Args(context.Context, []int) map[int]string { return nil }
 
-// The session that asked for the slot and the workers it started are credited.
-// A worker of another session is not, and a caller that maps to no session
-// credits nothing.
+// The caller's own session tree is credited; a worker the caller started is
+// not, because that worker is still running and still uses its CPU. A caller
+// that maps to no session credits nothing.
 func TestCallerTreeCoresCreditsTheCallersTrees(t *testing.T) {
 	self := os.Getpid()
 	workerPID := self + 1
@@ -140,13 +140,10 @@ func TestCallerTreeCoresCreditsTheCallersTrees(t *testing.T) {
 		sessions: map[string]*localSession{"claude/x": {sessionID: "s_own", info: protocol.SessionInfo{PID: self}}},
 		workers:  map[string]*worker{"w_x": {id: "w_x", pid: workerPID, owner: "s_own", sessionID: "s_worker"}}}
 	lc := &localConn{d: d, peerPID: self}
-	// The session's tree ran at 100% of a core, its worker at 50%: 1.5 cores.
-	if got := d.callerTreeCores(lc); math.Abs(got-1.5) > 1e-9 {
-		t.Fatalf("own trees: %v cores, want 1.5", got)
-	}
-	d.workers["w_x"].owner = "s_other"
+	// The session's tree ran at 100% of a core. Its worker ran at 50%, which
+	// is not credited.
 	if got := d.callerTreeCores(lc); math.Abs(got-1) > 1e-9 {
-		t.Fatalf("another session's worker: %v cores, want 1", got)
+		t.Fatalf("own tree: %v cores, want 1", got)
 	}
 	if got := (&Daemon{cfg: d.cfg}).callerTreeCores(lc); got != 0 {
 		t.Fatalf("a caller with no session: %v cores, want 0", got)

@@ -81,11 +81,11 @@ func testParallel(load MachineLoad, target, pendingCores, ownCores float64) int 
 	return n
 }
 
-// callerTreeCores is the averaged CPU, in cores, of the process trees that
-// belong to the session that asked for the slot: its own tree, which holds the
-// suite it ran before, and the workers it started. Crediting that share keeps
-// the caller's own finished work from sizing its next suite down. A caller
-// that maps to no session credits nothing.
+// callerTreeCores is the averaged CPU, in cores, of the calling session's own
+// process tree: the tree that holds the suite it ran before. Crediting that
+// share keeps the caller's own finished work from sizing its next suite down.
+// Workers it started are still running and still use their CPU, so they are
+// not credited. A caller that maps to no session credits nothing.
 func (d *Daemon) callerTreeCores(lc *localConn) float64 {
 	s := d.cfg.UsageSampler
 	if s == nil {
@@ -94,72 +94,51 @@ func (d *Daemon) callerTreeCores(lc *localConn) float64 {
 	lc.mu.Lock()
 	pid := lc.peerPID
 	lc.mu.Unlock()
-	root, owned := d.callerSession(pid)
+	root := d.callerSession(pid)
 	if root <= 0 {
 		return 0
 	}
-	trees := s.Trees()
-	var cores float64
-	if t, ok := trees[root]; ok {
-		cores += t.CPU.Avg / 100
+	if t, ok := s.Trees()[root]; ok {
+		return t.CPU.Avg / 100
 	}
-	d.wmu.Lock()
-	pids := make([]int, 0, len(d.workers))
-	for _, w := range d.workers {
-		if w.pid > 1 && w.pid != root && owned[w.owner] {
-			pids = append(pids, w.pid)
-		}
-	}
-	d.wmu.Unlock()
-	for _, wpid := range pids {
-		if t, ok := trees[wpid]; ok {
-			cores += t.CPU.Avg / 100
-		}
-	}
-	return cores
+	return 0
 }
 
 // callerSession walks pid's parents to the first known session or worker root,
-// as insideSession does for the owner gate. It returns that root and the
-// session IDs it hosts; a pid that maps to no session returns 0.
-func (d *Daemon) callerSession(pid int) (int, map[string]bool) {
+// as insideSession does for the owner gate. A pid that maps to no session
+// returns 0.
+func (d *Daemon) callerSession(pid int) int {
 	if pid <= 0 {
-		return 0, nil
+		return 0
 	}
-	roots := map[int]map[string]bool{}
-	add := func(root int, id string) {
-		if root <= 1 {
-			return
-		}
-		if roots[root] == nil {
-			roots[root] = map[string]bool{}
-		}
-		if id != "" {
-			roots[root][id] = true
+	roots := map[int]bool{}
+	add := func(root int) {
+		if root > 1 {
+			roots[root] = true
 		}
 	}
 	d.mu.Lock()
 	for _, ls := range d.sessions {
-		add(ls.info.PID, ls.sessionID)
+		add(ls.info.PID)
 	}
 	d.mu.Unlock()
 	// A worker's process counts from its start, before its plugin says hello.
 	d.wmu.Lock()
 	for _, w := range d.workers {
-		add(w.pid, w.sessionID)
+		add(w.pid)
 	}
 	d.wmu.Unlock()
 	for p, depth := pid, 0; p > 1 && depth < 64; depth++ {
-		if ids, ok := roots[p]; ok {
-			return p, ids
+		if roots[p] {
+			return p
 		}
 		parent, err := parentPID(p)
 		if err != nil {
-			return 0, nil
+			return 0
 		}
 		p = parent
 	}
-	return 0, nil
+	return 0
 }
 
 // testTimeout is the merger.test_timeout value for a repo, or its network
