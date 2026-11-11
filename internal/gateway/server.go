@@ -1796,7 +1796,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
-		return st.undoNudge(p.NudgeUndoArgs)
+		return st.undoNudge(protocol.NudgeUndoArgs{PauseID: p.PauseID, Receipt: p.Receipt})
 
 	case "permission.undo":
 		var p protocol.PermissionUndoFrame

@@ -92,7 +92,7 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 			if a.ID == "" {
 				return nil, true, errors.New("id is required")
 			}
-			err = d.deliveryCall(ctx, protocol.FrameNudgeResume, protocol.NudgeResumeRequest{SessionID: sid, NudgeResumeArgs: a}, &out)
+			err = d.deliveryCall(ctx, protocol.FrameNudgeResume, protocol.NudgeResumeRequest{SessionID: sid, PauseID: a.ID}, &out)
 		case protocol.OpNudgePausesFind:
 			var a protocol.NudgePausesFindArgs
 			if err := decodeDeliveryArgs(method, raw, &a); err != nil {

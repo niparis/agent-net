@@ -107,7 +107,7 @@ func TestNudgeResumeNoBacklog(t *testing.T) {
 		r.clk.t = r.clk.t.Add(3 * time.Hour)
 		r.g.dispatchStepTasks(context.Background())
 	}
-	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"id": id}); err != nil {
+	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
 		t.Fatal(err)
 	}
 	if bodies := taskBodies(t, r); len(bodies) != 1 {
@@ -189,7 +189,7 @@ func stringMustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
 func TestNudgeChiefOnly(t *testing.T) {
 	s, _, chief, target := nudgeSetup(t)
 	id := nudgeApply(t, s, chief, map[string]any{"kind": "idle_check", "agent": "target-agent"})
-	for frame, args := range map[string]map[string]any{"nudge.pause": {"kind": "idle_check", "agent": "target-agent", "mode": "apply"}, "nudge.resume": {"id": id}, "nudge.pauses.find": {}} {
+	for frame, args := range map[string]map[string]any{"nudge.pause": {"kind": "idle_check", "agent": "target-agent", "mode": "apply"}, "nudge.resume": {"pause_id": id}, "nudge.pauses.find": {}} {
 		if _, err := nudgeCall(t, s, target, frame, args); err == nil || !strings.Contains(err.Error(), "chief") {
 			t.Fatalf("%s refused=%v", frame, err)
 		}
@@ -274,7 +274,7 @@ func TestNudgeStepMixedBatch(t *testing.T) {
 func TestNudgeUndoResumeRestoresPause(t *testing.T) {
 	s, _, chief, target := nudgeSetup(t)
 	id := nudgeApply(t, s, chief, map[string]any{"kind": "idle_check", "agent": "target-agent"})
-	if _, err := nudgeCall(t, s, chief, "nudge.resume", map[string]any{"id": id}); err != nil {
+	if _, err := nudgeCall(t, s, chief, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
 		t.Fatal(err)
 	}
 	log, err := s.DeskLog(1)
@@ -322,7 +322,7 @@ func TestNudgeExpiredQueueSnapshotNotReplayed(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := nudgeApply(t, s, chief, map[string]any{"kind": "idle_check", "agent": "target-agent"})
-	if _, err := nudgeCall(t, s, chief, "nudge.resume", map[string]any{"id": id}); err != nil {
+	if _, err := nudgeCall(t, s, chief, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
 		t.Fatal(err)
 	}
 	if allowed, err := s.allowNudgeDelivery(m); err != nil || allowed {
@@ -333,7 +333,7 @@ func TestNudgeExpiredQueueSnapshotNotReplayed(t *testing.T) {
 func TestNudgeStepExpiredReminderStillPaused(t *testing.T) {
 	r, id := nudgeStepRig(t)
 	r.g.dispatchStepTasks(context.Background())
-	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"id": id}); err != nil {
+	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
 		t.Fatal(err)
 	}
 	r.clk.t = r.clk.t.Add(3 * time.Hour)

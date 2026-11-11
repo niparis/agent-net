@@ -218,7 +218,7 @@ func (s *Store) logNudge(tx *sql.Tx, p protocol.NudgePause, action, receipt stri
 	text := fmt.Sprintf("%s %s for %s; until %s; reason: %s", action, p.Kind, target, until, p.Reason)
 	var options []string
 	if receipt != "" {
-		raw, _ := json.Marshal(protocol.NudgeUndoArgs{ID: p.ID, Receipt: receipt})
+		raw, _ := json.Marshal(protocol.NudgeUndoArgs{PauseID: p.ID, Receipt: receipt})
 		options = []string{protocol.OpNudgeUndo, string(raw)}
 	}
 	return s.deskLog(tx, "chief", "nudge_pause", p.ID, text, text, options)
@@ -237,7 +237,7 @@ func readNudge(q askDB, id string) (protocol.NudgePause, string, string, error) 
 	return p, receipt, action, err
 }
 func (s *Store) ResumeNudge(node string, r protocol.NudgeResumeRequest) (protocol.NudgeResult, error) {
-	out := protocol.NudgeResult{ID: r.ID}
+	out := protocol.NudgeResult{ID: r.PauseID}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return out, err
@@ -249,7 +249,7 @@ func (s *Store) ResumeNudge(node string, r protocol.NudgeResumeRequest) (protoco
 	if err = s.expireNudgePauses(tx); err != nil {
 		return out, err
 	}
-	p, _, _, err := readNudge(tx, r.ID)
+	p, _, _, err := readNudge(tx, r.PauseID)
 	if err != nil {
 		return out, reject("unknown pause")
 	}
@@ -257,7 +257,7 @@ func (s *Store) ResumeNudge(node string, r protocol.NudgeResumeRequest) (protoco
 		return out, reject("pause has already ended")
 	}
 	receipt := protocol.NewID("nu")
-	_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=?,ended_by=?,receipt=?,undo_action='resume' WHERE id=?`, s.now().UnixNano(), r.SessionID, receipt, r.ID)
+	_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=?,ended_by=?,receipt=?,undo_action='resume' WHERE id=?`, s.now().UnixNano(), r.SessionID, receipt, r.PauseID)
 	if err != nil {
 		return out, err
 	}
@@ -307,13 +307,13 @@ func (s *Store) FindNudgePauses(node, session string) (protocol.NudgeResult, err
 	return out, tx.Commit()
 }
 func (s *Store) undoNudge(a protocol.NudgeUndoArgs) (protocol.NudgeResult, error) {
-	out := protocol.NudgeResult{ID: a.ID}
+	out := protocol.NudgeResult{ID: a.Pause()}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return out, err
 	}
 	defer tx.Rollback()
-	p, receipt, action, err := readNudge(tx, a.ID)
+	p, receipt, action, err := readNudge(tx, a.Pause())
 	if err != nil || receipt == "" || receipt != a.Receipt {
 		return out, reject("unknown, stale or already undone receipt")
 	}
@@ -321,9 +321,9 @@ func (s *Store) undoNudge(a protocol.NudgeUndoArgs) (protocol.NudgeResult, error
 		if p.EndedAt != 0 {
 			return out, reject("pause has already ended")
 		}
-		_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=?,ended_by='owner_undo',receipt='',undo_action='' WHERE id=?`, s.now().UnixNano(), a.ID)
+		_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=?,ended_by='owner_undo',receipt='',undo_action='' WHERE id=?`, s.now().UnixNano(), a.Pause())
 	} else if action == "resume" {
-		_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=0,ended_by='',receipt='',undo_action='' WHERE id=?`, a.ID)
+		_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=0,ended_by='',receipt='',undo_action='' WHERE id=?`, a.Pause())
 	} else {
 		return out, reject("receipt cannot be undone")
 	}

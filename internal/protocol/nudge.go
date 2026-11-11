@@ -56,12 +56,15 @@ type NudgePauseRequest struct {
 	SessionID string `json:"session_id"`
 	NudgePauseArgs
 }
+
+// NudgeResumeArgs is the input of the chief's agent_nudge_resume tool. The
+// wire field is pause_id: a frame already owns id.
 type NudgeResumeArgs struct {
 	ID string `json:"id"`
 }
 type NudgeResumeRequest struct {
 	SessionID string `json:"session_id"`
-	NudgeResumeArgs
+	PauseID   string `json:"pause_id"`
 }
 type NudgePausesFindArgs struct{}
 type NudgePausesFindRequest struct {
@@ -89,14 +92,26 @@ type NudgeResult struct {
 	Pauses      []NudgePause   `json:"pauses,omitempty"`
 }
 
-// NudgeUndoArgs is an owner-only Desk receipt, never an agent tool.
+// NudgeUndoArgs is an owner-only Desk receipt, never an agent tool. Old rows
+// store the pause as id; new rows store pause_id. Read both.
 type NudgeUndoArgs struct {
-	ID      string `json:"id"`
+	ID      string `json:"id,omitempty"`
+	PauseID string `json:"pause_id,omitempty"`
 	Receipt string `json:"receipt"`
 }
+
+// Pause returns the pause id from the old or the new field.
+func (a NudgeUndoArgs) Pause() string {
+	if a.PauseID != "" {
+		return a.PauseID
+	}
+	return a.ID
+}
+
 type NudgeUndoRequest struct {
-	NudgeUndoArgs
-	Owner string `json:"owner"`
+	PauseID string `json:"pause_id"`
+	Receipt string `json:"receipt"`
+	Owner   string `json:"owner"`
 }
 
 // ParseNudgeUntil also accepts a minute-resolution RFC3339 timestamp.
