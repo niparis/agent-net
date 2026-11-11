@@ -416,7 +416,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_graph_read",
-    "description": "Read the graph: nodes with charters and rules, and their edges. Give node for one node and its edges.",
+    "description": "Read the graph: nodes with charters and rules, and their edges. Give node for one node and its edges; a shared name returns every node.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -678,7 +678,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machines_find",
-    "description": "List machines with online state and versions. Use agent_machine_get for one machine's details.",
+    "description": "List machines with online state and versions. Use agent_machine_get for one machine's models, quotas, track record or playbook.",
     "inputSchema": {
       "type": "object",
       "properties": {
