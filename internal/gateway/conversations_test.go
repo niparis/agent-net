@@ -450,11 +450,20 @@ func TestConversationsPageGroupsTenThousandWorkerMessagesFast(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("grouped conversation page over 10000 messages took %s", elapsed)
-	if page.Total != workers+convs || len(page.Conversations) != 50 || page.Next == "" {
+	// The 100 agent-to-worker threads stay one row each; the 100 conversations
+	// between alice and bob collapse into one pair row.
+	if page.Total != workers+1 || len(page.Conversations) != 50 || page.Next == "" {
 		t.Fatalf("page total=%d rows=%d next=%q", page.Total, len(page.Conversations), page.Next)
 	}
-	if page.Conversations[0].Count != 2 {
-		t.Errorf("worker row count = %d, want 2", page.Conversations[0].Count)
+	var workerRow *protocol.ConversationView
+	for i := range page.Conversations {
+		if strings.HasPrefix(page.Conversations[i].ID, "worker:") {
+			workerRow = &page.Conversations[i]
+			break
+		}
+	}
+	if workerRow == nil || workerRow.Count != 2 {
+		t.Errorf("worker row = %+v, want a worker row with count 2", workerRow)
 	}
 	// About 40 ms without the race detector and up to 4 s with it on a busy
 	// CI runner; the unindexed query this guards against took 20 s or more.
@@ -495,8 +504,13 @@ func TestConversationsPageKeepsTenThousandMessagesFast(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("first conversation page over 10000 messages took %s", elapsed)
-	if page.Total != 500 || len(page.Conversations) != 50 || page.Next == "" {
+	// All 500 conversations are between the same two parties, so the stored
+	// list shows one thread that counts every message.
+	if page.Total != 1 || len(page.Conversations) != 1 || page.Next != "" {
 		t.Fatalf("page total=%d rows=%d next=%q", page.Total, len(page.Conversations), page.Next)
+	}
+	if page.Conversations[0].Count != 10000 {
+		t.Errorf("pair row count = %d, want 10000", page.Conversations[0].Count)
 	}
 	if elapsed > 10*time.Second {
 		t.Errorf("first page is too slow: %s", elapsed)

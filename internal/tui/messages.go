@@ -70,12 +70,11 @@ func (m Model) feedConversations() []messageConversation {
 		if worker {
 			id = "worker:" + workerSession
 		} else {
-			system = it.From == "agent-net"
-			if !system {
-				if k, ok := classifySystemMessage(it.From, it.Body); ok && k == systemNativeMCPRemoved {
-					system = true
-				}
-			}
+			// The gateway groups a conversation that involves agent-net by
+			// its conversation id, both its notices and the replies to them,
+			// and every other conversation by its pair. The feed must use the
+			// same key or the two rows never merge.
+			system = it.From == "agent-net" || it.To == "agent-net"
 			if system {
 				id = it.ConversationID
 				if id == "" {

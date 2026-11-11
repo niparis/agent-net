@@ -48,6 +48,31 @@ func TestThreadsGroupByPartyPair(t *testing.T) {
 	}
 }
 
+func TestThreadsKeepAnAgentNetNoticeAndItsReplyInOneThread(t *testing.T) {
+	const owner = "s_owner"
+	m := newModel(120, 34)
+	m.tab, m.focus = messagesTab, focusFeed
+	threadFeed(&m,
+		ev(1, -2*time.Minute, "msg.stored", "notice", "agent-net", owner, "notification", func(e *protocol.FeedEvent) {
+			e.ConversationID = "c_check"
+		}),
+		ev(2, -time.Minute, "msg.stored", "reply", owner, "agent-net", "reply", func(e *protocol.FeedEvent) {
+			e.ConversationID = "c_check"
+			e.Parent = "notice"
+		}),
+	)
+	m.feed.byMsg["notice"].Body = idleCheckBodyForTest
+	m.feed.byMsg["reply"].Snippet = "done"
+	m.messageSubtab = messageSystem
+	rows := m.messageConversations()
+	if len(rows) != 1 {
+		t.Fatalf("a notice and its reply made %d threads: %+v", len(rows), rows)
+	}
+	if !rows[0].system || rows[0].systemKind != systemIdleCheck {
+		t.Fatalf("the reply split the notice from its thread: %+v", rows[0])
+	}
+}
+
 func TestMessageSubtabsSplitAgentWorkerSystem(t *testing.T) {
 	const owner, peer, worker = "s_owner", "s_peer", "s_worker"
 	m := newModel(120, 34)
