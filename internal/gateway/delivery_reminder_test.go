@@ -125,7 +125,7 @@ func recentStepMessageTo(t *testing.T, r *deliveryRig, session, change string, r
 
 // A step claimed after its reminder batch was selected must not appear in the
 // notice built when that batch flushes. Merge waits on test, so the leftover
-// task must not be announced as ready either.
+// task gets no reminder either.
 func TestDeliveryStepReminderSkipsClaimedStepInBatch(t *testing.T) {
 	r := setupMergerRig(t)
 	res := r.submit(r.a, r.workerSubmit("feature/claimed-batch", commitA))
@@ -156,22 +156,33 @@ func TestDeliveryStepReminderSkipsClaimedStepInBatch(t *testing.T) {
 	r.g.flushStepTasks(r.sonnet)
 
 	var count int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND body LIKE '[agent-net step task%'`, r.sonnet).Scan(&count); err != nil || count > 2 {
-		t.Fatalf("merger got %d step notices, want at most a pair and one reminder: %v", count, err)
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND body LIKE '[agent-net step task%'`, r.sonnet).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("merger got %d step notices, want only the first pair: %v", count, err)
 	}
-	if count == 2 {
-		var last string
-		if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE recipient=? ORDER BY created_at DESC, rowid DESC LIMIT 1`, r.sonnet).Scan(&last); err != nil {
-			t.Fatal(err)
-		}
-		for _, bad := range []string{"ready since", ", not claimed", "steps: test", "step: test"} {
-			if strings.Contains(last, bad) {
-				t.Fatalf("reminder repeats a claimed step (%q):\n%s", bad, last)
-			}
-		}
-		if !strings.Contains(last, "then merge (not ready yet)") {
-			t.Fatalf("reminder does not name merge as a then step:\n%s", last)
-		}
+}
+
+// A claimed test step with its merge step still queued must not produce a
+// reminder for merge: merge still waits on test, so there is nothing to act on.
+func TestDeliveryStepReminderSkipsStepWaitingOnClaimedStep(t *testing.T) {
+	r := setupMergerRig(t)
+	res := r.submit(r.a, r.workerSubmit("feature/claimed-wait", commitA))
+	c := res.Change.Change
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept,
+		Result: protocol.StepResultPass, Commit: commitA})
+
+	r.g.dispatchStepTasks(context.Background())
+	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.sonnet, ChangeID: c.ID,
+		StepRef: protocol.StepRef{Step: protocol.StepTest}, Commit: commitA}); err != nil {
+		t.Fatal(err)
+	}
+
+	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.g.dispatchStepTasks(context.Background())
+	r.g.flushStepTasks(r.sonnet)
+
+	var count int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND body LIKE '[agent-net step task%'`, r.sonnet).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("merger got %d step notices, want only the first pair: %v", count, err)
 	}
 }
 
@@ -371,6 +382,10 @@ func TestVerifyReminderBackoff(t *testing.T) {
 	r := newDeliveryRig(t)
 	callerNeedsSharedPipeline(t, r)
 	c := mergedChange(t, r, "feature/backoff", true)
+	// Verify must be ready for its reminders to be due; release is its only
+	// prerequisite and the CI test on the merged commit has passed.
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: releaseRef,
+		Result: protocol.StepResultPass, Commit: commitMerged})
 	ref := protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true}
 	target := nodeTaskTarget{id: c.ID, revision: c.Revision, ref: ref, session: r.caller}
 	r.g.dispatchStepTasks(context.Background())

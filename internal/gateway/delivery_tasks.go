@@ -1367,6 +1367,11 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			readyNote = stepThenNote(run)
 		}
 		if len(group) == 1 {
+			// A reminder for a step that still waits on another step has
+			// nothing to act on. Keep handing it out as a first notice only.
+			if t.isReminder && !firstReady {
+				continue
+			}
 			line := fmt.Sprintf("change: %s | step: %s | after_merge: %t | commit: %s | title: %s", c.ID, t.ref.String(), t.ref.AfterMerge, commit, protocol.NeutralizeMarkers(c.Title))
 			if t.isReminder {
 				line += " | " + readyNote
@@ -1401,12 +1406,19 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContract(c.Project, t.ref.Step), isReminder: t.isReminder})
 			continue
 		}
-		isReminder := false
+		isReminder, allReminder := false, true
 		for _, gt := range group {
 			if gt.isReminder {
 				isReminder = true
-				break
+			} else {
+				allReminder = false
 			}
+		}
+		// A group of reminders that starts with a step still waiting on another
+		// step has nothing to act on. A first notice in the group keeps today's
+		// hand-out behaviour.
+		if allReminder && !firstReady {
+			continue
 		}
 		names := stepRunNames(run)
 		steps := strings.Join(names, ", ")
