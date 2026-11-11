@@ -79,6 +79,11 @@ func (s *Store) waitingNotice(tx *sql.Tx, id string) (protocol.Message, bool, er
 	if err != nil || harness == "bot" || protocol.IsOwner(harness) {
 		return none, false, err
 	}
+	if paused, err := s.nudgePaused(tx, "waiting_notice", m.From); err != nil {
+		return none, false, err
+	} else if paused {
+		return none, false, nil
+	}
 	name, w, err := sessionWait(tx, m.To)
 	if err != nil || w == nil || w.Since == 0 {
 		return none, false, err

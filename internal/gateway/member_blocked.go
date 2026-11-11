@@ -244,6 +244,13 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 	if err != nil {
 		return nil, err
 	}
+	if leadSession != "" && leadSession != p.SessionID {
+		if paused, err := s.nudgePaused(s.db, "member_blocked", leadSession); err != nil {
+			return nil, err
+		} else if paused {
+			return nil, nil
+		}
+	}
 	now := s.now()
 	if started <= 0 {
 		started = now.UnixNano()

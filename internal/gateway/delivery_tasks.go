@@ -27,6 +27,7 @@ type nodeTaskTarget struct {
 	urgent             bool
 	createdAt          int64
 	isReminder         bool
+	wasNotified        bool // Includes expired notices; a pause must not reclassify these as first notices.
 }
 
 func taskDisplayOwner(owner string) string {
@@ -601,7 +602,9 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,t.owner_node,s.id,t.urgent,t.created_at,
 		EXISTS(SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
 			WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
-			AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired')
+			AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired'),
+        EXISTS(SELECT 1 FROM delivery_step_messages d WHERE d.change_id=t.change_id AND d.revision=t.revision
+        AND d.step=t.step AND d.for_step=t.for_step AND d.after_merge=t.after_merge AND d.session_id=s.id)
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
 		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
 		WHERE t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
@@ -622,7 +625,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		var after int
 		var urgentInt int
 		var isReminderInt int
-		if err = rows.Scan(&target.id, &target.revision, &target.ref.Step, &target.ref.For, &after, &target.owner, &target.session, &urgentInt, &target.createdAt, &isReminderInt); err != nil {
+		if err = rows.Scan(&target.id, &target.revision, &target.ref.Step, &target.ref.For, &after, &target.owner, &target.session, &urgentInt, &target.createdAt, &isReminderInt, &target.wasNotified); err != nil {
 			break
 		}
 		target.ref.AfterMerge = after != 0
@@ -639,7 +642,16 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		return
 	}
 	groups := map[string][]nodeTaskTarget{}
+	pausedReminder := g.store.nudgeLookup(g.store.db, "step_reminder")
 	for _, target := range targets {
+		if target.isReminder || target.wasNotified {
+			if paused, err := pausedReminder(target.session); err != nil {
+				g.logLine("error", "where", "step reminder pause", "err", err)
+				continue
+			} else if paused {
+				continue
+			}
+		}
 		if target.ref.AfterMerge && target.ref.Step == protocol.StepVerify {
 			recorded, err := g.store.stepMessageRecorded(target, reminderCutoff)
 			if err != nil || recorded {
@@ -817,6 +829,12 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 	}
 
 	for _, it := range items {
+		if paused, err := g.store.nudgePaused(g.store.db, "stuck_step", it.caller); err != nil {
+			g.logLine("error", "where", "stuck step pause", "err", err)
+			continue
+		} else if paused {
+			continue
+		}
 		idemKey := fmt.Sprintf("delivery:stuck:%s:%d:%s:%s:%d", it.changeID, it.revision, it.ref.Step, it.ref.For, boolInt(it.ref.AfterMerge))
 		age := now.Sub(time.Unix(it.createdAt, 0))
 		ageStr := formatAge(age)
@@ -880,7 +898,10 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 // tasks wait for an online session. No notice is created until discovery brings
 // a session online, preserving batching across its accumulated ready tasks.
 func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int64) {
-	rows, err := g.store.db.Query(`SELECT DISTINCT s.id
+	rows, err := g.store.db.Query(`SELECT DISTINCT s.id,
+  EXISTS(SELECT 1 FROM delivery_step_messages d
+   WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
+   AND d.after_merge=t.after_merge AND d.session_id=s.id)
   FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
   JOIN sessions s ON s.online=0 AND s.harness='claude' AND s.worker=''
   WHERE t.completed=0 AND t.claimed_by=''
@@ -894,13 +915,17 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int6
 		g.logLine("error", "where", "offline step owners", "err", err)
 		return
 	}
-	var ids []string
+	type wakeTarget struct {
+		id       string
+		reminder bool
+	}
+	var ids []wakeTarget
 	for rows.Next() {
-		var id string
-		if err = rows.Scan(&id); err != nil {
+		var target wakeTarget
+		if err = rows.Scan(&target.id, &target.reminder); err != nil {
 			break
 		}
-		ids = append(ids, id)
+		ids = append(ids, target)
 	}
 	if err == nil {
 		err = rows.Err()
@@ -910,8 +935,19 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int6
 		g.logLine("error", "where", "offline step owners", "err", err)
 		return
 	}
-	for _, id := range ids {
-		a, ok, err := g.store.Agent(id)
+	seen := map[string]bool{}
+	pausedReminder := g.store.nudgeLookup(g.store.db, "step_reminder")
+	for _, target := range ids {
+		if seen[target.id] {
+			continue
+		}
+		if target.reminder {
+			if paused, err := pausedReminder(target.id); err != nil || paused {
+				continue
+			}
+		}
+		seen[target.id] = true
+		a, ok, err := g.store.Agent(target.id)
 		if err != nil {
 			g.logLine("error", "where", "offline step owner", "err", err)
 			continue
@@ -1077,14 +1113,33 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 	// write time so a step already recorded is not sent again.
 	cutoff := s.stepReminderCutoff()
 	kept := queue[:0]
+	pausedReminder := s.nudgeLookup(s.db, "step_reminder")
 	for _, t := range queue {
 		recorded, err := s.stepMessageRecorded(t, cutoff)
 		if err != nil {
 			return protocol.Message{}, err
 		}
-		if !recorded {
-			kept = append(kept, t)
+		if recorded {
+			continue
 		}
+		if !t.isReminder {
+			var prior bool
+			if err := s.db.QueryRow(`SELECT COALESCE(MAX(m.state<>'expired'),0),COUNT(d.message_id)>0
+                FROM delivery_step_messages d LEFT JOIN messages m ON m.id=d.message_id
+				WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=? AND d.session_id=?`,
+				t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session).Scan(&prior, &t.wasNotified); err != nil {
+				return protocol.Message{}, err
+			}
+			t.isReminder = prior
+		}
+		if t.isReminder || t.wasNotified {
+			if paused, err := pausedReminder(t.session); err != nil {
+				return protocol.Message{}, err
+			} else if paused {
+				continue
+			}
+		}
+		kept = append(kept, t)
 	}
 	queue = kept
 	// Pipeline order keeps a pair together whatever order the dispatch query
@@ -1119,13 +1174,6 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		if t.createdAt == 0 {
 			_ = s.db.QueryRow(`SELECT created_at FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
 				t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge)).Scan(&t.createdAt)
-		}
-		if !t.isReminder {
-			var hasNonExpired int
-			_ = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
-				WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=? AND d.session_id=? AND m.state<>'expired')`,
-				t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session).Scan(&hasNonExpired)
-			t.isReminder = hasNonExpired != 0
 		}
 		commit := c.HeadCommit
 		if t.ref.AfterMerge {

@@ -52,6 +52,11 @@ func (s *Store) undeliveredNotice(tx *sql.Tx, m protocol.Message, reason string,
 	if harness == "bot" || protocol.IsOwner(harness) {
 		return none, false, nil
 	}
+	if paused, err := s.nudgePaused(tx, "undelivered", m.From); err != nil {
+		return none, false, err
+	} else if paused {
+		return none, false, nil
+	}
 	var name string
 	if err = tx.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(r.name,''),?) FROM (SELECT ? AS id) x
 		LEFT JOIN sessions r ON r.id=x.id LEFT JOIN profiles p ON p.session_id=x.id`, m.To, m.To).Scan(&name); err != nil {

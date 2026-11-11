@@ -1810,3 +1810,9 @@ Topic subscriptions on the daemon socket use the owner gate: agent clients and
 commands in an agent session's process tree are refused. The gateway accepts
 the subscription from an enrolled daemon, like other node frames. Events carry
 only topic names and version numbers, not the data in the corresponding reads.
+
+The nudge pause tools (`agent_nudge_pause`, `agent_nudge_resume`, and
+`agent_nudge_pauses_find`) require the registered live chief of staff session
+on its authenticated machine. Other agents, workers and the CTO cannot call
+them. Only the owner can use their Desk Undo receipts. Pauses affect automatic
+nudges only; owner messages and peer requests and replies keep normal delivery.

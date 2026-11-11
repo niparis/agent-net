@@ -665,7 +665,7 @@ func logUndo(e protocol.DeskLogEntry) (string, json.RawMessage, bool) {
 		return "", nil, false
 	}
 	// The gateway's own permission approval log is undoable by the owner too.
-	if e.Options[0] == protocol.OpPermissionUndo {
+	if e.Options[0] == protocol.OpPermissionUndo || (e.Source == "chief" && e.Options[0] == protocol.OpNudgeUndo) {
 		raw := json.RawMessage(e.Options[1])
 		return e.Options[0], raw, json.Valid(raw)
 	}

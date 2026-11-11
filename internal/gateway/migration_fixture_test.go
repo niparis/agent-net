@@ -18,7 +18,7 @@ func prepareOldSessionIdentity(t *testing.T, s *Store) {
 		t.Fatal(err)
 	}
 	if current < migrationVersion(t, "Explicit session and run identity") {
-		if _, err := s.db.Exec(`DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update; DROP TRIGGER IF EXISTS session_identity_repo_update; DROP TABLE IF EXISTS session_agent_history`); err != nil {
+		if _, err := s.db.Exec(`DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update; DROP TRIGGER IF EXISTS session_identity_repo_update; DROP TABLE IF EXISTS session_agent_history; DROP INDEX IF EXISTS nudge_sessions_limited; DROP INDEX IF EXISTS nudge_repo_sessions_limited`); err != nil {
 			t.Fatal(err)
 		}
 		for _, col := range []struct{ table, name string }{{"sessions", "agent_id"}, {"sessions", "repo_id"}, {"worker_runs", "caller_agent_id"}, {"worker_starts", "caller_agent_id"}} {

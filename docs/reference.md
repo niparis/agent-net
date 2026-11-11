@@ -4065,3 +4065,48 @@ precede the first owner message, depending on the harness. Only orders and rules
 load. Up to 4096 bytes of order text load as before. Above that budget, pinned orders always load, then
 the newest orders that fit. Pins may exceed the budget. Omitted orders add:
 "N more standing orders: search them with cto_standing_orders search".
+
+### Chief of staff nudge pauses
+
+Only the registered chief session can use these tools. The chief can apply a
+pause without asking the owner. Every apply and resume appears in the Desk log
+with Undo. The owner can undo a pause to end it, or undo a resume to restore it
+with its original expiry.
+
+- `agent_nudge_pause {kind, team | agent, until?, reason?, mode}`: give exactly
+  one team name or agent name/id. `mode: "preview"` lists target session names
+  and the count of this kind's messages to them in the last 24 hours, without
+  writing anything. `mode: "apply"` stores the pause and returns its `id`.
+- `agent_nudge_resume {id}`: end a pause now. This sends no messages.
+- `agent_nudge_pauses_find {}`: list active and ended pauses, including
+  `ended_at` and `ended_by` for ended ones. Times are Unix nanoseconds.
+
+`until` may be an RFC3339 time, such as `2026-11-18T00:00:00Z`, or
+`"provider_reset"`. Provider reset ends when none of the target's sessions has
+`limited_until` in the future, with a seven-day safety expiry. Omit `until` for
+no expiry. An agent pause covers all its sessions; a team pause covers all
+sessions of its current agent members and sessions in member repos.
+
+| Kind | Automatic message paused |
+| --- | --- |
+| `idle_check` | Is your task done? |
+| `autonomy_continue` | You said you have work left; carry on |
+| `reply_reminder` | A peer is waiting for your answer |
+| `loop_tick` | The repo lead's standing loop prompt |
+| `step_reminder` | A ready step task reminder, including batched reminders |
+| `stuck_step` | A step has waited without being claimed |
+| `undelivered` | Your message was not delivered or may not have arrived |
+| `waiting_notice` | The recipient is waiting for its user's answer |
+| `wake_failed` | The recipient is offline and could not be woken |
+| `member_blocked` | A member is blocked or waiting, sent to its lead |
+
+The target is the recipient of the automatic message. Pauses suppress message
+creation and leave each mechanism's bookkeeping unchanged. Nothing accumulates
+for delivery on resume; the next due check uses the normal rules. First step
+task notices, step results, owner messages, peer requests and replies, worker
+notices, and the chief's own brief wake and ask batches are unaffected. Current
+mechanisms and defaults remain unchanged unless the chief applies a pause.
+
+Applying a pause also expires matching nudges already queued at the gateway.
+Delivery rechecks pauses before sending or waking a session, so a saved queue
+snapshot cannot replay an expired nudge after resume.

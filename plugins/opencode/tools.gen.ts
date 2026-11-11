@@ -1077,6 +1077,95 @@ export const TOOL_CATALOG = [
     "method": "messages"
   },
   {
+    "name": "agent_nudge_pause",
+    "description": "Chief of staff only: preview or pause one automatic nudge kind for a team or agent. Preview lists sessions and the last 24h message count, without writes. Apply logs an owner-undoable pause. Real messages and first step notices are unaffected.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "idle_check",
+            "autonomy_continue",
+            "reply_reminder",
+            "loop_tick",
+            "step_reminder",
+            "stuck_step",
+            "undelivered",
+            "waiting_notice",
+            "wake_failed",
+            "member_blocked"
+          ]
+        },
+        "team": {
+          "type": "string",
+          "description": "Team name. Give exactly one of team or agent."
+        },
+        "agent": {
+          "type": "string",
+          "description": "Agent name or id. All its sessions are covered."
+        },
+        "until": {
+          "type": "string",
+          "description": "Optional RFC3339 expiry or provider_reset. Provider reset ends when no target session is limited, at most seven days."
+        },
+        "reason": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "preview",
+            "apply"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "nudge_pause"
+  },
+  {
+    "name": "agent_nudge_pauses_find",
+    "description": "Chief of staff only: list nudge pauses, including when and why ended pauses ended.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "nudge_pauses_find"
+  },
+  {
+    "name": "agent_nudge_resume",
+    "description": "Chief of staff only: end a nudge pause by id. Logs an owner-undoable resume. No backlog is sent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "nudge_resume"
+  },
+  {
     "name": "agent_owner_ask",
     "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. A new ask adds to your pending ones; replaces retires one. Use it when you stop for the owner.",
     "inputSchema": {
