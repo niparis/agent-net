@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -101,6 +102,27 @@ type codexRPCResult struct {
 	} `json:"error"`
 }
 
+// syncBuffer is a bytes.Buffer that can be read while a process still writes
+// to it. exec copies a non-file Stderr from its own goroutine, which only Wait
+// joins, so codexModels must not read a plain buffer to report a failure before
+// it waits.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // codexModels asks `codex app-server` (stdio) for its model list. It says
 // initialize, then model/list, and follows nextCursor. A failure returns the
 // server's own stderr in the error. The caller's context bounds the whole call.
@@ -108,7 +130,7 @@ func codexModels(ctx context.Context, path, searchPATH string) ([]string, map[st
 	cmd := exec.CommandContext(ctx, path, "app-server")
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+searchPATH)
 	cmd.WaitDelay = 500 * time.Millisecond // as in runProgram
-	var stderr bytes.Buffer
+	var stderr syncBuffer
 	cmd.Stderr = &stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
