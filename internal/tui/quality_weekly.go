@@ -99,8 +99,20 @@ func weeklyRowLine(r protocol.ScoresWeeklyRow, w int) string {
 	b.WriteString(cellR(tokensStr, 6))
 	b.WriteString(" ")
 	if len(r.Releases) > 0 {
-		rel := "releases: " + strings.Join(r.Releases, ", ")
-		b.WriteString(rel)
+		b.WriteString(releasesText(r.Releases))
 	}
 	return b.String()
+}
+
+// releasesText renders one week's release tags. Up to two tags are listed; a
+// week with more is written as its first and last tag and the count, so a long
+// release week stays on one line.
+func releasesText(tags []string) string {
+	switch {
+	case len(tags) == 0:
+		return ""
+	case len(tags) <= 2:
+		return "releases: " + strings.Join(tags, ", ")
+	}
+	return fmt.Sprintf("%s-%s (%d)", tags[0], tags[len(tags)-1], len(tags))
 }

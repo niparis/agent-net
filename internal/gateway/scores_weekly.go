@@ -1,8 +1,8 @@
 package gateway
 
 import (
+	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -22,152 +22,174 @@ func (g *Gateway) handleScoresWeekly(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out, err)
 }
 
+// isoWeekKey is the ISO week of a Unix second in UTC, in the form the table
+// shows. It is computed in Go: SQLite's %G and %V need SQLite 3.46 or newer, so
+// a read that passes the week through SQL depends on the driver's version.
+func isoWeekKey(unix int64) string {
+	year, week := time.Unix(unix, 0).UTC().ISOWeek()
+	return fmt.Sprintf("%04d-W%02d", year, week)
+}
+
+// weekBuckets is one row's running sums: runs, early quits, fix rounds, tokens
+// and the mean task score.
+type weekBuckets struct {
+	runs, early, fixes    int
+	briefDefects, defects int
+	tokens                int64
+	scoreSum              float64
+	tasks                 int
+}
+
 // ScoresWeeklyAt computes the last 8 ISO weeks relative to the given reference time.
+// The task scores come from the picker's own reader (pickerTaskRecords) and
+// PickerTaskScore, so there is one score rule and one set of task facts. The
+// other columns are simple scans of indexed time ranges, bucketed by ISO week
+// in Go.
 func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error) {
 	now = now.UTC()
 	weekday := (int(now.Weekday()) + 6) % 7 // Monday = 0
 	mon := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -weekday)
 	start := mon.AddDate(0, 0, -7*7) // 7 weeks before current week Monday = 8 weeks total
 	end := mon.AddDate(0, 0, 7)      // Next Monday 00:00:00 UTC
-
 	startUnix, endUnix := start.Unix(), end.Unix()
 
-	const query = `
-	WITH RECURSIVE week_series(n, wstart) AS (
-		SELECT 0, ?
-		UNION ALL
-		SELECT n + 1, wstart + 7 * 86400 FROM week_series WHERE n < 7
-	),
-	runs_per_task AS (
-		SELECT
-			CASE WHEN r.task_id <> '' THEN r.task_id ELSE r.session_id END AS root,
-			strftime('%G-W%V', MAX(r.ended_at), 'unixepoch') AS week,
-			(SELECT outcome FROM worker_runs r2
-				WHERE (CASE WHEN r2.task_id <> '' THEN r2.task_id ELSE r2.session_id END) = (CASE WHEN r.task_id <> '' THEN r.task_id ELSE r.session_id END)
-				  AND r2.outcome NOT IN ('stopped', 'infra')
-				ORDER BY r2.ended_at DESC, r2.id DESC LIMIT 1) AS final_outcome,
-			SUM(r.fix_count) AS task_fixes,
-			(SELECT COUNT(*) FROM delivery_evidence e JOIN delivery_changes c ON c.id = e.change_id
-				WHERE e.result = 'fail' AND e.step IN ('accept', 'review', 'test')
-				AND json_extract(c.origin, '$.session_id') IN (SELECT session_id FROM worker_runs r3 WHERE (CASE WHEN r3.task_id <> '' THEN r3.task_id ELSE r3.session_id END) = (CASE WHEN r.task_id <> '' THEN r.task_id ELSE r.session_id END))) AS failed_steps,
-			(SELECT COUNT(*) FROM worker_defects d
-				WHERE d.moved_at = 0
-				AND d.session_id IN (SELECT session_id FROM worker_runs r4 WHERE (CASE WHEN r4.task_id <> '' THEN r4.task_id ELSE r4.session_id END) = (CASE WHEN r.task_id <> '' THEN r.task_id ELSE r.session_id END))) AS defect_count,
-			(SELECT COALESCE(SUM(d.severity), 0) FROM worker_defects d
-				WHERE d.moved_at = 0
-				AND d.session_id IN (SELECT session_id FROM worker_runs r5 WHERE (CASE WHEN r5.task_id <> '' THEN r5.task_id ELSE r5.session_id END) = (CASE WHEN r.task_id <> '' THEN r.task_id ELSE r.session_id END))) AS defect_sev
-		FROM worker_runs r
-		WHERE r.outcome NOT IN ('stopped', 'infra') AND r.ended_at >= ? AND r.ended_at < ?
-		GROUP BY root
-	),
-	task_scores AS (
-		SELECT
-			week,
-			AVG(CASE
-				WHEN final_outcome <> 'complete' THEN 0.0
-				ELSE MAX(0.0, 1.0 - 0.25 * (task_fixes + failed_steps + defect_count + defect_sev))
-			END) AS mean_score
-		FROM runs_per_task
-		GROUP BY week
-	),
-	runs_summary AS (
-		SELECT
-			strftime('%G-W%V', r.ended_at, 'unixepoch') AS week,
-			COUNT(*) AS runs,
-			CAST(SUM(CASE WHEN r.early_quit = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(*) AS early_quit_rate,
-			CAST(SUM(r.fix_count) AS REAL) / COUNT(*) AS mean_fix_rounds,
-			CAST(SUM(COALESCE(CAST(json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END, '$.tokens') AS INTEGER), 0)) AS REAL) / COUNT(*) AS mean_tokens
-		FROM worker_runs r
-		LEFT JOIN sessions s ON s.id = r.session_id
-		WHERE r.ended_at >= ? AND r.ended_at < ?
-		GROUP BY week
-	),
-	brief_defects_summary AS (
-		SELECT
-			strftime('%G-W%V', at, 'unixepoch') AS week,
-			COUNT(*) AS brief_defects
-		FROM worker_brief_defects
-		WHERE at >= ? AND at < ?
-		GROUP BY week
-	),
-	defects_summary AS (
-		SELECT
-			strftime('%G-W%V', at, 'unixepoch') AS week,
-			COUNT(*) AS defects
-		FROM worker_defects
-		WHERE moved_at = 0 AND at >= ? AND at < ?
-		GROUP BY week
-	),
-	releases_summary AS (
-		SELECT
-			week,
-			GROUP_CONCAT(tag, ', ') AS releases
-		FROM (
-			SELECT DISTINCT strftime('%G-W%V', at, 'unixepoch') AS week, json_extract(fields, '$.tag') AS tag, at
-			FROM delivery_evidence
-			WHERE step = 'release' AND json_extract(fields, '$.tag') IS NOT NULL AND json_extract(fields, '$.tag') <> '' AND at >= ? AND at < ?
-			ORDER BY at ASC
-		)
-		GROUP BY week
-	)
-	SELECT
-		strftime('%G-W%V', w.wstart, 'unixepoch') AS week,
-		COALESCE(rs.runs, 0) AS runs,
-		COALESCE(ts.mean_score, 0.0) AS mean_score,
-		COALESCE(rs.early_quit_rate, 0.0) AS early_quit_rate,
-		COALESCE(rs.mean_fix_rounds, 0.0) AS mean_fix_rounds,
-		COALESCE(bds.brief_defects, 0) AS brief_defects,
-		COALESCE(ds.defects, 0) AS defects,
-		ROUND(COALESCE(rs.mean_tokens, 0)) AS mean_tokens,
-		COALESCE(rel.releases, '') AS releases
-	FROM week_series w
-	LEFT JOIN runs_summary rs ON rs.week = strftime('%G-W%V', w.wstart, 'unixepoch')
-	LEFT JOIN task_scores ts ON ts.week = strftime('%G-W%V', w.wstart, 'unixepoch')
-	LEFT JOIN brief_defects_summary bds ON bds.week = strftime('%G-W%V', w.wstart, 'unixepoch')
-	LEFT JOIN defects_summary ds ON ds.week = strftime('%G-W%V', w.wstart, 'unixepoch')
-	LEFT JOIN releases_summary rel ON rel.week = strftime('%G-W%V', w.wstart, 'unixepoch')
-	ORDER BY w.wstart ASC
-	`
+	buckets := make([]weekBuckets, 8)
+	index := make(map[string]int, 8)
+	out := make([]protocol.ScoresWeeklyRow, 8)
+	for i := range out {
+		week := isoWeekKey(start.AddDate(0, 0, 7*i).Unix())
+		index[week] = i
+		out[i].Week = week
+	}
 
-	rows, err := s.db.Query(query,
-		startUnix,
-		startUnix, endUnix,
-		startUnix, endUnix,
-		startUnix, endUnix,
-		startUnix, endUnix,
-		startUnix, endUnix,
-	)
+	// Runs, early quits, fix rounds and tokens per week.
+	rows, err := s.db.Query(`
+		SELECT r.ended_at, r.early_quit, r.fix_count,
+			COALESCE(CAST(json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END, '$.tokens') AS INTEGER), 0)
+		FROM worker_runs r LEFT JOIN sessions s ON s.id = r.session_id
+		WHERE r.ended_at >= ? AND r.ended_at < ?`, startUnix, endUnix)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []protocol.ScoresWeeklyRow
 	for rows.Next() {
-		var row protocol.ScoresWeeklyRow
-		var relStr string
-		var meanTokens float64
-		if err := rows.Scan(
-			&row.Week,
-			&row.Runs,
-			&row.MeanScore,
-			&row.EarlyQuitRate,
-			&row.MeanFixRounds,
-			&row.BriefDefects,
-			&row.Defects,
-			&meanTokens,
-			&relStr,
-		); err != nil {
+		var ended int64
+		var early, fix int
+		var tokens int64
+		if err := rows.Scan(&ended, &early, &fix, &tokens); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		row.MeanTokens = int64(meanTokens)
-		if relStr != "" {
-			row.Releases = strings.Split(relStr, ", ")
+		i, ok := index[isoWeekKey(ended)]
+		if !ok {
+			continue
 		}
-		out = append(out, row)
+		buckets[i].runs++
+		buckets[i].early += early
+		buckets[i].fixes += fix
+		buckets[i].tokens += tokens
 	}
-	if err := rows.Err(); err != nil {
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
 		return nil, err
 	}
+
+	// The task score is the mean of PickerTaskScore over the tasks whose last
+	// counted run ended in the week.
+	tasks, err := s.pickerTaskRecords()
+	if err != nil {
+		return nil, err
+	}
+	for _, task := range tasks {
+		// A task is in the week of its last counted run: the same run that
+		// gives the final outcome.
+		if task.end < startUnix || task.end >= endUnix {
+			continue
+		}
+		i, ok := index[isoWeekKey(task.end)]
+		if !ok {
+			continue
+		}
+		buckets[i].scoreSum += protocol.PickerTaskScore(task.facts)
+		buckets[i].tasks++
+	}
+
+	// Brief defects are charged to the caller, not to the worker, and are
+	// counted in the week the caller filed them (worker_brief_defects.at is
+	// Unix seconds, like every other at column).
+	if err := s.countWeeklyAt(`SELECT at FROM worker_brief_defects WHERE at >= ? AND at < ?`, startUnix, endUnix, index, buckets, func(b *weekBuckets) { b.briefDefects++ }); err != nil {
+		return nil, err
+	}
+	if err := s.countWeeklyAt(`SELECT at FROM worker_defects WHERE moved_at = 0 AND at >= ? AND at < ?`, startUnix, endUnix, index, buckets, func(b *weekBuckets) { b.defects++ }); err != nil {
+		return nil, err
+	}
+
+	// One tag per release: every change of a release has its own evidence row,
+	// so the tag is grouped and placed by its first row.
+	releases := make([][]string, 8)
+	rows, err = s.db.Query(`
+		SELECT json_extract(fields, '$.tag') AS tag, MIN(at)
+		FROM delivery_evidence
+		WHERE step = 'release' AND json_extract(fields, '$.tag') IS NOT NULL AND json_extract(fields, '$.tag') <> ''
+			AND at >= ? AND at < ?
+		GROUP BY tag
+		ORDER BY MIN(at) ASC`, startUnix, endUnix)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var tag string
+		var at int64
+		if err := rows.Scan(&tag, &at); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if i, ok := index[isoWeekKey(at)]; ok {
+			releases[i] = append(releases[i], tag)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range out {
+		b := buckets[i]
+		if b.runs > 0 {
+			out[i].Runs = b.runs
+			out[i].EarlyQuitRate = float64(b.early) / float64(b.runs)
+			out[i].MeanFixRounds = float64(b.fixes) / float64(b.runs)
+			// Rounded like the old read, so a weekly mean token count keeps
+			// the value the table showed before.
+			out[i].MeanTokens = (b.tokens + int64(b.runs)/2) / int64(b.runs)
+		}
+		if b.tasks > 0 {
+			out[i].MeanScore = b.scoreSum / float64(b.tasks)
+		}
+		out[i].BriefDefects = b.briefDefects
+		out[i].Defects = b.defects
+		out[i].Releases = releases[i]
+	}
 	return out, nil
+}
+
+// countWeeklyAt reads a list of Unix-second timestamps in the window and adds
+// one to the matching week's row.
+func (s *Store) countWeeklyAt(query string, start, end int64, index map[string]int, buckets []weekBuckets, add func(*weekBuckets)) error {
+	rows, err := s.db.Query(query, start, end)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var at int64
+		if err := rows.Scan(&at); err != nil {
+			return err
+		}
+		if i, ok := index[isoWeekKey(at)]; ok {
+			add(&buckets[i])
+		}
+	}
+	return rows.Err()
 }

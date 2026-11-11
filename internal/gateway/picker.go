@@ -59,16 +59,28 @@ func (s *Store) pickerSettings() (protocol.PickerSettings, error) {
 	}.Normalized(), nil
 }
 
-// pickerTasks scores each task once. A run and its continuations are one task
-// (decision 0105). The chain link is the task root of the run: task_id when the
-// continuation started a new session, otherwise the session id, because a
-// continue to the same session records another worker_runs row with the same
-// session. This is the same root the rework counters use (runsSnapshot). The
-// first counted run gives the model and the first judge result of the chain
-// gives D. The last counted run gives the outcome. Fix rounds, defects and
-// failed steps count once per chain; a continuation costs nothing. Stopped and
-// infrastructure runs do not contribute. No time cut is applied.
-func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
+// pickerTaskRecord is one task of the picker data: the score facts, the
+// judge's D, the model key and the end time of its last counted run. The picker
+// table and the weekly scores both read it, so they cannot score a task
+// differently.
+type pickerTaskRecord struct {
+	key   string
+	d     float64
+	facts protocol.PickerTaskFacts
+	end   int64
+}
+
+// pickerTaskRecords reads each task's facts once, whatever its judge result.
+// A run and its continuations are one task (decision 0105). The chain link is
+// the task root of the run: task_id when the continuation started a new
+// session, otherwise the session id, because a continue to the same session
+// records another worker_runs row with the same session. This is the same root
+// the rework counters use (runsSnapshot). The first counted run gives the model
+// and the first judge result of the chain gives D. The last counted run gives
+// the outcome and the task's end. Fix rounds, defects and failed steps count
+// once per chain; a continuation costs nothing. Stopped and infrastructure runs
+// do not contribute. No time cut is applied.
+func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 	snap, err := s.runsSnapshot()
 	if err != nil {
 		return nil, err
@@ -150,6 +162,7 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 		root     string
 		key      string
 		facts    protocol.PickerTaskFacts
+		end      int64
 		sessions []string
 	}
 	groups := map[string]*chain{}
@@ -168,14 +181,16 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 			groups[root] = c
 			order = append(order, c)
 		}
-		// The rows come oldest first, so the last row is the final outcome.
+		// The rows come oldest first, so the last row is the final outcome and
+		// its end is the task's end.
 		c.facts.Complete = r.outcome == protocol.OutcomeComplete
 		c.facts.FixRounds += r.fix
+		c.end = r.ended
 		if !slices.Contains(c.sessions, r.session) {
 			c.sessions = append(c.sessions, r.session)
 		}
 	}
-	out := make([]protocol.PickerTask, 0, len(order))
+	out := make([]pickerTaskRecord, 0, len(order))
 	for _, c := range order {
 		// D is the first judge result of the root session, or of the first
 		// session of the chain that has one.
@@ -189,12 +204,26 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 				d = judged[session]
 			}
 		}
-		if d <= 0 || c.key == "" {
-			continue
-		}
-		out = append(out, protocol.PickerTask{Key: c.key, D: d, Score: protocol.PickerTaskScore(c.facts)})
+		out = append(out, pickerTaskRecord{key: c.key, d: d, facts: c.facts, end: c.end})
 	}
 
+	return out, nil
+}
+
+// pickerTasks is the picker's task list: the records with a judge result and a
+// model key, scored by PickerTaskScore.
+func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
+	records, err := s.pickerTaskRecords()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]protocol.PickerTask, 0, len(records))
+	for _, r := range records {
+		if r.d <= 0 || r.key == "" {
+			continue
+		}
+		out = append(out, protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts)})
+	}
 	return out, nil
 }
 

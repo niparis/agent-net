@@ -157,3 +157,98 @@ func TestScoresWeeklyReleaseTagsLandInRightWeek(t *testing.T) {
 		t.Errorf("w46 defects = %d, want 1", w46.Defects)
 	}
 }
+
+// TestScoresWeeklyMeanMatchesPickerTaskScore pins the week score to the
+// picker's own task score. A task's runs span two weeks: the score must sit in
+// the week of the last counted run and use every run's facts, exactly as the
+// picker sees the task.
+func TestScoresWeeklyMeanMatchesPickerTaskScore(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("host", "linux")
+
+	// W45 ends Sunday 2026-11-08, W46 starts Monday 2026-11-09.
+	w46 := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC).Unix()
+	// The first run of the chain ended before the 8-week window. The picker
+	// still counts its fix round: a continuation costs nothing and the task's
+	// facts cover the whole chain.
+	early := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC).Unix()
+
+	// One task with a continuation: a partial run with one fix round before the
+	// window, then a complete run in W46.
+	pickerRun(t, s, node, "chain", "claude", "claude-opus-5-5:high", protocol.OutcomePartial, 1, early)
+	pickerRun(t, s, node, "chain", "claude", "claude-opus-5-5:high", protocol.OutcomeComplete, 0, w46)
+	pickerAssessment(t, s, "chain", 2.5)
+	// A second, clean task in W46.
+	pickerRun(t, s, node, "clean", "claude", "claude-opus-5-5:high", protocol.OutcomeComplete, 0, w46)
+	pickerAssessment(t, s, "clean", 2.5)
+
+	// The picker's tasks are the fixture the table reads.
+	tasks, err := s.pickerTasks()
+	if err != nil {
+		t.Fatalf("pickerTasks failed: %v", err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("want 2 picker tasks, got %d: %+v", len(tasks), tasks)
+	}
+	chained := protocol.PickerTaskScore(protocol.PickerTaskFacts{Complete: true, FixRounds: 1})
+	clean := protocol.PickerTaskScore(protocol.PickerTaskFacts{Complete: true})
+	want := map[string]float64{"2026-W46": (chained + clean) / 2}
+
+	rows, err := s.ScoresWeeklyAt(time.Date(2026, 11, 11, 14, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ScoresWeeklyAt failed: %v", err)
+	}
+	for _, r := range rows {
+		if wantScore, ok := want[r.Week]; ok && r.MeanScore != wantScore {
+			t.Errorf("%s mean_score = %v, want %v (the mean of PickerTaskScore)", r.Week, r.MeanScore, wantScore)
+		}
+	}
+}
+
+// TestScoresWeeklyReleaseTagListedOnce covers one release whose changes each
+// write their own release evidence row: the tag belongs to the week once.
+func TestScoresWeeklyReleaseTagListedOnce(t *testing.T) {
+	s, _ := newTestStore(t)
+	w45 := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC).Unix()
+	// Two changes of the same release, one minute apart.
+	for i, at := range []int64{w45, w45 + 60} {
+		if _, err := s.db.Exec(`INSERT INTO delivery_evidence (change_id, revision, step, result, commit_hash, fields, by_session, at)
+			VALUES (?, 1, 'release', 'pass', ?, '{"tag":"v0.5.21"}', 's1', ?)`, []string{"c1", "c2"}[i], "hash", at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := s.ScoresWeeklyAt(time.Date(2026, 11, 11, 14, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ScoresWeeklyAt failed: %v", err)
+	}
+	w := rows[6]
+	if w.Week != "2026-W45" {
+		t.Fatalf("row 6 week = %q, want 2026-W45", w.Week)
+	}
+	if len(w.Releases) != 1 || w.Releases[0] != "v0.5.21" {
+		t.Errorf("w45 releases = %v, want one v0.5.21", w.Releases)
+	}
+}
+
+// TestScoresWeeklyBriefDefectCountsInItsWeek covers a brief defect filed this
+// week: it must be counted in this week, not in a different one or never.
+func TestScoresWeeklyBriefDefectCountsInItsWeek(t *testing.T) {
+	s, _ := newTestStore(t)
+	// Wednesday of the reference week W46.
+	at := time.Date(2026, 11, 11, 10, 30, 0, 0, time.UTC).Unix()
+	if _, err := s.db.Exec(`INSERT INTO worker_brief_defects (worker_session_id, caller, severity, at) VALUES ('s2', 'owner', 2, ?)`, at); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := s.ScoresWeeklyAt(time.Date(2026, 11, 11, 14, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ScoresWeeklyAt failed: %v", err)
+	}
+	if w45 := rows[6]; w45.Week != "2026-W45" || w45.BriefDefects != 0 {
+		t.Errorf("w45 = %+v, want week 2026-W45 with 0 brief defects", w45)
+	}
+	if w46 := rows[7]; w46.Week != "2026-W46" || w46.BriefDefects != 1 {
+		t.Errorf("w46 = %+v, want week 2026-W46 with 1 brief defect", w46)
+	}
+}

@@ -42,3 +42,18 @@ func TestQualityWeeklyGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("quality_weekly_%dx%d", size[0], size[1]), view)
 	}
 }
+
+// TestQualityWeeklyCompactReleases covers a week with many release tags: it
+// must read as the first and last tag plus the count, on one line.
+func TestQualityWeeklyCompactReleases(t *testing.T) {
+	tags := []string{"v0.4.165", "v0.4.166", "v0.4.207", "v0.4.208"}
+	if got, want := releasesText(tags), "v0.4.165-v0.4.208 (4)"; got != want {
+		t.Errorf("many tags = %q, want %q", got, want)
+	}
+	if got, want := releasesText(tags[:2]), "releases: v0.4.165, v0.4.166"; got != want {
+		t.Errorf("two tags = %q, want %q", got, want)
+	}
+	if got := releasesText(nil); got != "" {
+		t.Errorf("no tags = %q, want empty", got)
+	}
+}
