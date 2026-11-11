@@ -363,6 +363,7 @@ type Daemon struct {
 	ctoEntering      *ctoEnterCall
 	herdrOpenMu      sync.Mutex
 	herdrOpened      map[string]herdrOpenedPane
+	signIn           signInState
 	cto              ctoRuntime
 	claudeCTO        claudeCTOState
 	ctoTranscript    ctoTranscriptCache // the parsed CTO transcript, for the owner timeline

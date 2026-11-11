@@ -2693,6 +2693,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		asks, err := st.ListAsks()
 		return protocol.AsksResult{Asks: asks}, err
 
+	case "query.sign_in":
+		// A read of the provider and host only; it opens no pane.
+		return g.signInTarget(raw)
+
+	case "sign_in.list":
+		asks, err := st.SignInAsks()
+		return protocol.AsksResult{Asks: asks}, err
+
+	case "sign_in.raise":
+		return g.signInRaise(nc, raw)
+
+	case "sign_in.close":
+		return map[string]bool{"ok": true}, g.signInClose(nc, raw)
+
 	case "desk.log":
 		var p protocol.DeskLogQuery
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {

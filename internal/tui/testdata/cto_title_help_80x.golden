@@ -198,6 +198,8 @@ Legend ────────────────────────�
   A                      approve all changes
   t                      type answer
   x                      dismiss the ask
+  i                      on a sign-in ask: open that CLI's login in a herdr pane
+                         on the machine that needs it
   u                      undo
   n                      on an ask that reached you: the chief did not need to
                          send it. Type one optional line of why; the chief reads

@@ -319,6 +319,8 @@ func firstNonEmpty(v ...string) string {
 // what proposes a change, then what only informs.
 func askRank(a protocol.Ask) int {
 	switch a.Kind {
+	case protocol.AskKindSignIn:
+		return 0
 	case protocol.AskKindQuestion:
 		return 0
 	case protocol.AskKindApproval, protocol.AskKindPermission:
@@ -464,6 +466,12 @@ func askCard(a protocol.Ask, now time.Time, names map[string]string) askView {
 		v.Kind = "brief"
 		v.Form, v.Dismiss, v.CanMark = "inbox", true, false
 		v.Detail = a.Detail
+	case protocol.AskKindSignIn:
+		// The one action opens the CLI's login in a herdr pane on the machine
+		// the ask names. A phone cannot show that pane; it says so plainly.
+		v.Kind, v.Form, v.TargetID = "sign in", "signin", a.ID
+		v.Detail = a.Detail
+		v.Hint = "Opens the login in a herdr pane on the machine that needs it."
 	default:
 		v.Form, v.Hint = "tui", "Answer from the TUI."
 		v.Detail = a.Detail

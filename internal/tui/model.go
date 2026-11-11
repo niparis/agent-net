@@ -1082,6 +1082,20 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inboxNote = ""
 		}
 		return m, nil
+	case inboxSignInMsg:
+		if msg.err != nil {
+			m.fail("Cannot open sign-in: " + explain(msg.err))
+			return m, nil
+		}
+		if msg.plan.OpenedHerdr {
+			m.say(sanitize(msg.plan.Note))
+			return m, nil
+		}
+		if len(msg.plan.Argv) == 0 {
+			m.fail(sanitize(firstNonEmpty(msg.plan.Note, "The sign-in pane could not be opened.")))
+			return m, nil
+		}
+		return m.onEnter(enterMsg{name: msg.name, plan: msg.plan})
 	case onboardingMsg:
 		if msg.revision != m.onboardingRevision {
 			return m, nil

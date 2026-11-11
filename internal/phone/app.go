@@ -164,6 +164,17 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 		if err != nil && err.Error() == "inbox item not found" {
 			err = nil
 		}
+	case "signin":
+		// The owner's click opens the CLI's login in a herdr pane on the
+		// machine the ask names. The web sends no command and no provider.
+		var raw json.RawMessage
+		raw, err = a.src.Call(ctx, protocol.OpSignInOpen, protocol.SignInOpenRequest{AskID: id})
+		if err == nil {
+			var plan protocol.EnterPlan
+			if json.Unmarshal(raw, &plan) == nil && !plan.OpenedHerdr && plan.Note != "" {
+				err = fmt.Errorf("%s", plan.Note)
+			}
+		}
 	case "mark":
 		if act != protocol.MarkDidntNeedMe {
 			err = fmt.Errorf("invalid action")

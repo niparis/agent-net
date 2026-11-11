@@ -270,6 +270,7 @@ func TestCTOOperatorAllowlistCoversOwnerMethods(t *testing.T) {
 		"desk_settle":        "the TUI marks a Desk log line undone after its own undo",
 		"permission_undo":    "only the owner may undo a Claude Code permission approval",
 		"nudge_undo":         "only the owner may undo the chief of staff nudge pause or resume",
+		"sign_in_open":       "only the owner's click may open a sign-in pane",
 	}
 	for method := range operatorMethods {
 		if _, ok := covered[method]; ok {

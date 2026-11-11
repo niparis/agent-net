@@ -261,7 +261,7 @@ func TestWebActionKindsAreExact(t *testing.T) {
 	for _, m := range regexp.MustCompile(`case "([a-z_]+)":`).FindAllStringSubmatch(string(src)[start:start+end], -1) {
 		got[m[1]] = true
 	}
-	want := map[string]bool{"held": true, "outcome": true, "inbox": true, "mark": true, "send": true, "reply": true, "cto_send": true, "proposal": true}
+	want := map[string]bool{"held": true, "outcome": true, "inbox": true, "mark": true, "send": true, "reply": true, "cto_send": true, "proposal": true, "signin": true}
 	if len(got) != len(want) {
 		t.Fatalf("action kinds: %v, want %v", got, want)
 	}

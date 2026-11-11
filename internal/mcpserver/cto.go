@@ -227,7 +227,7 @@ var ctoTools = map[string]ctoToolDef{
 		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite, onboarding, or stop processes (process_stop: TERM then KILL, no undo; never a live Claude or agent-net session).",
 		fields: map[string]ctoField{
 			"method":              {typ: "string", enum: strings.Fields(protocol.CTOOperatorReads + " " + protocol.CTOOperatorChanges)},
-			"arguments":           {typ: "object", desc: "Arguments for the owner operation."},
+			"arguments":           {typ: "object", desc: "Arguments."},
 			"changes":             settingsChangesField(),
 			"revision":            {typ: "integer", desc: "Revision to undo."},
 			"area":                {typ: "string", enum: []string{"operator", "values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"}},

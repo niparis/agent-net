@@ -8,9 +8,10 @@
 {{if .Recommendation}}<div class="rec"><b>Recommended:</b> {{.Recommendation}}</div>{{end}}
 {{if .WhyYou}}<div class="rec">Why you: {{.WhyYou}}</div>{{end}}
 </div>
-{{if or .Approve .Refuse .Dismiss .Options (eq .Form "outcome")}}<div class="actions">
+{{if or .Approve .Refuse .Dismiss .Options (eq .Form "outcome") (eq .Form "signin")}}<div class="actions">
 {{if eq .Form "held"}}<form method="post" action="/action"><input type="hidden" name="kind" value="held"><input type="hidden" name="id" value="{{.TargetID}}"><button class="btn primary" name="action" value="a">Send it to {{.HeldTo}}</button><button class="btn" name="action" value="r">Keep it held</button><button class="btn quiet" name="action" value="A">Always send to {{.HeldTo}}</button><button class="btn quiet" name="action" value="R">Never send to {{.HeldTo}}</button></form>
 {{else if eq .Form "outcome"}}{{if .RefusalNote}}<div class="rec">{{.RefusalNote}}</div>{{end}}<form method="post" action="/action"><input type="hidden" name="kind" value="outcome"><input type="hidden" name="id" value="{{.TargetID}}"><button class="btn primary" name="action" value="let_stand">{{.LetStand}}</button><button class="btn" name="action" value="overrule">{{.Overrule}}</button></form>
+{{else if eq .Form "signin"}}<form method="post" action="/action"><input type="hidden" name="kind" value="signin"><input type="hidden" name="id" value="{{.TargetID}}"><button class="btn primary" name="action" value="open">Open sign-in</button></form>
 {{else if eq .Form "inbox"}}<form method="post" action="/action"><input type="hidden" name="kind" value="inbox"><input type="hidden" name="id" value="{{.TargetID}}">{{if .Approve}}<button class="btn primary" name="action" value="approve">Approve {{.From}}'s request</button>{{end}}{{if .Refuse}}<button class="btn" name="action" value="refuse">Refuse {{.From}}'s request</button>{{end}}{{range .Options}}<button class="btn" name="action" value="{{.}}">{{.}}</button>{{end}}{{if .Dismiss}}<button class="btn quiet" name="action" value="dismiss">Dismiss the ask</button>{{end}}</form>{{end}}
 </div>{{end}}
 {{if or .CanMark .CanText .Hint}}<div class="actions more">
