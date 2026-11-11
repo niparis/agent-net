@@ -729,7 +729,7 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	state := d.openCodeSessionContext(ctx, base, password, version, identity, session)
 	snap := d.SettingsSnapshot()
 	where := settings.Where{Agent: "cto"}
-	threshold := snap.Int("sessions.compaction_threshold_percent", where)
+	threshold := snap.IntUnlessDefault("sessions.compaction_threshold_percent", where, protocol.CTOCompactionThreshold)
 	if threshold <= 0 {
 		threshold = 80
 	}

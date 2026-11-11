@@ -66,7 +66,7 @@ func bumpSettingsRevision(tx *sql.Tx) error {
 
 // settingsTables are the tables settingsSnapshotTx reads. Keep it equal to the
 // queries there (see readThrough).
-var settingsTables = []string{"setting_revision", "setting_values", "graph_charter", "graph_edges"}
+var settingsTables = []string{"setting_revision", "setting_values", "graph_charter", "graph_edges", "repos", "team_members", "teams"}
 
 // SettingsSnapshot reads all settings. The read is kept until one of
 // settingsTables is written, and each caller gets a copy.
@@ -261,17 +261,30 @@ func (s *Store) cutoverSessionCompactionTx(tx *sql.Tx) error {
 	if err := tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&revision); err != nil {
 		return err
 	}
-	changed := false
-	// The CTO's threshold was 50 percent. Store that at agent level so it
-	// keeps its behaviour when the shared default is 80.
-	res, err := tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision)
- SELECT 'sessions.compaction_threshold_percent','agent','cto','','50',revision FROM setting_revision WHERE id=1
- AND NOT EXISTS (SELECT 1 FROM setting_values WHERE key='sessions.compaction_threshold_percent' AND level='agent' AND scope='cto' AND item='')`)
-	if err != nil {
+	// The old CTO settings row is the sign of an upgrade. A fresh database has
+	// none, and must start with no stored compaction value and revision 0.
+	var legacy string
+	legacyCTO := false
+	switch err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_settings'`).Scan(&legacy); err {
+	case nil:
+		legacyCTO = true
+	case sql.ErrNoRows:
+	default:
 		return err
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		changed = true
+	changed := false
+	if legacyCTO {
+		// The CTO's threshold was 50 percent. Store that at agent level so it
+		// keeps its behaviour when the shared default is 80.
+		res, err := tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision)
+	 SELECT 'sessions.compaction_threshold_percent','agent','cto','','50',revision FROM setting_revision WHERE id=1
+	 AND NOT EXISTS (SELECT 1 FROM setting_values WHERE key='sessions.compaction_threshold_percent' AND level='agent' AND scope='cto' AND item='')`)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			changed = true
+		}
 	}
 	// An explicit old idle window becomes the cache window for providers that
 	// have no entry. The default key covers providers without their own value.
@@ -289,9 +302,7 @@ func (s *Store) cutoverSessionCompactionTx(tx *sql.Tx) error {
 	default:
 		return err
 	}
-	var legacy string
-	switch err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_settings'`).Scan(&legacy); err {
-	case nil:
+	if legacyCTO {
 		var old struct {
 			Compaction struct {
 				CacheWindowSeconds map[string]int `json:"cache_window_seconds"`
@@ -304,9 +315,6 @@ func (s *Store) cutoverSessionCompactionTx(tx *sql.Tx) error {
 				}
 			}
 		}
-	case sql.ErrNoRows:
-	default:
-		return err
 	}
 	if len(windows) > 0 {
 		var existing string

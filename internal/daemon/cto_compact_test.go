@@ -172,10 +172,36 @@ func TestCTOCompactionHalfWindow(t *testing.T) {
 	}
 }
 
+// TestCTOCompactionStoredThresholdWins proves the CTO's code default of 50
+// does not override a threshold the owner stored.
+func TestCTOCompactionStoredThresholdWins(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	ctx := context.Background()
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"sessions.compaction_threshold_percent","level":"agent","scope":"cto","value":90}],"reason":"cto threshold"}`)
+	if _, err := f.n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the stored threshold applies", func() bool {
+		return f.n.d.SettingsSnapshot().Int("sessions.compaction_threshold_percent", settings.Where{Agent: "cto"}) == 90
+	})
+	// A completed turn at 80% of the window is above the code default 50 but
+	// below the stored 90, so it must not compact.
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
+	f.send(t, "work")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_big", 800_000), ctoUser("work"), ctoAssistant("msg_old", 1000)})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 0 {
+		t.Fatalf("compacted at 80%% with a stored 90%% threshold: %d", got)
+	}
+}
+
 func TestCTOCompactionThreshold(t *testing.T) {
 	f := startCTOCompactionFixture(t)
 	ctx := context.Background()
-	// A completed turn at 800k of a 1M window: above 70%, compact at once.
+	// A completed turn at 800k of a 1M window: above the 50% default, compact
+	// at once.
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
 	f.send(t, "work")
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_big", 800_000), ctoUser("work"), ctoAssistant("msg_old", 1000)})
@@ -465,7 +491,7 @@ func TestCTOCompactionChatLineWaitsForTokens(t *testing.T) {
 func TestCTOCompactionSettings(t *testing.T) {
 	f := startCTOCompactionFixture(t)
 	ctx := context.Background()
-	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"sessions.compaction_threshold_percent","level":"agent","scope":"cto","value":90,"expect":50},{"key":"sessions.cache_window_seconds","level":"network","scope":"network","value":{"default":300,"fake":60}}],"reason":"cto window"}`)
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"sessions.compaction_threshold_percent","level":"agent","scope":"cto","value":90},{"key":"sessions.cache_window_seconds","level":"network","scope":"network","value":{"default":300,"fake":60}}],"reason":"cto window"}`)
 	if _, err := f.n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
 		t.Fatal(err)
 	}

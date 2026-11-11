@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/niparis/agent-net/internal/protocol"
-	"strings"
 	"testing"
 )
 
@@ -13,12 +12,12 @@ type ctoFake struct{ req protocol.CTOSettingsRequest }
 
 func (f *ctoFake) Call(_ context.Context, method string, p any) (json.RawMessage, error) {
 	f.req = p.(protocol.CTOSettingsRequest)
-	return json.RawMessage(`{"harness":"claude","model":"opus","compaction":{"threshold_percent":70}}`), nil
+	return json.RawMessage(`{"harness":"claude","model":"opus"}`), nil
 }
 func TestCTOCommand(t *testing.T) {
 	f := &ctoFake{}
 	var out bytes.Buffer
-	if err := runCTOCommand(context.Background(), f, &out, nil); err != nil || !strings.Contains(out.String(), "claude") || !strings.Contains(out.String(), "opus") || !strings.Contains(out.String(), "70") {
+	if err := runCTOCommand(context.Background(), f, &out, nil); err != nil || out.String() != "harness: claude\nmodel: opus\n" {
 		t.Fatalf("output %q error %v", out.String(), err)
 	}
 	for _, args := range [][]string{{"harness", "claude"}, {"model", ""}} {

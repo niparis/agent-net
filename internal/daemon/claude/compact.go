@@ -208,6 +208,9 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 			where = settings.Where{Agent: "cto"}
 		}
 		threshold := snap.Int("sessions.compaction_threshold_percent", where)
+		if isCTO {
+			threshold = snap.IntUnlessDefault("sessions.compaction_threshold_percent", where, protocol.CTOCompactionThreshold)
+		}
 		if threshold <= 0 {
 			threshold = 80
 		}

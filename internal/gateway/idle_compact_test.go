@@ -39,14 +39,16 @@ func TestCompactionCacheWindowMigration(t *testing.T) {
 
 // TestSessionCompactionCutoverWithoutRevisionRow covers an old database that
 // reaches the compaction cutover with no setting_revision row, as a fixture or
-// a replay that starts before the settings schema does. The cutover creates the
-// row and still writes the CTO's 50 percent threshold, and a second replay
-// leaves it alone.
+// a replay that starts before the settings schema does. Its old CTO settings
+// row marks an upgrade, so the cutover creates the row and writes the CTO's 50
+// percent threshold, and a second replay leaves it alone.
 func TestSessionCompactionCutoverWithoutRevisionRow(t *testing.T) {
 	s, _ := newTestStore(t)
-	// An old database: no revision row and none of the values this cutover
-	// writes, so the checks below prove the cutover wrote them.
+	// An old database: an old CTO settings row, no revision row and none of
+	// the values this cutover writes, so the checks below prove the cutover
+	// wrote them.
 	for _, q := range []string{
+		`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_settings','{"compaction":{}}',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
 		`DELETE FROM setting_revision`,
 		`DELETE FROM setting_values WHERE key IN ('sessions.compaction_threshold_percent','sessions.cache_window_seconds')`,
 	} {
@@ -70,12 +72,36 @@ func TestSessionCompactionCutoverWithoutRevisionRow(t *testing.T) {
 	if threshold != 50 {
 		t.Fatalf("CTO threshold=%d, want 50", threshold)
 	}
-	var revisions int
-	if err := s.db.QueryRow(`SELECT count(*) FROM setting_revision WHERE id=1`).Scan(&revisions); err != nil {
+	var revision int64
+	if err := s.db.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&revision); err != nil {
 		t.Fatal(err)
 	}
-	if revisions != 1 {
-		t.Fatalf("revision rows=%d, want 1", revisions)
+	if revision != 1 {
+		t.Fatalf("revision=%d, want 1", revision)
+	}
+}
+
+// TestFreshStoreHasNoCompactionValues proves a fresh install starts with no
+// stored compaction value and revision 0. The CTO's 50 lives in code, not in
+// the database, until the owner stores a value.
+func TestFreshStoreHasNoCompactionValues(t *testing.T) {
+	s, _ := newTestStore(t)
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Revision != 0 {
+		t.Fatalf("revision=%d, want 0", snap.Revision)
+	}
+	var stored int
+	if err := s.db.QueryRow(`SELECT count(*) FROM setting_values WHERE key IN ('sessions.compaction_threshold_percent','sessions.cache_window_seconds')`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != 0 {
+		t.Fatalf("fresh store has %d stored compaction values, want 0", stored)
+	}
+	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{}); got != 80 {
+		t.Fatalf("network threshold=%d, want the recipe default 80", got)
 	}
 }
 
@@ -111,14 +137,16 @@ func TestCompactionThresholdTeamAndAgentLevels(t *testing.T) {
 	}
 }
 
-func TestCTOCompactionThresholdMigration(t *testing.T) {
+func TestCompactionShippedDefaults(t *testing.T) {
 	s, _ := newTestStore(t)
 	snap, err := s.SettingsSnapshot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{Agent: "cto"}); got != 50 {
-		t.Fatalf("CTO threshold=%d, want 50", got)
+	// The settings layer ships 80 for every agent. The daemon applies the
+	// CTO's own 50 when no level stores a threshold.
+	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{Agent: "cto"}); got != 80 {
+		t.Fatalf("recipe threshold=%d, want 80", got)
 	}
 	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{}); got != 80 {
 		t.Fatalf("network threshold=%d, want 80", got)

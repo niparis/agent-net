@@ -52,6 +52,10 @@ func CTOTitleOrDefault(title string) string {
 	return DefaultCTOTitle
 }
 
+// CTOCompactionThreshold is the CTO's compaction threshold when the owner has
+// not stored one. The shared recipe default is 80 percent.
+const CTOCompactionThreshold = 50
+
 // CTOSettings is the owner's CTO harness and per-harness model preferences.
 // Auto-compaction is a normal setting: sessions.compaction_threshold_percent
 // at the CTO agent level.

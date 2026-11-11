@@ -58,6 +58,21 @@ func (s Snapshot) Int(key string, w Where) int {
 	_ = json.Unmarshal(e.Value, &v)
 	return v
 }
+
+// IntUnlessDefault reads an int like Int, but returns fallback when no level
+// stored the key and the value comes from the recipe.
+func (s Snapshot) IntUnlessDefault(key string, w Where, fallback int) int {
+	e, err := s.Resolve(key, w)
+	if err != nil || e.SourceLevel == "recipe" {
+		return fallback
+	}
+	var v int
+	if json.Unmarshal(e.Value, &v) != nil {
+		return fallback
+	}
+	return v
+}
+
 func (s Snapshot) Float(key string, w Where) float64 {
 	e, err := s.Resolve(key, w)
 	if err != nil {

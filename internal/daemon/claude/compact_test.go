@@ -66,6 +66,8 @@ func TestIdleCompact(t *testing.T) {
 		{name: "CTO compacts while the owner has the pane open", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true, cto: true, want: 1, wantLog: "event=idle_compact session=test result=ok"},
 		{name: "CTO ignores the idle token floor", status: "idle", kind: "bg", tokens: 100000, age: time.Hour, cto: true, want: 1, wantLog: "event=idle_compact session=test result=ok"},
 		{name: "CTO fill at its agent threshold", status: "idle", kind: "bg", tokens: 500000, model: "claude-sonnet-5", age: 4 * time.Minute, cto: true, agentThreshold: 50, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "CTO fill at its code default", status: "idle", kind: "bg", tokens: 500000, model: "claude-sonnet-5", age: 4 * time.Minute, cto: true, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "CTO stored threshold wins over the code default", status: "idle", kind: "bg", tokens: 500000, model: "claude-sonnet-5", age: 4 * time.Minute, cto: true, agentThreshold: 90},
 		{name: "small", status: "idle", kind: "bg", tokens: 199999, age: time.Hour},
 		{name: "recent", status: "idle", kind: "bg", tokens: 300000, age: 4 * time.Minute},
 		{name: "disabled", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, disabled: true},
