@@ -40,6 +40,7 @@ type deliveryChange struct {
 	// StepState is the state of Step: ready, running, needs_owner, passed,
 	// failed, waiting, skipped or closed. Empty when no step is current.
 	StepState string
+	Wait      string // the current step's event wait, including its optional due time
 	Finding   string // the current failed step's short finding
 	Check     string // the current needs_owner step's note: what the owner checks
 	ClaimedBy string

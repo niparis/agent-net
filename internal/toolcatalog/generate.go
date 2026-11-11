@@ -23,7 +23,10 @@ type PluginTool struct {
 }
 
 var pluginMethods = map[string]string{
-	"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
+	"agent_nudge_pause":       protocol.OpNudgePause,
+	"agent_nudge_resume":      protocol.OpNudgeResume,
+	"agent_nudge_pauses_find": protocol.OpNudgePausesFind,
+	"agent_sessions_find":     "sessions_find", "agent_session_get": "session_get",
 	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list",
 	"agent_messages_find": "messages", "agent_message_get": "message_status",

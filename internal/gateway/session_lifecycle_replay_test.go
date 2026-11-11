@@ -14,6 +14,7 @@ func TestSessionLifecycleMigrationReplay(t *testing.T) {
 			s, _ := newTestStore(t)
 			// Match old fixtures: the later identity migration must add these back.
 			if _, err := s.db.Exec(`DROP TRIGGER session_identity_repo_update;
+ DROP INDEX nudge_sessions_limited; DROP INDEX nudge_repo_sessions_limited;
  ALTER TABLE sessions DROP COLUMN agent_id; ALTER TABLE sessions DROP COLUMN repo_id;
  ALTER TABLE worker_runs DROP COLUMN caller_agent_id; ALTER TABLE worker_starts DROP COLUMN caller_agent_id;
  DROP TABLE session_agent_history; DELETE FROM schema_version WHERE version>?`, version); err != nil {

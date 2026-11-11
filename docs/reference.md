@@ -1130,7 +1130,8 @@ the first line of the body (at most 200 characters). An expiry gives the reason
 `expired after 24 hours`, plus the last error if there was one. When the
 message may have arrived (the daemon stopped while delivering, a write failed
 after connecting, or it expired while dispatched with no report), the notice
-says `may not have arrived` instead. A delivered message gets no notice.
+says `may not have arrived` instead. A delivered message gets no notice. A
+message to an ended or offline worker also gets no notice.
 
 The gateway stores the notice as a normal message with the idempotency key
 `undelivered:<message id>`, so each message gets at most one, also after a
@@ -2371,11 +2372,13 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
 ### Delivery changes
 
-The delivery pipeline (decision [0057](decisions/0057-delivery-pipeline.md)) records changes and the evidence of each step in the gateway. Node-owned ready steps have an initial queue; pipeline settings and owner controls are available, and a merge pass is refused until its required steps pass. Git itself is not blocked. A **change** is one unit of delivery: a project, the machine that holds the branch, the branch, its head commit, where it came from (`worker`, `session` or `person`), its caller, and its state (`open`, `merged`, `done` or `stopped`). A **revision** is the head at one complete hand-back or one submit. **Evidence** is one step report on one revision and one exact commit. Evidence of an older revision no longer counts: after a fix, the steps run again on the new head. By default the pre-merge test starts after accept passes on that head. A test task already ready or claimed before this rule remains available. The pipeline uses `delivery.pipeline.review.required_from`, `delivery.pipeline.review.required_risk`, `delivery.pipeline.review.independent`, `delivery.pipeline.review.requires`, `delivery.pipeline.merge.requires`, `delivery.pipeline.merge.approver` and `delivery.pipeline.deploy.approver`. Legacy delivery settings are shorthand for these rules. Settings also offers owner rows for delivery steps. When the next step waits only for the step that just became ready and has the same owner (such as `release` then `verify`, or `test` then `merge`), one task message names both and says to claim and report each step in order. Each step still needs its own report on the exact commit. Four tools, for agent sessions, go through the daemon to the gateway:
+The delivery pipeline (decision [0057](decisions/0057-delivery-pipeline.md)) records changes and the evidence of each step in the gateway. Node-owned ready steps have an initial queue; pipeline settings and owner controls are available, and a merge pass is refused until its required steps pass. Git itself is not blocked. A **change** is one unit of delivery: a project, the machine that holds the branch, the branch, its head commit, where it came from (`worker`, `session` or `person`), its caller, and its state (`open`, `merged`, `done` or `stopped`). A **revision** is the head at one complete hand-back or one submit. **Evidence** is one step report on one revision and one exact commit. Evidence of an older revision no longer counts: after a fix, the steps run again on the new head. By default the pre-merge test starts after accept passes on that head. A test task already ready or claimed before this rule remains available. The pipeline uses `delivery.pipeline.review.required_from`, `delivery.pipeline.review.required_risk`, `delivery.pipeline.review.independent`, `delivery.pipeline.review.requires`, `delivery.pipeline.merge.requires`, `delivery.pipeline.merge.approver` and `delivery.pipeline.deploy.approver`. Legacy delivery settings are shorthand for these rules. Settings also offers owner rows for delivery steps. When the next step waits only for the step that just became ready and has the same owner (such as `release` then `verify`, or `test` then `merge`), one task message names both and says to claim and report each step in order. Each step still needs its own report on the exact commit. A session eligible to claim a step, or its claimant, can report `waiting` with a required `note` naming the event, such as "owner opens the web console". This records no evidence and takes no claim. A new waiting report replaces the previous wait. The step sends no reminder, offline wake or stuck notice until new evidence on any step or revision of the change, or 24 hours after the waiting report. An optional `until` is an RFC 3339 time when evidence can first exist: the step stays quiet before that time, and the wait expires 24 hours after it. New evidence can end either wait earlier. Reminders then resume on the existing cadence, without a burst of missed notices. The step rows and Desk show "waiting on" with the reason and optional time; later task messages say "was waiting on" with the reason.
+
+Four tools, for agent sessions, go through the daemon to the gateway:
 
 - `agent_change_submit {branch, commit, target_branch, project, change, title, fixes, fixes_severity}` submits work done outside a worker. Workers cannot call it: their complete hand-back submits for them (see **Delivery record at hand-back** under [workers](#workers)). The daemon fills in the calling session, its project and model, and reads the branch from git. `branch` defaults to the session folder's current branch, and `commit` to its head; a `commit` must be the full hash of a commit on that branch. `project` must be the session's own project. When a local `target_branch` is given, the daemon records its merge base and a diff stat for the task. `change` names the change this work continues, so it follows the work to another branch. Without it, an open change on the same project and branch takes the new head, or a new change starts. A new head commit makes a new revision. `fixes` names a shipped change this new change fixes, and `fixes_severity` (1 to 4, default 2) sets the defect agent-net records on that change's worker; see **Defects agent-net records** under [workers](#workers).
 - `agent_step_claim {change, step, for, after_merge, commit}` reserves a ready node-owned task before work starts. The first eligible session of the owner node to claim or report the step takes it. A repeat claim by that session is safe; another session, a worker, or a claim for a different commit is refused.
-- `agent_step_report {change, step, for, after_merge, result, commit, fields, done_by, note}` reports one step. `step` is one of `accept`, `test`, `review`, `approve`, `merge`, `release`, `deploy` and `verify`. `result` is `pass`, `fail`, `needs_owner` or `close` (close without merge: the change stops). The change's caller may report `close` on the step the change is at even when another node owns that step, so a caller can stop its own change at any step; a close needs a `note` saying why. Only the caller, the owner or the step's own owner may close it. A close keeps the evidence, ends the pending step tasks so no reminder or stuck notice follows, dismisses open approval Inbox items, and tells a session that had claimed a step that the change is closed. `commit` is the full hash the step checked: the change's head, or the merged commit for a step after merge; a report for another commit or an older revision is refused. `fields` are evidence fields such as `suite`, `tests_added`, `findings_open`, `run` and `merged_commit`. Two more fields feed the defect records: `flake: yes` on a failed test marks a known flake, and `severity` (1 to 4) on a failed verify sets the severity of the defect agent-net records. `done_by` names a worker you started that did the work, such as a review worker; it defaults to you. For a delegated approval, the caller or an allowed delegate may report an owner who approved directly in the session with `done_by: "owner"`. An `ask` approval requires the owner's Inbox answer. Workers cannot call this tool: their caller reports. The gateway fills in who did the work and that session's model, and sets `independent` itself: `none` for the author's own session, `session` for another session of the same model maker, `family` for another model maker, the owner or GitHub. The model maker is Anthropic, OpenAI, Google, DeepSeek and so on, so a Sonnet review of an Opus change is `session`, not `family`. A `merge` pass marks the change merged; it is done when every step after merge has passed.
+- `agent_step_report {change, step, for, after_merge, result, commit, fields, done_by, note, until}` reports one step. `step` is one of `accept`, `test`, `review`, `approve`, `merge`, `release`, `deploy` and `verify`. `result` is `pass`, `fail`, `needs_owner`, `waiting` or `close` (close without merge: the change stops). The change's caller may report `close` on the step the change is at even when another node owns that step, so a caller can stop its own change at any step; a close needs a `note` saying why. Only the caller, the owner or the step's own owner may close it. A close keeps the evidence, ends the pending step tasks so no reminder or stuck notice follows, dismisses open approval Inbox items, and tells a session that had claimed a step that the change is closed. `commit` is the full hash the step checked: the change's head, or the merged commit for a step after merge; a report for another commit or an older revision is refused. `fields` are evidence fields such as `suite`, `tests_added`, `findings_open`, `run` and `merged_commit`. Two more fields feed the defect records: `flake: yes` on a failed test marks a known flake, and `severity` (1 to 4) on a failed verify sets the severity of the defect agent-net records. `done_by` names a worker you started that did the work, such as a review worker; it defaults to you. For a delegated approval, the caller or an allowed delegate may report an owner who approved directly in the session with `done_by: "owner"`. An `ask` approval requires the owner's Inbox answer. Workers cannot call this tool: their caller reports. The gateway fills in who did the work and that session's model, and sets `independent` itself: `none` for the author's own session, `session` for another session of the same model maker, `family` for another model maker, the owner or GitHub. The model maker is Anthropic, OpenAI, Google, DeepSeek and so on, so a Sonnet review of an Opus change is `session`, not `family`. A `merge` pass marks the change merged; it is done when every step after merge has passed.
 - `agent_changes_find {change, project, state, caller, limit, cursor}` reads changes, for agents and workers. `change` returns one change in full, with its revisions and the evidence of every revision. Otherwise it lists changes newest first: `state` is `active` (the default: open and merged), `open`, `merged`, `done`, `stopped` or `any`; `caller: "me"` keeps the changes whose caller you are. Each item has the change, where each step stands (`ready`, `running`, `waiting` with what is missing, `passed`, `failed`, `needs_owner`, `closed` or `skipped`), and `next`, the steps that may start now.
 
 Review is required from difficulty `hard` up, or when the judge's risk score
@@ -4077,3 +4080,48 @@ precede the first owner message, depending on the harness. Only orders and rules
 load. Up to 4096 bytes of order text load as before. Above that budget, pinned orders always load, then
 the newest orders that fit. Pins may exceed the budget. Omitted orders add:
 "N more standing orders: search them with cto_standing_orders search".
+
+### Chief of staff nudge pauses
+
+Only the registered chief session can use these tools. The chief can apply a
+pause without asking the owner. Every apply and resume appears in the Desk log
+with Undo. The owner can undo a pause to end it, or undo a resume to restore it
+with its original expiry.
+
+- `agent_nudge_pause {kind, team | agent, until?, reason?, mode}`: give exactly
+  one team name or agent name/id. `mode: "preview"` lists target session names
+  and the count of this kind's messages to them in the last 24 hours, without
+  writing anything. `mode: "apply"` stores the pause and returns its `id`.
+- `agent_nudge_resume {id}`: end a pause now. This sends no messages.
+- `agent_nudge_pauses_find {}`: list active and ended pauses, including
+  `ended_at` and `ended_by` for ended ones. Times are Unix nanoseconds.
+
+`until` may be an RFC3339 time, such as `2026-11-18T00:00:00Z`, or
+`"provider_reset"`. Provider reset ends when none of the target's sessions has
+`limited_until` in the future, with a seven-day safety expiry. Omit `until` for
+no expiry. An agent pause covers all its sessions; a team pause covers all
+sessions of its current agent members and sessions in member repos.
+
+| Kind | Automatic message paused |
+| --- | --- |
+| `idle_check` | Is your task done? |
+| `autonomy_continue` | You said you have work left; carry on |
+| `reply_reminder` | A peer is waiting for your answer |
+| `loop_tick` | The repo lead's standing loop prompt |
+| `step_reminder` | A ready step task reminder, including batched reminders |
+| `stuck_step` | A step has waited without being claimed |
+| `undelivered` | Your message was not delivered or may not have arrived |
+| `waiting_notice` | The recipient is waiting for its user's answer |
+| `wake_failed` | The recipient is offline and could not be woken |
+| `member_blocked` | A member is blocked or waiting, sent to its lead |
+
+The target is the recipient of the automatic message. Pauses suppress message
+creation and leave each mechanism's bookkeeping unchanged. Nothing accumulates
+for delivery on resume; the next due check uses the normal rules. First step
+task notices, step results, owner messages, peer requests and replies, worker
+notices, and the chief's own brief wake and ask batches are unaffected. Current
+mechanisms and defaults remain unchanged unless the chief applies a pause.
+
+Applying a pause also expires matching nudges already queued at the gateway.
+Delivery rechecks pauses before sending or waking a session, so a saved queue
+snapshot cannot replay an expired nudge after resume.

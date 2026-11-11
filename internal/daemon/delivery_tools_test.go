@@ -350,7 +350,7 @@ func TestChangeSubmitRefusedForWorkers(t *testing.T) {
 		}
 	}
 	n.d.mu.Unlock()
-	for _, op := range []string{protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpAskSort, protocol.OpOwnerBrief} {
+	for _, op := range []string{protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpAskSort, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind} {
 		_, err := lc.call(op, map[string]any{"branch": "feat/x", "ask": "i_1", "result": "close", "reason": "x"})
 		if err == nil || !strings.Contains(err.Error(), "worker") {
 			t.Errorf("%s from a worker: %v", op, err)

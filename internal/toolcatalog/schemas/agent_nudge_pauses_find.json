@@ -1,0 +1,83 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "messages_24h": {
+        "type": "integer"
+      },
+      "sessions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "pauses": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "team": {
+              "type": "string"
+            },
+            "agent": {
+              "type": "string"
+            },
+            "until": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "integer"
+            },
+            "ended_at": {
+              "type": "integer"
+            },
+            "ended_by": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "created_at"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "messages_24h"
+    ],
+    "additionalProperties": false
+  }
+}

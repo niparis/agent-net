@@ -28,7 +28,7 @@ import (
 // other methods.
 func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {
-	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief:
+	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind:
 	default:
 		return nil, false, nil
 	}
@@ -68,6 +68,38 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		}
 		var out protocol.StepClaimResult
 		err := d.deliveryCall(ctx, protocol.FrameStepClaim, q, &out)
+		return out, true, err
+	case protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind:
+		if info.Worker != nil {
+			return nil, true, errors.New("a worker does not manage nudge pauses")
+		}
+		var out protocol.NudgeResult
+		switch method {
+		case protocol.OpNudgePause:
+			var a protocol.NudgePauseArgs
+			if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+				return nil, true, err
+			}
+			if err := a.Validate(); err != nil {
+				return nil, true, err
+			}
+			err = d.deliveryCall(ctx, protocol.FrameNudgePause, protocol.NudgePauseRequest{SessionID: sid, NudgePauseArgs: a}, &out)
+		case protocol.OpNudgeResume:
+			var a protocol.NudgeResumeArgs
+			if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+				return nil, true, err
+			}
+			if a.ID == "" {
+				return nil, true, errors.New("id is required")
+			}
+			err = d.deliveryCall(ctx, protocol.FrameNudgeResume, protocol.NudgeResumeRequest{SessionID: sid, PauseID: a.ID}, &out)
+		case protocol.OpNudgePausesFind:
+			var a protocol.NudgePausesFindArgs
+			if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+				return nil, true, err
+			}
+			err = d.deliveryCall(ctx, protocol.FrameNudgePausesFind, protocol.NudgePausesFindRequest{SessionID: sid}, &out)
+		}
 		return out, true, err
 	case protocol.OpAskSort:
 		if info.Worker != nil {
@@ -313,7 +345,7 @@ func (d *Daemon) stepReport(ctx context.Context, sid string, info protocol.Sessi
 		doneBy = ""
 	}
 	q := protocol.StepReportRequest{SessionID: sid, ChangeID: a.Change, StepRef: a.StepRef, Result: a.Result, Commit: a.Commit,
-		Fields: a.Fields, DoneBy: doneBy, Note: a.Note}
+		Fields: a.Fields, DoneBy: doneBy, Note: a.Note, Until: a.Until}
 	if err := q.Validate(); err != nil {
 		return out, err
 	}

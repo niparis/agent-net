@@ -61,6 +61,24 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		data, err = g.store.ClaimStep(nc.id, q)
+	case protocol.FrameNudgePause:
+		q, derr := decode[protocol.NudgePauseRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.PauseNudge(nc.id, q)
+	case protocol.FrameNudgeResume:
+		q, derr := decode[protocol.NudgeResumeRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.ResumeNudge(nc.id, q)
+	case protocol.FrameNudgePausesFind:
+		q, derr := decode[protocol.NudgePausesFindRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.FindNudgePauses(nc.id, q.SessionID)
 	case protocol.FrameAskSort:
 		q, derr := decode[protocol.AskSortRequest](raw)
 		if derr != nil {
@@ -429,6 +447,9 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protocol.StepReportResult, error) {
 	if err := q.Validate(); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
+	}
+	if q.Result == protocol.StepResultWaiting {
+		return s.reportStepWaiting(machine, q)
 	}
 	reporter, ok, err := s.deliverySession(q.SessionID)
 	if err != nil {
@@ -935,6 +956,17 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 				owner = "caller"
 			}
 			st.Note = deliveryStatusNote(st.Note, "waiting for "+owner+" (offline)")
+		}
+	}
+	for i := range v.Steps {
+		st := &v.Steps[i]
+		active, note, err := s.stepWaiting(nodeTaskTarget{id: c.ID, revision: c.Revision, ref: st.StepRef})
+		if err != nil {
+			return protocol.ChangeView{}, err
+		}
+		if active {
+			st.State, st.Note = protocol.StepStateWaiting, note
+			startedSteps[st.StepRef] = true
 		}
 	}
 	if len(startedSteps) > 0 {

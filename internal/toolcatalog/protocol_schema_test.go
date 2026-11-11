@@ -13,11 +13,14 @@ import (
 // The MCP layer validates every structured result against the tool's output
 // schema, so the schema must name every field the type can marshal.
 var protocolOutputs = map[string]reflect.Type{
-	"agent_machine_log":   reflect.TypeOf(protocol.MachineLogResult{}),
-	"agent_change_submit": reflect.TypeOf(protocol.ChangeSubmitResult{}),
-	"agent_step_claim":    reflect.TypeOf(protocol.StepClaimResult{}),
-	"agent_step_report":   reflect.TypeOf(protocol.StepReportResult{}),
-	"agent_changes_find":  reflect.TypeOf(protocol.ChangesFindResult{}),
+	"agent_nudge_pause":       reflect.TypeOf(protocol.NudgeResult{}),
+	"agent_nudge_resume":      reflect.TypeOf(protocol.NudgeResult{}),
+	"agent_nudge_pauses_find": reflect.TypeOf(protocol.NudgeResult{}),
+	"agent_machine_log":       reflect.TypeOf(protocol.MachineLogResult{}),
+	"agent_change_submit":     reflect.TypeOf(protocol.ChangeSubmitResult{}),
+	"agent_step_claim":        reflect.TypeOf(protocol.StepClaimResult{}),
+	"agent_step_report":       reflect.TypeOf(protocol.StepReportResult{}),
+	"agent_changes_find":      reflect.TypeOf(protocol.ChangesFindResult{}),
 }
 
 // TestOutputSchemasCoverProtocolTypes fills every field of each tool's result

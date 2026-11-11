@@ -1,0 +1,124 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "kind": {
+        "type": "string",
+        "enum": [
+          "idle_check",
+          "autonomy_continue",
+          "reply_reminder",
+          "loop_tick",
+          "step_reminder",
+          "stuck_step",
+          "undelivered",
+          "waiting_notice",
+          "wake_failed",
+          "member_blocked"
+        ]
+      },
+      "team": {
+        "type": "string",
+        "description": "Team name. Give exactly one of team or agent."
+      },
+      "agent": {
+        "type": "string",
+        "description": "Agent name or id. All its sessions are covered."
+      },
+      "until": {
+        "type": "string",
+        "description": "Optional RFC3339 expiry or provider_reset. Provider reset ends when no target session is limited, at most seven days."
+      },
+      "reason": {
+        "type": "string"
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "preview",
+          "apply"
+        ]
+      }
+    },
+    "required": [
+      "kind",
+      "mode"
+    ],
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "messages_24h": {
+        "type": "integer"
+      },
+      "sessions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "pauses": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "team": {
+              "type": "string"
+            },
+            "agent": {
+              "type": "string"
+            },
+            "until": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "integer"
+            },
+            "ended_at": {
+              "type": "integer"
+            },
+            "ended_by": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "created_at"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "messages_24h"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -484,6 +484,9 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 		case <-t.C:
 			func() {
 				defer g.slowLoop("expiry", time.Now())
+				if err := g.store.expireNudgePauses(g.store.db); err != nil {
+					g.logLine("error", "where", "nudge pause expiry", "err", err)
+				}
 				g.logStepDispatchCount()
 				g.retryPublicConsent(ctx)
 				if err := g.store.checkSessionStalls(); err != nil {
@@ -1787,6 +1790,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		g.raiseTrustAsk(p.Session, nc.id, st.hostname(nc.id), p.Path, p.Project, p.Owner)
 		return map[string]bool{"raised": true}, nil
+
+	case protocol.FrameNudgeUndo:
+		var p protocol.NudgeUndoRequest
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return st.undoNudge(protocol.NudgeUndoArgs{PauseID: p.PauseID, Receipt: p.Receipt})
 
 	case "permission.undo":
 		var p protocol.PermissionUndoFrame
@@ -3198,6 +3208,9 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 }
 
 func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol.Message, released bool) {
+	if allowed, err := g.store.allowNudgeDelivery(m); err != nil || !allowed {
+		return
+	}
 	if m.HeldForBusy {
 		return
 	}

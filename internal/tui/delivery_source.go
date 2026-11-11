@@ -314,6 +314,9 @@ func deliveryChangeFromView(v protocol.ChangeView, now time.Time) deliveryChange
 		for _, st := range steps {
 			if st.StepRef == r {
 				out.ClaimedBy = deliveryClaimedSession(st.Note)
+				if state == protocol.StepStateWaiting && strings.HasPrefix(st.Note, "waiting on ") {
+					out.Wait = st.Note
+				}
 				if st.Evidence != nil {
 					switch state {
 					case protocol.StepStateFailed:

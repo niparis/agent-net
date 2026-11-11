@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The delivery pipeline (decision 0056, docs/design/delivery-pipeline.md).
@@ -138,6 +139,7 @@ const (
 	StepResultFail       = "fail"
 	StepResultNeedsOwner = "needs_owner"
 	StepResultClose      = "close"
+	StepResultWaiting    = "waiting"
 )
 
 // Kinds of step owner. A step owner is a graph node (OwnerNode, a component or
@@ -1649,6 +1651,7 @@ type StepReportRequest struct {
 	Fields map[string]string `json:"fields,omitempty"`
 	DoneBy string            `json:"done_by,omitempty"`
 	Note   string            `json:"note,omitempty"`
+	Until  string            `json:"until,omitempty"`
 	// MergeContainsHead is the daemon's git check for a merge pass. Nil is
 	// an older daemon without the check; versions from 0.4.131 must send it.
 	// False refuses the merge report.
@@ -1667,7 +1670,23 @@ func (q StepReportRequest) Validate() error {
 	if err := q.StepRef.Validate(); err != nil {
 		return err
 	}
-	if err := validResult(q.Result); err != nil {
+	if q.Result == StepResultWaiting {
+		if strings.TrimSpace(q.Note) == "" {
+			return errors.New("waiting needs a note: say which event the step waits on")
+		}
+		if q.DoneBy != "" {
+			return errors.New("waiting is reported by the session itself: leave done_by out")
+		}
+	}
+	if q.Until != "" {
+		if q.Result != StepResultWaiting {
+			return errors.New("until is only for waiting")
+		}
+		if _, err := time.Parse(time.RFC3339, q.Until); err != nil {
+			return errors.New("until must be an RFC 3339 time")
+		}
+	}
+	if err := validResult(q.Result); err != nil && q.Result != StepResultWaiting {
 		return err
 	}
 	if !ValidCommit(q.Commit) {

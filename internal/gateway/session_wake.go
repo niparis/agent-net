@@ -95,6 +95,9 @@ func (g *Gateway) wakeReceiptNote(m protocol.Message, route string, started bool
 // wakeForMessage wakes an offline session for m when the wake rules allow it. It
 // reports whether it started a wake of the session.
 func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m protocol.Message) bool {
+	if allowed, err := g.store.allowNudgeDelivery(m); err != nil || !allowed {
+		return false
+	}
 	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online || m.State != protocol.StateStored || !m.ExpiresAt.After(g.store.now()) {
 		return false
 	}
