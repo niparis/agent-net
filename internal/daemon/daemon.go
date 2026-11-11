@@ -1067,6 +1067,12 @@ func (d *Daemon) noteCompacted(harness, nativeID string, at int64, reason string
 	}
 }
 
+// NoteCompacted records an automatic compaction an adapter finished, so the
+// session row shows its time and reason before the next discovery poll.
+func (d *Daemon) NoteCompacted(harness, nativeID string, at int64, reason string) {
+	d.noteCompacted(harness, nativeID, at, reason)
+}
+
 func (d *Daemon) infoLocked(ls *localSession) protocol.SessionInfo {
 	info := ls.info
 	if ls.sessionID != "" {

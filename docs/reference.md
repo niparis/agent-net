@@ -4022,10 +4022,11 @@ idle for its provider's prompt cache window minus one tenth of that window.
 maps a provider to its window in seconds. Claude Code uses `anthropic`, so it
 compacts after 54 minutes idle, where it used the fixed 50-minute rule before.
 Every other provider uses `default` and compacts after 4.5 minutes idle.
-Whichever comes first wins. Neither runs mid-turn, while
-a client is attached, or after the session already compacted in this idle
-stretch. A busy turn resets that guard. The guard is in daemon memory and resets
-on daemon restart.
+Whichever comes first wins. Neither runs mid-turn, or after the session already
+compacted in this idle stretch. An attached client also stops a session, except
+the CTO's Claude conversation: the owner usually keeps its pane open, so the
+adapter compacts it there. A busy turn resets that guard. The guard is in daemon
+memory and resets on daemon restart.
 
 Claude Code has no compaction API. The daemon compacts an idle background
 session by attaching with `claude attach <jobId>` and typing `/compact` with
@@ -4037,6 +4038,8 @@ pane does not block, so tabs left open for days do not stop compaction. If
 herdr cannot say where a client runs, it counts as viewed. One scan runs
 `herdr pane list` once per herdr server and `herdr pane process-info` at most
 once per pane. The daemon checks again before typing, excluding its own client.
+The CTO's conversation is never refused for an open client: our own unattended
+client still types `/compact` while the owner's pane is open.
 If the process scan fails it skips compaction.
 
 The daemon opens its own attach client in a pseudo-terminal, waits up to 30

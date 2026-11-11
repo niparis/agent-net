@@ -42,8 +42,10 @@ func TestIdleCompact(t *testing.T) {
 		age                                            time.Duration
 		attached, noPrompt, disabled, scanError, noJob bool
 		worker                                         bool
+		cto                                            bool // the job bound as the CTO's Claude conversation
 		repo                                           string
 		repoThreshold                                  int
+		agentThreshold                                 int    // agent-level threshold, for the CTO
 		clients                                        string // ps output; the clients' pids are asked to the host
 		viewing                                        bool   // the host says the client's herdr pane is focused, or outside herdr
 		wantLog                                        string
@@ -60,7 +62,10 @@ func TestIdleCompact(t *testing.T) {
 		{name: "busy", status: "busy", kind: "bg", tokens: 300000, age: time.Hour},
 		{name: "shell", status: "shell", kind: "bg", tokens: 300000, age: time.Hour},
 		{name: "interactive", status: "idle", kind: "interactive", tokens: 300000, age: time.Hour},
-		{name: "attached", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true},
+		{name: "attached is still skipped without the CTO", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true, wantLog: "event=idle_compact session=test result=skipped:viewing"},
+		{name: "CTO compacts while the owner has the pane open", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true, cto: true, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "CTO ignores the idle token floor", status: "idle", kind: "bg", tokens: 100000, age: time.Hour, cto: true, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "CTO fill at its agent threshold", status: "idle", kind: "bg", tokens: 500000, model: "claude-sonnet-5", age: 4 * time.Minute, cto: true, agentThreshold: 50, want: 1, wantLog: "event=idle_compact session=test result=ok"},
 		{name: "small", status: "idle", kind: "bg", tokens: 199999, age: time.Hour},
 		{name: "recent", status: "idle", kind: "bg", tokens: 300000, age: 4 * time.Minute},
 		{name: "disabled", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, disabled: true},
@@ -125,11 +130,19 @@ func TestIdleCompact(t *testing.T) {
 			}
 			a := New(Config{SessionsDir: sessions, ProjectsDir: projects})
 			h.worker = tc.worker
+			h.cto = tc.cto
 			h.where = settings.Where{Repo: tc.repo}
+			if tc.repoThreshold > 0 || tc.agentThreshold > 0 {
+				h.snap.Values = append(h.snap.Values,
+					settings.Value{Key: "sessions.compaction_threshold_percent", Level: "network", Scope: "network", Value: []byte("80")})
+			}
 			if tc.repoThreshold > 0 {
 				h.snap.Values = append(h.snap.Values,
-					settings.Value{Key: "sessions.compaction_threshold_percent", Level: "network", Scope: "network", Value: []byte("80")},
 					settings.Value{Key: "sessions.compaction_threshold_percent", Level: "repo", Scope: tc.repo, Value: []byte(strconv.Itoa(tc.repoThreshold))})
+			}
+			if tc.agentThreshold > 0 {
+				h.snap.Values = append(h.snap.Values,
+					settings.Value{Key: "sessions.compaction_threshold_percent", Level: "agent", Scope: "cto", Value: []byte(strconv.Itoa(tc.agentThreshold))})
 			}
 			a.host = h
 			a.compactNow = func() time.Time { return now }
@@ -203,6 +216,14 @@ func TestIdleCompact(t *testing.T) {
 					if got := h.current()[0].LastCompactedReason; got != wantReason {
 						t.Fatalf("note reason=%q, want %q", got, wantReason)
 					}
+					// The adapter records the finished compaction immediately,
+					// not only on the next discovery poll.
+					h.mu.Lock()
+					notes := append([]compactNote(nil), h.notes...)
+					h.mu.Unlock()
+					if len(notes) != 1 || notes[0].harness != "claude" || notes[0].session != "test" || notes[0].reason != wantReason || notes[0].at != started.Unix() {
+						t.Fatalf("compaction notes=%v, want one %q at %d", notes, wantReason, started.Unix())
+					}
 					// A real busy observation starts a new stretch; polling idle alone did not.
 					// A busy turn writes to the transcript, so write one too: the
 					// transcript, not memory, is what survives a restart.
@@ -260,8 +281,17 @@ type compactHost struct {
 	snap    settings.Snapshot
 	viewing map[int]bool
 	worker  bool
+	cto     bool
 	where   settings.Where
 	scans   int // calls of AttachClientsViewing: one per scan
+	notes   []compactNote
+}
+
+// compactNote is one record the adapter sent with NoteCompacted.
+type compactNote struct {
+	harness, session string
+	at               int64
+	reason           string
 }
 
 func (h *compactHost) SettingsWhere(harness, nativeID string) settings.Where {
@@ -273,6 +303,17 @@ func (h *compactHost) SettingsWhere(harness, nativeID string) settings.Where {
 
 func (h *compactHost) IsWorkerSession(harness, nativeID string) bool {
 	return h.worker && harness == "claude" && nativeID == "test"
+}
+
+// IsClaudeCTOJob makes the fake job "job-test" the CTO's conversation.
+func (h *compactHost) IsClaudeCTOJob(job string) bool {
+	return h.cto && job == "job-test"
+}
+
+func (h *compactHost) NoteCompacted(harness, nativeID string, at int64, reason string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.notes = append(h.notes, compactNote{harness: harness, session: nativeID, at: at, reason: reason})
 }
 
 func (h *compactHost) AttachClientsViewing(pids []int) map[int]bool {

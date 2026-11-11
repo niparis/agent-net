@@ -13,8 +13,10 @@ that agent's team, so the owner can change the value for any persistent session.
 The trigger is context fill at or above the threshold, or idle for the
 provider's prompt cache window minus a margin of one tenth of that window,
 whichever comes first. The margin is 30 seconds for a 5-minute OpenCode cache
-and 6 minutes for Claude Code's hour. Neither runs while a client is attached or
-mid-turn. Each idle stretch gets one attempt; a busy turn resets the guard.
+and 6 minutes for Claude Code's hour. Neither runs mid-turn. An attached client
+also stops a session, except the CTO's Claude conversation: the owner keeps its
+pane open, and the adapter compacts it there. Each idle stretch gets one
+attempt; a busy turn resets the guard.
 
 The shipped `sessions.cache_window_seconds` default is
 `{"anthropic":3600,"default":300}`. The Claude adapter looks up `anthropic`
