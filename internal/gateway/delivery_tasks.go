@@ -1353,24 +1353,17 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 		}
 	}
 	ready := p.NextSteps(c, evidence)
-	for _, step := range p.Steps {
-		found := false
-		for _, ref := range ready {
-			if ref == step.StepRef {
-				found = true
-				break
-			}
-		}
-		if found {
-			continue
-		}
-		args := []any{c.ID, c.Revision, step.Step, step.For, boolInt(step.AfterMerge)}
-		if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND claimed_by='' AND completed=0`, args...); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN (SELECT m.message_id FROM delivery_step_messages m JOIN delivery_step_tasks t ON t.change_id=m.change_id AND t.revision=m.revision AND t.step=m.step AND t.for_step=m.for_step AND t.after_merge=m.after_merge WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.completed=1 AND t.claimed_by='')`, args...); err != nil {
-			return err
-		}
+	args := []any{c.ID, c.Revision}
+	query := `UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND claimed_by='' AND completed=0`
+	for _, ref := range ready {
+		query += ` AND NOT (step=? AND for_step=? AND after_merge=?)`
+		args = append(args, ref.Step, ref.For, boolInt(ref.AfterMerge))
+	}
+	if _, err := tx.Exec(query, args...); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN (SELECT m.message_id FROM delivery_step_messages m JOIN delivery_step_tasks t ON t.change_id=m.change_id AND t.revision=m.revision AND t.step=m.step AND t.for_step=m.for_step AND t.after_merge=m.after_merge WHERE t.change_id=? AND t.revision=? AND t.completed=1 AND t.claimed_by='')`, c.ID, c.Revision); err != nil {
+		return err
 	}
 	for _, ref := range p.NextSteps(c, evidence) {
 		step, ok := p.Find(ref)
