@@ -34,6 +34,23 @@ func TestStandardAndParity(t *testing.T) {
 		}
 	}
 }
+
+// Repo visibility is not stored, so a project keeps the per-change default
+// until its repo setting opts into a train.
+func TestDeliveryCIModeDefault(t *testing.T) {
+	s := Snapshot{}
+	if got := s.String("delivery.ci_mode", Where{Repo: "alpha"}); got != "per_change" {
+		t.Fatalf("default = %q, want per_change", got)
+	}
+	s.Values = []Value{{Key: "delivery.ci_mode", Level: "repo", Scope: "alpha", Value: raw(`"train"`)}}
+	if got := s.String("delivery.ci_mode", Where{Repo: "alpha"}); got != "train" {
+		t.Fatalf("repo value = %q, want train", got)
+	}
+	if got := s.String("delivery.ci_mode", Where{Repo: "beta"}); got != "per_change" {
+		t.Fatalf("other repo = %q, want per_change", got)
+	}
+}
+
 func TestResolveSourceIdentity(t *testing.T) {
 	s := Snapshot{Revision: 4, Values: []Value{
 		{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: raw("true")},

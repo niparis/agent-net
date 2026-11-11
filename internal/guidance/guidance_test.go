@@ -84,6 +84,24 @@ func TestGuidanceSaysAgentsCanReadCharters(t *testing.T) {
 	}
 }
 
+// The merger reads the one CI run per train rule in its guidance, including
+// the local bisect before a re-push.
+func TestGuidanceCoversMergeTrain(t *testing.T) {
+	for _, v := range []string{Claude, Other, Combined} {
+		b := Block(v)
+		for _, want := range []string{
+			"test each change locally with the targeted packages",
+			"Run CI once on the train tip.",
+			"Cite that one run for every change in the train.",
+			"bisect locally to find the culprit before you re-push",
+		} {
+			if !strings.Contains(b, want) {
+				t.Errorf("%s block lacks %q", v, want)
+			}
+		}
+	}
+}
+
 func TestApplyInsertAndRerun(t *testing.T) {
 	out, changed := Apply("# Mine\n\n- rule\n", Claude)
 	if !changed || !strings.HasPrefix(out, "# Mine\n\n- rule\n\n"+Begin+"\n## agent-net") || !strings.HasSuffix(out, End+"\n") {

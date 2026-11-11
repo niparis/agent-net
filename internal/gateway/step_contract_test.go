@@ -33,6 +33,33 @@ func TestStepContractSettingsLive(t *testing.T) {
 	}
 }
 
+// Repo visibility is not stored, so a public project opts into a train with
+// its repo setting. Without that setting the per-change text stays.
+func TestStepContractCIMode(t *testing.T) {
+	s, _ := newTestStore(t)
+	private := s.stepContract("alpha", "test")
+	if !strings.Contains(private, "Run the full changed packages and CI.") {
+		t.Fatalf("private repo contract: %q", private)
+	}
+	if _, err := s.WriteSettings([]SettingsChange{{Key: "delivery.ci_mode", Level: "repo", Scope: "beta", Value: settingValue(`"train"`)}}, "cto", "public repo"); err != nil {
+		t.Fatal(err)
+	}
+	public := s.stepContract("beta", "test")
+	for _, want := range []string{
+		"Test each change locally with the targeted packages",
+		"Run CI once on the train tip.",
+		"Cite that one run for every change in the train.",
+		"bisect locally to find the culprit before you re-push",
+	} {
+		if !strings.Contains(public, want) {
+			t.Errorf("public repo contract lacks %q: %q", want, public)
+		}
+	}
+	if got := s.stepContract("alpha", "test"); got != private {
+		t.Fatalf("per-change repo changed: %q", got)
+	}
+}
+
 // Exercise the message writer, including its compact batch and reminder paths.
 func TestStepTaskContracts(t *testing.T) {
 	for _, batch := range []bool{false, true} {
