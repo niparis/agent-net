@@ -209,6 +209,8 @@ Legend ────────────────────────�
   y                      on a To try row, report that the check passed: the owner tried it and it works
   n                      on a To try row, report that the check failed: type one line of what is wrong
 
+  in details             up and down choose an answer; enter answers the marked one; digits still switch tabs
+
  In overlays
  Message body
   esc, enter             close

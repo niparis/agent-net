@@ -80,6 +80,7 @@ type Model struct {
 	inboxDetail, inboxEditing           bool
 	inboxDeliveryID                     string
 	inboxIndex, inboxDetailScroll       int
+	inboxDetailOption                   int
 	inboxError                          string
 	inboxNote                           string
 	inboxInput                          textinput.Model
@@ -1066,13 +1067,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case inboxAnswerMsg:
 		switch {
 		case msg.err == nil:
-			m.inboxDetail = false
+			m.inboxDetail, m.inboxDetailOption = false, 0
 			m.inboxError, m.inboxNote = "", ""
 			m.dropInboxItem(msg.id)
 		case inboxGone(msg.err):
 			// The item left the gateway while the row waited. Keep the list
 			// honest: drop the row and say it is gone, not the raw error.
-			m.inboxDetail = false
+			m.inboxDetail, m.inboxDetailOption = false, 0
 			m.inboxError = ""
 			m.inboxNote = "already gone"
 			m.dropInboxItem(msg.id)
@@ -1744,14 +1745,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.tab == inboxTab && !m.inboxEditing && len(k.Text) == 1 && k.Text[0] >= '1' && k.Text[0] <= '4' {
-		if row, ok := m.inboxSelected(m.inboxRows()); ok && (row.kind == "question" || row.kind == "approval") {
-			i := int(k.Text[0] - '1')
-			if i < len(row.item.Options) {
-				return m, m.inboxAnswer(row.item.ID, row.item.Options[i])
-			}
-		}
-	}
 	if !m.filtering && m.open == nil {
 		switch keyAction(contextGlobal, k.String()) {
 		case "graph tab":
@@ -1831,7 +1824,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.sessionCell = 0
 			}
 			if i == inboxTab {
-				m.inboxDetail, m.inboxEditing = false, false
+				m.inboxDetail, m.inboxDetailOption, m.inboxEditing = false, 0, false
 				m.delivery.project, m.delivery.detail = "", false
 				m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
 				return m.startDeliveryLoad()
