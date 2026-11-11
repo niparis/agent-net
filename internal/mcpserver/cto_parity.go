@@ -75,7 +75,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("node_rename", "Set machine name.", map[string]ctoField{"node_id": s("Machine."), "name": s("Empty clears.")})
 
 	add("worker_start", "Start a worker.", map[string]ctoField{
-		"project": s("Default CTO project."), "harness": en("Harness; empty is auto.", "opencode", "claude", "pi", "codex"),
+		"project": s("Default CTO project."), "harness": en("Harness; empty is auto.", protocol.WorkerHarnesses...),
 		"model": s("Model; empty is auto."), "difficulty": en("Deprecated and ignored: the level comes from the difficulty judge.", "trivial", "simple", "normal", "hard", "very_complex"),
 		"touches": {typ: "array", desc: "Deprecated and ignored: the level comes from the difficulty judge.", items: map[string]any{"type": "string", "enum": []string{"db", "hot-path", "ui", "docs", "tests", "config", "other"}}},
 		"base":    s("Branch."), "continue": s("Worker ID."), "task": s("Brief and limits."), "machine": s("Machine."),

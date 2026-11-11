@@ -164,7 +164,7 @@ var ctoTools = map[string]ctoToolDef{
 		fields: map[string]ctoField{
 			"action":         {typ: "string", enum: []string{"start", "stop"}},
 			"project":        {typ: "string", desc: "Project."},
-			"harness":        {typ: "string", desc: "Harness; empty is auto.", enum: []string{"opencode", "claude", "pi", "codex"}},
+			"harness":        {typ: "string", desc: "Harness; empty is auto.", enum: protocol.WorkerHarnesses},
 			"model":          {typ: "string", desc: "Model; empty is auto."},
 			"difficulty":     {typ: "string", desc: "Deprecated and ignored: the level comes from the difficulty judge.", enum: []string{"trivial", "simple", "normal", "hard", "very_complex"}},
 			"touches":        {typ: "array", desc: "Deprecated and ignored: the level comes from the difficulty judge.", items: map[string]any{"type": "string", "enum": []string{"db", "hot-path", "ui", "docs", "tests", "config", "other"}}},

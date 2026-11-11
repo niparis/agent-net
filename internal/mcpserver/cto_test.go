@@ -472,3 +472,56 @@ func TestCTOProjectRemoveMachineSchema(t *testing.T) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
+
+// The CTO uses worker_change start to launch agy workers on machines where
+// antigravity is installed (m_fc8bf55ce081fe07).
+func TestCTOWorkerChangeStartAgyHarness(t *testing.T) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	var calledMethod string
+	var calledArgs map[string]any
+	srv := NewCTO(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		calledMethod = method
+		if raw, ok := params.(json.RawMessage); ok {
+			_ = json.Unmarshal(raw, &calledArgs)
+		}
+		return json.RawMessage(`{"state":"started"}`), nil
+	}, "test")
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "worker_change",
+		Arguments: map[string]any{
+			"action":  "start",
+			"project": "agent-net",
+			"task":    "evaluate changes",
+			"harness": "agy",
+		},
+	})
+	if err != nil {
+		t.Fatalf("call failed: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("worker_change rejected harness agy: %+v", res)
+	}
+	if calledMethod != "worker_change" || calledArgs["harness"] != "agy" {
+		t.Fatalf("got method %q args %v, want worker_change with harness agy", calledMethod, calledArgs)
+	}
+	for _, tc := range []struct{ name, args string }{
+		{"worker_start", `{"task":"x","project":"p","harness":"agy"}`},
+		{"worker_change", `{"action":"start","task":"x","project":"p","harness":"agy"}`},
+	} {
+		if err := CTOArguments(tc.name, json.RawMessage(tc.args)); err != nil {
+			t.Errorf("%s refused harness agy: %v", tc.name, err)
+		}
+	}
+}
