@@ -75,6 +75,22 @@ func TestPickerGetOwnerGate(t *testing.T) {
 	}
 }
 
+func TestScoresWeeklyOwnerGate(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi"})
+	pi, _ := helloPi(t, n, "p1", "/w/p", false)
+	if _, err := pi.call(protocol.OpScoresWeekly, nil); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("gate: %v", err)
+	}
+	cli := cliClient(t, n)
+	raw := cli.mustCall(protocol.OpScoresWeekly, nil)
+	var out []protocol.ScoresWeeklyRow
+	if err := json.Unmarshal(raw, &out); err != nil || len(out) != 8 {
+		t.Fatalf("weekly: %s %v", raw, err)
+	}
+}
+
 func TestWorkerProvidersOwnerGate(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")

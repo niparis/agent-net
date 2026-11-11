@@ -146,6 +146,33 @@ func (d *Daemon) pickerAnalysis(ctx context.Context) (protocol.PickerAnalysis, e
 	return out, err
 }
 
+func (d *Daemon) scoresWeekly(ctx context.Context) ([]protocol.ScoresWeeklyRow, error) {
+	c, ok := d.integrationsClient()
+	if !ok {
+		return nil, errNotConnected
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.URL, "/")+"/v1/scores-weekly", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	hc := c.HTTP
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("gateway answered %s", resp.Status)
+	}
+	var out []protocol.ScoresWeeklyRow
+	err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out)
+	return out, err
+}
+
 func (d *Daemon) workerProviders(ctx context.Context, change *protocol.WorkerProviders) (protocol.WorkerProviders, error) {
 	c, ok := d.integrationsClient()
 	if !ok {

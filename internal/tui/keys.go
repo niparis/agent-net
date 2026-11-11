@@ -294,6 +294,7 @@ var keyBindings = []keyBinding{
 	bind(contextQualityDetails, "pgup", actPageUp, "page", 1),
 	bind(contextQualityDetails, "pgdown", actPageDown, "page", 1),
 	bind(contextQualityDetails, "o", "older", "older keys", 1),
+	bind(contextQualityDetails, "w", "weekly", "weekly table", 1),
 	bind(contextQualityDetails, "R", "refresh", "refresh", 1),
 	bind(contextQuotas, "?", "help", "help", 2),
 	bind(contextGraph, "D", "delivery", "delivery", -1),
