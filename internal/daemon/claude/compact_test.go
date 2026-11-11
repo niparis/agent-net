@@ -25,6 +25,13 @@ const fakeCompactOutput = "printf '%s\\n' " +
 	"'{\"type\":\"attachment\",\"attachment\":{\"type\":\"file\"}}' " +
 	">> \"$COMPACT_TRANSCRIPT\"\n"
 
+// compactPromptWait is how long the fake claude gets to start and print its
+// prompt. The product's default is 30s. A fixed 100ms raced the fake process
+// startup on a loaded CI machine and failed TestIdleCompact/eligible with
+// "attach prompt timeout", so success cases use a bound well above startup.
+// The prompt-timeout case keeps a short deadline because it tests that deadline.
+const compactPromptWait = 5 * time.Second
+
 func TestIdleCompact(t *testing.T) {
 	for _, tc := range []struct {
 		name, status, kind                             string
@@ -108,7 +115,11 @@ func TestIdleCompact(t *testing.T) {
 			a.host = h
 			a.compactNow = func() time.Time { return now }
 			a.compactBinary = bin
-			a.compactPromptTimeout = 100 * time.Millisecond
+			a.compactPromptTimeout = compactPromptWait
+			if tc.noPrompt {
+				// This case tests the wait itself, so keep it short.
+				a.compactPromptTimeout = 100 * time.Millisecond
+			}
 			a.compactTimeout = time.Second
 			if tc.clients != "" {
 				a.compactPS = func(context.Context) ([]byte, error) { return []byte(tc.clients), nil }
@@ -296,7 +307,7 @@ func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
 			a := New(Config{SessionsDir: sessions, ProjectsDir: projects}) // empty compactStates: a fresh daemon
 			a.host = h
 			a.compactBinary = bin
-			a.compactPromptTimeout = 100 * time.Millisecond
+			a.compactPromptTimeout = compactPromptWait
 			a.compactTimeout = time.Second
 			a.compactAttached = func(context.Context) (map[string]bool, error) { return map[string]bool{}, nil }
 			if got := contextTokens(transcript); got != tc.wantTokens {
@@ -372,7 +383,7 @@ func TestIdleCompactTypesFixedInstructions(t *testing.T) {
 	a := New(Config{SessionsDir: sessions, ProjectsDir: projects})
 	a.host = h
 	a.compactBinary = bin
-	a.compactPromptTimeout = 100 * time.Millisecond
+	a.compactPromptTimeout = compactPromptWait
 	a.compactTimeout = time.Second
 	a.compactAttached = func(context.Context) (map[string]bool, error) { return map[string]bool{}, nil }
 	a.poll()
