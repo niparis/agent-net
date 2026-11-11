@@ -867,6 +867,12 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		g.sendStepTaskBatch(ctx, batch)
 	}
 	for session := range forceFlush {
+		// A burst that already has a notice out stays in its quiet window.
+		// Flushing it here would cut the same burst into two step-task
+		// messages just because an unrelated nudge is due.
+		if recentBySession[session] {
+			continue
+		}
 		g.flushStepTasksArmedContext(ctx, session, 0)
 	}
 }

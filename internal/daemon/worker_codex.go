@@ -493,11 +493,18 @@ func (c *codexAdapter) deliverWorker(w *worker, m protocol.Message) Result {
 		return Result{Detail: "the Codex worker is not connected"}
 	}
 	person := m.FromHarness == protocol.OwnerHarness
-	if m.From != owner && !person {
+	// An automatic task comes from the reserved agent-net sender. The worker
+	// still answers the session that started it, not agent-net itself.
+	automatic := m.From == "agent-net" && protocol.IsWorkerTask(m)
+	if m.From != owner && !person && !automatic {
 		return Result{Detail: "a Codex worker takes messages from the session that started it, and from the person at the machine, not from other agents"}
 	}
+	from := m.From
+	if automatic {
+		from = owner
+	}
 	text := codexWorkerText(m)
-	j := codexJob{from: m.From, msgID: m.ID, text: text}
+	j := codexJob{from: from, msgID: m.ID, text: text}
 	for {
 		cc.mu.Lock()
 		ending := cc.ending
