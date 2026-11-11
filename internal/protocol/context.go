@@ -67,3 +67,18 @@ func CacheWindow(windows map[string]int64, provider string) time.Duration {
 	}
 	return 5 * time.Minute
 }
+
+// cacheIdleMarginShare is the part of the prompt cache window kept as headroom
+// before the idle trigger fires, so a compaction finishes before the cache
+// expires. A tenth is the 30 seconds a 5-minute OpenCode cache has always used
+// and 6 minutes of Claude Code's hour.
+const cacheIdleMarginShare = 10
+
+// CacheIdleAfter is how long a session must be idle before the idle trigger
+// fires: the provider's cache window minus the margin above. For the shipped
+// settings a Claude Code session compacts after 54 minutes idle and an
+// OpenCode session after 4 minutes 30 seconds.
+func CacheIdleAfter(windows map[string]int64, provider string) time.Duration {
+	window := CacheWindow(windows, provider)
+	return window - window/cacheIdleMarginShare
+}

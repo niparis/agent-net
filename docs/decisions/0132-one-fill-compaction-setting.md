@@ -11,9 +11,20 @@ session is never compacted. A session resolves the repo, the repo's agent and
 that agent's team, so the owner can change the value for any persistent session.
 
 The trigger is context fill at or above the threshold, or idle for the
-provider's prompt cache window minus 30 seconds, whichever comes first. Neither
-runs while a client is attached or mid-turn. Each idle stretch gets one attempt;
-a busy turn resets the guard.
+provider's prompt cache window minus a margin of one tenth of that window,
+whichever comes first. The margin is 30 seconds for a 5-minute OpenCode cache
+and 6 minutes for Claude Code's hour. Neither runs while a client is attached or
+mid-turn. Each idle stretch gets one attempt; a busy turn resets the guard.
+
+The shipped `sessions.cache_window_seconds` default is
+`{"anthropic":3600,"default":300}`. The Claude adapter looks up `anthropic`
+directly, so a Claude Code session keeps the hour-long cache and its idle trigger
+fires after 54 minutes, close to the fixed 50-minute rule it had before. A
+harness that uses the model's provider prefix falls back to `default`, the
+5-minute cache, and compacts after 4.5 minutes idle, unchanged. An explicit old
+`sessions.idle_compaction_after` becomes `default`; per-provider values from the
+old CTO settings are kept when present. When the old key was never set, the
+per-provider defaults above apply.
 
 The CTO's own loop reads the same key with its agent level. The schema migration
 sets `50` at the CTO's agent level when no value is set there, so the CTO keeps

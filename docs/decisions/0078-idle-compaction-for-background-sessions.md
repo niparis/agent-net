@@ -41,7 +41,10 @@ The owner replaced the separate idle rules with one primary key,
 `sessions.compaction_threshold_percent` (default 80, levels network, team, repo
 and agent). The fill trigger fires at that percentage of the model's context.
 The idle trigger now uses the provider's prompt cache window from
-`sessions.cache_window_seconds` (default 300 seconds) minus 30 seconds. The old
+`sessions.cache_window_seconds` (default `{"anthropic":3600,"default":300}`)
+minus one tenth of the window. Claude Code uses the anthropic entry and
+compacts after 54 minutes idle, near its old 50 minutes; a provider with a
+5-minute cache compacts after 4.5 minutes. The old
 `sessions.idle_compaction_after` is gone; an explicit value in it and the old
 CTO cache window are migrated into the new key. `sessions.idle_compaction` and
 `sessions.idle_compaction_min_tokens` stay as documented idle-only controls.

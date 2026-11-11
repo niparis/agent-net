@@ -4017,9 +4017,12 @@ the minimum to keep its old behaviour.
 The fill trigger fires when context tokens reach the threshold percentage of
 the model's window. Context tokens are the latest assistant usage: input plus
 cache read plus cache creation. The idle trigger fires when a session has been
-idle for its provider's prompt cache window minus 30 seconds.
-`sessions.cache_window_seconds` (default `{"default":300}`) maps a provider to
-its window in seconds. Whichever comes first wins. Neither runs mid-turn, while
+idle for its provider's prompt cache window minus one tenth of that window.
+`sessions.cache_window_seconds` (default `{"anthropic":3600,"default":300}`)
+maps a provider to its window in seconds. Claude Code uses `anthropic`, so it
+compacts after 54 minutes idle, where it used the fixed 50-minute rule before.
+Every other provider uses `default` and compacts after 4.5 minutes idle.
+Whichever comes first wins. Neither runs mid-turn, while
 a client is attached, or after the session already compacted in this idle
 stretch. A busy turn resets that guard. The guard is in daemon memory and resets
 on daemon restart.

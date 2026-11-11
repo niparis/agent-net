@@ -447,11 +447,11 @@ settings:
     default: 80
     live: true
   - key: sessions.cache_window_seconds
-    description: Prompt cache lifetime per provider in seconds, as a JSON object such as {"anthropic":300}; the idle trigger fires shortly before the cache expires.
+    description: Prompt cache lifetime per provider in seconds, as a JSON object such as {"anthropic":3600}; the idle trigger fires one tenth of the window before the cache expires. Defaults are anthropic 3600 for Claude Code and 300 for every other provider.
     kind: advice
     type: map
     levels: [network]
-    default: {default: 300}
+    default: {anthropic: 3600, default: 300}
     live: true
   - key: sessions.idle_compaction
     description: Enable the idle trigger for persistent sessions. It is separate from the fill trigger.

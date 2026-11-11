@@ -114,7 +114,7 @@ func (d *Daemon) autoCompactSession(ctx context.Context, snap settings.Snapshot,
 		model = t.model
 	}
 	fill, hasFill := protocol.ContextFill(tokens, limit)
-	idleDue := idleEnabled && t.lastActive > 0 && now.Sub(time.Unix(t.lastActive, 0)) >= protocol.CacheWindow(windows, providerOf(model))-30*time.Second
+	idleDue := idleEnabled && t.lastActive > 0 && now.Sub(time.Unix(t.lastActive, 0)) >= protocol.CacheIdleAfter(windows, providerOf(model))
 	reason := ""
 	if hasFill && tokens*100 >= limit*int64(threshold) {
 		reason = fmt.Sprintf("fill %d%%", fill)

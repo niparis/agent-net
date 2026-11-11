@@ -50,8 +50,10 @@ func TestIdleCompact(t *testing.T) {
 		wantScans                                      int // herdr scans: none when no candidate passes the token check
 		want                                           int
 	}{
-		{name: "eligible", status: "idle", kind: "bg", tokens: 200000, age: 50 * time.Minute, want: 1},
+		{name: "idle inside the anthropic window", status: "idle", kind: "bg", tokens: 300000, age: 10 * time.Minute},
+		{name: "idle past the anthropic window", status: "idle", kind: "bg", tokens: 300000, age: 55 * time.Minute, want: 1, wantLog: "event=idle_compact session=test result=ok"},
 		{name: "fill before idle", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "fill with no idle time", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 0, want: 1, wantLog: "event=idle_compact session=test result=ok"},
 		{name: "repo threshold blocks fill", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, repo: "shop", repoThreshold: 90},
 		{name: "repo threshold allows fill", status: "idle", kind: "bg", tokens: 750000, model: "claude-sonnet-5", age: 4 * time.Minute, repo: "shop", repoThreshold: 70, want: 1, wantLog: "event=idle_compact session=test result=ok"},
 		{name: "worker is never compacted", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, worker: true},
@@ -233,6 +235,23 @@ func TestIdleCompact(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The shipped Anthropic window is an hour, and the idle trigger keeps a
+// margin, so a Claude session compacts between 50 and 59 minutes idle: the
+// same place it did when the rule was a fixed 50 minutes.
+func TestIdleCompactClaudeCacheWindow(t *testing.T) {
+	windows := settings.Snapshot{}.Map("sessions.cache_window_seconds", settings.Where{})
+	if got := windows["anthropic"]; got != 3600 {
+		t.Fatalf("anthropic window=%d, want 3600", got)
+	}
+	idle := protocol.CacheIdleAfter(windows, "anthropic")
+	if idle < 50*time.Minute || idle > 59*time.Minute {
+		t.Fatalf("Claude idle compaction after %v, want 50 to 59 minutes", idle)
+	}
+	if got := protocol.CacheIdleAfter(windows, "fake"); got != 270*time.Second {
+		t.Fatalf("default window idle after %v, want 4m30s", got)
 	}
 }
 

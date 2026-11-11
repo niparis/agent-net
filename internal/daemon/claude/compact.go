@@ -198,7 +198,7 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 		limit := protocol.ClaudeContextLimit(a.models.Model(f.info.NativeID, f.info.Cwd))
 		fill, known := protocol.ContextFill(tokens, limit)
 		reason := ""
-		idleDue := idleEnabled && now.Sub(time.Unix(f.info.LastActive, 0)) >= protocol.CacheWindow(windows, "anthropic")-30*time.Second
+		idleDue := idleEnabled && now.Sub(time.Unix(f.info.LastActive, 0)) >= protocol.CacheIdleAfter(windows, "anthropic")
 		if known && tokens*100 >= limit*int64(threshold) {
 			reason = fmt.Sprintf("fill %d%%", fill)
 		} else if idleDue && tokens >= minTokens {

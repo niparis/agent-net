@@ -189,6 +189,75 @@ func TestAutoCompactOpenCodeByFill(t *testing.T) {
 	}
 }
 
+// OpenCode providers keep the 5-minute prompt cache. With the shipped
+// settings an idle session still compacts after about 4.5 minutes, not
+// immediately and not after Claude's hour.
+func TestAutoCompactOpenCodeDefaultCacheWindow(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{exe: "/opt/x/node_modules/@opencode/cli/bin/opencode.exe"})
+	dir := t.TempDir()
+	var mu sync.Mutex
+	compacted := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if user, pass, ok := r.BasicAuth(); !ok || user != "opencode" || pass != "test-owner-password" {
+			w.WriteHeader(401)
+			return
+		}
+		if r.URL.Path == "/openapi.json" {
+			http.NotFound(w, r)
+			return
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/session/active":
+			if r.URL.Query().Get("directory") != "" {
+				break
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{}})
+		case "GET /api/session/ses_idle":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": "ses_idle", "model": map[string]any{"providerID": "fake", "id": "m1"}}})
+		case "GET /api/session/ses_idle/message":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "msg_1", "type": "assistant", "tokens": map[string]any{"input": 250000}}}})
+		case "GET /api/model":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"providerID": "fake", "id": "m1", "limit": map[string]any{"context": 1000000}}}})
+		case "POST /api/session/ses_idle/compact":
+			mu.Lock()
+			compacted++
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": "cmp"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	writeOwnerOpenCodeService(t, state, server.URL)
+	_, id := helloOpenCode(t, n, "ses_idle", dir)
+	now := time.Now()
+	n.d.autoCompactNow = func() time.Time { return now }
+	ls := n.d.sessionByID(id)
+	setIdle := func(age time.Duration) {
+		n.d.mu.Lock()
+		ls.lastActive = now.Add(-age)
+		n.d.mu.Unlock()
+	}
+	compactionCount := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return compacted
+	}
+	setIdle(4 * time.Minute)
+	n.d.autoCompactOnce(context.Background())
+	if got := compactionCount(); got != 0 {
+		t.Fatalf("compacted at 4 minutes idle: %d", got)
+	}
+	setIdle(5 * time.Minute)
+	n.d.autoCompactOnce(context.Background())
+	if got := compactionCount(); got != 1 {
+		t.Fatalf("compacted after 5 minutes idle: %d, want 1", got)
+	}
+}
+
 func TestCompactionUnsupportedHarness(t *testing.T) {
 	if protocol.CompactionSupported("agy") {
 		t.Fatal("agy reports compaction support")

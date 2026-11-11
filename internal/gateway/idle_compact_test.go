@@ -81,8 +81,12 @@ func TestCTOCompactionThresholdMigration(t *testing.T) {
 	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{}); got != 80 {
 		t.Fatalf("network threshold=%d, want 80", got)
 	}
-	if got := snap.Map("sessions.cache_window_seconds", settings.Where{})["default"]; got != 300 {
-		t.Fatalf("cache window=%d, want 300", got)
+	// The old idle window was never set explicitly here, so the shipped
+	// per-provider defaults stay: Claude Code keeps its hour-long cache and
+	// every other provider keeps the 5-minute one.
+	windows := snap.Map("sessions.cache_window_seconds", settings.Where{})
+	if windows["anthropic"] != 3600 || windows["default"] != 300 {
+		t.Fatalf("cache windows=%v, want anthropic 3600 and default 300", windows)
 	}
 }
 

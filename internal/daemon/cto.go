@@ -706,9 +706,10 @@ func (d *Daemon) openCodeSessionBusy(ctx context.Context, base, password, versio
 	return page.Data[session].Type == "running", true
 }
 
-// cacheWindow is the provider's prompt cache lifetime.
-func cacheWindow(windows map[string]int64, provider string) time.Duration {
-	return protocol.CacheWindow(windows, provider)
+// cacheIdleAfter is how long the CTO must be idle before the idle trigger
+// fires: the provider's prompt cache window minus its margin.
+func cacheIdleAfter(windows map[string]int64, provider string) time.Duration {
+	return protocol.CacheIdleAfter(windows, provider)
 }
 
 // ctoCompactOnce compacts at the threshold or before the cache expires,
@@ -778,10 +779,7 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 			reason = fmt.Sprintf("fill %d%%", percent)
 		} else if idleEnabled && !cs.idleSince.IsZero() {
 			provider, _, _ := strings.Cut(state.Model, "/")
-			lead := cacheWindow(windows, provider) - 30*time.Second
-			if lead < 0 {
-				lead = 0
-			}
+			lead := cacheIdleAfter(windows, provider)
 			if !now.Before(cs.idleSince.Add(lead)) {
 				reason = "idle"
 			}

@@ -13,8 +13,10 @@ func TestCompactionSettingsDefaults(t *testing.T) {
 	if !s.Bool("sessions.idle_compaction", Where{}) || s.Int("sessions.idle_compaction_min_tokens", Where{}) != 200000 {
 		t.Fatal("idle compaction secondary controls missing")
 	}
-	if got := s.Map("sessions.cache_window_seconds", Where{}); got["default"] != 300 {
-		t.Fatalf("cache window default=%v, want default 300", got)
+	// Claude Code keeps its prompt cache for an hour; a 5-minute default
+	// would compact every Claude session after 4.5 minutes idle.
+	if got := s.Map("sessions.cache_window_seconds", Where{}); got["anthropic"] != 3600 || got["default"] != 300 {
+		t.Fatalf("cache window default=%v, want anthropic 3600 and default 300", got)
 	}
 	for _, key := range []string{"sessions.compaction_threshold_percent", "sessions.cache_window_seconds", "sessions.idle_compaction", "sessions.idle_compaction_min_tokens"} {
 		d, ok := DefinitionFor(key)

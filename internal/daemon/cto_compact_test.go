@@ -486,7 +486,8 @@ func TestCTOCompactionSettings(t *testing.T) {
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
-	f.clock.Advance(29 * time.Second)
+	// A 60-second window keeps a 6-second margin, so the trigger is at 54s.
+	f.clock.Advance(53 * time.Second)
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
