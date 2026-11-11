@@ -23,7 +23,14 @@ type Proxy struct {
 	Name    string
 	in      io.Reader
 	out     io.Writer
+	tail    tailBuffer
 }
+
+// LastLines is up to n of the last non-empty lines the command printed, as
+// plain text, joined by a space. The TUI shows it when the command fails, so
+// the owner reads the command's own reason and not only its exit status. It is
+// "" when the command printed nothing.
+func (p *Proxy) LastLines(n int) string { return p.tail.lastLines(n) }
 
 func New(cmd *exec.Cmd) *Proxy         { return &Proxy{Cmd: cmd} }
 func (p *Proxy) SetStdin(r io.Reader)  { p.in = r }
@@ -115,7 +122,10 @@ func (p *Proxy) Run() (runErr error) {
 		resize()
 	}
 	outputDone := make(chan struct{})
-	go func() { _, _ = io.Copy(barWriter{status}, pt); close(outputDone) }()
+	go func() {
+		_, _ = io.Copy(io.MultiWriter(barWriter{status}, &p.tail), pt)
+		close(outputDone)
+	}()
 	escaped := make(chan struct{}, 1)
 	inputDone := make(chan struct{})
 	defer close(inputDone)
