@@ -92,6 +92,10 @@ func CheckWorkerFloor(quotas *Quotas, floors WorkerFloors, harness, model string
 		return false, "no quota reading, floor not applied", true
 	}
 
+	var worstWindow QuotaWindow
+	worstRemaining := math.MaxInt
+	foundUnder := false
+
 	for _, w := range p.Windows {
 		if !QuotaWindowServes(w, model) {
 			continue
@@ -103,9 +107,17 @@ func CheckWorkerFloor(quotas *Quotas, floors WorkerFloors, harness, model string
 			remaining = int(math.Round(math.Max(0, math.Min(100, 100-w.PercentUsed))))
 		}
 		if remaining < floor {
-			sentence := fmt.Sprintf("%s has %d%% left in its %s window, under your %d%% worker floor", provider, remaining, QuotaWindowName(w), floor)
-			return true, sentence, false
+			if !foundUnder || remaining < worstRemaining {
+				worstRemaining = remaining
+				worstWindow = w
+				foundUnder = true
+			}
 		}
+	}
+
+	if foundUnder {
+		sentence := fmt.Sprintf("%s has %d%% left in its %s window, under your %d%% worker floor", provider, worstRemaining, QuotaWindowName(worstWindow), floor)
+		return true, sentence, false
 	}
 
 	return false, "", false

@@ -269,8 +269,19 @@ func QuotaProviderForStart(harness, model string) string {
 
 // QuotaWindowName names a window for a sentence: its label, else its id.
 func QuotaWindowName(w QuotaWindow) string {
+	if strings.EqualFold(w.Kind, "monthly") || strings.EqualFold(w.Kind, "month") ||
+		strings.EqualFold(w.Label, "month") || strings.EqualFold(w.ID, "month") ||
+		strings.EqualFold(w.Label, "monthly") || strings.EqualFold(w.ID, "monthly") {
+		return "monthly"
+	}
 	if w.Label != "" {
 		return w.Label
+	}
+	if w.ID != "" && w.ID != "included_usage" {
+		return w.ID
+	}
+	if w.Kind != "" {
+		return w.Kind
 	}
 	if w.ID != "" {
 		return w.ID

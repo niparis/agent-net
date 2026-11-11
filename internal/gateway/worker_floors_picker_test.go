@@ -25,7 +25,7 @@ func setupFloorGateway(t *testing.T) (*Gateway, string, string, string, *clock) 
 	harnesses := []protocol.HarnessInfo{
 		{Name: "claude", Models: []string{"claude-opus-5-5"}},
 		{Name: "codex", Models: []string{"gpt-6.1-terra"}},
-		{Name: "opencode", Models: []string{"deepseek/deepseek-v4.1-flash"}},
+		{Name: "opencode", Models: []string{"deepseek/deepseek-v4.1-flash", "opencode-go/deepseek-v4.1-flash"}},
 	}
 	if _, err := st.SetNodeHarnesses(node, harnesses); err != nil {
 		t.Fatal(err)
@@ -47,15 +47,16 @@ func setupFloorGateway(t *testing.T) (*Gateway, string, string, string, *clock) 
 		{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"},
 		{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"},
 		{Name: "deepseek", Harness: "opencode", Model: "deepseek/deepseek-v4.1-flash", Effort: "high"},
+		{Name: "deepseek opencode", Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash", Effort: "high"},
 	}
 	if err := st.saveWorkerProfiles(profiles); err != nil {
 		t.Fatal(err)
 	}
-	scoresJSON := `[{"match":"claude-opus-5-5","score":55},{"match":"gpt-6.1-terra","score":52},{"match":"deepseek/deepseek-v4.1-flash","score":45}]`
+	scoresJSON := `[{"match":"claude-opus-5-5","score":55},{"match":"gpt-6.1-terra","score":52},{"match":"deepseek/deepseek-v4.1-flash","score":45},{"match":"opencode-go/deepseek-v4.1-flash","score":45}]`
 	if _, err := st.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, scoresKey, scoresJSON); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["anthropic","openai","deepseek"]}`); err != nil {
+	if _, err := st.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["anthropic","openai","deepseek","opencode-go"]}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -242,5 +243,86 @@ func TestWorkerFloorOwnerOverride(t *testing.T) {
 	}, true)
 	if err != nil {
 		t.Fatalf("owner explicit start should be allowed (owner override): %v", err)
+	}
+}
+
+func TestWorkerFloorPickerMonthlyWindowUnderFloorExcluded(t *testing.T) {
+	g, node, owner, _, c := setupFloorGateway(t)
+	nc := g.conns[node]
+
+	// opencode-go has floor 10%. Quota: rolling 5%, weekly 10%, monthly 99% used (1% left).
+	// deepseek profile is excluded by excluding deepseek provider so only opencode-go candidate is considered.
+	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10,"deepseek":50}}`); err != nil {
+		t.Fatal(err)
+	}
+
+	quotas := &protocol.Quotas{
+		GeneratedAt: c.now().Unix(),
+		Providers: []protocol.QuotaProvider{
+			{
+				Provider: "opencode-go",
+				Windows: []protocol.QuotaWindow{
+					{ID: "rolling", Label: "rolling", Kind: "rolling", PercentUsed: 5},
+					{ID: "weekly", Label: "weekly", Kind: "weekly", PercentUsed: 10},
+					{ID: "included_usage", Label: "month", Kind: "monthly", PercentUsed: 99},
+				},
+			},
+			{
+				Provider: "deepseek",
+				Windows:  []protocol.QuotaWindow{{ID: "5h", PercentUsed: 70}}, // excluded
+			},
+		},
+	}
+	g.usage.set(node, c.now(), protocol.UsageReport{Quotas: quotas})
+
+	_, err := g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{
+		Owner:              owner,
+		Level:              "hard",
+		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "opencode", Model: "auto"},
+	}, true)
+	if err == nil {
+		t.Fatalf("expected error when opencode-go is under floor, got nil")
+	}
+	wantNote := "skipped deepseek opencode: opencode-go has 1% left in its monthly window, under your 10% worker floor"
+	if !strings.Contains(err.Error(), wantNote) {
+		t.Fatalf("error %q does not contain %q", err.Error(), wantNote)
+	}
+}
+
+func TestWorkerFloorPickerMonthlyWindowAboveFloorKept(t *testing.T) {
+	g, node, owner, _, c := setupFloorGateway(t)
+	nc := g.conns[node]
+
+	// opencode-go has floor 10%. All windows above floor.
+	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10,"deepseek":50}}`); err != nil {
+		t.Fatal(err)
+	}
+
+	quotas := &protocol.Quotas{
+		GeneratedAt: c.now().Unix(),
+		Providers: []protocol.QuotaProvider{
+			{
+				Provider: "opencode-go",
+				Windows: []protocol.QuotaWindow{
+					{ID: "rolling", Label: "rolling", Kind: "rolling", PercentUsed: 5},
+					{ID: "weekly", Label: "weekly", Kind: "weekly", PercentUsed: 10},
+					{ID: "included_usage", Label: "month", Kind: "monthly", PercentUsed: 40}, // 60% left >= 10%
+				},
+			},
+			{
+				Provider: "deepseek",
+				Windows:  []protocol.QuotaWindow{{ID: "5h", PercentUsed: 70}}, // excluded under floor 50%
+			},
+		},
+	}
+	g.usage.set(node, c.now(), protocol.UsageReport{Quotas: quotas})
+
+	_, err := g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{
+		Owner:              owner,
+		Level:              "hard",
+		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "opencode", Model: "auto"},
+	}, true)
+	if err != nil {
+		t.Fatalf("workerStart opencode auto: %v", err)
 	}
 }
