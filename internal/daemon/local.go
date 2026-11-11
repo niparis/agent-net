@@ -290,6 +290,7 @@ func (lc *localConn) run(ctx context.Context) {
 }
 
 func (lc *localConn) cleanup() {
+	lc.d.releaseTestSlot(lc)
 	lc.d.topics.remove(lc)
 	lc.close()
 	lc.srv.mu.Lock()
@@ -842,12 +843,22 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
 		method != "project_add" && method != "project_remove" &&
 		method != protocol.OpSend && method != protocol.OpWorkerStart && method != protocol.OpWorkerStop &&
-		method != protocol.OpWorkerDefect &&
+		method != protocol.OpWorkerDefect && method != protocol.OpTestSlot &&
 		method != protocol.OpWorkerProfiles && method != protocol.OpWorkerProfileAdd && method != protocol.OpWorkerProfileRemove {
 		return nil, fmt.Errorf("method %q is not available to cli clients", method)
 	}
 	// Sender identity is never taken from params: the bound session is used.
 	switch method {
+	case protocol.OpTestSlot:
+		if client != "cli" {
+			return nil, errors.New("test slots are for command-line clients")
+		}
+		var p protocol.TestSlotRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad test_slot params")
+		}
+		return d.acquireTestSlot(lc, p.Cwd), nil
+
 	case "info":
 		return protocol.OperatorInfo{Connected: d.Connected(), NodeID: d.cfg.NodeID, Hostname: d.hostName(),
 			GatewayURL: d.cfg.GatewayURL, Sessions: d.Sessions(), Version: d.helloVersion(),

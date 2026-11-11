@@ -261,8 +261,24 @@ func (d *Daemon) clearGapAfterShortWorker(w *worker) {
 // admission decides whether a worker of this harness and model may start
 // now. The caller holds d.qmu.
 func (d *Daemon) admission(harness, model string) Decision {
-	now := time.Now()
 	snap := d.SettingsSnapshot()
+	return d.admissionWith(snap, d.expectedCostWithSnapshot(harness, model, d.load().Total, snap))
+}
+
+// admissionForTest decides whether a test suite may start now. It costs one
+// core and the default worker RAM, so the same memory reserve and CPU target
+// hold for it as for a worker. The caller holds d.qmu.
+func (d *Daemon) admissionForTest() Decision {
+	snap := d.SettingsSnapshot()
+	cost := d.testAdmissionCost(snap)
+	return d.admissionWith(snap, cost)
+}
+
+// admissionWith applies admission to a cost. A running test suite is load
+// like a worker: it adds one to the running count and its granted cores to the
+// pending cost, because the five-minute averages cannot show it yet.
+func (d *Daemon) admissionWith(snap settings.Snapshot, cost WorkerCost) Decision {
+	now := time.Now()
 	load := d.load()
 	d.wmu.Lock()
 	running := len(d.workers)
@@ -274,9 +290,17 @@ func (d *Daemon) admission(harness, model string) Decision {
 		}
 	}
 	d.wmu.Unlock()
-	pending := make([]WorkerCost, 0, len(recent))
+	pending := make([]WorkerCost, 0, len(recent)+1)
 	for _, r := range recent {
 		pending = append(pending, d.expectedCostWithSnapshot(r.harness, r.model, load.Total, snap))
+	}
+	if suite := d.runningTestSlot(); suite != nil {
+		running++
+		// Like a worker, its cost is pending only until the five-minute
+		// averages can show it.
+		if age := now.Sub(suite.startedAt); age >= 0 && age < pendingLoadWindow {
+			pending = append(pending, suite.cost)
+		}
 	}
 	set := d.workerSettingsWith(snap, "")
 	if d.cfg.Workers.MemReserve == 0 {
@@ -285,8 +309,8 @@ func (d *Daemon) admission(harness, model string) Decision {
 			_ = json.Unmarshal(e.Value, &set.MemReserve)
 		}
 	}
-	return admitWithHot(set, load, d.expectedCostWithSnapshot(harness, model, load.Total, snap), pending,
-		running, d.lastWorkerStart(), now, snap.Float("workers.cpu_hot", settings.Where{}))
+	return admitWithHot(set, load, cost, pending, running, d.lastWorkerStart(), now,
+		snap.Float("workers.cpu_hot", settings.Where{}))
 }
 
 // workerLoad is the worker count and room of this machine, for the report to
