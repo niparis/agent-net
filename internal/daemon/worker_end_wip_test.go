@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCommitWorkerEndWIP(t *testing.T) {
@@ -51,6 +53,13 @@ func TestCommitWorkerEndWIP(t *testing.T) {
 	}
 }
 
+func TestCommitWorkerEndWIPEmptyDirDoesNothing(t *testing.T) {
+	got := commitWorkerEndWIP(context.Background(), "", "", "lost")
+	if got.Failed != "" || got.SHA != "" {
+		t.Fatalf("a WIP save without a worktree did work: %+v", got)
+	}
+}
+
 func TestCommitWorkerEndWIPClean(t *testing.T) {
 	repo := initWIPRepo(t)
 	before := gitOutT(t, repo, "rev-parse", "HEAD")
@@ -77,6 +86,79 @@ func TestCommitWorkerEndWIPFailureLeavesFiles(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(filepath.Join(repo, "change.txt")); string(got) != "change\n" {
 		t.Fatal("working file changed")
+	}
+}
+
+// A stale empty index lock in the worker's own worktree is removed, and the
+// WIP save is retried once.
+func TestCommitWorkerEndWIPRemovesStaleEmptyIndexLock(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "worktrees", "w_test")
+	if err := os.MkdirAll(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	gitRunT(t, repo, "init", "-b", "worker")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("base\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRunT(t, repo, "add", "README.md")
+	gitRunT(t, repo, "commit", "-q", "-m", "base")
+	if err := os.WriteFile(filepath.Join(repo, "change.txt"), []byte("change\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(repo, ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-workerIndexLockStaleAfter - time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	var logs []string
+	got := commitWorkerEndWIPWithPolicy(context.Background(), repo, "worker", "lost", wipLockPolicy{
+		WorktreesRoot: filepath.Join(root, "worktrees"),
+		Logf:          func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) },
+	})
+	if got.Failed != "" || got.SHA == "" {
+		t.Fatalf("WIP save with a stale lock: %+v", got)
+	}
+	if _, err := os.Stat(lock); !os.IsNotExist(err) {
+		t.Fatalf("the stale index lock was left in place: %v", err)
+	}
+	if !strings.Contains(strings.Join(logs, "\n"), "removed stale index lock") {
+		t.Fatalf("the removal was not logged: %v", logs)
+	}
+}
+
+// A fresh lock may belong to a running git process, so it is left alone.
+func TestCommitWorkerEndWIPLeavesFreshIndexLock(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "worktrees", "w_test")
+	if err := os.MkdirAll(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	gitRunT(t, repo, "init", "-b", "worker")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("base\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRunT(t, repo, "add", "README.md")
+	gitRunT(t, repo, "commit", "-q", "-m", "base")
+	if err := os.WriteFile(filepath.Join(repo, "change.txt"), []byte("change\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(repo, ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := commitWorkerEndWIPWithPolicy(context.Background(), repo, "worker", "lost", wipLockPolicy{
+		WorktreesRoot: filepath.Join(root, "worktrees"),
+		Logf:          func(string, ...any) {},
+	})
+	if got.Failed == "" || !strings.Contains(got.Failed, "index.lock") {
+		t.Fatalf("a fresh lock was not reported: %+v", got)
+	}
+	if _, err := os.Stat(lock); err != nil {
+		t.Fatalf("the fresh index lock was removed: %v", err)
 	}
 }
 

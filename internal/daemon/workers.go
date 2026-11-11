@@ -1133,7 +1133,7 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 			if harness == "agy" {
 				result = d.saveAgyWorkerEnd(w, reason)
 			} else {
-				result = commitWorkerEndWIP(context.Background(), w.worktree, w.branch, reason)
+				result = d.commitWorkerEndWIP(context.Background(), w.worktree, w.branch, reason)
 			}
 			unlock()
 		}
