@@ -318,9 +318,8 @@ func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCoun
 	}
 
 	type leftOutItem struct {
-		name     string
-		provider string
-		reason   string
+		name   string
+		reason string
 	}
 	var leftItems []leftOutItem
 	for _, e := range entries {
@@ -328,11 +327,7 @@ func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCoun
 			continue
 		}
 		if e.reason != "" {
-			provider := e.c.Provider
-			if provider == "" {
-				provider = QuotaProviderForStart(e.c.Harness, e.c.Model)
-			}
-			leftItems = append(leftItems, leftOutItem{name: e.name, provider: provider, reason: e.reason})
+			leftItems = append(leftItems, leftOutItem{name: e.name, reason: e.reason})
 		}
 	}
 	for _, qe := range quotaExcluded {
@@ -342,19 +337,13 @@ func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCoun
 			name = qe[:idx]
 			reason = strings.TrimSuffix(qe[idx+len(" left out (quota: "):], ")")
 		}
-		provider := ""
-		for _, e := range entries {
-			if e.name == name {
-				provider = e.c.Provider
-				if provider == "" {
-					provider = QuotaProviderForStart(e.c.Harness, e.c.Model)
-				}
-				break
-			}
-		}
-		leftItems = append(leftItems, leftOutItem{name: name, provider: provider, reason: reason})
+		leftItems = append(leftItems, leftOutItem{name: name, reason: reason})
 	}
 
+	// The owner reads profile names, so a group lists the profiles it covers,
+	// never a provider label. A long group keeps the count honest and the line
+	// short.
+	const maxWhyNames = 3
 	if len(leftItems) > 0 {
 		reasonOrder := []string{}
 		reasonGroups := map[string][]leftOutItem{}
@@ -367,22 +356,19 @@ func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCoun
 		var groups []string
 		for _, r := range reasonOrder {
 			items := reasonGroups[r]
-			sameProvider := items[0].provider != ""
-			for _, it := range items {
-				if it.provider != items[0].provider {
-					sameProvider = false
-					break
-				}
+			shown := items
+			if len(shown) > maxWhyNames {
+				shown = shown[:maxWhyNames]
 			}
-			if sameProvider && len(items) >= 2 {
-				groups = append(groups, fmt.Sprintf("%s profiles (%s)", items[0].provider, r))
-			} else {
-				names := make([]string, len(items))
-				for i, it := range items {
-					names[i] = it.name
-				}
-				groups = append(groups, fmt.Sprintf("%s (%s)", strings.Join(names, ", "), r))
+			names := make([]string, len(shown))
+			for i, it := range shown {
+				names[i] = it.name
 			}
+			label := strings.Join(names, ", ")
+			if rest := len(items) - len(shown); rest > 0 {
+				label += fmt.Sprintf(", +%d more", rest)
+			}
+			groups = append(groups, fmt.Sprintf("%s (%s)", label, r))
 		}
 		if len(groups) > 0 {
 			parts = append(parts, "left out: "+strings.Join(groups, "; "))

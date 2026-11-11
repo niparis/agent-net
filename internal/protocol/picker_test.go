@@ -833,7 +833,10 @@ func TestStartedNoticeContainsWhyWithChosenProfileAndGroupedReasons(t *testing.T
 	if choice.Why == "" {
 		t.Fatal("choice.Why is empty")
 	}
-	for _, want := range []string{"simple", "D 1.90", "good agy", "qualifying", "left out:", "flash agy, opus agy (explore is up only)"} {
+	// The rotation prefers the weaker adequate profile by design, so "other agy"
+	// is the profile actually started. The why line must name that profile, not
+	// the higher-scored one the fixture happens to offer.
+	for _, want := range []string{"simple", "D 1.90", choice.Name, "qualifying", "left out:", "flash agy, opus agy (explore is up only)"} {
 		if !strings.Contains(choice.Why, want) {
 			t.Errorf("choice.Why lacks %q: %s", want, choice.Why)
 		}
@@ -844,5 +847,38 @@ func TestStartedNoticeContainsWhyWithChosenProfileAndGroupedReasons(t *testing.T
 	}
 	if !strings.Contains(notice, "\nfull: agent_workers_find {worker, detail:full}") {
 		t.Errorf("notice lacks full tool line: %s", notice)
+	}
+}
+
+// The owner reads profile names, so a left-out group names them even when the
+// profiles share a provider. A long group keeps a few names and counts the
+// rest, so the two-line why stays short.
+func TestPickerWhyLeftOutNamesAreCapped(t *testing.T) {
+	tasks := pickTasks("good", 1.9, repeat(10, 1)...)
+	tasks = append(tasks, pickTasks("thin1", 1.9, 1)...)
+	tasks = append(tasks, pickTasks("thin2", 1.9, 1)...)
+	tasks = append(tasks, pickTasks("thin3", 1.9, 1)...)
+	tasks = append(tasks, pickTasks("thin4", 1.9, 1)...)
+	tasks = append(tasks, pickTasks("thin5", 1.9, 1)...)
+	scores := pickScores(map[string]float64{"good": 45, "thin1": 30, "thin2": 30, "thin3": 30, "thin4": 30, "thin5": 30})
+	in := &PickerInput{D: 1.9, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	candidates := []WorkerModelCandidate{
+		{Name: "good agy", Harness: "agy", Model: "good", Provider: "anthropic"},
+		{Name: "one agy", Harness: "agy", Model: "thin1", Provider: "google"},
+		{Name: "two agy", Harness: "agy", Model: "thin2", Provider: "google"},
+		{Name: "three agy", Harness: "agy", Model: "thin3", Provider: "google"},
+		{Name: "four agy", Harness: "agy", Model: "thin4", Provider: "google"},
+		{Name: "five agy", Harness: "agy", Model: "thin5", Provider: "google"},
+	}
+	choice, err := ChooseWorkerModel(candidates, "simple", scores, nil, nil, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "left out: one agy, two agy, three agy, +2 more (explore is up only)"
+	if !strings.Contains(choice.Why, want) {
+		t.Errorf("choice.Why lacks %q: %s", want, choice.Why)
+	}
+	if strings.Contains(choice.Why, "google profiles") {
+		t.Errorf("choice.Why names a provider instead of profiles: %s", choice.Why)
 	}
 }
