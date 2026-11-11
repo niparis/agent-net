@@ -108,7 +108,7 @@ func TestPrecheckDoesNotRefuseOnLevelForAutomaticModel(t *testing.T) {
 	t.Cleanup(func() { delete(g.conns, node) })
 	frame := func(level string) []byte {
 		raw, _ := json.Marshal(protocol.WorkerStartFrame{Owner: owner, Level: level,
-			WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "claude"}})
+			WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: gatewayBrief("internal/gateway/worker_precheck_test.go"), Harness: "claude"}})
 		return raw
 	}
 	// The real start at normal is refused, which is why the precheck must not
