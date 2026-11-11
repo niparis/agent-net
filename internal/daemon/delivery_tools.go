@@ -559,6 +559,7 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	harness, model, title, kept := w.harness, w.model, w.title, w.changeID
 	difficulty := first(w.difficultyUsed, w.difficultyAsked)
 	project := w.project
+	struggle := w.runStruggle()
 	d.wmu.Unlock()
 	if dir == "" || branch == "" || owner == "" {
 		return "", ""
@@ -598,7 +599,7 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	}
 	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: base,
 		HeadCommit: head, Uncommitted: uncommitted, Risk: risk, SensitivePath: deliverySensitivePath(ctx, dir, base, head), Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
-		Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model}}
+		Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model, Struggle: struggle}}
 	if base != "" {
 		if stat, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil {
 			q.DiffStat = deliveryDiffStat(stat)

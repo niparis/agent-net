@@ -339,6 +339,21 @@ func (claudeLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerSta
 	return claudeTranscriptStats(filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects"), w.nativeID)
 }
 
+// struggle reads the session transcript once and counts the run's struggle
+// signs (decision 0132). Claude Code writes every tool call and its result
+// there.
+func (claudeLauncher) struggle(_ context.Context, d *Daemon, w *worker) protocol.Struggle {
+	if w.nativeID == "" {
+		return protocol.Struggle{Trace: protocol.StruggleNoTrace}
+	}
+	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
+	path := claudeTranscriptPath(projectsDir, w.nativeID, w.path)
+	if path == "" {
+		return protocol.Struggle{Trace: protocol.StruggleNoTrace}
+	}
+	return readClaudeStruggle(path)
+}
+
 // claudeTranscriptStats sums the usage of the assistant messages in the
 // transcript ~/.claude/projects/<folder>/<session>.jsonl. The context is the
 // usage of the last assistant message, and the limit comes from

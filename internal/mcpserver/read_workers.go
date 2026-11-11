@@ -41,7 +41,9 @@ type roWorkerRow struct {
 	RunTime    string                     `json:"run_time"`
 	Started    string                     `json:"started,omitempty"`
 	Branch     string                     `json:"branch,omitempty"`
-	key        string
+	// Struggle is the run-end sign count, shown by detail full only.
+	Struggle *protocol.Struggle `json:"struggle,omitempty"`
+	key      string
 }
 
 type roWorkersFindOut struct {
@@ -171,6 +173,10 @@ func roWorkerRowOf(agent protocol.AgentView, names map[string]string, full bool)
 	if full {
 		row.Assessment = agent.Worker.Assessment
 		row.Started = roUnixText(agent.Worker.StartedAt)
+		row.Struggle = agent.Worker.Struggle
+		if row.Struggle == nil {
+			row.Struggle = &protocol.Struggle{Trace: protocol.StruggleNoTrace}
+		}
 	}
 	return row, true
 }

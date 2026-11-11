@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, struggleMigration}
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.
@@ -1417,6 +1417,13 @@ INSERT INTO desk_log(at,source,about_kind,about_id,text,detail,options)
  SELECT i.created_at, i.from_kind, '', '', i.text, i.recommendation, i.options
  FROM inbox_items i WHERE i.kind='check' AND i.status='open' AND i.from_kind IN ('cto','apps')
  AND NOT EXISTS (SELECT 1 FROM desk_log l WHERE l.at=i.created_at AND l.source=i.from_kind AND l.text=i.text);
+`
+
+// struggleMigration adds the run-end struggle counts to worker_runs. The
+// columns are added in the migration loop so replaying the migration is safe.
+const struggleMigration = `
+-- Worker run struggle counts (columns added replay-safely below).
+SELECT 1 /* worker run struggle columns */;
 `
 
 // stmtCacheSize is how many prepared statements the connection keeps. The
@@ -1579,6 +1586,30 @@ func (s *Store) migrate() error {
 			if err != nil {
 				tx.Rollback()
 				return err
+			}
+		}
+		if strings.Contains(migrations[i], "worker run struggle columns") {
+			for _, col := range []struct{ name, decl string }{
+				{"struggle_failed", "INTEGER NOT NULL DEFAULT 0"},
+				{"struggle_repeats", "INTEGER NOT NULL DEFAULT 0"},
+				{"struggle_retries", "INTEGER NOT NULL DEFAULT 0"},
+				{"struggle_exploration", "INTEGER NOT NULL DEFAULT 0"},
+				{"struggle_env", "INTEGER NOT NULL DEFAULT 0"},
+				{"struggle_top", "TEXT NOT NULL DEFAULT ''"},
+				{"struggle_trace", "TEXT NOT NULL DEFAULT ''"},
+				{"struggle_capped", "INTEGER NOT NULL DEFAULT 0"},
+			} {
+				var has int
+				if err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name=?", col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec("ALTER TABLE worker_runs ADD COLUMN " + col.name + " " + col.decl); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
 			}
 		}
 		if strings.Contains(migrations[i], "Typed edge metadata") {
