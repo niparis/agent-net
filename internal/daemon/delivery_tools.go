@@ -313,7 +313,7 @@ func (d *Daemon) stepReport(ctx context.Context, sid string, info protocol.Sessi
 		doneBy = ""
 	}
 	q := protocol.StepReportRequest{SessionID: sid, ChangeID: a.Change, StepRef: a.StepRef, Result: a.Result, Commit: a.Commit,
-		Fields: a.Fields, DoneBy: doneBy, Note: a.Note}
+		Fields: a.Fields, DoneBy: doneBy, Note: a.Note, Until: a.Until}
 	if err := q.Validate(); err != nil {
 		return out, err
 	}

@@ -1810,3 +1810,8 @@ Topic subscriptions on the daemon socket use the owner gate: agent clients and
 commands in an agent session's process tree are refused. The gateway accepts
 the subscription from an enrolled daemon, like other node frames. Events carry
 only topic names and version numbers, not the data in the corresponding reads.
+
+A delivery step's waiting report uses the same session eligibility as a claim.
+It takes no claim and records no evidence. The reminder pause expires after
+24 hours, or 24 hours after its optional RFC 3339 `until`, and new evidence
+on the change ends it earlier.

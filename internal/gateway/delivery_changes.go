@@ -430,6 +430,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err := q.Validate(); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
 	}
+	if q.Result == protocol.StepResultWaiting {
+		return s.reportStepWaiting(machine, q)
+	}
 	reporter, ok, err := s.deliverySession(q.SessionID)
 	if err != nil {
 		return protocol.StepReportResult{}, err
@@ -935,6 +938,17 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 				owner = "caller"
 			}
 			st.Note = deliveryStatusNote(st.Note, "waiting for "+owner+" (offline)")
+		}
+	}
+	for i := range v.Steps {
+		st := &v.Steps[i]
+		active, note, err := s.stepWaiting(nodeTaskTarget{id: c.ID, revision: c.Revision, ref: st.StepRef})
+		if err != nil {
+			return protocol.ChangeView{}, err
+		}
+		if active {
+			st.State, st.Note = protocol.StepStateWaiting, note
+			startedSteps[st.StepRef] = true
 		}
 	}
 	if len(startedSteps) > 0 {

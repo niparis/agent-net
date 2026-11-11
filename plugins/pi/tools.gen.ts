@@ -1622,9 +1622,10 @@ export const TOOL_CATALOG = [
             "pass",
             "fail",
             "needs_owner",
-            "close"
+            "close",
+            "waiting"
           ],
-          "description": "pass, fail with findings, needs_owner, or close without merge."
+          "description": "pass, fail with findings, needs_owner, waiting on an event, or close without merge."
         },
         "commit": {
           "type": "string",
@@ -1647,7 +1648,12 @@ export const TOOL_CATALOG = [
         "note": {
           "type": "string",
           "maxLength": 8192,
-          "description": "Findings, the command run, or why the owner is needed."
+          "description": "Findings, command run, why the owner is needed, or the required event for waiting."
+        },
+        "until": {
+          "type": "string",
+          "format": "date-time",
+          "description": "waiting only: RFC 3339 time when evidence can first exist. Reminders pause until new evidence or 24h after this time."
         }
       },
       "required": [
