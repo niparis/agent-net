@@ -3,6 +3,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"database/sql"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -994,10 +996,129 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 	return nil
 }
 
+// frameEnvelopeFields sit next to the method arguments in every flat frame.
+// The daemon also adds by as attribution; a method whose request struct has a
+// by argument keeps it.
+var frameEnvelopeFields = []string{"id", "type", "via", "by"}
+
+// decode reads one frame's method arguments into T. Unknown arguments are
+// refused and named: a caller must never believe a field such as dry_run
+// exists when the method would drop it. The frame's own fields and daemon
+// attribution are skipped, so only the method's arguments are checked.
 func decode[T any](raw []byte) (T, error) {
 	var v T
-	err := json.Unmarshal(raw, &v)
-	return v, err
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return v, err
+	}
+	known := frameArgumentNames(reflect.TypeOf(v))
+	hasArgument := map[string]bool{}
+	for _, name := range known {
+		hasArgument[name] = true
+	}
+	for _, key := range frameEnvelopeFields {
+		if key == "by" && hasArgument[key] {
+			continue
+		}
+		delete(fields, key)
+	}
+	args, err := json.Marshal(fields)
+	if err != nil {
+		return v, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(args))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&v); err != nil {
+		if named := namedUnknownArgument(raw, err, reflect.TypeOf(v)); named != "" {
+			return v, reject("%s", named)
+		}
+		return v, err
+	}
+	return v, nil
+}
+
+// namedUnknownArgument turns the decoder's unknown-field error into one that
+// names the operator method and the arguments it does accept. It is empty for
+// every other decode error.
+func namedUnknownArgument(raw []byte, err error, rt reflect.Type) string {
+	const marker = `unknown field "`
+	text := err.Error()
+	start := strings.Index(text, marker)
+	if start < 0 {
+		return ""
+	}
+	rest := text[start+len(marker):]
+	end := strings.IndexByte(rest, '"')
+	if end < 0 {
+		return ""
+	}
+	field := rest[:end]
+	var header struct {
+		Type string `json:"type"`
+	}
+	_ = json.Unmarshal(raw, &header)
+	method := strings.ReplaceAll(header.Type, ".", "_")
+	known := frameArgumentNames(rt)
+	if method == "" {
+		if len(known) == 0 {
+			return fmt.Sprintf("unknown argument %q", field)
+		}
+		return fmt.Sprintf("unknown argument %q; known: %s", field, strings.Join(known, ", "))
+	}
+	if len(known) == 0 {
+		return fmt.Sprintf("unknown argument %q for %s", field, method)
+	}
+	return fmt.Sprintf("unknown argument %q for %s; known: %s", field, method, strings.Join(known, ", "))
+}
+
+// frameArgumentNames lists the JSON names T accepts, including fields promoted
+// from an embedded request struct.
+func frameArgumentNames(rt reflect.Type) []string {
+	if rt == nil {
+		return nil
+	}
+	for rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
+	if rt.Kind() != reflect.Struct {
+		return nil
+	}
+	var names []string
+	seen := map[string]bool{}
+	var walk func(reflect.Type)
+	walk = func(rt reflect.Type) {
+		for i := 0; i < rt.NumField(); i++ {
+			f := rt.Field(i)
+			tag := strings.Split(f.Tag.Get("json"), ",")[0]
+			if f.Anonymous && tag == "" {
+				ft := f.Type
+				for ft.Kind() == reflect.Pointer {
+					ft = ft.Elem()
+				}
+				if ft.Kind() == reflect.Struct {
+					walk(ft)
+					continue
+				}
+			}
+			if tag == "-" {
+				continue
+			}
+			if f.PkgPath != "" {
+				continue
+			}
+			name := tag
+			if name == "" {
+				name = f.Name
+			}
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	walk(rt)
+	return names
 }
 
 func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
@@ -1137,7 +1258,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "project.display.get", "project.display.set":
 		p, err := decode[protocol.ProjectDisplayRequest](raw)
-		if err != nil || p.Project == "" {
+		if err != nil {
+			return nil, err
+		}
+		if p.Project == "" {
 			return nil, reject("project identity required")
 		}
 		if typ == "project.display.set" {
@@ -1160,7 +1284,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return map[string]bool{"ok": true}, nil
 	case "node.rename":
 		p, err := decode[protocol.NodeRename](raw)
-		if err != nil || p.NodeID == "" {
+		if err != nil {
+			return nil, err
+		}
+		if p.NodeID == "" {
 			return nil, reject("bad node.rename")
 		}
 		res, err := st.SetNodeDisplayName(p.NodeID, p.Name)
@@ -1220,6 +1347,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return g.setToolNewProjects(ctx, p.ToolNewProjectsRequest, p.Actor)
 	case "query.tools_projects":
 		p, err := decode[struct {
+			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
 		if err != nil || !g.validToolOwner(nc, p.Owner) {
@@ -1476,14 +1604,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "project.add":
 		p, err := decode[protocol.ProjectAdd](raw)
 		if err != nil {
-			return nil, reject("bad project.add")
+			return nil, err
 		}
 		return st.AddProjects(nc.id, p)
 
 	case "project.remove":
 		p, err := decode[protocol.ProjectRemove](raw)
 		if err != nil {
-			return nil, reject("bad project.remove")
+			return nil, err
 		}
 		node := nc.id
 		if p.On != "" {
@@ -1891,7 +2019,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return map[string]bool{"attribution": true, "network_session": true, "graph_authority": true}, nil
 	case "team.write", "team.history":
 		q, err := decode[protocol.TeamWrite](raw)
-		if err != nil || !g.validToolOwner(nc, q.OwnerSession) {
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, q.OwnerSession) {
 			return nil, reject("owner authority required")
 		}
 		if typ == "team.history" {
@@ -1901,7 +2032,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "graph.get":
 		p, err := decode[protocol.QueryGraph](raw)
 		if err != nil {
-			return nil, reject("bad graph.get")
+			return nil, err
 		}
 		if p.Typed || p.Ref != nil {
 			return st.GraphForRef(p.Ref)
@@ -2007,13 +2138,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "charter.validate":
 		p, err := decode[protocol.CharterSetRequest](raw)
 		if err != nil {
-			return nil, reject("bad charter.set")
+			return nil, err
 		}
 		return map[string]bool{"ok": true}, st.SetLevelCharter(p, "owner", true)
 	case "charter.set":
 		p, err := decode[protocol.CharterSetRequest](raw)
 		if err != nil {
-			return nil, reject("bad charter.set")
+			return nil, err
 		}
 		if err := st.SetLevelCharter(p, graphActor(raw), false); err != nil {
 			return nil, err
@@ -2031,7 +2162,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return result, nil
 	case "charter.history":
 		p, err := decode[protocol.GraphHistoryRequest](raw)
-		if err != nil || (p.Node == "" && p.Ref == nil) {
+		if err != nil {
+			return nil, err
+		}
+		if p.Node == "" && p.Ref == nil {
 			return nil, reject("bad charter.history")
 		}
 		if p.Ref != nil {
@@ -2040,7 +2174,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.CharterHistory(p.Node, p.Limit)
 	case "lead.set":
 		p, err := decode[protocol.LeadSetRequest](raw)
-		if err != nil || !g.validToolOwner(nc, p.Owner) {
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		err = st.SetLead(p, graphActor(raw), false)
@@ -2051,7 +2188,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		p, err := decode[protocol.GraphLifecycleRequest](raw)
 		if err != nil {
-			return nil, reject("bad lifecycle request")
+			return nil, err
 		}
 		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
@@ -2060,7 +2197,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return map[string]any{"ok": err == nil, "retained": "Charters, settings, offline sessions and run and delivery history remain attached; an archived repo keeps its owner. Active edges and assignments must first be removed."}, err
 	case "node.add", "node.remove":
 		p, err := decode[protocol.GraphNodeRequest](raw)
-		if err != nil || p.Name == "" {
+		if err != nil {
+			return nil, err
+		}
+		if p.Name == "" {
 			return nil, reject("bad node request")
 		}
 		if typ == "node.add" {
@@ -2094,7 +2234,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "edge.set", "edge.remove":
 		p, err := decode[protocol.Edge](raw)
 		if err != nil {
-			return nil, reject("bad edge request")
+			return nil, err
 		}
 		if p.FromRef != nil || p.ToRef != nil {
 			if err := st.requireGraphRefs(); err != nil {
@@ -2149,7 +2289,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return out, rows.Err()
 	case "merger.plan":
 		p, err := decode[protocol.MergerSetRequest](raw)
-		if err != nil || p.Project == "" {
+		if err != nil {
+			return nil, err
+		}
+		if p.Project == "" {
 			return nil, reject("merger needs project")
 		}
 		needs, err := st.MergerNeedsDefault(p.Project)
@@ -2157,7 +2300,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "merger.set":
 		p, err := decode[protocol.MergerSetRequest](raw)
 		if err != nil {
-			return nil, reject("bad merger request")
+			return nil, err
 		}
 		if p.NodeID != nc.id {
 			owner, ok, err := st.Agent(p.Owner)
@@ -2176,7 +2319,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "delivery.owner.set":
 		p, err := decode[protocol.DeliveryOwnerSetRequest](raw)
 		if err != nil {
-			return nil, reject("bad delivery owner request")
+			return nil, err
 		}
 		err = st.SetDeliveryOwner(p, graphActor(raw))
 		if err == nil {
@@ -2186,7 +2329,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "edge.history":
 		p, err := decode[protocol.GraphHistoryRequest](raw)
 		if err != nil {
-			return nil, reject("bad edge.history")
+			return nil, err
 		}
 		if p.Ref != nil {
 			return st.RefEdgeHistory(*p.Ref, p.Limit)
@@ -2194,7 +2337,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.EdgeHistory(p.Node, p.Limit)
 	case "graph.undo":
 		p, err := decode[protocol.GraphUndoFrame](raw)
-		if err != nil || p.HistoryID < 0 {
+		if err != nil {
+			return nil, err
+		}
+		if p.HistoryID < 0 {
 			return nil, reject("bad graph.undo")
 		}
 		err = st.GraphUndo(p.HistoryID, graphActor(raw))
@@ -2207,12 +2353,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "settings.target":
 		p, err := decode[protocol.SettingsTarget](raw)
 		if err != nil {
-			return nil, reject("bad settings.target")
+			return nil, err
 		}
 		return st.ResolveSettingsTarget(p)
 	case "settings.write":
 		p, err := decode[protocol.SettingsWrite](raw)
-		if err != nil || len(p.Changes) == 0 {
+		if err != nil {
+			return nil, err
+		}
+		if len(p.Changes) == 0 {
 			return nil, reject("bad settings.write")
 		}
 		if !settingsActor(p.By) {
@@ -2225,13 +2374,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return result, err
 	case "settings.validate":
 		p, err := decode[protocol.SettingsWrite](raw)
-		if err != nil || len(p.Changes) == 0 || !settingsActor(p.By) {
+		if err != nil {
+			return nil, err
+		}
+		if len(p.Changes) == 0 || !settingsActor(p.By) {
 			return nil, reject("bad settings.validate")
 		}
 		return nil, st.ValidateSettings(p.Changes, p.By)
 	case "settings.undo":
 		p, err := decode[protocol.SettingsUndo](raw)
-		if err != nil || p.Revision <= 0 {
+		if err != nil {
+			return nil, err
+		}
+		if p.Revision <= 0 {
 			return nil, reject("bad settings.undo")
 		}
 		if !settingsActor(p.By) {
@@ -2248,19 +2403,28 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Revision int64  `json:"revision"`
 			Owner    bool   `json:"owner"`
 		}](raw)
-		if err != nil || p.Revision < 0 {
+		if err != nil {
+			return nil, err
+		}
+		if p.Revision < 0 {
 			return nil, reject("bad settings.history")
 		}
 		return st.SettingsHistory(p.Key, p.Revision, p.Owner)
 	case "node.settings.get":
 		p, err := decode[protocol.NodeSettingsGetRequest](raw)
-		if err != nil || p.Node == "" {
+		if err != nil {
+			return nil, err
+		}
+		if p.Node == "" {
 			return nil, reject("bad node.settings.get")
 		}
 		return st.NodeSettings(p.Node)
 	case "node.settings.set":
 		p, err := decode[protocol.NodeSettingsSetRequest](raw)
-		if err != nil || p.Node == "" || p.Setting == "" {
+		if err != nil {
+			return nil, err
+		}
+		if p.Node == "" || p.Setting == "" {
 			return nil, reject("bad node.settings.set")
 		}
 		actor := graphActor(raw)
@@ -2298,7 +2462,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "hidden.set":
 		p, err := decode[protocol.HiddenItems](raw)
 		if err != nil {
-			return nil, reject("bad hidden.set")
+			return nil, err
 		}
 		items, err := st.SetHiddenItems(p)
 		if err != nil {
@@ -2310,7 +2474,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "session.policy":
 		p, err := decode[protocol.SessionPolicy](raw)
-		if err != nil || p.SessionID == "" {
+		if err != nil {
+			return nil, err
+		}
+		if p.SessionID == "" {
 			return nil, reject("bad session.policy")
 		}
 		clean, err := p.Policy.Clean()

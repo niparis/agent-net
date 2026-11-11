@@ -432,8 +432,11 @@ The remaining owner operations use the existing settings tool:
 
 `method` is an explicit schema enum, also defined in
 `internal/protocol/cto_operator.go`. `arguments` has the same fields as the
-matching owner API; unknown operations are refused. This is not an arbitrary
-RPC passthrough. The available families are:
+matching owner API; unknown operations are refused. Unknown argument fields are
+refused too: the error names the field and the arguments the method accepts. A
+field such as `dry_run` on a method with no preview mode is an error, never a
+silent no-op. This is not an arbitrary RPC passthrough. The available families
+are:
 
 | Owner operation family | CTO operator methods |
 |---|---|

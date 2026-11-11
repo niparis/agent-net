@@ -11,6 +11,20 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// TestOperatorDeliveryOwnerSetRefusesUnknownArgument is the CTO's dry_run
+// call through the operator path: the method has no preview mode, so the
+// argument must fail and be named instead of dropped.
+func TestOperatorDeliveryOwnerSetRefusesUnknownArgument(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	_, err := cliClient(t, n).call(protocol.OpDeliveryOwnerSet, map[string]any{
+		"project": "demo", "step": "accept", "dry_run": true,
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown argument "dry_run"`) || !strings.Contains(err.Error(), protocol.OpDeliveryOwnerSet) {
+		t.Fatalf("dry_run was not refused by name: %v", err)
+	}
+}
+
 // The two daemons use a real gateway and local, fake Pi sessions.
 func TestDeliveryNodeStepReachesOtherMachine(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
