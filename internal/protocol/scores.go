@@ -13,10 +13,11 @@ import (
 
 // ModelScore is a capability score for a model or a loose model name.
 type ModelScore struct {
-	Match  string  `json:"match"`
-	Effort string  `json:"effort,omitempty"`
-	Score  float64 `json:"score"`
-	Source string  `json:"source"`
+	Match          string  `json:"match"`
+	Effort         string  `json:"effort,omitempty"`
+	Score          float64 `json:"score"`
+	Source         string  `json:"source"`
+	FallbackEffort string  `json:"fallback_effort,omitempty"`
 }
 
 //go:embed scores.json
@@ -150,72 +151,87 @@ func splitScoreLevel(model string) (base, level string) {
 	return base, selection.Effort
 }
 
+// matchModelRank scores the specificity of a model name match.
+func matchModelRank(s ModelScore, model, base, part, partBase, partBaseNorm, partNorm string) int {
+	match := strings.TrimSpace(s.Match)
+	matchNorm := scoreVersionDot.ReplaceAllString(match, "${1}-${2}")
+	switch {
+	case strings.EqualFold(match, model):
+		return 4
+	case strings.EqualFold(match, part) || strings.EqualFold(matchNorm, partNorm):
+		return 3
+	case strings.EqualFold(match, base):
+		return 2
+	case strings.EqualFold(match, partBase) || strings.EqualFold(matchNorm, partBaseNorm) || strings.EqualFold(match, partBaseNorm):
+		return 2
+	default:
+		if scoreName(match) == scoreName(model) && scoreName(model) != "" {
+			return 1
+		} else if looseScoreMatch(scoreName(match), scoreName(model)) {
+			return 0
+		}
+	}
+	return -1
+}
+
 // LookupModelScoreWithDefaultEffort uses the harness default when no effort is named.
 func LookupModelScoreWithDefaultEffort(model, defaultEffort string, overrides []ModelScore) (ModelScore, bool) {
-	lookup := func(scores []ModelScore) (ModelScore, bool) {
+	base, level := splitScoreLevel(model)
+	requested := strings.ToLower(level)
+	if requested == "" {
+		requested = strings.ToLower(defaultEffort)
+	}
+	if requested == "" {
+		requested = "medium"
+	}
+	part := model
+	if i := strings.LastIndexByte(part, '/'); i >= 0 {
+		part = part[i+1:]
+	}
+	partBase, _ := SplitModelLevel(part)
+	partBaseNorm := scoreVersionDot.ReplaceAllString(partBase, "${1}-${2}")
+	partNorm := scoreVersionDot.ReplaceAllString(part, "${1}-${2}")
+
+	lookupExact := func(scores []ModelScore) (ModelScore, bool) {
 		best := -1
 		var result ModelScore
-		base, level := splitScoreLevel(model)
-		part := model
-		if i := strings.LastIndexByte(part, '/'); i >= 0 {
-			part = part[i+1:]
-		}
 		for _, s := range scores {
-			requested := strings.ToLower(level)
-			if requested == "" {
-				requested = strings.ToLower(defaultEffort)
-			}
-			if requested == "" {
-				requested = "medium"
+			entryEffort := s.Effort
+			if entryEffort == "" {
+				_, wantLevel := SplitModelLevel(s.Match)
+				entryEffort = wantLevel
 			}
 			effortRank := 0
-			if s.Effort != "" {
-				if strings.EqualFold(s.Effort, requested) {
+			if entryEffort != "" {
+				if strings.EqualFold(entryEffort, requested) {
 					effortRank = 2
-				} else if s.Effort == "default" {
+				} else if entryEffort == "default" {
 					effortRank = 1
 				} else {
 					continue
 				}
 			}
-			match := strings.TrimSpace(s.Match)
-			rank := -1
-			switch {
-			case strings.EqualFold(match, model):
-				rank = 3
-			case strings.EqualFold(match, part):
-				rank = 2
-			case strings.EqualFold(match, base):
-				rank = 1
-			default:
-				_, wantLevel := SplitModelLevel(match)
-				if wantLevel != "" && !strings.EqualFold(wantLevel, requested) {
-					continue
-				}
-				if scoreName(match) == scoreName(model) && scoreName(model) != "" {
-					rank = 1
-				} else if looseScoreMatch(scoreName(match), scoreName(model)) {
-					rank = 0
-				}
-			}
+			rank := matchModelRank(s, model, base, part, partBase, partBaseNorm, partNorm)
 			if rank >= 0 {
-				rank = rank*3 + effortRank
-			}
-			if rank > best {
-				result, best = s, rank
+				totalRank := rank*3 + effortRank
+				if totalRank > best {
+					result, best = s, totalRank
+				}
 			}
 		}
 		return result, best >= 0
 	}
-	if result, ok := lookup(overrides); ok {
+
+	if result, ok := lookupExact(overrides); ok {
 		return result, true
 	}
 	scores := embeddedScoreTable()
-	if result, ok := lookup(scores); ok {
+	if result, ok := lookupExact(scores); ok {
 		return result, true
 	}
-	_, level := SplitModelLevel(model)
-	if level == "" && defaultEffort == "" {
+
+	_, modelLevel := SplitModelLevel(model)
+	if modelLevel == "" && defaultEffort == "" {
 		var found ModelScore
 		count := 0
 		for _, s := range scores {
@@ -228,6 +244,80 @@ func LookupModelScoreWithDefaultEffort(model, defaultEffort string, overrides []
 			return found, true
 		}
 	}
+
+	lookupFallback := func(list []ModelScore) (ModelScore, bool) {
+		bestModelRank := -1
+		bestIsLower := false
+		bestDist := 999
+		var bestResult ModelScore
+		hasCandidate := false
+
+		reqRank, ok := scoreEffortOrder[requested]
+		if !ok {
+			reqRank = scoreEffortOrder["medium"]
+		}
+
+		for _, s := range list {
+			mRank := matchModelRank(s, model, base, part, partBase, partBaseNorm, partNorm)
+			if mRank < 0 {
+				continue
+			}
+			effortStr := s.Effort
+			if effortStr == "" {
+				_, effortStr = SplitModelLevel(s.Match)
+			}
+			effortStr = strings.ToLower(strings.TrimSpace(effortStr))
+			if effortStr == "" || strings.EqualFold(effortStr, requested) || effortStr == "default" {
+				continue
+			}
+			sRank, ok := scoreEffortOrder[effortStr]
+			if !ok {
+				sRank = scoreEffortOrder["medium"]
+			}
+
+			isLower := sRank < reqRank
+			var dist int
+			if isLower {
+				dist = reqRank - sRank
+			} else {
+				dist = sRank - reqRank
+			}
+
+			better := false
+			if !hasCandidate {
+				better = true
+			} else if mRank > bestModelRank {
+				better = true
+			} else if mRank == bestModelRank {
+				if isLower && !bestIsLower {
+					better = true
+				} else if isLower == bestIsLower && dist < bestDist {
+					better = true
+				}
+			}
+
+			if better {
+				hasCandidate = true
+				bestModelRank = mRank
+				bestIsLower = isLower
+				bestDist = dist
+				bestResult = s
+				if bestResult.Effort == "" {
+					bestResult.Effort = effortStr
+				}
+				bestResult.FallbackEffort = effortStr
+			}
+		}
+		return bestResult, hasCandidate
+	}
+
+	if result, ok := lookupFallback(overrides); ok {
+		return result, true
+	}
+	if result, ok := lookupFallback(scores); ok {
+		return result, true
+	}
+
 	return ModelScore{}, false
 }
 
