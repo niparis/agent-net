@@ -1349,12 +1349,16 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			break
 		}
 	}
-	// Retire unclaimed work whose requirements no longer hold. Claims stay
+	// Retire unclaimed work outside the ready steps and their paired partners. Claims stay
 	// with their current owner; retired tasks can be queued again when ready.
 	ready := p.NextSteps(c, evidence)
 	args := []any{c.ID, c.Revision}
 	query := `UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND claimed_by='' AND completed=0`
+	keep := append([]protocol.StepRef(nil), ready...)
 	for _, ref := range ready {
+		keep = append(keep, stepRun(p, c, evidence, ref)[1:]...)
+	}
+	for _, ref := range keep {
 		query += ` AND NOT (step=? AND for_step=? AND after_merge=?)`
 		args = append(args, ref.Step, ref.For, boolInt(ref.AfterMerge))
 	}
@@ -1426,7 +1430,15 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			// now is its own task, not another partner for an old notice.
 			continue
 		}
-
+		// Hand the next step out with this one when it needs only this step.
+		// Each step keeps its own task row, evidence and order.
+		for _, next := range stepRun(p, c, evidence, ref)[1:] {
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks
+				(change_id,revision,step,for_step,after_merge,owner_node,created_at) VALUES(?,?,?,?,?,?,?)`,
+				c.ID, c.Revision, next.Step, next.For, boolInt(next.AfterMerge), ownerNode, now); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

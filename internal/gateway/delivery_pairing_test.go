@@ -122,16 +122,16 @@ func TestStepPairReleaseVerifyOneMessage(t *testing.T) {
 		t.Fatalf("caller got %d task messages, want 1: %v", len(bodies), bodies)
 	}
 	body := bodies[0]
-	if !strings.Contains(body, "step: release after merge") {
+	if !strings.Contains(body, "steps: release, verify (after merge)") {
 		t.Fatalf("pair line missing from:\n%s", body)
 	}
-	if strings.Contains(body, "then verify") {
+	if !strings.Contains(body, "Claim and report each step in order: release, then verify.") {
 		t.Fatalf("order guidance missing from:\n%s", body)
 	}
 	var tasks int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND revision=? AND owner_node=?`,
-		c.ID, c.Revision, callerTaskOwner).Scan(&tasks); err != nil || tasks != 1 {
-		t.Fatalf("caller tasks=%d want=1 err=%v", tasks, err)
+		c.ID, c.Revision, callerTaskOwner).Scan(&tasks); err != nil || tasks != 2 {
+		t.Fatalf("caller tasks=%d want=2 err=%v", tasks, err)
 	}
 }
 
@@ -148,8 +148,8 @@ func TestStepPairReleaseVerifyClaimAndReport(t *testing.T) {
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: releaseRef,
 		Result: protocol.StepResultPass, Commit: commitMerged})
 
-	if got := len(callerMessages(t, r, c.ID)); got != 2 {
-		t.Fatalf("after release the caller has %d messages, want separate release and verify messages", got)
+	if got := len(callerMessages(t, r, c.ID)); got != 1 {
+		t.Fatalf("after release the caller has %d messages, want the one pair message", got)
 	}
 
 	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: verifyRef, Commit: commitMerged}); err != nil {
@@ -177,8 +177,14 @@ func TestStepPairLaterStepBeforeEarlierRefused(t *testing.T) {
 
 	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: verifyRef, Commit: commitMerged}); err == nil {
 		t.Fatal("claimed verify before release passed")
-	} else if !strings.Contains(err.Error(), "no ready node task") && !strings.Contains(err.Error(), "not ready") {
+	} else if !strings.Contains(err.Error(), "not ready") || !strings.Contains(err.Error(), "release") {
 		t.Fatalf("claim refusal does not name release: %v", err)
+	}
+	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: verifyRef,
+		Result: protocol.StepResultPass, Commit: commitMerged}); err == nil {
+		t.Fatal("reported verify before release passed")
+	} else if !strings.Contains(err.Error(), "not ready") || !strings.Contains(err.Error(), "release") {
+		t.Fatalf("report refusal does not name release: %v", err)
 	}
 
 	// Release is still claimable, and its pass opens verify.
@@ -282,14 +288,14 @@ func TestStepPairAfterMergePairsOnlyNextStep(t *testing.T) {
 	if len(bodies) != 1 {
 		t.Fatalf("caller got %d messages, want 1: %v", len(bodies), bodies)
 	}
-	if !strings.Contains(bodies[0], "step: test after merge") {
+	if !strings.Contains(bodies[0], "steps: test, release (after merge)") {
 		t.Fatalf("pair line missing from:\n%s", bodies[0])
 	}
-	if strings.Contains(bodies[0], "then release") {
+	if !strings.Contains(bodies[0], "Claim and report each step in order: test, then release.") {
 		t.Fatalf("order guidance missing from:\n%s", bodies[0])
 	}
 	var verifyTasks int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step IN ('release','verify') AND completed=0`, c.ID).Scan(&verifyTasks); err != nil || verifyTasks != 0 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step='verify'`, c.ID).Scan(&verifyTasks); err != nil || verifyTasks != 0 {
 		t.Fatalf("verify task rows=%d want=0 err=%v", verifyTasks, err)
 	}
 }
@@ -305,11 +311,8 @@ func TestStepTaskReleaseRequiresPassingTest(t *testing.T) {
 			t.Fatalf("active release tasks=%d want=%d err=%v", got, want, err)
 		}
 	}
-	assertTasks(0)
-	// Reproduce a stale task left by an older gateway before recording failure.
-	if _, err := r.s.db.Exec(`INSERT INTO delivery_step_tasks (change_id,revision,step,for_step,after_merge,owner_node,created_at) VALUES(?,?,'release','',1,?,1)`, c.ID, c.Revision, callerTaskOwner); err != nil {
-		t.Fatal(err)
-	}
+	// The ready test and its same-owner release partner are queued together.
+	assertTasks(1)
 	record := func(result string, at int64) {
 		t.Helper()
 		tx, err := r.s.db.Begin()
