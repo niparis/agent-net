@@ -378,6 +378,10 @@ func (m Model) helpSectionContent(section helpSection, w int) []string {
 		out = append(out, m.helpRow("dormant", "no online session or activity in 30 days, archived, or a temporary name", w)...)
 		out = append(out, mapLegendLines(w)...)
 	}
+	if section.title == "Desk" {
+		out = append(out, "")
+		out = append(out, m.helpRow("in details", "up and down choose an answer; enter answers the marked one; digits still switch tabs", w)...)
+	}
 	return out
 }
 

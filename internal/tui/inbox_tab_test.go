@@ -744,29 +744,126 @@ func TestInboxAlreadyAnsweredIsNotGone(t *testing.T) {
 	}
 }
 
-func TestInboxNumberedOptions(t *testing.T) {
-	for i, key := range []string{"1", "2", "3", "4"} {
+// On the Desk, the number keys always switch tabs. They must never answer the
+// selected ask: a tab switch that silently answers in the owner's name is
+// worse than a lost key.
+func TestDeskDigitsSwitchTabsOnAQuestion(t *testing.T) {
+	want := []int{sessionsTab, graphTab, quotasTab, messagesTab, toolsTab, settingsTab, inboxTab}
+	for i, key := range []string{"1", "2", "3", "4", "5", "6", "7"} {
 		m, src := inboxAllKindsModel(120, 34)
-		m.asks[1].Options = []string{"one", "two", "three", "four"}
+		setAskOptions(t, &m, "i_question", []string{"one", "two", "three", "four"})
 		m = openInbox(m)
 		m.inboxIndex = inboxRowIndex(m, "question")
-		next, cmd := m.key(tea.KeyPressMsg{Text: key, Code: rune(key[0])})
-		if cmd == nil {
-			t.Fatalf("%s no answer", key)
+		if m.inboxIndex < 0 {
+			t.Fatal("no question row")
 		}
-		msg := cmd()
-		if batch, ok := msg.(tea.BatchMsg); ok {
-			for _, c := range batch {
-				if c != nil {
-					c()
-				}
-			}
+		next, _ := press(m, tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
+		if next.tab != want[i] {
+			t.Errorf("%s: tab %d, want %d", key, next.tab, want[i])
 		}
-		c := src.method("inbox_answer")
-		if c == nil || c.params.(map[string]string)["answer"] != m.asks[1].Options[i] {
-			t.Fatalf("%s: %+v msg=%T next=%+v detail=%v edit=%v focus=%v open=%v", key, c, msg, next.(Model).tab, m.inboxDetail, m.inboxEditing, m.focus, m.open != nil)
+		if call := src.method("inbox_answer"); call != nil {
+			t.Errorf("%s answered the question: %+v", key, call.params)
 		}
 	}
+}
+
+func TestDeskDigitsSwitchTabsOnAnApproval(t *testing.T) {
+	want := []int{sessionsTab, graphTab, quotasTab, messagesTab, toolsTab, settingsTab, inboxTab}
+	for i, key := range []string{"1", "2", "3", "4", "5", "6", "7"} {
+		m, src := inboxAllKindsModel(120, 34)
+		setAskOptions(t, &m, "i_app", []string{"one", "two", "three", "four"})
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "approval")
+		if m.inboxIndex < 0 {
+			t.Fatal("no approval row")
+		}
+		next, _ := press(m, tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
+		if next.tab != want[i] {
+			t.Errorf("%s: tab %d, want %d", key, next.tab, want[i])
+		}
+		if call := src.method("inbox_answer"); call != nil {
+			t.Errorf("%s answered the approval: %+v", key, call.params)
+		}
+	}
+}
+
+// The details are not a modal, so the tab keys stay live there too.
+func TestDeskDetailDigitsSwitchTabs(t *testing.T) {
+	want := []int{sessionsTab, graphTab, quotasTab, messagesTab, toolsTab, settingsTab, inboxTab}
+	for i, key := range []string{"1", "2", "3", "4", "5", "6", "7"} {
+		m, src := inboxAllKindsModel(120, 34)
+		setAskOptions(t, &m, "i_question", []string{"one", "two", "three", "four"})
+		m = openInbox(m)
+		m.inboxIndex = inboxRowIndex(m, "question")
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if !m.inboxDetail {
+			t.Fatal("enter did not open the details")
+		}
+		next, _ := press(m, tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
+		if next.tab != want[i] {
+			t.Errorf("%s: tab %d, want %d", key, next.tab, want[i])
+		}
+		if call := src.method("inbox_answer"); call != nil {
+			t.Errorf("%s answered the question: %+v", key, call.params)
+		}
+	}
+}
+
+// Enter opens the details. There, up and down mark an option and Enter
+// answers it, so an option is still one short path away.
+func TestDeskDetailChoosesAnOptionWithUpDownAndEnter(t *testing.T) {
+	m, src := inboxAllKindsModel(120, 34)
+	setAskOptions(t, &m, "i_question", []string{"main", "next"})
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "question")
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.inboxDetail {
+		t.Fatal("enter did not open the details")
+	}
+	if !strings.Contains(ansi.Strip(m.testView()), "▸ main") {
+		t.Fatalf("the first option is not marked:\n%s", ansi.Strip(m.testView()))
+	}
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	if !strings.Contains(ansi.Strip(m.testView()), "▸ next") {
+		t.Fatalf("down did not mark the second option:\n%s", ansi.Strip(m.testView()))
+	}
+	next, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter did not answer the marked option")
+	}
+	send(next, cmd())
+	call := src.method("inbox_answer")
+	if call == nil || call.params.(map[string]string)["id"] != "i_question" || call.params.(map[string]string)["answer"] != "next" {
+		t.Fatalf("answer call %+v", call)
+	}
+}
+
+func TestDeskDetailEnterAnswersTheFirstOption(t *testing.T) {
+	m, src := inboxAllKindsModel(120, 34)
+	setAskOptions(t, &m, "i_question", []string{"main", "next"})
+	m = openInbox(m)
+	m.inboxIndex = inboxRowIndex(m, "question")
+	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	next, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter did not answer the first option")
+	}
+	send(next, cmd())
+	call := src.method("inbox_answer")
+	if call == nil || call.params.(map[string]string)["answer"] != "main" {
+		t.Fatalf("answer call %+v", call)
+	}
+}
+
+func setAskOptions(t *testing.T, m *Model, id string, options []string) {
+	t.Helper()
+	for i := range m.asks {
+		if m.asks[i].ID == id {
+			m.asks[i].Options = options
+			return
+		}
+	}
+	t.Fatalf("no ask %s", id)
 }
 func TestInboxDetailFields(t *testing.T) {
 	m, _ := inboxAllKindsModel(80, 24)
@@ -805,20 +902,20 @@ func TestInboxLongDetailScrollAndHints(t *testing.T) {
 	m.asks[1].Options = []string{"yes", "no"}
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "question")
-	if !strings.Contains(ansi.Strip(m.testView()), "1-2") {
-		t.Fatal("list lacks option hints")
+	if strings.Contains(ansi.Strip(m.testView()), "choose an answer") {
+		t.Fatal("the list still offers numbered answers")
 	}
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	view := ansi.Strip(m.testView())
-	if !strings.Contains(view, "more below") || !strings.Contains(view, "1-2") {
+	if !strings.Contains(view, "more below") || !strings.Contains(view, "↑↓ choose an answer") {
 		t.Fatalf("detail: %s", view)
 	}
 	golden(t, "inbox_detail_long_80x24", m.testView())
 	for i := 0; i < 3; i++ {
 		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
 	}
-	if !strings.Contains(ansi.Strip(m.testView()), "2. no") {
-		t.Fatal("page down did not show options")
+	if !strings.Contains(ansi.Strip(m.testView()), "▸ yes") {
+		t.Fatal("page down did not show the marked option")
 	}
 }
 
@@ -829,6 +926,7 @@ func TestInboxDetailScrollUpAfterEnd(t *testing.T) {
 		fmt.Fprintf(&b, "line %02d\n", i)
 	}
 	m.asks[1].Question = b.String()
+	m.asks[1].Options = nil
 	m = openInbox(m)
 	m.inboxIndex = inboxRowIndex(m, "question")
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})

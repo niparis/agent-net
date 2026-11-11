@@ -4,8 +4,8 @@ Inbox detail ──────────────────────�
   From: Build agent
 
   which branch?
-  1. main
-  2. next
+  ▸ main
+    next
 
   Recommendation: Use main
 
@@ -31,4 +31,4 @@ Inbox detail ──────────────────────�
 │                                                                                                                      │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-1-2 choose an answer  t type answer  esc back
+↑↓ choose an answer  enter answer  t type answer  esc back
