@@ -9,7 +9,7 @@ import (
 
 // HeldRequests returns unexpired requests awaiting an owner decision.
 func (s *Store) HeldRequests() ([]protocol.Message, error) {
-	rows, err := s.db.Query(msgSelect+` WHERE m.state='held' AND m.expires_at>? ORDER BY m.created_at, m.rowid`, s.now().UnixNano())
+	rows, err := s.db.Query(msgSelect+` WHERE m.state='held' AND m.hold_kind='' AND m.expires_at>? ORDER BY m.created_at, m.rowid`, s.now().UnixNano())
 	if err != nil {
 		return nil, err
 	}
@@ -45,6 +45,13 @@ func (s *Store) answerHeld(id, action, actor string, validate ...bool) (protocol
 		return empty, err
 	}
 	if !ok || m.State != protocol.StateHeld || !m.ExpiresAt.After(s.now()) {
+		return empty, reject("request is not held")
+	}
+	var holdKind string
+	if err := tx.QueryRow(`SELECT hold_kind FROM messages WHERE id=?`, id).Scan(&holdKind); err != nil {
+		return empty, err
+	}
+	if holdKind != "" {
 		return empty, reject("request is not held")
 	}
 	if action == "A" || action == "R" {

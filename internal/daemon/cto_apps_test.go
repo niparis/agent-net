@@ -57,7 +57,7 @@ func TestCTOConnectedApps(t *testing.T) {
 			if action == "public_off" {
 				cli.mustCall("apps.public.on", map[string]any{})
 			}
-			args := map[string]any{"action": action}
+			args := map[string]any{}
 			if strings.HasPrefix(action, "app_") {
 				args["id"] = "app_fixture"
 			}
@@ -67,8 +67,8 @@ func TestCTOConnectedApps(t *testing.T) {
 			if action == "app_rename" {
 				args["name"] = "After"
 			}
-			raw, _ := json.Marshal(args)
-			result, err := n.d.runCTOTool(ctx, "mcp_change", raw)
+			raw, _ := json.Marshal(map[string]any{"method": action, "args": args})
+			result, err := n.d.runCTOTool(ctx, "cto_op", raw)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -117,7 +117,8 @@ func TestCTOConnectedApps(t *testing.T) {
 			if notice == nil {
 				t.Fatalf("missing CTO notice: %+v", items)
 			}
-			concrete, _, _, _ := ctoConcreteCall("mcp_change", raw)
+			typed, _ := json.Marshal(map[string]any{"action": action, "id": args["id"], "grant": args["grant"], "name": args["name"]})
+			concrete, _, _, _ := ctoConcreteCall("mcp_change", typed)
 			var count int
 			if err := n.d.st.db.QueryRow(`SELECT COUNT(*) FROM cto_actions WHERE text=?`, concrete).Scan(&count); err != nil || count != 1 {
 				t.Fatalf("audit count %d: %v", count, err)
@@ -171,11 +172,8 @@ func TestCTOConnectedAppsReads(t *testing.T) {
 	g := startGatewayWith(t, t.TempDir(), "", 0, func(o *gateway.Options) { o.FunnelRunner = ctoAppsRunner{} })
 	n := startNode(t, g, nodeOpts{})
 	for _, action := range []string{"apps_list", "public_status"} {
-		raw, _ := json.Marshal(map[string]string{"action": action})
-		if class, err := ctoClass("mcp_change", raw); err != nil || class != ctoRead {
-			t.Fatalf("%s class %s %v", action, class, err)
-		}
-		if _, err := n.d.runCTOTool(context.Background(), "mcp_change", raw); err != nil {
+		raw, _ := json.Marshal(map[string]any{"method": action, "args": map[string]any{}})
+		if _, err := n.d.runCTOTool(context.Background(), "cto_op", raw); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -33,9 +33,10 @@ Rotation saves a new token to that machine's `node.json` atomically with mode
 0600 and reconnects it. The old token stops working when the save is confirmed.
 
 The owner-only operator methods are `machine_remove` and `machine_rotate`, both
-with `{node_id}`. The CTO uses `settings_change` with `area: machine_remove` or
-`area: machine_rotate` and `node_id`. These create proposals for the owner's
-approval in Inbox. Agent sessions cannot invoke the owner methods directly.
+with `{node_id}`. The CTO uses `cto_op` with `method: machine_remove` or
+`method: machine_rotate` and `args: {node_id}`. These create proposals for the
+owner's approval in Inbox. Agent sessions cannot invoke the owner methods
+directly.
 
 ## Machine states and sleep
 
@@ -177,6 +178,10 @@ Approved worker-start tasks remain owner-session messages without the CTO flag.
 Messages to the CTO session reach the currently selected harness, including
 replies after a harness switch.
 The owner can hand one item over with `c` (see below).
+
+An Agent with lead level may start a request with the CTO. Lead level is the explicit `lead_level` grant on the Agent, leading an active Team, or being the agent of the session named as chief of staff. It is not inferred from Team membership. The owner or the CTO grants and clears it with `lead_set`: `ref` is `{"kind":"agent","id":"<agent>"}`, `lead` names the same Agent to grant it, and an empty `lead` clears it. The change is recorded in the graph history and `graph_change` `undo` restores it. A lead-level Agent may start only a request, for a CTO tool or a second opinion; a notification to the CTO stays reply-only.
+
+Each sending Agent may start `cto.requests_per_hour` new conversations with the CTO in an hour (default 3) and `cto.requests_per_day` in a day (default 10); both are network settings. A request over either window is not refused. It is held, the sender's result says when it will go (for example `held: over 3 per hour; it goes at 01:42`), and the gateway releases it when the window allows. Replies are not counted.
 
 Open proposals appear on the Desk (Needs you). Enter shows the CTO's reason, a fresh diff,
 and the sender and time of up to three messages delivered before the proposal.
@@ -349,10 +354,29 @@ operator methods after approval for proposal calls. The brief treats material
 it reads as data. The Desk shows each proposed change for the owner's decision;
 the daemon, rather than the CTO model, executes the stored call.
 
-The CTO has 34 tools: 15 reads, 8 talk tools and 11 change tools. They are
-the catalog tools of the CTO role. List reads return `items` or rows, `total`
-and, when another page exists, `next_cursor`; pass it as `cursor`. The default
-page is 25 rows and the maximum is 100.
+The CTO has 39 listed tools in two tiers. The core tier holds the everyday
+tools: sessions, messages, workers, settings read and change, graph read and
+change, standing orders, proposals, `cto_ui_show`, machines and projects. The
+op tier holds every rare operation behind `cto_ops_list` and `cto_op`. The core
+tools stay typed as before, and their schemas no longer carry the rare actions.
+
+The op tier holds the rare operations: session replacement, app grants and
+revokes, machine removal and rotation, process stop, graph lifecycle removal,
+tool import, export and versions, the owner operations, gateway backup and
+charter history.
+
+`cto_ops_list` takes an optional `filter`. It returns the ops grouped, each
+with a one-line purpose, an example and an owner gate: `direct` runs at once,
+`proposal` waits for the owner's approval, and `irreversible` runs at once and
+cannot be undone. `cto_op` takes `method` and `args`. It validates `args`
+against that op's full schema; a wrong, missing or unknown argument returns the
+schema and the example and runs nothing. Proposal and irreversible ops never
+fall back to defaults. A correct call runs the same daemon path, owner gate,
+proposal and undo as the typed tool it replaced.
+
+List reads return `items` or rows, `total` and, when another page exists,
+`next_cursor`; pass it as `cursor`. The default page is 25 rows and the maximum
+is 100.
 
 No server lists or runs a tool name from before the tool redesign (v0.4.71 to
 v0.4.74). A call with one, from the CTO or an agent, returns one error line that
@@ -372,15 +396,15 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | `agent_messages_find`, `agent_message_get` | The CTO's own conversations, and one message body in chunks |
 | `agent_graph_read` | The public graph: nodes with their full charters, maturity and rules (name and value), and edges with kind, mode and request rule. `node` reads one node; when a repo, an agent or a team share that name, every match comes back after the repo node, each labelled with its `kind` and `ref` and with its own charter, and `note` says how many. A typed read (`typed: true` with a `ref`) returns one node. `view: "guide"` returns the charter guide in `note`. |
 | `agent_mcp_servers_find` | Shared MCP servers |
-| `mcp_change` actions `apps_list`, `public_status` | Owner-authorized connected-app metadata and internet-access status; no credentials |
 | `agent_settings_read`, `agent_worker_profiles_find` | Public settings values and history, and public worker profiles |
 | `projects_layout` | Read-only project layout of online machines (roots, groups, remotes, newest commits). Cached for 10 minutes. |
+| `cto_ops_list` | The rare operations, grouped, with their purpose, example and owner gate. Filter by text. |
 | `cto_proposals_find` | The CTO's own proposals; `id` selects one. `kind` filters the list: `proposal` is the default, `all` lists every pending owner item, and `draft` (charter suggestions), `learned` (pending major learned proposals), `held`, `inbox`, `approval`, `question`, `escalation` and `rejection` narrow it. Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
 The parity and canary tests cover ordinary agent-shaped views. Those message
 reads remain limited to the CTO's own conversations and omit waiting-question
-contents. Explicit `settings_change` operator reads use the owner handlers,
+contents. Owner operation reads run through `cto_op` and use the owner handlers,
 including protected-provider settings, Inbox, tool inventory and session text.
 Ordinary agents do not gain access to these owner handlers.
 The items that wait for the owner are readable through
@@ -400,26 +424,26 @@ action tool per area:
 | `agent_learn` | one finding, under the daily limit |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
-| `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_charter` (including `attr: mode` and `attr: held_back`), `team_archive`, `team_member_add`, `team_member_remove` or `undo` |
+| `graph_change` | `action: charter_set`, `node_add`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `agent_create`, `team_create`, `team_rename`, `team_purpose`, `team_charter` (including `attr: mode` and `attr: held_back`), `team_archive`, `team_member_add`, `team_member_remove` or `undo`. Lifecycle removal (`node_remove`, `agent_tombstone`, `repo_archive`) is in `cto_op` and needs owner approval. |
 | `sessions_archive` | Archive offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Reversible through Inbox undo. |
 | `session_change` | `action: rename`, `trust`, `mcp_servers`, `policy`, `session_start`, `merger_start`, `merger_stop`, `stop`, `resume` or `restart`. `stop`, `resume` and `restart` take `session_id`; see [CTO session stop, resume and restart](#cto-session-stop-resume-and-restart). `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `mcp_servers` takes one of `project` or `path`, optional `node_id`, and `mcp_servers: approve` or `disable`, to record the choice for the `.mcp.json` servers Claude Code would load there. `session_start` takes `trust: true` to trust the folder and start in one step, and `mcp_servers` to record that choice first. See [CTO folder trust](#cto-folder-trust) and [Claude MCP server approval](#claude-mcp-server-approval) |
 | `cto_standing_orders` | `action: save` (with `text`), `read` (with `order_id`), `list` or `remove` (with `order_id`). See [standing orders](#standing-orders) |
 | `worker_change` | `action: start` or `stop` |
 | `answer` | `kind: held`, `inbox` or `outcome` |
-| `tools_change` | `action: plan`, `apply`, `undo`, `import` or `native_remove` |
-| `mcp_change` | `action: add`, `remove`, `test`, `enable`, `apps_list`, `app_grant`, `app_ungrant`, `app_rename`, `app_revoke`, `app_ask`, `public_status`, `public_on` or `public_off` |
+| `tools_change` | `action: plan`, `apply`, `undo` or `native_remove`. Import is in `cto_op` as `mcp_import`. |
+| `mcp_change` | `action: add`, `remove`, `test`, `enable` or `app_ask`. Connected app actions are in `cto_op`. |
 | `mcp_call` | one call on a shared MCP server |
-| `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `machine_remove`, `machine_rotate`, `invite`, `onboarding`, `operator` or `process_stop`. `process_stop` takes `node_id` and `pids` and cannot be undone. See [CTO process stop](#cto-process-stop)  |
+| `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `invite` or `onboarding`. Machine removal, token rotation, `process_stop` and the owner operations are in `cto_op`. See [CTO process stop](#cto-process-stop) |
 | `project_change` | `action: add`, `remove`, `display` or `create`; `add`, `remove` and `create` accept optional `node_id` (machine name or node ID); `remove` takes `name` or `path` |
 | `cto_new` | a new conversation for the active harness |
 
-Connected apps use `mcp_change`. Call `{"action":"apps_list"}` to find app
-IDs, names, kinds, grants and revocation status. This list contains no access or
-refresh tokens. `{"action":"public_status"}` reads internet access and its
-setup errors. These two reads do not create notices.
+Connected apps use the op tier. Call `cto_op` with `{"method":"apps_list"}` to
+find app IDs, names, kinds, grants and revocation status. This list contains no
+access or refresh tokens. `{"method":"public_status"}` reads internet access and
+its setup errors. These two reads do not create notices.
 
-Grant a bot access with `{"action":"app_grant","id":"app-id","grant":"mcp server example"}`.
-Use `app_ungrant` with the same fields to remove it. `app_rename` takes `id`
+Grant a bot access with `{"method":"app_grant","args":{"id":"app-id","grant":"mcp server example"}}`.
+Use `app_ungrant` with the same args to remove it. `app_rename` takes `id`
 and `name`. `app_revoke` takes `id`: it invalidates credentials and cannot be
 undone; the app must connect again. `public_on` and `public_off` switch internet
 access on the gateway. No extra approval is required for these CTO actions.
@@ -441,16 +465,18 @@ with the HTTPS link. Pressing `y` opens that link in the owner's browser. The
 ask stays open until access is enabled; status checks and the gateway retry
 automatically complete the switch and close it. `public_off` withdraws it.
 
-The remaining owner operations use the existing settings tool:
+The remaining owner operations use `cto_op`:
 
 ```json
-{"area":"operator","method":"session_pin","arguments":{"session_id":"session-id","pinned":true},"reason":"Keep this session visible"}
+{"method":"session_pin","args":{"session_id":"session-id","pinned":true}}
 ```
 
-`method` is an explicit schema enum, also defined in
-`internal/protocol/cto_operator.go`. `arguments` has the same fields as the
-matching owner API; unknown operations are refused. This is not an arbitrary
-RPC passthrough. The available families are:
+`cto_ops_list` names every method and its gate; the methods are also defined in
+`internal/protocol/cto_operator.go`. `args` has the same fields as the matching
+owner API; unknown operations are refused. Unknown argument fields are refused
+too: the error names the field and the arguments the method accepts. A field
+such as `dry_run` on a method with no preview mode is an error, never a silent
+no-op. This is not an arbitrary RPC passthrough. The available families are:
 
 | Owner operation family | CTO operator methods |
 |---|---|
@@ -3326,7 +3352,7 @@ Each use leaves an Inbox notice. `added` is true only when the folder was not tr
 
 ### CTO process stop
 
-The owner can ask the CTO to stop orphan processes on a machine, for example an MCP server that a restart left behind. The CTO calls `settings_change` with `area: process_stop`, `node_id` and `pids`. It acts at once, like folder trust. It is not a proposal. The CTO decides when to use it. `node_id` is required and never means "this machine": name the machine that runs the processes (its node ID or host name). An empty `pids` list is an error. A repeated pid is stopped once.
+The owner can ask the CTO to stop orphan processes on a machine, for example an MCP server that a restart left behind. The CTO calls `cto_op` with `method: process_stop`, `args: {node_id, pids}`. It acts at once, like folder trust. It is not a proposal. The CTO decides when to use it. `node_id` is required and never means "this machine": name the machine that runs the processes (its node ID or host name). An empty `pids` list is an error. A repeated pid is stopped once.
 
 The machine does this for each pid, in this order:
 

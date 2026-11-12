@@ -22,9 +22,9 @@ var ctoV2Tools = map[string]bool{
 
 var ctoActionRoutes = map[string]map[string]string{
 	"answer":          {"held": "held_answer", "inbox": "inbox_answer", "outcome": "outcome_overrule"},
-	"tools_change":    {"toggle": "tools_toggle", "new_projects": "tools_new_projects", "plan": "tools_plan", "apply": "tools_apply", "undo": "tools_undo", "import": "mcp_import", "native_remove": "mcp_native_remove"},
-	"mcp_change":      {"add": "mcp_add", "remove": "mcp_remove", "test": "mcp_test", "enable": "mcp_enable", "app_ask": "apps.ask", "apps_list": "apps.list", "app_grant": "apps.grant", "app_ungrant": "apps.ungrant", "app_rename": "apps.rename", "app_revoke": "apps.revoke", "public_status": "apps.public.status", "public_on": "apps.public.on", "public_off": "apps.public.off"},
-	"settings_change": {"operator": "owner_operation", "values_write": "settings_values_write", "values_undo": "settings_values_undo", "worker_profile_add": "worker_profile_add", "worker_profile_remove": "worker_profile_remove", "worker_providers": "worker_providers_set", "protected_providers": "protected_providers_set", "score": "score_set", "integrations": "integrations_set", "notifications": "notification_settings", "cto": "cto_settings", "playbook": "playbook_set", "machine_name": "node_rename", "machine_remove": "machine_remove", "machine_rotate": "machine_rotate", "invite": "invite", "onboarding": "onboarding_restart", "process_stop": "process_stop"},
+	"tools_change":    {"toggle": "tools_toggle", "new_projects": "tools_new_projects", "plan": "tools_plan", "apply": "tools_apply", "undo": "tools_undo", "native_remove": "mcp_native_remove"},
+	"mcp_change":      {"add": "mcp_add", "remove": "mcp_remove", "test": "mcp_test", "enable": "mcp_enable", "app_ask": "apps.ask"},
+	"settings_change": {"values_write": "settings_values_write", "values_undo": "settings_values_undo", "worker_profile_add": "worker_profile_add", "worker_profile_remove": "worker_profile_remove", "worker_providers": "worker_providers_set", "protected_providers": "protected_providers_set", "score": "score_set", "integrations": "integrations_set", "notifications": "notification_settings", "cto": "cto_settings", "playbook": "playbook_set", "machine_name": "node_rename", "invite": "invite", "onboarding": "onboarding_restart"},
 	"project_change":  {"add": "project_add", "remove": "project_remove", "display": "project_display_set", "create": "project_create"},
 }
 
@@ -50,14 +50,14 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 	if concrete == "" {
 		concrete = map[string]string{
 			"graph_change": map[string]string{
-				"charter_set": "charter_set", "node_add": "node_add", "node_remove": "node_remove",
+				"charter_set": "charter_set", "node_add": "node_add",
 				"edge_set": "edge_set", "edge_remove": "edge_remove", "settings_set": "node_settings_set",
-				"undo": "graph_undo", "repo_create": "repo_create", "repo_archive": "repo_archive",
-				"agent_create": "agent_create", "agent_tombstone": "agent_tombstone",
-				"lead_set": "lead_set", "team_create": "team_create", "team_rename": "team_rename", "team_purpose": "team_purpose", "team_charter": "team_charter", "team_archive": "team_archive",
+				"undo": "graph_undo", "repo_create": "repo_create",
+				"agent_create": "agent_create",
+				"lead_set":     "lead_set", "team_create": "team_create", "team_rename": "team_rename", "team_purpose": "team_purpose", "team_charter": "team_charter", "team_archive": "team_archive",
 				"team_member_add": "team_member_add", "team_member_remove": "team_member_remove",
 			}[action],
-			"session_change": map[string]string{"rename": "session_rename", "replace": "session_replace", "trust": "session_trust", "mcp_servers": "folder_mcp", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop", "stop": "session_stop", "resume": "session_resume", "restart": "session_restart"}[action],
+			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "mcp_servers": "folder_mcp", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop", "stop": "session_stop", "resume": "session_resume", "restart": "session_restart"}[action],
 			"worker_change":  map[string]string{"start": "worker_start", "stop": "worker_stop"}[action],
 		}[tool]
 	}
@@ -175,9 +175,6 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 		}
 		if action == "stop" || action == "resume" || action == "restart" {
 			required = []string{"session_id"}
-		}
-		if action == "replace" {
-			required = []string{"old_session", "new_session"}
 		}
 		if action == "mcp_servers" {
 			if nonempty(args["project"]) == nonempty(args["path"]) {

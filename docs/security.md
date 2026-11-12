@@ -1114,7 +1114,7 @@ The CTO design lists what its rules leave open ([design section 10](design/cto-a
 
 - **The owner approves without reading.** A proposal is checked again before it runs, and its diff is computed when the owner opens it. But the owner approves what the detail shows, not what the CTO saw.
 - **What the owner shares can be repeated.** Typed text and handed-over items enter the CTO conversation. Its brief asks it not to repeat them to other agents, but that is advice, not a data gate.
-- **A peak of proposals.** Deduplication and the cap of 20 open proposals limit a flood. Agents cannot start a conversation with the CTO.
+- **A peak of proposals.** Deduplication and the cap of 20 open proposals limit a flood. Only a lead-level Agent (the chief of staff, a team lead, or an Agent the owner or CTO granted lead level) may start a conversation with the CTO, and only as a request. Those requests are held once an Agent passes its hourly or daily window (3 an hour and 10 a day by default).
 - **An agent asks the CTO to relay a request.** A plain send carries the peer note, so the receiver judges it like any peer request. This is the same as an agent relaying a request itself.
 - **A proposal shaped by public data.** The CTO reads only public data, and nothing it reads runs anything. Injected text can still shape an immediate action.
 - **A forged CTO note or flag.** The CTO send path sets the CTO flag, and the gateway accepts it only from the recorded CTO session. As elsewhere, the gateway trusts enrolled daemons to set it honestly.

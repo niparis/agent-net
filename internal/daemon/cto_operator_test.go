@@ -86,6 +86,37 @@ func TestCTOOperatorSettingsUndo(t *testing.T) {
 	}
 }
 
+// The CTO reads a playbook note through the owner operation path. That path
+// forwarded the set request, whose note field the gateway's strict argument
+// check refused; a get now sends the get arguments only.
+func TestCTOOperatorPlaybookGetSendsGetArguments(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cli := cliClient(t, n)
+	cli.mustCall("playbook_set", protocol.PlaybookSetRequest{Model: "terra", Harness: "pi", Note: "Ask for a checklist."})
+	raw, _ := json.Marshal(map[string]any{"area": "operator", "method": "playbook_get",
+		"arguments": map[string]any{"model": "terra", "harness": "pi"}})
+	result, err := n.d.runCTOTool(ctx, "settings_change", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.PlaybookGetResult
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bad result %s: %v", data, err)
+	}
+	if got.Note == nil || got.Note.Note != "Ask for a checklist." || got.Note.Harness != "pi" {
+		t.Errorf("the CTO read: %+v", got)
+	}
+}
+
 func TestCTOOperatorEnterNeedsVisibleOwnerTUI(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})

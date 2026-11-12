@@ -23,7 +23,7 @@ func TestSessionStartAgentReservation(t *testing.T) {
 			}
 			for _, agent := range []string{"missing", "dead"} {
 				if agent == "dead" {
-					if _, err = s.db.Exec(`INSERT INTO agents VALUES('dead','Dead','',0,0,1)`); err != nil {
+					if _, err = s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('dead','Dead','',0,0,1)`); err != nil {
 						t.Fatal(err)
 					}
 				}

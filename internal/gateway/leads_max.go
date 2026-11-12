@@ -37,8 +37,11 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	if err := q.Ref.Validate(); err != nil {
 		return err
 	}
-	if q.Ref.Kind != "repo" && q.Ref.Kind != "team" {
-		return reject("lead target must be a Repo or Team")
+	if q.Ref.Kind != "repo" && q.Ref.Kind != "team" && q.Ref.Kind != "agent" {
+		return reject("lead target must be a Repo, Team or Agent")
+	}
+	if q.Ref.Kind == "agent" && q.Lead != nil && (q.Lead.Kind != "agent" || q.Lead.ID != q.Ref.ID) {
+		return reject("lead level is granted to the Agent itself: name it in lead")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -112,6 +115,30 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 			return err
 		}
 		_, err = tx.Exec(`UPDATE teams SET owner_agent_id=?,lead_session=?,updated_at=? WHERE id=?`, lead, session, now, q.Ref.ID)
+	case "agent":
+		if err = liveTeamMember(tx, q.Ref); err != nil {
+			return err
+		}
+		if err = refuseBotLead(tx, q.Ref.ID); err != nil {
+			return err
+		}
+		var on int
+		err = tx.QueryRow(`SELECT lead_level FROM agents WHERE id=? AND tombstone=0`, q.Ref.ID).Scan(&on)
+		if err == sql.ErrNoRows {
+			return reject("unknown or inactive Agent")
+		}
+		if err != nil {
+			return err
+		}
+		historyAttr = "lead_level"
+		if on != 0 {
+			old.String = "1"
+		}
+		level := 0
+		if q.Lead != nil {
+			level = 1
+		}
+		_, err = tx.Exec(`UPDATE agents SET lead_level=?, updated_at=? WHERE id=?`, level, now, q.Ref.ID)
 	}
 	if err != nil {
 		return err
@@ -119,6 +146,9 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	next := ""
 	if q.Lead != nil {
 		next = q.Lead.ID
+		if q.Ref.Kind == "agent" {
+			next = "1"
+		}
 	}
 	if _, err = tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('lead',?,?,?,?,?,?,?)`, q.Ref.ID, historyAttr, old.String, next, now, actor, q.Ref.Kind); err != nil {
 		return err

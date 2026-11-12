@@ -21,8 +21,11 @@ func TestToolToggleOperatorGateAndRead(t *testing.T) {
 	if _, err := cli.call("tools_projects", map[string]any{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, method := range []string{"tools_toggle", "tools_new_projects"} {
-		if _, err := cli.call(method, protocol.ToolToggleRequest{Item: "missing", Project: "demo", On: false}); err == nil || !strings.Contains(err.Error(), "skill item not found") {
+	for method, params := range map[string]any{
+		"tools_toggle":       protocol.ToolToggleRequest{Item: "missing", Project: "demo", On: false},
+		"tools_new_projects": protocol.ToolNewProjectsRequest{Item: "missing", On: false},
+	} {
+		if _, err := cli.call(method, params); err == nil || !strings.Contains(err.Error(), "skill item not found") {
 			t.Fatalf("%s route: %v", method, err)
 		}
 	}

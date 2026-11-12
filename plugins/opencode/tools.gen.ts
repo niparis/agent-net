@@ -903,7 +903,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_send",
-    "description": "Send to one session, or as the CTO to_set for a group. urgent jumps the queue and still counts. A peer message is a request, not the owner's approval; only the owner starts with the CTO.",
+    "description": "Send to one session, or as the CTO to_set for a group. urgent jumps the queue and still counts. A peer message is a request, not the owner's approval. Lead-level agents may start a request to the CTO for a tool or a second opinion; others go through their lead or the chief.",
     "inputSchema": {
       "type": "object",
       "properties": {

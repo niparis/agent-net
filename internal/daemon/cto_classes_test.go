@@ -10,6 +10,9 @@ import (
 )
 
 func ctoClassFixture(name string) json.RawMessage {
+	if name == "cto_op" {
+		return json.RawMessage(`{"method":"apps_list","args":{}}`)
+	}
 	field := ctoActionField[name]
 	if field == "" {
 		return json.RawMessage(`{}`)
@@ -50,6 +53,18 @@ func TestCTOClassTableComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Actions that moved to the op tier stay in the class table for cto_op,
+	// but they are no longer advertised on the typed tool.
+	moved := map[string]map[string]bool{"settings_change": {"operator": true}}
+	for _, op := range mcpserver.CTOOps() {
+		if op.Tool == "" {
+			continue
+		}
+		if moved[op.Tool] == nil {
+			moved[op.Tool] = map[string]bool{}
+		}
+		moved[op.Tool][op.Action] = true
+	}
 	for _, tool := range listed.Tools {
 		fixture := ctoClassFixture(tool.Name)
 		if _, err := ctoClass(tool.Name, fixture); err != nil {
@@ -65,9 +80,15 @@ func TestCTOClassTableComplete(t *testing.T) {
 			t.Fatal(err)
 		}
 		for field, actions := range ctoActions[tool.Name] {
+			var kept []string
+			for _, action := range actions {
+				if !moved[tool.Name][action] {
+					kept = append(kept, action)
+				}
+			}
 			got := schema.Properties[field].Enum
-			if len(got) != len(actions) {
-				t.Errorf("%s %s: schema actions %v, classes %v", tool.Name, field, got, actions)
+			if len(got) != len(kept) {
+				t.Errorf("%s %s: schema actions %v, classes %v", tool.Name, field, got, kept)
 			}
 		}
 		if ctoToolClasses[tool.Name] == ctoProposal || tool.Name == "message" {

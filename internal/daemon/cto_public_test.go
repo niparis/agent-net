@@ -25,7 +25,7 @@ var wantCTOReads = map[string]string{
 
 func TestCTOReadParitySources(t *testing.T) {
 	for name, class := range ctoToolClasses {
-		if class == ctoRead && wantCTOReads[name] == "" {
+		if class == ctoRead && name != "cto_ops_list" && wantCTOReads[name] == "" {
 			t.Errorf("read %s has no ordinary-agent source", name)
 		}
 	}

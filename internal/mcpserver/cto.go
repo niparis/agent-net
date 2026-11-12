@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -463,6 +464,7 @@ func NewCTO(call Caller, version string, note ...func(context.Context) string) *
 	addTool := ctoDialogTools(s, originalCall)
 	addCTOV2Tools(s, call, addTool)
 	addCTOSharedTools(s, call, addTool)
+	addCTOOpTools(s, call, addTool)
 	filterCatalogTools(s, toolcatalog.RoleCTO)
 	return s
 }
@@ -561,13 +563,15 @@ func ctoDialogTools(s *mcp.Server, call Caller) ctoToolAdder {
 }
 
 // CTOToolNames returns the listed CTO tool names, sorted: the catalog tools of
-// the CTO role.
+// the CTO role plus the two op tier tools.
 func CTOToolNames() []string {
 	tools := toolcatalog.ForRole(toolcatalog.RoleCTO)
-	names := make([]string, 0, len(tools))
+	names := make([]string, 0, len(tools)+2)
 	for _, tool := range tools {
 		names = append(names, tool.Name)
 	}
+	names = append(names, "cto_ops_list", "cto_op")
+	sort.Strings(names)
 	return names
 }
 

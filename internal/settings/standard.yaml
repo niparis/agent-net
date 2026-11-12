@@ -175,6 +175,24 @@ settings:
     levels: [network, repo, agent]
     default: 5
     live: true
+  - key: cto.requests_per_hour
+    description: How many new conversations with the CTO a lead-level agent may start in one hour; later requests wait for the window.
+    kind: rule
+    type: int
+    min: 1
+    max: 100
+    levels: [network]
+    default: 3
+    live: true
+  - key: cto.requests_per_day
+    description: How many new conversations with the CTO a lead-level agent may start in one day; later requests wait for the window.
+    kind: rule
+    type: int
+    min: 1
+    max: 1000
+    levels: [network]
+    default: 10
+    live: true
   - key: loop.every
     rows: [46]
     description: How often agent-net wakes the repo's lead agent to keep working toward its purpose; 0s means no loop.
@@ -962,7 +980,7 @@ settings:
     kind: advice
     type: text
     levels: [network]
-    default: "- **Message a peer when it helps the work:** a breaking change that affects its code, a question it can answer better than you, or a result it asked for. Find it with `agent_sessions_find`, read its charter with `agent_graph_read`, and send with `agent_message_send` to its session ID. Only the owner starts conversations with the CTO. Reply when the CTO asks you; otherwise ask your owner."
+    default: "- **Message a peer when it helps the work:** a breaking change that affects its code, a question it can answer better than you, or a result it asked for. Find it with `agent_sessions_find`, read its charter with `agent_graph_read`, and send with `agent_message_send` to its session ID. Lead-level agents (the chief of staff, team leads, and agents granted lead level) may start a request to the CTO for a CTO tool or a second opinion; notifications to the CTO stay reply-only, and everyone else goes through their lead or the chief. Reply when the CTO asks you; otherwise ask your owner."
     live: true
   - key: guidance.ask_peer_after_tries
     rows: [10]
