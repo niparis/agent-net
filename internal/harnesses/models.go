@@ -144,14 +144,20 @@ func codexModels(ctx context.Context, path, searchPATH string) ([]string, map[st
 	if err := cmd.Start(); err != nil {
 		return nil, nil, fmt.Errorf("codex app-server: %w", err)
 	}
-	defer func() {
-		stdin.Close()
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
-		cmd.Wait()
-	}()
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			stdin.Close()
+			if cmd.Process != nil {
+				cmd.Process.Kill()
+			}
+			cmd.Wait()
+		})
+	}
+	defer stop()
 	fail := func(what string) ([]string, map[string]string, error) {
+		// Wait joins the stderr copier before we report the server's reason.
+		stop()
 		if detail := harnessOutput(stderr.String()); detail != "" {
 			return nil, nil, fmt.Errorf("codex app-server %s: %s", what, detail)
 		}
