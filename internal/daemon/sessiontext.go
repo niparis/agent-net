@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -590,11 +591,21 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 	case protocol.OpChiefGet:
 		res, err = d.call(ctx, "chief.get", struct{}{})
 	case protocol.OpChiefSet:
+		// Strict: a field chief_set does not have is refused by name, never
+		// dropped, so a call can only do what it names. The gateway decides
+		// whether the request names anything.
 		var p protocol.ChiefSetRequest
-		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad chief_set request")
+		if len(raw) > 0 && string(raw) != "null" {
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&p); err != nil {
+				return nil, true, fmt.Errorf("bad chief_set request: %v", err)
+			}
 		}
-		res, err = d.call(ctx, "chief.set", map[string]any{"session_id": p.SessionID, "by": operatorActor(ctx)})
+		res, err = d.call(ctx, "chief.set", struct {
+			protocol.ChiefSetRequest
+			By string `json:"by"`
+		}{p, operatorActor(ctx)})
 	case protocol.OpAskHistory:
 		var p protocol.AskHistoryRequest
 		if json.Unmarshal(raw, &p) != nil || p.Ask == "" {

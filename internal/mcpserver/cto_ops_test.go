@@ -140,3 +140,24 @@ func TestCTOOpsListForwardsFilter(t *testing.T) {
 		t.Fatalf("filter: %+v", args)
 	}
 }
+
+// The CTO's chief_set schema lists the model fields and clear, and refuses an
+// argument it does not have before any call is made.
+func TestCTOOpChiefSetSchemaIsStrict(t *testing.T) {
+	op, ok := CTOOpByName("chief_set")
+	if !ok {
+		t.Fatal("no chief_set op")
+	}
+	props, _ := op.Schema["properties"].(map[string]any)
+	for _, name := range []string{"session_id", "clear", "harness", "provider", "model", "effort"} {
+		if _, ok := props[name]; !ok {
+			t.Errorf("chief_set schema lacks %q: %v", name, op.Schema)
+		}
+	}
+	if err := ValidateCTOOpArgs(op, json.RawMessage(op.Example)); err != nil {
+		t.Fatalf("the chief_set example does not validate: %v", err)
+	}
+	if err := ValidateCTOOpArgs(op, json.RawMessage(`{"foo":1}`)); err == nil || !strings.Contains(err.Error(), "foo") {
+		t.Fatalf("err = %v, want chief_set to refuse foo by name", err)
+	}
+}

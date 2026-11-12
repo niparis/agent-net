@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
 	"github.com/niparis/agent-net/internal/settings"
@@ -73,17 +76,136 @@ func liveChief(q askDB) (string, error) {
 	return id, nil
 }
 
-// SetChief names the chief session. Only the owner or the CTO may do it. An
-// empty id clears the role. A new chief takes over the open asks that wait for
-// the owner and were never offered to a chief, so asks opened before the chief
-// existed are not stranded.
+// SetChief changes the chief of staff, and only what the request names: the
+// session, an explicit clear, or the chief's model. Only the owner or the CTO
+// may do it. A clear removes the role. A new chief takes over the open asks that
+// wait for the owner and were never offered to a chief, so asks opened before
+// the chief existed are not stranded. The model is checked before anything is
+// written, so a refused model changes nothing.
 func (s *Store) SetChief(q protocol.ChiefSetRequest, actor string) error {
 	if !actorAllowed(actor, "rule") {
 		return reject("only the owner or the CTO may set the chief of staff")
 	}
-	if q.SessionID == "" {
+	if err := q.Validate(); err != nil {
+		return reject("%v", err)
+	}
+	var line string
+	var stored json.RawMessage
+	if q.HasModel() {
+		var err error
+		if line, stored, err = s.chiefModelLine(q); err != nil {
+			return err
+		}
+	}
+	if err := s.setChiefSession(q); err != nil {
+		return err
+	}
+	if line == "" {
+		return nil
+	}
+	_, err := s.WriteSettings([]SettingsChange{{Key: protocol.ChiefModelKey, Level: "network", Scope: "network",
+		Value: json.RawMessage(strconv.Quote(line)), Expect: stored}}, actor, "chief_set")
+	return err
+}
+
+// chiefModelLine resolves the model fields of a request against the models the
+// network's machines report, the way a worker start does, and returns the
+// one-line chief.model value, with the value now stored for the settings write
+// to expect (nil when the setting was never written). A field not given keeps
+// its value from the current setting. A model no machine lists is refused.
+func (s *Store) chiefModelLine(q protocol.ChiefSetRequest) (string, json.RawMessage, error) {
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		return "", nil, err
+	}
+	var stored json.RawMessage
+	for _, v := range snap.Values {
+		if v.Key == protocol.ChiefModelKey && v.Level == "network" && v.Scope == "network" && v.Item == "" {
+			stored = v.Value
+		}
+	}
+	current := snap.String(protocol.ChiefModelKey, settings.Where{})
+	if current == "" {
+		current = protocol.DefaultChiefModel
+	}
+	parts := strings.Split(current, " · ")
+	for len(parts) < 4 {
+		parts = append(parts, "")
+	}
+	harness, provider, model, effort := parts[0], parts[1], parts[2], parts[3]
+	if effort == "default" {
+		effort = ""
+	}
+	if q.Harness != "" {
+		harness = q.Harness
+	}
+	if q.Model != "" || q.Harness != "" || q.Provider != "" {
+		// A new model or harness drops the old provider, which belonged to it.
+		provider = q.Provider
+	}
+	if q.Model != "" {
+		model = q.Model
+	}
+	if q.Effort != "" {
+		effort = q.Effort
+	}
+	if model == "default" {
+		model = ""
+	}
+	if model == "" {
+		return "", nil, reject("chief_set needs a model for harness %q", harness)
+	}
+	if !slices.Contains(harnesses.Names, harness) {
+		return "", nil, reject("unknown harness %q; known: %s", harness, strings.Join(harnesses.Names, ", "))
+	}
+	if effort != "" {
+		if _, level := protocol.SplitModelLevel("m:" + effort); level == "" {
+			return "", nil, reject("unknown effort %q", effort)
+		}
+	}
+	nodes, err := s.Nodes()
+	if err != nil {
+		return "", nil, err
+	}
+	var models, providers []string
+	for _, n := range nodes {
+		for _, h := range n.Harnesses {
+			if h.Name == harness {
+				models = append(models, h.Models...)
+				providers = append(providers, h.ModelProviders...)
+			}
+		}
+	}
+	if len(models) == 0 {
+		return "", nil, reject("no machine reports a %s model list, so model %q cannot be checked", harness, model)
+	}
+	sel := protocol.ParseModelSelection(harness, provider, model, effort)
+	res, err := protocol.ResolveWorkerModelRankedQuota(harness, sel.ModelID(), models, nil, providers, nil, nil, nil)
+	if err != nil {
+		return "", nil, reject("model %q is not available on this network for %s: %v", model, harness, err)
+	}
+	sel = protocol.ParseModelSelection(harness, "", res.Model, sel.Effort)
+	if sel.Provider == "" {
+		sel.Provider = provider
+	}
+	if sel.Harness == "agy" {
+		if _, err := sel.Arguments(models); err != nil {
+			return "", nil, reject("%v", err)
+		}
+	}
+	return sel.Display(), stored, nil
+}
+
+// setChiefSession applies the session part of a request: a named session
+// becomes the chief, an explicit clear removes it, and a model-only request
+// leaves the chief as it is.
+func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
+	if q.Clear {
 		_, err := s.db.Exec(`DELETE FROM owner_settings WHERE key IN (?,?)`, chiefSessionKey, chiefSilentKey)
 		return err
+	}
+	if q.SessionID == "" {
+		return nil
 	}
 	var harness, worker string
 	var archived int64
