@@ -1159,6 +1159,36 @@ func stepRunNames(run []protocol.StepRef) []string {
 	return names
 }
 
+// stepReadyNote says when the run's first step became ready. Only that step is
+// ready; the rest are the then steps of the same task.
+func stepReadyNote(readySince time.Time, run []protocol.StepRef) string {
+	note := "ready since " + readySince.UTC().Format(time.RFC3339) + ", not claimed"
+	if len(run) > 1 {
+		note += ", then " + strings.Join(stepRunNames(run[1:]), ", then ") + " (not ready yet)"
+	}
+	return note
+}
+
+// stepThenNote names a step that still waits on another step of its run.
+func stepThenNote(run []protocol.StepRef) string {
+	return "then " + strings.Join(stepRunNames(run), ", then ") + " (not ready yet)"
+}
+
+// stepTaskDeliverable reports whether a task selected before a batch was
+// flushed is still waiting for this session: current revision, unclaimed,
+// unfinished, not waiting, and in the phase the task belongs to.
+func (s *Store) stepTaskDeliverable(t nodeTaskTarget) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks t
+		JOIN delivery_changes c ON c.id=t.change_id
+		WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?
+		AND t.revision=c.revision AND t.completed=0 AND t.claimed_by='' AND t.owner_node=?
+		AND `+s.stepNotWaitingAt()+`
+		AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged')))`,
+		t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.owner).Scan(&n)
+	return n != 0, err
+}
+
 func (s *Store) storeStepTaskMessage(t nodeTaskTarget) (protocol.Message, error) {
 	return s.storeStepTaskMessages([]nodeTaskTarget{t})
 }
@@ -1254,6 +1284,15 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		if recorded {
 			continue
 		}
+		// A claim or a report can land while a batch waits in its quiet window.
+		// The task is no longer this session's to hand out then.
+		deliverable, err := s.stepTaskDeliverable(t)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		if !deliverable {
+			continue
+		}
 		if !t.isReminder {
 			var prior bool
 			if err := s.db.QueryRow(`SELECT COALESCE(MAX(m.state<>'expired'),0),COUNT(d.message_id)>0
@@ -1303,6 +1342,10 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		if c.Revision != t.revision || (t.ref.AfterMerge && c.State != protocol.ChangeMerged) || (!t.ref.AfterMerge && c.State != protocol.ChangeOpen) {
 			continue
 		}
+		// A task whose pair partner was claimed or reported before the batch
+		// flushed is only the next step of a run. It is not ready on its own,
+		// so a reminder must not announce it as ready.
+		firstReady, _ := d.pipeline.Ready(t.ref, c, d.evidence)
 		if t.createdAt == 0 {
 			_ = s.db.QueryRow(`SELECT created_at FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
 				t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge)).Scan(&t.createdAt)
@@ -1334,11 +1377,19 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			run = append(run, ref)
 		}
 		displayOwner := taskDisplayOwner(t.owner)
-		readySinceStr := time.Unix(t.createdAt, 0).UTC().Format(time.RFC3339)
+		readyNote := stepReadyNote(time.Unix(t.createdAt, 0), run)
+		if !firstReady {
+			readyNote = stepThenNote(run)
+		}
 		if len(group) == 1 {
+			// A reminder for a step that still waits on another step has
+			// nothing to act on. Keep handing it out as a first notice only.
+			if t.isReminder && !firstReady {
+				continue
+			}
 			line := fmt.Sprintf("change: %s | step: %s | after_merge: %t | commit: %s | title: %s", c.ID, t.ref.String(), t.ref.AfterMerge, commit, protocol.NeutralizeMarkers(c.Title))
 			if t.isReminder {
-				line += fmt.Sprintf(" | ready since %s, not claimed", readySinceStr)
+				line += " | " + readyNote
 			}
 			stLine := s.changeStruggleLine(c, []protocol.StepRef{t.ref})
 			var body string
@@ -1366,7 +1417,7 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 				reminderNote := ""
 				if t.isReminder {
 					header = "[agent-net step task reminder]"
-					reminderNote = fmt.Sprintf("\nready since %s, not claimed", readySinceStr)
+					reminderNote = "\n" + readyNote
 				}
 				body = fmt.Sprintf("%s%s\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
 					header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String()+"\n"+s.stepContract(c.Project, t.ref.Step), protocol.NeutralizeMarkers(displayOwner),
@@ -1382,12 +1433,19 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContract(c.Project, t.ref.Step), isReminder: t.isReminder})
 			continue
 		}
-		isReminder := false
+		isReminder, allReminder := false, true
 		for _, gt := range group {
 			if gt.isReminder {
 				isReminder = true
-				break
+			} else {
+				allReminder = false
 			}
+		}
+		// A group of reminders that starts with a step still waiting on another
+		// step has nothing to act on. A first notice in the group keeps today's
+		// hand-out behaviour.
+		if allReminder && !firstReady {
+			continue
 		}
 		names := stepRunNames(run)
 		steps := strings.Join(names, ", ")
@@ -1425,13 +1483,13 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		order := strings.Join(names, ", then ")
 		line := fmt.Sprintf("change: %s | steps: %s | after_merge: %t | commit: %s | title: %s", c.ID, steps, t.ref.AfterMerge, commit, protocol.NeutralizeMarkers(c.Title))
 		if isReminder {
-			line += fmt.Sprintf(" | ready since %s, not claimed", readySinceStr)
+			line += " | " + readyNote
 		}
 		header := "[agent-net step tasks]"
 		reminderNote := ""
 		if isReminder {
 			header = "[agent-net step task reminder]"
-			reminderNote = fmt.Sprintf("\nready since %s, not claimed", readySinceStr)
+			reminderNote = "\n" + readyNote
 		}
 		body := fmt.Sprintf("%s%s\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nsteps: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields:\n%s\nClaim and report each step in order: %s.",
 			header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, steps+"\n"+s.stepContracts(c.Project, run), protocol.NeutralizeMarkers(displayOwner),

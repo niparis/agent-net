@@ -2459,7 +2459,10 @@ node task stays queued until a session claims or reports it. If an undelivered
 task notice expires, the gateway can issue a fresh notice to that session.
 When a ready step task stays unclaimed, the gateway re-sends a task reminder
 after `delivery.step_reminder` (default 2h, 0 turns it off), marked with
-`[agent-net step task reminder]` and the time it has been ready. At most one
+`[agent-net step task reminder]` and the time it has been ready. A claimed step
+gets no reminder. When one reminder names a run of steps, only the first step is
+ready; the rest are named as then steps. A reminder whose first step still waits
+on another step is not sent. At most one
 reminder is sent per interval, and reminders follow standard batching. Unclaimed
 verify steps after merge instead get reminders at 30 minutes, 2 hours, 8 hours
 and 24 hours from becoming ready, then once every 24 hours. Their last notice

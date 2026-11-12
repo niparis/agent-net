@@ -152,9 +152,10 @@ func TestVerifyReminderPulledForwardAdvancesCadence(t *testing.T) {
 	r := newDeliveryRig(t)
 	callerNeedsSharedPipeline(t, r)
 	c := mergedChange(t, r, "feature/verify-lookahead", true)
-	if _, err := r.s.db.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE step<>'verify'`); err != nil {
-		t.Fatal(err)
-	}
+	// Verify must be ready for its reminders to be due; release is its only
+	// prerequisite and the CI test on the merged commit has passed.
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: releaseRef,
+		Result: protocol.StepResultPass, Commit: commitMerged})
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	start := r.clk.t
