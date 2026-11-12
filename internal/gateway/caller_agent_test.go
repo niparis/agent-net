@@ -359,3 +359,43 @@ func TestCallerOnlyPipelineQueuesStepTasks(t *testing.T) {
 		r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commitMerged, Fields: fields})
 	}
 }
+
+// The project's merger is a session of the same agent as the caller. It owns
+// the merge step, so it is never handed the caller's steps and may not act on
+// them. With the caller offline the steps follow the wake and the lead.
+func TestMergerSessionOfCallerAgentNeverGetsCallerSteps(t *testing.T) {
+	r := newCallerAgentRig(t)
+	merger := r.second
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: merger}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	lead := r.leadOf()
+	if err := r.s.SetSessionOffline(r.a, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	id := r.submitAs(r.caller, "feature/merger-agent", commitA)
+	r.g.dispatchStepTasks(context.Background())
+	if n := r.stepMessageCount(merger); n != 0 {
+		t.Fatalf("the merger got %d caller step messages", n)
+	}
+	if _, err := r.accept(merger, id, commitA); err == nil || !strings.Contains(err.Error(), "owned by the caller") {
+		t.Fatalf("merger report on accept = %v, want owned by the caller", err)
+	}
+	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: merger, ChangeID: id, StepRef: stepAccept, Commit: commitA}); err == nil {
+		t.Fatal("the merger claimed the caller's accept")
+	}
+	// The task follows the wake of the offline caller, then the lead.
+	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.g.dispatchStepTasks(context.Background())
+	if got := r.waitWake(); got != r.caller {
+		t.Fatalf("woke %s, want the caller %s", got, r.caller)
+	}
+	r.clk.t = r.clk.t.Add(wakeTimeout + time.Minute)
+	r.g.dispatchStepTasks(context.Background())
+	if n := r.stepMessageCount(merger); n != 0 {
+		t.Fatalf("the merger got %d caller step messages after the offer", n)
+	}
+	if _, err := r.accept(lead, id, commitA); err != nil {
+		t.Fatalf("lead refused after the wake window: %v", err)
+	}
+}

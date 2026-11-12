@@ -2558,7 +2558,7 @@ This notice is sent only once per change, revision and step. For verify steps
 after merge, this remains true even after message history is pruned.
 
 A step the caller owns belongs to the caller's agent, not only to its session
-(decision 0147). Any live session of that agent may claim and report it, and the
+(decision 0148). Any live session of that agent may claim and report it, and the
 task goes to one live session of the agent. When no session of the agent is live
 and the step waited past `delivery.step_stuck`, the gateway sends the agent one
 message listing its waiting steps, which wakes its best offline session the way a

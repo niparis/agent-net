@@ -13,7 +13,7 @@ import (
 )
 
 // A step owned by the caller belongs to the caller's agent, not only to the
-// session that submitted the change (decision 0147). Any live session of that
+// session that submitted the change (decision 0148). Any live session of that
 // agent may claim and report it. When no session of the agent is live, the
 // steps that waited past delivery.step_stuck wake the agent; if that fails the
 // repo lead gets them.
@@ -29,7 +29,19 @@ CREATE TABLE IF NOT EXISTS caller_step_escalations (
  owner_key TEXT PRIMARY KEY, woken_at INTEGER NOT NULL, lead_offered INTEGER NOT NULL DEFAULT 0);
 `
 
-const (
+// ownsOtherStepSQL is true when session a owns a step of change c that is not
+// a caller step: it is the project's merger for the change's machine, or the
+// node that owns a node step of the change. Such a session does its own step.
+// It is never handed the caller's steps, and may not act on them, so one
+// session does not accept, test and merge the same change. It uses the same
+// identity checks as the step dispatch.
+func ownsOtherStepSQL(a string) string {
+	return `(EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=` + a + `.id)
+ OR EXISTS(SELECT 1 FROM delivery_step_tasks o WHERE o.change_id=c.id AND o.owner_node NOT LIKE '/%'
+ AND o.owner_node=COALESCE(` + a + `.repo_id,NULLIF(` + a + `.repo_project,''),(SELECT pr.project FROM profiles pr WHERE pr.session_id=` + a + `.id),'')))`
+}
+
+var (
 	// liveSessionSQL is a session that can act on delivery steps.
 	liveSessionSQL = `x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','bot','cto')`
 	// callerAgentSQL is the agent of the change's caller session, or ''.
@@ -37,27 +49,30 @@ const (
 	// callerOwnerKeySQL names who owns the caller's steps: the agent, or the
 	// session when it has no agent.
 	callerOwnerKeySQL = `COALESCE(NULLIF(` + callerAgentSQL + `,''),c.caller)`
+	// agentSessionSQL is a live session of the caller's agent that may act on
+	// the caller's steps: it owns no other step of the change.
+	agentSessionSQL = liveSessionSQL + ` AND ` + callerAgentSQL + `<>'' AND x.agent_id=` + callerAgentSQL + ` AND NOT ` + ownsOtherStepSQL("x")
 	// callerOwnerLiveSQL is true when a live session owns the caller's steps.
-	callerOwnerLiveSQL = `EXISTS(SELECT 1 FROM sessions x WHERE ` + liveSessionSQL + ` AND (x.id=c.caller OR (` + callerAgentSQL + `<>'' AND x.agent_id=` + callerAgentSQL + `)))`
+	callerOwnerLiveSQL = `EXISTS(SELECT 1 FROM sessions x WHERE (x.id=c.caller AND ` + liveSessionSQL + `) OR (` + agentSessionSQL + `))`
 	// liveCallerSessionSQL is the one live session of the owner that gets the
 	// work: the caller itself, else the agent's most recently seen session.
 	liveCallerSessionSQL = `COALESCE((SELECT x.id FROM sessions x WHERE x.id=c.caller AND ` + liveSessionSQL + `),
- (SELECT x.id FROM sessions x WHERE ` + callerAgentSQL + `<>'' AND x.agent_id=` + callerAgentSQL + ` AND ` + liveSessionSQL + ` ORDER BY x.last_seen DESC,x.id LIMIT 1))`
+ (SELECT x.id FROM sessions x WHERE ` + agentSessionSQL + ` ORDER BY x.last_seen DESC,x.id LIMIT 1))`
 	// repoLeadAgentSQL is the agent that leads the change's repo.
 	repoLeadAgentSQL = `(CASE WHEN EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=c.project) THEN (SELECT rl.agent_id FROM repo_leads rl WHERE rl.repo_id=c.project) ELSE (SELECT r.owner_agent_id FROM repos r WHERE r.id=c.project) END)`
 	// leadOfferedSQL is true when the owner's steps were offered to the lead.
 	leadOfferedSQL = `EXISTS(SELECT 1 FROM caller_step_escalations e WHERE e.lead_offered=1 AND e.owner_key=` + callerOwnerKeySQL + `)`
 	// leadSessionSQL is the one live lead session that gets offered steps. A
 	// pinned lead session is the only one.
-	leadSessionSQL = `(SELECT x.id FROM sessions x WHERE ` + leadOfferedSQL + ` AND x.agent_id=` + repoLeadAgentSQL + ` AND ` + liveSessionSQL + `
+	leadSessionSQL = `(SELECT x.id FROM sessions x WHERE ` + leadOfferedSQL + ` AND x.agent_id=` + repoLeadAgentSQL + ` AND ` + liveSessionSQL + ` AND NOT ` + ownsOtherStepSQL("x") + `
  AND COALESCE((SELECT rl.lead_session FROM repo_leads rl WHERE rl.repo_id=c.project),x.id)=x.id ORDER BY x.last_seen DESC,x.id LIMIT 1)`
 	// offeredCallerSessionSQL is the one session a ready caller step is sent to.
 	offeredCallerSessionSQL = `COALESCE(` + liveCallerSessionSQL + `,` + leadSessionSQL + `)`
 	// sessionActsForCallerSQL says that session s may claim and report the
 	// caller's steps of change c: the caller, any session of its agent, or the
 	// repo lead once the steps were offered to it.
-	sessionActsForCallerSQL = `(s.id=c.caller OR (` + callerAgentSQL + `<>'' AND s.agent_id=` + callerAgentSQL + `) OR
- (` + leadOfferedSQL + ` AND NOT ` + callerOwnerLiveSQL + ` AND s.agent_id=` + repoLeadAgentSQL + `
+	sessionActsForCallerSQL = `(s.id=c.caller OR (` + callerAgentSQL + `<>'' AND s.agent_id=` + callerAgentSQL + ` AND NOT ` + ownsOtherStepSQL("s") + `) OR
+ (` + leadOfferedSQL + ` AND NOT ` + callerOwnerLiveSQL + ` AND s.agent_id=` + repoLeadAgentSQL + ` AND NOT ` + ownsOtherStepSQL("s") + `
  AND COALESCE((SELECT rl.lead_session FROM repo_leads rl WHERE rl.repo_id=c.project),s.id)=s.id))`
 )
 
@@ -178,12 +193,12 @@ func (s *Store) dropCallerEscalations(keep []string) error {
 func (g *Gateway) wakeCallerAgent(ctx context.Context, key string, tasks []waitingCallerTask) {
 	now := g.store.now()
 	var target string
-	err := g.store.db.QueryRow(`SELECT s.id FROM sessions s
+	err := g.store.db.QueryRow(`SELECT s.id FROM sessions s JOIN delivery_changes c ON c.id=?
 		WHERE s.online=0 AND s.worker='' AND s.harness IN ('claude','codex','opencode') AND s.archived_at=0 AND s.replaced_by=''
 		AND NOT EXISTS(SELECT 1 FROM session_wake_failures f WHERE f.session_id=s.id)
-		AND (s.id=? OR s.agent_id=?)
+		AND (s.id=? OR (s.agent_id=? AND NOT `+ownsOtherStepSQL("s")+`))
 		ORDER BY CASE WHEN s.id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`,
-		tasks[0].caller, key, tasks[0].caller).Scan(&target)
+		tasks[0].changeID, tasks[0].caller, key, tasks[0].caller).Scan(&target)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		g.logLine("error", "where", "caller agent wake target", "err", err)
 		return
