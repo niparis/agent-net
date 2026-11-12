@@ -277,3 +277,57 @@ func TestCTOSessionControlActionsAreClassified(t *testing.T) {
 		}
 	}
 }
+
+// The owner stops, resumes and restarts the CTO through the same functions as
+// any session (session_stop, session_resume, restartSession; decision 0157).
+// The CTO keeps its session ID and its conversation.
+func TestOwnerStopsResumesAndRestartsTheCTO(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	sessions, _ := useFakeClaude(t)
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) {
+		c.ClaudeSessionsDir = sessions
+		c.HarnessPaths = map[string]string{"claude": os.Args[0]}
+	}})
+	cli := cliClient(t, n)
+	harness := "claude"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	cli.mustCall("cto_enter", nil)
+	id := n.d.ctoSessionID()
+	conversation := func() string {
+		n.d.cto.mu.Lock()
+		defer n.d.cto.mu.Unlock()
+		return n.d.claudeCTO.session
+	}
+	first := conversation()
+	if id == "" || first == "" || !n.d.ctoRunning() {
+		t.Fatalf("the CTO did not start: id=%q conversation=%q", id, first)
+	}
+
+	if _, err := cli.call("session_stop", protocol.SessionResumeRequest{SessionID: id}); err != nil {
+		t.Fatalf("session_stop on the CTO: %v", err)
+	}
+	if n.d.ctoRunning() {
+		t.Fatal("the CTO still runs after session_stop")
+	}
+	if _, err := cli.call("session_resume", protocol.SessionResumeRequest{SessionID: id}); err != nil {
+		t.Fatalf("session_resume on the CTO: %v", err)
+	}
+	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+	if !n.d.ctoRunning() || argValue(rec.Args, "--resume") != first {
+		t.Fatalf("resume: running=%v args=%q, want --resume %s", n.d.ctoRunning(), rec.Args, first)
+	}
+
+	n.d.cto.mu.Lock()
+	job := n.d.claudeCTO.ref
+	n.d.cto.mu.Unlock()
+	if _, err := n.d.restartSession(context.Background(), id, true); err != nil {
+		t.Fatalf("restart of the CTO: %v", err)
+	}
+	n.d.cto.mu.Lock()
+	newJob := n.d.claudeCTO.ref
+	n.d.cto.mu.Unlock()
+	if !n.d.ctoRunning() || newJob == "" || newJob == job || n.d.ctoSessionID() != id {
+		t.Fatalf("restart: running=%v job %s -> %s, id %s -> %s", n.d.ctoRunning(), job, newJob, id, n.d.ctoSessionID())
+	}
+}

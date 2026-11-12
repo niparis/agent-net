@@ -497,6 +497,9 @@ func (d *Daemon) sessionResumeLocal(ctx context.Context, sessionID string) (prot
 }
 
 func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, pane string) (protocol.StartedSession, error) {
+	if a.SessionID != "" && a.SessionID == d.ctoSessionID() {
+		return d.resumeCTOSession(ctx, a)
+	}
 	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex") {
 		return protocol.StartedSession{}, errors.New("Cannot resume this conversation here. Open it in the harness directly.")
 	}

@@ -145,7 +145,9 @@ which the receiving machine checks against the gateway. They refuse workers
 (which have `worker_change`), the CTO's own session, and Pi for resume and
 restart. A resume never opens a view and carries no herdr location. A CTO can
 therefore interrupt a running turn of any agent session, as the owner can; the
-conversation is kept, and the Inbox notice for a stop can resume it.
+conversation is kept, and the Inbox notice for a stop can resume it. The owner,
+not the CTO, can stop, resume and restart the CTO's own session through the same
+`session_stop` and `session_resume` methods, behind the same owner gate.
 
 **Connected apps.** The private CTO may list connected apps and public-access
 status, grant or remove a bot's shared MCP server access, rename an app, revoke

@@ -3433,6 +3433,8 @@ Messages sent to the old ID after the move go to the new session. This matters b
 
 All three refuse a worker (use `worker_change` with `stop`) and the CTO's own session. They are immediate changes with an Inbox notice and an audit line (`session_stop`, `session_resume` or `session_restart`). Only `stop` has an undo. `resume` and `restart` have none, because the session is already running again.
 
+**The CTO's own session, from the owner.** You stop, resume and restart the CTO with the same functions as any session ([decision 0157](decisions/0157-cto-full-power-and-own-folders.md)): `x` on its Sessions row (operator method `session_stop`), Enter or `session_resume` on it, and the restart path above. A stop ends its Claude job or private OpenCode server and keeps its session ID and conversation; the gateway shows it `dorm`. A resume starts it again on its conversation, or on a new one when Claude says the old one is gone, and opens no view. A restart waits until the CTO is reported dormant, then resumes it. A message to the CTO also starts it again, as before.
+
 ### CTO folder trust
 
 The owner can ask the CTO to trust a folder for Claude Code. The CTO calls `session_change` with action `trust` and one of `project` (a project registered on that machine) or `path` (an existing folder under the owner's home), plus `node_id` when the folder is on another machine. It writes `hasTrustDialogAccepted` for that folder in that machine's `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`), with the same helper the TUI's `needs_trust` answer uses. `session_change` with action `session_start` and `trust: true` trusts the folder and starts in one step; a path that does not exist yet is created and trusted by the start itself, as before.

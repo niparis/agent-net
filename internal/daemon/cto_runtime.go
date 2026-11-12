@@ -179,6 +179,12 @@ type ctoEnterCall struct {
 // Concurrent callers share the same startup result, including failures. Each
 // waiter can leave on its own deadline without starting another process.
 func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
+	return d.ctoEnterFor(ctx, "enter")
+}
+
+// ctoEnterFor starts the CTO if it is not running and returns its plan. The
+// trigger names what woke it in the log.
+func (d *Daemon) ctoEnterFor(ctx context.Context, trigger string) (protocol.EnterPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return protocol.EnterPlan{}, err
 	}
@@ -195,7 +201,7 @@ func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
 	call := &ctoEnterCall{done: make(chan struct{})}
 	d.ctoEntering = call
 	d.ctoEnterMu.Unlock()
-	call.plan, call.err = d.ctoEnterOnce(ctx)
+	call.plan, call.err = d.ctoEnterOnce(ctx, trigger)
 	d.ctoEnterMu.Lock()
 	d.ctoEntering = nil
 	close(call.done)
@@ -203,7 +209,7 @@ func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
 	return call.plan, call.err
 }
 
-func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
+func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (protocol.EnterPlan, error) {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return protocol.EnterPlan{}, err
 	}
@@ -217,7 +223,7 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 		return protocol.EnterPlan{}, err
 	}
 	if !d.ctoRunning() {
-		d.Logf("cto.wake trigger=enter harness=%s", h.name())
+		d.Logf("cto.wake trigger=%s harness=%s", trigger, h.name())
 	}
 	plan := protocol.EnterPlan{Note: "Press ctrl+] to come back here; the CTO keeps running."}
 	bin, err := d.harnessBinary(h.name())

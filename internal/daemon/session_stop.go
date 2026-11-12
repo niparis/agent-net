@@ -55,6 +55,9 @@ func (d *Daemon) relaySessionStop(ctx context.Context, nodeID, id string) (proto
 // path, so it refuses a session that is not here instead of relaying again.
 func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.SessionStopResult, error) {
 	no := func(err error) (protocol.SessionStopResult, error) { return protocol.SessionStopResult{}, err }
+	if id != "" && id == d.ctoSessionID() {
+		return d.stopCTOSession(ctx)
+	}
 	ls := d.sessionByID(id)
 	if ls == nil {
 		return no(errors.New("session is not known on this machine"))

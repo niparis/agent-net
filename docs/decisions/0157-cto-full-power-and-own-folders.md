@@ -77,6 +77,16 @@ reuses it. The owner's trust is still asked for the project folder, because the
 merger's folder holds the same code. An existing merger keeps its folder until it
 is replaced: start a new one, then `session_replace` old to new.
 
+### The owner stops, resumes and restarts the CTO like any session
+
+`session_stop`, `session_resume` and the restart path serve the CTO's session
+too: `x` on its Sessions row stops it, Enter or resume starts it again on its
+conversation, and a restart waits until the gateway reports it dormant. The
+branch for the CTO sits at the entry of each ordinary function
+(`sessionStopLocal`, `resumeAgent`, `waitSessionEnded`) and calls the CTO's own
+stop and start. The CTO still cannot stop or restart its own session from its
+tools.
+
 ## What this supersedes
 
 - Decision 0035 rule 5 ("No built-in tools") and the consequence that removed
@@ -84,12 +94,23 @@ is replaced: start a new one, then `session_replace` old to new.
 - In decision 0156: "The CTO's restrictions are the same, for both harnesses"
   and the gap "The CTO's own Enter plan".
 
-## Not done yet
+## Not done: folding the CTO's runtime record
 
-These part B items remain, in the order they should be done:
+The CTO's runtime record (`claudeCTO`, `cto.mu`, `monitorClaudeCTO`, and `d.cto`
+for OpenCode) stays separate from the ordinary session record, and
+`cto_runtime.go` stays. Folding them is not safe as a plain move, for three
+reasons:
 
-- The CTO's runtime record (`claudeCTO`, `cto.mu`, `monitorClaudeCTO`) is not
-  yet folded into the ordinary session record. `ctoEnter` still starts the CTO
-  before it builds the shared plan.
-- Stop, resume and restart of the CTO do not yet run through the ordinary
-  session functions.
+- The record is the root of the check that lets a process use the CTO's MCP
+  server (`isCTOPeer`): the CTO's process root and its start token. That server
+  now has the owner's powers. The ordinary record is filled from harness
+  discovery, which any owner process can feed.
+- Every ordinary record is registered at the gateway as an ordinary session.
+  The CTO's identity is the gateway's `cto` session. Folding it in would make a
+  second identity unless the gateway's registration learns the role.
+- Messages to the CTO go through `DeliverCTO`, which labels them as peer input.
+  Ordinary delivery does not.
+
+Doing it needs a role field on the ordinary record that only the role start
+path can set, a gateway registration for a role session, and the CTO's
+delivery moved with it. That is its own design step.
