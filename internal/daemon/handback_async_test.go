@@ -63,6 +63,13 @@ func (a *asyncCheck) handback(t *testing.T) *protocol.WorkerHandbackResult {
 
 func startAsyncCheck(t *testing.T) *asyncCheck {
 	t.Helper()
+	return startAsyncCheckWith(t, autoContinueOff())
+}
+
+// startAsyncCheckWith is startAsyncCheck with the worker's auto-continue
+// choice; nil keeps the project's setting.
+func startAsyncCheckWith(t *testing.T, autoContinue *bool) *asyncCheck {
+	t.Helper()
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, queueSet, withLoad(&fakeLoad{l: roomyLoad()}))
 	repo := newRepo(t, "shop")
@@ -79,7 +86,7 @@ func startAsyncCheck(t *testing.T) *asyncCheck {
 		return cmd == command
 	})
 	a.res = w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
-		Task: "FAKE:ignore", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
+		Task: "FAKE:ignore", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinue})
 	a.edit(t, "first.txt")
 	return a
 }

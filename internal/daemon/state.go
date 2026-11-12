@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS session_activity (harness TEXT NOT NULL, native_id TE
 CREATE TABLE IF NOT EXISTS cleanup_worktrees (
  worker_id TEXT PRIMARY KEY, project TEXT NOT NULL, path TEXT NOT NULL,
  branch TEXT NOT NULL, ended_at INTEGER NOT NULL, harness TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS worker_pending_handback (worker_id TEXT PRIMARY KEY, head TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL CHECK(json_valid(payload)), at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS worker_visual_reports (worker_id TEXT NOT NULL, generation INTEGER NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(worker_id,generation));
 CREATE TABLE IF NOT EXISTS workers (
 	id TEXT PRIMARY KEY, harness TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL,

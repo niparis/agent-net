@@ -1119,6 +1119,15 @@ type handbackTail struct {
 	files                           *OutgoingFiles
 	sessionID, committed, wipDetail string
 	complete                        bool
+
+	// persisted is true when the hand-back is saved in the state database
+	// (handback_replay.go): head and noticeKey name it, and check and the
+	// record fields carry what it already did.
+	persisted                 bool
+	head, noticeKey           string
+	check                     *protocol.HandbackCheck
+	recorded                  bool
+	changeID, deliveryProblem string
 }
 
 // handbackFlow records a hand-back and sends its notice. With early set, a
@@ -1228,7 +1237,10 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 		handedOver = started
 		return out, err
 	}
-	return d.finishHandback(ctx, w, t, plan, nil)
+	out, err := d.finishHandback(ctx, w, t, plan, nil)
+	// A saved hand-back keeps its snapshots for the next connect.
+	handedOver = errors.Is(err, errHandbackDeferred)
+	return out, err
 }
 
 // handbackCheckRun is one running check of a worker. A newer hand-back on a
@@ -1277,27 +1289,36 @@ func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackT
 	if !d.holdCheck() {
 		return stopping()
 	}
+	// Saved before the reply: the worker is told it can end, so from now on
+	// only this row carries the hand-back across a restart.
+	d.persistHandback(w, t, plan.head)
 	started := d.goBackground(func() {
 		defer d.checks.Done()
 		defer cancel()
-		defer t.files.Remove()
-		// The run stays registered until its notice is sent, so a repeated
-		// hand-back on this head never starts a second check.
-		defer func() {
-			d.wmu.Lock()
-			if w.checkRun == run {
-				w.checkRun, w.checking = nil, false
-			}
-			d.wmu.Unlock()
-		}()
 		// Only the check stops when a newer hand-back replaces this one; the
 		// change and the notice use a context that stays open.
-		if _, err := d.finishHandback(baseCtx, w, t, plan, run); err != nil && !errors.Is(err, errHandbackSuperseded) {
+		_, err := d.finishHandback(baseCtx, w, t, plan, run)
+		deferred := errors.Is(err, errHandbackDeferred)
+		if err != nil && !deferred && !errors.Is(err, errHandbackSuperseded) {
 			d.Logf("worker %s: hand-back after the reply: %v", w.id, err)
 		}
+		if !deferred {
+			t.files.Remove()
+		}
+		// The run stays registered until its notice is sent, so a repeated
+		// hand-back on this head never starts a second check. A saved
+		// hand-back still owns the worker's end: no nudge and no idle end.
+		d.wmu.Lock()
+		if w.checkRun == run {
+			w.checkRun, w.checking = nil, deferred
+		}
+		d.wmu.Unlock()
 	})
 	if !started {
 		d.checks.Done()
+		if t.persisted {
+			d.dropHandback(w.id, t.head)
+		}
 		return stopping()
 	}
 	return out, true, nil
@@ -1328,6 +1349,7 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail,
 				d.wmu.Lock()
 				w.checking = true
 				d.wmu.Unlock()
+				d.persistHandback(w, t, plan.head)
 			}
 			runCtx := context.WithoutCancel(ctx)
 			if run != nil {
@@ -1344,7 +1366,21 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail,
 				return nil, errHandbackSuperseded
 			}
 		}
-		changeID, deliveryProblem = d.recordHandbackChange(ctx, w, handbackCheck, req.VisualEvidence)
+		if t.persisted && d.checksStopped() {
+			// The gateway may be down too (on its own machine the installer
+			// restarts it first). The next daemon records and announces.
+			return nil, d.deferHandback(w, t, handbackCheck, "the daemon is stopping")
+		}
+		if t.recorded {
+			changeID, deliveryProblem = t.changeID, t.deliveryProblem
+		} else {
+			var offline bool
+			changeID, deliveryProblem, offline = d.submitHandbackChange(ctx, w, handbackCheck, req.VisualEvidence)
+			if offline && t.persisted {
+				return nil, d.deferHandback(w, t, handbackCheck, deliveryProblem)
+			}
+			t.recorded, t.changeID, t.deliveryProblem = true, changeID, deliveryProblem
+		}
 	}
 	st := d.workerStats(w)
 	d.wmu.Lock()
@@ -1386,7 +1422,7 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail,
 		}
 		n.Note = strings.TrimSpace(note + " " + misplaced)
 	}
-	noticeKey := ""
+	noticeKey := t.noticeKey
 	if w.harness == "agy" {
 		d.wmu.Lock()
 		c := w.agy
@@ -1409,7 +1445,17 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail,
 		d.wmu.Lock()
 		w.handingBack = false
 		d.wmu.Unlock()
+		// A notice with files needs the link; one without goes to the outbox.
+		if t.persisted && !d.Connected() {
+			return nil, d.deferHandback(w, t, handbackCheck, err.Error())
+		}
+		if t.persisted {
+			d.dropHandback(w.id, t.head)
+		}
 		return nil, err
+	}
+	if t.persisted {
+		d.dropHandback(w.id, t.head)
 	}
 	d.wmu.Lock()
 	var next *protocol.Message

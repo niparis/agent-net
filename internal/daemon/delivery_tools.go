@@ -691,6 +691,15 @@ func handbackDiffBase(ctx context.Context, dir, start, head string) string {
 // notice's "delivery record:" line. A gateway that does not know change.submit
 // gives neither.
 func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker, check *protocol.HandbackCheck, visual ...protocol.VisualEvidence) (changeID, problem string) {
+	changeID, problem, _ = d.submitHandbackChange(ctx, w, check, visual...)
+	return changeID, problem
+}
+
+// submitHandbackChange is recordHandbackChange that also says whether the
+// submit failed only because this daemon had no gateway link. A saved
+// hand-back then waits for the next connect instead of sending its notice
+// without the change.
+func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *protocol.HandbackCheck, visual ...protocol.VisualEvidence) (changeID, problem string, offline bool) {
 	d.wmu.Lock()
 	dir, branch, base, owner, sid := w.worktree, w.branch, w.base, w.owner, w.sessionID
 	harness, model, title, kept := w.harness, w.model, w.title, w.changeID
@@ -699,7 +708,7 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker, check *pro
 	struggle := w.runStruggle()
 	d.wmu.Unlock()
 	if dir == "" || branch == "" || owner == "" {
-		return "", ""
+		return "", "", false
 	}
 	timeout := deliveryRecordTimeout
 	if d.cfg.testDeliveryRecordTimeout > 0 {
@@ -709,9 +718,9 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker, check *pro
 	defer cancel()
 	// The work may be on a branch the worker moved to, not the start branch.
 	branch = handbackBranch(ctx, dir, branch, base)
-	fail := func(err error) (string, string) {
+	fail := func(err error) (string, string, bool) {
 		d.Logf("worker.delivery_record worker=%s session=%s branch=%s error=%q", w.id, sid, branch, err.Error())
-		return "", strings.Join(strings.Fields(err.Error()), " ")
+		return "", strings.Join(strings.Fields(err.Error()), " "), errors.Is(err, errNotConnected)
 	}
 	head, err := gitBranchHead(ctx, dir, branch)
 	if err != nil {
@@ -736,7 +745,7 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker, check *pro
 	// change to accept, and no step task goes to the caller.
 	if base != "" && head == base && !uncommitted {
 		d.Logf("worker.delivery_record worker=%s session=%s branch=%s skipped: no commits beyond the base %s", w.id, sid, branch, base)
-		return "", ""
+		return "", "", false
 	}
 	var risk int
 	if err := d.st.db.QueryRow(`SELECT risk FROM worker_delivery_risk WHERE worker_id=?`, w.id).Scan(&risk); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -800,21 +809,21 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker, check *pro
 		err = d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out)
 	}
 	if errors.Is(err, errNoDeliveryGateway) {
-		return "", pushProblem
+		return "", pushProblem, false
 	}
 	if err != nil {
-		_, problem := fail(err)
+		_, problem, offline := fail(err)
 		if pushProblem != "" {
 			problem = pushProblem + "; " + problem
 		}
-		return "", problem
+		return "", problem, offline
 	}
 	id := out.Change.Change.ID
 	d.wmu.Lock()
 	w.changeID = id
 	d.wmu.Unlock()
 	d.Logf("worker.delivery_record worker=%s session=%s change=%s revision=%d head=%s", w.id, sid, id, out.Change.Change.Revision, head)
-	return id, pushProblem
+	return id, pushProblem, false
 }
 
 // withHandbackCheckSignal appends the signal of a failed or timed-out
