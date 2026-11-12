@@ -150,8 +150,12 @@ func setupCall(ctx context.Context, cl *client.Client, method string, params any
 	return err == nil && json.Unmarshal(raw, out) == nil
 }
 
+// setupAgentsWait is how long setup waits for the first agent to show up in
+// the list. Tests shorten it.
+var setupAgentsWait = 3 * time.Second
+
 func waitSetupAgents(ctx context.Context, cl *client.Client) ([]protocol.AgentView, bool) {
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(setupAgentsWait)
 	for {
 		callCtx, cancel := context.WithTimeout(ctx, time.Second)
 		raw, err := cl.Call(callCtx, "list", map[string]bool{"online_only": true})
