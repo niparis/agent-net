@@ -1683,6 +1683,16 @@ List items carry a `file_count` per location and no file lists. `tools_item`
 carries each file list capped at 500 paths, with `files_more` and an item
 `note` for the rest. A list item that is still too large is trimmed and
 carries a `note`; it never fails the page.
+`tools_items` also takes `name`, a text that the item name must contain (any
+case), and `compact: true`. A compact page returns `rows` and `total` instead
+of items. Each row has `id`, `name`, `kind`, `machines` (how many machines
+hold a copy), `file_count` (the largest count among the copies), `trimmed`
+(true when the description was cut), `description` (one line, at most 80 bytes)
+and `state` when it is not `ok`. Pages hold 25 rows by default and 100 at most,
+set with `limit`. A page also stops before 16 KB of rows, so a long name can
+make it shorter than `limit`. `next_cursor` is the `cursor` for the next page.
+The CTO lists the inventory this way and reads one item in full with
+`tools_item` and its `id`. Without `compact` the answer is the full list, as before.
 The owner-only `tools_skill_details` reads the file manifest of one observed
 copy on one machine, so a comparison does not wait for a whole scan. The
 machine checks that the skill is still observed and that its hash has not

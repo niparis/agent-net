@@ -86,12 +86,40 @@ type InventoryPage struct {
 }
 
 // ToolsFilter selects observed locations. Offset pages the result by item.
+// Compact asks for one ToolRow per item instead of the full item, paged by
+// Cursor and Limit. Name keeps the items whose name contains it, in either form.
 type ToolsFilter struct {
 	Kind    string `json:"kind,omitempty"`
 	Harness string `json:"harness,omitempty"`
 	Project string `json:"project,omitempty"`
 	State   string `json:"state,omitempty"`
 	Offset  int    `json:"offset,omitempty"`
+	Name    string `json:"name,omitempty" jsonschema:"keep items whose name contains this text, ignoring case"`
+	Compact bool   `json:"compact,omitempty" jsonschema:"return one short row per item (ToolRowsPage) instead of full items; read one item in full with tools_item"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"compact only: rows per page, 25 by default, at most 100"`
+	Cursor  string `json:"cursor,omitempty" jsonschema:"compact only: next_cursor from the previous page; empty for the first page"`
+}
+
+// ToolRow is one item in the compact list. ID is what tools_item takes. The
+// description is one line, cut to 80 bytes; Trimmed says it was cut.
+// FileCount is the largest file count of the item's copies.
+type ToolRow struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	Machines    int    `json:"machines"`
+	FileCount   int    `json:"file_count"`
+	Trimmed     bool   `json:"trimmed,omitempty"`
+	State       string `json:"state,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// ToolRowsPage is one page of compact rows. Total counts every row that the
+// filters match, and NextCursor is empty on the last page.
+type ToolRowsPage struct {
+	Rows       []ToolRow `json:"rows"`
+	Total      int       `json:"total"`
+	NextCursor string    `json:"next_cursor,omitempty"`
 }
 type ToolLocation struct {
 	NodeID    string `json:"node_id"`
