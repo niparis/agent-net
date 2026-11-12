@@ -80,8 +80,13 @@ func TestMain(m *testing.M) {
 	// A shell that runs the tests can carry the launch settings of its own
 	// agent (a Claude Code session exports CLAUDE_CODE_DISABLE_MOUSE). Worker
 	// launches inherit this process's environment, so drop those values here
-	// once: a test sets what it needs with t.Setenv.
-	scrubLaunchEnv()
+	// once: a test sets what it needs with t.Setenv. The fake agy is this
+	// binary run as TestAgyProcess, so it gets here too. The daemon sets
+	// AGENT_NET_WORKER and AGENT_NET_SOCKET for that child on purpose, and the
+	// child reports them back, so it keeps its environment.
+	if os.Getenv("FAKE_AGY_PROCESS") != "1" {
+		scrubLaunchEnv()
+	}
 	// The race runtime has already initialized in this process. Child test
 	// binaries do not need its one-second exit delay.
 	os.Setenv("GORACE", "atexit_sleep_ms=0")
