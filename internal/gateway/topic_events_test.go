@@ -71,7 +71,7 @@ func TestUsageTopicAndQuotaVersion(t *testing.T) {
 }
 
 func TestTopicEventsFollowNodeConnections(t *testing.T) {
-	g, url, subscriberID, subscriberToken := newLinkGateway(t, time.Second)
+	g, url, subscriberID, subscriberToken := newQuietLinkGateway(t, time.Second)
 	targetID, targetToken, err := g.store.CreateNode("other-test-host", "linux")
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +219,7 @@ func TestTopicEventsFollowNodeConnections(t *testing.T) {
 }
 
 func TestTopicConnectionVersionMovesOnMachineRemoval(t *testing.T) {
-	g, url, ownerNode, _ := newLinkGateway(t, time.Second)
+	g, url, ownerNode, _ := newQuietLinkGateway(t, time.Second)
 	ownerID, err := g.store.UpsertSession(ownerNode, owner("test-host"))
 	if err != nil {
 		t.Fatal(err)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -31,8 +32,21 @@ func waitLink(t *testing.T, what string, condition func() bool) {
 
 func newLinkGateway(t *testing.T, grace time.Duration) (*Gateway, string, string, string) {
 	t.Helper()
+	return newLinkGatewayAt(t, grace, testLinkPing, testLinkTimeout)
+}
+
+// newQuietLinkGateway is newLinkGateway with the production keepalive timings.
+// A test that is not about the keepalive must not lose its link when a loaded
+// machine takes longer than the short test timeout to answer a ping.
+func newQuietLinkGateway(t *testing.T, grace time.Duration) (*Gateway, string, string, string) {
+	t.Helper()
+	return newLinkGatewayAt(t, grace, linkkeepalive.DefaultPingInterval, linkkeepalive.DefaultTimeout)
+}
+
+func newLinkGatewayAt(t *testing.T, grace, ping, timeout time.Duration) (*Gateway, string, string, string) {
+	t.Helper()
 	g, err := New(Options{DataDir: seededDataDir(t), OfflineGrace: grace,
-		KeepalivePingInterval: testLinkPing, KeepaliveTimeout: testLinkTimeout})
+		KeepalivePingInterval: ping, KeepaliveTimeout: timeout})
 	if err != nil {
 		t.Fatal(err)
 	}
