@@ -352,7 +352,7 @@ function piTextEntries(branch: any[]): TextEntry[] {
 
 function formatCatalogResult(name: string, result: any): string {
   if (name === "agent_learn") return result.accepted === false ? `Not recorded: ${result.reason}` : `Recorded finding ${result.id} (${result.status}). ${result.remaining} left today.`;
-  if (name === "agent_handback") return `Handed back (${result.status}${result.complete === false ? ", partial" : ""}). ${r.note ? r.note : "The caller has your report and the facts."} You can still receive follow-up messages.`;
+  if (name === "agent_handback") return `Handed back (${result.status}${result.complete === false ? ", partial" : ""}). ${result.note ? result.note : "The caller has your report and the facts."} You can still receive follow-up messages.`;
   return JSON.stringify(result ?? {}, null, 2);
 }
 
