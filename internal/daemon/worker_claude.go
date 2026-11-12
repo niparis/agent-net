@@ -63,6 +63,7 @@ type claudeSessionFile struct {
 	SessionID string `json:"sessionId"`
 	JobID     string `json:"jobId"`
 	Kind      string `json:"kind"`
+	Cwd       string `json:"cwd"`
 }
 
 func (claudeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
@@ -358,6 +359,26 @@ func claudeWorkerName(w *worker) string {
 var nameClean = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
 
 // findClaudeBg finds the live background session with this id.
+// claudeResumeSettled tells whether the session file of a resumed job names
+// the conversation the job runs. A cold `claude --bg --resume` first writes
+// its session file under a fresh conversation ID, and switches to the resumed
+// conversation once it has loaded the transcript. On 2026-11-12 a wake read
+// the file in that window and rebound the agent-net lead to the fresh ID, so
+// the resumed conversation registered as a second, new session. Claude names
+// a job after the first eight characters of its conversation ID, so a file
+// whose ID does not start with the job ID has not settled yet, unless that
+// conversation already has a transcript (a real copy of the conversation).
+func claudeResumeSettled(sf claudeSessionFile, job, resume, projectsDir string) bool {
+	if resume == "" || sf.SessionID == resume || strings.HasPrefix(sf.SessionID, job) {
+		return true
+	}
+	if sf.Cwd == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(projectsDir, claudeTranscriptDir(sf.Cwd), sf.SessionID+".jsonl"))
+	return err == nil
+}
+
 func findClaudeBg(dir, id string) (claudeSessionFile, bool) {
 	return findClaudeSessionFile(dir, func(sf claudeSessionFile) bool {
 		if sf.JobID != id && !(sf.JobID == "" && strings.HasPrefix(sf.SessionID, id)) {
@@ -876,10 +897,18 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, s
 	find := func() (claudeSessionFile, bool) {
 		return findClaudeBg(d.cfg.ClaudeSessionsDir, id)
 	}
+	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
+	unsettled := ""
 	for tick := 0; ; tick++ {
 		if f, ok := find(); ok {
-			sf = f
-			break
+			if claudeResumeSettled(f, id, resume, projectsDir) {
+				sf = f
+				break
+			}
+			if unsettled == "" {
+				d.Logf("claude start: the session file of job %s still shows conversation %s; waiting for %s", id, f.SessionID, resume)
+			}
+			unsettled = f.SessionID
 		}
 		// A job blocked on Claude Code's "new MCP server needs approval" prompt
 		// never writes a session file and nobody can answer the prompt. Say so
@@ -893,6 +922,9 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, s
 		case <-ctx.Done():
 			if blocked := d.claudeJobMCPBlock(id, path); blocked != nil {
 				return claudeSessionFile{}, blocked
+			}
+			if unsettled != "" {
+				return claudeSessionFile{}, fmt.Errorf("the Claude background session %s still shows conversation %s, not %s; retry the message or resume the conversation with `claude --resume %s`", id, unsettled, resume, resume)
 			}
 			if resume != "" {
 				return claudeSessionFile{}, fmt.Errorf("the Claude background session %s wrote no session file in time; retry the message or resume the conversation with `claude --resume %s`", id, resume)

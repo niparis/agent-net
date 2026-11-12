@@ -3671,9 +3671,20 @@ omits its kind, agent-net must have recorded the session as a background
 session. A live or running record, an unreadable listing, a worker and a folder
 that is gone are refused. When the record is missing, ambiguous or not retired
 (for example a record in another folder) and no matching record shows a live
-process, the wake uses the same resume path as `session_change` resume. An
+process, the wake uses the same resume path as `session_change` resume: it
+runs `claude --bg --resume <native ID>` in the session's folder, which may be a
+git worktree. The native ID is the conversation last bound to that agent-net
+session in the gateway, never another conversation of the same agent. The
+daemon then waits until the job's session file names the conversation the job
+runs. A cold resume first shows a fresh conversation ID there, and switches to
+the resumed one when the transcript is loaded. Only an ID that starts with the
+job ID, or that already has a transcript, counts as a copy, so the session keeps
+its ID and does not show up a second time under a new one. An
 interactive session without autonomy is not taken by that fallback, and an
-archived session is never resumed. The gateway makes at most one attempt per session per 10 minutes,
+archived session is never resumed. A machine runs one wake per session at a
+time: a second wake while the first one's session is still starting waits for
+that wake and starts nothing, and a wake of a session the machine already
+holds live starts nothing. The gateway makes at most one attempt per session per 10 minutes,
 including across gateway restarts, and logs a failure once. A failed attempt
 is kept: a restart does not retry it, only a new message asks again, and each
 sender with a queued message gets one agent-net notice that says why. Queued messages

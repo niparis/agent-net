@@ -19,7 +19,7 @@ import (
 // wake falls back to the owner resume path. The record, not gateway presence,
 // is authoritative about a stop or removal by the owner.
 func (d *Daemon) wakeRetiredClaude(ctx context.Context, id, token string) error {
-	return d.wakeClaude(ctx, id, token, false)
+	return d.wakeSession(ctx, id, token, false)
 }
 
 // claudeAgentRecord is one entry of `claude agents --json --all`.

@@ -50,12 +50,16 @@ const (
 	envFakeCodexExecHang = "FAKE_CODEX_EXEC_HANG"
 
 	// Variables that change what the fakes do.
-	envFakeClaudeSessions   = "FAKE_CLAUDE_SESSIONS"     // the folder of the session files
-	envFakeClaudeLog        = "FAKE_CLAUDE_LOG"          // one line per `claude stop`
-	envFakeClaudeSockets    = "FAKE_CLAUDE_SOCKETS"      // the folder of the inbox sockets
-	envFakeStopIgnored      = "FAKE_CLAUDE_STOP_IGNORED" // `claude stop` does nothing
-	envFakeIgnoreTerm       = "FAKE_IGNORE_TERM"
-	envFakeStartFails       = "FAKE_START_FAILS" // the fake exits at once
+	envFakeClaudeSessions = "FAKE_CLAUDE_SESSIONS"     // the folder of the session files
+	envFakeClaudeLog      = "FAKE_CLAUDE_LOG"          // one line per `claude stop`
+	envFakeClaudeSockets  = "FAKE_CLAUDE_SOCKETS"      // the folder of the inbox sockets
+	envFakeStopIgnored    = "FAKE_CLAUDE_STOP_IGNORED" // `claude stop` does nothing
+	envFakeIgnoreTerm     = "FAKE_IGNORE_TERM"
+	envFakeStartFails     = "FAKE_START_FAILS" // the fake exits at once
+	// envFakeResumeSettleGate makes a resume write its session file first
+	// under a fresh conversation ID, and switch to the resumed one only when
+	// this file exists.
+	envFakeResumeSettleGate = "FAKE_CLAUDE_RESUME_SETTLE_GATE"
 	envFakeCodexNoApprovals = "FAKE_CODEX_NOAPPROVAL"
 )
 
@@ -455,6 +459,20 @@ func fakeClaudeSession() {
 		os.Exit(1)
 	}
 	defer os.Remove(sock)
+	if gate := os.Getenv(envFakeResumeSettleGate); gate != "" && argValue(in.Args, "--resume") != "" {
+		// A cold `claude --bg --resume` names the job after the resumed
+		// conversation, but its first session file shows a fresh
+		// conversation ID until the transcript is loaded (Claude Code
+		// 2.1.322, seen on 2026-11-12 right after its daemon started).
+		id = session[:8]
+		writeFakeClaudeSessionFile(dir, map[string]any{"pid": os.Getpid(), "sessionId": randHex(4) + "-0000-4000-8000-" + randHex(6),
+			"jobId": id, "cwd": in.Cwd, "kind": "bg", "status": "idle", "messagingSocketPath": sock})
+		for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			if _, err := os.Stat(gate); err == nil {
+				break
+			}
+		}
+	}
 
 	rec := fakeClaudeRecord{Args: in.Args, Cwd: in.Cwd, CommandEnv: in.Env, Pid: os.Getpid(), ID: id, Session: session, Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
@@ -491,13 +509,10 @@ func fakeClaudeSession() {
 	if os.Getenv("FAKE_CLAUDE_NO_JOB_ID") != "" {
 		sf["jobId"] = ""
 	}
-	b, _ := json.Marshal(sf)
-	tmp := filepath.Join(dir, "."+strconv.Itoa(os.Getpid())+".tmp")
-	os.WriteFile(tmp, b, 0o600)
 	job := filepath.Join(filepath.Dir(dir), "jobs", id)
 	os.MkdirAll(job, 0700)
 	os.WriteFile(filepath.Join(job, "state.json"), []byte(`{"state":"working","detail":null}`), 0600)
-	os.Rename(tmp, filepath.Join(dir, strconv.Itoa(os.Getpid())+".json"))
+	writeFakeClaudeSessionFile(dir, sf)
 
 	var mu sync.Mutex
 	for {
@@ -516,6 +531,15 @@ func fakeClaudeSession() {
 			}
 		}()
 	}
+}
+
+// writeFakeClaudeSessionFile replaces the session file of this process in one
+// rename, so a reader never sees half a file.
+func writeFakeClaudeSessionFile(dir string, sf map[string]any) {
+	b, _ := json.Marshal(sf)
+	tmp := filepath.Join(dir, "."+strconv.Itoa(os.Getpid())+".tmp")
+	os.WriteFile(tmp, b, 0o600)
+	os.Rename(tmp, filepath.Join(dir, strconv.Itoa(os.Getpid())+".json"))
 }
 
 // fakeClaudeNoResponseLine is the placeholder entry Claude Code writes to the

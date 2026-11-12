@@ -544,6 +544,9 @@ type Daemon struct {
 	// from its owner cannot start two processes.
 	resumeMu      sync.Mutex
 	claudeStartMu sync.Mutex
+	// wakes holds the session wakes in flight, by session ID (wakeSession).
+	wakeMu sync.Mutex
+	wakes  map[string]*wakeCall
 	// mcpHello is when the MCP server of each Claude session first said hello.
 	// A Claude worker waits for it before it gets its task.
 	mcpHello map[string]time.Time
