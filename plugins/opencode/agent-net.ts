@@ -1035,7 +1035,7 @@ const TOOLS: ToolDef[] = [
     },
     required: ["report"],
     method: "worker_handback",
-    format: (r) => `Handed back (${r.status}${r.complete === false ? ", partial" : ""}). The caller has your report and the facts. You can still receive follow-up messages.`,
+    format: (r) => `Handed back (${r.status}${r.complete === false ? ", partial" : ""}). ${r.note ? r.note : "The caller has your report and the facts."} You can still receive follow-up messages.`,
   },
   {
     name: "agent_learn",

@@ -53,43 +53,63 @@ func (d *Daemon) handbackCheckSettings(repo string) (command string, timeout tim
 	return command, timeout
 }
 
-// runHandbackCheck runs the project's check for a complete hand-back, or
-// returns nil when there is nothing to check. The setting empty records
-// not_configured; a hand-back with no commit, or a worker without a worktree,
-// records nothing. It never returns an error: a check that cannot run is
-// reported as a failed or timed-out result, so the notice is always sent.
-func (d *Daemon) runHandbackCheck(ctx context.Context, w *worker) *protocol.HandbackCheck {
+// handbackCheckPlan is what a complete hand-back has to check: nothing, a
+// recorded result that needs no run (not configured), or a command to run on
+// one head commit.
+type handbackCheckPlan struct {
+	result  *protocol.HandbackCheck // set when there is nothing to run
+	dir     string
+	head    string
+	command string
+	timeout time.Duration
+	worker  string
+}
+
+// planHandbackCheck decides what the check for a complete hand-back is. The
+// setting empty records not_configured; a hand-back with no commit, or a worker
+// without a worktree, records nothing (a nil plan result and no command). It
+// never returns an error: a problem is logged and means no check.
+func (d *Daemon) planHandbackCheck(ctx context.Context, w *worker) handbackCheckPlan {
 	d.wmu.Lock()
 	dir, branch, base, project := w.worktree, w.branch, w.base, w.project
 	d.wmu.Unlock()
 	if dir == "" || branch == "" {
-		return nil
+		return handbackCheckPlan{}
 	}
 	checkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	head, err := gitBranchHead(checkCtx, dir, branch)
 	cancel()
 	if err != nil {
 		d.Logf("worker.handback_check worker=%s error=%q", w.id, err.Error())
-		return nil
+		return handbackCheckPlan{}
 	}
 	if base != "" && head == base {
-		return nil // nothing changed: there is no check to run
+		return handbackCheckPlan{} // nothing changed: there is no check to run
 	}
 	command, timeout := d.handbackCheckSettings(project)
 	if command == "" {
-		return &protocol.HandbackCheck{Status: protocol.HandbackCheckNotConfigured}
+		return handbackCheckPlan{result: &protocol.HandbackCheck{Status: protocol.HandbackCheckNotConfigured}}
 	}
-	// The timeout covers the queue as well as the command, so a busy machine
-	// can never hold the hand-back forever.
-	runCtx, cancelRun := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	return handbackCheckPlan{dir: dir, head: head, command: command, timeout: timeout, worker: w.id}
+}
+
+// runs is true when the plan has a command to run.
+func (p handbackCheckPlan) runs() bool { return p.command != "" }
+
+// run runs the command for the plan and returns its result. The timeout covers
+// the queue as well as the command, so a busy machine can never hold the
+// hand-back forever. It never returns an error: a check that cannot run is
+// reported as a failed or timed-out result, so the notice is always sent.
+func (d *Daemon) runHandbackCheckPlan(ctx context.Context, p handbackCheckPlan) *protocol.HandbackCheck {
+	runCtx, cancelRun := context.WithTimeout(ctx, p.timeout)
 	defer cancelRun()
 	parallel, slot, ok := d.acquireHandbackCheckSlot(runCtx)
 	if !ok {
-		return &protocol.HandbackCheck{Status: protocol.HandbackCheckTimedOut, DurationMS: timeout.Milliseconds(),
+		return &protocol.HandbackCheck{Status: protocol.HandbackCheckTimedOut, DurationMS: p.timeout.Milliseconds(),
 			OutputTail: "timed out waiting for the machine's test slot"}
 	}
 	defer d.releaseTestSlot(slot)
-	return d.runCheckCommand(runCtx, dir, command, parallel, w.id)
+	return d.runCheckCommand(runCtx, p.dir, p.command, parallel, p.worker)
 }
 
 // acquireHandbackCheckSlot waits in the machine's test queue for an in-process

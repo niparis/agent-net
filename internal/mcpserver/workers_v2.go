@@ -192,7 +192,13 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			return nil, err
 		}
 		delivered := m["sent"] != nil && !boolValue(m["queued"])
-		return map[string]any{"delivered": delivered, "status": m["status"], "complete": m["complete"]}, nil
+		result := map[string]any{"delivered": delivered, "status": m["status"], "complete": m["complete"]}
+		// The daemon may answer before the project's check ends; its note says
+		// the notice follows, so the worker does not hand back again.
+		if note, ok := m["note"].(string); ok && note != "" {
+			result["note"] = note
+		}
+		return result, nil
 	case "agent_announce":
 		m, err := announceCall(ctx, run, announceIn{Task: str("task"), Project: str("project"), Expertise: str("expertise"), Capabilities: stringSlice(a["capabilities"]), Waiting: str("waiting")})
 		if err != nil {

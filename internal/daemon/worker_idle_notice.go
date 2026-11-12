@@ -86,7 +86,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 			d.Logf("worker %s: reset idle notice: %v", w.id, err)
 		}
 	}
-	eligible := idle && !w.stopping && w.doneStatus == "" && w.taskMsg != "" &&
+	eligible := idle && !w.stopping && !w.checking && w.doneStatus == "" && w.taskMsg != "" &&
 		((harness == "opencode" && !w.turnActive && !w.turnAwaitingStart && len(w.turnQueue) == 0) ||
 			harness == "claude" ||
 			((harness == "codex" || harness == "agy") && w.idleNoticeReport != ""))
@@ -127,7 +127,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 			report = "(No assistant message was available.)"
 		}
 		d.wmu.Lock()
-		valid := d.workers[w.id] == w && !w.stopping && w.doneStatus == "" && w.idleNoticeGeneration == generation && w.idleNoticePending
+		valid := d.workers[w.id] == w && !w.stopping && !w.checking && w.doneStatus == "" && w.idleNoticeGeneration == generation && w.idleNoticePending
 		d.wmu.Unlock()
 		if !valid {
 			return
@@ -139,7 +139,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 		}
 		n := d.notice(w, "idle without hand-back", "This is the worker's last assistant message, not a hand-back. The worker is still running.", stats)
 		d.wmu.Lock()
-		valid = d.workers[w.id] == w && !w.stopping && w.doneStatus == "" && w.idleNoticeGeneration == generation && w.idleNoticePending
+		valid = d.workers[w.id] == w && !w.stopping && !w.checking && w.doneStatus == "" && w.idleNoticeGeneration == generation && w.idleNoticePending
 		d.wmu.Unlock()
 		if !valid {
 			return

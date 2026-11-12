@@ -578,6 +578,11 @@ type WorkerHandbackResult struct {
 	// AutoContinued is true when the daemon kept the worker running with its
 	// own continue instead of telling the caller.
 	AutoContinued bool `json:"auto_continued,omitempty"`
+	// Checking is true when the reply came before the project's hand-back
+	// check ended. The check runs on, and its result comes with the notice.
+	Checking bool `json:"checking,omitempty"`
+	// Note is one line for the worker, for example that the check runs now.
+	Note string `json:"note,omitempty"`
 }
 
 // RecentWorkerWindow is how long a worker that ended stays visible: the

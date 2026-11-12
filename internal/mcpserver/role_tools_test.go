@@ -126,6 +126,24 @@ func TestWorkerHandbackTool(t *testing.T) {
 	}
 }
 
+// A hand-back answered before its check ends carries the daemon's note, so the
+// worker knows the notice follows and does not hand back again.
+func TestWorkerHandbackToolKeepsCheckNote(t *testing.T) {
+	t.Setenv("AGENT_NET_WORKER", "1")
+	cs := connectServer(t, func(context.Context, string, any) (json.RawMessage, error) {
+		return json.RawMessage(`{"status":"done","complete":true,"checking":true,"note":"already handed back; check running"}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_handback",
+		Arguments: map[string]any{"report": "done", "status": "done", "complete": true}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_handback: %v %+v", err, res)
+	}
+	out, ok := res.StructuredContent.(map[string]any)
+	if !ok || out["note"] != "already handed back; check running" || out["delivered"] != false {
+		t.Fatalf("structured result: %#v", res.StructuredContent)
+	}
+}
+
 func TestCatalogOutputValidationRefusesBadResult(t *testing.T) {
 	t.Setenv("AGENT_NET_WORKER", "")
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {

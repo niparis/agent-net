@@ -1091,7 +1091,9 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 		}
 		return out, err
 	}
-	return d.handbackTo(ctx, w, req, "", "")
+	// The tool call returns as soon as the hand-back is recorded. A slow
+	// check runs after the reply and its result comes with the notice.
+	return d.handbackFlow(ctx, w, req, "", "", "", true, nil, true)
 }
 
 // handbackTo is handback to another session than the owner (see sendNoticeTo).
@@ -1106,6 +1108,25 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 // An Antigravity handback carries its already checked snapshot until its
 // result event. A recovered stream without one prepares it again.
 func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string, end bool, files *OutgoingFiles) (*protocol.WorkerHandbackResult, error) {
+	return d.handbackFlow(ctx, w, req, to, replyTo, sandboxNote, end, files, false)
+}
+
+// handbackTail is what a hand-back carries from its record step to its notice.
+type handbackTail struct {
+	req                             protocol.WorkerHandbackRequest
+	to, replyTo, sandboxNote        string
+	end                             bool
+	files                           *OutgoingFiles
+	sessionID, committed, wipDetail string
+	complete                        bool
+}
+
+// handbackFlow records a hand-back and sends its notice. With early set, a
+// complete hand-back whose check has a command to run returns right after the
+// record step: the check, the change and the notice follow in the background.
+// Without it the call returns after the notice (workers that nobody waits on,
+// such as Codex and Antigravity runs, use that).
+func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string, end bool, files *OutgoingFiles, early bool) (*protocol.WorkerHandbackResult, error) {
 	d.wmu.Lock()
 	sessionID, stopping := w.sessionID, w.stopping
 	d.wmu.Unlock()
@@ -1121,13 +1142,19 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	if strings.TrimSpace(req.Report) == "" {
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
+	handedOver := false
 	if files == nil {
 		var err error
 		files, err = d.prepareHandbackFiles(w, handbackPaths(req))
 		if err != nil {
 			return nil, err
 		}
-		defer files.Remove()
+		// The background finish takes over the snapshots and removes them.
+		defer func() {
+			if !handedOver {
+				files.Remove()
+			}
+		}()
 	}
 	// A report that ends with "complete: no" is partial, whatever the harness
 	// and even when the hand-back has no complete field (Codex reports are
@@ -1190,18 +1217,108 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	// pipeline build step 1). A partial one records nothing. The project's
 	// pre-hand-back check runs after the commit and before the change is
 	// recorded, so the change carries its result (owner decision 2026-11-12).
+	t := &handbackTail{req: req, to: to, replyTo: replyTo, sandboxNote: sandboxNote, end: end, files: files,
+		sessionID: sessionID, committed: committed, wipDetail: wipDetail, complete: complete}
+	plan := handbackCheckPlan{}
+	if complete {
+		plan = d.planHandbackCheck(ctx, w)
+	}
+	if early && plan.runs() {
+		out, started := d.startHandbackCheck(ctx, w, t, plan)
+		handedOver = started
+		return out, nil
+	}
+	return d.finishHandback(ctx, w, t, plan, nil)
+}
+
+// handbackCheckRun is one running check of a worker. A newer hand-back on a
+// new head cancels it and takes its place.
+type handbackCheckRun struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	head   string
+}
+
+// startHandbackCheck starts the check, the change and the notice in the
+// background and answers the worker at once. A check that already runs on the
+// same head is not started again; a new head cancels the old check first. The
+// second result says whether the background run took over the snapshot files.
+func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackTail, plan handbackCheckPlan) (*protocol.WorkerHandbackResult, bool) {
+	out := &protocol.WorkerHandbackResult{Status: t.req.Status, Complete: true, Checking: true,
+		Note: "handed back; the check runs now and its result comes in the notice to the caller; you can end"}
+	d.wmu.Lock()
+	if old := w.checkRun; old != nil {
+		if old.head == plan.head {
+			d.wmu.Unlock()
+			d.Logf("worker.handback worker=%s head=%s already_checking=1", w.id, plan.head)
+			out.Note = "already handed back; check running"
+			return out, false
+		}
+		old.cancel()
+	}
+	// The run lasts until its notice is sent, not until the request ends.
+	baseCtx := context.WithoutCancel(ctx)
+	runCtx, cancel := context.WithCancel(baseCtx)
+	run := &handbackCheckRun{ctx: runCtx, cancel: cancel, head: plan.head}
+	w.checkRun = run
+	// Mark the check: the tick must not end the worker by age or idleness
+	// while the project's command runs.
+	w.checking = true
+	d.wmu.Unlock()
+	d.goBackground(func() {
+		defer cancel()
+		defer t.files.Remove()
+		// The run stays registered until its notice is sent, so a repeated
+		// hand-back on this head never starts a second check.
+		defer func() {
+			d.wmu.Lock()
+			if w.checkRun == run {
+				w.checkRun, w.checking = nil, false
+			}
+			d.wmu.Unlock()
+		}()
+		// Only the check stops when a newer hand-back replaces this one; the
+		// change and the notice use a context that stays open.
+		if _, err := d.finishHandback(baseCtx, w, t, plan, run); err != nil && !errors.Is(err, errHandbackSuperseded) {
+			d.Logf("worker %s: hand-back after the reply: %v", w.id, err)
+		}
+	})
+	return out, true
+}
+
+// errHandbackSuperseded ends a background hand-back whose check a newer
+// hand-back cancelled. The newer one sends the notice.
+var errHandbackSuperseded = errors.New("a newer hand-back replaced this check")
+
+// finishHandback runs the check, records the change and sends the notice. run
+// is nil when the caller waits for it.
+func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail, plan handbackCheckPlan, run *handbackCheckRun) (*protocol.WorkerHandbackResult, error) {
+	req, to, replyTo, sandboxNote, end, files := t.req, t.to, t.replyTo, t.sandboxNote, t.end, t.files
+	sessionID, committed, wipDetail := t.sessionID, t.committed, t.wipDetail
 	changeID, deliveryProblem := "", ""
-	var handbackCheck *protocol.HandbackCheck
-	if req.Status == protocol.StatusDone && req.IsComplete() {
-		// Mark the check: the tick must not end the worker by age or
-		// idleness while the project's command runs.
-		d.wmu.Lock()
-		w.checking = true
-		d.wmu.Unlock()
-		handbackCheck = d.runHandbackCheck(ctx, w)
-		d.wmu.Lock()
-		w.checking = false
-		d.wmu.Unlock()
+	handbackCheck := plan.result
+	if t.complete {
+		if plan.runs() {
+			if run == nil {
+				d.wmu.Lock()
+				w.checking = true
+				d.wmu.Unlock()
+			}
+			runCtx := context.WithoutCancel(ctx)
+			if run != nil {
+				runCtx = run.ctx
+			}
+			handbackCheck = d.runHandbackCheckPlan(runCtx, plan)
+			d.wmu.Lock()
+			superseded := run != nil && w.checkRun != run
+			if !superseded && run == nil {
+				w.checking = false
+			}
+			d.wmu.Unlock()
+			if superseded {
+				return nil, errHandbackSuperseded
+			}
+		}
 		changeID, deliveryProblem = d.recordHandbackChange(ctx, w, handbackCheck, req.VisualEvidence)
 	}
 	st := d.workerStats(w)
