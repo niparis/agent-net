@@ -733,7 +733,7 @@ settings:
     kind: advice
     type: text
     levels: [network, repo]
-    default: "Do the whole task. Do not gold-plate it, and do not stop halfway."
+    default: "Do the whole task. Do not gold-plate it, and do not stop halfway. If your change alters anything a user sees, prove it with a scenario: named steps (open, type, scroll, resize), each with the action and a frame of what the user sees. For a terminal UI, frames are text captured at a fixed size (for example 120x34), not images. For a graphical app, screenshots at stated sizes. Each proof gives a build line (the commit shown) and the errors seen. Use and improve the project's existing verification scripts; commit the scenario script so a reviewer can rerun it. Wait on the screen's state, never a fixed pause. Keep steps independent. Fix size, fonts, locale and sample data. If you cannot produce proof, say why."
     live: true
   - key: workers.brief_no_delegation
     rows: [67]
