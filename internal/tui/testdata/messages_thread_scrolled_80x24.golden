@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
+[ Agents ]    Workers      System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
+│ ▸ ✓ tenebrae-53 ↔ strategies · stored conversation 00           now · 3 msgs │
+│   ✓ peer01 ↔ strategies · stored conversation 01                 1m · 3 msgs │
+│   ✓ peer02 ↔ strategies · stored conversation 02                 2m · 3 msgs │
+│   ✓ peer03 ↔ strategies · stored conversation 03                 3m · 3 msgs │
+│   ✓ peer04 ↔ strategies · stored conversation 04                 4m · 3 msgs │
+│ 60 threads · 0 system events                                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ thread message 67                                                            │
+│   14:04 tenebrae-53                                                          │
+│ thread message 68                                                            │
+│   14:04 strategies                                                           │
+│ thread message 69                                                            │
+│   14:04 tenebrae-53                                                          │
+│ thread message 70                                                            │
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit

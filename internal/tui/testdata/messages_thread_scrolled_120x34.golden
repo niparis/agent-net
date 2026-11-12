@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 6 sessions, 5 online · 1 busy      updated 14:05:00
+[ Agents ]    Workers      System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
+│ ▸ ✓ tenebrae-53 ↔ strategies · store… now · 3 msgs ││ thread message 35                                              │
+│   ✓ peer01 ↔ strategies · stored … 1m ago · 3 msgs ││   14:04 tenebrae-53                                            │
+│   ✓ peer02 ↔ strategies · stored … 2m ago · 3 msgs ││ thread message 36                                              │
+│   ✓ peer03 ↔ strategies · stored … 3m ago · 3 msgs ││   14:04 strategies                                             │
+│   ✓ peer04 ↔ strategies · stored … 4m ago · 3 msgs ││ thread message 37                                              │
+│   ✓ peer05 ↔ strategies · stored … 5m ago · 3 msgs ││   14:04 tenebrae-53                                            │
+│   ✓ peer06 ↔ strategies · stored … 6m ago · 3 msgs ││ thread message 38                                              │
+│   ✓ peer07 ↔ strategies · stored … 7m ago · 3 msgs ││   14:04 strategies                                             │
+│   ✓ peer08 ↔ strategies · stored … 8m ago · 3 msgs ││ thread message 39                                              │
+│   ✓ peer09 ↔ strategies · stored … 9m ago · 3 msgs ││   14:04 tenebrae-53                                            │
+│   ✓ peer10 ↔ strategies · stored… 10m ago · 3 msgs ││ thread message 40                                              │
+│   ✓ peer11 ↔ strategies · stored… 11m ago · 3 msgs ││   14:04 strategies                                             │
+│   ✓ peer12 ↔ strategies · stored… 12m ago · 3 msgs ││ thread message 41                                              │
+│   ✓ peer13 ↔ strategies · stored… 13m ago · 3 msgs ││   14:04 tenebrae-53                                            │
+│   ✓ peer14 ↔ strategies · stored… 14m ago · 3 msgs ││ thread message 42                                              │
+│   ✓ peer15 ↔ strategies · stored… 15m ago · 3 msgs ││   14:04 strategies                                             │
+│   ✓ peer16 ↔ strategies · stored… 16m ago · 3 msgs ││ thread message 43                                              │
+│   ✓ peer17 ↔ strategies · stored… 17m ago · 3 msgs ││   14:04 tenebrae-53                                            │
+│   ✓ peer18 ↔ strategies · stored… 18m ago · 3 msgs ││ thread message 44                                              │
+│   ✓ peer19 ↔ strategies · stored… 19m ago · 3 msgs ││   14:04 strategies                                             │
+│   ✓ peer20 ↔ strategies · stored… 20m ago · 3 msgs ││ thread message 45                                              │
+│   ✓ peer21 ↔ strategies · stored… 21m ago · 3 msgs ││   14:04 tenebrae-53                                            │
+│ 60 threads · 0 system events                       ││ thread message 46                                              │
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit

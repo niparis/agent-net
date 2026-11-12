@@ -10,13 +10,13 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 │ 2 threads · 0 system events                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
-│ tenebrae-53 ↔ ended session · Polish the sessions panel and make the long    │
-│ list readable                                                                │
-│   13:55 tenebrae-53                                                          │
-│ [agent-net worker brief] Another agent started you through agent-net to do   │
-│ the one task below. That agent will check your work and relay the result to  │
-│ its user. Nobody watches this session.                                       │
-│ - Do the whole task. Do not gold-plate it, and do not stop halfway.          │
+│                                                                              │
+│ Task:                                                                        │
+│ Polish the sessions panel and make the long list readable                    │
+│   14:00 ended worker                                                         │
+│ ✗ started                                                                    │
+│   14:03 ended worker                                                         │
+│ ✓ done · 12m                                                                 │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

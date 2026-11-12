@@ -135,6 +135,9 @@ Legend ────────────────────────�
   left/right             select the previous or next message
   pgup/pgdn              page
   home/g, end            first thread, latest message
+  ctrl+u                 scroll the open conversation up; the mouse wheel over
+                         it works too
+  ctrl+d                 scroll the open conversation down
   enter                  open the selected message body
   f                      report a defect found later on the selected worker
                          conversation
