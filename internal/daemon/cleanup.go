@@ -752,13 +752,19 @@ func cleanupCherryMerged(ctx context.Context, dir, head, ref string) bool {
 // has that shape, including a squash commit made by a pull request. Only the
 // commits since the merge base, up to cleanupSquashCommits, are checked.
 func cleanupSquashMerged(ctx context.Context, dir, head, ref string) bool {
+	return cleanupSquashCommit(ctx, dir, head, ref) != ""
+}
+
+// cleanupSquashCommit returns the commit on ref that squash-merged head, or ""
+// when there is none. See cleanupSquashMerged.
+func cleanupSquashCommit(ctx context.Context, dir, head, ref string) string {
 	base, err := gitOut(ctx, dir, "merge-base", head, ref)
 	if err != nil || base == "" {
-		return false
+		return ""
 	}
 	commits, err := gitOut(ctx, dir, "rev-list", "--parents", fmt.Sprintf("--max-count=%d", cleanupSquashCommits), ref, "--not", base)
 	if err != nil {
-		return false
+		return ""
 	}
 	for _, line := range strings.Split(commits, "\n") {
 		parts := strings.Fields(line)
@@ -772,10 +778,10 @@ func cleanupSquashMerged(ctx context.Context, dir, head, ref string) bool {
 		}
 		actual, err := gitOut(ctx, dir, "rev-parse", parts[0]+"^{tree}")
 		if err == nil && tree != "" && tree == actual {
-			return true
+			return parts[0]
 		}
 	}
-	return false
+	return ""
 }
 
 // cleanupContainedMaxRefs bounds how many branches that contain a closed

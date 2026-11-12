@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -401,5 +402,136 @@ func TestDeliveryReconcileExternalPRWithoutChecksLeavesTestOpen(t *testing.T) {
 		if e.StepRef == (protocol.StepRef{Step: protocol.StepTest}) {
 			t.Fatalf("test evidence without passing checks: %+v", e)
 		}
+	}
+}
+
+func noWorkReconcile(c protocol.Change) protocol.ChangeReconcileRequest {
+	return protocol.ChangeReconcileRequest{ChangeID: c.ID, Revision: c.Revision, HeadCommit: c.HeadCommit, Kind: protocol.ReconcileNoWork}
+}
+
+func noWorkNotices(t *testing.T, r *deliveryRig, session string) []string {
+	t.Helper()
+	rows, err := r.s.db.Query(`SELECT body FROM messages WHERE recipient=? AND body LIKE '%no work recorded%'`, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var bodies []string
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, body)
+	}
+	return bodies
+}
+
+// A change whose head equals its base is not merged and not closed. Its
+// caller hears once per revision that no work was recorded, however often the
+// daemon repeats the observation.
+func TestDeliveryReconcileNoWorkTellsCallerOnce(t *testing.T) {
+	r := newDeliveryRig(t)
+	q := r.workerSubmit("feat/empty", commitA)
+	q.BaseCommit = commitA
+	c := r.submit(r.a, q).Change.Change
+	for i := 0; i < 3; i++ {
+		if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, noWorkReconcile(c)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	notices := noWorkNotices(t, r, c.Caller)
+	if len(notices) != 1 || !strings.Contains(notices[0], c.ID) || !strings.Contains(notices[0], "Close it") || !strings.Contains(notices[0], "resubmit it") {
+		t.Fatalf("caller notices: %q", notices)
+	}
+	v := r.get(c.ID)
+	if v.Change.State != protocol.ChangeOpen || len(v.Evidence) != 0 || v.Change.MergedCommit != "" {
+		t.Fatalf("no-work change was changed: %+v", v)
+	}
+}
+
+// The notice is only for a change that records no commits beyond its base.
+func TestDeliveryReconcileNoWorkNeedsHeadEqualBase(t *testing.T) {
+	r := newDeliveryRig(t)
+	c := r.submit(r.a, r.workerSubmit("feat/real", commitA)).Change.Change
+	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, noWorkReconcile(c)); err == nil {
+		t.Fatal("no_work accepted for a change with commits beyond its base")
+	}
+	if notices := noWorkNotices(t, r, c.Caller); len(notices) != 0 {
+		t.Fatalf("caller told about a change with work: %q", notices)
+	}
+}
+
+// The merge record names the proof and the steps agent-net did not run, so
+// agent_changes_find shows that no accept or review was faked.
+func TestDeliveryReconcileExternalProofIsRecorded(t *testing.T) {
+	for _, proof := range []string{protocol.MergeProofAncestor, protocol.MergeProofCherry, protocol.MergeProofSquash} {
+		t.Run(proof, func(t *testing.T) {
+			r := newDeliveryRig(t)
+			c := r.submit(r.a, r.workerSubmit("feat/"+proof, commitA)).Change.Change
+			q := externalReconcile(c)
+			q.Proof = proof
+			if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, q); err != nil {
+				t.Fatal(err)
+			}
+			v := r.get(c.ID)
+			e := latestMergeEvidence(t, r, c.ID)
+			if !strings.HasPrefix(e.Note, "merged outside agent-net: ") || e.Fields["merge_proof"] != proof || e.Fields["skipped_steps"] != "accept,test" {
+				t.Fatalf("merge evidence does not name the proof: %+v", e)
+			}
+			for _, ref := range []protocol.StepRef{{Step: protocol.StepAccept}, {Step: protocol.StepTest}} {
+				if st := stepStatus(t, v, ref); st.State == protocol.StepStatePassed || st.Evidence != nil {
+					t.Fatalf("%s was recorded as run: %+v", ref, st)
+				}
+			}
+		})
+	}
+}
+
+func TestDeliveryReconcileUnknownProofRejected(t *testing.T) {
+	r := newDeliveryRig(t)
+	c := r.submit(r.a, r.workerSubmit("feat/odd", commitA)).Change.Change
+	q := externalReconcile(c)
+	q.Proof = "trust me"
+	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, q); err == nil {
+		t.Fatal("unknown proof accepted")
+	}
+}
+
+func TestDeliveryReconcileExternalPRMergeNoteNamesPR(t *testing.T) {
+	r := newDeliveryRig(t)
+	c := r.submit(r.a, r.workerSubmit("feature/prnote", commitA)).Change.Change
+	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, externalPRReconcile(c, true)); err != nil {
+		t.Fatal(err)
+	}
+	e := latestMergeEvidence(t, r, c.ID)
+	if e.Note != "merged outside agent-net: PR #101 (https://github.com/example/demo/pull/101)" || e.Fields["merge_proof"] != "pr" {
+		t.Fatalf("merge note: %+v", e)
+	}
+}
+
+// The caller owns the change's steps, so it hears once that the change was
+// recorded as merged outside agent-net.
+func TestDeliveryReconcileExternalMergeTellsCaller(t *testing.T) {
+	r := newDeliveryRig(t)
+	c := r.submit(r.a, r.workerSubmit("feature/told", commitA)).Change.Change
+	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, externalPRReconcile(c, true)); err != nil {
+		t.Fatal(err)
+	}
+	var bodies []string
+	rows, err := r.s.db.Query(`SELECT body FROM messages WHERE recipient=? AND body LIKE '%merged outside agent-net%' AND sender='agent-net'`, c.Caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var b string
+		if err := rows.Scan(&b); err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, b)
+	}
+	if len(bodies) != 1 || !strings.Contains(bodies[0], c.ID) || !strings.Contains(bodies[0], "PR #101") || !strings.Contains(bodies[0], "I recorded it") {
+		t.Fatalf("caller notices: %q", bodies)
 	}
 }

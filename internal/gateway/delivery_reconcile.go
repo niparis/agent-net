@@ -23,11 +23,18 @@ const daemonEvidenceBy = "daemon"
 // confirms the merge reopens its after-merge steps (see ReportStep). The
 // transaction rejects observations made obsolete by a new revision/report.
 func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileRequest) (protocol.ChangeView, error) {
-	if q.Kind != "external" && q.Kind != "abandoned" {
+	if q.Kind != protocol.ReconcileExternal && q.Kind != protocol.ReconcileAbandoned && q.Kind != protocol.ReconcileNoWork {
 		return protocol.ChangeView{}, reject("unknown reconciliation kind")
 	}
-	if !protocol.ValidCommit(q.HeadCommit) || (q.Kind == "external" && !protocol.ValidCommit(q.MergedCommit)) {
+	if !protocol.ValidCommit(q.HeadCommit) || (q.Kind == protocol.ReconcileExternal && !protocol.ValidCommit(q.MergedCommit)) {
 		return protocol.ChangeView{}, reject("invalid reconciliation commit")
+	}
+	if q.Kind == protocol.ReconcileExternal && q.PRNumber == 0 {
+		switch q.Proof {
+		case "", protocol.MergeProofAncestor, protocol.MergeProofCherry, protocol.MergeProofSquash:
+		default:
+			return protocol.ChangeView{}, reject("unknown merge proof %q", q.Proof)
+		}
 	}
 	// Read the pipeline before the transaction. A PR merge needs it to leave
 	// the after-merge steps (verify among them) for the caller.
@@ -54,10 +61,13 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 	if !ok || c.Machine != machine || c.State != protocol.ChangeOpen || c.Revision != q.Revision || c.HeadCommit != q.HeadCommit || c.Uncommitted {
 		return protocol.ChangeView{}, reject("change no longer matches reconciliation")
 	}
+	if q.Kind == protocol.ReconcileNoWork {
+		return s.noWorkNotice(tx, c)
+	}
 	now := s.now().Unix()
 	e := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, Commit: c.HeadCommit, By: daemonEvidenceBy, At: now, Fields: map[string]string{"reconcile_kind": q.Kind}}
 	externalPR := false
-	if q.Kind == "external" {
+	if q.Kind == protocol.ReconcileExternal {
 		if c.HeadCommit == c.BaseCommit {
 			return protocol.ChangeView{}, reject("change has no commits beyond its base")
 		}
@@ -70,15 +80,22 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 		}
 		externalPR = q.PRNumber > 0
 		c.State, c.MergedCommit = protocol.ChangeDone, q.MergedCommit
-		e.Step, e.Result, e.Note = protocol.StepMerge, protocol.StepResultPass, "merged outside agent-net"
+		e.Step, e.Result, e.Note = protocol.StepMerge, protocol.StepResultPass, externalMergeNote(q)
 		e.Fields["merge_kind"], e.Fields[protocol.FieldMergedCommit] = "external", q.MergedCommit
+		if q.Proof != "" {
+			e.Fields["merge_proof"] = q.Proof
+		}
 		if externalPR {
 			// A merged PR is the lead's review on GitHub. The change stays
 			// merged so verify still runs for the caller; accept, and test
 			// when every check passed, are recorded from that review.
 			c.State = protocol.ChangeMerged
-			e.Note = externalPRNote(q)
+			e.Fields["merge_proof"] = "pr"
 			e.Fields["pr_url"] = q.PRURL
+		} else if q.Proof != "" {
+			// No review was recorded for a git-only proof, and none is
+			// invented: the record lists the steps agent-net did not run.
+			e.Fields["skipped_steps"] = "accept,test"
 		}
 	} else {
 		if s.now().Sub(time.Unix(c.CreatedAt, 0)) <= 7*24*time.Hour {
@@ -141,6 +158,19 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 	// Only an abandoned change is closed for the sessions that claimed its
 	// steps. An external merge is not a close: the merger's report confirms it.
 	var notices []protocol.Message
+	if q.Kind == protocol.ReconcileExternal {
+		// The caller owns the change's steps and may not know it moved.
+		proof := "git shows it on the default branch"
+		if q.PRNumber > 0 {
+			proof = fmt.Sprintf("PR #%d", q.PRNumber)
+		}
+		notice, err := s.callerNoticeTx(tx, c, fmt.Sprintf("merged-outside-%s-r%d", c.ID, c.Revision),
+			fmt.Sprintf("[agent-net merged outside]\nYour change %s was merged outside agent-net (%s); I recorded it.", changeLabel(c), proof))
+		if err != nil {
+			return protocol.ChangeView{}, err
+		}
+		notices = append(notices, notice)
+	}
 	if q.Kind == "abandoned" {
 		for _, session := range sessions {
 			notice, err := s.stepClosedNoticeTx(tx, c, session)
@@ -159,6 +189,81 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 		}
 	}
 	return s.GetChange(c.ID)
+}
+
+// externalMergeNote is the note on the merge step an external merge records.
+// An empty proof is an older daemon and keeps the plain note.
+func externalMergeNote(q protocol.ChangeReconcileRequest) string {
+	const outside = "merged outside agent-net"
+	switch {
+	case q.PRNumber > 0:
+		return fmt.Sprintf("%s: PR #%d (%s)", outside, q.PRNumber, q.PRURL)
+	case q.Proof == protocol.MergeProofAncestor:
+		return outside + ": head is an ancestor of the default branch; agent-net ran no accept or test step"
+	case q.Proof == protocol.MergeProofCherry:
+		return outside + ": every commit has a patch-equivalent on the default branch; agent-net ran no accept or test step"
+	case q.Proof == protocol.MergeProofSquash:
+		return outside + ": a squash commit on the default branch has the tree of this head; agent-net ran no accept or test step"
+	}
+	return outside
+}
+
+// noWorkNotice tells the caller of change c once per revision that it records
+// no commits beyond its base. It changes nothing on the change: with no work
+// recorded, nothing shows whether it was merged, so only the caller can close
+// it or resubmit it. The message key makes a repeated observation a no-op.
+func (s *Store) noWorkNotice(tx *sql.Tx, c protocol.Change) (protocol.ChangeView, error) {
+	if c.HeadCommit != c.BaseCommit {
+		return protocol.ChangeView{}, reject("change has commits beyond its base")
+	}
+	notice, err := s.callerNoticeTx(tx, c, fmt.Sprintf("no-work-%s-r%d", c.ID, c.Revision),
+		fmt.Sprintf("[agent-net no work recorded]\nchange: %s\nproject: %s\nrevision: %d\nbranch: %s\n\n%s has no work recorded: its head equals its base. agent-net cannot tell whether it was merged. Close it (agent_step_report accept with result close) or resubmit it with the branch that holds the work.",
+			c.ID, protocol.NeutralizeMarkers(c.Project), c.Revision, protocol.NeutralizeMarkers(c.Branch), changeLabel(c)))
+	if err != nil {
+		return protocol.ChangeView{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return protocol.ChangeView{}, err
+	}
+	if notice.ID != "" {
+		s.logMessage(notice)
+	}
+	return s.GetChange(c.ID)
+}
+
+// changeLabel names a change for a message: its title and ID, or the ID.
+func changeLabel(c protocol.Change) string {
+	if title := protocol.NeutralizeMarkers(c.Title); title != "" {
+		return title + " (" + c.ID + ")"
+	}
+	return c.ID
+}
+
+// callerNoticeTx stores a notification for the caller of change c in tx. The
+// key makes a repeat a no-op: it returns an empty message then, and also when
+// the change has no caller or the caller's session is gone.
+func (s *Store) callerNoticeTx(tx *sql.Tx, c protocol.Change, key, body string) (protocol.Message, error) {
+	if c.Caller == "" {
+		return protocol.Message{}, nil
+	}
+	var ok int
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?)`, c.Caller).Scan(&ok); err != nil || ok == 0 {
+		return protocol.Message{}, err
+	}
+	now := s.now().UTC()
+	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: "agent-net", FromName: "agent-net", FromHarness: "agent-net",
+		To: c.Caller, Type: protocol.TypeNotification, Body: body, IdempotencyKey: key,
+		CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored}
+	res, err := tx.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
+		VALUES(?,?,?,?,?,?,?,0,?,?,?,?) ON CONFLICT(sender, idem_key) DO NOTHING`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body,
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State)
+	if err != nil {
+		return protocol.Message{}, err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return protocol.Message{}, err
+	}
+	return m, nil
 }
 
 // externalPRNote is the evidence the lead's GitHub review leaves on accept and
