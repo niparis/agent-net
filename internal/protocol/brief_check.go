@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -38,8 +39,8 @@ var (
 	briefMessageID = regexp.MustCompile(`(?i)\bm_[0-9a-z]{6,}\b`)
 	briefQuote     = regexp.MustCompile(`"[^"\n]{2,}"|“[^”\n]{2,}”|‘[^’\n]{2,}’`)
 	briefGraded    = regexp.MustCompile(`(?i)\bgraded\b`)
-	briefPathRE    = regexp.MustCompile(`[A-Za-z0-9_.@+~\-]+(?:/[A-Za-z0-9_.@+~\-]+)+`)
-	briefFileRE    = regexp.MustCompile(`(?i)\b[A-Za-z0-9_\-]+\.(go|ts|tsx|js|jsx|mjs|cjs|md|markdown|py|rs|sql|sh|bash|json|yaml|yml|toml|html|css|scss|c|cc|cpp|h|hpp|java|kt|rb|php|swift)\b`)
+	briefPathRE    = regexp.MustCompile(`(?:\$[A-Za-z_][A-Za-z0-9_]*|[A-Za-z0-9_.@+~\-]*)(?:/[A-Za-z0-9_.@+~\-]+)+`)
+	briefFileRE    = regexp.MustCompile(`(?i)\b(?:[A-Za-z0-9_\-]+\.(go|ts|tsx|js|jsx|mjs|cjs|md|markdown|py|rs|sql|sh|bash|json|yaml|yml|toml|html|css|scss|c|cc|cpp|h|hpp|java|kt|rb|php|swift|lock)|README(?:\.[A-Za-z0-9_\-]+)?)\b`)
 	briefOverlapRE = regexp.MustCompile(`(?i)overlap\s+ok\s*:\s*([^\n]+)`)
 	briefTargetID  = regexp.MustCompile(`(?i)\b(?:ch|w|s)_[0-9a-z]{6,}\b`)
 )
@@ -126,11 +127,10 @@ func BriefPaths(text string) []string {
 }
 
 func briefURLContext(text string, start int) bool {
-	from := start - 9
-	if from < 0 {
-		from = 0
-	}
-	return strings.Contains(text[from:start], "://") || strings.HasPrefix(strings.ToLower(text[start:]), "www.")
+	prefix := text[:start]
+	from := strings.LastIndexAny(prefix, " \t\r\n`\"'()[]<>")
+	prefix = prefix[from+1:]
+	return strings.Contains(prefix, "://") || strings.HasSuffix(prefix, ":/") || strings.HasPrefix(strings.ToLower(text[start:]), "www.")
 }
 
 func briefPathStop(raw string) bool {
@@ -146,7 +146,7 @@ func normalizeBriefPath(raw string) string {
 	path = strings.Trim(path, " \t\r\n`'\"()[]{}<>,.;:!?")
 	path = strings.TrimPrefix(path, "./")
 	path = strings.TrimSuffix(path, "/")
-	if len(path) < 4 || !strings.ContainsAny(path, "/.") {
+	if len(path) < 4 || (!strings.ContainsAny(path, "/.") && !strings.EqualFold(path, "README")) {
 		return ""
 	}
 	return strings.ToLower(path)
@@ -301,4 +301,55 @@ func BriefPathsShare(a, b string) bool {
 		return true
 	}
 	return strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a)
+}
+
+// WorkerBriefRepoRequest asks the selected daemon for the worker base tree.
+type WorkerBriefRepoRequest struct {
+	Path string `json:"path"`
+	Base string `json:"base,omitempty"`
+}
+
+// WorkerBriefRepo holds tracked files at the base commit, never untracked files.
+type WorkerBriefRepo struct {
+	Root  string   `json:"root"`
+	Files []string `json:"files"`
+}
+
+// Paths returns the base-tree files named by text, expanding named directories.
+// A root-relative spelling such as /internal/parser is accepted, but external
+// absolute paths and environment-variable paths never become basename matches.
+func (r WorkerBriefRepo) Paths(text string) []string {
+	var out []string
+	seen := map[string]bool{}
+	root := strings.TrimRight(strings.ToLower(r.Root), "/")
+	for _, candidate := range BriefPaths(text) {
+		if strings.HasPrefix(candidate, "$") || strings.HasPrefix(candidate, "~") {
+			continue
+		}
+		if root != "" && strings.HasPrefix(candidate, root+"/") {
+			candidate = strings.TrimPrefix(candidate, root+"/")
+		} else {
+			candidate = strings.TrimPrefix(candidate, "/")
+		}
+		candidate = path.Clean(candidate)
+		if candidate == ".." || strings.HasPrefix(candidate, "../") {
+			continue
+		}
+		for _, file := range r.Files {
+			file = strings.ToLower(file)
+			if (file == candidate || strings.HasPrefix(file, candidate+"/")) && !seen[file] {
+				seen[file] = true
+				out = append(out, file)
+			}
+		}
+	}
+	return out
+}
+
+// BriefSharedIndex reports the shared documentation and index files whose
+// overlaps are useful warnings rather than reasons to refuse a worker.
+func BriefSharedIndex(file string) bool {
+	file = strings.ToLower(file)
+	base := path.Base(file)
+	return strings.HasPrefix(file, "docs/") || base == "agents.md" || base == "migrations.lock" || base == "readme" || strings.HasPrefix(base, "readme.")
 }

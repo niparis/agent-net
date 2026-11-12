@@ -1112,7 +1112,7 @@ func launchOf(t *testing.T, cli *localClient, node string) *bool {
 	return nil
 }
 
-// A project that is on two machines needs the machine to be named.
+// A project on two machines chooses automatically; an explicit machine still wins.
 func TestWorkerProjectOnTwoMachines(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
@@ -1122,10 +1122,12 @@ func TestWorkerProjectOnTwoMachines(t *testing.T) {
 	a.register(t, ra)
 	b.register(t, rb)
 	req := protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"}
-	_, err := a.start(req)
-	if err == nil || !strings.Contains(err.Error(), "is on several machines") {
-		t.Fatalf("ambiguous project: %v", err)
+	automatic := a.mustStart(t, req)
+	if automatic.NodeID != a.d.NodeID() && automatic.NodeID != b.d.NodeID() {
+		t.Fatalf("automatic machine: %+v", automatic)
 	}
+	a.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: automatic.SessionID})
+	eventually(t, "automatic worker stopped", func() bool { return a.d.workerCount() == 0 && b.d.workerCount() == 0 })
 	// Named, it runs on the other machine; the reply still comes back here.
 	req.Machine = b.cfg.Hostname
 	res := a.mustStart(t, req)

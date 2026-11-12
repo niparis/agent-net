@@ -442,7 +442,7 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 			note = strings.Join(ans.BriefFailures, "\n")
 		}
 		return &protocol.WorkerStartResult{Status: "checked", NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project,
-			Path: ans.Path, Harness: ans.Harness, Model: ans.Model, BriefFailures: ans.BriefFailures, Note: note}, nil
+			Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, BriefFailures: ans.BriefFailures, Note: note}, nil
 	}
 	selected := protocol.ParseModelSelection(ans.Harness, ans.Provider, ans.Model, ans.Effort)
 	ans.Provider, ans.Effort = selected.Provider, selected.Effort
@@ -577,6 +577,11 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 	switch h.Type {
 	case "cto.worker_capabilities":
 		data = map[string]bool{"attribution": true, "read_only_enforced": true}
+	case "worker.brief_repo":
+		var p protocol.WorkerBriefRepoRequest
+		if err = json.Unmarshal(raw, &p); err == nil {
+			data, err = d.workerBriefRepo(ctx, p)
+		}
 	case "worker.launch":
 		var p protocol.WorkerLaunch
 		if err = json.Unmarshal(raw, &p); err == nil {

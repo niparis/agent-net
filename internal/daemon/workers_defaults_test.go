@@ -171,7 +171,7 @@ func TestWorkerProjectDefaultsToTheCallers(t *testing.T) {
 }
 
 // When the caller's project is on two machines, the caller's own machine wins,
-// and else the one that has the harness. A named project is still ambiguous.
+// and else the one that has the harness. A named project also chooses a machine.
 func TestWorkerCallerProjectPicksTheMachine(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
@@ -194,7 +194,7 @@ func TestWorkerCallerProjectPicksTheMachine(t *testing.T) {
 	if err != nil || res.NodeID != a.d.NodeID() {
 		t.Fatalf("the caller's machine should win: %+v, %v", res, err)
 	}
-	if _, err := call(a, false); err == nil || !strings.Contains(err.Error(), "is on several machines") {
-		t.Errorf("a named project on two machines: %v", err)
+	if res, err := call(a, false); err != nil || res.NodeID == "" {
+		t.Errorf("a named project on two machines: %+v, %v", res, err)
 	}
 }

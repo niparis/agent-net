@@ -23,14 +23,18 @@ const briefRetryWindow = 24 * time.Hour
 // not an overlap: the change's id or the worker's id named in the brief, an
 // open change whose branch is the start's base, or the continue or fixes
 // target. A fix round starts from its own change's branch and names its files.
-func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string) ([]string, error) {
+func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, repo protocol.WorkerBriefRepo) ([]string, []string, error) {
 	failures := protocol.CheckWorkerBrief(p.Task)
 	if _, ok := protocol.BriefOverlapAllowed(p.Task); ok {
-		return failures, nil
+		return failures, nil, nil
 	}
-	mine := protocol.BriefPaths(p.Task)
+	mine := repo.Paths(p.Task)
 	if len(mine) == 0 {
-		return failures, nil
+		return failures, nil, nil
+	}
+	mineSet := map[string]bool{}
+	for _, file := range mine {
+		mineSet[file] = true
 	}
 	targets := protocol.BriefTargetIDs(p.Task)
 	for _, id := range []string{p.Continue, p.Fixes} {
@@ -41,37 +45,37 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string) ([
 	base := strings.TrimSpace(p.Base)
 	running, err := s.runningWorkerBriefs(project)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	changes, err := s.openChangeBriefs(project)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var overlaps []string
+	var overlaps, warnings []string
 	seen := map[string]bool{}
 	for _, other := range append(running, changes...) {
 		if targets[strings.ToLower(other.id)] || (base != "" && other.kind == "open change" && other.branch == base) {
 			continue
 		}
-		for _, a := range mine {
-			for _, b := range other.paths {
-				if !protocol.BriefPathsShare(a, b) {
-					continue
-				}
-				shared := a
-				if len(b) > len(shared) {
-					shared = b
-				}
-				msg := fmt.Sprintf("overlaps %s %s on %s", other.kind, other.id, shared)
-				if !seen[msg] {
-					seen[msg] = true
+		otherFiles := repo.Paths(strings.Join(other.paths, "\n"))
+		for _, shared := range otherFiles {
+			if !mineSet[shared] {
+				continue
+			}
+			msg := fmt.Sprintf("overlaps %s %s on %s", other.kind, other.id, shared)
+			if !seen[msg] {
+				seen[msg] = true
+				if protocol.BriefSharedIndex(shared) {
+					warnings = append(warnings, "warning: "+msg)
+				} else {
 					overlaps = append(overlaps, msg)
 				}
 			}
 		}
 	}
 	sort.Strings(overlaps)
-	return append(failures, overlaps...), nil
+	sort.Strings(warnings)
+	return append(failures, overlaps...), warnings, nil
 }
 
 type briefOverlap struct {
