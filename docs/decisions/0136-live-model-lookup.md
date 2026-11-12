@@ -1,4 +1,4 @@
-# 0132 Live model lookup instead of a scanned inventory
+# 0136 Live model lookup instead of a scanned inventory
 
 Date: 2026-11-11
 

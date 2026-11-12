@@ -69,7 +69,7 @@ const (
 
 	// OpSessionReplace repairs a restart that already orphaned a session: it
 	// moves the old session's work to the session its new conversation
-	// registered (decision 0132). Owner only through the command line or TUI,
+	// registered (decision 0137). Owner only through the command line or TUI,
 	// and the CTO through its checked operator path.
 	OpSessionReplace = "session_replace" // takes SessionReplaceRequest, answers SessionReplaceResult
 
