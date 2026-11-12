@@ -12,10 +12,11 @@ import (
 
 // gitClean runs git without the commit hook and trailer variables of the
 // runner's own worker environment, so a commit made here carries only the
-// trailer the test writes.
+// trailer the test writes. It gives git its own author, because dropping
+// GIT_CONFIG_* also drops the identity CI supplies that way.
 func gitClean(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=test", "-c", "user.email=test@example.invalid"}, args...)...)
 	for _, item := range os.Environ() {
 		if strings.HasPrefix(item, "GIT_CONFIG_") || strings.HasPrefix(item, "AGENT_NET_TRAILER_") {
 			continue
