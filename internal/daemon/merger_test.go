@@ -58,7 +58,7 @@ func TestMergerStartStopProposal(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() {
-				raw, _ := os.ReadFile(filepath.Join(repo, "fake-claude.json"))
+				raw, _ := os.ReadFile(filepath.Join(started.Path, "fake-claude.json"))
 				var rec fakeClaudeRecord
 				if json.Unmarshal(raw, &rec) == nil && rec.Pgid > 1 {
 					syscall.Kill(-rec.Pgid, syscall.SIGKILL)
@@ -98,7 +98,7 @@ func TestMergerStartStopProposal(t *testing.T) {
 					t.Fatalf("missing %s owner %s", kind, want)
 				}
 			}
-			rec := readClaude(t, repo)
+			rec := readClaude(t, started.Path)
 			if argValue(rec.Args, "--name") != "garden merger" || argValue(rec.Args, "--model") != "claude-opus-5-5" || rec.Args[len(rec.Args)-1] != MergerFirstMessage {
 				t.Fatalf("args=%v", rec.Args)
 			}
@@ -195,7 +195,10 @@ func TestMergerFirstMessageMergeTrain(t *testing.T) {
 	}
 }
 
-func TestMergerStartClearsHiddenFolderOptions(t *testing.T) {
+// A merger runs in its own git worktree under the daemon's state folder, never
+// in the project's folder, where the lead and the owner run. Claude Code keys
+// its memory by folder, so a shared folder shares memory (decision 0157).
+func TestMergerRunsInItsOwnFolder(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "garden")
@@ -208,11 +211,17 @@ func TestMergerStartClearsHiddenFolderOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := value.(protocol.StartedSession)
-	if started.Path != repo || started.Branch != "main" {
-		t.Fatalf("hidden folder options applied: %+v", started)
+	want := filepath.Join(c.cfg.StateDir, "mergers", "garden")
+	if started.Path != want || started.Path == repo || started.Branch == "hidden-branch" {
+		t.Fatalf("merger folder: %+v, want %s", started, want)
+	}
+	common, err := gitOut(ctx, want, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	gitDir, _ := filepath.EvalSymlinks(filepath.Join(repo, ".git"))
+	if resolved, _ := filepath.EvalSymlinks(common); err != nil || resolved != gitDir {
+		t.Fatalf("merger folder is not a worktree of %s: %q %v", repo, common, err)
 	}
 	t.Cleanup(func() {
-		raw, _ := os.ReadFile(filepath.Join(repo, "fake-claude.json"))
+		raw, _ := os.ReadFile(filepath.Join(want, "fake-claude.json"))
 		var rec fakeClaudeRecord
 		if json.Unmarshal(raw, &rec) == nil && rec.Pgid > 1 {
 			syscall.Kill(-rec.Pgid, syscall.SIGKILL)
@@ -229,4 +238,12 @@ func TestMergerStartClearsHiddenFolderOptions(t *testing.T) {
 		}
 		return started.Status == "started"
 	})
+	if _, err := os.Stat(filepath.Join(repo, "fake-claude.json")); !os.IsNotExist(err) {
+		t.Fatal("the merger ran in the project folder")
+	}
+	// A second start reuses the same folder.
+	dir, err := c.d.mergerFolder(ctx, repo, "garden")
+	if err != nil || dir != want {
+		t.Fatalf("second start: %q %v", dir, err)
+	}
 }
