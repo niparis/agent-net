@@ -89,6 +89,14 @@ type NodeBot struct {
 	Parent string `json:"parent,omitempty"`
 }
 
+// The reasons an Agent has lead level, as the graph read shows them. An
+// explicit grant wins over the chief of staff, which wins over leading a Team.
+const (
+	LeadLevelGrant    = "grant"
+	LeadLevelTeamLead = "team lead"
+	LeadLevelChief    = "chief of staff"
+)
+
 // Node is a component or an architect. Components can be implicit projects.
 type Node struct {
 	Active     *bool     `json:"active,omitempty"`
@@ -99,6 +107,9 @@ type Node struct {
 	AgentCount int       `json:"agent_count,omitempty"`
 	OverMax    bool      `json:"over_max,omitempty"`
 	Role       string    `json:"role,omitempty"`
+	// LeadLevel is why an Agent has lead level: LeadLevelGrant,
+	// LeadLevelTeamLead or LeadLevelChief. It is empty when the Agent has none.
+	LeadLevel string `json:"lead_level,omitempty"`
 	// Bot is set on the agent node of a connected bot app (role "bot").
 	Bot *NodeBot `json:"bot,omitempty"`
 	// AuthorityMode (a team) and HeldBack (a team or a repo) are the owner's

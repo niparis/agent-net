@@ -118,6 +118,25 @@ func TestMapCardShowsPurposeAndMaturityOnce(t *testing.T) {
 	}
 }
 
+// An Agent card says why the Agent has lead level, and says nothing for an
+// Agent without it.
+func TestMapCardShowsLeadLevelOnlyWhenSet(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes,
+		protocol.Node{Name: "granted", Kind: "agent", LeadLevel: protocol.LeadLevelGrant},
+		protocol.Node{Name: "plain", Kind: "agent"},
+	)
+	m := openMap(t, mapModel(120, 34, g))
+	m.mp.selected = "granted"
+	if v := ansi.Strip(m.testView()); !strings.Contains(v, "lead level: grant") {
+		t.Fatalf("granted Agent card lacks its lead level:\n%s", v)
+	}
+	m.mp.selected = "plain"
+	if v := ansi.Strip(m.testView()); strings.Contains(v, "lead level") {
+		t.Fatalf("Agent without lead level shows one:\n%s", v)
+	}
+}
+
 func TestMapCardCharterScrolls(t *testing.T) {
 	m := openMap(t, mapModel(80, 24, richGraph()))
 	m.mp.selected = "tenebrae"

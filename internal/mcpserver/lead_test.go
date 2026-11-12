@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestCTOLeadSetCatalogSchema(t *testing.T) {
@@ -29,5 +30,18 @@ func TestCTOLeadSetCatalogSchema(t *testing.T) {
 		if err != nil || res.IsError {
 			t.Fatalf("%s: %+v %v", kind, res, err)
 		}
+	}
+}
+
+// agent_graph_read is the tool the CTO reads, so an Agent's lead level must
+// reach its node there.
+func TestGraphReadShowsAgentLeadLevel(t *testing.T) {
+	nodes := roGraphNodes([]protocol.PublicGraphNode{{Name: "lead-agent", Kind: "agent", LeadLevel: protocol.LeadLevelTeamLead}})
+	raw, err := json.Marshal(nodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"lead_level":"team lead"`) {
+		t.Fatalf("lead level lost in agent_graph_read: %s", raw)
 	}
 }

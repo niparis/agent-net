@@ -217,11 +217,15 @@ func (s *Store) graphForRefRecords(ref *protocol.GraphRef, places bool) (protoco
 		}
 		g.Nodes = append(g.Nodes, n)
 	}
+	leadBases, err := agentLeadBases(s.db)
+	if err != nil {
+		return g, err
+	}
 	for _, a := range agents {
 		if a.Tombstone {
 			continue
 		}
-		n := protocol.Node{Name: a.DisplayName, Kind: "agent", Role: a.Role, CreatedAt: a.CreatedAt, Ref: &protocol.GraphRef{Kind: "agent", ID: a.ID}}
+		n := protocol.Node{Name: a.DisplayName, Kind: "agent", Role: a.Role, LeadLevel: leadBases[a.ID], CreatedAt: a.CreatedAt, Ref: &protocol.GraphRef{Kind: "agent", ID: a.ID}}
 		g.Nodes = append(g.Nodes, n)
 	}
 	teams, err := s.teamGraph()

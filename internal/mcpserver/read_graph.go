@@ -29,6 +29,7 @@ type roGraphNode struct {
 	AgentCount int                   `json:"agent_count,omitempty"`
 	OverMax    bool                  `json:"over_max,omitempty"`
 	Role       string                `json:"role,omitempty"`
+	LeadLevel  string                `json:"lead_level,omitempty"`
 	Name       string                `json:"name"`
 	Kind       string                `json:"kind"`
 	Maturity   string                `json:"maturity"`
@@ -168,7 +169,7 @@ func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
 		for _, rule := range node.Rules {
 			rules[rule.Name] = rule.Value
 		}
-		out = append(out, roGraphNode{Active: node.Active, Ref: node.Ref, Owner: node.Owner, Lead: node.Lead, MaxAgents: node.MaxAgents, AgentCount: node.AgentCount, OverMax: node.OverMax, Role: node.Role, Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
+		out = append(out, roGraphNode{Active: node.Active, Ref: node.Ref, Owner: node.Owner, Lead: node.Lead, MaxAgents: node.MaxAgents, AgentCount: node.AgentCount, OverMax: node.OverMax, Role: node.Role, LeadLevel: node.LeadLevel, Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
 	}
 	return out
 }

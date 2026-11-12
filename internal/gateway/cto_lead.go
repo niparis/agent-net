@@ -20,9 +20,84 @@ const (
 	ctoRateHoldLabel = "held: over %d per %s; it goes at %s"
 )
 
+// leadQueryer runs the lead level reads on a transaction or on the database.
+type leadQueryer interface {
+	queryer
+	Query(string, ...any) (*sql.Rows, error)
+}
+
+// leadBasis is the one rule for lead level: the explicit grant, else the chief
+// of staff's Agent, else leading an active Team. It returns the reason, or ""
+// when the Agent has no lead level.
+func leadBasis(grant, chief, teamLead bool) string {
+	switch {
+	case grant:
+		return protocol.LeadLevelGrant
+	case chief:
+		return protocol.LeadLevelChief
+	case teamLead:
+		return protocol.LeadLevelTeamLead
+	}
+	return ""
+}
+
+// agentLeadBases gives the reason for each Agent that has lead level, applying
+// leadBasis to three set reads. The CTO gate and the graph read both use it, so
+// they never disagree about who has lead level.
+func agentLeadBases(q leadQueryer) (map[string]string, error) {
+	grants, err := agentIDs(q, `SELECT id FROM agents WHERE lead_level<>0`)
+	if err != nil {
+		return nil, err
+	}
+	teamLeads, err := agentIDs(q, `SELECT DISTINCT owner_agent_id FROM teams WHERE active=1 AND owner_agent_id<>''`)
+	if err != nil {
+		return nil, err
+	}
+	var chief string
+	err = q.QueryRow(`SELECT COALESCE(s.agent_id,'') FROM owner_settings o JOIN sessions s ON s.id=o.value WHERE o.key=?`, chiefSessionKey).Scan(&chief)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	ids := map[string]bool{chief: true}
+	for id := range grants {
+		ids[id] = true
+	}
+	for id := range teamLeads {
+		ids[id] = true
+	}
+	out := map[string]string{}
+	for id := range ids {
+		if id == "" {
+			continue
+		}
+		if basis := leadBasis(grants[id], chief == id, teamLeads[id]); basis != "" {
+			out[id] = basis
+		}
+	}
+	return out, nil
+}
+
+// agentIDs reads one column of Agent IDs into a set.
+func agentIDs(q leadQueryer, query string) (map[string]bool, error) {
+	rows, err := q.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 // ctoLeadLevel reads the sending session's Agent and says whether that Agent
 // has lead level. It returns the Agent ID for the rate limit.
-func ctoLeadLevel(q queryer, session string) (string, bool, error) {
+func ctoLeadLevel(q leadQueryer, session string) (string, bool, error) {
 	var agent string
 	err := q.QueryRow(`SELECT COALESCE(agent_id,'') FROM sessions WHERE id=?`, session).Scan(&agent)
 	if err != nil {
@@ -31,27 +106,11 @@ func ctoLeadLevel(q queryer, session string) (string, bool, error) {
 	if agent == "" {
 		return "", false, nil
 	}
-	var explicit int
-	err = q.QueryRow(`SELECT lead_level FROM agents WHERE id=?`, agent).Scan(&explicit)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	bases, err := agentLeadBases(q)
+	if err != nil {
 		return "", false, err
 	}
-	if err == nil && explicit != 0 {
-		return agent, true, nil
-	}
-	var chief string
-	err = q.QueryRow(`SELECT COALESCE(s.agent_id,'') FROM owner_settings o JOIN sessions s ON s.id=o.value WHERE o.key=?`, chiefSessionKey).Scan(&chief)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", false, err
-	}
-	if err == nil && chief != "" && chief == agent {
-		return agent, true, nil
-	}
-	var teamLead bool
-	if err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM teams WHERE owner_agent_id=? AND active=1)`, agent).Scan(&teamLead); err != nil {
-		return "", false, err
-	}
-	return agent, teamLead, nil
+	return agent, bases[agent] != "", nil
 }
 
 // ctoRequestHold returns when a new request from agent may go out, the limit

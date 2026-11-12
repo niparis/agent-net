@@ -162,3 +162,89 @@ func TestCTOAgentLeadLevelGrantUndo(t *testing.T) {
 		t.Fatalf("lead level survived undo: %v", err)
 	}
 }
+
+// The Graph and the CTO gate both read the lead level through leadBasis, so
+// one test table pins the order: the grant, then the chief, then a team lead.
+func TestLeadBasisOrder(t *testing.T) {
+	cases := []struct {
+		grant, chief, teamLead bool
+		want                   string
+	}{
+		{false, false, false, ""},
+		{false, false, true, protocol.LeadLevelTeamLead},
+		{false, true, true, protocol.LeadLevelChief},
+		{false, true, false, protocol.LeadLevelChief},
+		{true, true, true, protocol.LeadLevelGrant},
+		{true, false, false, protocol.LeadLevelGrant},
+	}
+	for _, c := range cases {
+		if got := leadBasis(c.grant, c.chief, c.teamLead); got != c.want {
+			t.Errorf("leadBasis(grant=%v, chief=%v, team=%v) = %q, want %q", c.grant, c.chief, c.teamLead, got, c.want)
+		}
+	}
+}
+
+// The graph read shows the grant on the Agent node, and the node loses it when
+// the grant is cleared. The CTO gate reads the same grant.
+func TestGraphShowsGrantedLeadLevel(t *testing.T) {
+	s, _, _, alice, _ := ctoLeadFixture(t)
+	setAgentFor(t, s, alice, "lead-agent")
+	ref := protocol.GraphRef{Kind: "agent", ID: "lead-agent"}
+
+	if got := agentGraphLeadLevel(t, s, ref); got != "" {
+		t.Fatalf("lead level before the grant = %q", got)
+	}
+	grantLeadLevel(t, s, "lead-agent", "owner")
+	if got := agentGraphLeadLevel(t, s, ref); got != protocol.LeadLevelGrant {
+		t.Fatalf("lead level after the grant = %q, want %q", got, protocol.LeadLevelGrant)
+	}
+	if _, lead, err := ctoLeadLevel(s.db, alice); err != nil || !lead {
+		t.Fatalf("CTO gate after the grant: lead=%v err=%v", lead, err)
+	}
+	if err := s.SetLead(protocol.LeadSetRequest{Ref: ref}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := agentGraphLeadLevel(t, s, ref); got != "" {
+		t.Fatalf("lead level after clearing = %q, want none", got)
+	}
+	if _, lead, err := ctoLeadLevel(s.db, alice); err != nil || lead {
+		t.Fatalf("CTO gate after clearing: lead=%v err=%v", lead, err)
+	}
+}
+
+// A team lead shows "team lead" with no grant, and a chief of staff shows
+// "chief of staff". A grant on top of either shows "grant".
+func TestGraphShowsTeamLeadAndChiefLeadLevel(t *testing.T) {
+	s, _, _, alice, bob := ctoLeadFixture(t)
+	setAgentFor(t, s, alice, "team-lead")
+	if _, err := s.db.Exec(`INSERT INTO teams(id,name,owner_agent_id,active,created_at,updated_at) VALUES('t1','Crew','team-lead',1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	ref := protocol.GraphRef{Kind: "agent", ID: "team-lead"}
+	if got := agentGraphLeadLevel(t, s, ref); got != protocol.LeadLevelTeamLead {
+		t.Fatalf("team lead = %q, want %q", got, protocol.LeadLevelTeamLead)
+	}
+	grantLeadLevel(t, s, "team-lead", "owner")
+	if got := agentGraphLeadLevel(t, s, ref); got != protocol.LeadLevelGrant {
+		t.Fatalf("team lead with a grant = %q, want %q", got, protocol.LeadLevelGrant)
+	}
+
+	setAgentFor(t, s, bob, "chief-agent")
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: bob}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	chief := protocol.GraphRef{Kind: "agent", ID: "chief-agent"}
+	if got := agentGraphLeadLevel(t, s, chief); got != protocol.LeadLevelChief {
+		t.Fatalf("chief of staff = %q, want %q", got, protocol.LeadLevelChief)
+	}
+}
+
+// agentGraphLeadLevel reads the one Agent node from the typed graph.
+func agentGraphLeadLevel(t *testing.T, s *Store, ref protocol.GraphRef) string {
+	t.Helper()
+	g, err := s.GraphForRef(&ref)
+	if err != nil || len(g.Nodes) != 1 {
+		t.Fatalf("graph read of %s: %+v %v", ref.ID, g, err)
+	}
+	return g.Nodes[0].LeadLevel
+}
