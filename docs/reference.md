@@ -2924,8 +2924,8 @@ When `chief.set` names a chief, and when the gateway starts with a chief set,
 every open ask that still waits for the owner and was never offered to a chief
 is marked as waiting for it. That includes asks opened before the chief
 existed. An ask the owner already answered, one that was already sorted, or one
-already sent to a session is left alone. The 15 minute fallback starts when the
-ask starts waiting for the chief, so an adopted ask gets its full time.
+already sent to a session is left alone. The safety net below counts from the
+time the ask starts waiting for the chief, so an adopted ask gets its full time.
 
 **Batches.** Asks for the chief leave as one message from `agent-net` after a
 quiet window of 5 seconds since the newest ask, and never later than 30 seconds
@@ -2933,10 +2933,40 @@ after the oldest. One message holds up to 25 asks: id, kind, asker, subject,
 question, options, recommendation and up to five related open asks. The gateway
 checks for due batches once a second. A sent ask is never sent again.
 
-**Fallback.** An ask the chief has not sorted in 15 minutes (a constant) goes to
-the owner. An ask waiting on a chief that is offline goes to the owner at once.
-Each one writes a Desk log line (`The chief of staff did not sort it in 15
-minutes, so it is with you: ...` or `The chief of staff is offline, ...`).
+**No owner timer, claims and the safety net (decision 0150).** No timer sends an
+ask to the owner while the chief is live and working. The old 15 minute
+fallback (`ChiefTimeout`) and the line "An ask you leave for 15 minutes goes to
+the owner" in the batch text are gone. An ask the chief holds (state
+`verifying`: with the chief, or with a session the chief chose) is claimed, and
+a claimed ask has no clock that ends at the owner. The 30 second `ChiefMaxWait`
+in the batch rule above is not an owner timer: it only keeps a steady stream of
+asks from holding a batch back.
+
+- *Claim age.* A claimed ask that has not moved for the stuck-work limit pings
+  the chief, never the owner. The limit is the setting `delivery.step_stuck` (12
+  hours by default), the same one stuck delivery steps use. The ping is one
+  message from `agent-net` per tick that lists each ask as `<id> still open, N
+  hours: <question>`, and repeats once per limit that passes. "Moved" means the
+  newest of the ask's creation, the time it started waiting for the chief and its
+  newest sort. The daily brief wake carries the same lines under "Still open". The gateway looks for them once a minute.
+- *With the CTO.* An open item with the CTO (state `with_cto`) that has not moved
+  for the same limit goes back to the chief (`next = chief`, a new clock, sent in
+  the next batch), with the Desk log line `The CTO did not act on it in N hours,
+  so it is back with the chief: ...`. The CTO acts only in owner conversations.
+- *Safety net.* It applies only when the chief cannot work (offline, no quota, a
+  harness error or silent, see below). A wake is the batch message to the chief.
+  It is missed when the chief has not claimed or sorted the ask within
+  `ChiefWakeInterval` (10 minutes, a constant) of the batch, or of the time the ask
+  started waiting when no batch could go out. An ask in category `security`,
+  `outage` or `money` goes to the owner after one missed wake, every other ask
+  after two. Each writes a Desk log line (`The chief of staff is offline, so it
+  is with you: ...` or `The chief of staff cannot work (<reason>), so it is with
+  you: ...`). With no chief named, an ask goes at once.
+- *Harnesses that cannot be woken.* A chief on Pi has presence and batches only:
+  online, it gets its batch and the unanswered batch is the missed wake; offline,
+  no batch can wake it, and the clock runs from the time the ask started waiting.
+  An offline chief whose harness can be woken (Claude, Codex, OpenCode) still
+  gets its batch, and that message is the wake.
 
 **Chief availability.** A chief whose session is online can still be unable to
 work. The gateway marks it unavailable when any of these holds. The check runs
@@ -2959,8 +2989,8 @@ once a second with the batch tick, and when an ask is created.
 While the chief is unavailable, an ask that would go to the chief goes to the
 owner path instead (`next = owner`): the Desk's Needs you list, which the CTO
 reads and answers as it did before the chief existed. The asks that already wait
-for the chief move there at once, each with a Desk log line (`The chief of staff
-cannot work (<reason>), so it is with you: ...`). No batch is sent. A chief that
+for the chief move there when the safety net above says so, each with a Desk
+log line (`The chief of staff cannot work (<reason>), so it is with you: ...`). No batch is sent. A chief that
 is online but cannot work is not offered those asks again: they get
 `route_fixed`, so adoption leaves them with the owner path when the chief is
 back, while new asks go to the chief again. An offline chief keeps the earlier

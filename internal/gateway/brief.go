@@ -159,6 +159,14 @@ func (s *Store) checkDailyBrief(now time.Time) (protocol.Message, bool, error) {
 		return protocol.Message{}, false, nil
 	}
 	body := fmt.Sprintf("Daily brief due for %s. Write it and deliver it with agent_owner_brief.", date)
+	// Claimed asks that went quiet show in the brief (decision 0150).
+	open, err := s.stillOpenText(now)
+	if err != nil {
+		return protocol.Message{}, false, err
+	}
+	if open != "" {
+		body += "\n\nStill open (claimed, no move for the stuck-work limit):\n" + open
+	}
 	m, err := s.storeAgentNetMessage(tx, chief, body, "", now)
 	if err != nil {
 		return protocol.Message{}, false, err

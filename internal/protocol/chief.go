@@ -32,9 +32,12 @@ const (
 	AskSortDone = "done"
 )
 
-// ChiefTimeout is how long the chief has to sort an ask before it goes to the
-// owner. It is a constant, not a setting.
-const ChiefTimeout = 15 * time.Minute
+// ChiefWakeInterval is the wake interval of decision 0150. A wake counts as
+// missed when the chief has not claimed or sorted the batch within it. No timer
+// sends an ask to the owner while the chief is live and working. When the chief
+// is down, an ask in security, outage or money goes to the owner after one
+// missed wake and every other ask after two. It is a constant, not a setting.
+const ChiefWakeInterval = 10 * time.Minute
 
 // ChiefSilentAfter is how long the chief may sit on asks that were sent to it
 // with no sort and no harness activity before agent-net treats it as
@@ -45,7 +48,7 @@ const ChiefSilentAfter = 10 * time.Minute
 // ChiefRetryAfter is how long a chief that was silent stays unavailable. After
 // it, the next ask goes to the chief again as a probe, and a sort ends the
 // wait at once.
-const ChiefRetryAfter = ChiefTimeout
+const ChiefRetryAfter = 15 * time.Minute
 
 // ChiefQuietWindow is how long asks for the chief wait so that a burst goes
 // out as one message. ChiefMaxWait sends a batch even when asks keep coming.

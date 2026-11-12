@@ -15,8 +15,9 @@ import (
 )
 
 // The chief of staff (decision 0114). One registered session sorts the asks
-// that would go to the owner first. An ask it has not sorted in time goes to the
-// owner, and nothing is deleted. The chief is a standard agent session: the
+// that would go to the owner first. No timer sends an ask to the owner while the
+// chief is live (decision 0150); a chief that is down is covered by the safety
+// net in chief_health.go, and nothing is deleted. The chief is a standard agent session: the
 // only special code is the routing of asks, the batch message and the sort.
 
 // chiefSessionKey is the owner_settings row that names the chief session.
@@ -43,7 +44,7 @@ CREATE INDEX IF NOT EXISTS ask_sorts_ask ON ask_sorts(ask_id, id);
 const chiefAdoptMigration = `
 -- Chief of staff adoption (decision 0114): when an ask started waiting for the
 -- chief. Zero means its created_at. An ask opened before the chief existed is
--- adopted now, so its 15 minutes start now, not when its asker wrote it.
+-- adopted now, so its wait for the chief starts now, not when its asker wrote it.
 -- route_fixed marks an ask whose creator named the next who, so adoption
 -- leaves it there.
 SELECT 1 /* chief ask adoption time */;
@@ -207,10 +208,21 @@ type chiefBatch struct {
 // ChiefMaxWait after its oldest one.
 func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 	h, err := s.availableChief(s.db, now)
-	if err != nil || h.id == "" {
+	if err != nil {
 		return nil, err
 	}
 	chief := h.id
+	if chief == "" {
+		// An offline chief whose harness can be woken still gets its batch: the
+		// message is the wake, and a wake it does not answer counts as missed
+		// (chiefMissedWakes). A harness that cannot be woken gets none.
+		if !h.offline {
+			return nil, nil
+		}
+		if chief, err = s.wakeableChief(); err != nil || chief == "" {
+			return nil, err
+		}
+	}
 	rows, err := s.db.Query(`SELECT id,kind,session_id,from_kind,about_kind,about_id,text,recommendation,options,created_at
 		FROM inbox_items WHERE status='open' AND next_who=? AND chief_sent_at=0 ORDER BY created_at,id LIMIT ?`, protocol.AskNextChief, protocol.ChiefBatchCap)
 	if err != nil {
@@ -240,7 +252,7 @@ func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 		return nil, nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Chief of staff: %d ask(s) to sort. Sort each one with agent_ask_sort: close, merge into another open ask, send to a session, or owner (with priority and why_you). Sort only. Never answer for the owner. An ask you leave for 15 minutes goes to the owner.\n", len(list))
+	fmt.Fprintf(&b, "Chief of staff: %d ask(s) to sort. Sort each one with agent_ask_sort: close, merge into another open ask, send to a session, or owner (with priority and why_you). Sort only. Never answer for the owner.\n", len(list))
 	batch := &chiefBatch{chief: chief}
 	for _, p := range list {
 		batch.ids = append(batch.ids, p.id)
@@ -337,6 +349,7 @@ func (g *Gateway) flushChief(ctx context.Context) {
 	if err := g.store.releaseChiefAsks(now); err != nil {
 		g.logLine("error", "where", "chief release", "err", err)
 	}
+	g.flushChiefStuck(ctx, now)
 	b, err := g.store.chiefBatchDue(now)
 	if err != nil {
 		g.logLine("error", "where", "chief batch", "err", err)
@@ -351,6 +364,28 @@ func (g *Gateway) flushChief(ctx context.Context) {
 		return
 	}
 	g.dispatch(ctx, m)
+}
+
+// chiefStuckEvery is how often the tick looks for claimed asks that went quiet.
+// The limit is hours long, so a minute is enough and the tick stays cheap.
+const chiefStuckEvery = time.Minute
+
+// flushChiefStuck runs the claim-age rules (chief_stuck.go) at most once a
+// minute and dispatches the chief's ping.
+func (g *Gateway) flushChiefStuck(ctx context.Context, now time.Time) {
+	last := g.chiefStuckAt.Load()
+	if last != 0 && now.UnixNano()-last < int64(chiefStuckEvery) {
+		return
+	}
+	g.chiefStuckAt.Store(now.UnixNano())
+	msgs, err := g.store.chiefStuckWork(now, g.store.chiefStuckLimit())
+	if err != nil {
+		g.logLine("error", "where", "chief stuck work", "err", err)
+		return
+	}
+	for _, m := range msgs {
+		g.dispatch(ctx, m)
+	}
 }
 
 // refreshChiefQuota reads the quota of the chief's provider on the chief's

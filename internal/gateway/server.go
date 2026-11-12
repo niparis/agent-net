@@ -131,6 +131,8 @@ type Gateway struct {
 	pin              string
 	logger           *log.Logger
 	stepDispatchRuns atomic.Int64
+	// chiefStuckAt is when the claim-age rules last ran (chief_stuck.go).
+	chiefStuckAt atomic.Int64
 	// skillScans counts the full reads of all skills by the standing choice.
 	skillScans atomic.Int64
 	// skillSettled is the skill inputs fingerprint at which the standing
