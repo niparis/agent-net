@@ -441,6 +441,8 @@ func (d *Daemon) ctoCatalogMessageGet(ctx context.Context, raw json.RawMessage) 
 		Message    string `json:"message"`
 		BodyCursor string `json:"body_cursor"`
 		MaxBytes   int    `json:"max_bytes"`
+		File       string `json:"file"`
+		FileCursor string `json:"file_cursor"`
 	}
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
 		return nil, errors.New("bad agent_message_get arguments")
@@ -492,6 +494,39 @@ func (d *Daemon) ctoCatalogMessageGet(ctx context.Context, raw json.RawMessage) 
 	}
 	if next < len(message.Body) {
 		out["next_body_cursor"] = strconv.Itoa(next)
+	}
+	if len(message.Files) > 0 {
+		files := make([]map[string]any, 0, len(message.Files))
+		for _, f := range message.Files {
+			files = append(files, map[string]any{"name": f.Name, "size": f.Size})
+		}
+		out["files"] = files
+	}
+	if q.File == "" && q.FileCursor != "" {
+		return nil, fmt.Errorf(`file_cursor needs file. Example: {"message":%q,"file":"notes.md"}`, message.ID)
+	}
+	if q.File != "" {
+		fileOffset, err := ctoCatalogOffset(q.FileCursor)
+		if err != nil {
+			return nil, err
+		}
+		params, _ := json.Marshal(protocol.MessageFileRequest{MessageID: message.ID, File: q.File, Offset: int64(fileOffset), MaxBytes: maxBytes})
+		value, err := d.ctoReadConn().dispatch(ctx, "message_file", params)
+		if err != nil {
+			return nil, err
+		}
+		var page protocol.MessageFileResult
+		if err := ctoDecode(value, &page); err != nil {
+			return nil, err
+		}
+		file := map[string]any{"name": page.Name, "size": page.Size, "type": page.Type}
+		if page.Text != "" {
+			file["text"] = page.Text
+		}
+		if page.NextOffset > 0 {
+			file["next_file_cursor"] = strconv.FormatInt(page.NextOffset, 10)
+		}
+		out["file"] = file
 	}
 	return out, nil
 }

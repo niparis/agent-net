@@ -151,3 +151,32 @@ type FileSendResult struct {
 	Files     []FileSendDestination `json:"files"`
 	Error     string                `json:"error,omitempty"`
 }
+
+// MessageFile limits: one read returns at most this many bytes of a received
+// file, so a long file is read in pages.
+const (
+	MessageFileDefaultBytes = 8192
+	MessageFileMinBytes     = 256
+	MessageFileMaxBytes     = 16384
+)
+
+// MessageFileRequest asks for a page of a file that came with a message. The
+// caller is the receiver; the daemon reads the file from the caller's own
+// inbox folder. Offset is a byte offset: 0, or the NextOffset of the last page.
+type MessageFileRequest struct {
+	MessageID string `json:"message_id"`
+	File      string `json:"file"`
+	Offset    int64  `json:"offset,omitempty"`
+	MaxBytes  int    `json:"max_bytes,omitempty"`
+}
+
+// MessageFileResult is one page of a received file. Type is "text" or
+// "binary". A binary file has a name, a size and a type and no text.
+type MessageFileResult struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+	// NextOffset is where the next page starts. It is absent on the last page.
+	NextOffset int64 `json:"next_offset,omitempty"`
+}

@@ -1217,6 +1217,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	case "file_send":
 		return d.localFileSend(ctx, lc, raw)
 
+	case "message_file":
+		return d.localMessageFile(ctx, lc, raw)
+
 	case "send":
 		return d.localSend(ctx, lc, raw)
 
