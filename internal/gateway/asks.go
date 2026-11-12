@@ -360,7 +360,7 @@ func (s *Store) reconcileHeldAsks(q askDB) error {
 	if _, err := s.closeAsks(q, `kind='held' AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id=substr(inbox_items.source_ref,6) AND m.state='held' AND m.expires_at>?)`, []any{now}, protocol.AskReasonExpired); err != nil {
 		return err
 	}
-	rows, err := q.Query(`SELECT m.id,m.sender,m.recipient,m.body FROM messages m WHERE m.state='held' AND m.expires_at>?
+	rows, err := q.Query(`SELECT m.id,m.sender,m.recipient,m.body FROM messages m WHERE m.state='held' AND m.hold_kind='' AND m.expires_at>?
 		AND NOT EXISTS (SELECT 1 FROM inbox_items i WHERE i.source_ref='held:'||m.id AND i.status='open')`, now)
 	if err != nil {
 		return err

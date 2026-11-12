@@ -157,6 +157,10 @@ Messages to the CTO session reach the currently selected harness, including
 replies after a harness switch.
 The owner can hand one item over with `c` (see below).
 
+An Agent with lead level may start a request with the CTO. Lead level is the explicit `lead_level` grant on the Agent, leading an active Team, or being the agent of the session named as chief of staff. It is not inferred from Team membership. The owner or the CTO grants and clears it with `lead_set`: `ref` is `{"kind":"agent","id":"<agent>"}`, `lead` names the same Agent to grant it, and an empty `lead` clears it. The change is recorded in the graph history and `graph_change` `undo` restores it. A lead-level Agent may start only a request, for a CTO tool or a second opinion; a notification to the CTO stays reply-only.
+
+Each sending Agent may start `cto.requests_per_hour` new conversations with the CTO in an hour (default 3) and `cto.requests_per_day` in a day (default 10); both are network settings. A request over either window is not refused. It is held, the sender's result says when it will go (for example `held: over 3 per hour; it goes at 01:42`), and the gateway releases it when the window allows. Replies are not counted.
+
 Open proposals appear on the Desk (Needs you). Enter shows the CTO's reason, a fresh diff,
 and the sender and time of up to three messages delivered before the proposal.
 Press `a` to approve, `x` to decline, or `A` to review and approve all. The

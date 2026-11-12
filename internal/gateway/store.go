@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, agentLeadLevelMigration, ctoRateHoldMigration}
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries
 // of one task can be counted and the weekly table can show rejections per
@@ -1475,6 +1475,49 @@ CREATE TRIGGER IF NOT EXISTS sessions_worker_ad AFTER DELETE ON sessions WHEN ol
 END;
 `
 }
+
+// agentLeadLevelMigration adds the explicit lead level on an Agent. The column
+// is added in the migrate loop, which checks that it is missing. These
+// triggers insert into agents by name; a positional insert would break on a
+// later column, so replaying this migration rewrites them.
+const agentLeadLevelMigration = `
+-- Agent lead level column: the owner or CTO granted this Agent the right to
+-- start a request with the CTO. The column is added replay-safely below.
+DROP TRIGGER IF EXISTS repo_agent_project_insert;
+DROP TRIGGER IF EXISTS repo_agent_project_update;
+DROP TRIGGER IF EXISTS repo_agent_session_insert;
+DROP TRIGGER IF EXISTS repo_agent_session_update;
+DROP TRIGGER IF EXISTS repo_agent_architect_insert;
+CREATE TRIGGER repo_agent_project_insert AFTER INSERT ON projects WHEN NEW.name<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.name AND kind<>'component') BEGIN
+ INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(NEW.name,NEW.name,'',NEW.added_at,NEW.added_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.name,NEW.name,NEW.added_at,NEW.added_at,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.name AND tombstone=0) THEN NEW.name ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_project_update AFTER UPDATE OF name ON projects WHEN NEW.name<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.name AND kind<>'component') BEGIN
+ INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(NEW.name,NEW.name,'',NEW.checked_at,NEW.checked_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.name,NEW.name,NEW.checked_at,NEW.checked_at,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.name AND tombstone=0) THEN NEW.name ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_session_insert AFTER INSERT ON sessions WHEN NEW.repo_project<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.repo_project AND kind<>'component') BEGIN
+ INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(NEW.repo_project,NEW.repo_project,'',NEW.created_at,NEW.created_at,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.repo_project,NEW.repo_project,NEW.created_at,NEW.created_at,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.repo_project AND tombstone=0) THEN NEW.repo_project ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_session_update AFTER UPDATE OF repo_project ON sessions WHEN NEW.repo_project<>'' AND NOT EXISTS (SELECT 1 FROM graph_nodes WHERE name=NEW.repo_project AND kind<>'component') BEGIN
+ INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(NEW.repo_project,NEW.repo_project,'',NEW.last_seen,NEW.last_seen,0) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO repos VALUES(NEW.repo_project,NEW.repo_project,NEW.last_seen,NEW.last_seen,CASE WHEN EXISTS (SELECT 1 FROM agents WHERE id=NEW.repo_project AND tombstone=0) THEN NEW.repo_project ELSE NULL END) ON CONFLICT(id) DO NOTHING;
+END;
+CREATE TRIGGER repo_agent_architect_insert AFTER INSERT ON graph_nodes WHEN NEW.kind='architect' BEGIN
+ INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(NEW.name,NEW.name,'architect',NEW.created_at,NEW.created_at,0)
+ ON CONFLICT(id) DO UPDATE SET role='architect', tombstone=0, updated_at=NEW.created_at;
+END;
+`
+
+// ctoRateHoldMigration adds the wait of a lead-level Agent's request over the
+// CTO rate limit. The sender is told when it goes, and the gateway releases it
+// when the window allows. The columns are added in the migrate loop, which
+// checks that they are missing.
+const ctoRateHoldMigration = `
+-- CTO lead request rate hold columns, added replay-safely below.
+CREATE INDEX IF NOT EXISTS messages_cto_rate_hold ON messages(hold_kind, hold_until) WHERE hold_kind<>'';
+`
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.
@@ -2085,6 +2128,39 @@ func (s *Store) migrate() error {
 			if err := storeThreadColumnsPlain(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "Agent lead level column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name='lead_level'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE agents ADD COLUMN lead_level INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "CTO lead request rate hold columns") {
+			for _, col := range []struct{ name, spec string }{
+				{"hold_kind", `TEXT NOT NULL DEFAULT ''`},
+				{"hold_until", `INTEGER NOT NULL DEFAULT 0`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE messages ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
 			}
 		}
 		var result sql.Result
@@ -4419,6 +4495,8 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	if err != nil && err != sql.ErrNoRows {
 		return msg, false, err
 	}
+	leadRequest := false
+	leadAgent := ""
 	if m.To == ctoID && ctoID != "" {
 		var harness string
 		if err = tx.QueryRow(`SELECT harness FROM sessions WHERE id=?`, m.From).Scan(&harness); err != nil {
@@ -4441,8 +4519,39 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			}
 			allowed = root == ctoID || rootCTO
 		}
+		// A lead-level Agent may start a request with the CTO. Notifications
+		// and threads stay reply-only.
+		if !allowed && m.Type == protocol.TypeRequest && m.ParentID == "" && !threaded {
+			leadAgent, allowed, err = ctoLeadLevel(tx, m.From)
+			if err != nil {
+				return msg, false, err
+			}
+			leadRequest = allowed
+		}
 		if !allowed {
 			return msg, false, reject("The CTO only takes replies. Ask your owner, or wait for the CTO to ask you.")
+		}
+	}
+	// A lead-level Agent's first requests in the window go at once; later ones
+	// wait for the CTO and are released when the window allows.
+	holdKind := ""
+	var holdUntil int64
+	if leadRequest {
+		until, limit, label, err := ctoRequestHold(tx, leadAgent, ctoID, now, "")
+		if err != nil {
+			return msg, false, err
+		}
+		if !until.IsZero() {
+			holdKind = ctoRateHoldKind
+			holdUntil = until.UnixNano()
+			m.State = protocol.StateHeld
+			if route != nil {
+				note := ctoHoldNote(limit, label, until, now.Location())
+				if *route != "" {
+					*route += "\n"
+				}
+				*route += note
+			}
 		}
 	}
 	if m.Type == protocol.TypeRequest && !m.FromCTO && m.To != ctoID {
@@ -4478,13 +4587,13 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 	}
 	_, err = tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
-		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task, is_order, urgent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task, is_order, urgent, hold_kind, hold_until) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.Hop,
-		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask, m.IsOrder, m.Urgent)
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask, m.IsOrder, m.Urgent, holdKind, holdUntil)
 	if err != nil {
 		return msg, false, err
 	}
-	if m.State == protocol.StateHeld {
+	if m.State == protocol.StateHeld && holdKind == "" {
 		if err := s.openHeldAsk(tx, m.ID, m.From, m.To, m.Body); err != nil {
 			return msg, false, err
 		}
@@ -5553,11 +5662,21 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 	noticed := false
 	if m.State == protocol.StateHeld {
 		// The held path answers the sender with its own reply.
-		if err = s.heldReply(tx, m, "your request expired while awaiting your user", "expired"); err != nil {
+		var holdKind string
+		if err = tx.QueryRow(`SELECT hold_kind FROM messages WHERE id=?`, m.ID).Scan(&holdKind); err != nil {
 			return false, err
 		}
-		if err = s.closeHeldAsk(tx, m.ID, protocol.AskReasonExpired); err != nil {
-			return false, err
+		if holdKind != "" {
+			if err = s.heldReply(tx, m, "your request expired while waiting for the CTO rate window", "expired"); err != nil {
+				return false, err
+			}
+		} else {
+			if err = s.heldReply(tx, m, "your request expired while awaiting your user", "expired"); err != nil {
+				return false, err
+			}
+			if err = s.closeHeldAsk(tx, m.ID, protocol.AskReasonExpired); err != nil {
+				return false, err
+			}
 		}
 	} else if notice, noticed, err = s.expiryNotice(tx, m); err != nil {
 		return false, err

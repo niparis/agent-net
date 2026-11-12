@@ -630,6 +630,37 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		if !actorAllowed(actor, "rule") {
 			return reject("only the owner or CTO may set a lead")
 		}
+		if targetKind == "agent" {
+			var current int
+			err = tx.QueryRow(`SELECT lead_level FROM agents WHERE id=? AND tombstone=0`, node).Scan(&current)
+			if err == sql.ErrNoRows {
+				return reject("unknown or inactive Agent")
+			}
+			if err != nil {
+				return err
+			}
+			currentValue := ""
+			if current != 0 {
+				currentValue = "1"
+			}
+			if currentValue != value {
+				return reject("lead level changed since that history entry")
+			}
+			level := 0
+			if old != "" {
+				level = 1
+			}
+			if _, err = tx.Exec(`UPDATE agents SET lead_level=?, updated_at=? WHERE id=?`, level, now, node); err != nil {
+				return err
+			}
+			if _, err = tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('lead',?,'lead_level',?,?,?,?,'agent')`, node, value, old, now, actor); err != nil {
+				return err
+			}
+			if len(validate) > 0 && validate[0] {
+				return nil
+			}
+			return tx.Commit()
+		}
 		var current sql.NullString
 		var lead any
 		if old != "" {

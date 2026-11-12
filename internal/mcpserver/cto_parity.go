@@ -30,7 +30,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	for _, name := range []string{"repo_archive", "agent_tombstone"} {
 		add(name, "Deactivate a typed identity; owner approval required.", map[string]ctoField{"ref": {typ: "graph_ref"}})
 	}
-	add("lead_set", "Set a Repo or Team lead.", map[string]ctoField{"ref": {typ: "graph_ref"}, "lead": {typ: "graph_ref"}})
+	add("lead_set", "Set a Repo or Team lead, or grant an Agent lead level; omit lead to clear.", map[string]ctoField{"ref": {typ: "graph_ref"}, "lead": {typ: "graph_ref"}})
 	add("node_add", "Add an architect node.", map[string]ctoField{"name": s("Name.")})
 	add("node_remove", "Remove an edgeless architect.", map[string]ctoField{"name": s("Name.")})
 	add("edge_set", "Set a directed edge.", map[string]ctoField{

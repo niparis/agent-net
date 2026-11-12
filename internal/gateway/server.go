@@ -515,6 +515,15 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 						g.releaseBusyHold(ctx, id, true)
 					}
 				}
+				// Lead-level requests that waited for the CTO rate window go
+				// out as soon as the window allows.
+				if released, err := g.store.ReleaseCTOHolds(g.store.now()); err != nil {
+					g.logLine("error", "where", "release CTO rate holds", "err", err)
+				} else {
+					for _, m := range released {
+						g.dispatch(ctx, m)
+					}
+				}
 				g.flushLeadRequests(ctx)
 				if err := g.store.samplePendingStalls(); err != nil {
 					g.logLine("error", "where", "pending sample", "err", err)
