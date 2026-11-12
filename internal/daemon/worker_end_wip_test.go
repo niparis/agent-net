@@ -98,6 +98,8 @@ func TestCommitWorkerEndWIPRemovesStaleEmptyIndexLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitRunT(t, repo, "init", "-b", "worker")
+	gitRunT(t, repo, "config", "user.name", "Owner")
+	gitRunT(t, repo, "config", "user.email", "owner@example.test")
 	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("base\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +140,8 @@ func TestCommitWorkerEndWIPLeavesFreshIndexLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitRunT(t, repo, "init", "-b", "worker")
+	gitRunT(t, repo, "config", "user.name", "Owner")
+	gitRunT(t, repo, "config", "user.email", "owner@example.test")
 	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("base\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
