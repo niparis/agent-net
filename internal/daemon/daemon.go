@@ -468,6 +468,11 @@ type Daemon struct {
 	// qmu guards worker admission: the queue, lastStart and qGone (queue.go).
 	// It is taken before wmu, never after.
 	qmu sync.Mutex
+	// tmu guards the machine's test slot and its queue (testslot.go). It is
+	// taken after qmu when an admission reads the slot, and alone otherwise.
+	tmu      sync.Mutex
+	testSlot *testSlotState
+	testWait []*localConn
 	// lastStart is when a worker start that ran was last let through. A start
 	// that fails, or a worker that ends within 30 seconds, clears it.
 	lastStart     time.Time

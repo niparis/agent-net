@@ -62,6 +62,8 @@ const usage = `usage: agent-net <command>
   start      start a worker session: --project NAME --harness opencode --model M "<task>"
   stop       stop a worker: agent-net stop <session>
   workers    list the workers on the network with their owners
+  test-run   run a local test suite through this machine's admission:
+             agent-net test-run [--timeout D] -- <command...>
   cto        show or change CTO harness and model settings
   charter    show, set or list the history of a node's charter
   graph      show the graph or undo a change
@@ -171,6 +173,8 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		err = cmdStop(ctx, args)
 	case "workers":
 		err = cmdWorkers(ctx, args)
+	case "test-run":
+		err = cmdTestRun(ctx, args)
 	case "cto":
 		err = cmdCTO(ctx, args)
 	case "charter", "graph", "node", "edge", "merger":
@@ -198,6 +202,10 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		return 2
 	}
 	if err != nil {
+		var exit exitCodeError
+		if errors.As(err, &exit) {
+			return exit.code
+		}
 		fmt.Fprintln(stderr, "agent-net:", err)
 		return 1
 	}

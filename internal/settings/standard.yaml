@@ -593,6 +593,15 @@ settings:
     levels: [network]
     default: 6s
     live: true
+  - key: merger.test_timeout
+    description: Wall-clock limit for a local test suite run through test-run.
+    kind: rule
+    type: duration
+    min: 1ns
+    stricter: lower
+    levels: [network, repo]
+    default: 90m
+    live: true
   - key: workers.isolation_minimum
     rows: [51]
     description: Worker filesystem isolation policy.
@@ -1062,7 +1071,7 @@ settings:
     kind: advice
     type: text
     levels: [network, repo]
-    default: "Merge onto the current default branch in your own worktree. Resolve conflicts yourself, keeping the intent of both sides, and list each resolution. Run the full changed packages and CI. Fail only for real test or CI failures, with the failing test names."
+    default: "Merge onto the current default branch in your own worktree. Resolve conflicts yourself, keeping the intent of both sides, and list each resolution. Run the full changed packages and CI. Run every local suite through `agent-net test-run -- <command>`, which takes the machine's test slot and sets parallelism, priority and the timeout. Fail only for real test or CI failures, with the failing test names."
     live: true
   - key: delivery.contract.test_train
     description: Contract for the test step in train mode.
