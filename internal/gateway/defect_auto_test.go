@@ -155,6 +155,8 @@ func TestTestFailBeforeMergeRecordsSeverityOnePerRevisionAgainstItsWorker(t *tes
 	if rows := autoDefectRows(t, r.s); len(rows) != 0 {
 		t.Fatalf("a failed accept made defects: %+v", rows)
 	}
+	// The caller's test step waits for an accept pass, as the merger's does.
+	r.report1(stepAccept, id, commitA, protocol.StepResultPass, nil, "")
 
 	r.report1(test, id, commitA, protocol.StepResultFail, suite, "TestFoo fails")
 	r.report1(test, id, commitA, protocol.StepResultFail, suite, "TestFoo still fails")
@@ -172,6 +174,7 @@ func TestTestFailBeforeMergeRecordsSeverityOnePerRevisionAgainstItsWorker(t *tes
 	if got := r.submit(r.a, q).Change.Change; got.ID != id || got.Revision != 2 {
 		t.Fatalf("second revision: %+v", got)
 	}
+	r.report1(stepAccept, id, commitB, protocol.StepResultPass, nil, "")
 	r.report1(test, id, commitB, protocol.StepResultFail, suite, "TestBar fails")
 	rows = autoDefectRows(t, r.s)
 	if len(rows) != 2 || rows[1].session != second || rows[1].severity != 1 {
@@ -182,6 +185,7 @@ func TestTestFailBeforeMergeRecordsSeverityOnePerRevisionAgainstItsWorker(t *tes
 func TestTestFailMarkedAsFlakeRecordsNothing(t *testing.T) {
 	r := newDeliveryRig(t)
 	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
+	r.report1(stepAccept, id, commitA, protocol.StepResultPass, nil, "")
 	r.report1(protocol.StepRef{Step: protocol.StepTest}, id, commitA, protocol.StepResultFail,
 		map[string]string{protocol.FieldSuite: protocol.SuiteChanged, protocol.FieldFlake: protocol.FieldYes}, "known flake")
 	if rows := autoDefectRows(t, r.s); len(rows) != 0 {
