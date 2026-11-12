@@ -18,6 +18,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/quotaaxi"
+	"github.com/niparis/agent-net/internal/tui/tabs"
 )
 
 type setupDaemonFixture struct {
@@ -144,6 +145,19 @@ func onboardingFixture(name string) (setupDaemonFixture, bool, []string, []strin
 	}
 }
 
+func tempSetupDirs(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "xdg-state"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "xdg-data"))
+	t.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(home, "config"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(home, "state"))
+	t.Setenv("AGENT_NET_GATEWAY_DATA", filepath.Join(home, "gateway"))
+	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", filepath.Join(home, "claude-sessions"))
+}
+
 func harnessInfos(names []string) []protocol.HarnessInfo {
 	out := make([]protocol.HarnessInfo, 0, len(names))
 	for _, name := range names {
@@ -165,12 +179,7 @@ func TestSetupOnboardingGolden(t *testing.T) {
 				mode = "color"
 			}
 			t.Run(name+"/"+mode, func(t *testing.T) {
-				home := t.TempDir()
-				t.Setenv("HOME", home)
-				t.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(home, "config"))
-				t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(home, "state"))
-				t.Setenv("AGENT_NET_GATEWAY_DATA", filepath.Join(home, "gateway"))
-				t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", filepath.Join(home, "claude-sessions"))
+				tempSetupDirs(t)
 				fixtureName := name
 				if name == "failed-run" {
 					fixtureName = "first-machine"
@@ -221,13 +230,95 @@ func TestSetupOnboardingGolden(t *testing.T) {
 	}
 }
 
+// setupLabels reads the "What you have now" block as point name to key.
+func setupLabels(out string) map[string]string {
+	labels := map[string]string{}
+	in := false
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case line == "What you have now":
+			in = true
+		case !in:
+		case line == "Do this first":
+			return labels
+		case line == "" || strings.HasPrefix(line, "        "):
+		default:
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				labels[fields[1]] = fields[0]
+			}
+		}
+	}
+	return labels
+}
+
+func TestSetupLabelsMatchTUITabs(t *testing.T) {
+	tempSetupDirs(t)
+	fixture, joining, harnesses, quotaProviders := onboardingFixture("first-machine")
+	fakeSetupDaemon(t, fixture)
+	if len(quotaProviders) > 0 {
+		providers := make([]quotaaxi.AuthProvider, 0, len(quotaProviders))
+		for _, provider := range quotaProviders {
+			providers = append(providers, quotaaxi.AuthProvider{Provider: provider, Status: "found"})
+		}
+		if err := quotaaxi.SaveAuth(daemon.ConfigDir(), quotaaxi.AuthResult{Providers: providers}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldTTY := openTTY
+	openTTY = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("n\n")), nil }
+	t.Cleanup(func() { openTTY = oldTTY })
+	var out strings.Builder
+	r := &runner{Options: Options{Out: &out, Exe: "/fake/agent-net"}, joining: joining, foundHarnesses: harnesses, interactive: true}
+	r.daemonStatus(context.Background())
+	r.finish(context.Background())
+
+	labels := setupLabels(out.String())
+	tabFor := map[string]string{
+		"See":   "Sessions",
+		"Talk":  "Messages",
+		"Graph": "Graph",
+		"Work":  "Quotas",
+		"Tools": "Tools",
+	}
+	keys := map[string]string{}
+	for name, tab := range tabFor {
+		want := tabs.Key(tab)
+		if want == "" {
+			t.Fatalf("no tab named %q", tab)
+		}
+		got, ok := labels[name]
+		if !ok {
+			t.Fatalf("missing the %s line in:\n%s", name, out.String())
+		}
+		if got != want {
+			t.Errorf("%s points at key %q, want %q", name, got, want)
+		}
+		keys[name] = got
+	}
+	cto, ok := labels["CTO"]
+	if !ok {
+		t.Fatalf("missing the CTO line in:\n%s", out.String())
+	}
+	if cto != tabs.CTOKey {
+		t.Errorf("CTO points at key %q, want %q", cto, tabs.CTOKey)
+	}
+	keys["CTO"] = cto
+
+	seen := map[string]string{}
+	for name, key := range keys {
+		if len(key) != 1 || key[0] < '0' || key[0] > '9' {
+			continue
+		}
+		if other, ok := seen[key]; ok {
+			t.Errorf("key %q appears for %s and %s", key, other, name)
+		}
+		seen[key] = name
+	}
+}
+
 func TestSetupWaitsForFirstNonEmptyAgentList(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(home, "config"))
-	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(home, "state"))
-	t.Setenv("AGENT_NET_GATEWAY_DATA", filepath.Join(home, "gateway"))
-	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", filepath.Join(home, "claude-sessions"))
+	tempSetupDirs(t)
 	fixture, joining, harnesses, _ := onboardingFixture("first-machine")
 	fixture.listAfter = 2
 	fakeSetupDaemon(t, fixture)

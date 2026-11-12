@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/tabs"
 )
 
 // The main screen: header, machines, sessions table, detail pane, feed, key
@@ -374,8 +375,8 @@ func (m Model) composeView(w, room int) []string {
 	return panel(title, lines, w, roleAccent)
 }
 
-var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools", "Settings", "Desk"}
-var shortTabNames = []string{"Sess", "Graph", "Quota", "Msg", "Tools", "Set", "Desk"}
+var tabNames = tabs.Names()
+var shortTabNames = tabs.ShortNames()
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 // sessionViewName is the view the v key selected.

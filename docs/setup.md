@@ -135,7 +135,7 @@ Start a Pi session on one machine and a Claude Code session on another. Ask one 
 
 In the TUI, press `2`, `M` or `G` for Graph. Find an agent with `/`, then
 press Enter for its charter card. Esc returns to the Graph with the same node
-selected. The tabs are 1 Sessions, 2 Graph, 3 Quotas, 4 Messages and 5 Tools.
+selected. The tabs are 1 Sessions, 2 Graph, 3 Quotas, 4 Messages, 5 Tools, 6 Settings and 7 Desk.
 
 ## Phone app
 

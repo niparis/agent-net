@@ -13,7 +13,44 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/quotaaxi"
+	"github.com/niparis/agent-net/internal/tui/tabs"
 )
+
+func TestTabTableMatchesTabBar(t *testing.T) {
+	if len(tabNames) != len(tabs.All) || len(shortTabNames) != len(tabs.All) {
+		t.Fatalf("tab table has %d names and %d short names, want %d", len(tabNames), len(shortTabNames), len(tabs.All))
+	}
+	for i, tab := range tabs.All {
+		if tabNames[i] != tab.Name || shortTabNames[i] != tab.Short {
+			t.Errorf("tab %d is %q/%q, want %q/%q", i, tabNames[i], shortTabNames[i], tab.Name, tab.Short)
+		}
+		if got := keyAction(contextGlobal, tab.Key); got != actionID(tab.Action) {
+			t.Errorf("key %q runs %q, want %q", tab.Key, got, tab.Action)
+		}
+		for _, size := range [][2]int{{80, 24}, {120, 34}} {
+			m := keys(newModel(size[0], size[1]), tab.Key)
+			if m.tab != i {
+				t.Errorf("%dx%d: key %q opened tab %d, want %d", size[0], size[1], tab.Key, m.tab, i)
+			}
+		}
+	}
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		line := ansi.Strip(newModel(size[0], size[1]).titleLine(size[0]))
+		for _, tab := range tabs.All {
+			if !strings.Contains(line, tab.Key+" "+tab.Name) {
+				t.Errorf("%dx%d: tab bar is missing %q: %q", size[0], size[1], tab.Key+" "+tab.Name, line)
+			}
+		}
+	}
+	for name, index := range map[string]int{
+		"Sessions": sessionsTab, "Graph": graphTab, "Quotas": quotasTab, "Messages": messagesTab,
+		"Tools": toolsTab, "Settings": settingsTab, "Desk": inboxTab,
+	} {
+		if tabs.All[index].Name != name {
+			t.Errorf("tab %d is %q, want %q", index, tabs.All[index].Name, name)
+		}
+	}
+}
 
 func TestTabSwitching(t *testing.T) {
 	m := newModel(80, 24)

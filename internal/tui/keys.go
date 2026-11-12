@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/niparis/agent-net/internal/tui/tabs"
 )
 
 type keyContext string
@@ -150,7 +152,7 @@ var keyBindings = []keyBinding{
 	bind(contextGlobal, "5", "tools tab", "Tools", -1),
 	bind(contextGlobal, "6", "settings tab", "Settings", -1),
 	bind(contextGlobal, "7", "inbox tab", "Desk", -1),
-	withHelp(bind(contextGlobal, "c", "open CTO", "open CTO", -1), "open the CTO session"),
+	withHelp(bind(contextGlobal, tabs.CTOKey, "open CTO", "open CTO", -1), "open the CTO session"),
 	withHelp(bind(contextGlobal, "C", "focus CTO", "focus CTO box", -1), "focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip"),
 	withHelp(bind(contextGlobal, "ctrl+p", "find session", "find session", -1), "find a session by name, project, folder, machine or task"),
 	bind(contextGlobal, "ctrl+c", actQuit, "quit", -1),

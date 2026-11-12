@@ -4,13 +4,13 @@ daemon status         connected to https://gateway.example:7420 as node n_laptop
 [1mWhat you have now[0m
 [36m1 See[0m   4 sessions on laptop: 3 claude, 1 codex. 2 busy.
         [2mYour other machines appear when you add them.[0m
-[36m2 Talk[0m  Your agents can now ask each other. New sessions get the
+[36m4 Talk[0m  Your agents can now ask each other. New sessions get the
         [2mtools; open ones get them after a restart.[0m
-[36m3 CTO[0m   Your CTO runs the network for you. Ask it in plain words.
+[36mc CTO[0m   Your CTO runs the network for you. Ask it in plain words.
 [36m2 Graph[0m 8 projects seen. None has a charter yet: the CTO drafts
         [2mthem with you.[0m
-[36m5 Work[0m  Workers use claude, codex. Your claude plan is protected.
-[36m6 Tools[0m Skills and MCP servers are checked on every machine.
+[36m3 Work[0m  Workers use claude, codex. Your claude plan is protected.
+[36m5 Tools[0m Skills and MCP servers are checked on every machine.
 
 [33;1mDo this first[0m
 [33m![0m Restart 2 pi sessions so they get the agent-net tools.

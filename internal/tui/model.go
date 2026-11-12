@@ -18,6 +18,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 	"github.com/niparis/agent-net/internal/tui/palette"
+	"github.com/niparis/agent-net/internal/tui/tabs"
 )
 
 // RefreshEvery is how often the screen asks the daemon for news.
@@ -1937,8 +1938,8 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.openFinder(), nil
 	}
 
-	for i := range tabNames {
-		if keyAction(contextGlobal, k.String()) == [...]actionID{"sessions tab", "graph tab", "quotas tab", "messages tab", "tools tab", "settings tab", "inbox tab"}[i] {
+	for i, tab := range tabs.All {
+		if keyAction(contextGlobal, k.String()) == actionID(tab.Action) {
 			m.tab = i
 			m.uiFilter = ""
 			m.focus = focusSessions
