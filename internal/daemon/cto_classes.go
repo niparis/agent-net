@@ -26,7 +26,7 @@ const (
 var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
-		ctoRead:  "cto_proposals_find agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find agent_owner_judgments_find projects_layout",
+		ctoRead:  "cto_proposals_find cto_ops_list agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find agent_owner_judgments_find projects_layout",
 		ctoTalk:  "message cto_placement_memory cto_standing_orders cto_ui_show proposal_ask agent_message_send agent_message_reply agent_message_withdraw agent_owner_ask agent_learn agent_permission_propose",
 		ctoMinor: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new sessions_archive judgment_add",
 	} {
@@ -112,6 +112,13 @@ var ctoActions = map[string]map[string][]string{
 }
 
 func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {
+	if name == "cto_op" {
+		_, tool, args, err := ctoOpCall(raw)
+		if err != nil {
+			return "", err
+		}
+		return ctoClass(tool, args)
+	}
 	class, ok := ctoToolClasses[name]
 	if !ok {
 		return "", fmt.Errorf("unclassified CTO tool %q", name)

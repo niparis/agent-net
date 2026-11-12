@@ -15,15 +15,26 @@ import (
 func TestCTOGraphLifecycleProposalSchema(t *testing.T) {
 	for _, raw := range []string{
 		`{"action":"repo_create","name":"repo"}`,
-		`{"action":"repo_archive","ref":{"kind":"repo","id":"repo"}}`,
 		`{"action":"agent_create","name":"agent"}`,
-		`{"action":"agent_tombstone","ref":{"kind":"agent","id":"agent"}}`,
 	} {
 		if err := mcpserver.ValidateCTOActionSchema("graph_change", json.RawMessage(raw)); err != nil {
 			t.Errorf("%s: %v", raw, err)
 		}
 		if _, _, _, err := ctoConcreteCall("graph_change", json.RawMessage(raw)); err != nil {
 			t.Errorf("%s: %v", raw, err)
+		}
+	}
+	for _, raw := range []string{
+		`{"method":"repo_archive","args":{"ref":{"kind":"repo","id":"repo"}}}`,
+		`{"method":"agent_tombstone","args":{"ref":{"kind":"agent","id":"agent"}}}`,
+	} {
+		_, tool, args, err := ctoOpCall(json.RawMessage(raw))
+		if err != nil {
+			t.Errorf("%s: %v", raw, err)
+			continue
+		}
+		if concrete, _, _, err := ctoConcreteCall(tool, args); err != nil || (concrete != "repo_archive" && concrete != "agent_tombstone") {
+			t.Errorf("%s: concrete %s, %v", raw, concrete, err)
 		}
 	}
 }

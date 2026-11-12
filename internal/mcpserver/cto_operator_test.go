@@ -11,29 +11,50 @@ import (
 
 func TestCTOOperatorActionSchemas(t *testing.T) {
 	for method := range protocol.CTOOperatorMethods() {
-		raw, _ := json.Marshal(map[string]any{"area": "operator", "method": method, "arguments": map[string]any{}})
-		if err := ValidateCTOActionSchema("settings_change", raw); err != nil {
-			t.Errorf("%s: %v", method, err)
+		op, ok := CTOOpByName(method)
+		if !ok || op.Method != method {
+			t.Errorf("owner operation %s is not an op", method)
+			continue
+		}
+		if op.Schema == nil {
+			t.Errorf("%s has no schema", method)
+		}
+		if op.Example == "" {
+			t.Errorf("%s has no example", method)
 		}
 	}
-	for _, raw := range []string{
-		`{"area":"operator","method":"apps.approve","arguments":{}}`,
-		`{"area":"operator","method":"session_trust","arguments":{}}`,
-		`{"area":"operator","method":"hidden_set"}`,
-		`{"area":"operator","method":"hidden_set","arguments":[]}`,
-		`{"area":"operator","method":"hidden_set","arguments":{},"owner":"forged"}`,
-	} {
-		if err := ValidateCTOActionSchema("settings_change", json.RawMessage(raw)); err == nil {
-			t.Errorf("accepted invalid operator request %s", raw)
+	cases := []struct {
+		method, args string
+		valid        bool
+	}{
+		{"charter_history", `{"node":"architect"}`, true},
+		{"charter_history", `{"node":"architect","bogus":1}`, false},
+		{"tools_export", `{"item":"item-id","version":"hash"}`, true},
+		{"tools_export", `{"item":"item-id"}`, false},
+		{"gateway_backup", `{"path":"/tmp/backup"}`, true},
+		{"gateway_backup", `{}`, false},
+		{"tools_versions", `{"item":"item-id","bogus":1}`, false},
+		{"tools_import", `{"item":"item-id","location":{"node_id":"n_1","location":"/tmp/skill"}}`, true},
+		{"tools_import", `{"item":"item-id"}`, false},
+	}
+	for _, tc := range cases {
+		op, ok := CTOOpByName(tc.method)
+		if !ok {
+			t.Fatalf("missing op %s", tc.method)
 		}
+		err := ValidateCTOOpArgs(op, json.RawMessage(tc.args))
+		if (err == nil) != tc.valid {
+			t.Errorf("%s %s: err=%v, want valid=%v", tc.method, tc.args, err, tc.valid)
+		}
+	}
+	if _, ok := CTOOpByName("apps.approve"); ok {
+		t.Fatal("an operation outside the CTO allowlist is an op")
 	}
 }
 
 func TestCTOOperatorCatalogParity(t *testing.T) {
 	var fields struct {
-		Properties map[string]struct {
-			Enum []string `json:"enum"`
-		} `json:"properties"`
+		Properties map[string]json.RawMessage `json:"properties"`
 	}
 	for _, entry := range toolcatalog.ForRole(toolcatalog.RoleCTO) {
 		if entry.Name == "settings_change" {
@@ -42,15 +63,31 @@ func TestCTOOperatorCatalogParity(t *testing.T) {
 			}
 		}
 	}
+	if _, ok := fields.Properties["operator"]; ok {
+		t.Fatal("settings_change still advertises operator")
+	}
+	if _, ok := fields.Properties["method"]; ok {
+		t.Fatal("settings_change still advertises the operator method enum")
+	}
+	if _, ok := fields.Properties["arguments"]; ok {
+		t.Fatal("settings_change still advertises operator arguments")
+	}
+
 	wanted := protocol.CTOOperatorMethods()
-	for _, name := range fields.Properties["method"].Enum {
-		if _, ok := wanted[name]; !ok {
-			t.Errorf("catalog advertises unknown operation %s", name)
+	seen := map[string]bool{}
+	for _, op := range CTOOps() {
+		if op.Method == "" {
+			continue
 		}
-		delete(wanted, name)
+		if _, ok := wanted[op.Method]; !ok {
+			t.Errorf("op advertises unknown owner operation %s", op.Method)
+		}
+		seen[op.Method] = true
 	}
 	for name := range wanted {
-		t.Errorf("catalog omits owner operation %s", name)
+		if !seen[name] {
+			t.Errorf("op list omits owner operation %s", name)
+		}
 	}
 }
 

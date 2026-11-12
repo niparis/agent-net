@@ -190,6 +190,15 @@ func (d *Daemon) ctoProjectStartOutcome(ctx context.Context, start protocol.Star
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	// A rare op resolves to the parent tool and its full arguments, then runs
+	// that same path: the same owner gate, proposal and undo as the typed tool.
+	if name == "cto_op" {
+		_, tool, args, err := ctoOpCall(raw)
+		if err != nil {
+			return nil, err
+		}
+		return d.runCTOToolRaw(ctx, tool, args)
+	}
 	// The CTO server lists only the new names. An old name, including the
 	// internal stored "message" call, is refused on the channel.
 	if err := toolcatalog.RenamedError(name); err != nil {
@@ -248,6 +257,9 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 	}
 	if name == "cto_standing_orders" {
 		return d.ctoStandingOrders(ctx, raw)
+	}
+	if name == "cto_ops_list" {
+		return d.ctoOpsList(raw)
 	}
 	if ctoToolClasses[name] == ctoRead {
 		return d.readCTOTool(ctx, name, raw)
@@ -610,6 +622,14 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 	auditName := name
 	if concrete, _, _, err := ctoConcreteCall(name, raw); err == nil {
 		auditName = concrete
+	}
+	if name == "cto_op" {
+		if op, tool, args, err := ctoOpCall(raw); err == nil {
+			auditName = op.Name
+			if concrete, _, _, err := ctoConcreteCall(tool, args); err == nil {
+				auditName = concrete
+			}
+		}
 	}
 	switch name {
 	case "agent_message_send", "agent_message_reply":

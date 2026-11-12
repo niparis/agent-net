@@ -216,7 +216,7 @@ func TestCTOProposalsFindFillsMissingFields(t *testing.T) {
 
 func TestCTOV2EveryActionValidates(t *testing.T) {
 	cases := []struct{ tool, args string }{
-		{"graph_change", `{"action":"charter_set"}`}, {"graph_change", `{"action":"node_add"}`}, {"graph_change", `{"action":"node_remove"}`}, {"graph_change", `{"action":"edge_set"}`}, {"graph_change", `{"action":"edge_remove"}`}, {"graph_change", `{"action":"settings_set"}`}, {"graph_change", `{"action":"undo"}`},
+		{"graph_change", `{"action":"charter_set"}`}, {"graph_change", `{"action":"node_add"}`}, {"graph_change", `{"action":"edge_set"}`}, {"graph_change", `{"action":"edge_remove"}`}, {"graph_change", `{"action":"settings_set"}`}, {"graph_change", `{"action":"undo"}`},
 		{"graph_change", `{"action":"team_create","name":"team"}`}, {"graph_change", `{"action":"team_rename","team":"team","name":"new"}`}, {"graph_change", `{"action":"team_purpose","team":"team","purpose":"new purpose"}`}, {"graph_change", `{"action":"team_archive","team":"team"}`}, {"graph_change", `{"action":"team_member_add","team":"team","member":{"kind":"agent","id":"a"}}`}, {"graph_change", `{"action":"team_member_remove","team":"team","member":{"kind":"agent","id":"a"}}`},
 		{"session_change", `{"action":"rename"}`}, {"session_change", `{"action":"trust","session_id":"s_1","on":true}`}, {"session_change", `{"action":"trust","project":"example","node_id":"n_1"}`}, {"session_change", `{"action":"trust","path":"~/code/example"}`}, {"session_change", `{"action":"session_start","project":"example","trust":true}`}, {"session_change", `{"action":"policy"}`}, {"session_change", `{"action":"session_start","project":"example"}`},
 		{"worker_change", `{"action":"start","project":"example","task":"work","touches":["docs"]}`}, {"worker_change", `{"action":"stop"}`},
@@ -273,7 +273,7 @@ func TestCTOV2ActionArgumentsReachExistingHandler(t *testing.T) {
 		args map[string]any
 	}{
 		{"graph_change", map[string]any{"action": "charter_set", "node": "x", "attr": "purpose", "value": "v"}},
-		{"graph_change", map[string]any{"action": "node_add", "name": "x"}}, {"graph_change", map[string]any{"action": "node_remove", "name": "x"}},
+		{"graph_change", map[string]any{"action": "node_add", "name": "x"}},
 		{"graph_change", map[string]any{"action": "edge_set", "from": "a", "to": "b", "kind": "depends", "rule": "normal"}},
 		{"graph_change", map[string]any{"action": "edge_remove", "from": "a", "to": "b", "kind": "depends"}},
 		{"graph_change", map[string]any{"action": "settings_set", "node": "a", "setting": "autonomy", "value": "owner"}}, {"graph_change", map[string]any{"action": "undo"}},
@@ -344,7 +344,7 @@ func TestCTOChangePart2CatalogAndActionValidation(t *testing.T) {
 		{"answer", `{"kind":"held","message_id":"m1","action":"a","id":"other"}`, `id`},
 		{"answer", `{"kind":"held","message_id":"m1"}`, `action`},
 		{"tools_change", `{"action":"apply"}`, `plan_id`},
-		{"tools_change", `{"action":"import"}`, `candidate`},
+		{"tools_change", `{"action":"native_remove"}`, `selector`},
 		{"mcp_change", `{"action":"add"}`, `server`},
 		{"settings_change", `{"area":"notifications"}`, `disabled`},
 		{"project_change", `{"action":"create"}`, `path`},
@@ -385,7 +385,7 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 	defer cs.Close()
 	cases := []struct{ name, raw string }{
 		{"answer", `{"kind":"held","message_id":"m","action":"a"}`}, {"answer", `{"kind":"inbox","id":"i","answer":"yes"}`}, {"answer", `{"kind":"outcome","reply_id":"m","action":"overrule"}`},
-		{"tools_change", `{"action":"plan","item":"i","target":{"scope":"global"}}`}, {"tools_change", `{"action":"apply","plan_id":"p"}`}, {"tools_change", `{"action":"undo","item":"i"}`}, {"tools_change", `{"action":"import","candidate":"c"}`}, {"tools_change", `{"action":"native_remove","undo_plan_id":"p"}`},
+		{"tools_change", `{"action":"plan","item":"i","target":{"scope":"global"}}`}, {"tools_change", `{"action":"apply","plan_id":"p"}`}, {"tools_change", `{"action":"undo","item":"i"}`}, {"tools_change", `{"action":"native_remove","undo_plan_id":"p"}`},
 		{"mcp_change", `{"action":"add","server":{"name":"s","transport":"stdio","command":"/bin/true"}}`}, {"mcp_change", `{"action":"remove","name":"s"}`}, {"mcp_change", `{"action":"test","name":"s"}`}, {"mcp_change", `{"action":"enable","name":"s","enabled":true}`},
 		{"settings_change", `{"area":"worker_profile_add","name":"p","harness":"anything","model":"m"}`}, {"settings_change", `{"area":"worker_profile_remove","name":"p"}`}, {"settings_change", `{"area":"worker_providers","providers":["p"]}`}, {"settings_change", `{"area":"protected_providers","protected_providers":["p"]}`}, {"settings_change", `{"area":"score","model":"m","score":50}`}, {"settings_change", `{"area":"integrations","peer_messages":true}`}, {"settings_change", `{"area":"notifications","disabled":true}`}, {"settings_change", `{"area":"cto","title":"CTO"}`}, {"settings_change", `{"area":"playbook","note":"hello"}`}, {"settings_change", `{"area":"machine_name","name":"desk"}`}, {"settings_change", `{"area":"invite"}`}, {"settings_change", `{"area":"onboarding"}`},
 		{"project_change", `{"action":"add","paths":["/tmp/project"]}`}, {"project_change", `{"action":"remove","name":"p"}`}, {"project_change", `{"action":"display","project":"p","name":"P"}`}, {"project_change", `{"action":"create","path":"~/project"}`},
@@ -436,10 +436,16 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 		t.Fatalf("calls=%d want %d", len(calls), len(cases))
 	}
 	// mcp_change add must go through the proposal tool route and preserve args.
-	var result map[string]any
-	_ = json.Unmarshal([]byte(calls[8].args), &result)
-	if calls[8].name != "mcp_change" || result["action"] != "add" {
-		t.Fatalf("mcp add route: %s %s", calls[8].name, calls[8].args)
+	foundAdd := false
+	for _, call := range calls {
+		var result map[string]any
+		_ = json.Unmarshal([]byte(call.args), &result)
+		if call.name == "mcp_change" && result["action"] == "add" {
+			foundAdd = true
+		}
+	}
+	if !foundAdd {
+		t.Fatalf("mcp add route missing: %+v", calls)
 	}
 }
 
@@ -491,24 +497,28 @@ func TestCTOSessionChangeMCPServersAction(t *testing.T) {
 }
 
 func TestCTOV2ProcessStopNeedsAMachineAndPids(t *testing.T) {
+	op, ok := CTOOpByName("process_stop")
+	if !ok {
+		t.Fatal("process_stop is not an op")
+	}
 	for _, args := range []string{
-		`{"area":"process_stop","node_id":"n_1","pids":[1234,5678]}`,
-		`{"area":"process_stop","node_id":"n_1","pids":[42],"reason":"orphans after a restart"}`,
+		`{"node_id":"n_1","pids":[1234,5678]}`,
 	} {
-		if err := ValidateCTOActionSchema("settings_change", json.RawMessage(args)); err != nil {
+		if err := ValidateCTOOpArgs(op, json.RawMessage(args)); err != nil {
 			t.Errorf("%s: %v", args, err)
 		}
 	}
 	for _, args := range []string{
-		`{"area":"process_stop","pids":[42]}`,
-		`{"area":"process_stop","node_id":"","pids":[42]}`,
-		`{"area":"process_stop","node_id":"n_1"}`,
-		`{"area":"process_stop","node_id":"n_1","pids":[]}`,
-		`{"area":"process_stop","node_id":"n_1","pids":["42"]}`,
-		`{"area":"process_stop","node_id":"n_1","pids":[1.5]}`,
-		`{"area":"process_stop","node_id":"n_1","pids":[42],"signal":"KILL"}`,
+		`{"pids":[42]}`,
+		`{"node_id":"","pids":[42]}`,
+		`{"node_id":"n_1"}`,
+		`{"node_id":"n_1","pids":[]}`,
+		`{"node_id":"n_1","pids":["42"]}`,
+		`{"node_id":"n_1","pids":[1.5]}`,
+		`{"node_id":"n_1","pids":[42],"signal":"KILL"}`,
+		`{"node_id":"n_1","pids":[42],"reason":"orphans after a restart"}`,
 	} {
-		if err := ValidateCTOActionSchema("settings_change", json.RawMessage(args)); err == nil {
+		if err := ValidateCTOOpArgs(op, json.RawMessage(args)); err == nil {
 			t.Errorf("%s should be refused", args)
 		}
 	}

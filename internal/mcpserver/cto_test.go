@@ -89,15 +89,15 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	}
 	wantEnums := map[string]map[string][]string{
 		"graph_change": {
-			"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set"},
+			"action": {"charter_set", "node_add", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "agent_create", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set"},
 			"rule":   {"normal", "auto", "ask", "never"},
 		},
 		"session_change": {"action": {"rename", "replace", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}, "folder": {"project", "worktree"}, "harness": {"opencode", "claude", "pi", "codex"}},
 		"worker_change":  {"action": {"start", "stop"}, "harness": {"opencode", "claude", "pi", "codex", "agy"}, "isolation": {"worktree", "none"}},
 		"answer":         {"kind": {"held", "inbox", "outcome"}},
-		"tools_change":   {"action": {"plan", "apply", "undo", "import", "native_remove", "toggle", "new_projects"}},
+		"tools_change":   {"action": {"plan", "apply", "undo", "native_remove", "toggle", "new_projects"}},
 		"settings_change": {
-			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "operator", "process_stop"},
+			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "invite", "onboarding"},
 		},
 		"project_change": {"action": {"add", "remove", "display", "create"}},
 		"cto_ui_show":    {"tab": {"sessions", "messages", "quotas", "graph", "tools"}},
@@ -235,13 +235,13 @@ func TestCTOParityTools(t *testing.T) {
 		got[tool.Name] = true
 	}
 	for _, name := range []string{"cto_proposals_find", "cto_placement_memory", "cto_standing_orders", "cto_ui_show", "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "sessions_archive", "proposal_ask", "cto_new",
-		"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "agent_message_send", "agent_message_reply", "agent_message_withdraw", "agent_owner_ask", "agent_learn", "agent_permission_propose", "projects_layout", "agent_owner_judgments_find"} {
+		"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "agent_message_send", "agent_message_reply", "agent_message_withdraw", "agent_owner_ask", "agent_learn", "agent_permission_propose", "projects_layout", "agent_owner_judgments_find", "cto_ops_list", "cto_op"} {
 		if !got[name] {
 			t.Errorf("missing CTO tool %s", name)
 		}
 	}
-	if len(got) != 37 {
-		t.Errorf("CTO exposes %d tools, want 37: %v", len(got), got)
+	if len(got) != 39 {
+		t.Errorf("CTO exposes %d tools, want 39: %v", len(got), got)
 	}
 	for _, name := range []string{"overview", "sessions", "session", "proposals", "feed", "messages", "graph", "machines", "projects", "workers", "tools", "settings", "message", "ask_owner", "learn", "ui", "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "session_rename", "session_trust", "session_policy", "worker_start", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "tools_plan", "tools_apply", "tools_undo", "mcp_import", "mcp_native_remove", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "send", "reply", "ui_show", "ui_notice", "cto_send"} {
 		if got[name] {
@@ -367,14 +367,19 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Leave room for connected-app actions and the parallel trust/standing-orders
-	// tools without removing the descriptions callers need.
+	// The budget now covers the core tier plus cto_ops_list and cto_op. Keep
+	// at least 1 KiB of headroom so a new core tool or a fuller description
+	// does not push the list straight to the limit.
 	// agent_permission_propose, owner-approved permission rules, 2026-11-09
 	// scores_weekly, weekly scores table with release markers, 2026-11-11
 	const schemaBudget = 36*1024 + 680
+	const headroom = 1024
 	t.Logf("total schema: %d bytes, %d bytes left of the %d byte budget", len(schema), schemaBudget-len(schema), schemaBudget)
 	if len(schema) >= schemaBudget {
 		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), schemaBudget)
+	}
+	if left := schemaBudget - len(schema); left < headroom {
+		t.Errorf("CTO schema headroom is %d bytes, want at least %d", left, headroom)
 	}
 	for _, tool := range list.Tools {
 		data, err := json.Marshal(tool)
