@@ -68,13 +68,22 @@ jobs:
           go test -count=1 -v -run '^TestMigrationsLockExtendsBase$' ./internal/gateway
 
   test-sharded:
-    name: ${{ matrix.package }} shard ${{ matrix.shard }} of 4
+    name: ${{ matrix.package }} shard ${{ matrix.shard }} of ${{ matrix.shards || 4 }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         package: [daemon, gateway, setup, tui, agent-net]
         shard: [0, 1, 2, 3]
+        # The daemon tests need five shards to stay under ten minutes. The first
+        # entry adds the count to its four jobs, the second adds the fifth job.
+        # Every other package runs four shards.
+        include:
+          - package: daemon
+            shards: 5
+          - package: daemon
+            shard: 4
+            shards: 5
     steps:
       - uses: actions/checkout@v4.2.2
       - name: Go toolchain location
@@ -104,7 +113,7 @@ jobs:
       # The JSON output of each shard is kept as an artifact. scripts/test-timings.py
       # turns the artifacts of one green run into scripts/test-timings.tsv, so the
       # shard plan balances the times CI itself measures.
-      - run: scripts/test.sh --package ${{ matrix.package }} --shard-index ${{ matrix.shard }} --shard-count 4 --json-output "$RUNNER_TEMP/test-${{ matrix.package }}-${{ matrix.shard }}.json" -- -timeout 30m
+      - run: scripts/test.sh --package ${{ matrix.package }} --shard-index ${{ matrix.shard }} --shard-count ${{ matrix.shards || 4 }} --json-output "$RUNNER_TEMP/test-${{ matrix.package }}-${{ matrix.shard }}.json" -- -timeout 30m
       - uses: actions/upload-artifact@v4.6.2
         if: always()
         with:
