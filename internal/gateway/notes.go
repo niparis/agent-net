@@ -14,7 +14,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Gateway notes (decision 0157) are rows of standing_orders that have a name.
+// Gateway notes (decision 0158) are rows of standing_orders that have a name.
 // They share the owner judgment store, so the owner sees and deletes them where
 // he sees his judgments. A note belongs to a scope: one agent, one project or
 // the owner (every session).
@@ -149,6 +149,18 @@ func (s *Store) writeNote(session string, q protocol.NoteWriteRequest, now time.
 	}
 	if !protocol.ValidNoteKind(kind) {
 		return res, errors.New("kind must be feedback, fact or reference")
+	}
+	if scope == protocol.NoteScopeOwner {
+		// An owner-wide note reaches every session, so it is the owner's: the
+		// owner writes it, or the CTO on his words. The harness of a session
+		// is set by the gateway, never by the caller.
+		_, _, harness, _, err := s.sessionIdentity(session)
+		if err != nil {
+			return res, err
+		}
+		if harness != "cto" && !protocol.IsOwner(harness) {
+			return res, errors.New("an owner-wide note is written by the owner or by the CTO on his words: use scope agent or project")
+		}
 	}
 	agent, project, err := s.noteScopes(session)
 	if err != nil {

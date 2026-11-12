@@ -11,7 +11,7 @@ import (
 
 // A session writes a note with agent_note_write, finds it with
 // agent_notes_find, and sees its title (not its body) in the charter text the
-// gateway sends (decision 0157). The command line has no notes.
+// gateway sends (decision 0158). The command line has no notes.
 func TestAgentNotesWriteFindAndCharterIndex(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})

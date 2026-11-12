@@ -15,7 +15,7 @@ import (
 // keeps them. The CTO reads them at the start of every conversation. Section 6
 // of Settings lists them: enter adds one, x removes the selected one and u
 // puts the last removed one back. The same section lists the gateway notes the
-// agents keep (decision 0157), with their scope and kind; x deletes one.
+// agents keep (decision 0158), with their scope and kind; x deletes one.
 
 type standingMsg struct {
 	orders []protocol.StandingOrder

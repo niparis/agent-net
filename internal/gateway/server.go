@@ -2840,7 +2840,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		return protocol.PolicyGot{Charter: text}, nil
+		// The notes index travels beside the charter, not inside it: the
+		// daemon hashes the charter to decide when to send it again, and a
+		// note change must not make it send the charter (decision 0158).
+		notes, err := st.notesIndex(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.PolicyGot{Charter: text, Notes: notes}, nil
 
 	case "charter.global":
 		// The owner's global level, for a connection that has no session yet.

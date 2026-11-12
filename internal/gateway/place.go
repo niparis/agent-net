@@ -306,20 +306,9 @@ func (s *Store) contextText(session string) (string, error) {
 		return "", err
 	}
 	if text != "" && place != "" {
-		text += "\n" + place
-	} else {
-		text += place
+		return text + "\n" + place, nil
 	}
-	// The titles of the session's notes follow the charter, so they are sent
-	// with it at the start and again when either changes (decision 0157).
-	notes, err := s.notesIndex(session)
-	if err != nil {
-		return "", err
-	}
-	if text != "" && notes != "" {
-		return text + "\n" + notes, nil
-	}
-	return text + notes, nil
+	return text + place, nil
 }
 
 // handoffNotice is the first line of a handed-off message.

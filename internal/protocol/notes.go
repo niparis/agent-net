@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Gateway notes (decision 0157) are named notes that live in the owner
+// Gateway notes (decision 0158) are named notes that live in the owner
 // judgment store (standing_orders). An agent writes one with agent_note_write
 // and finds them with agent_notes_find.
 const (

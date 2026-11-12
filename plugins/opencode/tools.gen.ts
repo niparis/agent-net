@@ -1205,7 +1205,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_note_write",
-    "description": "Save a note that outlives this session: a name, a one-line description and a body, for your agent, your project or every session. The same name in the same scope updates the note. The answer lists up to 3 similar notes: merge into one instead of adding another. Keep one fact per note.",
+    "description": "Save a note that outlives this session: a name, a one-line description and a body, for your agent or your project (every session is for the owner and the CTO). The same name in the same scope updates the note. The answer lists up to 3 similar notes: merge into one instead of adding another. Keep one fact per note.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1229,7 +1229,7 @@ export const TOOL_CATALOG = [
             "owner"
           ],
           "default": "agent",
-          "description": "Who sees it: your agent (default), your project, or every session."
+          "description": "Who sees it: your agent (default), your project, or every session. Only the owner and the CTO write owner; an agent's owner write is refused."
         },
         "kind": {
           "type": "string",

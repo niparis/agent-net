@@ -91,7 +91,7 @@ type StandingOrder struct {
 	Kind      string   `json:"kind,omitempty"`
 	Area      string   `json:"area,omitempty"`
 	Ref       string   `json:"ref,omitempty"`
-	// A gateway note (decision 0157) also has a scope, the agent or project it
+	// A gateway note (decision 0158) also has a scope, the agent or project it
 	// belongs to, a name and a one-line description. Uses and UsedAt say how
 	// often and when it was last read or written. Stale is true when nobody did
 	// for 30 days.
@@ -158,7 +158,7 @@ type StandingOrdersRequest struct {
 type StandingOrdersResult struct {
 	History []StandingOrder `json:"history,omitempty"`
 	Orders  []StandingOrder `json:"orders"`
-	// Notes are the gateway notes (decision 0157), newest first. The list
+	// Notes are the gateway notes (decision 0158), newest first. The list
 	// action fills them; orders keeps only orders and rules.
 	Notes []StandingOrder `json:"notes,omitempty"`
 	Order *StandingOrder  `json:"order,omitempty"`
