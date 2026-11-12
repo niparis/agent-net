@@ -329,7 +329,7 @@ func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
 		result := d.saveAgyWorkerEnd(w, reason)
 		return result.SHA != ""
 	}
-	result := commitWorkerEndWIP(context.Background(), w.worktree, w.branch, reason)
+	result := d.commitWorkerEndWIP(context.Background(), w.worktree, w.branch, reason)
 	if result.Failed != "" {
 		d.Logf("worker %s: adoption WIP commit: %s", w.id, result.Failed)
 	}
@@ -429,10 +429,140 @@ func (r workerEndCommitResult) keepWorktree() bool {
 	return r.Failed != "" || r.Skipped != ""
 }
 
+// workerIndexLockStaleAfter is how old an empty index lock must be before a
+// WIP save may treat it as the one a dead git process left behind.
+const workerIndexLockStaleAfter = 10 * time.Minute
+
+// wipLockPolicy says whether a WIP save may clear a stale index lock. An empty
+// WorktreesRoot leaves every lock alone.
+type wipLockPolicy struct {
+	WorktreesRoot string
+	Logf          func(format string, args ...any)
+}
+
+// commitWorkerEndWIP is commitWorkerEndWIPWithPolicy for this daemon: a stale
+// lock is cleared only inside the daemon's own worktrees folder.
+func (d *Daemon) commitWorkerEndWIP(ctx context.Context, dir, branch, reason string) workerEndCommitResult {
+	return commitWorkerEndWIPWithPolicy(ctx, dir, branch, reason, wipLockPolicy{WorktreesRoot: d.worktreesDir(), Logf: d.Logf})
+}
+
+// commitWorkerEndWIPWithoutLockPolicy leaves every index lock alone, for
+// callers that do not own a worktrees folder.
+func commitWorkerEndWIP(ctx context.Context, dir, branch, reason string) workerEndCommitResult {
+	return commitWorkerEndWIPWithPolicy(ctx, dir, branch, reason, wipLockPolicy{})
+}
+
+// commitWorkerEndWIPWithPolicy saves the WIP once, and once more after it
+// removes a stale index lock that a dead git process left behind.
+func commitWorkerEndWIPWithPolicy(ctx context.Context, dir, branch, reason string, policy wipLockPolicy) workerEndCommitResult {
+	result := commitWorkerEndWIPOnce(ctx, dir, branch, reason)
+	if result.Failed == "" || policy.WorktreesRoot == "" || !strings.Contains(result.Failed, "index.lock") {
+		return result
+	}
+	removed, _ := removeStaleIndexLock(ctx, dir, policy)
+	if !removed {
+		return result
+	}
+	if policy.Logf != nil {
+		policy.Logf("worker worktree %s: removed stale index lock", dir)
+	}
+	return commitWorkerEndWIPOnce(ctx, dir, branch, reason)
+}
+
+// removeStaleIndexLock removes the index lock of the WIP worktree when it is
+// empty, older than workerIndexLockStaleAfter, inside the daemon's worktrees
+// folder, and no git process uses the worktree. It says whether it removed the
+// file, and why not.
+func removeStaleIndexLock(ctx context.Context, dir string, policy wipLockPolicy) (bool, string) {
+	root := strings.TrimSpace(policy.WorktreesRoot)
+	if root == "" {
+		return false, ""
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return false, err.Error()
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false, err.Error()
+	}
+	if absDir == absRoot || !strings.HasPrefix(absDir, absRoot+string(filepath.Separator)) {
+		return false, "the worktree is not under the daemon's worktrees folder"
+	}
+	indexPath, err := gitOut(ctx, dir, "rev-parse", "--git-path", "index")
+	if err != nil {
+		return false, err.Error()
+	}
+	if !filepath.IsAbs(indexPath) {
+		indexPath = filepath.Join(dir, indexPath)
+	}
+	lockPath := indexPath + ".lock"
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		return false, ""
+	}
+	if info.Size() != 0 {
+		return false, "the index lock is not empty"
+	}
+	if time.Since(info.ModTime()) < workerIndexLockStaleAfter {
+		return false, "the index lock is recent"
+	}
+	if gitProcessUsesWorktree(absDir) {
+		return false, "a git process is using the worktree"
+	}
+	if err := os.Remove(lockPath); err != nil {
+		return false, err.Error()
+	}
+	return true, ""
+}
+
+// gitProcessUsesWorktree says whether a running git process works in dir or a
+// folder under it. A system without /proc says yes, so a lock is never removed
+// where the daemon cannot look.
+func gitProcessUsesWorktree(dir string) bool {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return true
+	}
+	seen := false
+	for _, e := range entries {
+		pid := e.Name()
+		if pid == "" || pid[0] < '0' || pid[0] > '9' {
+			continue
+		}
+		seen = true
+		comm, err := os.ReadFile(filepath.Join("/proc", pid, "comm"))
+		if err != nil {
+			continue
+		}
+		name := strings.TrimSpace(string(comm))
+		if name != "git" && !strings.HasPrefix(name, "git-") {
+			continue
+		}
+		if cwd, err := os.Readlink(filepath.Join("/proc", pid, "cwd")); err == nil &&
+			(cwd == dir || strings.HasPrefix(cwd, dir+string(filepath.Separator))) {
+			return true
+		}
+		cmdline, err := os.ReadFile(filepath.Join("/proc", pid, "cmdline"))
+		if err != nil {
+			continue
+		}
+		for _, arg := range strings.Split(string(cmdline), "\x00") {
+			if filepath.IsAbs(arg) && (arg == dir || strings.HasPrefix(arg, dir+string(filepath.Separator))) {
+				return true
+			}
+		}
+	}
+	return !seen
+}
+
 // commitWorkerEndWIP commits remaining work using a fixed daemon identity. It
 // shares stageWorkerLeftovers with hand-back commits so ignored and oversized
 // files follow the same filtering rules.
-func commitWorkerEndWIP(ctx context.Context, dir, branch, reason string) workerEndCommitResult {
+func commitWorkerEndWIPOnce(ctx context.Context, dir, branch, reason string) workerEndCommitResult {
+	if dir == "" {
+		return workerEndCommitResult{}
+	}
 	status, err := gitOut(ctx, dir, "status", "--porcelain")
 	if err != nil {
 		return workerEndCommitResult{Failed: err.Error()}
@@ -1010,7 +1140,7 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	wipDetail := ""
 	if !complete && w.worktree != "" && w.harness != "agy" {
 		unlock := d.lockWorktree(w.worktree)
-		result := commitWorkerEndWIP(context.Background(), w.worktree, w.branch, "handback")
+		result := d.commitWorkerEndWIP(context.Background(), w.worktree, w.branch, "handback")
 		unlock()
 		wipDetail = result.noticeDetail()
 		if result.Failed != "" {
@@ -1294,10 +1424,14 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 	w := &worker{evidence: r.Evidence, id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
 		sessionID: r.SessionID, startedAt: r.StartedAt, taskMsg: r.TaskMsg, mainPath: r.MainPath, worktree: r.Worktree,
 		branch: r.Branch, base: r.Base, title: r.Title}
+	state, err := d.st.loadWorkerLostNotice(r.ID, r.RunGeneration)
+	if err != nil {
+		d.Logf("worker %s: lost notice state: %v", r.ID, err)
+	}
 	status, note := d.noticeFor(protocol.StopLost)
 	d.noteWorkerStruggle(ctx, w)
 	unlock := d.lockWorktree(w.worktree)
-	result := commitWorkerEndWIP(ctx, w.worktree, w.branch, protocol.StopLost)
+	result := d.commitWorkerEndWIP(ctx, w.worktree, w.branch, protocol.StopLost)
 	unlock()
 	if result.Failed != "" {
 		d.Logf("worker %s: end WIP commit: %s", r.ID, result.Failed)
@@ -1317,10 +1451,35 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 			}
 		}
 	}
-	n := d.notice(w, status, note, workerStats{})
-	n.WIPDetail = result.noticeDetail()
-	if _, err := d.sendNotice(ctx, w, n, ""); err != nil {
-		d.Logf("worker %s: notice: %v", r.ID, err)
+	// One lost run tells its caller once, however often the gateway report is
+	// retried. A WIP save that succeeds after the notice is a short follow-up.
+	if !state.Sent {
+		n := d.notice(w, status, note, workerStats{})
+		n.WIPDetail = result.noticeDetail()
+		if _, err := d.sendNotice(ctx, w, n, ""); err != nil {
+			d.Logf("worker %s: notice: %v", r.ID, err)
+			d.finishWorktree(w)
+			return
+		}
+		state.Sent = true
+		if result.SHA != "" {
+			state.WIPSHA = result.SHA
+		}
+		if err := d.st.saveWorkerLostNotice(r.ID, r.RunGeneration, state); err != nil {
+			d.Logf("worker %s: save lost notice state: %v", r.ID, err)
+		}
+		d.finishWorktree(w)
+		return
+	}
+	if result.SHA != "" && !state.WIPSent && result.SHA != state.WIPSHA {
+		if _, err := d.sendWorkerNoticeBody(ctx, w, "WIP saved as "+result.SHA, "", "", ""); err != nil {
+			d.Logf("worker %s: WIP saved notice: %v", r.ID, err)
+		} else {
+			state.WIPSHA, state.WIPSent = result.SHA, true
+			if err := d.st.saveWorkerLostNotice(r.ID, r.RunGeneration, state); err != nil {
+				d.Logf("worker %s: save lost notice state: %v", r.ID, err)
+			}
+		}
 	}
 	d.finishWorktree(w)
 }

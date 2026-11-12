@@ -270,6 +270,9 @@ func (s *state) deleteWorker(id string) error {
 	if err := s.deleteWorkerIdleNotice(id); err != nil {
 		return err
 	}
+	if err := s.deleteWorkerLostNotice(id); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`DELETE FROM workers WHERE id = ?`, id)
 	return err
 }
@@ -306,5 +309,45 @@ func (s *state) loadWorkerIdleNotice(id string) (time.Time, string, string, bool
 }
 func (s *state) deleteWorkerIdleNotice(id string) error {
 	_, err := s.db.Exec(`DELETE FROM worker_idle_notice WHERE worker_id=?`, id)
+	return err
+}
+
+// workerLostNotice is what the daemon remembers about the lost notice of one
+// run: the notice itself went out, and a later WIP save was reported.
+type workerLostNotice struct {
+	Sent    bool
+	WIPSHA  string
+	WIPSent bool
+}
+
+// loadWorkerLostNotice returns the state of one run's lost notice. A row from
+// another run generation is not about this run.
+func (s *state) loadWorkerLostNotice(id string, generation int) (workerLostNotice, error) {
+	var st workerLostNotice
+	var stored, sent, wipSent int
+	err := s.db.QueryRow(`SELECT run_generation, sent, wip_sha, wip_sent FROM worker_lost_notice WHERE worker_id=?`, id).
+		Scan(&stored, &sent, &st.WIPSHA, &wipSent)
+	if errors.Is(err, sql.ErrNoRows) {
+		return workerLostNotice{}, nil
+	}
+	if err != nil {
+		return workerLostNotice{}, err
+	}
+	if stored != generation {
+		return workerLostNotice{}, nil
+	}
+	st.Sent, st.WIPSent = sent != 0, wipSent != 0
+	return st, nil
+}
+
+func (s *state) saveWorkerLostNotice(id string, generation int, st workerLostNotice) error {
+	_, err := s.db.Exec(`INSERT INTO worker_lost_notice(worker_id, run_generation, sent, wip_sha, wip_sent) VALUES(?,?,?,?,?)
+ ON CONFLICT(worker_id) DO UPDATE SET run_generation=excluded.run_generation, sent=excluded.sent,
+ wip_sha=excluded.wip_sha, wip_sent=excluded.wip_sent`, id, generation, boolInt(st.Sent), st.WIPSHA, boolInt(st.WIPSent))
+	return err
+}
+
+func (s *state) deleteWorkerLostNotice(id string) error {
+	_, err := s.db.Exec(`DELETE FROM worker_lost_notice WHERE worker_id=?`, id)
 	return err
 }

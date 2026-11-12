@@ -1387,6 +1387,93 @@ func TestLostWorkerIsReportedOnceByConcurrentReporters(t *testing.T) {
 	}
 }
 
+// A lost worker whose WIP save keeps failing tells its caller once: the
+// worker.stopped report may be retried, but its notice must not be resent.
+func TestLostWorkerNoticeIsSentOnceWhenWIPSaveKeepsFailing(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	_, sid := helloPi(t, w.node, "pi-lost", "/work/lost", true)
+	// The worker's own worktree, inside the folder this daemon creates.
+	dir := filepath.Join(w.d.worktreesDir(), "w_lost")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "init", "-q", "-b", "worker")
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "add", "README.md")
+	gitIn(t, dir, "commit", "-q", "-m", "base")
+	if err := os.WriteFile(filepath.Join(dir, "change.txt"), []byte("work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A fresh empty lock makes every WIP save fail, as the live case did.
+	if err := os.WriteFile(filepath.Join(dir, ".git", "index.lock"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	row := workerRow{ID: "w_lost", Harness: "pi", Project: "shop", Path: "/x", Owner: w.ownerID(),
+		NativeID: "pi-lost", SessionID: sid, PID: 1, PGID: 1, StartToken: "not-this-run",
+		StartedAt: time.Now(), LastActive: time.Now(), EndedReason: protocol.StopLost,
+		Worktree: dir, Branch: "worker"}
+	if err := w.d.st.saveWorker(row); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 4; i++ {
+		w.d.reportWorkerEnds(context.Background())
+		// The gateway report did not land: the row stays unreported and the
+		// next cycle reaches lostNotice again, as after a dropped link.
+		if _, err := w.d.st.db.Exec(`UPDATE workers SET reported = 0 WHERE id = ?`, row.ID); err != nil {
+			t.Fatal(err)
+		}
+		w.d.releaseWorkerReport(row.ID)
+	}
+
+	got := w.notices(t)
+	if len(got) != 1 {
+		t.Fatalf("the lost worker sent %d notices, want 1", len(got))
+	}
+	if !strings.Contains(got[0].Body, "status: lost after daemon restart") || !strings.Contains(got[0].Body, "WIP commit failed") {
+		t.Fatalf("lost notice: %+v", got[0])
+	}
+	if saved := w.wipSaved(t); len(saved) != 0 {
+		t.Fatalf("a failed WIP save was reported as saved: %v", saved)
+	}
+
+	// The lock disappears. A later retry saves the WIP and sends one short
+	// follow-up, and the lost notice is not repeated.
+	if err := os.Remove(filepath.Join(dir, ".git", "index.lock")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		w.d.reportWorkerEnds(context.Background())
+		if _, err := w.d.st.db.Exec(`UPDATE workers SET reported = 0 WHERE id = ?`, row.ID); err != nil {
+			t.Fatal(err)
+		}
+		w.d.releaseWorkerReport(row.ID)
+	}
+	if got := w.notices(t); len(got) != 1 {
+		t.Fatalf("a retry repeated the lost notice: %d notices", len(got))
+	}
+	sha := gitOutT(t, dir, "rev-parse", "--short", "HEAD")
+	if saved := w.wipSaved(t); len(saved) != 1 || !strings.Contains(saved[0].Body, "WIP saved as "+sha) {
+		t.Fatalf("WIP saved follow-up: %v, want one with %s", saved, sha)
+	}
+}
+
+// wipSaved returns the short WIP-saved follow-ups the owner received.
+func (w *workerNode) wipSaved(t *testing.T) []protocol.Message {
+	t.Helper()
+	var out []protocol.Message
+	for _, m := range w.messagesOf(t, w.ownerID()) {
+		if strings.HasPrefix(m.Body, "WIP saved as ") {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // A process ID that was reused is not a worker: the start time differs.
 func TestAdoptIgnoresAReusedProcessID(t *testing.T) {
 	t.Parallel()
