@@ -158,8 +158,11 @@ type Model struct {
 	topicSubscribing       bool
 	topicRetryAt           time.Time
 	topicLastFull          time.Time
-	topicVersions          map[string]uint64
-	topicDirty             map[string]bool
+	// topicFetchedAt is when the last read that finished began. Changed topics
+	// are read again no sooner than topicRefreshGap after it.
+	topicFetchedAt time.Time
+	topicVersions  map[string]uint64
+	topicDirty     map[string]bool
 	// dataVersions is the topic version each part of snap was read at, and
 	// dataVersionsAt is when that read happened. A safety refresh sends the
 	// version only while the read is younger than the worker window, because
@@ -173,6 +176,8 @@ type Model struct {
 	// that screen, so the count cannot stay stale.
 	inboxSeen string
 	inboxAt   time.Time
+	// proposalsAt is when the proposals were last asked for.
+	proposalsAt time.Time
 
 	// Stored conversations for the Messages tab. The gateway answers a page;
 	// View only reads convs, never calls the source.
@@ -350,6 +355,7 @@ type pendingStop struct {
 type fetchedMsg struct {
 	proposals       []protocol.CTOProposal
 	proposalsOK     bool
+	proposalsAsked  bool // the proposals were asked for this refresh
 	asks            []protocol.Ask
 	inboxOK         bool
 	chief           protocol.ChiefStatus
@@ -468,8 +474,17 @@ func (m Model) forgetReadVersions() Model {
 	return m
 }
 
+// topicRefreshGap is the shortest time between two reads that a changed topic
+// asks for. On a busy network some topic moves every second (every session
+// report writes the sessions table), and a read for each move was a full read
+// of every list each second. The first change after a quiet time is read at
+// once, and the changes of a busy time are read together, so a part of the
+// screen is at most this old. The reads the owner asks for do not wait.
+const topicRefreshGap = 3 * time.Second
+
 func (m Model) topicRefreshDue() bool {
-	return !m.topicActive || len(m.topicDirty) != 0 || m.topicLastFull.IsZero() || m.now().Sub(m.topicLastFull) >= 30*time.Second || m.topicView != m.topicViewKey()
+	changed := len(m.topicDirty) != 0 && (m.topicFetchedAt.IsZero() || m.now().Sub(m.topicFetchedAt) >= topicRefreshGap)
+	return !m.topicActive || changed || m.topicLastFull.IsZero() || m.now().Sub(m.topicLastFull) >= 30*time.Second || m.topicView != m.topicViewKey()
 }
 
 func (m Model) topicViewKey() string {
@@ -530,7 +545,7 @@ func (m Model) fetchCmd() tea.Cmd {
 	askU := askUsage && m.usage.unavailable == ""
 	askTools := m.onboardingWantsTools()
 	inboxOnScreen := m.tab == inboxTab || m.focus == focusCTO
-	inboxSeen, inboxAt := m.inboxSeen, m.inboxAt
+	inboxSeen, inboxAt, proposalsAt := m.inboxSeen, m.inboxAt, m.proposalsAt
 	deskLogOpen := m.deskLogOpen
 	wantWorkerLog := m.tab == quotasTab && m.workersLog
 	wantPicker := m.tab == quotasTab && !m.workersLog && m.pickerWanted
@@ -647,15 +662,25 @@ func (m Model) fetchCmd() tea.Cmd {
 		// Snapshot says that what waits for the owner changed. Away from that
 		// screen it is still checked now and then, because gateway items and
 		// proposals made on another machine do not change the Snapshot.
-		if c, ok := src.(inboxCaller); ok &&
-			(wants(protocol.TopicInbox) || wants(protocol.TopicAgents) || wants(protocol.TopicLearned)) &&
-			(inboxOnScreen || inboxMarkerOf(res.snap) != inboxSeen || res.at.Sub(inboxAt) >= inboxRefreshEvery || topics[protocol.TopicInbox]) {
-			res.listsAsked = true
+		//
+		// The gateway's Inbox topic moves with every session report, as the
+		// agents topic does, so it is no reason to ask for the proposals: they
+		// are the machines' own, and each ask goes to every online machine. A
+		// proposal on this machine changes the count in the Snapshot, and one
+		// on another machine is found by the wait.
+		markerMoved := inboxMarkerOf(res.snap) != inboxSeen
+		listsWanted := wants(protocol.TopicInbox) || wants(protocol.TopicAgents) || wants(protocol.TopicLearned)
+		c, ok := src.(inboxCaller)
+		if ok && listsWanted && (markerMoved || res.at.Sub(proposalsAt) >= inboxRefreshEvery || (inboxOnScreen && full)) {
+			res.proposalsAsked = true
 			group(func(ctx context.Context) {
 				if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
 					res.proposalsOK = true
 				}
 			})
+		}
+		if ok && listsWanted && (markerMoved || res.at.Sub(inboxAt) >= inboxRefreshEvery || topics[protocol.TopicInbox] || (inboxOnScreen && full)) {
+			res.listsAsked = true
 			group(func(ctx context.Context) {
 				var data protocol.AsksResult
 				raw, err := c.Call(ctx, protocol.OpAsksList, nil)
@@ -1186,6 +1211,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.fetching = false
 		if msg.err == nil && msg.snap.Connected {
+			m.topicFetchedAt = msg.at
 			if msg.topicFull {
 				m.topicLastFull = msg.at
 				m.topicView = msg.topicView
@@ -1254,6 +1280,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.listsAsked {
 			m.inboxAt = msg.at
+		}
+		if msg.proposalsAsked {
+			m.proposalsAt = msg.at
 		}
 		if msg.convAsked {
 			m.applyConversationPage(conversationPageMsg{page: msg.convPage, err: msg.convErr, first: true})

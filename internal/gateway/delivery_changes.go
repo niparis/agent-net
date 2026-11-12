@@ -873,6 +873,12 @@ func (s *Store) ListChanges(q protocol.ChangeListRequest) (protocol.ChangeListRe
 		}
 		out.Changes = append(out.Changes, v)
 	}
+	if q.WantETag || q.IfETag != "" {
+		out.ETag = etagOf(out)
+		if out.ETag != "" && out.ETag == q.IfETag {
+			return protocol.ChangeListResult{NotModified: true, ETag: out.ETag}, nil
+		}
+	}
 	return out, nil
 }
 

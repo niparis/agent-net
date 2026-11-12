@@ -661,13 +661,25 @@ type (
 		// gateway answers NotModified and no rows when the topic has not moved,
 		// so a safety refresh costs almost nothing.
 		IfVersion uint64 `json:"if_version,omitempty"`
+		// IfETag is the ETag of the rows the caller already holds. The gateway
+		// answers NotModified when the rows it would send hash to the same
+		// value, even if a table under them was written. WantETag asks for the
+		// ETag of the answer, so the caller has one to send next time.
+		IfETag   string `json:"if_etag,omitempty"`
+		WantETag bool   `json:"want_etag,omitempty"`
 		// Lite leaves out fields no list screen shows. The TUI sets it.
 		Lite bool `json:"lite,omitempty"`
 	}
 	// QueryNodes asks for NodesInfo. IfVersion is the nodes topic version the
-	// caller already holds; an unchanged topic answers NotModified.
+	// caller already holds; an unchanged topic answers NotModified. IfETag and
+	// WantETag work as in QueryAgents. Brief asks only for who is on the
+	// network: no quality tables, tracks or notes. Callers that need machine
+	// ids and names use it.
 	QueryNodes struct {
 		IfVersion uint64 `json:"if_version,omitempty"`
+		IfETag    string `json:"if_etag,omitempty"`
+		WantETag  bool   `json:"want_etag,omitempty"`
+		Brief     bool   `json:"brief,omitempty"`
 	}
 	QueryAgent struct {
 		SessionID string `json:"session_id"`
@@ -893,9 +905,11 @@ type ProjectView struct {
 type NodesInfo struct {
 	GatewayVersion string     `json:"gateway_version"`
 	Nodes          []NodeView `json:"nodes"`
-	// NotModified means the caller's IfVersion already matches the nodes
-	// topic, so Nodes holds no rows and the caller keeps its copy.
-	NotModified bool `json:"not_modified,omitempty"`
+	// NotModified means the caller's IfVersion or IfETag already matches, so
+	// Nodes holds no rows and the caller keeps its copy. ETag is the hash of
+	// the answer, set when the caller asked for it.
+	NotModified bool   `json:"not_modified,omitempty"`
+	ETag        string `json:"etag,omitempty"`
 	// Playbook is the fresh notes of the network, for agent_machines_find and the
 	// owner's "Learned" list (decision 0022).
 	Playbook []PlaybookNote `json:"playbook,omitempty"`

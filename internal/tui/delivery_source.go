@@ -35,13 +35,40 @@ type gatewayDelivery struct {
 	now  func() time.Time
 	// ifVersion is the changes topic version the held list was read at.
 	ifVersion uint64
+
+	mu sync.Mutex
+	// held is what the last read of each state got: its first page with the
+	// ETag the gateway gave it, and the later pages. full says the next read
+	// ignores them. The changes topic moves with every message and event, but
+	// the list rarely changes, so a page that the gateway says is the same is
+	// not sent again.
+	held map[string]heldChanges
+	full bool
+}
+
+// heldChanges is one state's list as the gateway sent it. The rows are the
+// gateway's own, not the view's: how long a change has waited depends on the
+// time of each draw.
+type heldChanges struct {
+	etag  string
+	first []protocol.ChangeView
+	next  string
+	more  []protocol.ChangeView
 }
 
 // SetIfVersion is how the view says which changes version it already holds.
 func (g *gatewayDelivery) SetIfVersion(v uint64) { g.ifVersion = v }
 
+// SetFullRead says the next read asks for every page again. The view sets it
+// now and then, so a change on a later page is never missed for long.
+func (g *gatewayDelivery) SetFullRead(full bool) {
+	g.mu.Lock()
+	g.full = full
+	g.mu.Unlock()
+}
+
 func newGatewayDelivery(call func(context.Context, string, any) (json.RawMessage, error), now func() time.Time) *gatewayDelivery {
-	return &gatewayDelivery{call: call, now: now}
+	return &gatewayDelivery{call: call, now: now, held: map[string]heldChanges{}}
 }
 
 // find sends one changes_owner_find and decodes the page.
@@ -69,10 +96,15 @@ func (g *gatewayDelivery) Changes(ctx context.Context, repo string) ([]deliveryC
 	// not delay the others and the load takes the time of the slowest page, not
 	// the sum. Later pages are rare and follow in order, until the cap.
 	states := []string{protocol.ChangeListActive, protocol.ChangeDone, protocol.ChangeStopped}
+	g.mu.Lock()
+	full := g.full
+	g.mu.Unlock()
 	type first struct {
-		items  []deliveryChange
-		cursor string
-		err    error
+		views     []protocol.ChangeView
+		cursor    string
+		etag      string
+		unchanged bool
+		err       error
 	}
 	firsts := make([]first, len(states))
 	var wg sync.WaitGroup
@@ -80,56 +112,84 @@ func (g *gatewayDelivery) Changes(ctx context.Context, repo string) ([]deliveryC
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			firsts[i].items, firsts[i].cursor, firsts[i].err = g.page(ctx, repo, state, "")
+			f := &firsts[i]
+			key := repo + "\x00" + state
+			ifETag := ""
+			g.mu.Lock()
+			held, ok := g.held[key]
+			g.mu.Unlock()
+			if ok && !full {
+				ifETag = held.etag
+			}
+			page, err := g.find(ctx, protocol.ChangesFindArgs{Project: repo, State: state, Limit: deliveryPageSize, IfVersion: g.ifVersion, IfETag: ifETag, WantETag: true, Lite: true})
+			switch {
+			case err != nil:
+				f.err = err
+			case page.NotModified && page.ETag == "":
+				// The topic has not moved: the view keeps its list.
+				f.err = errDeliveryNotModified
+			case page.NotModified && ok:
+				// The page is the one the view holds, though the topic moved.
+				f.views, f.cursor, f.etag, f.unchanged = held.first, held.next, held.etag, true
+			default:
+				f.views, f.etag = page.Items, page.ETag
+				if len(page.Items) > 0 {
+					f.cursor = page.NextCursor
+				}
+			}
 		}()
 	}
 	wg.Wait()
-	var out []deliveryChange
 	have := 0 // changes in the first pages of all states
 	for _, f := range firsts {
 		if f.err != nil {
 			return nil, f.err
 		}
-		have += len(f.items)
+		have += len(f.views)
+	}
+	var out []deliveryChange
+	now := g.now()
+	add := func(views []protocol.ChangeView) {
+		for _, v := range views {
+			out = append(out, deliveryChangeFromView(v, now))
+		}
 	}
 	for i, state := range states {
-		out = append(out, firsts[i].items...)
-		cursor := firsts[i].cursor
-		// More pages only while the cap is not reached by what is already read.
-		for cursor != "" && have < deliveryMaxChanges {
-			items, next, err := g.page(ctx, repo, state, cursor)
-			if err != nil {
-				return nil, err
+		key := repo + "\x00" + state
+		f := firsts[i]
+		add(f.views)
+		var more []protocol.ChangeView
+		if f.unchanged {
+			// The first page is the same, so the pages after it are the ones
+			// the last full read got.
+			g.mu.Lock()
+			more = g.held[key].more
+			g.mu.Unlock()
+			add(more)
+			have += len(more)
+		} else {
+			// More pages only while the cap is not reached by what is already
+			// read.
+			cursor := f.cursor
+			for cursor != "" && have < deliveryMaxChanges {
+				page, err := g.find(ctx, protocol.ChangesFindArgs{Project: repo, State: state, Limit: deliveryPageSize, Cursor: cursor, Lite: true})
+				if err != nil {
+					return nil, err
+				}
+				add(page.Items)
+				more = append(more, page.Items...)
+				have += len(page.Items)
+				cursor = page.NextCursor
+				if len(page.Items) == 0 {
+					break
+				}
 			}
-			out = append(out, items...)
-			have += len(items)
-			cursor = next
+			g.mu.Lock()
+			g.held[key] = heldChanges{etag: f.etag, first: f.views, next: f.cursor, more: more}
+			g.mu.Unlock()
 		}
 	}
 	return out[:min(len(out), deliveryMaxChanges)], nil
-}
-
-// page reads one page of one state. The cursor it returns is empty after the
-// last page.
-func (g *gatewayDelivery) page(ctx context.Context, repo, state, cursor string) ([]deliveryChange, string, error) {
-	page, err := g.find(ctx, protocol.ChangesFindArgs{Project: repo, State: state, Limit: deliveryPageSize, Cursor: cursor, IfVersion: g.ifVersion, Lite: true})
-	if err != nil {
-		return nil, "", err
-	}
-	if page.NotModified {
-		// The version covers every state, so the other states are unchanged
-		// too.
-		return nil, "", errDeliveryNotModified
-	}
-	now := g.now()
-	items := make([]deliveryChange, 0, len(page.Items))
-	for _, v := range page.Items {
-		items = append(items, deliveryChangeFromView(v, now))
-	}
-	if len(page.Items) == 0 {
-		return items, "", nil
-	}
-	return items, page.NextCursor, nil
 }
 
 // Change reads one change in full: every revision's evidence.

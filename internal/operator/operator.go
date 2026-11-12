@@ -109,6 +109,11 @@ type Snapshot struct {
 	// snapshot part is the caller's previous copy and its read time did not
 	// move.
 	Unchanged []string
+	// AgentsETag and NodesETag are the hashes of the rows held in Agents and
+	// Nodes, as the gateway gave them. The next read sends them back, and the
+	// gateway answers NotModified while the rows it would send are the same,
+	// even if a table under them was written. Empty from an older gateway.
+	AgentsETag, NodesETag string
 	// Connected tells whether the daemon has a link to the gateway.
 	Connected bool
 	NodeID    string // the machine the operator runs on

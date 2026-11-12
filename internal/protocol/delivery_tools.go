@@ -102,6 +102,9 @@ type ChangesFindArgs struct {
 	// IfVersion is the changes topic version the caller already holds. An
 	// unchanged topic answers NotModified and no rows.
 	IfVersion uint64 `json:"if_version,omitempty"`
+	// IfETag and WantETag work as in QueryAgents.
+	IfETag   string `json:"if_etag,omitempty"`
+	WantETag bool   `json:"want_etag,omitempty"`
 	// Lite asks for list rows only: long evidence notes and fields are left
 	// out, and the item is read in full when it is opened. The TUI sets it.
 	Lite bool `json:"lite,omitempty"`
@@ -114,7 +117,9 @@ type ChangesFindResult struct {
 	Total      int          `json:"total"`
 	NextCursor string       `json:"next_cursor,omitempty"`
 	Note       string       `json:"note,omitempty"`
-	// NotModified means the caller's IfVersion already matches the changes
-	// topic, so Items holds no rows and the caller keeps its copy.
-	NotModified bool `json:"not_modified,omitempty"`
+	// NotModified means the caller's IfVersion or IfETag already matches, so
+	// Items holds no rows and the caller keeps its copy. ETag is the hash of
+	// this page, set when the caller asked for it.
+	NotModified bool   `json:"not_modified,omitempty"`
+	ETag        string `json:"etag,omitempty"`
 }

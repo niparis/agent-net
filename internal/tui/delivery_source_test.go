@@ -453,10 +453,11 @@ func TestGatewayDeliveryPagesThroughEveryState(t *testing.T) {
 		asked[c] = true
 	}
 	for _, want := range []protocol.ChangesFindArgs{
-		{State: protocol.ChangeListActive, Limit: deliveryPageSize, Lite: true},
+		// The first page of each state asks for an ETag to send next time.
+		{State: protocol.ChangeListActive, Limit: deliveryPageSize, WantETag: true, Lite: true},
 		{State: protocol.ChangeListActive, Limit: deliveryPageSize, Cursor: "ch_5", Lite: true},
-		{State: protocol.ChangeDone, Limit: deliveryPageSize, Lite: true},
-		{State: protocol.ChangeStopped, Limit: deliveryPageSize, Lite: true},
+		{State: protocol.ChangeDone, Limit: deliveryPageSize, WantETag: true, Lite: true},
+		{State: protocol.ChangeStopped, Limit: deliveryPageSize, WantETag: true, Lite: true},
 	} {
 		if !asked[want] {
 			t.Errorf("call %+v was not made: %+v", want, f.calls)
