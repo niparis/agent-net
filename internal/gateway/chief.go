@@ -47,7 +47,7 @@ CREATE INDEX IF NOT EXISTS ask_sorts_ask ON ask_sorts(ask_id, id);
 const chiefAdoptMigration = `
 -- Chief of staff adoption (decision 0114): when an ask started waiting for the
 -- chief. Zero means its created_at. An ask opened before the chief existed is
--- adopted now, so its wait for the chief starts now, not when its asker wrote it.
+-- adopted now, so its 15 minutes start now, not when its asker wrote it.
 -- route_fixed marks an ask whose creator named the next who, so adoption
 -- leaves it there.
 SELECT 1 /* chief ask adoption time */;
