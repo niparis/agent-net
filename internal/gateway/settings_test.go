@@ -103,7 +103,7 @@ func TestSettingsMaturityRevision(t *testing.T) {
 }
 
 func TestSettingsSnapshotSyncLink(t *testing.T) {
-	g, url, _, token := newLinkGateway(t, time.Second)
+	g, url, _, token := newQuietLinkGateway(t, time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	ws, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + token}}})
@@ -162,7 +162,7 @@ func TestSettingsSnapshotSyncLink(t *testing.T) {
 // default case. This peer deliberately has no settings.sync handler and sends
 // no acknowledgment for that frame.
 func TestSettingsSyncLegacyPeer(t *testing.T) {
-	_, url, _, token := newLinkGateway(t, time.Second)
+	_, url, _, token := newQuietLinkGateway(t, time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	ws, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + token}}})

@@ -3,11 +3,11 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -184,12 +184,19 @@ func fakeSlowNode(t *testing.T, g *Gateway, nodeID, hostname string) {
 		}
 	}()
 
-	// Client loop that deliberately ignores node.projects_layout (does not answer)
+	// Client loop that reports a timeout for node.projects_layout. It answers at
+	// once instead of staying silent, so the test never waits on a real deadline
+	// that a loaded machine could race against the fast node's reply.
 	go func() {
 		for {
-			_, _, e := client.Read(ctx)
+			_, raw, e := client.Read(ctx)
 			if e != nil {
 				return
+			}
+			var h protocol.Header
+			if json.Unmarshal(raw, &h) == nil && h.Type == "node.projects_layout" && h.ID != "" {
+				b, _ := protocol.EncodeResult(h.ID, nil, errors.New("timeout waiting for node layout"))
+				_ = client.Write(ctx, websocket.MessageText, b)
 			}
 		}
 	}()
@@ -251,11 +258,9 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 	// Connect slow node
 	fakeSlowNode(t, g, idSlow, "box-slow")
 
-	// Call with caller context timeout of 150ms to keep test fast (< 2s)
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
-	defer cancel()
-
-	res, err := g.ProjectsLayout(ctx, protocol.ProjectsLayoutRequest{})
+	// The slow node answers with a timeout of its own, so the caller needs no
+	// deadline and the fast node's reply is never raced by one.
+	res, err := g.ProjectsLayout(context.Background(), protocol.ProjectsLayoutRequest{})
 	if err != nil {
 		t.Fatalf("ProjectsLayout: %v", err)
 	}

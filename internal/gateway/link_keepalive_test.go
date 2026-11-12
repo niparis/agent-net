@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -31,8 +32,21 @@ func waitLink(t *testing.T, what string, condition func() bool) {
 
 func newLinkGateway(t *testing.T, grace time.Duration) (*Gateway, string, string, string) {
 	t.Helper()
+	return newLinkGatewayAt(t, grace, testLinkPing, testLinkTimeout)
+}
+
+// newQuietLinkGateway is newLinkGateway with the production keepalive timings.
+// A test that is not about the keepalive must not lose its link when a loaded
+// machine takes longer than the short test timeout to answer a ping.
+func newQuietLinkGateway(t *testing.T, grace time.Duration) (*Gateway, string, string, string) {
+	t.Helper()
+	return newLinkGatewayAt(t, grace, linkkeepalive.DefaultPingInterval, linkkeepalive.DefaultTimeout)
+}
+
+func newLinkGatewayAt(t *testing.T, grace, ping, timeout time.Duration) (*Gateway, string, string, string) {
+	t.Helper()
 	g, err := New(Options{DataDir: seededDataDir(t), OfflineGrace: grace,
-		KeepalivePingInterval: testLinkPing, KeepaliveTimeout: testLinkTimeout})
+		KeepalivePingInterval: ping, KeepaliveTimeout: timeout})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,18 +219,25 @@ func TestLinkKeepaliveGatewayEmptyFragments(t *testing.T) {
 }
 
 func TestLinkOfflineGraceQuickRedial(t *testing.T) {
-	g, url, id, token := newLinkGateway(t, 200*time.Millisecond)
+	g, url, id, token := newLinkGateway(t, time.Hour)
 	var pings atomic.Int32
 	ws := dialLinkPeer(t, url, token, true, &pings)
 	sendLinkSession(t, ws)
 	waitLink(t, "session online", func() bool { return sessionOnline(g, id) })
 	ws.CloseNow()
 	waitLink(t, "node disconnected", func() bool { return !nodeConnected(g, id) })
+	// Capture the timer before reconnecting. Its callback may already be queued
+	// when Stop runs, so exercise that callback explicitly after the redial.
+	g.mu.Lock()
+	oldTimer := g.timers[id]
+	g.mu.Unlock()
+	if oldTimer == nil {
+		t.Fatal("disconnect did not install a grace timer")
+	}
 	ws = dialLinkPeer(t, url, token, true, &pings)
 	waitLink(t, "node reconnected", func() bool { return nodeConnected(g, id) })
-	// Wait beyond the old grace timer without sending a new session sync.
-	start := pings.Load()
-	waitLink(t, "pings after the grace period", func() bool { return pings.Load() >= start+8 })
+	// No new session sync should be needed to preserve the online session.
+	g.nodeGone(id, oldTimer)
 	if !sessionOnline(g, id) {
 		t.Fatal("quick redial let the old timer mark the session offline")
 	}

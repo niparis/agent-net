@@ -263,7 +263,7 @@ func TestGraphCutoverStaleBlockersRaiseOneInboxItem(t *testing.T) {
 }
 
 func TestGraphCutoverBackupDoesNotBlockHello(t *testing.T) {
-	g, url, id, token := newLinkGateway(t, time.Second)
+	g, url, id, token := newQuietLinkGateway(t, time.Second)
 	if err := g.store.SetNodeGraphRefs(id, "v0.4.145", true); err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestGraphCutoverBackupDoesNotBlockHello(t *testing.T) {
 }
 
 func TestGraphCutoverBlockedNodesCanSayHello(t *testing.T) {
-	g, url, id, _ := newLinkGateway(t, time.Second)
+	g, url, id, _ := newQuietLinkGateway(t, time.Second)
 	if err := g.store.SetNodeHello(id, "blocker", "dev"); err != nil {
 		t.Fatal(err)
 	}
