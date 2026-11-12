@@ -13,5 +13,5 @@ func procToken(pid int) (token string, alive bool) {
 		return "", false
 	}
 	state, _ := ps("stat", pid)
-	return start, !strings.HasPrefix(state, "Z")
+	return startToken(start), !strings.HasPrefix(state, "Z")
 }

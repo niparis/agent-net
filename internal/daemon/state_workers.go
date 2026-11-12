@@ -191,6 +191,7 @@ func (s *state) workers() ([]workerRow, error) {
 				return nil, err
 			}
 		}
+		w.StartToken = startToken(w.StartToken) // rows saved before startToken may hold padded text
 		w.StartedAt, w.LastActive = time.Unix(0, started), time.Unix(0, active)
 		w.Resumable, w.Reported, w.DonePartial = resumable == 1, reported == 1, partial == 1
 		w.PendingHandback, w.PendingPartial = pending == 1, pendingPartial == 1
@@ -233,6 +234,7 @@ func (s *state) workerBySession(sessionID string) (workerRow, bool, error) {
 			return w, false, err
 		}
 	}
+	w.StartToken = startToken(w.StartToken) // rows saved before startToken may hold padded text
 	w.StartedAt, w.LastActive = time.Unix(0, started), time.Unix(0, active)
 	w.Resumable, w.Reported, w.DonePartial = resumable == 1, reported == 1, partial == 1
 	w.PendingHandback, w.PendingPartial = pending == 1, pendingPartial == 1
