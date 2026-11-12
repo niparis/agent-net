@@ -61,6 +61,32 @@ answers, safety net, measures), [0150](../decisions/0150-cto-or-chief-confirms-p
 - Tests: a live chief never sends an item to the owner by timer; an offline
   chief sends a security item after one missed wake and others after two.
 
+## Step (c2): no owner questions in session chats
+
+Added 2026-11-12 (0149, "No agent asks the owner in its own chat").
+
+- Guidance: change the owner-ask lines in internal/guidance (instruction-file
+  text and its goldens, `-update`) and the MCP server instructions
+  (internal/mcpserver/mcpserver.go) to "owner questions go to the chief with
+  agent_owner_ask; do not end a turn waiting on the owner".
+- Gateway: agent_owner_ask from an agent session creates a chief-bound item
+  (owner chief, state verifying). syncWaitingAsk (internal/gateway/asks.go)
+  creates the waiting-session item chief-bound, with no debounce unless the
+  owner typed in that session in the last 30 minutes.
+- Daemon: the Claude Stop hook (policy-hook) returns a continue reason "Send
+  this question to the chief with agent_owner_ask and carry on" when the turn
+  ends waiting on the user and the owner has not typed there in 30 minutes.
+  Other harnesses get the line at the start of the next turn.
+- Tests:
+  - an agent session's agent_owner_ask creates an item with owner chief and
+    never an owner-bound item without options;
+  - a session that reports a wait with no owner typing in 30 minutes gets a
+    chief-bound item at once, and the Stop hook returns the continue reason;
+  - the same wait with the owner typing 5 minutes ago creates no redirect and
+    no hook block (in the loop);
+  - the CTO's and the chief's own sessions are never redirected;
+  - guidance goldens contain no "ask your owner" line.
+
 ## Step (d): migration
 
 - One migration re-routes the open items. Owner-bound items without options
