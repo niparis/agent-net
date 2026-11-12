@@ -63,6 +63,21 @@ func (s *Store) noteReworkCauseTx(tx *sql.Tx, c protocol.Change, e protocol.Evid
 	return setWorkerRunCauseTx(tx, c.Origin.SessionID, cause)
 }
 
+// AgentsWithCauses is Agents with each worker's latest cause on its row. The
+// cause is read outside the kept agents read on purpose: worker_runs is written
+// on every worker start and end, and declaring it would reload the whole agent
+// list each time. Agents returns a copy, so setting the field here is safe.
+func (s *Store) AgentsWithCauses(f protocol.QueryAgents) ([]protocol.AgentView, error) {
+	agents, err := s.Agents(f)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyWorkerCauses(agents); err != nil {
+		return nil, err
+	}
+	return agents, nil
+}
+
 // applyWorkerCauses puts each worker's latest recorded cause on its row, so
 // agent_workers_find detail full can show why the last run failed or needed
 // rework. It reads one query for all workers in the list.

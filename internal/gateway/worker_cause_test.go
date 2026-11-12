@@ -208,7 +208,7 @@ func TestWorkerListCarriesTheCause(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE worker_runs SET cause=? WHERE session_id=?`, protocol.CauseQuotaAuth, wid); err != nil {
 		t.Fatal(err)
 	}
-	agents, err := s.Agents(protocol.QueryAgents{})
+	agents, err := s.AgentsWithCauses(protocol.QueryAgents{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3996,7 +3996,7 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
 var agentListTables = []string{"sessions", "nodes", "profiles", "apps", "project_display_names", "project_mergers",
 	"worker_assessments", "agents", "repo_leads", "repos", "teams", "team_members", "setting_values", "inbox_items",
-	"owner_settings", "messages", "worker_runs"}
+	"owner_settings", "messages"}
 
 const (
 	// agentRepoCountWhere is what makes a session count toward its Repo's
@@ -4214,9 +4214,6 @@ func (s *Store) agentsRead(f protocol.QueryAgents) ([]protocol.AgentView, error)
 		return nil, err
 	}
 	if err := s.applyEndedWorkerNotes(out); err != nil {
-		return nil, err
-	}
-	if err := s.applyWorkerCauses(out); err != nil {
 		return nil, err
 	}
 	return out, nil
