@@ -107,7 +107,31 @@ func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
 // in the bucket of the task's D rotate, weighted by their cell score (see
 // chooseByCells). When no profile is allowed that way, or without a
 // PickerInput, the old level rule applies (chooseWorkerModelBand).
+//
+// A provider whose running workers would use up its quota before the reset
+// with one more worker is left out first (decision 0144). The pick says so. When
+// no other model qualifies, the error names the hold.
 func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, pick ...*PickerInput) (WorkerModelChoice, error) {
+	kept, held := dropBurnHeld(candidates, quotas)
+	if len(held) == 0 {
+		return chooseWorkerModelRanked(candidates, level, scores, minimums, quotas, running, rotation, pick...)
+	}
+	choice, err := chooseWorkerModelRanked(kept, level, scores, minimums, quotas, running, rotation, pick...)
+	if err != nil {
+		return choice, fmt.Errorf("no other model qualifies, and these were held back for quota: %s; %w", strings.Join(held, "; "), err)
+	}
+	choice.QuotaNote = appendNote(choice.QuotaNote, "held back for quota: "+strings.Join(held, "; "))
+	return choice, nil
+}
+
+func appendNote(note, more string) string {
+	if note == "" {
+		return more
+	}
+	return note + "; " + more
+}
+
+func chooseWorkerModelRanked(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, pick ...*PickerInput) (WorkerModelChoice, error) {
 	if len(pick) > 0 && pick[0].usable() {
 		if level == "" {
 			level = "normal"
@@ -455,23 +479,7 @@ func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, 
 		if w.Exhausted || w.PercentUsed > 90 {
 			return 0, "", false, true
 		}
-		var duration time.Duration
-		switch strings.ToLower(w.Kind) {
-		case "week", "weekly":
-			duration = 7 * 24 * time.Hour
-		case "day", "daily":
-			duration = 24 * time.Hour
-		case "five_hour", "5h", "session":
-			duration = 5 * time.Hour
-		case "month", "monthly":
-			reset := time.Unix(w.ResetsAt, 0).UTC()
-			first := time.Date(reset.Year(), reset.Month(), 1, reset.Hour(), reset.Minute(), reset.Second(), 0, time.UTC)
-			previousMonth := first.AddDate(0, -1, 0)
-			days := previousMonth.AddDate(0, 1, -1).Day()
-			day := min(reset.Day(), days)
-			start := time.Date(previousMonth.Year(), previousMonth.Month(), day, reset.Hour(), reset.Minute(), reset.Second(), 0, time.UTC)
-			duration = reset.Sub(start)
-		}
+		duration := quotaWindowDuration(w)
 		if duration == 0 || w.ResetsAt <= 0 || q.GeneratedAt <= 0 {
 			continue
 		}
@@ -491,6 +499,31 @@ func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, 
 		}
 	}
 	return room, note, measured, false
+}
+
+// quotaWindowDuration is the length of a window, from its kind. It is 0 when
+// the kind names no length, or a monthly window has no reset time.
+func quotaWindowDuration(w QuotaWindow) time.Duration {
+	switch strings.ToLower(w.Kind) {
+	case "week", "weekly":
+		return 7 * 24 * time.Hour
+	case "day", "daily":
+		return 24 * time.Hour
+	case "five_hour", "5h", "session":
+		return 5 * time.Hour
+	case "month", "monthly":
+		if w.ResetsAt <= 0 {
+			return 0
+		}
+		reset := time.Unix(w.ResetsAt, 0).UTC()
+		first := time.Date(reset.Year(), reset.Month(), 1, reset.Hour(), reset.Minute(), reset.Second(), 0, time.UTC)
+		previousMonth := first.AddDate(0, -1, 0)
+		days := previousMonth.AddDate(0, 1, -1).Day()
+		day := min(reset.Day(), days)
+		start := time.Date(previousMonth.Year(), previousMonth.Month(), day, reset.Hour(), reset.Minute(), reset.Second(), 0, time.UTC)
+		return reset.Sub(start)
+	}
+	return 0
 }
 
 // Only finished outcomes that describe task quality count; stopped and timed-out

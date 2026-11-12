@@ -66,6 +66,9 @@ type Quotas struct {
 	GeneratedAt int64           `json:"generated_at,omitempty"`
 	Copy        *QuotaCopy      `json:"copy,omitempty"`
 	Providers   []QuotaProvider `json:"providers"`
+	// Burn is what the gateway measured of the workers on each provider, for
+	// one start (decision 0144). It is not part of a reading and never travels.
+	Burn *QuotaBurnSet `json:"-"`
 }
 
 // Provider returns the reading of one quota provider.

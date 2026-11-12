@@ -1281,7 +1281,17 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, quotaBudgetMigration}
+
+// quotaBudgetMigration stores the size of a provider's quota window in tokens,
+// learned from a quota failure (decision 0144): the tokens its workers used in
+// the window before the failure. One row per provider and window length; the
+// newest failure wins.
+const quotaBudgetMigration = `
+CREATE TABLE IF NOT EXISTS quota_budgets (
+ provider TEXT NOT NULL, window_seconds INTEGER NOT NULL, tokens INTEGER NOT NULL, at INTEGER NOT NULL,
+ PRIMARY KEY (provider, window_seconds));
+`
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries
 // of one task can be counted and the weekly table can show rejections per
