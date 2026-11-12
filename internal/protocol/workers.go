@@ -282,7 +282,8 @@ type WorkerInfo struct {
 	// without cache reads. 0 when the harness cannot say.
 	Tokens int64 `json:"tokens,omitempty"`
 	// Permissions is the level the worker was started with (decision 0020):
-	// sandboxed, no-network or read-only. Only Codex workers apply it today.
+	// sandboxed, no-network or read-only. Codex, Antigravity and Claude
+	// workers apply it with their own sandbox.
 	Permissions string `json:"permissions,omitempty"`
 	// OSSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
 	// (docs/design/worker-os-sandbox.md).
@@ -376,6 +377,9 @@ type (
 		// Worktree and Branch are set when the worker got its own worktree.
 		Worktree string `json:"worktree,omitempty"`
 		Branch   string `json:"branch,omitempty"`
+		// Base is the branch the worktree started from, when the start named
+		// one. It lets the brief say when that is another worker's branch.
+		Base string `json:"base,omitempty"`
 		// ProjectRules is the text of the project's .agent-net/worker.md.
 		ProjectRules string `json:"project_rules,omitempty"`
 		// Task is the task text to send, set for a continued worker (it holds
@@ -531,6 +535,9 @@ type (
 		Title       string `json:"title,omitempty"`
 		Worktree    string `json:"worktree,omitempty"`
 		Branch      string `json:"branch,omitempty"`
+		// Base is the branch the worktree started from, when the start named
+		// one, for the brief's line about another worker's branch.
+		Base string `json:"base,omitempty"`
 		// ProjectRules is the project's .agent-net/worker.md text, for the brief.
 		ProjectRules string `json:"project_rules,omitempty"`
 		// OSSandbox is the OS wrapper the worker runs in, for the brief.
@@ -720,10 +727,24 @@ func WorkerEnforcer(level, harness, osSandbox string) string {
 	switch {
 	case osSandbox != "":
 		return osSandbox
-	case harness == "codex", harness == "agy" && WorkerPermissionsOrDefault(level) != WorkersNoNetwork:
+	case harness == "codex", harness == "claude", harness == "agy" && WorkerPermissionsOrDefault(level) != WorkersNoNetwork:
 		return harness
 	}
 	return ""
+}
+
+// WorkerBaseNote is the line a brief adds when the worker's base is another
+// worker's branch: its own worktree already holds that branch's head, so it
+// has no reason to go to that branch's worktree and every reason not to.
+func WorkerBaseNote(base, worktree string, snap settings.Snapshot) string {
+	if base == "" || worktree == "" {
+		return ""
+	}
+	prefix := snap.String("delivery.worker_branch_prefix", settings.Where{})
+	if !strings.HasPrefix(base, prefix+"w_") {
+		return ""
+	}
+	return "Your worktree already starts at the head of " + base + " (another worker's branch); edit and commit only in " + worktree + ", never in another worker's worktree."
 }
 
 // WorkerPermissionsLine describes the effective project level, and what
@@ -770,6 +791,14 @@ func WorkerTaskBodyWithSettingsForRepo(harness, task, worktree, branch, rules, c
 // WorkerTaskBodyOS is WorkerTaskBodyWithSettingsForRepo for a worker that may
 // run in the OS sandbox: osSandbox names the wrapper, "" when there is none.
 func WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
+	return WorkerTaskBodyOSBase(harness, task, worktree, branch, "", rules, charter, level, osSandbox, snap, repo)
+}
+
+// WorkerTaskBodyOSBase is WorkerTaskBodyOS with the branch the worker was
+// based on. When that branch is another worker's, the brief says the worker's
+// own worktree already starts at its head and that only that worktree is the
+// worker's to edit.
+func WorkerTaskBodyOSBase(harness, task, worktree, branch, base, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
 	b := workerPreamble(harness, snap, repo)
 	if harness == "agy" {
 		b += "\n- " + snap.String("delivery.worker_agy_commit_instruction", settings.Where{})
@@ -790,6 +819,9 @@ func WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, os
 			", not in the user's own checkout."
 		if harness != "agy" {
 			b += " " + snap.String("delivery.worker_branch_prep", settings.Where{})
+		}
+		if note := WorkerBaseNote(base, worktree, snap); note != "" {
+			b += "\n\n" + note
 		}
 	}
 	if rules != "" {

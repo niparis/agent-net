@@ -98,13 +98,13 @@ The permissions line of the start notice, the brief and the completion notice sa
 permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap)
 ```
 
-Without the wrapper, Pi, OpenCode and Claude workers keep "(enforced for Codex only for now)".
+Without the wrapper, Pi and OpenCode workers keep "(enforced for Codex only for now)". Claude workers enforce the level with Claude Code's own settings, below.
 
 ## Claude workers
 
 A Claude worker is `claude --bg`. The session runs inside Claude Code's own background service (`claude daemon run`, which starts a `bg-pty-host` and a pre-started spare process), not as a child of agent-net. A wrapper around `claude --bg` would sandbox only the short client that hands the job over. So with the switch on, a Claude worker start, and a Claude follow-up, are refused with this reason. A Claude worker that already runs keeps running.
 
-The follow-up for Claude, not built here: Claude Code has its own sandbox for its Bash tool (bubblewrap on Linux, Seatbelt on macOS). Claude Code 2.1.318 has the settings `sandbox.enabled`, `sandbox.filesystem.allowWrite`, `sandbox.network.allowedDomains`, `sandbox.allowUnsandboxedCommands` and `sandbox.failIfUnavailable`. The worker's `--settings` reach a `--bg` session, so the daemon can set them per worker, as it sets the level for Codex. Its file tools stay under Claude's permission rules. This must be checked with a real Claude worker run before it is turned on. The other way, a Claude process started directly by the daemon inside bubblewrap, loses `claude attach` and needs a terminal holder that outlives the daemon, and Claude writes `~/.claude.json` and `~/.claude/settings.json`, which can define hooks and MCP servers that run unsandboxed in the owner's sessions.
+The follow-up for Claude, built for the write boundary: Claude Code has its own sandbox for its Bash tool (bubblewrap on Linux, Seatbelt on macOS). Claude Code 2.1.322 has the settings `sandbox.enabled`, `sandbox.filesystem.allowWrite`, `sandbox.network.allowedDomains`, `sandbox.allowUnsandboxedCommands` and `sandbox.failIfUnavailable`, and `permissions.blockWritesOutsideWorkingDirectories` for its file tools. The worker's `--settings` reach a `--bg` session, so the daemon sets them per worker, as it sets the level for Codex: the file-tool rule refuses writes outside the worktree in every mode, and the Bash sandbox keeps commands to the worktree, the shared Go caches and the temp folders. `read-only` denies the worktree too; `no-network` leaves the sandbox's hosts empty. When bubblewrap or socat is missing, Claude Code warns and runs the commands unsandboxed, while the file-tool rule still applies. The OS wrapper itself still refuses a Claude start. The other way, a Claude process started directly by the daemon inside bubblewrap, loses `claude attach` and needs a terminal holder that outlives the daemon, and Claude writes `~/.claude.json` and `~/.claude/settings.json`, which can define hooks and MCP servers that run unsandboxed in the owner's sessions.
 
 ## macOS design (not built)
 

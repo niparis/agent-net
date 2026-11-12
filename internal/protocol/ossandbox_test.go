@@ -15,7 +15,7 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 		{WorkersSandboxed, "pi", "bubblewrap", "permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap)"},
 		{WorkersReadOnly, "opencode", "bubblewrap", "permissions: read-only (no writes) (sandboxed by bubblewrap)"},
 		{WorkersSandboxed, "pi", "", "permissions: sandboxed (writes only in its worktree, network on) (enforced for Codex only for now)"},
-		{WorkersSandboxed, "claude", "", "permissions: sandboxed (writes only in its worktree, network on) (enforced for Codex only for now)"},
+		{WorkersSandboxed, "claude", "", "permissions: sandboxed (writes only in its worktree, network on)"},
 		{WorkersReadOnly, "codex", "", "permissions: read-only (no writes)"},
 		{WorkersSandboxed, "agy", "", "permissions: sandboxed (writes only in its worktree, network on)"},
 		{WorkersNoNetwork, "agy", "", "permissions: no-network (writes only in its worktree, network off) (enforced for Codex only for now)"},

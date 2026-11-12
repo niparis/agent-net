@@ -306,7 +306,7 @@ func TestDetailShowsWorkerPermissions(t *testing.T) {
 	if worker.SessionID == "" {
 		t.Fatal("the fixture has no worker")
 	}
-	for _, harness := range []string{"codex", "opencode"} {
+	for _, harness := range []string{"codex", "claude", "opencode"} {
 		for i := range src.snap.Agents {
 			if src.snap.Agents[i].SessionID == worker.SessionID {
 				src.snap.Agents[i].Harness = harness
@@ -319,7 +319,7 @@ func TestDetailShowsWorkerPermissions(t *testing.T) {
 		if !strings.Contains(s, "sandbox") || !strings.Contains(s, "read-only") {
 			t.Errorf("%s: no permissions line:\n%s", harness, s)
 		}
-		if got := strings.Contains(s, "not enforced yet"); got != (harness != "codex") {
+		if got := strings.Contains(s, "not enforced yet"); got != (harness != "codex" && harness != "claude") {
 			t.Errorf("%s: note shown = %v", harness, got)
 		}
 	}

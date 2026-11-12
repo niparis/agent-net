@@ -261,7 +261,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 // told; when the worker ended by itself first, its own end tells the owner.
 func (d *Daemon) finishQueuedStart(ctx context.Context, e queuedStart, out protocol.WorkerLaunched, w *worker, waited time.Duration) {
 	err := d.sendQueuedStart(ctx, w, protocol.WorkerQueuedStart{Ref: e.ID, Owner: e.Owner, SessionID: out.SessionID,
-		Harness: e.Harness, Project: e.Project, Task: e.Task, Title: e.Title, Worktree: out.Worktree, Branch: out.Branch,
+		Harness: e.Harness, Project: e.Project, Task: e.Task, Title: e.Title, Worktree: out.Worktree, Branch: out.Branch, Base: e.Base,
 		ProjectRules: out.ProjectRules, Permissions: e.Permissions, OSSandbox: out.OSSandbox, FromCTO: e.FromCTO})
 	if errors.Is(err, errWorkerEnded) {
 		d.notStarted(ctx, e, "the worker ended before its task was sent")
@@ -443,7 +443,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 	}
 	charter := d.charterBrief(ctx, p.Project)
 	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest, WorkerTask: true, WorkerTaskRef: p.Ref,
-		Body: protocol.WorkerTaskBodyOS(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions, p.OSSandbox, d.SettingsSnapshot(), p.Project)})
+		Body: protocol.WorkerTaskBodyOSBase(p.Harness, p.Task, p.Worktree, p.Branch, p.Base, p.ProjectRules, charter, p.Permissions, p.OSSandbox, d.SettingsSnapshot(), p.Project)})
 	return err
 }
 

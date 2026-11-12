@@ -1233,6 +1233,13 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 		n.DeliveryBranch = d.deliveredBranch(ctx, w)
 	}
 	n.DefectHint = d.defectHint(ctx, w)
+	if misplaced := d.misplacedCommitNote(w); misplaced != "" {
+		note := strings.TrimSpace(n.Note)
+		if note != "" && !strings.HasSuffix(note, ".") {
+			note += "."
+		}
+		n.Note = strings.TrimSpace(note + " " + misplaced)
+	}
 	noticeKey := ""
 	if w.harness == "agy" {
 		d.wmu.Lock()
