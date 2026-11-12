@@ -850,6 +850,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				for _, lo := range choice.LeftOut {
 					roster.add(lo.Name, lo.Reason, lo.Rank)
 				}
+				if !(len(validate) > 0 && validate[0]) {
+					g.noProviderFeed(candidates, quotas)
+				}
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
 			p.Harness, p.Model = choice.Harness, choice.Model

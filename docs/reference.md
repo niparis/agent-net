@@ -3027,8 +3027,10 @@ never hands a CTO alert or a quota stuck item to the owner.
 **One quota event, one thread.** Work stuck on quota opens the provider's
 `quota` entry and one chief item of kind `quota_stuck` (`Work is stuck: ...`):
 a start refused because the provider or the whole harness has no quota left,
-a worker that cannot be started again for quota, and a worker run that ended
-failed with the cause `quota_auth`. Later events of the same provider join
+a worker that cannot be started again for quota, a worker run that ended
+failed with the cause `quota_auth`, and an automatic start the picker cannot
+place because every candidate's provider is out of quota (each of those
+providers' threads gets it). Later events of the same provider join
 that entry and that item; no second item is made. Its detail names the CTO entry, and the
 entry's `stuck` names the item. When a usage report shows the provider with
 room again, the entry closes, and so do its stuck-work item and its CTO alert.

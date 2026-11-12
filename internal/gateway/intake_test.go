@@ -671,3 +671,34 @@ func TestUnroutedAskKindGoesToTheChief(t *testing.T) {
 		t.Fatalf("unrouted kind next = %q, want chief", next)
 	}
 }
+
+// A start the picker cannot place because every candidate's provider is out
+// of quota is work stuck for want of a provider: each provider's thread gets
+// it. One candidate with room means the picker failed for another reason.
+func TestNoProviderAvailableJoinsQuotaThreads(t *testing.T) {
+	s, _ := intakeRig(t)
+	g := &Gateway{store: s}
+	out := func(provider string) protocol.QuotaProvider {
+		return protocol.QuotaProvider{Provider: provider, Windows: []protocol.QuotaWindow{{ID: "5h", Kind: "rolling", PercentUsed: 100, Exhausted: true}}}
+	}
+	room := protocol.QuotaProvider{Provider: "deepseek", Windows: []protocol.QuotaWindow{{ID: "5h", Kind: "rolling", PercentUsed: 10}}}
+	quotas := &protocol.Quotas{Providers: []protocol.QuotaProvider{out("zai"), out("kimi"), room}}
+	both := []protocol.WorkerModelCandidate{{Harness: "opencode", Model: "zai/glm-5"}, {Harness: "opencode", Model: "moonshot/kimi-k3"}}
+	withRoom := append(both, protocol.WorkerModelCandidate{Harness: "opencode", Model: "deepseek/deepseek-v4"})
+	g.noProviderFeed(withRoom, quotas)
+	if res, _ := s.CTOIntake(0); res.Total != 0 {
+		t.Fatalf("%d entries although one candidate had room", res.Total)
+	}
+	g.noProviderFeed(both, quotas)
+	g.noProviderFeed(both, quotas)
+	var items int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE kind=?`, protocol.AskKindQuotaStuck).Scan(&items); err != nil || items != 2 {
+		t.Fatalf("%d stuck items, want one per provider: %v", items, err)
+	}
+	for _, provider := range []string{protocol.QuotaProviderForStart("opencode", "zai/glm-5"), protocol.QuotaProviderForStart("opencode", "moonshot/kimi-k3")} {
+		e, err := openIntake(s.db, protocol.IntakeQuota, provider)
+		if err != nil || e.Stuck == "" || e.Count != 2 {
+			t.Fatalf("%s thread = %+v, %v", provider, e, err)
+		}
+	}
+}
