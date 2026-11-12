@@ -27,6 +27,8 @@ plugins/pi/typecheck.sh     # type-check the Pi extension (needs Pi installed)
 plugins/claude/test-agent-net-workers.sh # validate and test Claude hooks (needs npm)
 ```
 
+Before handing back, run scripts/test-changed.sh; it runs the tests your diff needs.
+
 If you change guidance text, also run go test ./internal/guidance ./internal/agentfiles (both have golden fixtures; use -update).
 
 CI runs `gofmt`, `go vet`, the daemon and gateway shards (`scripts/test.sh --package daemon|gateway --shard-index I --shard-count 4`), the other Go packages in one job, and `sh -n install.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
