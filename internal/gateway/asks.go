@@ -427,16 +427,23 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 	if protocol.IsOwner(harness) || worker != "" {
 		return nil
 	}
-	// A short wait for the user makes no ask (decision 0150): the minute
-	// reconcile opens it once the wait is old enough. The gateway stamps
-	// every stored wait with its start.
+	// A short wait for the owner who works in the session makes no ask
+	// (decision 0150): the minute reconcile opens it once the wait is old
+	// enough. When he is away, the question goes to the chief at once. The
+	// gateway stamps every stored wait with its start.
 	if w.Since > 0 && s.now().Sub(time.Unix(w.Since, 0)) < waitingAskDebounce {
-		var open int
-		if err := q.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=? AND status='open'`, ref).Scan(&open); err != nil {
+		present, err := s.ownerInSession(q, session)
+		if err != nil {
 			return err
 		}
-		if open == 0 {
-			return nil
+		if present {
+			var open int
+			if err := q.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=? AND status='open'`, ref).Scan(&open); err != nil {
+				return err
+			}
+			if open == 0 {
+				return nil
+			}
 		}
 	}
 	// A wait on the session's own lead is an ordinary wait inside the team: the

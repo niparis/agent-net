@@ -34,11 +34,14 @@ const policyTimeoutSeconds = 3
 // policyEvents: UserPromptSubmit has no matcher (it fires on every prompt).
 // PostCompact fires after a manual or automatic compaction, and SessionStart
 // with matcher compact is the same moment for Claude Code versions that only
-// report it there. Both tell the daemon to send the charter block again.
+// report it there. Both tell the daemon to send the charter block again. Stop
+// fires when a turn ends: a turn that ended on a question to the owner, who is
+// not in the session, is told once to send it to the chief (decision 0150).
 var policyEvents = []struct{ event, matcher string }{
 	{"UserPromptSubmit", ""},
 	{"PostCompact", ""},
 	{"SessionStart", "compact"},
+	{"Stop", ""},
 }
 
 type policyState struct {

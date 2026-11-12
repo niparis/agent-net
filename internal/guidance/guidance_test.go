@@ -53,7 +53,9 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 			"At the start of every session, before other work, call `agent_announce` with your current task in one short line.",
 			"Call it again whenever your task changes.",
 			"AGENTS.md automatically",
-			"When you stop to wait for my decision or answer, call `agent_owner_ask` with the question in one line",
+			"Owner questions go to the chief of staff with `agent_owner_ask`, in one line with your recommendation.",
+			"Do not end a turn waiting on me",
+			"start that line with \"Owner question:\"",
 			"Before asking the owner, search what he already decided: agent_owner_judgments_find",
 		} {
 			if !strings.Contains(b, want) {

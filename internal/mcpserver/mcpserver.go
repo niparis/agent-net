@@ -30,7 +30,8 @@ type Caller func(ctx context.Context, method string, params any) (json.RawMessag
 // agent_announce description and, in other words, in the guidance file.
 const AnnounceRule = "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
 	"Call it again whenever your task changes. " +
-	"When you end a turn waiting for your user's decision or input, call agent_owner_ask with the question in one line. " +
+	"Owner questions go to the chief of staff with agent_owner_ask, in one line with your recommendation. " +
+	"Do not end a turn waiting on the owner: carry on with work that does not depend on the answer. " +
 	"Your project description is taken from the project's AGENTS.md automatically."
 
 // Instructions are the MCP server instructions. They are the fallback: a new

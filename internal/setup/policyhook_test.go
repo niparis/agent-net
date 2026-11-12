@@ -140,7 +140,7 @@ func TestPolicyAndHintHooksLiveSideBySideAndUninstallRemovesOnlyOurs(t *testing.
 	}
 }
 
-// An upgrade can add a compaction event to the policy hook. The daemon
+// An upgrade can add an event (compaction, turn end) to the policy hook. The daemon
 // applies the same answers at start, so a machine set up before must get the
 // new events without a setup run. The second apply leaves the file alone.
 func TestApplyIntegrationsUpdatesThePolicyHookOfAnOlderVersion(t *testing.T) {
@@ -179,8 +179,11 @@ func TestApplyIntegrationsUpdatesThePolicyHookOfAnOlderVersion(t *testing.T) {
 	if g := h["SessionStart"]; len(g) != 1 || g[0].Matcher != "compact" || g[0].Hooks[0].Command != "/opt/test/agent-net policy-hook" {
 		t.Fatalf("SessionStart after the upgrade apply: %+v", g)
 	}
-	if n := strings.Count(readSettingsFile(t, f), "policy-hook"); n != 3 {
-		t.Fatalf("want 3 policy hooks, got %d:\n%s", n, readSettingsFile(t, f))
+	if g := h["Stop"]; len(g) != 1 || g[0].Hooks[0].Command != "/opt/test/agent-net policy-hook" {
+		t.Fatalf("Stop after the upgrade apply: %+v", g)
+	}
+	if n := strings.Count(readSettingsFile(t, f), "policy-hook"); n != 4 {
+		t.Fatalf("want 4 policy hooks, got %d:\n%s", n, readSettingsFile(t, f))
 	}
 	before := readSettingsFile(t, f)
 	if err := ApplyIntegrations(answers, nil); err != nil {
