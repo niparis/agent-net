@@ -21,6 +21,15 @@ type Monitor struct {
 	mu       sync.Mutex
 	last     time.Time
 	activity chan struct{}
+	timedOut bool
+}
+
+// TimedOut says Run closed the connection because nothing arrived within the
+// timeout, so a drop can be told apart from a close by the peer.
+func (m *Monitor) TimedOut() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.timedOut
 }
 
 func New() *Monitor {
@@ -98,6 +107,9 @@ func (m *Monitor) Run(ctx context.Context, ws *websocket.Conn, interval, timeout
 				timer.Reset(remaining)
 				continue
 			}
+			m.mu.Lock()
+			m.timedOut = true
+			m.mu.Unlock()
 			ws.CloseNow()
 			return
 		}

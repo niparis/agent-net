@@ -1339,7 +1339,15 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	// so every later resume on this machine timed out at the gateway too.
 	ctx, cancel := context.WithTimeout(ctx, d.resumeWait())
 	defer cancel()
-	d.resumeMu.Lock()
+	// Waiting for the lock counts against the same wait. A resume that queued
+	// behind another one without a bound ran past the gateway's launch wait.
+	for !d.resumeMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("another resume of a worker on this machine is still running; send the message again in a minute")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 	defer d.resumeMu.Unlock()
 	// A hand-back ends the worker right after its notice, and the owner's next
 	// message may arrive while the old process is still being killed. Wait for

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -25,6 +26,22 @@ type link struct {
 	mu      sync.Mutex
 	nextID  int
 	pending map[string]chan protocol.Header
+
+	// readErr is why the read loop ended. It is set before dead is closed.
+	readErr error
+}
+
+// closeCause says why the link ended, for the log: the 2026-11-12 20:32 drop
+// left only "link closed", so nobody could tell a keepalive timeout from a
+// close by the gateway.
+func (l *link) closeCause() string {
+	if l.health != nil && l.health.TimedOut() {
+		return "no traffic from the gateway for the keepalive timeout"
+	}
+	if l.readErr != nil {
+		return l.readErr.Error()
+	}
+	return "unknown"
 }
 
 func newLink(ws *websocket.Conn, health *linkkeepalive.Monitor) *link {
@@ -83,6 +100,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 	for {
 		_, raw, err := l.health.Read(ctx, l.ws)
 		if err != nil {
+			l.readErr = err
 			return
 		}
 		var h protocol.Header
@@ -486,5 +504,13 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 		d.lk = nil
 	}
 	d.mu.Unlock()
-	return true, errors.New("link closed")
+	if ctx.Err() != nil {
+		return true, errors.New("link closed")
+	}
+	select {
+	case <-l.dead:
+		return true, fmt.Errorf("link closed: %s", l.closeCause())
+	default:
+		return true, errors.New("link closed")
+	}
 }
