@@ -247,7 +247,18 @@ type node struct {
 // restart stops the daemon and starts a new one on the same socket and state.
 func (n *node) restart() {
 	n.t.Helper()
+	n.restartWith(nil, true)
+}
+
+// restartWith is restart that runs between, if set, after the old daemon has
+// stopped and before the new one starts. Without connect it does not wait for
+// the gateway, which may be down.
+func (n *node) restartWith(between func(), connect bool) {
+	n.t.Helper()
 	n.d.Stop()
+	if between != nil {
+		between()
+	}
 	d, err := New(n.cfg)
 	if err != nil {
 		n.t.Fatal(err)
@@ -264,7 +275,9 @@ func (n *node) restart() {
 	}
 	n.d = d
 	n.t.Cleanup(d.Stop)
-	eventually(n.t, "daemon reconnected to gateway", d.Connected)
+	if connect {
+		eventually(n.t, "daemon reconnected to gateway", d.Connected)
+	}
 }
 
 type nodeOpts struct {

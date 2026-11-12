@@ -181,13 +181,10 @@ type worker struct {
 	sendsInFlight int
 	stopping      bool
 	handingBack   bool // from the hand-back notice until the worker has ended
-	// checking is true while the project's pre-hand-back check runs. The
+	// checking is true while the project's pre-hand-back check runs, and
+	// while a saved hand-back waits for the gateway (handback_replay.go). The
 	// hand-back ends the worker itself, so the tick must not race it.
 	checking bool
-	// checkRun is the check a hand-back started in the background, until its
-	// notice goes out. A second hand-back on the same head sees it and starts
-	// nothing; a new head cancels it.
-	checkRun *handbackCheckRun
 	// endedCh is closed when the worker starts to end (endWorker). Made on first use.
 	endedCh                           chan struct{}
 	turnActive                        bool
@@ -1336,6 +1333,11 @@ func (d *Daemon) stopWorkerSession(k protocol.WorkerKill, validate ...bool) erro
 // started again (W10). Only the owner may ask; the gateway checks it and so
 // does this function.
 func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester string) (*protocol.WorkerResumeResult, error) {
+	// ctx is the gateway link's own context, which lasts as long as the link.
+	// A resume that waited on it for an end that never came held resumeMu,
+	// so every later resume on this machine timed out at the gateway too.
+	ctx, cancel := context.WithTimeout(ctx, d.resumeWait())
+	defer cancel()
 	d.resumeMu.Lock()
 	defer d.resumeMu.Unlock()
 	// A hand-back ends the worker right after its notice, and the owner's next
@@ -1360,7 +1362,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		}
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("worker %s is still ending after its hand-back; send the message again in a minute", sessionID)
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
@@ -1406,6 +1408,17 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		return nil, err
 	}
 	return &protocol.WorkerResumeResult{}, nil
+}
+
+// resumeAnswerWait bounds a worker.resume. The gateway waits 75 s for the
+// answer (launchWait); this daemon answers first, with its own reason.
+const resumeAnswerWait = 65 * time.Second
+
+func (d *Daemon) resumeWait() time.Duration {
+	if d.cfg.testResumeWait > 0 {
+		return d.cfg.testResumeWait
+	}
+	return resumeAnswerWait
 }
 
 // runWorkerResume starts the worker process for an ended worker.
@@ -1783,20 +1796,47 @@ func (d *Daemon) rememberEnded(w *worker, status, note string, at time.Time) {
 }
 
 // recentWorkers returns the workers that ended in the last two minutes, the
-// newest first, and forgets the older ones.
+// newest first, and forgets the older ones. A worker whose hand-back check has
+// not ended stays, with the check's state, however long the check waits.
 func (d *Daemon) recentWorkers(now time.Time) []protocol.WorkerView {
+	checks := d.checkStates()
 	d.rmu.Lock()
 	defer d.rmu.Unlock()
 	out := []protocol.WorkerView{}
 	for sid, r := range d.recent {
-		if now.Sub(r.at) > recentWindow {
+		check := checks[sid]
+		if check == "" && now.Sub(r.at) > recentWindow {
 			delete(d.recent, sid)
 			continue
 		}
-		out = append(out, r.view)
+		v := r.view
+		v.Check = check
+		out = append(out, v)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].EndedAt > out[j].EndedAt })
 	return out
+}
+
+// checkStates is the state of each running hand-back check, by session ID.
+func (d *Daemon) checkStates() map[string]string {
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	out := make(map[string]string, len(d.checkRuns))
+	for _, run := range d.checkRuns {
+		out[run.sessionID] = run.checkState()
+	}
+	return out
+}
+
+// touchRecent restarts the recent window of an ended worker, so its end stays
+// in a list for a while after its hand-back check ends.
+func (d *Daemon) touchRecent(sessionID string, at time.Time) {
+	d.rmu.Lock()
+	defer d.rmu.Unlock()
+	if r, ok := d.recent[sessionID]; ok {
+		r.at = at
+		d.recent[sessionID] = r
+	}
 }
 
 // workerTask is the short task line of the worker with this session, "" when
@@ -1846,10 +1886,15 @@ func (d *Daemon) adoptWorkers() {
 		d.Logf("workers: %v", err)
 		return
 	}
+	saved, err := d.st.pendingHandbacks()
+	if err != nil {
+		d.Logf("saved hand-backs: %v", err)
+	}
 	for _, r := range rows {
 		if r.EndedReason != "" {
 			continue // reported at the next connect
 		}
+		handback, hasHandback := saved[r.ID]
 		tok, alive := procToken(r.PID)
 		// agy may have written its last result while the daemon was down.
 		_, agyStreamErr := os.Stat(filepath.Join(d.cfg.StateDir, "workers", r.ID, "agy-stream.json"))
@@ -1857,6 +1902,14 @@ func (d *Daemon) adoptWorkers() {
 		if (!alive || tok != r.StartToken) && !agyRecoverable {
 			if err := d.st.deleteWorkerIdleNotice(r.ID); err != nil {
 				d.Logf("worker %s: remove idle notice: %v", r.ID, err)
+			}
+			if hasHandback {
+				// It handed back complete before it ended: the saved hand-back
+				// sends its notice at the next connect, not a lost notice.
+				adoptSavedHandback(&r, handback)
+				d.st.saveWorker(r)
+				d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s saved_handback=1", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopHandback)
+				continue
 			}
 			r.EndedReason = protocol.StopLost
 			if r.DoneStatus == "" {
@@ -1904,6 +1957,19 @@ func (d *Daemon) adoptWorkers() {
 			}
 		}
 		d.Logf("worker.adopted worker=%s session=%s project=%s pid=%d", w.id, w.sessionID, w.project, w.pid)
+		switch {
+		case hasHandback:
+			// Its saved hand-back ends it after the notice. Until then the
+			// tick must not nudge it, report it idle, or end it.
+			d.wmu.Lock()
+			w.checking = true
+			d.wmu.Unlock()
+		case w.doneStatus != "":
+			// It handed back and its notice went out, but the daemon stopped
+			// before its end began. Nothing else ends it: a message from its
+			// owner waited for that end until the gateway gave up.
+			d.goBackground(func() { d.endWorker(w, protocol.StopHandback) })
+		}
 	}
 }
 

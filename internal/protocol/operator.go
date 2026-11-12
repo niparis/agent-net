@@ -641,6 +641,10 @@ type WorkerView struct {
 	EndedAt   int64  `json:"ended_at,omitempty"`
 	EndStatus string `json:"end_status,omitempty"`
 	EndNote   string `json:"end_note,omitempty"`
+	// Check is set while the project's hand-back check of a worker that
+	// ended "done" has not ended: HandbackCheckQueued or HandbackCheckRunning.
+	// Such a worker stays in the recent list until its check ends.
+	Check string `json:"check,omitempty"`
 }
 
 // WorkersResult answers OpWorkers.

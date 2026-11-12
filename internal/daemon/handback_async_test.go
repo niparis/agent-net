@@ -63,8 +63,15 @@ func (a *asyncCheck) handback(t *testing.T) *protocol.WorkerHandbackResult {
 
 func startAsyncCheck(t *testing.T) *asyncCheck {
 	t.Helper()
+	return startAsyncCheckWith(t, autoContinueOff(), queueSet)
+}
+
+// startAsyncCheckWith is startAsyncCheck with the worker's auto-continue
+// choice (nil keeps the project's setting) and the machine's worker settings.
+func startAsyncCheckWith(t *testing.T, autoContinue *bool, set WorkerSettings) *asyncCheck {
+	t.Helper()
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, queueSet, withLoad(&fakeLoad{l: roomyLoad()}))
+	w := startWorkerNode(t, g, set, withLoad(&fakeLoad{l: roomyLoad()}))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	dir := t.TempDir()
@@ -79,9 +86,42 @@ func startAsyncCheck(t *testing.T) *asyncCheck {
 		return cmd == command
 	})
 	a.res = w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
-		Task: "FAKE:ignore", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
+		Task: "FAKE:ignore", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinue})
 	a.edit(t, "first.txt")
 	return a
+}
+
+// workerID is the ID of the worker, read while it runs.
+func (a *asyncCheck) workerID(t *testing.T) string {
+	t.Helper()
+	wk := a.w.d.workerBySession(a.res.SessionID)
+	if wk == nil {
+		t.Fatal("the worker does not run")
+	}
+	return wk.id
+}
+
+// waitEnded waits until the worker that handed back has ended.
+func (a *asyncCheck) waitEnded(t *testing.T) {
+	t.Helper()
+	eventually(t, "the worker ends at its hand-back", func() bool { return a.w.d.workerBySession(a.res.SessionID) == nil })
+}
+
+// resume sends the ended worker a message from its owner, which starts it
+// again, and waits until it runs.
+func (a *asyncCheck) resume(t *testing.T) {
+	t.Helper()
+	a.waitEnded(t)
+	a.w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: a.res.SessionID, Body: "one more thing"})
+	eventually(t, "the worker runs again", func() bool {
+		wk := a.w.d.workerBySession(a.res.SessionID)
+		if wk == nil {
+			return false
+		}
+		a.w.d.wmu.Lock()
+		defer a.w.d.wmu.Unlock()
+		return !wk.stopping && wk.pid != 0
+	})
 }
 
 func (a *asyncCheck) waitStarts(t *testing.T, n int) {
@@ -105,7 +145,7 @@ func TestHandbackReturnsBeforeSlowCheckEnds(t *testing.T) {
 	if !out.Checking {
 		t.Fatalf("the reply does not say the check runs: %+v", out)
 	}
-	if !strings.Contains(out.Note, "check runs now") {
+	if !strings.Contains(out.Note, "check runs on its own") {
 		t.Errorf("reply note: %q", out.Note)
 	}
 	a.waitStarts(t, 1)
@@ -119,11 +159,13 @@ func TestHandbackReturnsBeforeSlowCheckEnds(t *testing.T) {
 	}
 }
 
-// A second hand-back on the same head does not start a second check.
+// A second hand-back on the same head does not start a second check, even
+// from a later run of the worker that its owner started again.
 func TestHandbackSameHeadStartsOneCheck(t *testing.T) {
 	a := startAsyncCheck(t)
 	a.handback(t)
 	a.waitStarts(t, 1)
+	a.resume(t)
 	again := a.handback(t)
 	if !again.Checking || !strings.Contains(again.Note, "already handed back; check running") {
 		t.Fatalf("second reply: %+v", again)
@@ -144,6 +186,7 @@ func TestHandbackNewHeadReplacesRunningCheck(t *testing.T) {
 	a := startAsyncCheck(t)
 	a.handback(t)
 	a.waitStarts(t, 1)
+	a.resume(t)
 	a.edit(t, "second.txt")
 	a.handback(t)
 	a.waitStarts(t, 2)
@@ -164,10 +207,10 @@ func TestHandbackNewHeadReplacesRunningCheck(t *testing.T) {
 }
 
 // A daemon that stops while a hand-back check runs (an upgrade or a restart)
-// returns at once. It kills the check's process group, keeps the worker
-// running, and records the check as interrupted on the change and in the
-// notice. Before, Stop waited for the check, which can run for its whole
-// timeout, and systemd killed the daemon after 90 seconds.
+// returns at once. It kills the check's process group and records the check
+// as interrupted on the change and in the notice. Before, Stop waited for the
+// check, which can run for its whole timeout, and systemd killed the daemon
+// after 90 seconds. The worker itself ended at its hand-back.
 func TestDaemonStopInterruptsRunningHandbackCheck(t *testing.T) {
 	a := startAsyncCheck(t)
 	a.handback(t)
@@ -180,17 +223,7 @@ func TestDaemonStopInterruptsRunningHandbackCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check pid %q: %v", raw, err)
 	}
-	workerPID := 0
-	a.w.d.wmu.Lock()
-	for _, w := range a.w.d.workers {
-		if w.sessionID == a.res.SessionID {
-			workerPID = w.pid
-		}
-	}
-	a.w.d.wmu.Unlock()
-	if workerPID <= 0 {
-		t.Fatal("no worker process")
-	}
+	a.waitEnded(t)
 
 	stopped := make(chan struct{})
 	go func() { a.w.d.Stop(); close(stopped) }()
@@ -207,9 +240,6 @@ func TestDaemonStopInterruptsRunningHandbackCheck(t *testing.T) {
 	eventually(t, "the check's process is gone", func() bool {
 		return syscall.Kill(checkPID, 0) != nil
 	})
-	if err := syscall.Kill(workerPID, 0); err != nil {
-		t.Fatalf("the worker process did not survive the daemon stop: %v", err)
-	}
 
 	a.w.node.restart()
 	a.w.cli = cliClient(t, a.w.node)

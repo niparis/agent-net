@@ -86,6 +86,9 @@ type Config struct {
 	// testDeliveryRecordTimeout replaces deliveryRecordTimeout, how long a
 	// hand-back waits for the gateway to record its change.
 	testDeliveryRecordTimeout time.Duration
+	// testResumeWait replaces resumeAnswerWait, how long a worker.resume
+	// from the gateway may take before this daemon answers.
+	testResumeWait time.Duration
 	// testQueuedTaskTimeout shortens the queued task relay deadline in tests.
 	testQueuedTaskTimeout time.Duration
 	// testCleanupFetch replaces cleanupFetchDefault in cleanupProjects, so a
@@ -536,15 +539,20 @@ type Daemon struct {
 	workerSessionCleanupCursor  string
 	// reportMu guards reporting: the worker IDs that one caller is reporting
 	// now. The gateway link and the worker loop may report ended workers at the
-	// same time, and each worker must be reported once.
+	// same time, and each worker must be reported once. It also guards
+	// replaying, the workers whose saved hand-back is being sent now.
 	reportMu  sync.Mutex
 	reporting map[string]bool
+	replaying map[string]bool
 	// rmu guards recent, the workers that ended in the last two minutes.
 	rmu    sync.Mutex
 	recent map[string]recentWorker
 	// resumeMu serializes starting an ended worker again, so two messages
 	// from its owner cannot start two processes.
-	resumeMu      sync.Mutex
+	resumeMu sync.Mutex
+	// checkRuns holds the running hand-back check of each worker, by worker
+	// ID, until its notice is sent. wmu guards it.
+	checkRuns     map[string]*handbackCheckRun
 	claudeStartMu sync.Mutex
 	// wakes holds the session wakes in flight, by session ID (wakeSession).
 	wakeMu sync.Mutex
