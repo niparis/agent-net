@@ -137,6 +137,7 @@ func (d *Daemon) startWithinBudget(ctx context.Context, caller string, p protoco
 			return
 		}
 		mu.Unlock()
+		d.settleAccepted(id, res, err)
 		d.reportAcceptedStart(id, caller, p, res, err)
 	})
 	timer := time.NewTimer(budget)
@@ -156,7 +157,10 @@ func (d *Daemon) startWithinBudget(ctx context.Context, caller string, p protoco
 		return o.res, o.err
 	default:
 	}
+	// Recorded under mu, before the background start can see detached, so
+	// that its outcome is never lost.
 	detached = true
+	d.noteAccepted(id)
 	mu.Unlock()
 	d.Logf("worker.accepted start=%s project=%s harness=%s model=%s after=%dms", id, p.Project, p.Harness, p.Model, time.Since(began).Milliseconds())
 	if ctxErr != nil {
@@ -195,4 +199,91 @@ func (d *Daemon) startReport(ctx context.Context, r protocol.WorkerStartReport) 
 	if _, err := d.call(ctx, "worker.start_report", r); err != nil {
 		d.Logf("worker.start_report start=%s: %v", r.ID, err)
 	}
+}
+
+// acceptedStart is what the daemon that took an accepted start knows of it, so
+// that agent_worker_stop can act on the start id the caller was given. Settled
+// is false while the judge or the launch runs. A settled start is queued (Queue
+// names it), has a worker (Session), or did not start (neither).
+type acceptedStart struct {
+	Queue, Session string
+	Settled        bool
+}
+
+// noteAccepted records an accepted start. It is called before the answer goes
+// out, so a stop that follows the answer finds the start.
+func (d *Daemon) noteAccepted(id string) {
+	d.acceptedMu.Lock()
+	defer d.acceptedMu.Unlock()
+	if d.accepted == nil {
+		d.accepted = map[string]*acceptedStart{}
+	}
+	d.accepted[id] = &acceptedStart{}
+}
+
+// settleAccepted records how an accepted start ended.
+func (d *Daemon) settleAccepted(id string, res *protocol.WorkerStartResult, err error) {
+	d.acceptedMu.Lock()
+	defer d.acceptedMu.Unlock()
+	e := d.accepted[id]
+	if e == nil {
+		return
+	}
+	e.Settled = true
+	switch {
+	case err != nil || res == nil:
+		// Did not start: nothing is queued and no worker exists.
+	case res.Status == "queued":
+		e.Queue = res.QueueID
+	default:
+		e.Session = res.SessionID
+	}
+}
+
+// queuedStartBegan moves the accepted start that waited under the queue id to
+// the worker it became. The machine of the owner sends that task, so this
+// daemon sees it.
+func (d *Daemon) queuedStartBegan(queue, session string) {
+	if queue == "" {
+		return
+	}
+	d.acceptedMu.Lock()
+	defer d.acceptedMu.Unlock()
+	for _, e := range d.accepted {
+		if e.Queue == queue {
+			e.Queue, e.Session = "", session
+		}
+	}
+}
+
+// startTarget is the id that agent_worker_stop acts on for id. A start id the
+// caller was given stands for its queued start, or for the worker it became.
+func (d *Daemon) startTarget(id string) (string, error) {
+	if !protocol.IsStartID(id) {
+		return id, nil
+	}
+	d.acceptedMu.Lock()
+	e, ok := d.accepted[id]
+	var st acceptedStart
+	if ok {
+		st = *e
+	}
+	d.acceptedMu.Unlock()
+	switch {
+	case ok && !st.Settled:
+		return "", fmt.Errorf("start %s is still being judged or launched: stop it again when its notice says it is queued or started", id)
+	case ok && st.Session != "":
+		return st.Session, nil
+	case ok && st.Queue != "":
+		return st.Queue, nil
+	case ok:
+		return "", fmt.Errorf("start %s did not start, so there is nothing to stop", id)
+	}
+	d.heldMu.Lock()
+	_, held := d.heldStarts[id]
+	d.heldMu.Unlock()
+	if held {
+		return "", fmt.Errorf("start %s waits for your owner's answer on the Desk, so it cannot be stopped from here", id)
+	}
+	return "", fmt.Errorf("%s is a start id this daemon does not track: it was given by an earlier run of this daemon, or it never existed. Use the queue id (q_...) from the queued notice, or the worker's session id", id)
 }

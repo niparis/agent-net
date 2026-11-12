@@ -446,6 +446,9 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 	charter := d.charterBrief(ctx, p.Project)
 	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest, WorkerTask: true, WorkerTaskRef: p.Ref,
 		Body: protocol.WorkerTaskBodyBriefBar(p.Harness, protocol.WorkerBrief{Notes: p.Task}, p.Worktree, p.Branch, p.Base, p.ProjectRules, charter, p.Permissions, p.OSSandbox, d.SettingsSnapshot(), p.Project, d.barOf(ctx, p.Project))})
+	if err == nil {
+		d.queuedStartBegan(p.Ref, p.SessionID)
+	}
 	return err
 }
 

@@ -344,8 +344,12 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		if err != nil {
 			return nil, true, err
 		}
+		target, err := d.startTarget(p.Session)
+		if err != nil {
+			return nil, true, err
+		}
 		cctx := withCallWait(ctx, 30e9)
-		if _, err := d.call(cctx, "worker.stop", protocol.WorkerStopFrame{Session: p.Session, Requester: sid}); err != nil {
+		if _, err := d.call(cctx, "worker.stop", protocol.WorkerStopFrame{Session: target, Requester: sid}); err != nil {
 			return nil, true, tooOldGateway(err)
 		}
 		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, true, nil

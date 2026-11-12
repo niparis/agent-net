@@ -349,6 +349,8 @@ type Daemon struct {
 	ownerPromptClock    func() time.Time // test hook
 	heldMu              sync.Mutex
 	heldStarts          map[string]*heldStart // start id -> a start that waits for the owner, guarded by heldMu
+	acceptedMu          sync.Mutex
+	accepted            map[string]*acceptedStart // start id -> an accepted start, guarded by acceptedMu
 	openCodeRoutes      opencodeapi.Cache
 	startedAt           time.Time
 	cloneProject        func(context.Context, string, string) error // test hook
