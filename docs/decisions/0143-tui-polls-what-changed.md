@@ -53,6 +53,9 @@ signal moved all the time:
    call). An online session's `last_seen` is kept to the minute, because the TUI
    reads it only for "idle over an hour" and its exact value moves with every
    report. An offline session keeps its exact value, which is drawn as an age.
+   An online session's `last_active` is kept to the minute for the same reason: a
+   busy session moves it every few seconds, and the TUI draws it as minutes and
+   hours.
 6. **The machine list for proposals is brief** (`query.nodes` with `brief`: who is
    on the network, no quality tables).
 

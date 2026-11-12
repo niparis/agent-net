@@ -323,34 +323,34 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 		} else if t.Target.Action == "undo_remove" {
 			result = d.undoRemoveSkill(t)
 		} else if t.Target.Action == "copy" && ((t.Revision.Assignment.Scope == "global" && t.Target.Checkout == "") || (t.Revision.Assignment.Scope == "projects" && t.Target.Checkout != "")) {
-			raw, err = d.call(ctx, "tools.export", protocol.ToolVersionRequest{Item: t.Revision.Item, Version: t.Revision.Version})
-			if err != nil {
+			data, err := pass.bundle(ctx, t)
+			if errors.Is(err, errInvalidStoredBundle) {
+				result.State = "failed"
+				result.Reason = "invalid stored bundle"
+			} else if err != nil {
 				result.State = "failed"
 				result.Reason = "stored skill unavailable"
 			} else {
-				var b protocol.SkillBundle
-				if json.Unmarshal(raw, &b) != nil {
-					result.State = "failed"
-					result.Reason = "invalid stored bundle"
-				} else {
-					if t.Revision.Assignment.Scope == "projects" {
-						if t.Target.Destination == "" {
-							var names []string
-							for _, v := range targets {
-								if v.Revision.Item == t.Revision.Item && v.Target.Checkout == t.Target.Checkout && v.Target.Action == "copy" {
-									names = append(names, v.Target.Harness)
-								}
+				if t.Revision.Assignment.Scope == "projects" {
+					if t.Target.Destination == "" {
+						var names []string
+						for _, v := range targets {
+							if v.Revision.Item == t.Revision.Item && v.Target.Checkout == t.Target.Checkout && v.Target.Action == "copy" {
+								names = append(names, v.Target.Harness)
 							}
-							root, _ := inventory.ProjectSkillRoot(t.Target.Harness, names)
-							if t.Target.Root != "" {
-								root = t.Target.Root
-							}
-							t.Target.Destination = filepath.Join(t.Target.Checkout, root, protocol.BundleEntryName(itemKind(t.Revision.Item), t.Name))
 						}
-						result = d.copyProjectSkillIn(t, b.Data, worktrees[t.Target.Project], true)
-					} else {
-						result = d.copyGlobalSkill(t, b.Data)
+						root, _ := inventory.ProjectSkillRoot(t.Target.Harness, names)
+						if t.Target.Root != "" {
+							root = t.Target.Root
+						}
+						t.Target.Destination = filepath.Join(t.Target.Checkout, root, protocol.BundleEntryName(itemKind(t.Revision.Item), t.Name))
 					}
+					result = d.copyProjectSkillIn(t, data, worktrees[t.Target.Project], true)
+				} else {
+					result = d.copyGlobalSkill(t, data)
+				}
+				if result.State == "failed" && (result.Reason == "invalid skill bundle" || result.Reason == "skill hash mismatch") {
+					pass.dropBundle(t)
 				}
 			}
 		}
