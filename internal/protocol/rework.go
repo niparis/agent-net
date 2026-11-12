@@ -14,23 +14,29 @@ func ReworkCounts(handback, partial, idle bool) (cont, fix int) {
 	return 0, 0
 }
 
-// WorkerReportComplete reads the final nonempty report line requested by the
-// Codex brief. Without an explicit complete line, work counts as complete.
+// WorkerReportComplete reads the complete marker the worker brief asks for:
+// "complete: yes" or "complete: no" on the first or the last nonempty line of
+// the report. When both lines carry a marker and they differ, the last wins.
+// Without a marker, work counts as complete and ok is false.
 func WorkerReportComplete(report string) (complete, ok bool) {
-	complete = true
-	lines := strings.Split(strings.TrimSpace(report), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.ToLower(strings.TrimSpace(lines[i]))
+	var first, last string
+	for _, line := range strings.Split(strings.TrimSpace(report), "\n") {
+		line = strings.ToLower(strings.TrimSpace(line))
 		if line == "" {
 			continue
 		}
+		if first == "" {
+			first = line
+		}
+		last = line
+	}
+	for _, line := range []string{last, first} {
 		switch line {
 		case workerCompleteNo:
 			return false, true
 		case workerCompleteYes:
 			return true, true
 		}
-		return true, false
 	}
 	return true, false
 }

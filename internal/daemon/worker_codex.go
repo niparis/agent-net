@@ -1030,9 +1030,10 @@ func sandboxDenial(s string) bool {
 	return strings.Contains(s, "sandbox") && (strings.Contains(s, "denied") || strings.Contains(s, "not permitted") || strings.Contains(s, "violation"))
 }
 
-// codexReportComplete reads the line the Codex brief asks for at the end of a
-// report: "complete: yes" or "complete: no". The last such line wins. ok is
-// false when the report has none (the work then counts as complete).
+// codexReportComplete reads the line the Codex brief asks for, at the start
+// or the end of a report: "complete: yes" or "complete: no". The last line
+// wins when both carry one. ok is false when the report has none (the work
+// then counts as complete).
 func codexReportComplete(report string) (complete, ok bool) {
 	return protocol.WorkerReportComplete(report)
 }

@@ -474,3 +474,19 @@ func TestHandbackReportSayingCompleteNoRecordsNoChange(t *testing.T) {
 		t.Errorf("the notice names a change:\n%s", n.Body)
 	}
 }
+
+// The marker may be the first line of the report: the worker that hit the
+// original defect wrote it there. A worker with commits is still partial.
+func TestHandbackReportFirstLineCompleteNoRecordsNoChange(t *testing.T) {
+	c, _, _ := deliveryHandbackNode(t, nil)
+	caller, callerID := deliveryCaller(t, c)
+	res := startDeliveryWorker(t, c, caller, callerID, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude",
+		Title: "Half the work", Task: "FAKE:edit FAKE:firstno FAKE:handback", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
+	n := handbackNotice(t, c, callerID, res.SessionID)
+	if found := findChanges(t, caller, protocol.ChangesFindArgs{Project: "shop"}); len(found.Items) != 0 {
+		t.Errorf("a change was recorded for a report whose first line is complete: no: %+v", found.Items)
+	}
+	if strings.Contains(n.Body, "change: ch_") {
+		t.Errorf("the notice names a change:\n%s", n.Body)
+	}
+}

@@ -608,6 +608,10 @@ func fakeAgentAct(send func(string, any), body, cwd string) {
 		// complete field stays absent, as with a Codex report.
 		call["report"] = call["report"].(string) + "\ncomplete: no"
 	}
+	if strings.Contains(body, "FAKE:firstno") {
+		// The marker is the first line of the report, then the explanation.
+		call["report"] = "complete: no\n" + call["report"].(string)
+	}
 	send("worker_handback", call)
 }
 
