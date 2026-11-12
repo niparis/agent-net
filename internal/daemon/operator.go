@@ -163,10 +163,9 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 
 	case protocol.OpNoteWrite, protocol.OpNotesFind:
 		// Notes belong to a session's agent and project, so the call needs a
-		// session. The gateway reads the agent and the project from it.
-		if client == "cli" {
-			return nil, true, errors.New(method + " is for agent sessions, not the command line")
-		}
+		// session. The command line never gets here: the dispatch refuses it
+		// for every method outside its list. The gateway reads the agent and
+		// the project from the session.
 		sid, _, err := lc.callerSession(client, method)
 		if err != nil {
 			return nil, true, err
