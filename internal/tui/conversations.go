@@ -330,6 +330,15 @@ func (m *Model) applyConversationPage(msg conversationPageMsg) {
 		m.convVersion = msg.page.Version
 	}
 	if msg.first {
+		if msg.page.Total < len(m.storedConvs) {
+			// A thread left the list. Page one cannot say which older row
+			// went, so start again from this page and load the rest.
+			m.storedConvs = append(m.storedConvs[:0], msg.page.Conversations...)
+			m.convNext = msg.page.Next
+			m.convLoaded = true
+			m.rebuildConversations()
+			return
+		}
 		// A list that was already complete stays complete: a poll of page one
 		// finds every thread that changed, because a changed thread is the
 		// newest row of the page. Only a load that is still walking pages keeps

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -62,6 +63,11 @@ type Store struct {
 	// connector opens the database connection. Its write count says when
 	// data read from the database may be out of date.
 	connector *sqlitecache.Connector
+	// convEpoch makes the conversations list version unique to this store. The
+	// write counter below it starts from zero in every process, so without it
+	// a restarted gateway would hand out a version another process already
+	// used.
+	convEpoch uint32
 	// rc keeps reads that stay current until the next write. See readThrough.
 	rc                readCache
 	graphJunkRemoved  int64
@@ -1745,7 +1751,7 @@ func OpenStore(path string) (*Store, error) {
 	// One connection keeps writes serialized and avoids lock errors. Reads run
 	// on a pool of read-only connections that opens at the end (see openReadPool).
 	wdb.SetMaxOpenConns(1)
-	s := &Store{db: &storeDB{w: wdb}, connector: connector, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
+	s := &Store{db: &storeDB{w: wdb}, connector: connector, convEpoch: newConversationEpoch(), path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
 	db := s.db
 	if err := s.migrate(); err != nil {
 		db.Close()
@@ -5419,11 +5425,34 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 // harness or worker record, a profile name or a cited signal. It reads the
 // columns by name, so a session's heartbeat does not move it. It is an
 // in-memory counter, so an unchanged poll costs nothing.
+//
+// The high half is this store's run epoch and the low half is the write count.
+// The count starts from zero in every process, so a caller must never accept a
+// version from another process that happens to have climbed to the same
+// number.
 func (s *Store) conversationsVersion() uint64 {
-	return s.readStamp([]string{
+	stamp := s.readStamp([]string{
 		"messages", "sessions.name", "sessions.harness", "sessions.worker",
 		"profiles.name", "charter_signals",
 	})
+	return uint64(s.convEpoch)<<32 | uint64(uint32(stamp))
+}
+
+// conversationEpochBase separates the versions of two gateway processes. The
+// sequence keeps two stores in one process apart as well, so a test or a
+// second store on the same database can never reuse a version.
+var conversationEpochBase = func() uint32 {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return uint32(time.Now().UnixNano())
+	}
+	return binary.BigEndian.Uint32(b[:])
+}()
+
+var conversationEpochSeq atomic.Uint32
+
+func newConversationEpoch() uint32 {
+	return conversationEpochBase + conversationEpochSeq.Add(1)
 }
 
 // conversationListRunes is how much of a last line a list row keeps. The row

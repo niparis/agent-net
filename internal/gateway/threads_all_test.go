@@ -83,6 +83,41 @@ func TestConversationsLiteListsEveryThreadWithoutBodies(t *testing.T) {
 	}
 }
 
+func TestConversationsVersionIsNotReusedByAnotherStore(t *testing.T) {
+	path := seededStorePath(t, "gw.db")
+	first, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	before, err := first.ConversationsPage(protocol.QueryConversations{Lite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second gateway process opens the same database. Its write counter
+	// starts from zero and climbs through the same values, so a bare counter
+	// would match a version the first process handed out.
+	second, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	after, err := second.ConversationsPage(protocol.QueryConversations{Lite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Version == before.Version {
+		t.Fatalf("two stores handed out the same version %d", before.Version)
+	}
+	again, err := second.ConversationsPage(protocol.QueryConversations{Lite: true, IfVersion: before.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.NotModified {
+		t.Fatal("the second store accepted a version from the first store")
+	}
+}
+
 func TestConversationsLitePollIsNotModifiedWhileUnchanged(t *testing.T) {
 	s, c := newTestStore(t)
 	node, alice, _ := conversationFixture(t, s)

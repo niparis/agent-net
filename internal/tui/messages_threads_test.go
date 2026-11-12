@@ -133,6 +133,39 @@ func TestOpeningAnOldThreadReadsOnlyItsMessages(t *testing.T) {
 	}
 }
 
+func TestThreadRemovalReloadsTheList(t *testing.T) {
+	src := &fakeSource{snap: fakeSnapshot()}
+	rows := threadHistoryRows(500)
+	pageThreads(src, rows)
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m.tab, m.focus = messagesTab, focusFeed
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
+	m = refreshAndRun(t, m, src)
+	if got := len(m.messageConversations()); got != 500 {
+		t.Fatalf("the list has %d threads, want 500", got)
+	}
+
+	// One thread leaves the gateway. A merge of page one would keep it, so the
+	// screen must start the list again.
+	remaining := append(append([]protocol.ConversationView{}, rows[:250]...), rows[251:]...)
+	pageThreads(src, remaining)
+	src.convVersion = 8
+	m = refreshAndRun(t, m, src)
+	got := m.messageConversations()
+	if len(got) != 499 {
+		t.Fatalf("the list has %d threads after the removal, want 499", len(got))
+	}
+	for _, row := range got {
+		if row.convID == "c_250" {
+			t.Fatal("the removed thread is still in the list")
+		}
+	}
+	if view := ansi.Strip(strings.Join(m.messagesView(120, 34), "\n")); !strings.Contains(view, "499 threads") {
+		t.Fatalf("the footer does not count the removed list:\n%s", view)
+	}
+}
+
 func TestUnchangedThreadPollSendsNoRows(t *testing.T) {
 	src := &fakeSource{snap: fakeSnapshot()}
 	pageThreads(src, threadHistoryRows(500))
