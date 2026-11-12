@@ -380,7 +380,9 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	// scores_weekly, weekly scores table with release markers, 2026-11-11
 	// agent_owner_judgment_record, owner-approved front door (0150), 2026-11-12
 	// cto_intake_find, owner-approved front door step (b) (0152), 2026-11-12
-	const schemaBudget = 36*1024 + 1592
+	// agent_step_report in the CTO tool list (ch_81e7) plus the front door tools
+	// took the headroom to 767 bytes, so the budget grew by 320, 2026-11-12
+	const schemaBudget = 36*1024 + 1912
 	const headroom = 1024
 	t.Logf("total schema: %d bytes, %d bytes left of the %d byte budget", len(schema), schemaBudget-len(schema), schemaBudget)
 	if len(schema) >= schemaBudget {
