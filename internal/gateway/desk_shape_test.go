@@ -526,13 +526,21 @@ func TestProtectedProviderOverrideRoutesToCTO(t *testing.T) {
 	}
 }
 
-// A short wait for the user makes no ask (decision 0150, Desk item 10): the
-// ask of a waiting session comes only once it has waited the debounce.
+// A short wait for the owner who works in the session makes no ask (decision
+// 0150, Desk item 10): the ask of a waiting session comes only once it has
+// waited the debounce. With the owner away there is no debounce (plan step c2).
 func TestWaitingAskWaitsForTheDebounce(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("box", "linux")
-	info := protocol.SessionInfo{Harness: "claude", NativeID: "w", Name: "waiter",
-		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Which database?", Since: c.t.Unix()}}
+	info := protocol.SessionInfo{Harness: "claude", NativeID: "w", Name: "waiter"}
+	id, err := s.UpsertSession(node, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordOwnerTyped(id); err != nil {
+		t.Fatal(err)
+	}
+	info.Waiting = &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Which database?", Since: c.t.Unix()}
 	if _, err := s.UpsertSession(node, info); err != nil {
 		t.Fatal(err)
 	}

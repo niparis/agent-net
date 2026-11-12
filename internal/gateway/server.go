@@ -1964,6 +1964,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		if p.Prompt {
+			if err := st.RecordOwnerTyped(p.SessionID); err != nil {
+				return nil, err
+			}
 			// The owner typed in the session: what it asked is answered or
 			// overtaken (the Needs you tag must not outlive its reason).
 			if err := st.closeOwnerRepliedAsks(p.SessionID, p.Text); err != nil {
@@ -2881,26 +2884,42 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		ask := protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name, Replaces: p.Replaces}
-		// A team that sends questions to its lead keeps this one from the owner.
-		redirect, m, err := st.RedirectOwnerAsk(ask)
+		return g.agentOwnerAsk(ctx, st, protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name, Replaces: p.Replaces})
+
+	case "ask.turn_end":
+		// A session's turn ended on a question to the owner (decision 0150).
+		// When the owner is not working in that session, the question goes to
+		// the chief like an agent_owner_ask, and the daemon tells the session
+		// once to carry on. asked says the session asked it with
+		// agent_owner_ask: a Claude session already has its item, while the
+		// explicit wait of Pi or OpenCode has none yet.
+		var p struct {
+			SessionID string `json:"session_id"`
+			Text      string `json:"text"`
+			Asked     bool   `json:"asked"`
+		}
+		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Text) == "" {
+			return nil, reject("bad ask.turn_end")
+		}
+		agent, project, name, err := st.askingSession(nc.id, p.SessionID)
 		if err != nil {
 			return nil, err
 		}
-		if redirect != nil {
-			if m.State != protocol.StateHeld {
-				g.dispatch(ctx, m)
+		redirect, err := st.TurnEndRedirect(agent.SessionID)
+		if err != nil || !redirect {
+			return map[string]any{"redirect": false}, err
+		}
+		if p.Asked {
+			open, err := st.OtherOpenAsks(agent.SessionID, "")
+			if err != nil || len(open) > 0 {
+				return map[string]any{"redirect": err == nil}, err
 			}
-			return map[string]any{"item": protocol.InboxItem{ID: redirect.ItemID, Kind: p.Kind, Status: "open", SessionID: agent.SessionID}, "redirected": redirect}, nil
 		}
-		item, err := st.CreateInboxItem(ask)
-		if err != nil {
-			return map[string]any{"item": item}, err
+		res, err := g.agentOwnerAsk(ctx, st, turnEndQuestion(agent, project, name, strings.TrimSpace(p.Text)))
+		if res != nil {
+			res["redirect"] = err == nil
 		}
-		// A new ask adds to the pending ones. Tell the asker which others are
-		// still open so it can name one with replaces.
-		others, err := st.OtherOpenAsks(agent.SessionID, item.ID)
-		return map[string]any{"item": item, "other_open": others}, err
+		return res, err
 
 	case "apps.ask":
 		var p struct {

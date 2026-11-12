@@ -1362,7 +1362,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_ask",
-    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. A new ask adds to your pending ones; replaces retires one. Use it when you stop for the owner.",
+    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. It goes to the chief of staff, who brings decisions to the owner; carry on, do not wait for the answer. A new ask adds to your pending ones; replaces retires one.",
     "inputSchema": {
       "type": "object",
       "properties": {

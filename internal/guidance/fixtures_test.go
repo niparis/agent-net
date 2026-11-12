@@ -5,6 +5,7 @@ import (
 	"flag"
 	"github.com/niparis/agent-net/internal/settings"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -41,5 +42,35 @@ func TestNetworkGuidance(t *testing.T) {
 	got := BlockWithSnapshot(Other, s)
 	if !strings.Contains(got, "Custom introduction.") || strings.Contains(got, "Other coding agents run") {
 		t.Fatal("network text not applied")
+	}
+}
+
+// No agent asks the owner in its own chat (decision 0150): owner questions go
+// to the chief with agent_owner_ask. No guidance file that agent-net writes,
+// here or in internal/agentfiles, tells an agent to ask its owner.
+func TestGoldensHaveNoAskYourOwnerLine(t *testing.T) {
+	paths, err := filepath.Glob("testdata/*.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	more, err := filepath.Glob("../agentfiles/testdata/*.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths = append(paths, more...)
+	if len(paths) < 2 {
+		t.Fatalf("found %d golden files", len(paths))
+	}
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(raw), "\n") {
+			low := strings.ToLower(line)
+			if strings.Contains(low, "ask your owner") || strings.Contains(low, "wait for my decision") {
+				t.Errorf("%s:%d tells an agent to ask its owner: %s", path, i+1, line)
+			}
+		}
 	}
 }

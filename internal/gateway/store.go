@@ -1312,7 +1312,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, deskItemShapeMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, deskItemShapeMigration, ownerTypedMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1757,6 +1757,16 @@ const workerBriefDoneMigration = `
 SELECT 1 /* worker brief done list */;
 `
 
+// ownerTypedMigration keeps when the owner last typed in a session. Viewing
+// or attaching does not set it. A question that ends a turn is redirected to
+// the chief only when the owner has not typed there lately (decision 0150, "No
+// agent asks the owner in its own chat"). The column is added in the
+// migration loop, so replaying it is safe.
+const ownerTypedMigration = `
+-- Owner front door (decision 0150): session owner typed column.
+SELECT 1 /* session owner typed column */;
+`
+
 // deskItemShapeMigration gives each Desk item an owner (chief or cto), a
 // state and a category, and links a duplicate to the open item it joined
 // (decision 0150). A rule judgment gains its action and category, a sort
@@ -2053,6 +2063,17 @@ func (s *Store) migrate() error {
 						return fmt.Errorf("migration %d: %w", i+1, err)
 					}
 				}
+			}
+		}
+		if strings.Contains(migrations[i], "session owner typed column") {
+			var has int
+			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='owner_typed_at'`).Scan(&has)
+			if err == nil && has == 0 {
+				_, err = tx.Exec(`ALTER TABLE sessions ADD COLUMN owner_typed_at INTEGER NOT NULL DEFAULT 0`)
+			}
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
 		if strings.Contains(migrations[i], "worker brief done list") {

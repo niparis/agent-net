@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -170,5 +172,48 @@ func TestPolicyHookCarriesTheDisconnectedNoticeAlone(t *testing.T) {
 	out, _ = runPolicyWith(t, in, protocol.PolicyResult{Charter: "charter text", Notice: "notice line"}, nil)
 	if !strings.Contains(out, `charter text\n\nnotice line`) {
 		t.Fatalf("order: %q", out)
+	}
+}
+
+// A turn that ended on a question that went to the chief gets the documented
+// Stop answer (decision block with the reason), so Claude Code goes on. A turn
+// a Stop hook already continued always ends, and a plain turn end prints
+// nothing.
+func TestPolicyHookStopContinuesOnce(t *testing.T) {
+	in := `{"session_id":"abc","transcript_path":"/x","hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"Done.\nOwner question: ship it?"}`
+	out, asked := runPolicyWith(t, in, protocol.PolicyResult{Continue: protocol.OwnerQuestionRedirect}, nil)
+	if len(asked) != 1 || asked[0].Event != "Stop" || asked[0].NativeID != "abc" || asked[0].LastMessage != "Done.\nOwner question: ship it?" {
+		t.Fatalf("asked: %+v", asked)
+	}
+	var got map[string]string
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got["decision"] != "block" || got["reason"] != protocol.OwnerQuestionRedirect || len(got) != 2 {
+		t.Fatalf("output: %q", out)
+	}
+	active := strings.Replace(in, `"stop_hook_active":false`, `"stop_hook_active":true`, 1)
+	if out, asked := runPolicyWith(t, active, protocol.PolicyResult{Continue: protocol.OwnerQuestionRedirect}, nil); out != "" || len(asked) != 0 {
+		t.Fatalf("a continued turn: output %q, asked %+v", out, asked)
+	}
+	if out, _ := runPolicyWith(t, in, protocol.PolicyResult{}, nil); out != "" {
+		t.Fatalf("a plain turn end: output %q", out)
+	}
+}
+
+// Claude Code versions without last_assistant_message: the hook reads the
+// turn's final text from the end of the transcript, skipping subagent turns.
+func TestPolicyHookStopReadsTheTranscript(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	lines := []string{
+		`{"type":"user","message":{"content":"go"}}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Done.\nOwner question: which region?"}]}}`,
+		`{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"subagent text"}]}}`,
+		`{"type":"system","subtype":"stop_hook_summary"}`,
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	in, _ := json.Marshal(map[string]any{"session_id": "abc", "hook_event_name": "Stop", "transcript_path": path})
+	_, asked := runPolicyWith(t, string(in), protocol.PolicyResult{}, nil)
+	if len(asked) != 1 || asked[0].LastMessage != "Done.\nOwner question: which region?" {
+		t.Fatalf("asked: %+v", asked)
 	}
 }
