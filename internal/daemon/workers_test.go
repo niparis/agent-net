@@ -183,7 +183,10 @@ func (w *workerNode) startDefault(req protocol.WorkerStartRequest) (protocol.Wor
 	}
 	// Most lifecycle tests need a fully launched worker. The start-deadline
 	// tests exercise the immediate starting result directly.
-	deadline := time.Now().Add(scaled(20 * time.Second))
+	// Worktree starts run in the background and can take longer than the
+	// 20 s this wait used to allow on a loaded machine. The wait ends as soon
+	// as the task is sent, so a longer bound only costs failing tests time.
+	deadline := time.Now().Add(scaled(60 * time.Second))
 	for time.Now().Before(deadline) {
 		for _, m := range w.messagesOf(w.t, w.ownerID()) {
 			if m.To == res.SessionID && m.Type == protocol.TypeRequest {

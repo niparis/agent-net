@@ -336,6 +336,10 @@ func TestAgyWorkerHandbackFilesAfterRestart(t *testing.T) {
 
 func startAgyNode(t *testing.T, set WorkerSettings) (*workerNode, string, string) {
 	t.Helper()
+	// A start includes starting the fake agy, which is a whole Go test binary.
+	// The 8 s budget of shortSet expired under CI load, so give agy the same
+	// scaled start budget as the other harness tests.
+	set.StartTimeout = scaled(30 * time.Second)
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "agy")
 	script := "#!/bin/sh\nFAKE_AGY_RECORDS=" + shellQuote(dir) + " FAKE_AGY_PROCESS=1 exec " + shellQuote(os.Args[0]) + " -test.run '^TestAgyProcess$' -- \"$@\"\n"
