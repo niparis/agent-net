@@ -184,6 +184,10 @@ type worker struct {
 	// checking is true while the project's pre-hand-back check runs. The
 	// hand-back ends the worker itself, so the tick must not race it.
 	checking bool
+	// checkRun is the check a hand-back started in the background, until its
+	// notice goes out. A second hand-back on the same head sees it and starts
+	// nothing; a new head cancels it.
+	checkRun *handbackCheckRun
 	// endedCh is closed when the worker starts to end (endWorker). Made on first use.
 	endedCh                           chan struct{}
 	turnActive                        bool
@@ -1638,14 +1642,15 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		d.checkIdleNotice(ctx, w, now, set.IdleNotice, stats)
 		switch {
+		case checking:
+			// The hand-back sends its notice and ends the worker itself. The
+			// worker may have stopped already: its tool call returned.
 		case d.gone(w) && !(harness == "agy" && agyTurnFinished(d, w)):
 			// The process may have ended after the failure check above. Ask
 			// again, so the harness's own error is not lost to the generic note.
 			if !d.endFailedWorker(ctx, w) {
 				d.beginWorkerEnd(w, protocol.StopExited, nil)
 			}
-		case checking:
-			// The hand-back sends its notice and ends the worker itself.
 		case age >= set.MaxAge:
 			d.beginWorkerEnd(w, protocol.StopMaxAge, nil)
 		case idleLimit >= 0 && idle >= idleLimit:
@@ -1710,7 +1715,7 @@ func (d *Daemon) modelFailure(ctx context.Context, w *worker) (string, bool) {
 		return "", false
 	}
 	d.wmu.Lock()
-	skip := w.doneStatus != "" || w.stopping || w.sessionID == ""
+	skip := w.doneStatus != "" || w.stopping || w.sessionID == "" || w.checking
 	d.wmu.Unlock()
 	if skip {
 		return "", false
