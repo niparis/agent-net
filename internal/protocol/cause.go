@@ -22,7 +22,8 @@ const (
 	CauseHarness = "harness"
 	// CauseTestFailure is a failed test step in the merger's suite.
 	CauseTestFailure = "test_failure"
-	// CauseAcceptFinding is a failed accept step: the merger found a fault.
+	// CauseAcceptFinding is a failed accept step: the caller checked the work and
+	// found a fault.
 	CauseAcceptFinding = "accept_finding"
 	// CauseBriefDefect is the caller's own rating that its brief caused the
 	// rework.

@@ -1014,6 +1014,7 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 			cc.d.wmu.Lock()
 			cc.w.doneStatus = ""
 			cc.w.donePartial = false
+			cc.w.handbackReport = ""
 			cc.d.saveWorkerLocked(cc.w)
 			cc.d.wmu.Unlock()
 			cc.startTurn(*next)

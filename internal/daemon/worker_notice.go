@@ -1236,6 +1236,7 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	} else {
 		w.doneStatus = req.Status
 		w.donePartial = !req.IsComplete()
+		w.handbackReport = req.Report
 		w.pendingHandback = true
 		w.pendingPartial = !req.IsComplete()
 		if !end {

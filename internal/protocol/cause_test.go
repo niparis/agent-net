@@ -3,6 +3,24 @@ package protocol
 import "testing"
 
 // Every cause source agent-net can see is classified. Decision 0141.
+// TestProviderQuotaRefusal reads the provider usage-limit text that reaches a
+// worker.stopped frame as a failed hand-back (decision 0141).
+func TestProviderQuotaRefusal(t *testing.T) {
+	for _, text := range []string{
+		"The Codex turn failed: You've hit your usage limit. Upgrade to Pro ... or try again at 3:39 AM.",
+		"HTTP 429 rate limit",
+		"Resource_Exhausted",
+		"Credit balance is too low",
+	} {
+		if !ProviderQuotaRefusal(text) {
+			t.Errorf("quota text not refused: %q", text)
+		}
+	}
+	if ProviderQuotaRefusal("the model call failed") {
+		t.Error("a plain model failure counted as a quota refusal")
+	}
+}
+
 func TestWorkerRunCause(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -19,6 +37,7 @@ func TestWorkerRunCause(t *testing.T) {
 		{"harness crash", StopExited, "panic: index out of range", CauseHarness},
 		{"model call failed", StopModelFails, "the model call failed", CauseHarness},
 		{"lost run", StopLost, "", CauseHarness},
+		{"codex failed turn", StopHandback, "The Codex turn failed: You've hit your usage limit. Upgrade to Pro ... or try again at 3:39 AM.\n\nLast message:\nI could not continue.", CauseQuotaAuth},
 		{"normal hand-back", StopHandback, "", CauseUnknown},
 		{"owner stopped it", StopRequested, "", CauseUnknown},
 		{"no signal", "", "", CauseUnknown},

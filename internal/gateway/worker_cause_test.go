@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -49,6 +50,38 @@ func TestWorkerRunStoresEachCauseSource(t *testing.T) {
 				t.Fatalf("stored cause = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// A failed Codex turn arrives as a failed hand-back whose report holds the
+// provider text. Through worker.stopped it must record quota_auth, not
+// unknown (decision 0141).
+func TestCodexUsageLimitHandbackStoresQuotaCause(t *testing.T) {
+	a := newAgyGate(t)
+	worker, err := a.g.store.UpsertSession(a.node, protocol.SessionInfo{Harness: "codex", NativeID: "worker-limit", Model: "gpt-5.5",
+		Worker: &protocol.WorkerInfo{ID: "w_limit", Owner: a.owner, Project: "alpha"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete := true
+	const report = "The Codex turn failed: You've hit your usage limit. Upgrade to Pro ... or try again at 3:39 AM.\n\nLast message:\nI could not continue."
+	raw, err := json.Marshal(protocol.WorkerStopped{SessionID: worker, WorkerID: "w_limit", Project: "alpha", Harness: "codex",
+		Model: "gpt-5.5", Reason: protocol.StopHandback, Status: protocol.StatusFailed, Complete: &complete, Failure: report})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.g.handleWorker(t.Context(), a.nc, "worker.stopped", raw); err != nil {
+		t.Fatal(err)
+	}
+	var cause, outcome string
+	if err := a.g.store.db.QueryRow(`SELECT cause, outcome FROM worker_runs WHERE session_id=? ORDER BY id DESC LIMIT 1`, worker).Scan(&cause, &outcome); err != nil {
+		t.Fatal(err)
+	}
+	if cause != protocol.CauseQuotaAuth {
+		t.Fatalf("cause = %q, want %q", cause, protocol.CauseQuotaAuth)
+	}
+	if outcome != protocol.OutcomeFailed {
+		t.Fatalf("outcome = %q, want failed for a failed hand-back", outcome)
 	}
 }
 

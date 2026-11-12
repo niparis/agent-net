@@ -48,7 +48,11 @@ no new brief check is added.
 - A cause is stored on the records agent-net already keeps, from signals it
   already has, in `protocol.Cause*`:
   - `quota_auth`: a provider quota or sign-in refusal in the run's error text
-    (429, resource exhausted, quota reached, 401 or 403, not logged in).
+    (429, resource exhausted, quota reached, a usage or session limit, a low
+    credit balance, 401 or 403, not logged in). A failed Codex turn reports
+    "The Codex turn failed: ... usage limit ..." as its hand-back report, so a
+    failed hand-back's report becomes the run's failure text and reaches
+    `worker.stopped` the same way.
   - `sandbox`: a write or command the sandbox refused (`operation not
     permitted`, `sandbox`, `read-only file system`).
   - `harness`: a harness crash, a start that never ran, a lost run, or the idle

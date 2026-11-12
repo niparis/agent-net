@@ -106,7 +106,7 @@ type TrackRecord struct {
 // ProviderQuotaRefusal recognizes provider quota and rate refusals, not general errors.
 func ProviderQuotaRefusal(detail string) bool {
 	detail = strings.ToLower(detail)
-	for _, marker := range []string{"http 429", "status 429", "resource_exhausted", "quota reached", "rate limit", "rate_limit", "too many requests", "at capacity", "overloaded"} {
+	for _, marker := range []string{"http 429", "status 429", "resource_exhausted", "quota reached", "rate limit", "rate_limit", "too many requests", "at capacity", "overloaded", "usage limit", "usage_limit", "session limit", "credit balance"} {
 		if strings.Contains(detail, marker) {
 			return true
 		}

@@ -562,7 +562,10 @@ type (
 		Project       string          `json:"project"`
 		Harness       string          `json:"harness"`
 		Reason        string          `json:"reason"`
-		// Failure is the cleaned model-call error, used to remember provider auth failures.
+		// Failure is the cleaned error text of the run: a failed model call, or
+		// the report of a failed hand-back (a failed Codex turn reports its
+		// provider error there). It is used to remember provider auth and quota
+		// failures and to record the run's cause.
 		Failure string `json:"failure,omitempty"`
 		// Model is the model the worker ran, as the gateway resolved it. The
 		// gateway uses it with Reason model_failed to rank the model last for a

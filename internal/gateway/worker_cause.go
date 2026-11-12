@@ -47,7 +47,8 @@ func (s *Store) setWorkerRunCause(session, cause string) error {
 
 // noteReworkCauseTx records what made a change's origin worker need rework: a
 // failed test step is a test failure in the merger's suite, a failed accept
-// step is a finding by the merger. Other steps and passes record nothing.
+// step is a finding by the caller who checked the work. Other steps and passes
+// record nothing.
 func (s *Store) noteReworkCauseTx(tx *sql.Tx, c protocol.Change, e protocol.Evidence) error {
 	if e.Result != protocol.StepResultFail || c.Origin.Kind != protocol.OriginWorker || c.Origin.SessionID == "" {
 		return nil
