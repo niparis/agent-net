@@ -125,3 +125,29 @@ func TestBriefRepoPathsResolveOnlyBaseFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestBriefRepoPathsMatchOnlyUniqueBareFilenames(t *testing.T) {
+	repo := WorkerBriefRepo{Root: "/repo/shop", Files: []string{
+		"internal/daemon/claude_mouse.go", "internal/daemon/workers.go", "internal/gateway/workers.go",
+	}}
+	for _, tc := range []struct{ text, want string }{
+		{"claude_mouse.go", "internal/daemon/claude_mouse.go"},
+		{"workers.go", ""},
+		{"/claude_mouse.go", ""},
+		{"/internal/daemon/workers.go", "internal/daemon/workers.go"},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			if got := strings.Join(repo.Paths(tc.text), ","); got != tc.want {
+				t.Fatalf("paths = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	// A root file does not override an ambiguous bare name.
+	repo.Files = append(repo.Files, "workers.go")
+	if got := repo.Paths("workers.go"); len(got) != 0 {
+		t.Fatalf("ambiguous root basename matched: %v", got)
+	}
+	if got := strings.Join(repo.Paths("/workers.go"), ","); got != "workers.go" {
+		t.Fatalf("explicit root file = %q", got)
+	}
+}

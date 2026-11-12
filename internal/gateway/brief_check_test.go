@@ -269,7 +269,7 @@ func TestWorkerBriefSharedDocumentationOnlyWarns(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			s, _ := newTestStore(t)
 			insertOpenChange(t, s, "ch_open", "feature", path)
-			failures, warnings, err := s.checkWorkerBrief(briefFrame(gatewayBrief(path)), "shop", briefTestRepo())
+			failures, warnings, err := s.checkWorkerBrief(briefFrame(gatewayBrief("/"+path)), "shop", briefTestRepo())
 			if len(warnings) != 1 || !strings.Contains(warnings[0], strings.ToLower(path)) {
 				t.Fatalf("missing warning for %s: %v", path, warnings)
 			}

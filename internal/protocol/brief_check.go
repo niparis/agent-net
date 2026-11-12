@@ -316,15 +316,30 @@ type WorkerBriefRepo struct {
 }
 
 // Paths returns the base-tree files named by text, expanding named directories.
+// A bare filename matches only when its basename is unique in the base tree.
 // A root-relative spelling such as /internal/parser is accepted, but external
 // absolute paths and environment-variable paths never become basename matches.
 func (r WorkerBriefRepo) Paths(text string) []string {
 	var out []string
 	seen := map[string]bool{}
 	root := strings.TrimRight(strings.ToLower(r.Root), "/")
+	basenameFiles := map[string]string{}
+	basenameCounts := map[string]int{}
+	for _, file := range r.Files {
+		file = strings.ToLower(file)
+		base := path.Base(file)
+		basenameFiles[base] = file
+		basenameCounts[base]++
+	}
 	for _, candidate := range BriefPaths(text) {
 		if strings.HasPrefix(candidate, "$") || strings.HasPrefix(candidate, "~") {
 			continue
+		}
+		if !strings.Contains(candidate, "/") {
+			if basenameCounts[candidate] != 1 {
+				continue
+			}
+			candidate = basenameFiles[candidate]
 		}
 		if root != "" && strings.HasPrefix(candidate, root+"/") {
 			candidate = strings.TrimPrefix(candidate, root+"/")

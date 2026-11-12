@@ -150,6 +150,11 @@ func (s *Store) openChangeBriefs(project string) ([]briefOverlap, error) {
 			return nil, err
 		}
 		paths := protocol.BriefPaths(stat)
+		// Diff stats name exact repository paths. A root file is not a
+		// caller's ambiguous bare filename, so keep it root-relative.
+		for i, file := range paths {
+			paths[i] = "/" + strings.TrimPrefix(file, "/")
+		}
 		if len(paths) == 0 {
 			continue
 		}
