@@ -827,9 +827,8 @@ func claudeProviderFailure(text string) bool { return providererr.Failure(text) 
 // launchClaudeBackground is shared by workers and owner sessions. The caller
 // holds claudeStartMu until the session file is known, before discovery runs.
 // Worker settings, records and lifetime rules belong to the caller.
-func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, args []string, logPath, resume string, extraEnv map[string]string, onJob func(string)) (claudeSessionFile, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = path
+func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, spec claudeBackground, logPath string, extraEnv map[string]string, onJob func(string)) (claudeSessionFile, error) {
+	resume := spec.Resume
 	env := os.Environ()
 	if logPath == "" {
 		filtered := env[:0]
@@ -850,8 +849,7 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, a
 		}
 		filtered = append(filtered, item)
 	}
-	cmd.Env = claudeLaunchEnv(workerEnv(filtered, extraEnv))
-	out, err := cmd.CombinedOutput()
+	out, id, err := runClaudeBackground(ctx, bin, path, spec, claudeLaunchEnv(workerEnv(filtered, extraEnv)))
 	if logPath != "" {
 		logf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if lerr == nil {
@@ -865,11 +863,9 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, a
 		}
 		return claudeSessionFile{}, fmt.Errorf("claude --bg failed: %v", err) // its output is added from the log
 	}
-	m := claudeBgID.FindStringSubmatch(string(out))
-	if m == nil {
+	if id == "" {
 		return claudeSessionFile{}, errors.New("claude --bg did not say the background session id")
 	}
-	id := m[1]
 	if onJob != nil {
 		onJob(id)
 	}

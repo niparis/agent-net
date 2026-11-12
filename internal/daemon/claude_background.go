@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"os/exec"
 )
 
 // claudeBackground describes one Claude Code background session. Every start
@@ -49,5 +50,24 @@ func claudeBackgroundArgs(s claudeBackground) []string {
 // discovery cannot register the session first. Records and lifetime rules
 // belong to the caller.
 func (d *Daemon) startBackground(ctx context.Context, bin, dir string, s claudeBackground, logPath string, env map[string]string, onJob func(string)) (claudeSessionFile, error) {
-	return d.launchClaudeBackground(ctx, bin, dir, claudeBackgroundArgs(s), logPath, s.Resume, env, onJob)
+	return d.launchClaudeBackground(ctx, bin, dir, s, logPath, env, onJob)
+}
+
+// runClaudeBackground runs `claude --bg` for the spec and returns its output
+// and the background job ID it printed (empty when it printed none). env is the
+// complete process environment: the owner and worker launchers and the CTO
+// each filter it differently. The output is returned also on failure, so the
+// caller can read the trust prompt or the error detail from it.
+func runClaudeBackground(ctx context.Context, bin, dir string, s claudeBackground, env []string) (out []byte, jobID string, err error) {
+	cmd := exec.CommandContext(ctx, bin, claudeBackgroundArgs(s)...)
+	cmd.Dir = dir
+	cmd.Env = env
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		return out, "", err
+	}
+	if m := claudeBgID.FindStringSubmatch(string(out)); m != nil {
+		jobID = m[1]
+	}
+	return out, jobID, nil
 }

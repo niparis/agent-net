@@ -30,7 +30,10 @@ func TestClaudeBackgroundHasOneBuilder(t *testing.T) {
 				continue
 			}
 			if strings.Contains(line, `"--bg"`) {
-				t.Errorf("%s:%d builds claude --bg itself; use claudeBackgroundArgs", f, i+1)
+				t.Errorf("%s:%d builds claude --bg itself; use startBackground or runClaudeBackground", f, i+1)
+			}
+			if strings.Contains(line, "claudeBackgroundArgs(") {
+				t.Errorf("%s:%d builds the --bg arguments itself; use runClaudeBackground", f, i+1)
 			}
 			if strings.Contains(line, "d.launchClaudeBackground(") {
 				t.Errorf("%s:%d calls launchClaudeBackground; use startBackground", f, i+1)
