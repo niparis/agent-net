@@ -74,6 +74,20 @@ func tooOldGateway(err error) error {
 	return err
 }
 
+// editBar sends one bar change for a session. The gateway decides who may
+// edit: the owner and the CTO name the project, a lead edits its own.
+func (d *Daemon) editBar(ctx context.Context, session string, p protocol.BarEditRequest) (protocol.BarEditResult, error) {
+	var out protocol.BarEditResult
+	data, err := d.call(ctx, "bar.edit", protocol.BarEditFrame{BarEditRequest: p, SessionID: session})
+	if err != nil {
+		return out, tooOldGateway(err)
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
 // dispatchActions serves the operator actions. handled is false for other
 // methods.
 func (lc *localConn) dispatchActions(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
@@ -184,6 +198,26 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		}
 		var out protocol.CharterDraftResult
 		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, true, err
+		}
+		return out, true, nil
+
+	case protocol.OpBarEdit:
+		// The bar is written by the project's lead, the owner or the CTO. The
+		// gateway checks the caller; a worker or the command line cannot.
+		var p protocol.BarEditRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad agent_bar_edit params")
+		}
+		if client == "cli" {
+			return nil, true, errors.New("agent_bar_edit is for agent sessions, not the command line")
+		}
+		sid, _, err := lc.callerSession(client, method)
+		if err != nil {
+			return nil, true, err
+		}
+		out, err := d.editBar(ctx, sid, p)
+		if err != nil {
 			return nil, true, err
 		}
 		return out, true, nil
@@ -490,7 +524,7 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 	charter := d.charterBrief(ctx, ans.Project)
 	end = ph.begin("task")
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest, WorkerTask: true, WorkerTaskRef: ans.StartRef,
-		Body: protocol.WorkerTaskBodyOS(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, ans.OSSandbox, d.SettingsSnapshot(), ans.Project)})
+		Body: protocol.WorkerTaskBodyBar(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, ans.OSSandbox, d.SettingsSnapshot(), ans.Project, d.barOf(ctx, ans.Project))})
 	end()
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)

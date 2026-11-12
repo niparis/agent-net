@@ -99,6 +99,21 @@ func (d *Daemon) sessionCharterContext(ctx context.Context, sid, project string)
 	return d.charterContext(ctx, project)
 }
 
+// barOf returns the bar of a project from the cached graph read, nil when
+// there is none or the gateway cannot be reached: a brief never waits for it.
+func (d *Daemon) barOf(ctx context.Context, project string) []protocol.BarRule {
+	g, ok := d.graphOf(ctx, project)
+	if !ok {
+		return nil
+	}
+	for _, n := range g.Nodes {
+		if n.Name == project {
+			return n.Bar
+		}
+	}
+	return nil
+}
+
 // charterBrief is the charter section of a worker's brief. Empty when the
 // node has no charter.
 func (d *Daemon) charterBrief(ctx context.Context, project string) string {

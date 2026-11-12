@@ -117,6 +117,9 @@ type Node struct {
 	Kind      string     `json:"kind"`
 	CreatedAt int64      `json:"created_at,omitempty"`
 	Charter   Charter    `json:"charter"`
+	// Bar is the project's own list of rules, which workers and reviewers
+	// check a diff against. It is set on repo nodes only.
+	Bar []BarRule `json:"bar,omitempty"`
 	// Settings are the node's overrides of its maturity defaults (decision
 	// 0022). They sit beside the charter and only the owner changes them.
 	Settings map[string]string `json:"settings,omitempty"`

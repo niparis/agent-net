@@ -2234,7 +2234,16 @@ func (s *Store) stepContract(project, step string) string {
 	if step == "test" && snap.String("delivery.ci_mode", settings.Where{Repo: project}) == "train" {
 		key = "delivery.contract.test_train"
 	}
-	return "contract:\n  " + strings.ReplaceAll(protocol.NeutralizeMarkers(snap.String(key, settings.Where{Repo: project})), "\n", "\n  ")
+	text := protocol.NeutralizeMarkers(snap.String(key, settings.Where{Repo: project}))
+	// The accept and review steps check the diff against the project's bar.
+	if step == protocol.StepAccept || step == protocol.StepReview {
+		if rules, err := s.BarRules(project); err == nil {
+			if bar := protocol.BarStepSection(rules); bar != "" {
+				text += "\n" + bar
+			}
+		}
+	}
+	return "contract:\n  " + strings.ReplaceAll(text, "\n", "\n  ")
 }
 func (s *Store) stepContracts(project string, refs []protocol.StepRef) string {
 	var lines []string

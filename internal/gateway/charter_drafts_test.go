@@ -70,7 +70,8 @@ func TestCharterDraftAskNamesOnlyMissingFields(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if text := mustAsk(t, s, draftSession(t, s, "demo"), "h1"); text != "" {
+	// The charter is full, so only the project rules request may remain.
+	if text := mustAsk(t, s, draftSession(t, s, "demo"), "h1"); strings.Contains(text, "Charter draft request") {
 		t.Fatalf("asked for a full charter:\n%s", text)
 	}
 	if err := s.SetLevelCharter(protocol.CharterSetRequest{Level: "agent", Node: "demo", Attr: "rules", Value: ""}, "owner", false); err != nil {

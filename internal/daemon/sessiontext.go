@@ -224,6 +224,22 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.RawMessage) (res any, ok bool, err error) {
 	d := lc.d
 	switch method {
+	case "bar_edit":
+		// The CTO's cto_op form of agent_bar_edit. It acts as the owner session,
+		// which the gateway accepts for any project the call names.
+		var p protocol.BarEditRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad bar_edit arguments")
+		}
+		sid, _, err := lc.callerSession("cli", method)
+		if err != nil {
+			return nil, true, err
+		}
+		out, err := lc.d.editBar(ctx, sid, p)
+		if err != nil {
+			return nil, true, err
+		}
+		return out, true, nil
 	case "worker_floors_reset":
 		result, err := d.call(ctx, "owner.worker_floors.reset", map[string]string{"owner": d.ownerSessionID()})
 		return result, true, err

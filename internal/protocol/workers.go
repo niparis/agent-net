@@ -639,6 +639,12 @@ var (
 )
 
 func workerPreamble(harness string, snap settings.Snapshot, repo string) string {
+	return workerPreambleBar(harness, snap, repo, nil)
+}
+
+// workerPreambleBar is workerPreamble with the project's bar. The bar follows
+// the shared rules, so a worker reads the project's own rules last.
+func workerPreambleBar(harness string, snap settings.Snapshot, repo string, bar []BarRule) string {
 	where := settings.Where{Repo: repo}
 	line := func(key string) string { return renderWorkerText(snap, key, where) }
 	b := "[agent-net worker brief] " + line("workers.brief_preamble")
@@ -664,6 +670,9 @@ func workerPreamble(harness string, snap settings.Snapshot, repo string) string 
 		"Put a check in one place, at the entry point, not repeated in every layer.",
 	} {
 		b += "\n- " + rule
+	}
+	if section := BarBriefSection(bar); section != "" {
+		b += "\n" + section
 	}
 	b += "\nThe project's own AGENTS.md wins where it conflicts."
 	// The Claude line comes last, so the Claude brief starts with the default
@@ -770,7 +779,12 @@ func WorkerTaskBodyWithSettingsForRepo(harness, task, worktree, branch, rules, c
 // WorkerTaskBodyOS is WorkerTaskBodyWithSettingsForRepo for a worker that may
 // run in the OS sandbox: osSandbox names the wrapper, "" when there is none.
 func WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
-	b := workerPreamble(harness, snap, repo)
+	return WorkerTaskBodyBar(harness, task, worktree, branch, rules, charter, level, osSandbox, snap, repo, nil)
+}
+
+// WorkerTaskBodyBar is WorkerTaskBodyOS with the project's bar in the header.
+func WorkerTaskBodyBar(harness, task, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string, bar []BarRule) string {
+	b := workerPreambleBar(harness, snap, repo, bar)
 	if harness == "agy" {
 		b += "\n- " + snap.String("delivery.worker_agy_commit_instruction", settings.Where{})
 	}

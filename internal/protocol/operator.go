@@ -119,6 +119,8 @@ const (
 	// OpCharterDraft proposes one charter value drafted from AGENTS.md
 	// (decision 0088). Open to agent sessions, not to the command line.
 	OpCharterDraft = "agent_charter_draft" // takes CharterDraftRequest, answers CharterDraftResult
+	// OpBarEdit adds, edits or removes rules of a project's bar.
+	OpBarEdit = "agent_bar_edit" // takes BarEditRequest, answers BarEditResult
 
 	// OpPermissionPropose proposes exact Claude Code permission allow rules
 	// for registered repositories (decision 0127). Open to every session,
