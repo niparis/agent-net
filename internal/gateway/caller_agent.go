@@ -201,6 +201,11 @@ func (g *Gateway) wakeCallerAgent(ctx context.Context, key string, tasks []waiti
 		return
 	}
 	if live {
+		// Nobody can be woken, and the live session may not act on the steps,
+		// so the repo lead may act on them at once.
+		if _, err := g.store.db.Exec(`INSERT OR IGNORE INTO caller_step_escalations(owner_key,woken_at,lead_offered) VALUES(?,?,1)`, key, now.UnixNano()); err != nil {
+			g.logLine("error", "where", "caller escalation write", "err", err)
+		}
 		return
 	}
 	var target string
