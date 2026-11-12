@@ -524,3 +524,97 @@ func TestLeadExplicitRepoAddressStaysWithRepoLead(t *testing.T) {
 		t.Fatal("forged lead address accepted")
 	}
 }
+
+// mergerOfLead makes a new session of the lead's agent the merger of the demo
+// project. The merger shares the lead's agent, so only the merger check keeps
+// it apart from the lead.
+func mergerOfLead(t *testing.T, s *Store, node, lead, native string) string {
+	t.Helper()
+	var agent string
+	if err := s.db.QueryRow(`SELECT agent_id FROM sessions WHERE id=?`, lead).Scan(&agent); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: native, Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET agent_id=?,last_seen=? WHERE id=?`, agent, s.now().Add(time.Hour).UnixNano(), id); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: node, SessionID: id}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// A lead-only request must never reach the merger of the lead's project, even
+// when the merger is the newest session of the lead's agent. The lead is
+// offline here, so the request waits for it instead.
+func TestLeadRouteNeverGoesToTheMerger(t *testing.T) {
+	s := teamStore(t)
+	var lead, node string
+	if err := s.db.QueryRow(`SELECT id,node_id FROM sessions WHERE repo_id='demo'`).Scan(&lead, &node); err != nil {
+		t.Fatal(err)
+	}
+	var outsider string
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='other'`).Scan(&outsider); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddArchitect("helper", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	target, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "helper", Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='helper',name='Helper' WHERE id=?`, target); err != nil {
+		t.Fatal(err)
+	}
+	merger := mergerOfLead(t, s, node, lead, "merger")
+	if err := s.SetSessionOffline(node, lead); err != nil {
+		t.Fatal(err)
+	}
+	m, _, route, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: target, Body: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.To == merger || strings.Contains(route, "Redirected") {
+		t.Fatalf("lead request went to the merger: to %s route %q", m.To, route)
+	}
+	got, err := s.ResolveLeadAddress("repo:demo")
+	if err != nil || got == merger {
+		t.Fatalf("repo:demo resolved to the merger %s (%v)", got, err)
+	}
+	if got != lead {
+		t.Fatalf("repo:demo = %s, want the offline lead %s", got, lead)
+	}
+}
+
+// The session that owner asks are redirected to is the lead's, never the
+// merger's, live or waiting.
+func TestLeadAskSessionIsNeverTheMerger(t *testing.T) {
+	s := teamStore(t)
+	var lead, node, agent string
+	if err := s.db.QueryRow(`SELECT id,node_id,agent_id FROM sessions WHERE repo_id='demo'`).Scan(&lead, &node, &agent); err != nil {
+		t.Fatal(err)
+	}
+	merger := mergerOfLead(t, s, node, lead, "merger")
+	got, _, err := s.leadAskSession(agent, "")
+	if err != nil || got != lead {
+		t.Fatalf("live: lead ask session = %s, want the lead %s (%v)", got, lead, err)
+	}
+	if err := s.SetSessionOffline(node, lead); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = s.leadAskSession(agent, "")
+	if err != nil || got != lead {
+		t.Fatalf("offline: lead ask session = %s, want the waiting lead %s (%v)", got, lead, err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET archived_at=1 WHERE id=?`, lead); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = s.leadAskSession(agent, "")
+	if err != nil || got == merger {
+		t.Fatalf("merger only: lead ask session = %s (%v), want none", got, err)
+	}
+}

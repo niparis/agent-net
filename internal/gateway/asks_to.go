@@ -80,13 +80,14 @@ func (s *Store) askerTeam(session string) (teamName, leadAgent, pinned string, o
 
 // leadAskSession picks the session of the lead that gets the question: a live
 // one, otherwise the latest one the lead agent had. The message waits for it.
+// A project merger is never the lead's session.
 func (s *Store) leadAskSession(leadAgent, pinned string) (id, name string, err error) {
 	err = liveLeadSession(s.db, leadAgent, "", pinned, true, s.now()).Scan(&id, &name)
 	if err != sql.ErrNoRows {
 		return id, name, err
 	}
 	err = s.db.QueryRow(`SELECT s.id,a.display_name FROM sessions s JOIN agents a ON a.id=s.agent_id
-		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.harness NOT IN ('owner','cto') ORDER BY s.last_seen DESC,s.id LIMIT 1`, leadAgent).Scan(&id, &name)
+		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.harness NOT IN ('owner','cto') AND `+notMergerSQL("s")+` ORDER BY s.last_seen DESC,s.id LIMIT 1`, leadAgent).Scan(&id, &name)
 	if err == sql.ErrNoRows {
 		return "", "", nil
 	}

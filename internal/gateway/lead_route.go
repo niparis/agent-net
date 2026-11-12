@@ -26,15 +26,30 @@ func teamLeadRows(db leadDB, name string) (*sql.Rows, error) {
 	return db.Query(`SELECT id,owner_agent_id,lead_session FROM teams WHERE (id=? OR name=? COLLATE NOCASE) AND active=1`, name, name)
 }
 
+// notMergerSQL keeps a project merger out of the picks for a lead. A merger
+// shares its project's lead agent, so this test is the only thing that keeps a
+// request meant for the lead away from it.
+func notMergerSQL(alias string) string {
+	return "NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=" + alias + ".id)"
+}
+
+// isProjectMerger says whether a session is registered as the merger of a project.
+func isProjectMerger(q leadDB, session string) (bool, error) {
+	var merger bool
+	err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_mergers WHERE session_id=?)`, session).Scan(&merger)
+	return merger, err
+}
+
 // liveLeadSession picks the lead's session. A session under a provider usage
 // limit comes last: another live session of the same agent answers sooner. If
 // all of them are limited, the usual order decides and the message is delivered.
+// A project merger is never picked.
 func liveLeadSession(db leadDB, agent, repo, preferred string, withName bool, now time.Time) *sql.Row {
 	selectPart, join := "s.id", ""
 	if withName {
 		selectPart, join = "s.id,a.display_name", " JOIN agents a ON a.id=s.agent_id"
 	}
-	return db.QueryRow(`SELECT `+selectPart+` FROM sessions s`+join+` WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') ORDER BY CASE WHEN s.limited_until>? THEN 1 ELSE 0 END,CASE WHEN s.id=? THEN 0 ELSE 1 END,CASE WHEN s.repo_id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`, agent, now.Unix(), preferred, repo)
+	return db.QueryRow(`SELECT `+selectPart+` FROM sessions s`+join+` WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') AND `+notMergerSQL("s")+` ORDER BY CASE WHEN s.limited_until>? THEN 1 ELSE 0 END,CASE WHEN s.id=? THEN 0 ELSE 1 END,CASE WHEN s.repo_id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`, agent, now.Unix(), preferred, repo)
 }
 
 // isLeadSession says whether a session is its lead's session: any session of the
@@ -168,7 +183,7 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 // non-worker session in the Repo (for a repo address), then the newest such
 // session anywhere. The chosen session waits in the queue and the wake on
 // message resumes it. It returns sql.ErrNoRows when the lead has no session at
-// all.
+// all. A project merger is never chosen, live or waiting.
 func resolveLeadSession(db leadDB, agent, repo, preferred string, now time.Time) (string, error) {
 	var id string
 	err := liveLeadSession(db, agent, repo, preferred, false, now).Scan(&id)
@@ -180,7 +195,7 @@ func resolveLeadSession(db leadDB, agent, repo, preferred string, now time.Time)
 	}
 	// The pinned lead session comes next, even when it is offline.
 	if preferred != "" {
-		err = db.QueryRow(`SELECT id FROM sessions WHERE id=? AND archived_at=0`, preferred).Scan(&id)
+		err = db.QueryRow(`SELECT s.id FROM sessions s WHERE s.id=? AND s.archived_at=0 AND `+notMergerSQL("s"), preferred).Scan(&id)
 		if err == nil {
 			return id, nil
 		}
@@ -192,7 +207,7 @@ func resolveLeadSession(db leadDB, agent, repo, preferred string, now time.Time)
 	// anywhere else.
 	if repo != "" {
 		err = db.QueryRow(`SELECT s.id FROM sessions s WHERE s.agent_id=? AND s.repo_id=? AND s.worker='' AND s.archived_at=0
-			AND s.harness NOT IN ('owner','cto') ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent, repo).Scan(&id)
+			AND s.harness NOT IN ('owner','cto') AND `+notMergerSQL("s")+` ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent, repo).Scan(&id)
 		if err == nil {
 			return id, nil
 		}
@@ -201,7 +216,7 @@ func resolveLeadSession(db leadDB, agent, repo, preferred string, now time.Time)
 		}
 	}
 	err = db.QueryRow(`SELECT s.id FROM sessions s WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0
-		AND s.harness NOT IN ('owner','cto') ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent).Scan(&id)
+		AND s.harness NOT IN ('owner','cto') AND `+notMergerSQL("s")+` ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent).Scan(&id)
 	if err == sql.ErrNoRows {
 		return "", sql.ErrNoRows
 	}
