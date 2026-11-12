@@ -625,6 +625,27 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 			return out, none, err
 		}
 		out.Next, out.State = "", protocol.AskClosed
+	case protocol.AskSortConfirm, protocol.AskSortPicker:
+		// The chief answers a held worker start (decision 0151).
+		var ref string
+		if err := tx.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=?`, q.Ask).Scan(&ref); err != nil {
+			return out, none, err
+		}
+		if !strings.HasPrefix(ref, protocol.StartOverrideRefPrefix) {
+			return out, none, reject("confirm and picker answer only a held worker start")
+		}
+		if q.Result == protocol.AskSortConfirm {
+			if err := confirmOverrideCheck(tx, q.Ask, true); err != nil {
+				return out, none, err
+			}
+			logText = "Chief confirmed a picker override: " + text
+		} else {
+			logText = "Chief let the picker choose: " + text
+		}
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='answered', answer=?, answered_at=? WHERE id=?`, q.Result, now.UnixNano(), q.Ask); err != nil {
+			return out, none, err
+		}
+		out.Next, out.State = "", protocol.AskAnswered
 	case protocol.AskSortSend:
 		// An ask about a session cannot go back to that session: it would
 		// return to the session it is about, a loop. Every other send stays.

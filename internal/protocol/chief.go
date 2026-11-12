@@ -23,6 +23,10 @@ const (
 	// AskSortUndo is the result of an undo: a row in the sort history that puts
 	// an ask back the way it was before the newest sort.
 	AskSortUndo = "undo"
+	// AskSortConfirm and AskSortPicker answer a held worker start (decision
+	// 0151): confirm starts it with the caller's fields, picker without them.
+	AskSortConfirm = "confirm"
+	AskSortPicker  = "picker"
 )
 
 // ChiefTimeout is how long the chief has to sort an ask before it goes to the
@@ -191,7 +195,7 @@ func (a AskSortArgs) Validate() error {
 		return errors.New("rule applies only to close")
 	}
 	switch a.Result {
-	case AskSortClose:
+	case AskSortClose, AskSortConfirm, AskSortPicker:
 	case AskSortMerge:
 		if a.Into == "" {
 			return errors.New("merge needs into: the ask id to merge into")
@@ -208,7 +212,7 @@ func (a AskSortArgs) Validate() error {
 			return errors.New("owner needs why_you: why the owner must decide")
 		}
 	default:
-		return errors.New("result must be close, merge, send, owner, list or undo")
+		return errors.New("result must be close, merge, send, owner, confirm, picker, list or undo")
 	}
 	return nil
 }

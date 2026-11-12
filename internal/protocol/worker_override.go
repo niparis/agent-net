@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"strings"
 	"unicode/utf8"
 )
@@ -51,6 +52,39 @@ type StartOverrideAsk struct {
 	// StartID is the start id the caller was given.
 	StartID string `json:"start_id"`
 	Text    string `json:"text"`
+	OverrideFacts
+}
+
+// OverrideFacts are what the chief's confirm rule checks (decision 0151): the
+// provider the override picks, the model family of the caller and of the
+// override, and whether the task reviews work.
+type OverrideFacts struct {
+	Provider       string `json:"provider,omitempty"`
+	CallerFamily   string `json:"caller_family,omitempty"`
+	OverrideFamily string `json:"override_family,omitempty"`
+	Review         bool   `json:"review,omitempty"`
+}
+
+// ConfirmOverride checks a confirm of a held override (decision 0151). The
+// chief does not confirm a protected provider: that goes to the CTO. Nobody
+// confirms an override that picks the caller's own family for a review of its
+// own work. That the override is no dearer than the picker's choice and that
+// quota allows it is the confirmer's judgment, given in its reason.
+func ConfirmOverride(f OverrideFacts, protected []string, chief bool) error {
+	if f.Review && f.OverrideFamily != "" && f.OverrideFamily == f.CallerFamily {
+		if chief {
+			return errors.New("this override picks the caller's own model family (" + f.OverrideFamily + ") for a review of its own work: nobody confirms it. Send it to the CTO, or answer picker")
+		}
+		return errors.New("this override picks the caller's own model family (" + f.OverrideFamily + ") for a review of its own work: nobody confirms it; answer picker")
+	}
+	if chief {
+		for _, p := range protected {
+			if strings.EqualFold(strings.TrimSpace(p), f.Provider) && f.Provider != "" {
+				return errors.New("provider " + f.Provider + " is protected: the chief does not confirm it. Send it to the CTO")
+			}
+		}
+	}
+	return nil
 }
 
 // MinOwnerWordsRunes and MaxOwnerWordsRunes bound the quote of owner_words. A

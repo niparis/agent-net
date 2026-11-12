@@ -122,11 +122,13 @@ export const TOOL_CATALOG = [
             "merge",
             "send",
             "owner",
+            "confirm",
+            "picker",
             "list",
             "hide",
             "undo"
           ],
-          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you, with the sorter's counts by result."
+          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you, with the sorter's counts by result. confirm or picker: answer a held worker start (decision 0151); never confirm a protected provider or the caller's own model family for a review of its own work."
         },
         "into": {
           "type": "string",

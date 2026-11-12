@@ -114,6 +114,15 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 		if serr == nil && m.ID != "" {
 			g.dispatch(ctx, m)
 		}
+		// The chief's confirm or picker reaches the machine that holds the
+		// start, as the owner's answer does.
+		if serr == nil && (q.Result == protocol.AskSortConfirm || q.Result == protocol.AskSortPicker) {
+			if ref := g.store.startOverrideRef(q.Ask); ref != "" {
+				if item, ierr := scanInbox(g.store.db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, q.Ask)); ierr == nil {
+					g.sendStartDecision(ctx, item, ref)
+				}
+			}
+		}
 		data, err = res, serr
 	case protocol.FrameJudgmentRecord:
 		q, derr := decode[protocol.JudgmentRecordRequest](raw)

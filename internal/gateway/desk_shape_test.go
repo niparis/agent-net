@@ -414,3 +414,96 @@ func TestCheckItemHasNoGeneratedRecommendation(t *testing.T) {
 		t.Fatalf("check item recommendation %q, want none", rec)
 	}
 }
+
+// overrideAsk holds a start the way the daemon does, with its facts.
+func overrideAsk(t *testing.T, s *Store, node, caller, startID string, facts protocol.StartOverrideAsk) string {
+	t.Helper()
+	facts.Session, facts.StartID = caller, startID
+	facts.Text = "bob wants model=" + facts.OverrideFamily + "/m for 'Review the parser': cheaper. Confirm, or let the picker choose."
+	item, err := s.CreateStartOverrideAsk(node, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return item.ID
+}
+
+// Decision 0151: a held override goes to the chief first, and the chief
+// confirms it when the override is no dearer than the picker's choice, quota
+// allows it and the provider is not protected.
+func TestChiefConfirmsCheaperOverride(t *testing.T) {
+	s, _, chief, asker, node := chiefRig(t)
+	var askerNode string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, asker).Scan(&askerNode); err != nil {
+		t.Fatal(err)
+	}
+	id := overrideAsk(t, s, askerNode, asker, "a_1", protocol.StartOverrideAsk{Provider: "deepseek", CallerFamily: "openai", OverrideFamily: "deepseek"})
+	if next := askNext(t, s, id); next != protocol.AskNextChief {
+		t.Fatalf("held override next = %q, want the chief", next)
+	}
+	if _, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: id, Result: protocol.AskSortConfirm, Reason: "cheaper tier than the picker's, quota has room"}); err != nil {
+		t.Fatalf("chief confirm of a cheaper override: %v", err)
+	}
+	var status, answer string
+	if err := s.db.QueryRow(`SELECT status,answer FROM inbox_items WHERE id=?`, id).Scan(&status, &answer); err != nil {
+		t.Fatal(err)
+	}
+	if status != "answered" || answer != protocol.StartAnswerConfirm {
+		t.Fatalf("after the chief's confirm: status %q answer %q", status, answer)
+	}
+	log, err := s.DeskLog(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logged := false
+	for _, e := range log {
+		logged = logged || (strings.Contains(e.Text, "Chief confirmed a picker override") && strings.Contains(e.Text, "cheaper") && strings.Contains(e.Detail, "cheaper tier than the picker's"))
+	}
+	if !logged {
+		t.Fatalf("the confirm is not logged with who confirmed it and both reasons: %+v", log)
+	}
+}
+
+// Neither the chief nor the CTO confirms an override that picks the caller's
+// own family for a review of the caller's own work: the chief routes it to the
+// CTO, and the CTO can only let the picker choose.
+func TestOwnFamilyOverrideForOwnReviewRoutesToCTO(t *testing.T) {
+	s, _, chief, asker, cto, node := deskRig(t)
+	var askerNode string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, asker).Scan(&askerNode); err != nil {
+		t.Fatal(err)
+	}
+	id := overrideAsk(t, s, askerNode, asker, "a_2", protocol.StartOverrideAsk{Provider: "openai", CallerFamily: "openai", OverrideFamily: "openai", Review: true})
+	_, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: id, Result: protocol.AskSortConfirm, Reason: "same tier"})
+	if err == nil || !strings.Contains(err.Error(), "CTO") {
+		t.Fatalf("chief confirm of own family for own review: err = %v, want a refusal that routes to the CTO", err)
+	}
+	if _, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: id, Result: protocol.AskSortSend, To: cto, Reason: "own family review"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerInboxAs(id, protocol.StartAnswerConfirm, "cto"); err == nil {
+		t.Fatal("the CTO confirmed the caller's own family for a review of its own work")
+	}
+	if _, err := s.AnswerInboxAs(id, protocol.StartAnswerPicker, "cto"); err != nil {
+		t.Fatalf("CTO picker: %v", err)
+	}
+}
+
+// A protected provider is not the chief's to confirm; the CTO may.
+func TestProtectedProviderOverrideRoutesToCTO(t *testing.T) {
+	s, _, chief, asker, _, node := deskRig(t)
+	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,0)`, protectedProvidersKey, `{"protected_providers":["anthropic"]}`); err != nil {
+		t.Fatal(err)
+	}
+	var askerNode string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, asker).Scan(&askerNode); err != nil {
+		t.Fatal(err)
+	}
+	id := overrideAsk(t, s, askerNode, asker, "a_3", protocol.StartOverrideAsk{Provider: "anthropic", CallerFamily: "openai", OverrideFamily: "anthropic"})
+	_, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: id, Result: protocol.AskSortConfirm, Reason: "cheaper"})
+	if err == nil || !strings.Contains(err.Error(), "protected") {
+		t.Fatalf("chief confirm of a protected provider: err = %v", err)
+	}
+	if _, err := s.AnswerInboxAs(id, protocol.StartAnswerConfirm, "cto"); err != nil {
+		t.Fatalf("CTO confirm of a protected provider: %v", err)
+	}
+}

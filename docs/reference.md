@@ -2854,6 +2854,8 @@ Intake rules:
 - **Routed items.** After the chief sends an ask to the CTO's session, both may close it: the chief with `agent_ask_sort` `close` or `merge`, the CTO with `answer` `dismiss`. Closing it closes its joined rows.
 - **Check items** carry no generated recommendation any more; the chief turns them into a decision or resolves them.
 
+`agent_ask_sort` has two more results for a held worker start (source key `wstart:<start id>`, decision 0151): `confirm` starts it with the caller's fields and `picker` with the picker's choice. Each needs a `reason`. The gateway refuses the chief's `confirm` when the provider is protected (send it to the CTO), and refuses any `confirm`, the CTO's included, when the override picks the caller's own model family for a review of its own work. The held start's facts are kept in `start_override_facts` (`ask_id`, `provider`, `caller_family`, `override_family`, `review`); `worker.override_ask` carries them from the daemon. The ask now goes to the chief first, or to the owner when no chief can work.
+
 `agent_ask_sort` takes these fields as well:
 
 - `options` (up to four) and `recommendation`, for `result: "owner"`: they are stored on the ask before it goes to the owner.

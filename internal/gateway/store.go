@@ -1759,13 +1759,18 @@ SELECT 1 /* worker brief done list */;
 
 // deskItemShapeMigration gives each Desk item an owner (chief or cto), a
 // state and a category, and links a duplicate to the open item it joined
-// (decision 0150). A rule judgment gains its action and category, and a sort
-// keeps the rule it applied. The columns are added in the migration loop, so
+// (decision 0150). A rule judgment gains its action and category, a sort
+// keeps the rule it applied, and a held picker override keeps the facts the
+// chief's confirm rule checks (decision 0151). The columns are added in the migration loop, so
 // replaying it is safe. The triggers keep owner and state equal to the item's
 // status and next who, whichever code path changes them.
 const deskItemShapeMigration = `
 -- Owner front door (decision 0150): desk item shape columns.
 CREATE INDEX IF NOT EXISTS inbox_items_dup_of ON inbox_items(dup_of) WHERE dup_of<>'';
+-- The facts of a held picker override (decision 0151), by its ask.
+CREATE TABLE IF NOT EXISTS start_override_facts (
+ ask_id TEXT PRIMARY KEY, provider TEXT NOT NULL DEFAULT '', caller_family TEXT NOT NULL DEFAULT '',
+ override_family TEXT NOT NULL DEFAULT '', review INTEGER NOT NULL DEFAULT 0);
 DROP TRIGGER IF EXISTS inbox_items_desk_insert;
 DROP TRIGGER IF EXISTS inbox_items_desk_update;
 CREATE TRIGGER inbox_items_desk_insert AFTER INSERT ON inbox_items BEGIN

@@ -128,7 +128,7 @@ func TestOverrideDismissedIsNotStartedWithANotice(t *testing.T) {
 	ask := waitOverrideAsk(t, g)
 	w.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": "dismiss"})
 	body := noticeFor(t, w, piID, res.StartID)
-	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "owner") {
+	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "was not confirmed") {
 		t.Fatalf("notice:\n%s", body)
 	}
 }
@@ -241,5 +241,21 @@ func TestOwnerPromptsAreKeptFromTheClaudeHook(t *testing.T) {
 	}
 	if n.d.ownerWordsMatch(sid, "use an opus worker for everything") {
 		t.Fatal("an injected turn was kept as the owner's words")
+	}
+}
+
+// The held start carries the facts of the confirm rule (decision 0151): the
+// provider and model family it picks, and whether the task reviews work.
+func TestOverrideFactsOfAReview(t *testing.T) {
+	d := &Daemon{}
+	p := overrideRequest()
+	p.Title = "Review the parser change"
+	f := d.overrideFacts("s_unknown", p)
+	if f.Provider != protocol.ProfileProvider("opencode", "fake/m2") || f.OverrideFamily != protocol.ModelFamily("opencode", "fake/m2") || !f.Review {
+		t.Fatalf("facts = %+v", f)
+	}
+	p.Title = "Do the work"
+	if f := d.overrideFacts("s_unknown", p); f.Review {
+		t.Fatalf("a task with no review is marked as one: %+v", f)
 	}
 }
