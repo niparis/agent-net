@@ -21,20 +21,24 @@ func TestHelpListsSettings(t *testing.T) {
 func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 	m := keys(newModel(80, 24), "?", "?")
 	var seen strings.Builder
-	// Scroll a few lines per frame, fewer than the lines the help shows at
-	// 80x24, so every line still appears in some frame.
-	const step = 6
-	for i := 0; i < (len(m.helpContent(80))+20)/step+1; i++ {
+	// The down key scrolls one line (checked once here). Every frame builds the
+	// whole help again, which is what made this test slow, so the loop sets the
+	// scroll offset itself and moves ten lines per frame. The help shows more
+	// than ten lines at 80x24, so a line that no frame shows fails below.
+	const step = 10
+	if down := keys(m, "down"); down.helpScroll != m.helpScroll+1 {
+		t.Fatalf("down moved the help from %d to %d, want one line", m.helpScroll, down.helpScroll)
+	}
+	for i := 0; i < len(m.helpContent(80))+20; i += step {
+		m.helpScroll = i
 		v := ansi.Strip(m.testView())
 		if strings.Contains(v, "…") {
 			t.Fatalf("help has an ellipsis:\n%s", v)
 		}
 		seen.WriteString(v)
 		seen.WriteByte('\n')
-		for j := 0; j < step; j++ {
-			m = keys(m, "down")
-		}
 	}
+	m = keys(m, "down") // at the end, this clamps like the real key
 	all := strings.Join(strings.Fields(seen.String()), " ")
 	for _, line := range m.helpContent(80) {
 		line = strings.Join(strings.Fields(ansi.Strip(line)), " ")
