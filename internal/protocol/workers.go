@@ -1001,6 +1001,9 @@ type WorkerNotice struct {
 	// did not fail.
 	Change        string
 	DeliveryError string
+	// DeliveryBranch is the branch the change records when it is not the
+	// start branch (Branch), empty otherwise.
+	DeliveryBranch string
 }
 
 // ReportMarker separates the facts from the worker's report in a notice.
@@ -1065,6 +1068,9 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		}
 		if n.Change != "" {
 			b.WriteString("change: " + n.Change + "\n")
+			if n.DeliveryBranch != "" {
+				b.WriteString("recorded branch: " + n.DeliveryBranch + "\n")
+			}
 		}
 		if n.DeliveryError != "" {
 			b.WriteString("delivery record: " + n.DeliveryError + "\n")
