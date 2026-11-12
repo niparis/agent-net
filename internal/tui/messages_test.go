@@ -32,7 +32,7 @@ func TestMessageConversationsGroupAndSort(t *testing.T) {
 		t.Fatalf("rows: %+v", rows)
 	}
 	v := ansi.Strip(strings.Join(m.messagesView(120, 20), "\n"))
-	if !strings.Contains(v, "la…") || !strings.Contains(v, "second topic") {
+	if !strings.Contains(v, "latest topic") || !strings.Contains(v, "second topic") {
 		t.Fatal(v)
 	}
 }
@@ -59,7 +59,7 @@ func TestFeedGroupsAnEndedWorkerByItsTaskAndNotice(t *testing.T) {
 	if rows[0].count != 1 {
 		t.Errorf("count = %d, want the task only", rows[0].count)
 	}
-	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	line := ansi.Strip(m.messageConversationText(rows[0], 110, false))
 	if !strings.Contains(line, "worker: Polish the sessions panel") || strings.Contains(line, "unknown session") {
 		t.Fatalf("row = %q", line)
 	}
@@ -103,7 +103,7 @@ func TestConversationExplainsMessageBodyFetchError(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "held", Time: t0}, From: "remote-a", To: "remote-b", Type: "request"}})
 	m.applySnippet(snippetMsg{id: "held", err: fmt.Errorf("body held on build-vm, offline")})
-	chat := strings.Join(m.conversationChat(m.messageConversations()[0], 80), "\n")
+	chat := strings.Join(m.conversationChat(m.messageConversations()[0], 120), "\n")
 	if !strings.Contains(chat, "body held on build-vm, offline") {
 		t.Fatalf("the thread did not explain why its body is unavailable:\n%s", chat)
 	}
@@ -119,7 +119,7 @@ func TestConversationShowsLoadingBodyUntilFetched(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "loading", Time: t0}, From: "remote-a", To: "remote-b", Type: "request"}})
 	m.feed.byMsg["loading"].Snip = snipLoading
-	chat := strings.Join(m.conversationChat(m.messageConversations()[0], 80), "\n")
+	chat := strings.Join(m.conversationChat(m.messageConversations()[0], 120), "\n")
 	if !strings.Contains(chat, "loading body") {
 		t.Fatalf("the thread should explain that the body fetch is in progress:\n%s", chat)
 	}
@@ -137,7 +137,7 @@ func TestMessagePartiesNeverShowRawSessionIDs(t *testing.T) {
 	}
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "unknown-party", Time: t0}, ConversationID: "unknown-party", From: "s_missing_fixture", To: owner, Type: "request"}})
-	line := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 110, false))
+	line := ansi.Strip(m.messageConversationText(m.messageConversations()[0], 110, false))
 	if !strings.Contains(line, "ended session ↔ you") || strings.Contains(line, "unknown session") || strings.Contains(line, "s_missing_fixture") || strings.Contains(line, owner) {
 		t.Fatalf("message parties should use safe session labels, got %q", line)
 	}
@@ -176,7 +176,7 @@ func TestMessageThreadFallsBackToSessionPairAndShowsLatestSummary(t *testing.T) 
 	if len(rows) != 1 || len(rows[0].items) != 2 {
 		t.Fatalf("messages without a conversation ID should group by session pair: %+v", rows)
 	}
-	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	line := ansi.Strip(m.messageConversationText(rows[0], 110, false))
 	for _, want := range []string{"Latest reply", "2 messages", "1m ago"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("thread summary is missing %q: %q", want, line)
@@ -226,7 +226,7 @@ func TestWorkerMessagesCollapseByWorkerAndCanBeHidden(t *testing.T) {
 	if workerRow == nil {
 		t.Fatal("worker 6 was not listed")
 	}
-	line := ansi.Strip(m.messageConversationLine(*workerRow, 110, false))
+	line := ansi.Strip(m.messageConversationText(*workerRow, 110, false))
 	for _, want := range []string{"a2a-ocs → worker 6", "3 messages", "opencode", "done"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("worker summary is missing %q: %q", want, line)
@@ -267,8 +267,8 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 	m.feed.byMsg["older"].Snippet = "Older agent note"
 	m.feed.byMsg["recent"].Snippet = "Waiting on test"
 	rows := m.messageConversations()
-	if len(rows) != 3 || !rows[0].ownerInstruction || rows[1].to != b || rows[2].to != "s_third" {
-		t.Fatalf("instruction, then recent and older agent threads expected: %+v", rows)
+	if len(rows) != 3 || rows[0].to != b || rows[1].to != "s_third" || !rows[2].ownerInstruction {
+		t.Fatalf("threads are newest first, the owner's instruction included: %+v", rows)
 	}
 	m.messageSubtab = messageWorkers
 	if workers := m.messageConversations(); len(workers) != 1 || !workers[0].worker {
@@ -278,12 +278,12 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 	old := testColorProfile
 	defer setTestColorProfile(old)
 	setTestColorProfile(termenv.TrueColor)
-	line := m.messageConversationLine(rows[0], 110, false)
+	line := m.messageConversationText(rows[2], 110, false)
 	if !strings.Contains(ansi.Strip(line), "you→") {
 		t.Fatalf("owner instruction marker missing: %s", line)
 	}
-	warning := lipgloss.NewStyle().Foreground(roleWarning).Render("a2a-ocs ↔ reviewer · Waiting on test")
-	if !strings.Contains(m.messageConversationLine(rows[1], 110, false), warning) {
+	warning := lipgloss.NewStyle().Foreground(roleWarning).Render("a2a-ocs ↔ reviewer")
+	if !strings.Contains(m.messageConversationText(rows[0], 110, false), warning) {
 		t.Fatal("a request without a reply is not orange")
 	}
 	view := ansi.Strip(strings.Join(m.messagesView(120, 22), "\n"))
@@ -346,7 +346,7 @@ func TestConversationWorkerNameAndActivity(t *testing.T) {
 	if !rows[0].at.Equal(t0.Add(-time.Minute)) {
 		t.Fatal(rows[0].at)
 	}
-	v := ansi.Strip(m.messageConversationLine(rows[0], 80, false))
+	v := ansi.Strip(m.messageConversationText(rows[0], 80, false))
 	if !strings.Contains(v, "worker 8") || strings.Contains(v, "shop worker") {
 		t.Fatal(v)
 	}
@@ -450,7 +450,7 @@ func TestConversationAgeUsesLastMessageTime(t *testing.T) {
 	m.tab = messagesTab
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "m", Time: t0.Add(-5 * time.Minute)}, ConversationID: "c"}, {Event: protocol.Event{ID: 2, Kind: "msg.delivered", MessageID: "m", Time: t0.Add(-time.Minute)}, ConversationID: "c"}})
-	v := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 80, false))
+	v := ansi.Strip(m.messageConversationText(m.messageConversations()[0], 80, false))
 	if !strings.Contains(v, "1m ago") {
 		t.Fatal(v)
 	}
@@ -488,14 +488,14 @@ func TestConversationRowCompactsNamesAndCountsAt80(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m.tab, m.focus = messagesTab, focusFeed
 	m.feed = newFeed()
-	m.snap.Agents[0].Profile.Name = "tenebrae-53-longer"
-	m.snap.Agents[1].Profile.Name = "strategies-longer"
+	m.snap.Agents[0].Profile.Name = "tenebrae-53-much-longer-name"
+	m.snap.Agents[1].Profile.Name = "strategies-much-longer-name"
 	from, to := m.snap.Agents[0].SessionID, m.snap.Agents[1].SessionID
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0.Add(-time.Minute)}, From: from, To: to, Type: protocol.TypeRequest}})
 	m.feed.byMsg["one"].Snippet = "Which environment should we target before the release?"
 	rows := m.messageConversations()
-	line := ansi.Strip(m.messageConversationLine(rows[0], 80, false))
-	for _, want := range []string{"tenebrae-53-l…", "strategies-lo…", "1m · 1 msg", "Which environment should we"} {
+	line := ansi.Strip(m.messageConversationText(rows[0], 80, false))
+	for _, want := range []string{"tenebrae-53-much-lo…", "strategies-much-lon…", "1m · 1 msg", "Which environment should we"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("80 column thread row is missing %q: %q", want, line)
 		}
@@ -505,12 +505,14 @@ func TestConversationRowCompactsNamesAndCountsAt80(t *testing.T) {
 			t.Errorf("80 column thread row still says %q: %q", gone, line)
 		}
 	}
-	if ansi.StringWidth(line) > 80 {
-		t.Errorf("thread row is %d columns wide: %q", ansi.StringWidth(line), line)
+	for _, l := range strings.Split(line, "\n") {
+		if ansi.StringWidth(l) > 80 {
+			t.Errorf("thread row is %d columns wide: %q", ansi.StringWidth(l), l)
+		}
 	}
 	m.width = 120
-	wide := ansi.Strip(m.messageConversationLine(rows[0], 120, false))
-	if !strings.Contains(wide, "tenebrae-53-longer") || !strings.Contains(wide, "1 message · 1m ago") {
+	wide := ansi.Strip(m.messageConversationText(rows[0], 120, false))
+	if !strings.Contains(wide, "tenebrae-53-much-longer-name") || !strings.Contains(wide, "1 message · 1m ago") {
 		t.Errorf("120 column thread row changed: %q", wide)
 	}
 }

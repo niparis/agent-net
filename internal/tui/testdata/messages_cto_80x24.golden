@@ -2,21 +2,21 @@
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
-│   ~ tenebrae-53 ↔ ended session · Which environment should I use? 1m · 1 msg │
-│   ! ci-runner ↔ tenebrae-53 · Rollback is ready if we need it.   2m · 2 msgs │
-│ ▸ ✓ CTO ↔ strategies · The deployment plan looks good.           8m · 2 msgs │
-│                                                                              │
-│                                                                              │
+│   ! ci-runner ↔ tenebrae-53                                      2m · 2 msgs │
+│     Rollback is ready if we need it.                                         │
+│ ▸ ✓ CTO ↔ strategies                                             8m · 2 msgs │
+│     The deployment plan looks good.                                          │
 │ 3 threads · 1 system event                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │ tenebrae-53 ↔ strategies                                                     │
-│ ▸ 13:56 CTO                                                                  │
-│ Can you check the latest deployment plan?                                    │
-│ The release is planned for tonight.                                          │
-│   13:57 strategies                                                           │
-│ The deployment plan looks good.                                              │
-│ I checked the rollback steps too.                                            │
+│ ▸ 29 Oct 13:56  CTO                                                          │
+│     m_1                                                                      │
+│     Can you check the latest deployment plan?                                │
+│     The release is planned for tonight.                                      │
+│                                                                              │
+│   29 Oct 13:57  strategies                                                   │
+│     re: CTO · Can you check the latest deployment plan? The release is…      │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

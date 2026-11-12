@@ -3,9 +3,11 @@
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
 │ ▸ you→ ~ tenebrae-53 ↔ ended sessi… 1m ago · 1 msg ││ tenebrae-53 ↔ ended session · owner                            │
-│   ! ci-runner ↔ tenebrae-53 · loa… 2m ago · 2 msgs ││ ▸ 14:04 you→ tenebrae-53                                       │
-│   ✓ tenebrae-53 ↔ strategies · lo… 8m ago · 2 msgs ││ Your instruction: ask the agent                                │
-│                                                    ││ work                                                           │
+│     work                                           ││ ▸ 29 Oct 14:04  you→ tenebrae-53                               │
+│   ! ci-runner ↔ tenebrae-53        2m ago · 2 msgs ││     Your instruction: ask the agent                            │
+│     loading body                                   ││     m_5                                                        │
+│   ✓ tenebrae-53 ↔ strategies       8m ago · 2 msgs ││     work                                                       │
+│     loading body                                   ││                                                                │
 │                                                    ││                                                                │
 │                                                    ││                                                                │
 │                                                    ││                                                                │
@@ -26,8 +28,6 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 │                                                    ││                                                                │
 │ 3 threads · 1 system event                         ││                                                                │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

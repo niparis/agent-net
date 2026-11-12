@@ -2,32 +2,32 @@
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
-│ ▸ ! tenebrae-53 ↔ strategies · Stored… now · 1 msg ││ tenebrae-53 ↔ strategies                                       │
-│   ✓ tenebrae-53 ↔ strategies · St… 7m ago · 2 msgs ││   14:03 tenebrae-53                                            │
-│   ✓ tenebrae-53 ↔ strategies · S… 21m ago · 4 msgs ││ Show the whole stored history of this conversation.            │
-│   ✓ tenebrae-53 ↔ strategies · S… 28m ago · 5 msgs ││   14:04 strategies                                             │
-│   ✓ tenebrae-53 ↔ strategies · St… 35m ago · 1 msg ││ The full stored conversation is in the right pane.             │
-│   ✓ tenebrae-53 ↔ strategies · S… 42m ago · 2 msgs ││ It comes from the gateway, not the feed.                       │
-│   ✓ tenebrae-53 ↔ strategies · S… 49m ago · 3 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies · S… 56m ago · 4 msgs ││                                                                │
-│   ! tenebrae-53 ↔ strategies · … 1h3m ago · 5 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies · … 1h10m ago · 1 msg ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies ·… 1h17m ago · 2 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies ·… 1h24m ago · 3 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies ·… 1h31m ago · 4 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies ·… 1h38m ago · 5 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies · … 1h45m ago · 1 msg ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies ·… 1h52m ago · 2 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies ·… 1h59m ago · 3 msgs ││                                                                │
-│   ! tenebrae-53 ↔ strategies · … 2h6m ago · 4 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies ·… 2h13m ago · 5 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies · … 2h20m ago · 1 msg ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies ·… 2h27m ago · 2 msgs ││                                                                │
-│   ✓ tenebrae-53 ↔ strategies ·… 2h34m ago · 3 msgs ││                                                                │
+│ ▸ ! tenebrae-53 ↔ strategies           now · 1 msg ││ tenebrae-53 ↔ strategies                                       │
+│     Stored conversation 00: keep the list full an… ││   29 Oct 14:03  tenebrae-53                                    │
+│   ✓ tenebrae-53 ↔ strategies       7m ago · 2 msgs ││     m_c_00                                                     │
+│     Stored conversation 01: keep the list full an… ││     Show the whole stored history of this conversation.        │
+│   ✓ tenebrae-53 ↔ strategies      21m ago · 4 msgs ││                                                                │
+│     Stored conversation 03: keep the list full an… ││   29 Oct 14:04  strategies                                     │
+│   ✓ tenebrae-53 ↔ strategies      28m ago · 5 msgs ││     m_c_00_reply                                               │
+│     Stored conversation 04: keep the list full an… ││     The full stored conversation is in the right pane.         │
+│   ✓ tenebrae-53 ↔ strategies       35m ago · 1 msg ││     It comes from the gateway, not the feed.                   │
+│     Stored conversation 05: keep the list full an… ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies      42m ago · 2 msgs ││                                                                │
+│     Stored conversation 06: keep the list full an… ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies      49m ago · 3 msgs ││                                                                │
+│     Stored conversation 07: keep the list full an… ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies      56m ago · 4 msgs ││                                                                │
+│     Stored conversation 08: keep the list full an… ││                                                                │
+│   ! tenebrae-53 ↔ strategies    1h03m ago · 5 msgs ││                                                                │
+│     Stored conversation 09: keep the list full an… ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies     1h10m ago · 1 msg ││                                                                │
+│     Stored conversation 10: keep the list full an… ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies    1h17m ago · 2 msgs ││                                                                │
+│     Stored conversation 11: keep the list full an… ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies    1h24m ago · 3 msgs ││                                                                │
+│     Stored conversation 12: keep the list full an… ││                                                                │
 │ 29 threads · 0 system events                       ││                                                                │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

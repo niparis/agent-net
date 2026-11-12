@@ -2313,6 +2313,11 @@ func (m *Model) move(delta int) {
 			if len(rows) > 0 {
 				pos := m.selectedConversationIndex(rows)
 				pos = min(max(pos+delta, 0), len(rows)-1)
+				if pos != m.convSel {
+					// A thread opens at its newest message, not where the
+					// last one was left.
+					m.threadScrolled = false
+				}
 				m.convSel = pos
 				if !m.convLoaded {
 					m.feedCur = rows[pos].items[0]

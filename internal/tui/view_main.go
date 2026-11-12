@@ -44,7 +44,13 @@ func (m Model) ctoBoxHeight(tab int) int {
 	if tab == quotasTab && h <= 24 && box > 6 {
 		box = 6
 	}
-	return (box + 1) / 2
+	box = (box + 1) / 2
+	if tab == messagesTab {
+		// The conversation pane is the reason to be on this tab. The strip
+		// keeps its title, one line of the CTO's latest words and the hint.
+		box = min(box, 4)
+	}
+	return box
 }
 
 // showCTOBox hides the box on the Graph tab unless the CTO proposes a change
@@ -1845,7 +1851,12 @@ func messagesLayout(w, h int) messagesGeometry {
 		return g
 	}
 	available := max(h-6, 0)
-	g.listRows = max(available/2, 1)
+	// The conversation is what the owner reads, so on a narrow screen it gets
+	// the larger share. The list still shows two rows of two lines.
+	g.listRows = max(available*2/5, 1)
+	if available >= 12 {
+		g.listRows = max(g.listRows, 5)
+	}
 	g.chatRows = max(available-g.listRows, 0)
 	return g
 }
@@ -1856,7 +1867,7 @@ func (m Model) messagesBodyHeight() int {
 }
 
 // messageThread is the lines of the selected conversation, with the header
-// lines on top, and the line to keep in view when the owner has not scrolled.
+// line on top, and the line to keep in view when the owner has not scrolled.
 func (m Model) messageThread(rows []messageConversation, selected, chatW int) ([]string, int) {
 	var chat []string
 	if len(rows) > 0 {
@@ -1869,21 +1880,19 @@ func (m Model) messageThread(rows []messageConversation, selected, chatW int) ([
 			}
 			chat = append(head, chat...)
 		}
-		if links := m.threadLinks(rows[selected]); len(links) > 0 {
-			labels := make([]string, 0, len(links))
-			for _, link := range links {
-				labels = append(labels, linkLabel(link))
-			}
-			chat = append([]string{sDim.Render("links: " + strings.Join(labels, " · "))}, chat...)
-		}
 	} else {
 		chat = []string{sDim.Render("Select a thread")}
 	}
-	// With no marked message the newest line stays in view, like a chat.
+	// With no marked message the newest line stays in view, like a chat. A
+	// marked message keeps its last line in view, so it shows whole.
 	chatSelected := len(chat) - 1
 	for i, line := range chat {
 		if strings.HasPrefix(ansi.Strip(line), "▸ ") {
-			chatSelected = min(i+1, len(chat)-1)
+			end := i
+			for end+1 < len(chat) && ansi.Strip(chat[end+1]) != "" {
+				end++
+			}
+			chatSelected = end
 			break
 		}
 	}
@@ -1915,9 +1924,9 @@ func (m Model) messagesView(w, h int) []string {
 		}
 		list = messageFit(list, max(height-1, 0), listSel)
 		list = append(list, sDim.Render(clip(footer, listW)))
-		chat = m.threadWindow(chat, height, chatSelected, rowID)
+		chat, older := m.threadWindow(chat, height, chatSelected, rowID)
 		left := panelWithRightHeader("Threads", m.messageFilterLine(), list, listW+4, roleAccent)
-		right := panel("Conversation", chat, chatW+4, roleAccent)
+		right := panelWithRightHeader("Conversation", olderMark(older), chat, chatW+4, roleAccent)
 		for i := range left {
 			out = append(out, left[i]+right[i])
 		}
@@ -1935,40 +1944,59 @@ func (m Model) messagesView(w, h int) []string {
 	if listHeight > 0 {
 		list = append(list, sDim.Render(clip(footer, listW)))
 	}
-	chat = m.threadWindow(chat, chatHeight, chatSelected, rowID)
+	chat, older := m.threadWindow(chat, chatHeight, chatSelected, rowID)
 	out = append(out, panelWithRightHeader("Threads", m.messageFilterLine(), list, w, roleAccent)...)
-	out = append(out, panel("Conversation", chat, w, roleAccent)...)
+	out = append(out, panelWithRightHeader("Conversation", olderMark(older), chat, w, roleAccent)...)
 	return out
 }
 
-// threadWindow cuts the conversation to the rows it has. After the owner
-// scrolls it keeps that place, whatever arrives; before, it follows the
-// selected message, or the newest line.
-func (m Model) threadWindow(chat []string, height, selected int, rowID string) []string {
+// threadWindow cuts the conversation to the rows it has and says whether
+// older lines are above the window. After the owner scrolls it keeps that
+// place, whatever arrives; before, it follows the selected message, or the
+// newest line, so a thread opens at its newest message.
+func (m Model) threadWindow(chat []string, height, selected int, rowID string) ([]string, bool) {
+	top := m.threadTopFor(chat, height, selected, rowID)
+	return sliceFrom(chat, height, top), top > 0
+}
+
+// threadTopFor is the first line of the window. The wheel, the keys and the
+// drawing all use it, so they agree on what is on screen.
+func (m Model) threadTopFor(chat []string, height, selected int, rowID string) int {
 	if m.threadScrolled && m.threadFor == rowID {
-		return sliceFrom(chat, height, m.threadTop)
+		return min(max(m.threadTop, 0), max(len(chat)-max(height, 0), 0))
 	}
-	return messageFit(chat, height, selected)
+	return messageStart(chat, height, selected)
+}
+
+// olderMark is the pane heading's note that there is more to scroll up to. It
+// sits in the heading so the window keeps every row for the messages.
+func olderMark(older bool) string {
+	if older {
+		return "↑ older above"
+	}
+	return ""
 }
 
 // threadListLines draws the rows around the selection and, for an expanded
 // worker run, up to four of its messages under the row. Work stays
-// proportional to the rows on screen.
+// proportional to the rows on screen. A row is two lines, so the line to keep
+// in view is the last line of the selected row.
 func (m Model) threadListLines(rows []messageConversation, w, selected, height int) ([]string, int) {
 	if height < 1 {
 		height = 1
 	}
-	start := max(selected-height, 0)
-	end := min(start+height+4, len(rows))
-	start = max(end-(height+4), 0)
+	perScreen := max(height/2, 1)
+	start := max(selected-perScreen, 0)
+	end := min(start+perScreen+4, len(rows))
+	start = max(end-(perScreen+4), 0)
 	lines := []string{}
 	sel := 0
 	for i := start; i < end; i++ {
 		r := rows[i]
+		lines = append(lines, m.messageConversationRow(r, w, i == selected && m.focus == focusFeed)...)
 		if i == selected {
-			sel = len(lines)
+			sel = len(lines) - 1
 		}
-		lines = append(lines, m.messageConversationLine(r, w, i == selected && m.focus == focusFeed))
 		if m.threadExpanded[r.id] && r.worker {
 			shown := 0
 			for _, idx := range r.items {

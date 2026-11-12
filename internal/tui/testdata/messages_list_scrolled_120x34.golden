@@ -2,32 +2,32 @@
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
-│   ✓ peer04 ↔ strategies · stored … 4m ago · 3 msgs ││ peer25 ↔ strategies                                            │
-│   ✓ peer05 ↔ strategies · stored … 5m ago · 3 msgs ││ loading messages                                               │
-│   ✓ peer06 ↔ strategies · stored … 6m ago · 3 msgs ││                                                                │
-│   ✓ peer07 ↔ strategies · stored … 7m ago · 3 msgs ││                                                                │
-│   ✓ peer08 ↔ strategies · stored … 8m ago · 3 msgs ││                                                                │
-│   ✓ peer09 ↔ strategies · stored … 9m ago · 3 msgs ││                                                                │
-│   ✓ peer10 ↔ strategies · stored… 10m ago · 3 msgs ││                                                                │
-│   ✓ peer11 ↔ strategies · stored… 11m ago · 3 msgs ││                                                                │
-│   ✓ peer12 ↔ strategies · stored… 12m ago · 3 msgs ││                                                                │
-│   ✓ peer13 ↔ strategies · stored… 13m ago · 3 msgs ││                                                                │
-│   ✓ peer14 ↔ strategies · stored… 14m ago · 3 msgs ││                                                                │
-│   ✓ peer15 ↔ strategies · stored… 15m ago · 3 msgs ││                                                                │
-│   ✓ peer16 ↔ strategies · stored… 16m ago · 3 msgs ││                                                                │
-│   ✓ peer17 ↔ strategies · stored… 17m ago · 3 msgs ││                                                                │
-│   ✓ peer18 ↔ strategies · stored… 18m ago · 3 msgs ││                                                                │
-│   ✓ peer19 ↔ strategies · stored… 19m ago · 3 msgs ││                                                                │
-│   ✓ peer20 ↔ strategies · stored… 20m ago · 3 msgs ││                                                                │
-│   ✓ peer21 ↔ strategies · stored… 21m ago · 3 msgs ││                                                                │
-│   ✓ peer22 ↔ strategies · stored… 22m ago · 3 msgs ││                                                                │
-│   ✓ peer23 ↔ strategies · stored… 23m ago · 3 msgs ││                                                                │
-│   ✓ peer24 ↔ strategies · stored… 24m ago · 3 msgs ││                                                                │
-│ ▸ ✓ peer25 ↔ strategies · stored… 25m ago · 3 msgs ││                                                                │
+│   ✓ peer14 ↔ strategies           14m ago · 3 msgs ││ peer25 ↔ strategies                                            │
+│     stored conversation 14                         ││ loading messages                                               │
+│   ✓ peer15 ↔ strategies           15m ago · 3 msgs ││                                                                │
+│     stored conversation 15                         ││                                                                │
+│   ✓ peer16 ↔ strategies           16m ago · 3 msgs ││                                                                │
+│     stored conversation 16                         ││                                                                │
+│   ✓ peer17 ↔ strategies           17m ago · 3 msgs ││                                                                │
+│     stored conversation 17                         ││                                                                │
+│   ✓ peer18 ↔ strategies           18m ago · 3 msgs ││                                                                │
+│     stored conversation 18                         ││                                                                │
+│   ✓ peer19 ↔ strategies           19m ago · 3 msgs ││                                                                │
+│     stored conversation 19                         ││                                                                │
+│   ✓ peer20 ↔ strategies           20m ago · 3 msgs ││                                                                │
+│     stored conversation 20                         ││                                                                │
+│   ✓ peer21 ↔ strategies           21m ago · 3 msgs ││                                                                │
+│     stored conversation 21                         ││                                                                │
+│   ✓ peer22 ↔ strategies           22m ago · 3 msgs ││                                                                │
+│     stored conversation 22                         ││                                                                │
+│   ✓ peer23 ↔ strategies           23m ago · 3 msgs ││                                                                │
+│     stored conversation 23                         ││                                                                │
+│   ✓ peer24 ↔ strategies           24m ago · 3 msgs ││                                                                │
+│     stored conversation 24                         ││                                                                │
+│ ▸ ✓ peer25 ↔ strategies           25m ago · 3 msgs ││                                                                │
+│     stored conversation 25                         ││                                                                │
 │ 60 threads · 0 system events                       ││                                                                │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

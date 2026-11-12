@@ -3,20 +3,20 @@
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
 │ ▸ tenebrae-53 → worker: Polish the sessions panel and make the lo… ended · 2 │
+│     worker notice                                                            │
 │   tenebrae-53 → worker: Review the deploy                          ended · 1 │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+│     The deploy is ready.                                                     │
 │ 2 threads · 0 system events                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Conversation─────────────────────────────────────────────────────────────────╮
+╭─Conversation───────────────────────────────────────────────────↑ older above─╮
 │                                                                              │
-│ Task:                                                                        │
-│ Polish the sessions panel and make the long list readable                    │
-│   14:00 ended worker                                                         │
-│ ✗ started                                                                    │
-│   14:03 ended worker                                                         │
-│ ✓ done · 12m                                                                 │
+│   29 Oct 14:00  ended worker                                                 │
+│     m_started_one                                                            │
+│     ✗ started                                                                │
+│                                                                              │
+│   29 Oct 14:03  ended worker                                                 │
+│     m_done_one                                                               │
+│     ✓ done · 12m                                                             │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

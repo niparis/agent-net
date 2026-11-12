@@ -171,7 +171,7 @@ func TestWorkerConversationRowShowsTheTaskLine(t *testing.T) {
 	if len(rows) != 1 || !rows[0].worker {
 		t.Fatalf("worker row not found: %+v", rows)
 	}
-	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	line := ansi.Strip(m.messageConversationText(rows[0], 110, false))
 	if !strings.Contains(line, "worker 8: Polish the sessions panel") {
 		t.Fatalf("worker row does not show the task: %q", line)
 	}
@@ -205,7 +205,7 @@ func TestWorkerConversationRowShowsTheTitle(t *testing.T) {
 	if len(rows) != 1 || !rows[0].worker {
 		t.Fatalf("worker row not found: %+v", rows)
 	}
-	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	line := ansi.Strip(m.messageConversationText(rows[0], 110, false))
 	if !strings.Contains(line, "worker 8: Fix the band") {
 		t.Fatalf("worker row does not show the title: %q", line)
 	}
@@ -234,7 +234,7 @@ func TestEndedWorkerRowUsesTheTaskAndCallerFromTheGateway(t *testing.T) {
 	if len(rows) != 1 || !rows[0].worker || rows[0].workerSession != ended {
 		t.Fatalf("ended worker row not found: %+v", rows)
 	}
-	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	line := ansi.Strip(m.messageConversationText(rows[0], 110, false))
 	if !strings.Contains(line, "tenebrae-53 → worker: Polish the sessions panel") {
 		t.Fatalf("ended worker row = %q", line)
 	}
