@@ -21,6 +21,11 @@ answers, safety net, measures), [0151](../decisions/0151-cto-or-chief-confirms-p
   check uses source plus kind, with a fallback to the same asker and the same
   normalized text (case and whitespace folded, ids removed) within 24 hours.
   Every asker that joined gets the answer when it is carried out.
+- A routed item can be closed by either owner: after the chief routes an ask
+  to the CTO, the chief and the CTO may both close it. Closing an item closes
+  its linked duplicates. Test: the chief closes an item it routed to the CTO
+  (today refused, as with i_16a5a8022de2c7d6), and its duplicates close with
+  it.
 - Owner-bound items need question, evidence, a verified line, a
   recommendation, options and "discuss". The gateway refuses an owner-bound item
   without options, with an error that names the missing field.

@@ -62,7 +62,11 @@ both views.
    no source, the fallback is the same asker and the same normalized question
    text (case and whitespace folded, ids removed) within 24 hours. A duplicate
    joins the open item; it does not make a new one. Every asker that joined
-   gets the answer when it is carried out, not only the first.
+   gets the answer when it is carried out, not only the first. Closing an
+   item closes its joined duplicates too.
+   Either side of a routed item may close it: when the chief routes an ask to
+   the CTO, both the chief and the CTO can still close it (today the chief is
+   refused once it has routed it, as with i_16a5a8022de2c7d6).
 5. **Owner-bound items** (next = owner) must have a one-line question, the
    evidence, a "verified by chief" line (or "unverified" with the reason), a
    recommendation, options, and "discuss". The gateway refuses an owner-bound
