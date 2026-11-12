@@ -105,7 +105,10 @@ func (d *Daemon) wrapRemoteEnter(host string, plan protocol.EnterPlan) protocol.
 	// herdr's remote client carries the clipboard, so an image copied here can
 	// be pasted into the session there. The other machine focused the pane
 	// before answering.
-	if localHerdr := d.herdrBinary(""); localHerdr != "" && herdrIDRe.MatchString(plan.HerdrPane) {
+	if localHerdr := d.herdrBinary(""); localHerdr != "" {
+		if !herdrIDRe.MatchString(plan.HerdrPane) {
+			return protocol.EnterPlan{Host: host, Note: "The remote session could not be opened in herdr. " + plan.Note}
+		}
 		return protocol.EnterPlan{
 			Argv: []string{localHerdr, "--remote", target}, Host: host,
 			Note: fmt.Sprintf("Opens herdr on %s; the session is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here; the session keeps running.", host, plan.HerdrPane),

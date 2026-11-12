@@ -179,10 +179,11 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 	if !sshTargetOK(targetHost) {
 		return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("The sign-in pane is open on %s in pane %s, but enter_ssh_hosts gives a target herdr --remote cannot use.", host, cleanLine(res.Pane))}, nil
 	}
-	return protocol.EnterPlan{
+	plan := protocol.EnterPlan{
 		Argv: []string{bin, "--remote", targetHost}, Host: host,
 		Note: fmt.Sprintf("Opens herdr on %s; the sign-in is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here.", host, cleanLine(res.Pane)),
-	}, nil
+	}
+	return d.openForCaller("signin-remote:"+q.AskID, "sign in: "+info.Label, q.HerdrSocket, q.HerdrPaneID, plan), nil
 }
 
 // openSignInPane opens the allowlisted login command in this machine's herdr.

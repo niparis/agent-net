@@ -795,3 +795,35 @@ func TestSignInPrepareOpensAllowlistedArgv(t *testing.T) {
 		t.Fatal("an unknown provider was accepted")
 	}
 }
+
+func TestEnterRemoteHerdrClientNeverFallsBackToSSH(t *testing.T) {
+	bin, _ := fakeOpenHerdr(t)
+	d := &Daemon{cfg: Config{EnterSSH: true, HarnessPaths: map[string]string{"herdr": bin}}}
+	p := d.wrapRemoteEnter("remote-host", protocol.EnterPlan{Host: "remote-host", Argv: []string{"claude", "attach", "job"}})
+	if len(p.Argv) > 0 && p.Argv[0] == "ssh" {
+		t.Fatalf("local herdr must prevent ssh fallback: %+v", p)
+	}
+}
+
+func TestSignInOpenRemoteInHerdrUsesTab(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	d := &Daemon{cfg: Config{NodeID: "local", testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+		switch typ {
+		case "query.sign_in":
+			b, _ := json.Marshal(protocol.SignInTarget{Provider: "alibaba", NodeID: "remote", Hostname: "remote-host"})
+			return b, true, nil
+		case "query.sign_in_prepare":
+			b, _ := json.Marshal(protocol.SignInPrepareResult{Opened: true, Host: "remote-host", Pane: "w1:p7"})
+			return b, true, nil
+		}
+		return nil, false, nil
+	}}}
+	p, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "ask", HerdrSocket: "/tmp/fake-herdr.sock", HerdrPaneID: "w1:p0"})
+	if err != nil || !p.OpenedHerdr {
+		t.Fatalf("plan %+v, error %v", p, err)
+	}
+	calls := string(mustRead(t, log))
+	if !strings.Contains(calls, "tab create") || !strings.Contains(calls, "--remote remote-host") || strings.Contains(calls, "pane split") {
+		t.Fatalf("calls %s", calls)
+	}
+}
