@@ -456,12 +456,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	d.mu.Unlock()
 	d.Logf("connected to gateway")
 	d.scheduleCTOPresence()
-	if d.toolsWake != nil {
-		select {
-		case d.toolsWake <- struct{}{}:
-		default:
-		}
-	}
+	d.wakeToolsPlan()
 	if _, now := d.inventory(); now != gen {
 		// Detection ended while the handshake ran, so hello did not carry it.
 		d.publishHarnesses(rctx)

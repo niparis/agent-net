@@ -374,6 +374,8 @@ type Daemon struct {
 	toolsReport      protocol.InventoryReport
 	toolsWake        chan struct{}
 	toolsFullNext    atomic.Bool // the next reconcile checks every target, see tools_pass.go
+	toolsScanNext    atomic.Bool // the next tools wake scans the disk, see wakeTools
+	inventorySent    atomic.Bool // the gateway holds the newest scan
 	toolsPass        toolsPassState
 	outboxWake       chan struct{} // a queued message wakes the link's outbox loop
 	skillConflicts   map[string]string

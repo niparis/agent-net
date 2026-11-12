@@ -148,19 +148,42 @@ func TestReconcileToolsReportsAChangedTarget(t *testing.T) {
 	}
 }
 
-// A new link has no results yet: they are all sent again.
-func TestReconcileToolsReportsAgainOnANewLink(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
+// The gateway keeps reported results in its database, not on the link. A
+// reconnect alone reports nothing again; a report that failed is sent again on
+// the next run, on whatever link that is.
+func TestReconcileToolsKeepsReportsAcrossAReconnect(t *testing.T) {
+	dir := t.TempDir()
+	g := startGateway(t, dir, "")
 	wire := &toolsWire{targets: []protocol.ToolTarget{toolsCopyTarget("v1")}}
-	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.testGatewayCall = wire.hook }})
+	failed := false
+	failFirstReport := func(ctx context.Context, method string, params any) (json.RawMessage, bool, error) {
+		raw, handled, err := wire.hook(ctx, method, params)
+		if method == "tools.report" && !failed {
+			failed = true // reconcileTools runs on this goroutine only
+			return nil, true, errNotConnected
+		}
+		return raw, handled, err
+	}
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.testGatewayCall = failFirstReport }})
 	ctx := context.Background()
 	n.d.reconcileTools(ctx)
-	_, reports := wire.counts()
-	n.d.mu.Lock()
-	n.d.linkEpoch++
-	n.d.mu.Unlock()
 	n.d.reconcileTools(ctx)
-	if _, r := wire.counts(); r != reports+1 {
-		t.Fatalf("a new link: %d reports more, want 1", r-reports)
+	if _, r := wire.counts(); r != 2 {
+		t.Fatalf("a failed report and its retry: %d tools.report calls, want 2", r)
+	}
+	addr := g.addr
+	g.stop()
+	eventually(t, "the link drops", func() bool { return !n.d.Connected() })
+	startGateway(t, dir, addr)
+	eventually(t, "the link is back", n.d.Connected)
+	n.d.mu.Lock()
+	epoch := n.d.linkEpoch
+	n.d.mu.Unlock()
+	if epoch < 2 {
+		t.Fatalf("link epoch %d after a reconnect, want at least 2", epoch)
+	}
+	n.d.reconcileTools(ctx)
+	if _, r := wire.counts(); r != 2 {
+		t.Fatalf("a reconnect with the same result: %d tools.report calls more, want 0", r-2)
 	}
 }

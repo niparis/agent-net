@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -163,5 +164,37 @@ func TestPushStateHoldsWorkerTokenCounters(t *testing.T) {
 	task.Worker = &protocol.WorkerInfo{ID: "w_1", Task: "b"}
 	if _, send := p.due(task, 1, now.Add(time.Second), timing); !send {
 		t.Fatal("a changed task was held")
+	}
+}
+
+// One OpenCode service holds many sessions, and each one's service activity
+// time moves with its work. It waits for the activity interval like the other
+// activity times, so 12 sessions that report it every second send at most one
+// session.upsert each per 30 seconds while nothing else changes.
+func TestPushStateHoldsOpenCodeActivity(t *testing.T) {
+	timing := pushTiming{activity: 30 * time.Second, keepalive: 2 * time.Minute}
+	start := time.Now()
+	const sessions, seconds = 12, 90
+	states := make([]pushState, sessions)
+	infos := make([]protocol.SessionInfo, sessions)
+	for i := range infos {
+		infos[i] = protocol.SessionInfo{Harness: "opencode", NativeID: fmt.Sprintf("ses_%d", i), Cwd: "/work/api", Status: "busy", OpenCodeActivity: start.UnixMilli()}
+		states[i].record(infos[i], 1, start)
+	}
+	sent := make([]int, sessions)
+	for s := 1; s <= seconds; s++ {
+		now := start.Add(time.Duration(s) * time.Second)
+		for i := range infos {
+			infos[i].OpenCodeActivity = now.UnixMilli()
+			if _, send := states[i].due(infos[i], 1, now, timing); send {
+				states[i].record(infos[i], 1, now)
+				sent[i]++
+			}
+		}
+	}
+	for i, n := range sent {
+		if n > seconds/30 {
+			t.Fatalf("session %d sent %d reports in %d s of activity alone, want at most %d", i, n, seconds, seconds/30)
+		}
 	}
 }

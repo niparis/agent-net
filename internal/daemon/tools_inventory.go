@@ -59,6 +59,7 @@ func (d *Daemon) scanToolsWithUpload(ctx context.Context) (protocol.InventoryRep
 	// Send the scan as it came so the gateway applies the same merge to its
 	// own stored report.
 	_, uploadErr := d.call(ctx, "node.inventory", fresh)
+	d.inventorySent.Store(uploadErr == nil)
 	result := d.toolsReport
 	result.Items = append([]protocol.InventoryItem{}, result.Items...)
 	return result, uploadErr
@@ -91,13 +92,27 @@ func (d *Daemon) toolsLoop(ctx context.Context) {
 			d.scanTools(ctx)
 			d.reconcileTools(ctx)
 		case <-d.toolsWake:
-			d.scanTools(ctx)
+			// A new link only needs the plan again: the gateway keeps the
+			// last inventory in its database. Scan when something on this
+			// machine changed, or when the last upload did not get there.
+			if d.toolsScanNext.Swap(false) || !d.inventorySent.Load() {
+				d.scanTools(ctx)
+			}
 			d.reconcileTools(ctx)
 		}
 	}
 }
 
+// wakeTools runs the tools loop now, with a scan: something on this machine
+// or in its plan changed.
 func (d *Daemon) wakeTools() {
+	d.toolsScanNext.Store(true)
+	d.wakeToolsPlan()
+}
+
+// wakeToolsPlan runs the tools loop now without a scan, unless the last
+// upload failed.
+func (d *Daemon) wakeToolsPlan() {
 	if d.toolsWake != nil {
 		select {
 		case d.toolsWake <- struct{}{}:
