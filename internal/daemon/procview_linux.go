@@ -98,3 +98,23 @@ func procBootTime() (time.Time, bool) {
 	}
 	return time.Time{}, false
 }
+
+// readProcTable reads every process from /proc. A process that ends while it is
+// read is left out.
+func readProcTable() (map[int]procView, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil, err
+	}
+	table := make(map[int]procView, len(entries))
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		if v, err := readProcView(pid); err == nil {
+			table[pid] = v
+		}
+	}
+	return table, nil
+}

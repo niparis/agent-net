@@ -10,18 +10,17 @@ import (
 )
 
 // Claude Code runs its background sessions outside agent-net. Its supervisor
-// rewrites a roster file every few seconds with the live sessions: each entry
+// rewrites a roster file when its live sessions change: each entry
 // names the background host (pid) and the session process (replPid). A process
 // stop must never end one of them, so processRefusal checks the roster too.
 //
-// The roster is read only while it is fresh. When it is missing or stale, the
-// daemon cannot tell which Claude processes are live, so it refuses every
+// A roster with a supervisor is trusted while that same user process lives.
+// When the supervisor cannot be verified, the daemon cannot tell which Claude processes are live, so it refuses every
 // Claude background process. The daemon_status file is not used: it can be
 // hours old.
 
 const (
-	// claudeRosterMaxAge is how old the roster may be (in either direction)
-	// and still be trusted.
+	// claudeRosterMaxAge applies only to legacy rosters without a supervisor.
 	claudeRosterMaxAge = 60 * time.Second
 	// claudeAncestorMax bounds the walk up the parents of a process.
 	claudeAncestorMax = 64
@@ -67,14 +66,24 @@ func (d *Daemon) claudeRosterFile() string {
 	return filepath.Join(dir, "daemon", "roster.json")
 }
 
-// readClaudeRoster returns the roster when it reads and was written within
-// claudeRosterMaxAge of now, or nil.
+// readClaudeRoster verifies the supervisor identity against the write time.
+// Legacy rosters without a supervisor retain the bounded freshness check.
 func (d *Daemon) readClaudeRoster(now time.Time) *claudeRoster {
+	return d.readClaudeRosterWithProcess(now, readProcView)
+}
+
+// readClaudeRosterWithProcess reads the roster. The supervisor is looked up
+// with read: the live reader for a process stop, a snapshot for the list.
+func (d *Daemon) readClaudeRosterWithProcess(now time.Time, read procLookup) *claudeRoster {
 	path := d.claudeRosterFile()
 	if path == "" {
 		return nil
 	}
-	raw, err := os.ReadFile(path)
+	readFile := d.cfg.readClaudeRosterFile
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
+	raw, err := readFile(path)
 	if err != nil {
 		return nil
 	}
@@ -82,20 +91,27 @@ func (d *Daemon) readClaudeRoster(now time.Time) *claudeRoster {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return nil
 	}
+	if r.SupervisorPID > 1 {
+		supervisor, err := read(r.SupervisorPID)
+		if err != nil || supervisor.Zombie || supervisor.UID != os.Getuid() || supervisor.EUID != os.Getuid() || supervisor.Started.IsZero() || supervisor.Started.After(time.UnixMilli(r.UpdatedAt)) || r.UpdatedAt > now.UnixMilli() {
+			return nil
+		}
+		return &r
+	}
 	if age := now.Sub(time.UnixMilli(r.UpdatedAt)); age > claudeRosterMaxAge || age < -claudeRosterMaxAge {
 		return nil
 	}
 	return &r
 }
 
-// claudeProcessRefusal says why a process must not be stopped because it is a
-// Claude background session, or is inside one, or returns "". A stale or
-// missing roster refuses every Claude background process.
-func (d *Daemon) claudeProcessRefusal(v procView) string {
-	roster := d.readClaudeRoster(time.Now())
+// claudeRosterProcessRefusal says why a process must not be stopped because it
+// is a Claude background session, or is inside one, or returns "". A nil roster
+// refuses every Claude background process. The ancestors of v are looked up
+// with lookup.
+func claudeRosterProcessRefusal(v procView, roster *claudeRoster, lookup procLookup) string {
 	if roster == nil {
 		if isClaudeBackgroundCommand(v.Command) {
-			return "Claude roster not fresh; cannot tell live sessions"
+			return "Claude roster not fresh; cannot tell live sessions (missing, invalid, or supervisor not verified alive)"
 		}
 		return ""
 	}
@@ -124,7 +140,7 @@ func (d *Daemon) claudeProcessRefusal(v procView) string {
 		if o, ok := owners[ppid]; ok {
 			return fmt.Sprintf("it runs inside a live Claude background session (short %s, cwd %s)", o.short, o.cwd)
 		}
-		parent, err := readProcView(ppid)
+		parent, err := lookup(ppid)
 		if err != nil {
 			break
 		}

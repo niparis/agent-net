@@ -45,6 +45,7 @@ type MachinesFindRequest struct {
 // MachineGetRequest is agent_machine_get. Include holds at most one category.
 type MachineGetRequest struct {
 	Machine     string   `json:"machine"`
+	Sort        string   `json:"sort,omitempty"`
 	Include     []string `json:"include,omitempty"`
 	Harness     string   `json:"harness,omitempty"`
 	ModelFilter string   `json:"model_filter,omitempty"`
@@ -280,11 +281,25 @@ type MachineHealth struct {
 	StateFreeBytes *uint64           `json:"state_free_bytes,omitempty"`
 }
 
-// MachineGetResult answers agent_machine_get: the machine and the one
-// requested category.
+// MachineProcessRow adds process ownership and the stop refusal to a sample.
+type MachineProcessRow struct {
+	MachineProcRow
+	User    string `json:"user"`
+	Refusal string `json:"refusal,omitempty"`
+}
+
+// MachineProcessPage is one page of the target machine process table.
+type MachineProcessPage struct {
+	Items      []MachineProcessRow `json:"items"`
+	Total      int                 `json:"total"`
+	NextCursor string              `json:"next_cursor,omitempty"`
+}
+
+// MachineGetResult answers agent_machine_get with the requested category.
 type MachineGetResult struct {
-	Machine MachineRow    `json:"machine"`
-	Health  MachineHealth `json:"health"`
+	Processes *MachineProcessPage `json:"processes,omitempty"`
+	Machine   MachineRow          `json:"machine"`
+	Health    MachineHealth       `json:"health"`
 	// Usage is set when no category is asked for.
 	Usage *MachineUsageNow `json:"usage,omitempty"`
 	// Requests is set with Usage. It is the gateway's own request counters,

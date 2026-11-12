@@ -47,3 +47,19 @@ func readProcView(pid int) (procView, error) {
 	}
 	return v, nil
 }
+
+// readProcTable reads every process with one `ps` call, so a list of processes
+// starts no process per process.
+func readProcTable() (map[int]procView, error) {
+	out, err := exec.Command("ps", "-A", "-ww", "-o", psTableFormat).Output()
+	if err != nil {
+		return nil, err
+	}
+	table := map[int]procView{}
+	for _, line := range strings.Split(string(out), "\n") {
+		if v, ok := parsePSLine(line); ok {
+			table[v.PID] = v
+		}
+	}
+	return table, nil
+}

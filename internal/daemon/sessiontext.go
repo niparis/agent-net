@@ -1479,6 +1479,11 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 			break
 		}
 		data = result
+	case "node.machine_processes":
+		var q protocol.MachineGetRequest
+		if err = json.Unmarshal(raw, &q); err == nil {
+			data, err = d.machineProcesses(ctx, q.Sort, readProcTable)
+		}
 	case "node.machine_usage":
 		data = d.machineUsageNow(ctx)
 	case "node.usage_top":
