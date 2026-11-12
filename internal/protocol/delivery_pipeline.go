@@ -1289,7 +1289,64 @@ func (p Pipeline) Accepts(c Change, e Evidence) error {
 	if e.Step == StepMerge && e.Result == StepResultPass && e.Fields[FieldMergedCommit] == "" {
 		return errors.New("a merge pass needs merged_commit: the commit on the target branch, which keeps the change's head")
 	}
+	if e.Result == StepResultPass {
+		return p.checkPassFields(e)
+	}
 	return nil
+}
+
+// checkPassFields refuses a pass that lacks a field a later step requires of
+// it, so the reporter fixes it at once and not at the merge claim. Only
+// presence is checked: a value another step does not accept is that step's
+// to refuse.
+func (p Pipeline) checkPassFields(e Evidence) error {
+	required := p.RequiredFields(e.StepRef)
+	for _, k := range sortedKeys(required) {
+		if _, ok := e.Fields[k]; !ok {
+			return fmt.Errorf("%s pass needs fields.%s, for example %s=%s", e.StepRef, k, k, exampleFieldValue(k, required[k]))
+		}
+	}
+	return nil
+}
+
+// RequiredFields lists the evidence fields that steps of the pipeline require
+// of a pass of ref, with the value each needs (FieldAny for any value). A
+// step left out (owner none) requires nothing.
+func (p Pipeline) RequiredFields(ref StepRef) map[string]string {
+	out := map[string]string{}
+	for _, s := range p.Steps {
+		if s.Owner.Kind == OwnerNone {
+			continue
+		}
+		for _, r := range s.Requires {
+			if r.StepRef != ref {
+				continue
+			}
+			for k, v := range r.Fields {
+				if prev, ok := out[k]; !ok || prev == FieldAny {
+					out[k] = v
+				}
+			}
+		}
+	}
+	return out
+}
+
+// exampleFieldValue is the value an error message shows for a field: the one
+// a requirement needs, else a typical one.
+func exampleFieldValue(field, want string) string {
+	if want != "" && want != FieldAny {
+		return want
+	}
+	switch field {
+	case FieldSuite:
+		return SuiteFull
+	case FieldTestsAdded:
+		return FieldYes
+	case FieldFindingsOpen:
+		return "0"
+	}
+	return "<value>"
 }
 
 // ReportFields lists the evidence fields the step should report: those other

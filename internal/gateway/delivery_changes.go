@@ -351,7 +351,7 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 			return protocol.ChangeSubmitResult{}, reject("unknown change %q", q.ChangeID)
 		}
 		if q.SessionID != c.Caller {
-			return protocol.ChangeSubmitResult{}, reject("change %s belongs to caller %s", c.ID, c.Caller)
+			return protocol.ChangeSubmitResult{}, reject("change %s belongs to caller %s: ask the caller to submit it", c.ID, c.Caller)
 		}
 		if c.Project != q.Project {
 			return protocol.ChangeSubmitResult{}, reject("change %s is for project %s, not %s", c.ID, c.Project, q.Project)
@@ -664,6 +664,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 					return protocol.StepReportResult{}, err
 				}
 			}
+			if err := reopenOwnReport(tx, c, p, e, q.SessionID); err != nil {
+				return protocol.StepReportResult{}, err
+			}
 			found, err = claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, true)
 		}
 		if err != nil {
@@ -769,6 +772,53 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	}
 	view, err := s.changeView(next, p, false)
 	return protocol.StepReportResult{Evidence: e, Change: view}, err
+}
+
+// reopenOwnReport lets the session that reported a step report it again on
+// the same commit, so it can add a field it forgot or correct a result: the
+// newest evidence wins, as it does for every read. It holds only while no
+// step that requires this one has passed on the revision, because that step
+// already relied on the old evidence. Merge is never reopened: its pass moves
+// the change. Another session's second report stays refused by the task
+// check.
+func reopenOwnReport(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, e protocol.Evidence, session string) error {
+	if e.Step == protocol.StepMerge {
+		return nil
+	}
+	var claimed, commit string
+	var completed int
+	err := tx.QueryRow(`SELECT t.claimed_by,t.completed,COALESCE((SELECT commit_hash FROM delivery_evidence
+		WHERE change_id=t.change_id AND revision=t.revision AND step=t.step AND for_step=t.for_step AND after_merge=t.after_merge ORDER BY seq DESC LIMIT 1),'')
+		FROM delivery_step_tasks t WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?`,
+		c.ID, c.Revision, e.Step, e.For, boolInt(e.AfterMerge)).Scan(&claimed, &completed, &commit)
+	if errors.Is(err, sql.ErrNoRows) || err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if completed == 0 || claimed != session || commit != e.Commit {
+		return nil
+	}
+	evidence, err := changeEvidence(tx, c.ID)
+	if err != nil {
+		return err
+	}
+	for _, s := range p.Steps {
+		for _, r := range s.Requires {
+			if r.StepRef != e.StepRef {
+				continue
+			}
+			for _, old := range evidence {
+				if old.Revision == c.Revision && old.StepRef == s.StepRef && old.Result == protocol.StepResultPass {
+					return nil
+				}
+			}
+		}
+	}
+	_, err = tx.Exec(`UPDATE delivery_step_tasks SET completed=0 WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
+		c.ID, c.Revision, e.Step, e.For, boolInt(e.AfterMerge))
+	return err
 }
 
 // afterMergeDone reports whether every step after merge passed or is left
