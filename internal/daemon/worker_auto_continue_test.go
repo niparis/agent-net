@@ -29,24 +29,17 @@ func TestAutoContinuePartialHandbackStopsAtTwo(t *testing.T) {
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
 		Task: "FAKE:handback FAKE:partial do half the task"})
 
-	// The first partial hand-back: one automatic continue, no caller notice.
+	// The worker hands back again as soon as it gets a continue, so the count
+	// can pass 1 and 2 between two polls on a busy machine. Wait for the count
+	// to reach each value, never to equal it. That no notice went out before
+	// the third hand-back is checked at the end: the caller must get exactly
+	// one, and it must say 2 automatic continues.
 	eventually(t, "the first automatic continue", func() bool {
-		row := reworkRow(t, w, res.SessionID)
-		return row.AutoContinueCount == 1 && row.AutoContinueRun == 1 && fakeAutoContinueCount(repo) == 1
+		return reworkRow(t, w, res.SessionID).AutoContinueCount >= 1 && fakeAutoContinueCount(repo) >= 1
 	})
-	if got := len(w.notices(t)); got != 0 {
-		t.Fatalf("the caller got %d notices after the first automatic continue, want none", got)
-	}
-
-	// The second partial hand-back: one more automatic continue, still no notice.
 	eventually(t, "the second automatic continue", func() bool {
-		row := reworkRow(t, w, res.SessionID)
-		return row.AutoContinueCount == 2 && row.AutoContinueRun == 2 && fakeAutoContinueCount(repo) == 2
+		return reworkRow(t, w, res.SessionID).AutoContinueCount >= 2 && fakeAutoContinueCount(repo) >= 2
 	})
-	// No check for "no notice yet" here: the worker hands back a third time as
-	// soon as it gets the second continue, so the notice can already be in
-	// when this line runs. The end of the test checks that the caller got
-	// exactly one notice, which covers the same thing without a race.
 
 	// The third partial hand-back is not continued: the caller is told.
 	n := w.waitNotice(t, 1)[0]
