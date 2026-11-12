@@ -1020,10 +1020,19 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err := g.store.trackWorkerStart(startRef, pick.NodeID, p.Owner, pick.Name, p.Harness, perms, p.Done); err != nil {
 		return none, err
 	}
+	// The machine records the assessment it gets here when the worker runs.
+	// A queued start reaches only that write, so the picker's note travels
+	// with it. The queue keeps the chosen model, so the note stays true.
+	launchAssessment := p.Assessment
+	if launchAssessment != nil {
+		copied := *launchAssessment
+		copied.PickerNote = modelNote
+		launchAssessment = &copied
+	}
 	launchBegan := time.Now()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
 		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.BriefText(), Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
-		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes,
+		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: launchAssessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes,
 		Why: choice.Why, NotFamily: p.NotFamily})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.

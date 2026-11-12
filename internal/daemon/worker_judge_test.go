@@ -178,6 +178,75 @@ func TestWorkerQueuedStartKeepsJudgeLabel(t *testing.T) {
 	})
 }
 
+// A start that waits in the queue keeps the picker's note and label, as a
+// direct start does: the owner audits every model choice through them.
+func TestQueuedStartKeepsPickerNote(t *testing.T) {
+	setupShadowJudge(t, normalJudgeReply, false)
+	g := startGateway(t, t.TempDir(), "")
+	fl := &fakeLoad{l: cpuBusy()}
+	w := startWorkerNode(t, g, queueSet, withDifficulty(withLoad(fl)))
+	w.register(t, newRepo(t, "shop"))
+	setJudgeScores(t, w, map[string]float64{"fake/m1": 32.5})
+	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
+	req := protocol.WorkerStartRequest{Model: "auto", Project: "shop", Harness: "opencode", Task: "queued"}
+
+	queued := startFrom(t, pi, req)
+	if queued.Status != "queued" || queued.ModelNote == "" {
+		t.Fatalf("not queued with a picker note: %+v", queued)
+	}
+	fl.set(roomyLoad())
+	var notice protocol.Message
+	eventually(t, "the started notice", func() bool {
+		for {
+			select {
+			case m := <-pi.Pushes:
+				if strings.Contains(m.Body, "status: started") {
+					notice = m
+					return true
+				}
+			default:
+				return false
+			}
+		}
+	})
+	_, why, _ := strings.Cut(notice.Body, "\nwhy: ")
+	why, _, _ = strings.Cut(why, "\n")
+	if !strings.Contains(why, queued.Model) {
+		t.Fatalf("started notice why line does not name %s:\n%s", queued.Model, notice.Body)
+	}
+	direct := startFrom(t, pi, req)
+	if direct.SessionID == "" {
+		t.Fatalf("direct start: %+v", direct)
+	}
+	// agent_workers_find reads the assessment from the same list call.
+	stored := func(session string) *protocol.WorkerAssessment {
+		t.Helper()
+		var got *protocol.WorkerAssessment
+		eventually(t, "the assessment of "+session, func() bool {
+			for _, a := range w.agents(t, true) {
+				if a.SessionID == session && a.Worker != nil && a.Worker.Assessment != nil {
+					got = a.Worker.Assessment
+					return true
+				}
+			}
+			return false
+		})
+		return got
+	}
+	q, d := stored(notice.From), stored(direct.SessionID)
+	if d.PickerNote != direct.ModelNote {
+		t.Fatalf("direct start note %q, want %q", d.PickerNote, direct.ModelNote)
+	}
+	// The queue keeps the model the picker chose, so the note made at the
+	// start explains the worker that runs, as the why line does.
+	if q.PickerNote != queued.ModelNote || !strings.Contains(q.PickerNote, "-> "+queued.Harness+" "+queued.Model+" ") {
+		t.Fatalf("queued start note %q, want %q", q.PickerNote, queued.ModelNote)
+	}
+	if q.PickerLabel == "" || q.PickerLabel != d.PickerLabel {
+		t.Fatalf("queued label %q, direct label %q", q.PickerLabel, d.PickerLabel)
+	}
+}
+
 func TestWorkerTouchesDoNotChangeLevel(t *testing.T) {
 	for _, touches := range [][]string{{"db"}, {"hot-path"}, {"docs", "tests"}} {
 		t.Run(strings.Join(touches, "+"), func(t *testing.T) {
