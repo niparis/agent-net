@@ -4498,8 +4498,19 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	if p.Recipient == agentNetSender && p.ParentID != "" {
 		return s.agentNetReply(tx, p)
 	}
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Recipient).Scan(&n); err != nil || n == 0 {
+	// A message to a replaced session goes to the session that replaced it. A
+	// worker's daemon, for one, keeps the caller ID it started with.
+	requested := p.Recipient
+	live, ok, err := liveSession(tx, p.Recipient)
+	if err != nil {
+		return msg, false, err
+	}
+	if !ok {
 		return msg, false, reject("unknown recipient session %q", p.Recipient)
+	}
+	p.Recipient = live
+	if p.Sender == p.Recipient {
+		return msg, false, reject("cannot send a message to yourself")
 	}
 	// Initial worker briefs must not revive or reach a worker that has ended.
 	// Check in the message transaction: worker.stopped can record the run
@@ -4556,7 +4567,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 				return msg, false, err
 			}
 		}
-		if parent.To != p.Sender || (parent.From != p.Recipient && !automaticTaskNotice) {
+		if parent.To != p.Sender || (parent.From != p.Recipient && parent.From != requested && !automaticTaskNotice) {
 			return msg, false, reject("a reply must come from the parent's recipient and go to its sender")
 		}
 		if p.Ack && parent.Type != protocol.TypeRequest {
@@ -4672,6 +4683,12 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		if err != nil {
 			return msg, false, err
 		}
+	}
+	if route != nil && requested != m.To && live == m.To {
+		if *route != "" {
+			*route += "\n"
+		}
+		*route += fmt.Sprintf("Session %s was replaced by %s, so the message went to %s.", requested, live, live)
 	}
 	if route != nil {
 		note, err := limitedNote(tx, m.To, s.now())

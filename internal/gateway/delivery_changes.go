@@ -319,6 +319,16 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 	if err := q.Validate(); err != nil {
 		return protocol.ChangeSubmitResult{}, reject("%s", err.Error())
 	}
+	// A worker's daemon keeps the caller ID it started with. When that session
+	// was replaced, the change and its step messages belong to its replacement.
+	if live, ok, err := liveSession(s.db, q.SessionID); err != nil {
+		return protocol.ChangeSubmitResult{}, err
+	} else if ok && live != q.SessionID {
+		if q.Origin.Kind == protocol.OriginSession && q.Origin.SessionID == q.SessionID {
+			q.Origin.SessionID = live
+		}
+		q.SessionID = live
+	}
 	if err := s.checkSubmitter(machine, q); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
