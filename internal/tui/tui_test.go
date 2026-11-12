@@ -255,6 +255,8 @@ type fakeSource struct {
 	convMore     map[string]protocol.ConversationPage
 	convErr      error
 	convCalls    []protocol.QueryConversations
+	convVersion  uint64 // the list version the fake answers with
+	convSentRows int    // rows handed to the screen, for the poll test
 	convMsgs     map[string][]protocol.Message
 	convMsgErr   error
 	convMsgCalls []string
@@ -285,10 +287,18 @@ func (f *fakeSource) Conversations(_ context.Context, q protocol.QueryConversati
 	if f.convErr != nil {
 		return protocol.ConversationPage{}, f.convErr
 	}
-	if q.Cursor == "" {
-		return f.convFirst, nil
+	// The gateway answers an unchanged first page with no rows, as the real
+	// store does.
+	if q.IfVersion != 0 && q.Cursor == "" && q.IfVersion == f.convVersion {
+		return protocol.ConversationPage{Version: f.convVersion, NotModified: true}, nil
 	}
-	return f.convMore[q.Cursor], nil
+	page := f.convFirst
+	if q.Cursor != "" {
+		page = f.convMore[q.Cursor]
+	}
+	page.Version = f.convVersion
+	f.convSentRows += len(page.Conversations)
+	return page, nil
 }
 
 func (f *fakeSource) ConversationMessages(_ context.Context, id string) ([]protocol.Message, error) {

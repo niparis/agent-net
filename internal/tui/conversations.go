@@ -11,8 +11,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// conversationPageSize is how many stored conversations one page holds.
-const conversationPageSize = 50
+// conversationPageSize is how many stored threads one page holds. A lite page
+// of 400 rows is about 200 KiB, under the gateway's response budget, and the
+// whole list at today's size is a handful of pages.
+const conversationPageSize = 400
 
 // convDetail is the stored messages of one conversation, fetched when the
 // owner selects it.
@@ -232,13 +234,21 @@ func (m Model) partyName(id, fallback string) string {
 }
 
 // conversationCmd asks for one page. first replaces the first page and keeps
-// the older pages already loaded; a later page is appended.
+// the older pages already loaded; a later page is appended. Only the first
+// page carries the version the screen holds, so a poll of an unchanged list
+// costs one small answer.
 func (m Model) conversationCmd(cursor string, first bool) tea.Cmd {
 	src := m.src
+	version := uint64(0)
+	if first {
+		version = m.convVersion
+	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
-		page, err := src.Conversations(ctx, protocol.QueryConversations{Cursor: cursor, Limit: conversationPageSize})
+		page, err := src.Conversations(ctx, protocol.QueryConversations{
+			Cursor: cursor, Limit: conversationPageSize, Lite: true, IfVersion: version,
+		})
 		return conversationPageMsg{page: page, err: err, first: first}
 	}
 }
@@ -254,24 +264,15 @@ func (m Model) conversationMessagesCmd(id string) tea.Cmd {
 	}
 }
 
-// wantConversations starts the next page when the cursor is near the end.
+// wantConversations loads every page of the stored list in the background, so
+// the whole thread history is on the screen after the first page. The list is
+// usable while the older pages arrive. A page that arrives for the first time
+// starts the next one.
 func (m *Model) wantConversations() tea.Cmd {
 	if m.tab != messagesTab || m.help || !m.convLoaded || m.convNext == "" || m.convLoading {
 		return nil
 	}
-	rows := m.messageConversations()
-	// A sub-tab can be empty on the first page because another sub-tab owns
-	// every row on it. Load the next page until this view has a few rows, or
-	// the short cap is reached. This is the existing page cursor, not a new
-	// poll.
-	needRows := len(rows) < 3 && m.convAutoPages < 3
-	if !needRows && (len(rows) == 0 || m.selectedConversationIndex(rows) < len(rows)-3) {
-		return nil
-	}
 	m.convLoading = true
-	if needRows {
-		m.convAutoPages++
-	}
 	return m.conversationCmd(m.convNext, false)
 }
 
@@ -317,10 +318,23 @@ func (m *Model) applyConversationPage(msg conversationPageMsg) {
 		}
 		return
 	}
+	if msg.page.NotModified {
+		if msg.page.Version != 0 {
+			m.convVersion = msg.page.Version
+		}
+		return
+	}
 	m.convErr = ""
 	m.convTotal = msg.page.Total
+	if msg.page.Version != 0 {
+		m.convVersion = msg.page.Version
+	}
 	if msg.first {
-		m.convAutoPages = 0
+		// A list that was already complete stays complete: a poll of page one
+		// finds every thread that changed, because a changed thread is the
+		// newest row of the page. Only a load that is still walking pages keeps
+		// the cursor.
+		wasComplete := m.convLoaded && m.convNext == ""
 		merged := make(map[string]protocol.ConversationView, len(m.storedConvs)+len(msg.page.Conversations))
 		for _, v := range m.storedConvs {
 			merged[v.ID] = v
@@ -333,7 +347,10 @@ func (m *Model) applyConversationPage(msg conversationPageMsg) {
 			m.storedConvs = append(m.storedConvs, v)
 		}
 		next := msg.page.Next
-		if m.convNext != "" && len(m.storedConvs) > len(msg.page.Conversations) {
+		switch {
+		case wasComplete:
+			next = ""
+		case m.convNext != "" && len(m.storedConvs) > len(msg.page.Conversations):
 			// Older pages are already loaded. Keep the cursor for the next
 			// page that is still missing instead of walking back to page two
 			// on every refresh.

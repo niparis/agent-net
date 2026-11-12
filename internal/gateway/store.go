@@ -5343,8 +5343,16 @@ const conversationsWorkerCountSQL = `SELECT COUNT(*) FROM (
 // grouping and filtering, never the screen.
 func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.ConversationPage, error) {
 	page := protocol.ConversationPage{Conversations: []protocol.ConversationView{}}
-	if q.Limit <= 0 || q.Limit > 100 {
+	if q.Limit <= 0 || q.Limit > 500 {
 		q.Limit = 50
+	}
+	// Read the version before the rows. A write that lands between the two is
+	// then newer than the version the caller keeps, so the next poll reads
+	// again instead of keeping rows that miss it.
+	version := s.conversationsVersion()
+	page.Version = version
+	if q.IfVersion != 0 && q.Cursor == "" && q.IfVersion == version {
+		return protocol.ConversationPage{Version: version, NotModified: true}, nil
 	}
 	normalWhere := conversationsNormalWhere("m")
 	sqlText, args := conversationsPageSQL(normalWhere, conversationsNormalWhere("b"), q.Cursor, q.Limit+1)
@@ -5361,8 +5369,13 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 			return page, err
 		}
 	}
-	if err := s.fillHourlySpread(normal, conversationsRowWhere("m")); err != nil {
-		return page, err
+	// The burst spread reads every message of every row on the page. The list
+	// row does not need it, and a TUI page holds hundreds of rows, so the lite
+	// read leaves it out.
+	if !q.Lite {
+		if err := s.fillHourlySpread(normal, conversationsRowWhere("m")); err != nil {
+			return page, err
+		}
 	}
 	rows := normal
 
@@ -5382,6 +5395,9 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 		return page, err
 	}
 	rows = append(rows, workerRows...)
+	if q.Lite {
+		shortenConversationRows(rows)
+	}
 
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].At.Equal(rows[j].At) {
@@ -5396,6 +5412,40 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 	}
 	page.Conversations = rows
 	return page, nil
+}
+
+// conversationsVersion moves whenever a write can change the list: a message
+// (a new one, a skipped lifecycle notice, a new state), a session's name,
+// harness or worker record, a profile name or a cited signal. It reads the
+// columns by name, so a session's heartbeat does not move it. It is an
+// in-memory counter, so an unchanged poll costs nothing.
+func (s *Store) conversationsVersion() uint64 {
+	return s.readStamp([]string{
+		"messages", "sessions.name", "sessions.harness", "sessions.worker",
+		"profiles.name", "charter_signals",
+	})
+}
+
+// conversationListRunes is how much of a last line a list row keeps. The row
+// clips the text to the panel anyway, and the full line is one keystroke away
+// in the conversation the thread opens.
+const conversationListRunes = 100
+
+// shortenConversationRows cuts the long text a list row never draws in full.
+func shortenConversationRows(rows []protocol.ConversationView) {
+	for i := range rows {
+		rows[i].LastLine = cutRunes(rows[i].LastLine, conversationListRunes)
+		rows[i].SystemLine = cutRunes(rows[i].SystemLine, conversationListRunes)
+		rows[i].Task = cutRunes(rows[i].Task, conversationListRunes)
+	}
+}
+
+func cutRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // scanConversations reads the rows both conversation queries select. The last

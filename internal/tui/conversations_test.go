@@ -86,7 +86,7 @@ func TestMessageListShowsStoredRowsBeyondTheFeedBuffer(t *testing.T) {
 	}
 }
 
-func TestMessageListLoadsTheNextPageWhenTheCursorNearsTheEnd(t *testing.T) {
+func TestMessageListLoadsTheRestOfTheListOnOpen(t *testing.T) {
 	src := &fakeSource{snap: fakeSnapshot()}
 	const a, b = "s_0000000000000001", "s_0000000000000002"
 	var first []protocol.ConversationView
@@ -106,22 +106,12 @@ func TestMessageListLoadsTheNextPageWhenTheCursorNearsTheEnd(t *testing.T) {
 	m.tab, m.focus = messagesTab, focusFeed
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = refreshAndRun(t, m, src)
-	if got := len(m.messageConversations()); got != 5 {
-		t.Fatalf("first page has %d rows, want 5", got)
-	}
-	if len(src.convCalls) != 1 {
-		t.Fatalf("the first page should be fetched once, got %d calls", len(src.convCalls))
-	}
 
-	m.convSel = len(m.messageConversations()) - 2
-	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	m = next.(Model)
-	m = runCommands(t, m, cmd)
 	if got := len(m.messageConversations()); got != 8 {
-		t.Fatalf("after scrolling the list has %d rows, want 8", got)
+		t.Fatalf("after the load the list has %d rows, want 8", got)
 	}
 	if len(src.convCalls) < 2 || src.convCalls[len(src.convCalls)-1].Cursor != "p2" {
-		t.Fatalf("next page was not asked with the cursor: %+v", src.convCalls)
+		t.Fatalf("the rest of the list was not asked for: %+v", src.convCalls)
 	}
 	rows := m.messageConversations()
 	if len(rows) != 8 || rows[len(rows)-1].lastLine != "second page 7" {

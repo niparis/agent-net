@@ -32,7 +32,6 @@ func (m Model) cycleMessageFilter() (Model, tea.Cmd) {
 func (m Model) setMessageSubtab(s messageSubtab) (Model, tea.Cmd) {
 	m.messageSubtab = s
 	m.convSel = 0
-	m.convAutoPages = 0
 	switch s {
 	case messageWorkers:
 		m.hideWorkerThreads, m.messageShowEvents = true, false

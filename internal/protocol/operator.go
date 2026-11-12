@@ -244,6 +244,16 @@ type EventsResult struct {
 type QueryConversations struct {
 	Cursor string `json:"cursor,omitempty"`
 	Limit  int    `json:"limit,omitempty"`
+	// Lite leaves out what only the detail pane reads: the hourly burst
+	// spread, and the long tail of a last line. The Messages tab asks for it,
+	// so a page of its list fits in one response and the whole list is a few
+	// pages. A caller that opens a thread reads its messages from their own
+	// call, never from a list row.
+	Lite bool `json:"lite,omitempty"`
+	// IfVersion is the Version of the list the caller already holds. While
+	// the tables the list reads have not been written, the gateway answers
+	// NotModified and sends no rows.
+	IfVersion uint64 `json:"if_version,omitempty"`
 }
 
 // ConversationView is one stored conversation as the owner's Messages tab
@@ -309,6 +319,12 @@ type ConversationPage struct {
 	Conversations []ConversationView `json:"conversations"`
 	Total         int                `json:"total"`
 	Next          string             `json:"next,omitempty"`
+	// Version is the write counter of the tables this list reads. The caller
+	// sends it back as QueryConversations.IfVersion.
+	Version uint64 `json:"version,omitempty"`
+	// NotModified means the caller's IfVersion still matches, so Conversations
+	// and Total are empty and the caller keeps the list it holds.
+	NotModified bool `json:"not_modified,omitempty"`
 }
 
 // QueryConversationMessages asks for every stored message of one conversation.
