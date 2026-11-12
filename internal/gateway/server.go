@@ -1702,6 +1702,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
+		items = toolsNamed(items, p.Name)
+		if p.Compact {
+			return toolRowsPage(items, p)
+		}
 		return toolsPage(items, p.Offset, g.opts.ToolsPageSize)
 	case "query.tools_item":
 		p, err := decodeOperator[struct {

@@ -54,6 +54,7 @@ var ctoOwnerOpTypes = map[string]reflect.Type{
 	"tools_import":   reflect.TypeOf(protocol.ToolImport{}),
 	"tools_versions": reflect.TypeOf(protocol.ToolVersionRequest{}),
 	"bar_edit":       reflect.TypeOf(protocol.BarEditRequest{}),
+	"tools_items":    reflect.TypeOf(protocol.ToolsFilter{}),
 }
 
 var ctoOwnerOpExamples = map[string]string{
@@ -64,11 +65,13 @@ var ctoOwnerOpExamples = map[string]string{
 	"tools_import":    `{"item":"skill-id","location":{"node_id":"node-id","location":"/home/owner/skill"}}`,
 	"tools_versions":  `{"item":"skill-id"}`,
 	"bar_edit":        `{"project":"demo","add":["Performance first."]}`,
+	"tools_items":     `{"compact":true,"name":"wiki","limit":50}`,
 }
 
 // ctoOwnerOpPurposes words the ops whose name alone does not say what they do.
 var ctoOwnerOpPurposes = map[string]string{
-	"bar_edit": "Add, edit or remove the short rules that workers and reviewers check a project's diffs against. Name the project.",
+	"bar_edit":    "Add, edit or remove the short rules that workers and reviewers check a project's diffs against. Name the project.",
+	"tools_items": "List skills and MCP servers. With compact true, one short row per item: id, name, kind, machines, file_count, trimmed and a one-line description, paged by limit and cursor. Read one item in full with tools_item and its id.",
 }
 
 func ownerOpSchema(method string) map[string]any {
