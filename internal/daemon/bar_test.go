@@ -54,3 +54,39 @@ func TestBarRequestEditAndBriefReachTheDaemon(t *testing.T) {
 		t.Fatalf("brief:\n%s", body)
 	}
 }
+
+// The CTO edits a project's bar with cto_op bar_edit, through the same gateway
+// frame as agent_bar_edit. The owner method is not an agent tool: an agent
+// session that calls it directly is refused and the bar is unchanged.
+func TestCTOOpBarEditWritesTheBarAndAgentsCannotCallIt(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	repo := newRepo(t, "demo")
+	if err := os.WriteFile(filepath.Join(repo, "AGENTS.md"), []byte("# Project: demo\n\nPerformance first.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	client, id := helloDelivery(t, n, "caller", repo, "claude-opus-4")
+	eventually(t, "session and repo registered", func() bool {
+		a, ok, err := g.gw.Store().Agent(id)
+		return err == nil && ok && a.Repo.Project == "demo"
+	})
+	if err := g.gw.Store().SetCharter("demo", "maturity", "early", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]any{"method": "bar_edit", "args": map[string]any{"project": "demo", "add": []string{"Performance first."}}})
+	if _, err := n.d.runCTOTool(ctx, "cto_op", raw); err != nil {
+		t.Fatalf("cto_op bar_edit: %v", err)
+	}
+	eventually(t, "the daemon reads the CTO's bar", func() bool { return len(n.d.barOf(ctx, "demo")) == 1 })
+
+	if _, err := client.call("bar_edit", protocol.BarEditRequest{Project: "demo", Add: []string{"Injected."}}); err == nil {
+		t.Fatal("an agent session called the owner method bar_edit")
+	}
+	if got := n.d.barOf(ctx, "demo"); len(got) != 1 || got[0].Text != "Performance first." {
+		t.Fatalf("bar after a refused call: %+v", got)
+	}
+}

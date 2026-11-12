@@ -52,6 +52,7 @@ var ctoOwnerOpTypes = map[string]reflect.Type{
 	"tools_export":   reflect.TypeOf(protocol.ToolVersionRequest{}),
 	"tools_import":   reflect.TypeOf(protocol.ToolImport{}),
 	"tools_versions": reflect.TypeOf(protocol.ToolVersionRequest{}),
+	"bar_edit":       reflect.TypeOf(protocol.BarEditRequest{}),
 }
 
 var ctoOwnerOpExamples = map[string]string{
@@ -60,6 +61,12 @@ var ctoOwnerOpExamples = map[string]string{
 	"tools_export":    `{"item":"skill-id","version":"version-hash"}`,
 	"tools_import":    `{"item":"skill-id","location":{"node_id":"node-id","location":"/home/owner/skill"}}`,
 	"tools_versions":  `{"item":"skill-id"}`,
+	"bar_edit":        `{"project":"demo","add":["Performance first."]}`,
+}
+
+// ctoOwnerOpPurposes words the ops whose name alone does not say what they do.
+var ctoOwnerOpPurposes = map[string]string{
+	"bar_edit": "Add, edit or remove the short rules that workers and reviewers check a project's diffs against. Name the project.",
 }
 
 func ownerOpSchema(method string) map[string]any {
@@ -73,6 +80,9 @@ func ownerOpSchema(method string) map[string]any {
 					if method == "tools_export" {
 						out["required"] = []string{"item", "version"}
 					}
+					if method == "bar_edit" {
+						out["required"] = []string{"project"}
+					}
 					return out
 				}
 			}
@@ -82,6 +92,9 @@ func ownerOpSchema(method string) map[string]any {
 }
 
 func ownerOpPurpose(method string, read bool) string {
+	if purpose, ok := ctoOwnerOpPurposes[method]; ok {
+		return purpose
+	}
 	words := strings.ReplaceAll(strings.ReplaceAll(method, "_", " "), ".", " ")
 	if read {
 		return "Read " + words + " through the owner operation."

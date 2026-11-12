@@ -77,6 +77,7 @@ func TestCTOOpBadArgumentsReturnSchemaAndRunNothing(t *testing.T) {
 	}{
 		{"process_stop", `{"method":"process_stop","args":{"node_id":"n_1"}}`, []string{"pids", "Schema:", "Example:"}},
 		{"node_remove", `{"method":"node_remove","args":{}}`, []string{"name", "Schema:", "Example:"}},
+		{"bar_edit without a project", `{"method":"bar_edit","args":{"add":["Performance first."]}}`, []string{"project", "Schema:", "Example:"}},
 		{"unknown argument", `{"method":"app_grant","args":{"id":"app-1","grant":"mcp server x","bogus":true}}`, []string{"bogus", "Schema:", "Example:"}},
 		{"unknown op", `{"method":"no_such_op","args":{}}`, []string{"no_such_op", "cto_ops_list"}},
 	} {

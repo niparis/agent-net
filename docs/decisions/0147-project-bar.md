@@ -28,9 +28,11 @@ findings is a later part.
   repo node, and the TUI card shows a "Project rules" section.
 - **Write.** `agent_bar_edit {project, add, edit, remove}` is one call that may
   add, edit and remove rules, so a lead seeds a whole bar at once. The
-  project's lead, the owner session and the CTO may write; the owner and the
-  CTO name the project. Every other session, and every worker (even a worker
-  of the lead), only reads. The command line is refused.
+  project's lead may write its own bar with `agent_bar_edit`. The owner and
+  the CTO write any project's bar; they name the project. The CTO uses the
+  rare-op tier, `cto_op` with method `bar_edit`, so `agent_bar_edit` stays out
+  of the CTO's everyday tools. Every other session, and every worker (even a
+  worker of the lead), only reads. The command line is refused.
 - **Brief.** The worker brief header lists the rules after the shared rules:
   "Project rules (check your diff against each before you hand back; list each
   as met or not applicable in your report):". No rules, no section.

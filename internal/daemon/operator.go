@@ -74,6 +74,20 @@ func tooOldGateway(err error) error {
 	return err
 }
 
+// editBar sends one bar change for a session. The gateway decides who may
+// edit: the owner and the CTO name the project, a lead edits its own.
+func (d *Daemon) editBar(ctx context.Context, session string, p protocol.BarEditRequest) (protocol.BarEditResult, error) {
+	var out protocol.BarEditResult
+	data, err := d.call(ctx, "bar.edit", protocol.BarEditFrame{BarEditRequest: p, SessionID: session})
+	if err != nil {
+		return out, tooOldGateway(err)
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
 // dispatchActions serves the operator actions. handled is false for other
 // methods.
 func (lc *localConn) dispatchActions(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
@@ -202,12 +216,8 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		if err != nil {
 			return nil, true, err
 		}
-		data, err := d.call(ctx, "bar.edit", protocol.BarEditFrame{BarEditRequest: p, SessionID: sid})
+		out, err := d.editBar(ctx, sid, p)
 		if err != nil {
-			return nil, true, tooOldGateway(err)
-		}
-		var out protocol.BarEditResult
-		if err := json.Unmarshal(data, &out); err != nil {
 			return nil, true, err
 		}
 		return out, true, nil
