@@ -283,15 +283,16 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		launch["tui"] = tui
 	}
 	settings, _ := json.Marshal(launch)
-	args := []string{"--bg", "--tools", "", "--setting-sources", "", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", d.ctoSystemPrompt(ctx)}
-	if id != "" {
-		args = append(args, "--resume", id)
-	}
-	if model != "" {
-		args = append(args, "--model", model)
-	}
 	mcp, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agent-net-cto": map[string]any{"command": d.cfg.Exe, "args": []string{"cto-mcp"}}}})
-	args = append(args, "--mcp-config", string(mcp), "--strict-mcp-config")
+	spec := claudeBackground{Name: "agent-net-cto", Settings: string(settings), Resume: id,
+		Flags: []string{"--tools", "", "--setting-sources", "", "--system-prompt", d.ctoSystemPrompt(ctx), "--mcp-config", string(mcp), "--strict-mcp-config"}}
+	if model != "" {
+		spec.ModelArgs = []string{"--model", model}
+	}
+	// The CTO keeps its own job tracking (private directory, crash detail, a
+	// restart without the old conversation), so it runs the command itself;
+	// the arguments still come from the one builder.
+	args := claudeBackgroundArgs(spec)
 	c.starting.Store(true)
 	defer c.starting.Store(false)
 	cmd := exec.CommandContext(ctx, bin, args...)
