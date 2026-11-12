@@ -179,6 +179,22 @@ func TestMergerFirstMessageBatchRules(t *testing.T) {
 	}
 }
 
+// The merger prompt carries the train rule, including the local bisect before
+// any re-push. It stays out of the shared guidance block.
+func TestMergerFirstMessageMergeTrain(t *testing.T) {
+	for _, rule := range []string{
+		"train mode",
+		"test each change locally with the targeted packages",
+		"Run CI once on the train tip",
+		"Cite that one run for every change in the train",
+		"bisect locally to find the culprit before you re-push",
+	} {
+		if !strings.Contains(MergerFirstMessage, rule) {
+			t.Errorf("missing train rule %q", rule)
+		}
+	}
+}
+
 func TestMergerStartClearsHiddenFolderOptions(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)

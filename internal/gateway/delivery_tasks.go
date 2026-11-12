@@ -2102,7 +2102,11 @@ func (s *Store) stepContract(project, step string) string {
 	if err != nil {
 		return "contract: unavailable"
 	}
-	return "contract:\n  " + strings.ReplaceAll(protocol.NeutralizeMarkers(snap.String("delivery.contract."+step, settings.Where{Repo: project})), "\n", "\n  ")
+	key := "delivery.contract." + step
+	if step == "test" && snap.String("delivery.ci_mode", settings.Where{Repo: project}) == "train" {
+		key = "delivery.contract.test_train"
+	}
+	return "contract:\n  " + strings.ReplaceAll(protocol.NeutralizeMarkers(snap.String(key, settings.Where{Repo: project})), "\n", "\n  ")
 }
 func (s *Store) stepContracts(project string, refs []protocol.StepRef) string {
 	var lines []string

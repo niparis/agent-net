@@ -119,6 +119,15 @@ settings:
     default: suite
     by_maturity: {experimental: optional, early: optional, mature: suite-new-tests, critical: suite-new-tests-review}
     live: true
+  - key: delivery.ci_mode
+    rows: [127]
+    description: Whether the merger runs CI once per merge train or once per change. Repo visibility is not stored, so a public repo opts in with the repo setting train; the default stays per_change otherwise.
+    kind: rule
+    type: enum
+    values: [per_change, train]
+    levels: [network, repo]
+    default: per_change
+    live: true
   - key: charter.judge_consumers
     rows: [45]
     description: How the node judges consumer requests.
@@ -1055,6 +1064,13 @@ settings:
     levels: [network, repo]
     default: "Merge onto the current default branch in your own worktree. Resolve conflicts yourself, keeping the intent of both sides, and list each resolution. Run the full changed packages and CI. Fail only for real test or CI failures, with the failing test names."
     live: true
+  - key: delivery.contract.test_train
+    description: Contract for the test step in train mode.
+    kind: advice
+    type: text
+    levels: [network, repo]
+    default: "Test each change locally with the targeted packages. Run CI once on the train tip. Cite that one run for every change in the train. When the tip fails, bisect locally to find the culprit before you re-push."
+    live: true
   - key: delivery.contract.approve
     description: Contract for the approve step.
     kind: advice
@@ -1232,7 +1248,7 @@ ledger:
   - {row: 124, keys: [skills.worktree_copy_policy]}
   - {row: 125, keys: [skills.backup_retention]}
   - {row: 126, keys: [skills.mcp_server_attachment]}
-  - {row: 127, keys: [delivery.tests_before_merge, delivery.test_text_optional, delivery.test_text_suite, delivery.test_text_suite_new_tests, delivery.test_text_suite_new_tests_review], step: 6}
+  - {row: 127, keys: [delivery.tests_before_merge, delivery.ci_mode, delivery.contract.test_train, delivery.test_text_optional, delivery.test_text_suite, delivery.test_text_suite_new_tests, delivery.test_text_suite_new_tests_review], step: 6}
   - {row: 128, keys: [delivery.merge_authority, delivery.merge_text_full, delivery.merge_text_delegated, delivery.merge_text_ask], step: 6}
   - {row: 129, keys: [delivery.merge_authority], step: 6}
   - {row: 130, code: "delegated approvers are the leads above the node and the owner"}

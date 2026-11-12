@@ -4067,6 +4067,14 @@ and an optional project override. The owner can edit them in the TUI Settings ta
 the CTO can read and set them through the settings tools. Changes apply to the
 next task without restarting sessions.
 
+`delivery.ci_mode` is a network and project setting with the values `per_change`
+and `train`. Repo visibility is not stored, so the default stays `per_change` and
+a public repo opts in with the project value `train`. In train mode the test step
+uses `delivery.contract.test_train` instead of `delivery.contract.test`: test each
+change locally with the targeted packages, run CI once on the train tip, cite that
+one run for every change in the train, and bisect locally when the tip fails before
+any re-push. Per-change mode keeps the existing test contract.
+
 Step task messages and reminders include a `contract:` block directly after the
 step line. Batched tasks include each step's contract. Worker hand-back notices
 name `delivery.contract.test` as the test scope for worker briefs.
