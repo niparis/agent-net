@@ -196,7 +196,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 	base = claudePlanEnv(base)
 	// The TUI on this machine hands over its terminal, in herdr or not.
 	if !viaGateway {
-		return d.viewPlan(q.SessionID, base.Name, false, base), nil
+		return d.sessionView(q, base.Name, false, base), nil
 	}
 	if focused != nil && *focused != "" {
 		// localEnterBase already found the pane. Do not walk the same herdr
@@ -229,25 +229,47 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 			name = a.Profile.Name
 		}
 	}
+	return d.sessionView(q, name, true, base), nil
+}
+
+// claudeAttachPlan is the Enter plan of a Claude background job: plan carries
+// the host and folder. Every Claude session uses it, the CTO too.
+func claudeAttachPlan(plan protocol.EnterPlan, bin, job, name string) protocol.EnterPlan {
+	// Claude Code ignores the mouse variable on the attach client; the
+	// user's Claude settings carry it (decision 0128).
+	plan.Argv = []string{bin, "attach", job}
+	plan = claudePlanEnvAlways(plan)
+	plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
+	return plan
+}
+
+// sessionView turns a session's own plan into the view the asking TUI runs.
+// The TUI on this machine hands over its terminal. A TUI on another machine
+// with a herdr client gets a pane in agent-net's herdr here, which it opens
+// with herdr --remote (decision 0046).
+func (d *Daemon) sessionView(q protocol.EnterRequest, name string, viaGateway bool, base protocol.EnterPlan) protocol.EnterPlan {
+	if !viaGateway {
+		return d.viewPlan(q.SessionID, name, false, base)
+	}
 	base.Name = name
 	private := base.Env["OPENCODE_SERVER_PASSWORD"] != "" || base.Env["AGENT_NET_CODEX_TOKEN"] != ""
 	if !q.HerdrClient || len(base.Argv) == 0 {
-		return base, nil
+		return base
 	}
 	// The asking machine opens the view with herdr --remote, so this machine
 	// hosts it in agent-net's herdr server.
 	opened := d.viewPlan(q.SessionID, name, true, base)
 	if opened.OpenedHerdr {
 		if private {
-			return protocol.EnterPlan{Argv: herdrSessionAttach(opened.HerdrSession, opened.HerdrPane), Host: base.Host, Name: name, HerdrPane: opened.HerdrPane, HerdrSession: opened.HerdrSession}, nil
+			return protocol.EnterPlan{Argv: herdrSessionAttach(opened.HerdrSession, opened.HerdrPane), Host: base.Host, Name: name, HerdrPane: opened.HerdrPane, HerdrSession: opened.HerdrSession}
 		}
 		base.HerdrPane, base.HerdrSession = opened.HerdrPane, opened.HerdrSession
-		return base, nil
+		return base
 	}
 	if private {
-		return protocol.EnterPlan{Host: base.Host, Name: name, Note: "Herdr could not open this private worker on its own machine. " + opened.Note}, nil
+		return protocol.EnterPlan{Host: base.Host, Name: name, Note: "Herdr could not open this private worker on its own machine. " + opened.Note}
 	}
-	return opened, nil
+	return opened
 }
 
 // focused receives the herdr pane of a Pi session for a machine that asks
@@ -307,12 +329,7 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		if err != nil || id == "" {
 			return no("cannot attach to %s: %v", name, firstNonNil(err, errors.New("no background id")))
 		}
-		// Claude Code ignores the mouse variable on the attach client; the
-		// user's Claude settings carry it (decision 0128).
-		plan.Argv = []string{bin, "attach", id}
-		plan = claudePlanEnvAlways(plan)
-		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
-		return plan, nil
+		return claudeAttachPlan(plan, bin, id, name), nil
 	case "opencode":
 		reopen := func() error {
 			if _, err := d.call(ctx, "session.remove", protocol.SessionRemove{SessionID: q.SessionID, Reopen: true}); err != nil {

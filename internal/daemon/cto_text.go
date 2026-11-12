@@ -179,8 +179,12 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 		return false, protocol.EnterPlan{}, nil
 	}
 	plan, err := d.ctoEnter(ctx)
+	if err == nil && plan.Env["OPENCODE_SERVER_PASSWORD"] == "" {
+		// A Claude CTO is a Claude session: its view is a coding session's.
+		return true, d.sessionView(q, ctoViewName, viaGateway, claudePlanEnv(plan)), nil
+	}
 	if err == nil {
-		plan = d.viewPlan("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", viaGateway && q.HerdrClient, plan)
+		plan = d.viewPlan(q.SessionID, ctoViewName, viaGateway && q.HerdrClient, plan)
 	}
 	if viaGateway && err == nil {
 		if plan.OpenedHerdr && q.HerdrClient {
@@ -193,7 +197,7 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 			}
 			plan.Env = nil
 		}
-		plan.Name = "CTO"
+		plan.Name = ctoViewName
 	}
 	return true, plan, err
 }

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/claudesettings"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -339,5 +340,51 @@ func TestEnterClaudeExitedBackgroundRefusesAttach(t *testing.T) {
 	}
 	if calls := f.calls(t); calls != "" {
 		t.Fatalf("exited session opened herdr: %s", calls)
+	}
+}
+
+// The CTO opens with the same Enter plan as a coding Claude session: the same
+// attach command, host, environment and note. Only the job and the folder
+// it runs in differ.
+// Image paste then works the same in both (decisions 0046 and 0157).
+func TestCTOEnterPlanIsACodingClaudePlan(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	sessions, _ := useFakeClaude(t)
+	g := startGateway(t, t.TempDir(), "")
+	fa := &fakeAdapter{harness: "claude"}
+	ea := &enterAdapter{fakeAdapter: fa, kind: "bg", job: "abcd1234"}
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) {
+		c.ClaudeSessionsDir = sessions
+		c.HarnessPaths = map[string]string{"claude": os.Args[0]}
+		c.Adapters = []Adapter{ea}
+	}})
+	cli := cliClient(t, n)
+	harness := "claude"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	cli.mustCall("cto_enter", nil) // register the CTO on this machine
+	cto := enterOf(t, n, n.d.ctoSessionID(), "")
+	// A coding session with the same name as the CTO. The CTO's own folder is
+	// private, so the coding session runs in another one.
+	cwd := t.TempDir()
+	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "abcd1234-0000-4000-8000-000000000000", PID: 1, Cwd: cwd, Name: "CTO", Status: "idle", Mode: protocol.ModeBackground})
+	var id string
+	eventually(t, "session id", func() bool {
+		for _, s := range n.d.Sessions() {
+			if s.Harness == "claude" {
+				id = s.SessionID
+			}
+		}
+		return id != ""
+	})
+	coding := enterOf(t, n, id, "")
+	if len(cto.Argv) != 3 || cto.Argv[2] != n.d.claudeCTO.ref || cto.Argv[2] == coding.Argv[2] {
+		t.Fatalf("CTO argv %v, job %s", cto.Argv, n.d.claudeCTO.ref)
+	}
+	if cto.Dir != n.d.claudeRoleDir(roleCTO) || coding.Dir != cwd {
+		t.Fatalf("folders: CTO %q coding %q", cto.Dir, coding.Dir)
+	}
+	cto.Argv[2], cto.Dir = coding.Argv[2], coding.Dir
+	if !reflect.DeepEqual(cto, coding) {
+		t.Fatalf("the CTO's plan differs from a coding Claude session's:\nCTO    %+v\ncoding %+v", cto, coding)
 	}
 }
