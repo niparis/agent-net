@@ -21,6 +21,15 @@ func (s *Store) SetNodeHello(nodeID, hostname, version string) error {
 	return err
 }
 
+// SetNodeSeen records the last frame the gateway got from a node, of any kind.
+// It only moves forward, so a late write from an old link cannot make a
+// machine that has already returned look quiet.
+func (s *Store) SetNodeSeen(nodeID string, t time.Time) error {
+	at := t.UnixNano()
+	_, err := s.db.Exec(`UPDATE nodes SET seen_at = ? WHERE id = ? AND seen_at < ?`, at, nodeID, at)
+	return err
+}
+
 // ErrNodeName is a display name the owner may not use.
 type ErrNodeName struct{ Reason string }
 

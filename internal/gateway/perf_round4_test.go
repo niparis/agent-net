@@ -41,7 +41,7 @@ func refQualityPreview(g *Gateway, in qualityPreviewInputs, node protocol.NodeVi
 
 // refNodesInfo is NodesInfo as it was.
 func refNodesInfo(g *Gateway) (protocol.NodesInfo, error) {
-	nodes, err := g.nodesWithOnline()
+	nodes, err := g.nodesWithState()
 	if err != nil {
 		return protocol.NodesInfo{}, err
 	}

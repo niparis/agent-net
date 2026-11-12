@@ -519,16 +519,13 @@ func machineRow(n protocol.NodeView, online bool, counts [2]int, full bool) prot
 		ID:             n.NodeID,
 		Name:           n.Hostname,
 		Online:         online,
-		State:          "offline",
+		State:          machineStateName(n, online),
 		Version:        n.Version,
 		Harnesses:      []protocol.HarnessRow{},
 		SessionsOnline: counts[0],
 		WorkersRunning: counts[1],
 	}
-	if online {
-		row.State = "online"
-	} else if n.DownState != "" {
-		row.State = n.DownState
+	if n.DownState != "" {
 		row.Since = rfc3339(n.DownSince)
 	}
 	for _, h := range n.Harnesses {
@@ -539,6 +536,19 @@ func machineRow(n protocol.NodeView, online bool, counts [2]int, full bool) prot
 		row.LastSeen = rfc3339(n.LastSeen)
 	}
 	return row
+}
+
+// machineStateName is the state a machine row shows. It reads the state
+// nodesWithState decided, so the tool rows and the nodes list agree; a live
+// link keeps Online true even when the row reads silent.
+func machineStateName(n protocol.NodeView, online bool) string {
+	if n.DownState != "" {
+		return n.DownState
+	}
+	if online {
+		return "online"
+	}
+	return "offline"
 }
 
 // FindMachines answers agent_machines_find.
@@ -558,7 +568,7 @@ func (g *Gateway) FindMachines(p protocol.MachinesFindRequest) (protocol.Machine
 	if err != nil {
 		return protocol.MachinesPage{}, err
 	}
-	nodes, err := g.store.Nodes()
+	nodes, err := g.nodesWithState()
 	if err != nil {
 		return protocol.MachinesPage{}, err
 	}
@@ -568,7 +578,7 @@ func (g *Gateway) FindMachines(p protocol.MachinesFindRequest) (protocol.Machine
 	}
 	var rows []protocol.MachineRow
 	for _, n := range nodes {
-		up := g.nodeOnline(n.NodeID)
+		up := n.Online
 		if online != "any" && up != (online == "online") {
 			continue
 		}
@@ -602,7 +612,7 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 			return protocol.MachineGetResult{}, fmt.Errorf("include must be models, quotas, track_record or playbook. Example: {\"include\":[\"track_record\"]}")
 		}
 	}
-	nodes, err := g.store.Nodes()
+	nodes, err := g.nodesWithState()
 	if err != nil {
 		return protocol.MachineGetResult{}, err
 	}
@@ -621,7 +631,7 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 	if err != nil {
 		return protocol.MachineGetResult{}, err
 	}
-	online := g.nodeOnline(node.NodeID)
+	online := node.Online
 	health, err := g.store.nodeHealth(node.NodeID, online)
 	if err != nil {
 		return protocol.MachineGetResult{}, err

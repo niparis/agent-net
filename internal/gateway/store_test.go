@@ -13,6 +13,10 @@ type clock struct{ t time.Time }
 
 func (c *clock) now() time.Time { return c.t }
 
+// advance moves the test clock forward, for a machine that stays connected
+// while the gateway's silence windows pass.
+func (c *clock) advance(d time.Duration) { c.t = c.t.Add(d) }
+
 func newTestStore(t testing.TB) (*Store, *clock) {
 	t.Helper()
 	s, err := OpenStore(seededStorePath(t, "gw.db"))

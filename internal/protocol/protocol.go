@@ -762,11 +762,11 @@ type NodeView struct {
 	TailscaleIP string `json:"tailscale_ip,omitempty"`
 	Online      bool   `json:"online"`
 	LastSeen    int64  `json:"last_seen"`
-	// DownState is why an offline machine is away: "asleep" when its daemon
-	// reported a sleep covering the gap, "silent" when the gateway waited 15
-	// minutes without such a report. Empty when the machine is online, or has
-	// been offline for less than that. DownSince is when the state began, in
-	// Unix seconds.
+	// DownState is why a machine is away: "asleep" when its daemon reported a
+	// sleep covering the gap, "silent" when the gateway waited 15 minutes
+	// without such a report, or when the link is open but no frame of any kind
+	// arrived for that long. Empty when the machine is simply online. DownSince
+	// is when the state began, in Unix seconds.
 	DownState string `json:"down_state,omitempty"`
 	DownSince int64  `json:"down_since,omitempty"`
 	// Harnesses is what the node's daemon last reported. Nil means the node

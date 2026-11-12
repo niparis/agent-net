@@ -49,10 +49,46 @@ func downState(dropped, asleepFrom, asleepTo, silentAt int64) (string, int64) {
 	return "", 0
 }
 
-// NodeLinkDown records that a machine's link dropped at t. A new outage
-// starts: an older sleep span explains nothing about it. A sleep the daemon
-// announced before it dropped (an ongoing span) is kept when it covers t.
+// machineState is the one place a machine's state is decided, so the nodes
+// list, agent_machine_get, agent_machines_find and the TUI agree. A live link
+// makes a machine online, and it stays online while frames of any kind arrive
+// on that link, including keepalive pings. Only a link that is open but has
+// carried no frame for silentAfter reads "silent". With no link, the recorded
+// outage names the state: asleep when a sleep report covers the drop, silent
+// once the Desk item was raised, else offline. since is when the state began,
+// in Unix seconds, and is 0 for a machine that is online.
+func machineState(online bool, lastFrame, now time.Time, downState string, downSince int64) (string, int64) {
+	if online {
+		if !lastFrame.IsZero() && now.Sub(lastFrame) >= silentAfter {
+			return "silent", lastFrame.Unix()
+		}
+		return "online", 0
+	}
+	if downState != "" {
+		return downState, downSince
+	}
+	return "offline", 0
+}
+
+// NodeLinkDown records that a machine's link dropped at t. A drop older than
+// the last frame the gateway saw from that machine is not an outage: the link
+// came back after it, and the late cleanup of a replaced connection must not
+// undo the return that already happened. A new outage starts with the rest: an
+// older sleep span explains nothing about it. A sleep the daemon announced
+// before it dropped (an ongoing span) is kept when it covers t.
 func (s *Store) NodeLinkDown(nodeID string, t time.Time) error {
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+	var seen int64
+	switch err := s.db.QueryRow(`SELECT seen_at FROM nodes WHERE id=?`, nodeID).Scan(&seen); err {
+	case nil:
+		if seen > t.UnixNano() {
+			return nil
+		}
+	case sql.ErrNoRows:
+	default:
+		return err
+	}
 	var asleepFrom, asleepTo int64
 	err := s.db.QueryRow(`SELECT asleep_from,asleep_to FROM node_silence WHERE node_id=?`, nodeID).Scan(&asleepFrom, &asleepTo)
 	if err != nil && err != sql.ErrNoRows {
@@ -75,6 +111,8 @@ ON CONFLICT(node_id) DO UPDATE SET dropped_at=excluded.dropped_at, asleep_from=0
 // NodeLinkUp records that a machine returned. It closes the open ask about
 // the outage, if one was raised, and forgets the outage row.
 func (s *Store) NodeLinkUp(nodeID string) error {
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -118,6 +156,8 @@ func (s *Store) NodeSlept(nodeID string, from, to time.Time) (bool, error) {
 	if from.IsZero() {
 		return false, nil
 	}
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return false, err

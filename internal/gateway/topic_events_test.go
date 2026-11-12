@@ -151,7 +151,7 @@ func TestTopicEventsFollowNodeConnections(t *testing.T) {
 	}
 	checkMCP := func(want bool) {
 		t.Helper()
-		nodes, err := g.nodesWithOnline()
+		nodes, err := g.nodesWithState()
 		if err != nil {
 			t.Fatal(err)
 		}
