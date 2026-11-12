@@ -128,6 +128,22 @@ else
   shards=$((10#$requested_shards))
 fi
 
+# Tests get no git identity from this machine or the CI runner. Git must not
+# guess one from the user or the host name: a test that forgets to set an
+# identity then fails here the same way it fails in CI, with "Author identity
+# unknown", instead of passing on a machine that happens to have one.
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=user.useConfigOnly
+export GIT_CONFIG_VALUE_0=true
+unset EMAIL
+while IFS='=' read -r name _; do
+  case $name in
+    GIT_AUTHOR_*|GIT_COMMITTER_*) unset "$name" ;;
+  esac
+done < <(env)
+
 work=$(mktemp -d "${TMPDIR:-/tmp}/agent-net-test.XXXXXX") || fail "could not create temporary directory"
 cleanup() {
   rm -rf "$work"
