@@ -24,6 +24,14 @@ var (
 	briefFileRE    = regexp.MustCompile(`(?i)\b(?:[A-Za-z0-9_\-]+\.(go|ts|tsx|js|jsx|mjs|cjs|md|markdown|py|rs|sql|sh|bash|json|yaml|yml|toml|html|css|scss|c|cc|cpp|h|hpp|java|kt|rb|php|swift|lock)|README(?:\.[A-Za-z0-9_\-]+)?)\b`)
 	briefOverlapRE = regexp.MustCompile(`(?i)overlap\s+ok\s*:\s*([^\n]+)`)
 	briefTargetID  = regexp.MustCompile(`(?i)\b(?:ch|w|s)_[0-9a-z]{6,}\b`)
+
+	// Phrases that tell the worker to leave files alone. The files after a
+	// prefix phrase run to the end of its clause; the files before a suffix
+	// phrase run back to the start of its clause.
+	briefAvoidRE      = regexp.MustCompile(`(?i)\b(?:(?:do\s+not|don'?t|never|must\s+not|not\s+to|please\s+don'?t)\s+(?:touch|edit|change|modify|alter|rewrite|delete|remove|rename|move)|avoid\s+(?:touching|editing|changing|modifying|touch|edit|change|modify))\b`)
+	briefAvoidEndRE   = regexp.MustCompile(`(?i)\n|;|\.(?:\s|$)|\s(?:but|however|except|instead|rather)\b|[,\s]+(?:(?:and|or|then)\s+)?(?:change|changes|edit|edits|fix|fixes|add|adds|update|updates|write|writes|implement|make|refactor|rename|move|delete|remove|create|wire|modify|extend)\b`)
+	briefAvoidAfterRE = regexp.MustCompile(`(?i)\b(?:(?:is|are)\s+(?:out\s+of\s+scope|off\s+limits|not\s+in\s+scope)|(?:is|are)\s+not\s+to\s+be\s+(?:touched|edited|changed|modified)|(?:must|should)\s+not\s+be\s+(?:touched|edited|changed|modified))\b`)
+	briefAvoidStartRE = regexp.MustCompile(`(?i)[;,\n]|\.\s|\s(?:and|or|but|then)\s`)
 )
 
 // BriefTargetIDs returns the change, worker and session ids a brief names. A
@@ -34,6 +42,37 @@ func BriefTargetIDs(text string) map[string]bool {
 		ids[strings.ToLower(id)] = true
 	}
 	return ids
+}
+
+// BriefWithoutAvoided blanks the parts of a brief that tell the worker to leave
+// files alone, so the paths in them do not count as work the worker holds. A
+// brief that asks to avoid a file another worker changes is not an overlap. The
+// blanking stops at the end of the clause, so a file the brief asks the worker
+// to change still counts, and any unclear wording stays an overlap.
+func BriefWithoutAvoided(text string) string {
+	b := []byte(text)
+	blank := func(from, to int) {
+		for i := from; i < to; i++ {
+			if b[i] != '\n' {
+				b[i] = ' '
+			}
+		}
+	}
+	for _, loc := range briefAvoidRE.FindAllStringIndex(text, -1) {
+		end := len(text)
+		if m := briefAvoidEndRE.FindStringIndex(text[loc[1]:]); m != nil {
+			end = loc[1] + m[0]
+		}
+		blank(loc[0], end)
+	}
+	for _, loc := range briefAvoidAfterRE.FindAllStringIndex(text, -1) {
+		start := 0
+		for _, m := range briefAvoidStartRE.FindAllStringIndex(text[:loc[0]], -1) {
+			start = m[1]
+		}
+		blank(start, loc[1])
+	}
+	return string(b)
 }
 
 // BriefPaths returns the repository paths a brief names, normalized and

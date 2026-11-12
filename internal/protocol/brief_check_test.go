@@ -22,6 +22,25 @@ func TestBriefPaths(t *testing.T) {
 	}
 }
 
+// The text that says to leave a file alone is blanked, and only up to the end of
+// its own clause. The paths the worker is asked to change stay.
+func TestBriefWithoutAvoidedKeepsWhatTheWorkerChanges(t *testing.T) {
+	for _, tc := range []struct{ text, want string }{
+		{"Do not touch internal/a/x.go. Change internal/b/y.go.", "internal/b/y.go"},
+		{"Change internal/b/y.go, but do not touch internal/a/x.go.", "internal/b/y.go"},
+		{"Do not touch internal/a/x.go but change internal/b/y.go.", "internal/b/y.go"},
+		{"Do not touch internal/a/x.go and change internal/b/y.go.", "internal/b/y.go"},
+		{"Change internal/b/y.go and internal/a/x.go is out of scope.", "internal/b/y.go"},
+		{"Change internal/b/y.go, not internal/a/x.go.", "internal/b/y.go,internal/a/x.go"},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			if got := strings.Join(BriefPaths(BriefWithoutAvoided(tc.text)), ","); got != tc.want {
+				t.Fatalf("paths = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBriefPathsShare(t *testing.T) {
 	if !BriefPathsShare("internal/gateway/brief.go", "repo/internal/gateway/brief.go") {
 		t.Fatal("the same file under a worktree path does not share")
