@@ -642,7 +642,7 @@ const handbackUncommittedPushProblem = "the branch was not pushed for the remote
 // caller is the worker's owner. A continued worker carries the change of the
 // worker it continues (its new branch has no open change yet), so the change
 // follows the work. A worker with no worktree has no branch of its own and
-// records nothing.
+// records nothing, and neither does a branch with no commit beyond its base.
 //
 // It never fails the hand-back: it returns the change ID, or the error for the
 // notice's "delivery record:" line. A gateway that does not know change.submit
@@ -688,6 +688,12 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	}
 	if !protocol.ValidCommit(base) {
 		base = ""
+	}
+	// A branch with no commit beyond its base holds no work: there is no
+	// change to accept, and no step task goes to the caller.
+	if base != "" && head == base && !uncommitted {
+		d.Logf("worker.delivery_record worker=%s session=%s branch=%s skipped: no commits beyond the base %s", w.id, sid, branch, base)
+		return "", ""
 	}
 	var risk int
 	if err := d.st.db.QueryRow(`SELECT risk FROM worker_delivery_risk WHERE worker_id=?`, w.id).Scan(&risk); err != nil && !errors.Is(err, sql.ErrNoRows) {
