@@ -252,7 +252,7 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 	fakeSlowNode(t, g, idSlow, "box-slow")
 
 	// Call with caller context timeout of 150ms to keep test fast (< 2s)
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
 	defer cancel()
 
 	res, err := g.ProjectsLayout(ctx, protocol.ProjectsLayoutRequest{})
