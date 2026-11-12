@@ -60,10 +60,13 @@ func (g *Gateway) quotaFloorFeed(harness, model, sentence string) {
 // quotaStuckFeed records a start refused because its provider has no quota
 // left: the CTO entry and the chief's stuck-work item, one thread.
 func (g *Gateway) quotaStuckFeed(harness, model, reason string) {
-	provider := protocol.QuotaProviderForStart(harness, model)
-	if provider == "" {
-		return
+	if provider := protocol.QuotaProviderForStart(harness, model); provider != "" {
+		g.quotaStuckProvider(provider, reason)
 	}
+}
+
+// quotaStuckProvider opens or joins the quota thread of one provider.
+func (g *Gateway) quotaStuckProvider(provider, reason string) {
 	tx, err := g.store.db.Begin()
 	if err == nil {
 		defer tx.Rollback()
@@ -143,4 +146,31 @@ func (s *Store) trainRunFeed(tx askDB, project string, e protocol.Evidence, now 
 		Text:   fmt.Sprintf("the %s merge queue failed %d test runs in a row on its train tip", project, fails),
 		Detail: "Last run: " + run}, now)
 	return err
+}
+
+// noProviderFeed runs when the automatic picker found no worker. When every
+// candidate's provider has no quota left, the work is stuck because no
+// provider is available: each of those providers' quota threads gets it.
+func (g *Gateway) noProviderFeed(candidates []protocol.WorkerModelCandidate, quotas *protocol.Quotas) {
+	for provider, reason := range quotaBlockedProviders(candidates, quotas) {
+		g.quotaStuckProvider(provider, "no worker could start: "+reason)
+	}
+}
+
+// quotaBlockedProviders maps each candidate's quota provider to its refusal,
+// or returns nil when any candidate is not refused for quota.
+func quotaBlockedProviders(candidates []protocol.WorkerModelCandidate, quotas *protocol.Quotas) map[string]string {
+	out := map[string]string{}
+	for _, c := range candidates {
+		reason := protocol.QuotaRefusal(quotas, c.Harness, c.Model)
+		provider := protocol.QuotaProviderForStart(c.Harness, c.Model)
+		if reason == "" || provider == "" {
+			return nil
+		}
+		out[provider] = reason
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

@@ -848,6 +848,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 			choice, protectionNote, err := g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(p.Assessment, difficulty), scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
 			if err != nil {
+				if !(len(validate) > 0 && validate[0]) {
+					g.noProviderFeed(candidates, quotas)
+				}
 				if familyNote != "" {
 					return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("%v; %s", err, familyNote))
 				}
