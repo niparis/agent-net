@@ -69,6 +69,21 @@ func githubMergedPRs(ctx context.Context, folder string) ([]githubMergedPR, erro
 	return prs, nil
 }
 
+// prHoldsHead reports whether the merged pull request contains the change's
+// head: its head commit is the change head, or a later commit of its branch
+// that has the change head as an ancestor (the worker pushed more after its
+// hand-back). A commit git does not have is not proof.
+func prHoldsHead(ctx context.Context, folder string, pr githubMergedPR, head string) bool {
+	if pr.HeadRefOID == head {
+		return true
+	}
+	if !protocol.ValidCommit(pr.HeadRefOID) {
+		return false
+	}
+	_, err := gitOut(ctx, folder, "merge-base", "--is-ancestor", head, pr.HeadRefOID)
+	return err == nil
+}
+
 // githubChecksPassed reports whether every check on the pull request passed.
 // No checks at all is not a pass: a test step needs evidence.
 func githubChecksPassed(ctx context.Context, folder string, number int) (bool, error) {
@@ -255,99 +270,33 @@ func deliveryReconcileRepo(ctx context.Context, folder string, changes []protoco
 	)
 	// Load the remote's actual branch names, rather than stale tracking refs.
 	var remoteHeads map[string]bool
-	for _, v := range changes {
+	// branchAbandoned reports whether a change with no step report, older than
+	// seven days, has its branch absent locally and on the remote.
+	branchAbandoned := func(v protocol.ChangeView) (bool, error) {
 		c := v.Change
-		if c.State != protocol.ChangeOpen || c.Uncommitted || !protocol.ValidCommit(c.HeadCommit) {
-			continue
-		}
-		q := protocol.ChangeReconcileRequest{ChangeID: c.ID, Revision: c.Revision, HeadCommit: c.HeadCommit}
-		// A base already on origin is not evidence that this change was
-		// merged. Require commits beyond a known base; git errors do not
-		// prove that the head is outside its history.
-		if c.HeadCommit != c.BaseCommit && protocol.ValidCommit(c.BaseCommit) {
-			_, err := gitOut(ctx, info.Path, "merge-base", "--is-ancestor", c.HeadCommit, c.BaseCommit)
-			var exit *exec.ExitError
-			if errors.As(err, &exit) && exit.ExitCode() == 1 {
-				if _, err := gitOut(ctx, info.Path, "merge-base", "--is-ancestor", c.HeadCommit, tip); err == nil {
-					q.Kind, q.MergedCommit = "external", tip
-					out = append(out, q)
-					continue
-				}
-			}
-		}
-		// A squash or rebase merge makes new commits, so the head is not an
-		// ancestor of the tip. Ask GitHub for the merged PR whose head is
-		// exactly this branch revision.
-		if c.Branch != "" && c.HeadCommit != c.BaseCommit && protocol.ValidCommit(c.BaseCommit) {
-			if !githubLoaded {
-				githubLoaded = true
-				if !isGitHubRemote(info.Remote) {
-					githubErr = errNotGitHubRemote{remote: info.Remote}
-				} else if prs, err := githubMergedPRs(ctx, info.Path); err != nil {
-					githubErr = err
-				} else {
-					githubPRs = prs
-				}
-			}
-			matched := false
-			if githubErr == nil {
-				for _, pr := range githubPRs {
-					if pr.HeadRefName != c.Branch || pr.HeadRefOID != c.HeadCommit || !protocol.ValidCommit(pr.MergeCommit.OID) {
-						continue
-					}
-					passed, ok := githubChecks[pr.Number]
-					if !ok {
-						passed, err = githubChecksPassed(ctx, info.Path, pr.Number)
-						if err != nil {
-							githubErr = err
-							break
-						}
-						githubChecks[pr.Number] = passed
-					}
-					q.Kind, q.MergedCommit = "external", pr.MergeCommit.OID
-					q.PRNumber, q.PRURL, q.PRChecksPassed = pr.Number, pr.URL, passed
-					out = append(out, q)
-					matched = true
-					break
-				}
-			}
-			if matched {
-				continue
-			}
-		}
 		if c.Branch == "" || now.Sub(time.Unix(c.CreatedAt, 0)) <= 7*24*time.Hour || len(v.Evidence) > 0 {
-			continue
+			return false, nil
 		}
-		reported := false
 		for _, step := range v.Steps {
 			if step.Evidence != nil {
-				reported = true
-				break
+				return false, nil
 			}
-		}
-		if reported {
-			continue
 		}
 		// rev-parse reports a missing ref with exit 128, also used for other
 		// errors. Enumerating refs lets errors remain errors, never absence.
 		local, err := gitOut(ctx, info.Path, "for-each-ref", "--format=%(refname)", "refs/heads/")
 		if err != nil {
-			return nil, err
+			return false, err
 		}
-		exists := false
 		for _, ref := range strings.Fields(local) {
 			if ref == "refs/heads/"+c.Branch {
-				exists = true
-				break
+				return false, nil
 			}
-		}
-		if exists {
-			continue
 		}
 		if remoteHeads == nil {
 			heads, err := gitOut(ctx, info.Path, "ls-remote", "--heads", "origin")
 			if err != nil {
-				return nil, err
+				return false, err
 			}
 			remoteHeads = make(map[string]bool)
 			for _, line := range strings.Split(heads, "\n") {
@@ -357,8 +306,96 @@ func deliveryReconcileRepo(ctx context.Context, folder string, changes []protoco
 				}
 			}
 		}
-		if !remoteHeads["refs/heads/"+c.Branch] {
-			q.Kind = "abandoned"
+		return !remoteHeads["refs/heads/"+c.Branch], nil
+	}
+	for _, v := range changes {
+		c := v.Change
+		if c.State != protocol.ChangeOpen || c.Uncommitted || !protocol.ValidCommit(c.HeadCommit) {
+			continue
+		}
+		q := protocol.ChangeReconcileRequest{ChangeID: c.ID, Revision: c.Revision, HeadCommit: c.HeadCommit}
+		// A head equal to its base records no work: a merge of the base says
+		// nothing about this change, and a PR cannot be tied to it. The caller
+		// hears about it once; an old change with its branch gone still closes
+		// as abandoned below.
+		noWork := c.HeadCommit == c.BaseCommit
+		if noWork {
+			q.Kind = protocol.ReconcileNoWork
+		}
+		// Require commits beyond a known base; git errors do not prove that
+		// the head is outside its history.
+		if !noWork && protocol.ValidCommit(c.BaseCommit) {
+			_, err := gitOut(ctx, info.Path, "merge-base", "--is-ancestor", c.HeadCommit, c.BaseCommit)
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				if _, err := gitOut(ctx, info.Path, "merge-base", "--is-ancestor", c.HeadCommit, tip); err == nil {
+					q.Kind, q.MergedCommit, q.Proof = protocol.ReconcileExternal, tip, protocol.MergeProofAncestor
+					out = append(out, q)
+					continue
+				}
+				// A squash or rebase merge makes new commits, so the head is
+				// not an ancestor of the tip. Ask GitHub for the merged PR
+				// that holds this head, whatever its branch is now called:
+				// leads rename branches before they push. When GitHub cannot
+				// say, look for the squash or cherry-pick shape in git.
+				{
+					if !githubLoaded {
+						githubLoaded = true
+						if !isGitHubRemote(info.Remote) {
+							githubErr = errNotGitHubRemote{remote: info.Remote}
+						} else if prs, err := githubMergedPRs(ctx, info.Path); err != nil {
+							githubErr = err
+						} else {
+							githubPRs = prs
+						}
+					}
+					matched := false
+					if githubErr == nil {
+						for _, pr := range githubPRs {
+							if !protocol.ValidCommit(pr.MergeCommit.OID) || !prHoldsHead(ctx, info.Path, pr, c.HeadCommit) {
+								continue
+							}
+							passed, ok := githubChecks[pr.Number]
+							if !ok {
+								passed, err = githubChecksPassed(ctx, info.Path, pr.Number)
+								if err != nil {
+									githubErr = err
+									break
+								}
+								githubChecks[pr.Number] = passed
+							}
+							q.Kind, q.MergedCommit = protocol.ReconcileExternal, pr.MergeCommit.OID
+							q.PRNumber, q.PRURL, q.PRChecksPassed = pr.Number, pr.URL, passed
+							out = append(out, q)
+							matched = true
+							break
+						}
+					}
+					if matched {
+						continue
+					}
+				}
+				if cleanupCherryMerged(ctx, info.Path, c.HeadCommit, ref) {
+					q.Kind, q.MergedCommit, q.Proof = protocol.ReconcileExternal, tip, protocol.MergeProofCherry
+					out = append(out, q)
+					continue
+				}
+				if squash := cleanupSquashCommit(ctx, info.Path, c.HeadCommit, ref); squash != "" {
+					q.Kind, q.MergedCommit, q.Proof = protocol.ReconcileExternal, squash, protocol.MergeProofSquash
+					out = append(out, q)
+					continue
+				}
+			}
+		}
+		gone, err := branchAbandoned(v)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case gone:
+			q.Kind = protocol.ReconcileAbandoned
+			out = append(out, q)
+		case noWork:
 			out = append(out, q)
 		}
 	}

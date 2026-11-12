@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -58,8 +59,8 @@ func TestDeliveryReconcileRepo(t *testing.T) {
 			if len(got) != 1 || got[0].Kind != tc.want {
 				t.Fatalf("want %s, got %+v", tc.want, got)
 			}
-			if tc.merged && got[0].MergedCommit != gitHead(t, repo, "main") {
-				t.Fatalf("wrong merge commit: %+v", got)
+			if tc.merged && (got[0].MergedCommit != gitHead(t, repo, "main") || got[0].Proof != protocol.MergeProofAncestor) {
+				t.Fatalf("wrong merge commit or proof: %+v", got)
 			}
 		})
 	}
@@ -171,10 +172,64 @@ func TestDeliveryReconcileNoOwnCommitsStaysOpen(t *testing.T) {
 			}
 			got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
 			ignoreNotGitHub(t, err)
-			if len(got) != 0 {
-				t.Fatalf("change without own commits would close: %+v", got)
+			for _, q := range got {
+				if q.Kind != protocol.ReconcileNoWork {
+					t.Fatalf("change without own commits would close: %+v", got)
+				}
+			}
+			// Only a head equal to its base is a recorded "no work" change.
+			if want := 0; kind == "head equals base" {
+				want = 1
+				if len(got) != want || got[0].ChangeID != "ch_empty" || got[0].HeadCommit != base {
+					t.Fatalf("no-work change not reported once: %+v", got)
+				}
+			} else if len(got) != want {
+				t.Fatalf("unexpected observation: %+v", got)
 			}
 		})
+	}
+}
+
+// A head equal to its base is never merged, even when GitHub lists a merged
+// pull request for the branch: the work was not recorded, so nothing ties the
+// PR to this change. gh is not asked at all.
+func TestDeliveryReconcileNoWorkIgnoresMergedPR(t *testing.T) {
+	repo, head, squash := githubDeliveryRepo(t)
+	calls := fakeGH(t, prListJSON(81, "feat/x", head, squash, "https://github.com/example/demo/pull/81"), checksPassedJSON)
+	base := gitHead(t, repo, "origin/main")
+	c := protocol.Change{ID: "ch_nowork", HeadCommit: base, BaseCommit: base, Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
+	got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Kind != protocol.ReconcileNoWork || got[0].MergedCommit != "" || got[0].PRNumber != 0 {
+		t.Fatalf("head equal to base was treated as merged: %+v", got)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("gh called for a change with no work: %v", *calls)
+	}
+}
+
+// A change with no commits beyond its base whose branch is long gone is still
+// closed as abandoned, and is not also reported as "no work".
+func TestDeliveryReconcileAbandonedNoWorkIsNotReported(t *testing.T) {
+	repo, wt := deliveryWorktree(t)
+	base := gitHead(t, repo, "main")
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if out, err := exec.Command("git", "clone", "--bare", repo, remote).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %s: %v", out, err)
+	}
+	gitIn(t, repo, "remote", "add", "origin", remote)
+	gitIn(t, repo, "fetch", "origin")
+	gitIn(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	gitIn(t, repo, "worktree", "remove", wt)
+	gitIn(t, repo, "branch", "-D", "feat/x")
+	gitIn(t, remote, "branch", "-D", "feat/x")
+	c := protocol.Change{ID: "ch_gone", HeadCommit: base, BaseCommit: base, Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Add(-8 * 24 * time.Hour).Unix()}
+	got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
+	ignoreNotGitHub(t, err)
+	if len(got) != 1 || got[0].Kind != protocol.ReconcileAbandoned {
+		t.Fatalf("want one abandoned observation: %+v", got)
 	}
 }
 
@@ -275,7 +330,8 @@ func TestDeliveryReconcilePRHeadMustMatch(t *testing.T) {
 	fakeGH(t, prListJSON(78, "feat/x", older, squash, "https://github.com/example/demo/pull/78"), checksPassedJSON)
 	c := protocol.Change{ID: "ch_old", HeadCommit: head, BaseCommit: gitHead(t, repo, "origin/main"), Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
 	got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
-	if err != nil || len(got) != 0 {
+	// Git still sees the single-commit squash, but not through the PR.
+	if err != nil || len(got) != 1 || got[0].PRNumber != 0 || got[0].Proof != protocol.MergeProofCherry {
 		t.Fatalf("PR merged from an older head matched: %+v, %v", got, err)
 	}
 }
@@ -289,8 +345,9 @@ func TestDeliveryReconcileGHErrorLeavesChangeOpen(t *testing.T) {
 	}
 	c := protocol.Change{ID: "ch_err", HeadCommit: head, BaseCommit: gitHead(t, repo, "origin/main"), Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
 	got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
-	if len(got) != 0 {
-		t.Fatalf("gh error produced an observation: %+v", got)
+	// The git-only proof stands; nothing is claimed from GitHub.
+	if len(got) != 1 || got[0].PRNumber != 0 || got[0].Proof == "" {
+		t.Fatalf("gh error changed the git observation: %+v", got)
 	}
 	if err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("gh error was not reported for one log: %v", err)
@@ -329,5 +386,94 @@ func TestDeliveryReconcilePRChecksNotPassed(t *testing.T) {
 	}
 	if len(*calls) != 2 {
 		t.Fatalf("gh calls: %v", *calls)
+	}
+}
+
+// A merge without a GitHub PR record leaves two shapes on the default branch.
+// A squash makes one commit with the branch's tree; a cherry-pick or rebase
+// copies each commit. Neither makes the head an ancestor of the tip.
+func TestDeliveryReconcileLocalProofs(t *testing.T) {
+	for _, tc := range []struct {
+		name, proof string
+		land        func(t *testing.T, repo string)
+	}{
+		{"squash", protocol.MergeProofSquash, func(t *testing.T, repo string) {
+			gitIn(t, repo, "merge", "--squash", "feat/x")
+			gitIn(t, repo, "commit", "-q", "-m", "squash feat/x")
+		}},
+		{"cherry", protocol.MergeProofCherry, func(t *testing.T, repo string) {
+			gitIn(t, repo, "cherry-pick", "feat/x")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, wt := deliveryWorktree(t)
+			base := gitHead(t, repo, "main")
+			if tc.proof == protocol.MergeProofSquash {
+				// Two commits squashed into one are not patch-equivalent one by one.
+				if err := os.WriteFile(filepath.Join(wt, "c.txt"), []byte("c\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				gitIn(t, wt, "add", "c.txt")
+				gitIn(t, wt, "commit", "-q", "-m", "second")
+			}
+			head := gitHead(t, wt, "HEAD")
+			// Main moves on first, so a cherry-pick gets a new parent and a new hash.
+			if err := os.WriteFile(filepath.Join(repo, "other.txt"), []byte("other\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			gitIn(t, repo, "add", "other.txt")
+			gitIn(t, repo, "commit", "-q", "-m", "other work")
+			tc.land(t, repo)
+			remote := filepath.Join(t.TempDir(), "remote.git")
+			if out, err := exec.Command("git", "clone", "--bare", repo, remote).CombinedOutput(); err != nil {
+				t.Fatalf("clone: %s: %v", out, err)
+			}
+			gitIn(t, repo, "remote", "add", "origin", remote)
+			gitIn(t, repo, "fetch", "origin")
+			gitIn(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+			c := protocol.Change{ID: "ch_local", HeadCommit: head, BaseCommit: base, Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
+			got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
+			ignoreNotGitHub(t, err)
+			if len(got) != 1 || got[0].Kind != protocol.ReconcileExternal || got[0].Proof != tc.proof || got[0].MergedCommit != gitHead(t, repo, "main") || got[0].PRNumber != 0 {
+				t.Fatalf("%s merge not proven: %+v", tc.name, got)
+			}
+		})
+	}
+}
+
+// A worker that pushed more commits to the PR branch after its hand-back left
+// the change at an older head. The merged PR still contains that head.
+func TestDeliveryReconcilePRWithNewerHeadMatches(t *testing.T) {
+	repo, head, squash := githubDeliveryRepo(t)
+	wt := filepath.Join(filepath.Dir(repo), "demo-feat")
+	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "b.txt")
+	gitIn(t, wt, "commit", "-q", "-m", "more")
+	newer := gitHead(t, wt, "HEAD")
+	fakeGH(t, prListJSON(82, "feat/x", newer, squash, "https://github.com/example/demo/pull/82"), checksPassedJSON)
+	c := protocol.Change{ID: "ch_newer", HeadCommit: head, BaseCommit: gitHead(t, repo, "origin/main~1"), Branch: "feat/x", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
+	got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].PRNumber != 82 || got[0].MergedCommit != squash {
+		t.Fatalf("PR merged from a newer head was missed: %+v", got)
+	}
+}
+
+// Leads rename a branch before they push it, so the PR's head branch is not
+// the branch agent-net recorded. The head commit still ties the PR to the change.
+func TestDeliveryReconcilePRWithRenamedBranchMatches(t *testing.T) {
+	repo, head, squash := githubDeliveryRepo(t)
+	fakeGH(t, prListJSON(83, "chore/bump-0.8.31", head, squash, "https://github.com/example/demo/pull/83"), checksPassedJSON)
+	c := protocol.Change{ID: "ch_renamed", HeadCommit: head, BaseCommit: gitHead(t, repo, "origin/main~1"), Branch: "agent-net/w_abc", Revision: 1, State: protocol.ChangeOpen, CreatedAt: time.Now().Unix()}
+	got, err := deliveryReconcileRepo(context.Background(), repo, []protocol.ChangeView{{Change: c}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].PRNumber != 83 {
+		t.Fatalf("PR from a renamed branch was missed: %+v", got)
 	}
 }
