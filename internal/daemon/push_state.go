@@ -9,8 +9,9 @@ import (
 )
 
 // A session's report to the gateway changes often in two ways only: its
-// activity time moves each time its harness prints something, and a busy
-// worker's token counters move on every stats tick. Sending every
+// activity times move each time its harness prints something (OpenCode also
+// sends its service's own activity time), and a busy worker's token counters
+// move on every stats tick. Sending every
 // one cost the gateway a write and a round of delivery sweeps, about three
 // times a second for a handful of sessions. So the daemon sends a report when
 //
@@ -46,7 +47,7 @@ func (d *Daemon) pushTiming() pushTiming {
 type pushState struct {
 	sent     bool
 	hash     [sha256.Size]byte // of the report without its activity times
-	activity [5]int64          // activity times in seconds and the worker's token counters
+	activity [6]int64          // activity times and the worker's token counters
 	at       time.Time
 	epoch    uint64
 	timer    *time.Timer
@@ -66,9 +67,13 @@ func (d *Daemon) invalidatePush(sessionID string) {
 
 // pushDigest splits a report into what is sent at once when it changes and
 // the activity times that are sent on a delay.
-func pushDigest(in protocol.SessionInfo) ([sha256.Size]byte, [5]int64) {
-	act := [5]int64{in.HarnessActivity, in.LastActive}
-	in.HarnessActivity, in.LastActive, in.SessionID = 0, 0, ""
+// OpenCodeActivity is an activity time like the others: the gateway reads it
+// only to reopen a closed session, and that comes with a status change, which
+// is sent at once with the newest value.
+func pushDigest(in protocol.SessionInfo) ([sha256.Size]byte, [6]int64) {
+	act := [6]int64{in.HarnessActivity, in.LastActive}
+	act[5] = in.OpenCodeActivity
+	in.HarnessActivity, in.LastActive, in.OpenCodeActivity, in.SessionID = 0, 0, 0, ""
 	if in.Worker != nil {
 		// A busy worker's token counters change on every stats tick.
 		w := *in.Worker
@@ -79,7 +84,7 @@ func pushDigest(in protocol.SessionInfo) ([sha256.Size]byte, [5]int64) {
 	raw, err := json.Marshal(in)
 	if err != nil {
 		// Cannot compare: send every time, as before.
-		return [sha256.Size]byte{}, [5]int64{-1}
+		return [sha256.Size]byte{}, [6]int64{-1}
 	}
 	return sha256.Sum256(raw), act
 }

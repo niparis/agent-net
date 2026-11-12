@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/inventory"
@@ -533,5 +534,62 @@ func TestToolsPlanPartialScanEndToEnd(t *testing.T) {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("bad skill conflict lacks %q: %s", want, raw)
 		}
+	}
+}
+
+// inventoryWire counts the daemon's inventory uploads and tools runs; the
+// real gateway still answers them.
+type inventoryWire struct {
+	mu        sync.Mutex
+	uploads   int
+	toolsRuns int
+}
+
+func (w *inventoryWire) hook(_ context.Context, method string, _ any) (json.RawMessage, bool, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	switch method {
+	case "node.inventory":
+		w.uploads++
+	case "tools.targets":
+		w.toolsRuns++
+	}
+	return nil, false, nil
+}
+
+func (w *inventoryWire) counts() (uploads, toolsRuns int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.uploads, w.toolsRuns
+}
+
+// The gateway keeps the machine's inventory in its database. A reconnect runs
+// the tools loop again (a plan change may have been missed), but it does not
+// scan the disk and upload the same inventory again.
+func TestReconnectDoesNotRescanInventory(t *testing.T) {
+	home := t.TempDir()
+	dir := t.TempDir()
+	g := startGateway(t, dir, "")
+	wire := &inventoryWire{}
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.InventoryHome = home
+		c.testGatewayCall = wire.hook
+	}})
+	eventually(t, "the first inventory is at the gateway", func() bool {
+		reports, err := g.gw.Store().Inventories()
+		return err == nil && len(reports) == 1
+	})
+	// The loop runs once at start and once for the first link's wake. A scan
+	// comes before the run in the same turn of the loop, so once the run is
+	// counted, its scan is counted too.
+	eventually(t, "the start and first-link runs", func() bool { _, runs := wire.counts(); return runs >= 2 })
+	uploads, runs := wire.counts()
+	addr := g.addr
+	g.stop()
+	eventually(t, "the link drops", func() bool { return !n.d.Connected() })
+	startGateway(t, dir, addr)
+	eventually(t, "the tools loop runs on the new link", func() bool { _, r := wire.counts(); return r > runs })
+	if u, _ := wire.counts(); u != uploads {
+		t.Fatalf("a reconnect sent %d node.inventory uploads, want 0", u-uploads)
 	}
 }

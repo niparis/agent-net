@@ -15,11 +15,17 @@ import (
 // not changed: about two calls a second for a handful of skills.
 //
 // Now a run that is not a full check reuses the last result of a target whose
-// revision and version are the same, and a result is reported only when the
-// gateway has not got it yet on this link. A full check (the five-minute tick,
-// a plan change, a project change, a new link, or toolsFullEvery without one)
+// revision and version are the same, and a result is reported only when it
+// changed or its last report failed. A full check (the five-minute tick, a
+// plan change, a project change, a new link, or toolsFullEvery without one)
 // looks at every target as before, so a skill deleted by hand is still put
 // back on time.
+//
+// A new link does not report the same results again: the gateway keeps them
+// in its database (tool_results), not on the link, and drops them only with
+// the item. Re-reporting every result on each reconnect sent thousands of
+// tools.report calls an hour from a machine whose link dropped every few
+// minutes.
 const toolsFullEvery = 5 * time.Minute
 
 type toolsPassState struct {
@@ -33,14 +39,12 @@ type toolsSeen struct {
 	version  string
 	result   protocol.ToolResult
 	reported bool
-	epoch    uint64
 }
 
 // toolsPass is one run of reconcileTools.
 type toolsPass struct {
-	d     *Daemon
-	full  bool
-	epoch uint64
+	d    *Daemon
+	full bool
 }
 
 func toolsKey(t protocol.ToolTarget) string {
@@ -68,7 +72,7 @@ func (d *Daemon) beginToolsPass(targets []protocol.ToolTarget) *toolsPass {
 		}
 		st.seen = keep
 	}
-	return &toolsPass{d: d, full: full, epoch: epoch}
+	return &toolsPass{d: d, full: full}
 }
 
 // unchanged says whether a light run can skip the target: it was checked with
@@ -85,7 +89,7 @@ func (p *toolsPass) unchanged(t protocol.ToolTarget) bool {
 	if !ok || v.version != t.Revision.Version {
 		return false
 	}
-	if v.reported && v.epoch == p.epoch {
+	if v.reported {
 		return true
 	}
 	p.send(context.Background(), t, v.result)
@@ -98,7 +102,7 @@ func (p *toolsPass) report(ctx context.Context, t protocol.ToolTarget, result pr
 	st.mu.Lock()
 	v, ok := st.seen[toolsKey(t)]
 	st.mu.Unlock()
-	if ok && v.reported && v.epoch == p.epoch && v.version == t.Revision.Version && v.result == result {
+	if ok && v.reported && v.version == t.Revision.Version && v.result == result {
 		return
 	}
 	p.send(ctx, t, result)
@@ -111,6 +115,6 @@ func (p *toolsPass) send(ctx context.Context, t protocol.ToolTarget, result prot
 	if st.seen == nil {
 		st.seen = map[string]toolsSeen{}
 	}
-	st.seen[toolsKey(t)] = toolsSeen{version: t.Revision.Version, result: result, reported: err == nil, epoch: p.epoch}
+	st.seen[toolsKey(t)] = toolsSeen{version: t.Revision.Version, result: result, reported: err == nil}
 	st.mu.Unlock()
 }
