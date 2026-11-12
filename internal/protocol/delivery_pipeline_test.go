@@ -884,3 +884,14 @@ func TestDeliveryPreMergeTestRequiresAccept(t *testing.T) {
 		}
 	}
 }
+
+func TestStepClaimReviewerOnlyForAcceptOrReview(t *testing.T) {
+	q := StepClaimRequest{SessionID: "s_1", ChangeID: "ch_1", StepRef: StepRef{Step: StepReview}, Commit: strings.Repeat("a", 40), Reviewer: "s_2"}
+	if err := q.Validate(); err != nil {
+		t.Fatalf("reviewer for review: %v", err)
+	}
+	q.Step = StepMerge
+	if err := q.Validate(); err == nil {
+		t.Fatal("a reviewer was accepted for the merge step")
+	}
+}

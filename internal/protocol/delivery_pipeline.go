@@ -1713,6 +1713,9 @@ type StepClaimRequest struct {
 	ChangeID  string `json:"change_id"`
 	StepRef
 	Commit string `json:"commit"`
+	// Reviewer names another session that may report this one caller step, in
+	// place of the caller. The request claims nothing for SessionID.
+	Reviewer string `json:"reviewer,omitempty"`
 }
 
 func (q StepClaimRequest) Validate() error {
@@ -1728,12 +1731,21 @@ func (q StepClaimRequest) Validate() error {
 	if !ValidCommit(q.Commit) {
 		return errors.New("commit must be the full hash of the exact commit to claim")
 	}
+	if err := validText("reviewer", q.Reviewer, maxNameBytes); err != nil {
+		return err
+	}
+	if q.Reviewer != "" && q.Step != StepAccept && q.Step != StepReview {
+		return errors.New("a reviewer can be named only for the accept or review step")
+	}
 	return nil
 }
 
+// StepClaimResult answers step.claim. For a named reviewer, SessionID is the
+// reviewer and Reviewer is set: the step is reserved for that session.
 type StepClaimResult struct {
 	Claimed   bool   `json:"claimed"`
 	SessionID string `json:"session_id"`
+	Reviewer  string `json:"reviewer,omitempty"`
 }
 
 // StepReportRequest is step.report: a step owner reports a result from its own

@@ -2190,7 +2190,10 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 		}
 		allowedOwner = allowed != 0
 	}
-	if node != machine || !allowedOwner || worker != "" || online == 0 || harness == "owner" || harness == "bot" || harness == "cto" || (claimed != "" && claimed != session && !reopened) {
+	// The CTO is never a step owner, except for the one caller step the caller
+	// named it for: that step is claimed for its session.
+	namedCTO := harness == "cto" && owner == callerTaskOwner && claimed == session
+	if node != machine || !allowedOwner || worker != "" || online == 0 || harness == "owner" || harness == "bot" || (harness == "cto" && !namedCTO) || (claimed != "" && claimed != session && !reopened) {
 		return true, reject("%s is owned by node %s", ref, owner)
 	}
 	if !claim || (reopened && !complete) {
@@ -2294,6 +2297,15 @@ func (s *Store) ClaimStep(machine string, q protocol.StepClaimRequest) (protocol
 			return protocol.StepClaimResult{}, err
 		}
 	}
+	if q.Reviewer != "" {
+		if err := nameStepReviewer(tx, c, p, machine, q); err != nil {
+			return protocol.StepClaimResult{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return protocol.StepClaimResult{}, err
+		}
+		return protocol.StepClaimResult{Claimed: true, SessionID: q.Reviewer, Reviewer: q.Reviewer}, nil
+	}
 	found, err := claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, false)
 	if err != nil {
 		return protocol.StepClaimResult{}, err
@@ -2308,6 +2320,62 @@ func (s *Store) ClaimStep(machine string, q protocol.StepClaimRequest) (protocol
 		return protocol.StepClaimResult{}, err
 	}
 	return protocol.StepClaimResult{Claimed: true, SessionID: q.SessionID}, nil
+}
+
+// nameStepReviewer lets the caller of a change hand one accept or review step
+// to another session, such as the CTO or the chief of staff, who then reports
+// it as itself. The step task is claimed for the reviewer: the claim is what
+// lets only that session report it, and it ends with the revision, as every
+// task does. The caller and the sessions of its agent cannot be named, so the
+// caller cannot pass its own change this way.
+func nameStepReviewer(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, machine string, q protocol.StepClaimRequest) error {
+	step, ok := p.Find(q.StepRef)
+	if !ok || step.Owner.Kind != protocol.OwnerCaller {
+		return reject("a reviewer can be named only for a step the caller owns; %s is not one", q.StepRef)
+	}
+	var node string
+	err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, q.SessionID).Scan(&node)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && node != machine) {
+		return reject("session %q is not on this machine", q.SessionID)
+	}
+	if err != nil {
+		return err
+	}
+	acts, err := sessionActsForCaller(tx, c, q.StepRef, q.SessionID)
+	if err != nil {
+		return err
+	}
+	if !acts {
+		return reject("%s is owned by the caller: only the caller names its reviewer", q.StepRef)
+	}
+	var worker, harness string
+	err = tx.QueryRow(`SELECT worker,harness FROM sessions WHERE id=?`, q.Reviewer).Scan(&worker, &harness)
+	if errors.Is(err, sql.ErrNoRows) {
+		return reject("unknown reviewer session %q", q.Reviewer)
+	}
+	if err != nil {
+		return err
+	}
+	if worker != "" || harness == "owner" || harness == "bot" {
+		return reject("reviewer %s must be an agent session or the CTO, not a worker or the owner", q.Reviewer)
+	}
+	same, err := sessionActsForCaller(tx, c, q.StepRef, q.Reviewer)
+	if err != nil {
+		return err
+	}
+	if same {
+		return reject("reviewer %s acts for the caller of %s: name a session of another agent, so the caller does not pass its own change", q.Reviewer, c.ID)
+	}
+	res, err := tx.Exec(`UPDATE delivery_step_tasks SET claimed_by=?
+		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND owner_node=? AND completed=0`,
+		q.Reviewer, c.ID, c.Revision, q.Step, q.For, boolInt(q.AfterMerge), callerTaskOwner)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return reject("no open caller task for %s", q.StepRef)
+	}
+	return retireStepMessages(tx, c.ID)
 }
 
 func (s *Store) stepContract(project, step string) string {
