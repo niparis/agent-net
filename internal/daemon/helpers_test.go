@@ -490,6 +490,12 @@ func (lc *localClient) read() {
 }
 
 func (lc *localClient) call(method string, params any) (json.RawMessage, error) {
+	return lc.callWithin(scaled(20*time.Second), method, params)
+}
+
+// callWithin is call with a shorter answer budget, for a caller that polls:
+// one slow reply must not use up the whole wait, so the caller can ask again.
+func (lc *localClient) callWithin(budget time.Duration, method string, params any) (json.RawMessage, error) {
 	lc.mu.Lock()
 	lc.nextID++
 	id := fmt.Sprint(lc.nextID)
@@ -508,7 +514,7 @@ func (lc *localClient) call(method string, params any) (json.RawMessage, error) 
 			return nil, errors.New(s)
 		}
 		return m["result"], nil
-	case <-time.After(scaled(20 * time.Second)):
+	case <-time.After(budget):
 		// Capture the blocked goroutines before test cleanup tears down the
 		// socket and gateway, so a rare stalled request can be diagnosed.
 		var stacks bytes.Buffer
