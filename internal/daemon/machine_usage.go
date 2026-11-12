@@ -19,7 +19,7 @@ import (
 // than protocol.MachineUsageMaxAgeSeconds, it takes one reading first.
 
 // procOwner says who a process belongs to.
-type procOwner struct{ kind, name, id string }
+type procOwner struct{ kind, name, id, rule string }
 
 // machineUsageNow builds the usage block of this machine.
 func (d *Daemon) machineUsageNow(ctx context.Context) protocol.MachineUsageNow {
@@ -29,6 +29,8 @@ func (d *Daemon) machineUsageNow(ctx context.Context) protocol.MachineUsageNow {
 		out.Note = "this daemon does not measure CPU and memory"
 		return out
 	}
+	roster, status := d.claudeRosterStatus(time.Now(), readProcView)
+	out.Roster = &status
 	maxAge := protocol.MachineUsageMaxAgeSeconds * time.Second
 	if age, ok := s.SnapshotAge(); !ok || age > maxAge {
 		s.Sample(ctx)
@@ -56,17 +58,17 @@ func (d *Daemon) machineUsageNow(ctx context.Context) protocol.MachineUsageNow {
 		out.Status = protocol.MachineUsageOK
 		return out
 	}
-	owners := d.procOwners()
+	owners := d.attributeProcs(procs, roster, nil)
 	out.Status = protocol.MachineUsageOK
 	out.Top = make([]protocol.MachineProcRow, 0, len(procs))
-	for _, p := range procs {
+	for i, p := range procs {
 		cmd := p.Args
 		if cmd == "" {
 			cmd = "[" + p.Cmd + "]"
 		}
-		o := classifyProc(p, owners)
+		o := owners[i]
 		out.Top = append(out.Top, protocol.MachineProcRow{PID: p.PID, PPID: p.PPID, CPU: round1(p.CPU), RSS: p.RSS,
-			ElapsedSeconds: int64(p.Elapsed / time.Second), Cmd: cmd, OwnerKind: o.kind, Owner: o.name, OwnerID: o.id})
+			ElapsedSeconds: int64(p.Elapsed / time.Second), Cmd: cmd, OwnerKind: o.kind, Owner: o.name, OwnerID: o.id, OwnerRule: o.rule})
 	}
 	return out
 }
@@ -84,7 +86,7 @@ func round2(v float64) float64 { return float64(int64(v*100+0.5)) / 100 }
 // and workers, hosted MCP servers and this daemon. A worker's own record wins
 // over its session, so the id shown is the worker id.
 func (d *Daemon) procOwners() map[int]procOwner {
-	owners := map[int]procOwner{os.Getpid(): {protocol.ProcOwnerDaemon, "agent-net daemon", ""}}
+	owners := map[int]procOwner{os.Getpid(): {protocol.ProcOwnerDaemon, "agent-net daemon", "", ruleDaemonPID}}
 	d.mu.Lock()
 	shared := map[int][]string{}
 	for _, ls := range d.sessions {
@@ -96,16 +98,16 @@ func (d *Daemon) procOwners() map[int]procOwner {
 		if name == "" {
 			name = ls.info.Harness
 		}
-		kind, id := protocol.ProcOwnerSession, ls.sessionID
+		kind, id, rule := protocol.ProcOwnerSession, ls.sessionID, ruleSessionPID
 		if w := ls.info.Worker; w != nil && w.ID != "" {
-			kind, id = protocol.ProcOwnerWorker, w.ID
+			kind, id, rule = protocol.ProcOwnerWorker, w.ID, ruleWorkerPID
 		}
 		if old, dup := owners[pid]; dup && old.kind != protocol.ProcOwnerDaemon {
 			// Several sessions in one process (OpenCode): one shared owner.
 			shared[pid] = append(shared[pid], id)
 			continue
 		}
-		owners[pid] = procOwner{kind, name, id}
+		owners[pid] = procOwner{kind, name, id, rule}
 		shared[pid] = []string{id}
 	}
 	d.mu.Unlock()
@@ -113,7 +115,7 @@ func (d *Daemon) procOwners() map[int]procOwner {
 		if len(ids) > 1 {
 			sort.Strings(ids)
 			o := owners[pid]
-			owners[pid] = procOwner{o.kind, strings.TrimSpace(o.name + " (shared by " + strconv.Itoa(len(ids)) + " sessions)"), ids[0]}
+			owners[pid] = procOwner{o.kind, strings.TrimSpace(o.name + " (shared by " + strconv.Itoa(len(ids)) + " sessions)"), ids[0], o.rule}
 		}
 	}
 	d.wmu.Lock()
@@ -125,7 +127,7 @@ func (d *Daemon) procOwners() map[int]procOwner {
 		if name == "" {
 			name = w.project
 		}
-		owners[w.pid] = procOwner{protocol.ProcOwnerWorker, name, w.id}
+		owners[w.pid] = procOwner{protocol.ProcOwnerWorker, name, w.id, ruleWorkerPID}
 	}
 	d.wmu.Unlock()
 	if d.mcp != nil {
@@ -140,7 +142,7 @@ func (d *Daemon) procOwners() map[int]procOwner {
 			pgid := r.pgid
 			r.mu.Unlock()
 			if pgid > 1 {
-				owners[pgid] = procOwner{protocol.ProcOwnerMCP, "mcp server " + r.spec.Name, ""}
+				owners[pgid] = procOwner{protocol.ProcOwnerMCP, "mcp server " + r.spec.Name, "", ruleMCPGroup}
 			}
 		}
 	}
@@ -156,11 +158,12 @@ func classifyProc(p usage.MachineProc, owners map[int]procOwner) procOwner {
 	}
 	for _, pid := range p.Lineage {
 		if o, ok := owners[pid]; ok {
+			o.rule = "descendant of " + o.rule
 			return o
 		}
 	}
 	if f := strings.Fields(p.Args); len(f) >= 2 && filepath.Base(f[0]) == "agent-net" && f[1] == "gateway" {
-		return procOwner{protocol.ProcOwnerGateway, "agent-net gateway", ""}
+		return procOwner{protocol.ProcOwnerGateway, "agent-net gateway", "", ruleGatewayCommand}
 	}
-	return procOwner{protocol.ProcOwnerOther, "other", ""}
+	return procOwner{protocol.ProcOwnerOther, "other", "", ""}
 }

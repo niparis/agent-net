@@ -293,6 +293,46 @@ type MachineProcessPage struct {
 	Items      []MachineProcessRow `json:"items"`
 	Total      int                 `json:"total"`
 	NextCursor string              `json:"next_cursor,omitempty"`
+	// Roster says whether the Claude session roster was fresh when the table was read.
+	Roster *ClaudeRosterStatus `json:"claude_roster,omitempty"`
+}
+
+// MachineProcessReply is what a daemon answers to node.machine_processes. An
+// older daemon answers with the bare list of rows.
+type MachineProcessReply struct {
+	Items  []MachineProcessRow `json:"items"`
+	Roster *ClaudeRosterStatus `json:"claude_roster,omitempty"`
+}
+
+// Values of ClaudeRosterStatus.State.
+const (
+	// ClaudeRosterFresh: the roster can be trusted to list every live Claude
+	// background session.
+	ClaudeRosterFresh = "fresh"
+	// ClaudeRosterStale: an old roster with no supervisor to vouch for it.
+	ClaudeRosterStale = "stale"
+	// ClaudeRosterUnverified: the supervisor named in the roster is not alive,
+	// not ours, or started after the roster was written.
+	ClaudeRosterUnverified = "unverified"
+	// ClaudeRosterMissing: the roster file is absent or unreadable.
+	ClaudeRosterMissing = "missing"
+)
+
+// ClaudeRosterStatus is the state of Claude Code's session roster, the file its
+// supervisor writes when its background sessions change. While it is not fresh,
+// agent-net cannot tell which Claude processes are live, so it refuses to stop
+// any of them. A roster with a living supervisor is fresh however old its file
+// is: the file is only rewritten when the sessions change.
+type ClaudeRosterStatus struct {
+	State string `json:"state"`
+	Note  string `json:"note,omitempty"`
+	// UpdatedAt is when the file was last written (RFC 3339, UTC), and
+	// AgeSeconds how long ago that was. Both are empty when there is no file.
+	UpdatedAt     string `json:"updated_at,omitempty"`
+	AgeSeconds    int64  `json:"age_s,omitempty"`
+	SupervisorPID int    `json:"supervisor_pid,omitempty"`
+	// Sessions is how many background sessions the file lists.
+	Sessions int `json:"sessions"`
 }
 
 // MachineGetResult answers agent_machine_get with the requested category.
@@ -362,6 +402,8 @@ type MachineUsageNow struct {
 	SwapTotal uint64           `json:"swap_total,omitempty"`
 	// Top lists the processes that used the most CPU, busiest first.
 	Top []MachineProcRow `json:"top,omitempty"`
+	// Roster is the state of Claude Code's session roster on this machine.
+	Roster *ClaudeRosterStatus `json:"claude_roster,omitempty"`
 }
 
 // MachineCPUSplit is the CPU time by kind, in percent of all cores.
@@ -388,7 +430,8 @@ const (
 // full core. Cmd is the command line, cut to 120 characters with secrets masked.
 // Owner is the session or worker id (OwnerID) and name (Owner) whose process
 // tree holds the process, or "agent-net daemon", "agent-net gateway", "mcp
-// server <name>" or "other".
+// server <name>" or "other". OwnerRule is the fact that gave the owner, such
+// as "cwd in worker worktree" or "Claude roster pid". It is empty for "other".
 type MachineProcRow struct {
 	PID            int     `json:"pid"`
 	PPID           int     `json:"ppid"`
@@ -399,6 +442,7 @@ type MachineProcRow struct {
 	OwnerKind      string  `json:"owner_kind"`
 	Owner          string  `json:"owner"`
 	OwnerID        string  `json:"owner_id,omitempty"`
+	OwnerRule      string  `json:"owner_rule,omitempty"`
 }
 
 // MachineUsageTopN is how many processes MachineUsageNow lists.

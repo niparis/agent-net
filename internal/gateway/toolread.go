@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -653,12 +654,12 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 		if err != nil {
 			return out, err
 		}
-		var rows []protocol.MachineProcessRow
-		if err := json.Unmarshal(raw, &rows); err != nil {
+		rows, roster, err := decodeMachineProcesses(raw)
+		if err != nil {
 			return out, err
 		}
 		start, end, next := paging.page(len(rows))
-		out.Processes = &protocol.MachineProcessPage{Items: rows[start:end], Total: len(rows), NextCursor: next}
+		out.Processes = &protocol.MachineProcessPage{Items: rows[start:end], Total: len(rows), NextCursor: next, Roster: roster}
 
 	case "models":
 		live, err := g.liveModels(ctx, node, p.Harness, p.ModelFilter)
@@ -949,6 +950,21 @@ func (g *Gateway) handleToolRead(ctx context.Context, nc *nodeConn, typ string, 
 // machineUsageWait is how long agent_machine_get waits for a machine's daemon
 // to answer with its load and busiest processes.
 const machineUsageWait = 15 * time.Second
+
+// decodeMachineProcesses reads a daemon's node.machine_processes answer: an
+// object with the rows and the Claude roster status, or, from an older daemon,
+// the bare list of rows with no roster status.
+func decodeMachineProcesses(raw []byte) ([]protocol.MachineProcessRow, *protocol.ClaudeRosterStatus, error) {
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 && trimmed[0] == '[' {
+		var rows []protocol.MachineProcessRow
+		return rows, nil, json.Unmarshal(trimmed, &rows)
+	}
+	var reply protocol.MachineProcessReply
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		return nil, nil, err
+	}
+	return reply.Items, reply.Roster, nil
+}
 
 // machineUsageNow asks the machine's daemon for its load and top processes.
 // An offline machine, an old daemon or a slow answer gives a note and never

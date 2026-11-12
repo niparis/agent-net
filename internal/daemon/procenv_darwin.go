@@ -3,9 +3,11 @@
 package daemon
 
 import (
+	"context"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -43,4 +45,24 @@ func osProcessList() []int {
 		}
 	}
 	return pids
+}
+
+// lsofTimeout bounds the one lsof call that reads many working directories.
+const lsofTimeout = 5 * time.Second
+
+// osProcessCWDs reads the working directory of each process with one lsof call
+// (macOS has no /proc, and reading it through libproc needs cgo).
+func osProcessCWDs(pids []int) map[int]string {
+	if len(pids) == 0 {
+		return nil
+	}
+	list := make([]string, len(pids))
+	for i, pid := range pids {
+		list[i] = strconv.Itoa(pid)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), lsofTimeout)
+	defer cancel()
+	// lsof exits 1 when some pid is gone, and still prints the others.
+	out, _ := exec.CommandContext(ctx, "lsof", "-a", "-d", "cwd", "-Fpn", "-p", strings.Join(list, ",")).Output()
+	return parseLsofCWD(out)
 }

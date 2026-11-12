@@ -508,3 +508,15 @@ func TestReadToolAnswerSize(t *testing.T) {
 	t.Logf("20 sessions: agent_sessions_find %d bytes, agent_list %d bytes", len(findJSON), len(agentJSON))
 	t.Logf("3 machines: agent_machines_find %d bytes, agent_nodes %d bytes", len(machineJSON), len(nodeJSON))
 }
+
+// A daemon from before the roster status answers with the bare list of rows.
+func TestDecodeMachineProcessesBothShapes(t *testing.T) {
+	rows, roster, err := decodeMachineProcesses([]byte(`[{"pid":7,"cmd":"x","owner_kind":"other","owner":"other","user":"u"}]`))
+	if err != nil || len(rows) != 1 || rows[0].PID != 7 || roster != nil {
+		t.Fatalf("old shape: rows=%+v roster=%+v err=%v", rows, roster, err)
+	}
+	rows, roster, err = decodeMachineProcesses([]byte(`{"items":[{"pid":8,"cmd":"y","owner_kind":"worker","owner":"w","owner_id":"w_1","owner_rule":"cwd in worker worktree","user":"u"}],"claude_roster":{"state":"fresh","age_s":3,"sessions":2}}`))
+	if err != nil || len(rows) != 1 || rows[0].OwnerRule != "cwd in worker worktree" || roster == nil || roster.State != protocol.ClaudeRosterFresh || roster.AgeSeconds != 3 {
+		t.Fatalf("new shape: rows=%+v roster=%+v err=%v", rows, roster, err)
+	}
+}

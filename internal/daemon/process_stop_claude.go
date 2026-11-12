@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // Claude Code runs its background sessions outside agent-net. Its supervisor
@@ -39,6 +41,7 @@ type claudeWorker struct {
 	PID           int    `json:"pid"` // the background host
 	ProcStart     string `json:"procStart"`
 	ReplPID       int    `json:"replPid"` // the session process
+	SessionID     string `json:"sessionId"`
 	ReplProcStart string `json:"replProcStart"`
 	CWD           string `json:"cwd"`
 }
@@ -75,9 +78,19 @@ func (d *Daemon) readClaudeRoster(now time.Time) *claudeRoster {
 // readClaudeRosterWithProcess reads the roster. The supervisor is looked up
 // with read: the live reader for a process stop, a snapshot for the list.
 func (d *Daemon) readClaudeRosterWithProcess(now time.Time, read procLookup) *claudeRoster {
+	r, _ := d.claudeRosterStatus(now, read)
+	return r
+}
+
+// claudeRosterStatus reads the roster once and says if it can be trusted. The
+// roster is nil unless the status is fresh. The status carries the age of the
+// file and the reason, so a person can see why every Claude process is refused.
+func (d *Daemon) claudeRosterStatus(now time.Time, read procLookup) (*claudeRoster, protocol.ClaudeRosterStatus) {
+	st := protocol.ClaudeRosterStatus{State: protocol.ClaudeRosterMissing}
 	path := d.claudeRosterFile()
 	if path == "" {
-		return nil
+		st.Note = "there is no home folder, so there is no roster path"
+		return nil, st
 	}
 	readFile := d.cfg.readClaudeRosterFile
 	if readFile == nil {
@@ -85,23 +98,54 @@ func (d *Daemon) readClaudeRosterWithProcess(now time.Time, read procLookup) *cl
 	}
 	raw, err := readFile(path)
 	if err != nil {
-		return nil
+		st.Note = "the roster file cannot be read"
+		if os.IsNotExist(err) {
+			st.Note = "the roster file does not exist"
+		}
+		return nil, st
 	}
 	var r claudeRoster
 	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil
+		st.Note = "the roster file is not valid JSON"
+		return nil, st
+	}
+	st.Sessions = len(r.Workers)
+	if r.UpdatedAt > 0 {
+		st.UpdatedAt = time.UnixMilli(r.UpdatedAt).UTC().Format(time.RFC3339)
+		st.AgeSeconds = max(0, int64(now.Sub(time.UnixMilli(r.UpdatedAt))/time.Second))
 	}
 	if r.SupervisorPID > 1 {
+		st.SupervisorPID = r.SupervisorPID
+		st.State = protocol.ClaudeRosterUnverified
 		supervisor, err := read(r.SupervisorPID)
-		if err != nil || supervisor.Zombie || supervisor.UID != os.Getuid() || supervisor.EUID != os.Getuid() || supervisor.Started.IsZero() || supervisor.Started.After(time.UnixMilli(r.UpdatedAt)) || r.UpdatedAt > now.UnixMilli() {
-			return nil
+		switch {
+		case err != nil:
+			st.Note = fmt.Sprintf("supervisor pid %d is not running", r.SupervisorPID)
+		case supervisor.Zombie:
+			st.Note = fmt.Sprintf("supervisor pid %d has ended", r.SupervisorPID)
+		case supervisor.UID != os.Getuid() || supervisor.EUID != os.Getuid():
+			st.Note = fmt.Sprintf("supervisor pid %d is not a process of this user", r.SupervisorPID)
+		case supervisor.Started.IsZero():
+			st.Note = fmt.Sprintf("the start time of supervisor pid %d is unknown", r.SupervisorPID)
+		case supervisor.Started.After(time.UnixMilli(r.UpdatedAt)):
+			st.Note = fmt.Sprintf("supervisor pid %d started after the roster was written, so the file is from an older supervisor", r.SupervisorPID)
+		case r.UpdatedAt > now.UnixMilli():
+			st.Note = "the roster file is dated in the future"
+		default:
+			st.State = protocol.ClaudeRosterFresh
+			st.Note = fmt.Sprintf("supervisor pid %d is alive and older than the file. The file changes only when sessions change, so its age does not matter", r.SupervisorPID)
+			return &r, st
 		}
-		return &r
+		return nil, st
 	}
 	if age := now.Sub(time.UnixMilli(r.UpdatedAt)); age > claudeRosterMaxAge || age < -claudeRosterMaxAge {
-		return nil
+		st.State = protocol.ClaudeRosterStale
+		st.Note = "the roster names no supervisor and was written more than a minute ago"
+		return nil, st
 	}
-	return &r
+	st.State = protocol.ClaudeRosterFresh
+	st.Note = "the roster names no supervisor and was written within the last minute"
+	return &r, st
 }
 
 // claudeRosterProcessRefusal says why a process must not be stopped because it

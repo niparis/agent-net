@@ -998,6 +998,12 @@ process ID, the parent, CPU, memory, run time, the owner and the command line.
 The daemon masks recognizable secrets in the command line (the same masking as
 the session top lists) and cuts it to 120 characters. Masking is best effort.
 Command lines can reveal folder and project names.
+The daemon names each row's owner from facts the system gives: a pid it
+registered or Claude's roster lists, the process tree, or the working directory
+of the process (read only, for this user's processes only, from `/proc` or
+one `lsof` call that ends after 5 seconds). The roster freshness is shown with
+its age, so a person can see why Claude processes are refused. Nothing is
+stopped or signalled by these reads.
 
 **Service log reads.** Agents, workers and the CTO may call `agent_machine_log`
 for a daemon or gateway log on one online machine. The gateway relays the read
