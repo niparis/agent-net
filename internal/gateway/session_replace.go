@@ -120,11 +120,13 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		// under the old caller. The move is reported when it repairs a row, so
 		// the owner's retry is not mistaken for a no-op. A session that already
 		// holds both a stale and a current association keeps the current one.
-		var repaired int64
+		repaired, err := moveStepNotices(tx, sessionID, newSessionID)
+		if err != nil {
+			return false, err
+		}
 		for _, query := range []string{
 			"UPDATE delivery_changes SET caller=? WHERE caller=? AND state IN ('open','merged')",
 			"UPDATE delivery_step_tasks SET claimed_by=? WHERE claimed_by=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))",
-			"UPDATE OR IGNORE delivery_step_messages SET session_id=? WHERE session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))",
 		} {
 			res, err := tx.Exec(query, newSessionID, sessionID)
 			if err != nil {
@@ -161,8 +163,8 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 	name = replacedSessionName(name, newName)
 	now := s.now().UnixNano()
 
-	// The caller role of running and queued workers, their step messages and
-	// the ratings that were waiting for this caller.
+	// The caller role of running and queued workers and the ratings that were
+	// waiting for this caller.
 	steps := []struct {
 		query string
 		args  []any
@@ -174,10 +176,7 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		// The caller's open changes and the steps it has claimed.
 		{`UPDATE delivery_changes SET caller=?, updated_at=? WHERE caller=? AND state IN ('open','merged')`, []any{newSessionID, now, sessionID}},
 		{`UPDATE delivery_step_tasks SET claimed_by=? WHERE claimed_by=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`, []any{newSessionID, sessionID}},
-		{`UPDATE delivery_step_messages SET session_id=? WHERE session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`, []any{newSessionID, sessionID}},
-		// The inbox and the open requests: anything the session has not been
-		// given yet follows the new record instead of a dead ID.
-		{`UPDATE messages SET recipient=? WHERE recipient=? AND state IN ('held','stored','dispatched','failed')`, []any{newSessionID, sessionID}},
+		// The open requests follow the new record instead of a dead ID.
 		{`UPDATE inbox_items SET session_id=? WHERE session_id=?`, []any{newSessionID, sessionID}},
 		// The lasting binding: the agent and the repo, and the lead places
 		// the session held.
@@ -192,6 +191,16 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		if _, err := tx.Exec(step.query, step.args...); err != nil {
 			return false, err
 		}
+	}
+	// The step notices move before the inbox, so an old duplicate notice is
+	// expired here and not handed to the new session as well.
+	if _, err := moveStepNotices(tx, sessionID, newSessionID); err != nil {
+		return false, err
+	}
+	// The inbox: anything the session has not been given yet follows the new
+	// record.
+	if _, err := tx.Exec(`UPDATE messages SET recipient=? WHERE recipient=? AND state IN `+undeliveredStates, newSessionID, sessionID); err != nil {
+		return false, err
 	}
 	// The name belongs to the conversation, so both records carry it: the live
 	// one shows it, and the replaced one says it was replaced by it.
@@ -211,6 +220,45 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		return false, err
 	}
 	return true, nil
+}
+
+// undeliveredStates are the message states a session has not been given yet.
+const undeliveredStates = `('held','stored','dispatched','failed')`
+
+// moveStepNotices moves the old session's notices of steps that still have
+// work to the new session, and reports how many rows it changed. Decision 0148
+// sends a caller step to any live session of the agent, so both sessions can
+// hold a notice for the same step. The new session's notice stays. The old
+// one is expired and dropped, so it neither wakes the old session nor reaches
+// the new one twice.
+func moveStepNotices(tx *sql.Tx, oldID, newID string) (int64, error) {
+	const duplicate = `session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))
+		AND EXISTS (SELECT 1 FROM delivery_step_messages n WHERE n.session_id=? AND n.change_id=delivery_step_messages.change_id
+		AND n.revision=delivery_step_messages.revision AND n.step=delivery_step_messages.step
+		AND n.for_step=delivery_step_messages.for_step AND n.after_merge=delivery_step_messages.after_merge)`
+	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN `+undeliveredStates+`
+		AND id IN (SELECT message_id FROM delivery_step_messages WHERE `+duplicate+`)`, oldID, newID); err != nil {
+		return 0, err
+	}
+	var changed int64
+	for _, step := range []struct {
+		query string
+		args  []any
+	}{
+		{`DELETE FROM delivery_step_messages WHERE ` + duplicate, []any{oldID, newID}},
+		{`UPDATE delivery_step_messages SET session_id=? WHERE session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`, []any{newID, oldID}},
+	} {
+		res, err := tx.Exec(step.query, step.args...)
+		if err != nil {
+			return 0, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		changed += n
+	}
+	return changed, nil
 }
 
 // ReplaceSessionForOwner is the owner's repair for a restart that already
