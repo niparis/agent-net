@@ -164,6 +164,12 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 				}
 				continue
 			}
+			if err := d.cleanupPrepareContained(ctx, p.Name, &ready[i]); err != nil {
+				if d.log != nil {
+					d.Logf("worker.worktree_cleanup path=%q prepare_error=%v", ready[i].Path, err)
+				}
+				continue
+			}
 			if err := d.cleanupWorktree(ctx, ready[i], now); err != nil && d.log != nil {
 				if d.shouldLogWorktreeError(ready[i].Path, err.Error(), now) {
 					d.Logf("worker.worktree_cleanup path=%q error=%v", ready[i].Path, err)
@@ -189,6 +195,11 @@ type cleanupWorktree struct {
 	// outside the cleanup locks. Cleanup uses the proof only when the branch
 	// head still equals MergedHead.
 	MergedReason, MergedHead string
+	// ContainedIn and ContainedHead are the proof, computed outside the cleanup
+	// locks, that every commit of a closed change's branch is also on the
+	// branch of another open or merged change. Cleanup uses it only when the
+	// branch head still equals ContainedHead.
+	ContainedIn, ContainedHead string
 }
 
 // cleanupBranch verifies a recorded worker branch without depending on the
@@ -345,6 +356,9 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 		return err
 	}
 	reason := "merged"
+	// closedSafe marks a closed change whose commits are all kept elsewhere, so
+	// its branch can go with its worktree.
+	closedSafe := false
 	if w.ChangeState != "" && w.ChangeState != protocol.ChangeMerged && w.ChangeState != protocol.ChangeDone && w.ChangeState != protocol.ChangeStopped {
 		return nil
 	}
@@ -363,12 +377,29 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 			// Disregard deadlines saved by an older cleanup pass.
 			retainUntil = time.Time{}
 		case protocol.ChangeStopped:
-			if w.ChangeEndedAt.IsZero() || now.Sub(w.ChangeEndedAt) <= 3*24*time.Hour {
+			if w.ChangeEndedAt.IsZero() {
 				return nil
 			}
-			reason = "closed"
-			if deadline := w.ChangeEndedAt.Add(30 * 24 * time.Hour); deadline.After(retainUntil) {
-				retainUntil = deadline
+			switch {
+			case unique == "":
+				// A closed change whose work reached the default branch another
+				// way (the merger lands a train, a later change supersedes it)
+				// holds nothing: free it like a merged one.
+				reason, closedSafe, retainUntil = "closed-merged", true, time.Time{}
+			case w.MergedReason != "" && w.MergedHead == head:
+				reason, closedSafe, retainUntil = "closed-"+w.MergedReason, true, time.Time{}
+			case w.ContainedIn != "" && w.ContainedHead == head && now.Sub(w.ChangeEndedAt) > 3*24*time.Hour:
+				// Every commit is on the branch of another open or merged
+				// change, so deleting this branch loses nothing.
+				reason, closedSafe, retainUntil = "closed-contained", true, time.Time{}
+			default:
+				if now.Sub(w.ChangeEndedAt) <= 3*24*time.Hour {
+					return nil
+				}
+				reason = "closed"
+				if deadline := w.ChangeEndedAt.Add(30 * 24 * time.Hour); deadline.After(retainUntil) {
+					retainUntil = deadline
+				}
 			}
 		default:
 			return nil
@@ -466,7 +497,7 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	if !missing && d.log != nil {
 		d.Logf("worker.worktree_cleanup path=%q branch=%q reason=%s freed=%d", w.Path, w.Branch, reason, size)
 	}
-	if w.ChangeState == protocol.ChangeStopped || (!retainUntil.IsZero() && now.Before(retainUntil)) {
+	if (w.ChangeState == protocol.ChangeStopped && !closedSafe) || (!retainUntil.IsZero() && now.Before(retainUntil)) {
 		return nil
 	}
 	if _, err := gitOut(ctx, w.Project, "update-ref", "-d", branchRef, head); err != nil {
@@ -570,11 +601,28 @@ func cleanupDefaultBranch(ctx context.Context, dir, configured string) string {
 	return ""
 }
 
-// cleanupNeedsRemoteProof reports whether a row has no delivery change and its
-// branch head is not on the local default branch, so cleanup must look at the
+// cleanupWantsProof reports whether cleanup may need a merged-elsewhere proof
+// for the row: a branch with no delivery change that is not already waiting on
+// a retention deadline, or a branch whose change was closed. A closed change
+// can hold a branch that landed on the default branch under another change.
+func cleanupWantsProof(w *cleanupWorktree) bool {
+	if w.DefaultBranch == "" {
+		return false
+	}
+	switch w.ChangeState {
+	case "":
+		return w.RetainUntil.IsZero()
+	case protocol.ChangeStopped:
+		return true
+	}
+	return false
+}
+
+// cleanupNeedsRemoteProof reports whether a row has no delivery change (or a
+// closed one) and its branch head is not on the local default branch, so cleanup must look at the
 // remote and at cherry or squash proofs. It runs outside the cleanup locks.
 func cleanupNeedsRemoteProof(ctx context.Context, w *cleanupWorktree) bool {
-	if w.ChangeState != "" || !w.RetainUntil.IsZero() || w.DefaultBranch == "" {
+	if !cleanupWantsProof(w) {
 		return false
 	}
 	branchRef := "refs/heads/" + w.Branch
@@ -598,7 +646,7 @@ func cleanupNeedsRemoteProof(ctx context.Context, w *cleanupWorktree) bool {
 // a cherry-pick or a squash. MergedHead is set even when no proof is found, so
 // cleanupWorktree knows the check was made for that head.
 func cleanupPrepareProof(ctx context.Context, w *cleanupWorktree) error {
-	if w.ChangeState != "" || !w.RetainUntil.IsZero() || w.DefaultBranch == "" {
+	if !cleanupWantsProof(w) {
 		return nil
 	}
 	branchRef := "refs/heads/" + w.Branch
@@ -728,6 +776,55 @@ func cleanupSquashMerged(ctx context.Context, dir, head, ref string) bool {
 		}
 	}
 	return false
+}
+
+// cleanupContainedMaxRefs bounds how many branches that contain a closed
+// change's head are looked up at the gateway.
+const cleanupContainedMaxRefs = 10
+
+// cleanupPrepareContained records, outside the cleanup locks, whether the
+// commits of a closed change are all on the branch of another open or merged
+// change. It asks git for the other branches that contain the head, then asks
+// the gateway whether one of them belongs to a live change. Rows that are not
+// closed, or that the default branch already holds, are left alone.
+func (d *Daemon) cleanupPrepareContained(ctx context.Context, project string, w *cleanupWorktree) error {
+	if w.ChangeState != protocol.ChangeStopped || w.DefaultBranch == "" || w.MergedReason != "" {
+		return nil
+	}
+	branchRef := "refs/heads/" + w.Branch
+	head, err := gitOut(ctx, w.Project, "rev-parse", "--verify", branchRef+"^{commit}")
+	if err != nil {
+		return nil
+	}
+	refs, err := gitOut(ctx, w.Project, "for-each-ref", "--format=%(refname)", "--contains", head, "refs/heads/")
+	if err != nil {
+		return err
+	}
+	checked := 0
+	for _, ref := range strings.Split(refs, "\n") {
+		other, ok := strings.CutPrefix(ref, "refs/heads/")
+		if !ok || other == w.Branch || other == w.DefaultBranch {
+			continue
+		}
+		if checked++; checked > cleanupContainedMaxRefs {
+			break
+		}
+		q := protocol.ChangeListRequest{Project: project, Branch: other, Limit: 10}
+		var page protocol.ChangeListResult
+		if err := d.deliveryCall(ctx, protocol.FrameChangeList, q, &page); err != nil {
+			return err
+		}
+		if page.Branch != other {
+			return fmt.Errorf("gateway does not support branch lookup")
+		}
+		for _, c := range page.Changes {
+			if c.Change.Branch == other && c.Change.ID != "" && c.Change.State != protocol.ChangeStopped {
+				w.ContainedIn, w.ContainedHead = c.Change.ID, head
+				return nil
+			}
+		}
+	}
+	return nil
 }
 
 // cleanupChange finds every change that has used the branch. Multiple matches
