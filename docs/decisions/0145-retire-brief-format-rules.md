@@ -37,10 +37,12 @@ no new brief check is added.
 - `protocol.CheckWorkerBrief` and its six failure lines are deleted. The brief
   is not checked or scored for format, and no warning replaces the rules.
 - The only brief refusal is overlap, unchanged: a brief may not name a file a
-  running worker's brief or an open change's changed files in the same project
-  name, unless it says `overlap ok: <reason>`. A change or worker the start
+  running worker's brief or an open change's changed files in the same
+  project, unless it says `overlap ok: <reason>`. A change or worker the start
   itself targets is exempt as before. The rejection count and the third attempt
   that starts anyway stay for overlap refusals.
+- The backtest tool `cmd/briefbacktest` replayed these six rules. It was removed
+  with them, since the analysis above is done.
 - The six items are removed from the `agent_worker_start` description, the
   worker start guidance written to agent instruction files, and the brief check
   section of `docs/reference.md`. [docs/brief-template.md](../brief-template.md)

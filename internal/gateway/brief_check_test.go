@@ -2,10 +2,13 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -190,6 +193,8 @@ func TestBriefRejectionsAreCountedPerTaskFor24Hours(t *testing.T) {
 // brief defect against the caller.
 func TestThirdBriefAttemptStartsAndRecordsADefect(t *testing.T) {
 	a := newAgyGate(t)
+	client, received := connectTestNode(t, a.g, a.node)
+	serveBriefRepo(t, client, received, briefTestRepo())
 	insertOpenChangeIn(t, a.g.store, "alpha", "ch_open", "agent-net/x", "internal/gateway/brief.go")
 	task := gatewayBrief("internal/gateway/brief.go")
 	start := func() error {
@@ -319,4 +324,35 @@ func briefTestRepo() protocol.WorkerBriefRepo {
 		"internal/gateway/brief.go", "internal/tui/other.go", "internal/toolcatalog/catalog.go",
 		"docs/reference.md", "AGENTS.md", "README.md", "internal/README.md", "migrations.lock",
 	}}
+}
+
+// serveBriefRepo answers the node's base-tree read with repo, which the overlap
+// check needs. Any other call fails at once, so a start that reaches the launch
+// does not wait for a worker the test never runs.
+func serveBriefRepo(t *testing.T, client *websocket.Conn, received <-chan []byte, repo protocol.WorkerBriefRepo) {
+	t.Helper()
+	ctx := t.Context()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case raw := <-received:
+				var h protocol.Header
+				if json.Unmarshal(raw, &h) != nil || h.ID == "" {
+					continue
+				}
+				var res []byte
+				var err error
+				if h.Type == "worker.brief_repo" {
+					res, err = protocol.EncodeResult(h.ID, repo, nil)
+				} else {
+					res, err = protocol.EncodeResult(h.ID, nil, errors.New("test node runs no worker"))
+				}
+				if err == nil {
+					_ = client.Write(ctx, websocket.MessageText, res)
+				}
+			}
+		}
+	}()
 }
