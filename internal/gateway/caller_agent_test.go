@@ -399,3 +399,22 @@ func TestMergerSessionOfCallerAgentNeverGetsCallerSteps(t *testing.T) {
 		t.Fatalf("lead refused after the wake window: %v", err)
 	}
 }
+
+// A caller that does its own steps reports each at once, so a project whose
+// steps all belong to the caller sends no notice for a young step. The notice
+// comes once the step has waited one reminder interval.
+func TestCallerOnlyStepNoticeWaitsForTheReminderInterval(t *testing.T) {
+	r := newCallerAgentRig(t)
+	r.submitAs(r.caller, "feature/quiet", commitA)
+	r.g.dispatchStepTasks(context.Background())
+	if n := r.stepMessageCount(r.caller); n != 0 {
+		t.Fatalf("a young caller step sent %d messages", n)
+	}
+	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.g.dispatchStepTasks(context.Background())
+	r.g.flushStepTaskBatches()
+	var n int
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("a caller step that waited past the reminder interval sent %d messages, want 1 (%v)", n, err)
+	}
+}

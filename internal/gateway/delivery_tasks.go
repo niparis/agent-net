@@ -819,6 +819,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		forceFlush[m.To] = true
 		dueSessions[m.To] = true
 	}
+	held := g.store.callerOnlyHold(reminderCutoff)
 	candidates := map[string][]nodeTaskTarget{}
 	horizon := g.store.now().Add(nudgeLookahead)
 	futureCutoff := reminderCutoff
@@ -834,6 +835,9 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 			} else if paused {
 				continue
 			}
+		}
+		if !target.urgent && held.holds(target.id, target.owner, target.createdAt, target.session) {
+			continue
 		}
 		recorded, err := g.store.stepMessageRecorded(target, reminderCutoff)
 		if err != nil {
@@ -1137,7 +1141,7 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int6
 	rows, err := g.store.db.Query(`SELECT DISTINCT s.id,
   EXISTS(SELECT 1 FROM delivery_step_messages d
    WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
-   AND d.after_merge=t.after_merge AND d.session_id=s.id)
+   AND d.after_merge=t.after_merge AND d.session_id=s.id),t.change_id,t.owner_node,t.created_at,t.urgent
   FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
   JOIN sessions s ON s.online=0 AND s.harness='claude' AND s.worker=''
   WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by=''
@@ -1155,11 +1159,20 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int6
 		id       string
 		reminder bool
 	}
+	held := g.store.callerOnlyHold(reminderCutoff)
 	var ids []wakeTarget
 	for rows.Next() {
 		var target wakeTarget
-		if err = rows.Scan(&target.id, &target.reminder); err != nil {
+		var change, owner string
+		var created int64
+		var urgent int
+		if err = rows.Scan(&target.id, &target.reminder, &change, &owner, &created, &urgent); err != nil {
 			break
+		}
+		// A caller that does its own steps is not woken for a step that has
+		// not waited yet. An urgent task (handed back by a stopped merger) is not held.
+		if urgent == 0 && held.holds(change, owner, created, target.id) {
+			continue
 		}
 		ids = append(ids, target)
 	}
@@ -2323,4 +2336,63 @@ func (s *Store) stepContracts(project string, refs []protocol.StepRef) string {
 		lines = append(lines, "step: "+ref.String()+"\n"+s.stepContract(project, ref.Step))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// callerOnlyHolds tells which caller step tasks are kept from the dispatch.
+type callerOnlyHolds struct {
+	s       *Store
+	cutoff  int64
+	changes map[string][2]string // change -> project, caller session
+	shared  map[string]bool
+}
+
+// callerOnlyHold keeps a caller step quiet while it is young, in a project
+// whose steps all belong to the caller. That caller does its own steps and
+// reports each one at once, so a notice for each would only be noise (a batch
+// of 25 changes made 9 messages). The task still exists: it lets any session of
+// the agent act, and it is what the stuck check, the wake and the Desk line read.
+// The first notice goes out once the task has waited as long as one reminder
+// interval. A pipeline with a step owned by someone else is not held, and
+// reminders off (cutoff 0) hold such a task until the stuck check takes over.
+// An urgent task is never held.
+func (s *Store) callerOnlyHold(reminderCutoff int64) *callerOnlyHolds {
+	return &callerOnlyHolds{s: s, cutoff: reminderCutoff, changes: map[string][2]string{}, shared: map[string]bool{}}
+}
+
+// holds says whether the notice of this task to the session is held. Only the
+// caller session itself is held back: another session of its agent, offered the
+// task because the caller is gone, hears of it at once.
+func (h *callerOnlyHolds) holds(change, owner string, createdAt int64, session string) bool {
+	if owner != callerTaskOwner {
+		return false
+	}
+	if h.cutoff != 0 && createdAt*int64(time.Second) <= h.cutoff {
+		return false
+	}
+	info, ok := h.changes[change]
+	if !ok {
+		if err := h.s.db.QueryRow(`SELECT project,caller FROM delivery_changes WHERE id=?`, change).Scan(&info[0], &info[1]); err != nil {
+			return false
+		}
+		h.changes[change] = info
+	}
+	project := info[0]
+	if session != info[1] {
+		return false
+	}
+	shared, ok := h.shared[project]
+	if !ok {
+		p, err := h.s.deliveryPipeline(project)
+		if err != nil {
+			return false
+		}
+		for _, step := range p.Steps {
+			if step.Owner.Kind != protocol.OwnerCaller && step.Owner.Kind != protocol.OwnerNone {
+				shared = true
+				break
+			}
+		}
+		h.shared[project] = shared
+	}
+	return !shared
 }
