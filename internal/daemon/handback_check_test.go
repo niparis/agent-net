@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -204,6 +206,91 @@ func TestHandbackCheckTimeout(t *testing.T) {
 	}
 	if !hasSignal(view.Signals, protocol.SignalHandbackCheckTimedOut) {
 		t.Fatalf("no timeout signal: %+v", view.Signals)
+	}
+}
+
+// A check finds go and gofmt where a worker finds them, not on the daemon's
+// own PATH: the daemon service starts with a minimal PATH that lacks the
+// owner's Go (defect ch_b2551b718b8a14b1).
+func TestHandbackCheckFindsToolchainGo(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, queueSet, withLoad(&fakeLoad{l: roomyLoad()}))
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+
+	base := t.TempDir()
+	bin, root, cache := filepath.Join(base, "bin"), filepath.Join(base, "goroot"), filepath.Join(base, "modcache")
+	for _, dir := range []string{bin, filepath.Join(root, "bin"), cache} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	goScript := "#!/bin/sh\ncase \"$*\" in\n'env GOROOT GOMODCACHE') printf '%s\\n%s\\n' '" + root + "' '" + cache + "';;\n" +
+		"*) echo 'go version fake';;\nesac\n"
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(goScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// gofmt lives where go says GOROOT is, not beside the go binary.
+	if err := os.WriteFile(filepath.Join(root, "bin", "gofmt"), []byte("#!/bin/sh\necho 'gofmt fake'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The daemon's PATH has no Go; only the worker toolchain lookup does.
+	t.Setenv("PATH", "/usr/bin:/bin")
+	w.d.cfg.HarnessSearch = &harnesses.Options{PATH: bin, Dirs: []string{}, Home: base,
+		LoginShellPATH: func(context.Context) string { return "" }}
+	command := handbackCheckScript(t, "go version\ngofmt fake\n")
+	setHandbackCheck(t, g, "shop", command, "")
+	eventually(t, "the daemon has the hand-back check", func() bool {
+		cmd, _ := w.d.handbackCheckSettings("shop")
+		return cmd == command
+	})
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:handback FAKE:edit", Isolation: protocol.IsolationWorktree})
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "hand-back check: passed in ") {
+		t.Fatalf("notice:\n%s", n.Body)
+	}
+	view := changeView(t, g, noticeChangeID(t, n.Body))
+	check := view.HandbackCheck
+	if check == nil || check.Status != protocol.HandbackCheckPassed {
+		t.Fatalf("change hand-back check: %+v", check)
+	}
+	for _, want := range []string{"go version fake", "gofmt fake"} {
+		if !strings.Contains(check.OutputTail, want) {
+			t.Errorf("output tail lacks %q: %s", want, check.OutputTail)
+		}
+	}
+}
+
+// A check whose tool is missing proves nothing: the notice says it could not
+// run, in one line, instead of reporting a failed test.
+func TestHandbackCheckMissingToolCouldNotRun(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, queueSet, withLoad(&fakeLoad{l: roomyLoad()}))
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	command := handbackCheckScript(t, "no-such-tool-xyz --version\n")
+	setHandbackCheck(t, g, "shop", command, "")
+	eventually(t, "the daemon has the hand-back check", func() bool {
+		cmd, _ := w.d.handbackCheckSettings("shop")
+		return cmd == command
+	})
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:handback FAKE:edit", Isolation: protocol.IsolationWorktree})
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "hand-back check: could not run: no-such-tool-xyz not found") {
+		t.Fatalf("notice:\n%s", n.Body)
+	}
+	if strings.Contains(n.Body, "hand-back check output:") {
+		t.Errorf("a check that could not run printed output:\n%s", n.Body)
+	}
+	view := changeView(t, g, noticeChangeID(t, n.Body))
+	check := view.HandbackCheck
+	if check == nil || check.Status != protocol.HandbackCheckCouldNotRun {
+		t.Fatalf("change hand-back check: %+v", check)
+	}
+	if hasSignal(view.Signals, protocol.SignalHandbackCheckFailed) {
+		t.Errorf("a check that could not run raised a failure signal: %+v", view.Signals)
 	}
 }
 
