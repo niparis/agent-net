@@ -101,7 +101,16 @@ jobs:
       - uses: actions/setup-go@v5.5.0
         with:
           go-version-file: go.mod
-      - run: scripts/test.sh --package ${{ matrix.package }} --shard-index ${{ matrix.shard }} --shard-count 4 -- -timeout 30m
+      # The JSON output of each shard is kept as an artifact. scripts/test-timings.py
+      # turns the artifacts of one green run into scripts/test-timings.tsv, so the
+      # shard plan balances the times CI itself measures.
+      - run: scripts/test.sh --package ${{ matrix.package }} --shard-index ${{ matrix.shard }} --shard-count 4 --json-output "$RUNNER_TEMP/test-${{ matrix.package }}-${{ matrix.shard }}.json" -- -timeout 30m
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: test-json-${{ matrix.package }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/test-${{ matrix.package }}-${{ matrix.shard }}.json
+          if-no-files-found: error
 
   test-other:
     runs-on: ubuntu-latest
