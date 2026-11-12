@@ -125,7 +125,7 @@ func (d *Daemon) runCheckCommand(ctx context.Context, dir, command string, paral
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
-	cmd.Env = d.handbackCheckEnv(parallel)
+	cmd.Env = d.handbackCheckEnv(ctx, dir, parallel)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Kill the whole group, not only nice, when the timeout expires.
 	cmd.Cancel = func() error {
@@ -140,11 +140,12 @@ func (d *Daemon) runCheckCommand(ctx context.Context, dir, command string, paral
 	check := &protocol.HandbackCheck{Status: protocol.HandbackCheckPassed}
 	err := cmd.Start()
 	if err != nil {
-		check.Status = protocol.HandbackCheckFailed
-		check.ExitCode = 127
 		if ctx.Err() != nil {
 			check.Status = protocol.HandbackCheckTimedOut
-			check.ExitCode = 0
+		} else {
+			// The command never ran, so this proves nothing about the code.
+			check.Status = protocol.HandbackCheckCouldNotRun
+			check.Detail = oneLine(err.Error())
 		}
 		check.OutputTail = safeCheckOutput(err.Error())
 		check.DurationMS = time.Since(started).Milliseconds()
@@ -153,21 +154,29 @@ func (d *Daemon) runCheckCommand(ctx context.Context, dir, command string, paral
 	}
 	err = cmd.Wait()
 	check.DurationMS = time.Since(started).Milliseconds()
+	check.OutputTail = safeCheckOutput(tail.String())
 	if ctx.Err() != nil {
 		check.Status = protocol.HandbackCheckTimedOut
 		check.ExitCode = 0
 	} else if err != nil {
-		check.Status = protocol.HandbackCheckFailed
 		check.ExitCode = exitCodeOf(err)
+		check.Status = protocol.HandbackCheckFailed
+		if check.ExitCode == 127 {
+			// The shell could not find a command the check needs. That is not
+			// a failing test, and the notice says which tool is missing.
+			check.Status = protocol.HandbackCheckCouldNotRun
+			check.Detail = missingToolDetail(check.OutputTail)
+			check.ExitCode = 0
+		}
 	}
-	check.OutputTail = safeCheckOutput(tail.String())
 	d.Logf("worker.handback_check worker=%s status=%s exit=%d duration=%s", workerID, check.Status, check.ExitCode, time.Duration(check.DurationMS)*time.Millisecond)
 	return check
 }
 
 // handbackCheckEnv is the worker's environment plus the values the check needs:
-// the shared Go caches and the parallelism the test slot granted.
-func (d *Daemon) handbackCheckEnv(parallel int) []string {
+// the PATH where the worker finds go and gofmt, the shared Go caches and the
+// parallelism the test slot granted.
+func (d *Daemon) handbackCheckEnv(ctx context.Context, dir string, parallel int) []string {
 	if parallel < 1 {
 		parallel = 1
 	}
@@ -176,12 +185,74 @@ func (d *Daemon) handbackCheckEnv(parallel int) []string {
 		// The granted -p comes last, so an inherited one cannot win.
 		flags = old + " " + flags
 	}
-	return workerEnv(os.Environ(), map[string]string{
+	env := os.Environ()
+	set := map[string]string{
 		"GOCACHE":    d.workerGoCacheDir(),
 		"GOTMPDIR":   d.workerGoTmpDir(),
 		"GOMAXPROCS": strconv.Itoa(parallel),
 		"GOFLAGS":    flags,
-	})
+	}
+	base := workerEnv(env, set)
+	if toolchain := d.workerToolchainPATH(ctx, dir, base); toolchain != "" {
+		// The toolchain comes first so a wrong go on the daemon's PATH cannot
+		// win over the one the worker would use.
+		if path := envValue(base, "PATH"); path != "" {
+			toolchain += string(os.PathListSeparator) + path
+		}
+		set["PATH"] = toolchain
+	}
+	return workerEnv(env, set)
+}
+
+// envValue is one variable's value in a KEY=value list.
+func envValue(env []string, key string) string {
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, key+"="); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// missingToolDetail turns a shell's "not found" line into the one-line reason
+// the notice shows, for example "gofmt not found".
+func missingToolDetail(out string) string {
+	line := ""
+	for _, l := range strings.Split(out, "\n") {
+		if t := strings.TrimSpace(l); t != "" {
+			line = t
+		}
+	}
+	for _, suffix := range []string{": command not found", ": not found"} {
+		prefix, ok := strings.CutSuffix(line, suffix)
+		if !ok {
+			continue
+		}
+		tool := prefix
+		if i := strings.LastIndex(tool, ":"); i >= 0 {
+			tool = tool[i+1:]
+		}
+		if tool = strings.TrimSpace(tool); tool != "" {
+			return tool + " not found"
+		}
+	}
+	return "a command the check needs is missing"
+}
+
+// oneLine makes an error text fit the notice's single line for a check that
+// could not run.
+func oneLine(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > protocol.MaxHandbackCheckDetailBytes {
+		s = s[:protocol.MaxHandbackCheckDetailBytes]
+		for len(s) > 0 && !utf8.RuneStart(s[len(s)-1]) {
+			s = s[:len(s)-1]
+		}
+	}
+	if s == "" {
+		return "the command did not start"
+	}
+	return s
 }
 
 // exitCodeOf is the process exit status, or -1 when none is available.

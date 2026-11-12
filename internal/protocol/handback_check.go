@@ -16,34 +16,52 @@ const (
 	HandbackCheckFailed        = "failed"
 	HandbackCheckTimedOut      = "timed_out"
 	HandbackCheckNotConfigured = "not_configured"
+	// HandbackCheckCouldNotRun means the command never started or a tool it
+	// needs is missing. It proves nothing about the code, so it is neither a
+	// pass nor a failed test.
+	HandbackCheckCouldNotRun = "could_not_run"
 )
 
 const (
 	// MaxHandbackCheckOutputBytes bounds the output tail kept for a change and
 	// its notice.
 	MaxHandbackCheckOutputBytes = 4 << 10
+	// MaxHandbackCheckDetailBytes bounds the one-line reason of a check that
+	// could not run.
+	MaxHandbackCheckDetailBytes = 200
 )
 
 // HandbackCheck is the result of one pre-hand-back check. Status is passed,
-// failed, timed_out or not_configured. ExitCode is the command's exit code
-// when it ran and failed. DurationMS is how long it ran. OutputTail is the
-// last few KiB of its combined output, with terminal controls removed.
+// failed, timed_out, not_configured or could_not_run. ExitCode is the command's
+// exit code when it ran and failed. DurationMS is how long it ran. OutputTail
+// is the last few KiB of its combined output, with terminal controls removed.
+// Detail is the one-line reason a check could not run.
 type HandbackCheck struct {
 	Status     string `json:"status"`
 	ExitCode   int    `json:"exit_code,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
 	OutputTail string `json:"output_tail,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 // Validate checks one result before a submit carries it.
 func (c HandbackCheck) Validate() error {
 	switch c.Status {
-	case HandbackCheckPassed, HandbackCheckFailed, HandbackCheckTimedOut, HandbackCheckNotConfigured:
+	case HandbackCheckPassed, HandbackCheckFailed, HandbackCheckTimedOut, HandbackCheckNotConfigured, HandbackCheckCouldNotRun:
 	default:
-		return fmt.Errorf("handback check status must be passed, failed, timed_out or not_configured, not %q", c.Status)
+		return fmt.Errorf("handback check status must be passed, failed, timed_out, not_configured or could_not_run, not %q", c.Status)
 	}
 	if c.Status == HandbackCheckFailed && (c.ExitCode < -1 || c.ExitCode > 255) {
 		return errors.New("handback check exit code must be between 0 and 255")
+	}
+	if c.Status == HandbackCheckCouldNotRun && strings.TrimSpace(c.Detail) == "" {
+		return errors.New("a handback check that could not run must say why")
+	}
+	if len(c.Detail) > MaxHandbackCheckDetailBytes {
+		return fmt.Errorf("handback check detail is longer than %d bytes", MaxHandbackCheckDetailBytes)
+	}
+	if strings.ContainsAny(c.Detail, "\r\n") {
+		return errors.New("handback check detail must be one line")
 	}
 	if c.DurationMS < 0 {
 		return errors.New("handback check duration must not be negative")
@@ -68,6 +86,8 @@ func (c HandbackCheck) NoticeLine() string {
 		return "hand-back check: timed out after " + checkDuration(c.DurationMS)
 	case HandbackCheckNotConfigured:
 		return "hand-back check: not configured"
+	case HandbackCheckCouldNotRun:
+		return "hand-back check: could not run: " + c.Detail
 	}
 	return "hand-back check: " + c.Status
 }
