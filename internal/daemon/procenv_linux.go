@@ -54,3 +54,14 @@ func osProcessList() []int {
 	}
 	return out
 }
+
+// osProcessCWDs reads the working directory of each process from /proc.
+func osProcessCWDs(pids []int) map[int]string {
+	res := make(map[int]string, len(pids))
+	for _, pid := range pids {
+		if cwd, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/cwd"); err == nil {
+			res[pid] = cwd
+		}
+	}
+	return res
+}

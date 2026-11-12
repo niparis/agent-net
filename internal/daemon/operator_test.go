@@ -108,6 +108,7 @@ func liveSampler(root int) *usage.Sampler {
 func withSampler(root int) func(*Config) {
 	return func(c *Config) {
 		c.UsageSampler = liveSampler(root)
+		c.claudeRosterPath = os.DevNull // never the real roster of this user
 		c.UsageReportInterval = 30 * time.Millisecond
 	}
 }

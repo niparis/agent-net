@@ -1,6 +1,9 @@
 package daemon
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // processEnviron is the environment of a process. Tests replace it so that the
 // herdr the tests run in is not seen.
@@ -13,6 +16,36 @@ var processParentPID = parentPID
 
 // processList lists the processes that can be looked at.
 var processList = osProcessList
+
+// processCWDs reads the working directory of each process in pids. A process
+// that is gone, or that this user may not look at, is left out. It is
+// replaceable so tests never read the real machine.
+var processCWDs = osProcessCWDs
+
+// parseLsofCWD reads the output of `lsof -a -d cwd -Fpn`: a "p<pid>" line, then
+// an "n<path>" line for that process.
+func parseLsofCWD(out []byte) map[int]string {
+	res := map[int]string{}
+	pid := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if line == "" {
+			continue
+		}
+		switch line[0] {
+		case 'p':
+			n, err := strconv.Atoi(line[1:])
+			if err != nil {
+				n = 0
+			}
+			pid = n
+		case 'n':
+			if pid > 0 {
+				res[pid] = line[1:]
+			}
+		}
+	}
+	return res
+}
 
 // processEnvVar reads one variable of a process's environment. It returns ""
 // when the process is not ours or the variable is not set.

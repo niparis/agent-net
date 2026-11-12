@@ -18,7 +18,7 @@ func TestMachineProcessesRSS(t *testing.T) {
 	d.sessions["s_test"] = &localSession{sessionID: "s_test", info: protocol.SessionInfo{PID: 200}}
 	s.Sample(context.Background())
 	s.Sample(context.Background())
-	rows, err := d.machineProcesses(context.Background(), "rss", fixtureProcessTable(now, fixture))
+	rows, _, err := d.machineProcesses(context.Background(), "rss", fixtureProcessTable(now, fixture))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +51,9 @@ func TestMachineProcessesThroughGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if r := out.Processes.Roster; r == nil || r.State != protocol.ClaudeRosterMissing {
+		t.Errorf("the process page must carry the roster status: %+v", r)
+	}
 	if out.Processes.Items[0].PID != os.Getpid() || out.Processes.Items[0].Refusal == "" || out.Processes.Items[0].OwnerKind != protocol.ProcOwnerDaemon {
 		t.Fatalf("missing daemon protection: %+v", out.Processes)
 	}
@@ -76,7 +79,7 @@ func TestMachineProcessesReadsTableAndRosterOnce(t *testing.T) {
 		tableReads++
 		return fixtureProcessTable(now, fixture)()
 	}
-	rows, err := d.machineProcesses(ctx, "rss", table)
+	rows, _, err := d.machineProcesses(ctx, "rss", table)
 	if err != nil {
 		t.Fatal(err)
 	}
