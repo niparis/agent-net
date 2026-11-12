@@ -59,6 +59,13 @@ jobs:
         run: bash -n scripts/test.sh
       - name: shard planner
         run: bash scripts/test-sharding.sh
+      # The checkout is shallow and has no default branch. The lock check
+      # compares the lock with origin/main, so fetch it here. A failed fetch
+      # fails this step, so the check cannot pass by skipping.
+      - name: migrations lock extends main
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          go test -count=1 -v -run '^TestMigrationsLockExtendsBase$' ./internal/gateway
 
   test-sharded:
     name: ${{ matrix.package }} shard ${{ matrix.shard }} of 4
