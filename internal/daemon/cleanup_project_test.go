@@ -1070,6 +1070,7 @@ func TestCleanupStoppedChangeKeepsBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_stopped", dir)
+	cleanupCommit(t, dir, "unique", "unique work")
 	d := &Daemon{cfg: Config{StateDir: state}, workers: map[string]*worker{}}
 	old := time.Now().Add(-60 * 24 * time.Hour)
 	candidate := cleanupWorktree{ID: "w_stopped", Project: project, Path: dir, Branch: "agent-net/w_stopped", EndedAt: old, ChangeState: protocol.ChangeStopped, ChangeEndedAt: old}
@@ -1127,6 +1128,158 @@ func TestCleanupMergedBranchImmediately(t *testing.T) {
 			rows, err := st.cleanupWorktrees(project)
 			if err != nil || len(rows) != 0 {
 				t.Fatalf("cleanup row remains: %+v %v", rows, err)
+			}
+		})
+	}
+}
+
+// closedFixture adds a worker worktree with one commit, so a test can say
+// where else that commit lives.
+func closedFixture(t *testing.T, id string) (project, state, dir string, d *Daemon) {
+	t.Helper()
+	project = newRepo(t, "project")
+	state = t.TempDir()
+	dir = cleanupAddWorktree(t, project, state, id)
+	cleanupCommit(t, dir, "unique", "unique work")
+	d = &Daemon{cfg: Config{StateDir: state}, workers: map[string]*worker{}}
+	return project, state, dir, d
+}
+
+func branchExists(t *testing.T, project, branch string) bool {
+	t.Helper()
+	_, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/"+branch)
+	return err == nil
+}
+
+// A change closed as superseded, whose work the default branch already holds,
+// is freed like a merged one. It does not wait three days or keep its branch.
+func TestCleanupClosedChangeInDefaultBranchFreedAtOnce(t *testing.T) {
+	t.Parallel()
+	project, _, dir, d := closedFixture(t, "w_closedmain")
+	gitIn(t, project, "merge", "-q", "--ff-only", "agent-net/w_closedmain")
+	now := time.Now()
+	w := cleanupWorktree{ID: "w_closedmain", Project: project, Path: dir, Branch: "agent-net/w_closedmain", EndedAt: now.Add(-time.Hour), ChangeState: protocol.ChangeStopped, ChangeEndedAt: now.Add(-time.Hour), ChangeChecked: true}
+	if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("closed worktree in main remains: %v", err)
+	}
+	if branchExists(t, project, w.Branch) {
+		t.Fatal("closed branch in main remains")
+	}
+}
+
+// A closed change whose branch is in main keeps a dirty worktree and a running
+// worker's worktree.
+func TestCleanupClosedChangeInDefaultBranchKeepsDirtyAndRunning(t *testing.T) {
+	t.Parallel()
+	project, _, dir, d := closedFixture(t, "w_closedkeep")
+	gitIn(t, project, "merge", "-q", "--ff-only", "agent-net/w_closedkeep")
+	now := time.Now()
+	w := cleanupWorktree{ID: "w_closedkeep", Project: project, Path: dir, Branch: "agent-net/w_closedkeep", EndedAt: now.Add(-time.Hour), ChangeState: protocol.ChangeStopped, ChangeEndedAt: now.Add(-time.Hour), ChangeChecked: true}
+	d.workers[w.ID] = &worker{id: w.ID}
+	if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("running worker's worktree removed: %v", err)
+	}
+	delete(d.workers, w.ID)
+	if err := os.WriteFile(filepath.Join(dir, "unsaved"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("dirty worktree removed: %v", err)
+	}
+	if !branchExists(t, project, w.Branch) {
+		t.Fatal("branch deleted with unsaved work")
+	}
+}
+
+// A closed change with work that no other branch and no change holds keeps its
+// branch, and its worktree waits three days.
+func TestCleanupClosedChangeWithOwnWorkWaits(t *testing.T) {
+	t.Parallel()
+	project, _, dir, d := closedFixture(t, "w_closedown")
+	now := time.Now()
+	w := cleanupWorktree{ID: "w_closedown", Project: project, Path: dir, Branch: "agent-net/w_closedown", EndedAt: now.Add(-2 * 24 * time.Hour), ChangeState: protocol.ChangeStopped, ChangeEndedAt: now.Add(-2 * 24 * time.Hour), ChangeChecked: true}
+	if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("worktree removed inside the grace period: %v", err)
+	}
+	w.ChangeEndedAt = now.Add(-4 * 24 * time.Hour)
+	if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("worktree remains after the grace period: %v", err)
+	}
+	if !branchExists(t, project, w.Branch) {
+		t.Fatal("branch with its own work deleted")
+	}
+}
+
+// A closed change whose commits are on the branch of another open or merged
+// change loses its worktree and branch after the grace period.
+func TestCleanupClosedChangeContainedInAnotherChange(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		age        time.Duration
+		otherState string
+		// wantTree and wantBranch say what must be gone.
+		wantTree, wantBranch bool
+	}{
+		{"open change, after grace", 4 * 24 * time.Hour, protocol.ChangeOpen, true, true},
+		{"merged change, after grace", 4 * 24 * time.Hour, protocol.ChangeMerged, true, true},
+		{"open change, inside grace", 2 * 24 * time.Hour, protocol.ChangeOpen, false, false},
+		{"other branch has no live change", 4 * 24 * time.Hour, "", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			project, state, dir, d := closedFixture(t, "w_contained")
+			// A second worker continued from the first one and holds its commits.
+			other := cleanupAddWorktree(t, project, state, "w_next")
+			gitIn(t, other, "merge", "-q", "--ff-only", "agent-net/w_contained")
+			cleanupCommit(t, other, "more", "more work")
+			var asked []string
+			d.cfg.testGatewayCall = func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
+				if typ != protocol.FrameChangeList {
+					return nil, false, nil
+				}
+				q := params.(protocol.ChangeListRequest)
+				asked = append(asked, q.Branch)
+				res := protocol.ChangeListResult{Branch: q.Branch}
+				if q.Branch == "agent-net/w_next" && tc.otherState != "" {
+					res.Changes = []protocol.ChangeView{{Change: protocol.Change{ID: "ch_next", Branch: q.Branch, State: tc.otherState}}}
+				}
+				raw, _ := json.Marshal(res)
+				return raw, true, nil
+			}
+			now := time.Now()
+			w := cleanupWorktree{ID: "w_contained", Project: project, Path: dir, Branch: "agent-net/w_contained", DefaultBranch: "main", EndedAt: now.Add(-tc.age), ChangeState: protocol.ChangeStopped, ChangeEndedAt: now.Add(-tc.age), ChangeChecked: true}
+			if err := cleanupPrepareProof(context.Background(), &w); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.cleanupPrepareContained(context.Background(), "project", &w); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.cleanupWorktree(context.Background(), w, now); err != nil {
+				t.Fatal(err)
+			}
+			_, err := os.Stat(dir)
+			if removed := os.IsNotExist(err); removed != tc.wantTree {
+				t.Fatalf("worktree removed=%v, want %v (asked %v)", removed, tc.wantTree, asked)
+			}
+			if gone := !branchExists(t, project, w.Branch); gone != tc.wantBranch {
+				t.Fatalf("branch deleted=%v, want %v", gone, tc.wantBranch)
+			}
+			if !branchExists(t, project, "agent-net/w_next") {
+				t.Fatal("the other change's branch was touched")
 			}
 		})
 	}
