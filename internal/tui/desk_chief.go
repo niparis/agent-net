@@ -44,7 +44,12 @@ type deskCounts struct {
 // deskMark is the mark whose optional line of why the owner is typing.
 type deskMark struct {
 	ask, mark string
+	// answer is set for a rule line: the option it answers (decision 0150).
+	answer string
 }
+
+// deskRuleMark is the mark of a pending rule line.
+const deskRuleMark = "rule"
 
 // deskAskMsg is the answer of an undo or a mark.
 type deskAskMsg struct {
@@ -281,7 +286,13 @@ func (m Model) deskHandledHints(h protocol.ChiefSort) []hint {
 		undo.label = "undo the sort"
 		out = append(out, undo)
 	}
-	out = append(out, bindingHint(contextInbox, "should_have_asked"))
+	// An ask the chief sent to the owner reached him: the mark that fits is
+	// didn't need me, also after he answered it (decision 0150).
+	if h.Result == protocol.AskSortOwner {
+		out = append(out, bindingHint(contextInbox, "didnt_need"))
+	} else {
+		out = append(out, bindingHint(contextInbox, "should_have_asked"))
+	}
 	return keepChoices(out)
 }
 
@@ -354,6 +365,48 @@ func (m Model) deskMarkStart(ask, mark string) Model {
 	return m
 }
 
+// deskRuleStart opens the line of a standing rule for the marked answer,
+// filled with the ask's repo as its area.
+func (m Model) deskRuleStart(ask, answer, repo string) Model {
+	m.deskPending = &deskMark{ask: ask, mark: deskRuleMark, answer: answer}
+	m.inboxInput = newTextInput()
+	m.inboxInput.CharLimit = protocol.MaxChiefReasonChars
+	m.inboxInput.Prompt = "always " + answer + " for> "
+	area := protocol.RuleAreaNetwork
+	if repo = strings.TrimSpace(repo); repo != "" {
+		area = protocol.RuleAreaRepo + repo
+	}
+	m.inboxInput.SetValue(" in " + area)
+	m.inboxInput.CursorStart()
+	m.inboxInput.Focus()
+	m.inboxEditing = true
+	return m
+}
+
+// parseRuleLine reads "<action> in <area>".
+func parseRuleLine(s string) (protocol.RuleScope, bool) {
+	i := strings.LastIndex(s, " in ")
+	if i < 0 {
+		return protocol.RuleScope{}, false
+	}
+	scope := protocol.RuleScope{Action: strings.TrimSpace(s[:i]), Area: strings.TrimSpace(s[i+4:])}
+	return scope, scope.Action != "" && scope.Area != ""
+}
+
+// inboxAnswerScoped answers with a scope: the gateway also keeps a rule.
+func (m Model) inboxAnswerScoped(id, answer string, scope protocol.RuleScope) tea.Cmd {
+	c, ok := m.src.(inboxCaller)
+	return func() tea.Msg {
+		if !ok {
+			return inboxAnswerMsg{id, fmt.Errorf("inbox unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		_, err := c.Call(ctx, "inbox_answer", map[string]any{"id": id, "answer": answer, "scope": scope})
+		return inboxAnswerMsg{id, err}
+	}
+}
+
 // deskMarkKey types the why of a mark. Enter stores it, even when it is empty.
 func (m Model) deskMarkKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch k.Code {
@@ -362,8 +415,18 @@ func (m Model) deskMarkKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyEnter:
 		p := *m.deskPending
+		value := strings.TrimSpace(m.inboxInput.Value())
+		if p.mark == deskRuleMark {
+			scope, ok := parseRuleLine(value)
+			if !ok {
+				m.fail("Type the action and its area: merge in repo:<name>, team:<name> or network.")
+				return m, nil
+			}
+			m.deskPending, m.inboxEditing = nil, false
+			return m, m.inboxAnswerScoped(p.ask, p.answer, scope)
+		}
 		m.deskPending, m.inboxEditing = nil, false
-		return m, m.deskMarkCmd(p, strings.TrimSpace(m.inboxInput.Value()))
+		return m, m.deskMarkCmd(p, value)
 	}
 	var cmd tea.Cmd
 	m.inboxInput, cmd = m.inboxInput.Update(k)

@@ -188,9 +188,14 @@ Legend ────────────────────────�
   t                      type answer
   x                      dismiss the ask
   i                      on a sign-in ask: open that CLI's login in a herdr pane on the machine that needs it
+  w                      in the details of a question or approval: answer the marked option and keep it as a standing
+                         rule. Type the action and its area: merge in repo:<name>, team:<name> or network. A rule
+                         applies only on an exact match; undo it on its Log line.
+  d                      on an open ask: talk it over. A chief item opens the chief's session and wakes it; a Atlas item
+                         opens your Atlas chat.
   u                      undo
-  n                      on an ask that reached you: the chief did not need to send it. Type one optional line of why;
-                         the chief reads it in its next batch.
+  n                      on an ask that reached you, open or answered (in Handled for you): the chief did not need to
+                         send it. Type one optional line of why; the chief reads it in its next batch.
   m                      on a handled ask: the chief should have asked you. Type one optional line of why; the chief
                          reads it in its next batch.
   v                      show or hide the done and stale changes in the In flight section

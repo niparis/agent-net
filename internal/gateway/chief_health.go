@@ -143,21 +143,24 @@ func (s *Store) releaseChiefAsks(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.Query(`SELECT id,text,about_kind,about_id,created_at,chief_at FROM inbox_items WHERE status='open' AND next_who=?`, protocol.AskNextChief)
+	rows, err := s.db.Query(`SELECT id,kind,text,about_kind,about_id,created_at,chief_at FROM inbox_items WHERE status='open' AND next_who=?`, protocol.AskNextChief)
 	if err != nil {
 		return err
 	}
 	type held struct {
-		id, text, aboutKind, aboutID string
-		created, chiefAt             int64
+		id, kind, text, aboutKind, aboutID string
+		created, chiefAt                   int64
 	}
 	var late []held
 	cutoff := now.Add(-protocol.ChiefTimeout).UnixNano()
 	for rows.Next() {
 		var x held
-		if err := rows.Scan(&x.id, &x.text, &x.aboutKind, &x.aboutID, &x.created, &x.chiefAt); err != nil {
+		if err := rows.Scan(&x.id, &x.kind, &x.text, &x.aboutKind, &x.aboutID, &x.created, &x.chiefAt); err != nil {
 			rows.Close()
 			return err
+		}
+		if neverOwnerAsk(x.kind) {
+			continue
 		}
 		anchor := x.created
 		if x.chiefAt != 0 {

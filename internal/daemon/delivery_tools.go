@@ -29,7 +29,7 @@ import (
 // other methods.
 func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {
-	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind, protocol.OpNudgeStats:
+	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind, protocol.OpNudgeStats, protocol.OpJudgmentRecord:
 	default:
 		return nil, false, nil
 	}
@@ -126,6 +126,20 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		}
 		var out protocol.AskSortResult
 		err := d.deliveryCall(ctx, protocol.FrameAskSort, protocol.AskSortRequest{SessionID: sid, AskSortArgs: a}, &out)
+		return out, true, err
+	case protocol.OpJudgmentRecord:
+		if info.Worker != nil {
+			return nil, true, errors.New("a worker does not record owner decisions")
+		}
+		var a protocol.JudgmentRecordArgs
+		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+			return nil, true, err
+		}
+		if err := a.Validate(); err != nil {
+			return nil, true, err
+		}
+		var out protocol.JudgmentRecordResult
+		err := d.deliveryCall(ctx, protocol.FrameJudgmentRecord, protocol.JudgmentRecordRequest{SessionID: sid, JudgmentRecordArgs: a}, &out)
 		return out, true, err
 	case protocol.OpAskIntake:
 		if info.Worker != nil {

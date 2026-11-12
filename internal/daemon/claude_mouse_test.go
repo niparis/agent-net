@@ -19,17 +19,17 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// mouseTestDaemon is a daemon that records Desk log lines instead of calling
+// mouseTestDaemon is a daemon that records CTO intake lines instead of calling
 // the gateway.
 func mouseTestDaemon(t *testing.T, lines *[]string) *Daemon {
 	t.Helper()
 	d := &Daemon{log: log.New(io.Discard, "", 0)}
 	d.cfg.Hostname = "research"
 	d.cfg.testGatewayCall = func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
-		if typ != "desk.note" {
+		if typ != "intake.report" {
 			return nil, false, nil
 		}
-		*lines = append(*lines, params.(protocol.DeskNote).Text)
+		*lines = append(*lines, params.(protocol.IntakeReport).Text)
 		return json.RawMessage(`{"ok":true}`), true, nil
 	}
 	return d
@@ -333,7 +333,7 @@ func TestClaudeMouseDriftPendingSentWhenGatewayLinkUp(t *testing.T) {
 	d := &Daemon{log: log.New(io.Discard, "", 0)}
 	d.cfg.Hostname = "research"
 	d.cfg.testGatewayCall = func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
-		if typ != "desk.note" {
+		if typ != "intake.report" {
 			return nil, false, nil
 		}
 		mu.Lock()
@@ -341,7 +341,7 @@ func TestClaudeMouseDriftPendingSentWhenGatewayLinkUp(t *testing.T) {
 		if !linkUp {
 			return nil, true, errNotConnected
 		}
-		lines = append(lines, params.(protocol.DeskNote).Text)
+		lines = append(lines, params.(protocol.IntakeReport).Text)
 		return json.RawMessage(`{"ok":true}`), true, nil
 	}
 	d.sessions = map[string]*localSession{
@@ -362,7 +362,7 @@ func TestClaudeMouseDriftPendingSentWhenGatewayLinkUp(t *testing.T) {
 	linkUp = true
 	mu.Unlock()
 
-	eventually(t, "desk note sent once gateway link is up", func() bool {
+	eventually(t, "intake report sent once gateway link is up", func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(lines) == 1
@@ -391,7 +391,7 @@ func TestClaudeMouseDriftRetryBacksOffWhileGatewayOffline(t *testing.T) {
 	var calls atomic.Int32
 	d := &Daemon{log: log.New(io.Discard, "", 0)}
 	d.cfg.testGatewayCall = func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
-		if typ == "desk.note" {
+		if typ == "intake.report" {
 			calls.Add(1)
 			return nil, true, errNotConnected
 		}
@@ -404,7 +404,7 @@ func TestClaudeMouseDriftRetryBacksOffWhileGatewayOffline(t *testing.T) {
 	d.showMouseNotice(ctx, "mouse-key", "offline notice")
 	time.Sleep(1100 * time.Millisecond)
 	if got := calls.Load(); got > 2 {
-		t.Fatalf("desk.note calls while offline = %d, want at most 2 during 1.1 seconds", got)
+		t.Fatalf("intake.report calls while offline = %d, want at most 2 during 1.1 seconds", got)
 	}
 }
 

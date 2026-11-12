@@ -7,12 +7,12 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// machineAsks counts the open Desk items about a machine.
+// machineAsks counts the open CTO alerts about a machine (decision 0152).
 func machineAsks(t *testing.T, s *Store, node string) int {
 	t.Helper()
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE kind=? AND about_kind=? AND about_id=? AND status='open'`,
-		protocol.AskKindMachine, protocol.AskAboutMachine, node).Scan(&n); err != nil {
+		protocol.AskKindCTOAlert, protocol.AskAboutMachine, node).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -87,7 +87,7 @@ func TestUnexplainedGapRaisesOneAsk(t *testing.T) {
 		t.Fatalf("%d open Desk items after return, want none", n)
 	}
 	var status, reason string
-	if err := s.db.QueryRow(`SELECT status,answer FROM inbox_items WHERE kind=?`, protocol.AskKindMachine).Scan(&status, &reason); err != nil {
+	if err := s.db.QueryRow(`SELECT status,answer FROM inbox_items WHERE kind=?`, protocol.AskKindCTOAlert).Scan(&status, &reason); err != nil {
 		t.Fatal(err)
 	}
 	if status != protocol.AskClosed {

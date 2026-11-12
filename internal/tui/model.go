@@ -1127,6 +1127,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deskLog = msg.entries
 		}
 		return m, nil
+	case askDiscussMsg:
+		return m.onAskDiscuss(msg)
 	case deskUndoneMsg:
 		m.say("Undone.")
 		for i := range m.deskLog {

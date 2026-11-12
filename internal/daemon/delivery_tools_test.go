@@ -442,6 +442,39 @@ func TestAskSortForwardsTheCallerSession(t *testing.T) {
 	}
 }
 
+// An owner decision recorded in chat goes to the gateway with the caller's own
+// session, so the gateway checks that it is the chief or the CTO.
+func TestJudgmentRecordForwardsTheCallerSession(t *testing.T) {
+	t.Parallel()
+	n, f := startDeliveryNode(t)
+	f.answer(protocol.FrameJudgmentRecord, func(raw json.RawMessage) (any, error) {
+		var q protocol.JudgmentRecordRequest
+		_ = json.Unmarshal(raw, &q)
+		return protocol.JudgmentRecordResult{ID: "so_1", Kind: protocol.StandingKindRule, Area: q.Area, Action: q.Action}, nil
+	})
+	_, wt := deliveryWorktree(t)
+	lc, sid := helloDelivery(t, n, "np-chief", wt, "gpt-6.1-sol")
+	res, err := lc.call(protocol.OpJudgmentRecord, map[string]any{"text": "Always merge docs-only changes.", "area": "repo:demo", "action": "merge docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out protocol.JudgmentRecordResult
+	if err := json.Unmarshal(res, &out); err != nil || out.ID != "so_1" || out.Kind != protocol.StandingKindRule {
+		t.Fatalf("result = %s (%v)", res, err)
+	}
+	sent := f.frames(protocol.FrameJudgmentRecord)
+	if len(sent) != 1 {
+		t.Fatalf("frames sent = %d, want 1", len(sent))
+	}
+	var q protocol.JudgmentRecordRequest
+	if err := json.Unmarshal(sent[0], &q); err != nil {
+		t.Fatal(err)
+	}
+	if q.SessionID != sid || q.Area != "repo:demo" || q.Action != "merge docs" {
+		t.Fatalf("frame = %+v, caller session %s", q, sid)
+	}
+}
+
 // The chief's brief status and delivery go to the gateway with the caller's
 // own session, so the gateway checks the chief and no agent names another.
 func TestOwnerBriefForwardsStatusAndDelivery(t *testing.T) {

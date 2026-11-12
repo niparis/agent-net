@@ -273,8 +273,8 @@ func (d *Daemon) claudeServiceLiveSessions(now time.Time) int {
 	return live
 }
 
-// reportMouseNotice shows one line in the owner's TUI and writes it to the
-// Desk log. It keeps to one report per key per day.
+// reportMouseNotice writes one digest line to the CTO intake queue (decision
+// 0152); it never reaches the owner. It keeps to one report per key per day.
 func (d *Daemon) reportMouseNotice(ctx context.Context, key, text string) {
 	now := time.Now()
 	if !d.mouseNoticeDue(key, now) {
@@ -284,8 +284,8 @@ func (d *Daemon) reportMouseNotice(ctx context.Context, key, text string) {
 	d.showMouseNotice(ctx, key, text)
 }
 
-// showMouseNotice sends the line to the local TUIs and the Desk log. If the
-// gateway link is not connected yet, it retries the Desk note with backoff.
+// showMouseNotice sends the line to the CTO intake queue. If the gateway link
+// is not connected yet, it retries with backoff.
 func (d *Daemon) showMouseNotice(ctx context.Context, key, text string) {
 	d.mouseMu.Lock()
 	if d.mouseNotices == nil {
@@ -303,16 +303,15 @@ func (d *Daemon) showMouseNotice(ctx context.Context, key, text string) {
 		delete(d.mouseNotices, pendingKey)
 		d.mouseMu.Unlock()
 	}
-	d.broadcastCTOUI(protocol.UIRequest{Text: text, DaemonNotice: true})
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text})
+	_, err := d.call(cctx, "intake.report", mouseIntake(text))
 	cancel()
 	if err == nil {
 		clearPending()
 		return
 	}
 	if !isMouseNoticeOffline(err) {
-		d.Logf("claude mouse: desk log: %v", err)
+		d.Logf("claude mouse: CTO intake: %v", err)
 		clearPending()
 		return
 	}
@@ -335,13 +334,13 @@ func (d *Daemon) showMouseNotice(ctx context.Context, key, text string) {
 			case <-timer.C:
 			}
 			cctx, cancel := context.WithTimeout(bctx, 10*time.Second)
-			_, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text})
+			_, err := d.call(cctx, "intake.report", mouseIntake(text))
 			cancel()
 			if err == nil {
 				return
 			}
 			if !isMouseNoticeOffline(err) {
-				d.Logf("claude mouse: desk log: %v", err)
+				d.Logf("claude mouse: CTO intake: %v", err)
 				return
 			}
 			delay *= 2
@@ -384,4 +383,10 @@ func (d *Daemon) markMouseNotice(key string, now time.Time) {
 		d.mouseNotices = map[string]time.Time{}
 	}
 	d.mouseNotices[key] = now
+}
+
+// mouseIntake is the CTO intake report of a mouse notice. All notices of one
+// machine are one entry, whose count grows.
+func mouseIntake(text string) protocol.IntakeReport {
+	return protocol.IntakeReport{Kind: protocol.IntakeClaudeMouse, Subject: "claude", Text: text}
 }

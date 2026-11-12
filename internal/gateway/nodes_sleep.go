@@ -3,7 +3,6 @@ package gateway
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -142,6 +141,9 @@ func (s *Store) NodeLinkUp(nodeID string) error {
 		if _, err := s.closeAsks(tx, `about_kind=? AND about_id=?`, []any{protocol.AskAboutMachine, nodeID}, protocol.AskReasonReturned); err != nil {
 			return err
 		}
+		if err := s.closeIntake(tx, protocol.IntakeMachineSilent, nodeID, intakeReturned, s.now()); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(`DELETE FROM node_silence WHERE node_id=?`, nodeID); err != nil {
 		return err
@@ -194,6 +196,9 @@ func (s *Store) NodeSlept(nodeID string, from, to time.Time) (bool, error) {
 	}
 	if silentAt > 0 {
 		if _, err := s.closeAsks(tx, `about_kind=? AND about_id=?`, []any{protocol.AskAboutMachine, nodeID}, protocol.AskReasonSlept); err != nil {
+			return false, err
+		}
+		if err := s.closeIntake(tx, protocol.IntakeMachineSilent, nodeID, intakeSlept, s.now()); err != nil {
 			return false, err
 		}
 	}
@@ -294,17 +299,15 @@ WHERE sl.dropped_at>0 AND sl.silent_at=0 AND sl.dropped_at<=?`, cutoff)
 			continue
 		}
 		c.row.SilentAt = now
+		// A silent machine goes to the CTO intake queue and wakes the CTO
+		// through the chief (decision 0152), never to the owner.
 		at := c.row.DroppedAt.UTC().Format("2006-01-02 15:04 MST")
-		if _, err := s.createInboxItem(tx, protocol.InboxItem{
-			Kind: protocol.AskKindMachine, SessionID: c.row.NodeID, Node: c.row.NodeID,
-			FromKind: protocol.AskFromGateway, AskerName: "agent-net",
-			SourceRef: "machine:" + c.row.NodeID + ":" + strconv.FormatInt(c.row.DroppedAt.UnixNano(), 10),
+		if _, err := s.recordIntake(tx, intakeEvent{
+			Kind: protocol.IntakeMachineSilent, Subject: c.row.NodeID,
 			AboutKind: protocol.AskAboutMachine, AboutID: c.row.NodeID,
-			NextWho: protocol.AskNextOwner,
-			Text:    fmt.Sprintf("%s went silent at %s without sleeping; it may be hung", c.host, at),
-			WhyYou:  "A machine that stays offline without a sleep report may be hung.",
-			Detail:  "Last link drop: " + c.row.DroppedAt.UTC().Format(time.RFC3339),
-		}); err != nil {
+			Text:   fmt.Sprintf("%s went silent at %s without sleeping; it may be hung", c.host, at),
+			Detail: "Last link drop: " + c.row.DroppedAt.UTC().Format(time.RFC3339),
+		}, now); err != nil {
 			return nil, err
 		}
 		marked = append(marked, c.row)

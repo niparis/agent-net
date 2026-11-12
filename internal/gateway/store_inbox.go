@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -25,7 +26,7 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 		var created, answered int64
 		var options string
 		err := tx.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, item.Replaces).
-			Scan(&old.ID, &old.Kind, &old.SessionID, &old.Node, &old.Text, &old.Recommendation, &old.MessageID, &old.ConversationID, &created, &old.Status, &old.Answer, &answered, &options, &old.AskerName, &old.ChangeTitle)
+			Scan(&old.ID, &old.Kind, &old.SessionID, &old.Node, &old.Text, &old.Recommendation, &old.MessageID, &old.ConversationID, &created, &old.Status, &old.Answer, &answered, &options, &old.AskerName, &old.ChangeTitle, &old.Category)
 		if err == sql.ErrNoRows {
 			return item, reject("unknown inbox item %q", item.Replaces)
 		}
@@ -50,10 +51,26 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 			return old, nil
 		}
 	}
-	item, err = s.createInboxItem(tx, item)
-	if err != nil {
-		return item, err
+	// One decision per item (decision 0150): an ask with several questions
+	// becomes one item per question. The first one is returned.
+	parts := []string{item.Text}
+	if item.Kind == protocol.AskKindQuestion && item.SourceRef == "" {
+		if split := protocol.SplitQuestions(item.Text); split != nil {
+			parts = split
+		}
 	}
+	first := protocol.InboxItem{}
+	for i, text := range parts {
+		part := item
+		part.Text = text
+		if part, err = s.createInboxItem(tx, part); err != nil {
+			return part, err
+		}
+		if i == 0 {
+			first = part
+		}
+	}
+	item = first
 	if err = tx.Commit(); err != nil {
 		return item, err
 	}
@@ -90,9 +107,24 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	switch item.Kind {
 	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
 		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindPermission, protocol.AskKindStep, protocol.AskKindWaiting,
-		protocol.AskKindBrief, protocol.AskKindSignIn, protocol.AskKindMachine:
+		protocol.AskKindBrief, protocol.AskKindSignIn, protocol.AskKindMachine, protocol.AskKindCTOAlert, protocol.AskKindQuotaStuck:
 	default:
 		return item, reject("invalid inbox kind")
+	}
+	// The route of decision 0152. A kind the table does not list keeps
+	// today's default, the chief; TestRouteTableCoversEveryKind is what
+	// makes every kind get a row.
+	rt, ok := routeOf(routeAsk, askRouteKey(item))
+	if !ok {
+		rt = route{Class: routeAsk, Kind: item.Kind, To: routeChief}
+		if s.logf != nil {
+			s.logf("route.missing", "kind", item.Kind)
+		}
+	}
+	// An automatic item routed to the owner (sign-in and OAuth) skips the
+	// chief: it is a one-click ask only the owner can do.
+	if rt.Auto && rt.To == routeOwner && item.NextWho == "" {
+		item.NextWho = protocol.AskNextOwner
 	}
 	if strings.TrimSpace(item.SessionID) == "" || strings.TrimSpace(item.Text) == "" {
 		return item, reject("inbox session and text are required")
@@ -121,15 +153,30 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	if len(item.Options) > 4 {
 		return item, reject("too many options")
 	}
+	fromSession := item.FromKind == "" || item.FromKind == protocol.AskFromSession
+	// An item an agent sends to the owner must be a decision he can take on the
+	// spot (decision 0150). Generated notices keep their fixed actions.
+	if item.NextWho == protocol.AskNextOwner && fromSession && protocol.KindNeedsOptions(item.Kind) && len(item.Options) == 0 {
+		return item, reject("an owner-bound item needs options: give the answers the owner can pick")
+	}
+	item.Category = itemCategory(item)
 	options, err := json.Marshal(item.Options)
 	if err != nil {
 		return item, err
 	}
-	// One open ask per source key: a repeat refreshes the text it shows.
+	now := s.now().UTC()
+	// One open ask per source key (and so per source and kind: a key belongs
+	// to one kind). A repeat from the same asker refreshes the text it shows;
+	// another asker joins the open item and gets its answer too.
 	if item.SourceRef != "" {
-		var id string
-		err := db.QueryRow(`SELECT id FROM inbox_items WHERE source_ref=? AND status='open'`, item.SourceRef).Scan(&id)
+		var id, session string
+		err := db.QueryRow(`SELECT id,session_id FROM inbox_items WHERE source_ref=? AND status='open'`, item.SourceRef).Scan(&id, &session)
 		if err == nil {
+			if session != item.SessionID && fromSession {
+				err := s.joinItem(db, id, item, now)
+				item.ID = id
+				return item, err
+			}
 			_, err = db.Exec(`UPDATE inbox_items SET text=?,recommendation=?,options=?,detail=?,why_you=? WHERE id=?`,
 				item.Text, item.Recommendation, string(options), item.Detail, item.WhyYou, id)
 			item.ID = id
@@ -138,17 +185,81 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 		if err != sql.ErrNoRows {
 			return item, err
 		}
+	} else if item.MessageID != "" {
+		// A message is the item's source: its outcome is resolved by that
+		// message, so it never joins another item by text.
+	} else if id, err := sameAskWithin(db, item, now); err != nil || id != "" {
+		if err != nil {
+			return item, err
+		}
+		return scanInbox(db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, id))
 	}
 	item.ID = protocol.NewID("i")
-	item.CreatedAt = s.now().UTC()
+	item.CreatedAt = now
 	item.Status = "open"
 	item.Answer = ""
 	item.AnsweredAt = time.Time{}
 	_, err = db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,
-		from_kind,source_ref,about_kind,about_id,next_who,why_you,detail,route_fixed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		from_kind,source_ref,about_kind,about_id,next_who,why_you,detail,route_fixed,category) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status, string(options), item.AskerName, item.ChangeTitle,
-		item.FromKind, item.SourceRef, item.AboutKind, item.AboutID, nextWho, item.WhyYou, item.Detail, routeFixed)
+		item.FromKind, item.SourceRef, item.AboutKind, item.AboutID, nextWho, item.WhyYou, item.Detail, routeFixed, item.Category)
 	return item, err
+}
+
+// itemCategory is the category of a new item: the one its kind fixes, else
+// the one the asker gave, else normal.
+func itemCategory(item protocol.InboxItem) string {
+	if c := protocol.KindCategory(item.Kind); c != "" {
+		return c
+	}
+	if protocol.ValidItemCategory(item.Category) {
+		return item.Category
+	}
+	return protocol.CategoryNormal
+}
+
+// sameAskWindow is how long an open ask catches the same question from the
+// same asker (decision 0150).
+const sameAskWindow = 24 * time.Hour
+
+// sameAskWithin finds the open ask of the same asker, made in the last 24
+// hours, whose text is the same once case, white space and ids are folded.
+func sameAskWithin(db askDB, item protocol.InboxItem, now time.Time) (string, error) {
+	if item.SessionID == "" {
+		return "", nil
+	}
+	rows, err := db.Query(`SELECT id,text FROM inbox_items WHERE session_id=? AND status='open' AND created_at>? ORDER BY created_at,rowid`,
+		item.SessionID, now.Add(-sameAskWindow).UnixNano())
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	key := protocol.NormalizeAskText(item.Text)
+	for rows.Next() {
+		var id, text string
+		if err := rows.Scan(&id, &text); err != nil {
+			return "", err
+		}
+		if protocol.NormalizeAskText(text) == key {
+			return id, nil
+		}
+	}
+	return "", rows.Err()
+}
+
+// joinItem records another asker of an open item. The joined row is answered
+// or closed with the item (trigger inbox_items_joined_settle), and its asker
+// gets the answer.
+func (s *Store) joinItem(db askDB, into string, item protocol.InboxItem, now time.Time) error {
+	options, err := json.Marshal(item.Options)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,
+		from_kind,source_ref,about_kind,about_id,next_who,detail,category,dup_of) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		protocol.NewID("i"), item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, now.UnixNano(), protocol.ItemStatusJoined, string(options), item.AskerName, item.ChangeTitle,
+		item.FromKind, item.SourceRef, item.AboutKind, item.AboutID, "", item.Detail, item.Category, into)
+	return err
 }
 
 // sourceRefID reads the numeric ID from a source key such as draft:12.
@@ -165,7 +276,7 @@ func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 	var item protocol.InboxItem
 	var created, answered int64
 	var options string
-	err := row.Scan(&item.ID, &item.Kind, &item.SessionID, &item.Node, &item.Text, &item.Recommendation, &item.MessageID, &item.ConversationID, &created, &item.Status, &item.Answer, &answered, &options, &item.AskerName, &item.ChangeTitle)
+	err := row.Scan(&item.ID, &item.Kind, &item.SessionID, &item.Node, &item.Text, &item.Recommendation, &item.MessageID, &item.ConversationID, &created, &item.Status, &item.Answer, &answered, &options, &item.AskerName, &item.ChangeTitle, &item.Category)
 	if err != nil {
 		return item, err
 	}
@@ -179,7 +290,7 @@ func scanInbox(row inboxScanner) (protocol.InboxItem, error) {
 	return item, nil
 }
 
-const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at,options,asker_name,change_title`
+const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at,options,asker_name,change_title,category`
 
 // inboxTables are the tables inboxRead reads: the items, the delivery steps and
 // their changes, the names of the askers (agentNames: sessions, nodes, profiles)
@@ -201,7 +312,7 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 func (s *Store) inboxRead() ([]protocol.InboxItem, error) {
 	// An open ask that waits on someone other than the owner (a team lead) is
 	// not the owner's Inbox item.
-	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items WHERE NOT (status='open' AND next_who NOT IN ('owner','')) ORDER BY created_at,id`)
+	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items WHERE NOT (status='open' AND next_who NOT IN ('owner','')) AND status<>'joined' ORDER BY created_at,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -297,11 +408,31 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 // AnswerInboxAs records an answer from the owner or the CTO and queues its
 // delivery in one transaction.
 func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (protocol.InboxItem, error) {
+	return s.answerInbox(id, answer, actor, nil, validate...)
+}
+
+// answerInbox records an answer. A rule scope makes the answer a standing rule
+// too, written in the same transaction (decision 0150): a refused rule stores
+// no answer. Only the answer of a plain question, approval or idea carries a
+// scope.
+func (s *Store) answerInbox(id, answer, actor string, scope *protocol.RuleScope, validate ...bool) (protocol.InboxItem, error) {
 	if actor == "" {
 		actor = "owner"
 	}
 	if actor != "owner" && actor != "cto" {
 		return protocol.InboxItem{}, reject("unknown answer actor")
+	}
+	if scope != nil {
+		// The answers of these asks run their own operation; none keeps a rule.
+		for _, special := range []func() (protocol.InboxItem, bool, error){
+			func() (protocol.InboxItem, bool, error) { return s.answerDeliveryApproval(id, answer, true) },
+			func() (protocol.InboxItem, bool, error) { return s.answerLoopAsk(id, answer, true) },
+			func() (protocol.InboxItem, bool, error) { return s.answerStartAsk(id, answer, actor, true) },
+		} {
+			if _, handled, _ := special(); handled {
+				return protocol.InboxItem{}, reject("a standing rule comes only from the answer of a question, approval or idea")
+			}
+		}
 	}
 	if item, handled, err := s.answerDeliveryApproval(id, answer, validate...); handled || err != nil {
 		return item, err
@@ -337,6 +468,9 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	// an old approval can outlive the session that asked for it, and the owner
 	// must still be able to clear it from the Inbox. "seen" is the older
 	// notice answer and means the same thing.
+	if scope != nil && (answer == "dismiss" || answer == "seen" || item.Kind == protocol.AskKindPermission || item.Kind == protocol.AskKindDraft || item.Kind == protocol.AskKindBrief) {
+		return item, reject("a standing rule comes only from the answer of a question, approval or idea")
+	}
 	if answer == "dismiss" || answer == "seen" {
 		item.Status = "dismissed"
 		item.Answer = ""
@@ -420,6 +554,12 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	}
 	item.Answer = answer
 	item.AnsweredAt = s.now().UTC()
+	// Every asker that joined the item gets the answer (decision 0150). Read
+	// them before the update settles their rows.
+	joined, err := joinedAskers(tx, id)
+	if err != nil {
+		return item, err
+	}
 	if _, err = tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
 		return item, err
 	}
@@ -445,13 +585,22 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	if item.Kind == "approval" && answer == "approve" {
 		note = protocol.WrittenApprovalNote("the owner", protocol.NeutralizeMarkers(item.Text), item.AnsweredAt)
 	}
-	_, err = tx.Exec(`INSERT INTO messages (id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state,approval_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		protocol.NewID("m"), protocol.NewID("c"), "", sender, item.SessionID, protocol.TypeNotification, answer, 0, protocol.NewID("k"), item.AnsweredAt.UnixNano(), item.AnsweredAt.Add(protocol.DefaultTTL).UnixNano(), protocol.StateStored, note)
-	if err != nil {
-		return item, err
+	for _, to := range append([]string{item.SessionID}, joined...) {
+		_, err = tx.Exec(`INSERT INTO messages (id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state,approval_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			protocol.NewID("m"), protocol.NewID("c"), "", sender, to, protocol.TypeNotification, answer, 0, protocol.NewID("k"), item.AnsweredAt.UnixNano(), item.AnsweredAt.Add(protocol.DefaultTTL).UnixNano(), protocol.StateStored, note)
+		if err != nil {
+			return item, err
+		}
 	}
 	if item.Kind == "rejection" || item.Kind == "escalation" {
 		if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution='answered' WHERE reply_id=? AND resolution=''`, item.MessageID); err != nil {
+			return item, err
+		}
+	}
+	if scope != nil {
+		text := fmt.Sprintf("Always %s for %s in %s. From ask %s: %s", strings.TrimSpace(answer), scope.Action, scope.Area, id, askFirstLine(item.Text, 120))
+		if _, err = s.addRuleTx(tx, protocol.JudgmentAddRequest{Kind: protocol.StandingKindRule, Text: text, Ref: id,
+			Area: scope.Area, Action: scope.Action, Category: scope.Category}, deskSource(actor)); err != nil {
 			return item, err
 		}
 	}
@@ -462,6 +611,27 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 		return item, err
 	}
 	return item, nil
+}
+
+// joinedAskers lists the sessions that joined an item, other than its own
+// asker. Joined rows follow their item, so they are read whatever their
+// status.
+func joinedAskers(q askDB, id string) ([]string, error) {
+	rows, err := q.Query(`SELECT DISTINCT j.session_id FROM inbox_items j JOIN inbox_items i ON i.id=j.dup_of
+		WHERE j.dup_of=? AND j.session_id<>i.session_id ORDER BY j.session_id`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var sid string
+		if err := rows.Scan(&sid); err != nil {
+			return nil, err
+		}
+		out = append(out, sid)
+	}
+	return out, rows.Err()
 }
 
 // CloseArchivedSessionInbox closes only requests belonging to a session on the authenticated node.

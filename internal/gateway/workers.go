@@ -144,7 +144,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err != nil || p.Session == "" || p.StartID == "" || strings.TrimSpace(p.Text) == "" {
 			return nil, reject("bad worker.override_ask")
 		}
-		item, err := g.store.CreateStartOverrideAsk(nc.id, p.Session, p.StartID, p.Text)
+		item, err := g.store.CreateStartOverrideAsk(nc.id, p)
 		if err != nil {
 			return nil, err
 		}
@@ -716,6 +716,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		// whole account has no allowance left.
 		if p.Harness != "" {
 			if reason := protocol.QuotaHarnessRefusal(quotas, p.Harness); reason != "" {
+				if !(len(validate) > 0 && validate[0]) {
+					g.quotaStuckFeed(p.Harness, "", reason)
+				}
 				return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
 			}
 		}
@@ -963,6 +966,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if under, floorSentence, _ := protocol.CheckWorkerFloor(quotas, floors, p.Harness, p.Model); under {
 			isOwner := protocol.IsOwner(owner.Harness) && !p.FromCTO
 			if !isOwner {
+				if !(len(validate) > 0 && validate[0]) {
+					g.quotaFloorFeed(p.Harness, p.Model, floorSentence)
+				}
 				return none, g.refuseWithAlternative(ctx, nc, p, floorSentence)
 			}
 		}
@@ -970,6 +976,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// A provider with no allowance left refuses the start now, with the reset
 	// time, instead of failing at the first model call (decision 0022).
 	if reason := protocol.QuotaRefusal(quotas, p.Harness, p.Model); reason != "" {
+		if !(len(validate) > 0 && validate[0]) {
+			g.quotaStuckFeed(p.Harness, p.Model, reason)
+		}
 		return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
 	}
 	pickerMS := time.Since(began).Milliseconds()
@@ -1915,7 +1924,12 @@ func (g *Gateway) resumeQuotaRefusal(a protocol.AgentView) string {
 	if harness == "" {
 		harness = a.Harness
 	}
-	return protocol.QuotaRefusal(g.ownerQuotas(a.NodeID), harness, model)
+	why := protocol.QuotaRefusal(g.ownerQuotas(a.NodeID), harness, model)
+	if why != "" {
+		// The worker is stuck on quota: it joins the provider's thread.
+		g.quotaStuckFeed(harness, model, why)
+	}
+	return why
 }
 
 // notifyResumeRefusal reports a failed restart even when the original send

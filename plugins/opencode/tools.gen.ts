@@ -122,11 +122,14 @@ export const TOOL_CATALOG = [
             "merge",
             "send",
             "owner",
+            "confirm",
+            "picker",
+            "done",
             "list",
             "hide",
             "undo"
           ],
-          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you, with the sorter's counts by result."
+          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you, with the sorter's counts by result. confirm or picker: answer a held worker start (decision 0151). done: the answer of an answered ask was carried out; its askers are told."
         },
         "into": {
           "type": "string",
@@ -204,6 +207,36 @@ export const TOOL_CATALOG = [
         "receipt": {
           "type": "string",
           "description": "Receipt for undo."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "description": "For owner: the answers the owner can pick. An ask for the owner needs options; give them here when it has none."
+        },
+        "recommendation": {
+          "type": "string",
+          "description": "For owner: your recommendation, one of the options."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "security",
+            "outage",
+            "money",
+            "normal"
+          ],
+          "description": "Correct the ask's category on any sort."
+        },
+        "rule": {
+          "type": "string",
+          "description": "For close: the id of the standing rule that decides this ask. The close cites it."
+        },
+        "action": {
+          "type": "string",
+          "description": "With rule: the action the ask is about. The rule applies only when its area and action match exactly."
         }
       },
       "required": [],
@@ -1411,6 +1444,47 @@ export const TOOL_CATALOG = [
       "agent"
     ],
     "method": "owner_brief"
+  },
+  {
+    "name": "agent_owner_judgment_record",
+    "description": "Chief of staff and CTO only: record, in the same turn, a decision the owner made in your chat. area and action make it a standing rule.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The owner's decision in his words."
+        },
+        "area": {
+          "type": "string",
+          "description": "Rule area: network, repo:\u003cname\u003e or team:\u003cname\u003e. Empty for a one-time decision."
+        },
+        "action": {
+          "type": "string",
+          "description": "Rule action, for example merge. Applies only on an exact match."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "security",
+            "outage",
+            "money",
+            "secrets",
+            "client_facing"
+          ],
+          "description": "An owner-only category names a repo or team, never the network."
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "judgment_record"
   },
   {
     "name": "agent_owner_judgments_find",

@@ -91,6 +91,11 @@ type StandingOrder struct {
 	Kind      string   `json:"kind,omitempty"`
 	Area      string   `json:"area,omitempty"`
 	Ref       string   `json:"ref,omitempty"`
+	// Action and Category are the scope of a rule (decision 0150): Area is
+	// network, repo:<name> or team:<name>, and the rule applies only when both
+	// area and action match exactly.
+	Action   string `json:"action,omitempty"`
+	Category string `json:"category,omitempty"`
 	// Mark rows (a correction with area chief) also carry the ask they mark,
 	// its whole question, what the chief did with it, and the mark.
 	Ask         string `json:"ask,omitempty"`
@@ -106,6 +111,12 @@ type JudgmentAddRequest struct {
 	Text string `json:"text"`
 	Area string `json:"area,omitempty"`
 	Ref  string `json:"ref,omitempty"`
+	// Action and Category scope a rule (decision 0150); Area is then network,
+	// repo:<name> or team:<name>.
+	Action   string `json:"action,omitempty"`
+	Category string `json:"category,omitempty"`
+	// Source says who recorded it; empty means the owner.
+	Source string `json:"source,omitempty"`
 }
 
 // JudgmentsFindRequest is the agent read tool agent_owner_judgments_find request.

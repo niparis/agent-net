@@ -3108,6 +3108,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, st.AddDeskNote(nc.id, p.Text, p.Detail)
 
+	case "intake.report":
+		var p protocol.IntakeReport
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad intake.report")
+		}
+		return map[string]bool{"ok": true}, st.ReportIntake(nc.id, p)
+
+	case protocol.FrameIntakeFind:
+		var p protocol.IntakeFindArgs
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad %s", protocol.FrameIntakeFind)
+		}
+		return st.CTOIntake(p.Limit)
+
 	case "desk.settle":
 		var p struct {
 			ID int64 `json:"id"`
@@ -3204,6 +3218,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, st.MarkAsk(p, graphActor(raw))
 
+	case "ask.discuss":
+		p, err := decodeOperator[protocol.AskDiscussRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !actorAllowed(graphActor(raw), "rule") {
+			return nil, reject("only the owner discusses a Desk item")
+		}
+		return g.discussAsk(ctx, p.Ask)
+
 	case "chief.sorts":
 		sorts, err := st.ChiefSorts(st.now().Add(-protocol.ChiefSortsWindow))
 		return protocol.ChiefSortsResult{Sorts: sorts}, err
@@ -3214,6 +3238,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Answer  string `json:"answer"`
 			FromCTO bool   `json:"from_cto"`
 			Actor   string `json:"actor"`
+			// A scope makes the answer a standing rule (decision 0150).
+			Scope protocol.RuleScope `json:"scope"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", "bad inbox.answer")
@@ -3226,10 +3252,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if handled, err := st.answerAppConsent(p.ID, p.Answer, owner, p.FromCTO); handled {
 			return map[string]bool{"answered": err == nil}, err
 		}
-		item, err := st.AnswerInboxAs(p.ID, p.Answer, p.Actor)
+		item, err := st.AnswerInboxScoped(p.ID, p.Answer, p.Actor, p.Scope)
 		if err != nil {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
 			return nil, err
+		}
+		// The askers that joined the item got the answer too: send it on.
+		if joined, jerr := st.joinedNodes(item.ID); jerr == nil {
+			for _, node := range joined {
+				g.dispatchPending(ctx, node, false)
+			}
 		}
 		// A permission approval is applied only here, after the owner's answer
 		// was stored. It reaches each target machine's daemon as its own frame.

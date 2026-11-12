@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -25,22 +24,23 @@ func TestStartOverrideAskAnswers(t *testing.T) {
 	}
 	mk := func(ref string) protocol.InboxItem {
 		t.Helper()
-		item, err := s.CreateStartOverrideAsk(node, agent, ref, "an agent wants model=m. Confirm, or let the picker choose.")
+		item, err := s.CreateStartOverrideAsk(node, protocol.StartOverrideAsk{Session: agent, StartID: ref, Text: "an agent wants model=m. Confirm, or let the picker choose."})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return item
 	}
 	item := mk("a_1")
-	if item.Kind != protocol.AskKindQuestion || item.NextWho != protocol.AskNextOwner || len(item.Options) != 2 {
-		t.Fatalf("ask: %+v", item)
+	// With no chief of staff the ask goes to the owner (decision 0151).
+	var next string
+	if err := s.db.QueryRow(`SELECT next_who FROM inbox_items WHERE id=?`, item.ID).Scan(&next); err != nil {
+		t.Fatal(err)
+	}
+	if item.Kind != protocol.AskKindQuestion || next != protocol.AskNextOwner || len(item.Options) != 2 {
+		t.Fatalf("ask: %+v next %q", item, next)
 	}
 	if ref := s.startOverrideRef(item.ID); ref != protocol.StartOverrideRefPrefix+"a_1" {
 		t.Fatalf("source ref = %q", ref)
-	}
-	// The CTO is not a human: it cannot confirm, but it can choose the picker.
-	if _, err := s.AnswerInboxAs(item.ID, protocol.StartAnswerConfirm, "cto"); err == nil || !strings.Contains(err.Error(), "owner") {
-		t.Fatalf("the CTO confirmed an override: %v", err)
 	}
 	got, err := s.AnswerInboxAs(item.ID, protocol.StartAnswerConfirm, "owner")
 	if err != nil || got.Status != "answered" || got.Answer != protocol.StartAnswerConfirm {
