@@ -1282,14 +1282,14 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
 `, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, `
--- Session compaction settings cutover (decision 0132): fold the CTO
+-- Session compaction settings cutover (decision 0138): fold the CTO
 -- compaction threshold into the shared sessions key.
 `, `
--- Why the session was last compacted: fill N% or idle (decision 0132).
+-- Why the session was last compacted: fill N% or idle (decision 0138).
 -- The column is added in the migration loop so replaying is safe.
 SELECT 1 /* last compacted reason column */;
 `, `
--- Team level settings targets (decision 0132).
+-- Team level settings targets (decision 0138).
 DROP TRIGGER IF EXISTS settings_target_identity_repo_delete;
 DROP TRIGGER IF EXISTS settings_target_identity_agent_delete;
 DROP TRIGGER IF EXISTS settings_target_identity_agent_tombstone;

@@ -249,7 +249,7 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 }
 
 // cutoverSessionCompactionTx folds the old CTO compaction controls into the
-// shared session keys (decision 0132). It runs once, from the schema migration.
+// shared session keys (decision 0138). It runs once, from the schema migration.
 func (s *Store) cutoverSessionCompactionTx(tx *sql.Tx) error {
 	// A replay can reach this migration on a database that has no revision row
 	// yet: an old fixture, or a rewind into the migrations before the settings

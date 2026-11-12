@@ -48,4 +48,4 @@ compacts after 54 minutes idle, near its old 50 minutes; a provider with a
 `sessions.idle_compaction_after` is gone; an explicit value in it and the old
 CTO cache window are migrated into the new key. `sessions.idle_compaction` and
 `sessions.idle_compaction_min_tokens` stay as documented idle-only controls.
-See decision 0132.
+See decision 0138.

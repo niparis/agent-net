@@ -3999,7 +3999,7 @@ When a live session's provider says its usage or rate limit is hit, the daemon r
 ### Auto-compaction of persistent sessions
 
 See [decision 0078](decisions/0078-idle-compaction-for-background-sessions.md)
-and [decision 0132](decisions/0132-one-fill-compaction-setting.md).
+and [decision 0138](decisions/0138-one-fill-compaction-setting.md).
 
 One live advice setting controls automatic compaction:
 `sessions.compaction_threshold_percent` (default `80`, range 1 to 100). It can
