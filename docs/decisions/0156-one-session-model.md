@@ -53,7 +53,7 @@ the process, which each gives as functions.
 - The conversation lives in the same private folder (`<state>/cto/claude`), so
   the transcript is found again. The `cto` and `cto_actions` tables are not
   changed, so there is no migration.
-- The CTO's restrictions are the same, for both harnesses.
+- The CTO's restrictions are the same, for both harnesses. (Part B, [decision 0157](0157-cto-full-power-and-own-folders.md), gives it full built-in tools.)
 
 ### What was deleted
 
@@ -73,7 +73,7 @@ and the management in the TUI:
 - The runtime record of the CTO job (`claudeCTO`, `cto.mu`): which job is the
   CTO, adoption after a daemon restart, crash monitoring (`monitorClaudeCTO`).
   It is separate from the ordinary session record, which carries no role yet.
-- The CTO's own Enter plan, `cto_enter` and the `c` key.
+- The CTO's own Enter plan, `cto_enter` and the `c` key. (Decision 0157 gives the CTO the shared Claude Enter plan.)
 - Sending to the CTO (`DeliverCTO`) and reading its timeline, which use the
   CTO's own tables and transcript cache.
 - A restart without the old conversation is in `startClaudeRole`: it retries

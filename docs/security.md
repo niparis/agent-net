@@ -90,24 +90,34 @@ as peer input with the body quoted as data. For 30 days after the gateway upgrad
 conversations to the CTO session. It checks the stored root marker and creation
 time; personal owner conversations remain with the owner.
 
-The CTO has no built-in shell, file, search, web, scheduling or subagent tools.
-Claude uses `--tools ""`, empty settings sources, disabled hooks, no enabled
-plugins and strict MCP configuration. OpenCode denies every built-in action
-with a wildcard deny plus explicit deny rules for bash, edit, write, subagent,
-read, glob, grep, list, webfetch and todowrite. Only the private CTO MCP namespace
-is allowed. The general subagent is disabled and owner plugins are not copied.
+The CTO has full power ([decision 0157](decisions/0157-cto-full-power-and-own-folders.md)).
+Claude has its built-in tools and loads the owner's Claude settings, hooks and
+plugins; only its MCP configuration stays strict, with `agent-net cto-mcp` as
+the one agent-net server. OpenCode's `cto` agent has no built-in deny rules and
+allows the private CTO MCP namespace. The CTO runs as the owner's operating
+system user, so it can do what that user can do; the owner's Claude Code
+permission settings decide which built-in calls ask first.
+
+A `PreToolUse` hook in the Claude CTO's launch settings (`agent-net cto-hook`)
+allows `cto_op` calls at once, except `app_revoke`, `process_stop`,
+`machine_remove`, `machine_rotate`, `agent_tombstone`, `node_remove` and
+`repo_archive`. For those it gives no decision, so Claude Code asks the owner.
+The hook reads only the hook input and never fails open on input it cannot read.
+The OpenCode CTO has no such hook: as before, its `cto_op` calls run without a
+harness prompt. In both harnesses node removal, agent tombstone, repo archive,
+machine removal and token rotation remain owner proposals in agent-net.
 
 The Claude Code CTO's launch settings also allow one tool by name:
 `mcp__agent-net-cto__agent_message_send`. No other tool is allowed by these
-settings. Because the call is allowed, Claude Code's auto-mode check does not
+launch settings; the owner's own Claude settings apply on top, as in a coding
+session. Because the call is allowed, Claude Code's auto-mode check does not
 review the CTO's messages. Each receiving agent's charter and permission checks
 still apply.
 
 Startup checks capabilities instead of a version allowlist. Harness versions
 are logged for diagnosis and do not decide whether the CTO can start.
-Claude's `--help` must list `--tools` and `--strict-mcp-config`; a missing
-flag stops startup. Its tool set is enforced by the start arguments and private
-settings. There is no independent effective-tool enumeration on this path.
+Claude's `--help` must list `--strict-mcp-config`; a missing flag stops
+startup.
 
 An isolated probe of Claude Code 2.1.316 used a temporary HOME, a fake API key,
 an unreachable API URL and no prompt. With the CTO's start arguments it printed
@@ -116,12 +126,8 @@ stop the session. Standard error said `Starting background service`.
 There was no JSON system init record or effective-tool list. The probe's job
 was stopped afterward. Startup therefore does not depend on such a record.
 
-OpenCode's `GET /api/agent` must report every required deny rule in the CTO's
-effective permissions, including the wildcard deny that closes its default
-allow. No later rule may allow tools outside the private CTO MCP namespace,
-and the general subagent must be absent or disabled. Missing reports or deny
-rules stop startup. Fake harnesses test these checks. Real model tool execution
-and subagent inheritance have not been verified.
+OpenCode's `GET /api/agent` must list an enabled `cto` agent; otherwise startup
+stops. Fake harnesses test these checks.
 
 The private MCP server classifies calls as public read, talk, immediate change
 or proposal. Only node removal, agent tombstone, repo archive, machine removal
