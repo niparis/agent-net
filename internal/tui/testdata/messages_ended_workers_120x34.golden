@@ -17,7 +17,7 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 │                                                    ││ in every layer.                                                │
 │                                                    ││ The project's own AGENTS.md wins where it conflicts.           │
 │                                                    ││ - permissions: sandboxed (writes only in its worktree, network │
-│                                                    ││ on) (enforced for Codex only for now)                          │
+│                                                    ││ on) (enforced for claude, codex and agy only for now)          │
 │                                                    ││                                                                │
 │                                                    ││ Task:                                                          │
 │                                                    ││ Polish the sessions panel and make the long list readable      │

@@ -824,36 +824,6 @@ function formatMessages(r: any): string {
     .join("\n");
 }
 
-function formatStarted(r: any): string {
-  const extra = [r.track ? formatTrack(r.track) : "", ...(r.playbooks ?? []).map(formatPlaybook)].filter(Boolean).join("\n");
-  if (r.status === "queued") {
-    return (
-      `${r.queue_reason}\n` +
-      `Queued start ${r.queue_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}: no worker exists yet. ` +
-      `A worker notice arrives in this session when it starts, or when it cannot. Cancel it with agent_worker_stop and the queue_id.\n${workerPermissions(r)}` +
-      (r.machine_note ? `\nmachine: ${r.machine_note}` : "") +
-      (extra ? `\n${extra}` : "")
-    );
-  }
-  const note = r.queued
-    ? "The task is queued: it is sent when the gateway link is back."
-    : "The task was sent as a message from you; the worker answers with agent_message_reply and its answer arrives in this session.";
-  return (
-    `Started worker ${r.session_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}.\n` +
-    `${workerPermissions(r)}\n` +
-      (r.model_note ? `model: ${r.model_note}\n` : "") +
-    (r.worktree ? `worktree: ${r.worktree} (branch ${r.branch})\n` : "") +
-    `${note} Stop it with agent_worker_stop. It ends by itself after 60 minutes without messages or 4 hours.` +
-    (extra ? `\n${extra}` : "")
-  );
-}
-
-function workerPermissions(r: any): string {
-  const level = r.permissions || "sandboxed";
-  const detail = level === "read-only" ? "no writes" : level === "no-network" ? "writes only in its worktree, network off" : "writes only in its worktree, network on";
-  return `permissions: ${level} (${detail})${r.harness === "codex" ? "" : " (enforced for Codex only for now)"}`;
-}
-
 function formatProjects(r: any): string {
   const ps: any[] = r.projects ?? [];
   if (!ps.length) return "No projects found.";

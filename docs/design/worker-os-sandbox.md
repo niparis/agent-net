@@ -98,7 +98,7 @@ The permissions line of the start notice, the brief and the completion notice sa
 permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap)
 ```
 
-Without the wrapper, Pi and OpenCode workers keep "(enforced for Codex only for now)". Claude workers enforce the level with Claude Code's own settings, below.
+Without the wrapper, Pi and OpenCode workers keep "(enforced for claude, codex and agy only for now)", which names the harnesses that enforce the level by their own sandbox (`WorkerEnforcedBy` in `internal/protocol/workers.go`). Claude workers enforce the level with Claude Code's own settings, below.
 
 ## Claude workers
 

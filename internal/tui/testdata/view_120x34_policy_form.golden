@@ -12,9 +12,9 @@ Delegation policy: web (Mac), opencode ─────────────�
   Workers   sandboxed (default)
   Scope     session
 
-  Workers: sandboxed: writes only in its worktree, network on, no approval prompts (Codex only for now)
+  Workers: sandboxed: writes only in its worktree, network on, no approval prompts
+  Enforced for claude, codex and agy only for now.
   left/right changes a choice. Enter on Scope saves. The policy is added to the session's context on every turn.
-
 
 
 
