@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -307,5 +309,97 @@ func TestClaudeMouseFindsTheBackgroundService(t *testing.T) {
 	got := claudeDaemonServicePIDs()
 	if len(got) != 1 || got[0] != 10 {
 		t.Fatalf("service pids = %v", got)
+	}
+}
+
+func TestClaudeMouseDriftPendingSentWhenGatewayLinkUp(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	path := claudesettings.File()
+	if _, err := claudesettings.EnsureMouseOn(path); err != nil {
+		t.Fatal(err)
+	}
+	fakeMouseStart(t, time.Now().Add(-time.Hour))
+	fakeProcessEnv(t, "CLAUDE_CODE_DISABLE_MOUSE=1")
+
+	var (
+		mu     sync.Mutex
+		lines  []string
+		linkUp bool
+	)
+	d := &Daemon{log: log.New(io.Discard, "", 0)}
+	d.cfg.Hostname = "research"
+	d.cfg.testGatewayCall = func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
+		if typ != "desk.note" {
+			return nil, false, nil
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if !linkUp {
+			return nil, true, errNotConnected
+		}
+		lines = append(lines, params.(protocol.DeskNote).Text)
+		return json.RawMessage(`{"ok":true}`), true, nil
+	}
+	d.sessions = map[string]*localSession{
+		key("claude", "abc"): {info: protocol.SessionInfo{Harness: "claude", NativeID: "abc", Name: "garden", PID: os.Getpid()}},
+	}
+
+	// First drift check with the gateway link down: the Desk note cannot be sent yet.
+	d.checkClaudeMouseSessions(context.Background(), time.Now())
+	mu.Lock()
+	if len(lines) != 0 {
+		mu.Unlock()
+		t.Fatalf("reports before gateway link up: %v", lines)
+	}
+	mu.Unlock()
+
+	// Link is up afterwards: the pending Desk note must be sent.
+	mu.Lock()
+	linkUp = true
+	mu.Unlock()
+
+	eventually(t, "desk note sent once gateway link is up", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(lines) == 1
+	})
+
+	want := "garden on research: wheel off (mouse tracking disabled); it scrolls after its next restart"
+	mu.Lock()
+	got := lines[0]
+	mu.Unlock()
+	if got != want {
+		t.Fatalf("got report %q, want %q", got, want)
+	}
+
+	// Repeated drift checks do not send it again.
+	d.checkClaudeMouseSessions(context.Background(), time.Now())
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	count := len(lines)
+	mu.Unlock()
+	if count != 1 {
+		t.Fatalf("report sent %d times, want 1", count)
+	}
+}
+
+func TestClaudeMouseDriftRetryBacksOffWhileGatewayOffline(t *testing.T) {
+	var calls atomic.Int32
+	d := &Daemon{log: log.New(io.Discard, "", 0)}
+	d.cfg.testGatewayCall = func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+		if typ == "desk.note" {
+			calls.Add(1)
+			return nil, true, errNotConnected
+		}
+		return nil, false, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.showMouseNotice(ctx, "mouse-key", "offline notice")
+	// A repeated report while its first sender is pending must not start another.
+	d.showMouseNotice(ctx, "mouse-key", "offline notice")
+	time.Sleep(1100 * time.Millisecond)
+	if got := calls.Load(); got > 2 {
+		t.Fatalf("desk.note calls while offline = %d, want at most 2 during 1.1 seconds", got)
 	}
 }

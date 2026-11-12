@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -280,17 +281,79 @@ func (d *Daemon) reportMouseNotice(ctx context.Context, key, text string) {
 		return
 	}
 	d.markMouseNotice(key, now)
-	d.showMouseNotice(ctx, text)
+	d.showMouseNotice(ctx, key, text)
 }
 
-// showMouseNotice sends the line to the local TUIs and the Desk log.
-func (d *Daemon) showMouseNotice(ctx context.Context, text string) {
+// showMouseNotice sends the line to the local TUIs and the Desk log. If the
+// gateway link is not connected yet, it retries the Desk note with backoff.
+func (d *Daemon) showMouseNotice(ctx context.Context, key, text string) {
+	d.mouseMu.Lock()
+	if d.mouseNotices == nil {
+		d.mouseNotices = map[string]time.Time{}
+	}
+	pendingKey := "\x00pending:" + key
+	if _, pending := d.mouseNotices[pendingKey]; pending {
+		d.mouseMu.Unlock()
+		return
+	}
+	d.mouseNotices[pendingKey] = time.Time{}
+	d.mouseMu.Unlock()
+	clearPending := func() {
+		d.mouseMu.Lock()
+		delete(d.mouseNotices, pendingKey)
+		d.mouseMu.Unlock()
+	}
 	d.broadcastCTOUI(protocol.UIRequest{Text: text, DaemonNotice: true})
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if _, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text}); err != nil {
-		d.Logf("claude mouse: desk log: %v", err)
+	_, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text})
+	cancel()
+	if err == nil {
+		clearPending()
+		return
 	}
+	if !isMouseNoticeOffline(err) {
+		d.Logf("claude mouse: desk log: %v", err)
+		clearPending()
+		return
+	}
+	bctx := ctx
+	if d.ctoCtx != nil {
+		bctx = d.ctoCtx
+	}
+	if bctx == nil {
+		bctx = context.Background()
+	}
+	d.goBackground(func() {
+		defer clearPending()
+		delay := time.Second
+		for {
+			timer := time.NewTimer(delay)
+			select {
+			case <-bctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			cctx, cancel := context.WithTimeout(bctx, 10*time.Second)
+			_, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text})
+			cancel()
+			if err == nil {
+				return
+			}
+			if !isMouseNoticeOffline(err) {
+				d.Logf("claude mouse: desk log: %v", err)
+				return
+			}
+			delay *= 2
+			if delay > time.Minute {
+				delay = time.Minute
+			}
+		}
+	})
+}
+
+func isMouseNoticeOffline(err error) bool {
+	return errors.Is(err, errNotConnected) || (err != nil && strings.Contains(err.Error(), "not connected to the gateway"))
 }
 
 // mouseNoticeDue says whether key may be reported. The record survives a
