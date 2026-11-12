@@ -2,11 +2,15 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestCTOTabDoesNotFocusFromAnyTab(t *testing.T) {
@@ -220,5 +224,43 @@ func runCmds(cmd tea.Cmd) {
 		for _, c := range batch {
 			runCmds(c)
 		}
+	}
+}
+
+// c selects the CTO's Sessions row and opens it, the same as Enter on that
+// row (decision 0157). Back from the CTO, the row is where the owner left it.
+func TestCTOcSelectsTheCTORow(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			snap := fakeSnapshot()
+			snap.Agents = append(snap.Agents, protocol.AgentView{SessionID: "s_cto", Harness: "cto", Online: true, Status: "idle", NodeID: "n_mac", Hostname: "mac", LastActive: t0.Unix(), Profile: protocol.Profile{Name: "CTO"}})
+			fs := &fakeSource{snap: snap, events: fakeEvents()}
+			fs.usage, fs.counts, fs.tops = fakeUsage(), fakeCounts(), fakeTops()
+			src := &fakeCTOSource{fakeSource: fs}
+			m := New(src)
+			m.loc = time.UTC
+			m.now = func() time.Time { return t0 }
+			m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			m = settle(refresh(m, src))
+			if m.selected == "s_cto" {
+				t.Fatal("the CTO is selected before c")
+			}
+			next, cmd := m.Update(tea.KeyPressMsg{Text: "c", Code: 'c'})
+			m = next.(Model)
+			if m.selected != "s_cto" {
+				t.Fatalf("c left the selection on %q", m.selected)
+			}
+			runCmds(cmd)
+			if len(src.enters) != 1 || src.enters[0].SessionID != "s_cto" {
+				t.Fatalf("c sent %+v, want one session_enter for the CTO", src.enters)
+			}
+			frame := ansi.Strip(m.testView())
+			if os.Getenv("AGENT_NET_WRITE_FRAMES") != "" {
+				_ = os.WriteFile(filepath.Join(os.Getenv("AGENT_NET_WRITE_FRAMES"), fmt.Sprintf("cto-c-%dx%d.txt", size[0], size[1])), []byte(frame), 0o644)
+			}
+			if !strings.Contains(frame, "CTO") {
+				t.Fatalf("no CTO row in:\n%s", frame)
+			}
+		})
 	}
 }

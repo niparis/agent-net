@@ -66,7 +66,8 @@ It has the same attach command, host, folder and note. A TUI on this machine
 hands over its terminal; a TUI on another machine opens it with
 `herdr --remote` (decision 0046). Image paste therefore works the same. A test
 asserts that the CTO's plan equals a coding Claude session's plan apart from the
-job and the folder.
+job and the folder. The `c` key selects the CTO's Sessions row and opens it,
+the same as Enter on that row.
 
 ### The merger has its own folder
 
@@ -92,5 +93,3 @@ These part B items remain, in the order they should be done:
   before it builds the shared plan.
 - Stop, resume and restart of the CTO do not yet run through the ordinary
   session functions.
-- The `c` key opens the CTO through `session_enter`, as its Sessions row does,
-  but does not move the selection to that row.

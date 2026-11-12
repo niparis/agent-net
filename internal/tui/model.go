@@ -1850,7 +1850,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.tab == toolsTab && !m.mapOn && m.tl.capturing() {
 		return m.toolsKey(k)
 	}
-	// c opens the CTO session in one key; C focuses the box for its own keys
+	// c selects the CTO session's row and opens it in one key; C focuses the box for its own keys
 	// (new conversation, undo, settings, scrolling).
 	if keyAction(contextGlobal, k.String()) == "open CTO" && !m.filtering {
 		var poll tea.Cmd
@@ -1861,7 +1861,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		next, enter := m.openCTO(m.ctoSessionID())
+		id := m.ctoSessionID()
+		m.selectSession(id)
+		next, enter := m.openCTO(id)
 		return next, tea.Batch(poll, enter)
 	}
 	if keyAction(contextGlobal, k.String()) == "focus CTO" && !m.filtering {
@@ -2822,6 +2824,18 @@ func (m *Model) ensureSelection() {
 	}
 	i := min(m.selIdx, len(vis)-1)
 	m.selected, m.selIdx = vis[i].SessionID, i
+}
+
+// selectSession moves the Sessions selection to a visible session, so the
+// owner comes back to the row they opened. A hidden session leaves it alone.
+func (m *Model) selectSession(id string) {
+	for i, a := range m.visible() {
+		if a.SessionID == id {
+			m.selected, m.selIdx = id, i
+			m.fixScroll()
+			return
+		}
+	}
 }
 
 // selectedAgent returns the selected session.

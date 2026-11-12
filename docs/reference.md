@@ -598,7 +598,7 @@ session name or project node, filter text and a short reason. `cto_ui_show`
 with `notice` shows a short note. Both show a `CTO:` line and return
 `no TUI open` when no subscribed local TUI is connected.
 
-In the TUI, `c` opens the CTO session from every tab, and `C` focuses the CTO box.
+In the TUI, `c` selects the CTO's Sessions row and opens it from every tab, the same as Enter on that row, and `C` focuses the CTO box.
 Its title shows the owner's CTO title, the selected harness and model.
 The box is read-only: it shows the latest CTO output lines and the hint
 `c: open the <title>`. When focused, the hint reads
@@ -2792,7 +2792,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | `h`, `v` | In Sessions, `h` hides or unhides the selected session; `v` cycles active only, all, all with offline, all with offline and hidden. The Graph card keeps `h` to hide or unhide the selected project node and `H` to include hidden nodes. |
 | `v` | Cycle the Sessions view: active only (hide sessions idle and unreported for more than an hour), all, all with offline, all with offline and hidden. The Sessions column header names the current view. On the Graph agent card, `a` toggles the node's autonomy between `off` and `wake`, and `L` cycles the standing loop: off, 1h, 4h, 12h, 24h. |
 | `1` to `7` | Open Sessions, Graph, Quotas, Messages, Tools, Settings or Desk. `M` and `G` do not open Graph. |
-| `c`, `C` | `c` opens the CTO session; `C` focuses the CTO box. Ctrl+] returns to Sessions and Esc skips a tip. |
+| `c`, `C` | `c` selects the CTO's Sessions row and opens it; `C` focuses the CTO box. Ctrl+] returns to Sessions and Esc skips a tip. |
 | `d` | Toggle selected session details in place of the session list. |
 | `?` | Show the keys of this screen; press again for all screens. |
 | esc | Leave the help or a message body, or clear the filter. When a filter holds text, the first Esc clears it and the second leaves the field. Esc never quits. |
