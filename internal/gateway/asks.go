@@ -427,6 +427,18 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 	if protocol.IsOwner(harness) || worker != "" {
 		return nil
 	}
+	// A short wait for the user makes no ask (decision 0150): the minute
+	// reconcile opens it once the wait is old enough. The gateway stamps
+	// every stored wait with its start.
+	if w.Since > 0 && s.now().Sub(time.Unix(w.Since, 0)) < waitingAskDebounce {
+		var open int
+		if err := q.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=? AND status='open'`, ref).Scan(&open); err != nil {
+			return err
+		}
+		if open == 0 {
+			return nil
+		}
+	}
 	// A wait on the session's own lead is an ordinary wait inside the team: the
 	// lead hears of it (blockedMemberNotice), the owner has no ask (decision
 	// 0126). A wait a harness event reported (a permission prompt) is the
@@ -444,6 +456,41 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 		Text: w.Text, Options: w.Options, Detail: w.Kind,
 	})
 	return err
+}
+
+// waitingAskDebounce is how long a session waits for its user before the
+// wait becomes an ask.
+const waitingAskDebounce = 2 * time.Minute
+
+// reconcileWaitingAsks opens the asks of the waits that outlived the
+// debounce. Only sessions that wait and have no open ask are read.
+func (s *Store) reconcileWaitingAsks() error {
+	rows, err := s.db.Query(`SELECT id,waiting FROM sessions WHERE waiting<>'' AND archived_at=0
+		AND NOT EXISTS (SELECT 1 FROM inbox_items i WHERE i.source_ref='waiting:'||sessions.id AND i.status='open')`)
+	if err != nil {
+		return err
+	}
+	type wait struct{ id, waiting string }
+	var list []wait
+	for rows.Next() {
+		var w wait
+		if err := rows.Scan(&w.id, &w.waiting); err != nil {
+			rows.Close()
+			return err
+		}
+		list = append(list, w)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, w := range list {
+		if err := s.syncWaitingAsk(s.db, w.id, w.waiting); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // reconcileLearnedAsks opens an ask for every ready major learned suggestion
@@ -560,6 +607,9 @@ func (s *Store) reconcileAsks() error {
 	}
 	if _, err := s.reconcileMovedOnOnce(); err != nil {
 		return fmt.Errorf("moved on cleanup: %w", err)
+	}
+	if err := s.reconcileWaitingAsks(); err != nil {
+		return fmt.Errorf("waiting asks: %w", err)
 	}
 	return nil
 }

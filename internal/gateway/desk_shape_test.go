@@ -507,3 +507,32 @@ func TestProtectedProviderOverrideRoutesToCTO(t *testing.T) {
 		t.Fatalf("CTO confirm of a protected provider: %v", err)
 	}
 }
+
+// A short wait for the user makes no ask (decision 0150, Desk item 10): the
+// ask of a waiting session comes only once it has waited the debounce.
+func TestWaitingAskWaitsForTheDebounce(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	info := protocol.SessionInfo{Harness: "claude", NativeID: "w", Name: "waiter",
+		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Which database?", Since: c.t.Unix()}}
+	if _, err := s.UpsertSession(node, info); err != nil {
+		t.Fatal(err)
+	}
+	if asks, _ := s.ListAsks(); len(askByKind(asks, "waiting")) != 0 {
+		t.Fatalf("a wait of 0s made an ask: %+v", asks)
+	}
+	c.t = c.t.Add(waitingAskDebounce - time.Second)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	if asks, _ := s.ListAsks(); len(askByKind(asks, "waiting")) != 0 {
+		t.Fatalf("a wait shorter than the debounce made an ask: %+v", asks)
+	}
+	c.t = c.t.Add(2 * time.Second)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	if asks, _ := s.ListAsks(); len(askByKind(asks, "waiting")) != 1 {
+		t.Fatalf("a wait past the debounce made no ask: %+v", asks)
+	}
+}

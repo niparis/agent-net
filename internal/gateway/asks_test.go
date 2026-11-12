@@ -208,11 +208,16 @@ func TestOutcomeIsAnAsk(t *testing.T) {
 
 // A session that reports a wait has an ask while it waits.
 func TestWaitingSessionIsAnAsk(t *testing.T) {
-	s, _ := newTestStore(t)
+	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("box", "linux")
 	info := protocol.SessionInfo{Harness: "claude", NativeID: "w", Name: "waiter", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Which database?"}}
 	id, err := s.UpsertSession(node, info)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// The ask comes once the wait outlived the debounce.
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
 	asks, _ := s.ListAsks()
@@ -237,6 +242,10 @@ func TestWaitingSessionIsAnAsk(t *testing.T) {
 	}
 	info.Waiting = &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Which database?"}
 	if _, err := s.UpsertSession(node, info); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
 	info.Waiting = nil
