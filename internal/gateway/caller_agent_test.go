@@ -418,3 +418,24 @@ func TestCallerOnlyStepNoticeWaitsForTheReminderInterval(t *testing.T) {
 		t.Fatalf("a caller step that waited past the reminder interval sent %d messages, want 1 (%v)", n, err)
 	}
 }
+
+// A session of the caller's agent that is online but owns another step of the
+// change (here it is the project's merger) may not act on the caller's steps,
+// yet the agent is not offline. The "no session of yours was online" wake must
+// not be sent to it.
+func TestCallerWakeNotSentWhileASessionOfTheAgentIsOnline(t *testing.T) {
+	r := newCallerAgentRig(t)
+	if err := r.s.SetSessionOffline(r.a, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES('demo',?,?)`, r.a, r.second); err != nil {
+		t.Fatal(err)
+	}
+	r.submitAs(r.caller, "feature/online-merger", commitA)
+	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.g.dispatchStepTasks(context.Background())
+	var n int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:agentwake:%'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("woke the agent while its session %s is online: %d wake messages, %v", r.second, n, err)
+	}
+}
