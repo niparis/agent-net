@@ -61,11 +61,11 @@ func TestOpenCodeCallersDiscoverRoutesViaAdapter(t *testing.T) {
 		discoveries.Store(0)
 		d := &Daemon{log: log.New(io.Discard, "", 0)}
 		d.cto.base = server.URL
-		if err := d.checkOpenCodeCTOTools(context.Background(), []byte(`{"version":"2.2.6"}`)); err != nil {
+		if err := d.checkOpenCodeCTOAgent(context.Background(), []byte(`{"version":"2.2.6"}`)); err != nil {
 			t.Fatal(err)
 		}
 		if discoveries.Load() == 0 {
-			t.Fatal("checkOpenCodeCTOTools did not discover routes through adapter")
+			t.Fatal("checkOpenCodeCTOAgent did not discover routes through adapter")
 		}
 	})
 

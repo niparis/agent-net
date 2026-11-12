@@ -166,27 +166,6 @@ func TestClaudeCTOPrivateToolsAndSession(t *testing.T) {
 	if rec.MCPClient != "cto-mcp" {
 		t.Fatalf("CTO MCP client = %q, want private cto-mcp", rec.MCPClient)
 	}
-	toolsOff, privateSources := false, false
-	for i, arg := range rec.Args {
-		if arg == "--setting-sources" && i+1 < len(rec.Args) && rec.Args[i+1] == "" {
-			privateSources = true
-		}
-		if arg == "--tools" && i+1 < len(rec.Args) && rec.Args[i+1] == "" {
-			toolsOff = true
-		}
-	}
-	if !toolsOff {
-		t.Error("Claude built-in tools still enabled")
-	}
-	if !privateSources {
-		t.Error("owner settings loaded")
-	}
-	if plugins, ok := rec.Settings["enabledPlugins"].(map[string]any); !ok || len(plugins) != 0 {
-		t.Error("plugins enabled")
-	}
-	if rec.Settings["disableAllHooks"] != true {
-		t.Error("hooks enabled")
-	}
 
 	strict := false
 	for _, a := range rec.Args {
@@ -660,11 +639,13 @@ if [ "$1" = --help ]; then echo '--bg --strict-mcp-config --tools'; elif [ "$1" 
 	}
 }
 
-func TestCTOExtraBuiltinFailsStartup(t *testing.T) {
-	withFakeOpenCodeRouteSets(t, testCTOExtraBuiltinFailsStartup)
+// The CTO has full power (decision 0157): an OpenCode CTO whose agent allows a
+// built-in tool starts.
+func TestCTOOpenCodeBuiltinsStart(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testCTOOpenCodeBuiltinsStart)
 }
 
-func testCTOExtraBuiltinFailsStartup(t *testing.T) {
+func testCTOOpenCodeBuiltinsStart(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	t.Setenv("FAKE_CTO_EXTRA_TOOL", "Bash")
 	g := startGateway(t, t.TempDir(), "")
@@ -672,23 +653,24 @@ func testCTOExtraBuiltinFailsStartup(t *testing.T) {
 	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
 	n.d.cto.mu.Lock()
 	err := n.d.startOpenCodeRole(context.Background(), roleCTO)
-	retainsProcess := n.d.cto.cmd != nil
 	n.d.cto.mu.Unlock()
-	if err == nil || !strings.Contains(err.Error(), "Bash") {
-		t.Fatalf("extra built-in must fail clearly: %v", err)
-	}
-	if retainsProcess {
-		t.Error("rejected runtime retains CTO access")
+	t.Cleanup(func() {
+		n.d.cto.mu.Lock()
+		n.d.stopOpenCodeCTOLocked("test")
+		n.d.cto.mu.Unlock()
+	})
+	if err != nil {
+		t.Fatalf("a CTO with a built-in tool must start: %v", err)
 	}
 }
 
-func TestClaudeCTORequiresToolsCapability(t *testing.T) {
+func TestClaudeCTORequiresStrictMCPCapability(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	// A small script reports the flags, as a real `claude --help` does. The
 	// fake test binary is large, and a machine under load can fail to fork or
-	// kill such a child; that error says nothing about --tools.
+	// kill such a child; that error says nothing about the flag.
 	bin := filepath.Join(t.TempDir(), "claude")
-	script := "#!/bin/sh\nif [ \"$1\" = --help ]; then echo '--bg --strict-mcp-config'; elif [ \"$1\" = --version ]; then echo 2.1.316; fi\n"
+	script := "#!/bin/sh\nif [ \"$1\" = --help ]; then echo '--bg --tools'; elif [ \"$1\" = --version ]; then echo 2.1.316; fi\n"
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -696,30 +678,8 @@ func TestClaudeCTORequiresToolsCapability(t *testing.T) {
 	n := startClaudeNode(t, g, shortSet)
 	n.d.cfg.HarnessPaths["claude"] = bin
 	err := n.d.startClaudeRole(context.Background(), roleCTO, "", "opus")
-	if err == nil || !strings.Contains(err.Error(), "--tools") {
-		t.Fatalf("missing --tools must fail clearly: %v", err)
-	}
-}
-
-func TestCTOOpenCodeMissingDenyFailsStartup(t *testing.T) {
-	withFakeOpenCodeRouteSets(t, testCTOOpenCodeMissingDenyFailsStartup)
-}
-
-func testCTOOpenCodeMissingDenyFailsStartup(t *testing.T) {
-	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
-	t.Setenv("FAKE_CTO_MISSING_DENY", "read")
-	g := startGateway(t, t.TempDir(), "")
-	n := startClaudeNode(t, g, shortSet)
-	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
-	n.d.cto.mu.Lock()
-	err := n.d.startOpenCodeRole(context.Background(), roleCTO)
-	retainsProcess := n.d.cto.cmd != nil
-	n.d.cto.mu.Unlock()
-	if err == nil || !strings.Contains(err.Error(), "read") {
-		t.Fatalf("missing deny must fail clearly: %v", err)
-	}
-	if retainsProcess {
-		t.Error("rejected runtime retains CTO access")
+	if err == nil || !strings.Contains(err.Error(), "--strict-mcp-config") {
+		t.Fatalf("missing --strict-mcp-config must fail clearly: %v", err)
 	}
 }
 
@@ -730,9 +690,9 @@ func TestClaudeCTOCapabilitiesWithoutVersionGate(t *testing.T) {
 		{"mac version", "--tools --strict-mcp-config", "2.1.289", ""},
 		{"future version", "--tools --strict-mcp-config", "9.0.0", ""},
 		{"unrecognized version", "--tools --strict-mcp-config", "development", ""},
-		{"missing tools", "--strict-mcp-config", "2.1.316", "--tools"},
+		{"no tools flag needed", "--strict-mcp-config", "2.1.316", ""},
 		{"missing strict MCP", "--tools", "2.1.316", "--strict-mcp-config"},
-		{"similar flag", "--tools-other --strict-mcp-config", "2.1.316", "--tools"},
+		{"similar flag", "--tools --strict-mcp-config-other", "2.1.316", "--strict-mcp-config"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bin := filepath.Join(t.TempDir(), "claude")
@@ -917,53 +877,6 @@ func TestClaudeCTOStartupAdoptsWithoutGatewayOrHello(t *testing.T) {
 	}
 	if len(logs.lines("cto.start harness=claude mode=adopted")) == 0 {
 		t.Fatal("missing startup adoption log")
-	}
-}
-
-// The CTO starts with --setting-sources "", so the owner's user settings do not
-// reach it. The renderer is one of them: "tui": "fullscreen" gives the owner
-// scrollback in every other session, and the CTO fell back to the classic
-// renderer, where a long reply (a table) runs off the screen. The CTO gets the
-// owner's renderer choice in its own launch settings, and nothing else.
-func TestClaudeCTOKeepsOwnerRenderer(t *testing.T) {
-	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
-	g := startGateway(t, t.TempDir(), "")
-	n := startClaudeNode(t, g, shortSet)
-	user := `{"tui":"fullscreen","model":"sonnet","hooks":{"Stop":[]},"enabledPlugins":{"x@y":true}}`
-	if err := os.WriteFile(filepath.Join(filepath.Dir(n.sessions), "settings.json"), []byte(user), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
-	defer cancel()
-	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
-		t.Fatal(err)
-	}
-	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
-	if rec.Settings["tui"] != "fullscreen" {
-		t.Errorf("CTO tui setting = %v, want the owner's fullscreen renderer", rec.Settings["tui"])
-	}
-	if _, ok := rec.Settings["model"]; ok {
-		t.Error("CTO took the owner's model from user settings")
-	}
-	if plugins, ok := rec.Settings["enabledPlugins"].(map[string]any); !ok || len(plugins) != 0 || rec.Settings["disableAllHooks"] != true {
-		t.Error("CTO took owner plugins or hooks")
-	}
-}
-
-// An owner with no renderer setting gets the Claude Code default, as the other
-// sessions do, so no "tui" key is written.
-func TestClaudeCTOWithoutOwnerRenderer(t *testing.T) {
-	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
-	g := startGateway(t, t.TempDir(), "")
-	n := startClaudeNode(t, g, shortSet)
-	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
-	defer cancel()
-	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
-		t.Fatal(err)
-	}
-	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
-	if v, ok := rec.Settings["tui"]; ok {
-		t.Errorf("CTO tui setting = %v with no owner setting", v)
 	}
 }
 

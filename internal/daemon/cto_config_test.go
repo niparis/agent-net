@@ -87,7 +87,9 @@ func TestCTOConfigFallback(t *testing.T) {
 	}
 }
 
-func TestCTONoBuiltinConfig(t *testing.T) {
+// The CTO agent has no built-in deny rules (decision 0157) and allows its
+// own MCP server without a prompt.
+func TestCTOConfigHasFullTools(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("OPENCODE_CONFIG", "")
 	d := &Daemon{log: log.New(&bytes.Buffer{}, "", 0)}
@@ -104,18 +106,11 @@ func TestCTONoBuiltinConfig(t *testing.T) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Agents["general"].Disable {
-		t.Error("general subagent enabled")
+	if _, ok := cfg.Agents["general"]; ok {
+		t.Error("the general subagent is still configured")
 	}
-	for _, action := range []string{"*", "bash", "edit", "write", "subagent", "read", "glob", "grep", "list", "webfetch", "todowrite"} {
-		found := false
-		for _, rule := range cfg.Agents["cto"].Permissions {
-			if rule.Action == action && rule.Resource == "*" && rule.Effect == "deny" {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("missing deny: %s", action)
-		}
+	rules := cfg.Agents["cto"].Permissions
+	if len(rules) != 1 || rules[0].Action != "agent-net-cto_*" || rules[0].Resource != "*" || rules[0].Effect != "allow" {
+		t.Errorf("cto rules = %+v", rules)
 	}
 }

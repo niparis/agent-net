@@ -20,7 +20,7 @@ func TestClaudeStartSpecAppliesTheCTORole(t *testing.T) {
 	}
 	cto := d.claudeStartSpec(context.Background(), claudeStartInput{Role: roleCTO, Resume: "n1", Model: "opus"})
 	args := claudeBackgroundArgs(cto)
-	for flag, want := range map[string]string{"--tools": "", "--setting-sources": "", "--name": "agent-net-cto", "--resume": "n1", "--model": "opus"} {
+	for flag, want := range map[string]string{"--name": "agent-net-cto", "--resume": "n1", "--model": "opus"} {
 		if got := argValue(args, flag); got != want || !contains(args, flag) {
 			t.Errorf("%s = %q (present %v), want %q in %q", flag, got, contains(args, flag), want, args)
 		}
@@ -40,8 +40,45 @@ func TestClaudeStartSpecAppliesTheCTORole(t *testing.T) {
 	if !strings.Contains(cto.Settings, `"AGENT_NET_CTO":"1"`) || !strings.Contains(cto.Settings, "mcp__agent-net-cto__agent_message_send") {
 		t.Errorf("role settings: %s", cto.Settings)
 	}
+	// Full power (decision 0157): built-in tools and the owner's own Claude
+	// settings, hooks included.
+	for _, flag := range []string{"--tools", "--setting-sources", "--disallowedTools"} {
+		if contains(args, flag) {
+			t.Errorf("the CTO role must not pass %s: %q", flag, args)
+		}
+	}
+	if strings.Contains(cto.Settings, "disableAllHooks") {
+		t.Errorf("the CTO's hooks are off: %s", cto.Settings)
+	}
 	if len(cto.DropEnv) != 1 || cto.DropEnv[0] != "CLAUDE_CODE_DISABLE_MOUSE" {
 		t.Errorf("the CTO must not inherit a mouse switch: %v", cto.DropEnv)
+	}
+}
+
+// The CTO's launch settings carry its PreToolUse hook on cto_op. It runs
+// agent-net cto-hook, which allows every op the owner can easily revert.
+func TestCTORoleCarriesItsHook(t *testing.T) {
+	d := &Daemon{cfg: Config{Exe: "/opt/agent net/agent-net", SocketPath: "/run/agent-net.sock", StateDir: t.TempDir()}}
+	cto := d.claudeStartSpec(context.Background(), claudeStartInput{Role: roleCTO, Model: "opus"})
+	var launch struct {
+		Hooks map[string][]struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(cto.Settings), &launch); err != nil {
+		t.Fatal(err)
+	}
+	pre := launch.Hooks["PreToolUse"]
+	if len(pre) != 1 || pre[0].Matcher != "mcp__agent-net-cto__cto_op" || len(pre[0].Hooks) != 1 || pre[0].Hooks[0].Type != "command" || pre[0].Hooks[0].Command != "'/opt/agent net/agent-net' cto-hook" {
+		t.Fatalf("PreToolUse hooks = %+v in %s", pre, cto.Settings)
+	}
+	coding := d.claudeStartSpec(context.Background(), claudeStartInput{Name: "shop"})
+	if strings.Contains(coding.Settings, "cto-hook") {
+		t.Fatalf("a coding session got the CTO hook: %s", coding.Settings)
 	}
 }
 

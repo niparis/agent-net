@@ -54,8 +54,14 @@ func (d *Daemon) claudeStartSpec(ctx context.Context, in claudeStartInput) claud
 	return spec
 }
 
-// applyCTOClaudeRole is the CTO's Claude settings. It has no built-in tools
-// and reads none of the owner's Claude settings: only its own MCP server.
+// ctoHookMatcher is the CTO's cto_op tool as Claude Code names it:
+// mcp__<server>__<tool>. The server is the CTO's own MCP server.
+const ctoHookMatcher = "mcp__" + ctoClaudeJobName + "__cto_op"
+
+// applyCTOClaudeRole is the CTO's Claude settings. The CTO has full power
+// (decision 0157): Claude Code's built-in tools and the owner's own Claude
+// settings, as in any coding session. What the role adds is its prompt, its
+// own MCP server and the hook that lets it run easily reverted ops at once.
 func (d *Daemon) applyCTOClaudeRole(ctx context.Context, spec *claudeBackground) {
 	// CLAUDE_CODE_DISABLE_MOUSE is read inside the session, from its settings env
 	// and from the environment of Claude's background service. The command that
@@ -64,16 +70,17 @@ func (d *Daemon) applyCTOClaudeRole(ctx context.Context, spec *claudeBackground)
 	// service. See docs/decisions/0128-cto-keeps-mouse-tracking-on.md.
 	// The CTO's message tool is allowed, so Claude Code's auto-mode check does not
 	// block it. The name is the cto-mcp server's tool: mcp__<server>__<tool>.
-	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "permissions": map[string]any{"allow": []string{"mcp__agent-net-cto__agent_message_send"}}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0", "DISABLE_AUTOUPDATER": "1"}}
-	// "fullscreen" is what gives every other session scrollback; the CTO reads
-	// no owner settings, so this one is passed on (see ownerClaudeRenderer).
-	if tui := ownerClaudeRenderer(d.cfg.ClaudeSessionsDir); tui != "" {
-		launch["tui"] = tui
-	}
+	hook := map[string]any{"type": "command", "command": shellQuote(d.cfg.Exe) + " cto-hook"}
+	launch := map[string]any{"crossSessionInbound": "accept",
+		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": ctoHookMatcher, "hooks": []any{hook}}}},
+		"permissions": map[string]any{"allow": []string{"mcp__agent-net-cto__agent_message_send"}},
+		"env":         map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0", "DISABLE_AUTOUPDATER": "1"}}
 	settings, _ := json.Marshal(launch)
 	mcp, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{ctoClaudeJobName: map[string]any{"command": d.cfg.Exe, "args": []string{"cto-mcp"}}}})
 	spec.Name, spec.Settings = ctoClaudeJobName, string(settings)
-	spec.Flags = []string{"--tools", "", "--setting-sources", "", "--system-prompt", d.ctoSystemPrompt(ctx), "--mcp-config", string(mcp), "--strict-mcp-config"}
+	// --strict-mcp-config keeps the CTO's identity: its one agent-net server
+	// is cto-mcp, never the owner's ordinary agent-net server.
+	spec.Flags = []string{"--system-prompt", d.ctoSystemPrompt(ctx), "--mcp-config", string(mcp), "--strict-mcp-config"}
 	// Every session that Claude's service starts later inherits the environment
 	// of the first launch: do not hand it a variable that turns the wheel off.
 	spec.DropEnv = []string{"CLAUDE_CODE_DISABLE_MOUSE"}
@@ -276,7 +283,7 @@ func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error 
 		},
 		kill: d.stopOpenCodeCTOLocked,
 		ready: func(info []byte) error {
-			return d.checkOpenCodeCTOTools(startup, info)
+			return d.checkOpenCodeCTOAgent(startup, info)
 		},
 	})
 	if err != nil {

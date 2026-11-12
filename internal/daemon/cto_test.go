@@ -773,7 +773,7 @@ func testCTOEnterOpenCode(t *testing.T) {
 func TestCTOBriefProjectResearchAndCharters(t *testing.T) {
 	for _, want := range []string{
 		"To learn about a project, find it with the `agent_projects_find` and `agent_sessions_find` tools (machine, folder, live sessions).",
-		"You have no built-in tools. For file work or to draft a charter, send its live session a request and use its answer.",
+		"You have your harness's built-in tools, as a coding session has. For work inside a project or to draft a charter, send its live session a request and use its answer.",
 		"Ask the project's own agent to draft its charter with the charter guide, then show the owner the result as a diff.",
 	} {
 		if !strings.Contains(ctoBrief, want) {
