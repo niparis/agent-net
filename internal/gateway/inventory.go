@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/inventory"
@@ -241,7 +243,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		if host == "" {
 			host = node
 		}
-		loc := protocol.ToolLocation{NodeID: node, Machine: host, InventoryItem: obs}
+		loc := protocol.ToolLocation{NodeID: node, Machine: host, FileCount: len(obs.Files), InventoryItem: obs}
 		if project != "" && obs.Scope == protocol.InventoryProject {
 			loc.GraphNode = project
 		}
@@ -525,34 +527,129 @@ func (s *Store) ToolsItem(id string, online func(string) bool) (protocol.ToolDet
 		}
 		sort.Strings(d.Added)
 		sort.Strings(d.Removed)
+		d.Added, d.AddedMore = capPaths(d.Added)
+		d.Removed, d.RemovedMore = capPaths(d.Removed)
 		out.VariantDiffs = append(out.VariantDiffs, d)
+	}
+	// Cap after the diffs, which need the full lists.
+	left := 0
+	for i := range out.Item.Locations {
+		l := &out.Item.Locations[i]
+		l.Files, l.FilesMore = capPaths(l.Files)
+		left += l.FilesMore
+	}
+	if left > 0 {
+		out.Item.Note = fmt.Sprintf("%d more files not shown", left)
 	}
 	return out, nil
 }
 
+// toolDetailFiles caps each file list in a single-item read. A skill with
+// thousands of files would otherwise fill the whole response.
+const toolDetailFiles = 500
+
+func capPaths(paths []string) ([]string, int) {
+	if len(paths) <= toolDetailFiles {
+		return paths, 0
+	}
+	return paths[:toolDetailFiles], len(paths) - toolDetailFiles
+}
+
+// toolsPageLimit is the size of one tools_items response, well under the
+// frame limit of the links.
+const toolsPageLimit = 240 << 10
+
+// toolsPage pages the list. List items carry a file count and no file lists:
+// the single-item read (tools_item) carries those. One item that is still too
+// large is trimmed and noted, so it never fails the whole list.
 func toolsPage(items []protocol.ToolItem, offset, maxItems int) (protocol.ToolsPage, error) {
 	page := protocol.ToolsPage{Items: []protocol.ToolItem{}}
 	if offset < 0 || offset > len(items) {
 		return page, errors.New("invalid tools offset")
 	}
+	size := 0
 	for i := offset; i < len(items); i++ {
 		if maxItems > 0 && len(page.Items) >= maxItems {
 			page.Next = i
 			return page, nil
 		}
-		page.Items = append(page.Items, items[i])
-		b, err := json.Marshal(page)
+		item, n, err := fitToolItem(items[i])
 		if err != nil {
 			return page, err
 		}
-		if len(b) > 240<<10 {
-			page.Items = page.Items[:len(page.Items)-1]
-			if len(page.Items) == 0 {
-				return page, errors.New("tool item exceeds response limit")
-			}
+		if len(page.Items) > 0 && size+n > toolsPageLimit {
 			page.Next = i
 			return page, nil
 		}
+		size += n
+		page.Items = append(page.Items, item)
 	}
 	return page, nil
+}
+
+// fitToolItem returns the list form of an item and its encoded size. It
+// drops file lists first. When the item is still over the limit it trims in
+// steps, and says so in Note.
+func fitToolItem(item protocol.ToolItem) (protocol.ToolItem, int, error) {
+	locs := make([]protocol.ToolLocation, len(item.Locations))
+	copy(locs, item.Locations)
+	for i := range locs {
+		if locs[i].FileCount == 0 {
+			locs[i].FileCount = len(locs[i].Files)
+		}
+		locs[i].Files, locs[i].FilesMore = nil, 0
+	}
+	item.Locations = locs
+	steps := []struct {
+		note string
+		do   func(*protocol.ToolItem)
+	}{
+		{"description cut", func(it *protocol.ToolItem) {
+			if len(it.Description) > 4<<10 {
+				it.Description = it.Description[:4<<10]
+			}
+		}},
+		{"manifest file lists left out", func(it *protocol.ToolItem) {
+			for i := range it.Locations {
+				if m := it.Locations[i].Manifest; m != nil {
+					c := *m
+					c.Files = nil
+					it.Locations[i].Manifest = &c
+				}
+			}
+		}},
+		{"manifests left out", func(it *protocol.ToolItem) {
+			for i := range it.Locations {
+				it.Locations[i].Manifest = nil
+			}
+		}},
+		{"locations left out", func(it *protocol.ToolItem) {
+			if len(it.Locations) > 1 {
+				it.Locations = it.Locations[:1]
+			}
+		}},
+	}
+	b, err := json.Marshal(item)
+	if err != nil {
+		return item, 0, err
+	}
+	var notes []string
+	for _, st := range steps {
+		if len(b) <= toolsPageLimit {
+			break
+		}
+		st.do(&item)
+		notes = append(notes, st.note)
+		if b, err = json.Marshal(item); err != nil {
+			return item, 0, err
+		}
+	}
+	if len(b) > toolsPageLimit {
+		return item, 0, errors.New("tool item exceeds response limit")
+	}
+	if len(notes) > 0 {
+		item.Note = "trimmed to fit: " + strings.Join(notes, ", ")
+		b, _ = json.Marshal(item)
+	}
+	return item, len(b) + 1, nil
 }

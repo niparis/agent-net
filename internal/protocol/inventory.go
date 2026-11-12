@@ -103,6 +103,11 @@ type ToolLocation struct {
 	VersionNo int `json:"version_no,omitempty"`
 	// DeployedNo is the store number of DeployedHash, or 0 when unknown.
 	DeployedNo int `json:"deployed_no,omitempty"`
+	// FileCount is how many files this copy lists. A list item carries the
+	// count only; the single-item read (tools_item) carries Files, capped, and
+	// FilesMore says how many it left out.
+	FileCount int `json:"file_count,omitempty"`
+	FilesMore int `json:"files_more,omitempty"`
 	InventoryItem
 }
 type ToolItem struct {
@@ -125,9 +130,11 @@ type ToolItem struct {
 	Machines   []string       `json:"machines"`
 	Variants   int            `json:"variants"`
 	State      string         `json:"state"`
-	Desired    *ToolRevision  `json:"desired,omitempty"`
-	Applied    string         `json:"applied,omitempty"`
-	Results    []ToolResult   `json:"results,omitempty"`
+	// Note says the gateway trimmed this item to fit a response, and how.
+	Note    string        `json:"note,omitempty"`
+	Desired *ToolRevision `json:"desired,omitempty"`
+	Applied string        `json:"applied,omitempty"`
+	Results []ToolResult  `json:"results,omitempty"`
 	// Federated is true for a server registered with the MCP registry. It has
 	// no copies on machines: Scope and ScopeProjects say which sessions can see
 	// and call it (a server with no assignment is global), and Host says which
@@ -154,6 +161,9 @@ type ToolVariantDiff struct {
 	Hash    string   `json:"hash"`
 	Added   []string `json:"added"`
 	Removed []string `json:"removed"`
+	// AddedMore and RemovedMore count paths left out to fit the response.
+	AddedMore   int `json:"added_more,omitempty"`
+	RemovedMore int `json:"removed_more,omitempty"`
 }
 type ToolDetail struct {
 	Item         ToolItem          `json:"item"`
