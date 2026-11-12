@@ -20,7 +20,9 @@ const briefRetryWindow = 24 * time.Hour
 // a file it shares with a running worker or an open change in the same
 // project. Overlap compares the paths named in this brief with the briefs of
 // running workers in the same project and the changed files of open changes
-// there. A brief that says "overlap ok: reason" passes. A change or worker
+// there. A brief that says "overlap ok: reason" passes. A file that a clause
+// tells the worker to leave alone ("do not touch X") does not count, in the
+// new brief or in a running worker's brief. A change or worker
 // this start itself targets is not an overlap: the change's id or the worker's
 // id named in the brief, an open change whose branch is the start's base, or
 // the continue or fixes target. A fix round starts from its own change's
@@ -31,7 +33,7 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, re
 	if _, ok := protocol.BriefOverlapAllowed(text); ok {
 		return failures, nil, nil
 	}
-	mine := repo.Paths(text)
+	mine := repo.Paths(protocol.BriefWithoutAvoided(text))
 	if len(mine) == 0 {
 		return failures, nil, nil
 	}
@@ -107,7 +109,7 @@ func (s *Store) runningWorkerBriefs(project string) ([]briefOverlap, error) {
 		} else if full != "" {
 			task = full
 		}
-		paths := protocol.BriefPaths(task)
+		paths := protocol.BriefPaths(protocol.BriefWithoutAvoided(task))
 		if len(paths) == 0 {
 			continue
 		}

@@ -168,6 +168,97 @@ func TestWorkerBriefOverlapsADifferentOpenChange(t *testing.T) {
 	}
 }
 
+// runningWorkerWithTask starts a running worker in project shop whose brief is
+// task, and returns its session id.
+func runningWorkerWithTask(t *testing.T, s *Store, task string) string {
+	t.Helper()
+	node, _, _ := s.CreateNode("mac", "linux")
+	worker, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "w1", Worker: &protocol.WorkerInfo{
+		ID: "w_1", Owner: "s_owner", Project: "shop", Task: task}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return worker
+}
+
+// briefWithScope is a brief whose scope line is scope. It names no file of its
+// own, so the only paths it can overlap on are the ones scope names.
+func briefWithScope(scope string) string {
+	return "Goal: The owner asked: \"fix the parser crash\" (message m_86b8d8cd77f796f0).\n" +
+		"Scope: " + scope + "\n" +
+		"Limits: tests use temp dirs and fakes only, never the real setup.\n" +
+		"Definition of done: the new test fails first and passes after the fix.\n" +
+		"Evidence:\n- the owner's words\n"
+}
+
+// A brief may name a file that a running worker holds only to tell its own
+// worker to leave that file alone. That is not an overlap.
+func TestWorkerBriefAskingToAvoidARunningWorkersFileStarts(t *testing.T) {
+	for _, scope := range []string{
+		"Do not touch internal/gateway/brief.go.",
+		"Don't edit internal/gateway/brief.go.",
+		"Never change internal/gateway/brief.go.",
+		"Avoid editing internal/gateway/brief.go.",
+		"internal/gateway/brief.go is out of scope.",
+		"Do not touch internal/gateway/session_start.go, internal/gateway/brief.go or the hand-back paths, which other workers change now.",
+	} {
+		t.Run(scope, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			runningWorkerWithTask(t, s, "Fix internal/gateway/brief.go and its tests.")
+			failures, _, err := s.checkWorkerBrief(briefFrame(briefWithScope(scope)), "shop", briefTestRepo())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(failures) != 0 {
+				t.Fatalf("a brief that avoids the running worker's file failed: %v", failures)
+			}
+		})
+	}
+}
+
+// A brief that asks for a change to a file a running worker holds is still
+// refused, even when another sentence of the same brief asks to avoid a file.
+func TestWorkerBriefAskingToChangeARunningWorkersFileIsRefused(t *testing.T) {
+	const want = "overlaps running worker"
+	for _, scope := range []string{
+		"Change internal/gateway/brief.go. Do not touch internal/tui/other.go.",
+		"Do not touch internal/tui/other.go; change internal/gateway/brief.go.",
+		"Do not touch internal/tui/other.go, but change internal/gateway/brief.go.",
+		"Do not touch internal/tui/other.go and change internal/gateway/brief.go.",
+		"Do not touch internal/tui/other.go, or change internal/gateway/brief.go.",
+		"internal/tui/other.go is out of scope, change internal/gateway/brief.go.",
+	} {
+		t.Run(scope, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			worker := runningWorkerWithTask(t, s, "Fix internal/gateway/brief.go and its tests.")
+			failures, _, err := s.checkWorkerBrief(briefFrame(briefWithScope(scope)), "shop", briefTestRepo())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if exp := want + " " + worker + " on internal/gateway/brief.go"; !strings.Contains(strings.Join(failures, "\n"), exp) {
+				t.Fatalf("failures %q do not say %q", failures, exp)
+			}
+		})
+	}
+}
+
+// The same rule holds the other way: a running worker told to leave a file
+// alone does not hold it, so a new brief that changes that file does not
+// overlap it. A file the running worker does change still overlaps.
+func TestWorkerBriefChangingAFileARunningWorkerAvoidsStarts(t *testing.T) {
+	s, _ := newTestStore(t)
+	worker := runningWorkerWithTask(t, s, "Do not touch internal/gateway/brief.go. Fix internal/tui/other.go.")
+
+	failures, _, err := s.checkWorkerBrief(briefFrame(briefWithScope("Change internal/gateway/brief.go.")), "shop", briefTestRepo())
+	if err != nil || len(failures) != 0 {
+		t.Fatalf("a file the running worker avoids overlapped: %v, %v", failures, err)
+	}
+	failures, _, err = s.checkWorkerBrief(briefFrame(briefWithScope("Change internal/tui/other.go.")), "shop", briefTestRepo())
+	if want := "overlaps running worker " + worker + " on internal/tui/other.go"; err != nil || !strings.Contains(strings.Join(failures, "\n"), want) {
+		t.Fatalf("failures %q, %v do not say %q", failures, err, want)
+	}
+}
+
 func TestBriefRejectionsAreCountedPerTaskFor24Hours(t *testing.T) {
 	s, c := newTestStore(t)
 	key := protocol.BriefTaskKey("s_caller", "shop", "", "Goal: fix it")
