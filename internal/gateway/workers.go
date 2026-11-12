@@ -618,12 +618,41 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		}
 	}
 	if len(nodes) > 1 {
-		var hosts []string
-		for _, v := range cands {
-			hosts = append(hosts, v.Hostname)
+		// Missing load reports must not make the caller choose a machine.
+		// Prefer a live launcher with the requested harness, then the caller's
+		// own machine. Keep all folders on the chosen node for the path check.
+		rank := func(v protocol.ProjectView) int {
+			n := nodeByID(v.NodeID)
+			score := 0
+			if n != nil && n.Online && n.Launch != nil && *n.Launch {
+				score = 2
+				for _, h := range n.Harnesses {
+					if p.Harness == "" || h.Name == p.Harness {
+						score = 4
+						break
+					}
+				}
+			}
+			if v.NodeID == nc.id {
+				score++
+			}
+			return score
 		}
-		sort.Strings(hosts)
-		return none, reject("project %q is on several machines (%s): say which one with a machine", p.Project, strings.Join(hosts, ", "))
+		sort.SliceStable(cands, func(i, j int) bool {
+			if a, b := rank(cands[i]), rank(cands[j]); a != b {
+				return a > b
+			}
+			return cands[i].NodeID < cands[j].NodeID
+		})
+		chosen := cands[0]
+		var keep []protocol.ProjectView
+		for _, v := range cands {
+			if v.NodeID == chosen.NodeID {
+				keep = append(keep, v)
+			}
+		}
+		cands = keep
+		machineNote = "picked " + chosen.Hostname + ": automatic choice without complete load reports"
 	}
 	// One machine. Prefer the registered folder when seen folders also exist.
 	pick := cands[0]
@@ -687,12 +716,25 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// returns the list and starts nothing.
 	var briefNote string
 	if !(len(validate) > 0 && validate[0]) && !g.opts.TestNoBriefChecks && !p.RequireReadOnly {
-		failures, err := g.store.checkWorkerBrief(p, pick.Name)
+		var repo protocol.WorkerBriefRepo
+		g.mu.Lock()
+		briefTarget := g.conns[pick.NodeID]
+		g.mu.Unlock()
+		if briefTarget != nil {
+			briefCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			raw, readErr := briefTarget.call(briefCtx, "worker.brief_repo", protocol.WorkerBriefRepoRequest{Path: pick.Path, Base: p.Base})
+			cancel()
+			if readErr == nil {
+				repo, _ = decode[protocol.WorkerBriefRepo](raw)
+			}
+		}
+		failures, warnings, err := g.store.checkWorkerBrief(p, pick.Name, repo)
+		briefNote = strings.Join(warnings, "; ")
 		if err != nil {
 			return none, err
 		}
 		if p.Mode == protocol.WorkerStartModeCheck {
-			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: failures, NodeID: pick.NodeID, Hostname: pick.Hostname,
+			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: failures, ModelNote: briefNote, NodeID: pick.NodeID, Hostname: pick.Hostname,
 				Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model}, nil
 		}
 		if len(failures) > 0 {
@@ -709,7 +751,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 						return none, err
 					}
 				}
-				briefNote = fmt.Sprintf("brief started after %d refusals: %s", rejected, strings.Join(failures, "; "))
+				briefNote = strings.TrimSpace(briefNote + " " + fmt.Sprintf("brief started after %d refusals: %s", rejected, strings.Join(failures, "; ")))
 			} else {
 				if err := g.store.recordBriefRejection(p.Owner, key, failures); err != nil {
 					return none, err

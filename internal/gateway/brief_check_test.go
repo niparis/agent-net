@@ -26,7 +26,7 @@ func briefFrame(task string) protocol.WorkerStartFrame {
 
 func TestWorkerBriefPassesACompleteBrief(t *testing.T) {
 	s, _ := newTestStore(t)
-	failures, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop")
+	failures, _, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop", briefTestRepo())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestWorkerBriefOverlapsRunningWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	failures, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop")
+	failures, _, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop", briefTestRepo())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestWorkerBriefOverlapsRunningWorker(t *testing.T) {
 	// The same brief passes when it states the overlap and why.
 	ok := gatewayBrief("internal/gateway/brief.go")
 	ok = strings.Replace(ok, "Evidence:", "Overlap ok: the other worker is only reading the file.\nEvidence:", 1)
-	failures, err = s.checkWorkerBrief(briefFrame(ok), "shop")
+	failures, _, err = s.checkWorkerBrief(briefFrame(ok), "shop", briefTestRepo())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func insertOpenChange(t *testing.T, s *Store, id, branch, path string) {
 func TestWorkerBriefOverlapsOpenChange(t *testing.T) {
 	s, _ := newTestStore(t)
 	insertOpenChange(t, s, "ch_open", "agent-net/x", "internal/gateway/brief.go")
-	failures, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop")
+	failures, _, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop", briefTestRepo())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestWorkerBriefFixRoundDoesNotOverlapItsOwnChange(t *testing.T) {
 	// The start's base is the branch of the change it fixes.
 	frame := briefFrame(gatewayBrief("internal/gateway/brief.go"))
 	frame.Base = branch
-	failures, err := s.checkWorkerBrief(frame, "shop")
+	failures, _, err := s.checkWorkerBrief(frame, "shop", briefTestRepo())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestWorkerBriefFixRoundDoesNotOverlapItsOwnChange(t *testing.T) {
 
 	// A brief that names the change's id targets it too.
 	frame = briefFrame(gatewayBrief("internal/gateway/brief.go") + "Change: " + change + "\n")
-	failures, err = s.checkWorkerBrief(frame, "shop")
+	failures, _, err = s.checkWorkerBrief(frame, "shop", briefTestRepo())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestWorkerBriefFixRoundDoesNotOverlapItsOwnChange(t *testing.T) {
 	frame = briefFrame(gatewayBrief("internal/gateway/brief.go"))
 	frame.Base = branch
 	frame.Continue = worker
-	failures, err = s.checkWorkerBrief(frame, "shop")
+	failures, _, err = s.checkWorkerBrief(frame, "shop", briefTestRepo())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestWorkerBriefOverlapsADifferentOpenChange(t *testing.T) {
 	insertOpenChange(t, s, "ch_0f1e2d3c4b5a6978", "agent-net/w_1111222233334444", "internal/tui/other.go")
 	frame := briefFrame(gatewayBrief("internal/tui/other.go"))
 	frame.Base = "agent-net/w_299d8f5860a0fa4a"
-	failures, err := s.checkWorkerBrief(frame, "shop")
+	failures, _, err := s.checkWorkerBrief(frame, "shop", briefTestRepo())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,4 +244,45 @@ func TestWorkerStartCheckModeStartsNothing(t *testing.T) {
 	if !answer.Checked || len(answer.BriefFailures) == 0 {
 		t.Fatalf("answer = %+v", answer)
 	}
+}
+
+func TestWorkerBriefIgnoresPathsOutsideTheBase(t *testing.T) {
+	s, _ := newTestStore(t)
+	insertOpenChange(t, s, "ch_open", "feature", "tmp/agent-net-gocache")
+	failures, _, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")+"Run GOCACHE=/tmp/agent-net-gocache go test.\n"), "shop", briefTestRepo())
+	if err != nil || len(failures) != 0 {
+		t.Fatalf("external cache path refused: %v, %v", failures, err)
+	}
+}
+
+func TestWorkerBriefLeadingSlashDirectoryOverlaps(t *testing.T) {
+	s, _ := newTestStore(t)
+	insertOpenChange(t, s, "ch_open", "feature", "internal/toolcatalog/catalog.go")
+	failures, _, err := s.checkWorkerBrief(briefFrame(gatewayBrief("/internal/toolcatalog")), "shop", briefTestRepo())
+	if err != nil || !strings.Contains(strings.Join(failures, "\n"), "internal/toolcatalog/catalog.go") {
+		t.Fatalf("repo directory overlap missed: %v, %v", failures, err)
+	}
+}
+
+func TestWorkerBriefSharedDocumentationOnlyWarns(t *testing.T) {
+	for _, path := range []string{"docs/reference.md", "AGENTS.md", "README.md", "internal/README.md", "migrations.lock"} {
+		t.Run(path, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			insertOpenChange(t, s, "ch_open", "feature", path)
+			failures, warnings, err := s.checkWorkerBrief(briefFrame(gatewayBrief("/"+path)), "shop", briefTestRepo())
+			if len(warnings) != 1 || !strings.Contains(warnings[0], strings.ToLower(path)) {
+				t.Fatalf("missing warning for %s: %v", path, warnings)
+			}
+			if err != nil || len(failures) != 0 {
+				t.Fatalf("shared documentation refused: %v, %v", failures, err)
+			}
+		})
+	}
+}
+
+func briefTestRepo() protocol.WorkerBriefRepo {
+	return protocol.WorkerBriefRepo{Root: "/repo/shop", Files: []string{
+		"internal/gateway/brief.go", "internal/tui/other.go", "internal/toolcatalog/catalog.go",
+		"docs/reference.md", "AGENTS.md", "README.md", "internal/README.md", "migrations.lock",
+	}}
 }

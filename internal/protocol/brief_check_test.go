@@ -72,7 +72,7 @@ func TestBriefChecksSeeMarkdownLabels(t *testing.T) {
 
 func TestBriefPaths(t *testing.T) {
 	got := BriefPaths("Edit internal/gateway/brief.go and docs/reference.md, then check /tmp/x. See https://example.com/not/a/path.")
-	want := []string{"internal/gateway/brief.go", "docs/reference.md", "tmp/x"}
+	want := []string{"internal/gateway/brief.go", "docs/reference.md", "/tmp/x"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("paths = %v, want %v", got, want)
 	}
@@ -100,5 +100,54 @@ func TestBriefTaskKeyUsesTitleThenGoal(t *testing.T) {
 	d := BriefTaskKey("s_caller", "shop", "", "goal: THE OWNER ASKED \"FIX THE PARSER\"")
 	if c != d {
 		t.Fatalf("goals did not normalize: %q / %q", c, d)
+	}
+}
+
+func TestBriefRepoPathsResolveOnlyBaseFiles(t *testing.T) {
+	repo := WorkerBriefRepo{Root: "/repo/shop", Files: []string{"internal/parser.go", "internal/README.md", "docs/reference.md", "migrations.lock", "README"}}
+	for _, tc := range []struct{ text, want string }{
+		{"GOCACHE=/tmp/agent-net-gocache", ""},
+		{"/home/owner/other/internal/parser.go", ""},
+		{"$HOME/internal/parser.go", ""},
+		{"~/internal/parser.go", ""},
+		{"/repo/shop/internal/parser.go", "internal/parser.go"},
+		{"/internal/parser.go", "internal/parser.go"},
+		{"/internal", "internal/parser.go,internal/readme.md"},
+		{"internal/new.go", ""},
+		{"other/parser.go", ""},
+		{"migrations.lock", "migrations.lock"},
+		{"README", "readme"},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			if got := strings.Join(repo.Paths(tc.text), ","); got != tc.want {
+				t.Fatalf("paths = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBriefRepoPathsMatchOnlyUniqueBareFilenames(t *testing.T) {
+	repo := WorkerBriefRepo{Root: "/repo/shop", Files: []string{
+		"internal/daemon/claude_mouse.go", "internal/daemon/workers.go", "internal/gateway/workers.go",
+	}}
+	for _, tc := range []struct{ text, want string }{
+		{"claude_mouse.go", "internal/daemon/claude_mouse.go"},
+		{"workers.go", ""},
+		{"/claude_mouse.go", ""},
+		{"/internal/daemon/workers.go", "internal/daemon/workers.go"},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			if got := strings.Join(repo.Paths(tc.text), ","); got != tc.want {
+				t.Fatalf("paths = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	// A root file does not override an ambiguous bare name.
+	repo.Files = append(repo.Files, "workers.go")
+	if got := repo.Paths("workers.go"); len(got) != 0 {
+		t.Fatalf("ambiguous root basename matched: %v", got)
+	}
+	if got := strings.Join(repo.Paths("/workers.go"), ","); got != "workers.go" {
+		t.Fatalf("explicit root file = %q", got)
 	}
 }
