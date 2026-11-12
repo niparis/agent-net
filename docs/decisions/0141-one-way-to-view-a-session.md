@@ -26,3 +26,7 @@ Delete pane splitting and the per-entry view paths and helpers replaced by the
 shared view plan. This decision does not change session startup or add a way
 to move a running session to the background; those are separate parts of the
 redesign.
+
+An OpenCode session discovered from a standalone CLI may have no owner service
+record. In that case the view uses `opencode --session <id>`; sessions started
+through the owner service use its address and password for attachment.

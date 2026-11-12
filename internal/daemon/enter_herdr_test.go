@@ -85,7 +85,8 @@ echo "sock=$HERDR_SOCKET_PATH session=${HERDR_SESSION:-none} $*" >> ` + f.log + 
 case "$1 $2" in
   "pane list") cat ` + dir + `/panes ;;
   "pane process-info") cat ` + dir + `/info-$4 2>/dev/null || exit 1 ;;
-  "agent focus"|"tab focus"|"pane close") exit 0 ;;
+  "tab create") printf '%s\n' '{"result":{"tab":{"tab_id":"w1:tNew"},"root_pane":{"pane_id":"w1:pNew"}}}' ;;
+  "pane run"|"agent focus"|"tab focus"|"pane close") exit 0 ;;
   *) exit 1 ;;
 esac
 `
@@ -379,7 +380,7 @@ func TestEnterOpenCodeClosedHerdrPaneUsesTheService(t *testing.T) {
 	// with, and the note says what was tried.
 	n, _, id = enterNode(t, g, "opencode", info, nil, nil)
 	p = enterOf(t, n, id, "")
-	if len(p.Argv) != 0 || !strings.Contains(p.Note, "has closed") || !strings.Contains(p.Note, "not installed") {
+	if len(p.Argv) != 0 || !strings.Contains(p.Note, "not installed") {
 		t.Fatalf("no opencode binary: %+v", p)
 	}
 }
@@ -465,9 +466,9 @@ func enterRemoteHerdr(t *testing.T, g *testGateway, pane string) (*node, *fakeHe
 	f.panes(t, herdrAgentPane(pane, "term_b"))
 	pid := f.session(t, pane)
 	f.holds(t, pane, pid)
-	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "interactive"}
+	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "pi"}}
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Adapters = []Adapter{ea} }})
-	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "i1", PID: pid, Cwd: "/nope", Name: "inter", Status: "idle", Mode: protocol.ModeForeground})
+	ea.setSessions(protocol.SessionInfo{Harness: "pi", NativeID: "i1", PID: pid, Cwd: "/nope", Name: "inter", Status: "idle", Mode: protocol.ModeForeground})
 	var id string
 	eventually(t, "remote session id", func() bool {
 		if s := n.d.Sessions(); len(s) == 1 {
@@ -654,42 +655,24 @@ func TestEnterLocalHerdrStaysAttach(t *testing.T) {
 // The whole path: session_enter on a node answers a herdr plan for an
 // interactive Claude session, and the TUI's herdr socket is read from the request.
 func TestEnterHerdrThroughSessionEnter(t *testing.T) {
-	t.Parallel()
+	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
-	f := newFakeHerdr(t)
-	f.panes(t, herdrAgentPane("w1:pB", "term_b"))
-	pid := f.session(t, "w1:pB")
-	f.holds(t, "w1:pB", pid)
+	bins := fakeBin(t, "claude")
 	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "interactive"}
-	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Adapters = []Adapter{ea} }})
-	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "i1", PID: pid, Cwd: "/nope", Name: "inter", Status: "idle", Mode: protocol.ModeForeground})
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = bins; c.Adapters = []Adapter{ea} }})
+	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "i1", PID: 1, Name: "inter"})
 	var id string
 	eventually(t, "session id", func() bool {
-		if s := n.d.Sessions(); len(s) == 1 {
-			id = s[0].SessionID
+		if sessions := n.d.Sessions(); len(sessions) == 1 {
+			id = sessions[0].SessionID
 		}
 		return id != ""
 	})
-	raw, err := cliClient(t, n).call("session_enter", inHerdrEnter(protocol.EnterRequest{SessionID: id}, f.sock))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var p protocol.EnterPlan
-	if err := json.Unmarshal(raw, &p); err != nil {
-		t.Fatal(err)
-	}
-	calls := f.calls(t)
-	if !p.OpenedHerdr || p.HerdrPane != "w1:pB" || p.Note != "opened inter in herdr" || !strings.Contains(calls, "agent focus w1:pB") {
+	p := enterOfHerdr(t, n, id, fakeHerdrSocket(log))
+	if !p.OpenedHerdr {
 		t.Fatalf("plan %+v", p)
 	}
-	// One pane lookup and one focus: the daemon must not walk the same herdr
-	// server twice on the path the owner waits on.
-	if n := strings.Count(calls, "pane list"); n != 1 {
-		t.Errorf("%d pane list calls, want 1: %q", n, calls)
-	}
-	if n := strings.Count(calls, "agent focus w1:pB"); n != 1 {
-		t.Errorf("%d focus calls, want 1: %q", n, calls)
-	}
+	requireHerdrOpened(t, log, "inter", "--resume", "i1")
 }
 
 func TestSessionStopPiHerdrPane(t *testing.T) {
@@ -723,17 +706,11 @@ func TestSignInOpenLocalPaneRunsAllowlistedArgv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !plan.OpenedHerdr || plan.HerdrPane != "w1:p1" {
+	if plan.OpenedHerdr || !reflect.DeepEqual(plan.Argv, []string{"bl", "auth", "login", "--console"}) {
 		t.Fatalf("plan %+v", plan)
 	}
-	calls := string(mustRead(t, log))
-	for _, want := range []string{"tab create --label sign in: Alibaba Bailian CLI", "pane run w1:p1", "bl auth login --console"} {
-		if !strings.Contains(calls, want) {
-			t.Errorf("herdr calls %q missing %q", calls, want)
-		}
-	}
-	if strings.Contains(calls, "ssh") {
-		t.Errorf("a local sign-in used ssh: %q", calls)
+	if calls, _ := os.ReadFile(log); len(calls) != 0 {
+		t.Fatalf("outside herdr should hand over the terminal: %s", calls)
 	}
 }
 

@@ -131,9 +131,9 @@ func (d *Daemon) syncSignInAsks(ctx context.Context, q *protocol.Quotas) {
 	}
 }
 
-// signInOpen answers the owner's click. It opens the login on the machine the
-// ask names and returns the plan that shows it here. A machine without herdr
-// answers with a note; there is no ssh fallback.
+// signInOpen returns the allowlisted login command for the asking terminal,
+// or opens it in a tab when that terminal is in herdr. Remote logins run on
+// the target machine and are viewed through herdr.
 func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (protocol.EnterPlan, error) {
 	if strings.TrimSpace(q.AskID) == "" {
 		return protocol.EnterPlan{}, errors.New("sign_in_open needs an ask")
@@ -151,7 +151,12 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 		return protocol.EnterPlan{}, errors.New("unknown sign-in provider")
 	}
 	if target.NodeID == "" || target.NodeID == d.NodeID() {
-		return d.openSignInPane(info, q.HerdrSocket, q.HerdrPaneID)
+		plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
+		opened := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, q.HerdrSocket, q.HerdrPaneID, false, plan)
+		if opened.OpenedHerdr {
+			go d.watchSignInPane(info.Provider, d.herdrBinary(""), q.HerdrSocket, opened.HerdrPane)
+		}
+		return opened, nil
 	}
 	raw, err = d.call(ctx, "query.sign_in_prepare", protocol.SignInQuery{AskID: q.AskID, Owner: d.ownerSessionID()})
 	if err != nil {
@@ -186,21 +191,6 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 	return d.viewPlan("signin-remote:"+q.AskID, "sign in: "+info.Label, q.HerdrSocket, q.HerdrPaneID, false, plan), nil
 }
 
-// openSignInPane opens the allowlisted login command in this machine's herdr.
-// It runs the argv from the table, never a value from an ask or an agent.
-func (d *Daemon) openSignInPane(info protocol.SignInProviderInfo, socket, callerPane string) (protocol.EnterPlan, error) {
-	plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
-	opened := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, socket, callerPane, true, plan)
-	if !opened.OpenedHerdr {
-		return protocol.EnterPlan{Host: d.hostName(), Note: firstNonEmpty(opened.Note, herdrInstallNote)}, nil
-	}
-	bin := d.herdrBinary("")
-	if bin != "" {
-		go d.watchSignInPane(info.Provider, bin, socket, opened.HerdrPane)
-	}
-	return opened, nil
-}
-
 // signInPrepare opens the login pane on this machine for the gateway. The
 // frame carries a provider key only, so no caller can choose the command.
 func (d *Daemon) signInPrepare(raw []byte) (protocol.SignInPrepareResult, error) {
@@ -212,9 +202,10 @@ func (d *Daemon) signInPrepare(raw []byte) (protocol.SignInPrepareResult, error)
 	if !ok {
 		return protocol.SignInPrepareResult{}, errors.New("unknown sign-in provider")
 	}
-	plan, err := d.openSignInPane(info, "", "")
-	if err != nil {
-		return protocol.SignInPrepareResult{Opened: false, Host: d.hostName(), Note: err.Error()}, nil
+	base := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
+	plan := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, "", "", true, base)
+	if plan.OpenedHerdr {
+		go d.watchSignInPane(info.Provider, d.herdrBinary(""), "", plan.HerdrPane)
 	}
 	return protocol.SignInPrepareResult{Opened: plan.OpenedHerdr, Host: d.hostName(), Pane: plan.HerdrPane, Note: plan.Note}, nil
 }

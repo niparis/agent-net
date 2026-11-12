@@ -85,6 +85,16 @@ func enterRequest(t *testing.T, n *node, q protocol.EnterRequest) protocol.Enter
 	return p
 }
 
+func TestEnterInteractiveClaudeUsesResume(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "claude")
+	n, _, id := enterNode(t, g, "claude", protocol.SessionInfo{NativeID: "session-123", PID: 1, Name: "garden"}, bins, nil)
+	p := enterOf(t, n, id, "")
+	if want := []string{bins["claude"], "--resume", "session-123"}; !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("argv %v, want %v", p.Argv, want)
+	}
+}
+
 func TestEnterClaudeBackgroundSessionAttaches(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
@@ -121,7 +131,7 @@ func TestEnterClaudeBackgroundSessionAttaches(t *testing.T) {
 
 func TestEnterWithoutAWayGivesANote(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	for _, harness := range []string{"pi", "claude"} {
+	for _, harness := range []string{"pi"} {
 		info := protocol.SessionInfo{NativeID: "x1", PID: os.Getpid(), Cwd: "/nope", Name: "win", Status: "idle"}
 		n, _, id := enterNode(t, g, harness, info, nil, nil)
 		p := enterOf(t, n, id, "")
