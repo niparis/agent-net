@@ -1,0 +1,41 @@
+=== RUN   TestMeasureTUIPolling
+    poll_harness_test.go:312: 
+        tab 7, 60 s measured, heartbeats 3.0/s, events 0.3/s
+        method                      calls/min    bytes/10min   bytes/call
+        list                             57.0      483701378       848613
+        changes_owner_find               72.0      128705063       178760
+        nodes                            57.0      105361610       184848
+        projects                         57.0       15873096        27848
+        asks_list                        57.0        8993311        15778
+        chief_sorts                      57.0         662329         1162
+        counts                           57.0         189807          333
+        chief_get                        57.0          70679          124
+        info                             57.0          67259          118
+        events                           20.0          18970           94
+        usage                            57.0           6840           12
+        difficulty_get                   57.0           1140            2
+        notification_settings            57.0           1140            2
+        scores_get                       57.0           1140            2
+        worker_rotation_get              57.0           1140            2
+        cto_settings                     57.0           1140            2
+        worker_profiles                  57.0           1140            2
+        cto_graph_window                 57.0           1140            2
+        worker_floors_get                57.0           1140            2
+        hidden_get                       57.0           1140            2
+        onboarding_get                   57.0           1140            2
+        protected_providers_get          57.0           1140            2
+        session_text                     57.0           1140            2
+        tools_differences                57.0           1140            2
+        proposal_list                    57.0           1140            2
+        cto_graph_history                57.0           1140            2
+        timezone_get                     57.0           1140            2
+        worker_providers_get             57.0           1140            2
+        client_error                      2.0             40            2
+        graph_get                         2.0             40            2
+        learned_list                      2.0              0            0
+        TOTAL                          1580.0      743669801
+        process CPU (TUI, daemon stand-in, gateway handlers, churn): 152% of one core
+        
+--- PASS: TestMeasureTUIPolling (70.64s)
+PASS
+ok  	github.com/niparis/agent-net/internal/gateway	70.771s
