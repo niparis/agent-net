@@ -365,6 +365,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	// encoding (noteAsk hands it out), so never write into it: replace it.
 	next := *w.info
 	next.RunGeneration = w.runGeneration
+	next.Effort = protocol.ParseModelSelection(w.harness, "", w.model, "").Effort
 	next.ContextTokens, next.ContextLimit, next.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
 	next.OSSandbox = w.osSandbox
 	next.Continue, next.Fix = w.continueCount, w.fixCount

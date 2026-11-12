@@ -700,8 +700,14 @@ func WorkersOf(agents []AgentView) []WorkerView {
 		if a.Worker == nil || !a.Online {
 			continue
 		}
+		model := a.Model
+		if model != "" && a.Worker.Effort != "" {
+			if _, level := SplitModelLevel(model); level == "" {
+				model += ":" + a.Worker.Effort
+			}
+		}
 		out = append(out, WorkerView{SessionID: a.SessionID, NodeID: a.NodeID, Hostname: a.Hostname,
-			Harness: a.Harness, Model: a.Model, Project: a.Worker.Project, Path: a.Cwd, Name: names[a.SessionID],
+			Harness: a.Harness, Model: model, Project: a.Worker.Project, Path: a.Cwd, Name: names[a.SessionID],
 			Online: a.Online, Status: a.Status,
 			Owner: a.Worker.Owner, OwnerName: names[a.Worker.Owner], StartedAt: a.Worker.StartedAt,
 			Task: a.Worker.Task, Title: a.Worker.Title,

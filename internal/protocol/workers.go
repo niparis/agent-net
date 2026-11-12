@@ -270,6 +270,9 @@ type WorkerInfo struct {
 	Assessment    *WorkerAssessment `json:"assessment,omitempty"`
 	// ID is the worker's local ID on its machine.
 	ID string `json:"id"`
+	// Effort is the effort the worker was started with. A harness may report
+	// its live model without it (Claude does), so lists fall back to this.
+	Effort string `json:"effort,omitempty"`
 	// StartRef is the reference of the start this worker belongs to.
 	StartRef string `json:"start_ref,omitempty"`
 	// Owner is the session that started the worker (the owner's own

@@ -202,3 +202,18 @@ func TestWorkerRowKeepsStruggle(t *testing.T) {
 		t.Fatalf("round trip: %+v", got)
 	}
 }
+
+// Claude reports its live model without the start effort, so the worker record
+// that the gateway lists carries the effort the worker was started with.
+func TestWorkerInfoCarriesStartEffort(t *testing.T) {
+	d := struggleTestDaemon(t, "claude", claudeLauncher{})
+	w := struggleTestWorker("claude", "ses_effort")
+	w.model = "claude-opus-5-5:high"
+	if got := d.workerInfo(w).Effort; got != "high" {
+		t.Fatalf("effort %q, want high", got)
+	}
+	w.model = "claude-opus-5-5"
+	if got := d.workerInfo(w).Effort; got != "" {
+		t.Fatalf("effort %q, want none", got)
+	}
+}

@@ -65,6 +65,25 @@ test('the band lists a running worker and the status line counts it', async ($, 
   expect(statuses.at(-1)).toBe('agent-net: 1 busy')
 })
 
+test('a Claude worker row shows the effort it was started with', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  on('process.run', () => ({
+    value: runResult(JSON.stringify({
+      workers: [{
+        session_id: 's_effort12345', harness: 'claude', model: 'claude-opus-5-5:high', project: 'shop',
+        status: 'busy', online: true, started_at: Math.floor(NOW / 1000) - 120, title: 'Fix the parser',
+      }],
+    })),
+  }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'test-session' }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /claude +opus-5-5:high/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('a worker that ended done while its check runs shows its tick with checking', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const session = mock.session(on)
