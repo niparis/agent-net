@@ -2,18 +2,14 @@ package protocol
 
 import "strings"
 
-// No agent asks the owner in its own chat (decision 0150). Owner questions go
-// to the chief with agent_owner_ask. A turn that ends on a question to the
-// owner anyway is caught when the owner is not working in that session.
+// An owner question shows in the agent's own chat AND follows the route to the
+// chief and the Desk (decision 0150). A turn that ends on a marked question is
+// routed by agent-net when the agent did not send it with agent_owner_ask.
 
 // OwnerQuestionMarker starts the line of a final message that asks the owner.
 // The guidance asks agents to mark such a line, so agent-net can tell a
 // question from a plain turn end.
 const OwnerQuestionMarker = "Owner question:"
-
-// OwnerQuestionRedirect is what a session hears, once per question, when its
-// turn ended on a question to the owner that went to the chief.
-const OwnerQuestionRedirect = "Send this question to the chief with agent_owner_ask and carry on"
 
 // OwnerQuestionLine returns the question of the last line of msg that starts
 // with OwnerQuestionMarker, without the marker, or "". Markdown emphasis,

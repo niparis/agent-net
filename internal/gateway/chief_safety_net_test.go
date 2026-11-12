@@ -336,7 +336,7 @@ func TestAskMadeWhileWakeableChiefIsDownWaitsForMissedWakes(t *testing.T) {
 		urgent, rest string
 	}{
 		{protocol.ChiefWakeInterval - time.Second, protocol.AskNextChief, protocol.AskNextChief},
-		{time.Second, protocol.AskNextOwner, protocol.AskNextChief}, // one missed wake
+		{time.Second, protocol.AskNextOwner, protocol.AskNextChief},                // one missed wake
 		{protocol.ChiefWakeInterval, protocol.AskNextOwner, protocol.AskNextOwner}, // two missed wakes
 	}
 	for i, st := range steps {

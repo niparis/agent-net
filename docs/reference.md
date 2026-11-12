@@ -3339,26 +3339,23 @@ The CTO lists have `chief_sorts` (read), and `ask_undo` and `ask_mark` (changes,
 - **n** on a Needs you row marks "didn't need me". **m** on a handled row marks "should have asked me". Each asks for one optional line of why; Enter stores it, Esc cancels.
 - **The digest.** When the owner comes back after an hour or more without a key press, the Desk shows "While you were away (N h)" with four counts (closed, sent on, answered, for you). The counts are read once from the newest 500 log lines, and only the lines since the owner's last key press count. `x` hides the digest; while it shows, `x` only hides it, and does not dismiss an ask. The digest reads the log text the gateway writes (`Chief closed ask:`, `Chief sent ask to`, `so it is with you`, and `Closed ... (answered)`): change those lines and the counts change with them.
 
-## Owner questions go to the chief
+## Owner questions: in the chat and on the route
 
-No agent asks you in its own chat (decision [0150](decisions/0150-owner-front-door.md), "No agent asks the owner in its own chat"). Owner questions go to the chief of staff with `agent_owner_ask`. An ask from an agent session goes to the chief when one is live (owner `chief`, state `verifying`); the chief verifies it and brings you a decision with options, or resolves it. The guidance asks agents not to end a turn waiting on you, and to start a question to you in their chat with `Owner question:`.
+An agent asks you in its own chat and on the route at once (decision [0150](decisions/0150-owner-front-door.md), "Owner questions: in the chat and on the route"; your words: "the question should be in the chat AND follow the route"). The guidance asks agents to put an owner question in their chat, on a line that starts with `Owner question:`, and to send it with `agent_owner_ask` too. An ask from an agent session goes to the chief when one is live (owner `chief`, state `verifying`); the chief verifies it and brings you a decision with options, or resolves it.
 
-**A turn that ends on a question to you is caught.** A plain turn end is not a question. The trigger is one of:
+**A turn that ends on a question to you is routed.** A plain turn end is not a question. The trigger is one of:
 
 - an `agent_owner_ask` the session left open (its explicit wait);
 - a question prompt the harness reports (for example Claude Code's question dialog);
 - a line of the turn's final message that starts with `Owner question:` (case does not matter; Markdown marks before it are allowed).
 
-When that happens and you have not typed in that session in the last 30 minutes:
+When the agent did not send the question with `agent_owner_ask`, it becomes a chief-bound ask at once. A marked line becomes a `question` ask, and a reported prompt a `waiting` ask (with no 2-minute wait unless you typed in that session in the last 30 minutes). An open `agent_owner_ask` keeps its own ask; on Pi and OpenCode, where it is only a wait, it gets a `question` ask unless the session already has an open question or approval. The turn ends as it is: the question stays in the chat, and the session is not told to go on. Claude Code reports the turn from the `Stop` hook, which prints nothing. Pi and OpenCode, which have no such hook, report it at the start of their next turn. Codex and Antigravity have neither; their `agent_owner_ask` still goes to the chief.
 
-- the question becomes a chief-bound ask at once. A marked line becomes a `question` ask, and a reported prompt a `waiting` ask with no 2-minute wait. An open `agent_owner_ask` keeps its own ask; on Pi and OpenCode, where it is only a wait, it gets a `question` ask unless the session already has an open question or approval;
-- the session is told once: `Send this question to the chief with agent_owner_ask and carry on`. This is for an open `agent_owner_ask` and a marked line; a reported prompt holds the turn until it is answered. Claude Code hears it from the `Stop` hook (`decision: block` with that reason, so the turn goes on). Pi and OpenCode, which have no such hook, get it as an `agent-net:` line with the policy at the start of their next turn. Codex and Antigravity have neither, so they get no line; their `agent_owner_ask` still goes to the chief.
+The daemon remembers the questions it sent for each session (the last 16), so a question becomes one ask. An idle session whose turn ends with no question gets no ask.
 
-There is at most one redirect per question. The daemon remembers the questions it checked for each session (the last 16), and a turn that a `Stop` hook already continued always ends, so a session never loops. A question that was not redirected because you were in the session is checked again after 5 minutes at the earliest. An idle session whose turn ends with no question gets no ask and no line.
+**You in the loop.** When you type in the session, the question is in the chat you work in, and it is on the route too. Your answer there closes the ask with your words. "Typed" means your own prompt in that session: a Claude Code prompt through the policy hook (not a peer message, reminder or scheduled turn), a Pi or OpenCode prompt, or a Codex user message. Opening, attaching to or viewing the session does not count. The gateway keeps the time in `sessions.owner_typed_at`.
 
-**You in the loop are not blocked.** "Typed" means your own prompt in that session: a Claude Code prompt through the policy hook (not a peer message, reminder or scheduled turn), a Pi or OpenCode prompt, or a Codex user message. Opening, attaching to or viewing the session does not count. The gateway keeps the time in `sessions.owner_typed_at`.
-
-**The chief and the CTO** talk to you in their own chats; their sessions are never redirected. Workers ask their caller, never you, and are not redirected either.
+**The chief and the CTO** talk to you in their own chats; their questions are not routed. Workers ask their caller, never you, and are not routed either.
 
 When no chief can work, an ask still follows the chief-down path of the Desk.
 

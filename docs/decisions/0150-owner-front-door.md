@@ -90,42 +90,39 @@ both views.
 10. A **waiting-session ask** is created only after the session has waited a
    minimum time (a debounce), so a short wait for the user makes no ask.
 
-### No agent asks the owner in its own chat
+### Owner questions: in the chat and on the route
 
 Added 2026-11-12 on the owner's instruction (CTO m_e293ddbfaaae32e8): "no
 agent asks the owner directly; owner questions go through the chief to the
-Desk", enforced in code, not only by charter text.
+Desk", enforced in code, not only by charter text. Changed the same day on the
+owner's words to the agent-net lead: "the question should be in the chat AND
+follow the route". The first version caught a question in the chat and told
+the session to carry on, so the question left the chat. Now it stays there and
+goes on the route as well.
 
 1. **Guidance.** The text agent-net writes to agent instruction files and the
    MCP server instructions no longer say "ask your owner" or "when you stop to
-   wait for my decision, call agent_owner_ask". They say: an owner question
-   goes to the chief with `agent_owner_ask`, and the session goes on with
-   other work or ends its turn without a question.
+   wait for my decision, call agent_owner_ask". They say: ask an owner
+   question in your chat, on a line that starts with "Owner question:", and
+   also send it with `agent_owner_ask`; it goes to the chief of staff and the
+   Desk. Then carry on with other work or end the turn.
 2. **agent_owner_ask goes to the chief.** An ask from an agent session is
    created chief-bound (owner chief, state verifying). It never reaches the
    owner as it is: the chief verifies it and makes it a decision with options,
    or resolves it.
-3. **A turn that ends on a question to the owner is caught.** A plain turn end
+3. **A turn that ends on a question to the owner is routed.** A plain turn end
    is not a question: every Claude turn ends waiting for input. The trigger is
    precise: an agent_owner_ask the session left open, or a final message
    that is a question addressed to the owner (a harness-reported question
-   prompt, or a line the guidance asks agents to mark, "Owner question:").
-   When that happens and the owner has not typed in that session in the last
-   30 minutes, agent-net does two things:
-   - the question becomes a chief-bound ask at once (the debounce in item 10
-     applies only while the owner is in the session);
-   - at the turn's end, the session's hook tells it once: "Send this question
-     to the chief with agent_owner_ask and carry on." For Claude that is the
-     Stop hook with a continue reason; harnesses without such a hook get the
-     same line at the start of their next turn.
-   There is at most one redirect per question, and never a loop. An idle
-   agent whose turn ends with no question gets no ask and no continue.
-4. **The owner in the loop is not blocked.** When the owner typed in the
-   session in the last 30 minutes (his keystrokes in that session; attaching
-   or viewing does not count), he is working in it (principle 4, in the
-   loop), so a question to him there is normal and nothing is redirected.
+   prompt, or a line marked "Owner question:"). When the agent did not send
+   the question with agent_owner_ask, agent-net makes it a chief-bound ask at
+   once. The turn ends as it is: nothing removes the question from the chat
+   or makes the session go on. The daemon sends each question once.
+4. **The owner in the loop.** When the owner types in the session, the
+   question is in the chat he works in, and it is on the route too. His answer
+   in the chat closes the ask with his words (reason `owner_replied`).
 5. **The CTO and the chief** keep talking to the owner in their own chats;
-   they are the front door.
+   they are the front door, and their questions are not routed.
 
 ### Answers, scope and standing rules
 

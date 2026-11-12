@@ -245,10 +245,6 @@ type PolicyResult struct {
 	// Notice is one line for the turn text when the session's agent-net tools
 	// are disconnected (ToolsDisconnectedNotice). Empty otherwise.
 	Notice string `json:"notice,omitempty"`
-	// Continue is set on a Stop event when the turn ended on a question to
-	// the owner that went to the chief: the session is told this once and
-	// goes on (decision 0150). Empty lets the turn end.
-	Continue string `json:"continue,omitempty"`
 }
 
 // PolicySupport says what a harness does with a policy.

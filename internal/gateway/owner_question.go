@@ -9,11 +9,13 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// No agent asks the owner in its own chat (decision 0150). Owner questions go
-// to the chief with agent_owner_ask. A turn that ends on a question to the
-// owner is caught: the question becomes a chief-bound ask, and the session is
-// told once to carry on. The owner who typed in the session lately is working
-// in it, so a question to him there is normal and nothing is redirected.
+// An owner question shows in the agent's own chat AND follows the route to the
+// chief and the Desk (decision 0150). The owner's words, typed to the
+// agent-net lead on 2026-11-12: "the question should be in the chat AND follow
+// the route". Agents ask with agent_owner_ask and say the question in their
+// chat. A turn that ends on a question that went nowhere else is recorded as
+// a chief-bound ask, and the turn ends as it is: nothing removes the question
+// from the chat or makes the session go on.
 
 // ownerPresentWindow is how long after the owner typed in a session he counts
 // as working in it.
@@ -27,42 +29,50 @@ func (s *Store) RecordOwnerTyped(session string) error {
 }
 
 // ownerInSession tells whether the owner works in the session: he typed there
-// in the last ownerPresentWindow, or it is a front door session (the chief or
-// the CTO), which talks to him in its own chat.
+// in the last ownerPresentWindow, or it is a front door session.
 func (s *Store) ownerInSession(q askDB, session string) (bool, error) {
+	front, typed, err := s.frontDoorSession(q, session)
+	if err != nil || front {
+		return front, err
+	}
+	return typed > s.now().Add(-ownerPresentWindow).UnixNano(), nil
+}
+
+// frontDoorSession tells whether the session talks to the owner in its own
+// chat with no route: the owner's own sessions, the chief and the CTO. A
+// worker asks its caller, never the owner, so it counts too. typed is when the
+// owner last typed there.
+func (s *Store) frontDoorSession(q askDB, session string) (front bool, typed int64, err error) {
 	var harness, worker string
-	var typed int64
-	err := q.QueryRow(`SELECT harness,worker,owner_typed_at FROM sessions WHERE id=?`, session).Scan(&harness, &worker, &typed)
+	err = q.QueryRow(`SELECT harness,worker,owner_typed_at FROM sessions WHERE id=?`, session).Scan(&harness, &worker, &typed)
 	if errors.Is(err, sql.ErrNoRows) {
-		return true, nil
+		return true, 0, nil
 	}
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if protocol.IsOwner(harness) || harness == "cto" || worker != "" {
-		return true, nil
-	}
-	if typed > s.now().Add(-ownerPresentWindow).UnixNano() {
-		return true, nil
+		return true, typed, nil
 	}
 	for _, key := range []string{chiefSessionKey, "cto_session"} {
 		var id string
 		if err := q.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, key).Scan(&id); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return false, err
+			return false, 0, err
 		}
 		if id == session {
-			return true, nil
+			return true, typed, nil
 		}
 	}
-	return false, nil
+	return false, typed, nil
 }
 
-// TurnEndRedirect tells whether a question that ends a session's turn goes to
-// the chief: the owner is not working in that session. A worker asks its
-// caller, never the owner, so it is not redirected here either.
-func (s *Store) TurnEndRedirect(session string) (bool, error) {
-	in, err := s.ownerInSession(s.db, session)
-	return !in, err
+// TurnEndRoutes tells whether a question that ended a session's turn follows
+// the route to the chief. It does for every agent session, also while the
+// owner types there: the question is in his chat too, and his answer there
+// closes the ask. Front door sessions have no route.
+func (s *Store) TurnEndRoutes(session string) (bool, error) {
+	front, _, err := s.frontDoorSession(s.db, session)
+	return !front, err
 }
 
 // turnEndQuestion is the ask of a question that ended a turn. The text is cut

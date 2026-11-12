@@ -2933,11 +2933,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "ask.turn_end":
 		// A session's turn ended on a question to the owner (decision 0150).
-		// When the owner is not working in that session, the question goes to
-		// the chief like an agent_owner_ask, and the daemon tells the session
-		// once to carry on. asked says the session asked it with
-		// agent_owner_ask: a Claude session already has its item, while the
-		// explicit wait of Pi or OpenCode has none yet.
+		// The question stays in the chat and follows the route: it goes to
+		// the chief like an agent_owner_ask. asked says the session asked it
+		// with agent_owner_ask: a Claude session already has its item, while
+		// the explicit wait of Pi or OpenCode has none yet. The answer never
+		// has redirect true: an older daemon continues the turn on it.
 		var p struct {
 			SessionID string `json:"session_id"`
 			Text      string `json:"text"`
@@ -2950,19 +2950,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		redirect, err := st.TurnEndRedirect(agent.SessionID)
-		if err != nil || !redirect {
-			return map[string]any{"redirect": false}, err
+		routes, err := st.TurnEndRoutes(agent.SessionID)
+		if err != nil || !routes {
+			return map[string]any{"routed": false}, err
 		}
 		if p.Asked {
 			open, err := st.OtherOpenAsks(agent.SessionID, "")
 			if err != nil || len(open) > 0 {
-				return map[string]any{"redirect": err == nil}, err
+				return map[string]any{"routed": err == nil}, err
 			}
 		}
 		res, err := g.agentOwnerAsk(ctx, st, turnEndQuestion(agent, project, name, strings.TrimSpace(p.Text)))
 		if res != nil {
-			res["redirect"] = err == nil
+			res["routed"] = err == nil
 		}
 		return res, err
 

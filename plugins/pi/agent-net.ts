@@ -18,8 +18,8 @@ const UNREACHABLE =
 const ANNOUNCE_RULE =
   "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
   "Call it again whenever your task changes. " +
-  "Owner questions go to the chief of staff with agent_owner_ask, in one line with your recommendation. " +
-  "Do not end a turn waiting on the owner: carry on with work that does not depend on the answer. " +
+  "Ask an owner question in your chat, on a line that starts with \"Owner question:\", and also send it with agent_owner_ask, in one line with your recommendation: it goes to the chief of staff and the Desk. " +
+  "Then carry on with work that does not depend on the answer, or end the turn. " +
   "Your project description is taken from the project's AGENTS.md automatically.";
 // When to contact another session. Keep in step with AskPeerRule and RelayRule in internal/mcpserver.
 const ASK_PEER_RULE =

@@ -22,18 +22,9 @@ type policyHookInput struct {
 	EventName string `json:"hook_event_name"`
 	Source    string `json:"source"` // SessionStart: startup, resume, clear, compact, fork
 	Prompt    string `json:"prompt"`
-	// Stop: the turn's final text, and whether a Stop hook already made the
-	// session go on once in this turn.
+	// Stop: the turn's final text.
 	LastMessage    string `json:"last_assistant_message"`
-	StopHookActive bool   `json:"stop_hook_active"`
 	TranscriptPath string `json:"transcript_path"`
-}
-
-// stopOutput is the Stop hook answer that makes the session go on with the
-// reason as its next instruction.
-type stopOutput struct {
-	Decision string `json:"decision"`
-	Reason   string `json:"reason"`
 }
 
 // runPolicyHook is `agent-net policy-hook`: a Claude Code hook on
@@ -71,7 +62,7 @@ func runPolicyHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 		}
 		return
 	case "Stop":
-		runStopHook(ctx, stdout, in, ask)
+		runStopHook(ctx, in, ask)
 		return
 	case "", "UserPromptSubmit":
 	default:
@@ -104,28 +95,16 @@ func runPolicyHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	stdout.Write(append(b, '\n'))
 }
 
-// runStopHook catches a turn that ended on a question to the owner (decision
-// 0150): when the daemon says the question went to the chief, the session is
-// told once to carry on. A turn that a Stop hook already continued always
-// ends, so the hook can never loop.
-func runStopHook(ctx context.Context, stdout io.Writer, in policyHookInput,
+// runStopHook reports the turn's final text, so a question to the owner in it
+// follows the route to the chief (decision 0150). It prints nothing: the turn
+// ends with the question in the chat.
+func runStopHook(ctx context.Context, in policyHookInput,
 	ask func(ctx context.Context, req protocol.PolicyRequest) (protocol.PolicyResult, error)) {
-	if in.StopHookActive {
-		return
-	}
 	last := in.LastMessage
 	if last == "" && in.TranscriptPath != "" {
 		last = lastAssistantText(in.TranscriptPath)
 	}
-	res, err := ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID, Event: "Stop", LastMessage: last})
-	if err != nil || res.Continue == "" {
-		return
-	}
-	b, err := json.Marshal(stopOutput{Decision: "block", Reason: res.Continue})
-	if err != nil {
-		return
-	}
-	stdout.Write(append(b, '\n'))
+	_, _ = ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID, Event: "Stop", LastMessage: last})
 }
 
 // lastAssistantText is the text of the newest main-conversation assistant

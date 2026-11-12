@@ -9,7 +9,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// No agent asks the owner in its own chat (decision 0150, plan step c2).
+// An owner question shows in the agent's own chat AND follows the route to the
+// chief and the Desk (decision 0150, plan step c2). The owner's words, typed to
+// the agent-net lead on 2026-11-12: "the question should be in the chat AND
+// follow the route".
 
 // questionRig is a chief rig with a gateway to call, and the asker's node.
 func questionRig(t *testing.T) (s *Store, c *clock, g *Gateway, chief, asker, askerNode string) {
@@ -36,14 +39,20 @@ func nodeCall(t *testing.T, g *Gateway, node, method string, params any) map[str
 	return out
 }
 
-func turnEnd(t *testing.T, g *Gateway, node, session, text string) (redirect bool, item string) {
+// turnEnd reports a turn that ended on a question. A daemon before this
+// change continues the turn when the answer has redirect true, so the gateway
+// never sends it: the question stays the last thing in the chat.
+func turnEnd(t *testing.T, g *Gateway, node, session, text string) (routed bool, item string) {
 	t.Helper()
 	res := nodeCall(t, g, node, "ask.turn_end", map[string]any{"session_id": session, "text": text})
-	redirect, _ = res["redirect"].(bool)
+	if res["redirect"] == true {
+		t.Fatalf("ask.turn_end answered redirect true, which makes an older daemon continue the turn: %+v", res)
+	}
+	routed, _ = res["routed"].(bool)
 	if it, ok := res["item"].(map[string]any); ok {
 		item, _ = it["id"].(string)
 	}
-	return redirect, item
+	return routed, item
 }
 
 func openQuestions(t *testing.T, s *Store, session string) int {
@@ -75,42 +84,33 @@ func TestAgentOwnerAskGoesToTheChief(t *testing.T) {
 	wantChiefBound(t, s, id)
 }
 
-// A turn that ends on a question while the owner is away becomes a
-// chief-bound ask at once. The owner only viewing the session does not count
-// as working in it.
-func TestTurnEndQuestionGoesToTheChiefWhenTheOwnerIsAway(t *testing.T) {
+// A turn that ends on a question becomes a chief-bound ask at once, and the
+// question stays in the chat.
+func TestTurnEndQuestionGoesToTheChief(t *testing.T) {
 	s, _, g, _, asker, node := questionRig(t)
-	if err := s.RecordOwnerUse(asker); err != nil {
-		t.Fatal(err)
-	}
-	redirect, id := turnEnd(t, g, node, asker, "Ship the release today?")
-	if !redirect {
-		t.Fatal("a question with the owner away was not redirected")
+	routed, id := turnEnd(t, g, node, asker, "Ship the release today?")
+	if !routed {
+		t.Fatal("the question did not follow the route")
 	}
 	wantChiefBound(t, s, id)
 }
 
-// The owner typed in the session 5 minutes ago: he is working in it, so a
-// question to him there is normal. Nothing is redirected and no ask is made,
-// until he has not typed for 30 minutes.
-func TestTurnEndQuestionStaysWhenTheOwnerTypedLately(t *testing.T) {
+// The owner typed in the session 5 minutes ago. The question is in the chat
+// he works in, and it follows the route too. When he answers in the chat, the
+// ask closes with his words.
+func TestTurnEndQuestionIsRoutedWhenTheOwnerTypedLately(t *testing.T) {
 	s, c, g, _, asker, node := questionRig(t)
 	nodeCall(t, g, node, "session.owner_use", map[string]any{"session_id": asker, "prompt": true, "text": "go on"})
 	c.t = c.t.Add(5 * time.Minute)
-	if redirect, _ := turnEnd(t, g, node, asker, "Ship the release today?"); redirect {
-		t.Fatal("redirected while the owner works in the session")
+	routed, id := turnEnd(t, g, node, asker, "Ship the release today?")
+	if !routed {
+		t.Fatal("not routed while the owner works in the session")
 	}
-	if n := openQuestions(t, s, asker); n != 0 {
-		t.Fatalf("%d asks while the owner works in the session", n)
-	}
-	c.t = c.t.Add(ownerPresentWindow)
-	if redirect, _ := turnEnd(t, g, node, asker, "Ship the release today?"); !redirect {
-		t.Fatal("not redirected 35 minutes after the owner typed")
-	}
+	wantChiefBound(t, s, id)
 }
 
 // The chief and the CTO are the front door: they talk to the owner in their
-// own chats and are never redirected.
+// own chats, and their questions are not routed to the chief.
 func TestFrontDoorSessionsAreNeverRedirected(t *testing.T) {
 	s, _, g, chief, _, node := questionRig(t)
 	var chiefNode string
@@ -122,8 +122,8 @@ func TestFrontDoorSessionsAreNeverRedirected(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, x := range []struct{ session, node string }{{chief, chiefNode}, {cto, node}} {
-		if redirect, _ := turnEnd(t, g, x.node, x.session, "Which plan do you want?"); redirect {
-			t.Fatalf("front door session %s was redirected", x.session)
+		if routed, _ := turnEnd(t, g, x.node, x.session, "Which plan do you want?"); routed {
+			t.Fatalf("front door session %s was routed", x.session)
 		}
 		if n := openQuestions(t, s, x.session); n != 0 {
 			t.Fatalf("front door session %s got %d asks", x.session, n)
@@ -148,18 +148,18 @@ func TestWaitingQuestionIsAChiefAskAtOnceWhenTheOwnerIsAway(t *testing.T) {
 	wantChiefBound(t, s, w[0].ID)
 }
 
-// A turn that ends with an agent_owner_ask open is redirected without a second
+// A turn that ends with an agent_owner_ask open is routed without a second
 // ask. The explicit wait of Pi or OpenCode has no ask yet, so it gets one.
 func TestTurnEndOpenAskMakesOneAsk(t *testing.T) {
 	s, _, g, _, asker, node := questionRig(t)
 	ask := map[string]any{"session_id": asker, "text": "Which region for the new box?", "asked": true}
-	if res := nodeCall(t, g, node, "ask.turn_end", ask); res["redirect"] != true {
-		t.Fatalf("open ask with the owner away: %+v", res)
+	if res := nodeCall(t, g, node, "ask.turn_end", ask); res["routed"] != true {
+		t.Fatalf("open ask: %+v", res)
 	}
 	if n := openQuestions(t, s, asker); n != 1 {
 		t.Fatalf("%d asks for an explicit wait without one, want 1", n)
 	}
-	if res := nodeCall(t, g, node, "ask.turn_end", ask); res["redirect"] != true {
+	if res := nodeCall(t, g, node, "ask.turn_end", ask); res["routed"] != true {
 		t.Fatalf("second stop: %+v", res)
 	}
 	if n := openQuestions(t, s, asker); n != 1 {

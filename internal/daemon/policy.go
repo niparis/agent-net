@@ -212,7 +212,8 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		return protocol.PolicyResult{}, nil
 	}
 	if p.Event == "Stop" {
-		return protocol.PolicyResult{Continue: d.turnEndQuestion(ctx, ls, sid, p.LastMessage)}, nil
+		d.recordTurnEndQuestion(ctx, ls, sid, p.LastMessage)
+		return protocol.PolicyResult{}, nil
 	}
 	notice := ""
 	if d.infoOf(ls).ToolsVersion == protocol.ToolsDisconnected {
@@ -243,11 +244,9 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		res.Charter = joinCharter(res.Charter, got.DraftRequest)
 	}
 	// Pi and OpenCode have no Stop hook: a question the last turn left open
-	// for the owner is caught at the start of the next one (decision 0150).
+	// for the owner is routed at the start of the next one (decision 0150).
 	if client != "cli" {
-		if line := d.turnEndQuestion(ctx, ls, sid, ""); line != "" {
-			res.Charter = joinCharter(res.Charter, "agent-net: "+line+".")
-		}
+		d.recordTurnEndQuestion(ctx, ls, sid, "")
 	}
 	return res, nil
 }

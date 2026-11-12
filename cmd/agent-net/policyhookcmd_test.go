@@ -175,26 +175,17 @@ func TestPolicyHookCarriesTheDisconnectedNoticeAlone(t *testing.T) {
 	}
 }
 
-// A turn that ended on a question that went to the chief gets the documented
-// Stop answer (decision block with the reason), so Claude Code goes on. A turn
-// a Stop hook already continued always ends, and a plain turn end prints
-// nothing.
-func TestPolicyHookStopContinuesOnce(t *testing.T) {
-	in := `{"session_id":"abc","transcript_path":"/x","hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"Done.\nOwner question: ship it?"}`
-	out, asked := runPolicyWith(t, in, protocol.PolicyResult{Continue: protocol.OwnerQuestionRedirect}, nil)
+// The Stop hook reports the turn's final text and prints nothing, also when a
+// Stop hook already continued the turn: the question stays in the chat and
+// follows the route (decision 0150).
+func TestPolicyHookStopReportsTheTurnAndPrintsNothing(t *testing.T) {
+	in := `{"session_id":"abc","transcript_path":"/x","hook_event_name":"Stop","stop_hook_active":true,"last_assistant_message":"Done.\nOwner question: ship it?"}`
+	out, asked := runPolicyWith(t, in, protocol.PolicyResult{}, nil)
 	if len(asked) != 1 || asked[0].Event != "Stop" || asked[0].NativeID != "abc" || asked[0].LastMessage != "Done.\nOwner question: ship it?" {
 		t.Fatalf("asked: %+v", asked)
 	}
-	var got map[string]string
-	if err := json.Unmarshal([]byte(out), &got); err != nil || got["decision"] != "block" || got["reason"] != protocol.OwnerQuestionRedirect || len(got) != 2 {
-		t.Fatalf("output: %q", out)
-	}
-	active := strings.Replace(in, `"stop_hook_active":false`, `"stop_hook_active":true`, 1)
-	if out, asked := runPolicyWith(t, active, protocol.PolicyResult{Continue: protocol.OwnerQuestionRedirect}, nil); out != "" || len(asked) != 0 {
-		t.Fatalf("a continued turn: output %q, asked %+v", out, asked)
-	}
-	if out, _ := runPolicyWith(t, in, protocol.PolicyResult{}, nil); out != "" {
-		t.Fatalf("a plain turn end: output %q", out)
+	if out != "" {
+		t.Fatalf("output %q, want none", out)
 	}
 }
 

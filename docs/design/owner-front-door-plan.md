@@ -89,14 +89,18 @@ answers, safety net, measures), [0151](../decisions/0151-cto-or-chief-confirms-p
 - Tests: a live chief never sends an item to the owner by timer; an offline
   chief sends a security item after one missed wake and others after two.
 
-## Step (c2): no owner questions in session chats
+## Step (c2): owner questions in the chat and on the route
 
-Added 2026-11-12 (0150, "No agent asks the owner in its own chat").
+Added 2026-11-12 (0150, "Owner questions: in the chat and on the route").
+Changed the same day on the owner's words to the agent-net lead: "the
+question should be in the chat AND follow the route".
 
-- Guidance: change the owner-ask lines in internal/guidance (instruction-file
-  text and its goldens, `-update`) and the MCP server instructions
-  (internal/mcpserver/mcpserver.go) to "owner questions go to the chief with
-  agent_owner_ask; do not end a turn waiting on the owner".
+- Guidance: the owner-ask lines in internal/guidance (instruction-file text and
+  its goldens, `-update`), the MCP server instructions
+  (internal/mcpserver/mcpserver.go) and the Pi and OpenCode extensions say:
+  ask an owner question in your chat on a line that starts with "Owner
+  question:", and also send it with agent_owner_ask; it goes to the chief and
+  the Desk; then carry on or end the turn.
 - Gateway: agent_owner_ask from an agent session creates a chief-bound item
   (owner chief, state verifying). syncWaitingAsk (internal/gateway/asks.go)
   creates the waiting-session item chief-bound, with no debounce unless the
@@ -104,22 +108,19 @@ Added 2026-11-12 (0150, "No agent asks the owner in its own chat").
 - Trigger: an open agent_owner_ask, or a final message that is a question to
   the owner (a harness-reported question prompt, or a line marked "Owner
   question:" as the guidance asks). Never a plain turn end.
-- Daemon: the Claude Stop hook (policy-hook) returns a continue reason "Send
-  this question to the chief with agent_owner_ask and carry on" once per
-  question, when the trigger fires and the owner has not typed in that
-  session in 30 minutes (owner keystrokes there; attach or view does not
-  count). Other harnesses get the line at the start of the next turn. No loop.
+- Daemon: the Claude Stop hook (policy-hook) reports the turn's final text and
+  prints nothing. A marked question the agent did not send becomes a
+  chief-bound ask, once per question. Other harnesses report it at the start
+  of the next turn. The turn ends as it is; no session is told to go on.
 - Tests:
   - an agent session's agent_owner_ask creates an item with owner chief and
     never an owner-bound item without options;
-  - a turn ending on an owner question, with no owner typing in 30 minutes,
-    gets a chief-bound item at once, and the Stop hook returns the continue
-    reason exactly once (a second stop on the same question passes);
-  - an idle agent whose turn ends with no question gets no ask and no
-    continue;
-  - the same question with the owner typing 5 minutes ago creates no redirect
-    and no hook block (in the loop); the owner only viewing does not count;
-  - the CTO's and the chief's own sessions are never redirected;
+  - a turn ending on an owner question gets a chief-bound item at once and
+    the Stop hook prints nothing; a second stop on the same question makes no
+    second ask;
+  - an idle agent whose turn ends with no question gets no ask;
+  - the same question with the owner typing 5 minutes ago is routed too;
+  - the CTO's and the chief's own sessions are not routed;
   - guidance goldens contain no "ask your owner" line.
 
 ## Step (d): migration
