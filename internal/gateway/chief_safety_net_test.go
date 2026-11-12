@@ -309,3 +309,46 @@ func TestWithCTOItemIdlePastLimitGoesBackToChief(t *testing.T) {
 		t.Fatalf("chief_sent_at = %d, err %v, want 0", sent, err)
 	}
 }
+
+// An ask made while the chief is already offline, with a harness that can be
+// woken, waits for the chief like one made before it went down. The batch
+// wakes the chief, and the safety net sends the ask to the owner only after
+// the missed wakes of its category.
+func TestAskMadeWhileWakeableChiefIsDownWaitsForMissedWakes(t *testing.T) {
+	s, c, chief, asker, _ := chiefRig(t)
+	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, chief); err != nil {
+		t.Fatal(err)
+	}
+	urgent := chiefAsk(t, s, asker, "Is this deploy ok?")
+	setCategory(t, s, urgent, protocol.CategoryOutage)
+	plain := chiefAskKind(t, s, asker, "check", "Which name?")
+	for _, id := range []string{urgent, plain} {
+		if next := askNext(t, s, id); next != protocol.AskNextChief {
+			t.Fatalf("next = %q at creation with the chief down but wakeable, want chief", next)
+		}
+	}
+	c.t = c.t.Add(time.Minute)
+	if _, ok := sendDueChief(t, s, c.t); !ok {
+		t.Fatal("no batch went to wake the chief")
+	}
+	steps := []struct {
+		after        time.Duration
+		urgent, rest string
+	}{
+		{protocol.ChiefWakeInterval - time.Second, protocol.AskNextChief, protocol.AskNextChief},
+		{time.Second, protocol.AskNextOwner, protocol.AskNextChief}, // one missed wake
+		{protocol.ChiefWakeInterval, protocol.AskNextOwner, protocol.AskNextOwner}, // two missed wakes
+	}
+	for i, st := range steps {
+		c.t = c.t.Add(st.after)
+		if err := s.reconcileAsks(); err != nil {
+			t.Fatal(err)
+		}
+		if got := askNext(t, s, urgent); got != st.urgent {
+			t.Fatalf("step %d: outage ask next = %q, want %q", i, got, st.urgent)
+		}
+		if got := askNext(t, s, plain); got != st.rest {
+			t.Fatalf("step %d: normal ask next = %q, want %q", i, got, st.rest)
+		}
+	}
+}

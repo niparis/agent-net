@@ -285,13 +285,25 @@ func (s *Store) ChiefStatus() (protocol.ChiefStatus, error) {
 // When a chief is registered and online but cannot work (no quota, a harness
 // error, silent), the ask goes to the owner path, the way it went before the
 // chief existed, and fixed is true so the chief is not offered it later.
+// A chief that is offline but can be woken still gets the ask: its batch is
+// the wake, and the safety net of decision 0150 sends the ask to the owner
+// only after the missed wakes of its category.
 func (s *Store) chiefRoute(q askDB, item protocol.InboxItem) (next string, fixed bool, err error) {
 	if item.NextWho != "" {
 		return item.NextWho, false, nil
 	}
 	h, err := s.availableChief(q, s.now())
-	if err != nil || h.id == "" || h.id == item.SessionID {
-		return protocol.AskNextOwner, h.id == "" && h.down != "" && !h.offline, err
+	if err != nil {
+		return protocol.AskNextOwner, false, err
+	}
+	chief := h.id
+	if chief == "" && h.offline {
+		if chief, err = s.wakeableChief(q); err != nil {
+			return protocol.AskNextOwner, false, err
+		}
+	}
+	if chief == "" || chief == item.SessionID {
+		return protocol.AskNextOwner, h.id == "" && h.down != "" && !h.offline, nil
 	}
 	return protocol.AskNextChief, false, nil
 }
@@ -341,7 +353,7 @@ func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 		if !h.offline {
 			return nil, nil
 		}
-		if chief, err = s.wakeableChief(); err != nil || chief == "" {
+		if chief, err = s.wakeableChief(s.db); err != nil || chief == "" {
 			return nil, err
 		}
 	}

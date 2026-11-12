@@ -163,13 +163,13 @@ func chiefWakesAllowed(category string) int {
 
 // wakeableChief is the chief session when its harness can be woken by a
 // message, "" otherwise.
-func (s *Store) wakeableChief() (string, error) {
-	id, err := chiefSession(s.db)
+func (s *Store) wakeableChief(q askDB) (string, error) {
+	id, err := chiefSession(q)
 	if err != nil || id == "" {
 		return "", err
 	}
 	var harness string
-	if err := s.db.QueryRow(`SELECT harness FROM sessions WHERE id=?`, id).Scan(&harness); err != nil {
+	if err := q.QueryRow(`SELECT harness FROM sessions WHERE id=?`, id).Scan(&harness); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}

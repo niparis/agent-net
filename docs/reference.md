@@ -3135,7 +3135,10 @@ once a second with the batch tick, and when an ask is created.
   `chief_silent_at`. It ends after `ChiefRetryAfter` (15 minutes, a constant), when the next ask goes to the chief
   again as a probe, or when the chief sorts. Naming a new chief clears it.
 
-While the chief is unavailable, an ask that would go to the chief goes to the
+An offline chief whose harness can be woken still gets new asks (`next =
+chief`): its batch is the wake, and the safety net above sends each ask to the
+owner after the missed wakes of its category. Otherwise, while the chief is
+unavailable, an ask that would go to the chief goes to the
 owner path instead (`next = owner`): the Desk's Needs you list, which the CTO
 reads and answers as it did before the chief existed. The asks that already wait
 for the chief move there when the safety net above says so, each with a Desk

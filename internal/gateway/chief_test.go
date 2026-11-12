@@ -373,10 +373,13 @@ func TestChiefBurstIsOneMessage(t *testing.T) {
 	}
 }
 
-// With no live chief an ask stays with the owner, as before.
+// With no live chief that can be woken, an ask stays with the owner. An
+// offline chief whose harness can be woken gets the ask instead
+// (TestAskMadeWhileWakeableChiefIsDownWaitsForMissedWakes), so this chief
+// runs Pi, which cannot be woken.
 func TestNoLiveChiefKeepsAskWithOwner(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
-	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, chief); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET online=0, harness='pi' WHERE id=?`, chief); err != nil {
 		t.Fatal(err)
 	}
 	id := chiefAsk(t, s, asker, "Ship it?")
