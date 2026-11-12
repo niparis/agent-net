@@ -112,15 +112,75 @@ func (d *fakeDaemon) waitHello(t *testing.T, version string) map[string]any {
 	}
 }
 
-// buildAs builds this package with the given version baked in.
-func buildAs(t *testing.T, out, version string) {
+// The helper binaries are built once per test process, one per version, and
+// copied into each test's directory. A build per test cost many seconds each
+// under -race.
+var (
+	builtMu   sync.Mutex
+	builtDir  string
+	builtBins = map[string]string{}
+)
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if builtDir != "" {
+		os.RemoveAll(builtDir)
+	}
+	os.Exit(code)
+}
+
+// buildAll builds the versions that are missing: the first one alone, which
+// fills the Go build cache, then the others at the same time. Linking is what
+// is left to do for them.
+func buildAll(t *testing.T, versions ...string) {
 	t.Helper()
+	builtBinary(t, versions[0])
+	var wg sync.WaitGroup
+	for _, v := range versions[1:] {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			builtBinary(t, v)
+		}()
+	}
+	wg.Wait()
+}
+
+func builtBinary(t *testing.T, version string) string {
+	t.Helper()
+	builtMu.Lock()
+	if p, ok := builtBins[version]; ok {
+		builtMu.Unlock()
+		return p
+	}
+	if builtDir == "" {
+		dir, err := os.MkdirTemp("", "anbuilt")
+		if err != nil {
+			builtMu.Unlock()
+			t.Fatal(err)
+		}
+		builtDir = dir
+	}
+	dir := builtDir
+	builtMu.Unlock()
+	out := filepath.Join(dir, "agent-net-"+version)
 	goBin := filepath.Join(runtime.GOROOT(), "bin", "go")
 	cmd := exec.Command(goBin, "build", "-ldflags", "-X main.version="+version, "-o", out, ".")
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if b, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build %s: %v\n%s", version, err, b)
+		t.Errorf("build %s: %v\n%s", version, err, b)
+		return ""
 	}
+	builtMu.Lock()
+	builtBins[version] = out
+	builtMu.Unlock()
+	return out
+}
+
+// buildAs puts a copy of this package built with the given version baked in at out.
+func buildAs(t *testing.T, out, version string) {
+	t.Helper()
+	swapBinary(t, builtBinary(t, version), out)
 }
 
 // mcpClient is a fake MCP client on the pipes of an `agent-net mcp` process.
@@ -182,6 +242,7 @@ func startMCP(t *testing.T, exe, sock, tmp string, extraEnv ...string) *mcpProc 
 		"AGENT_NET_CONFIG_DIR="+filepath.Join(tmp, "cfg"),
 		"AGENT_NET_STATE_DIR="+filepath.Join(tmp, "state"),
 		"TMPDIR="+tmp,
+		"AGENT_NET_MCP_WATCH_INTERVAL=100ms", // the default is 10s
 		"CLAUDE_CODE_SESSION_ID=test-session")
 	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.Dir = tmp
@@ -275,6 +336,7 @@ func setupSelfUpgrade(t *testing.T) (tmp, exe, newBin, sock string) {
 	t.Cleanup(func() { os.RemoveAll(tmp) })
 	exe = filepath.Join(tmp, "agent-net")
 	newBin = filepath.Join(tmp, "agent-net-new")
+	buildAll(t, "v0.0.1", "v0.0.2", "v0.0.3")
 	buildAs(t, exe, "v0.0.1")
 	buildAs(t, newBin, "v0.0.2")
 	return tmp, exe, newBin, filepath.Join(tmp, "d.sock")

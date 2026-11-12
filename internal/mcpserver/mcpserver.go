@@ -536,7 +536,7 @@ func (s *switcher) watch(ctx context.Context) {
 	if s.opts.NoAutoUpgrade || s.opts.Exe == "" {
 		return
 	}
-	t := time.NewTicker(10 * time.Second)
+	t := time.NewTicker(watchInterval())
 	defer t.Stop()
 	for {
 		select {
@@ -546,6 +546,16 @@ func (s *switcher) watch(ctx context.Context) {
 			s.checkExecutable(ctx)
 		}
 	}
+}
+
+// watchInterval is how often the installed file is checked. Tests of the
+// switch set AGENT_NET_MCP_WATCH_INTERVAL (a Go duration, at least 10ms) so they
+// do not wait the default 10 seconds.
+func watchInterval() time.Duration {
+	if d, err := time.ParseDuration(os.Getenv("AGENT_NET_MCP_WATCH_INTERVAL")); err == nil && d >= 10*time.Millisecond {
+		return d
+	}
+	return 10 * time.Second
 }
 
 func (s *switcher) checkExecutable(ctx context.Context) {

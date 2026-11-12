@@ -61,10 +61,7 @@ func TestBuildMCPServerRefusals(t *testing.T) {
 // `agent-net mcp` with no subcommand is still the stdio server Claude starts,
 // and a subcommand goes to the registry CLI. This builds and runs the real binary.
 func TestMCPRouting(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "agent-net")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
-		t.Skipf("cannot build: %v\n%s", err, out)
-	}
+	bin := builtBinary(t, "v0.0.1")
 	run := func(args ...string) string {
 		cmd := exec.Command(bin, args...)
 		cmd.Env = append(os.Environ(), "CLAUDE_CODE_SESSION_ID=", "AGENT_NET_SOCKET="+filepath.Join(t.TempDir(), "none.sock"))

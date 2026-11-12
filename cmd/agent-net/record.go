@@ -83,6 +83,9 @@ func dash(s string) string {
 	return s
 }
 
+// eventsFollowInterval is how often --follow asks for new events. Tests make it shorter.
+var eventsFollowInterval = time.Second
+
 // cmdEvents shows the gateway's events table. It runs on the gateway machine.
 func cmdEvents(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("events", flag.ExitOnError)
@@ -148,7 +151,7 @@ func cmdEvents(ctx context.Context, args []string) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(time.Second):
+		case <-time.After(eventsFollowInterval):
 		}
 		more, err := fetch(last)
 		if err != nil {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -263,30 +264,66 @@ func TestEventsCommand(t *testing.T) {
 		t.Fatalf("no gateway here: %v", err)
 	}
 
-	// Follow: a new event shows up while the command runs.
+	// Follow: a new event shows up while the command runs. The command polls
+	// every 20ms here (it is 1s by default), and the test waits for what it
+	// prints instead of sleeping.
+	eventsFollowInterval = 20 * time.Millisecond
+	defer func() { eventsFollowInterval = time.Second }()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdout := os.Stdout
+	os.Stdout = w
+	var mu sync.Mutex
+	var got strings.Builder
+	readDone := make(chan struct{})
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := r.Read(buf)
+			mu.Lock()
+			got.Write(buf[:n])
+			mu.Unlock()
+			if err != nil {
+				close(readDone)
+				return
+			}
+		}
+	}()
+	seen := func(s string) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return strings.Contains(got.String(), s)
+	}
+	waitSeen := func(s string) {
+		t.Helper()
+		deadline := time.Now().Add(30 * time.Second)
+		for !seen(s) {
+			if time.Now().After(deadline) {
+				t.Errorf("follow never printed %q", s)
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	var followed string
 	finished := make(chan struct{})
 	go func() {
-		followed = captureStdout(t, func() {
-			cmdEvents(ctx, []string{"--data", data, "--follow", "--limit", "1"})
-		})
+		cmdEvents(ctx, []string{"--data", data, "--follow", "--limit", "1"})
 		close(finished)
 	}()
-	time.Sleep(300 * time.Millisecond)
+	waitSeen("second-event") // the first fetch is done: the next events are polled
 	st.Event("node.disconnected", "", "", "", "third-event")
-	deadline := time.Now().Add(1600 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-		select {
-		case <-finished:
-		default:
-			continue
-		}
-		break
-	}
+	waitSeen("third-event")
 	cancel()
 	<-finished
+	os.Stdout = oldStdout
+	w.Close()
+	<-readDone
+	mu.Lock()
+	followed := got.String()
+	mu.Unlock()
 	if !strings.Contains(followed, "second-event") || !strings.Contains(followed, "third-event") ||
 		strings.Contains(followed, "first-event") || strings.Count(followed, "second-event") != 1 {
 		t.Fatalf("follow output:\n%s", followed)
