@@ -278,6 +278,10 @@ func (d *Daemon) worktreeFacts(w *worker) (stat string, changed bool) {
 		return "", false
 	}
 	ctx := context.Background()
+	start := base
+	if head, err := gitOut(ctx, dir, "rev-parse", "HEAD"); err == nil {
+		base = handbackDiffBase(ctx, dir, base, head)
+	}
 	var parts []string
 	if s, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil && s != "" {
 		parts = append(parts, s)
@@ -290,7 +294,7 @@ func (d *Daemon) worktreeFacts(w *worker) (stat string, changed bool) {
 		}
 		parts = append(parts, "untracked: "+strings.Join(files, ", ")+more)
 	}
-	if n, err := gitOut(ctx, dir, "rev-list", "--count", base+"..HEAD"); err == nil && n != "0" && n != "" && len(parts) == 0 {
+	if n, err := gitOut(ctx, dir, "rev-list", "--count", start+"..HEAD"); err == nil && n != "0" && n != "" && len(parts) == 0 {
 		parts = append(parts, n+" commit(s) with no file changes")
 	}
 	return strings.Join(parts, "\n"), len(parts) > 0
