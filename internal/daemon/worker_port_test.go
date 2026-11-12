@@ -70,7 +70,7 @@ func TestCTORetriesPortCollision(t *testing.T) {
 		}
 	}})
 	n.d.cto.mu.Lock()
-	err = n.d.startCTOLocked(context.Background())
+	err = n.d.startOpenCodeRole(context.Background(), roleCTO)
 	n.d.cto.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)

@@ -334,6 +334,13 @@ is `fullscreen` or `default`. Without it the CTO would use the classic renderer
 while the owner's other sessions use the fullscreen one, and a long reply (a
 table) would run off the screen with no scrollback. A running CTO keeps the
 renderer it started with; it takes the new value at its next start.
+The CTO starts through the same start path as every other session (decision
+0156). Its role (name `agent-net-cto`, the system prompt, `--tools ""`,
+`--setting-sources ""`, the private MCP config and `--strict-mcp-config`) is
+added by the one Claude spec builder, and the job is launched by the same
+launcher as a coding session. For OpenCode, the private server is started by the
+same function that starts a worker's private server. A job that ends before it
+writes a session file fails the start at once, with its detail.
 At daemon start, on cto-mcp hello, and before starting Claude, the daemon adopts a live `agent-net-cto` background job
 in that private directory if one exists. When Claude resumes a conversation as
 a copy, the daemon saves the copy's session ID and moves its action lines to

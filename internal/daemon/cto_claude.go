@@ -22,7 +22,6 @@ import (
 	"unicode"
 
 	"github.com/niparis/agent-net/internal/claudetext"
-	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
 )
@@ -176,47 +175,7 @@ func ownerClaudeRenderer(sessionsDir string) string {
 	return ""
 }
 
-// startClaudeCTO is serialized with CTO mutations by ctoDispatchMu. Only
-// inspecting and publishing runtime state takes cto.mu. Launching Claude,
-// capability checks and waiting for its session file run without it.
 const claudeCTORestartNotice = "The CTO's Claude conversation was closed by Claude Code; started a new one."
-
-type claudeCTOJobFailure struct {
-	detail      string
-	recoverable bool
-}
-
-func (e *claudeCTOJobFailure) Error() string { return "CTO Claude job failed: " + e.detail }
-
-func recoverableClaudeResumeFailure(status, detail string) bool {
-	lower := strings.ToLower(detail)
-	return status == "crashed" || strings.Contains(lower, "crash") || (strings.Contains(lower, "source session") && strings.Contains(lower, "not found"))
-}
-
-func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
-	d.setClaudeCTORestarted(false)
-	start := func(id string) error {
-		err := d.startClaudeCTOOnce(ctx, id, model)
-		var failure *claudeCTOJobFailure
-		if errors.As(err, &failure) {
-			d.Logf("cto.crash harness=claude reason=startup_job_failed detail=%q", failure.detail)
-		}
-		return err
-	}
-	err := start(id)
-	var failure *claudeCTOJobFailure
-	if id == "" || !errors.As(err, &failure) || !failure.recoverable {
-		return err
-	}
-	if err = start(""); err != nil {
-		return err
-	}
-	d.setClaudeCTORestarted(true)
-	if d.log != nil {
-		d.log.Print(claudeCTORestartNotice)
-	}
-	return nil
-}
 
 // setClaudeCTORestarted takes cto.mu, which guards restarted: cto_enter reads
 // it while a start may still be running.
@@ -224,116 +183,6 @@ func (d *Daemon) setClaudeCTORestarted(v bool) {
 	d.cto.mu.Lock()
 	d.claudeCTO.restarted = v
 	d.cto.mu.Unlock()
-}
-
-func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error {
-	d.cto.mu.Lock()
-	c := &d.claudeCTO
-	dir := filepath.Join(d.cfg.StateDir, "cto", "claude")
-	canAdopt := c.ref == ""
-	if c.ref != "" {
-		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, c.ref)
-		root := c.root.Load()
-		tok, alive := "", false
-		if root != nil {
-			tok, alive = procToken(root.pid)
-		}
-		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, c.ref)
-		if ok && !claudeJobEnded(status) && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
-			d.cto.mu.Unlock()
-			return nil
-		}
-		reason := "configuration_change"
-		if !alive || root == nil || tok != c.token || claudeJobEnded(status) {
-			reason = claudeCTOEndReason(status)
-		}
-		d.stopClaudeCTOLocked(reason)
-	}
-	d.cto.mu.Unlock()
-	// A daemon restart loses the in-memory job ref, but the private background
-	// session may still be alive. Bind it before launching another copy.
-	if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ""); canAdopt && ok && func() bool {
-		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, sf.JobID)
-		return !claudeJobEnded(status)
-	}() && d.bindClaudeCTO(sf, model, id, "adopted") {
-		return nil
-	}
-	bin, err := d.harnessBinary("claude")
-	if err != nil {
-		return err
-	}
-	if err := d.checkClaudeCTOCapabilities(ctx, bin); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	if err := claudetrust.Set(dir); err != nil {
-		return fmt.Errorf("trust CTO Claude directory: %w", err)
-	}
-	// CLAUDE_CODE_DISABLE_MOUSE is read inside the session, from its settings env
-	// and from the environment of Claude's background service. The command that
-	// starts the job and the attach client are ignored, so "0" here is the only
-	// way to keep the wheel working for a long CTO reply whatever started the
-	// service. See docs/decisions/0128-cto-keeps-mouse-tracking-on.md.
-	// The CTO's message tool is allowed, so Claude Code's auto-mode check does not
-	// block it. The name is the cto-mcp server's tool: mcp__<server>__<tool>.
-	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "permissions": map[string]any{"allow": []string{"mcp__agent-net-cto__agent_message_send"}}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0", "DISABLE_AUTOUPDATER": "1"}}
-	if tui := ownerClaudeRenderer(d.cfg.ClaudeSessionsDir); tui != "" {
-		launch["tui"] = tui
-	}
-	settings, _ := json.Marshal(launch)
-	mcp, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agent-net-cto": map[string]any{"command": d.cfg.Exe, "args": []string{"cto-mcp"}}}})
-	spec := claudeBackground{Name: "agent-net-cto", Settings: string(settings), Resume: id,
-		Flags: []string{"--tools", "", "--setting-sources", "", "--system-prompt", d.ctoSystemPrompt(ctx), "--mcp-config", string(mcp), "--strict-mcp-config"}}
-	if model != "" {
-		spec.ModelArgs = []string{"--model", model}
-	}
-	c.starting.Store(true)
-	defer c.starting.Store(false)
-	// The CTO keeps its own job tracking (private directory, crash detail, a
-	// restart without the old conversation), so it waits for the job itself;
-	// the command comes from the one launcher.
-	// The first launch can start Claude's background service, and every session
-	// that service starts later inherits this environment. Do not hand it a
-	// variable that turns the wheel off.
-	output, ref, err := runClaudeBackground(ctx, bin, dir, spec, claudeLaunchEnv(withoutEnvKey(os.Environ(), "CLAUDE_CODE_DISABLE_MOUSE")))
-	if err != nil {
-		if claudeTrustPrompt(output) {
-			return fmt.Errorf("Claude Code does not trust %s", dir)
-		}
-		detail := claudeCTOErrorOutput(output)
-		if detail != "" {
-			if id != "" && recoverableClaudeResumeFailure("", detail) {
-				return &claudeCTOJobFailure{detail: detail, recoverable: true}
-			}
-			return fmt.Errorf("start CTO Claude: %s", detail)
-		}
-		return fmt.Errorf("start CTO Claude: %w", err)
-	}
-	if ref == "" {
-		return errors.New("Claude did not return a background session id")
-	}
-	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	for {
-		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ref)
-		status, detail := claudeCTOJobState(d.cfg.ClaudeSessionsDir, ref)
-		if claudeJobEnded(status) {
-			(claudeLauncher{}).stopID(d, ref)
-			lower := strings.ToLower(detail)
-			return &claudeCTOJobFailure{detail: detail, recoverable: status == "crashed" || strings.Contains(lower, "crash") || (strings.Contains(lower, "source session") && strings.Contains(lower, "not found"))}
-		}
-		if ok && !claudeJobEnded(status) && d.bindClaudeCTO(sf, model, id, "started") {
-			return nil
-		}
-		select {
-		case <-startup.Done():
-			(claudeLauncher{}).stopID(d, ref)
-			return fmt.Errorf("CTO Claude session did not start: %w", startup.Err())
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
 }
 
 // withoutEnvKey returns env without any entry for key.
@@ -473,7 +322,7 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 	if err != nil {
 		return nil, err
 	}
-	if err = d.startClaudeCTO(ctx, id, model); err != nil {
+	if err = d.startClaudeRole(ctx, roleCTO, id, model); err != nil {
 		return nil, err
 	}
 	d.cto.mu.Lock()

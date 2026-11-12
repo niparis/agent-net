@@ -870,6 +870,9 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, s
 		}
 		filtered = append(filtered, item)
 	}
+	for _, key := range spec.DropEnv {
+		filtered = withoutEnvKey(filtered, key)
+	}
 	out, id, err := runClaudeBackground(ctx, bin, path, spec, claudeLaunchEnv(workerEnv(filtered, extraEnv)))
 	if logPath != "" {
 		logf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
@@ -881,6 +884,12 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, s
 	if err != nil {
 		if claudeTrustPrompt(out) {
 			return claudeSessionFile{}, fmt.Errorf("Claude Code does not trust %s", path)
+		}
+		if logPath == "" {
+			// No log carries the output, so the error carries its first lines.
+			if detail := claudeCTOErrorOutput(out); detail != "" {
+				return claudeSessionFile{}, &claudeJobFailure{detail: detail, recoverable: resume != "" && recoverableClaudeResumeFailure("", detail)}
+			}
 		}
 		return claudeSessionFile{}, fmt.Errorf("claude --bg failed: %v", err) // its output is added from the log
 	}
@@ -916,6 +925,11 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, s
 		if tick%5 == 4 {
 			if blocked := d.claudeJobMCPBlock(id, path); blocked != nil {
 				return claudeSessionFile{}, blocked
+			}
+			// A job that ended before it wrote a session file never will.
+			if status, detail := claudeCTOJobState(d.cfg.ClaudeSessionsDir, id); claudeJobEnded(status) {
+				(claudeLauncher{}).stopID(d, id)
+				return claudeSessionFile{}, &claudeJobFailure{detail: detail, ended: true, recoverable: resume != "" && recoverableClaudeResumeFailure(status, detail)}
 			}
 		}
 		select {
