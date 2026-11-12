@@ -106,6 +106,9 @@ type Config struct {
 	// claudeRosterPath replaces the Claude roster file that a process stop
 	// reads (process_stop_claude.go). Empty uses the user's Claude folder.
 	claudeRosterPath string
+	// readClaudeRosterFile replaces the read of that roster file, so a test can
+	// count the reads. Nil uses os.ReadFile.
+	readClaudeRosterFile func(path string) ([]byte, error)
 	// claudeSettingsPath replaces the user's Claude settings file that the
 	// mouse choice lives in. Empty uses $CLAUDE_CONFIG_DIR or ~/.claude.
 	claudeSettingsPath string

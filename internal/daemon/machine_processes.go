@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/user"
 	"sort"
 	"strconv"
@@ -13,7 +14,9 @@ import (
 
 // machineProcesses uses the machine sampler and the stop path's refusal rules.
 // Refusals are advisory: process_stop checks identity again before signaling.
-func (d *Daemon) machineProcesses(ctx context.Context, order string, read func(int) (procView, error)) ([]protocol.MachineProcessRow, error) {
+// The process table and the Claude roster are each read once per call, however
+// many processes there are, so a list costs no process start per process.
+func (d *Daemon) machineProcesses(ctx context.Context, order string, readTable func() (map[int]procView, error)) ([]protocol.MachineProcessRow, error) {
 	if order == "" {
 		order = "rss"
 	}
@@ -31,8 +34,19 @@ func (d *Daemon) machineProcesses(ctx context.Context, order string, read func(i
 	if !ok {
 		return nil, fmt.Errorf("process sampler needs two readings")
 	}
+	table, err := readTable()
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the process table: %w", err)
+	}
+	lookup := func(pid int) (procView, error) {
+		if v, ok := table[pid]; ok {
+			return v, nil
+		}
+		return procView{}, os.ErrNotExist
+	}
 	owners := d.procOwners()
-	if roster := d.readClaudeRoster(time.Now()); roster != nil {
+	roster := d.readClaudeRosterWithProcess(time.Now(), lookup)
+	if roster != nil {
 		for id, w := range roster.Workers {
 			for _, pid := range []int{w.PID, w.ReplPID} {
 				if pid > 1 {
@@ -43,8 +57,8 @@ func (d *Daemon) machineProcesses(ctx context.Context, order string, read func(i
 	}
 	rows := make([]protocol.MachineProcessRow, 0, len(procs))
 	for _, p := range procs {
-		v, err := read(p.PID)
-		if err != nil {
+		v, ok := table[p.PID]
+		if !ok {
 			continue
 		}
 		o := classifyProc(p, owners)
@@ -56,7 +70,8 @@ func (d *Daemon) machineProcesses(ctx context.Context, order string, read func(i
 		if cmd == "" {
 			cmd = "[" + p.Cmd + "]"
 		}
-		rows = append(rows, protocol.MachineProcessRow{MachineProcRow: protocol.MachineProcRow{PID: p.PID, PPID: p.PPID, CPU: round1(p.CPU), RSS: p.RSS, ElapsedSeconds: int64(p.Elapsed / time.Second), Cmd: cmd, OwnerKind: o.kind, Owner: o.name, OwnerID: o.id}, User: name, Refusal: d.processRefusal(v)})
+		refusal := d.processRefusalWith(v, roster, lookup)
+		rows = append(rows, protocol.MachineProcessRow{MachineProcRow: protocol.MachineProcRow{PID: p.PID, PPID: p.PPID, CPU: round1(p.CPU), RSS: p.RSS, ElapsedSeconds: int64(p.Elapsed / time.Second), Cmd: cmd, OwnerKind: o.kind, Owner: o.name, OwnerID: o.id}, User: name, Refusal: refusal})
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		if order == "rss" && rows[i].RSS != rows[j].RSS {

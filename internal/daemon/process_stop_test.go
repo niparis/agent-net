@@ -842,7 +842,7 @@ func TestClaudeRosterQuietSupervisor(t *testing.T) {
 		{procView{PID: 502, PPID: 501}, true},
 		{procView{PID: 503, Command: "claude bg-spare"}, false},
 	} {
-		if got := d.claudeRosterProcessRefusal(tc.v, roster); (got != "") != tc.refused {
+		if got := claudeRosterProcessRefusal(tc.v, roster, readProcView); (got != "") != tc.refused {
 			t.Fatalf("pid %d refusal %q", tc.v.PID, got)
 		}
 	}

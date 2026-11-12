@@ -10,13 +10,15 @@ import (
 )
 
 func TestMachineProcessesRSS(t *testing.T) {
-	s := usage.NewWith(ownerFixture(time.Now()), time.Hour, 5*time.Minute, nil)
+	now := time.Now()
+	fixture := ownerFixture(now)
+	s := usage.NewWith(fixture, time.Hour, 5*time.Minute, nil)
 	d := &Daemon{cfg: Config{UsageSampler: s, claudeRosterPath: os.DevNull}, sessions: map[string]*localSession{}, workers: map[string]*worker{}}
 	d.workers["w_test"] = &worker{id: "w_test", pid: 100}
 	d.sessions["s_test"] = &localSession{sessionID: "s_test", info: protocol.SessionInfo{PID: 200}}
 	s.Sample(context.Background())
 	s.Sample(context.Background())
-	rows, err := d.machineProcesses(context.Background(), "rss", func(pid int) (procView, error) { return procView{PID: pid, UID: os.Getuid(), EUID: os.Getuid()}, nil })
+	rows, err := d.machineProcesses(context.Background(), "rss", fixtureProcessTable(now, fixture))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,5 +53,49 @@ func TestMachineProcessesThroughGateway(t *testing.T) {
 	}
 	if out.Processes.Items[0].PID != os.Getpid() || out.Processes.Items[0].Refusal == "" || out.Processes.Items[0].OwnerKind != protocol.ProcOwnerDaemon {
 		t.Fatalf("missing daemon protection: %+v", out.Processes)
+	}
+}
+
+func TestMachineProcessesReadsTableAndRosterOnce(t *testing.T) {
+	now := time.Now()
+	fixture := ownerFixture(now)
+	s := usage.NewWith(fixture, time.Hour, 5*time.Minute, nil)
+	ctx := context.Background()
+	s.Sample(ctx)
+	s.Sample(ctx)
+	tableReads, rosterReads := 0, 0
+	d := &Daemon{cfg: Config{
+		UsageSampler:     s,
+		claudeRosterPath: writeClaudeRoster(t, 200, now.Add(-time.Hour), map[string]any{"live": map[string]any{"pid": 101, "replPid": 102}}),
+		readClaudeRosterFile: func(path string) ([]byte, error) {
+			rosterReads++
+			return os.ReadFile(path)
+		},
+	}, sessions: map[string]*localSession{}, workers: map[string]*worker{}}
+	table := func() (map[int]procView, error) {
+		tableReads++
+		return fixtureProcessTable(now, fixture)()
+	}
+	rows, err := d.machineProcesses(ctx, "rss", table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := len(fixture.snaps[len(fixture.snaps)-1].Procs); len(rows) != want {
+		t.Fatalf("got %d rows, want %d", len(rows), want)
+	}
+	if tableReads != 1 || rosterReads != 1 {
+		t.Fatalf("process table read %d times and roster %d times for %d processes; want 1 and 1", tableReads, rosterReads, len(rows))
+	}
+}
+
+// fixtureProcessTable is the process table of a fixture: each of its processes
+// belongs to the test user and started two hours ago.
+func fixtureProcessTable(now time.Time, fixture *scriptReader) func() (map[int]procView, error) {
+	return func() (map[int]procView, error) {
+		out := map[int]procView{}
+		for pid := range fixture.snaps[len(fixture.snaps)-1].Procs {
+			out[pid] = procView{PID: pid, UID: os.Getuid(), EUID: os.Getuid(), Started: now.Add(-2 * time.Hour)}
+		}
+		return out, nil
 	}
 }

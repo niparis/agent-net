@@ -72,12 +72,18 @@ func (d *Daemon) readClaudeRoster(now time.Time) *claudeRoster {
 	return d.readClaudeRosterWithProcess(now, readProcView)
 }
 
-func (d *Daemon) readClaudeRosterWithProcess(now time.Time, read func(int) (procView, error)) *claudeRoster {
+// readClaudeRosterWithProcess reads the roster. The supervisor is looked up
+// with read: the live reader for a process stop, a snapshot for the list.
+func (d *Daemon) readClaudeRosterWithProcess(now time.Time, read procLookup) *claudeRoster {
 	path := d.claudeRosterFile()
 	if path == "" {
 		return nil
 	}
-	raw, err := os.ReadFile(path)
+	readFile := d.cfg.readClaudeRosterFile
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
+	raw, err := readFile(path)
 	if err != nil {
 		return nil
 	}
@@ -98,14 +104,11 @@ func (d *Daemon) readClaudeRosterWithProcess(now time.Time, read func(int) (proc
 	return &r
 }
 
-// claudeProcessRefusal says why a process must not be stopped because it is a
-// Claude background session, or is inside one, or returns "". A stale or
-// missing roster refuses every Claude background process.
-func (d *Daemon) claudeProcessRefusal(v procView) string {
-	return d.claudeRosterProcessRefusal(v, d.readClaudeRoster(time.Now()))
-}
-
-func (d *Daemon) claudeRosterProcessRefusal(v procView, roster *claudeRoster) string {
+// claudeRosterProcessRefusal says why a process must not be stopped because it
+// is a Claude background session, or is inside one, or returns "". A nil roster
+// refuses every Claude background process. The ancestors of v are looked up
+// with lookup.
+func claudeRosterProcessRefusal(v procView, roster *claudeRoster, lookup procLookup) string {
 	if roster == nil {
 		if isClaudeBackgroundCommand(v.Command) {
 			return "Claude roster not fresh; cannot tell live sessions (missing, invalid, or supervisor not verified alive)"
@@ -137,7 +140,7 @@ func (d *Daemon) claudeRosterProcessRefusal(v procView, roster *claudeRoster) st
 		if o, ok := owners[ppid]; ok {
 			return fmt.Sprintf("it runs inside a live Claude background session (short %s, cwd %s)", o.short, o.cwd)
 		}
-		parent, err := readProcView(ppid)
+		parent, err := lookup(ppid)
 		if err != nil {
 			break
 		}
