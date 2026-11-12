@@ -302,6 +302,9 @@ type WorkerInfo struct {
 	// Struggle is the sign count of the worker's latest run, computed at its
 	// end from the run's own tool record (decision 0133).
 	Struggle *Struggle `json:"struggle,omitempty"`
+	// Cause is the recorded reason for the latest run's failure or rework,
+	// one of the Cause constants (decision 0145). Empty when none is known.
+	Cause string `json:"cause,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -409,10 +412,10 @@ type (
 		// and model, and the fresh notes about it (decision 0022).
 		Track     *TrackRecord   `json:"track,omitempty"`
 		Playbooks []PlaybookNote `json:"playbooks,omitempty"`
-		// Checked means the start was mode "check": the brief checks ran and
+		// Checked means the start was mode "check": the overlap check ran and
 		// no worker started.
 		Checked bool `json:"checked,omitempty"`
-		// BriefFailures lists the failed brief items of a check, one per line
+		// BriefFailures lists the overlaps that refuse a brief, one per line
 		// when it is shown. Empty means the brief passed.
 		BriefFailures []string `json:"brief_failures,omitempty"`
 	}
@@ -560,7 +563,10 @@ type (
 		Project          string          `json:"project"`
 		Harness          string          `json:"harness"`
 		Reason           string          `json:"reason"`
-		// Failure is the cleaned model-call error, used to remember provider auth failures.
+		// Failure is the cleaned error text of the run: a failed model call, or
+		// the report of a failed hand-back (a failed Codex turn reports its
+		// provider error there). It is used to remember provider auth and quota
+		// failures and to record the run's cause.
 		Failure string `json:"failure,omitempty"`
 		// Model is the model the worker ran, as the gateway resolved it. The
 		// gateway uses it with Reason model_failed to rank the model last for a

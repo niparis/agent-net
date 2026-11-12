@@ -1311,7 +1311,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, workerCauseMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1345,6 +1345,16 @@ CREATE TABLE IF NOT EXISTS worker_brief_rejections (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_rejections_task ON worker_brief_rejections(caller, task_key, at);
 CREATE INDEX IF NOT EXISTS worker_brief_rejections_caller ON worker_brief_rejections(caller, at);
+`
+
+// workerCauseMigration stores the cause of failure or rework on a worker run
+// and on a defect, and whether a late defect was caught before release or
+// escaped (decision 0145). The columns are added in the migration loop, so
+// replaying it is safe.
+const workerCauseMigration = `
+-- Worker run and defect cause, and the phase of a late defect.
+CREATE INDEX IF NOT EXISTS worker_runs_session ON worker_runs (session_id, id);
+SELECT 1 /* worker run and defect cause */;
 `
 
 // messagePairGIDSQL is the thread key of one message: the unordered pair of
@@ -2257,6 +2267,25 @@ func (s *Store) migrate() error {
 				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN last_compacted_reason TEXT NOT NULL DEFAULT ''`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker run and defect cause") {
+			for _, col := range []struct{ table, name, spec string }{
+				{"worker_runs", "cause", `TEXT NOT NULL DEFAULT ''`},
+				{"worker_defects", "cause", `TEXT NOT NULL DEFAULT ''`},
+				{"worker_defects", "escape_phase", `TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, col.table, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
 				}
 			}
 		}
@@ -3944,7 +3973,7 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
 var agentListTables = []string{"sessions", "nodes", "profiles", "apps", "project_display_names", "project_mergers",
 	"worker_assessments", "agents", "repo_leads", "repos", "teams", "team_members", "setting_values", "inbox_items",
-	"owner_settings", "messages"}
+	"owner_settings", "messages", "worker_runs"}
 
 const (
 	// agentRepoCountWhere is what makes a session count toward its Repo's
@@ -4162,6 +4191,9 @@ func (s *Store) agentsRead(f protocol.QueryAgents) ([]protocol.AgentView, error)
 		return nil, err
 	}
 	if err := s.applyEndedWorkerNotes(out); err != nil {
+		return nil, err
+	}
+	if err := s.applyWorkerCauses(out); err != nil {
 		return nil, err
 	}
 	return out, nil

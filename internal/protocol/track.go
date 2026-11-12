@@ -79,6 +79,9 @@ type WorkerRun struct {
 	// Struggle counts the signs that this run fought its environment or its
 	// instructions, from the run's own tool record (decision 0133).
 	Struggle *Struggle `json:"struggle,omitempty"`
+	// Cause is the recorded reason for a failure or for rework after the run:
+	// one of the Cause constants (decision 0145). Empty is an older machine.
+	Cause string `json:"cause,omitempty"`
 }
 
 // TrackRecord is what the gateway learned about one harness and model.
@@ -104,7 +107,7 @@ type TrackRecord struct {
 // ProviderQuotaRefusal recognizes provider quota and rate refusals, not general errors.
 func ProviderQuotaRefusal(detail string) bool {
 	detail = strings.ToLower(detail)
-	for _, marker := range []string{"http 429", "status 429", "resource_exhausted", "quota reached", "rate limit", "rate_limit", "too many requests", "at capacity", "overloaded"} {
+	for _, marker := range []string{"http 429", "status 429", "resource_exhausted", "quota reached", "rate limit", "rate_limit", "too many requests", "at capacity", "overloaded", "usage limit", "usage_limit", "session limit", "credit balance"} {
 		if strings.Contains(detail, marker) {
 			return true
 		}

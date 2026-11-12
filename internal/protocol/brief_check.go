@@ -1,78 +1,30 @@
 package protocol
 
 import (
-	"fmt"
 	"path"
 	"regexp"
 	"strings"
 )
 
-// The six items of a worker brief. The worker start tool reads these names, so
-// a caller sees the same words in the format and in a refusal.
-const (
-	BriefItemGoal     = "Goal"
-	BriefItemFiles    = "Files or areas"
-	BriefItemLimits   = "Limits"
-	BriefItemDone     = "Definition of done"
-	BriefItemGraded   = "How you are graded"
-	BriefItemEvidence = "Evidence"
-	BriefItemOverlap  = "Overlap"
-)
+// The brief checks. Decision 0145 retired the six format rules: a brief is no
+// longer refused for missing a Goal line, files, limits, a definition of done,
+// how it is graded, or evidence with three lines. The only refusal left is
+// overlap: a brief may not name a file a running worker or an open change in
+// the same project is already working on, unless it says "overlap ok: reason".
+// docs/brief-template.md stays as optional advice.
 
-// One line per failed item. The text names the item and what to add.
-const (
-	BriefFailGoal       = "Goal: name who asked, with a quote, a message id (m_...), or owner"
-	BriefFailFiles      = "Files or areas: name at least one repo path, such as internal/gateway/brief.go"
-	BriefFailLimits     = "Limits: add a Limits: section, or state the test scope and the real setup"
-	BriefFailDefinition = "Definition of done: add this line"
-	BriefFailGraded     = "How you are graded: add this line"
-	BriefFailEvidence   = "Evidence: add this section with at least 3 lines"
-)
-
-// WorkerStartModeCheck is the mode value that runs the brief checks and
+// WorkerStartModeCheck is the mode value that runs the overlap check and
 // starts nothing.
 const (
 	WorkerStartModeCheck = "check"
 )
 
 var (
-	briefMessageID = regexp.MustCompile(`(?i)\bm_[0-9a-z]{6,}\b`)
-	briefQuote     = regexp.MustCompile(`"[^"\n]{2,}"|“[^”\n]{2,}”|‘[^’\n]{2,}’`)
-	briefGraded    = regexp.MustCompile(`(?i)\bgraded\b`)
 	briefPathRE    = regexp.MustCompile(`(?:\$[A-Za-z_][A-Za-z0-9_]*|[A-Za-z0-9_.@+~\-]*)(?:/[A-Za-z0-9_.@+~\-]+)+`)
 	briefFileRE    = regexp.MustCompile(`(?i)\b(?:[A-Za-z0-9_\-]+\.(go|ts|tsx|js|jsx|mjs|cjs|md|markdown|py|rs|sql|sh|bash|json|yaml|yml|toml|html|css|scss|c|cc|cpp|h|hpp|java|kt|rb|php|swift|lock)|README(?:\.[A-Za-z0-9_\-]+)?)\b`)
 	briefOverlapRE = regexp.MustCompile(`(?i)overlap\s+ok\s*:\s*([^\n]+)`)
 	briefTargetID  = regexp.MustCompile(`(?i)\b(?:ch|w|s)_[0-9a-z]{6,}\b`)
 )
-
-// CheckWorkerBrief runs the checks that need no store: goal, files or areas,
-// limits, done and graded, and evidence. It returns one line per failed item,
-// in a stable order.
-func CheckWorkerBrief(task string) []string {
-	var failures []string
-	if !briefNamesRequester(briefGoalLine(task)) {
-		failures = append(failures, BriefFailGoal)
-	}
-	if len(BriefPaths(task)) == 0 {
-		failures = append(failures, BriefFailFiles)
-	}
-	if !briefHasLimits(task) {
-		failures = append(failures, BriefFailLimits)
-	}
-	lower := strings.ToLower(task)
-	if !strings.Contains(lower, "definition of done") {
-		failures = append(failures, BriefFailDefinition)
-	}
-	if !briefGraded.MatchString(task) {
-		failures = append(failures, BriefFailGraded)
-	}
-	if n, ok := briefEvidenceLines(task); !ok {
-		failures = append(failures, BriefFailEvidence)
-	} else if n < 3 {
-		failures = append(failures, fmt.Sprintf("Evidence: at least 3 lines (found %d)", n))
-	}
-	return failures
-}
 
 // BriefTargetIDs returns the change, worker and session ids a brief names. A
 // start that targets a change or worker is not refused for overlapping it.
@@ -223,71 +175,6 @@ func briefLineLabel(line string) (label, rest string) {
 		label = strings.Trim(s, "*_# \t")
 	}
 	return strings.ToLower(strings.TrimSpace(label)), strings.TrimSpace(rest)
-}
-
-var briefSectionLabels = map[string]bool{
-	"goal": true, "files or areas": true, "files": true, "areas": true,
-	"limits": true, "definition of done": true, "how you are graded": true,
-	"evidence": true, "overlap": true, "report": true, "task": true,
-	"repo": true, "base": true, "branch": true, "worktree": true,
-	"project": true, "setup": true, "environment": true,
-}
-
-// briefSection returns the non-empty lines of a section and whether the
-// section exists. It stops at the next known section label or markdown heading.
-func briefSection(task, name string) ([]string, bool) {
-	found := false
-	var lines []string
-	for _, line := range strings.Split(task, "\n") {
-		label, rest := briefLineLabel(line)
-		if !found {
-			if label == name {
-				found = true
-				if rest != "" {
-					lines = append(lines, rest)
-				}
-			}
-			continue
-		}
-		if briefSectionLabels[label] || strings.HasPrefix(strings.TrimSpace(line), "#") {
-			break
-		}
-		if strings.TrimSpace(line) != "" {
-			lines = append(lines, strings.TrimSpace(line))
-		}
-	}
-	return lines, found
-}
-
-func briefEvidenceLines(task string) (int, bool) {
-	lines, ok := briefSection(task, "evidence")
-	return len(lines), ok
-}
-
-func briefNamesRequester(goal string) bool {
-	if strings.TrimSpace(goal) == "" {
-		return false
-	}
-	lower := strings.ToLower(goal)
-	return strings.Contains(lower, "owner") || briefMessageID.MatchString(goal) || briefQuote.MatchString(goal)
-}
-
-func briefHasLimits(task string) bool {
-	if _, ok := briefSection(task, "limits"); ok {
-		return true
-	}
-	lower := strings.ToLower(task)
-	return anyBriefPhrase(lower, []string{"temp dir", "temp folder", "temporary dir", "test dir", "tests use", "test-only", "test scope", "fakes only", "fake harness", "in /tmp"}) &&
-		anyBriefPhrase(lower, []string{"real setup", "real user setup", "never touch", "do not touch", "does not touch", "no real", "not the real"})
-}
-
-func anyBriefPhrase(text string, phrases []string) bool {
-	for _, phrase := range phrases {
-		if strings.Contains(text, phrase) {
-			return true
-		}
-	}
-	return false
 }
 
 // BriefPathsShare reports whether two brief paths name the same file or a

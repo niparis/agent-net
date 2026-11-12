@@ -53,6 +53,8 @@ type autoDefect struct {
 	worker   string
 	severity int
 	note     string
+	cause    string
+	step     string
 }
 
 // addAutoDefect stores d in tx, unless the same failure is already recorded or
@@ -88,9 +90,10 @@ func (s *Store) addAutoDefect(tx *sql.Tx, d autoDefect) (bool, error) {
 		note = autoDefectWhy[d.kind]
 	}
 	res, err := tx.Exec(`INSERT INTO worker_defects
-		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, facts.caller, "", facts.harness,
-		facts.model, facts.effort, facts.difficulty, d.severity, note, now.Unix())
+		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at, cause, escape_phase)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, facts.caller, "", facts.harness,
+		facts.model, facts.effort, facts.difficulty, d.severity, note, now.Unix(),
+		causeOrUnknown(d.cause), protocol.DefectPhase(d.step, d.severity))
 	if err != nil {
 		return false, err
 	}
@@ -116,10 +119,11 @@ func (s *Store) autoDefectFromReport(tx *sql.Tx, c protocol.Change, e protocol.E
 	if e.Result != protocol.StepResultFail || c.Origin.Kind != protocol.OriginWorker || c.Origin.SessionID == "" {
 		return false, nil
 	}
-	d := autoDefect{changeID: c.ID, revision: e.Revision, worker: c.Origin.SessionID, note: e.Note}
+	d := autoDefect{changeID: c.ID, revision: e.Revision, worker: c.Origin.SessionID, note: e.Note, step: e.Step}
 	switch {
 	case e.Step == protocol.StepVerify && e.AfterMerge:
 		d.kind, d.severity = autoDefectVerify, autoDefectVerifySeverity
+		d.cause = protocol.CauseUnknown
 		if v, err := strconv.Atoi(e.Fields[protocol.FieldSeverity]); err == nil && protocol.ValidRateSeverity(v) {
 			d.severity = v
 		}
@@ -127,7 +131,7 @@ func (s *Store) autoDefectFromReport(tx *sql.Tx, c protocol.Change, e protocol.E
 		if e.Fields[protocol.FieldFlake] == protocol.FieldYes {
 			return false, nil
 		}
-		d.kind, d.severity = autoDefectTest, autoDefectTestSeverity
+		d.kind, d.severity, d.cause = autoDefectTest, autoDefectTestSeverity, protocol.CauseTestFailure
 	default:
 		return false, nil
 	}

@@ -1,15 +1,15 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online · 1 busy                 updated 14:05:00
   Quotas      Workers log    [ Quality ]
 ╭─Quality · scores over time───────────────────────────────────────────────────────────────────────────────────────────╮
-│ WEEK     RUNS SCORE EARLY  FIX BRIEF LATE TOKENS RELEASES                                                            │
-│ 2026-W39    0  0.00    0% 0.00     0    0      0                                                                     │
-│ 2026-W40    0  0.00    0% 0.00     0    0      0                                                                     │
-│ 2026-W41    0  0.00    0% 0.00     0    0      0                                                                     │
-│ 2026-W42    0  0.00    0% 0.00     0    0      0                                                                     │
-│ 2026-W43    0  0.00    0% 0.00     0    0      0                                                                     │
-│ 2026-W44    0  0.00    0% 0.00     0    0      0                                                                     │
-│ 2026-W45   14  0.82    0% 0.25     1    0    12k releases: v0.5.21                                                   │
-│ 2026-W46   18  0.88    5% 0.10     0    1    15k releases: v0.5.22, v0.5.23                                          │
+│ WEEK     RUNS SCORE EARLY  FIX BRIEF LATE TOKENS CAUSE m/w/b c/e   RELEASES                                          │
+│ 2026-W39    0  0.00    0% 0.00     0    0      0 -                                                                   │
+│ 2026-W40    0  0.00    0% 0.00     0    0      0 -                                                                   │
+│ 2026-W41    0  0.00    0% 0.00     0    0      0 -                                                                   │
+│ 2026-W42    0  0.00    0% 0.00     0    0      0 -                                                                   │
+│ 2026-W43    0  0.00    0% 0.00     0    0      0 -                                                                   │
+│ 2026-W44    0  0.00    0% 0.00     0    0      0 -                                                                   │
+│ 2026-W45   14  0.82    0% 0.25     1    0    12k m2 w1 b1 c2 e1    releases: v0.5.21                                 │
+│ 2026-W46   18  0.88    5% 0.10     0    1    15k m0 w0 b0 c1 e0    releases: v0.5.22, v0.5.23                        │
 │                                                                                                                      │
 │ Scores over time · 8 ISO weeks with agent-net release tags · w picker                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
