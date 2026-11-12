@@ -124,12 +124,14 @@ Added 2026-11-12 (0150, "No agent asks the owner in its own chat").
 
 ## Step (d): migration
 
-- One migration re-routes the open items. Owner-bound items without options
-  become chief-bound; none is refused or dropped. Open items gain an owner and
-  a state.
-- The 13 ask kinds follow the 0152 table.
-- Test: a copy of a real gateway DB migrates with no item lost (count before =
-  count after).
+- Changed 2026-11-12 on the owner's words to the agent-net lead: "note that i
+  dont care if the inbox is flushed. Right now it's pretty bad, i only use it
+  when forced." One migration closes every open owner-bound item once, with
+  the answer `flushed_by_front_door`, and keeps the row. Delivery approvals
+  and permission asks stay open: nothing would ask them again. A marker in
+  owner_settings makes a replay close nothing new.
+- Test: no row is lost (count before = count after), and a second run leaves
+  an item opened after the flush open.
 
 ## Open
 

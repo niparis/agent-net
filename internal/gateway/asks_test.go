@@ -573,9 +573,9 @@ func TestAsksMigrationKeepsOpenItems(t *testing.T) {
 	for _, a := range asks {
 		got[a.ID] = a
 	}
-	// The Desk reroute (decision 0152) runs after the asks migration, so an
-	// owner-bound question with no chief sort now waits for the chief.
-	if len(got) != 3 || got["i_q"].Question != "Merge?" || got["i_q"].AboutKind != protocol.AskAboutProject || got["i_q"].AboutID != "demo" || got["i_q"].Next != protocol.AskNextChief ||
+	// The front door flush (plan step (d)) ran once when this store was made,
+	// so this replay leaves the owner question open and with the owner.
+	if len(got) != 3 || got["i_q"].Question != "Merge?" || got["i_q"].AboutKind != protocol.AskAboutProject || got["i_q"].AboutID != "demo" || got["i_q"].Next != protocol.AskNextOwner ||
 		got["i_disk"].FromKind != protocol.AskFromDisk || got["i_appr"].AboutKind != protocol.AskAboutChange || got["i_appr"].AboutID != "ch_1" {
 		t.Fatalf("asks after upgrade: %+v", asks)
 	}

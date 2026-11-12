@@ -51,7 +51,10 @@ const (
 	AskReasonMovedOnClean = "moved_on (cleanup)" // the one-time cleanup of asks the session left behind
 	AskReasonAnswered     = "answered"           // the escalated request was answered later
 	AskReasonMovedToLog   = "moved_to_log"
-	AskReasonGrouped      = "grouped" // a per-field charter draft ask folded into the one ask of its node
+	// AskReasonFlushedByFrontDoor closes, once, the open items that waited on
+	// the owner before the front door (decision 0150, plan step (d)).
+	AskReasonFlushedByFrontDoor = "flushed_by_front_door"
+	AskReasonGrouped            = "grouped" // a per-field charter draft ask folded into the one ask of its node
 	// AskReasonSignedIn closes a sign_in ask after its provider's quota check
 	// no longer reports the login remedy.
 	AskReasonSignedIn = "signed_in"
