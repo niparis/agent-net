@@ -107,19 +107,19 @@ func callerInHerdr(socket, pane string) bool {
 	return filepath.IsAbs(socket) && herdrIDRe.MatchString(pane)
 }
 
-// openForCaller opens the plan in herdr when the asking TUI runs in herdr, and
-// otherwise returns the terminal handover plan unchanged.
-func (d *Daemon) openForCaller(key, name, socket, pane string, plan protocol.EnterPlan) protocol.EnterPlan {
-	if !callerInHerdr(socket, pane) {
-		return plan
+// viewPlan chooses terminal handover or a full herdr tab. Host is set when
+// the command must run in a headless herdr server for a remote viewer or Pi.
+func (d *Daemon) viewPlan(key, name, socket, pane string, host bool, plan protocol.EnterPlan) protocol.EnterPlan {
+	if !host && !callerInHerdr(socket, pane) {
+		return claudePlanEnv(plan)
 	}
-	return d.openInHerdr(key, name, socket, pane, plan)
+	return d.openInHerdr(key, name, socket, plan)
 }
 
-// openInHerdr opens a plan in a pane or tab. It serializes the lookup and
+// openInHerdr opens a plan in a full tab. It serializes the lookup and
 // creation so concurrent Enter calls cannot create duplicate clients. When the
 // server is unavailable the original plan remains the fallback.
-func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol.EnterPlan) protocol.EnterPlan {
+func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) protocol.EnterPlan {
 	bin, lookupErr := d.lookupHerdrBinary()
 	if lookupErr != nil {
 		plan.Note = strings.TrimSpace(plan.Note + " " + lookupErr.Error())
@@ -131,9 +131,6 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 	plan = claudePlanEnv(plan)
 	if !filepath.IsAbs(socket) {
 		socket = ""
-	}
-	if socket == "" || !herdrIDRe.MatchString(callerPane) {
-		callerPane = ""
 	}
 	d.herdrOpenMu.Lock()
 	defer d.herdrOpenMu.Unlock()
@@ -169,16 +166,13 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 		time.AfterFunc(time.Minute, func() { _ = os.Remove(file) })
 	}()
 	args := []string{"tab", "create", "--label", cleanLine(name), "--focus"}
-	if callerPane != "" {
-		args = []string{"pane", "split", "--pane", callerPane, "--direction", "right", "--focus"}
-	}
 	if plan.Dir != "" {
 		args = append(args, "--cwd", plan.Dir)
 	}
 	out, err := d.herdrRun(bin, socket, args...)
 	if err != nil {
 		_ = os.Remove(file)
-		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not create a pane: %v", bin, err)}
+		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not create a tab: %v", bin, err)}
 	}
 	var created struct {
 		Result struct {
@@ -188,25 +182,12 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 			Pane struct {
 				ID string `json:"pane_id"`
 			} `json:"root_pane"`
-			Split struct {
-				ID  string `json:"pane_id"`
-				Tab string `json:"tab_id"`
-			} `json:"pane"`
 		} `json:"result"`
 	}
 	decodeErr := json.Unmarshal(out, &created)
-	if callerPane != "" {
-		created.Result.Pane.ID, created.Result.Tab.ID = created.Result.Split.ID, created.Result.Split.Tab
-	}
 	if decodeErr != nil || !herdrIDRe.MatchString(created.Result.Pane.ID) || !herdrIDRe.MatchString(created.Result.Tab.ID) {
 		_ = os.Remove(file)
 		return protocol.EnterPlan{Host: plan.Host, Note: "Herdr created a tab but did not return its pane; check herdr before retrying."}
-	}
-	if callerPane != "" {
-		if _, err := d.herdrRun(bin, socket, "pane", "rename", created.Result.Pane.ID, cleanLine(name)); err != nil {
-			_ = os.Remove(file)
-			return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not name the pane: %v", bin, err)}
-		}
 	}
 	quoted := make([]string, len(plan.Argv))
 	for i, arg := range plan.Argv {
@@ -311,83 +292,4 @@ func (d *Daemon) notifySessionStartFailed(r protocol.StartedSession) {
 	}
 	reason := firstNonEmpty(cleanLine(r.Error), "no reason was reported")
 	d.broadcastCTOUI(protocol.UIRequest{Text: "Session not started: " + name + ". " + reason, DaemonNotice: true})
-}
-
-// A background session's attach client is a different process from the
-// background job. Herdr can report its native session ID, including after an
-// agent-net daemon restart, so check that before creating another client.
-func (d *Daemon) focusHerdrSession(socket, harness, native, host, name string) (protocol.EnterPlan, bool) {
-	if native == "" {
-		return protocol.EnterPlan{}, false
-	}
-	bin := d.herdrBinary("")
-	if bin == "" {
-		return protocol.EnterPlan{}, false
-	}
-	if !filepath.IsAbs(socket) {
-		socket = ""
-	}
-	panes, err := d.herdrPanes(bin, socket)
-	if err != nil {
-		return protocol.EnterPlan{}, false
-	}
-	for _, pane := range panes {
-		if pane.Session == nil || pane.Session.Kind != "id" || pane.Session.Agent != harness || pane.Session.Value != native || !herdrIDRe.MatchString(pane.PaneID) {
-			continue
-		}
-		if _, err := d.herdrRun(bin, socket, "agent", "focus", pane.PaneID); err != nil {
-			return protocol.EnterPlan{Host: host, Note: "cannot focus " + cleanLine(name) + " in herdr; open pane " + pane.PaneID}, true
-		}
-		return openedHerdrPlan(host, name, pane.PaneID), true
-	}
-	return protocol.EnterPlan{}, false
-}
-
-// A pane that runs `claude attach <job>` has the agent claude but no
-// agent_session, so focusHerdrSession cannot see it. Find it through the
-// processes of each pane, so that a second Enter, a daemon restart or a pane
-// the owner opened by hand never leads to a second tab for the same job.
-func (d *Daemon) focusHerdrAttachClient(socket, job, host, name string) (protocol.EnterPlan, bool) {
-	if job == "" {
-		return protocol.EnterPlan{}, false
-	}
-	bin := d.herdrBinary("")
-	if bin == "" {
-		return protocol.EnterPlan{}, false
-	}
-	if !filepath.IsAbs(socket) {
-		socket = ""
-	}
-	panes, err := d.herdrPanes(bin, socket)
-	if err != nil {
-		return protocol.EnterPlan{}, false
-	}
-	// Live attach panes are claude agents with no session, so look at those
-	// first and stop at the first match. Any other pane is read only when none
-	// of them matches.
-	likely := func(p herdrPaneInfo) bool { return p.Agent == "claude" && p.Session == nil }
-	for _, pass := range []func(herdrPaneInfo) bool{likely, func(p herdrPaneInfo) bool { return !likely(p) }} {
-		for _, pane := range panes {
-			if !pass(pane) || !herdrIDRe.MatchString(pane.PaneID) {
-				continue
-			}
-			for _, pid := range d.herdrPaneProcesses(bin, socket, pane.PaneID) {
-				if claudeAttachJob(processArgs(pid)) != job {
-					continue
-				}
-				if pane.Agent != "" {
-					_, err = d.herdrRun(bin, socket, "agent", "focus", pane.PaneID)
-				} else if herdrIDRe.MatchString(pane.TabID) {
-					_, err = d.herdrRun(bin, socket, "tab", "focus", pane.TabID)
-				} else {
-					err = fmt.Errorf("pane has no tab ID")
-				}
-				if err != nil {
-					return protocol.EnterPlan{Host: host, Note: "cannot focus " + cleanLine(name) + " in herdr; open pane " + pane.PaneID}, true
-				}
-				return openedHerdrPlan(host, name, pane.PaneID), true
-			}
-		}
-	}
-	return protocol.EnterPlan{}, false
 }

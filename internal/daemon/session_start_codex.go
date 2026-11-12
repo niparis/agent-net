@@ -102,11 +102,11 @@ func (d *Daemon) resumeOwnerCodex(ctx context.Context, r protocol.StartedSession
 	// A Codex thread the app server could not find is a new conversation: the
 	// old session's work moves to it.
 	d.adoptResumedSession(ctx, r.Resumes, r.SessionID)
-	plan := protocol.EnterPlan{Argv: []string{bin, "resume", r.NativeID}, Dir: r.Path, Host: r.Hostname, Note: "Press ctrl+] to come back here; Codex keeps running."}
+	plan := protocol.EnterPlan{Argv: []string{bin, "resume", "--remote", "unix://", r.NativeID}, Dir: r.Path, Host: r.Hostname, Note: "Press ctrl+] to come back here; Codex keeps running."}
 	if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
 		plan.Env = map[string]string{"CODEX_HOME": home}
 	}
-	opened := d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
+	opened := d.viewPlan(r.SessionID, r.Project, socket, pane, false, plan)
 	r.EnterPlan = &opened
 	r.Status = "started"
 	return r, nil

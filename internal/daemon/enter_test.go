@@ -86,6 +86,16 @@ func enterRequest(t *testing.T, n *node, q protocol.EnterRequest) protocol.Enter
 	return p
 }
 
+func TestEnterInteractiveClaudeUsesResume(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "claude")
+	n, _, id := enterNode(t, g, "claude", protocol.SessionInfo{NativeID: "session-123", PID: 1, Name: "garden"}, bins, nil)
+	p := enterOf(t, n, id, "")
+	if want := []string{bins["claude"], "--resume", "session-123"}; !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("argv %v, want %v", p.Argv, want)
+	}
+}
+
 func TestEnterClaudeBackgroundSessionAttaches(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
@@ -122,7 +132,7 @@ func TestEnterClaudeBackgroundSessionAttaches(t *testing.T) {
 
 func TestEnterWithoutAWayGivesANote(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	for _, harness := range []string{"pi", "claude"} {
+	for _, harness := range []string{"pi"} {
 		info := protocol.SessionInfo{NativeID: "x1", PID: os.Getpid(), Cwd: "/nope", Name: "win", Status: "idle"}
 		n, _, id := enterNode(t, g, harness, info, nil, nil)
 		p := enterOf(t, n, id, "")
@@ -136,7 +146,9 @@ func TestEnterWithoutAWayGivesANote(t *testing.T) {
 }
 
 func TestEnterOpenCodeSessionAndWorker(t *testing.T) {
-	t.Parallel()
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	writeOwnerOpenCodeService(t, state, "http://127.0.0.1:9999")
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "opencode")
 	cwd := t.TempDir()
@@ -149,7 +161,7 @@ func TestEnterOpenCodeSessionAndWorker(t *testing.T) {
 	if err != nil || !view.Online {
 		t.Fatalf("resume: %+v %v", view, err)
 	}
-	if want := []string{bins["opencode"], "--session", "ses_1"}; !reflect.DeepEqual(p.Argv, want) || p.Dir != cwd || len(p.Env) != 0 {
+	if want := []string{bins["opencode"], "--server", "http://127.0.0.1:9999", "--session", "ses_1"}; !reflect.DeepEqual(p.Argv, want) || p.Dir != cwd || p.Env["OPENCODE_SERVER_PASSWORD"] != "test-owner-password" {
 		t.Fatalf("plain session: %+v", p)
 	}
 
@@ -177,12 +189,12 @@ func TestEnterCodexWorker(t *testing.T) {
 	bins := fakeBin(t, "codex")
 	n, _, id := enterNode(t, g, "codex", protocol.SessionInfo{NativeID: "thr_1", PID: 1, Cwd: t.TempDir(), Name: "cx", Status: "idle"}, bins, nil)
 	// A thread of the shared app server: codex resume joins it.
-	if p := enterOf(t, n, id, ""); !reflect.DeepEqual(p.Argv, []string{bins["codex"], "resume", "thr_1"}) || len(p.Env) != 0 {
+	if p := enterOf(t, n, id, ""); !reflect.DeepEqual(p.Argv, []string{bins["codex"], "resume", "--remote", "unix://", "thr_1"}) || len(p.Env) != 0 {
 		t.Fatalf("codex session without a worker: %+v", p)
 	}
 	// A thread found in another Codex home says which.
 	n.d.cfg.CodexHome = "/srv/codex-home"
-	if p := enterOf(t, n, id, ""); !reflect.DeepEqual(p.Argv, []string{"env", "CODEX_HOME=/srv/codex-home", bins["codex"], "resume", "thr_1"}) {
+	if p := enterOf(t, n, id, ""); !reflect.DeepEqual(p.Argv, []string{"env", "CODEX_HOME=/srv/codex-home", bins["codex"], "resume", "--remote", "unix://", "thr_1"}) {
 		t.Fatalf("codex session in another home: %+v", p)
 	}
 	n.d.cfg.CodexHome = ""

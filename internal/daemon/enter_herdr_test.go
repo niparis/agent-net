@@ -85,7 +85,8 @@ echo "sock=$HERDR_SOCKET_PATH session=${HERDR_SESSION:-none} $*" >> ` + f.log + 
 case "$1 $2" in
   "pane list") cat ` + dir + `/panes ;;
   "pane process-info") cat ` + dir + `/info-$4 2>/dev/null || exit 1 ;;
-  "agent focus"|"tab focus"|"pane close") exit 0 ;;
+  "tab create") printf '%s\n' '{"result":{"tab":{"tab_id":"w1:tNew"},"root_pane":{"pane_id":"w1:pNew"}}}' ;;
+  "pane run"|"agent focus"|"tab focus"|"pane close") exit 0 ;;
   *) exit 1 ;;
 esac
 `
@@ -160,8 +161,8 @@ func herdrAgentPane(id, term string) string {
 	return `{"pane_id":"` + id + `","terminal_id":"` + term + `","agent":"claude"}`
 }
 
-// testHerdrPane is the pane of the asking TUI in these tests: the daemon splits
-// the new view beside it instead of creating a tab.
+// testHerdrPane is the pane of the asking TUI in these tests: the daemon opens
+// the new view in a tab.
 const testHerdrPane = "w1:p0"
 
 // fakeHerdrSocket is the absolute socket of the fake herdr whose call log is at
@@ -190,9 +191,9 @@ func inHerdrAnswer(q protocol.CTOProposalAnswer, socket string) protocol.CTOProp
 	return q
 }
 
-func herdrPlanFor(pid int, q protocol.EnterRequest, viaGateway bool) (protocol.EnterPlan, bool) {
+func herdrPlanFor(pid int, q protocol.EnterRequest) (protocol.EnterPlan, bool) {
 	d := &Daemon{}
-	return d.herdrPlan(protocol.SessionInfo{PID: pid}, q, protocol.EnterPlan{Host: "h"}, "s", viaGateway)
+	return d.herdrPlan(protocol.SessionInfo{PID: pid}, q, protocol.EnterPlan{Host: "h"}, "s")
 }
 
 // fakeProcessTree supplies a process tree and its command lines without
@@ -227,7 +228,7 @@ func TestEnterHerdrFallbackFromServerWithoutEnvironment(t *testing.T) {
 		map[int]int{31870: 25104, 25104: 1024, 1024: 1},
 		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}, 1024: {f.bin, "server"}},
 	)
-	p, ok := herdrPlanFor(31870, protocol.EnterRequest{}, false)
+	p, ok := herdrPlanFor(31870, protocol.EnterRequest{})
 	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + socket, f.bin, "agent", "attach", "w1:p1"}
 	if !ok || !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("fallback plan %+v ok=%v, want argv %v", p, ok, want)
@@ -247,7 +248,7 @@ func TestEnterHerdrFallbackUsesServerSocketArgument(t *testing.T) {
 		map[int]int{31870: 25104, 25104: 1024, 1024: 1},
 		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}, 1024: {f.bin, "server", "--socket", socket}},
 	)
-	p, ok := herdrPlanFor(31870, protocol.EnterRequest{}, false)
+	p, ok := herdrPlanFor(31870, protocol.EnterRequest{})
 	if !ok || !strings.Contains(strings.Join(p.Argv, " "), "HERDR_SOCKET_PATH="+socket) {
 		t.Fatalf("server socket argument was not used: %+v ok=%v", p, ok)
 	}
@@ -259,7 +260,7 @@ func TestEnterNoHerdrOrTmuxFailureExplainsChecks(t *testing.T) {
 		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}},
 	)
 	d := &Daemon{}
-	p, err := d.terminalPlan(protocol.SessionInfo{PID: 31870}, protocol.EnterRequest{}, protocol.EnterPlan{Host: "h"}, "pi", false)
+	p, err := d.terminalPlan(protocol.SessionInfo{PID: 31870}, protocol.EnterRequest{}, protocol.EnterPlan{Host: "h"}, "pi")
 	if err != nil || len(p.Argv) != 0 || !strings.Contains(p.Note, "no herdr variables and no herdr server above the process") {
 		t.Fatalf("missing diagnostic: %+v err=%v", p, err)
 	}
@@ -274,7 +275,7 @@ func TestEnterHerdrAttach(t *testing.T) {
 	pid := f.session(t, "w1:pB")
 	f.holds(t, "w1:pB", pid)
 
-	p, ok := herdrPlanFor(pid, protocol.EnterRequest{}, false)
+	p, ok := herdrPlanFor(pid, protocol.EnterRequest{})
 	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + f.sock, f.bin, "agent", "attach", "w1:pB"}
 	if !ok || !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("ok=%v argv %v, want %v", ok, p.Argv, want)
@@ -294,12 +295,12 @@ func TestEnterHerdrAttach(t *testing.T) {
 	// The TUI is itself in herdr (the same server or another one): the first
 	// ctrl+b goes to the outer herdr. There is still one plan: focus would not
 	// move the TUI's client.
-	p, _ = herdrPlanFor(pid, protocol.EnterRequest{HerdrSocket: f.sock}, false)
+	p, _ = herdrPlanFor(pid, protocol.EnterRequest{HerdrSocket: f.sock})
 	if !reflect.DeepEqual(p.Argv, want) || !strings.Contains(p.Note, "Press ctrl+] to come back here;") {
 		t.Errorf("inside herdr: %v %q", p.Argv, p.Note)
 	}
 	// Asked by another machine: its terminal is not known.
-	p, _ = herdrPlanFor(pid, protocol.EnterRequest{}, true)
+	p, _ = herdrPlanFor(pid, protocol.EnterRequest{})
 	if !strings.Contains(p.Note, "Press ctrl+] to come back here;") {
 		t.Errorf("via gateway: %q", p.Note)
 	}
@@ -313,7 +314,7 @@ func TestEnterHerdrRemoteWrapping(t *testing.T) {
 	f.panes(t, herdrAgentPane("w1:pB", "term_b"))
 	pid := f.session(t, "w1:pB")
 	f.holds(t, "w1:pB", pid)
-	p, ok := herdrPlanFor(pid, protocol.EnterRequest{}, true)
+	p, ok := herdrPlanFor(pid, protocol.EnterRequest{})
 	if !ok || len(p.Argv) == 0 || len(p.Env) != 0 {
 		t.Fatalf("plan %+v ok=%v", p, ok)
 	}
@@ -332,7 +333,7 @@ func TestEnterHerdrStalePane(t *testing.T) {
 	pid := f.session(t, "w1:pB") // w1:pB does not exist any more
 	f.holds(t, "w1:p1", 999999)
 	f.holds(t, "w3:p2", pid)
-	p, ok := herdrPlanFor(pid, protocol.EnterRequest{}, false)
+	p, ok := herdrPlanFor(pid, protocol.EnterRequest{})
 	if !ok || len(p.Argv) == 0 || p.Argv[len(p.Argv)-1] != "w3:p2" || p.Argv[len(p.Argv)-2] != "attach" {
 		t.Fatalf("moved pane: %+v ok=%v", p, ok)
 	}
@@ -340,13 +341,13 @@ func TestEnterHerdrStalePane(t *testing.T) {
 	// The old ID exists but belongs to another process now.
 	f.panes(t, herdrAgentPane("w1:pB", "term_b")+","+herdrAgentPane("w3:p2", "term_3"))
 	f.holds(t, "w1:pB", 999999)
-	if p, _ = herdrPlanFor(pid, protocol.EnterRequest{}, false); len(p.Argv) == 0 || p.Argv[len(p.Argv)-1] != "w3:p2" {
+	if p, _ = herdrPlanFor(pid, protocol.EnterRequest{}); len(p.Argv) == 0 || p.Argv[len(p.Argv)-1] != "w3:p2" {
 		t.Fatalf("reused id: %+v", p)
 	}
 
 	// Nothing holds it.
 	f.holds(t, "w3:p2", 999999)
-	p, ok = herdrPlanFor(pid, protocol.EnterRequest{}, false)
+	p, ok = herdrPlanFor(pid, protocol.EnterRequest{})
 	if !ok || len(p.Argv) != 0 || !strings.Contains(p.Note, "has closed") || !strings.Contains(p.Note, "open its window on h") {
 		t.Fatalf("closed pane: %+v ok=%v", p, ok)
 	}
@@ -379,7 +380,7 @@ func TestEnterOpenCodeClosedHerdrPaneUsesTheService(t *testing.T) {
 	// with, and the note says what was tried.
 	n, _, id = enterNode(t, g, "opencode", info, nil, nil)
 	p = enterOf(t, n, id, "")
-	if len(p.Argv) != 0 || !strings.Contains(p.Note, "has closed") || !strings.Contains(p.Note, "not installed") {
+	if len(p.Argv) != 0 || !strings.Contains(p.Note, "not installed") {
 		t.Fatalf("no opencode binary: %+v", p)
 	}
 }
@@ -391,19 +392,19 @@ func TestEnterHerdrPlainTerminalAndDownServer(t *testing.T) {
 	f.panes(t, `{"pane_id":"w1:pB","terminal_id":"term_b"}`)
 	pid := f.session(t, "w1:pB")
 	f.holds(t, "w1:pB", pid)
-	p, _ := herdrPlanFor(pid, protocol.EnterRequest{}, false)
+	p, _ := herdrPlanFor(pid, protocol.EnterRequest{})
 	if got := strings.Join(p.Argv[len(p.Argv)-3:], " "); got != "terminal attach term_b" {
 		t.Fatalf("argv %v", p.Argv)
 	}
 	if err := os.WriteFile(filepath.Join(f.dir, "fail"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p, ok := herdrPlanFor(pid, protocol.EnterRequest{}, false)
+	p, ok := herdrPlanFor(pid, protocol.EnterRequest{})
 	if !ok || len(p.Argv) != 0 || !strings.Contains(p.Note, "herdr server does not answer") {
 		t.Fatalf("down: %+v ok=%v", p, ok)
 	}
 	// Not a herdr session at all.
-	if _, ok := herdrPlanFor(os.Getpid(), protocol.EnterRequest{}, false); ok {
+	if _, ok := herdrPlanFor(os.Getpid(), protocol.EnterRequest{}); ok {
 		t.Error("the test process is not in herdr")
 	}
 }
@@ -465,9 +466,9 @@ func enterRemoteHerdr(t *testing.T, g *testGateway, pane string) (*node, *fakeHe
 	f.panes(t, herdrAgentPane(pane, "term_b"))
 	pid := f.session(t, pane)
 	f.holds(t, pane, pid)
-	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "interactive"}
+	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "pi"}}
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Adapters = []Adapter{ea} }})
-	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "i1", PID: pid, Cwd: "/nope", Name: "inter", Status: "idle", Mode: protocol.ModeForeground})
+	ea.setSessions(protocol.SessionInfo{Harness: "pi", NativeID: "i1", PID: pid, Cwd: "/nope", Name: "inter", Status: "idle", Mode: protocol.ModeForeground})
 	var id string
 	eventually(t, "remote session id", func() bool {
 		if s := n.d.Sessions(); len(s) == 1 {
@@ -639,7 +640,7 @@ func TestEnterLocalHerdrStaysAttach(t *testing.T) {
 	f.panes(t, herdrAgentPane("w1:pB", "term_b"))
 	pid := f.session(t, "w1:pB")
 	f.holds(t, "w1:pB", pid)
-	p, ok := herdrPlanFor(pid, protocol.EnterRequest{}, false)
+	p, ok := herdrPlanFor(pid, protocol.EnterRequest{})
 	if !ok || p.HerdrPane != "" {
 		t.Fatalf("plan %+v ok=%v", p, ok)
 	}
@@ -654,42 +655,24 @@ func TestEnterLocalHerdrStaysAttach(t *testing.T) {
 // The whole path: session_enter on a node answers a herdr plan for an
 // interactive Claude session, and the TUI's herdr socket is read from the request.
 func TestEnterHerdrThroughSessionEnter(t *testing.T) {
-	t.Parallel()
+	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
-	f := newFakeHerdr(t)
-	f.panes(t, herdrAgentPane("w1:pB", "term_b"))
-	pid := f.session(t, "w1:pB")
-	f.holds(t, "w1:pB", pid)
+	bins := fakeBin(t, "claude")
 	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "interactive"}
-	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Adapters = []Adapter{ea} }})
-	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "i1", PID: pid, Cwd: "/nope", Name: "inter", Status: "idle", Mode: protocol.ModeForeground})
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = bins; c.Adapters = []Adapter{ea} }})
+	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "i1", PID: 1, Name: "inter"})
 	var id string
 	eventually(t, "session id", func() bool {
-		if s := n.d.Sessions(); len(s) == 1 {
-			id = s[0].SessionID
+		if sessions := n.d.Sessions(); len(sessions) == 1 {
+			id = sessions[0].SessionID
 		}
 		return id != ""
 	})
-	raw, err := cliClient(t, n).call("session_enter", inHerdrEnter(protocol.EnterRequest{SessionID: id}, f.sock))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var p protocol.EnterPlan
-	if err := json.Unmarshal(raw, &p); err != nil {
-		t.Fatal(err)
-	}
-	calls := f.calls(t)
-	if !p.OpenedHerdr || p.HerdrPane != "w1:pB" || p.Note != "opened inter in herdr" || !strings.Contains(calls, "agent focus w1:pB") {
+	p := enterOfHerdr(t, n, id, fakeHerdrSocket(log))
+	if !p.OpenedHerdr {
 		t.Fatalf("plan %+v", p)
 	}
-	// One pane lookup and one focus: the daemon must not walk the same herdr
-	// server twice on the path the owner waits on.
-	if n := strings.Count(calls, "pane list"); n != 1 {
-		t.Errorf("%d pane list calls, want 1: %q", n, calls)
-	}
-	if n := strings.Count(calls, "agent focus w1:pB"); n != 1 {
-		t.Errorf("%d focus calls, want 1: %q", n, calls)
-	}
+	requireHerdrOpened(t, log, "inter", "--resume", "i1")
 }
 
 func TestSessionStopPiHerdrPane(t *testing.T) {
@@ -705,8 +688,9 @@ func TestSessionStopPiHerdrPane(t *testing.T) {
 	}
 }
 
-// A sign-in ask opens the allowlisted login command in a herdr pane on this
-// machine. No ask or agent supplies the argv.
+// A sign-in ask runs the allowlisted login command through the one view path:
+// the TUI terminal outside herdr, a full tab inside herdr. No ask or agent
+// supplies the argv.
 func TestSignInOpenLocalPaneRunsAllowlistedArgv(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	call := func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
@@ -719,12 +703,22 @@ func TestSignInOpenLocalPaneRunsAllowlistedArgv(t *testing.T) {
 	d := &Daemon{cfg: Config{NodeID: "n_research", Hostname: "research", testGatewayCall: func(ctx context.Context, typ string, p any) (json.RawMessage, bool, error) {
 		return call(ctx, typ, p)
 	}}}
+	// A TUI outside herdr hands its terminal the same allowlisted command.
 	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !plan.OpenedHerdr || plan.HerdrPane != "w1:p1" {
+	if plan.OpenedHerdr || !reflect.DeepEqual(plan.Argv, []string{"bl", "auth", "login", "--console"}) {
 		t.Fatalf("plan %+v", plan)
+	}
+	if calls, _ := os.ReadFile(log); len(calls) != 0 {
+		t.Fatalf("outside herdr should hand over the terminal: %s", calls)
+	}
+
+	// A TUI inside herdr gets the command in a full tab, through the same path.
+	plan, err = d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin", HerdrSocket: "/tmp/fake-herdr.sock", HerdrPaneID: testHerdrPane})
+	if err != nil || !plan.OpenedHerdr {
+		t.Fatalf("in herdr: plan %+v, error %v", plan, err)
 	}
 	calls := string(mustRead(t, log))
 	for _, want := range []string{"tab create --label sign in: Alibaba Bailian CLI", "pane run w1:p1", "bl auth login --console"} {
@@ -732,8 +726,8 @@ func TestSignInOpenLocalPaneRunsAllowlistedArgv(t *testing.T) {
 			t.Errorf("herdr calls %q missing %q", calls, want)
 		}
 	}
-	if strings.Contains(calls, "ssh") {
-		t.Errorf("a local sign-in used ssh: %q", calls)
+	if strings.Contains(calls, "pane split") || strings.Contains(calls, "ssh") {
+		t.Fatalf("local sign-in used an old view path: %s", calls)
 	}
 }
 
@@ -793,5 +787,37 @@ func TestSignInPrepareOpensAllowlistedArgv(t *testing.T) {
 	bad, _ := json.Marshal(protocol.SignInPrepare{AskID: "i_signin", Provider: "sh -c curl"})
 	if _, err := d.signInPrepare(bad); err == nil {
 		t.Fatal("an unknown provider was accepted")
+	}
+}
+
+func TestEnterRemoteHerdrClientNeverFallsBackToSSH(t *testing.T) {
+	bin, _ := fakeOpenHerdr(t)
+	d := &Daemon{cfg: Config{EnterSSH: true, HarnessPaths: map[string]string{"herdr": bin}}}
+	p := d.wrapRemoteEnter("remote-host", protocol.EnterPlan{Host: "remote-host", Argv: []string{"claude", "attach", "job"}})
+	if len(p.Argv) > 0 && p.Argv[0] == "ssh" {
+		t.Fatalf("local herdr must prevent ssh fallback: %+v", p)
+	}
+}
+
+func TestSignInOpenRemoteInHerdrUsesTab(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	d := &Daemon{cfg: Config{NodeID: "local", testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+		switch typ {
+		case "query.sign_in":
+			b, _ := json.Marshal(protocol.SignInTarget{Provider: "alibaba", NodeID: "remote", Hostname: "remote-host"})
+			return b, true, nil
+		case "query.sign_in_prepare":
+			b, _ := json.Marshal(protocol.SignInPrepareResult{Opened: true, Host: "remote-host", Pane: "w1:p7"})
+			return b, true, nil
+		}
+		return nil, false, nil
+	}}}
+	p, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "ask", HerdrSocket: "/tmp/fake-herdr.sock", HerdrPaneID: "w1:p0"})
+	if err != nil || !p.OpenedHerdr {
+		t.Fatalf("plan %+v, error %v", p, err)
+	}
+	calls := string(mustRead(t, log))
+	if !strings.Contains(calls, "tab create") || !strings.Contains(calls, "--remote remote-host") || strings.Contains(calls, "pane split") {
+		t.Fatalf("calls %s", calls)
 	}
 }

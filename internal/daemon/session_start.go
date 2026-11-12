@@ -321,7 +321,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
 			r.EnterPlan.Env = map[string]string{"CODEX_HOME": home}
 		}
-		plan := d.openForCaller("start:"+r.ID, r.Project, p.HerdrSocket, p.HerdrPaneID, *r.EnterPlan)
+		plan := d.viewPlan("start:"+r.ID, r.Project, p.HerdrSocket, p.HerdrPaneID, p.HerdrClient, *r.EnterPlan)
 		r.EnterPlan = &plan
 		if p.CTOProposal && !plan.OpenedHerdr {
 			loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
@@ -382,6 +382,7 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 	}
 	socket, pane := p.HerdrSocket, p.HerdrPaneID
 	p.HerdrSocket, p.HerdrPaneID = "", ""
+	p.HerdrClient = !p.CTOProposal && !p.Merger && d.herdrBinary("") != ""
 	frame := protocol.SessionStartRelay{Owner: owner, NodeID: target, SessionStartRequest: p}
 	typ := protocol.FrameSessionStart
 	if p.CTOProposal {
@@ -454,6 +455,13 @@ func (d *Daemon) remoteStartResult(ctx context.Context, res protocol.StartedSess
 		return res
 	}
 	res.Hostname = firstNonEmpty(res.Hostname, res.NodeID)
+	if res.SessionID != "" && d.herdrBinary("") != "" && (res.EnterPlan == nil || !res.EnterPlan.OpenedHerdr) {
+		if plan, err := d.enterPlan(ctx, protocol.EnterRequest{SessionID: res.SessionID, HerdrSocket: socket, HerdrPaneID: pane}); err == nil && (plan.OpenedHerdr || len(plan.Argv) > 0) {
+			res.EnterPlan = &plan
+			res.EnterNote = "Enter opens it."
+			return res
+		}
+	}
 	if res.EnterPlan != nil {
 		remote := *res.EnterPlan
 		if remote.OpenedHerdr && herdrIDRe.MatchString(remote.HerdrPane) {
@@ -465,7 +473,7 @@ func (d *Daemon) remoteStartResult(ctx context.Context, res protocol.StartedSess
 		if res.SessionID != "" {
 			key = "remote:" + res.SessionID
 		}
-		plan = d.openForCaller(key, res.Project, socket, pane, plan)
+		plan = d.viewPlan(key, res.Project, socket, pane, false, plan)
 		res.EnterPlan = &plan
 	} else if res.Status == "started" && res.SessionID != "" && d.herdrBinary("") != "" {
 		if plan, err := d.enterPlan(ctx, protocol.EnterRequest{SessionID: res.SessionID, HerdrSocket: socket, HerdrPaneID: pane}); err == nil && plan.OpenedHerdr {
@@ -691,7 +699,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 			}
 			opened := plan
 			if !background {
-				opened = d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
+				opened = d.viewPlan(r.SessionID, r.Project, socket, pane, false, plan)
 			}
 			if background {
 				r.EnterNote = "Enter opens it."

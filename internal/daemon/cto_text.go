@@ -178,12 +178,13 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 	if !d.ctoOnThisNode(ctx) {
 		return false, protocol.EnterPlan{}, nil
 	}
-	var plan protocol.EnterPlan
-	var err error
-	if viaGateway && !q.HerdrClient {
-		plan, err = d.ctoEnterBase(ctx)
-	} else {
-		plan, err = d.ctoEnterWithLocation(ctx, q.HerdrSocket, q.HerdrPaneID, q.HerdrClient)
+	plan, err := d.ctoEnter(ctx)
+	if err == nil {
+		socket, pane := q.HerdrSocket, q.HerdrPaneID
+		if viaGateway {
+			socket, pane = "", "" // the asker's terminal means nothing here
+		}
+		plan = d.viewPlan("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", socket, pane, viaGateway && q.HerdrClient, plan)
 	}
 	if viaGateway && err == nil {
 		if plan.OpenedHerdr && q.HerdrClient {

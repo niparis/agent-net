@@ -2688,7 +2688,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | Key | What it does |
 |---|---|
 | up, down, `k`, `j`, `g`, home, end, page up, page down | Move the selection (or the message cursor, when the messages have the focus). |
-| enter | Open the selected session in herdr. When herdr is unavailable, the TUI uses the fallback enter plan. In Messages, Enter opens the body of the selected message. See [Enter a session](#enter-a-session). |
+| enter | Open the selected session: a full herdr tab when the TUI is in herdr, otherwise the harness client in the TUI terminal. In Messages, Enter opens the body of the selected message. See [Enter a session](#enter-a-session). |
 | `l` | In Messages, cycle the sub-tabs: Agents, Workers, System. `Tab` and `Shift+Tab` do the same. |
 | `p`, `t` | In Messages, cycle the project or team filter over the values the held threads name; Esc clears both. |
 | `e` | In Messages, expand or collapse the selected worker run in the list. |
@@ -2716,31 +2716,31 @@ The TUI asks for each readable message body once and keeps it by message ID. Own
 
 ### Enter a session
 
-`Enter` asks the daemon (`session_enter`) to open the selected session. If herdr is available, the daemon focuses an existing herdr pane for that session. Otherwise it creates a pane beside the TUI when the TUI is in herdr, or a titled tab on the herdr server. The TUI keeps running and its result line says `opened <name> in herdr`. If the server is not running, the daemon tries to start its headless server. When no herdr client is attached, open herdr in a terminal to see its panes. See the [herdr installation instructions](https://herdr.dev/tui/docs/install/). Your input in a session counts as yours, so approvals you give there are yours.
+`Enter` asks the daemon (`session_enter`) for one view plan. Every entry point uses it: a session, the CTO, a sign-in ask, and the plan a start returns. The view runs the harness's own client: `claude --resume <id>` for an interactive Claude session, `claude attach <id>` for a Claude background session, `opencode --server ... --session ...`, `codex resume --remote unix:// <thread>`, and the allowlisted login command for a sign-in.
 
-When herdr is missing or cannot start, agent-net uses the existing enter plan. The TUI hands its terminal to that command; press `ctrl+]` to return and see the installation hint. A session that has neither an attach command nor an accessible herdr pane shows a note to open its existing window.
+Inside herdr, the daemon opens the command in a full tab (`herdr tab create` and `herdr pane run`) and focuses it. The TUI keeps running and its result line says `opened <name> in herdr`. Outside herdr it returns the command and the TUI hands over its terminal. The daemon never opens a tab the owner cannot see. If the server is not running, the daemon tries to start its headless server. When no herdr client is attached, open herdr in a terminal to see its tabs. See the [herdr installation instructions](https://herdr.dev/tui/docs/install/). Your input in a session counts as yours, so approvals you give there are yours.
+
+When herdr is missing or cannot start, the same plan runs in the TUI terminal. Press `ctrl+]` to return and see the installation hint. A Pi session whose herdr pane is gone shows a note to open its existing window.
 
 While the TUI has handed its terminal to a session, agent-net keeps the bottom row of the terminal for itself and gives the session every row above it. The row reads `agent-net · ctrl+] back to agent-net · <session name>` in dim text, so the way back stays visible over the session's full-screen UI. The row is drawn again after a resize and after the session clears the screen, and the window title still carries the same hint. `ctrl+]` returns as before: agent-net clears the row and gives the session its full size back. Set `AGENT_NET_NO_BAR=1` to turn the row off on a terminal that mishandles it; the session then gets the whole terminal. Sessions opened in a herdr pane are unchanged: the bar belongs to the TUI terminal fallback only.
 
 | Session | Command used for a new view |
 |---|---|
 | Claude Code background session, including Claude workers | `claude attach <id>` |
-| Claude Code interactive session | Focus its existing herdr pane. An interactive session outside herdr cannot be attached twice. |
-| Pi | An owner session starts directly in herdr. Pi workers have no screen. |
-| OpenCode | `opencode --session <id>` in the session folder |
-| OpenCode worker | `opencode --server <private url> --session <id>` on its own machine; remote access uses herdr when both machines have it |
-| Codex | `codex resume <thread>` in the thread folder, using its configured Codex home |
-| Codex worker | `codex resume <thread> --remote ws://<private address> --remote-auth-token-env AGENT_NET_CODEX_TOKEN` on its own machine; remote access uses herdr when both machines have it |
+| Claude Code interactive session | `claude --resume <id>` |
+| Pi | Its existing herdr pane. An owner Pi session starts in herdr; Pi workers have no screen. |
+| OpenCode | `opencode --server <service url> --session <id>` in the session folder. A session discovered from a standalone CLI with no service record uses `opencode --session <id>`. |
+| OpenCode worker | `opencode --server <private url> --session <id>` on its own machine; remote access uses herdr |
+| Codex | `codex resume --remote unix:// <thread>` in the thread folder, using its configured Codex home |
+| Codex worker | `codex resume <thread> --remote ws://<private address> --remote-auth-token-env AGENT_NET_CODEX_TOKEN` on its own machine; remote access uses herdr |
 
-**herdr.** The daemon finds the binary from the session's `HERDR_BIN_PATH`, the server command line, the configured harness path, `PATH`, or `~/.local/bin/herdr`. It uses `herdr pane list` and `herdr pane process-info` to find the pane holding a session process. A moved pane is found the same way. `herdr agent focus` focuses a recognized agent, and `herdr tab focus` focuses the tab of a plain terminal. Herdr's existing clients can remain on their previous tab after a focus command; select the named tab if needed.
+**herdr.** The daemon finds the binary from the session's `HERDR_BIN_PATH`, the server command line, the configured harness path, `PATH`, or `~/.local/bin/herdr`. Pi uses `herdr pane list` and `herdr pane process-info` to find the pane holding its process; a moved pane is found the same way. `herdr agent focus` focuses a recognized agent, and `herdr tab focus` focuses the tab of a plain terminal. Herdr's existing clients can remain on their previous tab after a focus command; select the named tab if needed.
 
-A background Claude session has no `agent_session` in `herdr pane list` when its pane runs `claude attach <id>`. Before opening a new view, the daemon reads the foreground processes (`herdr pane process-info`) and command lines of the panes that are claude agents with no session first, and focuses the first pane that already runs `claude attach <id>` for that session. It reads the other panes only when none of those matches. This also works after a daemon restart.
-
-For a new view, agent-net uses `herdr pane split --pane <tui-pane> --direction right --focus` and `herdr pane rename` inside herdr, or `herdr tab create --label <name> --focus` outside it. It uses `herdr pane run` to launch the session. A private one-use environment file keeps worker credentials out of command arguments and pane text. The pane removes the file after use; the daemon also removes it after one minute while it is running. Claude's herdr client has mouse tracking enabled; the terminal fallback gets the same choice from the user's Claude settings (decision 0128). A second Enter focuses the existing pane instead of creating another one, while that pane remains present. The daemon also remembers panes it opened during its current run.
+For a new view, agent-net creates a full tab with `herdr tab create --label <name> --focus` and runs the client with `herdr pane run`. It never splits the pane the TUI runs in. A private one-use environment file keeps worker credentials out of command arguments and pane text. The pane removes the file after use; the daemon also removes it after one minute while it is running. Claude's herdr client has mouse tracking enabled; the terminal fallback gets the same choice from the user's Claude settings (decision 0128). A second Enter focuses the tab it opened instead of creating another one, while that tab remains present. The daemon also remembers tabs it opened during its current run.
 
 On macOS the daemon reads process environments and command lines with `sysctl kern.procargs2` when permitted. If Herdr's pane variables are not readable, it checks the process ancestry and candidate server sockets.
 
-**A session on another machine.** The question goes through the gateway to that machine. When both machines have herdr, the remote daemon focuses or opens the session there and this machine opens `herdr --remote <target>` in a local pane. Otherwise the daemon uses `ssh -t -o ConnectTimeout=5 -- <target> <command>`, in a local herdr pane if available or in the TUI terminal as a fallback. To change the target, or to turn ssh off, set in `node.json` on the machine where you use the TUI, and restart the daemon:
+**A session on another machine.** The question goes through the gateway to that machine. When this machine has herdr, the remote daemon opens the view in its herdr and this machine runs `herdr --remote <target>`, which carries the clipboard and image paste; it never substitutes ssh then. A TUI outside herdr runs that client in its own terminal, and a TUI inside herdr gets it in a local tab. When this machine has no herdr, the daemon uses `ssh -t -o ConnectTimeout=5 -- <target> <command>`, or a note when `enter_ssh` is false. To change the target, or to turn ssh off, set in `node.json` on the machine where you use the TUI, and restart the daemon:
 
 ```json
 "enter_ssh": false,
@@ -2807,15 +2807,16 @@ one ask, and a dismissed ask is not raised again until the provider error
 clears. The CTO may raise an ask for a known provider and machine with
 `sign_in_raise` and list them with `sign_in_list`; a command field is refused.
 
-The owner's action is `i`, Open sign-in (`sign_in_open`, owner only). It opens
-the allowlisted command in a herdr pane titled `sign in: <label>` on the
-machine the ask names. On this machine that is the local herdr. On another
-machine the target daemon opens its own pane and this machine shows it with
-`herdr --remote <target>` (decision 0046); there is no ssh fallback. A machine
-without herdr answers with a note in the result. After the pane closes, that
-machine runs the provider's quota check once. When the login error is gone the
-ask closes itself with `signed in`; a persisting error keeps it open. The web
-console shows the same ask with an Open sign-in button when it lists the Desk.
+The owner's action is `i`, Open sign-in (`sign_in_open`, owner only). It runs
+the allowlisted command through the same view path as Enter, in a tab titled
+`sign in: <label>` or in the TUI terminal, on the machine the ask names. On
+this machine that is the local herdr. On another machine the target daemon
+opens its own tab and this machine shows it with `herdr --remote <target>`
+(decision 0046); there is no ssh fallback. A machine without herdr answers
+with a note in the result. After the tab closes, that machine runs the
+provider's quota check once. When the login error is gone the ask closes
+itself with `signed in`; a persisting error keeps it open. The web console
+shows the same ask with an Open sign-in button when it lists the Desk.
 
 ## The chief of staff (decision 0114)
 

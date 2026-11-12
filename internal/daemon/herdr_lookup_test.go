@@ -54,7 +54,7 @@ func TestHerdrFailureNamesBinaryAndError(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := &Daemon{cfg: Config{HarnessPaths: map[string]string{"herdr": bin}}}
-	plan := d.openInHerdr("", "test", "/tmp/fake-herdr.sock", "", protocol.EnterPlan{Argv: []string{"true"}})
+	plan := d.openInHerdr("", "test", "/tmp/fake-herdr.sock", protocol.EnterPlan{Argv: []string{"true"}})
 	if !strings.Contains(plan.Note, "herdr at "+bin+" failed:") || !strings.Contains(plan.Note, "exit status 7") {
 		t.Fatalf("note = %q", plan.Note)
 	}
@@ -127,7 +127,7 @@ func TestHerdrLookupRefreshesAfterRunFailureWithoutLoggingSameChoice(t *testing.
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 7\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	plan := d.openInHerdr("", "test", "/tmp/fake-herdr.sock", "", protocol.EnterPlan{Argv: []string{"true"}})
+	plan := d.openInHerdr("", "test", "/tmp/fake-herdr.sock", protocol.EnterPlan{Argv: []string{"true"}})
 	if !strings.Contains(plan.Note, "failed:") {
 		t.Fatalf("note = %q", plan.Note)
 	}

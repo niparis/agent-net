@@ -122,6 +122,8 @@ type SessionStartRequest struct {
 	// HerdrSocket names the owner's local Herdr server, if the TUI is in one.
 	HerdrSocket string `json:"herdr_socket,omitempty"`
 	HerdrPaneID string `json:"herdr_pane_id,omitempty"`
+	// HerdrClient asks the target to host the view for a remote herdr client.
+	HerdrClient bool `json:"herdr_client,omitempty"`
 }
 
 // SessionStartRelay is "session.start" from the owner's machine. The gateway

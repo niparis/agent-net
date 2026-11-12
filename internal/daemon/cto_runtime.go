@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"time"
 
@@ -171,47 +170,6 @@ type ctoEnterCall struct {
 // Concurrent callers share the same startup result, including failures. Each
 // waiter can leave on its own deadline without starting another process.
 func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
-	return d.ctoEnterWithLocation(ctx, "", "", false)
-}
-
-func (d *Daemon) ctoEnterWithLocation(ctx context.Context, socket, pane string, herdrClient bool) (protocol.EnterPlan, error) {
-	plan, err := d.ctoEnterBase(ctx)
-	if err != nil {
-		return plan, err
-	}
-	if len(plan.Argv) > 2 && plan.Argv[1] == "attach" {
-		plan = claudePlanEnvAlways(plan)
-	} else {
-		plan = claudePlanEnv(plan)
-	}
-	// A TUI inside this machine's herdr can see the pane it opens. A caller on
-	// another machine has a herdr client but no pane here: its terminal runs
-	// herdr --remote, so this machine opens or focuses the pane and sends its
-	// ID back (decision 0046). Without either, the attach plan is wrapped in
-	// ssh by the asking machine.
-	if !callerInHerdr(socket, pane) && !herdrClient {
-		return plan, nil
-	}
-	harness, native := "opencode", ""
-	if len(plan.Argv) > 2 && plan.Argv[1] == "attach" {
-		harness = "claude"
-		d.cto.mu.Lock()
-		native = d.claudeCTO.session
-		d.cto.mu.Unlock()
-	} else {
-		for i := 1; i+1 < len(plan.Argv); i++ {
-			if plan.Argv[i] == "--session" {
-				native = plan.Argv[i+1]
-			}
-		}
-	}
-	if existing, found := d.focusHerdrSession(socket, harness, native, plan.Host, "CTO"); found {
-		return herdrOpenNotice(existing, plan), nil
-	}
-	return d.openInHerdr("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", socket, pane, plan), nil
-}
-
-func (d *Daemon) ctoEnterBase(ctx context.Context) (protocol.EnterPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return protocol.EnterPlan{}, err
 	}
@@ -289,6 +247,8 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 		// No mouse variable here: the session's own environment decides mouse
 		// tracking (see startClaudeCTOOnce), and the CTO must keep the wheel.
 		plan.Argv = []string{bin, "attach", d.claudeCTO.ref}
+		// The CTO runs Claude Code whatever its binary is called (decision 0139).
+		plan = claudePlanEnvAlways(plan)
 	} else {
 		d.cto.mu.Lock()
 		defer d.cto.mu.Unlock()
