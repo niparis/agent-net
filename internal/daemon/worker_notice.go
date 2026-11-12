@@ -1185,6 +1185,9 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	n.Committed = committed
 	n.WIPDetail = wipDetail
 	n.Change, n.DeliveryError = changeID, deliveryProblem
+	if changeID != "" {
+		n.DeliveryBranch = d.deliveredBranch(ctx, w)
+	}
 	n.DefectHint = d.defectHint(ctx, w)
 	noticeKey := ""
 	if w.harness == "agy" {

@@ -368,6 +368,45 @@ func gitBranchHead(ctx context.Context, dir, branch string) (string, error) {
 	return head, nil
 }
 
+// handbackBranch is the branch a complete hand-back delivers. When the worker
+// moved its worktree to another local branch and that branch has commits
+// beyond the base, it is that branch: the one its work is on, pushed or not.
+// A detached HEAD, a branch with no commits beyond the base, or no base keeps
+// the start branch.
+func handbackBranch(ctx context.Context, dir, start, base string) string {
+	if !protocol.ValidCommit(base) {
+		return start
+	}
+	ref, err := gitOut(ctx, dir, "symbolic-ref", "-q", "HEAD")
+	if err != nil {
+		return start
+	}
+	current, ok := strings.CutPrefix(ref, "refs/heads/")
+	if !ok || current == "" || current == start {
+		return start
+	}
+	beyond, err := gitOut(ctx, dir, "rev-list", "--count", base+"..HEAD")
+	if err != nil || beyond == "0" {
+		return start
+	}
+	return current
+}
+
+// deliveredBranch is the branch a hand-back recorded when it is not the start
+// branch, and "" otherwise.
+func (d *Daemon) deliveredBranch(ctx context.Context, w *worker) string {
+	d.wmu.Lock()
+	dir, start, base := w.worktree, w.branch, w.base
+	d.wmu.Unlock()
+	if dir == "" || start == "" {
+		return ""
+	}
+	if b := handbackBranch(ctx, dir, start, base); b != start {
+		return b
+	}
+	return ""
+}
+
 // branchUncommitted reports whether the worktree that has branch checked out
 // has changes that are not committed, untracked files included. A branch that
 // no worktree has checked out has none.
@@ -625,6 +664,8 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	defer cancel()
+	// The work may be on a branch the worker moved to, not the start branch.
+	branch = handbackBranch(ctx, dir, branch, base)
 	fail := func(err error) (string, string) {
 		d.Logf("worker.delivery_record worker=%s session=%s branch=%s error=%q", w.id, sid, branch, err.Error())
 		return "", strings.Join(strings.Fields(err.Error()), " ")
