@@ -154,7 +154,7 @@ func TestWorkerNoticeNotPushedInStatus(t *testing.T) {
 		return nil, errors.New("record unavailable")
 	})
 	w := &worker{id: "w_dirty", sessionID: "s_worker", owner: "s_owner", worktree: wt, branch: "feat/x", base: gitHead(t, repo, "main"), project: "demo"}
-	_, problem := n.d.recordHandbackChange(context.Background(), w)
+	_, problem := n.d.recordHandbackChange(context.Background(), w, nil)
 	if !strings.Contains(problem, handbackUncommittedPushProblem) || !strings.Contains(problem, "record unavailable") {
 		t.Fatalf("record problem does not preserve both errors: %q", problem)
 	}

@@ -28,6 +28,10 @@ const (
 	SignalHeavyTests = "heavy_tests"
 	// SignalTestHelpers is new non-Test helper functions in test files.
 	SignalTestHelpers = "test_helpers"
+	// SignalHandbackCheckFailed is a project's pre-hand-back check that failed.
+	SignalHandbackCheckFailed = "handback_check_failed"
+	// SignalHandbackCheckTimedOut is a check that ran past its timeout.
+	SignalHandbackCheckTimedOut = "handback_check_timed_out"
 )
 
 const (

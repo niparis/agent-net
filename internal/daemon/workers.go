@@ -181,6 +181,9 @@ type worker struct {
 	sendsInFlight int
 	stopping      bool
 	handingBack   bool // from the hand-back notice until the worker has ended
+	// checking is true while the project's pre-hand-back check runs. The
+	// hand-back ends the worker itself, so the tick must not race it.
+	checking bool
 	// endedCh is closed when the worker starts to end (endWorker). Made on first use.
 	endedCh                           chan struct{}
 	turnActive                        bool
@@ -1560,6 +1563,9 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		age, idle, owner := now.Sub(w.startedAt), now.Sub(w.lastActive), w.owner
 		harness, native := w.harness, w.nativeID
 		sending := w.sendsInFlight > 0
+		// A hand-back may run the project's check for up to its timeout. Its
+		// own end follows the notice, so age and idleness must not race it.
+		checking := w.checking
 		// A worker that is still starting is not idle. Until its first request
 		// is noted, it also gets the start timeout on top of the idle limit, so
 		// the task can arrive and a notice always has a request to answer.
@@ -1595,6 +1601,8 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			if !d.endFailedWorker(ctx, w) {
 				d.beginWorkerEnd(w, protocol.StopExited, nil)
 			}
+		case checking:
+			// The hand-back sends its notice and ends the worker itself.
 		case age >= set.MaxAge:
 			d.beginWorkerEnd(w, protocol.StopMaxAge, nil)
 		case idleLimit >= 0 && idle >= idleLimit:

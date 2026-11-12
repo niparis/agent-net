@@ -274,10 +274,23 @@ func (d *Daemon) admissionForTest() Decision {
 	return d.admissionWith(snap, cost)
 }
 
+// admissionForTestNoGap is admissionForTest without the start gap. A
+// hand-back check follows the worker's own run, not a new start, so
+// workers.start_gap does not hold it. Its slot still counts as load.
+func (d *Daemon) admissionForTestNoGap() Decision {
+	snap := d.SettingsSnapshot()
+	cost := d.testAdmissionCost(snap)
+	return d.admissionWithLastStart(snap, cost, time.Time{})
+}
+
 // admissionWith applies admission to a cost. A running test suite is load
 // like a worker: it adds one to the running count and its granted cores to the
 // pending cost, because the five-minute averages cannot show it yet.
 func (d *Daemon) admissionWith(snap settings.Snapshot, cost WorkerCost) Decision {
+	return d.admissionWithLastStart(snap, cost, d.lastWorkerStart())
+}
+
+func (d *Daemon) admissionWithLastStart(snap settings.Snapshot, cost WorkerCost, lastStart time.Time) Decision {
 	now := time.Now()
 	load := d.load()
 	d.wmu.Lock()
@@ -309,7 +322,7 @@ func (d *Daemon) admissionWith(snap settings.Snapshot, cost WorkerCost) Decision
 			_ = json.Unmarshal(e.Value, &set.MemReserve)
 		}
 	}
-	return admitWithHot(set, load, cost, pending, running, d.lastWorkerStart(), now,
+	return admitWithHot(set, load, cost, pending, running, lastStart, now,
 		snap.Float("workers.cpu_hot", settings.Where{}))
 }
 

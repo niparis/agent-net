@@ -554,7 +554,7 @@ const handbackUncommittedPushProblem = "the branch was not pushed for the remote
 // It never fails the hand-back: it returns the change ID, or the error for the
 // notice's "delivery record:" line. A gateway that does not know change.submit
 // gives neither.
-func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID, problem string) {
+func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker, check *protocol.HandbackCheck) (changeID, problem string) {
 	d.wmu.Lock()
 	dir, branch, base, owner, sid := w.worktree, w.branch, w.base, w.owner, w.sessionID
 	harness, model, title, kept := w.harness, w.model, w.title, w.changeID
@@ -599,7 +599,7 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	}
 	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: base,
 		HeadCommit: head, Uncommitted: uncommitted, Risk: risk, SensitivePath: deliverySensitivePath(ctx, dir, base, head), Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
-		Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model}}
+		HandbackCheck: check, Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model}}
 	if base != "" {
 		if stat, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil {
 			q.DiffStat = deliveryDiffStat(stat)
@@ -607,6 +607,7 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 		if patch, err := gitOut(ctx, dir, "diff", "-U0", base, head, "--"); err == nil {
 			q.Signals = quality.Signals(patch, difficulty)
 		}
+		q.Signals = withHandbackCheckSignal(q.Signals, check)
 	}
 	if model != "" {
 		q.Origin.ModelFamily = protocol.ModelFamily(harness, model)
@@ -656,6 +657,23 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	d.wmu.Unlock()
 	d.Logf("worker.delivery_record worker=%s session=%s change=%s revision=%d head=%s", w.id, sid, id, out.Change.Change.Revision, head)
 	return id, pushProblem
+}
+
+// withHandbackCheckSignal appends the signal of a failed or timed-out
+// pre-hand-back check. The check signal wins the last slot when the list is
+// full, because it names work the worker's own run did not finish cleanly.
+func withHandbackCheckSignal(signals []protocol.QualitySignal, check *protocol.HandbackCheck) []protocol.QualitySignal {
+	if check == nil {
+		return signals
+	}
+	signal, ok := check.Signal()
+	if !ok {
+		return signals
+	}
+	if len(signals) >= protocol.MaxQualitySignals {
+		signals = signals[:protocol.MaxQualitySignals-1]
+	}
+	return append(signals, signal)
 }
 
 // Keep the start's risk across daemon restarts. Risk is the judge's Risk

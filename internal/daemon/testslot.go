@@ -161,6 +161,17 @@ func (d *Daemon) testTimeout(repo string) time.Duration {
 // caller is queued and told its place. The caller keeps its local connection
 // open while the suite runs; closing it frees the slot.
 func (d *Daemon) acquireTestSlot(lc *localConn, cwd string) protocol.TestSlotResult {
+	return d.acquireTestSlotWith(lc, cwd, false)
+}
+
+// acquireTestSlotNoGap admits an in-process hand-back check. It is not a
+// worker start, so workers.start_gap does not hold it; its slot still counts
+// as load for later worker starts.
+func (d *Daemon) acquireTestSlotNoGap(lc *localConn, cwd string) protocol.TestSlotResult {
+	return d.acquireTestSlotWith(lc, cwd, true)
+}
+
+func (d *Daemon) acquireTestSlotWith(lc *localConn, cwd string, noStartGap bool) protocol.TestSlotResult {
 	host := d.hostName()
 	repo := ""
 	if cwd != "" {
@@ -187,7 +198,12 @@ func (d *Daemon) acquireTestSlot(lc *localConn, cwd string) protocol.TestSlotRes
 	// The head of the queue asks for room. Admission is first come, first
 	// served, so a later request does not go ahead while the head waits.
 	d.qmu.Lock()
-	dec := d.admissionForTest()
+	var dec Decision
+	if noStartGap {
+		dec = d.admissionForTestNoGap()
+	} else {
+		dec = d.admissionForTest()
+	}
 	d.qmu.Unlock()
 	if !dec.OK {
 		return protocol.TestSlotResult{Position: pos, TimeoutSeconds: seconds, Hostname: host, Reason: dec.Reason}

@@ -62,7 +62,7 @@ func TestDeliveryHandbackCarriesReviewRisk(t *testing.T) {
 	if err := n.d.recordDeliveryRisk(w.id, &protocol.WorkerAssessment{Reasoning: 1, Risk: 4}); err != nil {
 		t.Fatal(err)
 	}
-	id, problem := n.d.recordHandbackChange(context.Background(), w)
+	id, problem := n.d.recordHandbackChange(context.Background(), w, nil)
 	if id == "" || problem != "" {
 		t.Fatalf("id=%q problem=%q", id, problem)
 	}
