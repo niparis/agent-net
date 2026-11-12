@@ -10,7 +10,7 @@ import (
 )
 
 // agent-net's daemon is the only updater for every harness on the owner's
-// machines (decision 0133). Claude Code runs its own background updater in
+// machines (decision 0139). Claude Code runs its own background updater in
 // every session, so two updaters race on the same install and the in-session
 // one reports "update failed / run claude doctor". Every Claude Code process
 // agent-net starts carries DISABLE_AUTOUPDATER=1, and the user settings file

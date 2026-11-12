@@ -1,4 +1,4 @@
-# 0133 - agent-net is the only harness updater
+# 0139 - agent-net is the only harness updater
 
 **Date:** 2026-11-11
 **Status:** Accepted.

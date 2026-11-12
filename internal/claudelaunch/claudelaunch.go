@@ -2,7 +2,7 @@
 // agent-net starts.
 //
 // agent-net's daemon is the only updater for the harnesses on the owner's
-// machines (decision 0133). Claude Code otherwise runs its own background
+// machines (decision 0139). Claude Code otherwise runs its own background
 // updater in every session, which loses the race against the daemon and shows
 // "update failed / run claude doctor". So every launch carries
 // DISABLE_AUTOUPDATER=1: owner starts and resumes, workers, the merger, the

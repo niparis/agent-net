@@ -3,7 +3,7 @@ package setup
 import "github.com/niparis/agent-net/internal/claudesettings"
 
 // claudeAutoUpdateStepName is the setup line for turning Claude Code's own
-// updater off. agent-net's daemon is the only updater (decision 0133).
+// updater off. agent-net's daemon is the only updater (decision 0139).
 const claudeAutoUpdateStepName = "claude auto-update"
 
 // claudeAutoUpdateSettings writes the one value that turns Claude Code's own

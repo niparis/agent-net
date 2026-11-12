@@ -24,7 +24,7 @@ const MouseKey = "CLAUDE_CODE_DISABLE_MOUSE"
 const MouseOn = "0"
 
 // AutoUpdateKey turns Claude Code's own background updater off. agent-net's
-// daemon is the only updater for every harness (owner's order, decision 0133),
+// daemon is the only updater for every harness (owner's order, decision 0139),
 // so every Claude Code session agent-net starts gets this variable, and the
 // user settings carry it for sessions the owner starts by hand.
 const AutoUpdateKey = "DISABLE_AUTOUPDATER"
