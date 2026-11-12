@@ -885,3 +885,17 @@ func TestChangeListBranchIncludesRevisions(t *testing.T) {
 		t.Fatalf("branch lookup: %+v", got)
 	}
 }
+
+func TestChangeSubmitCrossProjectCaller(t *testing.T) {
+	r := newDeliveryRig(t)
+	first := r.submit(r.a, r.workerSubmit("feature", commitA)).Change.Change
+	q := protocol.ChangeSubmitRequest{SessionID: r.caller, ChangeID: first.ID, Project: "demo", Branch: "feature", HeadCommit: commitB, Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: r.caller}}
+	got := r.submit(r.a, q).Change.Change
+	if got.Revision != 2 || got.HeadCommit != commitB {
+		t.Fatalf("revision: %+v", got)
+	}
+	q.SessionID, q.Origin.SessionID = r.sonnet, r.sonnet
+	if _, err := deliveryCall[protocol.ChangeSubmitResult](r, r.a, protocol.FrameChangeSubmit, q); err == nil {
+		t.Fatal("non-caller accepted")
+	}
+}
