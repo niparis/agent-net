@@ -15,6 +15,12 @@ if [[ $1 == list ]]; then
 fi
 if [[ $1 == test && $2 == -race ]]; then
   printf '%s\n' "$*" >>"$SHARD_TEST_RUN_LOG"
+  case " $* " in
+    *' -json '*)
+      printf '%s\n' '{"Action":"output","Package":"example/internal/daemon","Output":"boom\n"}' 'not json'
+      ;;
+  esac
+  [[ -z ${FAKE_GO_FAIL:-} ]] || exit 1
   exit 0
 fi
 [[ $1 == test && $2 == -list && $3 == '.*' ]]
@@ -75,3 +81,24 @@ fi
 [[ $(grep -c 'TestBeta' "$work/runs") == 1 ]]
 [[ $(grep -c 'TestDelta' "$work/runs") == 1 ]]
 ! grep -q TestRemoved "$work/runs"
+
+# --json-output must keep the go test arguments and add only -json, copy the
+# JSON to the file, and still show a readable failure.
+: >"$work/runs"
+bash "$script" --package daemon --shard-index 0 --shard-count 2 --json-output "$work/shard.json" >"$work/json-output"
+[[ $(wc -l <"$work/runs") == 1 ]]
+grep -Fq ' -count=1 -json -run ' "$work/runs"
+[[ $(grep -c '"Action":"output"' "$work/shard.json") == 1 ]]
+python3 "$root/scripts/test-timings.py" "$work/shard.json" "$work/timings.json" >/dev/null
+if FAKE_GO_FAIL=1 bash "$script" --package daemon --shard-index 0 --shard-count 2 --json-output "$work/failed.json" >"$work/failed-output" 2>&1; then
+  echo 'a failing json run passed' >&2
+  exit 1
+fi
+grep -Fx 'boom' "$work/failed-output"
+grep -Fx 'not json' "$work/failed-output"
+! grep -Fq '"Action"' "$work/failed-output"
+[[ -s $work/failed.json ]]
+if bash "$script" --shards 2 --json-output "$work/all.json" --check-only >/dev/null 2>&1; then
+  echo 'accepted --json-output without a shard index' >&2
+  exit 1
+fi

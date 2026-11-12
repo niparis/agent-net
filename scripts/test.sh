@@ -4,7 +4,8 @@ set -u
 
 usage() {
   cat <<'EOF'
-Usage: scripts/test.sh [--shards N | --package NAME --shard-index I --shard-count N]
+Usage: scripts/test.sh [--shards N | --package NAME --shard-index I --shard-count N
+                       [--json-output FILE]]
                       [--check-only] [-- go-test-args...]
 
 Run the test suite. The tests of internal/daemon, internal/gateway,
@@ -17,6 +18,9 @@ eight.
 
 Indexed mode runs one shard of one sharded package, for CI. --package names the
 package (daemon, gateway, setup, tui or agent-net). Shard indexes are zero-based.
+--json-output FILE (indexed mode only) runs go test with -json and copies its
+output to FILE, so CI can keep per-test timings for scripts/test-timings.py.
+A failing run still prints readable text.
 Arguments after -- are passed to go test.
 EOF
 }
@@ -69,6 +73,7 @@ package_name=
 shard_index=
 shard_count=
 check_only=0
+json_output=
 go_test_args=()
 
 while (($#)); do
@@ -100,6 +105,11 @@ while (($#)); do
     --shard-count)
       (($# >= 2)) || fail "--shard-count requires a number"
       shard_count=$2
+      shift 2
+      ;;
+    --json-output)
+      (($# >= 2)) || fail "--json-output requires a file"
+      json_output=$2
       shift 2
       ;;
     --check-only)
@@ -138,6 +148,7 @@ else
   fi
   is_positive_integer "$requested_shards" || fail "shard count must be a positive integer"
   shards=$((10#$requested_shards))
+  [[ -z $json_output ]] || fail "--json-output needs --shard-index and --shard-count"
 fi
 
 # Tests get no git identity from this machine or the CI runner. Git must not
@@ -323,8 +334,12 @@ for idx in "${!run_names[@]}"; do
   fi
   for ((i=first; i<=last; i++)); do
     regex=$(paste -sd '|' "$work/$name/shard-$i")
+    # -json only changes the output format: the tests and the other flags stay
+    # the same.
+    json_flag=()
+    [[ -z $json_output ]] || json_flag=(-json)
     launch_job "$name shard $((i + 1))/$count" "$work/output-$job_count" \
-      go test -race -count=1 -run "^($regex)$" "${go_test_args[@]}" "$(package_path "$name")"
+      go test -race -count=1 "${json_flag[@]}" -run "^($regex)$" "${go_test_args[@]}" "$(package_path "$name")"
   done
 done
 
@@ -354,6 +369,10 @@ for pid in "${job_pids[@]}"; do
   wait "$pid" || failed=1
 done
 
+if [[ -n $json_output ]]; then
+  cp "$work/output-0" "$json_output" || failed=1
+fi
+
 for ((job_id=0; job_id<job_count; job_id++)); do
   read -r status duration <"$work/status-$job_id"
   if ((status == 0)); then
@@ -361,7 +380,11 @@ for ((job_id=0; job_id<job_count; job_id++)); do
   else
     failed=1
     printf '%s: FAIL (%ss)\n' "${job_labels[$job_id]}" "$duration"
-    cat "$work/output-$job_id"
+    if [[ -n $json_output ]]; then
+      python3 -I "$script_dir/test-json-text.py" "$work/output-$job_id"
+    else
+      cat "$work/output-$job_id"
+    fi
   fi
 done
 

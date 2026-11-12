@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Refresh shard weights: scripts/test-timings.py race-test-output*.json > scripts/test-timings.tsv.
 
-Inputs are go test -race -json outputs from packages or named shards.
+Inputs are go test -race -json outputs from packages or named shards. CI writes
+one per sharded job (the test-json-* artifacts of a run, made by
+scripts/test.sh --json-output). Take them from one green CI run, so the weights
+are the times CI itself measures.
 Subtests are already included in parents; later inputs replace earlier timings.
+Lines that are not JSON (build noise) are skipped.
 """
 import json
 import sys
@@ -11,9 +15,12 @@ seconds = {}
 for path in sys.argv[1:]:
     with open(path) as source:
         for line in source:
-            event = json.loads(line)
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
             name = event.get("Test", "")
-            if event["Action"] == "pass" and name and "/" not in name:
+            if event.get("Action") == "pass" and name and "/" not in name:
                 package = event["Package"].rsplit("/", 1)[-1]
                 seconds[package, name] = max(0.01, event["Elapsed"])
 
