@@ -180,12 +180,8 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 	if !sshTargetOK(targetHost) {
 		return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("The sign-in pane is open on %s in pane %s, but enter_ssh_hosts gives a target herdr --remote cannot use.", host, cleanLine(res.Pane))}, nil
 	}
-	argv := []string{bin, "--remote", targetHost}
-	if herdrSessionRe.MatchString(res.Session) {
-		argv = append(argv, "--session", res.Session)
-	}
 	plan := protocol.EnterPlan{
-		Argv: argv, Host: host,
+		Argv: herdrRemoteArgv(bin, targetHost, res.Session), Host: host,
 		Note: fmt.Sprintf("Opens herdr on %s; the sign-in is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here.", host, cleanLine(res.Pane)),
 	}
 	return d.viewPlan("signin-remote:"+q.AskID, "sign in: "+info.Label, false, plan), nil

@@ -25,6 +25,17 @@ import (
 
 const agentNetHerdrSession = "agent-net"
 
+// herdrRemoteArgv opens a herdr session on another machine through herdr's
+// remote client, the path that carries the clipboard (decision 0046). Without
+// a valid session name it opens that machine's default herdr session.
+func herdrRemoteArgv(bin, target, session string) []string {
+	argv := []string{bin, "--remote", target}
+	if herdrSessionRe.MatchString(session) {
+		argv = append(argv, "--session", session)
+	}
+	return argv
+}
+
 // herdrCleanEnv is the daemon's environment without the variables that would
 // point a herdr command at the herdr the daemon happens to run in.
 func herdrCleanEnv() []string {

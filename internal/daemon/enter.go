@@ -99,12 +99,8 @@ func (d *Daemon) wrapRemoteEnter(host string, plan protocol.EnterPlan) protocol.
 		if !herdrIDRe.MatchString(plan.HerdrPane) {
 			return protocol.EnterPlan{Host: host, Note: "The remote session could not be opened in herdr. " + plan.Note}
 		}
-		argv := []string{localHerdr, "--remote", target}
-		if plan.HerdrSession != "" {
-			argv = append(argv, "--session", plan.HerdrSession)
-		}
 		return protocol.EnterPlan{
-			Argv: argv, Host: host,
+			Argv: herdrRemoteArgv(localHerdr, target, plan.HerdrSession), Host: host,
 			Note: fmt.Sprintf("Opens herdr on %s; the session is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here; the session keeps running.", host, plan.HerdrPane),
 		}
 	}
