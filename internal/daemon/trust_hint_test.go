@@ -145,6 +145,45 @@ func TestReconnectIsOnlineWhenTheOldConnectionCleansUpLate(t *testing.T) {
 	eventually(t, "session online with trust", func() bool { return trustAgent(trustList(t, cli), sid).PeerTrust })
 }
 
+// A reconnecting session can own its identity again before the gateway has
+// returned its session ID. A late removal then finds no local session by ID.
+// The daemon must still register the session that owns the identity again, or
+// it stays offline and its peer trust is hidden from online lists.
+func TestRemovalRegistersASessionThatHasNoIDYet(t *testing.T) {
+	t.Parallel()
+	ls := &localSession{info: protocol.SessionInfo{Harness: "pi", NativeID: "n1"}}
+	k := key("pi", "n1")
+	var removes, upserts atomic.Int32
+	upserted := make(chan struct{}, 1)
+	d := &Daemon{sessions: map[string]*localSession{k: ls}, cfg: Config{
+		testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+			switch typ {
+			case "session.remove":
+				removes.Add(1)
+			case "session.upsert":
+				if upserts.Add(1) == 1 {
+					select {
+					case upserted <- struct{}{}:
+					default:
+					}
+				}
+				return json.RawMessage(`{"session_id":"s_1"}`), true, nil
+			}
+			return nil, true, nil
+		},
+	}}
+	d.removeSession(protocol.SessionRemove{SessionID: "s_1"}, k)
+	select {
+	case <-upserted:
+	case <-time.After(scaled(2 * time.Second)):
+		t.Fatal("the removal did not register the session that owns the identity again")
+	}
+	if removes.Load() != 1 {
+		t.Fatalf("remove calls: %d", removes.Load())
+	}
+	eventually(t, "the session ID is recorded", func() bool { return d.currentSessionID(ls) == "s_1" })
+}
+
 // pushSession holds the session's pushMu while it finishes a removal. When the
 // same local session is registered again during that removal, the re-push must
 // not wait on the lock the caller holds.

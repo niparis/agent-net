@@ -769,6 +769,13 @@ func (d *Daemon) Replies() ReplyBook { return d.st }
 
 // ---- registry ----
 
+// sessionRemoval is a session taken offline at the gateway, with the identity
+// key needed to find a reconnect that took the identity over.
+type sessionRemoval struct {
+	remove protocol.SessionRemove
+	key    string
+}
+
 func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	if harness == "claude" {
 		d.claudeStartMu.Lock()
@@ -839,7 +846,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	d.mu.Lock()
 	seen := map[string]bool{}
 	var changed []*localSession
-	var gone []protocol.SessionRemove
+	var gone []sessionRemoval
 	var updates []activityUpdate
 	for _, in := range infos {
 		in.Harness = harness
@@ -943,7 +950,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		if ls.info.Harness == harness && !ls.plugin() && !ls.owned && !seen[k] {
 			delete(d.sessions, k)
 			if ls.sessionID != "" {
-				gone = append(gone, protocol.SessionRemove{SessionID: ls.sessionID, Lost: !ls.ownerStopped && ls.info.Worker == nil && ls.info.Status == "busy"})
+				gone = append(gone, sessionRemoval{key: k, remove: protocol.SessionRemove{SessionID: ls.sessionID, Lost: !ls.ownerStopped && ls.info.Worker == nil && ls.info.Status == "busy"}})
 			}
 		}
 	}
@@ -954,11 +961,11 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	for _, ls := range changed {
 		d.pushSession(ls)
 	}
-	for _, goneSession := range gone {
+	for _, g := range gone {
 		// A resumed worker may replace a native session while retaining its
 		// gateway ID. Do not take that newly registered session offline.
-		if d.sessionByID(goneSession.SessionID) == nil {
-			d.removeSession(goneSession)
+		if d.sessionByID(g.remove.SessionID) == nil {
+			d.removeSession(g.remove, g.key)
 		}
 	}
 }
@@ -1160,23 +1167,40 @@ func (d *Daemon) pushSession(ls *localSession) {
 		// before it has an ID to take offline. Finish that removal now, unless
 		// another local session has taken over the gateway identity.
 		if removed && d.sessionByID(r.SessionID) == nil {
-			d.removeSession(protocol.SessionRemove{SessionID: r.SessionID})
+			d.removeSession(protocol.SessionRemove{SessionID: r.SessionID}, k)
 		}
 	}
 }
 
-// removeSession takes a session offline at the gateway. A reconnect can
-// register the same gateway ID again after the caller decided to remove it and
-// before the gateway handled the removal. The removal then lands last and
-// leaves a live session offline, with its peer trust hidden from online lists.
-// When that happened, register the live session again. The caller may hold
-// that session's pushMu (pushSession does), so the re-push runs in its own
-// goroutine, which pushMu still orders.
-func (d *Daemon) removeSession(r protocol.SessionRemove) {
+// removeSession takes the session with this key offline at the gateway. A
+// reconnect can register the same identity again after the caller decided to
+// remove it and before the gateway handled the removal. The removal then lands
+// last and leaves a live session offline, with its peer trust hidden from
+// online lists. When that happened, register the live session again. Look it
+// up by key as well as by ID: a session re-registering under that identity may
+// not have its gateway ID yet while its first upsert is in flight. The caller
+// may hold that session's pushMu (pushSession does), so the re-push runs in
+// its own goroutine, which pushMu still orders.
+func (d *Daemon) removeSession(r protocol.SessionRemove, k string) {
 	d.call(context.Background(), "session.remove", r)
-	if ls := d.activitySession(r.SessionID); ls != nil {
+	if ls := d.sessionForRemoval(r.SessionID, k); ls != nil {
 		go d.pushSession(ls)
 	}
+}
+
+// sessionForRemoval returns the local session that owns the removed gateway ID,
+// or the identity the removal was for. A reconnecting session owns that
+// identity before it has an ID, and a lookup by ID alone would miss it.
+func (d *Daemon) sessionForRemoval(id, k string) *localSession {
+	if ls := d.activitySession(id); ls != nil {
+		return ls
+	}
+	if k == "" {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.sessions[k]
 }
 
 func (d *Daemon) snapshot() []protocol.SessionInfo {

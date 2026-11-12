@@ -314,7 +314,7 @@ func (lc *localConn) cleanup() {
 	}
 	d.mu.Unlock()
 	if sid != "" {
-		d.removeSession(protocol.SessionRemove{SessionID: sid, Lost: lost})
+		d.removeSession(protocol.SessionRemove{SessionID: sid, Lost: lost}, k)
 	}
 }
 
