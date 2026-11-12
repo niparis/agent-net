@@ -8,7 +8,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The recorded cause of failure and rework, per source (decision 0141).
+// The recorded cause of failure and rework, per source (decision 0145).
 
 // TestWorkerRunStoresEachCauseSource stores the cause the gateway reads from
 // each source it already has: provider text, sandbox text, a harness end, a
@@ -55,7 +55,7 @@ func TestWorkerRunStoresEachCauseSource(t *testing.T) {
 
 // A failed Codex turn arrives as a failed hand-back whose report holds the
 // provider text. Through worker.stopped it must record quota_auth, not
-// unknown (decision 0141).
+// unknown (decision 0145).
 func TestCodexUsageLimitHandbackStoresQuotaCause(t *testing.T) {
 	a := newAgyGate(t)
 	worker, err := a.g.store.UpsertSession(a.node, protocol.SessionInfo{Harness: "codex", NativeID: "worker-limit", Model: "gpt-5.5",

@@ -16,7 +16,7 @@ import (
 const briefRetryWindow = 24 * time.Hour
 
 // checkWorkerBrief runs the brief check that needs the store: overlap. The
-// six format rules were retired (decision 0141); a brief is refused only for
+// six format rules were retired (decision 0145); a brief is refused only for
 // a file it shares with a running worker or an open change in the same
 // project. Overlap compares the paths named in this brief with the briefs of
 // running workers in the same project and the changed files of open changes

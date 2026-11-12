@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// The brief checks. Decision 0141 retired the six format rules: a brief is no
+// The brief checks. Decision 0145 retired the six format rules: a brief is no
 // longer refused for missing a Goal line, files, limits, a definition of done,
 // how it is graded, or evidence with three lines. The only refusal left is
 // overlap: a brief may not name a file a running worker or an open change in

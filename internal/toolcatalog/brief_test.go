@@ -7,7 +7,7 @@ import (
 
 // Every caller reads the worker start description. It names the one refusal
 // left (overlap), the check mode, and the template as advice. The six format
-// items are retired and must not be listed as a rule again (decision 0141).
+// items are retired and must not be listed as a rule again (decision 0145).
 func TestWorkerStartDescriptionNamesTheOverlapRefusalOnly(t *testing.T) {
 	var found *Tool
 	for i := range Tools {

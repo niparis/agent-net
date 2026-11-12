@@ -133,7 +133,7 @@ func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error
 	if err := s.countWeeklyAt(`SELECT at FROM worker_defects WHERE moved_at = 0 AND at >= ? AND at < ?`, startUnix, endUnix, index, buckets, func(b *weekBuckets) { b.defects++ }); err != nil {
 		return nil, err
 	}
-	// A defect found later is caught before release or escaped (decision 0141).
+	// A defect found later is caught before release or escaped (decision 0145).
 	rows, err = s.db.Query(`SELECT at, COALESCE(escape_phase,'') FROM worker_defects WHERE moved_at = 0 AND at >= ? AND at < ?`, startUnix, endUnix)
 	if err != nil {
 		return nil, err

@@ -1,7 +1,7 @@
 # Worker brief template
 
 This is a template, not a rule. `agent_worker_start` does not check or score
-the brief's format (decision 0141). A brief missing any section below starts
+the brief's format (decision 0145). A brief missing any section below starts
 the same as one that has them all.
 
 The one brief check left is overlap: a brief may not name a file that a running
@@ -11,7 +11,7 @@ an overlap: its id in the brief, an open change whose branch is the start's
 `base`, or the `continue` or `fixes` target. Use `mode: "check"` to run that
 check and start nothing.
 
-The analysis behind decision 0141 found that briefs failing more of the old
+The analysis behind decision 0145 found that briefs failing more of the old
 format rules did slightly better, not worse. The sections below are still a
 useful habit: they answer what a worker needs to know. Write what helps your
 worker, and leave out what does not.

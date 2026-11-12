@@ -303,7 +303,7 @@ type WorkerInfo struct {
 	// end from the run's own tool record (decision 0133).
 	Struggle *Struggle `json:"struggle,omitempty"`
 	// Cause is the recorded reason for the latest run's failure or rework,
-	// one of the Cause constants (decision 0141). Empty when none is known.
+	// one of the Cause constants (decision 0145). Empty when none is known.
 	Cause string `json:"cause,omitempty"`
 }
 

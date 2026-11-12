@@ -2,9 +2,9 @@ package protocol
 
 import "testing"
 
-// Every cause source agent-net can see is classified. Decision 0141.
+// Every cause source agent-net can see is classified. Decision 0145.
 // TestProviderQuotaRefusal reads the provider usage-limit text that reaches a
-// worker.stopped frame as a failed hand-back (decision 0141).
+// worker.stopped frame as a failed hand-back (decision 0145).
 func TestProviderQuotaRefusal(t *testing.T) {
 	for _, text := range []string{
 		"The Codex turn failed: You've hit your usage limit. Upgrade to Pro ... or try again at 3:39 AM.",

@@ -9,7 +9,7 @@ import (
 
 // The exact text a failed Codex turn reports. It reaches the daemon as the
 // hand-back report, so the run's failure text and the gateway's cause come
-// from here (decision 0141).
+// from here (decision 0145).
 const codexUsageLimitReport = "The Codex turn failed: You've hit your usage limit. Upgrade to Pro ... or try again at 3:39 AM.\n\nLast message:\nI could not continue."
 
 func TestHandbackFailureReadsTheProviderText(t *testing.T) {

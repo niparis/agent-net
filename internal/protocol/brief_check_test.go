@@ -6,7 +6,7 @@ import (
 )
 
 // A brief without any of the six old format sections is no longer refused:
-// decision 0141 retired them. The paths it names still feed the overlap check.
+// decision 0145 retired them. The paths it names still feed the overlap check.
 func TestRetiredBriefFormatSectionsDoNotFail(t *testing.T) {
 	task := "Fix the parser crash in internal/parser/parse.go. Keep it small."
 	if paths := BriefPaths(task); len(paths) != 1 || paths[0] != "internal/parser/parse.go" {

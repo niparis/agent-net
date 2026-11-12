@@ -223,7 +223,7 @@ func TestThirdBriefAttemptStartsAndRecordsADefect(t *testing.T) {
 	}
 }
 
-// A brief with none of the six old format sections starts: decision 0141
+// A brief with none of the six old format sections starts: decision 0145
 // retired them, and no warning took their place.
 func TestWorkerBriefWithoutTheSixSectionsStarts(t *testing.T) {
 	a := newAgyGate(t)

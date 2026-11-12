@@ -1300,7 +1300,7 @@ CREATE INDEX IF NOT EXISTS worker_brief_rejections_caller ON worker_brief_reject
 
 // workerCauseMigration stores the cause of failure or rework on a worker run
 // and on a defect, and whether a late defect was caught before release or
-// escaped (decision 0141). The columns are added in the migration loop, so
+// escaped (decision 0145). The columns are added in the migration loop, so
 // replaying it is safe.
 const workerCauseMigration = `
 -- Worker run and defect cause, and the phase of a late defect.

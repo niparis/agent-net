@@ -6,7 +6,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Recorded causes of failure and rework (decision 0141). Every write is from a
+// Recorded causes of failure and rework (decision 0145). Every write is from a
 // signal agent-net already has: the stop reason and provider error text of a
 // run, a failed test or accept step, or the caller's own brief defect. An
 // unknown cause stays "unknown" and never blocks anything.

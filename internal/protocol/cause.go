@@ -2,7 +2,7 @@ package protocol
 
 import "strings"
 
-// Causes of rework (decision 0141). When a worker run fails, quits early, or
+// Causes of rework (decision 0145). When a worker run fails, quits early, or
 // needs a fix round, and when a defect is filed, the gateway stores what it
 // already knows about the cause, so the next analysis can tell a bad brief
 // from the model or the machine. The cause is never asked from a caller and
