@@ -1,4 +1,4 @@
-# 0141 - The TUI reads what changed, not every list every second
+# 0143 - The TUI reads what changed, not every list every second
 
 **Date:** 2026-11-12
 **Status:** Accepted.
