@@ -224,54 +224,30 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 		"AGENT_NET_SOCKET":              d.cfg.SocketPath,
 		"XDG_STATE_HOME":                state,
 	})
-	// A child can lose the race for an ephemeral port after it is selected.
-	// Retry when it exits during startup, choosing a new port each time.
-	for attempt := 0; attempt < 3; attempt++ {
-		port, err := d.workerFreePort()
-		if err != nil {
-			return nil, err
-		}
-		args := []string{"serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port)}
-		if err := d.spawnWorker(w, bin, args, env); err != nil {
-			return nil, err
-		}
-		base := "http://127.0.0.1:" + strconv.Itoa(port)
-		version := d.openCodeVersion()
-		identity := fmt.Sprintf("worker:%s:%d", w.id, attempt)
-		d.wmu.Lock()
-		w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity = base, password, version, identity
-		w.ref = "127.0.0.1:" + strconv.Itoa(port)
-		d.saveWorkerLocked(w)
-		d.wmu.Unlock()
-		api := openCodeWorkerAPI(ctx, base, password)
-		for {
-			if routes, routeErr := d.discoverOpenCodeRoutes(ctx, base, password, version, identity); routeErr == nil {
-				infoPath, pathErr := routes.Path(opencodeapi.Info, "")
-				if pathErr != nil {
-					d.killGroup(w)
-					return nil, pathErr
-				}
-				if info, code, err := api(opencodeapi.Info.Method(), infoPath, nil); err == nil && code == http.StatusOK {
-					if v := parseOpenCodeInfoVersion(info); v != "" {
-						d.wmu.Lock()
-						w.apiVersion = v
-						d.wmu.Unlock()
-					}
-					return api, nil
-				}
+	return d.serveOpenCodePrivate(ctx, openCodeServe{
+		label: "opencode serve", password: password,
+		spawn: func(attempt, port int) (string, string, string, error) {
+			args := []string{"serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port)}
+			if err := d.spawnWorker(w, bin, args, env); err != nil {
+				return "", "", "", err
 			}
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("opencode serve did not start in time")
-			case <-time.After(100 * time.Millisecond):
-			}
-			if d.gone(w) {
-				d.killGroup(w)
-				break
-			}
-		}
-	}
-	return nil, errors.New("opencode serve exited at start")
+			base, version := portURL(port), d.openCodeVersion()
+			identity := fmt.Sprintf("worker:%s:%d", w.id, attempt)
+			d.wmu.Lock()
+			w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity = base, password, version, identity
+			w.ref = "127.0.0.1:" + strconv.Itoa(port)
+			d.saveWorkerLocked(w)
+			d.wmu.Unlock()
+			return base, version, identity, nil
+		},
+		setVersion: func(v string) {
+			d.wmu.Lock()
+			w.apiVersion = v
+			d.wmu.Unlock()
+		},
+		gone: func() bool { return d.gone(w) },
+		kill: func(string) { d.killGroup(w) },
+	})
 }
 
 func openCodeWorkerAPI(ctx context.Context, base, password string) opencodeAPI {

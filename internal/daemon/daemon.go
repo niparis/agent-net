@@ -802,7 +802,7 @@ func (d *Daemon) Stop() {
 	d.cto.mu.Lock()
 	// The CTO's Claude job outlives the daemon: an upgrade restarts the daemon
 	// often, and killing the job lost the owner's CTO conversation. The next
-	// daemon adopts the running job again (startClaudeCTO).
+	// daemon adopts the running job again (startClaudeRole).
 	if d.cfg.testStopCTOOnExit {
 		d.stopClaudeCTOLocked("daemon_shutdown")
 	} else {

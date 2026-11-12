@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"os/exec"
+	"strings"
 )
 
 // claudeBackground describes one Claude Code background session. Every start
@@ -23,6 +24,29 @@ type claudeBackground struct {
 	Flags []string
 	// FirstMessage is the first prompt of a new conversation.
 	FirstMessage string
+	// DropEnv names variables the launch must not inherit. The first launch can
+	// start Claude's background service, and every session that service starts
+	// later inherits the environment of that launch.
+	DropEnv []string
+}
+
+// claudeJobFailure is a background job that ended before it was a session, or
+// a launch that printed an error. recoverable says a resume of an old
+// conversation may work as a new conversation (the source is gone or the job
+// crashed).
+type claudeJobFailure struct {
+	detail      string
+	recoverable bool
+	// ended says the job started and then ended, as opposed to a launch that
+	// printed an error.
+	ended bool
+}
+
+func (e *claudeJobFailure) Error() string { return "Claude background job failed: " + e.detail }
+
+func recoverableClaudeResumeFailure(status, detail string) bool {
+	lower := strings.ToLower(detail)
+	return status == "crashed" || strings.Contains(lower, "crash") || (strings.Contains(lower, "source session") && strings.Contains(lower, "not found"))
 }
 
 // claudeBackgroundArgs is the one place that writes `claude --bg ...`. A test

@@ -541,12 +541,12 @@ func TestClaudeCTOCompatibilityAndStartupError(t *testing.T) {
 	}
 	write(`if [ "$1" = --help ]; then echo '--strict-mcp-config'; elif [ "$1" = --version ]; then echo '2.1.289 (Claude Code)'; fi`)
 	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
-	err := d.startClaudeCTO(context.Background(), "", "opus")
+	err := d.startClaudeRole(context.Background(), roleCTO, "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "required capability --tools is missing") {
 		t.Fatalf("old Claude: %v", err)
 	}
 	write(`if [ "$1" = --help ]; then echo '--bg --strict-mcp-config --tools'; elif [ "$1" = --version ]; then echo '2.1.316'; else echo 'unknown option --bg' >&2; echo 'token=topsecretvalue' >&2; echo 'third line' >&2; exit 1; fi`)
-	err = d.startClaudeCTO(context.Background(), "", "opus")
+	err = d.startClaudeRole(context.Background(), roleCTO, "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "unknown option --bg") || !strings.Contains(err.Error(), "[REDACTED]") || strings.Contains(err.Error(), "topsecretvalue") || strings.Contains(err.Error(), "third line") {
 		t.Fatalf("startup error: %v", err)
 	}
@@ -621,7 +621,7 @@ func TestClaudeCTOCapabilityCheckIsSerialized(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			errs[i] = d.startClaudeCTO(context.Background(), "", "opus")
+			errs[i] = d.startClaudeRole(context.Background(), roleCTO, "", "opus")
 		}(i)
 	}
 	close(start)
@@ -653,7 +653,7 @@ if [ "$1" = --help ]; then echo '--bg --strict-mcp-config --tools'; elif [ "$1" 
 		t.Fatal(err)
 	}
 	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
-	err := d.startClaudeCTO(context.Background(), "", "opus")
+	err := d.startClaudeRole(context.Background(), roleCTO, "", "opus")
 	want := "Claude Code does not trust " + filepath.Join(dir, "cto", "claude")
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("got %v, want %s", err, want)
@@ -671,7 +671,7 @@ func testCTOExtraBuiltinFailsStartup(t *testing.T) {
 	n := startClaudeNode(t, g, shortSet)
 	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
 	n.d.cto.mu.Lock()
-	err := n.d.startCTOLocked(context.Background())
+	err := n.d.startOpenCodeRole(context.Background(), roleCTO)
 	retainsProcess := n.d.cto.cmd != nil
 	n.d.cto.mu.Unlock()
 	if err == nil || !strings.Contains(err.Error(), "Bash") {
@@ -695,7 +695,7 @@ func TestClaudeCTORequiresToolsCapability(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startClaudeNode(t, g, shortSet)
 	n.d.cfg.HarnessPaths["claude"] = bin
-	err := n.d.startClaudeCTO(context.Background(), "", "opus")
+	err := n.d.startClaudeRole(context.Background(), roleCTO, "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "--tools") {
 		t.Fatalf("missing --tools must fail clearly: %v", err)
 	}
@@ -712,7 +712,7 @@ func testCTOOpenCodeMissingDenyFailsStartup(t *testing.T) {
 	n := startClaudeNode(t, g, shortSet)
 	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
 	n.d.cto.mu.Lock()
-	err := n.d.startCTOLocked(context.Background())
+	err := n.d.startOpenCodeRole(context.Background(), roleCTO)
 	retainsProcess := n.d.cto.cmd != nil
 	n.d.cto.mu.Unlock()
 	if err == nil || !strings.Contains(err.Error(), "read") {

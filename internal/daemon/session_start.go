@@ -315,13 +315,11 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.Merger {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
-	spec := claudeBackground{Name: name, Settings: claudeSettingsWithMCPAnswers(settings, r.Path)}
-	if p.Model != "" {
-		spec.ModelArgs = []string{"--model", p.Model}
-	}
+	in := claudeStartInput{Name: name, Settings: claudeSettingsWithMCPAnswers(settings, r.Path), Model: p.Model}
 	if p.AgentID == "" {
-		spec.FirstMessage = p.FirstMessage
+		in.FirstMessage = p.FirstMessage
 	}
+	spec := d.claudeStartSpec(ctx, in)
 	view := startView{socket: p.HerdrSocket, pane: p.HerdrPaneID, relayed: remoteOwner, background: p.CTOProposal}
 	return d.launchOwnerClaude(r, bin, spec, view, notify, p.FirstMessage), nil
 }
@@ -567,7 +565,7 @@ func (d *Daemon) claudeResumeSpec(a protocol.AgentView) claudeBackground {
 	if a.Type == "merger" {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
-	return claudeBackground{Resume: a.NativeID, Settings: claudeSettingsWithMCPAnswers(settings, a.Cwd)}
+	return d.claudeStartSpec(context.Background(), claudeStartInput{Resume: a.NativeID, Settings: claudeSettingsWithMCPAnswers(settings, a.Cwd)})
 }
 
 func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {

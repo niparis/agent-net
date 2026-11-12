@@ -10,10 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -164,124 +161,6 @@ func (d *Daemon) ctoOp(ctx context.Context, op opencodeapi.Operation, id, query 
 		return nil, err
 	}
 	return d.cto.api(ctx, op.Method(), path+query, body)
-}
-
-func (d *Daemon) startCTOLocked(ctx context.Context) error {
-	c := &d.cto
-	if c.cmd != nil {
-		select {
-		case <-c.exited:
-			d.stopOpenCodeCTOLocked("crash")
-		default:
-			return nil
-		}
-	}
-	bin, err := d.harnessBinary("opencode")
-	if err != nil {
-		return err
-	}
-	dir := filepath.Join(d.cfg.StateDir, "cto")
-	if err = os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	data, state := filepath.Join(dir, "data"), filepath.Join(dir, "state")
-	if err = copyOpenCodeAuth(ctx, bin, data, state); err != nil {
-		return err
-	}
-	config, cache := filepath.Join(dir, "config"), filepath.Join(dir, "cache")
-	for _, path := range []string{state, config, cache} {
-		if err = os.MkdirAll(path, 0700); err != nil {
-			return err
-		}
-	}
-	// This project configuration belongs only to the private CTO server.
-	configData, err := d.ctoConfigData(config)
-	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(filepath.Join(dir, "opencode.json"), configData, 0600); err != nil {
-		return err
-	}
-	pass := protocol.NewToken()
-	logf, err := os.OpenFile(filepath.Join(dir, "opencode.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil {
-		return err
-	}
-	defer logf.Close()
-	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	for attempt := 0; attempt < 3; attempt++ {
-		port, err := d.workerFreePort()
-		if err != nil {
-			return err
-		}
-		cmd := exec.Command(bin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
-		cmd.Dir = dir
-		cmd.Env = workerEnv(os.Environ(), map[string]string{"XDG_DATA_HOME": data, "XDG_STATE_HOME": state, "XDG_CONFIG_HOME": config, "OPENCODE_CONFIG": "", "OPENCODE_CONFIG_CONTENT": "", "OPENCODE_CONFIG_DIR": "", "XDG_CACHE_HOME": cache, "OPENCODE_SERVER_PASSWORD": pass, "AGENT_NET_CTO": "1", "AGENT_NET_WORKER": "", "AGENT_NET_WORKER_SESSION_FILE": "", "AGENT_NET_SOCKET": ""})
-		cmd.Stdout, cmd.Stderr = logf, logf
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err = cmd.Start(); err != nil {
-			return fmt.Errorf("start CTO OpenCode: %w", err)
-		}
-		c.cmd = cmd
-		c.pid.Store(int64(cmd.Process.Pid))
-		c.exited = make(chan struct{})
-		c.base = "http://127.0.0.1:" + strconv.Itoa(port)
-		c.password = pass
-		c.version = d.openCodeVersion()
-		c.identity = fmt.Sprintf("cto:%d:%d", cmd.Process.Pid, attempt)
-		exited := c.exited
-		run := &ctoProcess{}
-		c.run = run
-		go func() {
-			err := cmd.Wait()
-			c.pid.CompareAndSwap(int64(cmd.Process.Pid), 0)
-			if !run.expected.Load() {
-				// Reap any children left in the private process group.
-				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-				d.Logf("cto.crash harness=opencode error=%v", err)
-				if run.started.Load() {
-					d.Logf("cto.stop harness=opencode reason=crash")
-				}
-			}
-			close(exited)
-			d.scheduleCTOPresence()
-		}()
-		for {
-			if routes, routeErr := d.discoverOpenCodeRoutes(startup, c.base, c.password, c.version, c.identity); routeErr == nil {
-				infoPath, pathErr := routes.Path(opencodeapi.Info, "")
-				if pathErr != nil {
-					d.stopOpenCodeCTOLocked("startup_failure")
-					return pathErr
-				}
-				if info, infoErr := c.api(startup, opencodeapi.Info.Method(), infoPath, nil); infoErr == nil {
-					if v := parseOpenCodeInfoVersion(info); v != "" {
-						c.version = v
-					}
-					if err := d.checkOpenCodeCTOTools(startup, info); err != nil {
-						d.stopOpenCodeCTOLocked("startup_failure")
-						return err
-					}
-					run.started.Store(true)
-					d.Logf("cto.start harness=opencode")
-					d.scheduleCTOPresence()
-					d.startCTOCompactionLoop()
-					return nil
-				}
-			}
-			select {
-			case <-exited:
-				d.stopOpenCodeCTOLocked("crash")
-				goto retry
-			case <-startup.Done():
-				d.stopOpenCodeCTOLocked("startup_timeout")
-				return fmt.Errorf("CTO OpenCode did not start: %w", startup.Err())
-			case <-time.After(100 * time.Millisecond):
-			}
-		}
-	retry:
-	}
-	return errors.New("CTO OpenCode exited at start")
 }
 
 func (d *Daemon) ctoConfigData(config string) ([]byte, error) {
@@ -487,7 +366,7 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := d.startCTOLocked(ctx); err != nil {
+	if err := d.startOpenCodeRole(ctx, roleCTO); err != nil {
 		return nil, err
 	}
 	id, err := d.ctoSession()
@@ -591,7 +470,7 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 	if id == "" {
 		return out, nil
 	}
-	if err = d.startCTOLocked(ctx); err != nil {
+	if err = d.startOpenCodeRole(ctx, roleCTO); err != nil {
 		return out, err
 	}
 	if model, _, e := d.openCodeCTOSessionSelection(ctx, id); e == nil && model != "" {

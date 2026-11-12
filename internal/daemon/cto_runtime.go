@@ -228,7 +228,7 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 		if e != nil {
 			return plan, e
 		}
-		if e = d.startClaudeCTO(ctx, id, model); e != nil {
+		if e = d.startClaudeRole(ctx, roleCTO, id, model); e != nil {
 			return plan, e
 		}
 		d.cto.mu.Lock()
@@ -245,14 +245,14 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 			plan.Note = claudeCTORestartNotice
 		}
 		// No mouse variable here: the session's own environment decides mouse
-		// tracking (see startClaudeCTOOnce), and the CTO must keep the wheel.
+		// tracking (see applyCTOClaudeRole), and the CTO must keep the wheel.
 		plan.Argv = []string{bin, "attach", d.claudeCTO.ref}
 		// The CTO runs Claude Code whatever its binary is called (decision 0139).
 		plan = claudePlanEnvAlways(plan)
 	} else {
 		d.cto.mu.Lock()
 		defer d.cto.mu.Unlock()
-		if err = d.startCTOLocked(ctx); err != nil {
+		if err = d.startOpenCodeRole(ctx, roleCTO); err != nil {
 			return plan, err
 		}
 		id, e := d.ctoSession()
