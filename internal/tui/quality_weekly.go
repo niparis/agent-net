@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -45,6 +46,14 @@ func (m Model) qualityWeeklyBody(w, height int) []string {
 	for _, row := range m.weeklyScores {
 		line := weeklyRowLine(row, inner)
 		body = append(body, clip(line, inner))
+		models := make([]string, 0, len(row.ProofUnavailable))
+		for model := range row.ProofUnavailable {
+			models = append(models, model)
+		}
+		sort.Strings(models)
+		for _, model := range models {
+			body = append(body, clip(fmt.Sprintf("  %s: proof unavailable %d", model, row.ProofUnavailable[model]), inner))
+		}
 	}
 	body = append(body, "")
 	body = append(body, sDim.Render(clip("Scores over time · 8 ISO weeks with agent-net release tags · w picker", inner)))

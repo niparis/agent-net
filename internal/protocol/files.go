@@ -27,10 +27,11 @@ const (
 // FileEntry is one file of a message's manifest: the name the receiver sees,
 // the size, the SHA-256 of the bytes and an ID unique inside the message.
 type FileEntry struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
+	VisualProof bool   `json:"visual_proof,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Size        int64  `json:"size"`
+	SHA256      string `json:"sha256"`
 }
 
 // TaildropPrefix is the start of the unique name of every file of a message.

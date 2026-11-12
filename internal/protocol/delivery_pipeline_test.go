@@ -847,7 +847,12 @@ func TestDeliveryJSONNames(t *testing.T) {
 		for i := 0; i < rt.NumField(); i++ {
 			f := rt.Field(i)
 			if f.Anonymous {
-				walk(f.Type, top)
+				// An embedded pointer flattens its fields into JSON too.
+				ft := f.Type
+				if ft.Kind() == reflect.Pointer {
+					ft = ft.Elem()
+				}
+				walk(ft, top)
 				continue
 			}
 			name := strings.Split(f.Tag.Get("json"), ",")[0]

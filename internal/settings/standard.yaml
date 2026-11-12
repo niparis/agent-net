@@ -781,6 +781,13 @@ settings:
     levels: [network]
     default: 5
     live: true
+  - key: files.proof_retention
+    description: How long received visual proof remains available.
+    kind: rule
+    type: duration
+    levels: [network]
+    default: "720h"
+    live: true
   - key: workers.brief_preamble
     rows: [67]
     description: Worker brief or continuation text.
@@ -795,7 +802,7 @@ settings:
     kind: advice
     type: text
     levels: [network, repo]
-    default: "Do the whole task. Do not gold-plate it, and do not stop halfway."
+    default: "Do the whole task. Do not gold-plate it, and do not stop halfway. If your change alters anything a user sees, prove it with a scenario: named steps (open, type, scroll, resize), each with the action and a frame of what the user sees. For a terminal UI, frames are text captured at a fixed size (for example 120x34), not images. For a graphical app, screenshots at stated sizes. Each proof gives a build line (the commit shown) and the errors seen. Use and improve the project's existing verification scripts; commit the scenario script so a reviewer can rerun it. Wait on the screen's state, never a fixed pause. Keep steps independent. Fix size, fonts, locale and sample data. If you cannot produce proof, say why."
     live: true
   - key: workers.brief_no_delegation
     rows: [67]
@@ -1094,7 +1101,7 @@ settings:
     kind: advice
     type: text
     levels: [network, repo]
-    default: "Read the diff. Check it does what the brief and the owner's own words asked, and adds no limit or check the owner did not ask for. When the change is about something the owner sees, try the real behaviour read-only. Do not run test suites: the test step owns tests. Pass, or fail with concrete findings for the author."
+    default: "When visual proof is present, compare its frames with the brief's expected visible outcome. Read the diff. Check it does what the brief and the owner's own words asked, and adds no limit or check the owner did not ask for. When the change is about something the owner sees, try the real behaviour read-only. Do not run test suites: the test step owns tests. Pass, or fail with concrete findings for the author."
     live: true
   - key: delivery.contract.review
     description: Contract for the review step.

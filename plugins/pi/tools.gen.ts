@@ -503,6 +503,62 @@ export const TOOL_CATALOG = [
             "minLength": 1
           },
           "description": "Absolute paths to files inside this worker's worktree."
+        },
+        "user_visible": {
+          "type": "string",
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "visual_proof": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "caption": {
+                "type": "string"
+              },
+              "manifest": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "size": {
+                    "type": "integer"
+                  },
+                  "sha256": {
+                    "type": "string"
+                  },
+                  "visual_proof": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "size",
+                  "sha256"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "file",
+              "caption"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "proof_unavailable": {
+          "type": "string"
         }
       },
       "required": [

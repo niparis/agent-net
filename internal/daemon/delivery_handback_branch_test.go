@@ -28,7 +28,7 @@ func TestHandbackRecordsTheBranchTheWorkerMovedTo(t *testing.T) {
 	head := gitHead(t, wt, "HEAD")
 	w := &worker{id: "w_moved", worktree: wt, branch: "feat/x", base: gitHead(t, repo, "main"), owner: "s_owner", sessionID: "s_worker", project: "demo", difficultyUsed: "normal"}
 
-	id, problem := n.d.recordHandbackChange(context.Background(), w)
+	id, problem := n.d.recordHandbackChange(context.Background(), w, nil)
 	if id == "" || problem != "" {
 		t.Fatalf("id=%q problem=%q", id, problem)
 	}
@@ -70,7 +70,7 @@ func TestHandbackKeepsTheStartBranchWhenTheWorkerDidNotMove(t *testing.T) {
 			head := gitHead(t, wt, "feat/x")
 			w := &worker{id: "w_still", worktree: wt, branch: "feat/x", base: gitHead(t, repo, "main"), owner: "s_owner", sessionID: "s_worker", project: "demo", difficultyUsed: "normal"}
 
-			id, problem := n.d.recordHandbackChange(context.Background(), w)
+			id, problem := n.d.recordHandbackChange(context.Background(), w, nil)
 			if id == "" || problem != "" {
 				t.Fatalf("id=%q problem=%q", id, problem)
 			}

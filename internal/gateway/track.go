@@ -66,6 +66,11 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 		return err
 	}
 	defer tx.Rollback()
+	if r.ProofUnavailable != "" {
+		if _, err := tx.Exec(`INSERT INTO worker_visual_proof(node_id,session_id,generation,model,unavailable,at) VALUES(?,?,?,?,?,?) ON CONFLICT(node_id,session_id,generation) DO NOTHING`, r.NodeID, r.SessionID, r.RunGeneration, r.Model, r.ProofUnavailable, r.EndedAt); err != nil {
+			return err
+		}
+	}
 	sf, sr, srt, se, senv, stop, strace, scapped := struggleRow(r.Struggle)
 	if _, err := tx.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count, auto_continue_count, caller, caller_session_id, difficulty, touches, difficulty_used, task_id, midrun_count, counters_known, files_changed, lines_changed, worker_complete, early_quit, caller_agent_id, struggle_failed, struggle_repeats, struggle_retries, struggle_exploration, struggle_env, struggle_top, struggle_trace, struggle_capped)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1, ?,?,?,?, CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=? AND owner=?) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=? AND owner=? ORDER BY created_at DESC,rowid DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=?) END, ?,?,?,?,?,?,?,?)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.CallerSessionID, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed, r.TaskID, r.Midrun, files, lines, complete, early, r.SessionID, r.CallerSessionID, r.SessionID, r.CallerSessionID, r.CallerSessionID, sf, sr, srt, se, senv, stop, strace, scapped); err != nil {

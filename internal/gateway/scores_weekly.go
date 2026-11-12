@@ -62,6 +62,32 @@ func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error
 		out[i].Week = week
 	}
 
+	// Count explicit inability to capture proof in ended runs, by model. Missing proof alone
+	// is not a declaration that the worker could not produce it.
+	proofRows, err := s.db.Query(`SELECT at,model,unavailable FROM worker_visual_proof WHERE at>=? AND at<?`, startUnix, endUnix)
+	if err != nil {
+		return nil, err
+	}
+	for proofRows.Next() {
+		var at int64
+		var model, reason string
+		if err := proofRows.Scan(&at, &model, &reason); err != nil {
+			proofRows.Close()
+			return nil, err
+		}
+		if i, ok := index[isoWeekKey(at)]; ok {
+			if out[i].ProofUnavailable == nil {
+				out[i].ProofUnavailable = map[string]int{}
+			}
+			out[i].ProofUnavailable[model]++
+		}
+	}
+	err = proofRows.Err()
+	proofRows.Close()
+	if err != nil {
+		return nil, err
+	}
+
 	// Runs, early quits, fix rounds and tokens per week.
 	rows, err := s.db.Query(`
 		SELECT r.ended_at, r.early_quit, r.fix_count,

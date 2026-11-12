@@ -520,7 +520,11 @@ func scanForSecrets(path, name string) error {
 // files go after FileRetention, send snapshots left by a crash after a day,
 // and same-machine or staged Taildrop files nobody collected after
 // FileRetention. logf may be nil.
-func cleanFileFolders(state string, now time.Time, logf func(string, ...any)) {
+func cleanFileFolders(state string, now time.Time, logf func(string, ...any), retention ...time.Duration) {
+	ageLimit := 30 * 24 * time.Hour
+	if len(retention) > 0 && retention[0] > 0 {
+		ageLimit = retention[0]
+	}
 	removeOld := func(path string, age time.Duration) bool {
 		info, err := os.Lstat(path)
 		if err != nil || now.Sub(info.ModTime()) < age {
@@ -544,7 +548,12 @@ func cleanFileFolders(state string, now time.Time, logf func(string, ...any)) {
 			continue
 		}
 		for _, m := range messages {
-			if removeOld(filepath.Join(sdir, m.Name()), protocol.FileRetention) {
+			msgdir := filepath.Join(sdir, m.Name())
+			retention := protocol.FileRetention
+			if _, err := os.Stat(filepath.Join(msgdir, ".visual-proof")); err == nil {
+				retention = ageLimit
+			}
+			if removeOld(msgdir, retention) {
 				removed++
 			}
 		}

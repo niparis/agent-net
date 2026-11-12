@@ -1524,6 +1524,7 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 					stat = "not available"
 				}
 				signalText, err := s.stepSignalBlock(c.ID, t.revision)
+				signalText = c.Origin.Visual().Lines() + signalText
 				if err != nil {
 					return protocol.Message{}, err
 				}
@@ -1582,6 +1583,7 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			stat = "not available"
 		}
 		signalText, err := s.stepSignalBlock(c.ID, t.revision)
+		signalText = c.Origin.Visual().Lines() + signalText
 		if err != nil {
 			return protocol.Message{}, err
 		}

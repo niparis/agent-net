@@ -1077,7 +1077,7 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 		return nil, errors.New("only a worker started by agent-net can hand back a report")
 	}
 	if w.harness == "agy" {
-		files, err := d.prepareHandbackFiles(w, req.Files)
+		files, err := d.prepareHandbackFiles(w, handbackPaths(req))
 		if err != nil {
 			return nil, err
 		}
@@ -1119,7 +1119,7 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	}
 	if files == nil {
 		var err error
-		files, err = d.prepareHandbackFiles(w, req.Files)
+		files, err = d.prepareHandbackFiles(w, handbackPaths(req))
 		if err != nil {
 			return nil, err
 		}
@@ -1133,11 +1133,33 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 			req.Complete = &v
 		}
 	}
+	// Carry the transfer manifest with each frame so names and hashes survive
+	// the worker's worktree. The original path stays useful to a local reviewer.
+	for i := range req.VisualProof {
+		if files != nil {
+			for j, f := range files.Files {
+				if f.Source == req.VisualProof[i].File {
+					files.Files[j].Entry.VisualProof = true
+					entry := files.Files[j].Entry
+					req.VisualProof[i].Manifest = &entry
+					break
+				}
+			}
+		}
+	}
 	// A partial hand-back is a worker that stopped early. Send it one more
 	// message ourselves, up to the limit, and do not tell the caller yet.
 	if req.Status == protocol.StatusDone && !req.IsComplete() && d.tryAutoContinue(ctx, w) {
 		d.Logf("worker.handback worker=%s session=%s status=%s complete=false auto_continue=1", w.id, sessionID, req.Status)
 		return &protocol.WorkerHandbackResult{Status: req.Status, Complete: false, AutoContinued: true}, nil
+	}
+	// Keep the explicit inability report for every ended run, including blocked
+	// workers and workers without a delivery change. It survives daemon restarts.
+	d.wmu.Lock()
+	workerID, generation := w.id, w.runGeneration
+	d.wmu.Unlock()
+	if _, err := d.st.db.Exec(`INSERT INTO worker_visual_reports(worker_id,generation,reason) VALUES(?,?,?) ON CONFLICT(worker_id,generation) DO UPDATE SET reason=excluded.reason`, workerID, generation, req.ProofUnavailable); err != nil {
+		d.Logf("worker visual report: %v", err)
 	}
 	complete := req.Status == protocol.StatusDone && req.IsComplete()
 	// Read the run's own trace once, before the harness may be stopped, so
@@ -1176,7 +1198,7 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 		d.wmu.Lock()
 		w.checking = false
 		d.wmu.Unlock()
-		changeID, deliveryProblem = d.recordHandbackChange(ctx, w, handbackCheck)
+		changeID, deliveryProblem = d.recordHandbackChange(ctx, w, handbackCheck, req.VisualEvidence)
 	}
 	st := d.workerStats(w)
 	d.wmu.Lock()
@@ -1202,6 +1224,7 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 		note = sandboxNote + "; " + note
 	}
 	n := d.notice(w, req.Status, note, st)
+	n.VisualEvidence = req.VisualEvidence
 	n.Committed = committed
 	n.HandbackCheck = handbackCheck
 	n.WIPDetail = wipDetail
@@ -1725,4 +1748,22 @@ func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
 		}
 	}
 	return strings.Join(excluded, ", "), nil
+}
+
+// handbackPaths uses the same transfer and confinement rules for proof frames.
+func handbackPaths(req protocol.WorkerHandbackRequest) []string {
+	paths := append([]string(nil), req.Files...)
+	for _, proof := range req.VisualProof {
+		found := false
+		for _, p := range paths {
+			if p == proof.File {
+				found = true
+				break
+			}
+		}
+		if !found {
+			paths = append(paths, proof.File)
+		}
+	}
+	return paths
 }

@@ -518,6 +518,7 @@ type WorkerStopResult struct {
 
 // WorkerHandbackRequest is OpWorkerHandback.
 type WorkerHandbackRequest struct {
+	VisualEvidence
 	// Report is the final report. It is the message.
 	Report string `json:"report"`
 	// Status is done (default), blocked or failed.

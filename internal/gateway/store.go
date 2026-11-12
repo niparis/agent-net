@@ -1311,7 +1311,16 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration}
+
+// workerVisualProofMigration adds proof reports to stores already at version 187.
+const workerVisualProofMigration = `
+-- Worker visual proof reports, deduplicated by ended run.
+CREATE TABLE IF NOT EXISTS worker_visual_proof (
+ node_id TEXT NOT NULL, session_id TEXT NOT NULL, generation INTEGER NOT NULL, model TEXT NOT NULL,
+ unavailable TEXT NOT NULL, at INTEGER NOT NULL,
+ PRIMARY KEY(node_id,session_id,generation));
+`
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries
 // of one task can be counted and the weekly table can show rejections per

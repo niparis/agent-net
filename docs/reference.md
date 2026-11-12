@@ -4360,3 +4360,42 @@ The TUI Settings tab has a Nudges section with the total and the five kinds
 with the most fires. `agent_nudge_pause` in preview mode also returns a
 `useful_line`, for example `useful 2 of 14 in 24h`; preview still writes
 nothing. No nudge behaviour, default or setting changes.
+
+
+### Visual proof from workers
+
+The standard worker brief asks for a scenario whenever a change alters what a
+user sees. Name each step and its action. Capture terminal frames as text at a
+fixed size, such as 120x34. Capture graphical screens at stated sizes. Include
+the build commit and any errors. Commit the scenario script so a reviewer can
+rerun it. Use existing project verification scripts. Wait for the screen state,
+keep steps independent, and fix size, fonts, locale and sample data.
+
+A user-visible brief without an expected visible outcome gets a WARNING. This
+warning does not refuse the worker start.
+
+`agent_handback` accepts `user_visible` (`yes` or `no`), `visual_proof` (an array
+of objects with `file` and `caption`), and `proof_unavailable` (the reason proof
+could not be captured). Frame paths must be absolute paths inside the worker's
+worktree. They use the same file transfer, size limits and secret checks as other
+hand-back files. The notice lists the frames and captions. The change stores
+them in `origin`, including each frame's transfer manifest with its name and
+hash. `agent_changes_find` returns these fields. The change view and delivery
+step brief show the proof. Nothing is copied to the owner's Desk.
+
+A declaration of `yes` without proof raises a strong quality signal. A declaration
+of `no` with a diff in user-facing files raises a weak signal. The file heuristic
+includes TUI files, golden screens, templates, styles and front-end files. These
+signals warn and never block. Older hand-backs without these fields still work.
+The accept contract asks the reviewer to compare frames with the brief's expected
+visible outcome when proof is present.
+
+The weekly table lists explicit reports of unavailable proof by model. Counts
+belong to the ended run's week, including blocked and failed runs. Missing proof alone is not counted as
+an inability to produce it. Repeating the same ended-run report does not add a count.
+
+Received proof stays in agent-net's inbox for 30 days by default. The network
+setting `files.proof_retention` changes this duration (default `720h`). Normal
+received files still expire after seven days. A message containing proof keeps
+all its files for the proof retention period. File cleanup runs hourly.
+

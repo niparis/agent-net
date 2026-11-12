@@ -207,3 +207,10 @@ func (s *Store) recordBriefDefectFromBrief(caller string, failures []string) err
 		VALUES (0,'',?,?,'',2,?,?)`, caller, caller, note, s.now().Unix())
 	return err
 }
+
+func visualWarningLines(task string) []string {
+	if warning := protocol.VisualBriefWarning(task); warning != "" {
+		return []string{warning}
+	}
+	return nil
+}

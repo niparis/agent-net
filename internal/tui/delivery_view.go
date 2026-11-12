@@ -754,6 +754,13 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 	for _, l := range wrap(facts, inner) {
 		head = append(head, sDim.Render(l))
 	}
+	for _, line := range strings.Split(strings.TrimSpace(ch.Origin.Visual().Lines()), "\n") {
+		if line != "" {
+			for _, l := range wrap(sanitize(line), inner) {
+				head = append(head, sDim.Render(l))
+			}
+		}
+	}
 	if lines := deliverySignalLines(ch.Signals); len(lines) > 0 {
 		head = append(head, sBold.Render("Quality signals"))
 		for _, line := range lines {
