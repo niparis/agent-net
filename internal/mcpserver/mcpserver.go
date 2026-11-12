@@ -498,22 +498,38 @@ func Run(ctx context.Context, socket string, opts Options) error {
 	d.Logf = logf
 	defer d.Close()
 	sw := newSwitcher(opts, conn, logf)
-	// Connect now if the daemon is up; if not, the first tool call tries again.
-	d.conn(ctx)
-	srv := NewWithInstructions(d.Call, opts.Version, StartInstructions(ctx, d.Call), func(context.Context) string { return d.takeNote() })
+	srv, dyn := startupServer(ctx, d, opts.Version, func(context.Context) string { return d.takeNote() })
 	watchCtx, stopWatch := context.WithCancel(ctx)
 	defer stopWatch()
 	go sw.watch(watchCtx)
-	// Registered MCP servers' tools follow the registry while this runs.
-	dyn := NewDynamic(srv, d.Call)
-	// Load them before serving, so the first tools/list already has them.
-	ictx, icancel := context.WithTimeout(ctx, 3*time.Second)
-	dyn.Refresh(ictx)
-	icancel()
 	go dyn.Watch(ctx, d.Changed, 15*time.Second)
 	// An idle session reconnects after a daemon restart to refresh its hello.
 	go d.Reconnect(ctx, 2*time.Second)
 	return srv.Run(ctx, stdioTransport{conn})
+}
+
+// startupBudget bounds all daemon work done before the server can answer
+// initialize: the connection, the charter text and the registered servers'
+// tools share it. Claude Code does not retry an MCP server that fails to start,
+// so a slow daemon must not hold the handshake past this. Whatever is missing
+// is picked up later by Dynamic.Watch and Daemon.Reconnect.
+const startupBudget = 2 * time.Second
+
+// startupServer builds the MCP server and the registered servers' tools. All
+// daemon work done here happens before the server can answer initialize.
+func startupServer(ctx context.Context, d *Daemon, version string, note func(context.Context) string) (*mcp.Server, *Dynamic) {
+	sctx, cancel := context.WithTimeout(ctx, startupBudget)
+	defer cancel()
+	// Connect now if the daemon is up; if not, the first tool call tries again.
+	d.conn(sctx)
+	srv := NewWithInstructions(d.Call, version, StartInstructions(sctx, d.Call), note)
+	// Registered MCP servers' tools follow the registry while this runs.
+	dyn := NewDynamic(srv, d.Call)
+	// Load them before serving, so the first tools/list already has them.
+	if sctx.Err() == nil {
+		dyn.Refresh(sctx)
+	}
+	return srv, dyn
 }
 
 // switcher checks the installed file independently of the daemon's version.

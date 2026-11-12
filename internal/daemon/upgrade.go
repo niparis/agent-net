@@ -310,6 +310,7 @@ func (d *Daemon) toolsLinkInfoLocked(ls *localSession, in protocol.SessionInfo, 
 		}
 	case now.Sub(ls.mcpSince) >= d.cfg.MCPLinkGrace:
 		in.ToolsVersion, in.ToolsOld = protocol.ToolsDisconnected, false
+		d.noteMCPRepairLocked(in, ls.sessionID, ls.mcpSince, now)
 	}
 	return in
 }
