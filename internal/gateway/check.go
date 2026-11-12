@@ -635,8 +635,9 @@ func (s *Store) checkInboxItem(sessionID, node, text string) error {
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	_, err = s.createInboxItem(s.db, protocol.InboxItem{Kind: "check", SessionID: sessionID, Node: node, Text: text,
-		Recommendation: "Open the session and ask what is left, or message it."})
+	// No generated recommendation (decision 0150): the chief turns the check
+	// into a decision or resolves it.
+	_, err = s.createInboxItem(s.db, protocol.InboxItem{Kind: "check", SessionID: sessionID, Node: node, Text: text})
 	return err
 }
 

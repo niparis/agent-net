@@ -118,6 +118,11 @@ type Ask struct {
 	// Next is who must act now: owner, a session id, or chief.
 	Next   string `json:"next"`
 	WhyYou string `json:"why_you,omitempty"`
+	// Owner (chief or cto), DeskState and Category are the Desk item shape of
+	// decision 0150.
+	Owner     string `json:"owner,omitempty"`
+	DeskState string `json:"desk_state,omitempty"`
+	Category  string `json:"category,omitempty"`
 	// Priority (1 to 3) is the chief's rank for an ask it sent to the owner.
 	Priority    int    `json:"priority,omitempty"`
 	Answer      string `json:"answer,omitempty"`

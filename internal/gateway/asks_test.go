@@ -517,6 +517,7 @@ func TestAsksMigrationKeepsOpenItems(t *testing.T) {
 	s, _ := newTestStore(t)
 	version := migrationVersion(t, "Asks and the Desk (decision 0090)")
 	for _, stmt := range []string{
+		`DROP TRIGGER inbox_items_desk_insert`, `DROP TRIGGER inbox_items_desk_update`, `DROP TRIGGER inbox_items_joined_settle`,
 		`DROP INDEX inbox_items_open_source`, `DROP INDEX inbox_items_status`, `DROP TABLE desk_log`,
 		`ALTER TABLE inbox_items DROP COLUMN from_kind`, `ALTER TABLE inbox_items DROP COLUMN source_ref`,
 		`ALTER TABLE inbox_items DROP COLUMN about_kind`, `ALTER TABLE inbox_items DROP COLUMN about_id`,

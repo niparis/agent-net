@@ -670,8 +670,9 @@ func logUndo(e protocol.DeskLogEntry) (string, json.RawMessage, bool) {
 	if len(e.Options) != 2 {
 		return "", nil, false
 	}
-	// The gateway's own permission approval log is undoable by the owner too.
-	if e.Options[0] == protocol.OpPermissionUndo || (e.Source == "chief" && e.Options[0] == protocol.OpNudgeUndo) {
+	// The gateway's own permission approval log is undoable by the owner too,
+	// and so is a standing rule or recorded decision (decision 0150).
+	if e.Options[0] == protocol.OpPermissionUndo || (e.Source == "chief" && e.Options[0] == protocol.OpNudgeUndo) || ruleUndo(e.Options) {
 		raw := json.RawMessage(e.Options[1])
 		return e.Options[0], raw, json.Valid(raw)
 	}
@@ -692,6 +693,13 @@ func logUndo(e protocol.DeskLogEntry) (string, json.RawMessage, bool) {
 		return "", nil, false
 	}
 	return e.Options[0], raw, true
+}
+
+// ruleUndo says whether a log line's undo removes one owner judgment.
+func ruleUndo(options []string) bool {
+	var q protocol.StandingOrdersRequest
+	return options[0] == protocol.OpStandingOrders && json.Unmarshal([]byte(options[1]), &q) == nil &&
+		q.Action == protocol.StandingActionRemove && q.ID != "" && q.Text == "" && q.Restore == nil
 }
 
 // deskUndo runs the undo of a log line, then marks the line as undone so that

@@ -1,0 +1,60 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "description": "The owner's decision in his words."
+      },
+      "area": {
+        "type": "string",
+        "description": "Rule area: network, repo:<name> or team:<name>. Empty for a one-time decision."
+      },
+      "action": {
+        "type": "string",
+        "description": "Rule action, for example merge. Applies only on an exact match."
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "security",
+          "outage",
+          "money",
+          "secrets",
+          "client_facing"
+        ],
+        "description": "An owner-only category names a repo or team, never the network."
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "kind": {
+        "type": "string"
+      },
+      "area": {
+        "type": "string"
+      },
+      "action": {
+        "type": "string"
+      },
+      "category": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "kind"
+    ],
+    "additionalProperties": false
+  }
+}

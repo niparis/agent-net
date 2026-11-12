@@ -164,12 +164,21 @@ func (s *Store) AddJudgment(q protocol.JudgmentAddRequest) (protocol.StandingOrd
 // addJudgment is the one write path of corrections and rules. Owner marks on
 // asks use it inside their own transaction.
 func addJudgment(db execer, now time.Time, q protocol.JudgmentAddRequest) (protocol.StandingOrder, error) {
-	if q.Kind != protocol.StandingKindCorrection && q.Kind != protocol.StandingKindRule {
-		return protocol.StandingOrder{}, errors.New("judgment kind must be correction or rule")
+	if q.Kind != protocol.StandingKindCorrection && q.Kind != protocol.StandingKindRule && q.Kind != protocol.StandingKindAnswer {
+		return protocol.StandingOrder{}, errors.New("judgment kind must be correction, rule or answer")
 	}
 	text, err := protocol.CleanStandingText(q.Text)
 	if err != nil {
 		return protocol.StandingOrder{}, err
+	}
+	// A scoped rule (decision 0150) holds only where its area and action say.
+	if q.Action != "" {
+		scope := protocol.RuleScope{Area: q.Area, Action: q.Action, Category: q.Category}
+		if err := scope.Validate(); err != nil {
+			return protocol.StandingOrder{}, err
+		}
+		scope = scope.Normalize()
+		q.Area, q.Action, q.Category = scope.Area, scope.Action, scope.Category
 	}
 	o := protocol.StandingOrder{
 		ID:        protocol.NewID("so"),
@@ -179,12 +188,17 @@ func addJudgment(db execer, now time.Time, q protocol.JudgmentAddRequest) (proto
 		Kind:      q.Kind,
 		Area:      q.Area,
 		Ref:       q.Ref,
+		Action:    q.Action,
+		Category:  q.Category,
 		Tags:      []string{},
 		Pinned:    false,
 		UpdatedAt: 0,
 	}
-	_, err = db.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		o.ID, o.Text, o.SavedAt, o.Source, "[]", 0, 0, o.Kind, o.Area, o.Ref)
+	if q.Source != "" {
+		o.Source = q.Source
+	}
+	_, err = db.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref,action,category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		o.ID, o.Text, o.SavedAt, o.Source, "[]", 0, 0, o.Kind, o.Area, o.Ref, o.Action, o.Category)
 	return o, err
 }
 
@@ -212,7 +226,7 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
 	var err error
 	match := ftsMatch(q.Query)
 	if match != "" {
-		rows, err = s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,snippet(standing_orders_fts,0,'[',']','...',24),o.kind,o.area,o.ref
+		rows, err = s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,snippet(standing_orders_fts,0,'[',']','...',24),o.kind,o.area,o.ref,o.action,o.category
  FROM standing_orders_fts JOIN standing_orders o ON o.rowid=standing_orders_fts.rowid
  WHERE standing_orders_fts MATCH ?
    AND (?='' OR o.area=?)
@@ -220,7 +234,7 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
    AND (?='' OR o.ref=?)
  ORDER BY bm25(standing_orders_fts), o.id LIMIT ? OFFSET ?`, match, area, area, kind, kind, q.Ref, q.Ref, limit, offset)
 	} else {
-		rows, err = s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,'' AS snippet,o.kind,o.area,o.ref
+		rows, err = s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,'' AS snippet,o.kind,o.area,o.ref,o.action,o.category
  FROM standing_orders o
  WHERE (?='' OR o.area=?)
    AND (?='' OR o.kind=?)
@@ -234,7 +248,7 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
 	for rows.Next() {
 		var o protocol.StandingOrder
 		var tags string
-		if err := rows.Scan(&o.ID, &o.Text, &o.SavedAt, &o.Source, &tags, &o.Pinned, &o.UpdatedAt, &o.Snippet, &o.Kind, &o.Area, &o.Ref); err != nil {
+		if err := rows.Scan(&o.ID, &o.Text, &o.SavedAt, &o.Source, &tags, &o.Pinned, &o.UpdatedAt, &o.Snippet, &o.Kind, &o.Area, &o.Ref, &o.Action, &o.Category); err != nil {
 			rows.Close()
 			return nil, err
 		}

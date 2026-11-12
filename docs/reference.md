@@ -2834,6 +2834,38 @@ An ask closes by itself with a kept reason: `change_done` (the change it is abou
 
 The log (`desk_log`) holds what is not a question: "CTO applied ...", "CTO sent ...", a new app, a daemon report (a Claude session or background service whose wheel is off, decision 0128), and what the gateway did by itself (closing an ask, reminders, idle checks, retired notices). It keeps the newest 2000 lines. The Desk tab (tab 7) shows the asks, the changes in flight and the log. The CTO and app notices are in the log only: the migration that came with the Desk closed their old Inbox rows (`moved_to_log`), and `desk_settle` marks a log line as undone.
 
+### The Desk item shape (decision 0150, plan step (a))
+
+Each item in `inbox_items` also has:
+
+- `owner`: `chief` or `cto`. An item waits on the CTO when its `next_who` is the CTO's session; every other item is the chief's, who curates the Desk.
+- `state`: `verifying` (the chief or a session it chose has it), `with_cto`, `ready` (it waits on the owner), `answered`, `carried_out` or `closed`. Triggers keep `owner` and `state` equal to `status` and `next_who`, whatever changes them.
+- `category`: `security`, `outage`, `money` or `normal`. The kind sets it where the kind fixes it (`sign_in` and `permission` are security, `machine` is outage), else the asker's value, else `normal`. The chief corrects it with `category` on any `agent_ask_sort` call.
+- `dup_of`: for a duplicate, the open item it joined. Its `status` is `joined`.
+
+`asks_list` adds `owner`, `desk_state` and `category` to each ask; inbox reads add `category`.
+
+Intake rules:
+
+- **One decision per item.** A `question` without a source key whose text holds two or more lines that end with `?` becomes one item per question. Lines that are not questions are context and stay at the top of each part. List markers (`1.`, `2)`, `-`) are dropped.
+- **Duplicates.** An ask with a source key joins the open item with that key (a key belongs to one kind, so this is source plus kind). The same asker refreshes the item's text, as before. Another session gets a `joined` row. An ask without a source key and without a message joins the open item of the same asker whose text is the same once case and white space are folded and ids are removed (`i_...`, `ch_...`, hex runs, numbers), when that item is less than 24 hours old.
+- **Joined askers.** When the item is answered, every joined asker gets the answer as a message too. When the item is answered or closed, its joined rows follow it.
+- **Owner-bound items need options.** An item an agent creates with `next_who` owner, and a chief sort with `result: "owner"`, are refused when the kind has no fixed answers (`question`, `feature_idea`, `check`, `waiting`, `session_stall`) and there are no options. The error names `options`. Generated notices (sign-in, machine, brief, permission and the other gateway kinds) are not affected, and an ask that falls to the owner because no chief can work keeps its old path.
+- **Routed items.** After the chief sends an ask to the CTO's session, both may close it: the chief with `agent_ask_sort` `close` or `merge`, the CTO with `answer` `dismiss`. Closing it closes its joined rows.
+- **Check items** carry no generated recommendation any more; the chief turns them into a decision or resolves them.
+
+`agent_ask_sort` takes these fields as well:
+
+- `options` (up to four) and `recommendation`, for `result: "owner"`: they are stored on the ask before it goes to the owner.
+- `category`, on any sort.
+- `rule` and `action`, for `result: "close"`: the id of a standing rule and the action the ask is about. The close is refused unless the rule exists and its area and action match the ask exactly, and a network rule never closes an ask in an owner-only category. The close reason starts with `rule <id>:`, and the sort row keeps the rule in `ask_sorts.rule_id`.
+
+### Standing rules from answers (decision 0150)
+
+An answer can carry a scope: `inbox_answer {id, answer, scope: {area, action, category}}` (gateway `inbox.answer`, same field). `area` is `network`, `repo:<name>` or `team:<name>`; `action` is what the rule allows, for example `merge`. Case and white space of the action are folded; nothing else is. `category` defaults to the item's category. A rule in `money`, `secrets`, `security` or `client_facing` must name a repo or a team; a network rule there is refused before the answer is stored. A scoped answer writes a judgment with `kind` `rule`, `area`, `action`, `category` and `ref` the ask id (new columns `standing_orders.action` and `standing_orders.category`), and a Desk log line `Standing rule <id> (...)` whose undo is `standing_orders` `{"action": "remove", "order_id": "<id>"}`. The Desk offers that undo on the line (`u`). An undone rule no longer applies.
+
+**`agent_owner_judgment_record {text, area, action, category}`** (the chief of staff and the CTO only; other sessions are refused) records a decision the owner made in a live chat, in the same turn. With `area` and `action` it is a rule as above; without them it is a judgment with `kind` `answer` and `ref` `chat:<session>`. It writes the same Desk log line with its undo. It answers `{id, kind, area, action, category}`. The daemon sends it to the gateway as `judgment.record` with the caller's session.
+
 ### Sign-in asks (decision 0132)
 
 A `sign_in` ask says that a CLI agent-net depends on needs the owner's

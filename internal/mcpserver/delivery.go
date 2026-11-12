@@ -43,4 +43,5 @@ func addDeliveryTools(s *mcp.Server, call Caller) {
 	deliveryTool[protocol.NudgeStatsArgs, protocol.NudgeStatsResult](s, call, "agent_nudge_stats", protocol.OpNudgeStats)
 	deliveryTool[protocol.AskSortArgs, protocol.AskSortResult](s, call, "agent_ask_sort", protocol.OpAskSort)
 	deliveryTool[protocol.AskIntakeArgs, protocol.AskIntakeResult](s, call, "agent_ask_intake", protocol.OpAskIntake)
+	deliveryTool[protocol.JudgmentRecordArgs, protocol.JudgmentRecordResult](s, call, "agent_owner_judgment_record", protocol.OpJudgmentRecord)
 }

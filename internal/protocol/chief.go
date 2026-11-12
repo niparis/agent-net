@@ -115,6 +115,16 @@ type AskSortArgs struct {
 	Until       int64  `json:"until,omitempty"`
 	FromID      int64  `json:"from_id,omitempty"`
 	ToID        int64  `json:"to_id,omitempty"`
+	// Options and Recommendation make an ask a decision when the chief sends
+	// it to the owner: an owner-bound ask needs options (decision 0150).
+	Options        []string `json:"options,omitempty"`
+	Recommendation string   `json:"recommendation,omitempty"`
+	// Category corrects the ask's category on any sort.
+	Category string `json:"category,omitempty"`
+	// Rule and Action close an ask by a standing rule: the rule's area and
+	// action must match the ask exactly, and the close cites the rule id.
+	Rule   string `json:"rule,omitempty"`
+	Action string `json:"action,omitempty"`
 }
 
 // Validate checks a sort before the gateway looks at the ask. A full read is
@@ -167,6 +177,18 @@ func (a AskSortArgs) Validate() error {
 	}
 	if len(a.Reason) > MaxChiefReasonChars || len(a.WhyYou) > MaxChiefReasonChars {
 		return errors.New("reason and why_you are limited to 300 characters")
+	}
+	if a.Category != "" && !ValidItemCategory(a.Category) {
+		return errors.New("category must be security, outage, money or normal")
+	}
+	if len(a.Options) > 4 {
+		return errors.New("options: at most four answers")
+	}
+	if (a.Rule != "") != (a.Action != "") {
+		return errors.New("rule and action go together: the rule id and the action the ask is about")
+	}
+	if a.Rule != "" && a.Result != AskSortClose {
+		return errors.New("rule applies only to close")
 	}
 	switch a.Result {
 	case AskSortClose:

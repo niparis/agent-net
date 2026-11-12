@@ -680,8 +680,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, strings.Replace(method, "_", ".", 1), frame)
 	case "inbox_answer":
 		var p struct {
-			ID     string `json:"id"`
-			Answer string `json:"answer"`
+			ID     string             `json:"id"`
+			Answer string             `json:"answer"`
+			Scope  protocol.RuleScope `json:"scope"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" || p.Answer == "" {
 			return nil, true, errors.New("inbox_answer needs id and answer")
@@ -695,7 +696,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 				actor = "cto"
 			}
 		}
-		res, err = d.call(ctx, "inbox.answer", map[string]any{"item_id": p.ID, "answer": p.Answer, "actor": actor, "from_cto": fromCTO})
+		res, err = d.call(ctx, "inbox.answer", map[string]any{"item_id": p.ID, "answer": p.Answer, "actor": actor, "from_cto": fromCTO, "scope": p.Scope})
 	case "outcome_overrule":
 		var p protocol.OutcomeResolution
 		if json.Unmarshal(raw, &p) != nil || p.ReplyID == "" {

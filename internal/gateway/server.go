@@ -3171,6 +3171,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Answer  string `json:"answer"`
 			FromCTO bool   `json:"from_cto"`
 			Actor   string `json:"actor"`
+			// A scope makes the answer a standing rule (decision 0150).
+			Scope protocol.RuleScope `json:"scope"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", "bad inbox.answer")
@@ -3183,10 +3185,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if handled, err := st.answerAppConsent(p.ID, p.Answer, owner, p.FromCTO); handled {
 			return map[string]bool{"answered": err == nil}, err
 		}
-		item, err := st.AnswerInboxAs(p.ID, p.Answer, p.Actor)
+		item, err := st.AnswerInboxScoped(p.ID, p.Answer, p.Actor, p.Scope)
 		if err != nil {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
 			return nil, err
+		}
+		// The askers that joined the item got the answer too: send it on.
+		if joined, jerr := st.joinedNodes(item.ID); jerr == nil {
+			for _, node := range joined {
+				g.dispatchPending(ctx, node, false)
+			}
 		}
 		// A permission approval is applied only here, after the owner's answer
 		// was stored. It reaches each target machine's daemon as its own frame.

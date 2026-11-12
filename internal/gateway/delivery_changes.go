@@ -115,6 +115,13 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			g.dispatch(ctx, m)
 		}
 		data, err = res, serr
+	case protocol.FrameJudgmentRecord:
+		q, derr := decode[protocol.JudgmentRecordRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		o, rerr := g.store.RecordJudgment(nc.id, q)
+		data, err = protocol.JudgmentRecordResult{ID: o.ID, Kind: o.Kind, Area: o.Area, Action: o.Action, Category: o.Category}, rerr
 	case protocol.FrameAskIntake:
 		q, derr := decode[protocol.AskIntakeRequest](raw)
 		if derr != nil {

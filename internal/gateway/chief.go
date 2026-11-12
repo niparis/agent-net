@@ -385,6 +385,7 @@ func (s *Store) reconcileChiefAsks(now time.Time) error {
 // askSortRow is the ask a sort reads and changes.
 type askSortRow struct {
 	text, kind, session, aboutKind, aboutID, next, status, answer string
+	owner, options, category                                      string
 	answeredAt                                                    int64
 }
 
@@ -566,19 +567,33 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		return out, none, tx.Commit()
 	}
 	var a askSortRow
-	err = tx.QueryRow(`SELECT text,kind,session_id,about_kind,about_id,next_who,status,answer,answered_at FROM inbox_items WHERE id=?`, q.Ask).
-		Scan(&a.text, &a.kind, &a.session, &a.aboutKind, &a.aboutID, &a.next, &a.status, &a.answer, &a.answeredAt)
+	err = tx.QueryRow(`SELECT text,kind,session_id,about_kind,about_id,next_who,status,answer,answered_at,owner,options,category FROM inbox_items WHERE id=?`, q.Ask).
+		Scan(&a.text, &a.kind, &a.session, &a.aboutKind, &a.aboutID, &a.next, &a.status, &a.answer, &a.answeredAt, &a.owner, &a.options, &a.category)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, none, reject("unknown ask %q", q.Ask)
 	}
 	if err != nil {
 		return out, none, err
 	}
-	if a.status != "open" || a.next != protocol.AskNextChief {
+	// Either side of a routed item may close it (decision 0150): the chief
+	// still closes or merges an ask it sent to the CTO.
+	closing := q.Result == protocol.AskSortClose || q.Result == protocol.AskSortMerge
+	if a.status != "open" || (a.next != protocol.AskNextChief && !(closing && a.owner == protocol.DeskOwnerCTO)) {
 		return out, none, reject("ask %s is not waiting for the chief of staff", q.Ask)
 	}
 	now := s.now()
 	reason := strings.TrimSpace(q.Reason)
+	if q.Rule != "" {
+		if err := s.ruleApplies(tx, q.Ask, a.category, q.Rule, q.Action); err != nil {
+			return out, none, err
+		}
+		reason = "rule " + q.Rule + ": " + reason
+	}
+	if q.Category != "" && q.Category != a.category {
+		if _, err := tx.Exec(`UPDATE inbox_items SET category=? WHERE id=?`, q.Category, q.Ask); err != nil {
+			return out, none, err
+		}
+	}
 	rec := protocol.AskSort{Ask: q.Ask, At: now, Sorter: chief, Result: q.Result, Into: q.Into, To: q.To, Reason: reason,
 		Priority: q.Priority, WhyYou: strings.TrimSpace(q.WhyYou), PrevNext: a.next, PrevStatus: a.status, PrevAnswer: a.answer}
 	if a.answeredAt != 0 {
@@ -639,6 +654,26 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		}
 		return out, m, tx.Commit()
 	case protocol.AskSortOwner:
+		// An owner-bound item is a decision he can take on the spot: it carries
+		// options (decision 0150).
+		if len(q.Options) > 0 {
+			raw, err := json.Marshal(q.Options)
+			if err != nil {
+				return out, none, err
+			}
+			a.options = string(raw)
+			if _, err := tx.Exec(`UPDATE inbox_items SET options=? WHERE id=?`, a.options, q.Ask); err != nil {
+				return out, none, err
+			}
+		}
+		if protocol.KindNeedsOptions(a.kind) && (a.options == "" || a.options == "[]" || a.options == "null") {
+			return out, none, reject("owner needs options: an ask for the owner carries the answers he can pick; give options (and a recommendation)")
+		}
+		if r := strings.TrimSpace(q.Recommendation); r != "" {
+			if _, err := tx.Exec(`UPDATE inbox_items SET recommendation=? WHERE id=?`, r, q.Ask); err != nil {
+				return out, none, err
+			}
+		}
 		if _, err := tx.Exec(`UPDATE inbox_items SET next_who=?, priority=?, why_you=? WHERE id=?`, protocol.AskNextOwner, q.Priority, rec.WhyYou, q.Ask); err != nil {
 			return out, none, err
 		}
@@ -646,6 +681,12 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 	}
 	if err := s.commitSort(tx, rec, now, logText, a, "chief"); err != nil {
 		return out, none, err
+	}
+	if q.Rule != "" {
+		// The application cites the rule, so the brief can count it.
+		if _, err := tx.Exec(`UPDATE ask_sorts SET rule_id=? WHERE id=(SELECT MAX(id) FROM ask_sorts WHERE ask_id=?)`, q.Rule, q.Ask); err != nil {
+			return out, none, err
+		}
 	}
 	return out, none, tx.Commit()
 }

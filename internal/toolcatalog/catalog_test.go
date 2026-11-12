@@ -51,8 +51,8 @@ func checkInputRoot(t *testing.T, name string, raw json.RawMessage) {
 }
 
 func TestInputSchemaShape(t *testing.T) {
-	if len(Tools) != 59 {
-		t.Errorf("catalog has %d tools, want 59", len(Tools))
+	if len(Tools) != 60 {
+		t.Errorf("catalog has %d tools, want 60", len(Tools))
 	}
 	for _, tool := range Tools {
 		checkInputRoot(t, tool.Name, tool.InputSchema)
@@ -294,13 +294,13 @@ func TestBotRole(t *testing.T) {
 }
 
 func TestExistingRoleListsUnchanged(t *testing.T) {
-	if got, want := names(ForRole(RoleAgent)), []string{"agent_announce", "agent_ask_intake", "agent_ask_sort", "agent_bar_edit", "agent_change_submit", "agent_changes_find", "agent_charter_draft", "agent_file_send", "agent_graph_read", "agent_learn", "agent_machine_get", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_mcp_test", "agent_message_get", "agent_message_handoff", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_nudge_pause", "agent_nudge_pauses_find", "agent_nudge_resume", "agent_nudge_stats", "agent_owner_ask", "agent_owner_brief", "agent_owner_judgments_find", "agent_permission_propose", "agent_project_add", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_step_claim", "agent_step_report", "agent_worker_profiles_find", "agent_worker_rate", "agent_worker_start", "agent_worker_stop", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
+	if got, want := names(ForRole(RoleAgent)), []string{"agent_announce", "agent_ask_intake", "agent_ask_sort", "agent_bar_edit", "agent_change_submit", "agent_changes_find", "agent_charter_draft", "agent_file_send", "agent_graph_read", "agent_learn", "agent_machine_get", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_mcp_test", "agent_message_get", "agent_message_handoff", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_nudge_pause", "agent_nudge_pauses_find", "agent_nudge_resume", "agent_nudge_stats", "agent_owner_ask", "agent_owner_brief", "agent_owner_judgment_record", "agent_owner_judgments_find", "agent_permission_propose", "agent_project_add", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_step_claim", "agent_step_report", "agent_worker_profiles_find", "agent_worker_rate", "agent_worker_start", "agent_worker_stop", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RoleAgent tools changed: %v", got)
 	}
 	if got, want := names(ForRole(RoleWorker)), []string{"agent_changes_find", "agent_file_send", "agent_graph_read", "agent_handback", "agent_learn", "agent_machine_get", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_owner_judgments_find", "agent_permission_propose", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RoleWorker tools changed: %v", got)
 	}
-	if got, want := names(ForRole(RoleCTO)), []string{"agent_graph_read", "agent_learn", "agent_machine_get", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_owner_ask", "agent_owner_judgments_find", "agent_permission_propose", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_worker_profiles_find", "agent_workers_find", "answer", "cto_new", "cto_placement_memory", "cto_proposals_find", "cto_standing_orders", "cto_ui_show", "graph_change", "mcp_call", "mcp_change", "project_change", "projects_layout", "proposal_ask", "session_change", "sessions_archive", "settings_change", "tools_change", "worker_change"}; !reflect.DeepEqual(got, want) {
+	if got, want := names(ForRole(RoleCTO)), []string{"agent_graph_read", "agent_learn", "agent_machine_get", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_message_get", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_owner_ask", "agent_owner_judgment_record", "agent_owner_judgments_find", "agent_permission_propose", "agent_projects_find", "agent_session_get", "agent_sessions_find", "agent_settings_read", "agent_worker_profiles_find", "agent_workers_find", "answer", "cto_new", "cto_placement_memory", "cto_proposals_find", "cto_standing_orders", "cto_ui_show", "graph_change", "mcp_call", "mcp_change", "project_change", "projects_layout", "proposal_ask", "session_change", "sessions_archive", "settings_change", "tools_change", "worker_change"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RoleCTO tools changed: %v", got)
 	}
 	for _, role := range []Role{RoleAgent, RoleWorker, RoleCTO} {
