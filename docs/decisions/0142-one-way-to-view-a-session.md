@@ -34,3 +34,8 @@ redesign.
 An OpenCode session discovered from a standalone CLI may have no owner service
 record. In that case the view uses `opencode --session <id>`; sessions started
 through the owner service use its address and password for attachment.
+
+Enter reuses the view tab. The shell that runs a viewer carries a marker word
+and a hash of the session key, so after a daemon restart the daemon finds the
+open tab through `herdr pane process-info` and focuses it. When the viewer
+exits, its shell closes the pane, so no idle login shell tab is left.

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,9 +28,9 @@ func fakeOpenHerdr(t *testing.T) (string, string) {
 printf '%s\n' "$*" >> ` + shellQuote(log) + `
 case "$1 $2" in
   "pane list") if [ -f ` + shellQuote(filepath.Join(dir, "created")) + ` ]; then printf '%s\n' '{"result":{"panes":[{"pane_id":"w1:p1","tab_id":"w1:t1"}]}}'; else printf '%s\n' '{"result":{"panes":[]}}'; fi ;;
-  "pane process-info") if [ -f ` + shellQuote(filepath.Join(dir, "idle")) + ` ]; then printf '%s\n' '{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":11}]}}}'; else printf '%s\n' '{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":22}]}}}'; fi ;;
+  "pane process-info") if [ -f ` + shellQuote(filepath.Join(dir, "info")) + ` ]; then cat ` + shellQuote(filepath.Join(dir, "info")) + `; elif [ -f ` + shellQuote(filepath.Join(dir, "idle")) + ` ]; then printf '%s\n' '{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":11}]}}}'; else printf '%s\n' '{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":22}]}}}'; fi ;;
   "tab create") : > ` + shellQuote(filepath.Join(dir, "created")) + `; printf '%s\n' '{"result":{"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1"}}}' ;;
-  "pane run"|"pane rename"|"agent focus"|"tab focus") printf '%s\n' '{"result":{}}' ;;
+  "pane run"|"pane rename"|"agent focus"|"tab focus"|"pane close") printf '%s\n' '{"result":{}}' ;;
   *) exit 1 ;;
 esac
 `
@@ -685,6 +686,121 @@ func TestEnterHerdrReopensWhenClientExited(t *testing.T) {
 	raw, _ := os.ReadFile(log)
 	if strings.Count(string(raw), "tab create") != 2 {
 		t.Fatalf("did not reopen an exited client: %s", raw)
+	}
+}
+
+// lastPaneRun returns the shell command the daemon typed into a pane, the way
+// the pane's login shell would receive it.
+func lastPaneRun(t *testing.T, log string) string {
+	t.Helper()
+	raw, _ := os.ReadFile(log)
+	var line string
+	for _, l := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(l, "pane run ") {
+			line = l
+		}
+	}
+	_, command, ok := strings.Cut(line, "pane run w1:p1 ")
+	if !ok {
+		t.Fatalf("no pane run in %s", raw)
+	}
+	return command
+}
+
+func TestEnterHerdrReusesViewAfterDaemonRestart(t *testing.T) {
+	bin, log := fakeOpenHerdr(t)
+	plan := protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}}
+	if p := (&Daemon{}).openInHerdr("session", "garden", "", plan); !p.OpenedHerdr {
+		t.Fatalf("first plan %+v", p)
+	}
+	// Herdr keeps the pane; show it the way herdr does: the shell that runs
+	// the viewer, with the words the daemon gave it.
+	command := strings.Fields(lastPaneRun(t, log))
+	marker := command[len(command)-2:]
+	info := `{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":22,"argv":["sh","-c","x","` + marker[0] + `","` + marker[1] + `"]}]}}}`
+	if err := os.WriteFile(filepath.Join(filepath.Dir(bin), "info"), []byte(info), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// A new Daemon has no memory of the first tab, as after an upgrade.
+	if p := (&Daemon{}).openInHerdr("session", "garden", "", plan); !p.OpenedHerdr || p.HerdrPane != "w1:p1" {
+		t.Fatalf("second plan %+v", p)
+	}
+	raw, _ := os.ReadFile(log)
+	if n := strings.Count(string(raw), "tab create"); n != 1 {
+		t.Fatalf("created %d tabs: %s", n, raw)
+	}
+	if !strings.Contains(string(raw), "tab focus w1:t1") {
+		t.Fatalf("did not focus the open tab: %s", raw)
+	}
+}
+
+func TestEnterHerdrOtherSessionGetsOwnTab(t *testing.T) {
+	bin, log := fakeOpenHerdr(t)
+	plan := protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}}
+	if p := (&Daemon{}).openInHerdr("one", "garden", "", plan); !p.OpenedHerdr {
+		t.Fatalf("first plan %+v", p)
+	}
+	command := strings.Fields(lastPaneRun(t, log))
+	marker := command[len(command)-2:]
+	info := `{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":22,"argv":["sh","-c","x","` + marker[0] + `","` + marker[1] + `"]}]}}}`
+	if err := os.WriteFile(filepath.Join(filepath.Dir(bin), "info"), []byte(info), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if p := (&Daemon{}).openInHerdr("two", "orchard", "", plan); !p.OpenedHerdr {
+		t.Fatalf("second plan %+v", p)
+	}
+	raw, _ := os.ReadFile(log)
+	if n := strings.Count(string(raw), "tab create"); n != 2 {
+		t.Fatalf("a different session reused the tab: %s", raw)
+	}
+}
+
+func TestEnterHerdrViewerExitClosesItsPane(t *testing.T) {
+	for name, script := range map[string]string{"clean exit": "exit 0", "failure": "exit 3"} {
+		t.Run(name, func(t *testing.T) {
+			_, log := fakeOpenHerdr(t)
+			dir := t.TempDir()
+			viewer := filepath.Join(dir, "viewer")
+			if err := os.WriteFile(viewer, []byte("#!/bin/sh\n"+script+"\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if p := (&Daemon{}).openInHerdr("session", "garden", "", protocol.EnterPlan{Argv: []string{viewer}}); !p.OpenedHerdr {
+				t.Fatalf("plan %+v", p)
+			}
+			raw, _ := os.ReadFile(log)
+			if strings.Contains(string(raw), "\npane close") {
+				t.Fatalf("closed the pane before the viewer ran: %s", raw)
+			}
+			// The pane's shell runs the typed command, then the viewer ends.
+			if out, err := exec.Command("sh", "-c", lastPaneRun(t, log)).CombinedOutput(); err != nil {
+				t.Fatalf("command failed: %s %v", out, err)
+			}
+			raw, _ = os.ReadFile(log)
+			if !strings.Contains(string(raw), "\npane close w1:p1") {
+				t.Fatalf("viewer exit left its pane open: %s", raw)
+			}
+		})
+	}
+}
+
+func TestEnterHerdrConcurrentEntersCreateOneTab(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	d := &Daemon{}
+	plan := protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}}
+	var wg sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if p := d.openInHerdr("session", "garden", "", plan); !p.OpenedHerdr {
+				t.Errorf("plan %+v", p)
+			}
+		}()
+	}
+	wg.Wait()
+	raw, _ := os.ReadFile(log)
+	if n := strings.Count(string(raw), "tab create"); n != 1 {
+		t.Fatalf("created %d tabs: %s", n, raw)
 	}
 }
 
