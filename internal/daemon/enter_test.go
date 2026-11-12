@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/claudesettings"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -108,7 +109,7 @@ func TestEnterClaudeBackgroundSessionAttaches(t *testing.T) {
 	if want := []string{bins["claude"], "attach", "abcd1234"}; !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("argv %v, want %v", p.Argv, want)
 	}
-	if p.Dir != cwd || len(p.Env) != 0 {
+	if p.Dir != cwd || p.Env[claudesettings.AutoUpdateKey] != claudesettings.AutoUpdateOff {
 		t.Fatalf("dir %q env %v", p.Dir, p.Env)
 	}
 

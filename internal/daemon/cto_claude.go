@@ -266,7 +266,7 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	// service. See docs/decisions/0128-cto-keeps-mouse-tracking-on.md.
 	// The CTO's message tool is allowed, so Claude Code's auto-mode check does not
 	// block it. The name is the cto-mcp server's tool: mcp__<server>__<tool>.
-	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "permissions": map[string]any{"allow": []string{"mcp__agent-net-cto__agent_message_send"}}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0"}}
+	launch := map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "permissions": map[string]any{"allow": []string{"mcp__agent-net-cto__agent_message_send"}}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0", "DISABLE_AUTOUPDATER": "1"}}
 	if tui := ownerClaudeRenderer(d.cfg.ClaudeSessionsDir); tui != "" {
 		launch["tui"] = tui
 	}
@@ -287,7 +287,7 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	// The first launch can start Claude's background service, and every session
 	// that service starts later inherits this environment. Do not hand it a
 	// variable that turns the wheel off.
-	cmd.Env = withoutEnvKey(os.Environ(), "CLAUDE_CODE_DISABLE_MOUSE")
+	cmd.Env = claudeLaunchEnv(withoutEnvKey(os.Environ(), "CLAUDE_CODE_DISABLE_MOUSE"))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if claudeTrustPrompt(output) {

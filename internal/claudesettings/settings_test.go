@@ -168,6 +168,91 @@ func TestRemoveMouseOnKeepsAValueThatIsNotOurs(t *testing.T) {
 	}
 }
 
+func TestEnsureAutoUpdateOffKeepsOtherKeysAndReapplies(t *testing.T) {
+	path := settingsFile(t)
+	original := `{
+  "theme": "dark",
+  "env": {
+    "OTHER": "kept",
+    "DISABLE_AUTOUPDATER": "0"
+  },
+  "hooks": {"Stop": []}
+}
+`
+	if err := os.WriteFile(path, []byte(original), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := EnsureAutoUpdateOff(path)
+	if err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	doc := readJSON(t, path)
+	if doc["theme"] != "dark" || doc["hooks"] == nil {
+		t.Fatalf("other keys changed: %v", doc)
+	}
+	env, _ := doc["env"].(map[string]any)
+	if env["OTHER"] != "kept" || env[AutoUpdateKey] != AutoUpdateOff {
+		t.Fatalf("env = %v", env)
+	}
+	if st, err := os.Stat(path); err != nil {
+		t.Fatalf("stat: %v", err)
+	} else if st.Mode().Perm() != 0o640 {
+		t.Fatalf("mode %v", st.Mode().Perm())
+	}
+	changed, err = EnsureAutoUpdateOff(path)
+	if err != nil || changed {
+		t.Fatalf("second run changed=%v err=%v", changed, err)
+	}
+	// Drift is set back on the next pass.
+	if err := os.WriteFile(path, []byte(`{"env":{"DISABLE_AUTOUPDATER":"0"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err = EnsureAutoUpdateOff(path)
+	if err != nil || !changed {
+		t.Fatalf("reapply changed=%v err=%v", changed, err)
+	}
+	value, present, err := AutoUpdateValue(path)
+	if err != nil || !present || value != AutoUpdateOff {
+		t.Fatalf("value=%q present=%v err=%v", value, present, err)
+	}
+}
+
+func TestRemoveAutoUpdateOffRemovesOnlyOurValue(t *testing.T) {
+	path := settingsFile(t)
+	if err := os.WriteFile(path, []byte(`{"theme":"dark","env":{"DISABLE_AUTOUPDATER":"1","OTHER":"kept"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := RemoveAutoUpdateOff(path)
+	if err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	doc := readJSON(t, path)
+	env, _ := doc["env"].(map[string]any)
+	if doc["theme"] != "dark" || env["OTHER"] != "kept" || env[AutoUpdateKey] != nil {
+		t.Fatalf("file = %v", doc)
+	}
+	if err := os.WriteFile(path, []byte(`{"env":{"DISABLE_AUTOUPDATER":"0"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err = RemoveAutoUpdateOff(path)
+	if err != nil || changed {
+		t.Fatalf("a value that is not ours must stay: changed=%v err=%v", changed, err)
+	}
+}
+
+func TestAutoUpdateValueReportsMissingAndInvalid(t *testing.T) {
+	path := settingsFile(t)
+	if value, present, err := AutoUpdateValue(path); err != nil || present || value != "" {
+		t.Fatalf("missing file: %q %v %v", value, present, err)
+	}
+	if err := os.WriteFile(path, []byte("nope"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AutoUpdateValue(path); !errors.Is(err, ErrNotJSON) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestMouseValueReportsInvalidJSON(t *testing.T) {
 	path := settingsFile(t)
 	if err := os.WriteFile(path, []byte("nope"), 0o600); err != nil {

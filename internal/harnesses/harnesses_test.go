@@ -2,11 +2,13 @@ package harnesses
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func script(t *testing.T, dir, name, body string) string {
@@ -444,5 +446,34 @@ func TestRealDetection(t *testing.T) {
 		for _, o := range h.Others {
 			t.Logf("  other: %s %q", o.Path, o.Version)
 		}
+	}
+}
+
+func TestVersionProbeReportsDeadline(t *testing.T) {
+	root := t.TempDir()
+	path := script(t, root, "claude", `case "$1" in --version) exec /bin/sleep 2 ;; esac`)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	got, err := VersionProbe(ctx, path, Options{PATH: root, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
+	if got != "" || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("probe = %q, err = %v", got, err)
+	}
+}
+
+func TestVersionProbeReportsAFailedProbe(t *testing.T) {
+	root := t.TempDir()
+	path := script(t, root, "claude", `case "$1" in --version) echo broken >&2; exit 1 ;; esac`)
+	got, err := VersionProbe(context.Background(), path, Options{PATH: root, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
+	if got != "" || err == nil || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("probe = %q, err = %v", got, err)
+	}
+}
+
+func TestVersionProbeReportsAVersion(t *testing.T) {
+	root := t.TempDir()
+	path := script(t, root, "claude", `echo "2.1.322 (Claude Code)"`)
+	got, err := VersionProbe(context.Background(), path, Options{PATH: root, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
+	if err != nil || got != "2.1.322 (Claude Code)" {
+		t.Fatalf("probe = %q, err = %v", got, err)
 	}
 }

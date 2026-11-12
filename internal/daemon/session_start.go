@@ -683,8 +683,8 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 			}
 			// Claude Code ignores the mouse variable on the attach client; the
 			// user's Claude settings carry it (decision 0128).
-			plan := protocol.EnterPlan{Argv: []string{bin, "attach", job}, Dir: r.Path, Host: r.Hostname,
-				Note: "Press ctrl+] to come back here; the session keeps running."}
+			plan := claudePlanEnvAlways(protocol.EnterPlan{Argv: []string{bin, "attach", job}, Dir: r.Path, Host: r.Hostname,
+				Note: "Press ctrl+] to come back here; the session keeps running."})
 			if job == "" {
 				plan.Argv = nil
 				plan.Note = "The session started but has no Claude background ID to attach."

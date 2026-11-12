@@ -94,6 +94,7 @@ func Uninstall(o Options) error {
 	}
 	r.removeClaudeMCP()
 	r.removeClaudeMouseSettings()
+	r.removeClaudeAutoUpdateSettings()
 	r.removePeerMessages()
 	r.removeCodexMCP()
 	r.removeHintHook()

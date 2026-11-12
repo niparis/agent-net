@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"encoding/json"
+	"github.com/niparis/agent-net/internal/claudesettings"
 	"github.com/niparis/agent-net/internal/protocol"
 	"os"
 	"path/filepath"
@@ -96,6 +97,9 @@ func TestClaudeCTOBackgroundAndResume(t *testing.T) {
 	settingsEnv, _ := rec.Settings["env"].(map[string]any)
 	if settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "0" || rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
 		t.Fatalf("mouse tracking must stay on: settings %v session %v command %v", settingsEnv, rec.Env, rec.CommandEnv)
+	}
+	if settingsEnv[claudesettings.AutoUpdateKey] != claudesettings.AutoUpdateOff || rec.Env[claudesettings.AutoUpdateKey] != claudesettings.AutoUpdateOff || rec.CommandEnv[claudesettings.AutoUpdateKey] != claudesettings.AutoUpdateOff {
+		t.Fatalf("the CTO must not run its own updater: settings %v session %v command %v", settingsEnv, rec.Env, rec.CommandEnv)
 	}
 	transcriptDir := filepath.Join(filepath.Dir(n.sessions), "projects", "fake")
 	if err := os.MkdirAll(transcriptDir, 0700); err != nil {
@@ -498,6 +502,9 @@ func TestCTOEnterClaude(t *testing.T) {
 	}
 	if _, set := plan.Env["CLAUDE_CODE_DISABLE_MOUSE"]; set {
 		t.Fatalf("the CTO's attach must not touch mouse tracking: %v", plan.Env)
+	}
+	if plan.Env[claudesettings.AutoUpdateKey] != claudesettings.AutoUpdateOff {
+		t.Fatalf("the CTO's attach must disable Claude's own updater: %v", plan.Env)
 	}
 	cfgPath := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".claude.json")
 	raw, err := os.ReadFile(cfgPath)

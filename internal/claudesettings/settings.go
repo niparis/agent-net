@@ -23,6 +23,15 @@ const MouseKey = "CLAUDE_CODE_DISABLE_MOUSE"
 // scrolls the conversation.
 const MouseOn = "0"
 
+// AutoUpdateKey turns Claude Code's own background updater off. agent-net's
+// daemon is the only updater for every harness (owner's order, decision 0133),
+// so every Claude Code session agent-net starts gets this variable, and the
+// user settings carry it for sessions the owner starts by hand.
+const AutoUpdateKey = "DISABLE_AUTOUPDATER"
+
+// AutoUpdateOff is the value that turns the in-session updater off.
+const AutoUpdateOff = "1"
+
 // ErrNotJSON says a settings file is not a JSON object. agent-net leaves such
 // a file untouched and reports it.
 var ErrNotJSON = errors.New("not a valid JSON object")
@@ -52,6 +61,45 @@ func File() string {
 // MouseValue returns the user-level mouse value and whether the key is set.
 // A missing file has no value. A file that is not valid JSON returns ErrNotJSON.
 func MouseValue(path string) (string, bool, error) {
+	return EnvValue(path, MouseKey)
+}
+
+// EnsureMouseOn sets env.CLAUDE_CODE_DISABLE_MOUSE to "0" and keeps every
+// other key. It writes only when the file changes and returns whether it did.
+// A missing file is created with only that key. A file that is not valid JSON
+// is left untouched and ErrNotJSON is returned.
+func EnsureMouseOn(path string) (bool, error) {
+	return EnsureEnvValue(path, MouseKey, MouseOn)
+}
+
+// RemoveMouseOn removes env.CLAUDE_CODE_DISABLE_MOUSE only while its value is
+// still "0". A value somebody else chose is kept. Other keys stay as they are.
+func RemoveMouseOn(path string) (bool, error) {
+	return RemoveEnvValue(path, MouseKey, MouseOn)
+}
+
+// AutoUpdateValue returns the user-level auto-update value and whether the key
+// is set. It follows the same rules as MouseValue.
+func AutoUpdateValue(path string) (string, bool, error) {
+	return EnvValue(path, AutoUpdateKey)
+}
+
+// EnsureAutoUpdateOff sets env.DISABLE_AUTOUPDATER to "1" and keeps every
+// other key. It follows the same rules as EnsureMouseOn.
+func EnsureAutoUpdateOff(path string) (bool, error) {
+	return EnsureEnvValue(path, AutoUpdateKey, AutoUpdateOff)
+}
+
+// RemoveAutoUpdateOff removes env.DISABLE_AUTOUPDATER only while its value is
+// still "1". A value somebody else chose is kept, and so is every other key.
+func RemoveAutoUpdateOff(path string) (bool, error) {
+	return RemoveEnvValue(path, AutoUpdateKey, AutoUpdateOff)
+}
+
+// EnvValue returns the value of one key in the env object and whether it is
+// set. A missing file has no value. A file that is not valid JSON returns
+// ErrNotJSON.
+func EnvValue(path, key string) (string, bool, error) {
 	members, _, err := readFile(path)
 	if err != nil {
 		return "", false, err
@@ -61,7 +109,7 @@ func MouseValue(path string) (string, bool, error) {
 		return "", false, err
 	}
 	for _, m := range env {
-		if m.key == MouseKey {
+		if m.key == key {
 			var s string
 			if json.Unmarshal(m.val, &s) == nil {
 				return s, true, nil
@@ -72,11 +120,11 @@ func MouseValue(path string) (string, bool, error) {
 	return "", false, nil
 }
 
-// EnsureMouseOn sets env.CLAUDE_CODE_DISABLE_MOUSE to "0" and keeps every
-// other key. It writes only when the file changes and returns whether it did.
-// A missing file is created with only that key. A file that is not valid JSON
-// is left untouched and ErrNotJSON is returned.
-func EnsureMouseOn(path string) (bool, error) {
+// EnsureEnvValue sets env.key to value and keeps every other key. It writes
+// only when the file changes and returns whether it did. A missing file is
+// created with only that key. A file that is not valid JSON is left untouched
+// and ErrNotJSON is returned.
+func EnsureEnvValue(path, key, value string) (bool, error) {
 	members, _, err := readFile(path)
 	if err != nil {
 		return false, err
@@ -85,19 +133,20 @@ func EnsureMouseOn(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	want := json.RawMessage(quote(value))
 	changed := false
 	found := false
 	for i := range env {
-		if env[i].key == MouseKey {
+		if env[i].key == key {
 			found = true
-			if string(env[i].val) != `"0"` {
-				env[i].val = json.RawMessage(`"0"`)
+			if string(env[i].val) != string(want) {
+				env[i].val = want
 				changed = true
 			}
 		}
 	}
 	if !found {
-		env = append(env, member{key: MouseKey, val: json.RawMessage(`"0"`)})
+		env = append(env, member{key: key, val: want})
 		changed = true
 	}
 	if envIndex >= 0 {
@@ -111,9 +160,9 @@ func EnsureMouseOn(path string) (bool, error) {
 	return true, writeFile(path, encodeDocument(members))
 }
 
-// RemoveMouseOn removes env.CLAUDE_CODE_DISABLE_MOUSE only while its value is
-// still "0". A value somebody else chose is kept. Other keys stay as they are.
-func RemoveMouseOn(path string) (bool, error) {
+// RemoveEnvValue removes env.key only while its value is still value. A value
+// somebody else chose is kept. Other keys stay as they are.
+func RemoveEnvValue(path, key, value string) (bool, error) {
 	members, _, err := readFile(path)
 	if err != nil {
 		return false, err
@@ -122,11 +171,12 @@ func RemoveMouseOn(path string) (bool, error) {
 	if err != nil || envIndex < 0 {
 		return false, err
 	}
+	want := string(quote(value))
 	kept := env[:0]
 	changed := false
 	for _, m := range env {
-		if m.key == MouseKey {
-			if string(m.val) != `"0"` {
+		if m.key == key {
+			if string(m.val) != want {
 				kept = append(kept, m)
 				continue
 			}

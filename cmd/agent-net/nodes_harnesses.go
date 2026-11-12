@@ -114,7 +114,7 @@ func harnessUpdateSummary(u *protocol.HarnessUpdate, now time.Time) string {
 		return "update failed: " + detail
 	case "update by hand":
 		return "update by hand: " + detail
-	case "updated", "already current", "skipped busy":
+	case "updated", "already current", "skipped busy", "timed out, retrying":
 		if u.CheckedAt.IsZero() {
 			return u.Result
 		}

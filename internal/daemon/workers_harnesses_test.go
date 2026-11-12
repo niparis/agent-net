@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudesettings"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -107,6 +108,9 @@ func TestClaudeWorkerLifecycle(t *testing.T) {
 	}
 	if _, set := env["CLAUDE_CODE_DISABLE_MOUSE"]; set || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "" || rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
 		t.Errorf("mouse must come from the user settings, not the worker launch: settings %v session %v command %v", env, rec.Env, rec.CommandEnv)
+	}
+	if rec.CommandEnv[claudesettings.AutoUpdateKey] != claudesettings.AutoUpdateOff {
+		t.Errorf("worker launch env must disable Claude's own updater: %v", rec.CommandEnv)
 	}
 	// The MCP server of the session is this daemon's binary, whatever the user
 	// has installed.

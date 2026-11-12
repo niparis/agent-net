@@ -303,7 +303,8 @@ func fakeClaudeCLI() {
 	}
 	cwd, _ := os.Getwd()
 	init, _ := json.Marshal(fakeClaudeInit{Args: os.Args[1:], Cwd: cwd, Env: map[string]string{
-		"CLAUDE_CODE_DISABLE_MOUSE": os.Getenv("CLAUDE_CODE_DISABLE_MOUSE")}})
+		"CLAUDE_CODE_DISABLE_MOUSE": os.Getenv("CLAUDE_CODE_DISABLE_MOUSE"),
+		"DISABLE_AUTOUPDATER":       os.Getenv("DISABLE_AUTOUPDATER")}})
 	env := os.Environ()
 	// The settings "env" reaches the session, as in the real Claude Code. The
 	// environment of this command does not.
@@ -422,7 +423,7 @@ func fakeClaudeSession() {
 	rec := fakeClaudeRecord{Args: in.Args, Cwd: in.Cwd, CommandEnv: in.Env, Pid: os.Getpid(), ID: id, Session: session, Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
 	json.Unmarshal([]byte(argValue(in.Args, "--settings")), &rec.Settings)
-	for _, k := range []string{"AGENT_NET_SOCKET", "AGENT_NET_WORKER", "FOO_FROM_COMMAND", "CLAUDE_CODE_DISABLE_MOUSE"} {
+	for _, k := range []string{"AGENT_NET_SOCKET", "AGENT_NET_WORKER", "FOO_FROM_COMMAND", "CLAUDE_CODE_DISABLE_MOUSE", "DISABLE_AUTOUPDATER"} {
 		rec.Env[k] = os.Getenv(k)
 	}
 	sleeper := exec.Command("sleep", "600")

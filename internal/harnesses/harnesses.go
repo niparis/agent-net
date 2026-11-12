@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,6 +52,17 @@ type Options struct {
 	// Run runs a program and returns its output. Default: exec with the
 	// search path in PATH, so scripts that start with "#!/usr/bin/env node" work.
 	Run func(ctx context.Context, path string, args ...string) (string, error)
+	// VersionTimeout bounds one --version probe. Default: VersionTimeout.
+	// Tests set it so a slow fake probe does not wait five seconds.
+	VersionTimeout time.Duration
+}
+
+// versionTimeout is the probe limit this Options value uses.
+func (o Options) versionTimeout() time.Duration {
+	if o.VersionTimeout > 0 {
+		return o.VersionTimeout
+	}
+	return VersionTimeout
 }
 
 // Detect reports the installed harnesses, in the order of Names. A harness that
@@ -217,7 +229,7 @@ func prepare(ctx context.Context, o *Options) search {
 // runs proves that a copy starts, with the same bounded version probe Detect
 // uses.
 func runs(ctx context.Context, o Options, path string) bool {
-	vctx, cancel := context.WithTimeout(ctx, VersionTimeout)
+	vctx, cancel := context.WithTimeout(ctx, o.versionTimeout())
 	defer cancel()
 	_, err := o.Run(vctx, path, "--version")
 	return err == nil
@@ -247,12 +259,30 @@ func models(ctx context.Context, o Options, name, path string, search []string) 
 }
 
 func version(ctx context.Context, o Options, path string) string {
-	vctx, cancel := context.WithTimeout(ctx, VersionTimeout)
+	vctx, cancel := context.WithTimeout(ctx, o.versionTimeout())
 	defer cancel()
 	if v, err := o.Run(vctx, path, "--version"); err == nil {
 		return firstLine(v)
 	}
 	return ""
+}
+
+// VersionProbe runs the same bounded version probe Detect uses and says why an
+// empty answer came back. A probe stopped by its deadline returns
+// context.DeadlineExceeded; a probe that ran and failed returns that error, and
+// a probe that ran and printed nothing returns no error.
+func VersionProbe(ctx context.Context, path string, o Options) (string, error) {
+	prepare(ctx, &o)
+	vctx, cancel := context.WithTimeout(ctx, o.versionTimeout())
+	defer cancel()
+	out, err := o.Run(vctx, path, "--version")
+	if err != nil {
+		if errors.Is(vctx.Err(), context.DeadlineExceeded) {
+			return "", context.DeadlineExceeded
+		}
+		return "", err
+	}
+	return firstLine(out), nil
 }
 
 // findAll returns every executable called name in dirs, in order, without

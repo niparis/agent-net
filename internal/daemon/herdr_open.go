@@ -128,6 +128,7 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 	if len(plan.Argv) == 0 {
 		return plan
 	}
+	plan = claudePlanEnv(plan)
 	if !filepath.IsAbs(socket) {
 		socket = ""
 	}
