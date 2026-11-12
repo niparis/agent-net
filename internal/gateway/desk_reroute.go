@@ -20,13 +20,14 @@ const deskRerouteMigration = `SELECT 1 /* Desk reroute of open items (decision 0
 //
 //   - Sign-in and OAuth asks go to the owner, as a new one would.
 //   - An ask the chief routes that waits on the owner goes to the chief
-//     (owner chief, state verifying), unless the chief itself sent it to the
+//     (owner chief, state verifying), unless its creator named the owner
+//     (route_fixed, for example a pairing notice) or the chief itself sent it to the
 //     owner and it meets the owner-item rule of step (a): options where the
 //     kind needs them. Before the front door, the 15-minute timer and a
 //     missing chief also put asks there; those were never verified.
 //   - Every open item gets an owner and a state.
 func (s *Store) rerouteOpenAsksTx(tx *sql.Tx) error {
-	rows, err := tx.Query(`SELECT i.id,i.kind,i.from_kind,i.source_ref,i.next_who,i.options,
+	rows, err := tx.Query(`SELECT i.id,i.kind,i.from_kind,i.source_ref,i.next_who,i.options,i.route_fixed,
 		COALESCE((SELECT r.result FROM ask_sorts r WHERE r.ask_id=i.id ORDER BY r.id DESC LIMIT 1),'')
 		FROM inbox_items i WHERE i.status='open'`)
 	if err != nil {
@@ -36,7 +37,8 @@ func (s *Store) rerouteOpenAsksTx(tx *sql.Tx) error {
 	for rows.Next() {
 		var item protocol.InboxItem
 		var options, lastSort string
-		if err := rows.Scan(&item.ID, &item.Kind, &item.FromKind, &item.SourceRef, &item.NextWho, &options, &lastSort); err != nil {
+		var routeFixed int
+		if err := rows.Scan(&item.ID, &item.Kind, &item.FromKind, &item.SourceRef, &item.NextWho, &options, &routeFixed, &lastSort); err != nil {
 			rows.Close()
 			return err
 		}
@@ -51,7 +53,7 @@ func (s *Store) rerouteOpenAsksTx(tx *sql.Tx) error {
 			if item.NextWho != protocol.AskNextOwner {
 				toOwner = append(toOwner, item.ID)
 			}
-		case rt.To == routeChief && ownerBound:
+		case rt.To == routeChief && ownerBound && routeFixed == 0:
 			hasOptions := options != "" && options != "[]" && options != "null"
 			chiefSent := lastSort == protocol.AskSortOwner
 			if !chiefSent || (protocol.KindNeedsOptions(item.Kind) && !hasOptions) {
