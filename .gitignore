@@ -8,3 +8,6 @@ node_modules/
 
 # the binary built by "go build -o agent-net ./cmd/agent-net"
 /agent-net
+
+# scratch copies and exports of local analysis runs
+/tmp/
