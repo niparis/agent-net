@@ -2765,7 +2765,7 @@ The daemon returns the command and the TUI hands over its own terminal to it, in
 
 A Pi session whose herdr pane is gone shows a note to open its existing window.
 
-**The owner's herdr is read-only (decision 0149).** A herdr session you run yourself is never changed by agent-net. On such a server the daemon only runs `herdr pane list` and `herdr pane process-info`: it finds a harness that runs there, lists it, and Enter attaches to its pane. It never creates a tab or workspace, runs a command, focuses, types into or closes a pane there, and never starts your default herdr server. Everything the daemon hosts in herdr goes into its own named herdr session, `agent-net`: a Pi session, a view or sign-in asked from another machine, and a CTO view asked from another machine. The daemon starts that server on demand with `herdr --session agent-net server` and finds its socket with `herdr session list --json`. The server outlives a daemon restart. To look at it yourself, run `herdr --session agent-net`.
+**The owner's herdr is read-only (decision 0154).** A herdr session you run yourself is never changed by agent-net. On such a server the daemon only runs `herdr pane list` and `herdr pane process-info`: it finds a harness that runs there, lists it, and Enter attaches to its pane. It never creates a tab or workspace, runs a command, focuses, types into or closes a pane there, and never starts your default herdr server. Everything the daemon hosts in herdr goes into its own named herdr session, `agent-net`: a Pi session, a view or sign-in asked from another machine, and a CTO view asked from another machine. The daemon starts that server on demand with `herdr --session agent-net server` and finds its socket with `herdr session list --json`. The server outlives a daemon restart. To look at it yourself, run `herdr --session agent-net`.
 
 While the TUI has handed its terminal to a session, agent-net keeps the bottom row of the terminal for itself and gives the session every row above it. The row reads `agent-net · ctrl+] back to agent-net · <session name>` in dim text, so the way back stays visible over the session's full-screen UI. The row is drawn again after a resize and after the session clears the screen, and the window title still carries the same hint. `ctrl+]` returns as before: agent-net clears the row and gives the session its full size back. Set `AGENT_NET_NO_BAR=1` to turn the row off on a terminal that mishandles it; the session then gets the whole terminal. Inside herdr the row is drawn the same way, in the TUI's pane.
 
@@ -3508,7 +3508,7 @@ The daemon records the target machine and checks local paths before accepting a 
 
 ### Starting an owner session through the local API
 
-`session_start` starts a Claude, OpenCode, Pi or Codex session in an existing project folder. Enter opens it; a start never opens anything in your herdr (decision 0149). The folder may be on another machine.
+`session_start` starts a Claude, OpenCode, Pi or Codex session in an existing project folder. Enter opens it; a start never opens anything in your herdr (decision 0154). The folder may be on another machine.
 This is the daemon part of the [accepted session-start design](design/start-sessions.md).
 
 The request is `{"project":"shop","harness":"claude","model":"haiku","first_message":"Inspect this project","node_id":"n_..."}`.
@@ -3741,7 +3741,7 @@ Claude Code and Codex sign-in probes run `claude auth status` and `codex login s
 
 ### Antigravity main sessions
 
-Interactive agy sessions are discovered from SessionStart hooks and the matching live process and working folder. Conversation summaries supply the title and parent conversation when available. Worker conversations and known sub-conversations are excluded. Busy messages wait for a Stop or PreInvocation hook; idle sessions in a matching pane of agent-net's own herdr receive typed text and Enter; a session in your own herdr is never typed into (decision 0149) and waits for its next hook. Others wait until the next turn. A dispatched message's delivery detail names that wait; it becomes delivered after the hook returns it or herdr accepts it. See [Antigravity](antigravity.md#main-sessions) for Enter and limits.
+Interactive agy sessions are discovered from SessionStart hooks and the matching live process and working folder. Conversation summaries supply the title and parent conversation when available. Worker conversations and known sub-conversations are excluded. Busy messages wait for a Stop or PreInvocation hook; idle sessions in a matching pane of agent-net's own herdr receive typed text and Enter; a session in your own herdr is never typed into (decision 0154) and waits for its next hook. Others wait until the next turn. A dispatched message's delivery detail names that wait; it becomes delivered after the hook returns it or herdr accepts it. See [Antigravity](antigravity.md#main-sessions) for Enter and limits.
 
 ### Claude inbox health
 

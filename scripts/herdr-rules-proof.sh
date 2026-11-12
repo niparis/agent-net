@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Text frames for decision 0149 (the owner's herdr is read-only for agent-net),
+# Text frames for decision 0154 (the owner's herdr is read-only for agent-net),
 # from the TUI test renderer at 80x24 and 120x34. No herdr is started.
 set -euo pipefail
 cd "$(dirname "$0")/.."

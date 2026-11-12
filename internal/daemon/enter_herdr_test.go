@@ -119,7 +119,7 @@ func (f *fakeHerdr) holds(t *testing.T, pane string, pid int) {
 }
 
 // readOnly fails the test if the daemon sent this herdr, which plays the
-// owner's own herdr, anything but a read (decision 0149).
+// owner's own herdr, anything but a read (decision 0154).
 func (f *fakeHerdr) readOnly(t *testing.T) {
 	t.Helper()
 	for _, line := range strings.Split(strings.TrimSpace(f.calls(t)), "\n") {

@@ -69,7 +69,7 @@ func herdrCalls(t *testing.T, log string) [][2]string {
 	return calls
 }
 
-// requireHerdrRules checks the two rules of decision 0149 on the fake's log:
+// requireHerdrRules checks the two rules of decision 0154 on the fake's log:
 // a herdr agent-net does not own gets only reads (pane list, process-info;
 // session list and the start of agent-net's session do not go to a server),
 // and anything agent-net creates or runs goes to its own server.

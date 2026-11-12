@@ -10,7 +10,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The two herdr rules of decision 0149, on the fake herdr of
+// The two herdr rules of decision 0154, on the fake herdr of
 // herdr_open_test.go, which logs every call with its socket:
 // the owner's herdr is read-only, and what agent-net hosts goes into its own
 // "agent-net" herdr session.

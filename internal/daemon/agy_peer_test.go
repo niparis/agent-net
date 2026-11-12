@@ -208,7 +208,7 @@ func fakeAgySummaries(t *testing.T) string {
 
 // An idle Antigravity session gets a message typed into its herdr pane only
 // when that pane is in agent-net's own herdr. The owner's own herdr is
-// read-only (decision 0149), so there the message waits for the next hook.
+// read-only (decision 0154), so there the message waits for the next hook.
 func TestAgyPeerIdleHerdrDelivery(t *testing.T) {
 	for _, own := range []bool{true, false} {
 		t.Run(map[bool]string{true: "agent-net's herdr", false: "the owner's herdr"}[own], func(t *testing.T) {

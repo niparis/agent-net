@@ -15,7 +15,7 @@ import (
 
 // Enter a session through the harness client. The TUI hands over its own
 // terminal or herdr pane to the command, and ctrl+] returns; the daemon never
-// opens a tab in the owner's herdr (decision 0149). Pi stays in the herdr
+// opens a tab in the owner's herdr (decision 0154). Pi stays in the herdr
 // terminal it runs in because it has no attach client. Remote views use
 // herdr's client when it is available on the asking machine.
 //

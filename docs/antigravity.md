@@ -47,7 +47,7 @@ message to agy as a continuation. A PreInvocation hook can also inject a
 waiting message as a user message. When idle in a pane of agent-net's own
 herdr, agent-net sends the framed message as text to that pane and presses
 Enter. A session in a herdr you run yourself is never typed into (decision
-0149). Messages with terminal control characters also wait for a hook. Otherwise the
+0154). Messages with terminal control characters also wait for a hook. Otherwise the
 message waits for the next hook. Its status says "waiting for the session's
 next turn" until delivery. Waiting messages remain at the gateway while the
 daemon reconnects; messages expire under the normal message expiry rules.

@@ -64,7 +64,7 @@ func herdrEnvironment(env map[string]string) (string, error) {
 // the daemon host the command itself, in agent-net's herdr server: a Pi
 // session, which needs a terminal of its own, and a view or sign-in asked
 // from another machine, which that machine opens with herdr --remote. It
-// never opens anything in the owner's herdr (decision 0149).
+// never opens anything in the owner's herdr (decision 0154).
 func (d *Daemon) viewPlan(key, name string, host bool, plan protocol.EnterPlan) protocol.EnterPlan {
 	if !host {
 		return claudePlanEnv(plan)

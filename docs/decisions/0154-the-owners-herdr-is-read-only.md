@@ -1,4 +1,4 @@
-# 0149 - The owner's herdr is read-only; agent-net hosts in its own herdr
+# 0154 - The owner's herdr is read-only; agent-net hosts in its own herdr
 
 Date: 2026-11-12
 Status: Accepted by the owner, through the CTO (two rules for the session redesign, below)
@@ -61,7 +61,8 @@ is what that daemon expects.
 
 ## Not changed
 
-The Claude, OpenCode and Codex start paths of decision 0148 stay as they are.
+The Claude, OpenCode and Codex start paths of decision 0149 (one start path)
+stay as they are.
 Discovery of herdr panes (`findHerdrPane`, `herdrPanes`,
 `herdrPaneProcesses`) is unchanged. Idle compaction still reads pane focus
 with `pane list`.

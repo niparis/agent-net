@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-11
 **Status:** Accepted; implementation in progress. "In herdr, open a full tab"
-is replaced by decision 0149: the TUI hands over its own herdr pane, and the
+is replaced by decision 0154: the TUI hands over its own herdr pane, and the
 daemon hosts only in its own herdr.
 
 ## Context

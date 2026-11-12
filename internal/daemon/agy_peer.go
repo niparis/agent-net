@@ -268,7 +268,7 @@ func (a *agyAdapter) typeInHerdr(info protocol.SessionInfo, text string) (sent, 
 		return false, false
 	}
 	panes, socket, ok := a.d.herdrPanesFromServer(bin, h)
-	// Typing is a write. The owner's own herdr is read-only (decision 0149),
+	// Typing is a write. The owner's own herdr is read-only (decision 0154),
 	// so a session there gets its messages from its next hook.
 	if !ok || !a.d.isAgentNetHerdr(bin, socket) {
 		return false, false

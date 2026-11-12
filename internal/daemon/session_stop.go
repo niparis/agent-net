@@ -185,7 +185,7 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 				return terminalStop()
 			}
 		}
-		// A pane of the owner's own herdr is read-only (decision 0149): the
+		// A pane of the owner's own herdr is read-only (decision 0154): the
 		// process is signalled instead.
 		if !d.isAgentNetHerdr(bin, h.socket) {
 			return terminalStop()

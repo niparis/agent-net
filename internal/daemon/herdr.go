@@ -363,7 +363,7 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 		argv = append(argv, "HERDR_SOCKET_PATH="+h.socket)
 	}
 	// The asking machine has a herdr client: focus the pane, so the client
-	// opens on it. The owner's own herdr is read-only (decision 0149), so only
+	// opens on it. The owner's own herdr is read-only (decision 0154), so only
 	// a pane of agent-net's server is focused; the note names the pane.
 	if q.HerdrClient && d.isAgentNetHerdr(bin, h.socket) {
 		var err error

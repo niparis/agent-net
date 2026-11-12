@@ -14,7 +14,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// TestHerdrRulesProofScenario writes the text frames of decision 0149 for
+// TestHerdrRulesProofScenario writes the text frames of decision 0154 for
 // scripts/herdr-rules-proof.sh: what the owner sees when the TUI runs inside
 // his own herdr. The plans are the ones the daemon answers now (see
 // internal/daemon/herdr_rules_test.go). Each step starts from a fresh model.

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// agent-net's own herdr server (decision 0149).
+// agent-net's own herdr server (decision 0154).
 //
 // A herdr session the owner runs himself is read-only for agent-net: the
 // daemon lists its panes and reads their process info, and nothing else. It
