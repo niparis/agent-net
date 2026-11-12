@@ -1924,7 +1924,7 @@ func (m Model) messagesView(w, h int) []string {
 		if len(list) == 0 {
 			list = m.emptyThreadLines(listW)
 		}
-		list = messageFit(list, max(height-1, 0), listSel)
+		list = threadListFit(list, max(height-1, 0), listSel)
 		list = append(list, sDim.Render(clip(footer, listW)))
 		chat, older := m.threadWindow(chat, height, chatSelected, rowID)
 		left := panelWithRightHeader("Threads", m.messageFilterLine(), list, listW+4, roleAccent)
@@ -1942,7 +1942,7 @@ func (m Model) messagesView(w, h int) []string {
 	if len(list) == 0 {
 		list = m.emptyThreadLines(listW)
 	}
-	list = messageFit(list, max(listHeight-1, 0), listSel)
+	list = threadListFit(list, max(listHeight-1, 0), listSel)
 	if listHeight > 0 {
 		list = append(list, sDim.Render(clip(footer, listW)))
 	}
@@ -2092,6 +2092,17 @@ func (m Model) messageFooter(rows []messageConversation) string {
 		footer += " · e collapse"
 	}
 	return footer
+}
+
+// threadListFit is messageFit for the two-line rows: when the window would
+// start on a row's preview, it starts on the next row's names instead, so no
+// row shows its second line alone. The selected row stays in view.
+func threadListFit(lines []string, height, selected int) []string {
+	start := messageStart(lines, height, selected)
+	if start > 0 && start < selected && strings.HasPrefix(ansi.Strip(lines[start]), threadBodyIndent) {
+		start++
+	}
+	return sliceFrom(lines, height, start)
 }
 
 func messageFit(lines []string, height, selected int) []string {

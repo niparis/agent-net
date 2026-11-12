@@ -2,9 +2,8 @@
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
-│     stored conversation 14                         ││ peer25 ↔ strategies                                            │
-│   ✓ peer15 ↔ strategies           15m ago · 3 msgs ││ loading messages                                               │
-│     stored conversation 15                         ││                                                                │
+│   ✓ peer15 ↔ strategies           15m ago · 3 msgs ││ peer25 ↔ strategies                                            │
+│     stored conversation 15                         ││ loading messages                                               │
 │   ✓ peer16 ↔ strategies           16m ago · 3 msgs ││                                                                │
 │     stored conversation 16                         ││                                                                │
 │   ✓ peer17 ↔ strategies           17m ago · 3 msgs ││                                                                │
@@ -25,6 +24,7 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 │     stored conversation 24                         ││                                                                │
 │ ▸ ✓ peer25 ↔ strategies           25m ago · 3 msgs ││                                                                │
 │     stored conversation 25                         ││                                                                │
+│   ✓ peer26 ↔ strategies           26m ago · 3 msgs ││                                                                │
 │ 60 threads · 0 system events                       ││                                                                │
 ╰────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮

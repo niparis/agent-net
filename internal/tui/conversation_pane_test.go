@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 )
@@ -299,6 +302,67 @@ func TestMessagesBoxesAreClosedAtEverySize(t *testing.T) {
 		}
 		if n := len(frameLines(m)); n > size[1] {
 			t.Errorf("%dx%d: the frame is %d rows", size[0], size[1], n)
+		}
+	}
+}
+
+// A thread the list holds only as a light row (no feed messages, last line cut
+// by the gateway) reads the same as a full one: its state mark comes from the
+// stored type and state, and the rows keep the order of their last activity,
+// not waiting first.
+func TestLightThreadRowsKeepTheirStateMarkAndTimeOrder(t *testing.T) {
+	src := &fakeSource{snap: fakeSnapshot()}
+	pageThreads(src, threadHistoryRows(40))
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m.tab, m.focus = messagesTab, focusFeed
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
+	m = refreshAndRun(t, m, src)
+	rows := m.messageConversations()
+	if len(rows) != 40 {
+		t.Fatalf("the list has %d rows, want 40", len(rows))
+	}
+	for i, r := range rows {
+		if want := fmt.Sprintf("Thread %03d", i); !strings.HasPrefix(r.lastLine, want) {
+			t.Fatalf("row %d is %q: the list is not in time order", i, r.lastLine)
+		}
+		wantWaiting := i%4 == 1 // the fixture's unanswered requests
+		if got := m.threadState(r) == "waiting"; got != wantWaiting {
+			t.Fatalf("row %d (%s): waiting is %v, want %v", i, r.lastLine, got, wantWaiting)
+		}
+		first := ansi.Strip(m.messageConversationRow(r, 80, false)[0])
+		if strings.Contains(first, "~ ") != wantWaiting || strings.Contains(first, "✓ ") == wantWaiting {
+			t.Fatalf("row %d has the wrong state mark: %q", i, first)
+		}
+	}
+}
+
+// A scrolled list starts on a row's first line, never on the preview of a row
+// whose names have scrolled off.
+func TestScrolledThreadListStartsOnARowHeader(t *testing.T) {
+	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+		src := &fakeSource{snap: fakeSnapshot()}
+		pageThreads(src, threadHistoryRows(60))
+		m := New(src)
+		m.loc, m.now = time.UTC, func() time.Time { return t0 }
+		m.tab, m.focus = messagesTab, focusFeed
+		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m = refreshAndRun(t, m, src)
+		for _, sel := range []int{12, 13, 30} {
+			m.convSel = sel
+			var first string
+			for _, l := range frameLines(m) {
+				if strings.HasPrefix(l, "│") {
+					first = strings.TrimPrefix(l, "│")
+					if i := strings.Index(first, "││"); i >= 0 {
+						first = first[:i] // the list panel only
+					}
+					break
+				}
+			}
+			if strings.HasPrefix(first, "     ") && !strings.Contains(first, "↔") {
+				t.Fatalf("%dx%d sel %d: the list starts on a preview line: %q", size[0], size[1], sel, first)
+			}
 		}
 	}
 }
