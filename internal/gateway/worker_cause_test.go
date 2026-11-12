@@ -124,6 +124,7 @@ func TestFailedTestStepStoresCauseAndCaughtDefect(t *testing.T) {
 	r := newDeliveryRig(t)
 	r.finishRun(r.worker, r.a)
 	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
+	r.report1(stepAccept, id, commitA, protocol.StepResultPass, nil, "")
 	r.report1(protocol.StepRef{Step: protocol.StepTest}, id, commitA, protocol.StepResultFail,
 		map[string]string{protocol.FieldSuite: protocol.SuiteChanged}, "TestParser fails")
 

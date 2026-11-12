@@ -576,6 +576,8 @@ A daemon may close its own machine's open change after observing an external mer
 
 The delivery pipeline (decision [0057](decisions/0057-delivery-pipeline.md)) records each step's result as evidence. The gateway stores changes, their revisions and evidence in `gateway.db`, and routes ready node-owned steps to that node's sessions. The tools `agent_change_submit`, `agent_step_claim`, `agent_step_report` and `agent_changes_find` go through the daemon to the gateway. The pipeline settings cutover and owner controls are available. No merge is refused in git. A worker's complete hand-back submits its change from the worker's machine, with the worker's caller as the change's session; the gateway accepts it only when that session is on the machine, or the worker's session is on the machine and that session started it. A change ID passed on by a continue comes only from the machine's own worker record, never from a frame.
 
+A step the caller owns belongs to the caller's agent (decision [0148](decisions/0148-caller-steps-belong-to-the-callers-agent.md)). Any live session of that agent, on the reporting machine, may claim and report it; a session of another agent may not. The repo's lead may act on those steps only after the gateway offered them: no session of the agent was live when a step waited past `delivery.step_stuck`, and the agent could not be woken or did not come online within the wake window. The offer ends when a session of the agent is live again. A session that holds a claim may always report it.
+
 Review is required for hard or very_complex changes, a judge risk of at least
 4 (or a lower configured threshold), or sensitive paths in the daemon's diff.
 Sensitive paths include migrations, authority and token files, security files,

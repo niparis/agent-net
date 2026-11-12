@@ -1280,7 +1280,7 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 	if strings.TrimSpace(report) != "" {
 		b.WriteString("\n" + ReportMarker + "\n" + strings.TrimSpace(report) + "\n")
 	}
-	b.WriteString("\n" + noticeChecklistWithSettings(n.Worktree, strings.TrimSpace(report) != "", snap))
+	b.WriteString("\n" + noticeChecklistWithSettings(n.Worktree, strings.TrimSpace(report) != "", snap, acceptReportLine(n, snap)))
 	if snap.DeliveryPipelineCutover && n.Project != "" {
 		if p, err := PipelineFromSettings(snap, n.Project); err == nil {
 			if merge, ok := p.Find(StepRef{Step: StepMerge}); ok && merge.Owner.Kind != OwnerCaller {
@@ -1298,7 +1298,29 @@ const ChecklistMarker = "[agent-net checklist]"
 func noticeChecklist(worktree string, learned bool) string {
 	return noticeChecklistWithSettings(worktree, learned, settings.Snapshot{})
 }
-func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Snapshot) string {
+
+// acceptReportLine tells a caller who owns the accept step what to do. Callers
+// read the checklist as "check the work" and never reported the step, so the
+// line names the change and gives the exact call. It is empty when another
+// node owns accept, or when no change was recorded.
+func acceptReportLine(n WorkerNotice, snap settings.Snapshot) string {
+	if !snap.DeliveryPipelineCutover || n.Project == "" || n.Change == "" {
+		return ""
+	}
+	p, err := PipelineFromSettings(snap, n.Project)
+	if err != nil {
+		return ""
+	}
+	if accept, ok := p.Find(StepRef{Step: StepAccept}); !ok || accept.Owner.Kind != OwnerCaller {
+		return ""
+	}
+	return "You own the accept step of " + n.Change + ". Report it: agent_step_report change=" + n.Change +
+		" step=accept result=pass commit=<head>, or result=close with a one-line reason if nothing will be merged."
+}
+
+// noticeChecklistWithSettings writes the checklist. extra lines go before the
+// learning line, which stays last.
+func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Snapshot, extra ...string) string {
 	where := "the changes in the project folder"
 	if worktree != "" {
 		where = "the diff in " + worktree
@@ -1306,6 +1328,11 @@ func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Sn
 	line := ChecklistMarker + " " + strings.ReplaceAll(snap.String("delivery.caller_review_and_merge", settings.Where{}), "{{where}}", NeutralizeMarkers(where))
 	line += "\nTest scope: delivery.contract.test (the test step owns suites and CI)."
 	line += "\nFound a defect in earlier work? Set fixes=<change> on the fix, or file defect_found_later. Rework from your own brief: brief_defect."
+	for _, e := range extra {
+		if e != "" {
+			line += "\n" + e
+		}
+	}
 	if learned {
 		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
 	}

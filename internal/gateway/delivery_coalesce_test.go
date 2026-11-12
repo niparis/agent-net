@@ -160,6 +160,8 @@ func TestCoalesceBatchedTaskClaimAndReport(t *testing.T) {
 
 func TestCoalesceWakeOnDemandOnceForRetiredOwner(t *testing.T) {
 	r := newDeliveryRig(t)
+	// The caller's agent has no other live session, so waking the caller is the way.
+	r.moveToAgent(r.caller, "caller-agent")
 	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
 		t.Fatal(err)
 	}

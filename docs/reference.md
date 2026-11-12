@@ -2557,6 +2557,18 @@ the gateway sends one stuck notice to the change's caller session:
 This notice is sent only once per change, revision and step. For verify steps
 after merge, this remains true even after message history is pruned.
 
+A step the caller owns belongs to the caller's agent, not only to its session
+(decision 0148). Any live session of that agent may claim and report it, and the
+task goes to one live session of the agent. When no session of the agent is live
+and the step waited past `delivery.step_stuck`, the gateway sends the agent one
+message listing its waiting steps, which wakes its best offline session the way a
+message does. If that cannot be done, or the agent is not online when the wake
+window ends, the live session of the repo's lead may claim and report the steps
+until a session of the agent is live again. Finished work that waited more than
+24 hours with no live owner shows as one Desk line per project, for example
+`finget: 30 finished changes waiting for accept, oldest 3 days, lead offline`.
+The line is updated in place and closes at zero.
+
 ### The playbook and the track record
 
 The gateway learns which harness and model do well from the runs it already records. When a machine reports `worker.stopped`, the gateway adds one row to `worker_runs` (node, harness, model, outcome, start, end, run time, the run's `continue`, `fix` and `auto_continue` counts, and its `cause`). The outcome is `complete`, `partial` (`complete: false`), `failed` (a blocked or failed hand-back, a process that ended by itself, or a run that errored), `timed_out` (the idle or longest-run limit) or `stopped` (a stop on request or an owner that went away), or `infra` (a provider quota or rate refusal, sign-in failure, worker lost at a daemon restart, or a start that never ran the task). `cause` records what agent-net already knows about a failure or later rework, so an analysis can tell a bad brief from the model or the machine: `quota_auth` (provider quota or sign-in text, including a usage limit reported in a failed turn such as a failed Codex turn's hand-back report), `sandbox` (a write the sandbox refused), `harness` (a crash, a start that never ran, a lost run, or a timeout), `test_failure` (a failed test step in the merger's suite), `accept_finding` (a failed accept step), `brief_defect` (the caller's own rating), or `unknown`. The first specific cause for a run is kept; a later signal only fills an empty or unknown one. `worker_defects` rows carry the same `cause`, and an `escape_phase` value of `caught` (severity 1 or found by the test step) or `escaped` (found after release). Stopped and infra runs are neither successes nor failures: it is counted apart and never makes a model look bad. The gateway keeps the rows for ever by default (`--keep-worker-runs` sets a period) and counts the last 30 days per harness and model. It also sums the two caller rework counters there: `continue` counts the owner's messages after a hand-back with `complete: no`, and `fix` after `complete: yes`. Automatic continues are summed apart, in `auto_continue`; they never enter the caller's rework or the calibration.

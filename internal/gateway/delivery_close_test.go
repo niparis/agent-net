@@ -68,6 +68,7 @@ func TestCallerClosesChangeAtMergerStep(t *testing.T) {
 // A session that is not the change's caller cannot close it. The owner may.
 func TestCallerCloseRefusedForNonCaller(t *testing.T) {
 	r := newDeliveryRig(t)
+	r.moveToAgent(r.sonnet, "peer")
 	id := r.submit(r.a, r.workerSubmit("feature/peer-close", commitA)).Change.Change.ID
 	_, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultClose, Commit: commitA, Note: "not mine"})
 	if err == nil || !strings.Contains(err.Error(), "caller") {
