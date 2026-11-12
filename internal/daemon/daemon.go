@@ -461,9 +461,17 @@ type Daemon struct {
 	// bg tracks short-lived work that writes the state database or kills a
 	// process, such as ending a worker after its hand-back. bgMu gates new
 	// work once Stop begins, so Stop can wait for it before closing the state.
-	bgMu            sync.Mutex
-	bgClosed        bool
-	bg              sync.WaitGroup
+	bgMu     sync.Mutex
+	bgClosed bool
+	bg       sync.WaitGroup
+	// checksDone is cancelled first in Stop. It kills running hand-back checks:
+	// one can run for its whole timeout (30 minutes by default), and Stop
+	// waited for it until systemd killed the daemon after 90 seconds. checks
+	// counts the hand-backs that run a check (holdCheck), so Stop lets them
+	// record the interrupted check while the gateway link is still up.
+	checksDone      context.Context
+	stopChecks      context.CancelFunc
+	checks          sync.WaitGroup
 	workerEndMu     sync.Mutex
 	workerEndTail   chan struct{}
 	worktreeLocksMu sync.Mutex
@@ -666,6 +674,7 @@ func New(cfg Config) (*Daemon, error) {
 		st.close()
 		return nil, err
 	}
+	d.checksDone, d.stopChecks = context.WithCancel(context.Background())
 	d.inSession = d.insideSession
 	d.ctoNow = time.Now
 	d.ctoCompactEvery = time.Second
@@ -778,6 +787,10 @@ func (d *Daemon) Stop() {
 	d.bgMu.Lock()
 	d.bgClosed = true
 	d.bgMu.Unlock()
+	if d.stopChecks != nil {
+		d.stopChecks()
+	}
+	d.checks.Wait()
 	if d.cancel != nil {
 		d.cancel()
 	}
@@ -810,12 +823,12 @@ func (d *Daemon) Stop() {
 }
 
 // goBackground runs fn in a goroutine that Stop waits for. New work is not
-// started once the daemon is stopping.
-func (d *Daemon) goBackground(fn func()) {
+// started once the daemon is stopping; the result says whether fn started.
+func (d *Daemon) goBackground(fn func()) bool {
 	d.bgMu.Lock()
 	if d.bgClosed {
 		d.bgMu.Unlock()
-		return
+		return false
 	}
 	d.bg.Add(1)
 	d.bgMu.Unlock()
@@ -823,6 +836,21 @@ func (d *Daemon) goBackground(fn func()) {
 		defer d.bg.Done()
 		fn()
 	}()
+	return true
+}
+
+// holdCheck counts a hand-back that runs the project's check, so Stop waits
+// for it to record the change before it closes the gateway link. It returns
+// false once Stop has begun; the caller then calls d.checks.Done itself only
+// when it returned true.
+func (d *Daemon) holdCheck() bool {
+	d.bgMu.Lock()
+	defer d.bgMu.Unlock()
+	if d.bgClosed {
+		return false
+	}
+	d.checks.Add(1)
+	return true
 }
 
 func (d *Daemon) Logf(format string, args ...any) { d.log.Printf(format, args...) }

@@ -103,13 +103,43 @@ func (p handbackCheckPlan) runs() bool { return p.command != "" }
 func (d *Daemon) runHandbackCheckPlan(ctx context.Context, p handbackCheckPlan) *protocol.HandbackCheck {
 	runCtx, cancelRun := context.WithTimeout(ctx, p.timeout)
 	defer cancelRun()
+	if d.checksDone != nil {
+		// The caller's context outlives the request on purpose, so only this
+		// ends the check when the daemon stops.
+		defer context.AfterFunc(d.checksDone, cancelRun)()
+	}
+	started := time.Now()
 	parallel, slot, ok := d.acquireHandbackCheckSlot(runCtx)
 	if !ok {
+		if d.checksStopped() {
+			return d.interruptedCheck(p.worker, started, "")
+		}
 		return &protocol.HandbackCheck{Status: protocol.HandbackCheckTimedOut, DurationMS: p.timeout.Milliseconds(),
 			OutputTail: "timed out waiting for the machine's test slot"}
 	}
 	defer d.releaseTestSlot(slot)
-	return d.runCheckCommand(runCtx, p.dir, p.command, parallel, p.worker)
+	check := d.runCheckCommand(runCtx, p.dir, p.command, parallel, p.worker)
+	if check.Status == protocol.HandbackCheckTimedOut && d.checksStopped() {
+		return d.interruptedCheck(p.worker, started, check.OutputTail)
+	}
+	return check
+}
+
+// checksStopped is true once Stop has begun to stop the running checks.
+func (d *Daemon) checksStopped() bool {
+	return d.checksDone != nil && d.checksDone.Err() != nil
+}
+
+// interruptedCheck is the result of a check the daemon stopped (a restart or
+// an upgrade). It proves nothing about the code, so it is recorded as a check
+// that could not run, which every gateway version accepts, and raises no
+// signal.
+func (d *Daemon) interruptedCheck(workerID string, started time.Time, tail string) *protocol.HandbackCheck {
+	check := &protocol.HandbackCheck{Status: protocol.HandbackCheckCouldNotRun,
+		Detail:     "interrupted: the daemon stopped before the check ended",
+		DurationMS: time.Since(started).Milliseconds(), OutputTail: tail}
+	d.Logf("worker.handback_check worker=%s status=%s interrupted=1 duration=%s", workerID, check.Status, time.Duration(check.DurationMS)*time.Millisecond)
+	return check
 }
 
 // acquireHandbackCheckSlot waits in the machine's test queue for an in-process
