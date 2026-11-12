@@ -473,7 +473,7 @@ type WorkerStartResult struct {
 	Title string `json:"title,omitempty"`
 	// Queued is true when the task message waits in the outbox.
 	Queued bool `json:"queued,omitempty"`
-	// BriefFailures lists the brief items that were missing or wrong in a
+	// BriefFailures lists the overlaps that refuse the brief in a
 	// mode "check" request.
 	BriefFailures []string `json:"brief_failures,omitempty"`
 	// Status is "starting", "started", "queued" or "checked". A starting worker has a

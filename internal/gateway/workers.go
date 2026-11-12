@@ -287,7 +287,8 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		run := protocol.WorkerRun{RunGeneration: p.RunGeneration, NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
 			Complete: p.Complete, Evidence: p.Evidence, Outcome: protocol.WorkerOutcomeDetail(p.Reason, p.Status, p.Complete, p.Failure), StartedAt: p.StartedAt, EndedAt: end,
-			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, AutoContinue: p.AutoContinueRun, Caller: caller, CallerSessionID: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches, TaskID: p.TaskID, Midrun: p.MidrunRun, Struggle: p.Struggle}
+			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, AutoContinue: p.AutoContinueRun, Caller: caller, CallerSessionID: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches, TaskID: p.TaskID, Midrun: p.MidrunRun, Struggle: p.Struggle,
+			Cause: protocol.WorkerRunCause(p.Reason, p.Failure)}
 		if err := g.store.RecordWorkerRun(run); err != nil {
 			return nil, err
 		}

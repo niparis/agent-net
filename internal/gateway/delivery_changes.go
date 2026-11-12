@@ -659,6 +659,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	if err != nil {
 		return protocol.StepReportResult{}, err
 	}
+	if err := s.noteReworkCauseTx(tx, c, e); err != nil {
+		return protocol.StepReportResult{}, err
+	}
 	if err := s.syncStepAsk(tx, c, e); err != nil {
 		return protocol.StepReportResult{}, err
 	}

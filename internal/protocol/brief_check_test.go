@@ -5,68 +5,12 @@ import (
 	"testing"
 )
 
-// completeBrief passes every deterministic brief check.
-const completeBrief = `Goal: The owner asked: "fix the parser crash" (message m_86b8d8cd77f796f0).
-Files or areas: internal/gateway/brief.go and docs/reference.md.
-Limits: tests use temp dirs and fakes only, never the real setup.
-Definition of done: the new test fails first and passes after the fix.
-How you are graded: the caller reruns the test and reads the diff.
-Evidence:
-- the owner's words
-- the failing test
-- the diff
-`
-
-func TestBriefChecksPassACompleteBrief(t *testing.T) {
-	if got := CheckWorkerBrief(completeBrief); len(got) != 0 {
-		t.Fatalf("complete brief failed: %v", got)
-	}
-}
-
-func TestBriefChecksNameEachMissingItem(t *testing.T) {
-	cases := []struct {
-		name string
-		task string
-		want string
-	}{
-		{"goal", "Fix the parser crash.\nFiles or areas: internal/gateway/brief.go\nLimits: tests use temp dirs, never the real setup.\nDefinition of done: the test passes.\nHow you are graded: the caller runs it.\nEvidence:\n- one\n- two\n- three\n", "Goal:"},
-		{"files", "Goal: The owner asked: \"fix it\".\nLimits: tests use temp dirs, never the real setup.\nDefinition of done: the test passes.\nHow you are graded: the caller runs it.\nEvidence:\n- one\n- two\n- three\n", "Files or areas:"},
-		{"limits", "Goal: The owner asked: \"fix it\".\nFiles or areas: internal/gateway/brief.go\nDefinition of done: the test passes.\nHow you are graded: the caller runs it.\nEvidence:\n- one\n- two\n- three\n", "Limits:"},
-		{"definition", "Goal: The owner asked: \"fix it\".\nFiles or areas: internal/gateway/brief.go\nLimits: tests use temp dirs, never the real setup.\nHow you are graded: the caller runs it.\nEvidence:\n- one\n- two\n- three\n", "Definition of done:"},
-		{"graded", "Goal: The owner asked: \"fix it\".\nFiles or areas: internal/gateway/brief.go\nLimits: tests use temp dirs, never the real setup.\nDefinition of done: the test passes.\nEvidence:\n- one\n- two\n- three\n", "How you are graded:"},
-		{"evidence", "Goal: The owner asked: \"fix it\".\nFiles or areas: internal/gateway/brief.go\nLimits: tests use temp dirs, never the real setup.\nDefinition of done: the test passes.\nHow you are graded: the caller runs it.\n", "Evidence:"},
-		{"evidence lines", "Goal: The owner asked: \"fix it\".\nFiles or areas: internal/gateway/brief.go\nLimits: tests use temp dirs, never the real setup.\nDefinition of done: the test passes.\nHow you are graded: the caller runs it.\nEvidence:\n- one\n- two\n", "Evidence:"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			failures := CheckWorkerBrief(tc.task)
-			joined := strings.Join(failures, "\n")
-			if !strings.Contains(joined, tc.want) {
-				t.Fatalf("failures %q do not name %q", joined, tc.want)
-			}
-		})
-	}
-}
-
-// Markdown punctuation around the labels does not hide them.
-func TestBriefChecksSeeMarkdownLabels(t *testing.T) {
-	task := "## **Goal:** the owner asked \"fix it\"\n" +
-		"* **Files or areas:** `internal/gateway/brief.go`\n" +
-		"> **Limits:** tests use temp dirs and never the real setup\n" +
-		"- **Definition of done:** the test passes\n" +
-		"- **How you are graded:** the caller runs it\n" +
-		"### Evidence\n- one\n- two\n- three\n"
-	if got := CheckWorkerBrief(task); len(got) != 0 {
-		t.Fatalf("markdown brief failed: %v", got)
-	}
-	numbered := "1. **Goal:** the owner asked \"fix it\"\n" +
-		"2. **Files or areas:** `internal/gateway/brief.go`\n" +
-		"3. **Limits:** tests use temp dirs and never the real setup\n" +
-		"4. **Definition of done:** the test passes\n" +
-		"5. **How you are graded:** the caller runs it\n" +
-		"6. **Evidence:**\n- one\n- two\n- three\n"
-	if got := CheckWorkerBrief(numbered); len(got) != 0 {
-		t.Fatalf("numbered markdown brief failed: %v", got)
+// A brief without any of the six old format sections is no longer refused:
+// decision 0141 retired them. The paths it names still feed the overlap check.
+func TestRetiredBriefFormatSectionsDoNotFail(t *testing.T) {
+	task := "Fix the parser crash in internal/parser/parse.go. Keep it small."
+	if paths := BriefPaths(task); len(paths) != 1 || paths[0] != "internal/parser/parse.go" {
+		t.Fatalf("paths = %v, want the one file", paths)
 	}
 }
 
@@ -75,6 +19,18 @@ func TestBriefPaths(t *testing.T) {
 	want := []string{"internal/gateway/brief.go", "docs/reference.md", "/tmp/x"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("paths = %v, want %v", got, want)
+	}
+}
+
+func TestBriefPathsShare(t *testing.T) {
+	if !BriefPathsShare("internal/gateway/brief.go", "repo/internal/gateway/brief.go") {
+		t.Fatal("the same file under a worktree path does not share")
+	}
+	if !BriefPathsShare("internal/gateway/brief.go", "internal/gateway/brief.go") {
+		t.Fatal("the same path does not share")
+	}
+	if BriefPathsShare("internal/gateway/brief.go", "internal/gateway/brief_test.go") {
+		t.Fatal("different files share")
 	}
 }
 

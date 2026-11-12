@@ -1890,7 +1890,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start a worker with a complete brief, or continue. Only when the owner asked or work mode says. Brief: Goal (who asked); Files or areas; Limits; Definition of done; How you are graded; Evidence (3+ lines); Overlap (or overlap ok: reason). Template: docs/brief-template.md. mode \"check\" checks only.",
+    "description": "Start a worker, or continue one. Only when the owner asked or work mode says. A brief is refused only when it names a file a running worker or an open change in the same project is working on, unless it says \"overlap ok: reason\". The brief's format is not checked or scored: docs/brief-template.md is a template, not a rule. mode \"check\" checks only.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2051,7 +2051,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_workers_find",
-    "description": "Find workers with their caller, model, difficulty, state and run time. Defaults to running workers you started.",
+    "description": "Find workers with their caller, model, difficulty, state and run time. detail full adds the start time, the struggle counts and the recorded cause of the latest run's failure or rework. Defaults to running workers you started.",
     "inputSchema": {
       "type": "object",
       "properties": {

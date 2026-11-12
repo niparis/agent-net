@@ -1,14 +1,22 @@
 # Worker brief template
 
-Every `agent_worker_start` brief has six items. The gateway checks them before
-it starts a worker. A brief that misses one is refused with a list of the
-missing items, and the caller can fix it and call again. The third attempt on
-the same task starts anyway; what is still missing is recorded as a brief
-defect against the caller.
+This is a template, not a rule. `agent_worker_start` does not check or score
+the brief's format (decision 0141). A brief missing any section below starts
+the same as one that has them all.
 
-Use `mode: "check"` to run the checks and start nothing.
+The one brief check left is overlap: a brief may not name a file that a running
+worker or an open change in the same project is already working on, unless it
+says `overlap ok: <reason>`. A change or worker the start itself targets is not
+an overlap: its id in the brief, an open change whose branch is the start's
+`base`, or the `continue` or `fixes` target. Use `mode: "check"` to run that
+check and start nothing.
 
-## The six items
+The analysis behind decision 0141 found that briefs failing more of the old
+format rules did slightly better, not worse. The sections below are still a
+useful habit: they answer what a worker needs to know. Write what helps your
+worker, and leave out what does not.
+
+## The sections, if you use them
 
 1. **Goal:** one line naming who asked. Quote the owner or requester, give a
    message id such as `m_86b8d8cd77f796f0`, or say `owner`.
@@ -22,10 +30,7 @@ Use `mode: "check"` to run the checks and start nothing.
 5. **Evidence:** an `Evidence:` section with at least three lines.
 6. **Overlap:** no file shared with a running worker's brief or an open
    change's changed files in the same project. If the overlap is intended,
-   say `overlap ok: <reason>`. A change or worker the start itself targets is
-   not an overlap: its id in the brief, an open change whose branch is the
-   start's `base`, or the `continue` or `fixes` target. A fix round on the
-   change's own branch therefore passes.
+   say `overlap ok: <reason>`.
 
 ## Example
 

@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, nodeSleepMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, nodeSleepMigration, workerCauseMigration}
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries
 // of one task can be counted and the weekly table can show rejections per
@@ -1296,6 +1296,16 @@ CREATE TABLE IF NOT EXISTS worker_brief_rejections (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_rejections_task ON worker_brief_rejections(caller, task_key, at);
 CREATE INDEX IF NOT EXISTS worker_brief_rejections_caller ON worker_brief_rejections(caller, at);
+`
+
+// workerCauseMigration stores the cause of failure or rework on a worker run
+// and on a defect, and whether a late defect was caught before release or
+// escaped (decision 0141). The columns are added in the migration loop, so
+// replaying it is safe.
+const workerCauseMigration = `
+-- Worker run and defect cause, and the phase of a late defect.
+CREATE INDEX IF NOT EXISTS worker_runs_session ON worker_runs (session_id, id);
+SELECT 1 /* worker run and defect cause */;
 `
 
 // messagePairGIDSQL is the thread key of one message: the unordered pair of
@@ -2098,6 +2108,25 @@ func (s *Store) migrate() error {
 			if err := storeThreadColumnsPlain(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "worker run and defect cause") {
+			for _, col := range []struct{ table, name, spec string }{
+				{"worker_runs", "cause", `TEXT NOT NULL DEFAULT ''`},
+				{"worker_defects", "cause", `TEXT NOT NULL DEFAULT ''`},
+				{"worker_defects", "escape_phase", `TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, col.table, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
+				}
 			}
 		}
 		var result sql.Result
@@ -3762,7 +3791,7 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
 var agentListTables = []string{"sessions", "nodes", "profiles", "apps", "project_display_names", "project_mergers",
 	"worker_assessments", "agents", "repo_leads", "repos", "teams", "team_members", "setting_values", "inbox_items",
-	"owner_settings", "messages"}
+	"owner_settings", "messages", "worker_runs"}
 
 const (
 	// agentRepoCountWhere is what makes a session count toward its Repo's
@@ -3980,6 +4009,9 @@ func (s *Store) agentsRead(f protocol.QueryAgents) ([]protocol.AgentView, error)
 		return nil, err
 	}
 	if err := s.applyEndedWorkerNotes(out); err != nil {
+		return nil, err
+	}
+	if err := s.applyWorkerCauses(out); err != nil {
 		return nil, err
 	}
 	return out, nil

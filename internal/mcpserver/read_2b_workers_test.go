@@ -68,3 +68,16 @@ func TestWorkerFullDetailIncludesAssessment(t *testing.T) {
 		t.Fatalf("compact row: %+v", compact)
 	}
 }
+
+// The recorded cause of the latest run is shown by detail full only.
+func TestWorkerFullDetailIncludesCause(t *testing.T) {
+	a := protocol.AgentView{SessionID: "s_test", Worker: &protocol.WorkerInfo{Cause: protocol.CauseQuotaAuth}}
+	full, _ := roWorkerRowOf(a, nil, true)
+	if full.Cause != protocol.CauseQuotaAuth {
+		t.Fatalf("full row cause = %q", full.Cause)
+	}
+	compact, _ := roWorkerRowOf(a, nil, false)
+	if compact.Cause != "" {
+		t.Fatalf("compact row has cause %q", compact.Cause)
+	}
+}

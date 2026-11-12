@@ -78,6 +78,9 @@ type WorkerRun struct {
 	// Struggle counts the signs that this run fought its environment or its
 	// instructions, from the run's own tool record (decision 0133).
 	Struggle *Struggle `json:"struggle,omitempty"`
+	// Cause is the recorded reason for a failure or for rework after the run:
+	// one of the Cause constants (decision 0141). Empty is an older machine.
+	Cause string `json:"cause,omitempty"`
 }
 
 // TrackRecord is what the gateway learned about one harness and model.
