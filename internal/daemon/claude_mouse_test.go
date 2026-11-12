@@ -190,9 +190,12 @@ func TestClaudeMouseServiceWaitsWithLiveSessions(t *testing.T) {
 	if err := os.MkdirAll(rosterDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// A fresh legacy roster: the daemon trusts it by its write time. A
+	// supervisor pid would name a real process that the daemon verifies, and
+	// this test only fakes the service in the process list.
 	writeRoster := func(workers string) {
 		t.Helper()
-		raw := `{"supervisorPid":1234,"updatedAt":` + fmt.Sprint(time.Now().UnixMilli()) + `,"workers":` + workers + `}`
+		raw := `{"updatedAt":` + fmt.Sprint(time.Now().UnixMilli()) + `,"workers":` + workers + `}`
 		if err := os.WriteFile(filepath.Join(rosterDir, "roster.json"), []byte(raw), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -254,9 +257,9 @@ func TestClaudeMouseServiceDoesNotStopWithoutAFreshRoster(t *testing.T) {
 	if err := os.MkdirAll(rosterDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// An old roster that lists no session proves nothing: a session may have
-	// started since. The service is reported and left alone.
-	raw := `{"supervisorPid":1234,"updatedAt":` + fmt.Sprint(time.Now().Add(-time.Hour).UnixMilli()) + `,"workers":{}}`
+	// An old legacy roster that lists no session proves nothing: a session may
+	// have started since. The service is reported and left alone.
+	raw := `{"updatedAt":` + fmt.Sprint(time.Now().Add(-time.Hour).UnixMilli()) + `,"workers":{}}`
 	if err := os.WriteFile(filepath.Join(rosterDir, "roster.json"), []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
