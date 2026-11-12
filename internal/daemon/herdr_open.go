@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -143,8 +145,7 @@ func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) 
 					if active, known := d.herdrPaneActive(old.bin, old.socket, old.pane); known && !active && time.Since(old.started) > time.Second {
 						break
 					}
-					if _, err := d.herdrRun(old.bin, old.socket, "tab", "focus", old.tab); err == nil {
-						_, _ = d.herdrRun(old.bin, old.socket, "agent", "focus", old.pane)
+					if d.focusHerdrView(old.bin, old.socket, old.tab, old.pane) {
 						return herdrOpenNotice(openedHerdrPlan(plan.Host, name, old.pane), plan)
 					}
 				}
@@ -155,6 +156,17 @@ func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) 
 	if err := d.herdrServer(bin, socket); err != nil {
 		plan.Note = strings.TrimSpace(plan.Note + " " + fmt.Sprintf("herdr at %s failed: %v", bin, err))
 		return plan
+	}
+	// The memory above is empty after a daemon restart. Herdr still shows the
+	// tab, so ask it before creating a second one.
+	if key != "" {
+		if pane, tab, ok := d.findHerdrView(bin, socket, herdrViewID(key)); ok && d.focusHerdrView(bin, socket, tab, pane) {
+			if d.herdrOpened == nil {
+				d.herdrOpened = make(map[string]herdrOpenedPane)
+			}
+			d.herdrOpened[key] = herdrOpenedPane{bin: bin, socket: socket, pane: pane, tab: tab}
+			return herdrOpenNotice(openedHerdrPlan(plan.Host, name, pane), plan)
+		}
 	}
 	file, err := herdrEnvironment(plan.Env)
 	if err != nil {
@@ -193,10 +205,22 @@ func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) 
 	for i, arg := range plan.Argv {
 		quoted[i] = shellQuote(arg)
 	}
-	command := ". " + shellQuote(file) + "; rm -f " + shellQuote(file) + "; exec " + strings.Join(quoted, " ")
+	// The viewer is not exec'd: the shell stays to close the pane when it
+	// exits, so no idle login shell is left in the tab. The INT handler keeps
+	// Ctrl-C from killing the shell before it closes (a handler, not an
+	// ignore, so the viewer still gets the default action).
+	closeCmd := shellQuote(bin) + " pane close " + shellQuote(created.Result.Pane.ID) + " >/dev/null 2>&1"
+	if socket != "" {
+		closeCmd = "HERDR_SOCKET_PATH=" + shellQuote(socket) + " " + closeCmd
+	}
+	command := "trap : INT; . " + shellQuote(file) + "; rm -f " + shellQuote(file) + "; " + strings.Join(quoted, " ") + "; " + closeCmd
 	// The pane may use fish or another non-POSIX login shell. Keep the
-	// assignment and argv quoting inside a POSIX shell.
+	// assignment and argv quoting inside a POSIX shell. The trailing words
+	// become $0 and $1 of that shell; they mark the view for findHerdrView.
 	command = "sh -c " + shellQuote(command)
+	if key != "" {
+		command += " " + herdrViewMarker + " " + herdrViewID(key)
+	}
 	if _, err := d.herdrRun(bin, socket, "pane", "run", created.Result.Pane.ID, command); err != nil {
 		_ = os.Remove(file)
 		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not run the command: %v", bin, err)}
@@ -208,6 +232,56 @@ func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) 
 		d.herdrOpened[key] = herdrOpenedPane{bin: bin, socket: socket, pane: created.Result.Pane.ID, tab: created.Result.Tab.ID, started: time.Now()}
 	}
 	return herdrOpenNotice(openedHerdrPlan(plan.Host, name, created.Result.Pane.ID), plan)
+}
+
+const herdrViewMarker = "agent-net-view"
+
+// herdrViewID names a view in the argv of the shell that runs it. It is a
+// hash because keys can hold NUL bytes and whole argv lists.
+func herdrViewID(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:8])
+}
+
+func (d *Daemon) focusHerdrView(bin, socket, tab, pane string) bool {
+	if _, err := d.herdrRun(bin, socket, "tab", "focus", tab); err != nil {
+		return false
+	}
+	_, _ = d.herdrRun(bin, socket, "agent", "focus", pane)
+	return true
+}
+
+// findHerdrView finds the pane whose shell was started with the view marker
+// of id, by reading the argv of each pane's foreground processes.
+func (d *Daemon) findHerdrView(bin, socket, id string) (pane, tab string, ok bool) {
+	panes, err := d.herdrPanes(bin, socket)
+	if err != nil {
+		return "", "", false
+	}
+	for _, p := range panes {
+		out, err := d.herdrRun(bin, socket, "pane", "process-info", "--pane", p.PaneID)
+		if err != nil {
+			continue
+		}
+		var r struct {
+			Result struct {
+				Info struct {
+					Processes []struct {
+						Argv []string `json:"argv"`
+					} `json:"foreground_processes"`
+				} `json:"process_info"`
+			} `json:"result"`
+		}
+		if json.Unmarshal(out, &r) != nil {
+			continue
+		}
+		for _, proc := range r.Result.Info.Processes {
+			if n := len(proc.Argv); n >= 2 && proc.Argv[n-2] == herdrViewMarker && proc.Argv[n-1] == id {
+				return p.PaneID, p.TabID, true
+			}
+		}
+	}
+	return "", "", false
 }
 
 func herdrOpenNotice(opened, previous protocol.EnterPlan) protocol.EnterPlan {
