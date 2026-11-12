@@ -75,6 +75,7 @@ func runFakeOpenCode() {
 	}
 	fakeRegister()
 	cwd, _ := os.Getwd()
+	dir := fakeHarnessDir(cwd, "XDG_DATA_HOME")
 	rec := fakeOCRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
 	for _, k := range []string{"AGENT_NET_CTO", "AGENT_NET_WORKER", "AGENT_NET_WORKER_SESSION_FILE", "AGENT_NET_SOCKET", "XDG_STATE_HOME", "XDG_DATA_HOME", "OPENCODE_SERVER_PASSWORD"} {
@@ -92,7 +93,7 @@ func runFakeOpenCode() {
 		mu.Lock()
 		defer mu.Unlock()
 		b, _ := json.Marshal(rec)
-		os.WriteFile(filepath.Join(cwd, "fake-opencode.json"), b, 0o644)
+		os.WriteFile(filepath.Join(dir, "fake-opencode.json"), b, 0o644)
 	}
 	write()
 
@@ -619,6 +620,7 @@ func fakeOCPluginTracked(client, sessionID, cwd string, location *atomic.Int64, 
 }
 
 func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, previous int64, turn func(string)) int64 {
+	dir := fakeHarnessDir(cwd, "XDG_DATA_HOME")
 	// Model an unloaded plugin context: only a location request boots it again.
 	if os.Getenv("FAKE_OC_REQUIRE_LOCATION") != "" && location.Load() <= previous {
 		return previous
@@ -683,12 +685,12 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		}
 		msg := m.Params.Message
 		if client == "pi" && os.Getenv("FAKE_PI_DROP_FIRST") != "" {
-			marker := filepath.Join(cwd, "fake-pi-dropped")
+			marker := filepath.Join(dir, "fake-pi-dropped")
 			if _, err := os.Stat(marker); os.IsNotExist(err) {
 				os.WriteFile(marker, []byte(msg.ID), 0600)
 				continue
 			}
-			f, _ := os.OpenFile(filepath.Join(cwd, "fake-pi-turns"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			f, _ := os.OpenFile(filepath.Join(dir, "fake-pi-turns"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 			if f != nil {
 				fmt.Fprintln(f, msg.ID)
 				f.Close()
@@ -709,7 +711,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 			turn(body)
 			go func() {
 				for {
-					if _, err := os.Stat(filepath.Join(cwd, "fake-end-turn")); err == nil {
+					if _, err := os.Stat(filepath.Join(dir, "fake-end-turn")); err == nil {
 						break
 					}
 					time.Sleep(10 * time.Millisecond)
@@ -722,18 +724,18 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		if strings.Contains(body, "FAKE:queued-missed-idle") {
 			go func() {
 				<-waitTurn
-				os.WriteFile(filepath.Join(cwd, "fake-queued-delivered"), nil, 0600)
+				os.WriteFile(filepath.Join(dir, "fake-queued-delivered"), nil, 0600)
 				for {
-					if _, err := os.Stat(filepath.Join(cwd, "fake-run-queued")); err == nil {
+					if _, err := os.Stat(filepath.Join(dir, "fake-run-queued")); err == nil {
 						break
 					}
 					time.Sleep(10 * time.Millisecond)
 				}
 				os.WriteFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-active"), []byte(sessionID), 0600)
 				turn(body)
-				os.WriteFile(filepath.Join(cwd, "fake-queued-started"), nil, 0600)
+				os.WriteFile(filepath.Join(dir, "fake-queued-started"), nil, 0600)
 				for {
-					if _, err := os.Stat(filepath.Join(cwd, "fake-end-queued")); err == nil {
+					if _, err := os.Stat(filepath.Join(dir, "fake-end-queued")); err == nil {
 						break
 					}
 					time.Sleep(10 * time.Millisecond)
@@ -749,7 +751,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 			turn(body)
 			go func() {
 				for {
-					if _, err := os.Stat(filepath.Join(cwd, "fake-opencode-finish")); err == nil {
+					if _, err := os.Stat(filepath.Join(dir, "fake-opencode-finish")); err == nil {
 						break
 					}
 					time.Sleep(10 * time.Millisecond)

@@ -96,7 +96,7 @@ func TestMain(m *testing.M) {
 	// Parallel Codex fixtures only read this empty home. Config-writing tests
 	// use their own CODEX_HOME instead.
 	codexHome := filepath.Join(fakes, "codex")
-	if err := os.MkdirAll(codexHome, 0500); err != nil {
+	if err := os.MkdirAll(codexHome, 0700); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

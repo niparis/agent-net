@@ -172,9 +172,45 @@ func argValue(args []string, name string) string {
 	return ""
 }
 
-func writeRecord(cwd, name string, rec any) {
+func isSourceDir(dir string) bool {
+	if dir == "" {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fakeharnesses_test.go")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(dir, "daemon.go")); err == nil {
+		return true
+	}
+	return false
+}
+
+func fakeHarnessDir(cwd, envHome string) string {
+	if !isSourceDir(cwd) && cwd != "" {
+		return cwd
+	}
+	if envHome != "" {
+		if home := os.Getenv(envHome); home != "" {
+			if f, err := os.CreateTemp(home, ".probe*"); err == nil {
+				name := f.Name()
+				f.Close()
+				os.Remove(name)
+				return home
+			}
+		}
+	}
+	if pids := os.Getenv(envFakePids); pids != "" {
+		return pids
+	}
+	return os.TempDir()
+}
+
+func writeRecord(dir, name string, rec any) {
+	if isSourceDir(dir) {
+		dir = fakeHarnessDir(dir, "")
+	}
 	b, _ := json.Marshal(rec)
-	os.WriteFile(filepath.Join(cwd, name), b, 0o644)
+	os.WriteFile(filepath.Join(dir, name), b, 0o644)
 }
 
 func readRecord(t *testing.T, dir, name string, rec any) {
@@ -837,6 +873,7 @@ func fakePi() {
 		signal.Ignore(syscall.SIGTERM)
 	}
 	cwd, _ := os.Getwd()
+	dir := fakeHarnessDir(cwd, "PI_CODING_AGENT_DIR")
 	fakeRegister()
 	rec := fakePiRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
@@ -846,8 +883,8 @@ func fakePi() {
 	if fi, err := os.Stdin.Stat(); err == nil {
 		rec.Stdin = fi.Mode().String()
 	}
-	if dir := os.Getenv(envFakePiProbeHome); dir != "" {
-		rec.HomeWrite = errText(os.WriteFile(filepath.Join(dir, "probe"), []byte("x"), 0o600))
+	if probeDir := os.Getenv(envFakePiProbeHome); probeDir != "" {
+		rec.HomeWrite = errText(os.WriteFile(filepath.Join(probeDir, "probe"), []byte("x"), 0o600))
 		rec.TmpWrite = errText(os.WriteFile("/tmp/fake-pi-probe", []byte("x"), 0o600))
 		rec.AgentDir = os.Getenv("PI_CODING_AGENT_DIR")
 	}
@@ -859,10 +896,10 @@ func fakePi() {
 		rec.ChildPid = child.Process.Pid
 		go child.Wait()
 	}
-	writeRecord(cwd, "fake-pi.json", rec)
+	writeRecord(dir, "fake-pi.json", rec)
 	session := argValue(os.Args, "--session-id")
-	fakePiSessionFile(session, cwd)
-	go fakeOCPlugin("pi", session, cwd)
+	fakePiSessionFile(session, dir)
+	go fakeOCPlugin("pi", session, dir)
 	// RPC mode ends when stdin closes. Its stdout is an event stream that the
 	// daemon discards; the usage comes from the session file.
 	in := bufio.NewReader(os.Stdin)
@@ -990,6 +1027,7 @@ func fakeCodex() {
 	}
 	fakeRegister()
 	cwd, _ := os.Getwd()
+	dir := fakeHarnessDir(cwd, "CODEX_HOME")
 	rec := fakeCodexRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
 	child := exec.Command("sleep", "600")
@@ -1001,7 +1039,7 @@ func fakeCodex() {
 	save := func() {
 		mu.Lock()
 		defer mu.Unlock()
-		writeRecord(cwd, "fake-codex.json", rec)
+		writeRecord(dir, "fake-codex.json", rec)
 	}
 	save()
 	listen := strings.TrimPrefix(argValue(os.Args, "--listen"), "ws://")
@@ -1082,7 +1120,7 @@ func fakeCodex() {
 				// A surviving turn can complete after a new subscriber resumes it.
 				go func(thread string) {
 					for {
-						if _, err := os.Stat(filepath.Join(cwd, "fake-codex-finish")); err == nil {
+						if _, err := os.Stat(filepath.Join(dir, "fake-codex-finish")); err == nil {
 							write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "item": map[string]any{"type": "agentMessage", "phase": "final_answer", "text": "finished after restart"}}})
 							write(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": thread, "turn": map[string]any{"status": "completed"}}})
 							return
@@ -1111,7 +1149,7 @@ func fakeCodex() {
 					if strings.Contains(text, "FAKE:offline") {
 						// The server keeps working even when its subscriber goes away.
 						for {
-							if _, err := os.Stat(filepath.Join(cwd, "fake-codex-offline-finish")); err == nil {
+							if _, err := os.Stat(filepath.Join(dir, "fake-codex-offline-finish")); err == nil {
 								mu.Lock()
 								rec.CompletedOffline = true
 								mu.Unlock()
@@ -1127,7 +1165,7 @@ func fakeCodex() {
 							finish = "fake-codex-finish-second"
 						}
 						for {
-							if _, err := os.Stat(filepath.Join(cwd, finish)); err == nil {
+							if _, err := os.Stat(filepath.Join(dir, finish)); err == nil {
 								break
 							}
 							select {
@@ -1142,7 +1180,7 @@ func fakeCodex() {
 						return
 					}
 					if strings.Contains(text, "FAKE:edit") {
-						fakeEdit(cwd)
+						fakeEdit(dir)
 					}
 					if strings.Contains(text, "FAKE:approve") {
 						write(map[string]any{"id": "srv-1", "method": "item/commandExecution/requestApproval",
@@ -1159,9 +1197,9 @@ func fakeCodex() {
 						}
 					}
 					if strings.Contains(text, "FAKE:hold-codex") {
-						os.WriteFile(filepath.Join(cwd, "fake-codex-held"), nil, 0600)
+						os.WriteFile(filepath.Join(dir, "fake-codex-held"), nil, 0600)
 						for {
-							if _, err := os.Stat(filepath.Join(cwd, "fake-codex-release")); err == nil {
+							if _, err := os.Stat(filepath.Join(dir, "fake-codex-release")); err == nil {
 								break
 							}
 							time.Sleep(10 * time.Millisecond)

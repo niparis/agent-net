@@ -102,6 +102,9 @@ func TestHarnessUpdateTimeout(t *testing.T) {
 	if u := updateResult(d, "codex"); !strings.Contains(u.Detail, "timed out") {
 		t.Fatalf("timeout: %+v", u)
 	}
+	if _, err := os.Stat("fake-codex.json"); !os.IsNotExist(err) {
+		t.Fatalf("test left fake-codex.json in package folder: %v", err)
+	}
 }
 
 func TestHarnessUpdateSettingOff(t *testing.T) {
@@ -159,6 +162,9 @@ func TestHarnessUpdateCommandsAndSearchPATH(t *testing.T) {
 			b, err := os.ReadFile(filepath.Join(dir, "args-"+name))
 			return err == nil && string(b) == want
 		})
+	}
+	if _, err := os.Stat("fake-codex.json"); !os.IsNotExist(err) {
+		t.Fatalf("test left fake-codex.json in package folder: %v", err)
 	}
 }
 

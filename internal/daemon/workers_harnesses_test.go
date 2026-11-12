@@ -670,6 +670,11 @@ func readCodex(t *testing.T, dir string, ok func(fakeCodexRecord) bool) fakeCode
 	var rec fakeCodexRecord
 	eventually(t, "the fake codex record", func() bool {
 		raw, err := os.ReadFile(filepath.Join(dir, "fake-codex.json"))
+		if err != nil {
+			if h := os.Getenv("CODEX_HOME"); h != "" {
+				raw, err = os.ReadFile(filepath.Join(h, "fake-codex.json"))
+			}
+		}
 		rec = fakeCodexRecord{}
 		return err == nil && json.Unmarshal(raw, &rec) == nil && ok(rec)
 	})
