@@ -1224,9 +1224,9 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 		plan = d.planHandbackCheck(ctx, w)
 	}
 	if early && plan.runs() {
-		out, started := d.startHandbackCheck(ctx, w, t, plan)
+		out, started, err := d.startHandbackCheck(ctx, w, t, plan)
 		handedOver = started
-		return out, nil
+		return out, err
 	}
 	return d.finishHandback(ctx, w, t, plan, nil)
 }
@@ -1243,7 +1243,7 @@ type handbackCheckRun struct {
 // background and answers the worker at once. A check that already runs on the
 // same head is not started again; a new head cancels the old check first. The
 // second result says whether the background run took over the snapshot files.
-func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackTail, plan handbackCheckPlan) (*protocol.WorkerHandbackResult, bool) {
+func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackTail, plan handbackCheckPlan) (*protocol.WorkerHandbackResult, bool, error) {
 	out := &protocol.WorkerHandbackResult{Status: t.req.Status, Complete: true, Checking: true,
 		Note: "handed back; the check runs now and its result comes in the notice to the caller; you can end"}
 	d.wmu.Lock()
@@ -1252,7 +1252,7 @@ func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackT
 			d.wmu.Unlock()
 			d.Logf("worker.handback worker=%s head=%s already_checking=1", w.id, plan.head)
 			out.Note = "already handed back; check running"
-			return out, false
+			return out, false, nil
 		}
 		old.cancel()
 	}
@@ -1265,7 +1265,20 @@ func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackT
 	// while the project's command runs.
 	w.checking = true
 	d.wmu.Unlock()
-	d.goBackground(func() {
+	stopping := func() (*protocol.WorkerHandbackResult, bool, error) {
+		cancel()
+		d.wmu.Lock()
+		if w.checkRun == run {
+			w.checkRun, w.checking = nil, false
+		}
+		d.wmu.Unlock()
+		return nil, false, errDaemonStopping
+	}
+	if !d.holdCheck() {
+		return stopping()
+	}
+	started := d.goBackground(func() {
+		defer d.checks.Done()
 		defer cancel()
 		defer t.files.Remove()
 		// The run stays registered until its notice is sent, so a repeated
@@ -1283,8 +1296,17 @@ func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackT
 			d.Logf("worker %s: hand-back after the reply: %v", w.id, err)
 		}
 	})
-	return out, true
+	if !started {
+		d.checks.Done()
+		return stopping()
+	}
+	return out, true, nil
 }
+
+// errDaemonStopping refuses a hand-back that arrives while the daemon stops:
+// its check could not run, and the worker can hand back again to the next
+// daemon.
+var errDaemonStopping = errors.New("the agent-net daemon is stopping; hand back again in a minute")
 
 // errHandbackSuperseded ends a background hand-back whose check a newer
 // hand-back cancelled. The newer one sends the notice.
@@ -1300,6 +1322,9 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail,
 	if t.complete {
 		if plan.runs() {
 			if run == nil {
+				if d.holdCheck() {
+					defer d.checks.Done()
+				}
 				d.wmu.Lock()
 				w.checking = true
 				d.wmu.Unlock()
