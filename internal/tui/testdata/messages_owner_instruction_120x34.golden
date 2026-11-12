@@ -1,30 +1,30 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online · 1 busy                 updated 14:05:00
-you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages──────────────────────────────────────filter: all  (l)─╮╭─Conversation───────────────────────────────────────╮
-│ ▸ you→ tenebrae-53 ↔ ended session · work       1m ago · 1 msg ││ ▸ 14:04 you→ tenebrae-53                           │
-│   ci-runner ↔ tenebrae-53 · loading body       2m ago · 2 msgs ││ Your instruction: ask the agent                    │
-│   tenebrae-53 ↔ strategies · loading body      8m ago · 2 msgs ││ work                                               │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│ 1 system event                                                 ││                                                    │
-╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
+[ Agents ]    Workers      System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
+│ ▸ you→ ~ tenebrae-53 ↔ ended sessi… 1m ago · 1 msg ││ tenebrae-53 ↔ ended session · owner                            │
+│   ! ci-runner ↔ tenebrae-53 · loa… 2m ago · 2 msgs ││ ▸ 14:04 you→ tenebrae-53                                       │
+│   ✓ tenebrae-53 ↔ strategies · lo… 8m ago · 2 msgs ││ Your instruction: ask the agent                                │
+│                                                    ││ work                                                           │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│ 3 threads · 1 system event                         ││                                                                │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

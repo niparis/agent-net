@@ -1,30 +1,30 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 6 online · 1 busy · 1 worker
-you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages──────────────────────────────────────filter: all  (l)─╮╭─Conversation───────────────────────────────────────╮
-│ ▸ tenebrae-53 ↔ strategies · Stored conversation … now · 1 msg ││   14:03 tenebrae-53                                │
-│   tenebrae-53 ↔ strategies · Stored conversat… 7m ago · 2 msgs ││ Show the whole stored history of this conversatio… │
-│   you → worker: Polish the sessions pane… 3 messages · running ││   14:04 strategies                                 │
-│   tenebrae-53 ↔ strategies · Stored conversa… 21m ago · 4 msgs ││ The full stored conversation is in the right pane. │
-│   tenebrae-53 ↔ strategies · Stored conversa… 28m ago · 5 msgs ││ It comes from the gateway, not the feed.           │
-│   tenebrae-53 ↔ strategies · Stored conversat… 35m ago · 1 msg ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conversa… 42m ago · 2 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conversa… 49m ago · 3 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conversa… 56m ago · 4 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored convers… 1h3m ago · 5 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored convers… 1h10m ago · 1 msg ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conver… 1h17m ago · 2 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conver… 1h24m ago · 3 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conver… 1h31m ago · 4 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conver… 1h38m ago · 5 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored convers… 1h45m ago · 1 msg ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conver… 1h52m ago · 2 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conver… 1h59m ago · 3 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored convers… 2h6m ago · 4 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conver… 2h13m ago · 5 msgs ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored convers… 2h20m ago · 1 msg ││                                                    │
-│   tenebrae-53 ↔ strategies · Stored conver… 2h27m ago · 2 msgs ││                                                    │
-│ 0 system events                                                ││                                                    │
-╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
+[ Agents ]    Workers      System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
+│ ▸ ! tenebrae-53 ↔ strategies · Stored… now · 1 msg ││ tenebrae-53 ↔ strategies                                       │
+│   ✓ tenebrae-53 ↔ strategies · St… 7m ago · 2 msgs ││   14:03 tenebrae-53                                            │
+│   ✓ tenebrae-53 ↔ strategies · S… 21m ago · 4 msgs ││ Show the whole stored history of this conversation.            │
+│   ✓ tenebrae-53 ↔ strategies · S… 28m ago · 5 msgs ││   14:04 strategies                                             │
+│   ✓ tenebrae-53 ↔ strategies · St… 35m ago · 1 msg ││ The full stored conversation is in the right pane.             │
+│   ✓ tenebrae-53 ↔ strategies · S… 42m ago · 2 msgs ││ It comes from the gateway, not the feed.                       │
+│   ✓ tenebrae-53 ↔ strategies · S… 49m ago · 3 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies · S… 56m ago · 4 msgs ││                                                                │
+│   ! tenebrae-53 ↔ strategies · … 1h3m ago · 5 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies · … 1h10m ago · 1 msg ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies ·… 1h17m ago · 2 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies ·… 1h24m ago · 3 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies ·… 1h31m ago · 4 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies ·… 1h38m ago · 5 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies · … 1h45m ago · 1 msg ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies ·… 1h52m ago · 2 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies ·… 1h59m ago · 3 msgs ││                                                                │
+│   ! tenebrae-53 ↔ strategies · … 2h6m ago · 4 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies ·… 2h13m ago · 5 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies · … 2h20m ago · 1 msg ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies ·… 2h27m ago · 2 msgs ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies ·… 2h34m ago · 3 msgs ││                                                                │
+│ 29 threads · 0 system events                       ││                                                                │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

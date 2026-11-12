@@ -117,11 +117,21 @@ Legend ────────────────────────�
   home/g, end            first thread, latest message
   enter                  open the selected message body
   f                      report a defect found later on the selected worker conversation
+  tab/shift+tab          sub tab
+  p                      filter the threads by project
+  t                      filter the threads by team
+  o                      open the thread's change or Desk ask
+  e                      expand or collapse the selected worker run
   l                      filter
   m                      send a message to the session as yourself
   x                      stop the selected worker or session
   d                      show or hide details
   states               pending ... delivered ✓ replied ↩ failed ✗
+  tab                    switch the sub-tabs: Agents, Workers, System
+  marks                  you→ owner · ~ waiting · ✓ answered · gw N held · ⚡ burst · ! blocked
+  burst                  20 or more messages in one hour and more than 3 times the thread's median hourly count
+  links                  PR, ch_ and ask i_ lines show above the conversation; o opens a loaded change or ask
+  p / t                  filter by project or team; / searches the text; esc clears the filters
 
  Tools
   i                      import

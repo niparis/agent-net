@@ -21,18 +21,18 @@ func TestMessageConversationsGroupAndSort(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{
 		{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0.Add(-3 * time.Minute)}, ConversationID: "a", From: "s_0000000000000001", To: "s_0000000000000002", Type: "request"},
-		{Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "two", Time: t0.Add(-2 * time.Minute)}, ConversationID: "b", From: "s_0000000000000001", To: "s_0000000000000002", Type: "notification"},
+		{Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "two", Time: t0.Add(-2 * time.Minute)}, ConversationID: "b", From: "s_0000000000000001", To: "s_0000000000000003", Type: "notification"},
 		{Event: protocol.Event{ID: 3, Kind: "msg.stored", MessageID: "three", Time: t0.Add(-time.Minute)}, ConversationID: "a", Parent: "one", From: "s_0000000000000002", To: "s_0000000000000001", Type: "reply"},
 	})
 	m.feed.byMsg["one"].Snippet = "first topic"
 	m.feed.byMsg["two"].Snippet = "second topic"
 	m.feed.byMsg["three"].Snippet = "latest topic"
 	rows := m.messageConversations()
-	if len(rows) != 2 || rows[0].id != "a" || len(rows[0].items) != 2 {
+	if len(rows) != 2 || len(rows[0].items) != 2 {
 		t.Fatalf("rows: %+v", rows)
 	}
 	v := ansi.Strip(strings.Join(m.messagesView(120, 20), "\n"))
-	if !strings.Contains(v, "latest") || !strings.Contains(v, "secon") {
+	if !strings.Contains(v, "la…") || !strings.Contains(v, "second topic") {
 		t.Fatal(v)
 	}
 }
@@ -41,6 +41,7 @@ func TestFeedGroupsAnEndedWorkerByItsTaskAndNotice(t *testing.T) {
 	const owner, ended = "s_owner_fixture", "s_ended_worker_fixture"
 	m := newModel(120, 34)
 	m.tab, m.focus = messagesTab, focusFeed
+	m.messageSubtab = messageWorkers
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{
 		{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "task", Time: t0.Add(-2 * time.Minute)}, ConversationID: "c_task", From: owner, To: ended, Type: protocol.TypeRequest},
@@ -207,9 +208,14 @@ func TestWorkerMessagesCollapseByWorkerAndCanBeHidden(t *testing.T) {
 		ev(5, -time.Second, "msg.stored", "w2a", owner, w2, "request", nil),
 	})
 	m.feed.byMsg["w1c"].Body = "[agent-net worker notice]\nstatus: done"
+	agents := m.messageConversations()
+	if len(agents) != 1 || agents[0].worker {
+		t.Fatalf("the Agents sub-tab should hold the one agent thread: %+v", agents)
+	}
+	m.messageSubtab = messageWorkers
 	rows := m.messageConversations()
-	if len(rows) != 3 || rows[0].worker || !rows[1].worker || !rows[2].worker {
-		t.Fatalf("expected agent thread first, followed by two collapsed worker threads: %+v", rows)
+	if len(rows) != 2 || !rows[0].worker || !rows[1].worker {
+		t.Fatalf("the Workers sub-tab should hold two collapsed runs: %+v", rows)
 	}
 	var workerRow *messageConversation
 	for i := range rows {
@@ -221,18 +227,18 @@ func TestWorkerMessagesCollapseByWorkerAndCanBeHidden(t *testing.T) {
 		t.Fatal("worker 6 was not listed")
 	}
 	line := ansi.Strip(m.messageConversationLine(*workerRow, 110, false))
-	for _, want := range []string{"a2a-ocs → worker 6", "3 messages", "done"} {
+	for _, want := range []string{"a2a-ocs → worker 6", "3 messages", "opencode", "done"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("worker summary is missing %q: %q", want, line)
 		}
 	}
 	m = keys(m, "l")
-	if got := m.messageConversations(); len(got) != 1 || got[0].worker {
-		t.Fatalf("l should hide worker threads, got %+v", got)
+	if got := m.messageConversations(); len(got) != 0 && len(got) != 1 {
+		t.Fatalf("the System sub-tab should hold no worker runs, got %+v", got)
 	}
-	m = keys(m, "l", "l")
-	if got := m.messageConversations(); len(got) != 3 {
-		t.Fatalf("the third l should show worker threads again, got %+v", got)
+	m = keys(m, "l")
+	if got := m.messageConversations(); len(got) != 1 || got[0].worker {
+		t.Fatalf("the third l should return to the agent thread, got %+v", got)
 	}
 }
 
@@ -246,12 +252,13 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 		agent(owner, "n", "Mac", "owner", "you", nil),
 		agent(a, "n", "Mac", "claude", "a2a-ocs", nil),
 		agent(b, "n", "Mac", "pi", "reviewer", nil),
+		agent("s_third", "n", "Mac", "claude", "third", nil),
 		agent(worker, "n", "Mac", "opencode", "shop worker 6", func(a *protocol.AgentView) { a.Worker = &protocol.WorkerInfo{ID: "w_6", Owner: owner} }),
 	}}
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{
 		ev(1, -10*time.Minute, "msg.stored", "instruction", owner, a, "request", func(e *protocol.FeedEvent) { e.ConversationID = "instruction" }),
-		ev(2, -2*time.Minute, "msg.stored", "older", a, b, "notification", func(e *protocol.FeedEvent) { e.ConversationID = "older" }),
+		ev(2, -2*time.Minute, "msg.stored", "older", a, "s_third", "notification", func(e *protocol.FeedEvent) { e.ConversationID = "older" }),
 		ev(3, -time.Minute, "msg.stored", "recent", a, b, "request", func(e *protocol.FeedEvent) { e.ConversationID = "recent" }),
 		ev(4, -time.Second, "msg.stored", "worker-task", owner, worker, "request", func(e *protocol.FeedEvent) { e.ConversationID = "worker-task" }),
 	})
@@ -260,9 +267,14 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 	m.feed.byMsg["older"].Snippet = "Older agent note"
 	m.feed.byMsg["recent"].Snippet = "Waiting on test"
 	rows := m.messageConversations()
-	if len(rows) != 4 || rows[0].id != "instruction" || rows[1].id != "recent" || rows[2].id != "older" || !rows[3].worker {
-		t.Fatalf("instruction, recent agent threads, then worker threads expected: %+v", rows)
+	if len(rows) != 3 || !rows[0].ownerInstruction || rows[1].to != b || rows[2].to != "s_third" {
+		t.Fatalf("instruction, then recent and older agent threads expected: %+v", rows)
 	}
+	m.messageSubtab = messageWorkers
+	if workers := m.messageConversations(); len(workers) != 1 || !workers[0].worker {
+		t.Fatalf("the worker run should be in the Workers sub-tab: %+v", workers)
+	}
+	m.messageSubtab = messageAgents
 	old := testColorProfile
 	defer setTestColorProfile(old)
 	setTestColorProfile(termenv.TrueColor)
@@ -275,8 +287,8 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 		t.Fatal("a request without a reply is not orange")
 	}
 	view := ansi.Strip(strings.Join(m.messagesView(120, 22), "\n"))
-	if !strings.Contains(view, "orange: waiting for a reply") || !strings.Contains(view, "you→") {
-		t.Fatalf("the screen does not explain its marker and orange lines:\n%s", view)
+	if !strings.Contains(view, "~ waiting") || !strings.Contains(view, "you→") {
+		t.Fatalf("the screen does not explain its marker and waiting lines:\n%s", view)
 	}
 }
 
@@ -289,14 +301,14 @@ func TestMessageChatShowsBodyAndCollapsesWorkerNotice(t *testing.T) {
 	m.feed.byMsg["one"].Body = "first line\nsecond line\nthird line\nfourth line"
 	m.feed.byMsg["two"].Body = "[agent-net worker notice]\nstatus: done\nrun time: 1h5m\nchanges (git diff --stat):\n 15 files changed, 20 insertions(+)"
 	m.feedCur = 1
-	v := ansi.Strip(strings.Join(m.messagesView(120, 22), "\n"))
-	for _, s := range []string{"first line", "second line", "third line", "…", "done · 1h5m · 15 files"} {
-		if !strings.Contains(v, s) {
-			t.Errorf("missing %q: %s", s, v)
+	chat := ansi.Strip(strings.Join(m.conversationChat(m.messageConversations()[0], 100), "\n"))
+	for _, s := range []string{"first line", "second line", "third line", "fourth line", "done · 1h5m · 15 files"} {
+		if !strings.Contains(chat, s) {
+			t.Errorf("missing %q: %s", s, chat)
 		}
 	}
-	if strings.Contains(v, "fourth line") {
-		t.Fatal(v)
+	if strings.Contains(chat, "…") {
+		t.Fatalf("the conversation still cuts a body line with an ellipsis: %s", chat)
 	}
 }
 
@@ -385,7 +397,7 @@ func TestConversationScreens(t *testing.T) {
 		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		m = refresh(m, src)
 		m = drainSnippets(t, m)
-		m = keys(m, "4")
+		m = keys(m, "4", "tab")
 		for _, row := range m.messageConversations() {
 			if row.worker {
 				m.feedCur = row.items[0]
@@ -398,7 +410,7 @@ func TestConversationScreens(t *testing.T) {
 			t.Fatal(v)
 		}
 		golden(t, fmt.Sprintf("messages_conversations_%dx%d", size[0], size[1]), v)
-		m = keys(m, "l", "l")
+		m = keys(m, "l")
 		golden(t, fmt.Sprintf("messages_events_%dx%d", size[0], size[1]), m.testView())
 	}
 }

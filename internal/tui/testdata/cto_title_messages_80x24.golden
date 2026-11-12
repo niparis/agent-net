@@ -1,20 +1,20 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
-you→: your prompt · orange: waiting for a reply · red: failed · purple: Atlas
-╭─Messages────────────────────────────────────────────────────filter: all  (l)─╮
+[ Agents ]    Workers      System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
 │ ▸ Atlas ↔ tenebrae-53 · Please check the deployment.              1m · 1 msg │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│                                                                              │
-│ 0 system events                                                              │
+│ 1 thread · 0 system events                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ strategies ↔ tenebrae-53                                                     │
 │ ▸ 14:04 Atlas                                                                │
 │ Please check the deployment.                                                 │
 │ It is on staging.                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 
 
 ╭─Atlas · opencode · fake/m1───────────────────────────────────────────────────╮

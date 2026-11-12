@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration}
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries
 // of one task can be counted and the weekly table can show rejections per
@@ -1297,6 +1297,184 @@ CREATE TABLE IF NOT EXISTS worker_brief_rejections (
 CREATE INDEX IF NOT EXISTS worker_brief_rejections_task ON worker_brief_rejections(caller, task_key, at);
 CREATE INDEX IF NOT EXISTS worker_brief_rejections_caller ON worker_brief_rejections(caller, at);
 `
+
+// messagePairGIDSQL is the thread key of one message: the unordered pair of
+// parties, or the conversation id when one side is agent-net.
+const messagePairGIDSQL = `CASE
+ WHEN sender = 'agent-net' OR recipient = 'agent-net' THEN conversation_id
+ WHEN sender < recipient THEN 'pair:' || sender || char(0) || recipient
+ ELSE 'pair:' || recipient || char(0) || sender END`
+
+// messageWorkerLifecycleSQL marks a worker start, difficulty or queued notice
+// that the list skips.
+const messageWorkerLifecycleSQL = `CASE WHEN body LIKE '[agent-net worker notice]%' AND (
+ instr(body, char(10)||'status: started'||char(10)) > 0 OR
+ instr(body, char(10)||'status: difficulty'||char(10)) > 0 OR
+ instr(body, char(10)||'status: queued'||char(10)) > 0 OR
+ instr(body, char(10)||'status: not started'||char(10)) > 0) THEN 1 ELSE 0 END`
+
+// messageBlockedSQL marks a message that reports a blocked action.
+const messageBlockedSQL = `CASE WHEN body LIKE '%blocked on%' OR body LIKE '%blocked by%'
+ OR body LIKE '%blocked:%' OR body LIKE '%is blocked%' OR body LIKE '%I am blocked%'
+ THEN 1 ELSE 0 END`
+
+// messagesThreadMigration stores the thread key and the worker side as plain
+// columns and builds the indexes the Messages page reads. It is one migration
+// because the earlier pair-column and plain-column migrations were never
+// released: a gateway upgrading from v0.5.25 arrives with no thread columns at
+// all, while a development database may still hold the VIRTUAL generated
+// columns the first draft added. storeThreadColumnsPlain handles both, and the
+// column check makes a replay safe.
+const messagesThreadMigration = `SELECT 1 /* Message thread columns stored as plain columns */;`
+
+// storeThreadColumnsPlain rewrites the message thread columns as plain
+// columns and fills them. A VIRTUAL generated column makes SQLite fetch the
+// row even when an index holds the value, which is why the old page index
+// could not cover the Messages read. Replaying this is safe: a plain column is
+// left alone, the values are filled again, and the triggers are IF NOT EXISTS.
+func storeThreadColumnsPlain(tx *sql.Tx) error {
+	// Drop the generated columns first: the old page index holds them, and
+	// SQLite refuses to drop a column an index or trigger uses.
+	for _, name := range []string{"pair_gid", "worker_lifecycle", "blocked"} {
+		var hidden int
+		err := tx.QueryRow(`SELECT hidden FROM pragma_table_xinfo('messages') WHERE name = ?`, name).Scan(&hidden)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if hidden == 0 {
+			continue
+		}
+		if _, err := tx.Exec(`DROP INDEX IF EXISTS messages_pair_gid`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`ALTER TABLE messages DROP COLUMN ` + name); err != nil {
+			return err
+		}
+	}
+	for _, col := range []struct{ name, spec string }{
+		{"pair_gid", `TEXT NOT NULL DEFAULT ''`},
+		{"worker_lifecycle", `INTEGER NOT NULL DEFAULT 0`},
+		{"blocked", `INTEGER NOT NULL DEFAULT 0`},
+		{"worker_side", `TEXT NOT NULL DEFAULT ''`},
+	} {
+		var has int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_xinfo('messages') WHERE name = ?`, col.name).Scan(&has); err != nil {
+			return err
+		}
+		if has > 0 {
+			continue
+		}
+		if _, err := tx.Exec(`ALTER TABLE messages ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+			return err
+		}
+	}
+	// The worker side asks whether either party is a worker. Asking the full
+	// rule of every message row makes a ghost party scan its own messages, which
+	// costs seconds on a real gateway: build the worker ids once, from the same
+	// rule, then read them per row.
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS temp.messages_worker_ids;
+		CREATE TEMP TABLE messages_worker_ids (id TEXT PRIMARY KEY);
+		INSERT OR IGNORE INTO messages_worker_ids SELECT id FROM sessions WHERE worker <> '';
+		INSERT OR IGNORE INTO messages_worker_ids SELECT DISTINCT m.sender FROM messages m
+			WHERE m.body LIKE '[agent-net worker notice]%'
+			AND instr(m.body, char(10)||'status: not started'||char(10)) = 0
+			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.sender);
+		INSERT OR IGNORE INTO messages_worker_ids SELECT DISTINCT m.recipient FROM messages m
+			WHERE m.body LIKE '[agent-net worker brief]%'
+			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.recipient);
+		UPDATE messages SET pair_gid = ` + messagePairGIDSQL +
+		`, worker_lifecycle = ` + messageWorkerLifecycleSQL +
+		`, blocked = ` + messageBlockedSQL +
+		`, worker_side = CASE
+			WHEN sender IN (SELECT id FROM messages_worker_ids) THEN sender
+			WHEN recipient IN (SELECT id FROM messages_worker_ids) THEN recipient
+			ELSE '' END;
+		DROP TABLE messages_worker_ids;`); err != nil {
+		return err
+	}
+	// Replace the indexes so the page reads only the index, then start the
+	// triggers that keep the plain values current.
+	if _, err := tx.Exec(`DROP INDEX IF EXISTS messages_pair_gid;
+		DROP INDEX IF EXISTS messages_worker_side;
+		DROP INDEX IF EXISTS messages_worker_conversations;
+		DROP INDEX IF EXISTS messages_normal_threads;`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(messagesThreadIndexesSQL); err != nil {
+		return err
+	}
+	_, err := tx.Exec(messagesThreadTriggersSQL())
+	return err
+}
+
+// messageWorkerSideSQL is the worker session of one message row: the sender
+// when it is a worker, else the recipient. A worker is a session marked worker,
+// or an id seen only in a worker notice or a task brief, which is how the
+// gateway finds workers whose session record is gone. It is the same rule
+// the page used to apply to every worker on every read, written for one row,
+// and it reads indexes only.
+func messageWorkerSideSQL(alias string) string {
+	member := func(id string) string {
+		return `(EXISTS (SELECT 1 FROM sessions s WHERE s.id = ` + id + ` AND s.worker <> '')
+			OR (NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = ` + id + `) AND (
+				EXISTS (SELECT 1 FROM messages x WHERE x.sender = ` + id + `
+					AND x.body LIKE '[agent-net worker notice]%'
+					AND instr(x.body, char(10)||'status: not started'||char(10)) = 0)
+				OR EXISTS (SELECT 1 FROM messages x WHERE x.recipient = ` + id + `
+					AND x.body LIKE '[agent-net worker brief]%'))))`
+	}
+	return `CASE WHEN ` + member(alias+".sender") + ` THEN ` + alias + `.sender
+		WHEN ` + member(alias+".recipient") + ` THEN ` + alias + `.recipient ELSE '' END`
+}
+
+// messagesThreadIndexesSQL is the current thread index set. The page walks
+// messages_pair_gid in pair order and reads every column it filters on from the
+// same index. The worker page walks messages_worker_side in worker order, and
+// the normal page asks which conversations hold a worker once per page.
+const messagesThreadIndexesSQL = `
+CREATE INDEX IF NOT EXISTS messages_pair_gid ON messages
+ (pair_gid, created_at, conversation_id, worker_lifecycle, worker_side, blocked, sender, owner_approved);
+CREATE INDEX IF NOT EXISTS messages_worker_side ON messages
+ (worker_side, created_at, worker_lifecycle, conversation_id, blocked);
+CREATE INDEX IF NOT EXISTS messages_worker_conversations ON messages (conversation_id)
+ WHERE worker_side <> '';
+CREATE INDEX IF NOT EXISTS messages_normal_threads ON messages
+ (pair_gid, created_at, conversation_id, worker_lifecycle, blocked, sender, owner_approved)
+ WHERE worker_side = '';
+CREATE INDEX IF NOT EXISTS messages_worker_notices ON messages (sender)
+ WHERE body LIKE '[agent-net worker notice]%';
+CREATE INDEX IF NOT EXISTS messages_worker_briefs ON messages (recipient)
+ WHERE body LIKE '[agent-net worker brief]%';
+`
+
+// messagesThreadTriggersSQL keeps the plain thread columns current. The worker
+// side is also refreshed when a session becomes or stops being a worker,
+// because a brief can reach a worker before its session record exists.
+func messagesThreadTriggersSQL() string {
+	side := messageWorkerSideSQL("messages")
+	columns := `pair_gid = ` + messagePairGIDSQL + `, worker_lifecycle = ` + messageWorkerLifecycleSQL +
+		`, blocked = ` + messageBlockedSQL + `, worker_side = ` + side
+	return `
+CREATE TRIGGER IF NOT EXISTS messages_thread_ai AFTER INSERT ON messages BEGIN
+ UPDATE messages SET ` + columns + ` WHERE rowid = new.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS messages_thread_au AFTER UPDATE OF body ON messages BEGIN
+ UPDATE messages SET ` + columns + ` WHERE rowid = new.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS sessions_worker_ai AFTER INSERT ON sessions WHEN new.worker <> '' BEGIN
+ UPDATE messages SET worker_side = ` + side + ` WHERE sender = new.id OR recipient = new.id;
+END;
+CREATE TRIGGER IF NOT EXISTS sessions_worker_au AFTER UPDATE OF worker ON sessions WHEN old.worker <> new.worker BEGIN
+ UPDATE messages SET worker_side = ` + side + ` WHERE sender = new.id OR recipient = new.id;
+END;
+CREATE TRIGGER IF NOT EXISTS sessions_worker_ad AFTER DELETE ON sessions WHEN old.worker <> '' BEGIN
+ UPDATE messages SET worker_side = ` + side + ` WHERE sender = old.id OR recipient = old.id;
+END;
+`
+}
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.
@@ -1901,6 +2079,12 @@ func (s *Store) migrate() error {
 					tx.Rollback()
 					return err
 				}
+			}
+		}
+		if strings.Contains(migrations[i], "Message thread columns stored") {
+			if err := storeThreadColumnsPlain(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
 		var result sql.Result
@@ -4751,6 +4935,8 @@ func (s *Store) MessagesPage(nodeID string, q protocol.QueryMessages) ([]protoco
 // of its own: a start that is queued or has begun, or a start that never
 // became a worker, or a difficulty assessment. The list skips these messages
 // as rows and as activity, but the worker's conversation still shows them.
+// The generated worker_lifecycle column is the stored, indexed form of this
+// check; changing one means a new migration for the other.
 func workerNoticeLifecycleSQL(alias string) string {
 	return `(` + alias + `.body LIKE '[agent-net worker notice]%' AND (
 	instr(` + alias + `.body, char(10)||'status: started'||char(10)) > 0 OR
@@ -4759,169 +4945,215 @@ func workerNoticeLifecycleSQL(alias string) string {
 	instr(` + alias + `.body, char(10)||'status: not started'||char(10)) > 0))`
 }
 
-// workerSessionIDs finds the worker sessions from data that outlives the
-// session record: the live worker records, and the notices and task briefs
-// that only a worker or its caller sends.
-func (s *Store) workerSessionIDs() ([]string, error) {
-	rows, err := s.db.Query(`SELECT id FROM sessions WHERE worker <> ''
-		UNION
-		SELECT m.sender FROM messages m WHERE m.body LIKE '[agent-net worker notice]%'
-			AND instr(m.body, char(10)||'status: not started'||char(10)) = 0
-			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.sender)
-		UNION
-		SELECT m.recipient FROM messages m WHERE COALESCE(m.worker_task, m.body LIKE '[agent-net worker brief]%')
-			AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.recipient)`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+// conversationsNormalWhere is the stored-row filter for one alias. It drops
+// empty conversation ids, worker lifecycle notices, and every conversation a
+// worker took part in (a worker message carries worker_side, and the whole
+// conversation groups under the worker row instead). The worker conversations
+// are found through messages_worker_conversations, so a page does not read the
+// message bodies.
+func conversationsNormalWhere(alias string) string {
+	return conversationsRowWhere(alias) + `
+		AND ` + alias + `.conversation_id NOT IN (
+			SELECT w.conversation_id FROM messages w INDEXED BY messages_worker_conversations
+			WHERE w.worker_side <> '')`
 }
 
-// workerValuesCTE binds the worker session IDs once, for the queries that use
-// them. It returns the CTE prefix and its arguments, or empty when there are
-// no workers.
-func workerValuesCTE(ids []string) (string, []any) {
-	if len(ids) == 0 {
-		return "", nil
-	}
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
-	}
-	return `WITH wid(id) AS MATERIALIZED (VALUES ` + strings.TrimSuffix(strings.Repeat("(?),", len(ids)), ",") + `)`, args
+// conversationsRowWhere is the stored-row filter for the rows of a thread that
+// has already been classified: the page kept only normal threads, so the
+// conversation-wide worker test is settled and only the row flags remain.
+func conversationsRowWhere(alias string) string {
+	return alias + `.conversation_id <> '' AND ` + alias + `.worker_lifecycle = 0
+		AND ` + alias + `.worker_side = ''`
 }
 
-// ConversationsPage lists every stored conversation on the gateway, newest
-// activity first, with a keyset cursor. The caller is the owner, so it is not
-// limited to one machine's sessions (docs/security.md). Normal conversations
-// keep the indexed conversation_id query. Workers are grouped under
-// "worker:<session>" and read through the sender and recipient indexes, so a
-// worker with a started, a task and a hand-back notice has one row, not three.
-// The gateway does the grouping and filtering, never the screen.
-func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.ConversationPage, error) {
-	page := protocol.ConversationPage{Conversations: []protocol.ConversationView{}}
-	if q.Limit <= 0 || q.Limit > 100 {
-		q.Limit = 50
-	}
-	workers, err := s.workerSessionIDs()
-	if err != nil {
-		return page, err
-	}
-	wid, widArgs := workerValuesCTE(workers)
-
-	normalWhere := `m.conversation_id <> '' AND NOT ` + workerNoticeLifecycleSQL("m")
-	if len(workers) > 0 {
-		normalWhere += ` AND m.conversation_id NOT IN (
-			SELECT m2.conversation_id FROM messages m2
-			WHERE m2.sender IN (SELECT id FROM wid) OR m2.recipient IN (SELECT id FROM wid))`
-	}
-	countSQL := wid + ` SELECT COUNT(*) FROM (
-		SELECT m.conversation_id FROM messages m WHERE ` + normalWhere + ` GROUP BY m.conversation_id)`
-	if err := s.db.QueryRow(countSQL, widArgs...).Scan(&page.Total); err != nil {
-		return page, err
-	}
-
-	normalPrefix := "WITH "
-	if wid != "" {
-		normalPrefix = wid + ", "
-	}
-	sqlText := normalPrefix + `page AS (
-		SELECT m.conversation_id AS gid, MAX(m.created_at) AS last_at
-		FROM messages m WHERE ` + normalWhere + `
-		GROUP BY m.conversation_id`
-	args := append([]any{}, widArgs...)
-	if at, id, ok := parseConversationCursor(q.Cursor); ok {
-		sqlText += ` HAVING last_at < ? OR (last_at = ? AND gid < ?)`
+// conversationsPageSQL builds one keyset page of stored threads. It groups by
+// the stored pair_gid column, so messages_pair_gid supplies both the thread
+// order and the latest row of each page thread. The count and the flags read
+// only the page's thread ids, never the whole table, and no window function
+// walks every message. normalWhere filters alias m and systemWhere filters
+// alias b.
+func conversationsPageSQL(normalWhere, systemWhere, cursor string, limit int) (string, []any) {
+	// COUNT(*) OVER () counts the groups before the cursor and the limit, so
+	// the same scan that orders the page also supplies its total.
+	sqlText := `WITH page_groups AS MATERIALIZED (
+		SELECT m.pair_gid AS gid, MAX(m.created_at) AS last_at, COUNT(*) OVER () AS total
+		FROM messages m INDEXED BY messages_normal_threads WHERE ` + normalWhere + `
+		GROUP BY m.pair_gid
+	),
+	page AS (
+		SELECT gid, last_at, total FROM page_groups`
+	args := []any{}
+	if at, id, ok := parseConversationCursor(cursor); ok {
+		sqlText += ` WHERE last_at < ? OR (last_at = ? AND gid < ?)`
 		args = append(args, at, at, id)
 	}
-	sqlText += ` ORDER BY last_at DESC, gid DESC LIMIT ?)
-	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type,
-		(SELECT COUNT(*) FROM messages c WHERE c.conversation_id = p.gid
-			AND NOT ` + workerNoticeLifecycleSQL("c") + `),
+	sqlText += ` ORDER BY last_at DESC, gid DESC LIMIT ?),
+	latest AS MATERIALIZED (
+		SELECT p.gid,
+			(SELECT m.rowid FROM messages m INDEXED BY messages_normal_threads
+				WHERE m.pair_gid = p.gid AND m.created_at = p.last_at AND ` + conversationsRowWhere("m") + `
+				ORDER BY m.rowid DESC LIMIT 1) AS rid
+		FROM page p
+	),
+	totals AS MATERIALIZED (
+		SELECT m.pair_gid AS gid, COUNT(*) AS n, MAX(m.blocked) AS blocked,
+			MAX(CASE WHEN m.sender = 'agent-net' THEN 1 ELSE 0 END) AS system,
+			MAX(CASE WHEN m.owner_approved <> 0
+				OR EXISTS (SELECT 1 FROM sessions o WHERE o.id = m.sender AND o.harness = 'owner')
+				THEN 1 ELSE 0 END) AS direct_owner
+		FROM page p
+		CROSS JOIN messages m INDEXED BY messages_normal_threads ON m.pair_gid = p.gid
+		WHERE ` + conversationsRowWhere("m") + `
+		GROUP BY m.pair_gid
+	),
+	cited AS MATERIALIZED (
+		SELECT DISTINCT b.pair_gid AS gid
+		FROM charter_signals cs2 CROSS JOIN messages b ON b.id = cs2.message_id
+		WHERE cs2.prompt <> '' AND b.pair_gid IN (SELECT gid FROM page) AND ` + systemWhere + `
+	),
+	sys AS MATERIALIZED (
+		SELECT p.gid,
+			(SELECT b.body FROM messages b INDEXED BY messages_normal_threads
+				WHERE b.pair_gid = p.gid AND b.sender = 'agent-net'
+				AND ` + systemWhere + ` ORDER BY b.created_at DESC, b.rowid DESC LIMIT 1) AS body,
+			(SELECT b.recipient FROM messages b INDEXED BY messages_normal_threads
+				WHERE b.pair_gid = p.gid AND b.sender = 'agent-net'
+				AND ` + systemWhere + ` ORDER BY b.created_at DESC, b.rowid DESC LIMIT 1) AS recipient
+		FROM page p
+		WHERE p.gid IN (SELECT gid FROM totals WHERE system <> 0)
+	)
+	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type, t.n,
 		COALESCE(NULLIF(fp.name,''), fs.name, ''),
 		COALESCE(NULLIF(rp.name,''), rs.name, ''),
-		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id)
+		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id),
+		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''),
+		CASE WHEN t.direct_owner <> 0 OR c.gid IS NOT NULL THEN 1 ELSE 0 END, t.blocked, t.system,
+		COALESCE(s.body, ''), COALESCE(s.recipient, ''), p.total
 	FROM page p
-	JOIN messages m ON m.conversation_id = p.gid AND m.created_at = p.last_at
-		AND m.rowid = (SELECT MAX(m2.rowid) FROM messages m2
-			WHERE m2.conversation_id = p.gid AND m2.created_at = p.last_at)
+	JOIN latest l ON l.gid = p.gid
+	JOIN messages m ON m.rowid = l.rid
+	JOIN totals t ON t.gid = p.gid
+	LEFT JOIN cited c ON c.gid = p.gid
+	LEFT JOIN sys s ON s.gid = p.gid
 	LEFT JOIN sessions fs ON fs.id = m.sender
 	LEFT JOIN profiles fp ON fp.session_id = m.sender
 	LEFT JOIN sessions rs ON rs.id = m.recipient
 	LEFT JOIN profiles rp ON rp.session_id = m.recipient
 	ORDER BY p.last_at DESC, p.gid DESC`
-	args = append(args, q.Limit+1)
-	normal, err := s.scanConversations(sqlText, args...)
+	return sqlText, append(args, limit)
+}
+
+// conversationsWorkerPageSQL builds one keyset page of worker threads. A
+// worker's messages carry its id in worker_side, so the page walks
+// messages_worker_side in worker order: one index-only pass groups the whole
+// history, and only the latest message of each page row is read from the
+// table for its body. The activity count and the blocked flag come from the
+// same index, never from a body.
+func conversationsWorkerPageSQL(cursor string, limit int) (string, []any) {
+	sqlText := `WITH grp AS MATERIALIZED (
+		SELECT m.worker_side AS sid,
+			MAX(CASE WHEN m.worker_lifecycle = 0 THEN m.created_at END) AS last_at
+		FROM messages m INDEXED BY messages_worker_side
+		WHERE m.worker_side <> '' AND m.conversation_id <> ''
+		GROUP BY m.worker_side
+	),
+	counted AS MATERIALIZED (
+		SELECT 'worker:' || sid AS gid, sid, last_at, COUNT(*) OVER () AS total
+		FROM grp WHERE last_at IS NOT NULL
+	),
+	page AS (
+		SELECT gid, sid, last_at, total FROM counted`
+	args := []any{}
+	if at, id, ok := parseConversationCursor(cursor); ok {
+		sqlText += ` WHERE last_at < ? OR (last_at = ? AND gid < ?)`
+		args = append(args, at, at, id)
+	}
+	sqlText += ` ORDER BY last_at DESC, gid DESC LIMIT ?),
+	latest AS MATERIALIZED (
+		SELECT p.gid, p.last_at, p.total,
+			(SELECT m.rowid FROM messages m INDEXED BY messages_worker_side
+				WHERE m.worker_side = p.sid AND m.conversation_id <> ''
+					AND m.worker_lifecycle = 0
+				ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1) AS rid,
+			(SELECT COUNT(*) FROM messages m INDEXED BY messages_worker_side
+				WHERE m.worker_side = p.sid AND m.conversation_id <> ''
+					AND m.worker_lifecycle = 0) AS n,
+			(SELECT MAX(m.blocked) FROM messages m INDEXED BY messages_worker_side
+				WHERE m.worker_side = p.sid AND m.conversation_id <> '') AS blocked
+		FROM page p
+	)
+	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type, p.n,
+		COALESCE(NULLIF(fp.name,''), fs.name, ''),
+		COALESCE(NULLIF(rp.name,''), rs.name, ''),
+		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id),
+		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''), 0,
+		CASE WHEN p.blocked <> 0 THEN 1 ELSE 0 END, 0, '', '', p.total
+	FROM latest p
+	JOIN messages m ON m.rowid = p.rid
+	LEFT JOIN sessions fs ON fs.id = m.sender
+	LEFT JOIN profiles fp ON fp.session_id = m.sender
+	LEFT JOIN sessions rs ON rs.id = m.recipient
+	LEFT JOIN profiles rp ON rp.session_id = m.recipient
+	ORDER BY p.last_at DESC, p.gid DESC`
+	return sqlText, append(args, limit)
+}
+
+// conversationsWorkerCountSQL counts the worker threads with activity. It runs
+// only at a cursor boundary where the page query returned no row to carry its
+// total.
+const conversationsWorkerCountSQL = `SELECT COUNT(*) FROM (
+	SELECT m.worker_side FROM messages m INDEXED BY messages_worker_side
+	WHERE m.worker_side <> '' AND m.conversation_id <> '' AND m.worker_lifecycle = 0
+	GROUP BY m.worker_side)`
+
+// ConversationsPage lists every stored thread on the gateway, newest activity
+// first, with a keyset cursor. The caller is the owner, so it is not limited to
+// one machine's sessions (docs/security.md). Peer threads group by pair_gid
+// through messages_pair_gid. Workers are grouped under "worker:<session>" and
+// read through the sender and recipient indexes, so a worker with a started, a
+// task and a hand-back notice has one row, not three. The gateway does the
+// grouping and filtering, never the screen.
+func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.ConversationPage, error) {
+	page := protocol.ConversationPage{Conversations: []protocol.ConversationView{}}
+	if q.Limit <= 0 || q.Limit > 100 {
+		q.Limit = 50
+	}
+	normalWhere := conversationsNormalWhere("m")
+	sqlText, args := conversationsPageSQL(normalWhere, conversationsNormalWhere("b"), q.Cursor, q.Limit+1)
+	normal, total, err := s.scanConversations(sqlText, args...)
 	if err != nil {
+		return page, err
+	}
+	page.Total = total
+	if total == 0 && q.Cursor != "" {
+		// The normal page ended before the worker rows did, so no row carried
+		// the thread count. Ask for it once, only on that boundary.
+		countSQL := `SELECT COUNT(DISTINCT m.pair_gid) FROM messages m INDEXED BY messages_pair_gid WHERE ` + normalWhere
+		if err := s.db.QueryRow(countSQL).Scan(&page.Total); err != nil {
+			return page, err
+		}
+	}
+	if err := s.fillHourlySpread(normal, conversationsRowWhere("m")); err != nil {
 		return page, err
 	}
 	rows := normal
 
-	if len(workers) > 0 {
-		workerBase := wid + `, wm AS MATERIALIZED (
-			SELECT m.rowid AS rid, m.id, m.conversation_id, m.created_at, m.sender, m.recipient,
-				m.type, m.body, m.state, m.sender_cto,
-				CASE WHEN m.sender IN (SELECT id FROM wid) THEN 'worker:' || m.sender
-					ELSE 'worker:' || m.recipient END AS gid,
-				` + workerNoticeLifecycleSQL("m") + ` AS lifecycle
-			FROM messages m
-			WHERE m.conversation_id <> ''
-				AND (m.sender IN (SELECT id FROM wid) OR m.recipient IN (SELECT id FROM wid))
-		)`
-		var n int
-		if err := s.db.QueryRow(workerBase+` SELECT COUNT(*) FROM (
-			SELECT gid FROM wm WHERE lifecycle = 0 AND gid <> '' GROUP BY gid)`, widArgs...).Scan(&n); err != nil {
-			return page, err
-		}
-		page.Total += n
-
-		workerSQL := workerBase + `, live AS MATERIALIZED (SELECT * FROM wm WHERE lifecycle = 0), latest AS MATERIALIZED (
-			SELECT gid, rid, id, sender, recipient, body, state, sender_cto, type, created_at,
-				COUNT(*) OVER (PARTITION BY gid) AS n,
-				ROW_NUMBER() OVER (PARTITION BY gid ORDER BY created_at DESC, rid DESC) AS rn
-			FROM live WHERE gid <> ''
-		), page AS (
-			SELECT gid, created_at AS last_at, id, sender, recipient, body, state, sender_cto, type, n
-			FROM latest WHERE rn = 1`
-		wargs := append([]any{}, widArgs...)
-		if at, id, ok := parseConversationCursor(q.Cursor); ok {
-			workerSQL += ` AND (created_at < ? OR (created_at = ? AND gid < ?))`
-			wargs = append(wargs, at, at, id)
-		}
-		workerSQL += ` ORDER BY created_at DESC, gid DESC LIMIT ?)
-		SELECT p.gid, p.last_at, p.id, p.sender, p.recipient, p.body, p.state, p.sender_cto, p.type, p.n,
-			COALESCE(NULLIF(fp.name,''), fs.name, ''),
-			COALESCE(NULLIF(rp.name,''), rs.name, ''),
-			EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = p.id)
-		FROM page p
-		LEFT JOIN sessions fs ON fs.id = p.sender
-		LEFT JOIN profiles fp ON fp.session_id = p.sender
-		LEFT JOIN sessions rs ON rs.id = p.recipient
-		LEFT JOIN profiles rp ON rp.session_id = p.recipient
-		ORDER BY p.last_at DESC, p.gid DESC`
-		wargs = append(wargs, q.Limit+1)
-		workerRows, err := s.scanConversations(workerSQL, wargs...)
-		if err != nil {
-			return page, err
-		}
-		// The worker facts are reads of their own, and the store may have one
-		// connection.
-		for i := range workerRows {
-			if session, ok := strings.CutPrefix(workerRows[i].ID, "worker:"); ok {
-				s.workerRow(&workerRows[i], session)
-			}
-		}
-		rows = append(rows, workerRows...)
+	workerSQL, wargs := conversationsWorkerPageSQL(q.Cursor, q.Limit+1)
+	workerRows, workerTotal, err := s.scanConversations(workerSQL, wargs...)
+	if err != nil {
+		return page, err
 	}
+	if len(workerRows) == 0 && q.Cursor != "" {
+		// Same boundary as the normal page: no worker row carried the total.
+		if err := s.db.QueryRow(conversationsWorkerCountSQL).Scan(&workerTotal); err != nil {
+			return page, err
+		}
+	}
+	page.Total += workerTotal
+	if err := s.fillWorkerRows(workerRows); err != nil {
+		return page, err
+	}
+	rows = append(rows, workerRows...)
 
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].At.Equal(rows[j].At) {
@@ -4938,75 +5170,265 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 	return page, nil
 }
 
-// scanConversations reads the rows both conversation queries select.
-func (s *Store) scanConversations(sqlText string, args ...any) ([]protocol.ConversationView, error) {
+// scanConversations reads the rows both conversation queries select. The last
+// column is the total number of grouped rows, which the page query counts in
+// the same pass as the groups; the worker query passes 0.
+func (s *Store) scanConversations(sqlText string, args ...any) ([]protocol.ConversationView, int, error) {
 	rows, err := s.db.QueryContext(context.Background(), sqlText, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []protocol.ConversationView{}
+	var total int
 	for rows.Next() {
 		var v protocol.ConversationView
 		var at int64
-		var senderCTO, ownerInstruction int
+		var senderCTO, ownerInstruction, ownerNamed, blocked, system int
 		var typ string
 		if err := rows.Scan(&v.ID, &at, &v.LastMessageID, &v.From, &v.To, &v.LastLine, &v.State,
-			&senderCTO, &typ, &v.Count, &v.FromName, &v.ToName, &ownerInstruction); err != nil {
-			return nil, err
+			&senderCTO, &typ, &v.Count, &v.FromName, &v.ToName, &ownerInstruction,
+			&v.FromHarness, &v.ToHarness, &ownerNamed, &blocked, &system, &v.SystemLine, &v.SystemTo,
+			&total); err != nil {
+			return nil, 0, err
 		}
 		v.Type = typ
 		v.At = time.Unix(0, at).UTC()
 		v.LastLine = conversationLine(v.LastLine)
+		v.SystemLine = conversationLine(v.SystemLine)
 		v.FromCTO = senderCTO != 0
 		v.OwnerInstruction = ownerInstruction != 0
+		v.OwnerNamed = ownerNamed != 0
+		v.Blocked = blocked != 0
+		v.System = system != 0
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
-// workerRow fills the caller and task of a worker row from messages that
-// survive the worker's session record: the first message sent to the worker,
-// or its stored worker info when no task message is left. The row is named
-// from these facts, never from a missing session.
-func (s *Store) workerRow(v *protocol.ConversationView, session string) {
-	v.WorkerSession = session
-	var caller, body string
-	if err := s.db.QueryRow(`SELECT m.sender, m.body FROM messages m
-		WHERE m.recipient = ? AND m.conversation_id <> '' AND NOT `+workerNoticeLifecycleSQL("m")+`
-		ORDER BY m.created_at ASC, m.rowid ASC LIMIT 1`, session).Scan(&caller, &body); err != nil {
-		caller, body = "", ""
+// fillHourlySpread sets PeakHour and MedianHour on each row. The Messages tab
+// marks a burst when a thread's busiest hour holds at least 20 messages and is
+// more than three times its median hourly count. One read for the whole page,
+// never one per row.
+func (s *Store) fillHourlySpread(rows []protocol.ConversationView, rowWhere string) error {
+	if len(rows) == 0 {
+		return nil
 	}
-	if body != "" {
-		v.Task = conversationLine(protocol.WorkerTaskSummary(body))
+	ids := make([]string, 0, len(rows))
+	seen := map[string]bool{}
+	for _, r := range rows {
+		if r.ID == "" || seen[r.ID] {
+			continue
+		}
+		seen[r.ID] = true
+		ids = append(ids, r.ID)
 	}
-	if caller != "" {
-		v.WorkerOwner = caller
-		v.From = caller
-		v.To = session
-		if name := s.displayName(caller); name != "" {
-			v.FromName = name
+	if len(ids) == 0 {
+		return nil
+	}
+	values := strings.TrimSuffix(strings.Repeat("(?),", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	// created_at is nanoseconds; an hour is 3.6e12 of them. pair_gid carries
+	// the pair or conversation id, so the spread is over the same group the
+	// row shows. The join seeks each page thread on the index; the IN-list form
+	// made SQLite sort every match in a temporary tree.
+	query := `WITH ids(gid) AS (VALUES ` + values + `)
+		SELECT m.pair_gid, m.created_at / 3600000000000 AS hour, COUNT(*)
+		FROM ids JOIN messages m INDEXED BY messages_normal_threads ON m.pair_gid = ids.gid
+		WHERE ` + rowWhere + `
+		GROUP BY m.pair_gid, hour`
+	got, err := s.db.Query(query, args...)
+	if err != nil {
+		return err
+	}
+	defer got.Close()
+	counts := map[string][]int{}
+	for got.Next() {
+		var id string
+		var hour, n int64
+		if err := got.Scan(&id, &hour, &n); err != nil {
+			return err
+		}
+		counts[id] = append(counts[id], int(n))
+	}
+	if err := got.Err(); err != nil {
+		return err
+	}
+	for i := range rows {
+		hours := counts[rows[i].ID]
+		rows[i].PeakHour, rows[i].MedianHour = hourlySpread(hours)
+	}
+	return nil
+}
+
+// hourlySpread returns the busiest hour's count and the median hourly count.
+func hourlySpread(hours []int) (peak, median int) {
+	if len(hours) == 0 {
+		return 0, 0
+	}
+	sorted := append([]int(nil), hours...)
+	sort.Ints(sorted)
+	peak = sorted[len(sorted)-1]
+	mid := len(sorted) / 2
+	if len(sorted)%2 == 1 {
+		median = sorted[mid]
+	} else {
+		median = (sorted[mid-1] + sorted[mid]) / 2
+	}
+	return peak, median
+}
+
+// fillWorkerRows fills the caller and task of the worker rows of one page. It
+// reads the first task message of every worker, the worker records and the
+// caller names in three reads, never two per row.
+func (s *Store) fillWorkerRows(rows []protocol.ConversationView) error {
+	var sessions []string
+	seen := map[string]bool{}
+	for i := range rows {
+		session, ok := strings.CutPrefix(rows[i].ID, "worker:")
+		if !ok || session == "" || seen[session] {
+			continue
+		}
+		seen[session] = true
+		sessions = append(sessions, session)
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	args := make([]any, len(sessions))
+	for i, session := range sessions {
+		args[i] = session
+	}
+	values := strings.TrimSuffix(strings.Repeat("(?),", len(sessions)), ",")
+	type firstTask struct{ caller, body string }
+	first := map[string]firstTask{}
+	got, err := s.db.Query(`SELECT f.recipient, f.sender, m.body FROM (
+		SELECT m.recipient AS recipient, m.sender AS sender, m.rowid AS rid,
+			ROW_NUMBER() OVER (PARTITION BY m.recipient ORDER BY m.created_at ASC, m.rowid ASC) AS rn
+		FROM messages m
+		WHERE m.recipient IN (`+values+`) AND m.conversation_id <> '' AND NOT `+workerNoticeLifecycleSQL("m")+`
+	) f JOIN messages m ON m.rowid = f.rid WHERE f.rn = 1`, args...)
+	if err != nil {
+		return err
+	}
+	for got.Next() {
+		var session string
+		var t firstTask
+		if err := got.Scan(&session, &t.caller, &t.body); err != nil {
+			got.Close()
+			return err
+		}
+		first[session] = t
+	}
+	if err := got.Err(); err != nil {
+		got.Close()
+		return err
+	}
+	got.Close()
+
+	type workerFact struct{ owner, task, name string }
+	facts := map[string]workerFact{}
+	got, err = s.db.Query(`SELECT s.id, COALESCE(json_extract(s.worker,'$.owner'),''),
+		COALESCE(json_extract(s.worker,'$.task'),''), COALESCE(NULLIF(p.name,''), s.name, '')
+		FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id WHERE s.id IN (`+values+`)`, args...)
+	if err != nil {
+		return err
+	}
+	for got.Next() {
+		var session string
+		var f workerFact
+		if err := got.Scan(&session, &f.owner, &f.task, &f.name); err != nil {
+			got.Close()
+			return err
+		}
+		facts[session] = f
+	}
+	if err := got.Err(); err != nil {
+		got.Close()
+		return err
+	}
+	got.Close()
+
+	// The caller name comes from the session record; the owner's does too when
+	// the task message is gone. One read for both sets.
+	names := map[string]string{}
+	var nameIDs []string
+	for _, session := range sessions {
+		if caller := first[session].caller; caller != "" {
+			nameIDs = append(nameIDs, caller)
+		}
+		if owner := facts[session].owner; owner != "" {
+			nameIDs = append(nameIDs, owner)
 		}
 	}
-	if v.Task == "" || v.WorkerOwner == "" {
-		var owner, task, name string
-		err := s.db.QueryRow(`SELECT COALESCE(json_extract(s.worker,'$.owner'),''),
-			COALESCE(json_extract(s.worker,'$.task'),''), COALESCE(NULLIF(p.name,''), s.name, '')
-			FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id WHERE s.id = ?`, session).Scan(&owner, &task, &name)
-		if err == nil {
-			if v.Task == "" {
-				v.Task = conversationLine(task)
+	if len(nameIDs) > 0 {
+		nameArgs := make([]any, len(nameIDs))
+		for i, id := range nameIDs {
+			nameArgs[i] = id
+		}
+		nameValues := strings.TrimSuffix(strings.Repeat("(?),", len(nameIDs)), ",")
+		got, err = s.db.Query(`SELECT s.id, COALESCE(NULLIF(p.name,''), s.name, '')
+			FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id
+			WHERE s.id IN (`+nameValues+`)`, nameArgs...)
+		if err != nil {
+			return err
+		}
+		for got.Next() {
+			var id, name string
+			if err := got.Scan(&id, &name); err != nil {
+				got.Close()
+				return err
 			}
-			if v.WorkerOwner == "" && owner != "" {
-				v.WorkerOwner = owner
-				v.From = owner
-				v.To = session
-				if ownerName := s.displayName(owner); ownerName != "" {
-					v.FromName = ownerName
-				}
+			names[id] = name
+		}
+		if err := got.Err(); err != nil {
+			got.Close()
+			return err
+		}
+		got.Close()
+	}
+
+	for i := range rows {
+		session, ok := strings.CutPrefix(rows[i].ID, "worker:")
+		if !ok {
+			continue
+		}
+		rows[i].WorkerSession = session
+		caller, body := first[session].caller, first[session].body
+		if body != "" {
+			rows[i].Task = conversationLine(protocol.WorkerTaskSummary(body))
+		}
+		if caller != "" {
+			rows[i].WorkerOwner = caller
+			rows[i].From = caller
+			rows[i].To = session
+			if name := names[caller]; name != "" {
+				rows[i].FromName = name
+			}
+		}
+		if rows[i].Task != "" && rows[i].WorkerOwner != "" {
+			continue
+		}
+		f := facts[session]
+		if f.name == "" && f.owner == "" && f.task == "" {
+			continue
+		}
+		if rows[i].Task == "" {
+			rows[i].Task = conversationLine(f.task)
+		}
+		if rows[i].WorkerOwner == "" && f.owner != "" {
+			rows[i].WorkerOwner = f.owner
+			rows[i].From = f.owner
+			rows[i].To = session
+			if name := names[f.owner]; name != "" {
+				rows[i].FromName = name
 			}
 		}
 	}
+	return nil
 }
 
 // displayName is the name the screen would draw for a session, or empty when
@@ -5036,6 +5458,10 @@ func (s *Store) ConversationMessages(conversationID string, limit int) ([]protoc
 		sqlText = msgSelect + `
 			WHERE m.sender = ? OR m.recipient = ? ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`
 		args = []any{session, session, limit}
+	} else if strings.HasPrefix(conversationID, "pair:") {
+		sqlText = msgSelect + `
+			WHERE m.pair_gid = ? ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`
+		args = []any{conversationID, limit}
 	}
 	rows, err := s.db.QueryContext(context.Background(), sqlText, args...)
 	if err != nil {

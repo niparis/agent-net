@@ -40,7 +40,7 @@ func (m Model) messageConversations() []messageConversation {
 	if m.convLoaded {
 		return m.convs
 	}
-	return m.feedConversations()
+	return m.visibleConversations(m.feedConversations())
 }
 
 // selectedConversationIndex is the selected row. The stored list keeps its own
@@ -65,7 +65,7 @@ func (m *Model) rebuildConversations() {
 	}
 	live := m.feedConversations()
 	if !m.convLoaded {
-		m.convs = live
+		m.convs = m.visibleConversations(live)
 		if m.convSel >= len(m.convs) {
 			m.convSel = max(len(m.convs)-1, 0)
 		}
@@ -121,6 +121,24 @@ func (m *Model) rebuildConversations() {
 			if row.task != "" {
 				r.task = row.task
 			}
+			r.system = r.system || row.system
+			if row.systemKind != systemOther {
+				r.systemKind = row.systemKind
+			}
+			r.ownerNamed = r.ownerNamed || row.ownerNamed
+			r.blocked = r.blocked || row.blocked
+			if r.peakHour == 0 && r.medianHour == 0 {
+				r.peakHour, r.medianHour = row.peakHour, row.medianHour
+			}
+			if r.fromHarness == "" {
+				r.fromHarness = row.fromHarness
+			}
+			if r.toHarness == "" {
+				r.toHarness = row.toHarness
+			}
+			if len(r.links) == 0 {
+				r.links = row.links
+			}
 			continue
 		}
 		byID[v.ID] = len(rows)
@@ -131,35 +149,9 @@ func (m *Model) rebuildConversations() {
 		}
 		rows = append(rows, row)
 	}
-	// The stored list is newest activity first. The feed fallback keeps its
-	// rank order so an owner instruction stays at the top there.
-	if m.hideWorkerThreads {
-		kept := rows[:0]
-		for _, r := range rows {
-			if !r.worker {
-				kept = append(kept, r)
-			}
-		}
-		rows = kept
-	}
-	if needle := strings.ToLower(firstNonEmpty(m.uiFilter, m.filter)); needle != "" {
-		kept := rows[:0]
-		for _, r := range rows {
-			text := strings.ToLower(strings.Join([]string{r.from, r.to, r.fromName, r.toName, r.lastLine, r.task,
-				m.conversationName(r.from), m.conversationName(r.to)}, " "))
-			if strings.Contains(text, needle) {
-				kept = append(kept, r)
-			}
-		}
-		rows = kept
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].at.Equal(rows[j].at) {
-			return rows[i].id > rows[j].id
-		}
-		return rows[i].at.After(rows[j].at)
-	})
-	m.convs = rows
+	// The active sub-tab, the filters and the sort run on the merged rows the
+	// screen already holds. The gateway is not asked again.
+	m.convs = m.visibleConversations(rows)
 	if selID != "" {
 		for i := range m.convs {
 			if m.convs[i].id == selID {
@@ -180,7 +172,29 @@ func (m Model) storedConversation(v protocol.ConversationView) messageConversati
 		count: v.Count, lastLine: sanitize(v.LastLine), state: v.State, typ: v.Type, at: v.At,
 		lastMsgID: v.LastMessageID, cto: v.FromCTO, ownerInstruction: v.OwnerInstruction,
 		stored: true, task: sanitize(v.Task),
+		fromHarness: v.FromHarness, toHarness: v.ToHarness,
+		ownerNamed: v.OwnerNamed || v.OwnerInstruction, blocked: v.Blocked,
+		peakHour: v.PeakHour, medianHour: v.MedianHour,
 	}
+	if v.System {
+		c.system = true
+		line := v.SystemLine
+		if line == "" {
+			line = v.LastLine
+		}
+		c.systemKind, _ = classifySystemMessage("agent-net", line)
+	}
+	if k, ok := classifySystemMessage("", v.LastLine); ok {
+		c.system, c.systemKind = true, k
+	}
+	if c.system {
+		c.recipient = v.SystemTo
+		if c.recipient == "" {
+			c.recipient = v.To
+		}
+	}
+	c.burst = m.threadBurst(c)
+	c.links = m.threadLinks(c)
 	if v.WorkerSession != "" {
 		c.worker, c.workerSession, c.workerOwner = true, v.WorkerSession, v.WorkerOwner
 		if c.workerOwner == "" {
@@ -246,10 +260,18 @@ func (m *Model) wantConversations() tea.Cmd {
 		return nil
 	}
 	rows := m.messageConversations()
-	if len(rows) == 0 || m.selectedConversationIndex(rows) < len(rows)-3 {
+	// A sub-tab can be empty on the first page because another sub-tab owns
+	// every row on it. Load the next page until this view has a few rows, or
+	// the short cap is reached. This is the existing page cursor, not a new
+	// poll.
+	needRows := len(rows) < 3 && m.convAutoPages < 3
+	if !needRows && (len(rows) == 0 || m.selectedConversationIndex(rows) < len(rows)-3) {
 		return nil
 	}
 	m.convLoading = true
+	if needRows {
+		m.convAutoPages++
+	}
 	return m.conversationCmd(m.convNext, false)
 }
 
@@ -298,6 +320,7 @@ func (m *Model) applyConversationPage(msg conversationPageMsg) {
 	m.convErr = ""
 	m.convTotal = msg.page.Total
 	if msg.first {
+		m.convAutoPages = 0
 		merged := make(map[string]protocol.ConversationView, len(m.storedConvs)+len(msg.page.Conversations))
 		for _, v := range m.storedConvs {
 			merged[v.ID] = v
@@ -425,13 +448,15 @@ func (m Model) messageLines(senderID, workerSession string, fromCTO bool, ownerI
 		}
 	}
 	if text, ok := workerNoticeLine(body); ok {
+		style := sBad
 		switch {
 		case workerNoticeLifecycle(body):
-			out = append(out, sDim.Render(clip(text, w)))
+			style = sDim
 		case strings.Contains(text, "✓ done"):
-			out = append(out, sBusy.Render(clip(text, w)))
-		default:
-			out = append(out, sBad.Render(clip(text, w)))
+			style = sBusy
+		}
+		for _, line := range wrap(text, w) {
+			out = append(out, style.Render(line))
 		}
 		return out
 	}
@@ -439,12 +464,13 @@ func (m Model) messageLines(senderID, workerSession string, fromCTO bool, ownerI
 		out = append(out, sDim.Render(clip("empty message", w)))
 		return out
 	}
-	lines := strings.Split(body, "\n")
-	for j := 0; j < len(lines) && j < 3; j++ {
-		out = append(out, clip(lines[j], w))
-	}
-	if len(lines) > 3 {
-		out = append(out, sDim.Render("…"))
+	// Wrap every line of the body. No line is cut with an ellipsis: the panel
+	// scrolls to the selected message instead.
+	bodyStyle := lipgloss.NewStyle().Foreground(roleText)
+	for _, line := range strings.Split(body, "\n") {
+		for _, wrapped := range wrap(line, w) {
+			out = append(out, bodyStyle.Render(wrapped))
+		}
 	}
 	return out
 }

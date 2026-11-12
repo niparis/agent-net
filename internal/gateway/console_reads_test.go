@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,7 +83,9 @@ func TestConsoleCachesLatestConversationsWithLargeHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != conversations || len(page.Conversations) != 50 || page.Conversations[0].ID != "c_console_00000" || page.Next == "" {
+	// Every conversation is between the same two parties, so the latest page
+	// holds one pair row.
+	if page.Total != 1 || len(page.Conversations) != 1 || !strings.HasPrefix(page.Conversations[0].ID, "pair:") || page.Next != "" {
 		t.Fatalf("latest page total=%d rows=%d next=%q", page.Total, len(page.Conversations), page.Next)
 	}
 }

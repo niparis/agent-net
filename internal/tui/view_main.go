@@ -1816,39 +1816,37 @@ func (m Model) messagesView(w, h int) []string {
 	if m.open != nil {
 		return append(out, m.messageView(w, h-1)...)
 	}
-	out = append(out, sDim.Render(clip("you→: your prompt · orange: waiting for a reply · red: failed · purple: "+m.ctoTitle(), w)))
+	out = append(out, m.messageSubtabs(w))
+	out = append(out, sDim.Render(clip(m.messageLegend(), w)))
 	rows := m.messageConversations()
 	selected := m.selectedConversationIndex(rows)
-	list := []string{}
 	listW := w - 4
 	chatW := w - 4
 	if w >= 100 {
-		listW = max(w*55/100-4, 1)
+		// The list is narrower than before; the conversation gets the room.
+		listW = min(max(w*45/100-4, 30), 72)
 		chatW = max(w-(listW+4)-4, 1)
 	}
-	for i, r := range rows {
-		list = append(list, m.messageConversationLine(r, listW, i == selected && m.focus == focusFeed))
-	}
-	if len(list) == 0 {
-		empty := "No conversations"
-		if m.feed.unavailable != "" {
-			empty = m.feed.unavailable
-		}
-		for _, line := range wrap(empty, listW) {
-			list = append(list, sDim.Render(line))
-		}
-	}
-	eventCount := m.systemEventCount()
-	eventWord := "events"
-	if eventCount == 1 {
-		eventWord = "event"
-	}
-	footer := fmt.Sprintf("%d system %s", eventCount, eventWord)
 	var chat []string
 	if len(rows) > 0 {
 		chat = m.conversationChat(rows[selected], chatW)
+		header := m.threadParticipants(rows[selected])
+		if header != "" {
+			var head []string
+			for _, line := range wrap(header, chatW) {
+				head = append(head, sDim.Render(line))
+			}
+			chat = append(head, chat...)
+		}
+		if links := m.threadLinks(rows[selected]); len(links) > 0 {
+			labels := make([]string, 0, len(links))
+			for _, link := range links {
+				labels = append(labels, linkLabel(link))
+			}
+			chat = append([]string{sDim.Render("links: " + strings.Join(labels, " · "))}, chat...)
+		}
 	} else {
-		chat = []string{sDim.Render("Select a conversation")}
+		chat = []string{sDim.Render("Select a thread")}
 	}
 	chatSelected := 0
 	for i, line := range chat {
@@ -1857,12 +1855,17 @@ func (m Model) messagesView(w, h int) []string {
 			break
 		}
 	}
+	footer := m.messageFooter(rows)
 	if w >= 100 {
 		height := max(h-4, 0)
-		list = messageFit(list, max(height-1, 0), selected)
+		list, listSel := m.threadListLines(rows, listW, selected, max(height-1, 0))
+		if len(list) == 0 {
+			list = m.emptyThreadLines(listW)
+		}
+		list = messageFit(list, max(height-1, 0), listSel)
 		list = append(list, sDim.Render(clip(footer, listW)))
 		chat = messageFit(chat, height, chatSelected)
-		left := panelWithRightHeader("Messages", "filter: "+m.messageFilterName()+"  (l)", list, listW+4, roleAccent)
+		left := panelWithRightHeader("Threads", m.messageFilterLine(), list, listW+4, roleAccent)
 		right := panel("Conversation", chat, chatW+4, roleAccent)
 		for i := range left {
 			out = append(out, left[i]+right[i])
@@ -1870,38 +1873,126 @@ func (m Model) messagesView(w, h int) []string {
 		return out
 	}
 	available := max(h-6, 0)
-	neededList := max(len(list)+1, 1)
-	neededChat := max(len(chat), 1)
-
-	listHeight := max((available+2)/2, 1)
+	listHeight := max(available/2, 1)
 	chatHeight := max(available-listHeight, 0)
-
-	if neededChat < chatHeight {
-		excess := chatHeight - neededChat
-		chatHeight = neededChat
-		if neededList > listHeight {
-			give := min(excess, neededList-listHeight)
-			listHeight += give
-		}
-	} else if neededList < listHeight {
-		excess := listHeight - neededList
-		listHeight = neededList
-		chatHeight += excess
-		if neededChat < chatHeight {
-			chatHeight = neededChat
-		}
+	if len(chat) < chatHeight {
+		chatHeight = len(chat)
 	}
-	listHeight = min(listHeight, available)
-	chatHeight = min(chatHeight, max(available-listHeight, 0))
-
-	list = messageFit(list, max(listHeight-1, 0), selected)
+	list, listSel := m.threadListLines(rows, listW, selected, max(listHeight-1, 0))
+	if len(list) == 0 {
+		list = m.emptyThreadLines(listW)
+	}
+	list = messageFit(list, max(listHeight-1, 0), listSel)
 	if listHeight > 0 {
 		list = append(list, sDim.Render(clip(footer, listW)))
 	}
 	chat = messageFit(chat, chatHeight, chatSelected)
-	out = append(out, panelWithRightHeader("Messages", "filter: "+m.messageFilterName()+"  (l)", list, w, roleAccent)...)
+	out = append(out, panelWithRightHeader("Threads", m.messageFilterLine(), list, w, roleAccent)...)
 	out = append(out, panel("Conversation", chat, w, roleAccent)...)
 	return out
+}
+
+// threadListLines draws the rows around the selection and, for an expanded
+// worker run, up to four of its messages under the row. Work stays
+// proportional to the rows on screen.
+func (m Model) threadListLines(rows []messageConversation, w, selected, height int) ([]string, int) {
+	if height < 1 {
+		height = 1
+	}
+	start := max(selected-height, 0)
+	end := min(start+height+4, len(rows))
+	start = max(end-(height+4), 0)
+	lines := []string{}
+	sel := 0
+	for i := start; i < end; i++ {
+		r := rows[i]
+		if i == selected {
+			sel = len(lines)
+		}
+		lines = append(lines, m.messageConversationLine(r, w, i == selected && m.focus == focusFeed))
+		if m.threadExpanded[r.id] && r.worker {
+			shown := 0
+			for _, idx := range r.items {
+				if shown >= 4 {
+					break
+				}
+				it := m.feedItemAt(idx)
+				if it == nil {
+					continue
+				}
+				body := firstNonEmpty(it.Snippet, firstNonEmpty(it.Body, m.missingMessageBody(it)))
+				for _, line := range wrap("    "+body, w) {
+					lines = append(lines, sDim.Render(line))
+					shown++
+				}
+			}
+		}
+	}
+	return lines, sel
+}
+
+// emptyThreadLines is the empty list's one message.
+func (m Model) emptyThreadLines(w int) []string {
+	empty := "No threads"
+	if m.feed.unavailable != "" {
+		empty = m.feed.unavailable
+	}
+	var out []string
+	for _, line := range wrap(empty, w) {
+		out = append(out, sDim.Render(line))
+	}
+	return out
+}
+
+// messageSubtabs is the line under the title, switched like Quotas.
+func (m Model) messageSubtabs(w int) string {
+	labels := []string{"Agents", "Workers", "System"}
+	var parts []string
+	for i, label := range labels {
+		if messageSubtab(i) == m.messageSubtab {
+			parts = append(parts, sActiveTab.Render("[ "+label+" ]"))
+		} else {
+			parts = append(parts, sDim.Render("  "+label+"  "))
+		}
+	}
+	return clip(strings.Join(parts, "  "), w)
+}
+
+// messageLegend explains the compact marks on one dim line.
+func (m Model) messageLegend() string {
+	return "you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked"
+}
+
+// messageFilterLine is the panel's right header: the active filters and the
+// search key.
+func (m Model) messageFilterLine() string {
+	project := firstNonEmpty(m.threadProject, "all")
+	team := firstNonEmpty(m.threadTeam, "all")
+	search := " / search"
+	if m.uiFilter != "" || m.filter != "" {
+		search = " / " + firstNonEmpty(m.uiFilter, m.filter)
+	}
+	return "p: " + project + " · t: " + team + search
+}
+
+// messageFooter is the list's last line: the row count and, in the System
+// sub-tab, the non-message events.
+func (m Model) messageFooter(rows []messageConversation) string {
+	word := "threads"
+	if len(rows) == 1 {
+		word = "thread"
+	}
+	footer := fmt.Sprintf("%d %s", len(rows), word)
+	eventCount := m.systemEventCount()
+	eventWord := "events"
+	if eventCount == 1 {
+		eventWord = "event"
+	}
+	footer += fmt.Sprintf(" · %d system %s", eventCount, eventWord)
+	if len(m.threadExpanded) > 0 {
+		footer += " · e collapse"
+	}
+	return footer
 }
 
 func messageFit(lines []string, height, selected int) []string {

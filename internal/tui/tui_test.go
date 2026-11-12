@@ -1040,9 +1040,14 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 		ev(15, time.Minute, "node.disconnected", "", "", "", "", func(e *protocol.FeedEvent) { e.Hostname = "build-vm" }),
 	)
 	m = refresh(m, src)
-	v := keys(m, "4", "l", "l").testView()
-	if !strings.Contains(v, "ci-runner") || !strings.Contains(v, "tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
-		t.Fatalf("new events not shown:\n%s", v)
+	mv := keys(m, "4")
+	v := mv.testView()
+	if !strings.Contains(v, "ci-runner") || !strings.Contains(v, "tenebrae-53") {
+		t.Fatalf("new agent messages not shown:\n%s", v)
+	}
+	sys := keys(mv, "l", "l").testView()
+	if !strings.Contains(sys, "build-vm disconnected") {
+		t.Fatalf("new system events not shown:\n%s", sys)
 	}
 	if m.feed.lastID != 15 {
 		t.Fatalf("cursor %d", m.feed.lastID)

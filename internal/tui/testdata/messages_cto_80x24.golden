@@ -1,22 +1,22 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online
-you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
-╭─Messages────────────────────────────────────────────────────filter: all  (l)─╮
-│   tenebrae-53 ↔ ended session · Which environment should I use?   1m · 1 msg │
-│   ci-runner ↔ tenebrae-53 · Rollback is ready if we need it.     2m · 2 msgs │
-│ ▸ CTO ↔ strategies · The deployment plan looks good.             8m · 2 msgs │
-│ 1 system event                                                               │
+[ Agents ]    Workers      System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
+│   ~ tenebrae-53 ↔ ended session · Which environment should I use? 1m · 1 msg │
+│   ! ci-runner ↔ tenebrae-53 · Rollback is ready if we need it.   2m · 2 msgs │
+│ ▸ ✓ CTO ↔ strategies · The deployment plan looks good.           8m · 2 msgs │
+│                                                                              │
+│                                                                              │
+│ 3 threads · 1 system event                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ tenebrae-53 ↔ strategies                                                     │
 │ ▸ 13:56 CTO                                                                  │
 │ Can you check the latest deployment plan?                                    │
 │ The release is planned for tonight.                                          │
 │   13:57 strategies                                                           │
 │ The deployment plan looks good.                                              │
 │ I checked the rollback steps too.                                            │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-
-
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
