@@ -10,6 +10,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +25,7 @@ const (
 	changeListMax     = 100
 )
 
-const changeColumns = `id, project, machine, branch, target_branch, base_commit, head_commit, uncommitted, revision, origin, caller, title, difficulty, state, merged_commit, created_at, updated_at, risk, sensitive_path`
+const changeColumns = `id, project, machine, branch, target_branch, base_commit, head_commit, uncommitted, revision, origin, caller, title, difficulty, state, merged_commit, created_at, updated_at, risk, sensitive_path, done`
 
 // deliveryQuerier is a *sql.DB or a *sql.Tx.
 type deliveryQuerier interface {
@@ -323,6 +325,12 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 	if err := s.fillOrigin(&q.Origin); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
+	// The worker's brief done list is kept with its start. A hand-back that
+	// does not repeat it gets it from there, so grading follows the brief
+	// (decision 0146).
+	if len(q.Done) == 0 && q.Origin.Kind == protocol.OriginWorker && q.Origin.SessionID != "" {
+		q.Done = s.startDoneForSession(q.Origin.SessionID)
+	}
 	p, err := s.deliveryPipeline(q.Project)
 	if err != nil {
 		return protocol.ChangeSubmitResult{}, err
@@ -355,7 +363,7 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 	if !found {
 		c = protocol.Change{ID: protocol.NewID("ch"), Project: q.Project, Machine: machine, Branch: q.Branch, TargetBranch: q.TargetBranch,
 			BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Uncommitted: q.Uncommitted, Revision: 1, Origin: q.Origin, Caller: q.SessionID,
-			Title: q.Title, Difficulty: q.Difficulty, Risk: q.Risk, SensitivePath: q.SensitivePath, State: protocol.ChangeOpen, CreatedAt: now}
+			Title: q.Title, Difficulty: q.Difficulty, Risk: q.Risk, SensitivePath: q.SensitivePath, Done: q.Done, State: protocol.ChangeOpen, CreatedAt: now}
 		if err := c.Validate(); err != nil {
 			return protocol.ChangeSubmitResult{}, reject("%s", err.Error())
 		}
@@ -418,7 +426,10 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 		if q.SensitivePath != "" {
 			next.SensitivePath = q.SensitivePath
 		}
-		if next != c {
+		if len(q.Done) > 0 {
+			next.Done = q.Done
+		}
+		if changeDiffers(next, c) {
 			next.UpdatedAt = now
 			if err := next.Validate(); err != nil {
 				return protocol.ChangeSubmitResult{}, reject("%s", err.Error())
@@ -683,7 +694,7 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 			next.State = protocol.ChangeDone
 		}
 	}
-	if next != c {
+	if changeDiffers(next, c) {
 		next.UpdatedAt = now
 		if err := writeChange(tx, next, false); err != nil {
 			return protocol.StepReportResult{}, err
@@ -1048,6 +1059,16 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 	return v, rows.Err()
 }
 
+// changeDiffers reports whether a change made from another one differs in a
+// stored field. Done is a slice, so the struct itself cannot be compared.
+func changeDiffers(a, b protocol.Change) bool {
+	if !slices.Equal(a.Done, b.Done) {
+		return true
+	}
+	a.Done, b.Done = nil, nil
+	return !reflect.DeepEqual(a, b)
+}
+
 func queryChange(q deliveryQuerier, where string, args ...any) (protocol.Change, bool, error) {
 	c, err := scanChange(q.QueryRow(`SELECT `+changeColumns+` FROM delivery_changes WHERE `+where, args...))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1058,13 +1079,18 @@ func queryChange(q deliveryQuerier, where string, args ...any) (protocol.Change,
 
 func scanChange(row interface{ Scan(...any) error }) (protocol.Change, error) {
 	var c protocol.Change
-	var origin string
+	var origin, done string
 	var uncommitted int
 	if err := row.Scan(&c.ID, &c.Project, &c.Machine, &c.Branch, &c.TargetBranch, &c.BaseCommit, &c.HeadCommit, &uncommitted, &c.Revision,
-		&origin, &c.Caller, &c.Title, &c.Difficulty, &c.State, &c.MergedCommit, &c.CreatedAt, &c.UpdatedAt, &c.Risk, &c.SensitivePath); err != nil {
+		&origin, &c.Caller, &c.Title, &c.Difficulty, &c.State, &c.MergedCommit, &c.CreatedAt, &c.UpdatedAt, &c.Risk, &c.SensitivePath, &done); err != nil {
 		return c, err
 	}
 	c.Uncommitted = uncommitted != 0
+	if done != "" {
+		if err := json.Unmarshal([]byte(done), &c.Done); err != nil {
+			return c, err
+		}
+	}
 	return c, json.Unmarshal([]byte(origin), &c.Origin)
 }
 
@@ -1074,16 +1100,24 @@ func writeChange(tx *sql.Tx, c protocol.Change, insert bool) error {
 	if err != nil {
 		return err
 	}
+	done := "[]"
+	if len(c.Done) > 0 {
+		raw, err := json.Marshal(c.Done)
+		if err != nil {
+			return err
+		}
+		done = string(raw)
+	}
 	if insert {
-		_, err = tx.Exec(`INSERT INTO delivery_changes(`+changeColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		_, err = tx.Exec(`INSERT INTO delivery_changes(`+changeColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			c.ID, c.Project, c.Machine, c.Branch, c.TargetBranch, c.BaseCommit, c.HeadCommit, boolInt(c.Uncommitted), c.Revision,
-			string(origin), c.Caller, c.Title, c.Difficulty, c.State, c.MergedCommit, c.CreatedAt, c.UpdatedAt, c.Risk, c.SensitivePath)
+			string(origin), c.Caller, c.Title, c.Difficulty, c.State, c.MergedCommit, c.CreatedAt, c.UpdatedAt, c.Risk, c.SensitivePath, done)
 		return err
 	}
 	_, err = tx.Exec(`UPDATE delivery_changes SET machine=?, branch=?, target_branch=?, base_commit=?, head_commit=?, uncommitted=?, revision=?,
-		origin=?, title=?, difficulty=?, state=?, merged_commit=?, updated_at=?, risk=?, sensitive_path=? WHERE id=?`,
+		origin=?, title=?, difficulty=?, state=?, merged_commit=?, updated_at=?, risk=?, sensitive_path=?, done=? WHERE id=?`,
 		c.Machine, c.Branch, c.TargetBranch, c.BaseCommit, c.HeadCommit, boolInt(c.Uncommitted), c.Revision,
-		string(origin), c.Title, c.Difficulty, c.State, c.MergedCommit, c.UpdatedAt, c.Risk, c.SensitivePath, c.ID)
+		string(origin), c.Title, c.Difficulty, c.State, c.MergedCommit, c.UpdatedAt, c.Risk, c.SensitivePath, done, c.ID)
 	return err
 }
 

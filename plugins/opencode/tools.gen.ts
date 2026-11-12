@@ -1890,14 +1890,43 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start a worker with a complete brief, or continue. Only when the owner asked or work mode says. Brief: Goal (who asked); Files or areas; Limits; Definition of done; How you are graded; Evidence (3+ lines); Overlap (or overlap ok: reason). Template: docs/brief-template.md. mode \"check\" checks only.",
+    "description": "Start a worker with a structured brief, or continue one. Only when the owner asked or work mode says. problem is required for a new start: what is wrong or wanted, in the owner's words, with who asked. done is required with problem: the outcomes the worker can check itself, one line each. evidence, hypothesis (your guess, which the worker may drop) and scope (what not to touch, known traps) are optional. task is extra notes only. The brief's format is not checked or scored: docs/brief-template.md is a template, not a rule. A brief is still refused for an overlap with a running worker or open change unless it says \"overlap ok: reason\". mode \"check\" checks only.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "problem": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "What is wrong or wanted, in your owner's words, with who asked. Required for a new start, unless you send only the old task."
+        },
+        "done": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Outcomes the worker can check itself, one line each. Required with problem. The accept and review tasks check exactly this list."
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The facts you already have, one line each."
+        },
+        "hypothesis": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Your guess at the cause or the fix. The brief marks it as the worker's to drop if it is wrong."
+        },
+        "scope": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "What not to touch and the known traps."
+        },
         "task": {
           "type": "string",
           "maxLength": 65536,
-          "description": "Brief describing the task and limits."
+          "description": "Extra notes only: the old free-text task. Optional now. A call with only task still works for older callers."
         },
         "difficulty": {
           "type": "string",

@@ -9,6 +9,11 @@ type startIn struct {
 	Touches      []string `json:"touches,omitempty" jsonschema:"Deprecated and ignored: the level comes from the difficulty judge."`
 	Project      string   `json:"project,omitempty" jsonschema:"The name of a project from agent_projects_find, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)"`
 	Task         string   `json:"task,omitempty" jsonschema:"what the worker should do, with everything it needs to know; it cannot ask you questions except by agent_message_reply. Optional only with continue"`
+	Problem      string   `json:"problem,omitempty" jsonschema:"What is wrong or wanted, in your owner's words, with who asked. Required for a new start."`
+	Evidence     []string `json:"evidence,omitempty" jsonschema:"The facts you already have, one line each."`
+	Done         []string `json:"done,omitempty" jsonschema:"Outcomes the worker can check itself, one line each. Required with problem. The accept and review tasks check exactly this list."`
+	Hypothesis   string   `json:"hypothesis,omitempty" jsonschema:"Your guess at the cause or the fix. The worker may drop it if wrong."`
+	Scope        string   `json:"scope,omitempty" jsonschema:"What not to touch and the known traps."`
 	Title        string   `json:"title,omitempty" jsonschema:"One short line naming the worker, at most 60 characters, with no newlines. Leave it empty to derive a title from the task."`
 	Harness      string   `json:"harness,omitempty" jsonschema:"claude, opencode, pi or codex; empty lets automatic selection choose a harness (with continue, the old worker's harness). agent_machines_find shows which are installed on the machine. A pi worker needs isolation worktree."`
 	Difficulty   string   `json:"difficulty,omitempty" jsonschema:"Deprecated and ignored: the level comes from the difficulty judge."`

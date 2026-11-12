@@ -24,11 +24,12 @@ const briefRetryWindow = 24 * time.Hour
 // open change whose branch is the start's base, or the continue or fixes
 // target. A fix round starts from its own change's branch and names its files.
 func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, repo protocol.WorkerBriefRepo) ([]string, []string, error) {
-	failures := protocol.CheckWorkerBrief(p.Task)
-	if _, ok := protocol.BriefOverlapAllowed(p.Task); ok {
+	text := p.BriefText()
+	failures := protocol.CheckWorkerBrief(text)
+	if _, ok := protocol.BriefOverlapAllowed(text); ok {
 		return failures, nil, nil
 	}
-	mine := repo.Paths(p.Task)
+	mine := repo.Paths(text)
 	if len(mine) == 0 {
 		return failures, nil, nil
 	}
@@ -36,7 +37,7 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, re
 	for _, file := range mine {
 		mineSet[file] = true
 	}
-	targets := protocol.BriefTargetIDs(p.Task)
+	targets := protocol.BriefTargetIDs(text)
 	for _, id := range []string{p.Continue, p.Fixes} {
 		if id = strings.TrimSpace(id); id != "" {
 			targets[strings.ToLower(id)] = true

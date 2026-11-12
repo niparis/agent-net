@@ -1066,7 +1066,7 @@ func TestWorkerRefusals(t *testing.T) {
 		{"unsupported harness", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "gemini", Task: "x"}, "workers can run these harnesses: opencode, claude, pi, codex"},
 		{"machine that refuses workers", protocol.WorkerStartRequest{Model: "fake/m1", Project: "private", Harness: "opencode", Task: "x"}, "does not accept workers (it was set up with --no-launch)"},
 		{"wrong machine named", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Machine: "elsewhere", Harness: "opencode", Task: "x"}, `no project named "shop" on machine "elsewhere"`},
-		{"no task", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode"}, "worker_start needs project, harness and task"},
+		{"no brief", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode"}, "problem is required"},
 	}
 	for _, c := range cases {
 		_, err := w.start(c.req)
@@ -1076,7 +1076,7 @@ func TestWorkerRefusals(t *testing.T) {
 	}
 	// The gateway recorded its refusals, with the reason.
 	refused, _ := g.gw.Store().Events("worker.refused")
-	if len(refused) != len(cases)-1 { // "no task" is refused before it reaches the gateway
+	if len(refused) != len(cases)-1 { // "no brief" is refused before it reaches the gateway
 		t.Errorf("worker.refused events: %d %v", len(refused), refused)
 	}
 	if nodes := inventoryNodes(t, w.cli); nodes != 3 {

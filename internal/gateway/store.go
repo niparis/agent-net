@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, nodeSleepMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, nodeSleepMigration, workerBriefDoneMigration}
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries
 // of one task can be counted and the weekly table can show rejections per
@@ -1632,6 +1632,14 @@ const struggleMigration = `
 SELECT 1 /* worker run struggle columns */;
 `
 
+// workerBriefDoneMigration adds the brief done list to worker starts and
+// delivery changes. The columns are added in the migration loop so replaying
+// the migration is safe (decision 0146).
+const workerBriefDoneMigration = `
+-- Worker brief done list: stored with the start and carried to the change.
+SELECT 1 /* worker brief done list */;
+`
+
 // stmtCacheSize is how many prepared statements the connection keeps. The
 // gateway runs a few hundred different statements.
 const stmtCacheSize = 1024
@@ -1812,6 +1820,21 @@ func (s *Store) migrate() error {
 				}
 				if has == 0 {
 					if _, err := tx.Exec("ALTER TABLE worker_runs ADD COLUMN " + col.name + " " + col.decl); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker brief done list") {
+			for _, table := range []string{"worker_starts", "delivery_changes"} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name='done'`, table).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN done TEXT NOT NULL DEFAULT '[]'`); err != nil {
 						tx.Rollback()
 						return err
 					}
