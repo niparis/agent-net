@@ -138,12 +138,15 @@ func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
 // with one more worker is left out first (decision 0144). The pick says so. When
 // no other model qualifies, the error names the hold.
 func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, pick ...*PickerInput) (WorkerModelChoice, error) {
-	kept, held := dropBurnHeld(candidates, quotas)
+	kept, held, heldOut := dropBurnHeld(candidates, quotas)
 	if len(held) == 0 {
 		return chooseWorkerModelRanked(candidates, level, scores, minimums, quotas, running, rotation, pick...)
 	}
 	choice, err := chooseWorkerModelRanked(kept, level, scores, minimums, quotas, running, rotation, pick...)
 	if err != nil {
+		// The held candidates never reached the ranking, so the roster would
+		// not name them without this.
+		choice.LeftOut = append(choice.LeftOut, heldOut...)
 		return choice, fmt.Errorf("no other model qualifies, and these were held back for quota: %s; %w", strings.Join(held, "; "), err)
 	}
 	choice.QuotaNote = appendNote(choice.QuotaNote, "held back for quota: "+strings.Join(held, "; "))

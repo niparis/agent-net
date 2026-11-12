@@ -233,13 +233,15 @@ func QuotaBurnHold(q *Quotas, provider, model string) (string, bool) {
 }
 
 // dropBurnHeld removes the candidates whose provider would run out of quota
-// with one more worker. It returns the others and one reason per provider.
-func dropBurnHeld(candidates []WorkerModelCandidate, q *Quotas) ([]WorkerModelCandidate, []string) {
+// with one more worker. It returns the others, one reason per provider, and
+// each removed candidate for the roster of a start that finds no model.
+func dropBurnHeld(candidates []WorkerModelCandidate, q *Quotas) ([]WorkerModelCandidate, []string, []WorkerLeftOut) {
 	if q == nil || q.Burn == nil {
-		return candidates, nil
+		return candidates, nil, nil
 	}
 	var kept []WorkerModelCandidate
 	var held []string
+	var leftOut []WorkerLeftOut
 	seen := map[string]bool{}
 	for _, c := range candidates {
 		provider := c.Provider
@@ -251,12 +253,17 @@ func dropBurnHeld(candidates []WorkerModelCandidate, q *Quotas) ([]WorkerModelCa
 			kept = append(kept, c)
 			continue
 		}
+		name := c.Name
+		if name == "" {
+			name = c.Harness + " " + c.Model
+		}
+		leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: "held back for quota: " + reason, Rank: LeftOutQuota})
 		if !seen[reason] {
 			seen[reason] = true
 			held = append(held, reason)
 		}
 	}
-	return kept, held
+	return kept, held, leftOut
 }
 
 // burnTokens writes a token count short: 840, 12k, 3.4M.

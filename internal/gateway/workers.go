@@ -2173,7 +2173,7 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notSt
 			}
 			if !protocol.WorkerProviderAllowed(h.Name, resolved, providers.Providers, quotas) {
 				if roster != nil {
-					roster.add(profileRosterName(profile), "provider "+protocol.ProfileProvider(h.Name, resolved)+" not allowed", rosterUnavailable)
+					roster.add(profileRosterName(profile), "provider "+protocol.ProfileProvider(h.Name, resolved)+" is not in your worker providers", rosterUnavailable)
 				}
 				continue
 			}
