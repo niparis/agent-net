@@ -87,3 +87,27 @@ func TestPerFamilyAgyWindowBlocksOnlyThatFamily(t *testing.T) {
 		}
 	}
 }
+
+const codexQuotaFailure = "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 3:39 AM."
+
+// A Codex run that reports its usage limit blocks the codex provider until the
+// reset the message names.
+func TestAccountQuotaBlockCodexUsageLimit(t *testing.T) {
+	now := time.Date(2026, 11, 12, 20, 0, 0, 0, time.Local)
+	provider, wait, ok := AccountQuotaBlockAt("codex", codexQuotaFailure, now)
+	if !ok || provider != "codex" || wait != 7*time.Hour+39*time.Minute {
+		t.Fatalf("got %q %v %v", provider, wait, ok)
+	}
+	// No reset time: nothing to block until.
+	if _, _, ok := AccountQuotaBlockAt("codex", "You've hit your usage limit.", now); ok {
+		t.Fatal("blocked with no reset time")
+	}
+	// A short rate limit is not an account block.
+	if _, _, ok := AccountQuotaBlockAt("codex", "HTTP 429 too many requests, try again in 30s", now); ok {
+		t.Fatal("blocked on a rate limit")
+	}
+	// The older entry point keeps reading agy only at the current time.
+	if _, _, ok := AccountQuotaBlock("claude", codexQuotaFailure); ok {
+		t.Fatal("claude blocked")
+	}
+}

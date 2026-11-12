@@ -56,3 +56,41 @@ func TestFailureKeepsOldMarkers(t *testing.T) {
 		t.Error("local errors and plain text are no provider failure")
 	}
 }
+
+// Codex names the reset as a clock time: "try again at 3:39 AM", or with a
+// date when it is days away.
+func TestCodexTryAgainAtReset(t *testing.T) {
+	at := time.Date(2026, 11, 12, 20, 0, 0, 0, time.Local)
+	const lead = "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at "
+	for _, tc := range []struct {
+		tail string
+		want time.Time
+	}{
+		{"3:39 AM.", time.Date(2026, 11, 13, 3, 39, 0, 0, time.Local)},
+		{"11:15 PM.", time.Date(2026, 11, 12, 23, 15, 0, 0, time.Local)},
+		{"Nov 14th, 2026 4:21 PM.", time.Date(2026, 11, 14, 16, 21, 0, 0, time.Local)},
+	} {
+		l, ok := Limit(lead+tc.tail, at)
+		if !ok || !l.Known || !l.Until.Equal(tc.want) {
+			t.Errorf("%q: got %v known=%v ok=%v, want %v", tc.tail, l.Until, l.Known, ok, tc.want)
+		}
+		if l.Reason != "usage limit" {
+			t.Errorf("%q: reason %q", tc.tail, l.Reason)
+		}
+	}
+	// No reset time named: the limit is real but the end is a guess.
+	l, ok := Limit("You've hit your usage limit.", at)
+	if !ok || l.Known || !l.Until.Equal(at.Add(DefaultWait)) {
+		t.Fatalf("no reset: %v known=%v ok=%v", l.Until, l.Known, ok)
+	}
+}
+
+// Antigravity writes a reset delay with no spaces: "Resets in 134h28m52s".
+func TestGluedResetDelay(t *testing.T) {
+	at := time.Date(2026, 11, 12, 20, 0, 0, 0, time.UTC)
+	l, ok := Limit("Individual quota reached. Resets in 134h28m52s.", at)
+	want := at.Add(134*time.Hour + 28*time.Minute + 52*time.Second)
+	if !ok || !l.Known || !l.Until.Equal(want) {
+		t.Fatalf("got %v known=%v ok=%v, want %v", l.Until, l.Known, ok, want)
+	}
+}
