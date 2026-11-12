@@ -3,6 +3,7 @@ package setup
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,6 +37,16 @@ func TestMain(m *testing.M) {
 				return 1
 			}
 		}
+		// A real claude or codex on the developer's PATH makes every uninstall
+		// test start it, and makes results differ between machines and CI.
+		cleanPath, err := pathWithoutRealHarnesses(os.Getenv("PATH"), root)
+		if err == nil {
+			err = os.Setenv("PATH", cleanPath)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 		env := map[string]string{
 			"HOME":                          filepath.Join(root, "home"),
 			"XDG_CONFIG_HOME":               filepath.Join(root, "xdg-config"),
@@ -64,6 +75,60 @@ func TestMain(m *testing.M) {
 		return m.Run()
 	}()
 	os.Exit(code)
+}
+
+// realHarnessPrograms are the programs setup would start or look for. Tests
+// that need one put a fake on PATH themselves.
+var realHarnessPrograms = []string{"claude", "codex", "pi", "opencode", "agy", "gemini", "tailscale", "quota-axi"}
+
+// pathWithoutRealHarnesses returns PATH with the real harnesses hidden. A
+// folder that holds one is replaced by a folder of links to its other
+// programs, so tools such as touch and rm stay reachable.
+func pathWithoutRealHarnesses(path, scratch string) (string, error) {
+	hidden := map[string]bool{}
+	for _, name := range realHarnessPrograms {
+		hidden[name] = true
+	}
+	var keep []string
+	for i, dir := range filepath.SplitList(path) {
+		found := false
+		for name := range hidden {
+			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+				found = true
+				break
+			}
+		}
+		if !found {
+			keep = append(keep, dir)
+			continue
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		filtered := filepath.Join(scratch, fmt.Sprintf("path-%d", i))
+		if err := os.MkdirAll(filtered, 0o700); err != nil {
+			return "", err
+		}
+		for _, entry := range entries {
+			if hidden[entry.Name()] {
+				continue
+			}
+			if err := os.Symlink(filepath.Join(dir, entry.Name()), filepath.Join(filtered, entry.Name())); err != nil {
+				return "", err
+			}
+		}
+		keep = append(keep, filtered)
+	}
+	return strings.Join(keep, string(os.PathListSeparator)), nil
+}
+
+func TestSetupTestPathHidesRealHarnesses(t *testing.T) {
+	for _, name := range realHarnessPrograms {
+		if p, err := exec.LookPath(name); err == nil {
+			t.Errorf("tests can reach a real %s at %s", name, p)
+		}
+	}
 }
 
 func TestSetupTestEnvironmentIsIsolated(t *testing.T) {

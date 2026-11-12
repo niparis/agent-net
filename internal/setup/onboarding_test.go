@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -152,6 +153,11 @@ func harnessInfos(names []string) []protocol.HarnessInfo {
 }
 
 func TestSetupOnboardingGolden(t *testing.T) {
+	// The empty machine waits for a first agent that never comes. The wait
+	// is a product setting, so the golden text does not depend on its length.
+	oldWait := setupAgentsWait
+	setupAgentsWait = 200 * time.Millisecond
+	t.Cleanup(func() { setupAgentsWait = oldWait })
 	for _, name := range []string{"first-machine", "empty-first-machine", "joining-machine", "failed-run"} {
 		for _, colored := range []bool{false, true} {
 			mode := "plain"

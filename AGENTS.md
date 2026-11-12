@@ -31,7 +31,7 @@ Before handing back, run scripts/test-changed.sh; it runs the tests your diff ne
 
 If you change guidance text, also run go test ./internal/guidance ./internal/agentfiles (both have golden fixtures; use -update).
 
-CI runs `gofmt`, `go vet`, the daemon and gateway shards (`scripts/test.sh --package daemon|gateway --shard-index I --shard-count 4`), the other Go packages in one job, and `sh -n install.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
+CI runs `gofmt`, `go vet`, the daemon, gateway, setup, tui and command shards (`scripts/test.sh --package daemon|gateway|setup|tui|agent-net --shard-index I --shard-count 4`), the other Go packages in one job, and `sh -n install.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
 
 ## Layout
 

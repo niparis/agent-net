@@ -7,15 +7,16 @@ usage() {
 Usage: scripts/test.sh [--shards N | --package NAME --shard-index I --shard-count N]
                       [--check-only] [-- go-test-args...]
 
-Run the test suite. The tests of the sharded packages, internal/daemon and
-internal/gateway, are split across processes by test name. Every other package
+Run the test suite. The tests of internal/daemon, internal/gateway,
+internal/setup, internal/tui and cmd/agent-net are split across processes by
+test name. Every other package
 runs in one go test process.
 TEST_SHARDS sets the local shard count for each sharded package. The default is
 half the available CPUs, rounded down, with a minimum of one and a maximum of
 eight.
 
 Indexed mode runs one shard of one sharded package, for CI. --package names the
-package (daemon or gateway). Shard indexes are zero-based.
+package (daemon, gateway, setup, tui or agent-net). Shard indexes are zero-based.
 Arguments after -- are passed to go test.
 EOF
 }
@@ -40,9 +41,17 @@ cpu_count() {
   printf '%s\n' "$count"
 }
 
-# Packages under internal/ whose tests are split into shards by test name.
-sharded_packages=(daemon gateway)
-module_internal=github.com/niparis/agent-net/internal
+# Packages whose tests are split into shards by test name.
+sharded_packages=(daemon gateway setup tui agent-net)
+module=github.com/niparis/agent-net
+
+package_path() {
+  if [[ $1 == agent-net ]]; then
+    printf '%s/cmd/agent-net\n' "$module"
+  else
+    printf '%s/internal/%s\n' "$module" "$1"
+  fi
+}
 
 is_sharded_package() {
   local name
@@ -150,13 +159,14 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-# plan_package NAME COUNT lists the tests of internal/NAME, splits them into
+# plan_package NAME COUNT lists the package tests and splits them into
 # COUNT shards by test name and checks that the shards hold each test exactly
 # once. Shard files go to $work/NAME/. The number of shards used is left in
 # planned_count, which can be lower than COUNT when there are fewer tests.
 plan_package() {
   local name=$1 wanted=$2
-  local pkg="$module_internal/$name" dir="$work/$name"
+  local pkg dir="$work/$name"
+  pkg=$(package_path "$name")
   local test_count i count oversized regex regex_length
   mkdir -p "$dir/listing"
   if ! env \
@@ -284,7 +294,7 @@ for idx in "${!run_names[@]}"; do
   for ((i=first; i<=last; i++)); do
     regex=$(paste -sd '|' "$work/$name/shard-$i")
     launch_job "$name shard $((i + 1))/$count" "$work/output-$job_count" \
-      go test -race -count=1 -run "^($regex)$" "${go_test_args[@]}" "$module_internal/$name"
+      go test -race -count=1 -run "^($regex)$" "${go_test_args[@]}" "$(package_path "$name")"
   done
 done
 
@@ -297,7 +307,7 @@ if [[ $shard_mode == all ]]; then
   while IFS= read -r package; do
     sharded=0
     for name in "${sharded_packages[@]}"; do
-      [[ $package == */internal/$name ]] && sharded=1
+      [[ $package == "$(package_path "$name")" ]] && sharded=1
     done
     ((sharded)) || other_packages+=("$package")
   done <"$work/packages"
