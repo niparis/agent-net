@@ -84,6 +84,7 @@ func (lc *localConn) dispatchProject(ctx context.Context, client, method string,
 		}
 		out, err := d.projectAdd(ctx, req, session, harness)
 		if err == nil && !req.DryRun {
+			d.toolsFullNext.Store(true)
 			d.wakeTools()
 		}
 		return out, true, err
@@ -105,6 +106,7 @@ func (lc *localConn) dispatchProject(ctx context.Context, client, method string,
 		}
 		res, err = d.call(ctx, "project.remove", p)
 		if err == nil {
+			d.toolsFullNext.Store(true)
 			d.wakeTools()
 		}
 		return res, true, oldGateway(err)

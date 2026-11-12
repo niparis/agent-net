@@ -257,6 +257,7 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 		return
 	}
 	targets = d.targetsForThisNode(targets)
+	pass := d.beginToolsPass(targets)
 	projectConflicts := projectTargets(targets)
 	projects := map[string]bool{}
 	// Project folders here are registered or seen in a session: any known
@@ -289,6 +290,9 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 		}
 	}
 	for _, t := range targets {
+		if pass.unchanged(t) {
+			continue
+		}
 		result := protocol.ToolResult{Item: t.Revision.Item, Revision: t.Revision.Revision, Index: t.Index, State: "pending", Reason: "operation is not supported yet"}
 		if blocked[t.Revision.Item] {
 			result.State = "conflict"
@@ -350,6 +354,6 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 				}
 			}
 		}
-		_, _ = d.call(ctx, "tools.report", result)
+		pass.report(ctx, t, result)
 	}
 }

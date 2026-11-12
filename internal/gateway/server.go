@@ -980,9 +980,19 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 		g.wakePending(ctx, nc.id)
 	}
 	if (h.Type == "session.upsert" || h.Type == "session.agent.reserve") && err == nil {
-		g.dispatchPending(ctx, nc.id, false)
+		if r, ok := data.(sessionUpsertResult); !ok || r.relevant {
+			g.dispatchPending(ctx, nc.id, false)
+		}
 	}
 	return nil
+}
+
+// sessionUpsertResult is the answer to session.upsert. relevant stays at the
+// gateway: it tells whether the report changed anything the delivery sweeps
+// read.
+type sessionUpsertResult struct {
+	SessionID string `json:"session_id"`
+	relevant  bool
 }
 
 func decode[T any](raw []byte) (T, error) {
@@ -1595,13 +1605,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad session.upsert")
 		}
-		id, err := st.UpsertSession(nc.id, p.Session)
+		id, relevant, err := st.UpsertSessionReport(nc.id, p.Session)
 		if err != nil {
 			return nil, err
 		}
-		g.releaseBusyHold(ctx, id, false)
-		g.dispatchStepTasks(ctx)
-		return map[string]string{"session_id": id}, nil
+		// A report that repeats what the gateway stores, or only moves the
+		// activity time, has nothing for the delivery sweeps to do. They run
+		// again on the next change and on the gateway's minute tick.
+		if relevant {
+			g.releaseBusyHold(ctx, id, false)
+			g.dispatchStepTasks(ctx)
+		}
+		return sessionUpsertResult{SessionID: id, relevant: relevant}, nil
 
 	case "session.remove":
 		p, err := decode[protocol.SessionRemove](raw)

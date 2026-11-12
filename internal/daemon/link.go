@@ -223,6 +223,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				d.onProjectsLayout(ctx, l, h.ID)
 			}()
 		case "node.tools_changed":
+			d.toolsFullNext.Store(true)
 			d.wakeTools()
 		case "node.tool_plan_scan":
 			d.wg.Add(1)
@@ -279,6 +280,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 
 // call sends a request over the current link.
 func (d *Daemon) call(ctx context.Context, typ string, params any) (json.RawMessage, error) {
+	if r, ok := params.(protocol.SessionRemove); ok && typ == "session.remove" {
+		// The gateway forgets what it knew of this session. The next report
+		// must go out even when it repeats the last one.
+		d.invalidatePush(r.SessionID)
+		defer d.invalidatePush(r.SessionID)
+	}
 	if fake := d.cfg.testGatewayCall; fake != nil {
 		if res, handled, err := fake(ctx, typ, params); handled {
 			return res, err
@@ -401,6 +408,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 		}
 	}
 	d.lk = l
+	d.linkEpoch++
 	d.connecting = false
 	// A new link may have missed mcp.changed pushes: the next catalog read
 	// asks the gateway.

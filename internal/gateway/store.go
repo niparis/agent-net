@@ -36,6 +36,7 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 // Store is the gateway's SQLite database.
 type Store struct {
 	graphRefsOn    atomic.Bool
+	upsertSeen     sync.Map // session report key -> sessionSeen, see session_upsert_skip.go
 	settingsHookMu sync.RWMutex
 	settingsHook   func()
 	charterHookMu  sync.RWMutex
@@ -3288,25 +3289,8 @@ func (s *Store) hostname(nodeID string) string {
 }
 
 func (s *Store) UpsertSession(nodeID string, in protocol.SessionInfo) (string, error) {
-	if _, err := s.ExpireSessionAgentStarts(); err != nil {
-		return "", err
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return "", err
-	}
-	defer tx.Rollback()
-	id, created, err := s.upsertSession(tx, nodeID, in)
-	if err != nil {
-		return "", err
-	}
-	if err = tx.Commit(); err != nil {
-		return "", err
-	}
-	if created {
-		s.logNewSessions([]newSession{{id, nodeID, in}})
-	}
-	return id, nil
+	id, _, err := s.UpsertSessionReport(nodeID, in)
+	return id, err
 }
 
 // SyncSessions upserts the full set and marks the node's other sessions offline.
