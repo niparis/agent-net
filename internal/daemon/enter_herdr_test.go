@@ -160,8 +160,8 @@ func herdrAgentPane(id, term string) string {
 	return `{"pane_id":"` + id + `","terminal_id":"` + term + `","agent":"claude"}`
 }
 
-// testHerdrPane is the pane of the asking TUI in these tests: the daemon splits
-// the new view beside it instead of creating a tab.
+// testHerdrPane is the pane of the asking TUI in these tests: the daemon opens
+// the new view in a tab.
 const testHerdrPane = "w1:p0"
 
 // fakeHerdrSocket is the absolute socket of the fake herdr whose call log is at

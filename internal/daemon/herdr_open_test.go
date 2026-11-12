@@ -29,7 +29,6 @@ case "$1 $2" in
   "pane list") if [ -f ` + shellQuote(filepath.Join(dir, "created")) + ` ]; then printf '%s\n' '{"result":{"panes":[{"pane_id":"w1:p1","tab_id":"w1:t1"}]}}'; else printf '%s\n' '{"result":{"panes":[]}}'; fi ;;
   "pane process-info") if [ -f ` + shellQuote(filepath.Join(dir, "idle")) + ` ]; then printf '%s\n' '{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":11}]}}}'; else printf '%s\n' '{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":22}]}}}'; fi ;;
   "tab create") : > ` + shellQuote(filepath.Join(dir, "created")) + `; printf '%s\n' '{"result":{"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1"}}}' ;;
-  "pane split") : > ` + shellQuote(filepath.Join(dir, "created")) + `; printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p1","tab_id":"w1:t1"}}}' ;;
   "pane run"|"pane rename"|"agent focus"|"tab focus") printf '%s\n' '{"result":{}}' ;;
   *) exit 1 ;;
 esac
@@ -93,7 +92,7 @@ func waitHerdrNotice(t *testing.T, ch <-chan map[string]any) map[string]any {
 	return notice
 }
 
-func TestEnterHerdrSplitsBesideTheTUI(t *testing.T) {
+func TestEnterHerdrOpensFullTab(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "claude")
@@ -110,12 +109,12 @@ func TestEnterHerdrSplitsBesideTheTUI(t *testing.T) {
 	var p protocol.EnterPlan
 	mustJSON(t, cliClient(t, n).mustCall("session_enter", map[string]string{"session_id": id, "herdr_socket": "/tmp/herdr-test.sock", "herdr_pane_id": "w1:p0"}), &p)
 	raw, _ := os.ReadFile(log)
-	for _, want := range []string{"pane split --pane w1:p0", "pane rename w1:p1 garden", "pane run w1:p1"} {
+	for _, want := range []string{"tab create --label garden", "pane run w1:p1"} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("calls %q missing %q", raw, want)
 		}
 	}
-	if !p.OpenedHerdr || strings.Contains(string(raw), "tab create") {
+	if !p.OpenedHerdr || strings.Contains(string(raw), "pane split") {
 		t.Fatalf("plan %+v calls %s", p, raw)
 	}
 }
@@ -127,18 +126,9 @@ func requireHerdrOpened(t *testing.T, log, title string, command ...string) {
 		t.Fatalf("herdr was not called: %v", err)
 	}
 	calls := string(raw)
-	// A TUI inside herdr gets its view split beside it. A caller on another
-	// machine has no pane here, so the daemon creates a tab for it.
-	label := "pane rename w1:p1 " + title
-	if strings.Contains(calls, "pane split --pane "+testHerdrPane) {
-		if !strings.Contains(calls, label) {
-			t.Errorf("herdr calls %q do not include %q", calls, label)
-		}
-	} else {
-		label = "tab create --label " + title
-		if !strings.Contains(calls, label) {
-			t.Errorf("herdr calls %q do not include %q", calls, label)
-		}
+	label := "tab create --label " + title
+	if !strings.Contains(calls, label) {
+		t.Errorf("herdr calls %q do not include %q", calls, label)
 	}
 	for _, want := range append([]string{"pane run w1:p1"}, command...) {
 		if !strings.Contains(calls, want) {
@@ -506,7 +496,7 @@ func TestEnterHerdrRemoteClientInLocalTab(t *testing.T) {
 		t.Fatalf("second plan %+v", p)
 	}
 	raw, _ := os.ReadFile(localLog)
-	if strings.Count(string(raw), "pane split") != 1 || !strings.Contains(string(raw), "tab focus w1:t1") {
+	if strings.Count(string(raw), "tab create") != 1 || !strings.Contains(string(raw), "tab focus w1:t1") {
 		t.Fatalf("second enter duplicated the tab: %s", raw)
 	}
 }

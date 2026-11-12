@@ -116,7 +116,7 @@ func (d *Daemon) openForCaller(key, name, socket, pane string, plan protocol.Ent
 	return d.openInHerdr(key, name, socket, pane, plan)
 }
 
-// openInHerdr opens a plan in a pane or tab. It serializes the lookup and
+// openInHerdr opens a plan in a full tab. It serializes the lookup and
 // creation so concurrent Enter calls cannot create duplicate clients. When the
 // server is unavailable the original plan remains the fallback.
 func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol.EnterPlan) protocol.EnterPlan {
@@ -130,9 +130,6 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 	}
 	if !filepath.IsAbs(socket) {
 		socket = ""
-	}
-	if socket == "" || !herdrIDRe.MatchString(callerPane) {
-		callerPane = ""
 	}
 	d.herdrOpenMu.Lock()
 	defer d.herdrOpenMu.Unlock()
@@ -168,16 +165,13 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 		time.AfterFunc(time.Minute, func() { _ = os.Remove(file) })
 	}()
 	args := []string{"tab", "create", "--label", cleanLine(name), "--focus"}
-	if callerPane != "" {
-		args = []string{"pane", "split", "--pane", callerPane, "--direction", "right", "--focus"}
-	}
 	if plan.Dir != "" {
 		args = append(args, "--cwd", plan.Dir)
 	}
 	out, err := d.herdrRun(bin, socket, args...)
 	if err != nil {
 		_ = os.Remove(file)
-		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not create a pane: %v", bin, err)}
+		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not create a tab: %v", bin, err)}
 	}
 	var created struct {
 		Result struct {
@@ -187,25 +181,12 @@ func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol
 			Pane struct {
 				ID string `json:"pane_id"`
 			} `json:"root_pane"`
-			Split struct {
-				ID  string `json:"pane_id"`
-				Tab string `json:"tab_id"`
-			} `json:"pane"`
 		} `json:"result"`
 	}
 	decodeErr := json.Unmarshal(out, &created)
-	if callerPane != "" {
-		created.Result.Pane.ID, created.Result.Tab.ID = created.Result.Split.ID, created.Result.Split.Tab
-	}
 	if decodeErr != nil || !herdrIDRe.MatchString(created.Result.Pane.ID) || !herdrIDRe.MatchString(created.Result.Tab.ID) {
 		_ = os.Remove(file)
 		return protocol.EnterPlan{Host: plan.Host, Note: "Herdr created a tab but did not return its pane; check herdr before retrying."}
-	}
-	if callerPane != "" {
-		if _, err := d.herdrRun(bin, socket, "pane", "rename", created.Result.Pane.ID, cleanLine(name)); err != nil {
-			_ = os.Remove(file)
-			return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("herdr at %s failed: could not name the pane: %v", bin, err)}
-		}
 	}
 	quoted := make([]string, len(plan.Argv))
 	for i, arg := range plan.Argv {
