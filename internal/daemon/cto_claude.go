@@ -151,30 +151,6 @@ func findClaudeCTOBg(sessions, dir, ref string) (claudeSessionFile, bool) {
 	return claudeSessionFile{}, false
 }
 
-// ownerClaudeRenderer is the "tui" setting (the terminal renderer) from the
-// owner's Claude Code user settings, or "" when there is none. The CTO starts
-// with --setting-sources "", so none of the owner's settings reach it. This one
-// is passed on in its launch settings: "fullscreen" is what gives every other
-// session scrollback, and without it a long CTO reply runs off the screen. No
-// other owner setting is read.
-func ownerClaudeRenderer(sessionsDir string) string {
-	raw, err := os.ReadFile(filepath.Join(filepath.Dir(sessionsDir), "settings.json"))
-	if err != nil {
-		return ""
-	}
-	var user struct {
-		TUI string `json:"tui"`
-	}
-	if json.Unmarshal(raw, &user) != nil {
-		return ""
-	}
-	switch user.TUI {
-	case "fullscreen", "default":
-		return user.TUI
-	}
-	return ""
-}
-
 const claudeCTORestartNotice = "The CTO's Claude conversation was closed by Claude Code; started a new one."
 
 // setClaudeCTORestarted takes cto.mu, which guards restarted: cto_enter reads
@@ -267,7 +243,7 @@ func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) err
 		d.log.Printf("CTO Claude Code version: %s", v)
 	}
 	var result error
-	for _, flag := range []string{"--tools", "--strict-mcp-config"} {
+	for _, flag := range []string{"--strict-mcp-config"} {
 		present := false
 		for _, word := range strings.Fields(string(help)) {
 			if strings.TrimSuffix(word, ",") == flag {

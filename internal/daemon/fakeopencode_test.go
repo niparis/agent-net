@@ -135,15 +135,6 @@ func runFakeOpenCode() {
 			return
 		}
 		rules := ctoPermissions()
-		if missing := os.Getenv("FAKE_CTO_MISSING_DENY"); missing != "" {
-			filtered := []ctoPermission{}
-			for _, rule := range rules {
-				if rule.Action != missing {
-					filtered = append(filtered, rule)
-				}
-			}
-			rules = filtered
-		}
 		if extra := os.Getenv("FAKE_CTO_EXTRA_TOOL"); extra != "" {
 			rules = append(rules, ctoPermission{extra, "*", "allow"})
 		}

@@ -326,17 +326,11 @@ Claude Code uses a private working directory under `cto/claude` in daemon
 state. The daemon passes a private MCP configuration with `--mcp-config` and
 `--strict-mcp-config`; the only MCP server in it is `agent-net cto-mcp`. The
 ordinary agent-net MCP tools are not registered for this session.
-Claude starts with `--tools ""` and `--setting-sources ""`. Private settings
-disable all hooks and enable no plugins. Because no user settings load, the
-daemon copies one value from the owner's `~/.claude/settings.json` (or
-`$CLAUDE_CONFIG_DIR/settings.json`) into those private settings: `tui`, when it
-is `fullscreen` or `default`. Without it the CTO would use the classic renderer
-while the owner's other sessions use the fullscreen one, and a long reply (a
-table) would run off the screen with no scrollback. A running CTO keeps the
-renderer it started with; it takes the new value at its next start.
+Claude has its built-in tools and reads the owner's Claude settings, hooks and
+plugins, as a coding session does ([decision 0157](decisions/0157-cto-full-power-and-own-folders.md)).
 The CTO starts through the same start path as every other session (decision
-0156). Its role (name `agent-net-cto`, the system prompt, `--tools ""`,
-`--setting-sources ""`, the private MCP config and `--strict-mcp-config`) is
+0156). Its role (name `agent-net-cto`, the system prompt, the private MCP config,
+`--strict-mcp-config` and the `cto_op` hook in its launch settings) is
 added by the one Claude spec builder, and the job is launched by the same
 launcher as a coding session. For OpenCode, the private server is started by the
 same function that starts a worker's private server. A job that ends before it
@@ -348,19 +342,27 @@ that ID. Concurrent `session_enter` calls on the CTO session share one start; ea
 caller can stop waiting on its own deadline. A start does not block owner reads
 such as `cto_settings`, the CTO timeline, graph, usage or inbox calls.
 
-The CTO has no built-in tools. OpenCode uses plural `permissions` rules denying
-`bash`, `edit`, `write`, `subagent`, `read`, `glob`, `grep`, `list`,
-`webfetch` and `todowrite`, plus a wildcard deny for future built-ins. Only the
-private CTO MCP namespace is allowed. The `general` subagent is disabled.
-At startup, Claude's `--help` must list `--tools` and `--strict-mcp-config`.
-The daemon enforces the tool set with its start arguments and private settings;
-it does not expect a tool list in background launch output.
-OpenCode must report every required deny rule in the CTO agent's effective
-permissions through `GET /api/agent`, with no enabled `general` subagent and
-no later allow outside the private CTO MCP namespace.
-Missing capabilities or permissions stop startup before an owner prompt is sent.
-Harness versions are logged for diagnosis, without a version allowlist.
-No model call was used to verify runtime enforcement.
+The CTO has full built-in tools. OpenCode's `cto` agent has one rule: it
+allows the private CTO MCP namespace without a prompt; OpenCode's own defaults
+decide the built-in tools. At startup, Claude's `--help` must list
+`--strict-mcp-config`, and OpenCode must list an enabled `cto` agent through
+`GET /api/agent`. Harness versions are logged for diagnosis, without a version
+allowlist.
+
+The Claude CTO's launch settings carry a `PreToolUse` hook on
+`mcp__agent-net-cto__cto_op`. It runs the hidden command `agent-net cto-hook`,
+which reads `tool_input.method` from the hook input and answers
+`permissionDecision: allow` for every method except `app_revoke`,
+`process_stop`, `machine_remove`, `machine_rotate`, `agent_tombstone`,
+`node_remove` and `repo_archive`. For those, and for any input it does not
+understand, it prints nothing, so Claude Code's own permission check applies and
+asks you. The owner's rule behind it: "anything that can easily be reverted,
+the CTO may do". A `settings.json` in the CTO's folder also loads now, but the
+hook does not need one.
+
+The CTO opens with the same Enter plan as a coding Claude session: `claude
+attach` to its job in the TUI's terminal on its own machine, and herdr's remote
+client from another machine. Image paste works the same as in a coding session.
 
 The CTO reads the charter writing guide with `agent_graph_read` and `view: "guide"`; the guide is in `note`.
 The `graph_change` schema contains no guide text.
@@ -596,7 +598,7 @@ session name or project node, filter text and a short reason. `cto_ui_show`
 with `notice` shows a short note. Both show a `CTO:` line and return
 `no TUI open` when no subscribed local TUI is connected.
 
-In the TUI, `c` opens the CTO session from every tab, and `C` focuses the CTO box.
+In the TUI, `c` selects the CTO's Sessions row and opens it from every tab, the same as Enter on that row, and `C` focuses the CTO box.
 Its title shows the owner's CTO title, the selected harness and model.
 The box is read-only: it shows the latest CTO output lines and the hint
 `c: open the <title>`. When focused, the hint reads
@@ -2790,7 +2792,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | `h`, `v` | In Sessions, `h` hides or unhides the selected session; `v` cycles active only, all, all with offline, all with offline and hidden. The Graph card keeps `h` to hide or unhide the selected project node and `H` to include hidden nodes. |
 | `v` | Cycle the Sessions view: active only (hide sessions idle and unreported for more than an hour), all, all with offline, all with offline and hidden. The Sessions column header names the current view. On the Graph agent card, `a` toggles the node's autonomy between `off` and `wake`, and `L` cycles the standing loop: off, 1h, 4h, 12h, 24h. |
 | `1` to `7` | Open Sessions, Graph, Quotas, Messages, Tools, Settings or Desk. `M` and `G` do not open Graph. |
-| `c`, `C` | `c` opens the CTO session; `C` focuses the CTO box. Ctrl+] returns to Sessions and Esc skips a tip. |
+| `c`, `C` | `c` selects the CTO's Sessions row and opens it; `C` focuses the CTO box. Ctrl+] returns to Sessions and Esc skips a tip. |
 | `d` | Toggle selected session details in place of the session list. |
 | `?` | Show the keys of this screen; press again for all screens. |
 | esc | Leave the help or a message body, or clear the filter. When a filter holds text, the first Esc clears it and the second leaves the field. Esc never quits. |
@@ -3431,6 +3433,8 @@ Messages sent to the old ID after the move go to the new session. This matters b
 
 All three refuse a worker (use `worker_change` with `stop`) and the CTO's own session. They are immediate changes with an Inbox notice and an audit line (`session_stop`, `session_resume` or `session_restart`). Only `stop` has an undo. `resume` and `restart` have none, because the session is already running again.
 
+**The CTO's own session, from the owner.** You stop, resume and restart the CTO with the same functions as any session ([decision 0157](decisions/0157-cto-full-power-and-own-folders.md)): `x` on its Sessions row (operator method `session_stop`), Enter or `session_resume` on it, and the restart path above. A stop ends its Claude job or private OpenCode server and keeps its session ID and conversation; the gateway shows it `dorm`. A resume starts it again on its conversation, or on a new one when Claude says the old one is gone, and opens no view. A restart waits until the CTO is reported dormant, then resumes it. A message to the CTO also starts it again, as before.
+
 ### CTO folder trust
 
 The owner can ask the CTO to trust a folder for Claude Code. The CTO calls `session_change` with action `trust` and one of `project` (a project registered on that machine) or `path` (an existing folder under the owner's home), plus `node_id` when the folder is on another machine. It writes `hasTrustDialogAccepted` for that folder in that machine's `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`), with the same helper the TUI's `needs_trust` answer uses. `session_change` with action `session_start` and `trust: true` trusts the folder and starts in one step; a path that does not exist yet is created and trusted by the start itself, as before.
@@ -3850,8 +3854,16 @@ The workers panel shows "agent-net panel is out of date: run /reload-plugins or 
 Ask the CTO to "set up a merger for garden". If a project lives on more than
 one machine, name the machine too. The CTO runs `session_change` action
 `merger_start` with `project`, optional `node_id`, and optional `model`.
-It starts a separate Claude session in the project's
-registered folder on that machine, with model `claude-opus-5-5` by default.
+It starts a separate Claude session on that machine, with model
+`claude-opus-5-5` by default. The merger runs in its own folder,
+`<state>/mergers/<project>` under the daemon state folder: a detached git
+worktree of the project, made at the first start and reused later. It never
+runs in the project's folder, where the lead runs, so its Claude Code memory is
+its own. Claude Code trust is still asked for the project's folder.
+
+A merger started before this rule still runs in the project's folder. To move
+it, start a new merger with `merger_start`, then move the old session's work to
+it with `session_replace` (old session, new session), and stop the old one.
 It does not open a view. Enter on its Sessions row opens it as usual. The
 merger session gets `GOCACHE` set to the shared worker Go build cache, so its
 builds and tests do not grow your own `~/.cache/go-build`.

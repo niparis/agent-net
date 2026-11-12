@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"os"
 	"sync"
 	"time"
 
@@ -161,6 +162,14 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	return d.mergeCTOHistory(out, h.name(), index)
 }
 
+// ctoViewName is the CTO's name in its view: the herdr tab and the note.
+const ctoViewName = "CTO"
+
+func isDir(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
+}
+
 type ctoEnterCall struct {
 	done chan struct{}
 	plan protocol.EnterPlan
@@ -170,6 +179,12 @@ type ctoEnterCall struct {
 // Concurrent callers share the same startup result, including failures. Each
 // waiter can leave on its own deadline without starting another process.
 func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
+	return d.ctoEnterFor(ctx, "enter")
+}
+
+// ctoEnterFor starts the CTO if it is not running and returns its plan. The
+// trigger names what woke it in the log.
+func (d *Daemon) ctoEnterFor(ctx context.Context, trigger string) (protocol.EnterPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return protocol.EnterPlan{}, err
 	}
@@ -186,7 +201,7 @@ func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
 	call := &ctoEnterCall{done: make(chan struct{})}
 	d.ctoEntering = call
 	d.ctoEnterMu.Unlock()
-	call.plan, call.err = d.ctoEnterOnce(ctx)
+	call.plan, call.err = d.ctoEnterOnce(ctx, trigger)
 	d.ctoEnterMu.Lock()
 	d.ctoEntering = nil
 	close(call.done)
@@ -194,7 +209,7 @@ func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
 	return call.plan, call.err
 }
 
-func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
+func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (protocol.EnterPlan, error) {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return protocol.EnterPlan{}, err
 	}
@@ -208,7 +223,7 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 		return protocol.EnterPlan{}, err
 	}
 	if !d.ctoRunning() {
-		d.Logf("cto.wake trigger=enter harness=%s", h.name())
+		d.Logf("cto.wake trigger=%s harness=%s", trigger, h.name())
 	}
 	plan := protocol.EnterPlan{Note: "Press ctrl+] to come back here; the CTO keeps running."}
 	bin, err := d.harnessBinary(h.name())
@@ -241,14 +256,17 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 		if _, e = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE (session_id='' OR session_id=?) AND harness='claude'`, id, oldID); e != nil {
 			return plan, e
 		}
+		// The same attach plan as every Claude session (decision 0157). No
+		// mouse variable here: the session's own environment decides mouse
+		// tracking (see applyCTOClaudeRole), and the CTO must keep the wheel.
+		base := protocol.EnterPlan{Host: d.hostName()}
+		if dir := d.claudeRoleDir(roleCTO); isDir(dir) {
+			base.Dir = dir
+		}
+		plan = claudeAttachPlan(base, bin, d.claudeCTO.ref, ctoViewName)
 		if d.claudeCTO.restarted {
 			plan.Note = claudeCTORestartNotice
 		}
-		// No mouse variable here: the session's own environment decides mouse
-		// tracking (see applyCTOClaudeRole), and the CTO must keep the wheel.
-		plan.Argv = []string{bin, "attach", d.claudeCTO.ref}
-		// The CTO runs Claude Code whatever its binary is called (decision 0139).
-		plan = claudePlanEnvAlways(plan)
 	} else {
 		d.cto.mu.Lock()
 		defer d.cto.mu.Unlock()

@@ -36,7 +36,7 @@ Workers on the orchestrator's subscription spend the limit it needs to keep work
 
 When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with ` + "`settings_change`" + ` in the worker_profile_add area under the same name.
 
-To learn about a project, find it with the ` + "`agent_projects_find`" + ` and ` + "`agent_sessions_find`" + ` tools (machine, folder, live sessions). You have no built-in tools. For file work or to draft a charter, send its live session a request and use its answer. Ask the project's own agent to draft its charter with the charter guide, then show the owner the result as a diff.
+To learn about a project, find it with the ` + "`agent_projects_find`" + ` and ` + "`agent_sessions_find`" + ` tools (machine, folder, live sessions). You have your harness's built-in tools, as a coding session has. For work inside a project or to draft a charter, send its live session a request and use its answer. Ask the project's own agent to draft its charter with the charter guide, then show the owner the result as a diff.
 
 Call cto_ops_list for the rare owner operations and reads, including the Inbox, session text, settings and tool inventory; each entry names its gate. Run one with cto_op and the arguments the owner interface uses. A wrong, missing or unknown argument returns its schema and runs nothing. Public agent tools keep their usual caller scope. OAuth consent, Tailscale login and phone pairing require the owner: create a one-click ask rather than giving manual TUI instructions. Use mcp_change action app_ask with the app code to request app or phone approval; cto_op public_on creates a login ask when needed. If the gateway needs Tailscale installation, a service start or operator setup, find its live agent by machine and ask it to fix the prerequisite, then retry public_on. Do not send the owner back to the TUI to repeat the operation. You can read every node's charter and every edge with ` + "`agent_graph_read`" + `. Do not share owner-only data with other agents unless the owner asks.
 
@@ -170,8 +170,7 @@ func (d *Daemon) ctoConfigData(config string) ([]byte, error) {
 		ownerConfig = make(map[string]any)
 	}
 	ownerConfig["agents"] = map[string]any{
-		"cto":     map[string]any{"mode": "primary", "description": "The owner's CTO", "system": ctoBrief, "permissions": ctoPermissions()},
-		"general": map[string]any{"disable": true},
+		"cto": map[string]any{"mode": "primary", "description": "The owner's CTO", "system": ctoBrief, "permissions": ctoPermissions()},
 	}
 	ownerConfig["mcp"] = map[string]any{"servers": map[string]any{"agent-net-cto": map[string]any{"type": "local", "command": []string{d.cfg.Exe, "cto-mcp"}, "environment": map[string]string{"AGENT_NET_SOCKET": d.cfg.SocketPath}}}}
 	return json.Marshal(ownerConfig)

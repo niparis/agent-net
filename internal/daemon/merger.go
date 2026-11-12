@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -56,4 +60,36 @@ func (d *Daemon) mergerProject(ctx context.Context, p protocol.SessionStartReque
 		return protocol.ProjectView{}, "", errors.New("merger needs an existing registered project on that machine")
 	}
 	return *found, found.NodeID, nil
+}
+
+var unsafeFolderChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// mergerFolder is the merger's own git worktree of the project:
+// <state>/mergers/<project>, outside the project folder. Claude Code keeps a
+// session's memory by folder, so a merger in the lead's folder shared the
+// lead's memory (decision 0157). The worktree is detached: the merger checks
+// out and merges branches itself. A later start reuses it.
+func (d *Daemon) mergerFolder(ctx context.Context, projectPath, project string) (string, error) {
+	name := unsafeFolderChars.ReplaceAllString(project, "-")
+	if name == "" || name == "." || name == ".." {
+		return "", fmt.Errorf("cannot make a merger folder for project %q", project)
+	}
+	dir := filepath.Join(d.cfg.StateDir, "mergers", name)
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		return dir, nil
+	}
+	if !isGitRepo(ctx, projectPath) {
+		return "", fmt.Errorf("a merger needs a git repository with a commit: %s", projectPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+		return "", err
+	}
+	if _, err := gitOutWithContext(ctx, projectPath, "worktree", "add", "--detach", dir, "HEAD"); err != nil {
+		return "", fmt.Errorf("cannot make the merger folder: %w", err)
+	}
+	if err := d.copyWorktreeSkills(ctx, projectPath, dir); err != nil {
+		return "", err
+	}
+	d.markOwnerWorktree(dir)
+	return dir, nil
 }

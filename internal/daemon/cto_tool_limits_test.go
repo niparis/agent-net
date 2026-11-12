@@ -11,6 +11,8 @@ import (
 	"testing"
 )
 
+// The CTO has full power (decision 0157): built-in tools and subagents do not
+// stop the start. Only a missing cto agent does.
 func TestCTOOpenCodeEffectiveTools(t *testing.T) {
 	cases := []struct {
 		name, version string
@@ -18,26 +20,11 @@ func TestCTOOpenCodeEffectiveTools(t *testing.T) {
 		extra, want   string
 	}{
 		{"private", "2.2.0", ctoPermissions(), "", ""},
-		{"mac version", "2.2.1", ctoPermissions(), "", ""},
 		{"future version", "9.0.0", ctoPermissions(), "", ""},
-		{"default primary agent", "2.2.1", ctoPermissions(), "build", ""},
-		{"default allow", "2.2.0", []ctoPermission{{"*", "*", "allow"}}, "", "built-in tools"},
-		{"read allow", "2.2.0", append(ctoPermissions(), ctoPermission{"read", "*", "allow"}), "", "read"},
-		{"future tool", "2.2.0", append(ctoPermissions(), ctoPermission{"future", "*", "allow"}), "", "future"},
-		{"delegation", "2.2.0", ctoPermissions(), "general", "general"},
-		{"missing rules", "2.2.0", nil, "", "deny"},
-	}
-	for i, rule := range ctoPermissions() {
-		if rule.Effect != "deny" {
-			continue
-		}
-		missing := append([]ctoPermission{}, ctoPermissions()[:i]...)
-		missing = append(missing, ctoPermissions()[i+1:]...)
-		cases = append(cases, struct {
-			name, version string
-			rules         []ctoPermission
-			extra, want   string
-		}{"missing " + rule.Action, "2.2.1", missing, "", rule.Action})
+		{"default allow", "2.2.0", []ctoPermission{{"*", "*", "allow"}}, "", ""},
+		{"read allow", "2.2.0", append(ctoPermissions(), ctoPermission{"read", "*", "allow"}), "", ""},
+		{"general subagent", "2.2.0", ctoPermissions(), "general", ""},
+		{"no cto agent", "2.2.0", nil, "", "missing"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -46,7 +33,11 @@ func TestCTOOpenCodeEffectiveTools(t *testing.T) {
 					http.NotFound(w, r)
 					return
 				}
-				agents := []any{map[string]any{"name": "cto", "permissions": tc.rules}}
+				name := "cto"
+				if tc.want == "missing" {
+					name = "build"
+				}
+				agents := []any{map[string]any{"name": name, "permissions": tc.rules}}
 				if tc.extra != "" {
 					agents = append(agents, map[string]any{"name": tc.extra})
 				}
@@ -57,7 +48,7 @@ func TestCTOOpenCodeEffectiveTools(t *testing.T) {
 			d := &Daemon{log: log.New(&logs, "", 0)}
 			d.cto.base = srv.URL
 			info, _ := json.Marshal(map[string]string{"version": tc.version})
-			err := d.checkOpenCodeCTOTools(context.Background(), info)
+			err := d.checkOpenCodeCTOAgent(context.Background(), info)
 			if !strings.Contains(logs.String(), tc.version) {
 				t.Fatalf("version was not logged: %q", logs.String())
 			}

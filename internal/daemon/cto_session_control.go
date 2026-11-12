@@ -133,7 +133,8 @@ func (d *Daemon) waitSessionEnded(ctx context.Context, id string) error {
 		if err != nil {
 			return err
 		}
-		if !view.Online {
+		// A stopped CTO keeps its network identity and is reported dormant.
+		if !view.Online || (view.Type == "cto" && view.Status == "dormant") {
 			return nil
 		}
 		if time.Now().After(deadline) {
@@ -145,4 +146,33 @@ func (d *Daemon) waitSessionEnded(ctx context.Context, id string) error {
 		case <-time.After(ctoControlPoll):
 		}
 	}
+}
+
+// stopCTOSession is session_stop for the CTO on this machine. The CTO keeps its
+// session ID and conversation; the next Enter, resume or message starts it.
+func (d *Daemon) stopCTOSession(ctx context.Context) (protocol.SessionStopResult, error) {
+	if err := d.ctoDispatchMu.lock(ctx); err != nil {
+		return protocol.SessionStopResult{}, err
+	}
+	defer d.ctoDispatchMu.unlock()
+	d.cto.mu.Lock()
+	d.stopClaudeCTOLocked("owner_stop")
+	d.stopOpenCodeCTOLocked("owner_stop")
+	d.cto.mu.Unlock()
+	d.scheduleCTOPresence()
+	return protocol.SessionStopResult{Note: "Stopped the CTO. The conversation is kept."}, nil
+}
+
+// resumeCTOSession is session_resume for the CTO on this machine: the CTO's
+// own start, which resumes its conversation, or starts a new one when Claude
+// says the old one is gone. It opens no view.
+func (d *Daemon) resumeCTOSession(ctx context.Context, a protocol.AgentView) (protocol.StartedSession, error) {
+	if d.ctoRunning() {
+		return protocol.StartedSession{}, errors.New("session is already online")
+	}
+	if _, err := d.ctoEnterFor(ctx, "resume"); err != nil {
+		return protocol.StartedSession{}, err
+	}
+	return protocol.StartedSession{ID: protocol.NewID("start"), Status: "started", Resumes: a.SessionID, SessionID: a.SessionID,
+		NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: ctoViewName, StartedAt: time.Now().Unix()}, nil
 }

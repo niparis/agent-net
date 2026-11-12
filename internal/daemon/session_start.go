@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -230,7 +231,13 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		}
 	}()
 	sessionPath, branch := found.Path, ""
-	if p.Folder == protocol.FolderWorktree {
+	if p.Merger {
+		dir, err := d.mergerFolder(ctx, found.Path, found.Name)
+		if err != nil {
+			return protocol.StartedSession{}, err
+		}
+		sessionPath = dir
+	} else if p.Folder == protocol.FolderWorktree {
 		if p.CTOProposal {
 			if err := checkOwnerHome(ownerWorktreeRoot(found.Path)); err != nil {
 				return protocol.StartedSession{}, err
@@ -247,18 +254,29 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	// Claude Code refuses an untrusted folder in `claude --bg`, so the answer is
 	// asked here for a project name and a typed path alike.
 	if p.Harness == "claude" {
-		needTrust, err := ownerClaudeTrust(sessionPath, created, p.Folder == protocol.FolderWorktree, p.TrustClaude)
+		// A merger's own folder holds the project's code, so the owner's trust
+		// is asked for the project folder, as when the merger ran there.
+		trustPath := sessionPath
+		if p.Merger {
+			trustPath = found.Path
+		}
+		needTrust, err := ownerClaudeTrust(trustPath, created, p.Folder == protocol.FolderWorktree, p.TrustClaude)
 		if err != nil {
 			return protocol.StartedSession{}, err
 		}
 		if needTrust {
 			// The gateway raises the owner's one-click trust ask, even when the
 			// start runs on this machine and never crosses the gateway relay.
-			go d.reportTrustNeed(context.Background(), sessionPath, found.Name, d.ownerSessionID())
+			go d.reportTrustNeed(context.Background(), trustPath, found.Name, d.ownerSessionID())
 			return protocol.StartedSession{ID: protocol.NewID("start"), Status: "needs_trust",
 				NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness,
-				Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model,
+				Project: found.Name, Path: trustPath, Branch: branch, Model: p.Model,
 				StartedAt: time.Now().Unix()}, nil
+		}
+		if p.Merger {
+			if err := claudetrust.Set(sessionPath); err != nil {
+				return protocol.StartedSession{}, fmt.Errorf("cannot trust %s for Claude Code: %w", sessionPath, err)
+			}
 		}
 	}
 	// The choice for the .mcp.json servers is stored in the launch folder before
@@ -479,6 +497,9 @@ func (d *Daemon) sessionResumeLocal(ctx context.Context, sessionID string) (prot
 }
 
 func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, pane string) (protocol.StartedSession, error) {
+	if a.SessionID != "" && a.SessionID == d.ctoSessionID() {
+		return d.resumeCTOSession(ctx, a)
+	}
 	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex") {
 		return protocol.StartedSession{}, errors.New("Cannot resume this conversation here. Open it in the harness directly.")
 	}
