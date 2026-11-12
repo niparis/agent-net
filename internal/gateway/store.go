@@ -1322,7 +1322,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1767,6 +1767,64 @@ const workerBriefDoneMigration = `
 SELECT 1 /* worker brief done list */;
 `
 
+// ownerTypedMigration keeps when the owner last typed in a session. Viewing
+// or attaching does not set it. A question that ends a turn is redirected to
+// the chief only when the owner has not typed there lately (decision 0150, "No
+// agent asks the owner in its own chat"). The column is added in the
+// migration loop, so replaying it is safe.
+const ownerTypedMigration = `
+-- Owner front door (decision 0150): session owner typed column.
+SELECT 1 /* session owner typed column */;
+`
+
+// deskItemShapeMigration gives each Desk item an owner (chief or cto), a
+// state and a category, and links a duplicate to the open item it joined
+// (decision 0150). A rule judgment gains its action and category, a sort
+// keeps the rule it applied, and a held picker override keeps the facts the
+// chief's confirm rule checks (decision 0151). The columns are added in the migration loop, so
+// replaying it is safe. The triggers keep owner and state equal to the item's
+// status and next who, whichever code path changes them.
+const deskItemShapeMigration = `
+-- Owner front door (decision 0150): desk item shape columns.
+CREATE INDEX IF NOT EXISTS inbox_items_dup_of ON inbox_items(dup_of) WHERE dup_of<>'';
+-- The facts of a held picker override (decision 0151), by its ask.
+CREATE TABLE IF NOT EXISTS start_override_facts (
+ ask_id TEXT PRIMARY KEY, harness TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', effort TEXT NOT NULL DEFAULT '',
+ level TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL DEFAULT '', caller_family TEXT NOT NULL DEFAULT '',
+ override_family TEXT NOT NULL DEFAULT '', review INTEGER NOT NULL DEFAULT 0);
+DROP TRIGGER IF EXISTS inbox_items_desk_insert;
+DROP TRIGGER IF EXISTS inbox_items_desk_update;
+CREATE TRIGGER inbox_items_desk_insert AFTER INSERT ON inbox_items BEGIN
+ UPDATE inbox_items SET owner=` + deskOwnerSQL + `, state=` + deskStateSQL + ` WHERE id=NEW.id;
+END;
+CREATE TRIGGER inbox_items_desk_update AFTER UPDATE OF status, next_who ON inbox_items BEGIN
+ UPDATE inbox_items SET owner=` + deskOwnerSQL + `, state=` + deskStateSQL + ` WHERE id=NEW.id;
+END;
+-- A duplicate that joined an item is answered or closed with it.
+DROP TRIGGER IF EXISTS inbox_items_joined_settle;
+CREATE TRIGGER inbox_items_joined_settle AFTER UPDATE OF status ON inbox_items WHEN OLD.status='open' AND NEW.status<>'open' BEGIN
+ UPDATE inbox_items SET status=CASE WHEN NEW.status IN ('answered','approved','refused') THEN NEW.status ELSE 'closed' END,
+  answer=NEW.answer, answered_at=NEW.answered_at WHERE dup_of=NEW.id AND status='joined';
+END;
+UPDATE inbox_items SET owner=CASE WHEN EXISTS (SELECT 1 FROM sessions x WHERE x.id=inbox_items.next_who AND x.harness='cto') THEN 'cto' ELSE 'chief' END;
+UPDATE inbox_items SET state=CASE WHEN status='open' THEN CASE WHEN owner='cto' THEN 'with_cto' WHEN next_who IN ('','owner') THEN 'ready' ELSE 'verifying' END
+ WHEN status IN ('answered','approved','refused') THEN 'answered' ELSE 'closed' END;
+UPDATE inbox_items SET category='security' WHERE kind IN ('sign_in','permission');
+UPDATE inbox_items SET category='outage' WHERE kind='machine';
+`
+
+// deskOwnerSQL is the owner of the inserted or updated item NEW: the CTO when
+// it waits on the CTO's session, else the chief, who curates the Desk.
+const deskOwnerSQL = `CASE WHEN EXISTS (SELECT 1 FROM sessions x WHERE x.id=NEW.next_who AND x.harness='cto') THEN 'cto' ELSE 'chief' END`
+
+// deskStateSQL is the Desk state of NEW. An open item waits on the CTO
+// (with_cto), on the owner (ready) or on the chief or a session the chief
+// chose (verifying).
+const deskStateSQL = `CASE WHEN NEW.status='open' THEN CASE
+ WHEN EXISTS (SELECT 1 FROM sessions x WHERE x.id=NEW.next_who AND x.harness='cto') THEN 'with_cto'
+ WHEN NEW.next_who IN ('','owner') THEN 'ready' ELSE 'verifying' END
+ WHEN NEW.status IN ('answered','approved','refused') THEN 'answered' ELSE 'closed' END`
+
 // stmtCacheSize is how many prepared statements the connection keeps. The
 // gateway runs a few hundred different statements.
 const stmtCacheSize = 1024
@@ -1992,6 +2050,40 @@ func (s *Store) migrate() error {
 						return err
 					}
 				}
+			}
+		}
+		if strings.Contains(migrations[i], "desk item shape columns") {
+			for _, col := range []struct{ table, name, spec string }{
+				{"inbox_items", "owner", `TEXT NOT NULL DEFAULT 'chief'`},
+				{"inbox_items", "state", `TEXT NOT NULL DEFAULT ''`},
+				{"inbox_items", "category", `TEXT NOT NULL DEFAULT 'normal'`},
+				{"inbox_items", "dup_of", `TEXT NOT NULL DEFAULT ''`},
+				{"standing_orders", "action", `TEXT NOT NULL DEFAULT ''`},
+				{"standing_orders", "category", `TEXT NOT NULL DEFAULT ''`},
+				{"ask_sorts", "rule_id", `TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "session owner typed column") {
+			var has int
+			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='owner_typed_at'`).Scan(&has)
+			if err == nil && has == 0 {
+				_, err = tx.Exec(`ALTER TABLE sessions ADD COLUMN owner_typed_at INTEGER NOT NULL DEFAULT 0`)
+			}
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
 		if strings.Contains(migrations[i], "worker brief done list") {
@@ -2993,6 +3085,12 @@ func (s *Store) migrate() error {
 		}
 		if strings.Contains(migrations[i], "Session compaction settings cutover") {
 			if err := s.cutoverSessionCompactionTx(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "Front door flush of open owner items") {
+			if err := s.flushOwnerAsksOnceTx(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}

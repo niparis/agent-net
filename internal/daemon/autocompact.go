@@ -129,6 +129,8 @@ func (d *Daemon) autoCompactSession(ctx context.Context, snap settings.Snapshot,
 	}
 	if err := d.autoCompactNowDo(ctx, t, reason); err != nil {
 		d.Logf("auto compaction %s %s (%s): %v", t.harness, t.native, reason, err)
+		d.reportIntake(protocol.IntakeReport{Kind: protocol.IntakeCompaction, Subject: t.harness,
+			Text: "auto compaction failed for a " + t.harness + " session", Detail: err.Error()})
 		d.autoCompactMu.Lock()
 		if s := d.autoCompact[key]; s != nil {
 			s.attempted = true
@@ -149,6 +151,7 @@ func (d *Daemon) autoCompactSession(ctx context.Context, snap settings.Snapshot,
 		d.noteCompacted(t.harness, t.native, now.Unix(), reason)
 	}
 	d.Logf("auto compaction %s %s: requested (%s)", t.harness, t.native, reason)
+	d.reportIntake(protocol.IntakeReport{Kind: protocol.IntakeCompaction, Subject: t.harness, Resolved: true})
 }
 
 // autoCompactContext returns the context tokens, the model window and whether

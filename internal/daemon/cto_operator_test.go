@@ -302,6 +302,7 @@ func TestCTOOperatorAllowlistCoversOwnerMethods(t *testing.T) {
 		"permission_undo":    "only the owner may undo a Claude Code permission approval",
 		"nudge_undo":         "only the owner may undo the chief of staff nudge pause or resume",
 		"sign_in_open":       "only the owner's click may open a sign-in pane",
+		"ask_discuss":        "the owner's discuss opens his own chat with the chief or the CTO",
 	}
 	for method := range operatorMethods {
 		if _, ok := covered[method]; ok {

@@ -51,7 +51,10 @@ const (
 	AskReasonMovedOnClean = "moved_on (cleanup)" // the one-time cleanup of asks the session left behind
 	AskReasonAnswered     = "answered"           // the escalated request was answered later
 	AskReasonMovedToLog   = "moved_to_log"
-	AskReasonGrouped      = "grouped" // a per-field charter draft ask folded into the one ask of its node
+	// AskReasonFlushedByFrontDoor closes, once, the open items that waited on
+	// the owner before the front door (decision 0150, plan step (d)).
+	AskReasonFlushedByFrontDoor = "flushed_by_front_door"
+	AskReasonGrouped            = "grouped" // a per-field charter draft ask folded into the one ask of its node
 	// AskReasonSignedIn closes a sign_in ask after its provider's quota check
 	// no longer reports the login remedy.
 	AskReasonSignedIn = "signed_in"
@@ -91,6 +94,14 @@ const (
 	// without a sleep report for longer than the gateway waits. It closes by
 	// itself when the machine returns.
 	AskKindMachine = "machine"
+	// AskKindCTOAlert is a wake of the CTO (decision 0152): a P1 item in the
+	// chief's queue for one CTO intake entry. The chief routes it to the lead
+	// that owns the cause. It never starts a CTO turn.
+	AskKindCTOAlert = "cto_alert"
+	// AskKindQuotaStuck is the chief's item for work that stopped because a
+	// provider has no quota left. It links the CTO intake entry of the
+	// provider, and closes with it.
+	AskKindQuotaStuck = "quota_stuck"
 )
 
 // Ask is one row of the Desk. It has the shape of a delivery step: who waits,
@@ -118,6 +129,11 @@ type Ask struct {
 	// Next is who must act now: owner, a session id, or chief.
 	Next   string `json:"next"`
 	WhyYou string `json:"why_you,omitempty"`
+	// Owner (chief or cto), DeskState and Category are the Desk item shape of
+	// decision 0150.
+	Owner     string `json:"owner,omitempty"`
+	DeskState string `json:"desk_state,omitempty"`
+	Category  string `json:"category,omitempty"`
 	// Priority (1 to 3) is the chief's rank for an ask it sent to the owner.
 	Priority    int    `json:"priority,omitempty"`
 	Answer      string `json:"answer,omitempty"`

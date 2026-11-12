@@ -437,6 +437,21 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, err
 		}
 		return map[string]any{"id": out.ID, "status": out.Status}, nil
+	case "agent_owner_judgment_record":
+		var p protocol.JudgmentRecordArgs
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad agent_owner_judgment_record params")
+		}
+		if err := p.Validate(); err != nil {
+			return nil, err
+		}
+		sid := d.ctoSessionID()
+		if sid == "" {
+			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
+		}
+		var out protocol.JudgmentRecordResult
+		err := d.deliveryCall(ctx, protocol.FrameJudgmentRecord, protocol.JudgmentRecordRequest{SessionID: sid, JudgmentRecordArgs: p}, &out)
+		return out, err
 	case "agent_learn":
 		var p protocol.LearnRequest
 		if json.Unmarshal(raw, &p) != nil {

@@ -349,6 +349,7 @@ func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
 	ownerPrompts        ownerPrompts
+	turnEnds            turnEndAsks
 	ownerPromptClock    func() time.Time // test hook
 	heldMu              sync.Mutex
 	heldStarts          map[string]*heldStart // start id -> a start that waits for the owner, guarded by heldMu

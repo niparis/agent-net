@@ -52,10 +52,12 @@ offline dot. The gateway dates a drop by the last frame it saw, so last seen
 keeps its meaning after the link goes. A late cleanup of a replaced link never
 records an outage on a machine that has already returned.
 
-The gateway raises one Desk item for an outage that stays silent for 15
-minutes: `<machine> went silent at <time> without sleeping; it may be hung`.
-The item closes by itself when the machine returns, or when a sleep report
-explains the gap. A sleep report is never a second item.
+An outage that stays silent for 15 minutes goes to the CTO intake queue, not
+to the owner (decision 0152): one entry `<machine> went silent at <time>
+without sleeping; it may be hung`, and one P1 "CTO alert" item in the chief's
+queue. The entry and the alert close by themselves when the machine returns,
+or when a sleep report explains the gap. A machine that reported sleep raises
+nothing. See [Automatic routes and the CTO intake queue](#automatic-routes-and-the-cto-intake-queue).
 
 Each daemon watches its own machine. It notices a jump in the wall clock
 against the monotonic clock, which works on every OS and reports the sleep
@@ -427,6 +429,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | `agent_settings_read`, `agent_worker_profiles_find` | Public settings values and history, and public worker profiles |
 | `projects_layout` | Read-only project layout of online machines (roots, groups, remotes, newest commits). Cached for 10 minutes. |
 | `cto_ops_list` | The rare operations, grouped, with their purpose, example and owner gate. Filter by text. |
+| `cto_intake_find` | The CTO intake queue (decision 0152): the open system-health entries, newest first, at most `limit` (default and maximum 200), with `total`. Each entry has `kind`, `subject`, `severity` (1 woke the CTO, 2 alert, 3 digest line), `text`, `detail`, `first_seen`, `last_seen`, `count`, `alert` (the chief's CTO alert item), `stuck` (the chief's stuck-work item for a quota entry) and `lead` (the lead that owns the cause). The CTO reads it at the start of each owner conversation. Gateway frame `cto.intake`. |
 | `cto_proposals_find` | The CTO's own proposals; `id` selects one. `kind` filters the list: `proposal` is the default, `all` lists every pending owner item, and `draft` (charter suggestions), `learned` (pending major learned proposals), `held`, `inbox`, `approval`, `question`, `escalation` and `rejection` narrow it. Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
@@ -794,7 +797,7 @@ The owner sees and edits them in the TUI, Settings, section "CTO standing orders
 | `agent-net playbook set MODEL [--harness H] [--pin\|--unpin] TEXT...` | Write or replace the owner's playbook note for a model, or for a model on one harness (`H` is `opencode`, `claude`, `pi` or `codex`). With no text the note is removed. `--pin` keeps automatic learning from ever changing it. The note appears in the `agent_worker_start` or `agent-net start` result for that model, and has at most 1 KiB. `agent-net playbook get MODEL [--harness H]` prints it; `agent-net playbook pin\|unpin MODEL [--harness H]` pins or unpins the note that is stored. See [the playbook](#the-playbook-and-the-track-record). |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
 | `agent-net hint` | Not for you to run: the Claude Code hook that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin and prints hook JSON only when it has a suggestion. See [peer trust and hints](#peer-trust-and-hints). |
-| `agent-net policy-hook` | Not for you to run: the Claude Code `UserPromptSubmit`, `PostCompact` and `SessionStart` (matcher `compact`) hooks that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin. On a prompt it prints hook JSON when the session has a delegation policy or its node has a charter. The full charter block is sent once per session, again when the charter changes, and again after a compaction. See [delegation policy](#delegation-policy) and [charters](#charters-and-component-relationships). |
+| `agent-net policy-hook` | Not for you to run: the Claude Code `UserPromptSubmit`, `PostCompact`, `SessionStart` (matcher `compact`) and `Stop` hooks that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin. On a prompt it prints hook JSON when the session has a delegation policy or its node has a charter. On `Stop` it prints `{"decision":"block","reason":...}` once when the turn ended on a question to the owner that went to the chief (see [owner questions go to the chief](#owner-questions-go-to-the-chief)). The full charter block is sent once per session, again when the charter changes, and again after a compaction. See [delegation policy](#delegation-policy) and [charters](#charters-and-component-relationships). |
 | `agent-net needs-hook` | Not for you to run: the Claude Code `PermissionRequest`, `Notification`, `PreToolUse`, `UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` hooks that [setup can add](#what-setup-changes-on-your-machine). It tells the local daemon when the session waits for you (a permission, or the question of `AskUserQuestion` and the plan of `ExitPlanMode` at their `PreToolUse`), and clears that when you type a prompt, a tool runs after an approval, or the dialog gets its answer. See [the Inbox (tab 7)](#inbox-tab-7). |
 | `agent-net version` | Print the version. |
 
@@ -1372,7 +1375,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `CLAUDE_CODE_DISABLE_MOUSE` | daemon | `0` in the `env` of your Claude Code settings (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`), written by setup and kept there by the daemon. Claude Code applies it inside every session, so the wheel scrolls the conversation in every session however it was started. agent-net adds no per-launch copy. |
 | `DISABLE_AUTOUPDATER` | daemon | `1` in the `env` of every Claude Code process agent-net starts (owner starts and resumes, workers, the merger, the CTO, sign-in and the compaction attach), and in the `env` of your Claude Code settings for sessions you start by hand. Claude Code's own background updater stays off, so agent-net's daemon is the only updater ([decision 0139](decisions/0139-agent-net-is-the-only-harness-updater.md)). |
 
-The daemon owns one value for mouse tracking: it writes `CLAUDE_CODE_DISABLE_MOUSE=0` to the `env` of your Claude Code settings file at start and checks it every minute, so a drifted value is set back without touching another key. A file that is not valid JSON is left alone and reported. Claude Code applies the user settings inside each session, and the launch settings of a managed session no longer carry a copy ([decision 0128](decisions/0128-cto-keeps-mouse-tracking-on.md)). The CTO keeps its own deliberate exception in its launch settings. The daemon also reports a live Claude session whose inherited environment still turns the wheel off, once per session per day, in the owner TUI and the Desk log. A Claude session that was already running keeps its old setting until it is started again. When Claude's background service itself carries the old value, the daemon reports it once and stops it with `claude daemon stop --any --keep-workers` only when Claude's fresh roster lists no live session, so even a session that starts during the check survives; the next launch starts a clean service.
+The daemon owns one value for mouse tracking: it writes `CLAUDE_CODE_DISABLE_MOUSE=0` to the `env` of your Claude Code settings file at start and checks it every minute, so a drifted value is set back without touching another key. A file that is not valid JSON is left alone and reported. Claude Code applies the user settings inside each session, and the launch settings of a managed session no longer carry a copy ([decision 0128](decisions/0128-cto-keeps-mouse-tracking-on.md)). The CTO keeps its own deliberate exception in its launch settings. The daemon also reports a live Claude session whose inherited environment still turns the wheel off, once per session per day, as a digest line of the CTO intake queue (kind `claude_mouse`, decision 0152); it no longer shows in the owner TUI or the Desk log. A Claude session that was already running keeps its old setting until it is started again. When Claude's background service itself carries the old value, the daemon reports it once and stops it with `claude daemon stop --any --keep-workers` only when Claude's fresh roster lists no live session, so even a session that starts during the check survives; the next launch starts a clean service.
 
 With mouse tracking on, the wheel scrolls the conversation, and selecting text needs Shift while dragging (Option on some terminals), because a plain drag is a mouse event for the session.
 
@@ -2890,6 +2893,54 @@ An ask closes by itself with a kept reason: `change_done` (the change it is abou
 
 The log (`desk_log`) holds what is not a question: "CTO applied ...", "CTO sent ...", a new app, a daemon report (a Claude session or background service whose wheel is off, decision 0128), and what the gateway did by itself (closing an ask, reminders, idle checks, retired notices). It keeps the newest 2000 lines. The Desk tab (tab 7) shows the asks, the changes in flight and the log. The CTO and app notices are in the log only: the migration that came with the Desk closed their old Inbox rows (`moved_to_log`), and `desk_settle` marks a log line as undone.
 
+### The Desk item shape (decision 0150, plan step (a))
+
+Each item in `inbox_items` also has:
+
+- `owner`: `chief` or `cto`. An item waits on the CTO when its `next_who` is the CTO's session; every other item is the chief's, who curates the Desk.
+- `state`: `verifying` (the chief or a session it chose has it), `with_cto`, `ready` (it waits on the owner), `answered`, `carried_out` or `closed`. Triggers keep `owner` and `state` equal to `status` and `next_who`, whatever changes them.
+- `category`: `security`, `outage`, `money` or `normal`. The kind sets it where the kind fixes it (`sign_in` and `permission` are security, `machine` is outage), else the asker's value, else `normal`. The chief corrects it with `category` on any `agent_ask_sort` call.
+- `dup_of`: for a duplicate, the open item it joined. Its `status` is `joined`.
+
+`asks_list` adds `owner`, `desk_state` and `category` to each ask; inbox reads add `category`.
+
+Intake rules:
+
+- **One decision per item.** A `question` without a source key whose text holds two or more lines that end with `?` becomes one item per question. Lines that are not questions are context and stay at the top of each part. List markers (`1.`, `2)`, `-`) are dropped.
+- **Duplicates.** An ask with a source key joins the open item with that key (a key belongs to one kind, so this is source plus kind). The same asker refreshes the item's text, as before. Another session gets a `joined` row. An ask without a source key and without a message joins the open item of the same asker whose text is the same once case and white space are folded and ids are removed, when that item is less than 24 hours old. An id is a short prefix such as `i_`, `m_`, `s_` or `ch_` followed by hex, or a run of 7 or more hex characters; plain numbers stay, so "merge 100 files" and "merge 900 files" are different asks.
+- **Waiting sessions.** A wait that is not an explicit `agent_owner_ask` becomes a `waiting` ask at once when the owner has not typed in that session in the last 30 minutes. While he works in it, the ask comes only after the session has waited 2 minutes (see "Waiting sessions on the Desk").
+- **Joined askers.** When the item is answered, every joined asker gets the answer as a message too. When the item is answered or closed, its joined rows follow it.
+- **Owner-bound items need options.** An item an agent creates with `next_who` owner, and a chief sort with `result: "owner"`, are refused when the kind has no fixed answers (`question`, `feature_idea`, `check`, `waiting`, `session_stall`) and there are no options. The error names `options`. Generated notices (sign-in, machine, brief, permission and the other gateway kinds) are not affected, and an ask that falls to the owner because no chief can work keeps its old path.
+- **Routed items.** After the chief sends an ask to the CTO's session, both may close it: the chief with `agent_ask_sort` `close` or `merge`, the CTO with `answer` `dismiss`. Closing it closes its joined rows.
+- **Check items** carry no generated recommendation any more; the chief turns them into a decision or resolves them.
+- **Upgrade (plan step (d)).** On the owner's words ("note that i dont care if the inbox is flushed. Right now it's pretty bad, i only use it when forced."), one migration closes every open item that waits on the owner (`next_who` empty or `owner`), once. Each row is kept: `status` closed, `answer` `flushed_by_front_door`, `answered_at` the time of the flush. A duplicate that joined such an item closes with it. Two kinds stay open because nothing asks them again: a delivery approval (it gates a merge) and a permission ask (it holds a proposal). Items that wait on the chief, the CTO or a lead stay as they are. Nothing is sent to the askers. The Desk log gets one line, `Front door: closed N open Desk items that waited on you (flushed_by_front_door)`, and `owner_settings` keeps the key `front_door_flush_v1` with the count. A store that has that key never flushes again, so a replay of the migrations closes nothing opened after the front door.
+
+`agent_ask_sort` has two more results for a held worker start (source key `wstart:<start id>`, decision 0151): `confirm` starts it with the caller's fields and `picker` with the picker's choice. Each needs a `reason`. The ask goes to the chief first, or to the owner when no chief can work. The held start's facts are kept in `start_override_facts` (`ask_id`, `harness`, `model`, `effort`, `level`, `provider`, `caller_family`, `override_family`, `review`); `worker.override_ask` carries them from the daemon.
+
+Nobody confirms an override that picks the caller's own model family for a review of its own work: the CTO's `confirm` is refused too, and only `picker` is left. The chief confirms only when all of these hold; otherwise its `confirm` is refused with the reason and it sends the ask to the CTO:
+
+- the provider is known and not protected. The daemon resolves it as the start does: the `provider` field, else the model's provider, else the one the harness fixes (claude: anthropic, codex: openai);
+- quota allows it, read with the same quota reading the start uses on the machine that holds it (`ownerQuotas`): there is a usable reading for the provider, no window is exhausted, `QuotaBurnHold` does not hold it, and it is not under the worker floor;
+- it is the same tier or cheaper: the highest level the override model's score meets (the picker's per-model maximum level) is at or below the level the start runs at, which is the start's `difficulty`.
+
+A fact that is missing never opens the gate: an unknown provider, an override with no model, no quota reading, no score for the model, a start with no `difficulty`, or, for a review, an unknown model family of the caller or the override. Each sends the ask to the CTO.
+
+A start is a review when its title or one of its done lines has one of the words review, audit, second opinion or "check the diff" (whole words, any case). The problem and the notes are not read, because they mention reviews in passing ("after review, merge").
+
+`done` reports that the answer of an answered ask was carried out: the ask and its joined rows move to `carried_out`, and the asker and every joined asker get a message with the chief's `reason` and the owner's answer. It is refused for an ask that is not answered, or already carried out.
+
+`agent_ask_sort` takes these fields as well:
+
+- `options` (up to four) and `recommendation`, for `result: "owner"`: they are stored on the ask before it goes to the owner.
+- `category`, on any sort.
+- `rule` and `action`, for `result: "close"`: the id of a standing rule and the action the ask is about. The close is refused unless the rule exists and its area and action match the ask exactly, and a network rule never closes an ask in an owner-only category. The close reason starts with `rule <id>:`, and the sort row keeps the rule in `ask_sorts.rule_id`.
+
+### Standing rules from answers (decision 0150)
+
+An answer can carry a scope: `inbox_answer {id, answer, scope: {area, action, category}}` (gateway `inbox.answer`, same field). On the Desk, open a question or approval with options, mark an answer and press `w` (answer always): a line `always <answer> for> <action> in <area>` opens, filled with the ask's repo, and Enter answers with that scope. `area` is `network`, `repo:<name>` or `team:<name>`; `action` is what the rule allows, for example `merge`. Case and white space of the action are folded; nothing else is. `category` defaults to the item's category. A rule in `money`, `secrets`, `security` or `client_facing` must name a repo or a team; a network rule there is refused before the answer is stored. The answer and its rule are written in one transaction: when the rule cannot be stored, the answer is not stored either. Only the answer of a plain question, approval or idea carries a scope. A scoped answer writes a judgment with `kind` `rule`, `area`, `action`, `category` and `ref` the ask id (new columns `standing_orders.action` and `standing_orders.category`), and a Desk log line `Standing rule <id> (...)` whose undo is `standing_orders` `{"action": "remove", "order_id": "<id>"}`. The Desk offers that undo on the line (`u`). An undone rule no longer applies.
+
+**`agent_owner_judgment_record {text, area, action, category}`** (the chief of staff and the CTO only; other sessions are refused) records a decision the owner made in a live chat, in the same turn. With `area` and `action` it is a rule as above; without them it is a judgment with `kind` `answer` and `ref` `chat:<session>`. It writes the same Desk log line with its undo. It answers `{id, kind, area, action, category}`. The daemon sends it to the gateway as `judgment.record` with the caller's session.
+
 ### Sign-in asks (decision 0132)
 
 A `sign_in` ask says that a CLI agent-net depends on needs the owner's
@@ -2917,6 +2968,81 @@ After that tab closes, that machine runs the provider's quota check once; a
 sign-in on this machine is checked on the next quota reading. When the login error is gone the ask closes
 itself with `signed in`; a persisting error keeps it open. The web console
 shows the same ask with an Open sign-in button when it lists the Desk.
+
+## Automatic routes and the CTO intake queue
+
+One route table in the gateway (`internal/gateway/routes.go`) says where each
+automatic message, each Desk ask kind and each CTO intake kind goes. It
+follows [decision 0152](decisions/0152-automatic-message-routes.md). A test
+reads every ask kind and intake kind from the source and fails on one with no
+row. At run time a kind with no row keeps today's default, the chief, and the
+gateway writes the log line `route.missing`.
+
+- **Agent only.** Step tasks, reminders, idle checks, worker notices,
+  undelivered notices, tools disconnected, member blocked and charter
+  requests go to the session that must act, as before.
+- **The chief.** Every ask that wants the owner goes to the chief of staff
+  first: approvals, questions, ideas, checks, waiting sessions, rejections,
+  escalations, stalls, held requests, charter drafts, learned suggestions,
+  CTO proposals, steps that need the owner, CTO alerts and quota stuck work.
+- **The owner directly.** Only sign-in asks and OAuth consents (the Connected
+  apps approval and the Tailscale public link consent) skip the chief, as
+  one-click asks. The chief's own daily brief and an agent's permission
+  proposal also show to the owner; neither is automatic. Nothing else that
+  agent-net makes by itself reaches the owner.
+- **The CTO intake queue.** System-health alerts go to the table `cto_intake`.
+
+### The CTO intake queue
+
+One row per `(kind, subject)` while it is open. A repeat raises `count` and
+`last_seen` and refreshes the text; it never adds a row. Each row has a
+`severity`: 1 when it woke the CTO, 2 for an alert kind that has not woken it
+yet, 3 for a digest line. The CTO reads the open rows, newest first, with
+`cto_intake_find` at the start of each owner conversation.
+
+| Kind | Subject | Fed by | Wakes the CTO when |
+|---|---|---|---|
+| `machine_silent` | machine | the gateway, after 15 minutes offline without a sleep report | at once; a machine that reported sleep never alerts (decision 0137) |
+| `harness_update_failed` | machine/harness | the daemon, after a failed harness update; a later update resolves it | the alert repeats for over an hour |
+| `compaction_failed` | machine/harness | the daemon, after a failed automatic compaction; a later one that works resolves it | the alert repeats for over an hour |
+| `mcp_repair_failed` | machine/agent-net | the gateway, from the daemon's ask about a session whose agent-net tools could not be connected after its one restart; that check ask still goes to the chief | the alert repeats for over an hour |
+| `struggle` | model | the gateway, when 3 distinct workers ended with struggle signs on the same model within 6 hours | at once |
+| `merge_queue_failing` | project | the gateway, when 3 test runs in a row failed on the merger's train tip in `delivery.ci_mode` `train`. Every change of a train cites the same `run`, so a run counts once; a failure marked `flake: yes` does not count; a pass resets the count and closes the entry | at once |
+| `quota` | provider | the gateway: a usage report with a used-up window, a start refused by the worker floor, or a start refused because the provider has no quota left; a usable reading with room closes it | the alert repeats for over an hour |
+| `claude_mouse` | machine/claude | the daemon's mouse notice (one per key per day); it no longer goes to the Desk log or the CTO chat | never: a digest line |
+| `phone_paired` | the device | a phone paired by Tailscale sign-in; it is no longer an owner notice. The device shows in Connected apps | never: a digest line |
+| `picker_override` | the start | reserved; held overrides go to the chief first (decision 0151) | never |
+
+A daemon reports its kinds with the frame `intake.report` (`kind`, `subject`,
+`text`, `detail`, `resolved`). The gateway puts the machine's name in front of
+the subject and refuses the kinds it detects itself.
+
+**A wake is never a CTO turn.** A CTO turn starts only from the owner. When a
+wake rule holds, the gateway opens one P1 item of kind `cto_alert` in the
+chief's queue (`CTO alert: <text>`). Its `why_you` names the lead that owns
+the cause: the project's lead for the merge queue, else the lead of the
+`agent-net` repo, or "none: the CTO owns it". The chief routes it to that
+lead and tells the CTO; it goes to the owner only for money, secrets or
+security. An entry raises one alert at most. The chief's 15-minute timeout
+never hands a CTO alert or a quota stuck item to the owner.
+
+**One quota event, one thread.** Work stuck on quota opens the provider's
+`quota` entry and one chief item of kind `quota_stuck` (`Work is stuck: ...`):
+a start refused because the provider or the whole harness has no quota left,
+a worker that cannot be started again for quota, a worker run that ended
+failed with the cause `quota_auth`, and an automatic start the picker cannot
+place because every candidate's provider is out of quota (each of those
+providers' threads gets it). Later events of the same provider join
+that entry and that item; no second item is made. Its detail names the CTO entry, and the
+entry's `stuck` names the item. When a usage report shows the provider with
+room again, the entry closes, and so do its stuck-work item and its CTO alert.
+
+**The morning brief.** When the chief delivers the daily brief, the gateway
+adds two parts after the chief's text: one system-health line from the open
+entries (`System health: 2 open alerts, 1 woke the CTO (quota, machine
+silent).`, or `System health: no open alerts.`), and `Decisions recorded
+today:` with the owner's answers and rules recorded in the last 24 hours (at
+most 20 lines, then `and N more`), or `Decisions recorded today: none.`
 
 ## The chief of staff (decision 0114)
 
@@ -2949,8 +3075,8 @@ When `chief.set` names a chief, and when the gateway starts with a chief set,
 every open ask that still waits for the owner and was never offered to a chief
 is marked as waiting for it. That includes asks opened before the chief
 existed. An ask the owner already answered, one that was already sorted, or one
-already sent to a session is left alone. The 15 minute fallback starts when the
-ask starts waiting for the chief, so an adopted ask gets its full time.
+already sent to a session is left alone. The safety net below counts from the
+time the ask starts waiting for the chief, so an adopted ask gets its full time.
 
 **Batches.** Asks for the chief leave as one message from `agent-net` after a
 quiet window of 5 seconds since the newest ask, and never later than 30 seconds
@@ -2958,10 +3084,40 @@ after the oldest. One message holds up to 25 asks: id, kind, asker, subject,
 question, options, recommendation and up to five related open asks. The gateway
 checks for due batches once a second. A sent ask is never sent again.
 
-**Fallback.** An ask the chief has not sorted in 15 minutes (a constant) goes to
-the owner. An ask waiting on a chief that is offline goes to the owner at once.
-Each one writes a Desk log line (`The chief of staff did not sort it in 15
-minutes, so it is with you: ...` or `The chief of staff is offline, ...`).
+**No owner timer, claims and the safety net (decision 0150).** No timer sends an
+ask to the owner while the chief is live and working. The old 15 minute
+fallback (`ChiefTimeout`) and the line "An ask you leave for 15 minutes goes to
+the owner" in the batch text are gone. An ask the chief holds (state
+`verifying`: with the chief, or with a session the chief chose) is claimed, and
+a claimed ask has no clock that ends at the owner. The 30 second `ChiefMaxWait`
+in the batch rule above is not an owner timer: it only keeps a steady stream of
+asks from holding a batch back.
+
+- *Claim age.* A claimed ask that has not moved for the stuck-work limit pings
+  the chief, never the owner. The limit is the setting `delivery.step_stuck` (12
+  hours by default), the same one stuck delivery steps use. The ping is one
+  message from `agent-net` per tick that lists each ask as `<id> still open, N
+  hours: <question>`, and repeats once per limit that passes. "Moved" means the
+  newest of the ask's creation, the time it started waiting for the chief and its
+  newest sort. The daily brief wake carries the same lines under "Still open". The gateway looks for them once a minute.
+- *With the CTO.* An open item with the CTO (state `with_cto`) that has not moved
+  for the same limit goes back to the chief (`next = chief`, a new clock, sent in
+  the next batch), with the Desk log line `The CTO did not act on it in N hours,
+  so it is back with the chief: ...`. The CTO acts only in owner conversations.
+- *Safety net.* It applies only when the chief cannot work (offline, no quota, a
+  harness error or silent, see below). A wake is the batch message to the chief.
+  It is missed when the chief has not claimed or sorted the ask within
+  `ChiefWakeInterval` (10 minutes, a constant) of the batch, or of the time the ask
+  started waiting when no batch could go out. An ask in category `security`,
+  `outage` or `money` goes to the owner after one missed wake, every other ask
+  after two. Each writes a Desk log line (`The chief of staff is offline, so it
+  is with you: ...` or `The chief of staff cannot work (<reason>), so it is with
+  you: ...`). With no chief named, an ask goes at once.
+- *Harnesses that cannot be woken.* A chief on Pi has presence and batches only:
+  online, it gets its batch and the unanswered batch is the missed wake; offline,
+  no batch can wake it, and the clock runs from the time the ask started waiting.
+  An offline chief whose harness can be woken (Claude, Codex, OpenCode) still
+  gets its batch, and that message is the wake.
 
 **Chief availability.** A chief whose session is online can still be unable to
 work. The gateway marks it unavailable when any of these holds. The check runs
@@ -2981,11 +3137,14 @@ once a second with the batch tick, and when an ask is created.
   `chief_silent_at`. It ends after `ChiefRetryAfter` (15 minutes, a constant), when the next ask goes to the chief
   again as a probe, or when the chief sorts. Naming a new chief clears it.
 
-While the chief is unavailable, an ask that would go to the chief goes to the
+An offline chief whose harness can be woken still gets new asks (`next =
+chief`): its batch is the wake, and the safety net above sends each ask to the
+owner after the missed wakes of its category. Otherwise, while the chief is
+unavailable, an ask that would go to the chief goes to the
 owner path instead (`next = owner`): the Desk's Needs you list, which the CTO
 reads and answers as it did before the chief existed. The asks that already wait
-for the chief move there at once, each with a Desk log line (`The chief of staff
-cannot work (<reason>), so it is with you: ...`). No batch is sent. A chief that
+for the chief move there when the safety net above says so, each with a Desk
+log line (`The chief of staff cannot work (<reason>), so it is with you: ...`). No batch is sent. A chief that
 is online but cannot work is not offered those asks again: they get
 `route_fixed`, so adoption leaves them with the owner path when the chief is
 back, while new asks go to the chief again. An offline chief keeps the earlier
@@ -3167,7 +3326,8 @@ The Desk shows what the chief did and lets the owner correct it. Each method is 
 
 - **`chief_sorts`** (gateway `chief.sorts`, read) returns the chief's sorts of the last 24 hours, newest first. Each row has the sort fields, the ask's `question` and `undone`. The Desk's Handled for you list reads it.
 - **`ask_undo` `{ask}`** (gateway `ask.undo`, owner or CTO) puts an ask back the way it was before the newest sort. It restores `next`, `status`, `answer` and `answered_at` from the sort's `prev_*` fields. A `next` of the chief becomes the owner, because the chief got its one batch and is not sent the ask again. `priority` and `why_you` are cleared. It writes an `ask_sorts` row with result `undo` and a log line from the owner (or the CTO). It is refused when the ask changed since the sort (for example, a session answered it), and when the sort is undone already. A merge also removes its `merged: <ask>` line from the ask it merged into. The chief has the same undo as `agent_ask_sort` with `result: "undo"`, with two differences: it undoes only its own newest sort, and the ask goes back to the chief, not to the owner, so the chief can sort it again. Its undo row names the chief as the sorter.
-- **`ask_mark` `{ask, mark, why}`** (gateway `ask.mark`, owner or CTO) stores a mark. `mark` is `didnt_need_me` (the owner did not need to see the ask) or `should_have_asked` (the chief should have sent it to the owner). `why` is optional, one line, up to 300 characters. The mark is stored in the owner judgment store (the standing orders memory) as a judgment with `kind` `correction`, `area` `chief` and `ref` set to the ask id. Its text says what the owner marked, gives the ask's first line and the `why`. A log line is written. The chief's next batch message lists the newest five of them under "Owner corrections". The old table `chief_corrections` is no longer written or read; a migration copied its rows into the judgment store, and the table is kept.
+- **`ask_mark` `{ask, mark, why}`** (gateway `ask.mark`, owner or CTO) stores a mark. On the Desk, `n` (didn't need me) works on a Needs you row and, since decision 0150, on a Handled for you row that the chief sent to the owner (`to you`), which stays there for a day after he answers it; `m` (should have asked me) works on the other handled rows. `mark` is `didnt_need_me` (the owner did not need to see the ask) or `should_have_asked` (the chief should have sent it to the owner). `why` is optional, one line, up to 300 characters. The mark is stored in the owner judgment store (the standing orders memory) as a judgment with `kind` `correction`, `area` `chief` and `ref` set to the ask id. Its text says what the owner marked, gives the ask's first line and the `why`. A log line is written. The chief's next batch message lists the newest five of them under "Owner corrections". The old table `chief_corrections` is no longer written or read; a migration copied its rows into the judgment store, and the table is kept.
+- **`ask_discuss` `{ask}`** (gateway `ask.discuss`, owner) is "discuss" on a Desk item (decision 0150), key `d` on a question, approval, idea or check row. For an item the CTO owns it answers `{"open": "cto"}` and the TUI opens the CTO chat, as `c` does; nothing is woken, because CTO turns start only from the owner. For any other item it sends the chief a message that names the ask and asks for what it verified, its recommendation and the options, wakes the chief when it is offline (the owner asked, so the wake rules of a peer message do not apply), and answers `{"open": "chief", "session", "woken"}`; the TUI enters the chief's session through `session_enter`, as Enter does. It is refused when no chief is set.
 - **Finding the marks.** `agent_owner_judgments_find {marks: true, limit, offset}` returns the owner's marks, newest first, with a page at a time. Each row keeps the judgment fields and adds `ask` (and `ref`), the ask's whole `question`, the chief's latest `disposition` (closed, merged, sent to a session, or sent to the owner with priority and why), `mark` (`didnt_need_me` or `should_have_asked`), `mark_text` in the owner's words, and `saved_at`, the mark's time. A `query` searches the mark text, which carries the ask's first line. The same call without `marks` searches every judgment as before. With `marks: true` the result also carries `marks_stored`, how many marks the judgment store holds, and with no rows a `note` that says so: zero marks stored means the owner has not marked an ask yet.
 - **Answers in the judgment store.** Every ask the owner decides gets one judgment row with `kind` `answer` and `ref` set to the ask id: a typed answer, a button (`approved: <ask>`, `refused: <ask>`, `dismissed: no decision`, `accepted` or `rejected` for a charter draft, `resumed the loop` or `stopped the loop`), an overrule or let-stand of a rejection (with the reason and the request that went through), an app consent, and a reply the owner typed in the asking session (his exact text). The CTO answering for the owner writes the same row. A second answer of the same ask updates the row. The ask keeps its answer code. The gateway also fills missing rows at start, and rewrites a row that holds only a code. A search term with a hyphen or colon is plain text; `OR` between terms, a quoted phrase and a trailing `*` still work.
 
@@ -3181,13 +3341,33 @@ The CTO lists have `chief_sorts` (read), and `ask_undo` and `ask_mark` (changes,
 - **n** on a Needs you row marks "didn't need me". **m** on a handled row marks "should have asked me". Each asks for one optional line of why; Enter stores it, Esc cancels.
 - **The digest.** When the owner comes back after an hour or more without a key press, the Desk shows "While you were away (N h)" with four counts (closed, sent on, answered, for you). The counts are read once from the newest 500 log lines, and only the lines since the owner's last key press count. `x` hides the digest; while it shows, `x` only hides it, and does not dismiss an ask. The digest reads the log text the gateway writes (`Chief closed ask:`, `Chief sent ask to`, `so it is with you`, and `Closed ... (answered)`): change those lines and the counts change with them.
 
+## Owner questions: in the chat and on the route
+
+An agent asks you in its own chat and on the route at once (decision [0150](decisions/0150-owner-front-door.md), "Owner questions: in the chat and on the route"; your words: "the question should be in the chat AND follow the route"). The guidance asks agents to put an owner question in their chat, on a line that starts with `Owner question:`, and to send it with `agent_owner_ask` too. An ask from an agent session goes to the chief when one is live (owner `chief`, state `verifying`); the chief verifies it and brings you a decision with options, or resolves it.
+
+**A turn that ends on a question to you is routed.** A plain turn end is not a question. The trigger is one of:
+
+- an `agent_owner_ask` the session left open (its explicit wait);
+- a question prompt the harness reports (for example Claude Code's question dialog);
+- a line of the turn's final message that starts with `Owner question:` (case does not matter; Markdown marks before it are allowed).
+
+When the agent did not send the question with `agent_owner_ask`, it becomes a chief-bound ask at once. A marked line becomes a `question` ask, and a reported prompt a `waiting` ask (with no 2-minute wait unless you typed in that session in the last 30 minutes). An open `agent_owner_ask` keeps its own ask; on Pi and OpenCode, where it is only a wait, it gets a `question` ask unless the session already has an open question or approval. The turn ends as it is: the question stays in the chat, and the session is not told to go on. Claude Code reports the turn from the `Stop` hook, which prints nothing. Pi and OpenCode, which have no such hook, report it at the start of their next turn. Codex and Antigravity have neither; their `agent_owner_ask` still goes to the chief.
+
+The daemon remembers the questions it sent for each session (the last 16), so a question becomes one ask. An idle session whose turn ends with no question gets no ask.
+
+**You in the loop.** When you type in the session, the question is in the chat you work in, and it is on the route too. Your answer there closes the ask with your words. "Typed" means your own prompt in that session: a Claude Code prompt through the policy hook (not a peer message, reminder or scheduled turn), a Pi or OpenCode prompt, or a Codex user message. Opening, attaching to or viewing the session does not count. The gateway keeps the time in `sessions.owner_typed_at`.
+
+**The chief and the CTO** talk to you in their own chats; their questions are not routed. Workers ask their caller, never you, and are not routed either.
+
+When no chief can work, an ask still follows the chief-down path of the Desk.
+
 ## Waiting sessions on the Desk (tab 7)
 
 A session can wait for you: it asks permission for a tool, asks a question, or wants your input. The TUI lists those sessions on the Desk (decision [0016](decisions/0016-needs-you.md)). Every machine's TUI sees them, so one screen answers "what needs me" across the network.
 
-Non-worker sessions on Claude Code, Codex, Pi and OpenCode can call `agent_owner_ask` with `kind: "question"`, `text`, optional `options`, optional `urgency`, and optional `replaces` (the ID of one earlier pending ask from this session to retire). A new ask adds to the pending ones: it never retires an earlier ask by itself, of the same kind or any other, so an approval for a data delete stays open when the same session later asks about money. Giving `replaces` closes exactly the named Inbox item as replaced; an empty question closes it without creating a new one. The result lists the session's other open asks in `other_open` (each with `id`, `kind` and the first line of `text`, at most 100 characters), with a note that `replaces` retires one of them, so the asking agent can retire a stale ask on purpose. This holds for questions, approvals and ideas, for asks sent to a team lead, and for the CTO's `agent_owner_ask`. The question is one line, cut to 200 characters with control characters removed. Options are up to four short strings, cleaned the same way. Urgency is `normal` or `high`. The guidance asks an agent to call this tool when it ends a turn waiting for your decision or input. A plain-text question at the end of a turn does not raise an alert by itself. A worker cannot call this tool; it must put the question in its hand-back or ask its caller with `agent_message_reply`. Worker rows do not appear in the TUI Inbox. When a worker reports a wait, its caller receives one blocked notice for that wait, naming the kind (approval or answer), the start time and the question text. The caller started the worker and must unblock it, so the text is for the caller, not an outside peer.
+Non-worker sessions on Claude Code, Codex, Pi and OpenCode can call `agent_owner_ask` with `kind: "question"`, `text`, optional `options`, optional `urgency`, and optional `replaces` (the ID of one earlier pending ask from this session to retire). A new ask adds to the pending ones: it never retires an earlier ask by itself, of the same kind or any other, so an approval for a data delete stays open when the same session later asks about money. Giving `replaces` closes exactly the named Inbox item as replaced; an empty question closes it without creating a new one. The result lists the session's other open asks in `other_open` (each with `id`, `kind` and the first line of `text`, at most 100 characters), with a note that `replaces` retires one of them, so the asking agent can retire a stale ask on purpose. This holds for questions, approvals and ideas, for asks sent to a team lead, and for the CTO's `agent_owner_ask`. The question is one line, cut to 200 characters with control characters removed. Options are up to four short strings, cleaned the same way. Urgency is `normal` or `high`. The guidance says that owner questions go to the chief of staff with this tool, and that an agent does not end a turn waiting on you. A plain turn end is not a question; a turn that ends on a question to you is caught as described in [owner questions go to the chief](#owner-questions-go-to-the-chief). A worker cannot call this tool; it must put the question in its hand-back or ask its caller with `agent_message_reply`. Worker rows do not appear in the TUI Inbox. When a worker reports a wait, its caller receives one blocked notice for that wait, naming the kind (approval or answer), the start time and the question text. The caller started the worker and must unblock it, so the text is for the caller, not an outside peer.
 
-The daemon stores the question as a `question` waiting state with the options, urgency and start time. It sends the state with the session to the gateway, and every machine reads it from the agent list. The existing harness hooks still report permission prompts, forms and input dialogs. `agent_announce` also accepts an optional `waiting` string as a fallback.
+The daemon stores the question as a `question` waiting state with the options, urgency and start time. It sends the state with the session to the gateway, and every machine reads it from the agent list. A wait that is not an explicit `agent_owner_ask` becomes a Desk ask (kind `waiting`) at once, bound for the chief, when you have not typed in that session in the last 30 minutes. While you work in it, the ask comes only after the session has waited 2 minutes (decision 0150): a shorter wait makes no ask. The gateway's minute reconcile opens the ask of a wait that is old enough. The existing harness hooks still report permission prompts, forms and input dialogs. `agent_announce` also accepts an optional `waiting` string as a fallback.
 
 Open the Desk, select a waiting session and press Enter to go into it. On an inbox question, `t` opens a one-line answer box. The first option, if any, is filled in. Enter sends the text as an owner message; Esc cancels. On a question or approval with options, Enter opens the details, up and down mark an option, and Enter answers the marked one. The digits `1` to `7` keep switching tabs there. The wait clears when the owner message is delivered. It also clears when the owner types a Claude Code prompt (with the `needs-hook` installed), a Pi or OpenCode prompt, or a Codex turn starts; when a permission or form settles; when the session becomes busy; or on an announce without `waiting`. A wait that a harness event reported (a permission, a form, a dialog) also ends with the turn: when a session goes from busy to idle, or a plugin says hello again while busy, that wait is dropped. This covers a permission that was denied or interrupted. An explicit `agent_owner_ask` and an announced `waiting` outlive the turn. Dismissing the question or approval on the Desk ends the wait too: the gateway tells the session's machine. If the gateway is down, a queued owner message clears the wait when delivered.
 
@@ -3367,7 +3547,7 @@ One case needs text apart from the node: a session whose folder has no node (for
 | Claude Code auto-update setting | If `claude` is found, writes `DISABLE_AUTOUPDATER=1` to the `env` of `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) with the same merge, drift and invalid-file rules as the mouse setting, so Claude Code's own updater is off ([decision 0139](decisions/0139-agent-net-is-the-only-harness-updater.md)). Every Claude Code process agent-net starts gets the same variable in its environment. | Removes `env.DISABLE_AUTOUPDATER`, only while its value is still `"1"`. Other keys stay. |
 | Claude Code peer messages | If `claude` is found and `crossSessionInbound` is not set in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), follows the network answer or `--accept-peer-messages` / `--no-accept-peer-messages`. On yes it adds `"crossSessionInbound": "accept"` and keeps every other key (file rewritten with 2-space indent, through a temp file and a rename). Records the answer in `~/.config/agent-net/claude-peer-messages.json`. An existing value is never changed. A file that is not valid JSON is not touched. The daemon and upgrades never change it. | Removes the key, only if agent-net set it and the value is still `"accept"`. Deletes the record. |
 | Claude Code hint hook | If `claude` is found, follows the network answer or `--claude-hint-hook` / `--no-claude-hint-hook`. On yes it adds five entries to `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`): `PostToolUseFailure` (all tools), `PostToolUse` with matcher `Bash`, and three `PreToolUse` entries with matcher `Bash` and `if` conditions `Bash(gh pr merge*)`, `Bash(gh pr close*)` and `Bash(gh workflow run*)`, each running `<binary> hint` with a timeout of 2 seconds. Before a merge, close or workflow dispatch in a team that sends blocked steps to its lead, the hint adds one line naming the lead (see [peer trust and hints](#peer-trust-and-hints)). Every other key and every other hook is kept. A later setup run updates the command if the binary moved. Records the answer in `~/.config/agent-net/claude-hint-hook.json`. A file that is not valid JSON is not touched. | Removes our five entries (and an empty `hooks` object), only if agent-net added them. Deletes the record. |
-| Claude Code policy hook | If `claude` is found, follows the network answer or `--claude-policy-hook` / `--no-claude-policy-hook`. On yes it adds three entries to `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), each running `<binary> policy-hook` with a timeout of 3 seconds: `UserPromptSubmit` (all prompts), `PostCompact` (after a compaction) and `SessionStart` with matcher `compact` (the same moment on versions that report it there). Every other key and hook is kept. A later setup run updates the command if the binary moved. The daemon does the same at start when the answer is on and agent-net added the hooks, so an upgrade that adds an event reaches the machine; it writes only when the hooks differ. Records the answer in `~/.config/agent-net/claude-policy-hook.json`; the daemon reads it to tell the gateway the hook is installed. When you set a `native` [delegation policy](#delegation-policy) for a Claude Code session, the daemon also writes `~/.claude/agents/agent-net-coder-<model>.md` (a marker comment inside; a file with that name that is not ours is left alone). | Removes our entry (and an empty `hooks` object), only if agent-net added it, deletes the record, and deletes every `agent-net-coder-*.md` file in `~/.claude/agents/` that has our marker. |
+| Claude Code policy hook | If `claude` is found, follows the network answer or `--claude-policy-hook` / `--no-claude-policy-hook`. On yes it adds four entries to `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), each running `<binary> policy-hook` with a timeout of 3 seconds: `UserPromptSubmit` (all prompts), `PostCompact` (after a compaction), `SessionStart` with matcher `compact` (the same moment on versions that report it there) and `Stop` (a turn end, for [owner questions](#owner-questions-go-to-the-chief)). Every other key and hook is kept. A later setup run updates the command if the binary moved. The daemon does the same at start when the answer is on and agent-net added the hooks, so an upgrade that adds an event reaches the machine; it writes only when the hooks differ. Records the answer in `~/.config/agent-net/claude-policy-hook.json`; the daemon reads it to tell the gateway the hook is installed. When you set a `native` [delegation policy](#delegation-policy) for a Claude Code session, the daemon also writes `~/.claude/agents/agent-net-coder-<model>.md` (a marker comment inside; a file with that name that is not ours is left alone). | Removes our entry (and an empty `hooks` object), only if agent-net added it, deletes the record, and deletes every `agent-net-coder-*.md` file in `~/.claude/agents/` that has our marker. |
 | Claude Code needs hooks | If `claude` is found, follows the network answer or `--claude-needs-hook` / `--no-claude-needs-hook`. On yes it adds six entries to `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), each running `<binary> needs-hook` with a timeout of 2 seconds: `PermissionRequest` (all tools), `Notification` with matcher `agent_needs_input|elicitation_dialog|elicitation_url_dialog`, `PreToolUse` (all tools), `UserPromptSubmit`, and `PostToolUse` and `PostToolUseFailure` with matcher `AskUserQuestion|ExitPlanMode`. It does not match `idle_prompt`, which Claude Code sends after any turn ends and does not mean the owner is needed; `needs-hook` ignores it, so an install with the older matcher keeps working without a setup rerun. Every other key and hook is kept. A later setup run updates the command if the binary moved and the matcher if it changed. The daemon does the same at start when the answer is on and agent-net added the hooks, so an upgrade that adds an event reaches the machine; it writes only when the hooks differ, and never for a binary whose name does not start with `agent-net`. Records the answer in `~/.config/agent-net/claude-needs-hook.json`. A file that is not valid JSON is not touched. | Removes our entries (and an empty `hooks` object), only if agent-net added them. Deletes the record. |
 | Claude Code workers plugin | If `claude` is found, follows the network answer or `--claude-workers-mod` / `--no-claude-workers-mod`. On yes it writes a local marketplace and the plugin in `~/.local/share/agent-net/claude-plugins/` from the files in this binary, then runs `claude plugin marketplace add <folder>` and `claude plugin install agent-net-workers@agent-net -s user`. Claude Code reads the plugin from that folder. The plugin records the absolute path of the running binary and falls back to `~/.local/bin/agent-net` and then `agent-net` on PATH. The written `plugin.json` keeps the embedded `0.1.0` base version and adds a short SHA-256 hash of the other plugin files, so their changes update the version Claude Code sees. A later setup run, or the daemon at start, rewrites the files if they differ from the binary, so the plugin matches the version that is installed. When an installed plugin changes, setup or the daemon also updates the Claude Code marketplace and plugin cache. Open Claude Code sessions need `/reload-plugins` to load the update. Refresh failures are reported and do not stop the upgrade. If the `claude` CLI fails, the step says so and the rest of setup continues. Records the answer in `~/.config/agent-net/claude-workers-mod.json`. | Runs `claude plugin uninstall agent-net-workers@agent-net -s user` and `claude plugin marketplace remove agent-net`, deletes the folder and the record. |
 | Quota-axi private copy | If the Quota integration is on and no usable owner or private copy is found, installs the pinned `quota-axi` with npm in `~/.local/share/agent-net/quota-axi/`. Needs Node 22.19 or newer and npm. A failed install is retried at most once a day. The daemon does the same in the background when it applies a changed network answer. | Removes `~/.local/share/agent-net/quota-axi`. Turning the item off does the same. |
@@ -3774,8 +3954,9 @@ machine's node. A fresh browser pairs automatically, with no code or TUI
 approval. There is no login setting: the gateway reads the node owner's login
 from local Tailscale status. Connected apps lists the device as
 `Tailscale sign-in: <login>, <device and browser>`. Each browser has its own
-entry, with a number added when names match. The owner Inbox receives one
-information notice: `Paired <device> by Tailscale sign-in`.
+entry, with a number added when names match. The CTO intake queue gets one
+digest line, `Paired <device> by Tailscale sign-in` (kind `phone_paired`,
+decision 0152); the owner gets no notice.
 
 Revoke that entry to block the device's cookie. It will show the pairing page
 on its next visit, even from the tailnet. A browser whose cookie was cleared

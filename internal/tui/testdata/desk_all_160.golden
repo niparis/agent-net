@@ -9,7 +9,7 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │ 2 hours ago                                  │
 ╭─In flight · 5───────────────────────────────────────────────────────────────────────────────────────────────╮ │                                              │
 │   TITLE                       REPO             STEP      STATUS                                AGE     DONE │ │ t answer ingest-forge  x dismiss the ask     │
-│   Approve the deploy gate     voicemechs       approve   waiting for you                       3h0m    ○    │ │ enter open details                           │
+│   Approve the deploy gate     voicemechs       approve   waiting for you                       3h0m    ○    │ │ enter open details  d discuss                │
 │   Show which provider each …  agent-net        review    waiting for merger                    2h14m   ●○●  │ │                                              │
 │   Say what a delivery row w…  agent-net        test      waiting for ci-runner (online)        6m      ●●○○ │ │                                              │
 │     merged: abcdef1                                                                                         │ │                                              │
@@ -37,4 +37,4 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 │                                                                                                                                                              │
 │ c: open the CTO                                                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-t answer ingest-forge  x dismiss the ask  enter open details  n didn't need me  ↑↓ select  l open the log  ? help
+t answer ingest-forge  x dismiss the ask  enter open details  d discuss  n didn't need me  ↑↓ select  l open the log  ? help

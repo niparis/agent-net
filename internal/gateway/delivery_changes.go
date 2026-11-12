@@ -110,11 +110,48 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 		if derr != nil {
 			return nil, true, reject("bad %s", typ)
 		}
-		res, m, serr := g.store.SortAsk(nc.id, q)
+		var confirm *protocol.ConfirmContext
+		if q.Result == protocol.AskSortConfirm && q.Ask != "" {
+			c, cerr := g.confirmContext(q.Ask)
+			if cerr != nil {
+				return nil, true, cerr
+			}
+			confirm = &c
+		}
+		res, m, serr := g.store.SortAskWith(nc.id, q, confirm)
 		if serr == nil && m.ID != "" {
 			g.dispatch(ctx, m)
 		}
+		// A carried-out notice goes to every asker of the ask.
+		if serr == nil && q.Result == protocol.AskSortDone {
+			nodes, _ := g.store.joinedNodes(q.Ask)
+			var asker string
+			if g.store.db.QueryRow(`SELECT session_id FROM inbox_items WHERE id=?`, q.Ask).Scan(&asker) == nil {
+				if node, nerr := g.store.SessionNode(asker); nerr == nil {
+					nodes = append(nodes, node)
+				}
+			}
+			for _, node := range nodes {
+				g.dispatchPending(ctx, node, false)
+			}
+		}
+		// The chief's confirm or picker reaches the machine that holds the
+		// start, as the owner's answer does.
+		if serr == nil && (q.Result == protocol.AskSortConfirm || q.Result == protocol.AskSortPicker) {
+			if ref := g.store.startOverrideRef(q.Ask); ref != "" {
+				if item, ierr := scanInbox(g.store.db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, q.Ask)); ierr == nil {
+					g.sendStartDecision(ctx, item, ref)
+				}
+			}
+		}
 		data, err = res, serr
+	case protocol.FrameJudgmentRecord:
+		q, derr := decode[protocol.JudgmentRecordRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		o, rerr := g.store.RecordJudgment(nc.id, q)
+		data, err = protocol.JudgmentRecordResult{ID: o.ID, Kind: o.Kind, Area: o.Area, Action: o.Action, Category: o.Category}, rerr
 	case protocol.FrameAskIntake:
 		q, derr := decode[protocol.AskIntakeRequest](raw)
 		if derr != nil {
@@ -555,6 +592,7 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		return protocol.StepReportResult{}, err
 	}
 	now := s.now().Unix()
+	trainRun := q.Step == protocol.StepTest && s.trainMode(c.Project)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.StepReportResult{}, err
@@ -694,6 +732,11 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	}
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
+	}
+	if trainRun {
+		if err := s.trainRunFeed(tx, c.Project, e, s.now()); err != nil {
+			return protocol.StepReportResult{}, err
+		}
 	}
 	defectAdded, err := s.autoDefectFromReport(tx, c, e)
 	if err != nil {

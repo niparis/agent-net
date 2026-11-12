@@ -373,10 +373,13 @@ func TestChiefBurstIsOneMessage(t *testing.T) {
 	}
 }
 
-// With no live chief an ask stays with the owner, as before.
+// With no live chief that can be woken, an ask stays with the owner. An
+// offline chief whose harness can be woken gets the ask instead
+// (TestAskMadeWhileWakeableChiefIsDownWaitsForMissedWakes), so this chief
+// runs Pi, which cannot be woken.
 func TestNoLiveChiefKeepsAskWithOwner(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
-	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, chief); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET online=0, harness='pi' WHERE id=?`, chief); err != nil {
 		t.Fatal(err)
 	}
 	id := chiefAsk(t, s, asker, "Ship it?")
@@ -389,37 +392,10 @@ func TestNoLiveChiefKeepsAskWithOwner(t *testing.T) {
 	}
 }
 
-// A chief that has not sorted an ask in 15 minutes gives it to the owner, and
-// the log says why.
-func TestChiefTimeoutReturnsAskToOwner(t *testing.T) {
-	s, c, _, asker, _ := chiefRig(t)
-	id := chiefAsk(t, s, asker, "Ship it?")
-	c.t = c.t.Add(protocol.ChiefTimeout - time.Minute)
-	if err := s.reconcileAsks(); err != nil {
-		t.Fatal(err)
-	}
-	if next := askNext(t, s, id); next != protocol.AskNextChief {
-		t.Fatalf("next = %q before the timeout, want chief", next)
-	}
-	c.t = c.t.Add(2 * time.Minute)
-	if err := s.reconcileAsks(); err != nil {
-		t.Fatal(err)
-	}
-	if next := askNext(t, s, id); next != protocol.AskNextOwner {
-		t.Fatalf("next = %q after the timeout, want owner", next)
-	}
-	entries, err := s.DeskLog(10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) == 0 || !strings.Contains(entries[0].Text, "did not sort it in 15 minutes") {
-		t.Fatalf("desk log = %+v, want the timeout line", entries)
-	}
-}
-
-// When the chief goes offline, its waiting asks go to the owner at once.
+// When the chief goes offline, its waiting asks go to the owner after the missed
+// wakes of the safety net (decision 0150), not at once.
 func TestChiefOfflineReturnsWaitingAsksToOwner(t *testing.T) {
-	s, _, chief, asker, _ := chiefRig(t)
+	s, c, chief, asker, _ := chiefRig(t)
 	id := chiefAsk(t, s, asker, "Ship it?")
 	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, chief); err != nil {
 		t.Fatal(err)
@@ -427,8 +403,15 @@ func TestChiefOfflineReturnsWaitingAsksToOwner(t *testing.T) {
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
+	if next := askNext(t, s, id); next != protocol.AskNextChief {
+		t.Fatalf("next = %q right after the chief went offline, want chief", next)
+	}
+	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
 	if next := askNext(t, s, id); next != protocol.AskNextOwner {
-		t.Fatalf("next = %q with the chief offline, want owner", next)
+		t.Fatalf("next = %q with the chief offline for two wakes, want owner", next)
 	}
 	entries, _ := s.DeskLog(10)
 	if len(entries) == 0 || !strings.Contains(entries[0].Text, "chief of staff is offline") {

@@ -23,11 +23,21 @@ const (
 	// AskSortUndo is the result of an undo: a row in the sort history that puts
 	// an ask back the way it was before the newest sort.
 	AskSortUndo = "undo"
+	// AskSortConfirm and AskSortPicker answer a held worker start (decision
+	// 0151): confirm starts it with the caller's fields, picker without them.
+	AskSortConfirm = "confirm"
+	AskSortPicker  = "picker"
+	// AskSortDone reports that the answer of an answered ask was carried out
+	// (decision 0150): the ask moves to carried_out and its askers are told.
+	AskSortDone = "done"
 )
 
-// ChiefTimeout is how long the chief has to sort an ask before it goes to the
-// owner. It is a constant, not a setting.
-const ChiefTimeout = 15 * time.Minute
+// ChiefWakeInterval is the wake interval of decision 0150. A wake counts as
+// missed when the chief has not claimed or sorted the batch within it. No timer
+// sends an ask to the owner while the chief is live and working. When the chief
+// is down, an ask in security, outage or money goes to the owner after one
+// missed wake and every other ask after two. It is a constant, not a setting.
+const ChiefWakeInterval = 10 * time.Minute
 
 // ChiefSilentAfter is how long the chief may sit on asks that were sent to it
 // with no sort and no harness activity before agent-net treats it as
@@ -38,7 +48,7 @@ const ChiefSilentAfter = 10 * time.Minute
 // ChiefRetryAfter is how long a chief that was silent stays unavailable. After
 // it, the next ask goes to the chief again as a probe, and a sort ends the
 // wait at once.
-const ChiefRetryAfter = ChiefTimeout
+const ChiefRetryAfter = 15 * time.Minute
 
 // ChiefQuietWindow is how long asks for the chief wait so that a burst goes
 // out as one message. ChiefMaxWait sends a batch even when asks keep coming.
@@ -65,7 +75,23 @@ const (
 	OpChiefSorts = "chief_sorts"
 	OpAskUndo    = "ask_undo"
 	OpAskMark    = "ask_mark"
+	// OpAskDiscuss is the owner's "discuss" on a Desk item (decision 0150).
+	OpAskDiscuss = "ask_discuss"
 )
+
+// AskDiscussRequest names the item the owner wants to discuss.
+type AskDiscussRequest struct {
+	Ask string `json:"ask"`
+}
+
+// AskDiscussResult says where the discussion is: Open is chief (Session is the
+// chief's, told about the item and woken when offline) or cto (the owner's
+// CTO chat; nothing is woken).
+type AskDiscussResult struct {
+	Open    string `json:"open"`
+	Session string `json:"session,omitempty"`
+	Woken   bool   `json:"woken,omitempty"`
+}
 
 // The two marks of the Desk (decision 0114, part 2). The owner puts one on an
 // ask that reached him (didnt_need_me) or on a handled ask (should_have_asked).
@@ -115,6 +141,16 @@ type AskSortArgs struct {
 	Until       int64  `json:"until,omitempty"`
 	FromID      int64  `json:"from_id,omitempty"`
 	ToID        int64  `json:"to_id,omitempty"`
+	// Options and Recommendation make an ask a decision when the chief sends
+	// it to the owner: an owner-bound ask needs options (decision 0150).
+	Options        []string `json:"options,omitempty"`
+	Recommendation string   `json:"recommendation,omitempty"`
+	// Category corrects the ask's category on any sort.
+	Category string `json:"category,omitempty"`
+	// Rule and Action close an ask by a standing rule: the rule's area and
+	// action must match the ask exactly, and the close cites the rule id.
+	Rule   string `json:"rule,omitempty"`
+	Action string `json:"action,omitempty"`
 }
 
 // Validate checks a sort before the gateway looks at the ask. A full read is
@@ -168,8 +204,20 @@ func (a AskSortArgs) Validate() error {
 	if len(a.Reason) > MaxChiefReasonChars || len(a.WhyYou) > MaxChiefReasonChars {
 		return errors.New("reason and why_you are limited to 300 characters")
 	}
+	if a.Category != "" && !ValidItemCategory(a.Category) {
+		return errors.New("category must be security, outage, money or normal")
+	}
+	if len(a.Options) > 4 {
+		return errors.New("options: at most four answers")
+	}
+	if (a.Rule != "") != (a.Action != "") {
+		return errors.New("rule and action go together: the rule id and the action the ask is about")
+	}
+	if a.Rule != "" && a.Result != AskSortClose {
+		return errors.New("rule applies only to close")
+	}
 	switch a.Result {
-	case AskSortClose:
+	case AskSortClose, AskSortConfirm, AskSortPicker, AskSortDone:
 	case AskSortMerge:
 		if a.Into == "" {
 			return errors.New("merge needs into: the ask id to merge into")
@@ -186,7 +234,7 @@ func (a AskSortArgs) Validate() error {
 			return errors.New("owner needs why_you: why the owner must decide")
 		}
 	default:
-		return errors.New("result must be close, merge, send, owner, list or undo")
+		return errors.New("result must be close, merge, send, owner, confirm, picker, done, list or undo")
 	}
 	return nil
 }

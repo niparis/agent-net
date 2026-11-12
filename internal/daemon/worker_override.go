@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -154,7 +155,7 @@ func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.Worker
 	id := protocol.NewID("a")
 	title := protocol.WorkerTitle(p.Title, p.BriefText(), "worker")
 	text := protocol.StartOverrideText(d.sessionName(ctx, caller), p.SelectionFields(), title, reason)
-	if _, err := d.call(ctx, "worker.override_ask", protocol.StartOverrideAsk{Session: caller, StartID: id, Text: text}); err != nil {
+	if _, err := d.call(ctx, "worker.override_ask", protocol.StartOverrideAsk{Session: caller, StartID: id, Text: text, OverrideFacts: d.overrideFacts(caller, p)}); err != nil {
 		if strings.Contains(err.Error(), "unknown frame type") {
 			return nil, errors.New("the gateway is too old to hold a start for the owner: upgrade it with `agent-net upgrade` on the gateway machine, or leave the selection fields empty")
 		}
@@ -169,7 +170,41 @@ func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.Worker
 	d.Logf("worker.held start=%s project=%s fields=%q", id, p.Project, strings.Join(fieldNames(p.SelectionFields()), ","))
 	return &protocol.WorkerStartResult{Status: "accepted", StartID: id, Project: p.Project, Harness: p.Harness, Model: p.Model,
 		SelectionPath: protocol.SelectionHeld,
-		Note:          "the start is held: " + strings.Join(fieldNames(p.SelectionFields()), ", ") + " can only be chosen by your owner. An ask is on his Desk: confirm starts the worker with those fields, picker starts it with the picker's own choice. A worker notice arrives in your inbox when it starts or does not start. Do not start it again."}, nil
+		Note:          "the start is held: " + strings.Join(fieldNames(p.SelectionFields()), ", ") + " need someone else to agree. The ask goes to the chief of staff (or the CTO, or your owner): confirm starts the worker with those fields, picker starts it with the picker's own choice. A worker notice arrives in your inbox when it starts or does not start. Do not start it again."}, nil
+}
+
+// reviewWords mark a task that reviews work. Only the title and the done
+// lines are read, the parts that say what the worker delivers: the problem
+// and the notes mention reviews in passing ("after review, merge"). The words
+// are review, audit, second opinion and "check the diff", whole words, any
+// case. The confirm rule forbids the caller's own model family for a review
+// of its own work (decision 0151).
+var reviewWords = regexp.MustCompile(`(?i)\b(review|reviews|reviewing|audit|audits|auditing|second opinion|check the diff)\b`)
+
+// isReviewTask tells whether a start reviews work, by reviewWords.
+func isReviewTask(p protocol.WorkerStartRequest) bool {
+	return reviewWords.MatchString(p.Title + "\n" + strings.Join(p.Done, "\n"))
+}
+
+// overrideFacts are the facts the confirm rule checks for a held start. The
+// provider is resolved the way the start resolves it; a fact that stays
+// unknown is left empty, and the rule then sends the ask to the CTO.
+func (d *Daemon) overrideFacts(caller string, p protocol.WorkerStartRequest) protocol.OverrideFacts {
+	f := protocol.OverrideFacts{Harness: strings.TrimSpace(p.Harness), Effort: strings.TrimSpace(p.Effort), Level: strings.TrimSpace(p.Difficulty),
+		Provider: protocol.OverrideProvider(p), Review: isReviewTask(p)}
+	if model := strings.TrimSpace(p.Model); model != "" && model != "auto" {
+		f.Model = model
+		f.OverrideFamily = protocol.ModelFamily(p.Harness, model)
+	}
+	if ls := d.sessionByID(caller); ls != nil {
+		d.mu.Lock()
+		harness, model := ls.info.Harness, ls.info.Model
+		d.mu.Unlock()
+		if model != "" {
+			f.CallerFamily = protocol.ModelFamily(harness, model)
+		}
+	}
+	return f
 }
 
 // onStartDecision is the owner's answer to the ask of a held start.
@@ -188,12 +223,12 @@ func (d *Daemon) onStartDecision(p protocol.StartDecision) {
 	req, lead := h.req, ""
 	switch strings.TrimSpace(p.Answer) {
 	case protocol.StartAnswerConfirm:
-		lead = "The owner confirmed your choice of " + strings.Join(fieldNames(req.SelectionFields()), ", ") + ". "
+		lead = "Your choice of " + strings.Join(fieldNames(req.SelectionFields()), ", ") + " was confirmed. "
 	case protocol.StartAnswerPicker:
-		req, lead = req.WithoutSelection(), "The owner let the picker choose. "
+		req, lead = req.WithoutSelection(), "The picker chooses, as answered on the Desk. "
 	default:
 		d.Logf("worker.held start=%s: not started, owner answer %q", id, p.Answer)
-		d.reportAcceptedStart(id, h.caller, req, nil, errors.New("your owner did not confirm the choice of "+strings.Join(fieldNames(req.SelectionFields()), ", ")+" (answer: "+oneLineAnswer(p.Answer)+"). Start again without selection fields, or ask him"))
+		d.reportAcceptedStart(id, h.caller, req, nil, errors.New("the choice of "+strings.Join(fieldNames(req.SelectionFields()), ", ")+" was not confirmed (answer: "+oneLineAnswer(p.Answer)+"). Start again without selection fields"))
 		return
 	}
 	d.goBackground(func() {

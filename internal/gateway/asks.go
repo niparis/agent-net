@@ -108,7 +108,7 @@ func (s *Store) DeskLog(limit int) ([]protocol.DeskLogEntry, error) {
 
 const askSelect = `SELECT i.id,i.kind,i.session_id,i.node,i.text,i.recommendation,i.message_id,i.conversation_id,i.created_at,i.status,i.answer,i.answered_at,i.options,
  COALESCE(NULLIF(i.asker_name,''), CASE WHEN s.archived_at=0 THEN COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.title,'') ELSE '' END, ''),
- i.change_title,i.from_kind,i.source_ref,i.about_kind,i.about_id,i.next_who,i.why_you,i.detail,i.priority,
+ i.change_title,i.from_kind,i.source_ref,i.about_kind,i.about_id,i.next_who,i.why_you,i.detail,i.priority,i.owner,i.state,i.category,
  COALESCE(d.change_id,''),COALESCE(d.step,''),COALESCE(d.for_step,''),COALESCE(d.after_merge,0),COALESCE(d.commit_hash,''),COALESCE(c.project,''),COALESCE(c.title,'')
  FROM inbox_items i LEFT JOIN sessions s ON s.id=i.session_id LEFT JOIN profiles p ON p.session_id=i.session_id
  LEFT JOIN delivery_step_inbox d ON d.item_id=i.id LEFT JOIN delivery_changes c ON c.id=d.change_id`
@@ -134,7 +134,7 @@ func (s *Store) ListAsks() ([]protocol.Ask, error) {
 		var after int
 		var d protocol.InboxDelivery
 		if err := rows.Scan(&a.ID, &a.Kind, &a.FromSession, &a.Node, &a.Question, &a.Recommendation, &a.MessageID, &a.ConversationID, &created, &status, &a.Answer, &answered, &options,
-			&a.From, &changeTitle, &a.FromKind, &a.Ref, &a.AboutKind, &a.AboutID, &a.Next, &a.WhyYou, &a.Detail, &a.Priority,
+			&a.From, &changeTitle, &a.FromKind, &a.Ref, &a.AboutKind, &a.AboutID, &a.Next, &a.WhyYou, &a.Detail, &a.Priority, &a.Owner, &a.DeskState, &a.Category,
 			&changeID, &d.Step, &d.For, &after, &d.Commit, &project, &a.AboutTitle); err != nil {
 			rows.Close()
 			return nil, err
@@ -427,6 +427,25 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 	if protocol.IsOwner(harness) || worker != "" {
 		return nil
 	}
+	// A short wait for the owner who works in the session makes no ask
+	// (decision 0150): the minute reconcile opens it once the wait is old
+	// enough. When he is away, the question goes to the chief at once. The
+	// gateway stamps every stored wait with its start.
+	if w.Since > 0 && s.now().Sub(time.Unix(w.Since, 0)) < waitingAskDebounce {
+		present, err := s.ownerInSession(q, session)
+		if err != nil {
+			return err
+		}
+		if present {
+			var open int
+			if err := q.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=? AND status='open'`, ref).Scan(&open); err != nil {
+				return err
+			}
+			if open == 0 {
+				return nil
+			}
+		}
+	}
 	// A wait on the session's own lead is an ordinary wait inside the team: the
 	// lead hears of it (blockedMemberNotice), the owner has no ask (decision
 	// 0126). A wait a harness event reported (a permission prompt) is the
@@ -444,6 +463,41 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 		Text: w.Text, Options: w.Options, Detail: w.Kind,
 	})
 	return err
+}
+
+// waitingAskDebounce is how long a session waits for its user before the
+// wait becomes an ask.
+const waitingAskDebounce = 2 * time.Minute
+
+// reconcileWaitingAsks opens the asks of the waits that outlived the
+// debounce. Only sessions that wait and have no open ask are read.
+func (s *Store) reconcileWaitingAsks() error {
+	rows, err := s.db.Query(`SELECT id,waiting FROM sessions WHERE waiting<>'' AND archived_at=0
+		AND NOT EXISTS (SELECT 1 FROM inbox_items i WHERE i.source_ref='waiting:'||sessions.id AND i.status='open')`)
+	if err != nil {
+		return err
+	}
+	type wait struct{ id, waiting string }
+	var list []wait
+	for rows.Next() {
+		var w wait
+		if err := rows.Scan(&w.id, &w.waiting); err != nil {
+			rows.Close()
+			return err
+		}
+		list = append(list, w)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, w := range list {
+		if err := s.syncWaitingAsk(s.db, w.id, w.waiting); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // reconcileLearnedAsks opens an ask for every ready major learned suggestion
@@ -561,6 +615,9 @@ func (s *Store) reconcileAsks() error {
 	if _, err := s.reconcileMovedOnOnce(); err != nil {
 		return fmt.Errorf("moved on cleanup: %w", err)
 	}
+	if err := s.reconcileWaitingAsks(); err != nil {
+		return fmt.Errorf("waiting asks: %w", err)
+	}
 	return nil
 }
 
@@ -586,6 +643,20 @@ func (s *Store) OpenExternalAsk(node string, a protocol.AskOpen) (protocol.Ask, 
 	if a.Kind == protocol.AskKindCheck || a.Kind == protocol.AskKindSignIn {
 		fromKind = protocol.AskFromGateway
 	}
+	// A failed MCP repair is also a CTO intake entry for the machine (decision
+	// 0152). A repeat of the same ask is not a new failure.
+	if a.Kind == protocol.AskKindCheck && strings.HasPrefix(a.Ref, mcpRepairRefPrefix) {
+		var open bool
+		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE source_ref=? AND status='open')`, a.Kind+":"+ref).Scan(&open); err != nil {
+			return protocol.Ask{}, err
+		}
+		if !open {
+			if _, err := s.RecordIntake(intakeEvent{Kind: protocol.IntakeMCPRepair, Subject: s.hostname(node) + "/agent-net",
+				Text: a.Question, Detail: a.Detail}); err != nil {
+				return protocol.Ask{}, err
+			}
+		}
+	}
 	item, err := s.createInboxItem(s.db, protocol.InboxItem{
 		Kind: a.Kind, SessionID: node, Node: node, FromKind: fromKind, AskerName: a.From, SourceRef: a.Kind + ":" + ref,
 		AboutKind: a.AboutKind, AboutID: a.AboutID, Text: a.Question, Options: a.Options, Recommendation: a.Recommendation, Detail: a.Detail,
@@ -595,6 +666,10 @@ func (s *Store) OpenExternalAsk(node string, a protocol.AskOpen) (protocol.Ask, 
 	}
 	return protocol.Ask{ID: item.ID, Kind: item.Kind, Ref: item.SourceRef, Question: item.Text, State: protocol.AskStateOpen, Next: protocol.AskNextOwner, CreatedAt: item.CreatedAt}, nil
 }
+
+// mcpRepairRefPrefix starts the ref of the daemon's ask about a failed MCP
+// repair (daemon/mcp_repair.go).
+const mcpRepairRefPrefix = "mcp:"
 
 // CloseExternalAsk closes the ask that OpenExternalAsk opened for a key.
 func (s *Store) CloseExternalAsk(node string, c protocol.AskClose) error {

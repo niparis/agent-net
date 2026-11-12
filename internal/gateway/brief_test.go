@@ -351,7 +351,7 @@ func TestOwnerBriefCreatesInformationalItemAndReplacesSameDate(t *testing.T) {
 	if brief == nil {
 		t.Fatal("the brief is not on the Desk")
 	}
-	if brief.From != "Daily brief 2026-10-28" || brief.Question != "Handled two fixes.\nOne decision waits." || brief.Next != protocol.AskNextOwner {
+	if brief.From != "Daily brief 2026-10-28" || !strings.HasPrefix(brief.Question, "Handled two fixes.\nOne decision waits.\n\nSystem health:") || brief.Next != protocol.AskNextOwner {
 		t.Fatalf("brief ask = %+v", brief)
 	}
 	if _, err := s.AnswerInbox(brief.ID, "approve"); err == nil || !strings.Contains(err.Error(), "brief") {
@@ -375,7 +375,7 @@ func TestOwnerBriefCreatesInformationalItemAndReplacesSameDate(t *testing.T) {
 			open = append(open, a)
 		}
 	}
-	if len(open) != 1 || open[0].Question != "A new brief for the same date." {
+	if len(open) != 1 || !strings.HasPrefix(open[0].Question, "A new brief for the same date.\n\n") {
 		t.Fatalf("open briefs after a replacement = %+v", open)
 	}
 	status, err := s.dailyBriefStatus(c.t.Add(time.Hour))

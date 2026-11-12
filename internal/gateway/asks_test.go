@@ -208,11 +208,16 @@ func TestOutcomeIsAnAsk(t *testing.T) {
 
 // A session that reports a wait has an ask while it waits.
 func TestWaitingSessionIsAnAsk(t *testing.T) {
-	s, _ := newTestStore(t)
+	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("box", "linux")
 	info := protocol.SessionInfo{Harness: "claude", NativeID: "w", Name: "waiter", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Which database?"}}
 	id, err := s.UpsertSession(node, info)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// The ask comes once the wait outlived the debounce.
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
 	asks, _ := s.ListAsks()
@@ -237,6 +242,10 @@ func TestWaitingSessionIsAnAsk(t *testing.T) {
 	}
 	info.Waiting = &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Which database?"}
 	if _, err := s.UpsertSession(node, info); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
 	info.Waiting = nil
@@ -517,6 +526,7 @@ func TestAsksMigrationKeepsOpenItems(t *testing.T) {
 	s, _ := newTestStore(t)
 	version := migrationVersion(t, "Asks and the Desk (decision 0090)")
 	for _, stmt := range []string{
+		`DROP TRIGGER inbox_items_desk_insert`, `DROP TRIGGER inbox_items_desk_update`, `DROP TRIGGER inbox_items_joined_settle`,
 		`DROP INDEX inbox_items_open_source`, `DROP INDEX inbox_items_status`, `DROP TABLE desk_log`,
 		`ALTER TABLE inbox_items DROP COLUMN from_kind`, `ALTER TABLE inbox_items DROP COLUMN source_ref`,
 		`ALTER TABLE inbox_items DROP COLUMN about_kind`, `ALTER TABLE inbox_items DROP COLUMN about_id`,
@@ -563,6 +573,8 @@ func TestAsksMigrationKeepsOpenItems(t *testing.T) {
 	for _, a := range asks {
 		got[a.ID] = a
 	}
+	// The front door flush (plan step (d)) ran once when this store was made,
+	// so this replay leaves the owner question open and with the owner.
 	if len(got) != 3 || got["i_q"].Question != "Merge?" || got["i_q"].AboutKind != protocol.AskAboutProject || got["i_q"].AboutID != "demo" || got["i_q"].Next != protocol.AskNextOwner ||
 		got["i_disk"].FromKind != protocol.AskFromDisk || got["i_appr"].AboutKind != protocol.AskAboutChange || got["i_appr"].AboutID != "ch_1" {
 		t.Fatalf("asks after upgrade: %+v", asks)

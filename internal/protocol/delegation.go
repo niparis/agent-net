@@ -222,6 +222,10 @@ type PolicyRequest struct {
 	Harness  string `json:"harness,omitempty"`
 	NativeID string `json:"native_id,omitempty"`
 	Prompt   string `json:"prompt,omitempty"`
+	// Event is "Stop" when a Claude Code turn ends; empty for a turn start.
+	// LastMessage is then the turn's final assistant text.
+	Event       string `json:"event,omitempty"`
+	LastMessage string `json:"last_message,omitempty"`
 }
 
 // PolicyResult answers MethodPolicy. Text is empty when the session has no

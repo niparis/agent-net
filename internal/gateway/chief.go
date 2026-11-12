@@ -18,8 +18,9 @@ import (
 )
 
 // The chief of staff (decision 0114). One registered session sorts the asks
-// that would go to the owner first. An ask it has not sorted in time goes to the
-// owner, and nothing is deleted. The chief is a standard agent session: the
+// that would go to the owner first. No timer sends an ask to the owner while the
+// chief is live (decision 0150); a chief that is down is covered by the safety
+// net in chief_health.go, and nothing is deleted. The chief is a standard agent session: the
 // only special code is the routing of asks, the batch message and the sort.
 
 // chiefSessionKey is the owner_settings row that names the chief session.
@@ -284,13 +285,25 @@ func (s *Store) ChiefStatus() (protocol.ChiefStatus, error) {
 // When a chief is registered and online but cannot work (no quota, a harness
 // error, silent), the ask goes to the owner path, the way it went before the
 // chief existed, and fixed is true so the chief is not offered it later.
+// A chief that is offline but can be woken still gets the ask: its batch is
+// the wake, and the safety net of decision 0150 sends the ask to the owner
+// only after the missed wakes of its category.
 func (s *Store) chiefRoute(q askDB, item protocol.InboxItem) (next string, fixed bool, err error) {
 	if item.NextWho != "" {
 		return item.NextWho, false, nil
 	}
 	h, err := s.availableChief(q, s.now())
-	if err != nil || h.id == "" || h.id == item.SessionID {
-		return protocol.AskNextOwner, h.id == "" && h.down != "" && !h.offline, err
+	if err != nil {
+		return protocol.AskNextOwner, false, err
+	}
+	chief := h.id
+	if chief == "" && h.offline {
+		if chief, err = s.wakeableChief(q); err != nil {
+			return protocol.AskNextOwner, false, err
+		}
+	}
+	if chief == "" || chief == item.SessionID {
+		return protocol.AskNextOwner, h.id == "" && h.down != "" && !h.offline, nil
 	}
 	return protocol.AskNextChief, false, nil
 }
@@ -329,10 +342,21 @@ type chiefBatch struct {
 // ChiefMaxWait after its oldest one.
 func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 	h, err := s.availableChief(s.db, now)
-	if err != nil || h.id == "" {
+	if err != nil {
 		return nil, err
 	}
 	chief := h.id
+	if chief == "" {
+		// An offline chief whose harness can be woken still gets its batch: the
+		// message is the wake, and a wake it does not answer counts as missed
+		// (chiefMissedWakes). A harness that cannot be woken gets none.
+		if !h.offline {
+			return nil, nil
+		}
+		if chief, err = s.wakeableChief(s.db); err != nil || chief == "" {
+			return nil, err
+		}
+	}
 	rows, err := s.db.Query(`SELECT id,kind,session_id,from_kind,about_kind,about_id,text,recommendation,options,created_at
 		FROM inbox_items WHERE status='open' AND next_who=? AND chief_sent_at=0 ORDER BY created_at,id LIMIT ?`, protocol.AskNextChief, protocol.ChiefBatchCap)
 	if err != nil {
@@ -362,7 +386,7 @@ func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 		return nil, nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Chief of staff: %d ask(s) to sort. Sort each one with agent_ask_sort: close, merge into another open ask, send to a session, or owner (with priority and why_you). Sort only. Never answer for the owner. An ask you leave for 15 minutes goes to the owner.\n", len(list))
+	fmt.Fprintf(&b, "Chief of staff: %d ask(s) to sort. Sort each one with agent_ask_sort: close, merge into another open ask, send to a session, or owner (with priority and why_you). Sort only. Never answer for the owner.\n", len(list))
 	batch := &chiefBatch{chief: chief}
 	for _, p := range list {
 		batch.ids = append(batch.ids, p.id)
@@ -459,6 +483,7 @@ func (g *Gateway) flushChief(ctx context.Context) {
 	if err := g.store.releaseChiefAsks(now); err != nil {
 		g.logLine("error", "where", "chief release", "err", err)
 	}
+	g.flushChiefStuck(ctx, now)
 	b, err := g.store.chiefBatchDue(now)
 	if err != nil {
 		g.logLine("error", "where", "chief batch", "err", err)
@@ -473,6 +498,28 @@ func (g *Gateway) flushChief(ctx context.Context) {
 		return
 	}
 	g.dispatch(ctx, m)
+}
+
+// chiefStuckEvery is how often the tick looks for claimed asks that went quiet.
+// The limit is hours long, so a minute is enough and the tick stays cheap.
+const chiefStuckEvery = time.Minute
+
+// flushChiefStuck runs the claim-age rules (chief_stuck.go) at most once a
+// minute and dispatches the chief's ping.
+func (g *Gateway) flushChiefStuck(ctx context.Context, now time.Time) {
+	last := g.chiefStuckAt.Load()
+	if last != 0 && now.UnixNano()-last < int64(chiefStuckEvery) {
+		return
+	}
+	g.chiefStuckAt.Store(now.UnixNano())
+	msgs, err := g.store.chiefStuckWork(now, g.store.chiefStuckLimit())
+	if err != nil {
+		g.logLine("error", "where", "chief stuck work", "err", err)
+		return
+	}
+	for _, m := range msgs {
+		g.dispatch(ctx, m)
+	}
 }
 
 // refreshChiefQuota reads the quota of the chief's provider on the chief's
@@ -507,6 +554,7 @@ func (s *Store) reconcileChiefAsks(now time.Time) error {
 // askSortRow is the ask a sort reads and changes.
 type askSortRow struct {
 	text, kind, session, aboutKind, aboutID, next, status, answer string
+	owner, options, category                                      string
 	answeredAt                                                    int64
 }
 
@@ -608,6 +656,13 @@ func askAge(now, created time.Time) string {
 // status and answer in ask_sorts. It returns the message to send when the ask
 // went to a session; the caller dispatches it.
 func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSortResult, protocol.Message, error) {
+	return s.SortAskWith(node, q, nil)
+}
+
+// SortAskWith is SortAsk with the context a confirm of a held worker start is
+// checked against (decision 0151). The gateway reads it before the sort; a
+// confirm without it is refused.
+func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *protocol.ConfirmContext) (protocol.AskSortResult, protocol.Message, error) {
 	var out protocol.AskSortResult
 	var none protocol.Message
 	if err := q.Validate(); err != nil {
@@ -688,19 +743,40 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		return out, none, tx.Commit()
 	}
 	var a askSortRow
-	err = tx.QueryRow(`SELECT text,kind,session_id,about_kind,about_id,next_who,status,answer,answered_at FROM inbox_items WHERE id=?`, q.Ask).
-		Scan(&a.text, &a.kind, &a.session, &a.aboutKind, &a.aboutID, &a.next, &a.status, &a.answer, &a.answeredAt)
+	err = tx.QueryRow(`SELECT text,kind,session_id,about_kind,about_id,next_who,status,answer,answered_at,owner,options,category FROM inbox_items WHERE id=?`, q.Ask).
+		Scan(&a.text, &a.kind, &a.session, &a.aboutKind, &a.aboutID, &a.next, &a.status, &a.answer, &a.answeredAt, &a.owner, &a.options, &a.category)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, none, reject("unknown ask %q", q.Ask)
 	}
 	if err != nil {
 		return out, none, err
 	}
-	if a.status != "open" || a.next != protocol.AskNextChief {
+	if q.Result == protocol.AskSortDone {
+		out, err := s.carriedOut(tx, chief, q.Ask, strings.TrimSpace(q.Reason), a)
+		if err != nil {
+			return out, none, err
+		}
+		return out, none, tx.Commit()
+	}
+	// Either side of a routed item may close it (decision 0150): the chief
+	// still closes or merges an ask it sent to the CTO.
+	closing := q.Result == protocol.AskSortClose || q.Result == protocol.AskSortMerge
+	if a.status != "open" || (a.next != protocol.AskNextChief && !(closing && a.owner == protocol.DeskOwnerCTO)) {
 		return out, none, reject("ask %s is not waiting for the chief of staff", q.Ask)
 	}
 	now := s.now()
 	reason := strings.TrimSpace(q.Reason)
+	if q.Rule != "" {
+		if err := s.ruleApplies(tx, q.Ask, a.category, q.Rule, q.Action); err != nil {
+			return out, none, err
+		}
+		reason = "rule " + q.Rule + ": " + reason
+	}
+	if q.Category != "" && q.Category != a.category {
+		if _, err := tx.Exec(`UPDATE inbox_items SET category=? WHERE id=?`, q.Category, q.Ask); err != nil {
+			return out, none, err
+		}
+	}
 	rec := protocol.AskSort{Ask: q.Ask, At: now, Sorter: chief, Result: q.Result, Into: q.Into, To: q.To, Reason: reason,
 		Priority: q.Priority, WhyYou: strings.TrimSpace(q.WhyYou), PrevNext: a.next, PrevStatus: a.status, PrevAnswer: a.answer}
 	if a.answeredAt != 0 {
@@ -732,6 +808,30 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 			return out, none, err
 		}
 		out.Next, out.State = "", protocol.AskClosed
+	case protocol.AskSortConfirm, protocol.AskSortPicker:
+		// The chief answers a held worker start (decision 0151).
+		var ref string
+		if err := tx.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=?`, q.Ask).Scan(&ref); err != nil {
+			return out, none, err
+		}
+		if !strings.HasPrefix(ref, protocol.StartOverrideRefPrefix) {
+			return out, none, reject("confirm and picker answer only a held worker start")
+		}
+		if q.Result == protocol.AskSortConfirm {
+			if confirm == nil {
+				return out, none, reject("confirm needs the gateway's quota reading: try again")
+			}
+			if err := confirmOverrideCheck(tx, q.Ask, true, *confirm); err != nil {
+				return out, none, err
+			}
+			logText = "Chief confirmed a picker override: " + text
+		} else {
+			logText = "Chief let the picker choose: " + text
+		}
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='answered', answer=?, answered_at=? WHERE id=?`, q.Result, now.UnixNano(), q.Ask); err != nil {
+			return out, none, err
+		}
+		out.Next, out.State = "", protocol.AskAnswered
 	case protocol.AskSortSend:
 		// An ask about a session cannot go back to that session: it would
 		// return to the session it is about, a loop. Every other send stays.
@@ -761,6 +861,26 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		}
 		return out, m, tx.Commit()
 	case protocol.AskSortOwner:
+		// An owner-bound item is a decision he can take on the spot: it carries
+		// options (decision 0150).
+		if len(q.Options) > 0 {
+			raw, err := json.Marshal(q.Options)
+			if err != nil {
+				return out, none, err
+			}
+			a.options = string(raw)
+			if _, err := tx.Exec(`UPDATE inbox_items SET options=? WHERE id=?`, a.options, q.Ask); err != nil {
+				return out, none, err
+			}
+		}
+		if protocol.KindNeedsOptions(a.kind) && (a.options == "" || a.options == "[]" || a.options == "null") {
+			return out, none, reject("owner needs options: an ask for the owner carries the answers he can pick; give options (and a recommendation)")
+		}
+		if r := strings.TrimSpace(q.Recommendation); r != "" {
+			if _, err := tx.Exec(`UPDATE inbox_items SET recommendation=? WHERE id=?`, r, q.Ask); err != nil {
+				return out, none, err
+			}
+		}
 		if _, err := tx.Exec(`UPDATE inbox_items SET next_who=?, priority=?, why_you=? WHERE id=?`, protocol.AskNextOwner, q.Priority, rec.WhyYou, q.Ask); err != nil {
 			return out, none, err
 		}
@@ -769,7 +889,49 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 	if err := s.commitSort(tx, rec, now, logText, a, "chief"); err != nil {
 		return out, none, err
 	}
+	if q.Rule != "" {
+		// The application cites the rule, so the brief can count it.
+		if _, err := tx.Exec(`UPDATE ask_sorts SET rule_id=? WHERE id=(SELECT MAX(id) FROM ask_sorts WHERE ask_id=?)`, q.Rule, q.Ask); err != nil {
+			return out, none, err
+		}
+	}
 	return out, none, tx.Commit()
+}
+
+// carriedOut records that the answer of an answered ask was carried out
+// (decision 0150). The ask and its joined rows move to carried_out, and every
+// asker gets a message; the gateway sends the messages on.
+func (s *Store) carriedOut(tx *sql.Tx, chief, ask, reason string, a askSortRow) (protocol.AskSortResult, error) {
+	var out protocol.AskSortResult
+	if a.status != "answered" && a.status != "approved" && a.status != "refused" {
+		return out, reject("ask %s is not answered, so its answer cannot be carried out yet", ask)
+	}
+	var state string
+	if err := tx.QueryRow(`SELECT state FROM inbox_items WHERE id=?`, ask).Scan(&state); err != nil {
+		return out, err
+	}
+	if state == protocol.DeskCarriedOut {
+		return out, reject("ask %s is already carried out", ask)
+	}
+	if _, err := tx.Exec(`UPDATE inbox_items SET state=? WHERE id=? OR dup_of=?`, protocol.DeskCarriedOut, ask, ask); err != nil {
+		return out, err
+	}
+	joined, err := joinedAskers(tx, ask)
+	if err != nil {
+		return out, err
+	}
+	now := s.now()
+	body := fmt.Sprintf("Ask %s is carried out: %s\nThe owner's answer was: %s", ask, reason, a.answer)
+	for _, to := range append([]string{a.session}, joined...) {
+		if _, err := s.storeAgentNetMessage(tx, to, body, ask, now); err != nil {
+			return out, err
+		}
+	}
+	rec := protocol.AskSort{Ask: ask, At: now, Sorter: chief, Result: protocol.AskSortDone, Reason: reason, PrevNext: a.next, PrevStatus: a.status, PrevAnswer: a.answer}
+	if err := s.commitSort(tx, rec, now, "Chief carried out the answer: "+askFirstLine(a.text, 120), a, "chief"); err != nil {
+		return out, err
+	}
+	return protocol.AskSortResult{Ask: ask, Result: protocol.AskSortDone, State: protocol.DeskCarriedOut}, nil
 }
 
 // commitSort writes the history row and the log line of one sort.

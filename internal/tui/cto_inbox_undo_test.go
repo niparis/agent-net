@@ -134,3 +134,36 @@ func TestCTOLogUndoApps(t *testing.T) {
 		}
 	}
 }
+
+// A standing rule from a scoped answer, or a decision the chief recorded, has
+// its undo on its Desk log line (decision 0150). The undo removes the judgment.
+// Run with -v to see the frames at 80x24 and 120x34.
+func TestRuleLogLineUndoRemovesTheRule(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		src := &ctoUndoSource{}
+		e := protocol.DeskLogEntry{ID: 7, At: time.Date(2026, 11, 12, 17, 40, 0, 0, time.UTC), Source: "owner",
+			Text:    "Standing rule so_test (merge in repo:demo): Always yes for merge in repo:demo. From ask i_test: Merge the picker change?",
+			Options: []string{protocol.OpStandingOrders, `{"tags":null,"action":"remove","order_id":"so_test"}`}}
+		m := logModel(src, e)
+		m.width, m.height = size[0], size[1]
+		view := m.testView()
+		t.Logf("frame %dx%d:\n%s", size[0], size[1], view)
+		if !strings.Contains(view, "Standing rule so_test") || !strings.Contains(view, "undo") {
+			t.Fatalf("%dx%d: rule line or its undo missing:\n%s", size[0], size[1], view)
+		}
+		_, cmd := m.Update(tea.KeyPressMsg{Text: "u", Code: 'u'})
+		if cmd == nil {
+			t.Fatal("missing undo command")
+		}
+		if _, ok := cmd().(deskUndoneMsg); !ok {
+			t.Fatal("undo did not run")
+		}
+		b, _ := json.Marshal(src.params[0])
+		if src.methods[0] != protocol.OpStandingOrders || !strings.Contains(string(b), `"order_id":"so_test"`) || !strings.Contains(string(b), `"action":"remove"`) {
+			t.Fatalf("undo call %v %s", src.methods, b)
+		}
+	}
+	if _, _, ok := logUndo(protocol.DeskLogEntry{Source: "owner", Options: []string{protocol.OpStandingOrders, `{"action":"save","text":"x"}`}}); ok {
+		t.Fatal("a save offered as the undo of a log line")
+	}
+}

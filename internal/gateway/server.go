@@ -131,6 +131,8 @@ type Gateway struct {
 	pin              string
 	logger           *log.Logger
 	stepDispatchRuns atomic.Int64
+	// chiefStuckAt is when the claim-age rules last ran (chief_stuck.go).
+	chiefStuckAt atomic.Int64
 	// skillScans counts the full reads of all skills by the standing choice.
 	skillScans atomic.Int64
 	// skillSettled is the skill inputs fingerprint at which the standing
@@ -2007,6 +2009,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		if p.Prompt {
+			if err := st.RecordOwnerTyped(p.SessionID); err != nil {
+				return nil, err
+			}
 			// The owner typed in the session: what it asked is answered or
 			// overtaken (the Needs you tag must not outlive its reason).
 			if err := st.closeOwnerRepliedAsks(p.SessionID, p.Text); err != nil {
@@ -2924,26 +2929,42 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		ask := protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name, Replaces: p.Replaces}
-		// A team that sends questions to its lead keeps this one from the owner.
-		redirect, m, err := st.RedirectOwnerAsk(ask)
+		return g.agentOwnerAsk(ctx, st, protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name, Replaces: p.Replaces})
+
+	case "ask.turn_end":
+		// A session's turn ended on a question to the owner (decision 0150).
+		// The question stays in the chat and follows the route: it goes to
+		// the chief like an agent_owner_ask. asked says the session asked it
+		// with agent_owner_ask: a Claude session already has its item, while
+		// the explicit wait of Pi or OpenCode has none yet. The answer never
+		// has redirect true: an older daemon continues the turn on it.
+		var p struct {
+			SessionID string `json:"session_id"`
+			Text      string `json:"text"`
+			Asked     bool   `json:"asked"`
+		}
+		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Text) == "" {
+			return nil, reject("bad ask.turn_end")
+		}
+		agent, project, name, err := st.askingSession(nc.id, p.SessionID)
 		if err != nil {
 			return nil, err
 		}
-		if redirect != nil {
-			if m.State != protocol.StateHeld {
-				g.dispatch(ctx, m)
+		routes, err := st.TurnEndRoutes(agent.SessionID)
+		if err != nil || !routes {
+			return map[string]any{"routed": false}, err
+		}
+		if p.Asked {
+			open, err := st.OtherOpenAsks(agent.SessionID, "")
+			if err != nil || len(open) > 0 {
+				return map[string]any{"routed": err == nil}, err
 			}
-			return map[string]any{"item": protocol.InboxItem{ID: redirect.ItemID, Kind: p.Kind, Status: "open", SessionID: agent.SessionID}, "redirected": redirect}, nil
 		}
-		item, err := st.CreateInboxItem(ask)
-		if err != nil {
-			return map[string]any{"item": item}, err
+		res, err := g.agentOwnerAsk(ctx, st, turnEndQuestion(agent, project, name, strings.TrimSpace(p.Text)))
+		if res != nil {
+			res["routed"] = err == nil
 		}
-		// A new ask adds to the pending ones. Tell the asker which others are
-		// still open so it can name one with replaces.
-		others, err := st.OtherOpenAsks(agent.SessionID, item.ID)
-		return map[string]any{"item": item, "other_open": others}, err
+		return res, err
 
 	case "apps.ask":
 		var p struct {
@@ -3108,6 +3129,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, st.AddDeskNote(nc.id, p.Text, p.Detail)
 
+	case "intake.report":
+		var p protocol.IntakeReport
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad intake.report")
+		}
+		return map[string]bool{"ok": true}, st.ReportIntake(nc.id, p)
+
+	case protocol.FrameIntakeFind:
+		var p protocol.IntakeFindArgs
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad %s", protocol.FrameIntakeFind)
+		}
+		return st.CTOIntake(p.Limit)
+
 	case "desk.settle":
 		var p struct {
 			ID int64 `json:"id"`
@@ -3204,6 +3239,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, st.MarkAsk(p, graphActor(raw))
 
+	case "ask.discuss":
+		p, err := decodeOperator[protocol.AskDiscussRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !actorAllowed(graphActor(raw), "rule") {
+			return nil, reject("only the owner discusses a Desk item")
+		}
+		return g.discussAsk(ctx, p.Ask)
+
 	case "chief.sorts":
 		sorts, err := st.ChiefSorts(st.now().Add(-protocol.ChiefSortsWindow))
 		return protocol.ChiefSortsResult{Sorts: sorts}, err
@@ -3214,6 +3259,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Answer  string `json:"answer"`
 			FromCTO bool   `json:"from_cto"`
 			Actor   string `json:"actor"`
+			// A scope makes the answer a standing rule (decision 0150).
+			Scope protocol.RuleScope `json:"scope"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", "bad inbox.answer")
@@ -3226,10 +3273,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if handled, err := st.answerAppConsent(p.ID, p.Answer, owner, p.FromCTO); handled {
 			return map[string]bool{"answered": err == nil}, err
 		}
-		item, err := st.AnswerInboxAs(p.ID, p.Answer, p.Actor)
+		item, err := st.AnswerInboxScoped(p.ID, p.Answer, p.Actor, p.Scope)
 		if err != nil {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
 			return nil, err
+		}
+		// The askers that joined the item got the answer too: send it on.
+		if joined, jerr := st.joinedNodes(item.ID); jerr == nil {
+			for _, node := range joined {
+				g.dispatchPending(ctx, node, false)
+			}
 		}
 		// A permission approval is applied only here, after the owner's answer
 		// was stored. It reaches each target machine's daemon as its own frame.

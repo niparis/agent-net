@@ -22,10 +22,11 @@ func openWaitingAsks(t *testing.T, s *Store) int {
 }
 
 // reportWait stores the wait of a session the way a session report does and runs
-// the ask sync that report runs.
+// the ask sync that report runs. The wait started one debounce ago, so an
+// owner ask is due at once.
 func reportWait(t *testing.T, s *Store, session, text string, now time.Time) {
 	t.Helper()
-	w := fmt.Sprintf(`{"kind":"input","text":%q,"since":%d}`, text, now.Unix())
+	w := fmt.Sprintf(`{"kind":"input","text":%q,"since":%d}`, text, now.Add(-waitingAskDebounce).Unix())
 	if _, err := s.db.Exec(`UPDATE sessions SET waiting=? WHERE id=?`, w, session); err != nil {
 		t.Fatal(err)
 	}

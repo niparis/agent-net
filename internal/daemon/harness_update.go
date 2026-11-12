@@ -144,6 +144,9 @@ func (d *Daemon) setHarnessUpdate(ctx context.Context, name string, u *protocol.
 	d.hgen++
 	d.hmu.Unlock()
 	d.Logf("harness update: %s: %s%s", name, u.Result, updateLogDetail(u.Detail))
+	if r, ok := harnessUpdateIntake(name, u); ok {
+		d.reportIntake(r)
+	}
 	d.publishHarnesses(ctx)
 }
 
