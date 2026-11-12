@@ -205,18 +205,25 @@ func TestLinkKeepaliveGatewayEmptyFragments(t *testing.T) {
 }
 
 func TestLinkOfflineGraceQuickRedial(t *testing.T) {
-	g, url, id, token := newLinkGateway(t, 200*time.Millisecond)
+	g, url, id, token := newLinkGateway(t, time.Hour)
 	var pings atomic.Int32
 	ws := dialLinkPeer(t, url, token, true, &pings)
 	sendLinkSession(t, ws)
 	waitLink(t, "session online", func() bool { return sessionOnline(g, id) })
 	ws.CloseNow()
 	waitLink(t, "node disconnected", func() bool { return !nodeConnected(g, id) })
+	// Capture the timer before reconnecting. Its callback may already be queued
+	// when Stop runs, so exercise that callback explicitly after the redial.
+	g.mu.Lock()
+	oldTimer := g.timers[id]
+	g.mu.Unlock()
+	if oldTimer == nil {
+		t.Fatal("disconnect did not install a grace timer")
+	}
 	ws = dialLinkPeer(t, url, token, true, &pings)
 	waitLink(t, "node reconnected", func() bool { return nodeConnected(g, id) })
-	// Wait beyond the old grace timer without sending a new session sync.
-	start := pings.Load()
-	waitLink(t, "pings after the grace period", func() bool { return pings.Load() >= start+8 })
+	// No new session sync should be needed to preserve the online session.
+	g.nodeGone(id, oldTimer)
 	if !sessionOnline(g, id) {
 		t.Fatal("quick redial let the old timer mark the session offline")
 	}
