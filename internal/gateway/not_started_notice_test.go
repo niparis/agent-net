@@ -554,7 +554,7 @@ func TestNotStartedRosterUsesThePickerReasons(t *testing.T) {
 	// chooser fails. Only deepseek reaches the chooser.
 	profiles := []protocol.WorkerProfile{
 		{Name: "flash", Harness: "agy", Model: "gemini-2.5-flash", Effort: "high"},
-		{Name: "deepseek", Harness: "opencode", Model: "deepseek/deepseek-v4.1-flash", Effort: "high"},
+		{Name: "deepseek", Harness: "opencode", Model: "deepseek/deepseek-unrated-test", Effort: "high"},
 		{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"},
 	}
 	if err := f.s.saveWorkerProfiles(profiles); err != nil {
@@ -562,7 +562,7 @@ func TestNotStartedRosterUsesThePickerReasons(t *testing.T) {
 	}
 	harnesses := []protocol.HarnessInfo{
 		{Name: "agy", Models: []string{"gemini-2.5-flash-high"}},
-		{Name: "opencode", Models: []string{"deepseek/deepseek-v4.1-flash"}},
+		{Name: "opencode", Models: []string{"deepseek/deepseek-unrated-test"}},
 		{Name: "claude", Models: []string{"claude-opus-5-5"}},
 	}
 	if _, err := f.s.SetNodeHarnesses(f.nodeA, harnesses); err != nil {
@@ -575,7 +575,7 @@ func TestNotStartedRosterUsesThePickerReasons(t *testing.T) {
 	if _, err := f.s.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES(?,?,?,0,0)`, f.nodeA, "/repo/shop", "shop"); err != nil {
 		t.Fatal(err)
 	}
-	// deepseek has no score, so the chooser has nothing to pick.
+	// No score matches the deepseek model, so the chooser has nothing to pick.
 	scoresJSON := `[{"match":"gemini-2.5-flash","score":70},{"match":"claude-opus-5-5","score":60}]`
 	if _, err := f.s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, scoresKey, scoresJSON); err != nil {
 		t.Fatal(err)
