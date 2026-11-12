@@ -95,6 +95,9 @@ func TestBotToolReadsAndIsolation(t *testing.T) {
 			t.Fatalf("handler accepted %s", field)
 		}
 	}
+	if _, err := g.botToolCall(t.Context(), "unused", "agent_message_get", map[string]any{"message": message.ID, "file": "notes.md"}); err == nil || !strings.Contains(err.Error(), "attachments") {
+		t.Fatalf("a bot read an attachment: %v", err)
+	}
 }
 
 func TestBotDeliveryNoteAndUnreadRetention(t *testing.T) {

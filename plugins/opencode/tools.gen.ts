@@ -905,7 +905,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_get",
-    "description": "Read one message's full body, delivery state and outcome. Long bodies come in chunks: follow next_body_cursor until it is absent.",
+    "description": "Read one message's full body, delivery state and outcome. Long bodies come in chunks: follow next_body_cursor until it is absent. Attachments are in files: pass file to read one as text, then follow next_file_cursor. A binary file gives name, size and type only.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -922,7 +922,15 @@ export const TOOL_CATALOG = [
           "minimum": 256,
           "maximum": 16384,
           "default": 8192,
-          "description": "Maximum UTF-8 body bytes in this chunk."
+          "description": "Maximum UTF-8 bytes per chunk."
+        },
+        "file": {
+          "type": "string",
+          "description": "Attachment to read as text."
+        },
+        "file_cursor": {
+          "type": "string",
+          "description": "Cursor from the previous file page."
         }
       },
       "required": [

@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // Pages have no overlap and no gap: three pages of 25, 25 and 10 cover the 60
@@ -170,5 +171,55 @@ func TestMessageGetShowsCitedNotes(t *testing.T) {
 	notes, _ := msg["notes"].([]any)
 	if len(notes) != 1 || notes[0] != f.message.CitedNotes[0] || msg["body"] != "see m_c0f041a063cd1359" {
 		t.Fatalf("message: %v", msg)
+	}
+}
+
+// agent_message_get lists attachments and reads one as text, page by page,
+// with a cursor; the pages join back to the file.
+func TestMessageGetReadsAttachmentPages(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "n_me")
+	f := roReadFixture()
+	text := strings.Repeat("line of the design\n", 60)
+	f.message = roMessageAt("m_files", time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC), "s_peer", "s_me", "see the file")
+	f.message.Files = []protocol.FileEntry{{ID: "f1", Name: "design.md", Size: int64(len(text)), SHA256: strings.Repeat("a", 64)}, {ID: "f2", Name: "other.md", Size: 1, SHA256: strings.Repeat("b", 64)}}
+	f.files = map[string]string{"design.md": text, "other.md": "x"}
+	cs := connect(t, f.call)
+
+	first := roCall(t, cs, "agent_message_get", map[string]any{"message": "m_files"})
+	if _, has := first["file"]; has || len(first["files"].([]any)) != 2 {
+		t.Fatalf("a read without file lists the files and reads none: %v", first)
+	}
+	var joined strings.Builder
+	cursor := ""
+	for pages := 0; ; pages++ {
+		if pages > 50 {
+			t.Fatal("file paging does not end")
+		}
+		args := map[string]any{"message": "m_files", "file": "design.md", "max_bytes": 256}
+		if cursor != "" {
+			args["file_cursor"] = cursor
+		}
+		file := roCall(t, cs, "agent_message_get", args)["file"].(map[string]any)
+		joined.WriteString(file["text"].(string))
+		cursor, _ = file["next_file_cursor"].(string)
+		if cursor == "" {
+			break
+		}
+	}
+	if joined.String() != text {
+		t.Fatalf("the pages do not join back to the file: %d bytes, want %d", joined.Len(), len(text))
+	}
+
+	// A cursor belongs to its file, and a name outside the manifest is refused.
+	file := roCall(t, cs, "agent_message_get", map[string]any{"message": "m_files", "file": "design.md", "max_bytes": 256})["file"].(map[string]any)
+	for name, args := range map[string]map[string]any{
+		"cursor of another file": {"message": "m_files", "file": "other.md", "file_cursor": file["next_file_cursor"]},
+		"unknown file":           {"message": "m_files", "file": "../design.md"},
+		"cursor without file":    {"message": "m_files", "file_cursor": file["next_file_cursor"]},
+	} {
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_message_get", Arguments: args})
+		if err != nil || !res.IsError {
+			t.Errorf("%s was accepted: %v %v", name, err, res)
+		}
 	}
 }

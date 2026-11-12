@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -490,9 +491,15 @@ func (g *Gateway) botMessageGet(sid string, in map[string]any) (any, error) {
 		Message    string `json:"message"`
 		BodyCursor string `json:"body_cursor"`
 		MaxBytes   int    `json:"max_bytes"`
+		File       string `json:"file"`
+		FileCursor string `json:"file_cursor"`
 	}
 	if err := botDecode(in, &p); err != nil {
 		return nil, err
+	}
+	// Files are in the inbox of a daemon's machine; a bot has none.
+	if p.File != "" || p.FileCursor != "" {
+		return nil, errors.New("a bot cannot read message attachments: it has no inbox folder")
 	}
 	m, ok, err := g.store.Message(p.Message)
 	if err != nil {

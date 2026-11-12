@@ -28,6 +28,8 @@ type roFakeDaemon struct {
 	profiles      []protocol.WorkerProfile
 	methods       []string
 	mcpListDetail bool
+	// files serves message_file: attachment name to text.
+	files map[string]string
 }
 
 func (f *roFakeDaemon) call(_ context.Context, method string, params any) (json.RawMessage, error) {
@@ -63,6 +65,19 @@ func (f *roFakeDaemon) call(_ context.Context, method string, params any) (json.
 		return json.Marshal(map[string]any{"messages": f.messages[offset:end], "total": total})
 	case "message_status":
 		return json.Marshal(protocol.MessageResult{Message: f.message})
+	case "message_file":
+		var q protocol.MessageFileRequest
+		json.Unmarshal(raw, &q)
+		text, ok := f.files[q.File]
+		if !ok {
+			return nil, fmt.Errorf("the message has no file named %q", q.File)
+		}
+		end := min(int(q.Offset)+q.MaxBytes, len(text))
+		page := protocol.MessageFileResult{Name: q.File, Size: int64(len(text)), Type: "text", Text: text[q.Offset:end]}
+		if end < len(text) {
+			page.NextOffset = int64(end)
+		}
+		return json.Marshal(page)
 	case "agent_graph":
 		var q protocol.PublicGraphQuery
 		json.Unmarshal(raw, &q)

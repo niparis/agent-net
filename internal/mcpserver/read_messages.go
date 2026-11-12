@@ -76,12 +76,32 @@ type roMessageGetIn struct {
 	Message    string `json:"message"`
 	BodyCursor string `json:"body_cursor"`
 	MaxBytes   int    `json:"max_bytes"`
+	// File names one attachment to read as text. FileCursor continues it.
+	File       string `json:"file"`
+	FileCursor string `json:"file_cursor"`
 }
 
 type roMessageGetOut struct {
 	Message        roMessageDetail `json:"message"`
 	NextBodyCursor string          `json:"next_body_cursor,omitempty"`
 	BodyTruncated  bool            `json:"body_truncated"`
+	Files          []roFileInfo    `json:"files,omitempty"`
+	File           *roFileChunk    `json:"file,omitempty"`
+}
+
+// roFileInfo is one attachment named by the message's manifest.
+type roFileInfo struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+}
+
+// roFileChunk is one page of an attachment. A binary file has no text.
+type roFileChunk struct {
+	Name           string `json:"name"`
+	Size           int64  `json:"size"`
+	Type           string `json:"type"`
+	Text           string `json:"text,omitempty"`
+	NextFileCursor string `json:"next_file_cursor,omitempty"`
 }
 
 func addMessageReadTools(s *mcp.Server, call Caller) {
@@ -292,5 +312,56 @@ func roGetMessage(ctx context.Context, call Caller, in roMessageGetIn) (roMessag
 	if next < len(message.Body) {
 		out.NextBodyCursor = roEncodeCursor(roCursor{Tool: "agent_message_get", Caller: caller.SessionID, Filters: filters, After: strconv.Itoa(next)})
 	}
+	for _, f := range message.Files {
+		out.Files = append(out.Files, roFileInfo{Name: f.Name, Size: f.Size})
+	}
+	if in.File == "" && in.FileCursor != "" {
+		return roMessageGetOut{}, fmt.Errorf("file_cursor needs file. Example: {\"message\":%q,\"file\":\"notes.md\"}", message.ID)
+	}
+	if in.File != "" {
+		out.File, err = roReadFile(ctx, call, caller.SessionID, message, in, maxBytes)
+		if err != nil {
+			return roMessageGetOut{}, err
+		}
+	}
 	return out, nil
+}
+
+// roReadFile reads one page of an attachment through the daemon, which checks
+// that the caller is the receiver and reads only its own inbox folder.
+func roReadFile(ctx context.Context, call Caller, caller string, message protocol.Message, in roMessageGetIn, maxBytes int) (*roFileChunk, error) {
+	var entry *protocol.FileEntry
+	for i := range message.Files {
+		if message.Files[i].Name == in.File {
+			entry = &message.Files[i]
+		}
+	}
+	if entry == nil {
+		return nil, fmt.Errorf("message %s has no file named %q. The files are listed in files", message.ID, in.File)
+	}
+	// The hash in the cursor makes it stale if the file ever changes.
+	filters := "message=" + message.ID + ";file=" + entry.Name + ";sha256=" + entry.SHA256
+	after, err := roDecodeCursor(in.FileCursor, "agent_message_get", caller, filters)
+	if err != nil {
+		return nil, err
+	}
+	var offset int64
+	if after != "" {
+		if offset, err = strconv.ParseInt(after, 10, 64); err != nil || offset < 0 {
+			return nil, fmt.Errorf("the file cursor is stale or unknown for %q: call again without file_cursor", entry.Name)
+		}
+	}
+	raw, err := call(ctx, "message_file", protocol.MessageFileRequest{MessageID: message.ID, File: entry.Name, Offset: offset, MaxBytes: maxBytes})
+	if err != nil {
+		return nil, err
+	}
+	var page protocol.MessageFileResult
+	if err := json.Unmarshal(raw, &page); err != nil {
+		return nil, err
+	}
+	chunk := &roFileChunk{Name: page.Name, Size: page.Size, Type: page.Type, Text: page.Text}
+	if page.NextOffset > 0 {
+		chunk.NextFileCursor = roEncodeCursor(roCursor{Tool: "agent_message_get", Caller: caller, Filters: filters, After: strconv.FormatInt(page.NextOffset, 10)})
+	}
+	return chunk, nil
 }
