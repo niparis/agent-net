@@ -328,9 +328,6 @@ func gitBranchHead(ctx context.Context, dir, branch string) (string, error) {
 	return head, nil
 }
 
-// branchUncommitted reports whether the worktree that has branch checked out
-// has changes that are not committed, untracked files included. A branch that
-// no worktree has checked out has none.
 // handbackBranch is the branch a complete hand-back delivers. When the worker
 // moved its worktree to another local branch and that branch has commits
 // beyond the base, it is that branch: the one its work is on, pushed or not.
@@ -370,6 +367,9 @@ func (d *Daemon) deliveredBranch(ctx context.Context, w *worker) string {
 	return ""
 }
 
+// branchUncommitted reports whether the worktree that has branch checked out
+// has changes that are not committed, untracked files included. A branch that
+// no worktree has checked out has none.
 func branchUncommitted(ctx context.Context, dir, branch string) (bool, error) {
 	list, err := gitOut(ctx, dir, "worktree", "list", "--porcelain")
 	if err != nil {
