@@ -264,20 +264,13 @@ func (a *agyAdapter) typeInHerdr(info protocol.SessionInfo, text string) (sent, 
 		h, found = findHerdrServer(info.PID)
 	}
 	bin := a.d.herdrBinary(h.bin)
-	if bin == "" {
+	if !found || bin == "" {
 		return false, false
 	}
-	var panes []herdrPaneInfo
-	var socket string
-	var ok bool
-	if found {
-		panes, socket, ok = a.d.herdrPanesFromServer(bin, h)
-	} else {
-		var err error
-		panes, err = a.d.herdrPanes(bin, "")
-		ok = err == nil
-	}
-	if !ok {
+	panes, socket, ok := a.d.herdrPanesFromServer(bin, h)
+	// Typing is a write. The owner's own herdr is read-only (decision 0154),
+	// so a session there gets its messages from its next hook.
+	if !ok || !a.d.isAgentNetHerdr(bin, socket) {
 		return false, false
 	}
 	chain := pidChain(info.PID)

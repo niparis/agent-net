@@ -118,6 +118,22 @@ func (f *fakeHerdr) holds(t *testing.T, pane string, pid int) {
 	}
 }
 
+// readOnly fails the test if the daemon sent this herdr, which plays the
+// owner's own herdr, anything but a read (decision 0154).
+func (f *fakeHerdr) readOnly(t *testing.T) {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSpace(f.calls(t)), "\n") {
+		fields := strings.SplitN(line, " ", 3)
+		if len(fields) < 3 {
+			continue
+		}
+		command := fields[2]
+		if !strings.HasPrefix(command, "pane list") && !strings.HasPrefix(command, "pane process-info") && !strings.HasPrefix(command, "session list") {
+			t.Errorf("the owner's herdr got %q", command)
+		}
+	}
+}
+
 func (f *fakeHerdr) calls(t *testing.T) string {
 	t.Helper()
 	b, _ := os.ReadFile(f.log)
@@ -498,7 +514,7 @@ func waitSessionOnGateway(t *testing.T, n *node, id string) {
 
 // A session in herdr on another machine: when this machine has herdr, the
 // owner enters it with herdr's own remote client, which carries the clipboard
-// and image paste. The remote pane is focused first, so the client opens there.
+// and image paste. The TUI runs that client in its own pane.
 func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	remote, remoteHerdr, id := enterRemoteHerdr(t, g, "w1:pB")
@@ -509,14 +525,16 @@ func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
 	waitSessionOnGateway(t, local, id)
 
 	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
-	if !p.OpenedHerdr || len(p.Argv) != 0 || p.Dir != "" || len(p.Env) != 0 || p.Host != remote.cfg.Hostname {
-		t.Fatalf("plan %+v", p)
+	if want := []string{localHerdr, "--remote", remote.cfg.Hostname}; p.OpenedHerdr || !reflect.DeepEqual(p.Argv, want) || p.Dir != "" || len(p.Env) != 0 || p.Host != remote.cfg.Hostname || !strings.Contains(p.Note, "w1:pB") {
+		t.Fatalf("plan %+v, want argv %v", p, want)
 	}
-	requireHerdrOpened(t, localLog, "inter", "--remote", remote.cfg.Hostname)
-	// The remote pane is focused before the client opens.
-	if calls := remoteHerdr.calls(t); !strings.Contains(calls, "pane process-info --pane w1:pB") || !strings.Contains(calls, "agent focus w1:pB") {
+	// The pane is in the owner's own herdr there, which is read-only: it is
+	// found, named in the note, and not focused.
+	if calls := remoteHerdr.calls(t); !strings.Contains(calls, "pane process-info --pane w1:pB") {
 		t.Errorf("remote herdr calls %q", calls)
 	}
+	remoteHerdr.readOnly(t)
+	requireHerdrRules(t, localLog)
 	// The ssh target from enter_ssh_hosts is the one herdr's client gets.
 	alias := startNode(t, g, nodeOpts{cfg: func(c *Config) {
 		c.HarnessPaths = map[string]string{"herdr": localHerdr}
@@ -524,15 +542,14 @@ func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
 	}})
 	waitSessionOnGateway(t, alias, id)
 	p = enterOfHerdr(t, alias, id, fakeHerdrSocket(localLog))
-	if !p.OpenedHerdr {
-		t.Fatalf("alias plan %+v", p)
+	if want := []string{localHerdr, "--remote", "me@box"}; !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("alias plan %+v, want argv %v", p, want)
 	}
-	requireHerdrOpened(t, localLog, "inter", "--remote", "me@box")
 }
 
 // The CTO on another machine opens the same way a session does: the CTO's
-// machine opens or focuses a pane in its own herdr, and this machine runs
-// herdr's remote client. Plain ssh loses the clipboard, so image paste into
+// machine opens or focuses a pane in agent-net's herdr there, and this
+// machine runs herdr's remote client in the TUI's own terminal or pane. Plain ssh loses the clipboard, so image paste into
 // the CTO fails (decision 0046).
 func TestEnterRemoteCTOUsesHerdrRemoteClient(t *testing.T) {
 	remoteBin, remoteLog := fakeOpenHerdr(t)
@@ -559,33 +576,30 @@ func TestEnterRemoteCTOUsesHerdrRemoteClient(t *testing.T) {
 
 	// A TUI in a plain terminal runs the remote client itself.
 	p := enterOf(t, local, ctoID, "")
-	if want := []string{localBin, "--remote", remote.cfg.Hostname}; !reflect.DeepEqual(p.Argv, want) {
+	if want := []string{localBin, "--remote", remote.cfg.Hostname, "--session", "agent-net"}; !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("argv %v, want %v (plan %+v)", p.Argv, want, p)
 	}
 	if p.OpenedHerdr {
 		t.Fatalf("a TUI outside herdr got a pane it cannot see: %+v", p)
 	}
-	// The CTO's machine made the pane in its own herdr, titled like the local
-	// CTO pane, and ran the attach there.
+	// The CTO's machine made the pane in agent-net's herdr, titled CTO, and
+	// ran the attach there.
 	raw, _ := os.ReadFile(remoteLog)
 	calls := string(raw)
-	if !strings.Contains(calls, "tab create --label CTO") || !strings.Contains(calls, "pane run") || !strings.Contains(calls, "attach") {
+	requireHerdrRules(t, remoteLog)
+	if !hasOwnHerdrCall(t, remoteLog, "workspace create --label CTO") || !hasOwnHerdrCall(t, remoteLog, "pane run") || !strings.Contains(calls, "attach") {
 		t.Fatalf("the CTO's machine did not open a pane: %s", calls)
 	}
 	if strings.Contains(strings.Join(p.Argv, " "), "ssh") || strings.Contains(calls, "ssh") {
 		t.Fatalf("ssh on the CTO path: argv %v calls %s", p.Argv, calls)
 	}
 
-	// A TUI inside this machine's herdr gets the remote client in a pane.
+	// A TUI inside the owner's herdr runs the same client in its own pane.
 	q := enterOfHerdr(t, local, ctoID, fakeHerdrSocket(localLog))
-	if !q.OpenedHerdr {
-		t.Fatalf("the remote client was not opened in herdr: %+v", q)
+	if q.OpenedHerdr || !reflect.DeepEqual(q.Argv, p.Argv) {
+		t.Fatalf("plan in herdr %+v, want argv %v", q, p.Argv)
 	}
-	requireHerdrOpened(t, localLog, "CTO", localBin, "--remote", remote.cfg.Hostname)
-	raw, _ = os.ReadFile(localLog)
-	if strings.Contains(string(raw), "ssh") {
-		t.Fatalf("ssh on the CTO path: %s", raw)
-	}
+	requireHerdrRules(t, localLog)
 }
 
 // A TUI outside herdr (a plain terminal such as Ghostty) still enters a remote
@@ -608,9 +622,7 @@ func TestEnterRemoteHerdrFromPlainTerminalUsesLocalClient(t *testing.T) {
 	if p.OpenedHerdr {
 		t.Fatalf("a TUI outside herdr got a pane it cannot see: %+v", p)
 	}
-	if calls := remoteHerdr.calls(t); !strings.Contains(calls, "agent focus w1:pB") {
-		t.Errorf("the remote pane was not focused first: %q", calls)
-	}
+	remoteHerdr.readOnly(t)
 }
 
 // Without a local herdr there is no client to carry the clipboard, so the plan
@@ -685,7 +697,9 @@ func TestEnterHerdrHandStartedClaudeOpensNothing(t *testing.T) {
 	}
 }
 
-func TestSessionStopPiHerdrPane(t *testing.T) {
+// A Pi session in the owner's own herdr is stopped by signalling its process:
+// closing its pane would write to a herdr agent-net does not own.
+func TestSessionStopPiInOwnerHerdrSignalsProcess(t *testing.T) {
 	f := newFakeHerdr(t)
 	pid := f.session(t, "w3:p2")
 	f.panes(t, herdrAgentPane("w3:p2", "w3:t1"))
@@ -693,14 +707,32 @@ func TestSessionStopPiHerdrPane(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n, _, id := enterNode(t, g, "pi", protocol.SessionInfo{NativeID: "pi_owner", Name: "shop", PID: pid, Status: "idle"}, nil, nil)
 	cliClient(t, n).mustCall("session_stop", map[string]string{"session_id": id})
-	if !strings.Contains(f.calls(t), "pane close w3:p2") {
-		t.Fatalf("calls: %s", f.calls(t))
+	eventually(t, "the Pi process ends", func() bool { _, live := procToken(pid); return !live })
+	f.readOnly(t)
+}
+
+// A harness the owner runs in his own herdr is discovered, listed and
+// entered, with reads only: the TUI attaches to its pane.
+func TestOwnerHerdrSessionIsListedAndEntered(t *testing.T) {
+	f := newFakeHerdr(t)
+	f.panes(t, herdrAgentPane("w2:p4", "term_4"))
+	pid := f.session(t, "w2:p4")
+	f.holds(t, "w2:p4", pid)
+	g := startGateway(t, t.TempDir(), "")
+	n, _, id := enterNode(t, g, "pi", protocol.SessionInfo{NativeID: "pi_mine", Name: "shop", PID: pid, Status: "idle"}, map[string]string{"herdr": f.bin}, nil)
+	if a, err := n.d.agentView(context.Background(), id); err != nil || a.Harness != "pi" {
+		t.Fatalf("not listed: %+v %v", a, err)
 	}
+	p := enterOfHerdr(t, n, id, f.sock)
+	if want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + f.sock, f.bin, "agent", "attach", "w2:p4"}; p.OpenedHerdr || !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("plan %+v, want argv %v", p, want)
+	}
+	f.readOnly(t)
 }
 
 // A sign-in ask runs the allowlisted login command through the one view path:
-// the TUI terminal outside herdr, a full tab inside herdr. No ask or agent
-// supplies the argv.
+// the TUI hands over its terminal, or its pane in the owner's herdr. No ask
+// or agent supplies the argv.
 func TestSignInOpenLocalPaneRunsAllowlistedArgv(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	call := func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
@@ -725,20 +757,12 @@ func TestSignInOpenLocalPaneRunsAllowlistedArgv(t *testing.T) {
 		t.Fatalf("outside herdr should hand over the terminal: %s", calls)
 	}
 
-	// A TUI inside herdr gets the command in a full tab, through the same path.
+	// A TUI inside the owner's herdr gets the same handover.
 	plan, err = d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin", HerdrSocket: "/tmp/fake-herdr.sock", HerdrPaneID: testHerdrPane})
-	if err != nil || !plan.OpenedHerdr {
+	if err != nil || plan.OpenedHerdr || !reflect.DeepEqual(plan.Argv, []string{"bl", "auth", "login", "--console"}) {
 		t.Fatalf("in herdr: plan %+v, error %v", plan, err)
 	}
-	calls := string(mustRead(t, log))
-	for _, want := range []string{"tab create --label sign in: Alibaba Bailian CLI", "pane run w1:p1", "bl auth login --console"} {
-		if !strings.Contains(calls, want) {
-			t.Errorf("herdr calls %q missing %q", calls, want)
-		}
-	}
-	if strings.Contains(calls, "pane split") || strings.Contains(calls, "ssh") {
-		t.Fatalf("local sign-in used an old view path: %s", calls)
-	}
+	requireNoHerdrCalls(t, log)
 }
 
 // A sign-in ask for another machine opens its pane there and comes back as
@@ -790,8 +814,8 @@ func TestSignInPrepareOpensAllowlistedArgv(t *testing.T) {
 	if !res.Opened || res.Host != "Nicolas-MBP" || res.Pane != "w1:p1" {
 		t.Fatalf("prepare result %+v", res)
 	}
-	calls := string(mustRead(t, log))
-	if !strings.Contains(calls, "tab create --label sign in: Alibaba Bailian CLI") || !strings.Contains(calls, "bl auth login --console") || strings.Contains(calls, "ssh") {
+	requireHerdrOpened(t, log, "sign in: Alibaba Bailian CLI", "bl auth login --console")
+	if calls := string(mustRead(t, log)); strings.Contains(calls, "ssh") {
 		t.Fatalf("herdr calls %q", calls)
 	}
 	bad, _ := json.Marshal(protocol.SignInPrepare{AskID: "i_signin", Provider: "sh -c curl"})
@@ -809,8 +833,10 @@ func TestEnterRemoteHerdrClientNeverFallsBackToSSH(t *testing.T) {
 	}
 }
 
-func TestSignInOpenRemoteInHerdrUsesTab(t *testing.T) {
-	_, log := fakeOpenHerdr(t)
+// A TUI in the owner's herdr runs the remote sign-in client in its own pane.
+// The answer of an older daemon names no herdr session, so none is passed.
+func TestSignInOpenRemoteInOwnerHerdrHandsOverPane(t *testing.T) {
+	bin, log := fakeOpenHerdr(t)
 	d := &Daemon{cfg: Config{NodeID: "local", testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
 		switch typ {
 		case "query.sign_in":
@@ -823,11 +849,8 @@ func TestSignInOpenRemoteInHerdrUsesTab(t *testing.T) {
 		return nil, false, nil
 	}}}
 	p, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "ask", HerdrSocket: "/tmp/fake-herdr.sock", HerdrPaneID: "w1:p0"})
-	if err != nil || !p.OpenedHerdr {
-		t.Fatalf("plan %+v, error %v", p, err)
+	if want := []string{bin, "--remote", "remote-host"}; err != nil || p.OpenedHerdr || !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("plan %+v, error %v, want argv %v", p, err, want)
 	}
-	calls := string(mustRead(t, log))
-	if !strings.Contains(calls, "tab create") || !strings.Contains(calls, "--remote remote-host") || strings.Contains(calls, "pane split") {
-		t.Fatalf("calls %s", calls)
-	}
+	requireNoHerdrCalls(t, log)
 }

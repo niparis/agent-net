@@ -220,7 +220,8 @@ type EnterRequest struct {
 	// TmuxSocket is retained for compatibility with older clients; it is unused.
 	TmuxSocket string `json:"tmux_socket,omitempty"`
 	// HerdrSocket is the value of $HERDR_SOCKET_PATH when the asking terminal
-	// runs inside herdr (HERDR_ENV=1), else "". The daemon uses that server.
+	// runs inside herdr (HERDR_ENV=1), else "". That herdr is the owner's, so
+	// the daemon only reads it and never opens anything there (decision 0154).
 	HerdrSocket string `json:"herdr_socket,omitempty"`
 	// HerdrPaneID is the pane containing the asking TUI, when known.
 	HerdrPaneID string `json:"herdr_pane_id,omitempty"`
@@ -256,7 +257,12 @@ type EnterPlan struct {
 	// (EnterRequest.HerdrClient). That machine then opens the pane with
 	// `herdr --remote` instead of running the ssh attach command.
 	HerdrPane string `json:"herdr_pane,omitempty"`
-	// OpenedHerdr means the daemon already opened or focused the session.
+	// HerdrSession is the named herdr session that holds HerdrPane, empty for
+	// the default one. The asking machine passes it to herdr --remote as
+	// --session. agent-net's own server is the session "agent-net".
+	HerdrSession string `json:"herdr_session,omitempty"`
+	// OpenedHerdr means the daemon runs the command in a pane of agent-net's
+	// herdr server, so there is nothing to run here (decision 0154).
 	OpenedHerdr bool `json:"opened_herdr,omitempty"`
 	// MoveToBackground says the session runs in a terminal the owner started,
 	// so it has nothing to attach to. The front end offers to move it to the

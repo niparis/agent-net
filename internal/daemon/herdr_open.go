@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -26,44 +24,6 @@ type herdrOpenedPane struct {
 const herdrInstallNote = "Herdr was not found; install: https://herdr.dev/tui/docs/install/."
 
 var shellEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
-// herdrServer selects the requested server, or starts the default headless
-// server. An explicitly requested socket must never be silently replaced.
-func (d *Daemon) herdrServer(bin, socket string) error {
-	if _, err := d.herdrPanes(bin, socket); err == nil {
-		return nil
-	} else if socket != "" {
-		return err
-	}
-	cmd := exec.Command(bin, "server")
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "HERDR_SESSION=") && !strings.HasPrefix(kv, "HERDR_SOCKET_PATH=") {
-			cmd.Env = append(cmd.Env, kv)
-		}
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(done) }()
-	deadline := time.NewTimer(3 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-done:
-			_, err := d.herdrPanes(bin, "")
-			return err
-		case <-deadline.C:
-			return fmt.Errorf("server did not become ready within 3 seconds")
-		case <-ticker.C:
-			if _, err := d.herdrPanes(bin, ""); err == nil {
-				return nil
-			}
-		}
-	}
-}
 
 // herdrEnvironment writes a one-use shell fragment instead of putting private
 // worker credentials in Herdr's command arguments or the pane's input text.
@@ -101,26 +61,24 @@ func herdrEnvironment(env map[string]string) (string, error) {
 	return path, nil
 }
 
-// callerInHerdr says whether the asking TUI runs inside herdr. Only then can
-// it see a herdr pane; outside herdr a pane would open where the owner cannot
-// see it, so the terminal handover plan is used instead.
-func callerInHerdr(socket, pane string) bool {
-	return filepath.IsAbs(socket) && herdrIDRe.MatchString(pane)
-}
-
-// viewPlan chooses terminal handover or a full herdr tab. Host is set when
-// the command must run in a headless herdr server for a remote viewer or Pi.
-func (d *Daemon) viewPlan(key, name, socket, pane string, host bool, plan protocol.EnterPlan) protocol.EnterPlan {
-	if !host && !callerInHerdr(socket, pane) {
+// viewPlan returns the plan the asking terminal runs: the TUI hands over its
+// own terminal or herdr pane, and ctrl+] returns. Only when host is set does
+// the daemon host the command itself, in agent-net's herdr server: a Pi
+// session, which needs a terminal of its own, and a view or sign-in asked
+// from another machine, which that machine opens with herdr --remote. It
+// never opens anything in the owner's herdr (decision 0154).
+func (d *Daemon) viewPlan(key, name string, host bool, plan protocol.EnterPlan) protocol.EnterPlan {
+	if !host {
 		return claudePlanEnv(plan)
 	}
-	return d.openInHerdr(key, name, socket, plan)
+	return d.openInHerdr(key, name, plan)
 }
 
-// openInHerdr opens a plan in a full tab. It serializes the lookup and
-// creation so concurrent Enter calls cannot create duplicate clients. When the
-// server is unavailable the original plan remains the fallback.
-func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) protocol.EnterPlan {
+// openInHerdr hosts a plan in a tab of agent-net's herdr server. It
+// serializes the lookup and creation so concurrent calls cannot create
+// duplicate tabs. When herdr is unavailable the original plan remains the
+// fallback.
+func (d *Daemon) openInHerdr(key, name string, plan protocol.EnterPlan) protocol.EnterPlan {
 	bin, lookupErr := d.lookupHerdrBinary()
 	if lookupErr != nil {
 		plan.Note = strings.TrimSpace(plan.Note + " " + lookupErr.Error())
@@ -130,9 +88,6 @@ func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) 
 		return plan
 	}
 	plan = claudePlanEnv(plan)
-	if !filepath.IsAbs(socket) {
-		socket = ""
-	}
 	d.herdrOpenMu.Lock()
 	defer d.herdrOpenMu.Unlock()
 	if old, ok := d.herdrOpened[key]; key != "" && ok {
@@ -145,14 +100,15 @@ func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) 
 						break
 					}
 					if d.focusHerdrView(old.bin, old.socket, old.tab, old.pane) {
-						return herdrOpenNotice(openedHerdrPlan(plan.Host, name, old.pane), plan)
+						return herdrOpenNotice(hostedHerdrPlan(plan.Host, name, old.pane), plan)
 					}
 				}
 			}
 		}
 		delete(d.herdrOpened, key)
 	}
-	if err := d.herdrServer(bin, socket); err != nil {
+	socket, err := d.agentNetHerdr(bin)
+	if err != nil {
 		plan.Note = strings.TrimSpace(plan.Note + " " + fmt.Sprintf("herdr at %s failed: %v", bin, err))
 		return plan
 	}
@@ -164,7 +120,7 @@ func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) 
 				d.herdrOpened = make(map[string]herdrOpenedPane)
 			}
 			d.herdrOpened[key] = herdrOpenedPane{bin: bin, socket: socket, pane: pane, tab: tab}
-			return herdrOpenNotice(openedHerdrPlan(plan.Host, name, pane), plan)
+			return herdrOpenNotice(hostedHerdrPlan(plan.Host, name, pane), plan)
 		}
 	}
 	file, err := herdrEnvironment(plan.Env)
@@ -176,7 +132,19 @@ func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) 
 		// covers a shell that never reaches the command.
 		time.AfterFunc(time.Minute, func() { _ = os.Remove(file) })
 	}()
-	args := []string{"tab", "create", "--label", cleanLine(name), "--focus"}
+	// A new server has no workspace, and herdr makes a tab only inside one.
+	create := "tab"
+	if out, err := d.herdrRun(bin, socket, "workspace", "list"); err == nil {
+		var ws struct {
+			Result struct {
+				Workspaces []json.RawMessage `json:"workspaces"`
+			} `json:"result"`
+		}
+		if json.Unmarshal(out, &ws) == nil && len(ws.Result.Workspaces) == 0 {
+			create = "workspace"
+		}
+	}
+	args := []string{create, "create", "--label", cleanLine(name), "--focus"}
 	if plan.Dir != "" {
 		args = append(args, "--cwd", plan.Dir)
 	}
@@ -230,7 +198,14 @@ func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) 
 		}
 		d.herdrOpened[key] = herdrOpenedPane{bin: bin, socket: socket, pane: created.Result.Pane.ID, tab: created.Result.Tab.ID, started: time.Now()}
 	}
-	return herdrOpenNotice(openedHerdrPlan(plan.Host, name, created.Result.Pane.ID), plan)
+	return herdrOpenNotice(hostedHerdrPlan(plan.Host, name, created.Result.Pane.ID), plan)
+}
+
+// hostedSocket is the herdr server of the pane openInHerdr made for key.
+func (d *Daemon) hostedSocket(key string) string {
+	d.herdrOpenMu.Lock()
+	defer d.herdrOpenMu.Unlock()
+	return d.herdrOpened[key].socket
 }
 
 const herdrViewMarker = "agent-net-view"
@@ -285,7 +260,7 @@ func (d *Daemon) findHerdrView(bin, socket, id string) (pane, tab string, ok boo
 
 func herdrOpenNotice(opened, previous protocol.EnterPlan) protocol.EnterPlan {
 	if strings.HasPrefix(previous.Note, claudeCTORestartNotice) {
-		opened.Note += ". " + previous.Note
+		opened.Note += " " + previous.Note
 	}
 	return opened
 }
@@ -318,8 +293,11 @@ func (d *Daemon) herdrPaneActive(bin, socket, pane string) (active, known bool) 
 	return false, true
 }
 
-func openedHerdrPlan(host, name, pane string) protocol.EnterPlan {
-	return protocol.EnterPlan{Host: host, Note: "opened " + cleanLine(name) + " in herdr", HerdrPane: pane, OpenedHerdr: true}
+// hostedHerdrPlan says that the daemon runs the command in a pane of
+// agent-net's herdr server. Nothing is open where the owner looks: Enter
+// opens it, and another machine opens it with herdr --remote.
+func hostedHerdrPlan(host, name, pane string) protocol.EnterPlan {
+	return protocol.EnterPlan{Host: host, Note: "Started " + cleanLine(name) + " in agent-net's herdr. Enter opens it.", HerdrPane: pane, HerdrSession: agentNetHerdrSession, OpenedHerdr: true}
 }
 
 func (d *Daemon) notifySessionStart(r protocol.StartedSession) {

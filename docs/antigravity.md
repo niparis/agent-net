@@ -44,17 +44,19 @@ unbound and cannot send as a session.
 
 Messages to a busy session wait for its next Stop hook, which returns the
 message to agy as a continuation. A PreInvocation hook can also inject a
-waiting message as a user message. When idle in herdr, agent-net sends the
-framed message as text to the matching pane and presses Enter. Messages with terminal control characters also wait for a hook. Otherwise the
+waiting message as a user message. When idle in a pane of agent-net's own
+herdr, agent-net sends the framed message as text to that pane and presses
+Enter. A session in a herdr you run yourself is never typed into (decision
+0154). Messages with terminal control characters also wait for a hook. Otherwise the
 message waits for the next hook. Its status says "waiting for the session's
 next turn" until delivery. Waiting messages remain at the gateway while the
 daemon reconnects; messages expire under the normal message expiry rules.
 The hook path depends on agy running the installed plugin, and an idle session
-outside herdr must have another turn before it receives a waiting message.
+outside agent-net's herdr must have another turn before it receives a waiting
+message.
 
-Enter opens `agy --conversation <id>` in the session folder or focuses its
-existing herdr pane. In herdr it opens beside the TUI; from a plain terminal on
-the same machine it uses the TUI terminal and ctrl+] returns. For a remote
+Enter runs `agy --conversation <id>` in the session folder, in the TUI's
+terminal or herdr pane, and ctrl+] returns. For a remote
 session a local herdr client opens the remote herdr when available. The
 new-session form does not offer agy; start an interactive session in its own
 terminal first.

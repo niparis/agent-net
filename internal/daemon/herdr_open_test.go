@@ -18,18 +18,28 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// A fake server records all commands. It does not start Herdr or a terminal.
+// A fake herdr records every command, prefixed with the socket it was sent
+// to ([] for the default server). It does not start Herdr or a terminal. Its
+// "agent-net" session runs once the daemon starts it; its socket is
+// fakeOwnHerdrSocket.
 func fakeOpenHerdr(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	cleanupHerdrEnvironment(t, log)
+	own := fakeOwnHerdrSocket(log)
+	running := filepath.Join(dir, "own-running")
+	created := filepath.Join(dir, "created")
 	script := `#!/bin/sh
-printf '%s\n' "$*" >> ` + shellQuote(log) + `
+printf '[%s] %s\n' "$HERDR_SOCKET_PATH" "$*" >> ` + shellQuote(log) + `
 case "$1 $2" in
-  "pane list") if [ -f ` + shellQuote(filepath.Join(dir, "created")) + ` ]; then printf '%s\n' '{"result":{"panes":[{"pane_id":"w1:p1","tab_id":"w1:t1"}]}}'; else printf '%s\n' '{"result":{"panes":[]}}'; fi ;;
+  "session list") if [ -f ` + shellQuote(running) + ` ]; then r=true; else r=false; fi
+    printf '{"sessions":[{"name":"default","running":true,"socket_path":"/nonexistent/herdr.sock"},{"name":"agent-net","running":%s,"socket_path":"%s"}]}\n' "$r" ` + shellQuote(own) + ` ;;
+  "--session agent-net") [ "$3" = server ] && : > ` + shellQuote(running) + ` ;;
+  "pane list") if [ -f ` + shellQuote(created) + ` ]; then printf '%s\n' '{"result":{"panes":[{"pane_id":"w1:p1","tab_id":"w1:t1"}]}}'; else printf '%s\n' '{"result":{"panes":[]}}'; fi ;;
   "pane process-info") if [ -f ` + shellQuote(filepath.Join(dir, "info")) + ` ]; then cat ` + shellQuote(filepath.Join(dir, "info")) + `; elif [ -f ` + shellQuote(filepath.Join(dir, "idle")) + ` ]; then printf '%s\n' '{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":11}]}}}'; else printf '%s\n' '{"result":{"process_info":{"shell_pid":11,"foreground_processes":[{"pid":22}]}}}'; fi ;;
-  "tab create") : > ` + shellQuote(filepath.Join(dir, "created")) + `; printf '%s\n' '{"result":{"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1"}}}' ;;
+  "workspace list") if [ -f ` + shellQuote(created) + ` ]; then printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1"}]}}'; else printf '%s\n' '{"result":{"workspaces":[]}}'; fi ;;
+  "tab create"|"workspace create") : > ` + shellQuote(created) + `; printf '%s\n' '{"result":{"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1","terminal_id":"term_1"}}}' ;;
   "pane run"|"pane rename"|"agent focus"|"tab focus"|"pane close") printf '%s\n' '{"result":{}}' ;;
   *) exit 1 ;;
 esac
@@ -39,6 +49,47 @@ esac
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return filepath.Join(dir, "herdr"), log
+}
+
+// fakeOwnHerdrSocket is the socket of the fake's "agent-net" session.
+func fakeOwnHerdrSocket(log string) string {
+	return filepath.Join(filepath.Dir(log), "herdr", "sessions", "agent-net", "herdr.sock")
+}
+
+// herdrCalls splits the fake's log into the socket and the command of each call.
+func herdrCalls(t *testing.T, log string) [][2]string {
+	t.Helper()
+	raw, _ := os.ReadFile(log)
+	var calls [][2]string
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		socket, command, ok := strings.Cut(strings.TrimPrefix(line, "["), "] ")
+		if ok {
+			calls = append(calls, [2]string{socket, command})
+		}
+	}
+	return calls
+}
+
+// requireHerdrRules checks the two rules of decision 0154 on the fake's log:
+// a herdr agent-net does not own gets only reads (pane list, process-info;
+// session list and the start of agent-net's session do not go to a server),
+// and anything agent-net creates or runs goes to its own server.
+func requireHerdrRules(t *testing.T, log string) {
+	t.Helper()
+	own := fakeOwnHerdrSocket(log)
+	for _, c := range herdrCalls(t, log) {
+		socket, command := c[0], c[1]
+		if socket == own {
+			continue
+		}
+		read := false
+		for _, ok := range []string{"pane list", "pane process-info", "session list", "--session agent-net server"} {
+			read = read || strings.HasPrefix(command, ok)
+		}
+		if !read {
+			t.Errorf("herdr %q got %q; only agent-net's own server may get it", socket, command)
+		}
+	}
 }
 
 func cleanupHerdrEnvironment(t *testing.T, log string) {
@@ -93,45 +144,19 @@ func waitHerdrNotice(t *testing.T, ch <-chan map[string]any) map[string]any {
 	return notice
 }
 
-func TestEnterHerdrOpensFullTab(t *testing.T) {
-	_, log := fakeOpenHerdr(t)
-	g := startGateway(t, t.TempDir(), "")
-	bins := fakeBin(t, "claude")
-	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "bg", job: "job_42"}
-	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = bins; c.Adapters = []Adapter{ea} }})
-	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "abcdefgh-1234", PID: 1, Name: "garden", Mode: protocol.ModeBackground})
-	var id string
-	eventually(t, "session", func() bool {
-		if s := n.d.Sessions(); len(s) == 1 {
-			id = s[0].SessionID
-		}
-		return id != ""
-	})
-	var p protocol.EnterPlan
-	mustJSON(t, cliClient(t, n).mustCall("session_enter", map[string]string{"session_id": id, "herdr_socket": "/tmp/herdr-test.sock", "herdr_pane_id": "w1:p0"}), &p)
-	raw, _ := os.ReadFile(log)
-	for _, want := range []string{"tab create --label garden", "pane run w1:p1"} {
-		if !strings.Contains(string(raw), want) {
-			t.Errorf("calls %q missing %q", raw, want)
-		}
-	}
-	if !p.OpenedHerdr || strings.Contains(string(raw), "pane split") {
-		t.Fatalf("plan %+v calls %s", p, raw)
-	}
-}
-
+// requireHerdrOpened checks that agent-net hosted a command in its own herdr
+// server: a tab or workspace titled title, and the command run in its pane.
 func requireHerdrOpened(t *testing.T, log, title string, command ...string) {
 	t.Helper()
-	raw, err := os.ReadFile(log)
-	if err != nil {
-		t.Fatalf("herdr was not called: %v", err)
+	calls := string(mustRead(t, log))
+	requireHerdrRules(t, log)
+	if !hasOwnHerdrCall(t, log, "tab create --label "+title) && !hasOwnHerdrCall(t, log, "workspace create --label "+title) {
+		t.Errorf("herdr calls %q do not create %q in agent-net's herdr", calls, title)
 	}
-	calls := string(raw)
-	label := "tab create --label " + title
-	if !strings.Contains(calls, label) {
-		t.Errorf("herdr calls %q do not include %q", calls, label)
+	if !hasOwnHerdrCall(t, log, "pane run w1:p1") {
+		t.Errorf("herdr calls %q do not run in agent-net's herdr", calls)
 	}
-	for _, want := range append([]string{"pane run w1:p1"}, command...) {
+	for _, want := range command {
 		if !strings.Contains(calls, want) {
 			t.Errorf("herdr calls %q do not include %q", calls, want)
 		}
@@ -141,28 +166,17 @@ func requireHerdrOpened(t *testing.T, log, title string, command ...string) {
 	}
 }
 
-func TestEnterHerdrOpensClaudeBackground(t *testing.T) {
-	_, log := fakeOpenHerdr(t)
-	g := startGateway(t, t.TempDir(), "")
-	bins := fakeBin(t, "claude")
-	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "bg", job: "job_42"}
-	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = bins; c.Adapters = []Adapter{ea} }})
-	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "abcdefgh-1234", PID: 1, Cwd: t.TempDir(), Name: "garden", Mode: protocol.ModeBackground})
-	var id string
-	eventually(t, "session", func() bool {
-		if s := n.d.Sessions(); len(s) == 1 {
-			id = s[0].SessionID
-		}
-		return id != ""
-	})
-	p := enterOfHerdr(t, n, id, fakeHerdrSocket(log))
-	if len(p.Argv) != 0 || !strings.Contains(p.Note, "opened garden in herdr") {
-		t.Errorf("plan %+v", p)
+// requireNoHerdrCalls checks that a handover left herdr alone.
+func requireNoHerdrCalls(t *testing.T, log string) {
+	t.Helper()
+	if calls := herdrCalls(t, log); len(calls) != 0 {
+		t.Fatalf("herdr was called: %v", calls)
 	}
-	requireHerdrOpened(t, log, "garden", bins["claude"], "attach", "job_42")
 }
 
-func TestEnterHerdrOpensCTO(t *testing.T) {
+// The CTO opens like any session: the TUI in the owner's herdr hands over
+// its pane.
+func TestEnterCTOInOwnerHerdrHandsOverPane(t *testing.T) {
 	for _, harness := range []string{"claude", "opencode"} {
 		t.Run(harness, func(t *testing.T) {
 			_, log := fakeOpenHerdr(t)
@@ -181,37 +195,20 @@ func TestEnterHerdrOpensCTO(t *testing.T) {
 			if err := json.Unmarshal(cli.mustCall("session_enter", q), &p); err != nil {
 				t.Fatal(err)
 			}
-			if len(p.Argv) != 0 || !strings.Contains(p.Note, "opened CTO in herdr") {
-				t.Errorf("plan %+v", p)
-			}
+			want := "--server"
 			if harness == "claude" {
-				requireHerdrOpened(t, log, "CTO", "attach", n.d.claudeCTO.ref)
-			} else {
-				requireHerdrOpened(t, log, "CTO", "--server", "--session")
+				want = "attach " + n.d.claudeCTO.ref
 			}
+			if p.OpenedHerdr || !strings.Contains(strings.Join(p.Argv, " "), want) {
+				t.Errorf("plan %+v, want %q", p, want)
+			}
+			requireNoHerdrCalls(t, log)
 		})
 	}
 }
 
-func TestSessionStartHerdrCodex(t *testing.T) {
-	_, log := fakeOpenHerdr(t)
-	g := startGateway(t, t.TempDir(), "")
-	f := startFakeShared(t)
-	bins := fakeBin(t, "codex")
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins; c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond })
-	repo := newRepo(t, "garden")
-	n.register(t, repo)
-	var r protocol.StartedSession
-	q := inHerdrStart(protocol.SessionStartRequest{Project: repo, Harness: "codex", FirstMessage: "hello"}, fakeHerdrSocket(log))
-	mustJSON(t, n.cli.mustCall("session_start", q), &r)
-	if r.EnterPlan == nil || len(r.EnterPlan.Argv) != 0 || !strings.Contains(r.EnterPlan.Note, "opened garden in herdr") {
-		t.Errorf("start %+v", r)
-	}
-	requireHerdrOpened(t, log, "garden", bins["codex"], "resume", "--remote", "unix://")
-}
-
 // A worker opens no view by itself: a view would take the owner's focus and,
-// for Codex, run its self-updater. Enter opens it in herdr.
+// for Codex, run its self-updater. Enter hands the TUI's pane to it.
 func TestWorkerStartOpensNoViewUntilEnter(t *testing.T) {
 	for _, harness := range []string{"claude", "opencode", "codex"} {
 		t.Run(harness, func(t *testing.T) {
@@ -238,17 +235,12 @@ func TestWorkerStartOpensNoViewUntilEnter(t *testing.T) {
 				t.Fatal("worker has no display name")
 			}
 			plan := enterOfHerdr(t, n.node, r.SessionID, fakeHerdrSocket(log))
-			if !plan.OpenedHerdr {
-				t.Fatalf("enter did not open the worker: %+v", plan)
+			argv := strings.Join(plan.Argv, " ")
+			want := map[string]string{"claude": "attach", "opencode": "--session " + info.NativeID, "codex": "resume " + info.NativeID}[harness]
+			if plan.OpenedHerdr || !strings.Contains(argv, want) {
+				t.Fatalf("enter plan %+v, want %q", plan, want)
 			}
-			switch harness {
-			case "claude":
-				requireHerdrOpened(t, log, agent.Profile.Name, "attach")
-			case "opencode":
-				requireHerdrOpened(t, log, agent.Profile.Name, "--server", "--session", info.NativeID)
-			case "codex":
-				requireHerdrOpened(t, log, agent.Profile.Name, "resume", info.NativeID, "--remote-auth-token-env")
-			}
+			requireNoHerdrCalls(t, log)
 		})
 	}
 }
@@ -282,17 +274,17 @@ func TestEnterRemoteStartedWorkerUsesHerdrClient(t *testing.T) {
 	}
 	waitSessionOnGateway(t, local.node, r.SessionID)
 	p := enterOfHerdr(t, local.node, r.SessionID, fakeHerdrSocket(localLog))
-	if !p.OpenedHerdr {
-		t.Fatalf("remote worker plan: %+v", p)
+	if want := []string{localBin, "--remote", remote.d.hostName(), "--session", "agent-net"}; !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("remote worker plan %+v, want argv %v", p, want)
 	}
 	agent := remote.agentOf(t, r.SessionID)
 	if agent == nil {
 		t.Fatal("worker absent from gateway")
 	}
-	requireHerdrOpened(t, localLog, agent.Profile.Name, "--remote", remote.d.hostName())
-	// The remote machine has no asking TUI, so it opens one tab for the session.
-	raw, _ := os.ReadFile(remoteLog)
-	if strings.Count(string(raw), "pane run w1:p1") != 1 || strings.Count(string(raw), "tab create") != 1 {
+	// The remote machine hosts one view of the session in agent-net's herdr.
+	requireHerdrOpened(t, remoteLog, agent.Profile.Name)
+	requireHerdrRules(t, localLog)
+	if raw := string(mustRead(t, remoteLog)); strings.Count(raw, "pane run w1:p1") != 1 || strings.Count(raw, "create --label") != 1 {
 		t.Fatalf("remote worker view: %s", raw)
 	}
 }
@@ -359,23 +351,29 @@ func TestEnterOutsideHerdrHandsOverTerminal(t *testing.T) {
 	}
 }
 
-// A start asked by a TUI outside herdr keeps the session in the daemon and
-// opens no view: Enter opens it later. No herdr view is opened either.
-func TestSessionStartCodexOutsideHerdrOpensNoView(t *testing.T) {
-	bins := fakeBin(t, "codex")
-	_, log := fakeOpenHerdr(t)
-	g := startGateway(t, t.TempDir(), "")
-	f := startFakeShared(t)
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins; c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond })
-	repo := newRepo(t, "garden")
-	n.register(t, repo)
-	var r protocol.StartedSession
-	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "codex", FirstMessage: "hello"}), &r)
-	if r.Status != "started" || r.EnterPlan != nil || r.EnterNote != "Enter opens it." {
-		t.Fatalf("start %+v", r)
-	}
-	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "tab create") || strings.Contains(string(raw), "pane split") || strings.Contains(string(raw), "pane run") {
-		t.Fatalf("herdr opened a view for a TUI outside herdr: %s", raw)
+// A start keeps the session in the daemon and opens no view, whether the TUI
+// runs in the owner's herdr or in a plain terminal: Enter opens it later.
+func TestSessionStartCodexOpensNoView(t *testing.T) {
+	for _, inHerdr := range []bool{false, true} {
+		t.Run(map[bool]string{false: "outside herdr", true: "in the owner's herdr"}[inHerdr], func(t *testing.T) {
+			bins := fakeBin(t, "codex")
+			_, log := fakeOpenHerdr(t)
+			g := startGateway(t, t.TempDir(), "")
+			f := startFakeShared(t)
+			n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins; c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond })
+			repo := newRepo(t, "garden")
+			n.register(t, repo)
+			q := protocol.SessionStartRequest{Project: repo, Harness: "codex", FirstMessage: "hello"}
+			if inHerdr {
+				q = inHerdrStart(q, fakeHerdrSocket(log))
+			}
+			var r protocol.StartedSession
+			mustJSON(t, n.cli.mustCall("session_start", q), &r)
+			if r.Status != "started" || r.EnterPlan != nil || r.EnterNote != "Enter opens it." {
+				t.Fatalf("start %+v", r)
+			}
+			requireNoHerdrCalls(t, log)
+		})
 	}
 }
 
@@ -406,7 +404,9 @@ func TestSessionStartOutsideHerdrDoesNotClaimHerdrMissing(t *testing.T) {
 	}
 }
 
-func TestSessionStartAndResumeHerdrClaude(t *testing.T) {
+// A Claude start or resume from a TUI in the owner's herdr opens nothing
+// there; Enter opens it.
+func TestSessionStartAndResumeClaudeInOwnerHerdr(t *testing.T) {
 	for _, resume := range []bool{false, true} {
 		t.Run(map[bool]string{false: "start", true: "resume"}[resume], func(t *testing.T) {
 			_, log := fakeOpenHerdr(t)
@@ -437,12 +437,17 @@ func TestSessionStartAndResumeHerdrClaude(t *testing.T) {
 				}
 				return r.Status == "started"
 			})
-			requireHerdrOpened(t, log, "garden", "attach", r.JobID)
+			if r.EnterPlan != nil || r.EnterNote != "Enter opens it." {
+				t.Fatalf("start %+v", r)
+			}
+			requireNoHerdrCalls(t, log)
 		})
 	}
 }
 
-func TestEnterHerdrRemoteClientInLocalTab(t *testing.T) {
+// A second Enter on a session of another machine reuses the view that
+// machine hosts in agent-net's herdr instead of making another one.
+func TestEnterRemoteViewReusesAgentNetTab(t *testing.T) {
 	remoteBin, remoteLog := fakeOpenHerdr(t)
 	localBin, localLog := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
@@ -464,18 +469,15 @@ func TestEnterHerdrRemoteClientInLocalTab(t *testing.T) {
 		a, err := local.d.agentView(context.Background(), id)
 		return err == nil && a.SessionID == id
 	})
-	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
-	if !p.OpenedHerdr || len(p.Argv) != 0 || p.Note != "opened garden in herdr" {
-		t.Fatalf("plan %+v", p)
+	want := []string{localBin, "--remote", remote.cfg.Hostname, "--session", "agent-net"}
+	for i := 0; i < 2; i++ {
+		if p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog)); !reflect.DeepEqual(p.Argv, want) {
+			t.Fatalf("plan %d %+v, want argv %v", i, p, want)
+		}
 	}
 	requireHerdrOpened(t, remoteLog, "garden", "attach", "job_42")
-	requireHerdrOpened(t, localLog, "garden", "--remote", remote.cfg.Hostname)
-	p = enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
-	if !p.OpenedHerdr {
-		t.Fatalf("second plan %+v", p)
-	}
-	raw, _ := os.ReadFile(localLog)
-	if strings.Count(string(raw), "tab create") != 1 || !strings.Contains(string(raw), "tab focus w1:t1") {
+	requireNoHerdrCalls(t, localLog)
+	if raw := string(mustRead(t, remoteLog)); strings.Count(raw, "create --label") != 1 || !hasOwnHerdrCall(t, remoteLog, "tab focus w1:t1") {
 		t.Fatalf("second enter duplicated the tab: %s", raw)
 	}
 }
@@ -494,16 +496,13 @@ func TestSessionStartHerdrRemoteCodex(t *testing.T) {
 	var r protocol.StartedSession
 	q := inHerdrStart(protocol.SessionStartRequest{Project: "garden", Harness: "codex", NodeID: remote.d.NodeID()}, fakeHerdrSocket(localLog))
 	mustJSON(t, local.cli.mustCall("session_start", q), &r)
-	if r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
-		t.Fatalf("remote start %+v", r)
+	if want := []string{localBin, "--remote", remote.d.cfg.Hostname, "--session", "agent-net"}; r.EnterPlan == nil || !reflect.DeepEqual(r.EnterPlan.Argv, want) {
+		t.Fatalf("remote start %+v, want argv %v", r.EnterPlan, want)
 	}
 	// A Codex thread has no name of its own, so the tab carries its ID, as when
 	// the owner presses Enter on it.
 	requireHerdrOpened(t, remoteLog, r.NativeID, bins["codex"])
-	requireHerdrOpened(t, localLog, r.NativeID, "--remote", remote.d.cfg.Hostname)
-	if raw, _ := os.ReadFile(localLog); strings.Contains(string(raw), "ssh") {
-		t.Fatalf("remote start used ssh: %s", raw)
-	}
+	requireNoHerdrCalls(t, localLog)
 }
 
 func TestHerdrStartsServerAndFallsBackWhenUnavailable(t *testing.T) {
@@ -515,7 +514,8 @@ func TestHerdrStartsServerAndFallsBackWhenUnavailable(t *testing.T) {
 			script := `#!/bin/sh
 printf '%s\n' "$*" >> ` + shellQuote(log) + `
 case "$1 $2" in
-  "server ") ` + map[bool]string{true: ": > " + shellQuote(marker), false: "exit 1"}[start] + ` ;;
+  "--session agent-net") ` + map[bool]string{true: ": > " + shellQuote(marker), false: "exit 1"}[start] + ` ;;
+  "session list") [ -f ` + shellQuote(marker) + ` ] && r=true || r=false; printf '{"sessions":[{"name":"agent-net","running":%s,"socket_path":"/tmp/an.sock"}]}\n' "$r" ;;
   "pane list") [ -f ` + shellQuote(marker) + ` ] || exit 1; printf '%s\n' '{"result":{"panes":[]}}' ;;
   "tab create") printf '%s\n' '{"result":{"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1"}}}' ;;
   "pane run") exit 0 ;;
@@ -526,15 +526,15 @@ esac
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			p := (&Daemon{}).openInHerdr("session", "garden", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Note: "fallback"})
+			p := (&Daemon{}).openInHerdr("session", "garden", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Note: "fallback"})
 			calls, _ := os.ReadFile(log)
-			if !strings.Contains(string(calls), "server\n") {
+			if !strings.Contains(string(calls), "--session agent-net server\n") {
 				t.Fatalf("no server start: %s", calls)
 			}
 			if start && (!p.OpenedHerdr || !strings.Contains(string(calls), "pane run w1:p1")) {
 				t.Fatalf("plan %+v calls %s", p, calls)
 			}
-			if !start && (p.OpenedHerdr || len(p.Argv) != 3 || !strings.Contains(p.Note, "herdr at "+dir+"/herdr failed:")) {
+			if !start && (p.OpenedHerdr || len(p.Argv) != 3 || !strings.Contains(p.Note, "herdr at "+dir+"/herdr failed: the agent-net herdr server exited: exit status 1")) {
 				t.Fatalf("fallback %+v", p)
 			}
 		})
@@ -544,7 +544,7 @@ esac
 func TestHerdrKeepsCredentialsOutOfCommand(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	secret := "a secret 'with spaces'"
-	p := (&Daemon{}).openInHerdr("worker", "garden", "", protocol.EnterPlan{Argv: []string{"opencode", "--server", "http://127.0.0.1:9"}, Env: map[string]string{"OPENCODE_SERVER_PASSWORD": secret, "CLAUDE_CODE_DISABLE_MOUSE": "1"}})
+	p := (&Daemon{}).openInHerdr("worker", "garden", protocol.EnterPlan{Argv: []string{"opencode", "--server", "http://127.0.0.1:9"}, Env: map[string]string{"OPENCODE_SERVER_PASSWORD": secret, "CLAUDE_CODE_DISABLE_MOUSE": "1"}})
 	if !p.OpenedHerdr || len(p.Env) != 0 {
 		t.Fatalf("plan %+v", p)
 	}
@@ -565,45 +565,6 @@ func TestHerdrKeepsCredentialsOutOfCommand(t *testing.T) {
 	if err != nil || !strings.Contains(string(data), "unset CLAUDE_CODE_DISABLE_MOUSE") || !strings.Contains(string(data), shellQuote(secret)) {
 		t.Fatalf("environment content missing, err %v", err)
 	}
-}
-
-func TestSessionStartHerdrPi(t *testing.T) {
-	_, log := fakeOpenHerdr(t)
-	g := startGateway(t, t.TempDir(), "")
-	bins := fakeBin(t, "pi")
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
-	repo := newRepo(t, "garden")
-	n.register(t, repo)
-	var r protocol.StartedSession
-	q := inHerdrStart(protocol.SessionStartRequest{Project: "garden", Harness: "pi"}, fakeHerdrSocket(log))
-	mustJSON(t, n.cli.mustCall("session_start", q), &r)
-	if r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
-		t.Fatalf("initial start %+v", r)
-	}
-	helloPi(t, n.node, r.NativeID, repo, true)
-	eventually(t, "started Pi", func() bool {
-		mustJSON(t, n.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
-		if r.Status == "failed" {
-			t.Fatalf("start %+v", r)
-		}
-		return r.Status == "started"
-	})
-	requireHerdrOpened(t, log, "garden", bins["pi"], "--session-id", r.NativeID)
-}
-
-func TestSessionStartPiOutsideHerdrUsesBackgroundPane(t *testing.T) {
-	_, log := fakeOpenHerdr(t)
-	g := startGateway(t, t.TempDir(), "")
-	bins := fakeBin(t, "pi")
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
-	repo := newRepo(t, "garden")
-	n.register(t, repo)
-	var r protocol.StartedSession
-	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "garden", Harness: "pi"}), &r)
-	if r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
-		t.Fatalf("initial start %+v", r)
-	}
-	requireHerdrOpened(t, log, "garden", bins["pi"], "--session-id", r.NativeID)
 }
 
 func TestCTOSessionProposalStartsInBackground(t *testing.T) {
@@ -648,7 +609,7 @@ func TestHerdrRunsQuotedCommandFromAnyShell(t *testing.T) {
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	p := (&Daemon{}).openInHerdr("a", "garden", "", protocol.EnterPlan{Argv: []string{bin, "a 'quoted' $prompt"}, Env: map[string]string{"TOKEN": "secret with ' quote"}})
+	p := (&Daemon{}).openInHerdr("a", "garden", protocol.EnterPlan{Argv: []string{bin, "a 'quoted' $prompt"}, Env: map[string]string{"TOKEN": "secret with ' quote"}})
 	if !p.OpenedHerdr {
 		t.Fatalf("plan %+v", p)
 	}
@@ -676,7 +637,7 @@ func TestEnterHerdrReopensWhenClientExited(t *testing.T) {
 	bin, log := fakeOpenHerdr(t)
 	d := &Daemon{}
 	plan := protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}}
-	if p := d.openInHerdr("session", "garden", "", plan); !p.OpenedHerdr {
+	if p := d.openInHerdr("session", "garden", plan); !p.OpenedHerdr {
 		t.Fatalf("first plan %+v", p)
 	}
 	if err := os.WriteFile(filepath.Join(filepath.Dir(bin), "idle"), nil, 0600); err != nil {
@@ -685,11 +646,11 @@ func TestEnterHerdrReopensWhenClientExited(t *testing.T) {
 	old := d.herdrOpened["session"]
 	old.started = time.Now().Add(-2 * time.Second)
 	d.herdrOpened["session"] = old
-	if p := d.openInHerdr("session", "garden", "", plan); !p.OpenedHerdr {
+	if p := d.openInHerdr("session", "garden", plan); !p.OpenedHerdr {
 		t.Fatalf("second plan %+v", p)
 	}
 	raw, _ := os.ReadFile(log)
-	if strings.Count(string(raw), "tab create") != 2 {
+	if strings.Count(string(raw), "create --label") != 2 {
 		t.Fatalf("did not reopen an exited client: %s", raw)
 	}
 }
@@ -701,7 +662,7 @@ func lastPaneRun(t *testing.T, log string) string {
 	raw, _ := os.ReadFile(log)
 	var line string
 	for _, l := range strings.Split(string(raw), "\n") {
-		if strings.HasPrefix(l, "pane run ") {
+		if strings.Contains(l, "] pane run ") {
 			line = l
 		}
 	}
@@ -715,7 +676,7 @@ func lastPaneRun(t *testing.T, log string) string {
 func TestEnterHerdrReusesViewAfterDaemonRestart(t *testing.T) {
 	bin, log := fakeOpenHerdr(t)
 	plan := protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}}
-	if p := (&Daemon{}).openInHerdr("session", "garden", "", plan); !p.OpenedHerdr {
+	if p := (&Daemon{}).openInHerdr("session", "garden", plan); !p.OpenedHerdr {
 		t.Fatalf("first plan %+v", p)
 	}
 	// Herdr keeps the pane; show it the way herdr does: the shell that runs
@@ -727,11 +688,12 @@ func TestEnterHerdrReusesViewAfterDaemonRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A new Daemon has no memory of the first tab, as after an upgrade.
-	if p := (&Daemon{}).openInHerdr("session", "garden", "", plan); !p.OpenedHerdr || p.HerdrPane != "w1:p1" {
+	if p := (&Daemon{}).openInHerdr("session", "garden", plan); !p.OpenedHerdr || p.HerdrPane != "w1:p1" {
 		t.Fatalf("second plan %+v", p)
 	}
 	raw, _ := os.ReadFile(log)
-	if n := strings.Count(string(raw), "tab create"); n != 1 {
+	// agent-net's own herdr makes its first tab with workspace create.
+	if n := strings.Count(string(raw), "] tab create") + strings.Count(string(raw), "] workspace create"); n != 1 {
 		t.Fatalf("created %d tabs: %s", n, raw)
 	}
 	if !strings.Contains(string(raw), "tab focus w1:t1") {
@@ -742,7 +704,7 @@ func TestEnterHerdrReusesViewAfterDaemonRestart(t *testing.T) {
 func TestEnterHerdrOtherSessionGetsOwnTab(t *testing.T) {
 	bin, log := fakeOpenHerdr(t)
 	plan := protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}}
-	if p := (&Daemon{}).openInHerdr("one", "garden", "", plan); !p.OpenedHerdr {
+	if p := (&Daemon{}).openInHerdr("one", "garden", plan); !p.OpenedHerdr {
 		t.Fatalf("first plan %+v", p)
 	}
 	command := strings.Fields(lastPaneRun(t, log))
@@ -751,11 +713,11 @@ func TestEnterHerdrOtherSessionGetsOwnTab(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(filepath.Dir(bin), "info"), []byte(info), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if p := (&Daemon{}).openInHerdr("two", "orchard", "", plan); !p.OpenedHerdr {
+	if p := (&Daemon{}).openInHerdr("two", "orchard", plan); !p.OpenedHerdr {
 		t.Fatalf("second plan %+v", p)
 	}
 	raw, _ := os.ReadFile(log)
-	if n := strings.Count(string(raw), "tab create"); n != 2 {
+	if n := strings.Count(string(raw), "] tab create") + strings.Count(string(raw), "] workspace create"); n != 2 {
 		t.Fatalf("a different session reused the tab: %s", raw)
 	}
 }
@@ -769,11 +731,11 @@ func TestEnterHerdrViewerExitClosesItsPane(t *testing.T) {
 			if err := os.WriteFile(viewer, []byte("#!/bin/sh\n"+script+"\n"), 0700); err != nil {
 				t.Fatal(err)
 			}
-			if p := (&Daemon{}).openInHerdr("session", "garden", "", protocol.EnterPlan{Argv: []string{viewer}}); !p.OpenedHerdr {
+			if p := (&Daemon{}).openInHerdr("session", "garden", protocol.EnterPlan{Argv: []string{viewer}}); !p.OpenedHerdr {
 				t.Fatalf("plan %+v", p)
 			}
 			raw, _ := os.ReadFile(log)
-			if strings.Contains(string(raw), "\npane close") {
+			if strings.Contains(string(raw), "] pane close") {
 				t.Fatalf("closed the pane before the viewer ran: %s", raw)
 			}
 			// The pane's shell runs the typed command, then the viewer ends.
@@ -781,7 +743,7 @@ func TestEnterHerdrViewerExitClosesItsPane(t *testing.T) {
 				t.Fatalf("command failed: %s %v", out, err)
 			}
 			raw, _ = os.ReadFile(log)
-			if !strings.Contains(string(raw), "\npane close w1:p1") {
+			if !strings.Contains(string(raw), "] pane close w1:p1") {
 				t.Fatalf("viewer exit left its pane open: %s", raw)
 			}
 		})
@@ -797,14 +759,15 @@ func TestEnterHerdrConcurrentEntersCreateOneTab(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if p := d.openInHerdr("session", "garden", "", plan); !p.OpenedHerdr {
+			if p := d.openInHerdr("session", "garden", plan); !p.OpenedHerdr {
 				t.Errorf("plan %+v", p)
 			}
 		}()
 	}
 	wg.Wait()
 	raw, _ := os.ReadFile(log)
-	if n := strings.Count(string(raw), "tab create"); n != 1 {
+	// agent-net's own herdr makes its first tab with workspace create.
+	if n := strings.Count(string(raw), "] tab create") + strings.Count(string(raw), "] workspace create"); n != 1 {
 		t.Fatalf("created %d tabs: %s", n, raw)
 	}
 }
@@ -822,11 +785,10 @@ func TestEnterHerdrRemotePrivateWorkerKeepsCredentialsLocal(t *testing.T) {
 	local := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} }})
 	waitSessionOnGateway(t, local, id)
 	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
-	if !p.OpenedHerdr || p.Note != "opened worker in herdr" || len(p.Env) != 0 {
-		t.Fatalf("plan %+v", p)
+	if want := []string{localBin, "--remote", remote.cfg.Hostname, "--session", "agent-net"}; !reflect.DeepEqual(p.Argv, want) || len(p.Env) != 0 {
+		t.Fatalf("plan %+v, want argv %v", p, want)
 	}
 	requireHerdrOpened(t, remoteLog, "worker", "--server", "--session", "ses_private")
-	requireHerdrOpened(t, localLog, "worker", "--remote", remote.cfg.Hostname)
 	remoteCalls, _ := os.ReadFile(remoteLog)
 	localCalls, _ := os.ReadFile(localLog)
 	raw, _ := json.Marshal(p)
@@ -856,11 +818,10 @@ func TestEnterHerdrRemotePrivateCodexKeepsTokenLocal(t *testing.T) {
 	local := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} }})
 	waitSessionOnGateway(t, local, id)
 	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
-	if !p.OpenedHerdr || len(p.Env) != 0 {
-		t.Fatalf("plan %+v", p)
+	if want := []string{localBin, "--remote", remote.cfg.Hostname, "--session", "agent-net"}; !reflect.DeepEqual(p.Argv, want) || len(p.Env) != 0 {
+		t.Fatalf("plan %+v, want argv %v", p, want)
 	}
 	requireHerdrOpened(t, remoteLog, "worker", "resume", "thread_1", "--remote-auth-token-env")
-	requireHerdrOpened(t, localLog, "worker", "--remote", remote.cfg.Hostname)
 	remoteCalls, _ := os.ReadFile(remoteLog)
 	localCalls, _ := os.ReadFile(localLog)
 	raw, _ := json.Marshal(p)
@@ -871,8 +832,8 @@ func TestEnterHerdrRemotePrivateCodexKeepsTokenLocal(t *testing.T) {
 
 func TestCTOEnterHerdrReportsConversationRestart(t *testing.T) {
 	fakeOpenHerdr(t)
-	p := (&Daemon{}).openInHerdr("cto", "CTO", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Note: claudeCTORestartNotice})
-	if !p.OpenedHerdr || !strings.Contains(p.Note, "opened CTO in herdr") || !strings.Contains(p.Note, claudeCTORestartNotice) {
+	p := (&Daemon{}).openInHerdr("cto", "CTO", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Note: claudeCTORestartNotice})
+	if !p.OpenedHerdr || !strings.Contains(p.Note, "Started CTO in agent-net's herdr.") || !strings.Contains(p.Note, claudeCTORestartNotice) {
 		t.Fatalf("restart notice lost: %+v", p)
 	}
 }
@@ -990,7 +951,8 @@ func TestEnterWithoutHerdrOrTerminalExplainsChecks(t *testing.T) {
 	}
 }
 
-func TestSessionStartHerdrClaudeWithoutJobID(t *testing.T) {
+// A start from the owner's herdr works when Claude Code reports no job ID.
+func TestSessionStartClaudeWithoutJobIDInOwnerHerdr(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	t.Setenv("FAKE_CLAUDE_NO_JOB_ID", "1")
 	g := startGateway(t, t.TempDir(), "")
@@ -1012,29 +974,7 @@ func TestSessionStartHerdrClaudeWithoutJobID(t *testing.T) {
 	if len(r.NativeID) < 8 {
 		t.Fatalf("native ID %q", r.NativeID)
 	}
-	requireHerdrOpened(t, log, "garden", "attach "+r.NativeID[:8])
-}
-
-func TestSessionResumeHerdrUsesIDWhenNameMissing(t *testing.T) {
-	_, log := fakeOpenHerdr(t)
-	g := startGateway(t, t.TempDir(), "")
-	c := startClaudeNode(t, g, shortSet)
-	repo := newRepo(t, "garden")
-	native := "11111111-0000-4000-8000-000000000000"
-	t.Cleanup(func() { killFakeClaude(t, repo) })
-	r, err := c.d.resumeAgent(context.Background(), protocol.AgentView{Harness: "claude", NativeID: native, Cwd: repo}, fakeHerdrSocket(log), testHerdrPane)
-	if err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "resumed unnamed session", func() bool {
-		var err error
-		r, err = c.d.sessionStartGet(context.Background(), r.ID)
-		if err != nil || r.Status == "failed" {
-			t.Fatalf("resume %+v %v", r, err)
-		}
-		return r.Status == "started"
-	})
-	requireHerdrOpened(t, log, native, "attach")
+	requireNoHerdrCalls(t, log)
 }
 
 func TestCTOProposalApprovalLeavesOwnerTUIViewUnchanged(t *testing.T) {
@@ -1182,7 +1122,9 @@ func TestHerdrCreateFailureDoesNotUseTerminalFallback(t *testing.T) {
 	dir := t.TempDir()
 	script := `#!/bin/sh
 case "$1 $2" in
+  "session list") printf '%s\n' '{"sessions":[{"name":"agent-net","running":true,"socket_path":"/tmp/an.sock"}]}' ;;
   "pane list") printf '%s\n' '{"result":{"panes":[]}}' ;;
+  "workspace list") printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1"}]}}' ;;
   *) exit 1 ;;
 esac
 `
@@ -1190,7 +1132,7 @@ esac
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	p := (&Daemon{}).openInHerdr("a", "garden", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}})
+	p := (&Daemon{}).openInHerdr("a", "garden", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}})
 	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(p.Note, "could not create") {
 		t.Fatalf("plan %+v", p)
 	}
@@ -1198,26 +1140,26 @@ esac
 
 func TestHerdrEnvironmentFailureDoesNotUseTerminalFallback(t *testing.T) {
 	fakeOpenHerdr(t)
-	p := (&Daemon{}).openInHerdr("a", "garden", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Env: map[string]string{"BAD-KEY": "value"}})
+	p := (&Daemon{}).openInHerdr("a", "garden", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Env: map[string]string{"BAD-KEY": "value"}})
 	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(strings.ToLower(p.Note), "could not prepare") {
 		t.Fatalf("plan %+v", p)
 	}
 }
 
-func TestViewPlanUsesCallerTerminalOrFullTab(t *testing.T) {
+func TestViewPlanHandsOverOrHostsInAgentNetHerdr(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	d := &Daemon{}
 	base := protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}}
-	outside := d.viewPlan("outside", "garden", "", "", false, base)
-	if outside.OpenedHerdr || !reflect.DeepEqual(outside.Argv, base.Argv) {
-		t.Fatalf("outside plan %+v", outside)
+	handover := d.viewPlan("view", "garden", false, base)
+	if handover.OpenedHerdr || !reflect.DeepEqual(handover.Argv, base.Argv) || len(herdrCalls(t, log)) != 0 {
+		t.Fatalf("handover plan %+v, calls %v", handover, herdrCalls(t, log))
 	}
-	inside := d.viewPlan("inside", "garden", "/tmp/fake-herdr.sock", "w1:p0", false, base)
-	if !inside.OpenedHerdr {
-		t.Fatalf("inside plan %+v", inside)
+	hosted := d.viewPlan("host", "garden", true, base)
+	if !hosted.OpenedHerdr || hosted.HerdrSession != "agent-net" || hosted.HerdrPane != "w1:p1" {
+		t.Fatalf("hosted plan %+v", hosted)
 	}
-	calls := string(mustRead(t, log))
-	if !strings.Contains(calls, "tab create --label garden") || strings.Contains(calls, "pane split") {
-		t.Fatalf("calls %s", calls)
+	requireHerdrRules(t, log)
+	if !hasOwnHerdrCall(t, log, "workspace create --label garden") || !hasOwnHerdrCall(t, log, "pane run w1:p1") {
+		t.Fatalf("calls %v", herdrCalls(t, log))
 	}
 }

@@ -44,7 +44,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 	piArgs = append(piArgs, "--tui-mode", "regular")
 	timeout := d.workerSettings("").StartTimeout
 	plan := protocol.EnterPlan{Argv: piArgs, Dir: r.Path, Host: r.Hostname}
-	opened := d.viewPlan("pi:"+r.NativeID, r.Project, socket, pane, true, plan)
+	opened := d.viewPlan("pi:"+r.NativeID, r.Project, true, plan)
 	if !opened.OpenedHerdr {
 		return protocol.StartedSession{}, fmt.Errorf("cannot start Pi in herdr on %s: %s", d.hostName(), opened.Note)
 	}

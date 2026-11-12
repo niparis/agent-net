@@ -181,12 +181,7 @@ func (d *Daemon) herdrRun(bin, socket string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
-	env := make([]string, 0, len(os.Environ())+1)
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "HERDR_SESSION=") && !strings.HasPrefix(kv, "HERDR_SOCKET_PATH=") {
-			env = append(env, kv)
-		}
-	}
+	env := herdrCleanEnv()
 	if socket != "" {
 		env = append(env, "HERDR_SOCKET_PATH="+socket)
 	}
@@ -367,10 +362,10 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	if h.socket != "" {
 		argv = append(argv, "HERDR_SOCKET_PATH="+h.socket)
 	}
-	// The asking machine has a herdr client: focus the pane there, so the
-	// client opens on it. This is best effort; the note names the pane in case
-	// the client opens on another tab.
-	if q.HerdrClient {
+	// The asking machine has a herdr client: focus the pane, so the client
+	// opens on it. The owner's own herdr is read-only (decision 0154), so only
+	// a pane of agent-net's server is focused; the note names the pane.
+	if q.HerdrClient && d.isAgentNetHerdr(bin, h.socket) {
 		var err error
 		if pane.Agent != "" {
 			_, err = d.herdrRun(bin, h.socket, "agent", "focus", pane.PaneID)
@@ -396,7 +391,7 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 		Note: fmt.Sprintf("Press ctrl+] to come back here; %s keeps running. If herdr says the terminal already has an attached client, close that other attach first.", name),
 	}
 	if q.HerdrClient && herdrIDRe.MatchString(pane.PaneID) {
-		out.HerdrPane = pane.PaneID
+		out.HerdrPane, out.HerdrSession = pane.PaneID, d.herdrSessionOf(bin, h)
 	}
 	return out, true
 }

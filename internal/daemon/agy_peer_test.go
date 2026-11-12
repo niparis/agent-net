@@ -206,48 +206,64 @@ func fakeAgySummaries(t *testing.T) string {
 	return path
 }
 
+// An idle Antigravity session gets a message typed into its herdr pane only
+// when that pane is in agent-net's own herdr. The owner's own herdr is
+// read-only (decision 0154), so there the message waits for the next hook.
 func TestAgyPeerIdleHerdrDelivery(t *testing.T) {
-	f := newFakeHerdr(t)
-	script := `#!/bin/sh
+	for _, own := range []bool{true, false} {
+		t.Run(map[bool]string{true: "agent-net's herdr", false: "the owner's herdr"}[own], func(t *testing.T) {
+			f := newFakeHerdr(t)
+			ownSocket := filepath.Join(f.dir, "other.sock")
+			if own {
+				ownSocket = f.sock
+			}
+			script := `#!/bin/sh
 case "$1 $2" in
+ "session list") printf '{"sessions":[{"name":"agent-net","running":true,"socket_path":"%s"}]}\n' "$FAKE_AGY_OWN" ;;
  "pane list") cat "$FAKE_AGY_HERDR/panes" ;;
  "pane process-info") cat "$FAKE_AGY_HERDR/info-$4" ;;
  "pane send-text"|"pane send-keys") printf '%s\n' "$*" >> "$FAKE_AGY_HERDR/sent" ;;
  *) exit 1 ;;
 esac
 `
-	if err := os.WriteFile(f.bin, []byte(script), 0755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("FAKE_AGY_HERDR", f.dir)
-	g := startGateway(t, t.TempDir(), "")
-	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = map[string]string{"herdr": f.bin} }})
-	cwd := t.TempDir()
-	cmd := fakeInteractiveAgy(t, cwd, []string{"HERDR_ENV=1", "HERDR_PANE_ID=w1:p1", "HERDR_SOCKET_PATH=" + f.sock, "HERDR_BIN_PATH=" + f.bin})
-	f.panes(t, `{"pane_id":"w1:p1"}`)
-	f.holds(t, "w1:p1", cmd.Process.Pid)
-	a := n.d.adapters["agy"].(*agyAdapter)
-	for _, ev := range []string{"SessionStart", "Stop"} {
-		raw, _ := json.Marshal(map[string]any{"conversationId": "main", "event": ev, "workspacePaths": []string{cwd}, "fullyIdle": true})
-		if _, err := n.d.antigravityHook(raw, cmd.Process.Pid); err != nil {
-			t.Fatal(err)
-		}
-	}
-	a.refresh()
-	res := a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "main", PID: cmd.Process.Pid}, protocol.Message{ID: "m_1", Body: "hello pane"})
-	if !res.Delivered {
-		t.Fatalf("delivery: %+v", res)
-	}
-	data, err := os.ReadFile(filepath.Join(f.dir, "sent"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "pane send-text w1:p1 hello pane") || !strings.Contains(string(data), "pane send-keys w1:p1 enter") {
-		t.Fatalf("calls: %s", data)
-	}
-	res = a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "main", PID: cmd.Process.Pid}, protocol.Message{ID: "m_control", Body: "hello\x1b[31m"})
-	if !res.Queued {
-		t.Fatalf("control characters must wait for a hook: %+v", res)
+			if err := os.WriteFile(f.bin, []byte(script), 0755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("FAKE_AGY_HERDR", f.dir)
+			t.Setenv("FAKE_AGY_OWN", ownSocket)
+			g := startGateway(t, t.TempDir(), "")
+			n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = map[string]string{"herdr": f.bin} }})
+			cwd := t.TempDir()
+			cmd := fakeInteractiveAgy(t, cwd, []string{"HERDR_ENV=1", "HERDR_PANE_ID=w1:p1", "HERDR_SOCKET_PATH=" + f.sock, "HERDR_BIN_PATH=" + f.bin})
+			f.panes(t, `{"pane_id":"w1:p1"}`)
+			f.holds(t, "w1:p1", cmd.Process.Pid)
+			a := n.d.adapters["agy"].(*agyAdapter)
+			for _, ev := range []string{"SessionStart", "Stop"} {
+				raw, _ := json.Marshal(map[string]any{"conversationId": "main", "event": ev, "workspacePaths": []string{cwd}, "fullyIdle": true})
+				if _, err := n.d.antigravityHook(raw, cmd.Process.Pid); err != nil {
+					t.Fatal(err)
+				}
+			}
+			a.refresh()
+			res := a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "main", PID: cmd.Process.Pid}, protocol.Message{ID: "m_1", Body: "hello pane"})
+			data, _ := os.ReadFile(filepath.Join(f.dir, "sent"))
+			if !own {
+				if !res.Queued || len(data) != 0 {
+					t.Fatalf("typed into the owner's herdr: %+v, sent %q", res, data)
+				}
+				return
+			}
+			if !res.Delivered {
+				t.Fatalf("delivery: %+v", res)
+			}
+			if !strings.Contains(string(data), "pane send-text w1:p1 hello pane") || !strings.Contains(string(data), "pane send-keys w1:p1 enter") {
+				t.Fatalf("calls: %s", data)
+			}
+			res = a.Deliver(context.Background(), protocol.SessionInfo{NativeID: "main", PID: cmd.Process.Pid}, protocol.Message{ID: "m_control", Body: "hello\x1b[31m"})
+			if !res.Queued {
+				t.Fatalf("control characters must wait for a hook: %+v", res)
+			}
+		})
 	}
 }
 
@@ -305,14 +321,14 @@ func TestAgyPeerEnterHerdrCases(t *testing.T) {
 	cwd := t.TempDir()
 	n, _, id := enterNode(t, g, "agy", protocol.SessionInfo{NativeID: "conversation-test", PID: 1, Cwd: cwd, Name: "agy-test"}, bins, nil)
 	p := enterOfHerdr(t, n, id, fakeHerdrSocket(log))
-	if !p.OpenedHerdr {
+	if p.OpenedHerdr || !reflect.DeepEqual(p.Argv, []string{bins["agy"], "--conversation", "conversation-test"}) {
 		t.Fatalf("local herdr: %+v", p)
 	}
-	requireHerdrOpened(t, log, "agy-test", bins["agy"], "--conversation", "conversation-test")
+	requireNoHerdrCalls(t, log)
 	local := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = map[string]string{"herdr": herdr} }})
 	waitSessionOnGateway(t, local, id)
 	p = enterOf(t, local, id, "")
-	if !reflect.DeepEqual(p.Argv, []string{herdr, "--remote", n.cfg.Hostname}) {
+	if !reflect.DeepEqual(p.Argv, []string{herdr, "--remote", n.cfg.Hostname, "--session", "agent-net"}) {
 		t.Fatalf("remote: %+v", p)
 	}
 }

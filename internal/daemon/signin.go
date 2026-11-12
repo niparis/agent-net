@@ -152,11 +152,7 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 	}
 	if target.NodeID == "" || target.NodeID == d.NodeID() {
 		plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
-		opened := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, q.HerdrSocket, q.HerdrPaneID, false, plan)
-		if opened.OpenedHerdr {
-			go d.watchSignInPane(info.Provider, d.herdrBinary(""), q.HerdrSocket, opened.HerdrPane)
-		}
-		return opened, nil
+		return d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, false, plan), nil
 	}
 	raw, err = d.call(ctx, "query.sign_in_prepare", protocol.SignInQuery{AskID: q.AskID, Owner: d.ownerSessionID()})
 	if err != nil {
@@ -185,10 +181,10 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 		return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("The sign-in pane is open on %s in pane %s, but enter_ssh_hosts gives a target herdr --remote cannot use.", host, cleanLine(res.Pane))}, nil
 	}
 	plan := protocol.EnterPlan{
-		Argv: []string{bin, "--remote", targetHost}, Host: host,
+		Argv: herdrRemoteArgv(bin, targetHost, res.Session), Host: host,
 		Note: fmt.Sprintf("Opens herdr on %s; the sign-in is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here.", host, cleanLine(res.Pane)),
 	}
-	return d.viewPlan("signin-remote:"+q.AskID, "sign in: "+info.Label, q.HerdrSocket, q.HerdrPaneID, false, plan), nil
+	return d.viewPlan("signin-remote:"+q.AskID, "sign in: "+info.Label, false, plan), nil
 }
 
 // signInPrepare opens the login pane on this machine for the gateway. The
@@ -203,11 +199,11 @@ func (d *Daemon) signInPrepare(raw []byte) (protocol.SignInPrepareResult, error)
 		return protocol.SignInPrepareResult{}, errors.New("unknown sign-in provider")
 	}
 	base := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
-	plan := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, "", "", true, base)
+	plan := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, true, base)
 	if plan.OpenedHerdr {
-		go d.watchSignInPane(info.Provider, d.herdrBinary(""), "", plan.HerdrPane)
+		go d.watchSignInPane(info.Provider, d.herdrBinary(""), d.hostedSocket("signin:"+info.Provider), plan.HerdrPane)
 	}
-	return protocol.SignInPrepareResult{Opened: plan.OpenedHerdr, Host: d.hostName(), Pane: plan.HerdrPane, Note: plan.Note}, nil
+	return protocol.SignInPrepareResult{Opened: plan.OpenedHerdr, Host: d.hostName(), Pane: plan.HerdrPane, Session: plan.HerdrSession, Note: plan.Note}, nil
 }
 
 // watchSignInPane waits until the owner closes the login pane, then re-runs

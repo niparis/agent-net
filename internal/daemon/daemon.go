@@ -391,6 +391,8 @@ type Daemon struct {
 	ctoEntering      *ctoEnterCall
 	herdrOpenMu      sync.Mutex
 	herdrOpened      map[string]herdrOpenedPane
+	herdrOwnMu       sync.Mutex
+	herdrOwnSocket   string // agent-net's herdr server, once herdr named it
 	signIn           signInState
 	cto              ctoRuntime
 	claudeCTO        claudeCTOState
