@@ -401,7 +401,7 @@ func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) (grew bool) {
 	sessionID := w.sessionID
 	d.wmu.Unlock()
 	if ls := d.setSessionWorker(sessionID, &cp); ls != nil {
-		go d.pushSession(ls)
+		go d.pushSessionChanged(ls)
 	}
 	return grew
 }

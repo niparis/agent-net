@@ -87,6 +87,7 @@ func (d *Daemon) toolsLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			d.toolsFullNext.Store(true)
 			d.scanTools(ctx)
 			d.reconcileTools(ctx)
 		case <-d.toolsWake:

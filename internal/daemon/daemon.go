@@ -134,13 +134,15 @@ type Config struct {
 	// returns handled, Daemon.call returns its answer and the real gateway
 	// never sees the frame.
 	testGatewayCall func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error)
-	InventoryHome   string // Empty disables tools inventory (used by tests).
-	HomeDir         string // Optional override for user home directory (used by tests).
-	GatewayURL      string
-	NodeID          string
-	Token           string
-	NodeConfigDir   string // node.json directory; empty uses ConfigDir().
-	CAPEM           []byte // pinned CA; nil means the system roots (plain http in tests)
+	// testPushActivityEvery and testPushKeepalive replace the push timing.
+	testPushActivityEvery, testPushKeepalive time.Duration
+	InventoryHome                            string // Empty disables tools inventory (used by tests).
+	HomeDir                                  string // Optional override for user home directory (used by tests).
+	GatewayURL                               string
+	NodeID                                   string
+	Token                                    string
+	NodeConfigDir                            string // node.json directory; empty uses ConfigDir().
+	CAPEM                                    []byte // pinned CA; nil means the system roots (plain http in tests)
 	// GatewayData is the gateway data dir on the gateway machine. Empty on
 	// other machines. The CTO invite tool reads it and fails without a gateway.
 	GatewayData string
@@ -303,6 +305,8 @@ type Config struct {
 type localSession struct {
 	stopToken       string
 	pushMu          sync.Mutex // orders gateway registration updates for this session
+	push            pushState  // what the gateway was last told, protected by pushMu
+	pushInvalid     atomic.Bool
 	info            protocol.SessionInfo
 	sessionID       string
 	workerWaiting   *protocol.Waiting // last unsettled worker wait, protected by d.mu
@@ -366,6 +370,8 @@ type Daemon struct {
 	toolsMu          sync.Mutex
 	toolsReport      protocol.InventoryReport
 	toolsWake        chan struct{}
+	toolsFullNext    atomic.Bool // the next reconcile checks every target, see tools_pass.go
+	toolsPass        toolsPassState
 	outboxWake       chan struct{} // a queued message wakes the link's outbox loop
 	skillConflicts   map[string]string
 	toolsPlanKeyOnce sync.Once
@@ -430,6 +436,7 @@ type Daemon struct {
 	adapters    map[string]Adapter
 	inflight    map[string]chan struct{}
 	lk          *link
+	linkEpoch   uint64 // counts links, so a report is sent again on a new one; d.mu
 	// connecting is true between a successful dial and the end of the handshake.
 	connecting bool
 	// upserting counts session.upsert calls in flight. The gateway may push a
@@ -1012,7 +1019,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		d.saveActivity(u.harness, u.native, u.at)
 	}
 	for _, ls := range changed {
-		d.pushSession(ls)
+		d.pushSessionChanged(ls)
 	}
 	for _, g := range gone {
 		// A resumed worker may replace a native session while retaining its
@@ -1178,7 +1185,7 @@ func (d *Daemon) touchSession(ls *localSession, at time.Time) {
 		return
 	}
 	d.saveActivity(harness, native, at)
-	d.pushSession(ls)
+	d.pushSessionChanged(ls)
 }
 
 // touchHarness records a sign of progress: harness output, not a discovery
@@ -1201,7 +1208,7 @@ func (d *Daemon) touchHarness(ls *localSession, at time.Time) {
 	if changed {
 		d.saveActivity(harness, native, at)
 	}
-	d.goBackground(func() { d.pushSession(ls) })
+	d.goBackground(func() { d.pushSessionChanged(ls) })
 }
 
 // saveActivity keeps a session's real activity time across a daemon restart.
@@ -1223,12 +1230,21 @@ func (d *Daemon) persistActivity(ls *localSession) {
 	d.saveActivity(harness, native, at)
 }
 
-// pushSession tells the gateway about a session if the link is up.
-func (d *Daemon) pushSession(ls *localSession) {
+// pushSession tells the gateway about a session if the link is up. It always
+// sends. A caller that may repeat itself many times a second (output, polls,
+// status reports) uses pushSessionChanged.
+func (d *Daemon) pushSession(ls *localSession) { d.pushSessionMode(ls, true) }
+
+// pushSessionChanged is pushSession for a frequent caller: it sends nothing
+// when the gateway already has the same report (see pushState).
+func (d *Daemon) pushSessionChanged(ls *localSession) { d.pushSessionMode(ls, false) }
+
+func (d *Daemon) pushSessionMode(ls *localSession, force bool) {
 	// Connection setup and discovery can push the same session concurrently.
 	// Read its current state only after older registrations have completed.
 	ls.pushMu.Lock()
 	defer ls.pushMu.Unlock()
+	ls.push.timerAt = time.Time{}
 	d.mu.Lock()
 	// A reconnect may have captured this session before discovery removed it.
 	// Do not register that stale snapshot and bring the session back online.
@@ -1238,6 +1254,14 @@ func (d *Daemon) pushSession(ls *localSession) {
 		return
 	}
 	info := d.infoLocked(ls)
+	epoch := d.linkEpoch
+	now := time.Now()
+	invalid := ls.pushInvalid.Swap(false) || force
+	if wait, send := ls.push.due(info, epoch, now, d.pushTiming()); !send && !invalid {
+		d.mu.Unlock()
+		d.armPush(ls, wait)
+		return
+	}
 	d.upserting++
 	d.mu.Unlock()
 	defer func() {
@@ -1247,8 +1271,11 @@ func (d *Daemon) pushSession(ls *localSession) {
 	}()
 	data, err := d.call(context.Background(), "session.upsert", protocol.SessionUpsert{Session: info})
 	if err != nil {
+		ls.push.sent = false
 		return
 	}
+	ls.push.record(info, epoch, now)
+	d.armPush(ls, d.pushTiming().keepalive)
 	var r struct {
 		SessionID string `json:"session_id"`
 	}
