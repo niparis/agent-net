@@ -716,6 +716,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		// whole account has no allowance left.
 		if p.Harness != "" {
 			if reason := protocol.QuotaHarnessRefusal(quotas, p.Harness); reason != "" {
+				if !(len(validate) > 0 && validate[0]) {
+					g.quotaStuckFeed(p.Harness, "", reason)
+				}
 				return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
 			}
 		}
@@ -1907,7 +1910,12 @@ func (g *Gateway) resumeQuotaRefusal(a protocol.AgentView) string {
 	if harness == "" {
 		harness = a.Harness
 	}
-	return protocol.QuotaRefusal(g.ownerQuotas(a.NodeID), harness, model)
+	why := protocol.QuotaRefusal(g.ownerQuotas(a.NodeID), harness, model)
+	if why != "" {
+		// The worker is stuck on quota: it joins the provider's thread.
+		g.quotaStuckFeed(harness, model, why)
+	}
+	return why
 }
 
 // notifyResumeRefusal reports a failed restart even when the original send

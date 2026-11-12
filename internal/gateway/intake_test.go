@@ -85,11 +85,6 @@ func TestRouteTableCoversEveryKind(t *testing.T) {
 			t.Errorf("message kind %q has no route", kind)
 		}
 	}
-	// The store refuses a kind with no route.
-	s, _ := newTestStore(t)
-	if _, err := s.CreateInboxItem(protocol.InboxItem{Kind: "no_such_kind", SessionID: "s", Text: "x"}); err == nil || !strings.Contains(err.Error(), "invalid inbox kind") {
-		t.Fatalf("a kind with no route was stored: %v", err)
-	}
 }
 
 // Nothing automatic reaches the owner except sign-in and OAuth asks.
@@ -611,5 +606,68 @@ func TestBriefCarriesHealthLineAndDecisions(t *testing.T) {
 	want := "Two fixes shipped.\n\nSystem health: 1 open alert, none woke the CTO (phone paired).\nDecisions recorded today:\n- Q: merge the picker fix? / A: yes"
 	if text != want {
 		t.Fatalf("brief =\n%s\nwant\n%s", text, want)
+	}
+}
+
+// Work that fails on quota after it started joins the provider's thread: the
+// same quota_stuck item, linked to the same queue entry, never a second item.
+func TestQuotaFailureMidRunJoinsTheProviderThread(t *testing.T) {
+	s, c := intakeRig(t)
+	node, _, err := s.CreateNode("research", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused, err := s.quotaStuck(tx, "zai", "zai is exhausted (5h; resets 14:00)", c.t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(10 * time.Minute)
+	for _, session := range []string{"w1", "w2"} {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: session, Harness: "opencode", Model: "zai/glm-5",
+			Outcome: protocol.OutcomeFailed, Cause: protocol.CauseQuotaAuth, EndedAt: c.t.Unix()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e, err := openIntake(s.db, protocol.IntakeQuota, "zai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.ID != refused.ID || e.Stuck != refused.Stuck || e.Count != 3 {
+		t.Fatalf("mid-run failures did not join the thread: %+v, first %+v", e, refused)
+	}
+	var items int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE kind=?`, protocol.AskKindQuotaStuck).Scan(&items); err != nil || items != 1 {
+		t.Fatalf("%d stuck items, want 1: %v", items, err)
+	}
+	// A failure for another reason is not a quota thread.
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "w3", Harness: "opencode", Model: "other/model",
+		Outcome: protocol.OutcomeFailed, Cause: protocol.CauseHarness, EndedAt: c.t.Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := s.CTOIntake(0); res.Total != 1 {
+		t.Fatalf("%d entries, want only the zai thread", res.Total)
+	}
+}
+
+// A kind the route table does not list keeps today's default: the chief.
+func TestUnroutedAskKindGoesToTheChief(t *testing.T) {
+	s, _, chief, other := briefRig(t)
+	_ = chief
+	saved := routeIndex[routeAsk+":"+protocol.AskKindHeld]
+	delete(routeIndex, routeAsk+":"+protocol.AskKindHeld)
+	t.Cleanup(func() { routeIndex[routeAsk+":"+protocol.AskKindHeld] = saved })
+	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: protocol.AskKindHeld, SessionID: other, Text: "held request"})
+	if err != nil {
+		t.Fatalf("an unrouted kind was refused: %v", err)
+	}
+	if next := askNext(t, s, item.ID); next != protocol.AskNextChief {
+		t.Fatalf("unrouted kind next = %q, want chief", next)
 	}
 }

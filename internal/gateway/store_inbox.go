@@ -104,13 +104,22 @@ func (s *Store) RequestWrittenApproval(session, node string, req protocol.Approv
 }
 
 func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.InboxItem, error) {
-	// Every kind has a route (decision 0152); a kind without one is refused.
-	rt, ok := routeOf(routeAsk, item.Kind)
-	if !ok {
+	switch item.Kind {
+	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
+		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindPermission, protocol.AskKindStep, protocol.AskKindWaiting,
+		protocol.AskKindBrief, protocol.AskKindSignIn, protocol.AskKindMachine, protocol.AskKindCTOAlert, protocol.AskKindQuotaStuck:
+	default:
 		return item, reject("invalid inbox kind")
 	}
-	if key := askRouteKey(item); key != item.Kind {
-		rt, _ = routeOf(routeAsk, key)
+	// The route of decision 0152. A kind the table does not list keeps
+	// today's default, the chief; TestRouteTableCoversEveryKind is what
+	// makes every kind get a row.
+	rt, ok := routeOf(routeAsk, askRouteKey(item))
+	if !ok {
+		rt = route{Class: routeAsk, Kind: item.Kind, To: routeChief}
+		if s.logf != nil {
+			s.logf("route.missing", "kind", item.Kind)
+		}
 	}
 	// An automatic item routed to the owner (sign-in and OAuth) skips the
 	// chief: it is a one-click ask only the owner can do.

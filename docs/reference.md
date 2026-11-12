@@ -2915,9 +2915,10 @@ shows the same ask with an Open sign-in button when it lists the Desk.
 
 One route table in the gateway (`internal/gateway/routes.go`) says where each
 automatic message, each Desk ask kind and each CTO intake kind goes. It
-follows [decision 0152](decisions/0152-automatic-message-routes.md). The
-gateway refuses an ask kind that has no route, and a test reads every ask
-kind and intake kind from the source and fails on one with no row.
+follows [decision 0152](decisions/0152-automatic-message-routes.md). A test
+reads every ask kind and intake kind from the source and fails on one with no
+row. At run time a kind with no row keeps today's default, the chief, and the
+gateway writes the log line `route.missing`.
 
 - **Agent only.** Step tasks, reminders, idle checks, worker notices,
   undelivered notices, tools disconnected, member blocked and charter
@@ -2967,9 +2968,12 @@ lead and tells the CTO; it goes to the owner only for money, secrets or
 security. An entry raises one alert at most. The chief's 15-minute timeout
 never hands a CTO alert or a quota stuck item to the owner.
 
-**One quota event, one thread.** A start refused because its provider has no
-quota left opens the provider's `quota` entry and one chief item of kind
-`quota_stuck` (`Work is stuck: ...`). Its detail names the CTO entry, and the
+**One quota event, one thread.** Work stuck on quota opens the provider's
+`quota` entry and one chief item of kind `quota_stuck` (`Work is stuck: ...`):
+a start refused because the provider or the whole harness has no quota left,
+a worker that cannot be started again for quota, and a worker run that ended
+failed with the cause `quota_auth`. Later events of the same provider join
+that entry and that item; no second item is made. Its detail names the CTO entry, and the
 entry's `stuck` names the item. When a usage report shows the provider with
 room again, the entry closes, and so do its stuck-work item and its CTO alert.
 
