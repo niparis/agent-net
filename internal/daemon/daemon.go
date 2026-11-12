@@ -316,6 +316,8 @@ type localSession struct {
 	limitUntil  int64
 	limitReason string
 	turnErrored bool
+	// contextTokens and contextLimit are what the Pi extension last reported.
+	contextTokens, contextLimit int64
 	// owned is set for a session the daemon registered itself (a Codex worker
 	// in its private server). Discovery of a harness never removes it.
 	owned bool
@@ -397,6 +399,11 @@ type Daemon struct {
 	testCleanupNow  func() time.Time
 	// sleep watches the machine's own sleep and wake events (sleep.go).
 	sleep *sleepWatch
+
+	autoCompactMu    sync.Mutex
+	autoCompact      map[string]*autoCompactState
+	autoCompactEvery time.Duration
+	autoCompactNow   func() time.Time
 
 	cleanupLogMu        sync.Mutex
 	cleanupProjectLogs  map[string]time.Time
@@ -633,6 +640,7 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{startedAt: time.Now(), cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
+		autoCompact: map[string]*autoCompactState{}, autoCompactEvery: time.Minute,
 		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1), outboxWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, mcpRepair: repairs, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}, "agy": agyLauncher{}},
@@ -707,6 +715,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		a.Start(ctx, d)
 	}
 	d.startUsage(ctx)
+	d.startAutoCompactionLoop(ctx)
 	if d.cfg.ApplyIntegrations != nil {
 		d.wg.Add(1)
 		go func() { defer d.wg.Done(); d.integrationsLoop(ctx) }()
@@ -918,6 +927,11 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			// The tools state comes from the session's MCP hello. Discovery
 			// does not know it, and must not erase it.
 			in.ToolsVersion, in.ToolsOld = ls.info.ToolsVersion, ls.info.ToolsOld
+			// Auto-compaction records its note on the daemon's session.
+			// Discovery keeps it until a busy stretch starts.
+			if in.LastCompactedAt == 0 && in.Status != "busy" {
+				in.LastCompactedAt, in.LastCompactedReason = ls.info.LastCompactedAt, ls.info.LastCompactedReason
+			}
 			in = d.toolsLinkInfoLocked(ls, in, time.Now())
 			if ls.lastActive.After(candidate) {
 				candidate = ls.lastActive
@@ -1059,6 +1073,47 @@ func (d *Daemon) infoOf(ls *localSession) protocol.SessionInfo {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.infoLocked(ls)
+}
+
+// IsWorkerSession says whether agent-net started this harness session as a
+// worker. Auto-compaction never touches a worker.
+func (d *Daemon) IsWorkerSession(harness, nativeID string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	ls := d.sessions[key(harness, nativeID)]
+	return ls != nil && ls.info.Worker != nil
+}
+
+// SettingsWhere gives the repo, team and agent that apply to a session. The
+// snapshot derives the team and agent from the repo.
+func (d *Daemon) SettingsWhere(harness, nativeID string) settings.Where {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if ls := d.sessions[key(harness, nativeID)]; ls != nil {
+		return settings.Where{Repo: ls.info.Repo.Project}
+	}
+	return settings.Where{}
+}
+
+// noteCompacted records the last automatic compaction on a session and tells
+// the gateway. Discovery keeps the note until the next busy stretch.
+func (d *Daemon) noteCompacted(harness, nativeID string, at int64, reason string) {
+	d.mu.Lock()
+	ls := d.sessions[key(harness, nativeID)]
+	if ls != nil {
+		ls.info.LastCompactedAt = at
+		ls.info.LastCompactedReason = reason
+	}
+	d.mu.Unlock()
+	if ls != nil {
+		d.goBackground(func() { d.pushSession(ls) })
+	}
+}
+
+// NoteCompacted records an automatic compaction an adapter finished, so the
+// session row shows its time and reason before the next discovery poll.
+func (d *Daemon) NoteCompacted(harness, nativeID string, at int64, reason string) {
+	d.noteCompacted(harness, nativeID, at, reason)
 }
 
 func (d *Daemon) infoLocked(ls *localSession) protocol.SessionInfo {

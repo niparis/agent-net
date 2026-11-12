@@ -386,6 +386,9 @@ export default function (pi: ExtensionAPI) {
   let backoff = BACKOFF_START_MS;
   let nextId = 1;
   let status: "idle" | "busy" = "idle";
+  // Why the daemon asked for the compaction now running, so the result can
+  // carry the same reason back.
+  let compactReason: string | undefined;
   let mode: "foreground" | "background" | undefined;
   let model: string | undefined;
   let hello: Record<string, unknown> = {};
@@ -520,6 +523,20 @@ export default function (pi: ExtensionAPI) {
     if (frame.method === "deliver" && frame.params?.message) handleDeliver(frame.params.message);
     if (frame.method === "mcp_changed") void refreshMcpTools();
     if (frame.method === "session_text" && frame.params) handleSessionText(frame.params);
+    if (frame.method === "compact" && frame.params) handleCompact(frame.params);
+
+  /** Run Pi's own /compact entry point when the daemon asks for it. */
+  function handleCompact(params: { reason?: string }) {
+    const reason = String(params.reason || "auto");
+    try {
+      if (!sessionCtx || typeof sessionCtx.compact !== "function") throw new Error("Pi has no compaction in this mode");
+      compactReason = reason;
+      sessionCtx.compact();
+    } catch (error) {
+      compactReason = undefined;
+      request("compacted", { ok: false, reason, detail: String(error) }).catch(() => {});
+    }
+  }
   }
 
   /** Answer the daemon's request for a page of this session's history. */
@@ -544,7 +561,7 @@ export default function (pi: ExtensionAPI) {
     s.on("connect", () => {
       connected = true;
       // hello must be the first request on the connection.
-      request("hello", { ...hello, status, ...(mode ? { mode } : {}), ...(model ? { model } : {}) })
+      request("hello", { ...hello, status, ...(mode ? { mode } : {}), ...(model ? { model } : {}), ...contextFields() })
         .then(() => {
           backoff = BACKOFF_START_MS;
           void refreshMcpTools();
@@ -570,9 +587,23 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+  // The context Pi estimates for its next request. The daemon uses it to decide
+// whether the session reached the compaction threshold.
+  function contextFields(): Record<string, number> {
+    try {
+      const u = sessionCtx?.getContextUsage?.();
+      if (u && typeof u.tokens === "number" && u.tokens > 0 && typeof u.contextWindow === "number" && u.contextWindow > 0) {
+        return { context_tokens: u.tokens, context_limit: u.contextWindow };
+      }
+    } catch {
+      // No estimate is better than a wrong one.
+    }
+    return {};
+  }
+
   function sendStatus(next: "idle" | "busy") {
     status = next;
-    if (connected) request("status", { status: next }).catch(() => {});
+    if (connected) request("status", { status: next, ...contextFields() }).catch(() => {});
   }
 
   pi.on("session_start", async (_event, ctx) => {
@@ -633,6 +664,22 @@ export default function (pi: ExtensionAPI) {
     sendStatus("busy");
   });
   pi.on("agent_settled", async () => sendStatus("idle"));
+
+  // The result of a compaction the daemon asked for. A manual /compact by the
+  // owner has no compactReason, so it is not reported as an automatic one.
+  pi.on("session_compact", async () => {
+    if (!compactReason) return;
+    const reason = compactReason;
+    compactReason = undefined;
+    await request("compacted", { ok: true, reason, at: Date.now(), ...contextFields() }).catch(() => {});
+  });
+  pi.on("session_compact_failed", async (event: any) => {
+    if (!compactReason) return;
+    const reason = compactReason;
+    compactReason = undefined;
+    const detail = String(event?.error ?? event?.reason ?? "compaction failed").slice(0, 500);
+    await request("compacted", { ok: false, reason, detail }).catch(() => {});
+  });
 
   pi.on("session_shutdown", async () => {
     if (connected) await request("harness_end", {}).catch(() => {});

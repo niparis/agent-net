@@ -7,10 +7,32 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+func TestCompactionUnsupportedRowNote(t *testing.T) {
+	m := Model{loc: time.UTC}
+	a := protocol.AgentView{Harness: "agy", Status: "idle"}
+	if got := m.sessionTaskText(a); got != "compaction not supported for agy" {
+		t.Fatalf("note=%q", got)
+	}
+	a.Harness = "codex"
+	if got := m.sessionTaskText(a); got != "" {
+		t.Fatalf("supported harness note=%q", got)
+	}
+	a.Harness = "owner"
+	if got := m.sessionTaskText(a); got != "" {
+		t.Fatalf("owner row note=%q", got)
+	}
+}
+
 func TestIdleCompactionRowNote(t *testing.T) {
 	m := Model{loc: time.UTC}
-	a := protocol.AgentView{IdleCompactedAt: 1700000000, Status: "idle"}
-	if got := m.sessionTaskText(a); got != "compacted while idle 22:13" {
-		t.Fatalf("note=%q", got)
+	for _, tc := range []struct{ reason, want string }{
+		{"fill 82%", "compacted 22:13 (fill 82%)"},
+		{"idle", "compacted 22:13 (idle)"},
+		{"", "compacted 22:13 (idle)"},
+	} {
+		a := protocol.AgentView{LastCompactedAt: 1700000000, LastCompactedReason: tc.reason, Status: "idle"}
+		if got := m.sessionTaskText(a); got != tc.want {
+			t.Fatalf("reason %q note=%q, want %q", tc.reason, got, tc.want)
+		}
 	}
 }

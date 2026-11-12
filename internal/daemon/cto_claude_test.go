@@ -988,3 +988,22 @@ func TestClaudeCTOAllowsOnlyItsMessageTool(t *testing.T) {
 		t.Fatalf("CTO allow = %v, want only mcp__agent-net-cto__agent_message_send", permissions["allow"])
 	}
 }
+
+// The Claude adapter asks this to recognise the CTO's conversation: that job
+// runs at the cto agent level and compacts past the owner's open attach client.
+func TestClaudeCTOJobIdentity(t *testing.T) {
+	d := &Daemon{}
+	if d.IsClaudeCTOJob("job-cto") {
+		t.Fatal("an unbound daemon claims a CTO job")
+	}
+	d.claudeCTO.ref = "job-cto"
+	d.claudeCTO.session = "sess-cto"
+	if !d.IsClaudeCTOJob("job-cto") {
+		t.Fatal("the bound CTO job is not recognised")
+	}
+	for _, job := range []string{"", "job-other"} {
+		if d.IsClaudeCTOJob(job) {
+			t.Fatalf("%q recognised as the CTO job", job)
+		}
+	}
+}

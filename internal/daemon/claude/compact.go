@@ -23,6 +23,7 @@ import (
 type idleCompactState struct {
 	attempted, running, awaitingIdle bool
 	at                               int64
+	reason                           string // "fill N%" or "idle"
 	skipLogged                       string // last skip reason logged in this idle stretch
 }
 
@@ -37,6 +38,37 @@ type compactSettingsHost interface{ SettingsSnapshot() settings.Snapshot }
 // viewers. One call is one scan, so it asks herdr once for all clients.
 type compactViewHost interface {
 	AttachClientsViewing(pids []int) map[int]bool
+}
+
+// compactWorkerHost says whether agent-net started a session as a worker.
+// Workers are never compacted.
+type compactWorkerHost interface {
+	IsWorkerSession(harness, nativeID string) bool
+}
+
+// compactWhereHost gives the repo, team and agent that apply to a session,
+// so settings resolve at every level.
+type compactWhereHost interface {
+	SettingsWhere(harness, nativeID string) settings.Where
+}
+
+// compactCTOHost identifies the CTO's Claude background job. The CTO is the
+// owner's own conversation: it uses the cto agent level, and an open attach
+// client does not stop its compaction.
+type compactCTOHost interface {
+	IsClaudeCTOJob(job string) bool
+}
+
+// compactNoteHost records a finished compaction on the session row, so the
+// row shows its time and reason before the next discovery poll.
+type compactNoteHost interface {
+	NoteCompacted(harness, nativeID string, at int64, reason string)
+}
+
+// isCTOJob says whether job is the CTO's Claude conversation.
+func (a *Adapter) isCTOJob(job string) bool {
+	h, ok := a.host.(compactCTOHost)
+	return ok && job != "" && h.IsClaudeCTOJob(job)
 }
 
 // viewedJobs returns a function that says whether the owner is viewing a job.
@@ -136,41 +168,84 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 	if h, ok := a.host.(compactSettingsHost); ok {
 		snap = h.SettingsSnapshot()
 	}
-	if !snap.Bool("sessions.idle_compaction", settings.Where{}) {
-		return
+	whereFor := func(nativeID string) settings.Where {
+		if h, ok := a.host.(compactWhereHost); ok {
+			return h.SettingsWhere("claude", nativeID)
+		}
+		return settings.Where{}
 	}
+	workers, _ := a.host.(compactWorkerHost)
 	now := time.Now()
 	if a.compactNow != nil {
 		now = a.compactNow()
 	}
 	viewed, err := a.viewedJobs(ctx, 0)
 	if err != nil {
-		a.host.Logf("claude idle compaction: cannot check attached clients: %v", err)
+		a.host.Logf("claude compaction: cannot check attached clients: %v", err)
 		return
 	}
 	a.mu.Lock()
 	var candidates []found
 	for _, f := range a.byNative {
 		s := a.compactStates[f.info.NativeID]
-		if f.kind == "bg" && f.job != "" && f.info.Status == "idle" && !s.attempted && f.info.LastActive > 0 && now.Sub(time.Unix(f.info.LastActive, 0)) >= snap.Duration("sessions.idle_compaction_after", settings.Where{}) {
-			candidates = append(candidates, f)
+		if f.kind != "bg" || f.job == "" || f.info.Status != "idle" || s.attempted || f.info.LastActive <= 0 {
+			continue
 		}
+		if f.info.Worker != nil || (workers != nil && workers.IsWorkerSession("claude", f.info.NativeID)) {
+			continue
+		}
+		candidates = append(candidates, f)
 	}
 	a.mu.Unlock()
 	for _, f := range candidates {
 		if ctx.Err() != nil {
 			return
 		}
+		isCTO := a.isCTOJob(f.job)
+		where := whereFor(f.info.NativeID)
+		if isCTO {
+			// The CTO's settings live at its agent level. SettingsWhere
+			// resolves by repo, which does not select the cto agent here.
+			where = settings.Where{Agent: "cto"}
+		}
+		threshold := snap.Int("sessions.compaction_threshold_percent", where)
+		if isCTO {
+			threshold = snap.IntUnlessDefault("sessions.compaction_threshold_percent", where, protocol.CTOCompactionThreshold)
+		}
+		if threshold <= 0 {
+			threshold = 80
+		}
+		idleEnabled := snap.Bool("sessions.idle_compaction", where)
+		minTokens := int64(snap.Int("sessions.idle_compaction_min_tokens", where))
+		windows := snap.Map("sessions.cache_window_seconds", where)
 		path := a.models.transcript(f.info.NativeID, f.info.Cwd)
 		if noTurnSinceCompact(path) {
 			a.compactSkip(f.info.NativeID, "no_activity_since_compact")
 			continue
 		}
-		if contextTokens(path) < int64(snap.Int("sessions.idle_compaction_min_tokens", settings.Where{})) {
-			a.compactSkip(f.info.NativeID, "small_context")
+		tokens := contextTokens(path)
+		limit := protocol.ClaudeContextLimit(a.models.Model(f.info.NativeID, f.info.Cwd))
+		fill, known := protocol.ContextFill(tokens, limit)
+		reason := ""
+		idleDue := idleEnabled && now.Sub(time.Unix(f.info.LastActive, 0)) >= protocol.CacheIdleAfter(windows, "anthropic")
+		// standard.yaml says the idle token floor does not affect the CTO. A
+		// zero reading is still no known context, so it is not compacted.
+		smallContext := tokens < minTokens
+		if isCTO {
+			smallContext = tokens <= 0
+		}
+		if known && tokens*100 >= limit*int64(threshold) {
+			reason = fmt.Sprintf("fill %d%%", fill)
+		} else if idleDue && !smallContext {
+			reason = "idle"
+		}
+		if reason == "" {
+			if idleDue && !isCTO && smallContext {
+				a.compactSkip(f.info.NativeID, "small_context")
+			}
 			continue
 		}
-		if viewed(f.job) {
+		if !isCTO && viewed(f.job) {
 			a.compactSkip(f.info.NativeID, "viewing")
 			continue
 		}
@@ -184,6 +259,7 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 		}
 		s.attempted = true
 		s.running = true
+		s.reason = reason
 		a.compactStates[f.info.NativeID] = s
 		a.mu.Unlock()
 		err := a.compactSession(ctx, f, path)
@@ -196,16 +272,20 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 				completed = a.compactNow()
 			}
 			s.at = completed.Unix()
+			s.reason = reason
 			s.awaitingIdle = true
 		}
 		a.compactStates[f.info.NativeID] = s
 		a.mu.Unlock()
 		if err != nil {
-			a.host.Logf("claude idle compaction %s: %v", f.info.NativeID, err)
+			a.host.Logf("claude compaction %s: %v", f.info.NativeID, err)
 			a.compactEvent(f.info.NativeID, "error")
 		} else {
-			a.host.Logf("claude idle compaction %s: compacted while idle", f.info.NativeID)
+			a.host.Logf("claude compaction %s: compacted (%s)", f.info.NativeID, reason)
 			a.compactEvent(f.info.NativeID, "ok")
+			if n, ok := a.host.(compactNoteHost); ok {
+				n.NoteCompacted("claude", f.info.NativeID, s.at, reason)
+			}
 		}
 	}
 }
@@ -444,12 +524,14 @@ func (a *Adapter) compactSession(ctx context.Context, f found, path string) (res
 		return fmt.Errorf("attach exited before prompt: %v", err)
 	case <-prompt:
 	}
-	// Recheck immediately before typing, excluding our own attach client.
+	// Recheck immediately before typing, excluding our own attach client. The
+	// CTO's conversation may have the owner's pane open: our own unattended
+	// attach client still types /compact there.
 	viewed, err := a.viewedJobs(ctx, cmd.Process.Pid)
 	if err != nil {
 		return fmt.Errorf("attached clients: %w", err)
 	}
-	if viewed(f.job) {
+	if viewed(f.job) && !a.isCTOJob(f.job) {
 		return fmt.Errorf("another client attached before compact")
 	}
 	raw, err := os.ReadFile(filepath.Join(a.cfg.SessionsDir, fmt.Sprintf("%d.json", f.pid)))

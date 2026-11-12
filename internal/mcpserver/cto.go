@@ -250,7 +250,6 @@ var ctoTools = map[string]ctoToolDef{
 			"workers_mod":         {typ: "boolean", desc: "Workers."},
 			"quota_axi":           {typ: "boolean", desc: "Quotas."},
 			"title":               {typ: "string", desc: "Name on screens."},
-			"compaction":          {typ: "object", desc: "Compaction."},
 			"note":                {typ: "string", desc: "Playbook note; empty clears."},
 			"pin":                 {typ: "boolean", desc: "Pin."},
 			"node_id":             {typ: "string", desc: "Machine; required for process_stop."},
@@ -306,11 +305,6 @@ func init() {
 		"command": property("string", "Command."), "args": stringsArray("No secrets."), "env": stringsArray("Names, not values."),
 		"url": property("string", "Endpoint."), "timeout_sec": property("integer", "Seconds."),
 		"headers": map[string]any{"type": "array", "description": "Headers.", "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"name": property("string", "Name."), "env": property("string", "Env."), "file": property("string", "Path.")}}},
-	})
-	setProperties("settings_change", "compaction", map[string]any{
-		"threshold_percent":    property("integer", "Percent."),
-		"cache_expiry_enabled": property("boolean", "Default true."),
-		"cache_window_seconds": map[string]any{"type": "object", "description": "Seconds per provider.", "additionalProperties": map[string]any{"type": "integer"}},
 	})
 }
 

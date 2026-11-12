@@ -1281,7 +1281,37 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, nodeSleepMigration, agentLeadLevelMigration, ctoRateHoldMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, nodeSleepMigration, agentLeadLevelMigration, ctoRateHoldMigration, `
+-- Session compaction settings cutover (decision 0138): fold the CTO
+-- compaction threshold into the shared sessions key.
+`, `
+-- Why the session was last compacted: fill N% or idle (decision 0138).
+-- The column is added in the migration loop so replaying is safe.
+SELECT 1 /* last compacted reason column */;
+`, `
+-- Team level settings targets (decision 0138).
+DROP TRIGGER IF EXISTS settings_target_identity_repo_delete;
+DROP TRIGGER IF EXISTS settings_target_identity_agent_delete;
+DROP TRIGGER IF EXISTS settings_target_identity_agent_tombstone;
+CREATE TABLE settings_target_identity_new (
+ kind TEXT NOT NULL CHECK(kind IN ('network','team','repo','agent')),
+ id TEXT NOT NULL,
+ token TEXT NOT NULL,
+ PRIMARY KEY(kind,id));
+INSERT INTO settings_target_identity_new(kind,id,token) SELECT kind,id,token FROM settings_target_identity;
+DROP TABLE settings_target_identity;
+ALTER TABLE settings_target_identity_new RENAME TO settings_target_identity;
+CREATE TRIGGER IF NOT EXISTS settings_target_identity_repo_delete AFTER DELETE ON repos BEGIN
+ DELETE FROM settings_target_identity WHERE kind='repo' AND id=OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_delete AFTER DELETE ON agents BEGIN
+ DELETE FROM settings_target_identity WHERE kind='agent' AND id=OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDATE OF tombstone ON agents WHEN NEW.tombstone<>0 BEGIN
+ DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
+END;
+INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
+`}
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries
 // of one task can be counted and the weekly table can show rejections per
@@ -2198,6 +2228,19 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		if strings.Contains(migrations[i], "last compacted reason column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='last_compacted_reason'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN last_compacted_reason TEXT NOT NULL DEFAULT ''`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
 		var result sql.Result
 		if strings.Contains(migrations[i], "ALTER TABLE repo_leads ADD COLUMN lead_session") {
 			for _, table := range []string{"repo_leads", "teams"} {
@@ -2820,6 +2863,12 @@ func (s *Store) migrate() error {
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
+		if strings.Contains(migrations[i], "Session compaction settings cutover") {
+			if err := s.cutoverSessionCompactionTx(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
 		var merges, conflicts [][2]string
 		if strings.Contains(migrations[i], "project identity migration") {
 			merges, conflicts, err = migrateProjectIdentities(tx)
@@ -3134,8 +3183,8 @@ func (s *Store) upsertSession(q interface {
 	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, worker_title, repo_description, worker_started,
-		tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at, limited_until, limited_reason)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at, last_compacted_reason, limited_until, limited_reason)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid,
 		-- A worker whose run is over stays ended. A late session sync from its
@@ -3159,6 +3208,7 @@ func (s *Store) upsertSession(q interface {
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded,
 		no_project=excluded.no_project, idle_compacted_at=excluded.idle_compacted_at,
+		last_compacted_reason=excluded.last_compacted_reason,
 		limited_until=excluded.limited_until, limited_reason=excluded.limited_reason,
 		worker_run_active=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
 			THEN 0 WHEN sessions.online=0 AND excluded.online=1 THEN 1 ELSE sessions.worker_run_active END`,
@@ -3167,7 +3217,7 @@ func (s *Store) upsertSession(q interface {
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
 		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject),
 		max(in.HarnessActivity*int64(time.Second), busyInitialActivity(in.Status, now)),
-		in.IdleCompactedAt, in.LimitedUntil, protocol.CleanModel(in.LimitedReason), in.HarnessActivity*int64(time.Second))
+		in.LastCompactedAt, in.LastCompactedReason, in.LimitedUntil, protocol.CleanModel(in.LimitedReason), in.HarnessActivity*int64(time.Second))
 	if err != nil {
 		return "", false, err
 	}
@@ -3849,7 +3899,7 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
  EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (t.lead_session IS NULL OR t.lead_session=s.id) AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
  @MAX@
  @COUNT@
- s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at,
+ s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at, s.last_compacted_reason,
  @STALL@
  @HELD@
  @INSESSION@
@@ -3905,7 +3955,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.IdleCompactedAt, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.ReplacedBy)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.ReplacedBy)
 	if err != nil {
 		return a, err
 	}

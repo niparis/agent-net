@@ -2080,10 +2080,14 @@ func sliceFrom(lines []string, height, start int) []string {
 	return lines
 }
 
-// sessionTaskText shows idle compaction or the claimant for a running step.
+// sessionTaskText shows the last compaction or the claimant for a running step.
 func (m Model) sessionTaskText(a protocol.AgentView) string {
-	if a.IdleCompactedAt > 0 {
-		return "compacted while idle " + m.displayTime(a.IdleCompactedAt).Format("15:04")
+	if a.LastCompactedAt > 0 {
+		reason := a.LastCompactedReason
+		if reason == "" {
+			reason = "idle"
+		}
+		return "compacted " + m.displayTime(a.LastCompactedAt).Format("15:04") + " (" + reason + ")"
 	}
 	for _, ch := range m.delivery.changes {
 		for _, step := range ch.Steps {
@@ -2096,6 +2100,9 @@ func (m Model) sessionTaskText(a protocol.AgentView) string {
 				}
 			}
 		}
+	}
+	if a.Worker == nil && protocol.CompactionHarness(a.Harness) && !protocol.CompactionSupported(a.Harness) && a.Status != "ended" && a.Status != "offline" {
+		return "compaction not supported for " + a.Harness
 	}
 	return ""
 }

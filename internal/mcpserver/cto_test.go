@@ -258,11 +258,17 @@ func TestCTOSettingsSchemasDescribeNestedValues(t *testing.T) {
 	}
 	for _, tool := range list.Tools {
 		switch tool.Name {
-		case "session_change", "mcp_change", "settings_change":
+		case "session_change", "mcp_change":
 			props, _ := ctoToolSchema(t, tool)
-			field := map[string]string{"session_change": "policy", "mcp_change": "server", "settings_change": "compaction"}[tool.Name]
+			field := map[string]string{"session_change": "policy", "mcp_change": "server"}[tool.Name]
 			if _, ok := props[field]["properties"].(map[string]any); !ok {
 				t.Errorf("%s.%s lacks nested properties", tool.Name, field)
+			}
+		case "settings_change":
+			props, _ := ctoToolSchema(t, tool)
+			items, _ := props["changes"]["items"].(map[string]any)
+			if _, ok := items["properties"].(map[string]any); !ok {
+				t.Error("settings_change.changes lacks nested properties")
 			}
 		}
 	}

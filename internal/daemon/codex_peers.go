@@ -42,9 +42,9 @@ type codexAdapter struct {
 
 // codexThread is what the adapter keeps of one open thread.
 type codexThread struct {
-	ID, Cwd, Name, Model, Status, Mode string
-	Activity                           int64
-	Wait                               *protocol.Waiting // from the thread's active flags
+	ID, Cwd, Name, Model, Status, Mode, Path string
+	Activity                                 int64
+	Wait                                     *protocol.Waiting // from the thread's active flags
 }
 
 func newCodexAdapter(d *Daemon) *codexAdapter {
@@ -364,7 +364,8 @@ func (a *codexAdapter) refresh(ctx context.Context, rpc *codexRPC) error {
 			th.Mode = protocol.ModeBackground
 		}
 		if t.Path != nil && *t.Path != "" {
-			if fi, err := os.Stat(*t.Path); err == nil {
+			th.Path = *t.Path
+			if fi, err := os.Stat(th.Path); err == nil {
 				th.Activity = fi.ModTime().Unix()
 			}
 		}
@@ -405,6 +406,31 @@ func (a *codexAdapter) isThread(id string) bool {
 	defer a.mu.Unlock()
 	_, ok := a.threads[id]
 	return ok
+}
+
+// thread returns what the adapter knows about one open thread.
+func (a *codexAdapter) thread(id string) (codexThread, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	t, ok := a.threads[id]
+	return t, ok
+}
+
+// compact asks the shared app server to compact one thread's context. Codex
+// runs the compaction as a turn on the thread.
+func (a *codexAdapter) compact(ctx context.Context, id string) error {
+	a.mu.Lock()
+	rpc := a.rpc
+	_, ok := a.threads[id]
+	a.mu.Unlock()
+	if rpc == nil {
+		return fmt.Errorf("agent-net is not connected to the Codex app server")
+	}
+	if !ok {
+		return fmt.Errorf("the Codex thread is not open any more")
+	}
+	_, err := rpc.call(ctx, "thread/compact/start", map[string]any{"threadId": id})
+	return err
 }
 
 // Deliver puts the message in the thread's queue.

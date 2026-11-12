@@ -30,6 +30,8 @@ func ViewsWithTarget(snapshot settings.Snapshot, history []protocol.SettingsHist
 		case "network":
 		case "repo":
 			where.Repo = target.ID
+		case "team":
+			where.Team = target.ID
 		case "agent":
 			where.Agent = target.ID
 		default:
@@ -139,7 +141,7 @@ func ViewsWithTarget(snapshot settings.Snapshot, history []protocol.SettingsHist
 func requestedAddress(q protocol.SettingsReadRequest, target *protocol.SettingsRef) (string, string) {
 	if target != nil {
 		switch target.Kind {
-		case "repo", "agent":
+		case "team", "repo", "agent":
 			return target.Kind, target.ID
 		default:
 			return "network", "network"
@@ -165,7 +167,7 @@ func sourceRef(e settings.Effective, target *protocol.SettingsRef) *protocol.Set
 		return &protocol.SettingsRef{Kind: "recipe", Name: "standard recipe"}
 	case "network":
 		return &protocol.SettingsRef{Kind: "network", ID: "network", Name: "network"}
-	case "repo", "agent":
+	case "team", "repo", "agent":
 		name := e.SourceID
 		if target != nil && target.Kind == e.SourceLevel && target.ID == e.SourceID && target.Name != "" {
 			name = target.Name

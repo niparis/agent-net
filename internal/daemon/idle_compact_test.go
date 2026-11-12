@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
@@ -18,7 +17,7 @@ func TestSettingsIdleCompactionCTOAppliesImmediately(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
-	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"sessions.idle_compaction","level":"network","scope":"network","value":false},{"key":"sessions.idle_compaction_after","level":"network","scope":"network","value":"45m"},{"key":"sessions.idle_compaction_min_tokens","level":"network","scope":"network","value":100000}],"reason":"idle cache policy"}`)
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"sessions.compaction_threshold_percent","level":"network","scope":"network","value":65},{"key":"sessions.cache_window_seconds","level":"network","scope":"network","value":{"default":600}},{"key":"sessions.idle_compaction","level":"network","scope":"network","value":false},{"key":"sessions.idle_compaction_min_tokens","level":"network","scope":"network","value":100000}],"reason":"compaction policy"}`)
 	if _, err := n.d.runCTOToolRaw(context.Background(), "settings_change", raw); err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +29,7 @@ func TestSettingsIdleCompactionCTOAppliesImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Bool("sessions.idle_compaction", settings.Where{}) || s.Duration("sessions.idle_compaction_after", settings.Where{}) != 45*time.Minute || s.Int("sessions.idle_compaction_min_tokens", settings.Where{}) != 100000 {
+	if s.Int("sessions.compaction_threshold_percent", settings.Where{}) != 65 || s.Map("sessions.cache_window_seconds", settings.Where{})["default"] != 600 || s.Bool("sessions.idle_compaction", settings.Where{}) || s.Int("sessions.idle_compaction_min_tokens", settings.Where{}) != 100000 {
 		t.Fatalf("CTO settings not applied: %+v", s)
 	}
 	rows, err := n.d.readSettings(context.Background(), protocol.SettingsReadRequest{}, true)
@@ -39,11 +38,11 @@ func TestSettingsIdleCompactionCTOAppliesImmediately(t *testing.T) {
 	}
 	found := 0
 	for _, row := range rows {
-		if row.Key == "sessions.idle_compaction" || row.Key == "sessions.idle_compaction_after" || row.Key == "sessions.idle_compaction_min_tokens" {
+		if row.Key == "sessions.compaction_threshold_percent" || row.Key == "sessions.cache_window_seconds" || row.Key == "sessions.idle_compaction" || row.Key == "sessions.idle_compaction_min_tokens" {
 			found++
 		}
 	}
-	if found != 3 {
+	if found != 4 {
 		t.Fatalf("Settings tab read exposes %d controls", found)
 	}
 }

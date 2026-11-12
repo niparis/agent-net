@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 type ctoTestClock struct {
@@ -171,10 +172,36 @@ func TestCTOCompactionHalfWindow(t *testing.T) {
 	}
 }
 
+// TestCTOCompactionStoredThresholdWins proves the CTO's code default of 50
+// does not override a threshold the owner stored.
+func TestCTOCompactionStoredThresholdWins(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	ctx := context.Background()
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"sessions.compaction_threshold_percent","level":"agent","scope":"cto","value":90}],"reason":"cto threshold"}`)
+	if _, err := f.n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the stored threshold applies", func() bool {
+		return f.n.d.SettingsSnapshot().Int("sessions.compaction_threshold_percent", settings.Where{Agent: "cto"}) == 90
+	})
+	// A completed turn at 80% of the window is above the code default 50 but
+	// below the stored 90, so it must not compact.
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
+	f.send(t, "work")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_big", 800_000), ctoUser("work"), ctoAssistant("msg_old", 1000)})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 0 {
+		t.Fatalf("compacted at 80%% with a stored 90%% threshold: %d", got)
+	}
+}
+
 func TestCTOCompactionThreshold(t *testing.T) {
 	f := startCTOCompactionFixture(t)
 	ctx := context.Background()
-	// A completed turn at 800k of a 1M window: above 70%, compact at once.
+	// A completed turn at 800k of a 1M window: above the 50% default, compact
+	// at once.
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
 	f.send(t, "work")
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_big", 800_000), ctoUser("work"), ctoAssistant("msg_old", 1000)})
@@ -300,9 +327,13 @@ func TestCTOCompactionIdleAfterGrowth(t *testing.T) {
 
 func TestCTOCompactionCacheExpiryDisabled(t *testing.T) {
 	f := startCTOCompactionFixture(t)
-	enabled := false
-	settings := protocol.CTOCompactionSettings{CacheExpiryEnabled: &enabled}
-	f.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Compaction: &settings})
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"sessions.idle_compaction","level":"network","scope":"network","value":false}],"reason":"idle trigger off"}`)
+	if _, err := f.n.d.runCTOToolRaw(context.Background(), "settings_change", raw); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the idle trigger is off", func() bool {
+		return !f.n.d.SettingsSnapshot().Bool("sessions.idle_compaction", settings.Where{Agent: "cto"})
+	})
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg", 45_000), ctoUser("work")})
 	if err := f.n.d.ctoCompactOnce(context.Background()); err != nil {
 		t.Fatal(err)
@@ -460,17 +491,15 @@ func TestCTOCompactionChatLineWaitsForTokens(t *testing.T) {
 func TestCTOCompactionSettings(t *testing.T) {
 	f := startCTOCompactionFixture(t)
 	ctx := context.Background()
-	settings := protocol.CTOCompactionSettings{
-		ThresholdPercent: 90,
-		CacheWindowSeconds: map[string]int{
-			"fake": 60,
-		},
+	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"sessions.compaction_threshold_percent","level":"agent","scope":"cto","value":90},{"key":"sessions.cache_window_seconds","level":"network","scope":"network","value":{"default":300,"fake":60}}],"reason":"cto window"}`)
+	if _, err := f.n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
+		t.Fatal(err)
 	}
-	f.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Compaction: &settings})
-	var saved protocol.CTOSettings
-	if err := json.Unmarshal(f.cli.mustCall("cto_settings", nil), &saved); err != nil || saved.Compaction.ThresholdPercent != 90 {
-		t.Fatalf("threshold setting did not round-trip: %+v %v", saved.Compaction, err)
-	}
+	eventually(t, "the CTO threshold and window apply", func() bool {
+		snap := f.n.d.SettingsSnapshot()
+		return snap.Int("sessions.compaction_threshold_percent", settings.Where{Agent: "cto"}) == 90 &&
+			snap.Map("sessions.cache_window_seconds", settings.Where{Agent: "cto"})["fake"] == 60
+	})
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
 	f.send(t, "work")
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_base", 45_000), ctoUser("work")})
@@ -483,7 +512,8 @@ func TestCTOCompactionSettings(t *testing.T) {
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
-	f.clock.Advance(29 * time.Second)
+	// A 60-second window keeps a 6-second margin, so the trigger is at 54s.
+	f.clock.Advance(53 * time.Second)
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}

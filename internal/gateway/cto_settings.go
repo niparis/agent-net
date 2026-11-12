@@ -55,7 +55,7 @@ func (s *Store) CTOSettings() (protocol.CTOSettings, error) {
 		if terr != nil {
 			return protocol.CTOSettings{}, terr
 		}
-		return protocol.CTOSettings{Title: title.Title, Harness: "opencode", Compaction: protocol.CTOCompactionSettings{}.Normalized()}, nil
+		return protocol.CTOSettings{Title: title.Title, Harness: "opencode"}, nil
 	}
 	if err != nil {
 		return protocol.CTOSettings{}, err
@@ -67,7 +67,6 @@ func (s *Store) CTOSettings() (protocol.CTOSettings, error) {
 	if settings.Harness == "" {
 		settings.Harness = "opencode"
 	}
-	settings.Compaction = settings.Compaction.Normalized()
 	title, err := s.CTOTitle()
 	if err != nil {
 		return protocol.CTOSettings{}, err
@@ -77,7 +76,6 @@ func (s *Store) CTOSettings() (protocol.CTOSettings, error) {
 }
 
 func (s *Store) SetCTOSettings(in protocol.CTOSettings) error {
-	in.Compaction = in.Compaction.Normalized()
 	title := in.Title
 	in.Title = ""
 	if err := s.SetCTOTitle(title); err != nil {
@@ -90,26 +88,6 @@ func (s *Store) SetCTOSettings(in protocol.CTOSettings) error {
 	_, err = s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?,?,?)
  ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, ctoSettingsKey, string(b), s.now().UnixNano())
 	return err
-}
-
-// validCompaction rejects values the daemon cannot use. Zero means the
-// default, so only values outside the usable ranges are errors.
-func validCompaction(c protocol.CTOCompactionSettings) bool {
-	if c.ThresholdPercent != 0 && (c.ThresholdPercent < 10 || c.ThresholdPercent > 100) {
-		return false
-	}
-	if len(c.CacheWindowSeconds) > 32 {
-		return false
-	}
-	for provider, seconds := range c.CacheWindowSeconds {
-		if provider == "" || len(provider) > 64 || strings.IndexFunc(provider, unicode.IsControl) >= 0 {
-			return false
-		}
-		if seconds < 1 || seconds > 24*60*60 {
-			return false
-		}
-	}
-	return true
 }
 
 func (g *Gateway) handleCTOSettingsGet(w http.ResponseWriter, r *http.Request) {
@@ -140,10 +118,6 @@ func (g *Gateway) handleCTOSettingsSet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad harness", http.StatusBadRequest)
 		return
 	}
-	if in.Compaction != nil && !validCompaction(*in.Compaction) {
-		http.Error(w, "bad compaction settings", http.StatusBadRequest)
-		return
-	}
 	if in.Title != nil {
 		title, err := protocol.NormalizeCTOTitle(*in.Title)
 		if err != nil {
@@ -152,7 +126,7 @@ func (g *Gateway) handleCTOSettingsSet(w http.ResponseWriter, r *http.Request) {
 		}
 		*in.Title = title
 	}
-	if in.Model == nil && in.Harness == nil && in.Compaction == nil && in.Title == nil {
+	if in.Model == nil && in.Harness == nil && in.Title == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -166,9 +140,6 @@ func (g *Gateway) handleCTOSettingsSet(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Harness != nil {
 		current.Harness = *in.Harness
-	}
-	if in.Compaction != nil {
-		current.Compaction = *in.Compaction
 	}
 	if in.Title != nil {
 		current.Title = protocol.CTOTitleOrDefault(*in.Title)

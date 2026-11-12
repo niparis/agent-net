@@ -49,6 +49,9 @@ func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 		WorkerSandboxCutover    bool                          `json:"worker_sandbox_cutover"`
 		Values                  []settings.Value              `json:"values"`
 		Maturity                map[string]string             `json:"maturity"`
+		RepoAgents              map[string]string             `json:"repo_agents"`
+		RepoTeams               map[string]string             `json:"repo_teams"`
+		AgentTeams              map[string]string             `json:"agent_teams"`
 	}
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		return settings.Snapshot{}, err
@@ -56,7 +59,7 @@ func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 	if wire.Revision == nil || *wire.Revision < 0 {
 		return settings.Snapshot{}, fmt.Errorf("invalid revision")
 	}
-	snap := settings.Snapshot{Revision: *wire.Revision, Recipe: wire.Recipe, DeliveryCutover: wire.DeliveryCutover, DeliveryPipelineCutover: wire.DeliveryPipelineCutover, WorkerSandboxCutover: wire.WorkerSandboxCutover, Values: []settings.Value{}, Maturity: wire.Maturity}
+	snap := settings.Snapshot{Revision: *wire.Revision, Recipe: wire.Recipe, DeliveryCutover: wire.DeliveryCutover, DeliveryPipelineCutover: wire.DeliveryPipelineCutover, WorkerSandboxCutover: wire.WorkerSandboxCutover, Values: []settings.Value{}, Maturity: wire.Maturity, RepoAgents: wire.RepoAgents, RepoTeams: wire.RepoTeams, AgentTeams: wire.AgentTeams}
 	for _, a := range wire.DeliveryAssignments {
 		ref := protocol.DeliveryEdgeRef(a.Kind)
 		if a.Project != "" && a.Node != "" && ref.Step == a.Step && ref.For == a.For && ref.AfterMerge == a.AfterMerge && a.Step != "" {
@@ -74,7 +77,7 @@ func (d *Daemon) cleanSettingsSnapshot(raw []byte) (settings.Snapshot, error) {
 			}
 		}
 		id := v.Key + "\x00" + v.Level + "\x00" + v.Scope + "\x00" + v.Item
-		if !ok || !allowed || seen[id] || v.Item != "" || (v.Level != "network" && v.Level != "repo") || (v.Level == "network" && v.Scope != "network") || (v.Level == "repo" && v.Scope == "") {
+		if !ok || !allowed || seen[id] || v.Item != "" || (v.Level != "network" && v.Level != "team" && v.Level != "repo" && v.Level != "agent") || (v.Level == "network" && v.Scope != "network") || (v.Level != "network" && v.Scope == "") {
 			if d.log != nil {
 				d.log.Printf("settings: ignoring unknown or invalid address %s", v.Key)
 			}

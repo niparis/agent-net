@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
@@ -65,7 +66,8 @@ func bumpSettingsRevision(tx *sql.Tx) error {
 
 // settingsTables are the tables settingsSnapshotTx reads. Keep it equal to the
 // queries there (see readThrough).
-var settingsTables = []string{"setting_revision", "setting_values", "graph_charter", "graph_edges"}
+var settingsTables = []string{"setting_revision", "setting_values", "graph_charter", "graph_edges",
+	"repos.id", "repos.owner_agent_id", "teams", "team_members"}
 
 // SettingsSnapshot reads all settings. The read is kept until one of
 // settingsTables is written, and each caller gets a copy.
@@ -141,6 +143,60 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 	if err != nil {
 		return out, err
 	}
+	// A reader on a machine has no graph: carry the repo's agent and team so
+	// the team and agent levels resolve without a round trip.
+	out.RepoAgents, out.RepoTeams, out.AgentTeams = map[string]string{}, map[string]string{}, map[string]string{}
+	rows, err = tx.Query(`SELECT id, COALESCE(owner_agent_id,'') FROM repos WHERE COALESCE(owner_agent_id,'')<>'' ORDER BY id`)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var repo, agent string
+		if err = rows.Scan(&repo, &agent); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.RepoAgents[repo] = agent
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return out, err
+	}
+	rows, err = tx.Query(`SELECT tm.member_id, tm.team_id FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE t.active=1 AND tm.member_kind='repo' ORDER BY tm.member_id, tm.team_id`)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var member, team string
+		if err = rows.Scan(&member, &team); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.RepoTeams[member] = team
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return out, err
+	}
+	rows, err = tx.Query(`SELECT tm.member_id, tm.team_id FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE t.active=1 AND tm.member_kind='agent' ORDER BY tm.member_id, tm.team_id`)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var member, team string
+		if err = rows.Scan(&member, &team); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.AgentTeams[member] = team
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return out, err
+	}
 	rows, err = tx.Query(`SELECT target,kind,source FROM graph_edges WHERE kind IN ('accepts','reviews','tests','tests_after_merge','approves','approves_deploy','merges','releases','deploys','delivery_deploys','verifies') ORDER BY target,kind,source`)
 	if err != nil {
 		return out, err
@@ -190,6 +246,107 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 		}
 	}
 	return out, nil
+}
+
+// cutoverSessionCompactionTx folds the old CTO compaction controls into the
+// shared session keys (decision 0138). It runs once, from the schema migration.
+func (s *Store) cutoverSessionCompactionTx(tx *sql.Tx) error {
+	// A replay can reach this migration on a database that has no revision row
+	// yet: an old fixture, or a rewind into the migrations before the settings
+	// schema. Create it the way the schema does so the cutover still writes the
+	// CTO threshold.
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO setting_revision (id, revision) VALUES (1, 0)`); err != nil {
+		return err
+	}
+	var revision int64
+	if err := tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&revision); err != nil {
+		return err
+	}
+	// The old CTO settings row is the sign of an upgrade. A fresh database has
+	// none, and must start with no stored compaction value and revision 0.
+	var legacy string
+	legacyCTO := false
+	switch err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_settings'`).Scan(&legacy); err {
+	case nil:
+		legacyCTO = true
+	case sql.ErrNoRows:
+	default:
+		return err
+	}
+	changed := false
+	if legacyCTO {
+		// The CTO's threshold was 50 percent. Store that at agent level so it
+		// keeps its behaviour when the shared default is 80.
+		res, err := tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision)
+	 SELECT 'sessions.compaction_threshold_percent','agent','cto','','50',revision FROM setting_revision WHERE id=1
+	 AND NOT EXISTS (SELECT 1 FROM setting_values WHERE key='sessions.compaction_threshold_percent' AND level='agent' AND scope='cto' AND item='')`)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			changed = true
+		}
+	}
+	// An explicit old idle window becomes the cache window for providers that
+	// have no entry. The default key covers providers without their own value.
+	windows := map[string]int64{}
+	var rawWindow string
+	switch err := tx.QueryRow(`SELECT value FROM setting_values WHERE key='sessions.idle_compaction_after' AND level='network' AND scope='network' AND item=''`).Scan(&rawWindow); err {
+	case nil:
+		var text string
+		if json.Unmarshal([]byte(rawWindow), &text) == nil {
+			if d, derr := time.ParseDuration(text); derr == nil && d > 0 {
+				windows["default"] = int64(d / time.Second)
+			}
+		}
+	case sql.ErrNoRows:
+	default:
+		return err
+	}
+	if legacyCTO {
+		var old struct {
+			Compaction struct {
+				CacheWindowSeconds map[string]int `json:"cache_window_seconds"`
+			} `json:"compaction"`
+		}
+		if json.Unmarshal([]byte(legacy), &old) == nil {
+			for provider, seconds := range old.Compaction.CacheWindowSeconds {
+				if provider != "" && seconds > 0 {
+					windows[provider] = int64(seconds)
+				}
+			}
+		}
+	}
+	if len(windows) > 0 {
+		var existing string
+		err := tx.QueryRow(`SELECT value FROM setting_values WHERE key='sessions.cache_window_seconds' AND level='network' AND scope='network' AND item=''`).Scan(&existing)
+		if err == nil {
+			var have map[string]int64
+			if json.Unmarshal([]byte(existing), &have) == nil {
+				for provider, seconds := range have {
+					windows[provider] = seconds
+				}
+			}
+		} else if err != sql.ErrNoRows {
+			return err
+		}
+		encoded, err := json.Marshal(windows)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision)
+ VALUES('sessions.cache_window_seconds','network','network','',?,?)
+ ON CONFLICT(key,level,scope,item) DO UPDATE SET value=excluded.value,revision=excluded.revision`, string(encoded), revision); err != nil {
+			return err
+		}
+		changed = true
+	}
+	if changed {
+		if _, err := tx.Exec(`UPDATE setting_revision SET revision=revision+1 WHERE id=1`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // settingsCutoverActor identifies an internal migration in history. It is
@@ -312,8 +469,26 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		if !actorAllowed(actor, d.Kind) {
 			return result, reject("%s cannot change %s", actor, d.Kind)
 		}
-		if c.Item != "" || (c.Level != "network" && c.Level != "repo") || !hasLevel(d.Levels, c.Level) || (c.Level == "network" && c.Scope != "network") || (c.Level == "repo" && c.Scope == "") {
+		if c.Item != "" || (c.Level != "network" && c.Level != "team" && c.Level != "repo" && c.Level != "agent") || !hasLevel(d.Levels, c.Level) || (c.Level == "network" && c.Scope != "network") || (c.Level != "network" && c.Scope == "") {
 			return result, reject("invalid setting address")
+		}
+		if c.Level == "team" {
+			var exists int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM teams WHERE id=? AND active=1`, c.Scope).Scan(&exists); err != nil {
+				return result, err
+			}
+			if exists == 0 {
+				return result, reject("unknown team %s", c.Scope)
+			}
+		}
+		if c.Level == "agent" {
+			var exists int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM agents WHERE id=? AND tombstone=0`, c.Scope).Scan(&exists); err != nil {
+				return result, err
+			}
+			if exists == 0 {
+				return result, reject("unknown agent %s", c.Scope)
+			}
 		}
 		a := address(c)
 		if seen[a] {

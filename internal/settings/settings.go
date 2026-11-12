@@ -126,7 +126,7 @@ func Load(data []byte) (*Recipe, error) {
 		}
 		seen := map[string]bool{}
 		for _, l := range d.Levels {
-			if seen[l] || !contains([]string{"network", "repo", "agent", "session", "run"}, l) {
+			if seen[l] || !contains([]string{"network", "team", "repo", "agent", "session", "run"}, l) {
 				return nil, fmt.Errorf("%s: invalid level", d.Key)
 			}
 			seen[l] = true
@@ -310,6 +310,22 @@ func (d Definition) yamlValue(n *yaml.Node) (json.RawMessage, error) {
 			a = append(a, x.Value)
 		}
 		v = a
+	case "map":
+		if n.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("expected map")
+		}
+		m := map[string]int64{}
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if n.Content[i].Tag != "!!str" || n.Content[i+1].Tag != "!!int" {
+				return nil, fmt.Errorf("map keys must be strings and values integers")
+			}
+			var seconds int64
+			if err := n.Content[i+1].Decode(&seconds); err != nil || seconds < 1 {
+				return nil, fmt.Errorf("map values must be positive integers")
+			}
+			m[n.Content[i].Value] = seconds
+		}
+		v = m
 	default:
 		return nil, fmt.Errorf("unknown type %s", d.Type)
 	}
@@ -462,6 +478,17 @@ func (d Definition) codec(raw json.RawMessage, expected bool) (json.RawMessage, 
 		}
 		sort.Strings(a)
 		value = a
+	case "map":
+		var m map[string]int64
+		if err := json.Unmarshal(raw, &m); err != nil || m == nil {
+			return nil, fmt.Errorf("invalid map")
+		}
+		for key, seconds := range m {
+			if key == "" || seconds < 1 {
+				return nil, fmt.Errorf("map keys must be present and values positive")
+			}
+		}
+		value = m
 	default:
 		return nil, fmt.Errorf("unknown type %s", d.Type)
 	}
@@ -607,10 +634,16 @@ type Snapshot struct {
 	Recipe                  string               `json:"recipe"`
 	Values                  []Value              `json:"values"`
 	Maturity                map[string]string    `json:"maturity"`
+	// RepoAgents, RepoTeams and AgentTeams let a reader find the team and
+	// agent levels that apply to a repo without asking the gateway.
+	RepoAgents map[string]string `json:"repo_agents,omitempty"`
+	RepoTeams  map[string]string `json:"repo_teams,omitempty"`
+	AgentTeams map[string]string `json:"agent_teams,omitempty"`
 }
 type Host struct{ RAMBytes int64 }
 type Where struct {
 	Repo         string
+	Team         string
 	Agent        string
 	Session, Run map[string]json.RawMessage
 	Host         Host
@@ -721,6 +754,21 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 			log.Printf("settings: ignoring invalid %s at network: %v", key, err)
 		}
 	}
+	agent, team := w.Agent, w.Team
+	if agent == "" && w.Repo != "" {
+		agent = s.RepoAgents[w.Repo]
+	}
+	if team == "" && w.Repo != "" {
+		team = s.RepoTeams[w.Repo]
+	}
+	if team == "" && agent != "" {
+		team = s.AgentTeams[agent]
+	}
+	if team != "" && contains(d.Levels, "team") {
+		if v := find("team", team); v != nil {
+			apply(v, "team "+team, "team", team, "")
+		}
+	}
 	if w.Repo != "" && contains(d.Levels, "repo") {
 		v := find("repo", w.Repo)
 		if v != nil {
@@ -738,9 +786,9 @@ func (s Snapshot) Resolve(key string, w Where) (Effective, error) {
 			}
 		}
 	}
-	if w.Agent != "" && contains(d.Levels, "agent") {
-		if v := find("agent", w.Agent); v != nil {
-			apply(v, "agent "+w.Agent, "agent", w.Agent, "")
+	if agent != "" && contains(d.Levels, "agent") {
+		if v := find("agent", agent); v != nil {
+			apply(v, "agent "+agent, "agent", agent, "")
 		}
 	}
 	if contains(d.Levels, "session") {

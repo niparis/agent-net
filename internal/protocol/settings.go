@@ -63,7 +63,7 @@ type SettingsTarget struct {
 }
 
 // SettingsRef is a resolved target or a source of an effective value. Kind is
-// network, repo, agent, or recipe for the standard recipe. Names are
+// network, team, repo, agent, or recipe for the standard recipe. Names are
 // presentation; ID is storage identity and never changes on rename.
 type SettingsRef struct {
 	Kind  string `json:"kind"`

@@ -59,10 +59,6 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 			openCodeModel = *in.Model
 		}
 	}
-	compaction := remote.Compaction.Normalized()
-	if in.Compaction != nil {
-		compaction = in.Compaction.Normalized()
-	}
 	switched := in.Harness != nil && previousHarness != harness
 	if switched {
 		if err := d.snapshotCTOHarness(ctx, previousHarness); err != nil {
@@ -91,12 +87,11 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 			return protocol.CTOSettings{}, err
 		}
 	}
-	if in.Model != nil || in.Harness != nil || in.Compaction != nil || in.Title != nil {
+	if in.Model != nil || in.Harness != nil || in.Title != nil {
 		remote.Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
 		remote.Harness = harness
 		remote.OpenCodeModel = openCodeModel
 		remote.ClaudeModel = claudeModel
-		remote.Compaction = compaction
 		remote.Title = title
 		if err := writeRemoteCTOSettings(ctx, c, remote); err != nil {
 			return protocol.CTOSettings{}, err
@@ -108,9 +103,7 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	out.OpenCodeModel = openCodeModel
 	out.ClaudeModel = claudeModel
 	out.Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
-	out.Compaction = compaction
 	out.Title = title
-	d.cacheCTOSettings(out)
 	return out, nil
 }
 

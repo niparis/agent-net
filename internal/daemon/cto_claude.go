@@ -54,6 +54,18 @@ type claudeCTOHarness struct{}
 
 func (claudeCTOHarness) name() string { return "claude" }
 
+// IsClaudeCTOJob says whether job is the Claude background job bound as the
+// CTO's conversation. The Claude adapter compacts that job at the cto agent
+// level, and the owner's open attach client does not stop it.
+func (d *Daemon) IsClaudeCTOJob(job string) bool {
+	if job == "" {
+		return false
+	}
+	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
+	return job == d.claudeCTO.ref
+}
+
 // releaseClaudeCTOLocked forgets the CTO's Claude job without ending it.
 func (d *Daemon) releaseClaudeCTOLocked() {
 	c := &d.claudeCTO

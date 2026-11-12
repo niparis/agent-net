@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
 
@@ -36,21 +38,38 @@ func TestIdleCompact(t *testing.T) {
 	for _, tc := range []struct {
 		name, status, kind                             string
 		tokens                                         int
+		model                                          string
 		age                                            time.Duration
 		attached, noPrompt, disabled, scanError, noJob bool
+		worker                                         bool
+		cto                                            bool // the job bound as the CTO's Claude conversation
+		repo                                           string
+		repoThreshold                                  int
+		agentThreshold                                 int    // agent-level threshold, for the CTO
 		clients                                        string // ps output; the clients' pids are asked to the host
 		viewing                                        bool   // the host says the client's herdr pane is focused, or outside herdr
 		wantLog                                        string
 		wantScans                                      int // herdr scans: none when no candidate passes the token check
 		want                                           int
 	}{
-		{name: "eligible", status: "idle", kind: "bg", tokens: 200000, age: 50 * time.Minute, want: 1},
+		{name: "idle inside the anthropic window", status: "idle", kind: "bg", tokens: 300000, age: 10 * time.Minute},
+		{name: "idle past the anthropic window", status: "idle", kind: "bg", tokens: 300000, age: 55 * time.Minute, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "fill before idle", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "fill with no idle time", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 0, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "repo threshold blocks fill", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, repo: "shop", repoThreshold: 90},
+		{name: "repo threshold allows fill", status: "idle", kind: "bg", tokens: 750000, model: "claude-sonnet-5", age: 4 * time.Minute, repo: "shop", repoThreshold: 70, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "worker is never compacted", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, worker: true},
 		{name: "busy", status: "busy", kind: "bg", tokens: 300000, age: time.Hour},
 		{name: "shell", status: "shell", kind: "bg", tokens: 300000, age: time.Hour},
 		{name: "interactive", status: "idle", kind: "interactive", tokens: 300000, age: time.Hour},
-		{name: "attached", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true},
+		{name: "attached is still skipped without the CTO", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true, wantLog: "event=idle_compact session=test result=skipped:viewing"},
+		{name: "CTO compacts while the owner has the pane open", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true, cto: true, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "CTO ignores the idle token floor", status: "idle", kind: "bg", tokens: 100000, age: time.Hour, cto: true, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "CTO fill at its agent threshold", status: "idle", kind: "bg", tokens: 500000, model: "claude-sonnet-5", age: 4 * time.Minute, cto: true, agentThreshold: 50, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "CTO fill at its code default", status: "idle", kind: "bg", tokens: 500000, model: "claude-sonnet-5", age: 4 * time.Minute, cto: true, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "CTO stored threshold wins over the code default", status: "idle", kind: "bg", tokens: 500000, model: "claude-sonnet-5", age: 4 * time.Minute, cto: true, agentThreshold: 90},
 		{name: "small", status: "idle", kind: "bg", tokens: 199999, age: time.Hour},
-		{name: "recent", status: "idle", kind: "bg", tokens: 300000, age: 49 * time.Minute},
+		{name: "recent", status: "idle", kind: "bg", tokens: 300000, age: 4 * time.Minute},
 		{name: "disabled", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, disabled: true},
 		{name: "process scan failure", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, scanError: true},
 		{name: "missing job ID", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, noJob: true},
@@ -72,7 +91,7 @@ func TestIdleCompact(t *testing.T) {
 				t.Fatal(err)
 			}
 			transcript := filepath.Join(td, "test.jsonl")
-			before := fmt.Sprintf("{\"type\":\"system\",\"subtype\":\"compact_boundary\"}\n{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":20,\"cache_read_input_tokens\":%d}}}\n", tc.tokens-30)
+			before := fmt.Sprintf("{\"type\":\"system\",\"subtype\":\"compact_boundary\"}\n{\"type\":\"assistant\",\"message\":{\"model\":%q,\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":20,\"cache_read_input_tokens\":%d}}}\n", tc.model, tc.tokens-30)
 			if err := os.WriteFile(transcript, []byte(before), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -112,6 +131,21 @@ func TestIdleCompact(t *testing.T) {
 				h.snap.Values = []settings.Value{{Key: "sessions.idle_compaction", Level: "network", Scope: "network", Value: []byte("false")}}
 			}
 			a := New(Config{SessionsDir: sessions, ProjectsDir: projects})
+			h.worker = tc.worker
+			h.cto = tc.cto
+			h.where = settings.Where{Repo: tc.repo}
+			if tc.repoThreshold > 0 || tc.agentThreshold > 0 {
+				h.snap.Values = append(h.snap.Values,
+					settings.Value{Key: "sessions.compaction_threshold_percent", Level: "network", Scope: "network", Value: []byte("80")})
+			}
+			if tc.repoThreshold > 0 {
+				h.snap.Values = append(h.snap.Values,
+					settings.Value{Key: "sessions.compaction_threshold_percent", Level: "repo", Scope: tc.repo, Value: []byte(strconv.Itoa(tc.repoThreshold))})
+			}
+			if tc.agentThreshold > 0 {
+				h.snap.Values = append(h.snap.Values,
+					settings.Value{Key: "sessions.compaction_threshold_percent", Level: "agent", Scope: "cto", Value: []byte(strconv.Itoa(tc.agentThreshold))})
+			}
 			a.host = h
 			a.compactNow = func() time.Time { return now }
 			a.compactBinary = bin
@@ -173,8 +207,24 @@ func TestIdleCompact(t *testing.T) {
 					t.Errorf("%d event lines for one idle stretch, want 1; logs=%v", n, h.logs)
 				}
 				if tc.want > 0 {
-					if got := h.current()[0].IdleCompactedAt; got != started.Unix() {
+					if got := h.current()[0].LastCompactedAt; got != started.Unix() {
 						t.Fatalf("note timestamp=%d", got)
+					}
+					wantReason := "idle"
+					if tc.model != "" {
+						fill, _ := protocol.ContextFill(int64(tc.tokens), protocol.ClaudeContextLimit(tc.model))
+						wantReason = fmt.Sprintf("fill %d%%", fill)
+					}
+					if got := h.current()[0].LastCompactedReason; got != wantReason {
+						t.Fatalf("note reason=%q, want %q", got, wantReason)
+					}
+					// The adapter records the finished compaction immediately,
+					// not only on the next discovery poll.
+					h.mu.Lock()
+					notes := append([]compactNote(nil), h.notes...)
+					h.mu.Unlock()
+					if len(notes) != 1 || notes[0].harness != "claude" || notes[0].session != "test" || notes[0].reason != wantReason || notes[0].at != started.Unix() {
+						t.Fatalf("compaction notes=%v, want one %q at %d", notes, wantReason, started.Unix())
 					}
 					// A real busy observation starts a new stretch; polling idle alone did not.
 					// A busy turn writes to the transcript, so write one too: the
@@ -211,11 +261,61 @@ func TestIdleCompact(t *testing.T) {
 	}
 }
 
+// The shipped Anthropic window is an hour, and the idle trigger keeps a
+// margin, so a Claude session compacts between 50 and 59 minutes idle: the
+// same place it did when the rule was a fixed 50 minutes.
+func TestIdleCompactClaudeCacheWindow(t *testing.T) {
+	windows := settings.Snapshot{}.Map("sessions.cache_window_seconds", settings.Where{})
+	if got := windows["anthropic"]; got != 3600 {
+		t.Fatalf("anthropic window=%d, want 3600", got)
+	}
+	idle := protocol.CacheIdleAfter(windows, "anthropic")
+	if idle < 50*time.Minute || idle > 59*time.Minute {
+		t.Fatalf("Claude idle compaction after %v, want 50 to 59 minutes", idle)
+	}
+	if got := protocol.CacheIdleAfter(windows, "fake"); got != 270*time.Second {
+		t.Fatalf("default window idle after %v, want 4m30s", got)
+	}
+}
+
 type compactHost struct {
 	*fakeHost
 	snap    settings.Snapshot
 	viewing map[int]bool
+	worker  bool
+	cto     bool
+	where   settings.Where
 	scans   int // calls of AttachClientsViewing: one per scan
+	notes   []compactNote
+}
+
+// compactNote is one record the adapter sent with NoteCompacted.
+type compactNote struct {
+	harness, session string
+	at               int64
+	reason           string
+}
+
+func (h *compactHost) SettingsWhere(harness, nativeID string) settings.Where {
+	if harness == "claude" && nativeID == "test" {
+		return h.where
+	}
+	return settings.Where{}
+}
+
+func (h *compactHost) IsWorkerSession(harness, nativeID string) bool {
+	return h.worker && harness == "claude" && nativeID == "test"
+}
+
+// IsClaudeCTOJob makes the fake job "job-test" the CTO's conversation.
+func (h *compactHost) IsClaudeCTOJob(job string) bool {
+	return h.cto && job == "job-test"
+}
+
+func (h *compactHost) NoteCompacted(harness, nativeID string, at int64, reason string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.notes = append(h.notes, compactNote{harness: harness, session: nativeID, at: at, reason: reason})
 }
 
 func (h *compactHost) AttachClientsViewing(pids []int) map[int]bool {

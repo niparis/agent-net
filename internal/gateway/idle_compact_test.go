@@ -1,33 +1,187 @@
 package gateway
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
-func TestSettingsIdleCompactionSessionNote(t *testing.T) {
+func TestCompactionCacheWindowMigration(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('sessions.idle_compaction_after','network','network','','"45m"',1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_settings','{"compaction":{"cache_window_seconds":{"anthropic":600}}}',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.cutoverSessionCompactionTx(tx); err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	windows := snap.Map("sessions.cache_window_seconds", settings.Where{})
+	if windows["default"] != 45*60 || windows["anthropic"] != 600 {
+		t.Fatalf("migrated windows=%v", windows)
+	}
+}
+
+// TestSessionCompactionCutoverWithoutRevisionRow covers an old database that
+// reaches the compaction cutover with no setting_revision row, as a fixture or
+// a replay that starts before the settings schema does. Its old CTO settings
+// row marks an upgrade, so the cutover creates the row and writes the CTO's 50
+// percent threshold, and a second replay leaves it alone.
+func TestSessionCompactionCutoverWithoutRevisionRow(t *testing.T) {
+	s, _ := newTestStore(t)
+	// An old database: an old CTO settings row, no revision row and none of
+	// the values this cutover writes, so the checks below prove the cutover
+	// wrote them.
+	for _, q := range []string{
+		`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_settings','{"compaction":{}}',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+		`DELETE FROM setting_revision`,
+		`DELETE FROM setting_values WHERE key IN ('sessions.compaction_threshold_percent','sessions.cache_window_seconds')`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rewind := migrationVersion(t, "Session compaction settings cutover") - 1
+	for i := 0; i < 2; i++ {
+		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.migrate(); err != nil {
+			t.Fatalf("replay %d: %v", i, err)
+		}
+	}
+	var threshold int
+	if err := s.db.QueryRow(`SELECT value FROM setting_values WHERE key='sessions.compaction_threshold_percent' AND level='agent' AND scope='cto' AND item=''`).Scan(&threshold); err != nil {
+		t.Fatal(err)
+	}
+	if threshold != 50 {
+		t.Fatalf("CTO threshold=%d, want 50", threshold)
+	}
+	var revision int64
+	if err := s.db.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if revision != 1 {
+		t.Fatalf("revision=%d, want 1", revision)
+	}
+}
+
+// TestFreshStoreHasNoCompactionValues proves a fresh install starts with no
+// stored compaction value and revision 0. The CTO's 50 lives in code, not in
+// the database, until the owner stores a value.
+func TestFreshStoreHasNoCompactionValues(t *testing.T) {
+	s, _ := newTestStore(t)
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Revision != 0 {
+		t.Fatalf("revision=%d, want 0", snap.Revision)
+	}
+	var stored int
+	if err := s.db.QueryRow(`SELECT count(*) FROM setting_values WHERE key IN ('sessions.compaction_threshold_percent','sessions.cache_window_seconds')`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != 0 {
+		t.Fatalf("fresh store has %d stored compaction values, want 0", stored)
+	}
+	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{}); got != 80 {
+		t.Fatalf("network threshold=%d, want the recipe default 80", got)
+	}
+}
+
+func TestCompactionThresholdTeamAndAgentLevels(t *testing.T) {
+	s, _ := newTestStore(t)
+	for _, q := range []string{
+		`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('shop-lead','shop-lead','',0,0,0)`,
+		`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('shop','shop',0,0,'shop-lead')`,
+		`INSERT INTO teams(id,name,created_at,updated_at) VALUES('forge','forge',0,0)`,
+		`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','shop','forge')`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	value := func(v string) json.RawMessage { return json.RawMessage(v) }
+	if _, err := s.WriteSettings([]protocol.SettingsChange{
+		{Key: "sessions.compaction_threshold_percent", Level: "network", Scope: "network", Value: value("80")},
+		{Key: "sessions.compaction_threshold_percent", Level: "team", Scope: "forge", Value: value("60")},
+		{Key: "sessions.compaction_threshold_percent", Level: "agent", Scope: "shop-lead", Value: value("50")},
+	}, "owner", "compaction policy"); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{Repo: "shop"}); got != 50 {
+		t.Fatalf("repo threshold=%d, want the agent value 50", got)
+	}
+	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{Repo: "shop", Agent: "other"}); got != 60 {
+		t.Fatalf("team threshold=%d, want 60", got)
+	}
+}
+
+func TestCompactionShippedDefaults(t *testing.T) {
+	s, _ := newTestStore(t)
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The settings layer ships 80 for every agent. The daemon applies the
+	// CTO's own 50 when no level stores a threshold.
+	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{Agent: "cto"}); got != 80 {
+		t.Fatalf("recipe threshold=%d, want 80", got)
+	}
+	if got := snap.Int("sessions.compaction_threshold_percent", settings.Where{}); got != 80 {
+		t.Fatalf("network threshold=%d, want 80", got)
+	}
+	// The old idle window was never set explicitly here, so the shipped
+	// per-provider defaults stay: Claude Code keeps its hour-long cache and
+	// every other provider keeps the 5-minute one.
+	windows := snap.Map("sessions.cache_window_seconds", settings.Where{})
+	if windows["anthropic"] != 3600 || windows["default"] != 300 {
+		t.Fatalf("cache windows=%v, want anthropic 3600 and default 300", windows)
+	}
+}
+
+func TestSettingsLastCompactedSessionNote(t *testing.T) {
 	s, _ := newTestStore(t)
 	n, _, err := s.CreateNode("test", "linux")
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := protocol.SessionInfo{Harness: "claude", NativeID: "test", Status: "idle", IdleCompactedAt: 1700000000}
+	in := protocol.SessionInfo{Harness: "claude", NativeID: "test", Status: "idle", LastCompactedAt: 1700000000, LastCompactedReason: "fill 82%"}
 	id, err := s.UpsertSession(n, in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a, ok, err := s.Agent(id)
-	if err != nil || !ok || a.IdleCompactedAt != in.IdleCompactedAt {
+	if err != nil || !ok || a.LastCompactedAt != in.LastCompactedAt || a.LastCompactedReason != in.LastCompactedReason {
 		t.Fatalf("note round trip: %+v %v", a, err)
 	}
-	in.IdleCompactedAt = 0
+	in.LastCompactedAt, in.LastCompactedReason = 0, ""
 	in.Status = "busy"
 	if _, err := s.UpsertSession(n, in); err != nil {
 		t.Fatal(err)
 	}
 	a, _, err = s.Agent(id)
-	if err != nil || a.IdleCompactedAt != 0 {
+	if err != nil || a.LastCompactedAt != 0 || a.LastCompactedReason != "" {
 		t.Fatalf("clear note: %+v %v", a, err)
 	}
 }

@@ -35,13 +35,16 @@ func (s *Store) ResolveSettingsTarget(t protocol.SettingsTarget) (protocol.Setti
 		}
 		out.Target = &protocol.SettingsRef{Kind: "network", ID: "network", Name: "network", Token: token}
 		return out, nil
-	case "repo", "agent":
+	case "team", "repo", "agent":
 		if name == "" {
 			return out, reject("%s target needs a name", level)
 		}
 		query := `SELECT id,display_name FROM repos WHERE display_name=? ORDER BY id`
-		if level == "agent" {
+		switch level {
+		case "agent":
 			query = `SELECT id,display_name FROM agents WHERE display_name=? AND tombstone=0 ORDER BY id`
+		case "team":
+			query = `SELECT id,name FROM teams WHERE name=? AND active=1 ORDER BY id`
 		}
 		rows, err := s.db.Query(query, name)
 		if err != nil {

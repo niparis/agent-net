@@ -22,6 +22,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 const ctoBrief = `You are the CTO for the owner in this chat. agent-net connects the owner's coding agents and workers across machines. Manage the network and show the owner a view with ` + "`cto_ui_show`" + `. Act at once on changes, settings, worker and session actions, tools, shared MCP servers, and messages. Only the cto_op operations node_remove, agent_tombstone, repo_archive, machine_remove and machine_rotate require an owner proposal. The owner sees actions in the Inbox and can undo reversible changes there. Report the backend state, including queued, starting or refused, as returned in result.data. For an open proposal use ` + "`proposal_ask`" + ` to open the approval dialog. A proposal result means waiting, not that the change ran. Plain sends and replies carry the CTO peer note; set as_owner true when sending or replying on the owner's instructions. The owner's standing orders arrive at the start of each conversation and stay in force. When the owner gives a lasting instruction, save it with ` + "`cto_standing_orders`" + `. To trust a folder for Claude Code, use session_change action trust with project or path, or trust true on session_start. To stop orphan processes the owner names, use cto_op method process_stop with node_id (always the machine that runs them) and pids; it sends TERM, then KILL after 5 seconds, refuses live sessions, workers, the daemon, pid 1 and other users' processes, and cannot be undone, so check the pids first. When a Claude start fails with mcp_approval_needed, use session_change action mcp_servers (approve or disable) for that folder, or mcp_servers on session_start; a start failure also arrives as a message from the owner session. Only the owner starts conversations with you; agents and workers may reply to conversations you started. Use to_set with team set to send to online members. Read teams and membership with ` + "`agent_graph_read`" + ` using typed true.
@@ -77,15 +78,14 @@ type ctoProcess struct {
 // conversation. It is separate from mu so a slow compaction never blocks a
 // chat send.
 type ctoCompactState struct {
-	mu             sync.Mutex
-	sessionID      string
-	turn           bool
-	lastAssistant  string
-	idleSince      time.Time
-	compactedIdle  bool
-	pendingBefore  int64
-	settings       protocol.CTOSettings
-	settingsLoaded time.Time
+	mu            sync.Mutex
+	sessionID     string
+	turn          bool
+	lastAssistant string
+	idleSince     time.Time
+	compactedIdle bool
+	pendingBefore int64
+	reason        string
 }
 
 func (s *ctoCompactState) reset(sessionID string) {
@@ -673,32 +673,10 @@ func (d *Daemon) ctoNowTime() time.Time {
 	return time.Now()
 }
 
-// ctoCompactionSettings uses the cached owner settings for a minute; an
-// explicit cto_settings call refreshes the cache at once.
-func (d *Daemon) ctoCompactionSettings(ctx context.Context) protocol.CTOCompactionSettings {
-	cs := &d.cto.compact
-	cs.mu.Lock()
-	if !cs.settingsLoaded.IsZero() && d.ctoNowTime().Sub(cs.settingsLoaded) < time.Minute {
-		out := cs.settings.Compaction.Normalized()
-		cs.mu.Unlock()
-		return out
-	}
-	cached := cs.settings.Compaction.Normalized()
-	cs.mu.Unlock()
-	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
-	if err != nil {
-		return cached
-	}
-	d.cacheCTOSettings(settings)
-	return settings.Compaction.Normalized()
-}
-
-func (d *Daemon) cacheCTOSettings(settings protocol.CTOSettings) {
-	cs := &d.cto.compact
-	cs.mu.Lock()
-	cs.settings = settings
-	cs.settingsLoaded = d.ctoNowTime()
-	cs.mu.Unlock()
+// ctoCompactionSetting reads one session setting for the CTO's agent.
+func (d *Daemon) ctoCompactionSetting(key string) settings.Effective {
+	e, _ := d.SettingsSnapshot().Resolve(key, settings.Where{Agent: "cto"})
+	return e
 }
 
 // openCodeSessionBusy says whether OpenCode is running a turn for the conversation.
@@ -739,6 +717,12 @@ func (d *Daemon) openCodeSessionBusy(ctx context.Context, base, password, versio
 	return page.Data[session].Type == "running", true
 }
 
+// cacheIdleAfter is how long the CTO must be idle before the idle trigger
+// fires: the provider's prompt cache window minus its margin.
+func cacheIdleAfter(windows map[string]int64, provider string) time.Duration {
+	return protocol.CacheIdleAfter(windows, provider)
+}
+
 // ctoCompactOnce compacts at the threshold or before the cache expires,
 // at most once per idle period. This loop controls the OpenCode harness.
 func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
@@ -754,7 +738,14 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 		return nil
 	}
 	state := d.openCodeSessionContext(ctx, base, password, version, identity, session)
-	settings := d.ctoCompactionSettings(ctx)
+	snap := d.SettingsSnapshot()
+	where := settings.Where{Agent: "cto"}
+	threshold := snap.IntUnlessDefault("sessions.compaction_threshold_percent", where, protocol.CTOCompactionThreshold)
+	if threshold <= 0 {
+		threshold = 80
+	}
+	idleEnabled := snap.Bool("sessions.idle_compaction", where)
+	windows := snap.Map("sessions.cache_window_seconds", where)
 	now := d.ctoNowTime()
 
 	cs := &c.compact
@@ -794,23 +785,22 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 
 	reason := ""
 	if !cs.turn && !busy && state.Tokens > 0 && !cs.compactedIdle {
-		if state.Limit > 0 && state.Tokens*100 >= state.Limit*int64(settings.ThresholdPercent) {
-			reason = "threshold"
-		} else if *settings.CacheExpiryEnabled && !cs.idleSince.IsZero() {
+		if state.Limit > 0 && state.Tokens*100 >= state.Limit*int64(threshold) {
+			percent, _ := protocol.ContextFill(state.Tokens, state.Limit)
+			reason = fmt.Sprintf("fill %d%%", percent)
+		} else if idleEnabled && !cs.idleSince.IsZero() {
 			provider, _, _ := strings.Cut(state.Model, "/")
-			lead := settings.CacheWindow(provider) - 30*time.Second
-			if lead < 0 {
-				lead = 0
-			}
+			lead := cacheIdleAfter(windows, provider)
 			if !now.Before(cs.idleSince.Add(lead)) {
 				reason = "idle"
 			}
 		}
 	}
 	if reason != "" {
-		// One compaction per idle period, whether it is the threshold or the
+		// One compaction per idle period, whether it is the fill or the
 		// cache-expiry rule. A failed request is not retried in a loop.
 		cs.compactedIdle = true
+		cs.reason = reason
 	}
 	cs.mu.Unlock()
 
@@ -834,6 +824,7 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("compact: %w", err)
 	}
+	d.noteCompacted("opencode", session, d.ctoNowTime().Unix(), reason)
 	return nil
 }
 
