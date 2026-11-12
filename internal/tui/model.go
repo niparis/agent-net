@@ -184,12 +184,12 @@ type Model struct {
 	storedConvs       []protocol.ConversationView
 	convs             []messageConversation
 	convTotal         int
+	convVersion       uint64
 	convNext          string
 	convLoaded        bool
 	convLoading       bool
 	convErr           string
 	convSel           int
-	convAutoPages     int
 	convDetail        map[string]convDetail
 	convDetailLoading map[string]bool
 	// The owner's scroll in the open conversation: the first line shown, for
@@ -721,7 +721,9 @@ func (m Model) fetchCmd() tea.Cmd {
 			if m.tab == messagesTab {
 				res.convAsked = true
 				group(func(ctx context.Context) {
-					res.convPage, res.convErr = src.Conversations(ctx, protocol.QueryConversations{Limit: conversationPageSize})
+					res.convPage, res.convErr = src.Conversations(ctx, protocol.QueryConversations{
+						Limit: conversationPageSize, Lite: true, IfVersion: m.convVersion,
+					})
 				})
 			}
 		}

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -63,6 +64,11 @@ type Store struct {
 	// connector opens the database connection. Its write count says when
 	// data read from the database may be out of date.
 	connector *sqlitecache.Connector
+	// convEpoch makes the conversations list version unique to this store. The
+	// write counter below it starts from zero in every process, so without it
+	// a restarted gateway would hand out a version another process already
+	// used.
+	convEpoch uint32
 	// rc keeps reads that stay current until the next write. See readThrough.
 	rc                readCache
 	graphJunkRemoved  int64
@@ -1795,7 +1801,7 @@ func openStore(path string, seed func(path string) error) (*Store, error) {
 	// One connection keeps writes serialized and avoids lock errors. Reads run
 	// on a pool of read-only connections that opens at the end (see openReadPool).
 	wdb.SetMaxOpenConns(1)
-	s := &Store{db: &storeDB{w: wdb}, connector: connector, path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
+	s := &Store{db: &storeDB{w: wdb}, connector: connector, convEpoch: newConversationEpoch(), path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
 	db := s.db
 	if err := s.migrate(); err != nil {
 		db.Close()
@@ -5411,8 +5417,16 @@ const conversationsWorkerCountSQL = `SELECT COUNT(*) FROM (
 // grouping and filtering, never the screen.
 func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.ConversationPage, error) {
 	page := protocol.ConversationPage{Conversations: []protocol.ConversationView{}}
-	if q.Limit <= 0 || q.Limit > 100 {
+	if q.Limit <= 0 || q.Limit > 500 {
 		q.Limit = 50
+	}
+	// Read the version before the rows. A write that lands between the two is
+	// then newer than the version the caller keeps, so the next poll reads
+	// again instead of keeping rows that miss it.
+	version := s.conversationsVersion()
+	page.Version = version
+	if q.IfVersion != 0 && q.Cursor == "" && q.IfVersion == version {
+		return protocol.ConversationPage{Version: version, NotModified: true}, nil
 	}
 	normalWhere := conversationsNormalWhere("m")
 	sqlText, args := conversationsPageSQL(normalWhere, conversationsNormalWhere("b"), q.Cursor, q.Limit+1)
@@ -5429,8 +5443,13 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 			return page, err
 		}
 	}
-	if err := s.fillHourlySpread(normal, conversationsRowWhere("m")); err != nil {
-		return page, err
+	// The burst spread reads every message of every row on the page. The list
+	// row does not need it, and a TUI page holds hundreds of rows, so the lite
+	// read leaves it out.
+	if !q.Lite {
+		if err := s.fillHourlySpread(normal, conversationsRowWhere("m")); err != nil {
+			return page, err
+		}
 	}
 	rows := normal
 
@@ -5450,6 +5469,9 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 		return page, err
 	}
 	rows = append(rows, workerRows...)
+	if q.Lite {
+		shortenConversationRows(rows)
+	}
 
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].At.Equal(rows[j].At) {
@@ -5464,6 +5486,63 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 	}
 	page.Conversations = rows
 	return page, nil
+}
+
+// conversationsVersion moves whenever a write can change the list: a message
+// (a new one, a skipped lifecycle notice, a new state), a session's name,
+// harness or worker record, a profile name or a cited signal. It reads the
+// columns by name, so a session's heartbeat does not move it. It is an
+// in-memory counter, so an unchanged poll costs nothing.
+//
+// The high half is this store's run epoch and the low half is the write count.
+// The count starts from zero in every process, so a caller must never accept a
+// version from another process that happens to have climbed to the same
+// number.
+func (s *Store) conversationsVersion() uint64 {
+	stamp := s.readStamp([]string{
+		"messages", "sessions.name", "sessions.harness", "sessions.worker",
+		"profiles.name", "charter_signals",
+	})
+	return uint64(s.convEpoch)<<32 | uint64(uint32(stamp))
+}
+
+// conversationEpochBase separates the versions of two gateway processes. The
+// sequence keeps two stores in one process apart as well, so a test or a
+// second store on the same database can never reuse a version.
+var conversationEpochBase = func() uint32 {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return uint32(time.Now().UnixNano())
+	}
+	return binary.BigEndian.Uint32(b[:])
+}()
+
+var conversationEpochSeq atomic.Uint32
+
+func newConversationEpoch() uint32 {
+	return conversationEpochBase + conversationEpochSeq.Add(1)
+}
+
+// conversationListRunes is how much of a last line a list row keeps. The row
+// clips the text to the panel anyway, and the full line is one keystroke away
+// in the conversation the thread opens.
+const conversationListRunes = 100
+
+// shortenConversationRows cuts the long text a list row never draws in full.
+func shortenConversationRows(rows []protocol.ConversationView) {
+	for i := range rows {
+		rows[i].LastLine = cutRunes(rows[i].LastLine, conversationListRunes)
+		rows[i].SystemLine = cutRunes(rows[i].SystemLine, conversationListRunes)
+		rows[i].Task = cutRunes(rows[i].Task, conversationListRunes)
+	}
+}
+
+func cutRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // scanConversations reads the rows both conversation queries select. The last
