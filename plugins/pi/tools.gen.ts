@@ -1844,13 +1844,13 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_step_report",
-    "description": "Report the result of a delivery step you own for one change: pass, fail with findings, needs_owner, or close without merge. The caller of a change may close it at any step, with a note saying why. Name the exact commit you checked; a report for any other commit is refused.",
+    "description": "Report a delivery step you own: pass, fail with findings, needs_owner, or close without merge (the caller may close at any step, with a note). Name the exact commit you checked. Send reports for several steps. The reply is short; agent_changes_find has the change.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "change": {
           "type": "string",
-          "description": "Change ID, from the step task."
+          "description": "Change ID, from the step task. Required unless you send reports."
         },
         "step": {
           "type": "string",
@@ -1917,14 +1917,96 @@ export const TOOL_CATALOG = [
           "type": "string",
           "format": "date-time",
           "description": "waiting only: RFC 3339 time when evidence can first exist. Reminders pause until new evidence or 24h after this time."
+        },
+        "reports": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "change": {
+                "type": "string",
+                "description": "Change ID, from the step task."
+              },
+              "step": {
+                "type": "string",
+                "enum": [
+                  "accept",
+                  "review",
+                  "test",
+                  "approve",
+                  "merge",
+                  "release",
+                  "deploy",
+                  "verify"
+                ],
+                "description": "The step you report."
+              },
+              "for": {
+                "type": "string",
+                "enum": [
+                  "merge",
+                  "deploy"
+                ],
+                "description": "approve only: what the approval is for."
+              },
+              "after_merge": {
+                "type": "boolean",
+                "default": false,
+                "description": "True for a step that runs on the merged commit."
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "fail",
+                  "needs_owner",
+                  "close",
+                  "waiting"
+                ],
+                "description": "pass, fail with findings, needs_owner, waiting on an event, or close without merge."
+              },
+              "commit": {
+                "type": "string",
+                "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$",
+                "description": "Full hash of the exact commit you checked: the change head, or the merged commit after merge."
+              },
+              "fields": {
+                "type": "object",
+                "maxProperties": 16,
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "description": "Evidence fields the step task asks for, for example {\"suite\":\"full\",\"tests_added\":\"yes\"}, {\"findings_open\":\"0\"} or {\"merged_commit\":\"\u003chash\u003e\"}."
+              },
+              "done_by": {
+                "type": "string",
+                "description": "Session ID of a worker you started, or owner for direct approval in a delegated approval step. Default: you."
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 8192,
+                "description": "Findings, command run, why the owner is needed, or the required event for waiting."
+              },
+              "until": {
+                "type": "string",
+                "format": "date-time",
+                "description": "waiting only: RFC 3339 time when evidence can first exist. Reminders pause until new evidence or 24h after this time."
+              }
+            },
+            "required": [
+              "change",
+              "step",
+              "result",
+              "commit"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Batch form: several reports in one call, each with change, step, result and commit as above. Leave the single-report fields out. A refused report carries its error and the rest still run."
         }
       },
-      "required": [
-        "change",
-        "step",
-        "result",
-        "commit"
-      ],
+      "required": [],
       "additionalProperties": false
     },
     "roles": [

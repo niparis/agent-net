@@ -56,7 +56,7 @@ func TestDeliveryToolsCallTheDaemon(t *testing.T) {
 	results := map[string]any{
 		protocol.OpChangeSubmit: protocol.ChangeSubmitResult{Change: view},
 		protocol.OpStepClaim:    protocol.StepClaimResult{Claimed: true, SessionID: "s_me"},
-		protocol.OpStepReport:   protocol.StepReportResult{Evidence: ev, Change: view},
+		protocol.OpStepReport:   protocol.StepReportReply{StepReportShort: protocol.ShortStepReport(protocol.StepReportResult{Evidence: ev, Change: view})},
 		protocol.OpChangesFind:  protocol.ChangesFindResult{Items: []protocol.ChangeView{view}, Total: 1, NextCursor: "ch_1"},
 	}
 	var mu sync.Mutex
@@ -169,7 +169,7 @@ func TestDeliveryOutputSchemasMatchProtocol(t *testing.T) {
 	for name, value := range map[string]any{
 		"agent_change_submit": protocol.ChangeSubmitResult{Change: view, Bumped: true},
 		"agent_step_claim":    protocol.StepClaimResult{Claimed: true, SessionID: "s_2"},
-		"agent_step_report":   protocol.StepReportResult{Evidence: ev, Change: view},
+		"agent_step_report":   protocol.StepReportReply{StepReportShort: protocol.ShortStepReport(protocol.StepReportResult{Evidence: ev, Change: view})},
 		"agent_changes_find":  map[string]any{"items": []protocol.ChangeView{view, {Change: c, Steps: steps}}, "total": 2, "next_cursor": "x"},
 		"agent_ask_sort": protocol.AskSortResult{Ask: "i_1", Result: "read", Next: "owner", State: "open",
 			Stats: &protocol.AskSortStats{Sorter: "chief", Counts: map[string]int{protocol.AskSortClose: 2}, FirstID: 1, LastID: 2},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -564,8 +565,8 @@ func TestStepReportDoneBy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("done_by of my worker: %v", err)
 	}
-	var out protocol.StepReportResult
-	if err := json.Unmarshal(res, &out); err != nil || out.Evidence.By != "s_mine" {
+	var out protocol.StepReportReply
+	if err := json.Unmarshal(res, &out); err != nil || out.Step != "review" || out.Result != protocol.StepResultPass {
 		t.Fatalf("report result %s: %v", res, err)
 	}
 	var q protocol.StepReportRequest
@@ -866,5 +867,99 @@ func TestCTOStepReportOpReportsAsTheCTOSession(t *testing.T) {
 	}
 	if n := len(f.frames(protocol.FrameStepReport)); n != 1 {
 		t.Fatalf("a refused CTO report reached the gateway: %d frames", n)
+	}
+}
+
+// bigStepReportResult is a step.report answer shaped like a real one: a change
+// with its done list, a full hand-back check output, notes and signals.
+func bigStepReportResult(q protocol.StepReportRequest) protocol.StepReportResult {
+	done := make([]string, 8)
+	for i := range done {
+		done[i] = fmt.Sprintf("outcome %d: %s", i, strings.Repeat("the worker can check this by itself ", 4))
+	}
+	c := protocol.Change{ID: q.ChangeID, Project: "demo", Branch: "agent-net/w_1", HeadCommit: q.Commit, Revision: 2,
+		Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, SessionID: "s_w"}, State: protocol.ChangeOpen, CreatedAt: 1,
+		Title: "A change with a long hand-back", Done: done}
+	view := deliveryTestView(c)
+	view.Next = []protocol.StepRef{{Step: protocol.StepReview}, {Step: protocol.StepTest}}
+	view.HandbackCheck = &protocol.HandbackCheck{Status: protocol.HandbackCheckPassed, DurationMS: 1000, OutputTail: strings.Repeat("ok  \tgithub.com/example/pkg\t0.123s\n", 120)}
+	for _, st := range []string{protocol.StepAccept, protocol.StepReview, protocol.StepTest} {
+		view.Evidence = append(view.Evidence, protocol.Evidence{ChangeID: c.ID, Revision: 1, StepRef: protocol.StepRef{Step: st}, Result: protocol.StepResultPass,
+			Commit: q.Commit, By: "s_caller", Note: strings.Repeat("read the diff and ran the tests ", 40), At: 2})
+	}
+	ev := protocol.Evidence{ChangeID: c.ID, Revision: 2, StepRef: q.StepRef, Result: q.Result, Commit: q.Commit, By: q.SessionID, Note: q.Note, At: 3}
+	return protocol.StepReportResult{Evidence: ev, Change: view}
+}
+
+// agent_step_report answers with where the change stands, not the whole
+// change: one verify batch cost about 337k tokens with the full reply.
+func TestStepReportReplyIsShort(t *testing.T) {
+	t.Parallel()
+	n, f := startDeliveryNode(t)
+	_, wt := deliveryWorktree(t)
+	lc, _ := helloDelivery(t, n, "short-reporter", wt, "claude-opus-5-5")
+	commit := gitHead(t, wt, "HEAD")
+	var full int
+	f.answer(protocol.FrameStepReport, func(raw json.RawMessage) (any, error) {
+		var q protocol.StepReportRequest
+		_ = json.Unmarshal(raw, &q)
+		res := bigStepReportResult(q)
+		b, _ := json.Marshal(res)
+		full = len(b)
+		return res, nil
+	})
+	raw := lc.mustCall(protocol.OpStepReport, protocol.StepReportArgs{Change: "ch_1", StepRef: protocol.StepRef{Step: protocol.StepAccept},
+		Result: protocol.StepResultPass, Commit: commit, Note: "read the diff"})
+	t.Logf("agent_step_report reply: %d bytes before (full change), %d bytes after", full, len(raw))
+	if len(raw) > 1024 {
+		t.Fatalf("reply is %d bytes: %s", len(raw), raw)
+	}
+	for _, leaked := range []string{"output_tail", "outcome 0", "read the diff and ran", "handback_check"} {
+		if strings.Contains(string(raw), leaked) {
+			t.Fatalf("reply carries %q: %s", leaked, raw)
+		}
+	}
+	var out protocol.StepReportReply
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Change != "ch_1" || out.Step != "accept" || out.Result != protocol.StepResultPass || out.ChangeState != protocol.ChangeOpen {
+		t.Fatalf("reply: %+v", out)
+	}
+}
+
+// A batch reports several steps in one call. A refused report carries its
+// error and does not stop the ones after it.
+func TestStepReportBatch(t *testing.T) {
+	t.Parallel()
+	n, f := startDeliveryNode(t)
+	_, wt := deliveryWorktree(t)
+	lc, _ := helloDelivery(t, n, "batch-reporter", wt, "claude-opus-5-5")
+	commit := gitHead(t, wt, "HEAD")
+	f.answer(protocol.FrameStepReport, func(raw json.RawMessage) (any, error) {
+		var q protocol.StepReportRequest
+		_ = json.Unmarshal(raw, &q)
+		return bigStepReportResult(q), nil
+	})
+	item := func(change, step, commit string) protocol.StepReportItem {
+		return protocol.StepReportItem{Change: change, StepRef: protocol.StepRef{Step: step}, Result: protocol.StepResultPass, Commit: commit}
+	}
+	raw := lc.mustCall(protocol.OpStepReport, protocol.StepReportArgs{Reports: []protocol.StepReportItem{
+		item("ch_1", protocol.StepAccept, commit), item("ch_2", protocol.StepAccept, "short"), item("ch_3", protocol.StepReview, commit)}})
+	var out protocol.StepReportReply
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Reports) != 3 || out.Reports[0].Change != "ch_1" || out.Reports[2].Change != "ch_3" || out.Reports[0].Error != "" || out.Reports[2].Error != "" {
+		t.Fatalf("batch reply: %s", raw)
+	}
+	if !strings.Contains(out.Reports[1].Error, "commit") {
+		t.Fatalf("the report with a short commit was not refused: %+v", out.Reports[1])
+	}
+	if got := f.frames(protocol.FrameStepReport); len(got) != 2 {
+		t.Fatalf("%d reports reached the gateway, want 2", len(got))
+	}
+	if _, err := lc.call(protocol.OpStepReport, protocol.StepReportArgs{Change: "ch_1", Reports: []protocol.StepReportItem{item("ch_2", protocol.StepAccept, commit)}}); err == nil {
+		t.Fatal("a call with both a single report and a batch was accepted")
 	}
 }

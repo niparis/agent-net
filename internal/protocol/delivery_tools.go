@@ -51,6 +51,38 @@ type StepReportArgs struct {
 	DoneBy string            `json:"done_by,omitempty"`
 	Note   string            `json:"note,omitempty"`
 	Until  string            `json:"until,omitempty"`
+	// Reports is the batch form: several steps reported in one call, each a
+	// report of its own. The fields above stay empty when it is set.
+	Reports []StepReportItem `json:"reports,omitempty"`
+}
+
+// StepReportItem is one report of a batch.
+type StepReportItem struct {
+	Change string `json:"change"`
+	StepRef
+	Result string            `json:"result"`
+	Commit string            `json:"commit"`
+	Fields map[string]string `json:"fields,omitempty"`
+	DoneBy string            `json:"done_by,omitempty"`
+	Note   string            `json:"note,omitempty"`
+	Until  string            `json:"until,omitempty"`
+}
+
+// Single is the item as the arguments of a single report.
+func (i StepReportItem) Single() StepReportArgs {
+	return StepReportArgs{Change: i.Change, StepRef: i.StepRef, Result: i.Result, Commit: i.Commit, Fields: i.Fields, DoneBy: i.DoneBy, Note: i.Note, Until: i.Until}
+}
+
+// IsBatch says the call uses the batch form. A call that sets both the batch
+// and the fields of a single report is ambiguous and refused.
+func (a StepReportArgs) IsBatch() (bool, error) {
+	if len(a.Reports) == 0 {
+		return false, nil
+	}
+	if a.Change != "" || a.Step != "" || a.Result != "" || a.Commit != "" || a.For != "" || a.AfterMerge || a.DoneBy != "" || a.Note != "" || a.Until != "" || len(a.Fields) > 0 {
+		return false, errors.New("send either one report (change, step, result, commit) or reports, not both")
+	}
+	return true, nil
 }
 
 // CTOStepReportArgs are the arguments of the CTO's step_report op. The CTO

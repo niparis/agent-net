@@ -167,7 +167,7 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
 			return nil, true, err
 		}
-		res, err := d.stepReport(ctx, sid, info, a)
+		res, err := d.stepReportReply(ctx, sid, info, a)
 		return res, true, err
 	default:
 		var a protocol.ChangesFindArgs
@@ -428,6 +428,38 @@ func branchUncommitted(ctx context.Context, dir, branch string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// stepReportReply answers agent_step_report: one short result, or one for each
+// report of a batch. The full change is not sent back: its hand-back check
+// output and done list made one reply over 10 KB, and a reporter that needs
+// the change reads it with agent_changes_find. A refused report of a batch
+// carries its error and the rest still run, so one bad report does not hold
+// back the others.
+func (d *Daemon) stepReportReply(ctx context.Context, sid string, info protocol.SessionInfo, a protocol.StepReportArgs) (protocol.StepReportReply, error) {
+	var out protocol.StepReportReply
+	batch, err := a.IsBatch()
+	if err != nil {
+		return out, err
+	}
+	if !batch {
+		res, err := d.stepReport(ctx, sid, info, a)
+		if err != nil {
+			return out, err
+		}
+		out.StepReportShort = protocol.ShortStepReport(res)
+		return out, nil
+	}
+	out.Reports = make([]protocol.StepReportShort, 0, len(a.Reports))
+	for _, item := range a.Reports {
+		res, err := d.stepReport(ctx, sid, info, item.Single())
+		if err != nil {
+			out.Reports = append(out.Reports, protocol.StepReportShort{Change: item.Change, Step: item.StepRef.String(), Error: err.Error()})
+			continue
+		}
+		out.Reports = append(out.Reports, protocol.ShortStepReport(res))
+	}
+	return out, nil
 }
 
 // stepReport sends step.report for the calling session, after checking that
