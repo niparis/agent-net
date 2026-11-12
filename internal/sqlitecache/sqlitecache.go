@@ -31,6 +31,7 @@ import (
 	"container/list"
 	"context"
 	"database/sql/driver"
+	"errors"
 	"reflect"
 	"sort"
 	"strings"
@@ -534,6 +535,10 @@ func (c *conn) recordExec(info *stmtInfo, query string, res driver.Result, err e
 	if c.owner.readOnly {
 		return
 	}
+	if isBusy(err) {
+		c.endStatement()
+		return
+	}
 	if err == nil && info != nil && info.rowCounted && res != nil {
 		if n, rerr := res.RowsAffected(); rerr == nil && n == 0 {
 			c.endStatement()
@@ -545,6 +550,17 @@ func (c *conn) recordExec(info *stmtInfo, query string, res driver.Result, err e
 		c.control(query)
 	}
 	c.endStatement()
+}
+
+// sqliteBusy is SQLITE_BUSY, the result of a statement that could not get the
+// lock it needs. It comes before the statement changes a row, so such a
+// statement changed nothing.
+const sqliteBusy = 5
+
+// isBusy says whether err is SQLITE_BUSY, extended codes included.
+func isBusy(err error) bool {
+	var se *sqlite.Error
+	return errors.As(err, &se) && se.Code()&0xff == sqliteBusy
 }
 
 // control follows a hand-written statement that starts or ends a transaction.
@@ -825,9 +841,11 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 		c.describe(ctx, query)
 		res, err := c.exec.ExecContext(ctx, query, args)
 		if !c.owner.readOnly {
-			c.note(nil, query)
-			if err == nil {
-				c.control(query)
+			if !isBusy(err) {
+				c.note(nil, query)
+				if err == nil {
+					c.control(query)
+				}
 			}
 			c.endStatement()
 		}
