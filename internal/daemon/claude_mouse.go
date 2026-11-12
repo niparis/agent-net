@@ -279,22 +279,39 @@ func (d *Daemon) reportMouseNotice(ctx context.Context, key, text string) {
 		return
 	}
 	d.markMouseNotice(key, now)
-	d.showMouseNotice(ctx, text)
+	d.showMouseNotice(ctx, key, text)
 }
 
 // showMouseNotice sends the line to the local TUIs and the Desk log. If the
-// gateway link is not connected yet, the Desk note stays pending and is sent
-// once the link is up.
-func (d *Daemon) showMouseNotice(ctx context.Context, text string) {
+// gateway link is not connected yet, it retries the Desk note with backoff.
+func (d *Daemon) showMouseNotice(ctx context.Context, key, text string) {
+	d.mouseMu.Lock()
+	if d.mouseNotices == nil {
+		d.mouseNotices = map[string]time.Time{}
+	}
+	pendingKey := "\x00pending:" + key
+	if _, pending := d.mouseNotices[pendingKey]; pending {
+		d.mouseMu.Unlock()
+		return
+	}
+	d.mouseNotices[pendingKey] = time.Time{}
+	d.mouseMu.Unlock()
+	clearPending := func() {
+		d.mouseMu.Lock()
+		delete(d.mouseNotices, pendingKey)
+		d.mouseMu.Unlock()
+	}
 	d.broadcastCTOUI(protocol.UIRequest{Text: text, DaemonNotice: true})
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	_, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text})
 	cancel()
 	if err == nil {
+		clearPending()
 		return
 	}
 	if !isMouseNoticeOffline(err) {
 		d.Logf("claude mouse: desk log: %v", err)
+		clearPending()
 		return
 	}
 	bctx := ctx
@@ -305,13 +322,15 @@ func (d *Daemon) showMouseNotice(ctx context.Context, text string) {
 		bctx = context.Background()
 	}
 	d.goBackground(func() {
-		tick := time.NewTicker(25 * time.Millisecond)
-		defer tick.Stop()
+		defer clearPending()
+		delay := time.Second
 		for {
+			timer := time.NewTimer(delay)
 			select {
 			case <-bctx.Done():
+				timer.Stop()
 				return
-			case <-tick.C:
+			case <-timer.C:
 			}
 			cctx, cancel := context.WithTimeout(bctx, 10*time.Second)
 			_, err := d.call(cctx, "desk.note", protocol.DeskNote{Text: text})
@@ -322,6 +341,10 @@ func (d *Daemon) showMouseNotice(ctx context.Context, text string) {
 			if !isMouseNoticeOffline(err) {
 				d.Logf("claude mouse: desk log: %v", err)
 				return
+			}
+			delay *= 2
+			if delay > time.Minute {
+				delay = time.Minute
 			}
 		}
 	})

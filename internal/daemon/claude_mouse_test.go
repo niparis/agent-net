@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -379,5 +380,26 @@ func TestClaudeMouseDriftPendingSentWhenGatewayLinkUp(t *testing.T) {
 	mu.Unlock()
 	if count != 1 {
 		t.Fatalf("report sent %d times, want 1", count)
+	}
+}
+
+func TestClaudeMouseDriftRetryBacksOffWhileGatewayOffline(t *testing.T) {
+	var calls atomic.Int32
+	d := &Daemon{log: log.New(io.Discard, "", 0)}
+	d.cfg.testGatewayCall = func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+		if typ == "desk.note" {
+			calls.Add(1)
+			return nil, true, errNotConnected
+		}
+		return nil, false, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.showMouseNotice(ctx, "mouse-key", "offline notice")
+	// A repeated report while its first sender is pending must not start another.
+	d.showMouseNotice(ctx, "mouse-key", "offline notice")
+	time.Sleep(1100 * time.Millisecond)
+	if got := calls.Load(); got > 2 {
+		t.Fatalf("desk.note calls while offline = %d, want at most 2 during 1.1 seconds", got)
 	}
 }
