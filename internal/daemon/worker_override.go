@@ -23,8 +23,6 @@ const (
 	// maxOwnerPromptsPerSession and maxOwnerPromptBytes bound the memory used.
 	maxOwnerPromptsPerSession = 20
 	maxOwnerPromptBytes       = 16 * 1024
-	// maxHeldStarts is how many starts one caller may have waiting for the owner.
-	maxHeldStarts = 5
 )
 
 // ownerPrompts keeps what the owner typed in each session, for the last few
@@ -153,17 +151,6 @@ type heldStart struct {
 // is accepted and waits. The worker notice follows when it starts, or when it
 // does not.
 func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.WorkerStartRequest, reason string, callerProject bool, callerPath string) (*protocol.WorkerStartResult, error) {
-	d.heldMu.Lock()
-	n := 0
-	for _, h := range d.heldStarts {
-		if h.caller == caller {
-			n++
-		}
-	}
-	d.heldMu.Unlock()
-	if n >= maxHeldStarts {
-		return nil, fmt.Errorf("%d of your starts already wait for your owner to confirm a model choice. Leave the selection fields empty so the picker chooses, or wait for his answer", n)
-	}
 	id := protocol.NewID("a")
 	title := protocol.WorkerTitle(p.Title, p.Task, "worker")
 	text := protocol.StartOverrideText(d.sessionName(ctx, caller), p.SelectionFields(), title, reason)
