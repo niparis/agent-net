@@ -568,7 +568,7 @@ const handbackUncommittedPushProblem = "the branch was not pushed for the remote
 // It never fails the hand-back: it returns the change ID, or the error for the
 // notice's "delivery record:" line. A gateway that does not know change.submit
 // gives neither.
-func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID, problem string) {
+func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker, visual ...protocol.VisualEvidence) (changeID, problem string) {
 	d.wmu.Lock()
 	dir, branch, base, owner, sid := w.worktree, w.branch, w.base, w.owner, w.sessionID
 	harness, model, title, kept := w.harness, w.model, w.title, w.changeID
@@ -615,14 +615,20 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker) (changeID,
 	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: base,
 		HeadCommit: head, Uncommitted: uncommitted, Risk: risk, SensitivePath: deliverySensitivePath(ctx, dir, base, head), Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
 		Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model, Struggle: struggle}}
+	var visualDiff string
+	if len(visual) > 0 {
+		q.Origin.VisualEvidence = &visual[0]
+	}
 	if base != "" {
 		if stat, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil {
 			q.DiffStat = deliveryDiffStat(stat)
 		}
 		if patch, err := gitOut(ctx, dir, "diff", "-U0", base, head, "--"); err == nil {
+			visualDiff = patch
 			q.Signals = quality.Signals(patch, difficulty)
 		}
 	}
+	q.Signals = append(q.Signals, quality.VisualSignals(visualDiff, q.Origin.Visual())...)
 	if model != "" {
 		q.Origin.ModelFamily = protocol.ModelFamily(harness, model)
 	}

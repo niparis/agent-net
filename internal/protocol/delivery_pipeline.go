@@ -442,6 +442,7 @@ type Pipeline struct {
 // session); Model and ModelFamily are the author's, used to judge
 // independence.
 type ChangeOrigin struct {
+	*VisualEvidence
 	Kind        string `json:"kind"`
 	WorkerID    string `json:"worker_id,omitempty"`
 	SessionID   string `json:"session_id,omitempty"`

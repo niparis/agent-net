@@ -1241,7 +1241,9 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			c := !r.DonePartial
 			complete = &c
 		}
-		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{RunGeneration: r.RunGeneration, Evidence: r.Evidence, SessionID: r.SessionID, WorkerID: r.ID,
+		var proofReason string
+		_ = d.st.db.QueryRow(`SELECT reason FROM worker_visual_reports WHERE worker_id=? AND generation=?`, r.ID, r.RunGeneration).Scan(&proofReason)
+		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{ProofUnavailable: proofReason, RunGeneration: r.RunGeneration, Evidence: r.Evidence, SessionID: r.SessionID, WorkerID: r.ID,
 			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model, Failure: r.Failure,
 			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix(),
 			Continue: r.Continue, Fix: r.Fix, ContinueRun: r.ContinueRun, FixRun: r.FixRun,

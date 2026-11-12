@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // fileState is the receiving side's bookkeeping of files between machines.
@@ -126,7 +127,7 @@ func (d *Daemon) collectThenDeliver(ctx context.Context, m protocol.Message) {
 		d.Logf("files: message=%s all %d files in %s (%s)", m.ID, len(m.Files), dir, fileRouteDetail(got))
 	}
 	if len(arrived) > 0 {
-		m.Body += fileNote(dir, arrived)
+		m.Body += fileNote(dir, arrived, d.SettingsSnapshot().Duration("files.proof_retention", settings.Where{}))
 	}
 	if len(arrived) > 0 {
 		d.files.mu.Lock()
@@ -175,7 +176,17 @@ func fileRouteDetail(got map[string]string) string {
 }
 
 // fileNote is what the receiving agent reads after the message body.
-func fileNote(dir string, files []protocol.FileEntry) string {
+func fileNote(dir string, files []protocol.FileEntry, proofRetention ...time.Duration) string {
+	retention := protocol.FileRetention
+	for _, f := range files {
+		if f.VisualProof {
+			retention = 30 * 24 * time.Hour
+			if len(proofRetention) > 0 && proofRetention[0] > 0 {
+				retention = proofRetention[0]
+			}
+			break
+		}
+	}
 	var b strings.Builder
 	if len(files) == 1 {
 		fmt.Fprintf(&b, "\n\n[agent-net] This message came with 1 file. It is in %s:\n", dir)
@@ -185,7 +196,7 @@ func fileNote(dir string, files []protocol.FileEntry) string {
 	for _, f := range files {
 		fmt.Fprintf(&b, "- %s (%s)\n", f.Name, humanBytes(f.Size))
 	}
-	fmt.Fprintf(&b, "agent-net deletes them after %d days.", int(protocol.FileRetention/(24*time.Hour)))
+	fmt.Fprintf(&b, "agent-net deletes them after %d days.", int(retention/(24*time.Hour)))
 	return b.String()
 }
 
@@ -264,6 +275,14 @@ func (d *Daemon) collectFiles(ctx context.Context, m protocol.Message, dir strin
 	fc := d.fileConfig()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
+	}
+	for _, f := range m.Files {
+		if f.VisualProof {
+			if err := os.WriteFile(filepath.Join(dir, ".visual-proof"), nil, 0600); err != nil {
+				return nil, err
+			}
+			break
+		}
 	}
 	d.files.mu.Lock()
 	if d.files.announced == nil {
@@ -763,7 +782,7 @@ func copyNew(src, dst string) error {
 	return err
 }
 
-// filesHousekeepingLoop removes received files after seven days, and the
+// filesHousekeepingLoop removes received files after 30 days, and the
 // leftovers of interrupted sends.
 var (
 	filesCleanFirstDelay = time.Minute
@@ -772,6 +791,6 @@ var (
 
 func (d *Daemon) filesHousekeepingLoop(ctx context.Context) {
 	runEvery(ctx, filesCleanFirstDelay, filesCleanEvery, func() {
-		cleanFileFolders(d.cfg.StateDir, time.Now(), d.Logf)
+		cleanFileFolders(d.cfg.StateDir, time.Now(), d.Logf, d.SettingsSnapshot().Duration("files.proof_retention", settings.Where{}))
 	})
 }

@@ -726,6 +726,10 @@ CREATE TABLE IF NOT EXISTS delivery_step_messages (
  PRIMARY KEY(change_id, revision, step, for_step, after_merge, session_id));
 `, `
 -- A diff stat belongs to the revision named by its head commit.
+CREATE TABLE IF NOT EXISTS worker_visual_proof (
+ node_id TEXT NOT NULL, session_id TEXT NOT NULL, generation INTEGER NOT NULL, model TEXT NOT NULL,
+ unavailable TEXT NOT NULL, at INTEGER NOT NULL,
+ PRIMARY KEY(node_id,session_id,generation));
 CREATE TABLE IF NOT EXISTS delivery_revision_stats (
  change_id TEXT NOT NULL, revision INTEGER NOT NULL, diff_stat TEXT NOT NULL,
  PRIMARY KEY(change_id, revision));

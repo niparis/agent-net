@@ -55,12 +55,24 @@ func TestWorkerHandbackFilesAcrossNodes(t *testing.T) {
 			t.Errorf("handback accepted outside path %s", p)
 		}
 	}
-	out, err := a.d.handback(ctx, res.SessionID, protocol.WorkerHandbackRequest{Report: "the report", Status: protocol.StatusBlocked, Files: []string{inside, code}})
+	out, err := a.d.handback(ctx, res.SessionID, protocol.WorkerHandbackRequest{Report: "the report", Status: protocol.StatusBlocked, Files: []string{code}, VisualEvidence: protocol.VisualEvidence{UserVisible: "yes", ProofUnavailable: "resize region could not be captured", VisualProof: []protocol.VisualProof{{File: inside, Caption: "open at 120x34"}}}})
 	if err != nil {
 		t.Fatalf("handback: %v", err)
 	}
 	if out.Sent == nil || len(out.Sent.Files) != 2 {
 		t.Fatalf("handback result: %+v", out)
+	}
+	if !strings.Contains(out.Sent.Body, "open at 120x34") {
+		t.Fatal("proof caption missing")
+	}
+	proofFound := false
+	for _, f := range out.Sent.Files {
+		if f.VisualProof {
+			proofFound = true
+		}
+	}
+	if !proofFound {
+		t.Fatal("proof frame not marked in manifest")
 	}
 	msgID := out.Sent.ID
 	dest := filepath.Join(b.cfg.StateDir, "inbox", caller, msgID, "result.txt")
@@ -72,6 +84,19 @@ func TestWorkerHandbackFilesAcrossNodes(t *testing.T) {
 			}
 		}
 		return false
+	})
+	eventually(t, "blocked worker proof report reaches weekly count", func() bool {
+		rows, err := g.gw.Store().ScoresWeekly()
+		if err != nil {
+			return false
+		}
+		n := 0
+		for _, row := range rows {
+			for _, count := range row.ProofUnavailable {
+				n += count
+			}
+		}
+		return n == 1
 	})
 	if got := string(mustReadFile(t, dest)); got != "worker result\n" {
 		t.Fatalf("file contents = %q", got)

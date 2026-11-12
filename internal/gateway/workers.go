@@ -274,7 +274,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if difficulty == "" {
 			difficulty = "normal"
 		}
-		run := protocol.WorkerRun{RunGeneration: p.RunGeneration, NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
+		run := protocol.WorkerRun{ProofUnavailable: p.ProofUnavailable, RunGeneration: p.RunGeneration, NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
 			Complete: p.Complete, Evidence: p.Evidence, Outcome: protocol.WorkerOutcomeDetail(p.Reason, p.Status, p.Complete, p.Failure), StartedAt: p.StartedAt, EndedAt: end,
 			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, AutoContinue: p.AutoContinueRun, Caller: caller, CallerSessionID: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches, TaskID: p.TaskID, Midrun: p.MidrunRun, Struggle: p.Struggle}
 		if err := g.store.RecordWorkerRun(run); err != nil {
@@ -674,14 +674,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// launch. Validation calls and internal read-only phrasing workers skip
 	// them: they start no caller worker and count no rejection. A check mode
 	// returns the list and starts nothing.
-	var briefNote string
+	briefNote := protocol.VisualBriefWarning(p.Task)
 	if !(len(validate) > 0 && validate[0]) && !g.opts.TestNoBriefChecks && !p.RequireReadOnly {
 		failures, err := g.store.checkWorkerBrief(p, pick.Name)
 		if err != nil {
 			return none, err
 		}
 		if p.Mode == protocol.WorkerStartModeCheck {
-			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: failures, NodeID: pick.NodeID, Hostname: pick.Hostname,
+			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: append(failures, visualWarningLines(p.Task)...), NodeID: pick.NodeID, Hostname: pick.Hostname,
 				Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model}, nil
 		}
 		if len(failures) > 0 {
@@ -698,7 +698,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 						return none, err
 					}
 				}
-				briefNote = fmt.Sprintf("brief started after %d refusals: %s", rejected, strings.Join(failures, "; "))
+				briefNote = strings.TrimSpace(briefNote + "\n" + fmt.Sprintf("brief started after %d refusals: %s", rejected, strings.Join(failures, "; ")))
 			} else {
 				if err := g.store.recordBriefRejection(p.Owner, key, failures); err != nil {
 					return none, err

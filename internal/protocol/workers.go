@@ -552,13 +552,14 @@ type (
 	}
 	// WorkerStopped is "worker.stopped", machine to gateway.
 	WorkerStopped struct {
-		RunGeneration int             `json:"run_generation,omitempty"`
-		Evidence      *WorkerEvidence `json:"evidence,omitempty"`
-		SessionID     string          `json:"session_id"`
-		WorkerID      string          `json:"worker_id"`
-		Project       string          `json:"project"`
-		Harness       string          `json:"harness"`
-		Reason        string          `json:"reason"`
+		ProofUnavailable string          `json:"proof_unavailable,omitempty"`
+		RunGeneration    int             `json:"run_generation,omitempty"`
+		Evidence         *WorkerEvidence `json:"evidence,omitempty"`
+		SessionID        string          `json:"session_id"`
+		WorkerID         string          `json:"worker_id"`
+		Project          string          `json:"project"`
+		Harness          string          `json:"harness"`
+		Reason           string          `json:"reason"`
 		// Failure is the cleaned model-call error, used to remember provider auth failures.
 		Failure string `json:"failure,omitempty"`
 		// Model is the model the worker ran, as the gateway resolved it. The
@@ -939,6 +940,7 @@ func ValidHandbackStatus(s string) bool {
 // WorkerNotice holds the facts of the completion notice (W11). The daemon
 // measures them; the worker does not write them.
 type WorkerNotice struct {
+	VisualEvidence
 	Evidence    *WorkerEvidence
 	Permissions string
 	Status      string
@@ -1014,6 +1016,7 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings.Snapshot) string {
 	var b strings.Builder
 	b.WriteString("[agent-net worker notice]\n")
+	b.WriteString(n.VisualEvidence.Lines())
 	b.WriteString("status: " + n.Status + "\n")
 	if n.Note != "" {
 		b.WriteString("note: " + n.Note + "\n")
