@@ -127,6 +127,7 @@ func TestMergerLifecycleReassignsEveryPhase(t *testing.T) {
 		for _, after := range []bool{false, true} {
 			t.Run(action+map[bool]string{false: "/before", true: "/after"}[after], func(t *testing.T) {
 				r := newDeliveryRig(t)
+				r.moveToAgent(r.sonnet, "merge-agent")
 				q := protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet, Configure: true}
 				if err := r.s.SetMerger(q, "owner"); err != nil {
 					t.Fatal(err)

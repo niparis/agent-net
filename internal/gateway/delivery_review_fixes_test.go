@@ -61,6 +61,7 @@ func TestDeliveryClosedChangeClosesApprovalItem(t *testing.T) {
 // with no node-owned step (so no durable task row exists).
 func TestDeliveryPeerCannotReportCallerStep(t *testing.T) {
 	r := newDeliveryRig(t)
+	r.moveToAgent(r.sonnet, "peer")
 	id := r.submit(r.a, r.workerSubmit("feature/peer", commitA)).Change.Change.ID
 	res, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	if err == nil {

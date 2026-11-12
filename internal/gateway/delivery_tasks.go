@@ -111,7 +111,13 @@ func (s *Store) backfillDeliveryTasks() error {
 		}
 		p, err = taskOwners(tx, c, p)
 		if err == nil {
-			err = s.queueSteps(tx, c, p, s.now().Unix())
+			// A task made now for work that finished earlier is ready since
+			// the change last moved, so its waiting time is honest.
+			readySince := s.now().Unix()
+			if c.UpdatedAt > 0 && c.UpdatedAt < readySince {
+				readySince = c.UpdatedAt
+			}
+			err = s.queueSteps(tx, c, p, readySince)
 		}
 		if err == nil {
 			err = retireStepMessages(tx, c.ID)
@@ -751,6 +757,8 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	reminderCutoff := g.store.stepReminderCutoff()
 
 	g.wakeOfflineStepOwners(ctx, reminderCutoff)
+	g.escalateCallerSteps(ctx, stuckLimit)
+	g.syncWaitingWorkAsks()
 	candidateCutoff := reminderCutoff
 	if candidateCutoff != 0 {
 		candidateCutoff += int64(nudgeLookahead)
@@ -764,7 +772,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
 		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
 		WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
-		AND ((t.owner_node='/merger' AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)) OR (t.owner_node=? AND s.id=c.caller) OR `+sessionRepoSQL+`=t.owner_node OR
+		AND ((t.owner_node='/merger' AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)) OR (t.owner_node=? AND s.id=`+offeredCallerSessionSQL+`) OR `+sessionRepoSQL+`=t.owner_node OR
 		 (t.owner_node=? AND EXISTS(SELECT 1 FROM delivery_step_delegates a WHERE a.change_id=t.change_id AND a.revision=t.revision
 		 AND a.step=t.step AND a.for_step=t.for_step AND a.after_merge=t.after_merge AND (a.node=`+sessionRepoSQL+` OR a.node='agent:'||COALESCE(s.agent_id,'')))))
 		AND s.harness NOT IN ('owner','bot','cto')
@@ -1006,7 +1014,7 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 	if dueSessions != nil {
 		cutoff += int64(nudgeLookahead / time.Second)
 	}
-	rows, err := g.store.db.Query(`SELECT t.change_id, t.revision, t.step, t.for_step, t.after_merge, t.owner_node, t.created_at, c.caller, c.title
+	rows, err := g.store.db.Query(`SELECT t.change_id, t.revision, t.step, t.for_step, t.after_merge, t.owner_node, t.created_at, COALESCE(`+liveCallerSessionSQL+`,c.caller), c.title
 		FROM delivery_step_tasks t
 		JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
 		WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by='' AND (t.step<>'verify' OR t.after_merge=0 OR t.stuck_notified=0)
@@ -1134,7 +1142,7 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int6
   JOIN sessions s ON s.online=0 AND s.harness='claude' AND s.worker=''
   WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by=''
   AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
-  AND ((t.owner_node=? AND s.id=c.caller) OR (t.owner_node=? AND EXISTS
+  AND ((t.owner_node=? AND s.id=c.caller AND NOT `+callerOwnerLiveSQL+`) OR (t.owner_node=? AND EXISTS
    (SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)))
   AND NOT EXISTS (SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
    WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
@@ -1756,13 +1764,6 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			}
 		}
 	}
-	shared := false
-	for _, step := range p.Steps {
-		if step.Owner.Kind != protocol.OwnerCaller && step.Owner.Kind != protocol.OwnerNone {
-			shared = true
-			break
-		}
-	}
 	// Retire unclaimed work outside the ready steps and their paired partners. Claims stay
 	// with their current owner; retired tasks can be queued again when ready.
 	ready := p.NextSteps(c, evidence)
@@ -1805,7 +1806,7 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			continue
 		}
 		ownerNode := step.Owner.Node
-		if step.Owner.Kind == protocol.OwnerCaller && shared {
+		if step.Owner.Kind == protocol.OwnerCaller {
 			ownerNode = callerTaskOwner
 		} else if step.Owner.Kind == protocol.OwnerMerger {
 			ownerNode = mergerTaskOwner
@@ -2128,7 +2129,11 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	if err != nil {
 		return false, err
 	}
-	if completed != 0 {
+	// A caller step may be reported again after it completed, as it could
+	// before caller steps had tasks: a fail and then a pass of one revision.
+	// Only the caller's actors may, and an open claim still holds.
+	reopened := completed != 0 && owner == callerTaskOwner
+	if completed != 0 && !reopened {
 		var result string
 		err := tx.QueryRow(`SELECT result FROM delivery_evidence WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? ORDER BY seq DESC LIMIT 1`, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&result)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -2138,7 +2143,7 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 			completed = 0
 		}
 	}
-	if completed != 0 {
+	if completed != 0 && !reopened {
 		return true, reject("%s was already reported by %s", ref, claimed)
 	}
 	var project, worker, harness, node, agent string
@@ -2160,7 +2165,9 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 		allowedOwner = n != 0
 	}
 	if owner == callerTaskOwner {
-		allowedOwner = session == c.Caller
+		if allowedOwner, err = sessionActsForCaller(tx, c, ref, session); err != nil {
+			return true, err
+		}
 	}
 	if owner == delegateTaskOwner {
 		var allowed int
@@ -2170,10 +2177,11 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 		}
 		allowedOwner = allowed != 0
 	}
-	if node != machine || !allowedOwner || worker != "" || online == 0 || harness == "owner" || harness == "bot" || harness == "cto" || (claimed != "" && claimed != session) {
+	if node != machine || !allowedOwner || worker != "" || online == 0 || harness == "owner" || harness == "bot" || harness == "cto" || (claimed != "" && claimed != session && !reopened) {
 		return true, reject("%s is owned by node %s", ref, owner)
 	}
-	if !claim {
+	if !claim || (reopened && !complete) {
+		// A claim never reopens a completed caller step.
 		return true, nil
 	}
 	_, err = tx.Exec(`UPDATE delivery_step_tasks SET claimed_by=?,completed=?

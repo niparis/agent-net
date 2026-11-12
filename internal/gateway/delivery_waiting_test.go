@@ -107,6 +107,7 @@ func TestWaitingNoStuck(t *testing.T) {
 }
 func TestWaitingEligibility(t *testing.T) {
 	r, c, ref := waitingRig(t)
+	r.moveToAgent(r.sonnet, "peer")
 	_, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: ref, Result: "waiting", Commit: c.MergedCommit, Note: "event"})
 	if err == nil {
 		t.Fatal("ineligible session accepted")

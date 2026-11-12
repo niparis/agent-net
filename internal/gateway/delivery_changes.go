@@ -580,8 +580,14 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 			}
 			switch step.Owner.Kind {
 			case protocol.OwnerCaller:
-				if q.SessionID != c.Caller && !ownerVerify {
-					return protocol.StepReportResult{}, reject("%s is owned by the caller", q.StepRef)
+				if !ownerVerify {
+					acts, err := sessionActsForCaller(tx, c, q.StepRef, q.SessionID)
+					if err != nil {
+						return protocol.StepReportResult{}, err
+					}
+					if !acts {
+						return protocol.StepReportResult{}, reject("%s is owned by the caller", q.StepRef)
+					}
 				}
 			case protocol.OwnerPerson:
 				return protocol.StepReportResult{}, reject("%s is owned by the person: answer its Inbox approval", q.StepRef)
@@ -921,10 +927,11 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 	startedSteps := map[protocol.StepRef]bool{}
 	for i := range v.Steps {
 		st := &v.Steps[i]
-		// Tasks queued under the previous rule remain ready across an upgrade.
+		// Tasks queued under the previous rule remain ready across an upgrade. A
+		// caller's test task handed out with its accept waits for the accept.
 		if c.State == protocol.ChangeOpen && st.Step == protocol.StepTest && !st.AfterMerge && st.State == protocol.StepStateWaiting {
 			var exists int
-			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=0 AND completed=0)`, c.ID, c.Revision, st.Step, st.For).Scan(&exists); err != nil {
+			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=0 AND completed=0 AND owner_node<>?)`, c.ID, c.Revision, st.Step, st.For, callerTaskOwner).Scan(&exists); err != nil {
 				return protocol.ChangeView{}, err
 			}
 			if exists != 0 {
@@ -1015,7 +1022,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		if st.Owner.Kind == protocol.OwnerMerger {
 			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE pm.project=? AND pm.node_id=? AND s.online=1)`, c.Project, c.Machine).Scan(&online)
 		} else if st.Owner.Kind == protocol.OwnerCaller {
-			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND online=1 AND worker='')`, c.Caller).Scan(&online)
+			err = s.db.QueryRow(`SELECT `+callerOwnerLiveSQL+` FROM delivery_changes c WHERE c.id=?`, c.ID).Scan(&online)
 		} else {
 			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
 				WHERE s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','bot','cto')

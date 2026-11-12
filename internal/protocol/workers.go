@@ -1286,6 +1286,12 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 			if merge, ok := p.Find(StepRef{Step: StepMerge}); ok && merge.Owner.Kind != OwnerCaller {
 				b.WriteString("\nThe merge step is assigned to " + NeutralizeMarkers(merge.Owner.String()) + ".")
 			}
+			// Callers read the checklist as "check the work", and never report
+			// the step. Say what they must do, with the exact call.
+			if accept, ok := p.Find(StepRef{Step: StepAccept}); ok && accept.Owner.Kind == OwnerCaller && n.Change != "" {
+				b.WriteString("\nYou own the accept step of " + n.Change + ". Report it: agent_step_report change=" + n.Change +
+					" step=accept result=pass commit=<head>, or result=close with a one-line reason if nothing will be merged.")
+			}
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")

@@ -99,6 +99,9 @@ func TestWakeOfflineMergerTaskBatched(t *testing.T) {
 
 func TestWakeOfflineCallerTaskBatched(t *testing.T) {
 	r := newDeliveryRig(t)
+	// Another live session of the caller's agent would take the task; this
+	// test is about waking a caller that has none.
+	r.moveToAgent(r.caller, "caller-agent")
 	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
 		t.Fatal(err)
 	}

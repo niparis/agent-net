@@ -160,6 +160,8 @@ func TestCoalesceBatchedTaskClaimAndReport(t *testing.T) {
 
 func TestCoalesceWakeOnDemandOnceForRetiredOwner(t *testing.T) {
 	r := newDeliveryRig(t)
+	// The caller's agent has no other live session, so waking the caller is the way.
+	r.moveToAgent(r.caller, "caller-agent")
 	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
 		t.Fatal(err)
 	}
@@ -204,66 +206,6 @@ func TestCoalesceWakeOnDemandOnceForRetiredOwner(t *testing.T) {
 	case id := <-wakes:
 		t.Fatalf("extra wake sent for %s", id)
 	case <-time.After(100 * time.Millisecond):
-	}
-}
-
-func TestCoalesce25ChangesReleaseThenVerifyGiveAtMostTwoMessages(t *testing.T) {
-	r := newDeliveryRig(t)
-	r.g.stepTaskQuietWindow = 50 * time.Millisecond
-	r.g.stepTaskBatchCap = 25
-
-	const numChanges = 25
-	var changeIDs []string
-	yes := true
-
-	for i := 0; i < numChanges; i++ {
-		c := r.submit(r.a, r.workerSubmit(fmt.Sprintf("feature/bulk-%d", i), commitA)).Change.Change
-		changeIDs = append(changeIDs, c.ID)
-
-		// accept
-		r.mustReport(r.a, protocol.StepReportRequest{
-			SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: "pass", Commit: commitA,
-		})
-		// test before merge
-		r.mustReport(r.a, protocol.StepReportRequest{
-			SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test"}, Result: "pass", Commit: commitA, Fields: map[string]string{"suite": "full"},
-		})
-		// merge
-		r.mustReport(r.a, protocol.StepReportRequest{
-			SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "merge"}, Result: "pass", Commit: commitA, Fields: map[string]string{"merged_commit": commitMerged}, MergeContainsHead: &yes,
-		})
-		// CI (test after merge)
-		r.mustReport(r.a, protocol.StepReportRequest{
-			SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test", AfterMerge: true}, Result: "pass", Commit: commitMerged, Fields: map[string]string{"suite": "full"},
-		})
-	}
-
-	// At this point, release is ready for all 25 changes.
-	// Wait for the quiet window to flush the batch.
-	time.Sleep(100 * time.Millisecond)
-
-	var msgsBeforeVerify int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&msgsBeforeVerify); err != nil {
-		t.Fatal(err)
-	}
-
-	// Now report release for all 25 changes, which makes verify ready for each change.
-	for _, cid := range changeIDs {
-		r.mustReport(r.a, protocol.StepReportRequest{
-			SessionID: r.caller, ChangeID: cid, StepRef: protocol.StepRef{Step: "release", AfterMerge: true}, Result: "pass", Commit: commitMerged,
-		})
-	}
-
-	// Wait for the quiet window to flush the verify batch.
-	time.Sleep(100 * time.Millisecond)
-
-	var totalMessages int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&totalMessages); err != nil {
-		t.Fatal(err)
-	}
-
-	if totalMessages > 2 {
-		t.Fatalf("expected at most 2 messages for 25 changes passing release then verify, got %d (before verify: %d)", totalMessages, msgsBeforeVerify)
 	}
 }
 

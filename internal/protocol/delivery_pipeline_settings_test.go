@@ -107,6 +107,26 @@ func TestWorkerNoticeNamesAssignedMergeOwner(t *testing.T) {
 	}
 }
 
+func TestWorkerNoticeTellsCallerToReportAccept(t *testing.T) {
+	caller := settings.Snapshot{DeliveryPipelineCutover: true}
+	notice := FormatWorkerNoticeWithSettings(WorkerNotice{Project: "demo", Change: "ch_x", Worktree: "/w"}, "done", caller)
+	want := "You own the accept step of ch_x. Report it: agent_step_report change=ch_x step=accept result=pass commit=<head>, or result=close with a one-line reason if nothing will be merged."
+	if !strings.Contains(notice, want) {
+		t.Fatalf("notice does not tell the caller to report accept: %s", notice)
+	}
+	assigned := settings.Snapshot{DeliveryPipelineCutover: true, DeliveryAssignments: []settings.DeliveryAssignment{{Project: "demo", Step: StepAccept, Node: "reviewer", Kind: "accepts"}}}
+	if notice := FormatWorkerNoticeWithSettings(WorkerNotice{Project: "demo", Change: "ch_x", Worktree: "/w"}, "done", assigned); strings.Contains(notice, "You own the accept step") {
+		t.Fatalf("notice tells the caller to report a step that another node owns: %s", notice)
+	}
+	merger := settings.Snapshot{DeliveryPipelineCutover: true, DeliveryAssignments: []settings.DeliveryAssignment{{Project: "demo", Step: StepAccept, Node: "@merger", Kind: "accepts"}}}
+	if notice := FormatWorkerNoticeWithSettings(WorkerNotice{Project: "demo", Change: "ch_x", Worktree: "/w"}, "done", merger); strings.Contains(notice, "You own the accept step") {
+		t.Fatalf("notice tells the caller to report a merger step: %s", notice)
+	}
+	if notice := FormatWorkerNoticeWithSettings(WorkerNotice{Project: "demo", Worktree: "/w"}, "done", caller); strings.Contains(notice, "You own the accept step") {
+		t.Fatalf("notice names a change that was not recorded: %s", notice)
+	}
+}
+
 func TestPipelineSettingsRenderCustomDeployApprover(t *testing.T) {
 	snap := settings.Snapshot{DeliveryCutover: true, DeliveryPipelineCutover: true,
 		DeliveryAssignments: []settings.DeliveryAssignment{{Project: "demo", Step: StepApprove, For: StepDeploy, AfterMerge: true, Node: "release-lead", Kind: "approves_deploy"}}}
