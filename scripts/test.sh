@@ -7,8 +7,9 @@ usage() {
 Usage: scripts/test.sh [--shards N | --package NAME --shard-index I --shard-count N]
                       [--check-only] [-- go-test-args...]
 
-Run the test suite. The tests of the sharded packages, internal/daemon, internal/gateway, internal/setup, internal/tui and
-cmd/agent-net, are split across processes by test name. Every other package
+Run the test suite. The tests of internal/daemon, internal/gateway,
+internal/setup, internal/tui and cmd/agent-net are split across processes by
+test name. Every other package
 runs in one go test process.
 TEST_SHARDS sets the local shard count for each sharded package. The default is
 half the available CPUs, rounded down, with a minimum of one and a maximum of
@@ -142,7 +143,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-# plan_package NAME COUNT lists the tests of internal/NAME, splits them into
+# plan_package NAME COUNT lists the package tests and splits them into
 # COUNT shards by test name and checks that the shards hold each test exactly
 # once. Shard files go to $work/NAME/. The number of shards used is left in
 # planned_count, which can be lower than COUNT when there are fewer tests.

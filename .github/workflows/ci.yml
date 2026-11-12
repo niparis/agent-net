@@ -49,6 +49,8 @@ jobs:
         run: sh -n install.sh
       - name: test script syntax
         run: bash -n scripts/test.sh
+      - name: shard planner
+        run: bash scripts/test-sharding.sh
 
   test-sharded:
     name: ${{ matrix.package }} shard ${{ matrix.shard }} of 4

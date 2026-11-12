@@ -143,6 +143,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Cleanup(func() { ensureQuotaAXI, ensureQuotaAXIAsync, removeQuotaAXI = oldEnsure, oldAsync, oldRemove })
 	noTTY(t)
 	data := t.TempDir()
+	copyFixtureDatabase(t, data)
 	gw, err := gateway.New(gateway.Options{DataDir: data})
 	if err != nil {
 		t.Fatal(err)
