@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -244,7 +245,10 @@ func TestWorkerContinueKeepsJudgeLabelUnlessBriefChanges(t *testing.T) {
 func TestWorkerStartWithoutTouches(t *testing.T) {
 	setupShadowJudge(t, normalJudgeReply, false)
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
+	// The test wants the start's own result. The production answer budget is
+	// 5 s: on a loaded machine the judge and the launch can take longer, and
+	// the call then answers "accepted" and finishes in the background.
+	w := startWorkerNode(t, g, shortSet, withDifficulty(func(c *Config) { c.testStartBudget = time.Minute }))
 	w.register(t, newRepo(t, "shop"))
 	setJudgeScores(t, w, map[string]float64{"fake/m1": 32.5})
 	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
