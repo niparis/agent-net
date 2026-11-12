@@ -1281,7 +1281,7 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, nodeSleepMigration}
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries
 // of one task can be counted and the weekly table can show rejections per
@@ -1475,6 +1475,19 @@ CREATE TRIGGER IF NOT EXISTS sessions_worker_ad AFTER DELETE ON sessions WHEN ol
 END;
 `
 }
+
+// nodeSleepMigration keeps one row for an outage the gateway saw start. It
+// lets a sleep report from the returning daemon explain the gap, and lets the
+// gateway mark an outage the daemon did not explain after 15 minutes.
+const nodeSleepMigration = `
+-- Machine sleep and silence for one outage
+CREATE TABLE IF NOT EXISTS node_silence (
+ node_id TEXT PRIMARY KEY,
+ dropped_at INTEGER NOT NULL DEFAULT 0,
+ asleep_from INTEGER NOT NULL DEFAULT 0,
+ asleep_to INTEGER NOT NULL DEFAULT 0,
+ silent_at INTEGER NOT NULL DEFAULT 0);
+`
 
 // askSortHideMigration stores receipts for reversible history hiding. The
 // column is added in the migration loop so replaying the migration is safe.

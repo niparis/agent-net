@@ -524,6 +524,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 					g.logLine("error", "where", "pending sample", "err", err)
 				}
 				g.loopTick(ctx)
+				g.markSilentMachines(g.store.now())
 				checks, err := g.store.checkIdle()
 				if err != nil {
 					g.logLine("error", "where", "idle checks", "err", err)
@@ -809,6 +810,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 
 	close(nc.dead)
 	cancel()
+	dropped := false
 	g.mu.Lock()
 	if g.conns[nodeID] == nc && !g.closed {
 		delete(g.conns, nodeID)
@@ -816,8 +818,14 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 		t := &offlineTimer{}
 		t.timer = time.AfterFunc(g.opts.OfflineGrace, func() { g.nodeGone(nodeID, t) })
 		g.timers[nodeID] = t
+		dropped = true
 	}
 	g.mu.Unlock()
+	if dropped {
+		if err := g.store.NodeLinkDown(nodeID, g.store.now()); err != nil {
+			g.logLine("error", "where", "node drop", "err", err)
+		}
+	}
 	ws.CloseNow()
 	g.store.Event("node.disconnected", nodeID, "", "", "")
 	g.logLine("node.disconnected", "node", nodeID, "host", g.store.hostname(nodeID))
@@ -1120,6 +1128,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.SetNodeTailscaleIP(nc.id, p.TailscaleIP); err != nil {
 			return nil, err
 		}
+		// A sleep report that arrived with this hello explains the outage
+		// before the return closes it.
+		for _, sl := range p.Sleeps {
+			var to time.Time
+			if sl.To > 0 {
+				to = time.Unix(0, sl.To)
+			}
+			if _, err := st.NodeSlept(nc.id, time.Unix(0, sl.From), to); err != nil {
+				g.logLine("error", "where", "node sleep", "err", err)
+			}
+		}
+		if err := st.NodeLinkUp(nc.id); err != nil {
+			g.logLine("error", "where", "node return", "err", err)
+		}
 		// A completed hello may be the last report the cutover was waiting for.
 		// The check runs in the background because this handler can hold the
 		// machine authentication lock.
@@ -1129,6 +1151,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		// The daemon uses the name the gateway lists (the owner's display name
 		// when there is one) where it compares host names.
 		return map[string]string{"node_id": nc.id, "hostname": st.hostname(nc.id)}, nil
+
+	case protocol.FrameNodeSleep:
+		p, err := decode[protocol.NodeSleep](raw)
+		if err != nil || p.From <= 0 {
+			return nil, reject("bad sleep report")
+		}
+		var to time.Time
+		if p.To > 0 {
+			to = time.Unix(0, p.To)
+		}
+		explained, err := st.NodeSlept(nc.id, time.Unix(0, p.From), to)
+		return map[string]bool{"explained": explained}, err
 
 	case "project.display.get", "project.display.set":
 		p, err := decode[protocol.ProjectDisplayRequest](raw)

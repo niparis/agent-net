@@ -136,11 +136,13 @@ ON CONFLICT(node_id) DO UPDATE SET ip=excluded.ip,updated_at=excluded.updated_at
 // false; the gateway fills it from its live connections.
 // nodesTables are the tables Nodes reads. Keep it equal to the query there (see
 // readThrough).
-var nodesTables = []string{"nodes", "node_time_zones", "node_tailscale"}
+var nodesTables = []string{"nodes", "node_time_zones", "node_tailscale", "node_silence"}
 
 func (s *Store) Nodes() ([]protocol.NodeView, error) {
-	rows, err := s.db.Query(`SELECT n.id, n.hostname, n.os, n.version, n.seen_at, n.harnesses, n.launch, n.display_name, n.reported_hostname, COALESCE(z.zone,''), COALESCE(ts.ip,'')
+	rows, err := s.db.Query(`SELECT n.id, n.hostname, n.os, n.version, n.seen_at, n.harnesses, n.launch, n.display_name, n.reported_hostname, COALESCE(z.zone,''), COALESCE(ts.ip,''),
+ COALESCE(sl.dropped_at,0), COALESCE(sl.asleep_from,0), COALESCE(sl.asleep_to,0), COALESCE(sl.silent_at,0)
 FROM nodes n LEFT JOIN node_time_zones z ON z.node_id=n.id LEFT JOIN node_tailscale ts ON ts.node_id=n.id
+LEFT JOIN node_silence sl ON sl.node_id=n.id
 WHERE n.seen_at > 0 AND n.removed=0 ORDER BY n.hostname, n.id`)
 	if err != nil {
 		return nil, err
@@ -152,12 +154,15 @@ WHERE n.seen_at > 0 AND n.removed=0 ORDER BY n.hostname, n.id`)
 		var seen int64
 		var hs string
 		var launch int
-		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs, &launch, &n.DisplayName, &n.Reported, &n.TimeZone, &n.TailscaleIP); err != nil {
+		var dropped, asleepFrom, asleepTo, silentAt int64
+		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs, &launch, &n.DisplayName, &n.Reported, &n.TimeZone, &n.TailscaleIP,
+			&dropped, &asleepFrom, &asleepTo, &silentAt); err != nil {
 			return nil, err
 		}
 		n.Launch = launchValue(launch)
 		n.Harnesses = decodeHarnesses(hs)
 		n.LastSeen = seen / 1e9
+		n.DownState, n.DownSince = downState(dropped, asleepFrom, asleepTo, silentAt)
 		out = append(out, n)
 	}
 	return out, rows.Err()

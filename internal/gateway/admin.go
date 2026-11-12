@@ -103,6 +103,10 @@ func (g *Gateway) nodesWithOnline() ([]protocol.NodeView, error) {
 	g.mu.Lock()
 	for i := range nodes {
 		_, nodes[i].Online = g.conns[nodes[i].NodeID]
+		if nodes[i].Online {
+			nodes[i].DownState = ""
+			nodes[i].DownSince = 0
+		}
 	}
 	g.mu.Unlock()
 	return nodes, nil

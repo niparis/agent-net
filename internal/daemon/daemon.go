@@ -387,6 +387,8 @@ type Daemon struct {
 	ctoCompactEvery time.Duration
 	ctoCtx          context.Context
 	testCleanupNow  func() time.Time
+	// sleep watches the machine's own sleep and wake events (sleep.go).
+	sleep *sleepWatch
 
 	cleanupLogMu        sync.Mutex
 	cleanupProjectLogs  map[string]time.Time
@@ -635,6 +637,7 @@ func New(cfg Config) (*Daemon, error) {
 	d.inSession = d.insideSession
 	d.ctoNow = time.Now
 	d.ctoCompactEvery = time.Second
+	d.sleep = newSleepWatch()
 	d.repo = cfg.Repo
 	d.mcp = newMCPHost(d)
 	if len(cfg.CAPEM) > 0 {
@@ -730,6 +733,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.deliveryReconcileLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.proposalAskLoop(ctx) }()
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.sleepLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.linkLoop(ctx) }()
 	return nil

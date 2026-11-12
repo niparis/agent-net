@@ -534,6 +534,10 @@ type (
 		// none. A sending daemon uses it to push files over Taildrop.
 		TailscaleIP string         `json:"tailscale_ip,omitempty"`
 		Health      *MachineHealth `json:"health,omitempty"`
+		// Sleeps are sleep spans the daemon detected since it last reported
+		// them. The daemon sends them with the hello that follows a wake, so
+		// the gateway can explain the gap before it marks the outage.
+		Sleeps []NodeSleep `json:"sleeps,omitempty"`
 	}
 	// NodeHarnesses is the "node.harnesses" request: a new inventory.
 	NodeHarnesses struct {
@@ -742,6 +746,13 @@ type NodeView struct {
 	TailscaleIP string `json:"tailscale_ip,omitempty"`
 	Online      bool   `json:"online"`
 	LastSeen    int64  `json:"last_seen"`
+	// DownState is why an offline machine is away: "asleep" when its daemon
+	// reported a sleep covering the gap, "silent" when the gateway waited 15
+	// minutes without such a report. Empty when the machine is online, or has
+	// been offline for less than that. DownSince is when the state began, in
+	// Unix seconds.
+	DownState string `json:"down_state,omitempty"`
+	DownSince int64  `json:"down_since,omitempty"`
 	// Harnesses is what the node's daemon last reported. Nil means the node
 	// never reported (an older daemon).
 	Harnesses []HarnessInfo `json:"harnesses"`

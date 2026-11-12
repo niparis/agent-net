@@ -25,6 +25,7 @@ const (
 	AskAboutChange  = "change"
 	AskAboutProject = "project"
 	AskAboutSession = "session"
+	AskAboutMachine = "machine"
 )
 
 // Where an ask comes from, besides a session.
@@ -54,6 +55,11 @@ const (
 	// AskReasonSignedIn closes a sign_in ask after its provider's quota check
 	// no longer reports the login remedy.
 	AskReasonSignedIn = "signed_in"
+	// AskReasonReturned closes the ask about a machine that went silent when
+	// its daemon connects again.
+	AskReasonReturned = "returned"
+	// AskReasonSlept closes that ask when a sleep report explains the gap.
+	AskReasonSlept = "slept"
 )
 
 // Ask kinds name the source and so the owner's actions on a row.
@@ -81,6 +87,10 @@ const (
 	// a herdr pane. Its provider is in Ref; the command comes from the fixed
 	// allowlist in signin.go, never from an agent.
 	AskKindSignIn = "sign_in"
+	// AskKindMachine is the owner's notice that a machine's link went silent
+	// without a sleep report for longer than the gateway waits. It closes by
+	// itself when the machine returns.
+	AskKindMachine = "machine"
 )
 
 // Ask is one row of the Desk. It has the shape of a delivery step: who waits,

@@ -171,9 +171,13 @@ type SessionGetResult struct {
 // MachineRow is one row of agent_machines_find. OS and LastSeen are optional
 // fields, added by detail "full".
 type MachineRow struct {
-	ID             string       `json:"id"`
-	Name           string       `json:"name"`
-	Online         bool         `json:"online"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Online bool   `json:"online"`
+	// State is "online", "asleep" or "silent". Since says when an asleep or
+	// silent machine last connected, or when it went silent (RFC 3339).
+	State          string       `json:"state"`
+	Since          string       `json:"since,omitempty"`
 	Version        string       `json:"version"`
 	Harnesses      []HarnessRow `json:"harnesses"`
 	SessionsOnline int          `json:"sessions_online"`

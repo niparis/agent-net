@@ -237,6 +237,10 @@ type machineRow struct {
 	host    string
 	version string
 	online  bool
+	// state is "asleep" or "silent" while the machine is offline for a reason
+	// the gateway knows; since is when that state began (Unix seconds).
+	state string
+	since int64
 	// harnesses: nil means the machine did not report (older agent-net).
 	harnesses []protocol.HarnessInfo
 	known     bool // from the node list; false when only agents told us
@@ -248,7 +252,7 @@ func (m Model) machineRows() []machineRow {
 	by := map[string]*machineRow{}
 	var rows []*machineRow
 	for _, n := range m.snap.Nodes {
-		r := &machineRow{nodeID: n.NodeID, host: n.Hostname, version: n.Version, online: n.Online, harnesses: n.Harnesses, known: true}
+		r := &machineRow{nodeID: n.NodeID, host: n.Hostname, version: n.Version, online: n.Online, state: n.DownState, since: n.DownSince, harnesses: n.Harnesses, known: true}
 		by[n.NodeID] = r
 		rows = append(rows, r)
 	}
