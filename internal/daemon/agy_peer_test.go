@@ -167,11 +167,13 @@ func TestAgyPeerDeliveryHooks(t *testing.T) {
 	if !r.Queued || !strings.Contains(r.Detail, "next turn") {
 		t.Fatalf("waiting: %+v", r)
 	}
-	out = hook("PreInvocation", false)
-	b, _ := json.Marshal(out)
-	if !strings.Contains(string(b), `"userMessage"`) || !strings.Contains(string(b), "Next") {
-		t.Fatalf("inject: %s", b)
-	}
+	// A hook that cannot record the delivery intent within its 500 ms budget
+	// leaves the message queued for the next hook call. Antigravity calls
+	// PreInvocation on every turn, so poll it the same way.
+	eventually(t, "Next injected by a PreInvocation hook", func() bool {
+		b, _ := json.Marshal(hook("PreInvocation", false))
+		return strings.Contains(string(b), `"userMessage"`) && strings.Contains(string(b), "Next")
+	})
 }
 
 func fakeInteractiveAgy(t *testing.T, cwd string, env []string) *exec.Cmd {
