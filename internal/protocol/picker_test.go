@@ -882,3 +882,66 @@ func TestPickerWhyLeftOutNamesAreCapped(t *testing.T) {
 		t.Errorf("choice.Why names a provider instead of profiles: %s", choice.Why)
 	}
 }
+
+// A profile held back by a quota window must come with the reason the window
+// gave, never empty parentheses. The owner saw "flash agy ()" in every start
+// because workerQuotaRoom returned no note for a blocked window.
+func TestPickerWhyGivesAQuotaReasonForALeftOutProfile(t *testing.T) {
+	tasks := pickTasks("deepseek", 1.65, repeat(9, .91)...)
+	scores := pickScores(map[string]float64{"deepseek": 51, "flash": 45})
+	candidates := []WorkerModelCandidate{
+		{Name: "deepseek alibaba", Harness: "opencode", Model: "deepseek", Provider: "alibaba"},
+		{Name: "flash agy", Harness: "agy", Model: "flash", Provider: "google"},
+	}
+	quotas := &Quotas{GeneratedAt: 1000, Providers: []QuotaProvider{{
+		Provider: "google",
+		Windows:  []QuotaWindow{{Kind: "weekly", PercentUsed: 95, ResetsAt: 1000 + 3*24*3600}},
+	}}}
+	in := &PickerInput{D: 1.65, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	choice, err := ChooseWorkerModel(candidates, "simple", scores, nil, quotas, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "flash agy (google weekly at 95% used)"; !strings.Contains(choice.Why, want) {
+		t.Errorf("choice.Why lacks %q: %s", want, choice.Why)
+	}
+	if strings.Contains(choice.Why, "()") {
+		t.Errorf("choice.Why has empty parentheses: %s", choice.Why)
+	}
+}
+
+// The why line never shows empty parentheses, even if an older note arrives
+// with no reason after its quota label.
+func TestPickerWhyNeverPrintsEmptyParentheses(t *testing.T) {
+	chosen := &pickerEntry{name: "deepseek"}
+	got := pickerShortWhy("simple", 1.65, chosen, 0, nil, []string{"flash agy left out (quota: )"})
+	if strings.Contains(got, "()") {
+		t.Errorf("why has empty parentheses: %s", got)
+	}
+	if !strings.Contains(got, "flash agy (out of quota)") {
+		t.Errorf("why lacks a fallback reason: %s", got)
+	}
+}
+
+// The count after the chosen profile counts the alternatives, so it must say
+// so: "no other qualifying", "1 other qualifying" or "N other qualifying".
+func TestPickerWhyCountsTheOtherQualifyingProfiles(t *testing.T) {
+	cases := []struct {
+		name      string
+		count     int
+		qualified bool
+		want      string
+	}{
+		{"none", 0, false, "no other qualifying"},
+		{"chosen is the only one", 1, true, "no other qualifying"},
+		{"one other", 1, false, "1 other qualifying"},
+		{"three others", 3, false, "3 other qualifying"},
+	}
+	for _, c := range cases {
+		chosen := &pickerEntry{name: "deepseek", qualified: c.qualified}
+		got := pickerShortWhy("simple", 1.65, chosen, c.count, nil, nil)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: why lacks %q: %s", c.name, c.want, got)
+		}
+	}
+}

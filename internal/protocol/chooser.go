@@ -521,7 +521,7 @@ func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, 
 			continue
 		}
 		if w.Exhausted || w.PercentUsed > 90 {
-			return 0, "", false, true
+			return 0, quotaWindowBlockedReason(provider, w), false, true
 		}
 		duration := quotaWindowDuration(w)
 		if duration == 0 || w.ResetsAt <= 0 || q.GeneratedAt <= 0 {
@@ -543,6 +543,16 @@ func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, 
 		}
 	}
 	return room, note, measured, false
+}
+
+// quotaWindowBlockedReason says why a window keeps a profile out of a choice.
+// It names the provider and the window so the why line never prints an empty
+// reason. A window whose reading is at or over its limit is reported as used up.
+func quotaWindowBlockedReason(provider string, w QuotaWindow) string {
+	if w.Exhausted || w.PercentUsed >= 100 {
+		return fmt.Sprintf("%s %s used up", provider, QuotaWindowName(w))
+	}
+	return fmt.Sprintf("%s %s at %.0f%% used", provider, QuotaWindowName(w), w.PercentUsed)
 }
 
 // quotaWindowDuration is the length of a window, from its kind. It is 0 when

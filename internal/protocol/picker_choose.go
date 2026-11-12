@@ -295,7 +295,8 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 
 // pickerShortWhy builds the short why line (at most 2 lines):
 // the difficulty and D; the chosen profile with its record (rate, n) or its score;
-// the count of qualifying alternatives; and the top reasons others were left out, grouped.
+// the count of other qualifying profiles; and the top reasons others were left
+// out, grouped.
 func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCount int, entries []*pickerEntry, quotaExcluded []string) string {
 	parts := []string{fmt.Sprintf("difficulty %s (D %.2f)", level, d)}
 	if chosen != nil {
@@ -311,10 +312,13 @@ func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCoun
 	if chosen != nil && chosen.qualified && altCount > 0 {
 		altCount--
 	}
-	if altCount == 1 {
-		parts = append(parts, "1 qualifying")
-	} else {
-		parts = append(parts, fmt.Sprintf("%d qualifying", altCount))
+	switch altCount {
+	case 0:
+		parts = append(parts, "no other qualifying")
+	case 1:
+		parts = append(parts, "1 other qualifying")
+	default:
+		parts = append(parts, fmt.Sprintf("%d other qualifying", altCount))
 	}
 
 	type leftOutItem struct {
@@ -335,7 +339,11 @@ func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCoun
 		reason := "out of quota"
 		if idx := strings.Index(qe, " left out (quota: "); idx >= 0 {
 			name = qe[:idx]
-			reason = strings.TrimSuffix(qe[idx+len(" left out (quota: "):], ")")
+			reason = strings.TrimSpace(strings.TrimSuffix(qe[idx+len(" left out (quota: "):], ")"))
+			// An older note may carry no reason; never show empty parentheses.
+			if reason == "" {
+				reason = "out of quota"
+			}
 		}
 		leftItems = append(leftItems, leftOutItem{name: name, reason: reason})
 	}
