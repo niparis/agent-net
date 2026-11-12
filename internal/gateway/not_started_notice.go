@@ -34,6 +34,15 @@ func oneLine(s string, limit int) string {
 	return protocol.NeutralizeMarkers(s)
 }
 
+// notStartedReasonText formats the reason for a not-started notice.
+// If the reason contains registered profiles, it preserves newlines and does not truncate.
+func notStartedReasonText(reason string) string {
+	if strings.Contains(reason, "registered profiles:") {
+		return protocol.NeutralizeMarkers(strings.TrimSpace(reason))
+	}
+	return oneLine(reason, maxNotStartedReason)
+}
+
 // notStartedNotice stores the notice that a tracked start will not become a
 // worker, for the session that asked for it. It comes from the reserved
 // agent-net sender, as the other notices of agent-net do. It never comes from
@@ -58,7 +67,10 @@ func (s *Store) notStartedNotice(tx *sql.Tx, w workerStart, host, reason string)
 	if harness == "bot" || protocol.IsOwner(harness) {
 		return none, false, nil
 	}
-	why := "the machine " + oneLine(host, 60) + " reported: " + oneLine(reason, maxNotStartedReason)
+	why := "the machine " + oneLine(host, 60) + " reported: " + notStartedReasonText(reason)
+	if strings.Contains(reason, "registered profiles:") {
+		why = "the machine " + oneLine(host, 60) + " reported:\n" + notStartedReasonText(reason)
+	}
 	body := protocol.WorkerNotStartedText(oneLine(w.Project, 100), oneLine(w.Harness, 40), why) +
 		protocol.WorkerPermissionsText(oneLine(w.Permissions, 40), oneLine(w.Harness, 40)) + "\n"
 	now := s.now()

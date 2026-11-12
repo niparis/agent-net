@@ -39,6 +39,32 @@ type WorkerModelChoice struct {
 	// Fallback is true when no profile was allowed by its cell and the old level
 	// rule chose the model.
 	Fallback bool
+	// Why is the short explanation for the chosen model (at most 2 lines).
+	Why string
+	// LeftOut lists the candidates the chooser dropped, when it found no model.
+	// The picker records each reason where it drops the candidate, so a roster
+	// only has to print the list.
+	LeftOut []WorkerLeftOut
+}
+
+// Ranks for WorkerLeftOut, closest to qualifying first.
+const (
+	// LeftOutAllowed is a candidate the rules allowed but did not choose.
+	LeftOutAllowed = 1
+	// LeftOutFit is a candidate too weak or too strong for the task.
+	LeftOutFit = 2
+	// LeftOutQuota is a candidate whose provider is out of quota.
+	LeftOutQuota = 3
+	// LeftOutNoScore is a candidate with no benchmark or rating.
+	LeftOutNoScore = 4
+)
+
+// WorkerLeftOut is one candidate a picker left out: its name, the reason it
+// was dropped, and a rank where a lower number is closer to qualifying.
+type WorkerLeftOut struct {
+	Name   string
+	Reason string
+	Rank   int
 }
 
 // WorkerRotation is the smooth weighted round robin state of automatic worker
@@ -112,12 +138,15 @@ func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
 // with one more worker is left out first (decision 0144). The pick says so. When
 // no other model qualifies, the error names the hold.
 func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, pick ...*PickerInput) (WorkerModelChoice, error) {
-	kept, held := dropBurnHeld(candidates, quotas)
+	kept, held, heldOut := dropBurnHeld(candidates, quotas)
 	if len(held) == 0 {
 		return chooseWorkerModelRanked(candidates, level, scores, minimums, quotas, running, rotation, pick...)
 	}
 	choice, err := chooseWorkerModelRanked(kept, level, scores, minimums, quotas, running, rotation, pick...)
 	if err != nil {
+		// The held candidates never reached the ranking, so the roster would
+		// not name them without this.
+		choice.LeftOut = append(choice.LeftOut, heldOut...)
 		return choice, fmt.Errorf("no other model qualifies, and these were held back for quota: %s; %w", strings.Join(held, "; "), err)
 	}
 	choice.QuotaNote = appendNote(choice.QuotaNote, "held back for quota: "+strings.Join(held, "; "))
@@ -146,10 +175,17 @@ func chooseWorkerModelRanked(candidates []WorkerModelCandidate, level string, sc
 		choice, err := chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
 		if err == nil {
 			choice.PickNote, choice.Fallback = fallback, true
+			if choice.Why == "" {
+				choice.Why = fmt.Sprintf("difficulty %s (D %.2f): %s (fallback to level rule, score %.1f)", level, pick[0].D, choice.Model, choice.Score)
+			}
 		}
 		return choice, err
 	}
-	return chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
+	choice, err := chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
+	if err == nil && choice.Why == "" {
+		choice.Why = fmt.Sprintf("difficulty %s: %s (score %.1f)", level, choice.Model, choice.Score)
+	}
+	return choice, err
 }
 
 // chooseWorkerModelBand is the level rule: it picks an adequate model by weighted
@@ -185,6 +221,7 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 	}
 	var eligible []rankedChoice
 	var reasons []string
+	var leftOut []WorkerLeftOut
 	for _, c := range candidates {
 		score, fit, isAdequate, ok := WorkerCandidateFit(c, level, scores, minimums)
 		name := c.Name
@@ -193,6 +230,7 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		}
 		if !ok {
 			reasons = append(reasons, name+" (max unknown: unscored)")
+			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: "unscored (no benchmark or rating)", Rank: LeftOutNoScore})
 			continue
 		}
 		scoreText := fmt.Sprintf("%g", score)
@@ -201,6 +239,7 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		}
 		reasons = append(reasons, fmt.Sprintf("%s (max %s, score %s, %s)", name, WorkerMaximumLevel(score, minimums), scoreText, fit))
 		if !isAdequate {
+			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: fmt.Sprintf("max %s, score %g, %s", WorkerMaximumLevel(score, minimums), score, fit), Rank: LeftOutFit})
 			continue
 		}
 		provider := c.Provider
@@ -209,6 +248,11 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		}
 		room, note, measured, blocked := workerQuotaRoom(quotas, provider, c.Model)
 		if blocked {
+			reason := "out of quota"
+			if note != "" {
+				reason += " (" + note + ")"
+			}
+			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: reason, Rank: LeftOutQuota})
 			continue
 		}
 		servedRoom := room
@@ -230,7 +274,7 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		if roster == "" {
 			roster = "none"
 		}
-		return WorkerModelChoice{}, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
+		return WorkerModelChoice{LeftOut: leftOut}, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
 	}
 	return rotateRanked(state, level, eligible)
 }

@@ -48,6 +48,8 @@ type queuedStart struct {
 	// AutoContinue is the start's automatic-continue setting.
 	AutoContinue bool
 	QueuedAt     time.Time
+	Why          string
+	NotFamily    []string
 	// ResumeSession is set when this queued entry restarts an ended worker session.
 	ResumeSession string
 }
@@ -59,14 +61,18 @@ func (s *state) addQueued(q queuedStart) error {
 			assessment = string(raw)
 		}
 	}
-	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial), assessment, q.ChangeID, q.MCPServers, q.Fixes, q.ResumeSession)
+	notFamily := ""
+	if raw, err := json.Marshal(q.NotFamily); err == nil && len(q.NotFamily) > 0 {
+		notFamily = string(raw)
+	}
+	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session, why, not_family)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial), assessment, q.ChangeID, q.MCPServers, q.Fixes, q.ResumeSession, q.Why, notFamily)
 	return err
 }
 
 // queue lists the waiting starts, the oldest first.
 func (s *state) queue() ([]queuedStart, error) {
-	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session FROM worker_queue ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session, why, not_family FROM worker_queue ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +82,8 @@ func (s *state) queue() ([]queuedStart, error) {
 		var q queuedStart
 		var at int64
 		var autoContinue int
-		var assessment string
-		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial, &assessment, &q.ChangeID, &q.MCPServers, &q.Fixes, &q.ResumeSession); err != nil {
+		var assessment, notFamily string
+		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial, &assessment, &q.ChangeID, &q.MCPServers, &q.Fixes, &q.ResumeSession, &q.Why, &notFamily); err != nil {
 			return nil, err
 		}
 		q.QueuedAt = time.Unix(0, at)
@@ -88,6 +94,11 @@ func (s *state) queue() ([]queuedStart, error) {
 				return nil, err
 			}
 			q.Assessment = &a
+		}
+		if notFamily != "" {
+			if err := json.Unmarshal([]byte(notFamily), &q.NotFamily); err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, q)
 	}

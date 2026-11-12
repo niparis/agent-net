@@ -182,7 +182,7 @@ func (d *Daemon) reportAcceptedStart(id, caller string, p protocol.WorkerStartRe
 		note += ". A notice follows when it starts."
 		d.startReport(ctx, protocol.WorkerStartReport{ID: id, Owner: caller, Project: res.Project, Harness: res.Harness, Status: protocol.StartReportQueued, Note: note})
 	default:
-		body := protocol.WorkerAcceptedStartText(id, res.Status, res.SessionID, res.Harness, res.Model, res.Project, res.Hostname, res.Worktree, res.Branch, res.OwnerLine)
+		body := protocol.WorkerAcceptedStartText(id, res.Status, res.SessionID, res.Harness, res.Model, res.Project, res.Hostname, res.Worktree, res.Branch, res.OwnerLine, res.Why)
 		if _, serr := d.send(ctx, protocol.MsgSend{Sender: res.SessionID, Recipient: caller, Type: protocol.TypeNotification, Body: body}); serr != nil {
 			d.Logf("worker %s: accepted start notice: %v", res.SessionID, serr)
 		}

@@ -187,7 +187,7 @@ func TestConversationsPageGroupsAnEndedWorkerAndNamesItFromTheTask(t *testing.T)
 
 	taskBody := protocol.WorkerTaskBody("Polish the sessions panel\nRun the checks.", "/tmp/wt", "agent-net/w_8")
 	insertConversationMessage(t, s, "m_task", "c_task", alice, worker, taskBody, base.Add(-10*time.Minute))
-	started := protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", time.Minute)
+	started := protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", time.Minute, "")
 	insertConversationMessage(t, s, "m_started", "c_started", worker, alice, started, base.Add(-9*time.Minute))
 	insertConversationMessage(t, s, "m_done", "c_done", worker, alice,
 		"[agent-net worker notice]\nstatus: done\nrun time: 1m\n", base.Add(-time.Minute))
@@ -654,7 +654,7 @@ func TestConversationsPageHidesLifecycleOnlyWorkerConversations(t *testing.T) {
 	node, alice, _ := conversationFixture(t, s)
 	base := c.t
 	worker := endedWorker(t, s, node, alice, "nw", "")
-	started := protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", time.Minute)
+	started := protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", time.Minute, "")
 	insertConversationMessage(t, s, "m_started", "c_started", worker, alice, started, base.Add(-2*time.Minute))
 	insertConversationMessage(t, s, "m_queued", "c_queued", worker, alice,
 		"[agent-net worker notice]\nstatus: queued\nnote: waiting for room\n", base.Add(-time.Minute))
@@ -681,7 +681,7 @@ func TestConversationsPageGroupsWorkerPagesAndTotals(t *testing.T) {
 		insertConversationMessage(t, s, fmt.Sprintf("m_task_%d", i), fmt.Sprintf("c_task_%d", i), alice, worker,
 			protocol.WorkerTaskBody(fmt.Sprintf("Task %d", i), "", ""), at)
 		insertConversationMessage(t, s, fmt.Sprintf("m_started_%d", i), fmt.Sprintf("c_started_%d", i), worker, alice,
-			protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", 0), at.Add(time.Minute))
+			protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", 0, ""), at.Add(time.Minute))
 		insertConversationMessage(t, s, fmt.Sprintf("m_done_%d", i), fmt.Sprintf("c_done_%d", i), worker, alice,
 			"[agent-net worker notice]\nstatus: done\n", at.Add(2*time.Minute))
 		want = append(want, "worker:"+worker)
@@ -743,7 +743,7 @@ func TestConversationMessagesOpensAGroupedWorker(t *testing.T) {
 	insertConversationMessage(t, s, "m_task", "c_task", alice, worker,
 		protocol.WorkerTaskBody("Polish the panels", "", ""), base.Add(-2*time.Minute))
 	insertConversationMessage(t, s, "m_started", "c_started", worker, alice,
-		protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", 0), base.Add(-time.Minute))
+		protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", 0, ""), base.Add(-time.Minute))
 
 	msgs, err := s.ConversationMessages("worker:"+worker, 10)
 	if err != nil {

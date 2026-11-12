@@ -66,7 +66,7 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 	if running == nil {
 		running = map[string]int{}
 	}
-	candidates, _, _, err := g.workerModelCandidatesWith(facts, &node, in.profiles, in.providers, node.Quotas, "", false, in.protected)
+	candidates, _, _, err := g.workerModelCandidatesWith(facts, nil, &node, in.profiles, in.providers, node.Quotas, "", false, in.protected)
 	if err != nil {
 		return nil, nil, nil, err
 	}

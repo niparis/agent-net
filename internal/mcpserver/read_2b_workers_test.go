@@ -81,3 +81,27 @@ func TestWorkerFullDetailIncludesCause(t *testing.T) {
 		t.Fatalf("compact row has cause %q", compact.Cause)
 	}
 }
+
+func TestWorkersFindDetailFullReturnsPickerNote(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "n_me")
+	f := roReadFixture()
+	f.agents[2].Worker.Assessment = &protocol.WorkerAssessment{
+		PickerNote: "difficulty simple (D 1.90) · simple -> claude claude-sonnet-5-5:high",
+	}
+	f.agents[2].Worker.NotFamily = []string{"openai"}
+	cs := connect(t, f.call)
+
+	out := roCall(t, cs, "agent_workers_find", map[string]any{"detail": "full"})
+	items := roPageItems(t, out)
+	if len(items) == 0 {
+		t.Fatal("no items returned")
+	}
+	t.Logf("item 0: %+v", items[0])
+	if items[0]["picker_note"] != "difficulty simple (D 1.90) · simple -> claude claude-sonnet-5-5:high" {
+		t.Fatalf("picker_note = %v", items[0]["picker_note"])
+	}
+	nf, ok := items[0]["not_family"].([]any)
+	if !ok || len(nf) != 1 || nf[0] != "openai" {
+		t.Fatalf("not_family = %v", items[0]["not_family"])
+	}
+}

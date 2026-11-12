@@ -537,7 +537,7 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 			Hint: ans.Hint}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
-		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
+		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Why: ans.Why, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
 		Permissions: ans.Permissions, OSSandbox: ans.OSSandbox, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
 		Hint: ans.Hint}
 	if ans.Starting {

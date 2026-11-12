@@ -771,6 +771,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 		}
 	}
+	var choice protocol.WorkerModelChoice
 	if automatic {
 		difficulty := difficultyUsed
 		providers, err := g.store.workerProviders()
@@ -806,7 +807,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if len(profiles) == 0 {
 			return none, reject("no registered workers qualify for %s; register a profile for %s, or pass model explicitly", difficulty, difficulty)
 		} else {
-			candidates, skippedProfiles, resolutionNotes, err := g.workerModelCandidates(node, profiles, providers, quotas, p.Harness, p.RequireReadOnly, protected)
+			roster := newNotStartedRoster()
+			candidates, skippedProfiles, resolutionNotes, err := g.workerModelCandidatesWith(&candidateFacts{}, roster, node, profiles, providers, quotas, p.Harness, p.RequireReadOnly, protected)
 			if err != nil {
 				return none, err
 			}
@@ -814,11 +816,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			for _, c := range candidates {
 				under, floorSentence, noReading := protocol.CheckWorkerFloor(quotas, floors, c.Harness, c.Model)
 				if under {
-					name := c.Name
-					if name == "" {
-						name = c.Harness + " " + c.Model
-					}
+					name := rosterName(c.Name, c.Harness, c.Model)
 					skippedProfiles = append(skippedProfiles, fmt.Sprintf("skipped %s: %s", name, floorSentence))
+					roster.add(name, "skipped: "+floorSentence, rosterFloor)
 					continue
 				}
 				if noReading {
@@ -833,22 +833,21 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 			candidates = allowedCandidates
 			if len(candidates) == 0 {
-				reason := fmt.Sprintf("no registered workers are available on an allowed worker provider on %s", node.Hostname)
-				if len(skippedProfiles) > 0 {
-					reason += "; " + strings.Join(skippedProfiles, "; ")
-				}
-				return none, g.refuseWithAlternative(ctx, nc, p, reason)
+				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
-			candidates, familyNote, err := filterWorkerFamilies(candidates, p.NotFamily)
+			candidates, familyNote, err := filterWorkerFamilies(candidates, p.NotFamily, roster)
 			if err != nil {
-				return none, reject("%v", err)
+				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
-			choice, protectionNote, err := g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(p.Assessment, difficulty), scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
+			var protectionNote string
+			choice, protectionNote, err = g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(p.Assessment, difficulty), scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
 			if err != nil {
-				if familyNote != "" {
-					return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("%v; %s", err, familyNote))
+				// The chooser records why it dropped each candidate, so the
+				// roster reports the same decision instead of guessing again.
+				for _, lo := range choice.LeftOut {
+					roster.add(lo.Name, lo.Reason, lo.Rank)
 				}
-				return none, g.refuseWithAlternative(ctx, nc, p, err.Error())
+				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
 			p.Harness, p.Model = choice.Harness, choice.Model
 			automaticNote = "(" + workerChoiceNote(difficulty, choice, candidates, scores, minimums)
@@ -916,7 +915,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		modelNote += briefNote
 	}
 	if !automatic && len(p.NotFamily) > 0 {
-		if _, _, err := filterWorkerFamilies([]protocol.WorkerModelCandidate{{Harness: p.Harness, Model: p.Model}}, p.NotFamily); err != nil {
+		if _, _, err := filterWorkerFamilies([]protocol.WorkerModelCandidate{{Harness: p.Harness, Model: p.Model}}, p.NotFamily, nil); err != nil {
 			return none, reject("%v", err)
 		}
 	}
@@ -1024,7 +1023,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	launchBegan := time.Now()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
 		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.BriefText(), Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
-		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes})
+		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes,
+		Why: choice.Why, NotFamily: p.NotFamily})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
@@ -1066,7 +1066,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			"project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner, "position", launched.Position,
 			"reason", launched.Reason)
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
-			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title, Queued: true, QueueID: launched.QueueID,
+			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, Title: p.Title, Queued: true, QueueID: launched.QueueID,
 			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms, Base: p.Base,
 			Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
 	}
@@ -1074,6 +1074,11 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("machine %s answered without a session", pick.Hostname)
 	}
 	g.recordWorkerPickerNote(p.Assessment, launched.SessionID, modelNote)
+	if automatic {
+		dVal := protocol.PickerD(p.Assessment, difficultyUsed)
+		g.logLine("worker.pick", "session", launched.SessionID, "level", difficultyUsed, "d", fmt.Sprintf("%.2f", dVal), "chosen", p.Harness+" "+p.Model, "reason", choice.Why)
+		g.logLine("worker.pick_detail", "session", launched.SessionID, "note", modelNote)
+	}
 	event := "worker.started"
 	if launched.Starting {
 		event = "worker.starting"
@@ -1086,7 +1091,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "permissions", perms, "worktree", launched.Worktree, "branch", launched.Branch,
 		"picker_ms", pickerMS, "launch_ms", time.Since(launchBegan).Milliseconds())
 	return protocol.WorkerStartAnswer{StartRef: startRef, Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
-		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title,
+		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, Base: p.Base, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
 		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
 }
@@ -1139,7 +1144,7 @@ func (g *Gateway) workerStartReport(ctx context.Context, nc *nodeConn, p protoco
 		return nil
 	}
 	n, ok, err := g.store.startReportNotice(p.Owner, p.ID, protocol.WorkerStartReportText(p.Status,
-		oneLine(p.Project, 100), oneLine(p.Harness, 40), oneLine(p.ID, 40), oneLine(p.Note, maxNotStartedReason)))
+		oneLine(p.Project, 100), oneLine(p.Harness, 40), oneLine(p.ID, 40), notStartedReasonText(p.Note)))
 	if err != nil {
 		return protocol.RetryableError{Err: err}
 	}
@@ -2024,7 +2029,7 @@ func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidate
 
 // workerModelCandidates builds the roster shared by starts and read-only previews.
 func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string, readOnly bool, protected protocol.ProtectedProviders) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
-	return g.workerModelCandidatesWith(&candidateFacts{}, node, profiles, providers, quotas, harness, readOnly, protected)
+	return g.workerModelCandidatesWith(&candidateFacts{}, nil, node, profiles, providers, quotas, harness, readOnly, protected)
 }
 
 // candidateFacts holds what the roster reads about one machine. A caller that
@@ -2095,8 +2100,9 @@ func (f *candidateFacts) authBlocked(s *Store, node, harness, model string) (boo
 }
 
 // workerModelCandidatesWith is workerModelCandidates with the reads the caller
-// already has.
-func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string, readOnly bool, protected protocol.ProtectedProviders) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
+// already has. A non-nil roster records why each profile was left out, at the
+// place this build drops it.
+func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notStartedRoster, node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string, readOnly bool, protected protocol.ProtectedProviders) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
 	tracks, err := facts.trackRecords(g.store, node.NodeID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -2112,15 +2118,23 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, node *protoco
 	var candidates []protocol.WorkerModelCandidate
 	var skippedProfiles []string
 	resolutionNotes := map[string]string{}
+	// harnessReason is why a whole harness was left out; the roster reports it
+	// once for each of its profiles.
+	harnessReason := map[string]string{}
 	for _, h := range node.Harnesses {
-		if h.SignedIn == "no" {
+		switch {
+		case h.SignedIn == "no":
+			harnessReason[h.Name] = "not signed in on " + node.Hostname
 			skippedProfiles = append(skippedProfiles, fmt.Sprintf("%s skipped on %s: not signed in", h.Name, node.Hostname))
 			continue
-		}
-		if !protocol.WorkerHarnessSupported(h.Name) || harness != "" && harness != h.Name {
+		case !protocol.WorkerHarnessSupported(h.Name):
+			harnessReason[h.Name] = "harness " + h.Name + " is not supported"
 			continue
-		}
-		if readOnly && !protocol.WorkerReadOnlySupported(h.Name) {
+		case harness != "" && harness != h.Name:
+			harnessReason[h.Name] = "harness " + h.Name + " was not asked for"
+			continue
+		case readOnly && !protocol.WorkerReadOnlySupported(h.Name):
+			harnessReason[h.Name] = "harness " + h.Name + " does not support read-only work"
 			continue
 		}
 		failures, err := facts.recentFailures(g.store, node.NodeID, h.Name)
@@ -2151,13 +2165,22 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, node *protoco
 				return nil, nil, nil, err
 			}
 			if blocked {
+				if roster != nil {
+					roster.add(profileRosterName(profile), "provider authentication failed", rosterUnavailable)
+				}
 				skippedProfiles = append(skippedProfiles, fmt.Sprintf("%s skipped on %s: provider authentication failed", profile.Name, node.Hostname))
 				continue
 			}
 			if !protocol.WorkerProviderAllowed(h.Name, resolved, providers.Providers, quotas) {
+				if roster != nil {
+					roster.add(profileRosterName(profile), "provider "+protocol.ProfileProvider(h.Name, resolved)+" is not in your worker providers", rosterUnavailable)
+				}
 				continue
 			}
 			if readOnly && isProtected(h.Name, resolved, protected) {
+				if roster != nil {
+					roster.add(profileRosterName(profile), "protected provider, not for read-only work", rosterUnavailable)
+				}
 				continue
 			}
 			model := resolved
@@ -2166,6 +2189,23 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, node *protoco
 			if resolved != profile.Model {
 				resolutionNotes[h.Name+"\x00"+model] = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
 			}
+		}
+	}
+	if roster != nil {
+		// Profiles that never reached the loop above: their harness is not
+		// installed on this machine, or the harness was skipped as a whole.
+		for _, c := range candidates {
+			roster.mark(rosterName(c.Name, c.Harness, c.Model))
+		}
+		for _, profile := range profiles {
+			if roster.marked(profileRosterName(profile)) {
+				continue
+			}
+			reason, ok := harnessReason[profile.Harness]
+			if !ok {
+				reason = "harness " + profile.Harness + " is not installed on " + node.Hostname
+			}
+			roster.add(profileRosterName(profile), reason, rosterUnavailable)
 		}
 	}
 
@@ -2229,8 +2269,9 @@ func (g *Gateway) chooseAutomaticWorkerCore(modelHealth func(harness, model stri
 	return choice, note, err
 }
 
-// filterWorkerFamilies removes excluded makers before scoring and rotation.
-func filterWorkerFamilies(candidates []protocol.WorkerModelCandidate, excluded []string) ([]protocol.WorkerModelCandidate, string, error) {
+// filterWorkerFamilies removes excluded makers before scoring and rotation. A
+// non-nil roster records each removed candidate with the family that removed it.
+func filterWorkerFamilies(candidates []protocol.WorkerModelCandidate, excluded []string, roster *notStartedRoster) ([]protocol.WorkerModelCandidate, string, error) {
 	if len(excluded) == 0 {
 		return candidates, "", nil
 	}
@@ -2251,6 +2292,9 @@ func filterWorkerFamilies(candidates []protocol.WorkerModelCandidate, excluded [
 		families[family] = true
 		if deny[family] {
 			skipped = append(skipped, c.Harness+" "+c.Model+" ("+family+")")
+			if roster != nil {
+				roster.add(rosterName(c.Name, c.Harness, c.Model), "removed by family filter ("+family+")", rosterFamily)
+			}
 		} else {
 			kept = append(kept, c)
 		}
@@ -2271,4 +2315,87 @@ func filterWorkerFamilies(candidates []protocol.WorkerModelCandidate, excluded [
 		return kept, "", nil
 	}
 	return kept, "skipped for family rule: " + strings.Join(skipped, ", "), nil
+}
+
+// Roster ranks order the lines from closest to qualifying to furthest away. The
+// picker's own ranks cover the candidates it scored; the build stages before
+// the chooser sort after them.
+const (
+	rosterFloor       = protocol.LeftOutNoScore + 1
+	rosterFamily      = protocol.LeftOutNoScore + 2
+	rosterUnavailable = protocol.LeftOutNoScore + 3
+)
+
+// rosterItem is one registered profile the build left out, with the reason it
+// recorded and a rank for the print order.
+type rosterItem struct {
+	name   string
+	reason string
+	rank   int
+}
+
+// notStartedRoster collects the reason each registered profile was left out.
+// The candidate build records each reason where it drops the profile; this type
+// only sorts and prints them, so there is one place that decides.
+type notStartedRoster struct {
+	items []rosterItem
+	seen  map[string]bool
+}
+
+func newNotStartedRoster() *notStartedRoster {
+	return &notStartedRoster{seen: map[string]bool{}}
+}
+
+// add records one profile and its reason. Lower ranks print first.
+func (r *notStartedRoster) add(name, reason string, rank int) {
+	r.mark(name)
+	r.items = append(r.items, rosterItem{name: name, reason: reason, rank: rank})
+}
+
+// mark says a profile was considered without being left out (it is a candidate).
+func (r *notStartedRoster) mark(name string) {
+	if r.seen == nil {
+		r.seen = map[string]bool{}
+	}
+	r.seen[name] = true
+}
+
+func (r *notStartedRoster) marked(name string) bool { return r.seen[name] }
+
+// format prints one line per profile, closest to qualifying first. It never
+// decides why a profile was left out.
+func (r *notStartedRoster) format() string {
+	items := append([]rosterItem(nil), r.items...)
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].rank != items[j].rank {
+			return items[i].rank < items[j].rank
+		}
+		return items[i].name < items[j].name
+	})
+	lines := make([]string, 0, len(items))
+	for _, it := range items {
+		lines = append(lines, "  "+it.name+": "+it.reason)
+	}
+	if len(lines) == 0 {
+		return "  (no registered profile was checked)"
+	}
+	return strings.Join(lines, "\n")
+}
+
+// rosterName is the name a profile or candidate is reported under.
+func rosterName(name, harness, model string) string {
+	if strings.TrimSpace(name) != "" {
+		return name
+	}
+	return harness + " " + model
+}
+
+func profileRosterName(p protocol.WorkerProfile) string {
+	return rosterName(p.Name, p.Harness, p.Model)
+}
+
+// notStartedReason is the refusal when the picker found no model: every
+// registered profile with the reason the candidate build recorded for it.
+func notStartedReason(difficulty string, roster *notStartedRoster) string {
+	return fmt.Sprintf("no model qualifies for %s; registered profiles:\n%s\nregister a profile for %s, or pass model explicitly", difficulty, roster.format(), difficulty)
 }

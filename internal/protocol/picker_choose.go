@@ -289,7 +289,92 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 	if len(quotaExcluded) > 0 {
 		picked.PickNote += "; " + strings.Join(quotaExcluded, "; ")
 	}
+	picked.Why = pickerShortWhy(level, in.D, chosen, len(qualified), entries, quotaExcluded)
 	return picked, ""
+}
+
+// pickerShortWhy builds the short why line (at most 2 lines):
+// the difficulty and D; the chosen profile with its record (rate, n) or its score;
+// the count of qualifying alternatives; and the top reasons others were left out, grouped.
+func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCount int, entries []*pickerEntry, quotaExcluded []string) string {
+	parts := []string{fmt.Sprintf("difficulty %s (D %.2f)", level, d)}
+	if chosen != nil {
+		if chosen.cell.N > 0 {
+			parts = append(parts, fmt.Sprintf("%s %.2f (n%d)", chosen.name, chosen.cell.Score, chosen.cell.N))
+		} else if chosen.scored && chosen.bench > 0 {
+			parts = append(parts, fmt.Sprintf("%s (score %.1f)", chosen.name, chosen.bench))
+		} else {
+			parts = append(parts, chosen.name)
+		}
+	}
+	altCount := qualifyingCount
+	if chosen != nil && chosen.qualified && altCount > 0 {
+		altCount--
+	}
+	if altCount == 1 {
+		parts = append(parts, "1 qualifying")
+	} else {
+		parts = append(parts, fmt.Sprintf("%d qualifying", altCount))
+	}
+
+	type leftOutItem struct {
+		name   string
+		reason string
+	}
+	var leftItems []leftOutItem
+	for _, e := range entries {
+		if e == chosen {
+			continue
+		}
+		if e.reason != "" {
+			leftItems = append(leftItems, leftOutItem{name: e.name, reason: e.reason})
+		}
+	}
+	for _, qe := range quotaExcluded {
+		name := qe
+		reason := "out of quota"
+		if idx := strings.Index(qe, " left out (quota: "); idx >= 0 {
+			name = qe[:idx]
+			reason = strings.TrimSuffix(qe[idx+len(" left out (quota: "):], ")")
+		}
+		leftItems = append(leftItems, leftOutItem{name: name, reason: reason})
+	}
+
+	// The owner reads profile names, so a group lists the profiles it covers,
+	// never a provider label. A long group keeps the count honest and the line
+	// short.
+	const maxWhyNames = 3
+	if len(leftItems) > 0 {
+		reasonOrder := []string{}
+		reasonGroups := map[string][]leftOutItem{}
+		for _, it := range leftItems {
+			if _, exists := reasonGroups[it.reason]; !exists {
+				reasonOrder = append(reasonOrder, it.reason)
+			}
+			reasonGroups[it.reason] = append(reasonGroups[it.reason], it)
+		}
+		var groups []string
+		for _, r := range reasonOrder {
+			items := reasonGroups[r]
+			shown := items
+			if len(shown) > maxWhyNames {
+				shown = shown[:maxWhyNames]
+			}
+			names := make([]string, len(shown))
+			for i, it := range shown {
+				names[i] = it.name
+			}
+			label := strings.Join(names, ", ")
+			if rest := len(items) - len(shown); rest > 0 {
+				label += fmt.Sprintf(", +%d more", rest)
+			}
+			groups = append(groups, fmt.Sprintf("%s (%s)", label, r))
+		}
+		if len(groups) > 0 {
+			parts = append(parts, "left out: "+strings.Join(groups, "; "))
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // exploreIsUp tells whether the task is a step up for a thin cell (decision

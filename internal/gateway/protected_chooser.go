@@ -47,10 +47,11 @@ func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level str
 	}
 	c, err := protocol.ChooseWorkerModel(protected, level, scores, minimums, quotas, running, rotation, pick...)
 	if err != nil {
-		// Report the full roster, including profiles excluded by level.
-		_, allErr := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, nil, pick...)
+		// Report the full roster, including profiles excluded by level. The
+		// all-candidates choice carries every left-out reason for the roster.
+		all, allErr := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, nil, pick...)
 		if allErr != nil {
-			err = allErr
+			return all, "", allErr
 		}
 		return c, "", err
 	}

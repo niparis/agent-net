@@ -542,3 +542,117 @@ func TestNotStartedStorageErrorIsMarkedRetryable(t *testing.T) {
 		t.Errorf("refusal: err=%v frame=%s", err, b)
 	}
 }
+
+// The roster only reports the decisions the real candidate build made. A
+// profile with no quota reading stays a candidate, so it is not listed as left
+// out for quota; a profile the family rule removed and one under the owner's
+// floor keep the reason the build recorded, closest to qualifying first.
+func TestNotStartedRosterUsesThePickerReasons(t *testing.T) {
+	f := newStartsFixture(t)
+	// flash is removed by the family rule, opus is under the floor, and
+	// deepseek has no quota reading and no score, so it is the real reason the
+	// chooser fails. Only deepseek reaches the chooser.
+	profiles := []protocol.WorkerProfile{
+		{Name: "flash", Harness: "agy", Model: "gemini-2.5-flash", Effort: "high"},
+		{Name: "deepseek", Harness: "opencode", Model: "deepseek/deepseek-unrated-test", Effort: "high"},
+		{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"},
+	}
+	if err := f.s.saveWorkerProfiles(profiles); err != nil {
+		t.Fatal(err)
+	}
+	harnesses := []protocol.HarnessInfo{
+		{Name: "agy", Models: []string{"gemini-2.5-flash-high"}},
+		{Name: "opencode", Models: []string{"deepseek/deepseek-unrated-test"}},
+		{Name: "claude", Models: []string{"claude-opus-5-5"}},
+	}
+	if _, err := f.s.SetNodeHarnesses(f.nodeA, harnesses); err != nil {
+		t.Fatal(err)
+	}
+	launch := true
+	if err := f.s.SetNodeLaunch(f.nodeA, &launch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES(?,?,?,0,0)`, f.nodeA, "/repo/shop", "shop"); err != nil {
+		t.Fatal(err)
+	}
+	// No score matches the deepseek model, so the chooser has nothing to pick.
+	scoresJSON := `[{"match":"gemini-2.5-flash","score":70},{"match":"claude-opus-5-5","score":60}]`
+	if _, err := f.s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, scoresKey, scoresJSON); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["google","deepseek","anthropic"]}`); err != nil {
+		t.Fatal(err)
+	}
+	// Anthropic has 30% left, under the 40% floor. Deepseek has no reading.
+	if _, err := f.s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
+		t.Fatal(err)
+	}
+	quotas := &protocol.Quotas{
+		GeneratedAt: f.clock.now().Unix(),
+		Providers: []protocol.QuotaProvider{
+			{
+				Provider: "claude",
+				Windows:  []protocol.QuotaWindow{{ID: "5h", PercentUsed: 70}},
+			},
+		},
+	}
+	f.g.usage.set(f.nodeA, f.clock.now(), protocol.UsageReport{Quotas: quotas})
+	if err := f.s.SetNodeHello(f.nodeA, "h1", "1"); err != nil {
+		t.Fatal(err)
+	}
+	nc := &nodeConn{id: f.nodeA}
+	f.g.mu.Lock()
+	f.g.conns[f.nodeA] = nc
+	f.g.mu.Unlock()
+
+	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.a, "shop", "claude", ""); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{
+		Owner: f.a,
+		Level: "very_complex",
+		WorkerStartRequest: protocol.WorkerStartRequest{
+			Project:   "shop",
+			Task:      "test task",
+			Model:     "auto",
+			NotFamily: []string{"google"},
+		},
+	}, true)
+	if err == nil {
+		t.Fatal("the picker found a model though every profile was left out")
+	}
+	if err := f.frame(t, f.nodeA, "worker.not_started", protocol.WorkerNotStarted{
+		Ref:    "q_1",
+		Reason: err.Error(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ns := f.notices(t, f.a)
+	if len(ns) != 1 {
+		t.Fatalf("expected 1 notice, got %d", len(ns))
+	}
+	body := ns[0].Body
+
+	// The notice lists every profile rather than cutting the reason to one line.
+	if strings.Contains(body, "...") {
+		t.Fatalf("not-started notice was truncated with '...':\n%s", body)
+	}
+	for _, want := range []string{
+		"flash: removed by family filter (google)",
+		"opus: skipped: anthropic has 30% left in its 5h window, under your 40% worker floor",
+		"deepseek: unscored",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("not-started notice lacks %q:\n%s", want, body)
+		}
+	}
+	// Unknown quota keeps a profile as a candidate: it is not an exclusion.
+	if strings.Contains(body, "quota unknown") || strings.Contains(body, "out of quota") {
+		t.Errorf("a profile with no quota reading was listed as out of quota:\n%s", body)
+	}
+	// Closest first: the chooser's line, then the floor, then the family rule.
+	d, o, fl := strings.Index(body, "deepseek:"), strings.Index(body, "opus:"), strings.Index(body, "flash:")
+	if d < 0 || o < 0 || fl < 0 || !(d < o && o < fl) {
+		t.Errorf("the roster is not sorted closest to qualifying first:\n%s", body)
+	}
+}

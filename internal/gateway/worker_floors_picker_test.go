@@ -97,7 +97,7 @@ func TestWorkerFloorPickerUnderFloorExcluded(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error when claude is under floor, got nil")
 	}
-	wantNote := "skipped opus: anthropic has 30% left in its 5h window, under your 40% worker floor"
+	wantNote := "opus: skipped: anthropic has 30% left in its 5h window, under your 40% worker floor"
 	if !strings.Contains(err.Error(), wantNote) {
 		t.Fatalf("error %q does not contain %q", err.Error(), wantNote)
 	}
@@ -293,7 +293,7 @@ func TestWorkerFloorPickerReadsMonthlyWindowFromAnotherMachine(t *testing.T) {
 		Level:              "hard",
 		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "opencode", Model: "auto"},
 	}, true)
-	wantNote := "skipped deepseek opencode: opencode-go has 1% left in its monthly window, under your 10% worker floor"
+	wantNote := "deepseek opencode: skipped: opencode-go has 1% left in its monthly window, under your 10% worker floor"
 	if err == nil || !strings.Contains(err.Error(), wantNote) {
 		t.Fatalf("workerStart = %v, want a refusal containing %q", err, wantNote)
 	}
@@ -336,7 +336,7 @@ func TestWorkerFloorPickerMonthlyWindowUnderFloorExcluded(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error when opencode-go is under floor, got nil")
 	}
-	wantNote := "skipped deepseek opencode: opencode-go has 1% left in its monthly window, under your 10% worker floor"
+	wantNote := "deepseek opencode: skipped: opencode-go has 1% left in its monthly window, under your 10% worker floor"
 	if !strings.Contains(err.Error(), wantNote) {
 		t.Fatalf("error %q does not contain %q", err.Error(), wantNote)
 	}
@@ -460,7 +460,7 @@ func TestWorkerPickerNoOwnReportUsesAnotherMachineFloor(t *testing.T) {
 		Level:              "hard",
 		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "opencode", Model: "auto"},
 	}, true)
-	wantNote := "skipped deepseek opencode: opencode-go has 1% left in its monthly window, under your 10% worker floor"
+	wantNote := "deepseek opencode: skipped: opencode-go has 1% left in its monthly window, under your 10% worker floor"
 	if err == nil || !strings.Contains(err.Error(), wantNote) {
 		t.Fatalf("workerStart = %v, want a refusal containing %q", err, wantNote)
 	}

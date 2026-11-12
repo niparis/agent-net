@@ -45,8 +45,10 @@ type roWorkerRow struct {
 	Struggle *protocol.Struggle `json:"struggle,omitempty"`
 	// Cause is why the latest run failed or needed rework, shown by detail
 	// full only. Empty when none is known.
-	Cause string `json:"cause,omitempty"`
-	key   string
+	Cause      string   `json:"cause,omitempty"`
+	PickerNote string   `json:"picker_note,omitempty"`
+	NotFamily  []string `json:"not_family,omitempty"`
+	key        string
 }
 
 type roWorkersFindOut struct {
@@ -180,6 +182,12 @@ func roWorkerRowOf(agent protocol.AgentView, names map[string]string, full bool)
 		row.Struggle = agent.Worker.Struggle
 		if row.Struggle == nil {
 			row.Struggle = &protocol.Struggle{Trace: protocol.StruggleNoTrace}
+		}
+		if agent.Worker.Assessment != nil {
+			row.PickerNote = agent.Worker.Assessment.PickerNote
+		}
+		if len(agent.Worker.NotFamily) > 0 {
+			row.NotFamily = agent.Worker.NotFamily
 		}
 	}
 	return row, true

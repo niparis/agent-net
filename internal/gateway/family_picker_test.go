@@ -9,7 +9,7 @@ import (
 
 func TestFamilyPickerExcludesCandidates(t *testing.T) {
 	candidates := []protocol.WorkerModelCandidate{{Harness: "codex", Model: "gpt-6.1-sol"}, {Harness: "opencode", Model: "anthropic/claude-sonnet"}}
-	kept, note, err := filterWorkerFamilies(candidates, []string{"openai"})
+	kept, note, err := filterWorkerFamilies(candidates, []string{"openai"}, nil)
 	if err != nil || len(kept) != 1 || kept[0].Model != candidates[1].Model || !strings.Contains(note, "gpt-6.1-sol") {
 		t.Fatalf("kept=%v note=%q err=%v", kept, note, err)
 	}
@@ -21,7 +21,7 @@ func TestFamilyPickerExcludesCandidates(t *testing.T) {
 
 func TestFamilyPickerAllExcluded(t *testing.T) {
 	candidates := []protocol.WorkerModelCandidate{{Harness: "codex", Model: "gpt-6.1-sol"}, {Harness: "opencode", Model: "anthropic/claude-sonnet"}}
-	_, _, err := filterWorkerFamilies(candidates, []string{"openai", "anthropic"})
+	_, _, err := filterWorkerFamilies(candidates, []string{"openai", "anthropic"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "openai") || !strings.Contains(err.Error(), "anthropic") || !strings.Contains(err.Error(), "available") {
 		t.Fatalf("error: %v", err)
 	}

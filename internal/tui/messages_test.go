@@ -48,7 +48,7 @@ func TestFeedGroupsAnEndedWorkerByItsTaskAndNotice(t *testing.T) {
 		{Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "started", Time: t0.Add(-time.Minute)}, ConversationID: "c_started", From: ended, To: owner, Type: protocol.TypeNotification},
 	})
 	m.feed.byMsg["task"].Body = protocol.WorkerTaskBody("Polish the sessions panel\nRun the checks.", "", "")
-	m.feed.byMsg["started"].Body = protocol.WorkerStartedText(ended, "opencode", "m1", "shop", "mac", time.Minute)
+	m.feed.byMsg["started"].Body = protocol.WorkerStartedText(ended, "opencode", "m1", "shop", "mac", time.Minute, "")
 	rows := m.messageConversations()
 	if len(rows) != 1 || !rows[0].worker || rows[0].workerSession != ended {
 		t.Fatalf("the ended worker was not grouped: %+v", rows)
