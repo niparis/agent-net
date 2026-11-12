@@ -1,0 +1,10 @@
+build: 108f959ac7c7470f621637619ee5410977ef6422
+size: 80x24
+step: enter
+action: press Enter on tenebrae (Mac) in the TUI that runs in the owner's herdr
+expected: the TUI hands its pane to `claude attach job_42` under the bar "tenebrae (Mac) - ctrl+] to come back"; no herdr tab is created
+errors: none
+
+handed over: claude attach job_42
+bar: tenebrae (Mac) - ctrl+] to come back
+

@@ -1,0 +1,31 @@
+build: 108f959ac7c7470f621637619ee5410977ef6422
+size: 80x24
+step: pi-start
+action: start a Pi session from the new-session form, with a first message
+expected: the notice names agent-net's herdr; nothing opens in the owner's herdr
+errors: none
+
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 6 online
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK        
+ Working (6)                                                             all (v)
+▸ ↳ tenebrae     Mac     tenebrae  opencode · … busy        ?     ?             
+  tenebrae-53    Mac     tenebrae  claude · op… busy        ?     ?             
+  ◐ strategies   Mac     strategi… claude · so… idle        ?     ? backtest v2 
+  web            Mac     shop      opencode · … idle        ?     ?             
+  ◐ ci-runner    build-… agent-net pi · gpt-6   idle        ?     ?             
+  scratch        build-… -         pi           shell       ?     ?             
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  Started tenebrae in agent-net's herdr. Enter opens it.
