@@ -654,6 +654,19 @@ func workerPreamble(harness string, snap settings.Snapshot, repo string) string 
 	for _, key := range keys {
 		b += "\n- " + line(key)
 	}
+	for _, rule := range []string{
+		"Reuse the package's existing test helpers; add new test infrastructure only if none exists.",
+		"Put shared setup in one helper, not copied into each test.",
+		"One test per behaviour; no cases for behaviour the task does not change.",
+		`Do not prove "nothing happened" with sleeps or short timeouts; assert on state.`,
+		"Comments say why, never restate the code.",
+		"Put a check in one place, at the entry point, not repeated in every layer.",
+	} {
+		b += "\n- " + rule
+	}
+	b += "\nThe project's own AGENTS.md wins where it conflicts."
+	// The Claude line comes last, so the Claude brief starts with the default
+	// brief (WorkerPreamble) and only adds to it.
 	if harness == "claude" {
 		b += "\n- " + line("workers.brief_claude")
 	}
