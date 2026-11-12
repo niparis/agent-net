@@ -176,26 +176,34 @@ func (s *Store) charterDraftAskFor(session string, c resolvedContext, hash strin
 				"agent-net asks once, and again only if AGENTS.md changes.\n")
 		}
 	}
-	barText, err := s.barAskText(tx, session, c, hash, record)
+	// The project rules and the team charter requests name the lead. A merger
+	// shares its project's lead agent, so it is never asked for them.
+	merger, err := isProjectMerger(tx, session)
 	if err != nil {
 		return "", err
 	}
-	if barText != "" {
-		if text.Len() > 0 {
-			text.WriteString("\n")
-		}
-		text.WriteString(barText + "\n")
-	}
-	if c.Agent != "" {
-		teamText, err := s.draftTeamAsk(tx, session, c.Agent, record)
+	if !merger {
+		barText, err := s.barAskText(tx, session, c, hash, record)
 		if err != nil {
 			return "", err
 		}
-		if teamText != "" {
+		if barText != "" {
 			if text.Len() > 0 {
 				text.WriteString("\n")
 			}
-			text.WriteString(teamText)
+			text.WriteString(barText + "\n")
+		}
+		if c.Agent != "" {
+			teamText, err := s.draftTeamAsk(tx, session, c.Agent, record)
+			if err != nil {
+				return "", err
+			}
+			if teamText != "" {
+				if text.Len() > 0 {
+					text.WriteString("\n")
+				}
+				text.WriteString(teamText)
+			}
 		}
 	}
 	if text.Len() == 0 {

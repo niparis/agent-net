@@ -267,3 +267,30 @@ func TestTeamLeadDraftsTeamCharterFromMembers(t *testing.T) {
 		t.Fatalf("sources: %+v", *c.Sources)
 	}
 }
+
+// A team's charter request says "You lead team". The merger of the lead's
+// project shares the lead's agent, so it must not get that request.
+func TestTeamRequestNeverGoesToTheMerger(t *testing.T) {
+	s := teamStore(t)
+	owner := protocol.GraphRef{Kind: "agent", ID: "demo"}
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &owner})
+	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &protocol.GraphRef{Kind: "repo", ID: "other"}})
+	if err := s.SetLevelCharter(protocol.CharterSetRequest{Level: "repo", Node: "other", Attr: "purpose", Value: "Other repo"}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetLevelCharter(protocol.CharterSetRequest{Level: "repo", Node: "other", Attr: "refuses", Value: "No prod writes"}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	lead := draftSession(t, s, "demo")
+	var node string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, lead).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	merger := mergerOfLead(t, s, node, lead, "merger")
+	if got := mustAsk(t, s, merger, "h1"); strings.Contains(got, "You lead team") {
+		t.Fatalf("the merger was asked for the team charter:\n%s", got)
+	}
+	if got := mustAsk(t, s, lead, "h1"); !strings.Contains(got, "You lead team Alpha") {
+		t.Fatalf("the lead was not asked for the team charter:\n%s", got)
+	}
+}

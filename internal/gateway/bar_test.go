@@ -226,3 +226,20 @@ func TestBarRequestToTheLeadOncePerAgentsMD(t *testing.T) {
 		t.Fatalf("asked without AGENTS.md:\n%s", got)
 	}
 }
+
+// The project rules request is for the lead only. The merger shares the lead's
+// agent, so it must be kept out by the merger check, not by the agent.
+func TestBarRequestNeverGoesToTheMerger(t *testing.T) {
+	f := newBarFixture(t)
+	var node string
+	if err := f.s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, f.lead).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	merger := mergerOfLead(t, f.s, node, f.lead, "merger")
+	if got := mustAsk(t, f.s, merger, "h1"); strings.Contains(got, "Project rules request") {
+		t.Fatalf("the merger was asked for the project rules:\n%s", got)
+	}
+	if got := mustAsk(t, f.s, f.lead, "h1"); !strings.Contains(got, "Project rules request") {
+		t.Fatalf("the lead was not asked after the merger read the context:\n%s", got)
+	}
+}
