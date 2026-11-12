@@ -1608,6 +1608,10 @@ type ChangeListRequest struct {
 	// IfVersion is the changes topic version the caller already holds. An
 	// unchanged topic answers NotModified and no rows.
 	IfVersion uint64 `json:"if_version,omitempty"`
+	// IfETag and WantETag work as in QueryAgents: a page that hashes to the
+	// caller's ETag answers NotModified, even if the topic moved.
+	IfETag   string `json:"if_etag,omitempty"`
+	WantETag bool   `json:"want_etag,omitempty"`
 	// Lite leaves out evidence notes and fields the list does not show. The
 	// owner's TUI sets it and reads a change in full when it is opened.
 	Lite bool `json:"lite,omitempty"`
@@ -1619,9 +1623,11 @@ type ChangeListResult struct {
 	Branch  string       `json:"branch,omitempty"`
 	Changes []ChangeView `json:"changes"`
 	Next    string       `json:"next,omitempty"`
-	// NotModified means the caller's IfVersion already matches the changes
-	// topic, so Changes holds no rows and the caller keeps its copy.
-	NotModified bool `json:"not_modified,omitempty"`
+	// NotModified means the caller's IfVersion or IfETag already matches, so
+	// Changes holds no rows and the caller keeps its copy. ETag is the hash of
+	// this page, set when the caller asked for it.
+	NotModified bool   `json:"not_modified,omitempty"`
+	ETag        string `json:"etag,omitempty"`
 }
 
 // StepClaimRequest is step.claim: one session takes a ready node-owned step.

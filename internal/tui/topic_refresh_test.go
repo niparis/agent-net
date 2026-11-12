@@ -69,7 +69,10 @@ func TestTopicEventRefreshesDeliveryWhenOpen(t *testing.T) {
 	m = m.withDeliverySource(&fakeDelivery{})
 	m.topicActive = true
 	m.topicVersions = map[string]uint64{protocol.TopicChanges: 2}
-	m.delivery.loadedAt = time.Now()
+	// The last load was a while ago: a change on a quiet topic loads at once.
+	// A load less than topicRefreshGap ago waits (see
+	// TestDeliveryTopicLoadsAreSpacedByTheGap).
+	m.delivery.loadedAt = time.Now().Add(-topicRefreshGap)
 	m.delivery.topicVersion, m.delivery.topicSeen = 1, true
 	m.tab = sessionsTab
 	_, cmd := m.deliveryTick()

@@ -1,11 +1,16 @@
 package gateway
 
-import "github.com/niparis/agent-net/internal/protocol"
+import (
+	"sort"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
 
 // liteAgentViews removes what no TUI list screen shows. The owner's TUI asks
 // for it on every refresh; the full rows stay for every other reader. The
 // fields left out are read again by opening the session or its card, which
-// goes through a different call.
+// goes through a different call. It also puts the rows in an order that a
+// report from a session does not change (see the end of the function).
 func liteAgentViews(agents []protocol.AgentView) {
 	for i := range agents {
 		a := &agents[i]
@@ -19,7 +24,34 @@ func liteAgentViews(agents []protocol.AgentView) {
 		a.Charter.Effective = nil
 		a.Charter.Rules = nil
 		a.Profile.Capabilities = nil
+		// The list draws the scores and labels of a worker's difficulty line.
+		// The judge's reasons and the picker's note are the longest text of the
+		// row, and the worker log shows them from its own call.
+		if w := a.Worker; w != nil && w.Assessment != nil {
+			as := *w.Assessment
+			as.Reasons, as.PickerNote, as.Bottleneck = nil, "", ""
+			as.JudgeHarness, as.JudgeModel, as.RulesVersion = "", "", ""
+			w.Assessment = &as
+		}
+		// An online session reports every few seconds, so its exact last_seen
+		// moves with every report and makes the whole list look new. The TUI
+		// reads it only for "idle for over an hour" on an online session, and
+		// shows the age of an offline one, whose value does not move. Online
+		// rows keep the minute.
+		if a.Online {
+			a.LastSeen -= a.LastSeen % 60
+		}
 	}
+	// The store lists the newest report first, so a report moves a row up and
+	// the list looks new. With last_seen at the minute, the rows of one minute
+	// are in id order: a report inside the minute changes nothing. The TUI
+	// orders its sessions itself (by activity).
+	sort.SliceStable(agents, func(i, j int) bool {
+		if agents[i].LastSeen != agents[j].LastSeen {
+			return agents[i].LastSeen > agents[j].LastSeen
+		}
+		return agents[i].SessionID < agents[j].SessionID
+	})
 }
 
 // liteChangeView removes the long parts of a list row: evidence notes and

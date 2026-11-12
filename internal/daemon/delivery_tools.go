@@ -471,10 +471,11 @@ func (d *Daemon) changesFind(ctx context.Context, sid string, a protocol.Changes
 		return out, nil
 	}
 	var page protocol.ChangeListResult
-	q := protocol.ChangeListRequest{Project: a.Project, State: a.State, Caller: caller, Limit: a.Limit, After: a.Cursor, IfVersion: a.IfVersion, Lite: a.Lite}
+	q := protocol.ChangeListRequest{Project: a.Project, State: a.State, Caller: caller, Limit: a.Limit, After: a.Cursor, IfVersion: a.IfVersion, IfETag: a.IfETag, WantETag: a.WantETag, Lite: a.Lite}
 	if err := d.deliveryCall(ctx, protocol.FrameChangeList, q, &page); err != nil {
 		return out, err
 	}
+	out.ETag = page.ETag
 	if page.NotModified {
 		out.NotModified = true
 		return out, nil

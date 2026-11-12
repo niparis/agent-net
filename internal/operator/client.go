@@ -222,6 +222,15 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	return s.SnapshotWith(ctx, SnapshotOptions{WorkerLog: true})
 }
 
+// heldETag is the ETag to send for a part the caller holds. A part that holds
+// no rows sends none, so the answer always carries rows.
+func heldETag(holds bool, etag string) string {
+	if !holds {
+		return ""
+	}
+	return etag
+}
+
 // SnapshotWith is Snapshot with the optional parts chosen by the caller.
 func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapshot, error) {
 	// A part the gateway reports unchanged, or one that fails, keeps the
@@ -254,8 +263,8 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 		err      error
 	}
 	calls := []request{
-		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true, IfVersion: opts.IfVersions[protocol.TopicAgents], Lite: opts.Lite}, required: true},
-		{method: protocol.OpNodes, params: protocol.QueryNodes{IfVersion: opts.IfVersions[protocol.TopicNodes]}},
+		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true, IfVersion: opts.IfVersions[protocol.TopicAgents], IfETag: heldETag(len(opts.Previous.Agents) > 0, opts.Previous.AgentsETag), WantETag: opts.Lite, Lite: opts.Lite}, required: true},
+		{method: protocol.OpNodes, params: protocol.QueryNodes{IfVersion: opts.IfVersions[protocol.TopicNodes], IfETag: heldETag(len(opts.Previous.Nodes) > 0, opts.Previous.NodesETag), WantETag: opts.Lite}},
 		{method: "notification_settings"}, {method: protocol.OpTimeZoneGet}, {method: protocol.OpWorkerProfiles},
 		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet}, {method: protocol.OpWorkerFloorsGet},
 		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: protocol.OpWorkerRotationGet},
@@ -310,7 +319,7 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 				if v.NotModified {
 					snap.Unchanged = append(snap.Unchanged, c.method)
 				} else {
-					snap.Agents = v.Agents
+					snap.Agents, snap.AgentsETag = v.Agents, v.ETag
 				}
 			case "notification_settings":
 				var v struct {
@@ -328,7 +337,7 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 				if v.NotModified {
 					snap.Unchanged = append(snap.Unchanged, c.method)
 				} else {
-					snap.Nodes = v.Nodes
+					snap.Nodes, snap.NodesETag = v.Nodes, v.ETag
 					snap.Calibration = v.Calibration
 					snap.GatewayWarnings = v.GatewayWarnings
 				}

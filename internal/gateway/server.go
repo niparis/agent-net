@@ -1496,7 +1496,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if p.IfVersion != 0 && p.IfVersion == g.topicVersions()[protocol.TopicNodes] {
 			return protocol.NodesInfo{NotModified: true}, nil
 		}
-		return g.NodesInfo()
+		if p.Brief {
+			nodes, err := g.nodesWithOnline()
+			return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes}, err
+		}
+		info, err := g.NodesInfo()
+		if err != nil || (!p.WantETag && p.IfETag == "") {
+			return info, err
+		}
+		info.ETag = etagOf(info)
+		if info.ETag != "" && info.ETag == p.IfETag {
+			return protocol.NodesInfo{NotModified: true, ETag: info.ETag}, nil
+		}
+		return info, nil
 
 	case "query.graph_talk":
 		return st.GraphTalkSnapshot()
@@ -3087,8 +3099,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if p.IfVersion != 0 && p.IfVersion == g.topicVersions()[protocol.TopicAgents] {
 			return protocol.AgentsResult{NotModified: true}, nil
 		}
-		// The version is a request hint only; it must not split the read cache.
-		p.IfVersion = 0
+		// The version and the ETag are request hints only; they must not split
+		// the read cache.
+		ifETag, wantETag := p.IfETag, p.WantETag || p.IfETag != ""
+		p.IfVersion, p.IfETag, p.WantETag = 0, "", false
 		agents, err := st.Agents(p)
 		if err != nil {
 			return nil, err
@@ -3096,7 +3110,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if p.Lite {
 			liteAgentViews(agents)
 		}
-		return protocol.AgentsResult{Agents: agents}, nil
+		res := protocol.AgentsResult{Agents: agents}
+		if wantETag {
+			res.ETag = etagOf(agents)
+			if res.ETag != "" && res.ETag == ifETag {
+				return protocol.AgentsResult{NotModified: true, ETag: res.ETag}, nil
+			}
+		}
+		return res, nil
 
 	case protocol.FrameSessionWakeRebind:
 		var p wakeRebind

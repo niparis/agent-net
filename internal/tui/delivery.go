@@ -102,6 +102,11 @@ const deliveryLoadTimeout = 5 * time.Second
 // deliveryRefreshEvery is how often changes load again.
 const deliveryRefreshEvery = 30 * time.Second
 
+// deliveryFullReadEvery is how often a load asks for every page again, though
+// the gateway says the first page of a state is the same. Later pages hold old
+// changes; a change on one is shown within this time.
+const deliveryFullReadEvery = 2 * time.Minute
+
 // inboxRefreshEvery is how often the Inbox lists are checked on a tab that
 // does not show them, so its count is never stale for long.
 const inboxRefreshEvery = 10 * time.Second
@@ -126,6 +131,7 @@ type deliveryState struct {
 
 	loading      bool      // a list load is out
 	loadedAt     time.Time // when the last load started
+	fullAt       time.Time // when the last load that asked for every page started
 	topicVersion uint64
 	topicSeen    bool
 	// dataVersion is the changes topic version the held list was read at,
@@ -200,6 +206,16 @@ func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
 	if v, ok := m.topicVersions[protocol.TopicChanges]; ok {
 		m.delivery.topicVersion, m.delivery.topicSeen = v, true
 	}
+	if f, ok := m.deliverySrc.(interface{ SetFullRead(bool) }); ok {
+		// Pages the gateway says are unchanged are not asked for again, except
+		// that every deliveryFullReadEvery all of them are, so a change on a
+		// later page is never missed for long.
+		full := m.delivery.fullAt.IsZero() || m.now().Sub(m.delivery.fullAt) >= deliveryFullReadEvery
+		if full {
+			m.delivery.fullAt = m.now()
+		}
+		f.SetFullRead(full)
+	}
 	if v, ok := m.deliverySrc.(interface{ SetIfVersion(uint64) }); ok {
 		held := uint64(0)
 		// Like the snapshot parts, the list is only current while it was read
@@ -223,7 +239,11 @@ func (m Model) deliveryTick() (Model, tea.Cmd) {
 	d := m.delivery
 	v, haveVersion := m.topicVersions[protocol.TopicChanges]
 	changed := m.topicActive && haveVersion && (!d.topicSeen || v > d.topicVersion)
-	if d.loading || (!changed && m.now().Sub(d.loadedAt) < deliveryRefreshEvery) {
+	// A changed topic loads again at once after a quiet time, and no sooner
+	// than topicRefreshGap after the last load on a busy one: the changes
+	// topic moves with every message and event.
+	since := m.now().Sub(d.loadedAt)
+	if d.loading || (changed && since < topicRefreshGap) || (!changed && since < deliveryRefreshEvery) {
 		return m, nil
 	}
 	return m.startDeliveryLoad()

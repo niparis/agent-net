@@ -221,9 +221,11 @@ type OperatorInfo struct {
 // AgentsResult answers OpAgents.
 type AgentsResult struct {
 	Agents []AgentView `json:"agents"`
-	// NotModified means the caller's IfVersion already matches the agents
-	// topic, so Agents holds no rows and the caller keeps its copy.
-	NotModified bool `json:"not_modified,omitempty"`
+	// NotModified means the caller's IfVersion or IfETag already matches, so
+	// Agents holds no rows and the caller keeps its copy. ETag is the hash of
+	// the rows, set when the caller asked for it.
+	NotModified bool   `json:"not_modified,omitempty"`
+	ETag        string `json:"etag,omitempty"`
 }
 
 // ProjectsResult answers OpProjects.

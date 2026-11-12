@@ -62,3 +62,32 @@ func TestNetworkProposalsAskTheMachinesTogether(t *testing.T) {
 		t.Fatalf("%d proposals, want one from each machine: %+v", len(items), items)
 	}
 }
+
+// The Desk lists the network's proposals on every refresh, and the list only
+// needs to know which machines are online. It asks for the brief machine list:
+// the full one is the quality tables of every machine.
+func TestNetworkProposalsAskForTheBriefMachineList(t *testing.T) {
+	var mu sync.Mutex
+	var asked []protocol.QueryNodes
+	f := func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
+		if typ != "query.nodes" {
+			return nil, false, nil
+		}
+		q, _ := params.(protocol.QueryNodes)
+		mu.Lock()
+		asked = append(asked, q)
+		mu.Unlock()
+		out, err := json.Marshal(protocol.NodesInfo{})
+		return out, true, err
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.testGatewayCall = f }})
+	if _, err := n.d.networkProposals(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(asked) != 1 || !asked[0].Brief {
+		t.Fatalf("machine list asked as %+v, want one brief ask", asked)
+	}
+}

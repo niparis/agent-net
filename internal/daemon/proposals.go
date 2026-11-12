@@ -168,7 +168,10 @@ func (d *Daemon) networkProposals(ctx context.Context) ([]protocol.CTOProposal, 
 		return nil, err
 	}
 	out := value.([]protocol.CTOProposal)
-	data, err := d.call(ctx, "query.nodes", nil)
+	// Only who is online matters here. The full answer carries the quality
+	// tables of every machine and is hundreds of kilobytes; this list is asked
+	// for on every refresh of the Desk.
+	data, err := d.call(ctx, "query.nodes", protocol.QueryNodes{Brief: true})
 	if err != nil {
 		return nil, err
 	}
