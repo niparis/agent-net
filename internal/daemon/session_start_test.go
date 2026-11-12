@@ -718,8 +718,8 @@ func TestCTOSessionStartChosenAgentProposal(t *testing.T) {
 
 func TestSessionStartCodexUnavailableDoesNotHoldUnrelatedSessions(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	bins := fakeBin(t, "codex")
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.CodexHome = t.TempDir(); c.HarnessPaths = bins })
+	bin, _ := fakeCodexDaemonStart(t, "", true)
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.CodexHome = t.TempDir(); c.HarnessPaths = map[string]string{"codex": bin} })
 	repo := newRepo(t, "shop")
 	n.register(t, repo)
 	n.register(t, newRepo(t, "chosen"))

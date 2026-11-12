@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -16,10 +17,25 @@ func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSessio
 	return d.prepareOwnerCodexThread(ctx, r, false)
 }
 
+// dialOwnerCodex connects to the shared app server. Nothing starts it after a
+// reboot, or on a machine where the owner has not run Codex yet, so a missing
+// control socket starts the server with Codex's own command, then dials again.
+func (d *Daemon) dialOwnerCodex(ctx context.Context) (*codexRPC, error) {
+	sock := codexSocketPath(d.cfg.CodexHome)
+	rpc, err := dialCodexSocket(ctx, sock, d.helloVersion(), nil)
+	if !codexServerDown(err) {
+		return rpc, err
+	}
+	if err := d.startCodexAppServer(ctx); err != nil {
+		return nil, fmt.Errorf("cannot start the Codex app server: %w", err)
+	}
+	return dialCodexSocket(ctx, sock, d.helloVersion(), nil)
+}
+
 func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.StartedSession, resume bool) (protocol.StartedSession, error) {
 	ctx, cancel := context.WithTimeout(ctx, d.workerSettings("").StartTimeout)
 	defer cancel()
-	rpc, err := dialCodexSocket(ctx, codexSocketPath(d.cfg.CodexHome), d.helloVersion(), nil)
+	rpc, err := d.dialOwnerCodex(ctx)
 	if err != nil {
 		return r, err
 	}

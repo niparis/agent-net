@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -89,12 +90,18 @@ func TestOwnerUsePromptPathAndPi(t *testing.T) {
 	}
 }
 
+// Enter on an owner OpenCode session attaches to the owner's OpenCode service
+// with --server. Without the service there is only a note (covered elsewhere).
 func TestOwnerUseEnter(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	writeOwnerOpenCodeService(t, state, "http://127.0.0.1:9999")
 	g := startGateway(t, t.TempDir(), "")
-	n, _, sid := enterNode(t, g, "opencode", protocol.SessionInfo{NativeID: "entry", Cwd: t.TempDir(), Status: "idle"}, fakeBin(t, "opencode"), nil)
+	bins := fakeBin(t, "opencode")
+	n, _, sid := enterNode(t, g, "opencode", protocol.SessionInfo{NativeID: "entry", Cwd: t.TempDir(), Status: "idle"}, bins, nil)
 	p := enterOf(t, n, sid, "")
-	if len(p.Argv) == 0 {
-		t.Fatalf("no attach: %+v", p)
+	if want := []string{bins["opencode"], "--server", "http://127.0.0.1:9999", "--session", "entry"}; !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("attach: %+v, want %v", p, want)
 	}
 	a, _, err := g.gw.Store().Agent(sid)
 	if err != nil || a.OwnerUses != 1 {
