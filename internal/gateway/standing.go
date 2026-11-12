@@ -33,6 +33,26 @@ func (s *Store) StandingOrders() ([]protocol.StandingOrder, error) {
 	return out, rows.Err()
 }
 
+// StandingNotes lists the gateway notes, newest first, with the stale flag.
+func (s *Store) StandingNotes() ([]protocol.StandingOrder, error) {
+	rows, err := s.db.Query(`SELECT ` + noteColumns + ` FROM standing_orders WHERE name<>'' ORDER BY saved_at DESC, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.StandingOrder{}
+	now := time.Now()
+	for rows.Next() {
+		o, err := scanNote(rows)
+		if err != nil {
+			return nil, err
+		}
+		o.Stale = noteStale(o, now)
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // SaveStandingOrder adds an order. Restore puts back a removed one with its
 // old ID, time and source.
 func (s *Store) SaveStandingOrder(q protocol.StandingOrdersRequest) (protocol.StandingOrder, error) {
@@ -54,25 +74,29 @@ func (s *Store) SaveStandingOrder(q protocol.StandingOrdersRequest) (protocol.St
 		return o, err
 	}
 	o.Text = text
-	if o.Source != protocol.StandingSourceCTO {
+	// Only the undo of a removed note keeps the agent source.
+	if o.Source != protocol.StandingSourceCTO && !(q.Restore != nil && o.Source == protocol.StandingSourceAgent) {
 		o.Source = protocol.StandingSourceOwner
 	}
+	if o.Name == "" {
+		o.Scope, o.ScopeRef = protocol.NoteScopeOwner, ""
+	}
+	if o.Scope == "" {
+		o.Scope = protocol.NoteScopeOwner
+	}
 	tags, _ := json.Marshal(o.Tags)
-	_, err = s.db.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref) VALUES(?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(id) DO UPDATE SET text=excluded.text,saved_at=excluded.saved_at,source=excluded.source,tags=excluded.tags,pinned=excluded.pinned,updated_at=excluded.updated_at,kind=excluded.kind,area=excluded.area,ref=excluded.ref`,
-		o.ID, o.Text, o.SavedAt, o.Source, string(tags), o.Pinned, o.UpdatedAt, o.Kind, o.Area, o.Ref)
+	_, err = s.db.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref,scope,scope_ref,name,description,used_at,uses) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET text=excluded.text,saved_at=excluded.saved_at,source=excluded.source,tags=excluded.tags,pinned=excluded.pinned,updated_at=excluded.updated_at,kind=excluded.kind,area=excluded.area,ref=excluded.ref,scope=excluded.scope,scope_ref=excluded.scope_ref,name=excluded.name,description=excluded.description,used_at=excluded.used_at,uses=excluded.uses`,
+		o.ID, o.Text, o.SavedAt, o.Source, string(tags), o.Pinned, o.UpdatedAt, o.Kind, o.Area, o.Ref, o.Scope, o.ScopeRef, o.Name, o.Description, o.UsedAt, o.Uses)
 	return o, err
 }
 
 // RemoveStandingOrder deletes one order and returns it.
 func (s *Store) RemoveStandingOrder(id string) (*protocol.StandingOrder, error) {
-	var o protocol.StandingOrder
-	var tags string
-	err := s.db.QueryRow(`SELECT id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref FROM standing_orders WHERE id=?`, id).Scan(&o.ID, &o.Text, &o.SavedAt, &o.Source, &tags, &o.Pinned, &o.UpdatedAt, &o.Kind, &o.Area, &o.Ref)
+	o, err := scanNote(s.db.QueryRow(`SELECT `+noteColumns+` FROM standing_orders WHERE id=?`, id))
 	if err != nil {
 		return nil, errors.New("no standing order " + id)
 	}
-	json.Unmarshal([]byte(tags), &o.Tags)
 	if _, err := s.db.Exec(`DELETE FROM standing_orders WHERE id=?`, id); err != nil {
 		return nil, err
 	}
@@ -208,24 +232,39 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
 		kind, area = protocol.StandingKindCorrection, chiefJudgmentArea
 	}
 
+	// Gateway notes are judgments too, but an agent's note is not the owner's
+	// past decision: they come only when the kind names a note kind or the
+	// caller asks for the stale ones.
+	notes, stale := 0, 0
+	switch kind {
+	case protocol.StandingKindFeedback, protocol.StandingKindFact, protocol.StandingKindReference:
+		notes = 1
+	}
+	var cutoff int64
+	if q.Stale {
+		notes, stale = 1, 1
+		cutoff = time.Now().Add(-time.Duration(protocol.NotesStaleDays) * 24 * time.Hour).Unix()
+	}
+	const cols = `o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,%s,o.kind,o.area,o.ref,o.scope,o.scope_ref,o.name,o.description,o.used_at,o.uses`
+	const noteFilter = ` AND (o.name='' OR ?=1) AND (?=0 OR (o.name<>'' AND MAX(o.used_at,o.saved_at,o.updated_at)<?))`
 	var rows *sql.Rows
 	var err error
 	match := ftsMatch(q.Query)
 	if match != "" {
-		rows, err = s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,snippet(standing_orders_fts,0,'[',']','...',24),o.kind,o.area,o.ref
+		rows, err = s.db.Query(fmt.Sprintf(`SELECT `+cols, `snippet(standing_orders_fts,0,'[',']','...',24)`)+`
  FROM standing_orders_fts JOIN standing_orders o ON o.rowid=standing_orders_fts.rowid
  WHERE standing_orders_fts MATCH ?
    AND (?='' OR o.area=?)
    AND (?='' OR o.kind=?)
-   AND (?='' OR o.ref=?)
- ORDER BY bm25(standing_orders_fts), o.id LIMIT ? OFFSET ?`, match, area, area, kind, kind, q.Ref, q.Ref, limit, offset)
+   AND (?='' OR o.ref=?)`+noteFilter+`
+ ORDER BY bm25(standing_orders_fts), o.id LIMIT ? OFFSET ?`, match, area, area, kind, kind, q.Ref, q.Ref, notes, stale, cutoff, limit, offset)
 	} else {
-		rows, err = s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,'' AS snippet,o.kind,o.area,o.ref
+		rows, err = s.db.Query(fmt.Sprintf(`SELECT `+cols, `''`)+`
  FROM standing_orders o
  WHERE (?='' OR o.area=?)
    AND (?='' OR o.kind=?)
-   AND (?='' OR o.ref=?)
- ORDER BY o.pinned DESC, o.saved_at DESC, o.rowid DESC LIMIT ? OFFSET ?`, area, area, kind, kind, q.Ref, q.Ref, limit, offset)
+   AND (?='' OR o.ref=?)`+noteFilter+`
+ ORDER BY o.pinned DESC, o.saved_at DESC, o.rowid DESC LIMIT ? OFFSET ?`, area, area, kind, kind, q.Ref, q.Ref, notes, stale, cutoff, limit, offset)
 	}
 	if err != nil {
 		return nil, err
@@ -234,11 +273,12 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
 	for rows.Next() {
 		var o protocol.StandingOrder
 		var tags string
-		if err := rows.Scan(&o.ID, &o.Text, &o.SavedAt, &o.Source, &tags, &o.Pinned, &o.UpdatedAt, &o.Snippet, &o.Kind, &o.Area, &o.Ref); err != nil {
+		if err := rows.Scan(&o.ID, &o.Text, &o.SavedAt, &o.Source, &tags, &o.Pinned, &o.UpdatedAt, &o.Snippet, &o.Kind, &o.Area, &o.Ref, &o.Scope, &o.ScopeRef, &o.Name, &o.Description, &o.UsedAt, &o.Uses); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		json.Unmarshal([]byte(tags), &o.Tags)
+		o.Stale = noteStale(o, time.Now())
 		out = append(out, o)
 	}
 	err = rows.Err()

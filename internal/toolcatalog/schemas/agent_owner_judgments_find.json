@@ -16,9 +16,12 @@
           "order",
           "rule",
           "answer",
-          "correction"
+          "correction",
+          "feedback",
+          "fact",
+          "reference"
         ],
-        "description": "Optional judgment kind: order, rule, answer, correction."
+        "description": "Optional judgment kind: order, rule, answer, correction. feedback, fact and reference list gateway notes."
       },
       "marks": {
         "type": "boolean",
@@ -36,6 +39,10 @@
         "minimum": 0,
         "default": 0,
         "description": "Rows to skip, for the next page."
+      },
+      "stale": {
+        "type": "boolean",
+        "description": "Only gateway notes nobody read or wrote for 30 days, for review."
       }
     },
     "required": [],
@@ -121,6 +128,27 @@
           },
           "mark_text": {
             "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "scope_ref": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "used_at": {
+            "type": "integer"
+          },
+          "uses": {
+            "type": "integer"
+          },
+          "stale": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -151,9 +179,12 @@
           "order",
           "rule",
           "answer",
-          "correction"
+          "correction",
+          "feedback",
+          "fact",
+          "reference"
         ],
-        "description": "Optional judgment kind: order, rule, answer, correction."
+        "description": "Optional judgment kind: order, rule, answer, correction. feedback, fact and reference list gateway notes."
       },
       "limit": {
         "type": "integer",

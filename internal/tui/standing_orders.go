@@ -14,10 +14,12 @@ import (
 // Standing orders: the owner's lasting instructions to the CTO. The gateway
 // keeps them. The CTO reads them at the start of every conversation. Section 6
 // of Settings lists them: enter adds one, x removes the selected one and u
-// puts the last removed one back.
+// puts the last removed one back. The same section lists the gateway notes the
+// agents keep (decision 0157), with their scope and kind; x deletes one.
 
 type standingMsg struct {
 	orders []protocol.StandingOrder
+	notes  []protocol.StandingOrder
 	loaded bool
 	notice string
 	err    error
@@ -42,7 +44,25 @@ func (m Model) standingItems() []settingsItem {
 		when := time.Unix(o.SavedAt, 0).Format("2006-01-02")
 		items = append(items, settingsItem{6, "standing", i, fmt.Sprintf("%s  (%s, %s)", mark+sanitize(o.Text), who, when)})
 	}
+	for i, n := range m.notes {
+		items = append(items, settingsItem{6, "note", i, noteLine(n)})
+	}
 	return items
+}
+
+// noteLine is one gateway note in the list: kind, name, description, the scope
+// it belongs to. A note nobody used for 30 days says
+// so, so the owner can review it. Nothing is deleted by age.
+func noteLine(n protocol.StandingOrder) string {
+	scope := n.Scope
+	if n.ScopeRef != "" {
+		scope += " " + n.ScopeRef
+	}
+	line := fmt.Sprintf("Note [%s] %s: %s  (%s)", sanitize(n.Kind), sanitize(n.Name), sanitize(n.Description), sanitize(scope))
+	if n.Stale {
+		line += "  unused 30 days"
+	}
+	return line
 }
 
 func (m Model) loadStandingOrders() tea.Cmd {
@@ -65,7 +85,7 @@ func (m Model) standingCall(q protocol.StandingOrdersRequest, notice string) tea
 		if err = json.Unmarshal(raw, &res); err != nil {
 			return standingMsg{err: err}
 		}
-		out := standingMsg{orders: res.Orders, loaded: true, notice: notice}
+		out := standingMsg{orders: res.Orders, notes: res.Notes, loaded: true, notice: notice}
 		if q.Action == protocol.StandingActionRemove {
 			out.removed = res.Order
 		}
@@ -80,6 +100,7 @@ func (m Model) onStanding(msg standingMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.loaded {
 		m.standing = msg.orders
+		m.notes = msg.notes
 	}
 	if msg.removed != nil {
 		m.standingRemoved = msg.removed
@@ -126,6 +147,9 @@ func (m Model) standingAddKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) standingKey(action string, item settingsItem) (tea.Model, tea.Cmd) {
 	switch action {
 	case "revoke":
+		if item.kind == "note" && item.index < len(m.notes) {
+			return m, m.standingCall(protocol.StandingOrdersRequest{Action: protocol.StandingActionRemove, ID: m.notes[item.index].ID}, "Note deleted. Press u to put it back.")
+		}
 		if item.kind != "standing" || item.index >= len(m.standing) {
 			return m, nil
 		}
@@ -137,7 +161,7 @@ func (m Model) standingKey(action string, item settingsItem) (tea.Model, tea.Cmd
 		}
 		back := m.standingRemoved
 		m.standingRemoved = nil
-		return m, m.standingCall(protocol.StandingOrdersRequest{Restore: back}, "Standing order put back.")
+		return m, m.standingCall(protocol.StandingOrdersRequest{Restore: back}, "Put back.")
 	}
 	return m, nil
 }

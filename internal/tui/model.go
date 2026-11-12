@@ -224,6 +224,7 @@ type Model struct {
 	nudgeStatsAt              time.Time
 	nudgeStatsErr             error
 	standing                  []protocol.StandingOrder
+	notes                     []protocol.StandingOrder
 	standingRemoved           *protocol.StandingOrder
 	settingEdit               int
 	settingRepo               string

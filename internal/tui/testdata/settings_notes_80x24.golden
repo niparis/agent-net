@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 12 online
+  The clock every time on this screen uses, wherever you run it.
+  Time zone: auto
+
+Notifications
+  Choose whether this machine shows desktop notifications.
+  Desktop notifications: on
+
+Tips
+  Show or restart the onboarding tips.
+  Tips: on
+  Restart tips
+
+Standing orders and notes
+  Your lasting instructions to the CTO, and the notes agents keep.
+  Add a standing order
+  Do what I say.  (you, 2023-11-14)
+  Note [fact] deploy-order: what ships first  (project demo)
+▸ Note [feedback] report-style: short plain words  (owner)  unused 30 days
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down row  tab/[ ] section  enter open  x remove  u undo remove  q quit

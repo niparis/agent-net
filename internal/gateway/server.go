@@ -2081,6 +2081,33 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.AddFinding(protocol.Finding{SubjectKind: p.SubjectKind, Subject: p.Subject,
 			Finding: p.Finding, Evidence: p.Evidence, Reporter: p.Reporter, NodeID: nc.id})
 
+	case "note.write", "notes.find":
+		// A session writes and reads its notes. The gateway reads the agent and
+		// the project from the session, so a session cannot name another's.
+		p, err := decode[protocol.NoteWriteFrame](raw)
+		if err != nil || p.Session == "" {
+			return nil, reject("bad %s", typ)
+		}
+		owner, err := st.SessionNode(p.Session)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("session %q does not belong to this node", p.Session)
+		}
+		if typ == "notes.find" {
+			f, err := decode[protocol.NotesFindFrame](raw)
+			if err != nil {
+				return nil, reject("bad notes.find")
+			}
+			return st.FindNotes(p.Session, f.NotesFindRequest)
+		}
+		res, err := st.WriteNote(p.Session, p.NoteWriteRequest)
+		if err != nil {
+			return nil, reject("%v", err)
+		}
+		return res, nil
+
 	case "charter.draft":
 		p, err := decode[protocol.CharterDraftFrame](raw)
 		if err != nil || p.SessionID == "" {
@@ -2277,6 +2304,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			res.Order = o
 		}
 		if res.Orders, err = st.StandingOrders(); err != nil {
+			return nil, err
+		}
+		if res.Notes, err = st.StandingNotes(); err != nil {
 			return nil, err
 		}
 		return res, nil

@@ -73,7 +73,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 	for _, tl := range tools.Tools {
 		have[tl.Name] = true
 	}
-	want := []string{"agent_announce", "agent_owner_ask", "agent_session_get", "agent_sessions_find", "agent_learn",
+	want := []string{"agent_announce", "agent_owner_ask", "agent_session_get", "agent_sessions_find", "agent_learn", "agent_note_write", "agent_notes_find",
 		"agent_graph_read", "agent_machines_find", "agent_machine_get", "agent_messages_find", "agent_message_get",
 		"agent_message_send", "agent_message_reply", "agent_message_handoff", "agent_permission_propose",
 		"agent_projects_find", "agent_project_add",

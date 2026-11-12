@@ -119,7 +119,7 @@ func (m Model) hints() []hint {
 		if item.kind == "app" {
 			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "name"), bindingHint(contextSettings, "revoke"), bindingHint(contextSettings, "grant"), bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 		}
-		if item.kind == "standing" || item.kind == "standing-add" {
+		if item.kind == "standing" || item.kind == "standing-add" || item.kind == "note" {
 			return []hint{bindingPairHint(contextSettings, actUp, actDown), {key: "tab/[ ]", label: "section"}, bindingHint(contextSettings, "open"), {key: "x", label: "remove", prio: 1}, {key: "u", label: "undo remove", prio: 1}, bindingHint(contextSettings, "help"), bindingHint(contextSettings, actQuit)}
 		}
 		if item.kind == "machine" {

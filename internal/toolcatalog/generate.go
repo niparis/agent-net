@@ -36,7 +36,7 @@ var pluginMethods = map[string]string{
 	"agent_file_send":        "file_send",
 	"agent_message_withdraw": "withdraw",
 	"agent_message_reply":    "reply", "agent_message_handoff": "handoff", "agent_announce": "announce",
-	"agent_owner_ask": "waiting", "agent_owner_brief": protocol.OpOwnerBrief, "agent_owner_judgments_find": "judgments_find", "agent_learn": "agent_learn", "agent_charter_draft": protocol.OpCharterDraft, "agent_bar_edit": protocol.OpBarEdit,
+	"agent_owner_ask": "waiting", "agent_owner_brief": protocol.OpOwnerBrief, "agent_owner_judgments_find": "judgments_find", "agent_learn": "agent_learn", "agent_note_write": protocol.OpNoteWrite, "agent_notes_find": protocol.OpNotesFind, "agent_charter_draft": protocol.OpCharterDraft, "agent_bar_edit": protocol.OpBarEdit,
 	"agent_permission_propose": protocol.OpPermissionPropose,
 	"agent_worker_start":       "worker_start", "agent_worker_stop": "worker_stop",
 	"agent_worker_rate": protocol.OpRate, "agent_handback": "worker_handback",

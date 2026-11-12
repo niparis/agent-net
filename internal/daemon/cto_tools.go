@@ -437,6 +437,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, err
 		}
 		return map[string]any{"id": out.ID, "status": out.Status}, nil
+	case "agent_note_write", "agent_notes_find":
+		return d.ctoNotes(ctx, name, raw)
 	case "agent_learn":
 		var p protocol.LearnRequest
 		if json.Unmarshal(raw, &p) != nil {

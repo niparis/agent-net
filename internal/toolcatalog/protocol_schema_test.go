@@ -21,6 +21,8 @@ var protocolOutputs = map[string]reflect.Type{
 	"agent_step_claim":        reflect.TypeOf(protocol.StepClaimResult{}),
 	"agent_step_report":       reflect.TypeOf(protocol.StepReportResult{}),
 	"agent_changes_find":      reflect.TypeOf(protocol.ChangesFindResult{}),
+	"agent_note_write":        reflect.TypeOf(protocol.NoteWriteResult{}),
+	"agent_notes_find":        reflect.TypeOf(protocol.NotesFindResult{}),
 }
 
 // TestOutputSchemasCoverProtocolTypes fills every field of each tool's result
