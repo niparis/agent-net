@@ -78,6 +78,37 @@ func TestAgentsETagSurvivesHeartbeatsButNotRealChanges(t *testing.T) {
 	}
 }
 
+// An online session moves its last_active each time its harness does
+// something (the daemon reports it at most every 30 seconds per session). With
+// a few busy sessions that changed the list every few seconds and no poll got
+// NotModified. The TUI draws activity as minutes and hours, so an online row
+// keeps the minute, as last_seen does. A move to the next minute is a change.
+func TestAgentsETagSurvivesActivityInsideAMinute(t *testing.T) {
+	r := newDeliveryRig(t)
+	base := int64(6000 * 60)
+	if _, err := r.s.db.Exec(`UPDATE sessions SET online=1, last_seen=?, last_active=?, status='idle'`, (base+10)*1e9, (base+10)*1e9); err != nil {
+		t.Fatal(err)
+	}
+	first := etagCall[protocol.AgentsResult](t, r.g, r.a, "query.agents", protocol.QueryAgents{Lite: true, WantETag: true})
+	if len(first.Agents) == 0 || first.ETag == "" {
+		t.Fatalf("first answer: %d rows, etag %q", len(first.Agents), first.ETag)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET last_active=?`, (base+40)*1e9); err != nil {
+		t.Fatal(err)
+	}
+	same := etagCall[protocol.AgentsResult](t, r.g, r.a, "query.agents", protocol.QueryAgents{Lite: true, IfETag: first.ETag})
+	if !same.NotModified || len(same.Agents) != 0 {
+		t.Fatalf("activity inside the minute: not_modified=%v rows=%d, want an unchanged answer", same.NotModified, len(same.Agents))
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET last_active=?`, (base+70)*1e9); err != nil {
+		t.Fatal(err)
+	}
+	next := etagCall[protocol.AgentsResult](t, r.g, r.a, "query.agents", protocol.QueryAgents{Lite: true, IfETag: first.ETag})
+	if next.NotModified || len(next.Agents) != len(first.Agents) {
+		t.Fatalf("activity in the next minute: not_modified=%v rows=%d, want new rows", next.NotModified, len(next.Agents))
+	}
+}
+
 // The lite rows keep the difficulty line of a worker and leave out the judge's
 // long text, which only the worker log shows.
 func TestLiteAgentsDropWorkerAssessmentText(t *testing.T) {

@@ -3,9 +3,12 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -15,6 +18,7 @@ type toolsWire struct {
 	mu      sync.Mutex
 	targets []protocol.ToolTarget
 	exports int
+	bundle  []byte // what tools.export returns; empty by default
 	reports []protocol.ToolResult
 }
 
@@ -27,7 +31,7 @@ func (w *toolsWire) hook(_ context.Context, method string, params any) (json.Raw
 		return raw, true, nil
 	case "tools.export":
 		w.exports++
-		raw, _ := json.Marshal(protocol.SkillBundle{})
+		raw, _ := json.Marshal(protocol.SkillBundle{Data: w.bundle})
 		return raw, true, nil
 	case "tools.report":
 		w.reports = append(w.reports, params.(protocol.ToolResult))
@@ -69,12 +73,62 @@ func TestReconcileToolsSendsNothingForUnchangedTargets(t *testing.T) {
 	if e, r := wire.counts(); e != exports || r != reports {
 		t.Fatalf("5 unchanged runs: %d exports and %d reports more, want none", e-exports, r-reports)
 	}
-	// A full check looks at the destination again (a skill removed by hand is
-	// put back), but the same result is not reported twice.
+}
+
+// A full check looks at every destination again, so a skill removed by hand is
+// put back. The stored bundle is named by its hash and never changes, so the
+// check must not fetch it again from the gateway: this was about 100
+// tools.export calls a minute on a machine with a few hundred copy targets.
+func TestReconcileToolsFullCheckDoesNotFetchAKnownBundle(t *testing.T) {
+	home := t.TempDir()
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := inventory.SkillHash(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := inventory.PackSkill(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	wire := &toolsWire{bundle: bundle, targets: []protocol.ToolTarget{toolsCopyTarget(hash)}}
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.testGatewayCall = wire.hook
+		c.InventoryHome = home
+	}})
+	ctx := context.Background()
+	// InventoryHome starts the daemon's own tools loop, which makes the first
+	// run. Wait for its report instead of racing it.
+	dest := filepath.Join(home, ".claude", "skills", "demo", "SKILL.md")
+	eventually(t, "first run reports", func() bool { _, r := wire.counts(); return r >= 1 })
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("first run did not install the skill: %v", err)
+	}
+	exports, _ := wire.counts()
+	if exports < 1 {
+		t.Fatal("first run did not fetch the bundle")
+	}
+	for i := 0; i < 5; i++ {
+		n.d.toolsFullNext.Store(true)
+		n.d.reconcileTools(ctx)
+	}
+	if e, _ := wire.counts(); e != exports {
+		t.Fatalf("5 full checks: %d exports more, want none", e-exports)
+	}
+	// The check still repairs: a skill deleted by hand comes back.
+	if err := os.RemoveAll(filepath.Dir(dest)); err != nil {
+		t.Fatal(err)
+	}
 	n.d.toolsFullNext.Store(true)
 	n.d.reconcileTools(ctx)
-	if e, r := wire.counts(); e != exports+1 || r != reports {
-		t.Fatalf("full check: %d exports and %d reports more, want 1 and 0", e-exports, r-reports)
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("full check did not put the skill back: %v", err)
+	}
+	if e, _ := wire.counts(); e != exports {
+		t.Fatalf("restoring from the known bundle fetched %d more", e-exports)
 	}
 }
 

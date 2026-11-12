@@ -38,8 +38,15 @@ func liteAgentViews(agents []protocol.AgentView) {
 		// reads it only for "idle for over an hour" on an online session, and
 		// shows the age of an offline one, whose value does not move. Online
 		// rows keep the minute.
+		//
+		// last_active is the same: a busy session moves it each time its
+		// harness does something (the daemon reports it at most every 30
+		// seconds). With a few busy sessions the list never hashed the same
+		// twice, so every poll got all rows. The TUI draws it as minutes and
+		// hours and orders by it, so the minute is enough.
 		if a.Online {
 			a.LastSeen -= a.LastSeen % 60
+			a.LastActive -= a.LastActive % 60
 		}
 	}
 	// The store lists the newest report first, so a report moves a row up and

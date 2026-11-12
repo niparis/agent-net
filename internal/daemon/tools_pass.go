@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strconv"
 	"sync"
 	"time"
@@ -27,6 +29,11 @@ type toolsPassState struct {
 	seen      map[string]toolsSeen
 	fullAt    time.Time
 	fullEpoch uint64
+	// bundles holds the stored bundle of each copy target by item and version.
+	// A version is the hash of the content, so a bundle never changes: a full
+	// check reads the destination against it and asks the gateway only for a
+	// version it has not seen.
+	bundles map[string][]byte
 }
 
 type toolsSeen struct {
@@ -46,6 +53,48 @@ type toolsPass struct {
 func toolsKey(t protocol.ToolTarget) string {
 	return t.Revision.Item + "\x00" + strconv.FormatInt(t.Revision.Revision, 10) + "\x00" + strconv.Itoa(t.Index)
 }
+
+func bundleKey(t protocol.ToolTarget) string {
+	return t.Revision.Item + "\x00" + t.Revision.Version
+}
+
+// bundle returns the stored bundle of a copy target. It asks the gateway
+// (tools.export) only when this version is not held yet.
+func (p *toolsPass) bundle(ctx context.Context, t protocol.ToolTarget) ([]byte, error) {
+	st := &p.d.toolsPass
+	st.mu.Lock()
+	b, ok := st.bundles[bundleKey(t)]
+	st.mu.Unlock()
+	if ok {
+		return b, nil
+	}
+	raw, err := p.d.call(ctx, "tools.export", protocol.ToolVersionRequest{Item: t.Revision.Item, Version: t.Revision.Version})
+	if err != nil {
+		return nil, err
+	}
+	var sb protocol.SkillBundle
+	if err := json.Unmarshal(raw, &sb); err != nil {
+		return nil, errInvalidStoredBundle
+	}
+	st.mu.Lock()
+	if st.bundles == nil {
+		st.bundles = map[string][]byte{}
+	}
+	st.bundles[bundleKey(t)] = sb.Data
+	st.mu.Unlock()
+	return sb.Data, nil
+}
+
+// dropBundle forgets a bundle that did not install, so the next check asks
+// the gateway again instead of repeating a bad copy.
+func (p *toolsPass) dropBundle(t protocol.ToolTarget) {
+	st := &p.d.toolsPass
+	st.mu.Lock()
+	delete(st.bundles, bundleKey(t))
+	st.mu.Unlock()
+}
+
+var errInvalidStoredBundle = errors.New("invalid stored bundle")
 
 // beginToolsPass decides whether this run checks every target.
 func (d *Daemon) beginToolsPass(targets []protocol.ToolTarget) *toolsPass {
@@ -67,6 +116,14 @@ func (d *Daemon) beginToolsPass(targets []protocol.ToolTarget) *toolsPass {
 			}
 		}
 		st.seen = keep
+		// Same for bundles: keep only those the plan still names.
+		bundles := map[string][]byte{}
+		for _, t := range targets {
+			if b, ok := st.bundles[bundleKey(t)]; ok {
+				bundles[bundleKey(t)] = b
+			}
+		}
+		st.bundles = bundles
 	}
 	return &toolsPass{d: d, full: full, epoch: epoch}
 }
