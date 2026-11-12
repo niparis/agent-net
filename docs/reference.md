@@ -1117,9 +1117,13 @@ When several messages waited, they go as one message, newest first:
 <body>
 ```
 
-A single held message goes as it is. The batch keeps every original message in
-its `batch` field, so a reply or an ack still names the original. The batch
-row is what moves through the delivery states; its originals move with it.
+A single held message goes as it is. A held message with files always goes
+on its own, as it is, and the other held messages form the batch. The daemon
+takes files only from a message it is handed with its manifest, so the files
+of a message inside a batch would never reach the inbox. The batch keeps every
+original message in its `batch` field, so a reply or an ack still names the
+original. The batch row is what moves through the delivery states; its
+originals move with it.
 The header text and the `batch` field are agent-net's own, not the sender's.
 
 The provenance line an adapter adds after the body names the batch and its

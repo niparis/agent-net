@@ -278,7 +278,7 @@ func TestRemindBusyBatchOriginal(t *testing.T) {
 			if !s.HoldForBusy(notice) {
 				t.Fatal("hold notice")
 			}
-			carrier, n, err := s.ReleaseBusyHold(b, true)
+			carrier, n, err := releaseOne(t, s, b, true)
 			if err != nil || n != 2 {
 				t.Fatalf("batch %d %v", n, err)
 			}

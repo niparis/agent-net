@@ -3801,7 +3801,7 @@ func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol
 // message when there are several. force is the 30-minute fallback (decision
 // 0130): the messages go even though the session still reports busy.
 func (g *Gateway) releaseBusyHold(ctx context.Context, sessionID string, force bool) {
-	carrier, n, err := g.store.ReleaseBusyHold(sessionID, force)
+	carriers, n, err := g.store.ReleaseBusyHold(sessionID, force)
 	if err != nil {
 		g.logLine("error", "where", "release busy hold", "session", sessionID, "err", err)
 		return
@@ -3815,9 +3815,11 @@ func (g *Gateway) releaseBusyHold(ctx context.Context, sessionID string, force b
 		return
 	}
 	if force {
-		g.logLine("msg.released_stuck", "session", sessionID, "msg", carrier.ID, "count", n, "limit_s", int(BusyHoldLimit.Seconds()))
+		g.logLine("msg.released_stuck", "session", sessionID, "msg", carriers[0].ID, "count", n, "limit_s", int(BusyHoldLimit.Seconds()))
 	}
-	g.sendDeliverWith(ctx, node, carrier, true)
+	for _, carrier := range carriers {
+		g.sendDeliverWith(ctx, node, carrier, true)
+	}
 	if force {
 		g.store.clearBusySince(sessionID)
 	}

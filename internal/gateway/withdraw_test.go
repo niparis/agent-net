@@ -185,7 +185,7 @@ func TestWithdrawRemovesAnOriginalFromItsBatch(t *testing.T) {
 		ids = append(ids, m.ID)
 	}
 	busyStatus(t, s, b, "idle")
-	carrier, n, err := s.ReleaseBusyHold(b, false)
+	carrier, n, err := releaseOne(t, s, b, false)
 	if err != nil || n != 3 {
 		t.Fatalf("release: %d %v", n, err)
 	}
