@@ -1729,11 +1729,28 @@ SELECT 1 /* worker run struggle columns */;
 // gateway runs a few hundred different statements.
 const stmtCacheSize = 1024
 
+// freshDatabaseSeed is nil in every release. The gateway tests set it so a new
+// database file starts as a copy of one template that was migrated once per
+// process: every ALTER TABLE makes SQLite parse the whole schema again, which
+// costs about 10 seconds for a fresh database under the race detector.
+var freshDatabaseSeed func(path string) error
+
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
+	return openStore(path, freshDatabaseSeed)
+}
+
+// openStore is OpenStore with the seed chosen by the caller. A test that
+// checks the real migration of an empty file passes nil.
+func openStore(path string, seed func(path string) error) (*Store, error) {
 	// The file is private from the start; SQLite gives -wal and -shm its mode.
 	if err := dbfile.Create(path); err != nil {
 		return nil, err
+	}
+	if seed != nil {
+		if err := seed(path); err != nil {
+			return nil, err
+		}
 	}
 	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
 	// The connection keeps the prepared statements of its recent SQL texts, so
