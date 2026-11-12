@@ -1067,7 +1067,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			"reason", launched.Reason)
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
 			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title, Queued: true, QueueID: launched.QueueID,
-			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms,
+			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms, Base: p.Base,
 			Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
 	}
 	if err != nil || launched.SessionID == "" {
@@ -1087,7 +1087,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		"picker_ms", pickerMS, "launch_ms", time.Since(launchBegan).Milliseconds())
 	return protocol.WorkerStartAnswer{StartRef: startRef, Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Title: p.Title,
-		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
+		Worktree: launched.Worktree, Branch: launched.Branch, Base: p.Base, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
 		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
 }
 

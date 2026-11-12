@@ -130,10 +130,8 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	for k, v := range commitEnv {
 		settingsEnv[k] = v
 	}
-	settings, _ := json.Marshal(map[string]any{
-		"crossSessionInbound": "accept",
-		"env":                 settingsEnv,
-	})
+	d.prepareClaudeWorkerWrites(w)
+	settings, _ := json.Marshal(d.claudeWorkerSettings(w, settingsEnv))
 	// The MCP choice for the worktree's .mcp.json servers goes in the launch
 	// settings too, not only in the file: a background job that misses the
 	// file stops on the approval prompt (seen on 2026-11-08).
@@ -216,6 +214,117 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 		if d.gone(w) {
 			return errors.New("the Claude background session ended at start")
 		}
+	}
+}
+
+// claudeWorkerSettings is the --settings JSON of a Claude worker: its identity
+// in "env", and the write boundary of its permission level. Claude Code's
+// settings reach a --bg session and add to the user's and project's files.
+// blockWritesOutsideWorkingDirectories cannot be turned off by another
+// settings source; the sandbox path lists merge with the owner's, so a folder
+// the owner already granted there stays writable.
+func (d *Daemon) claudeWorkerSettings(w *worker, env map[string]string) map[string]any {
+	d.wmu.Lock()
+	level, dir := protocol.WorkerPermissionsOrDefault(w.permissions), w.path
+	d.wmu.Unlock()
+	return map[string]any{
+		"crossSessionInbound": "accept",
+		"env":                 env,
+		"permissions":         claudeWorkerPermissions(level, dir),
+		"sandbox":             claudeWorkerSandbox(level, dir, d.claudeWorkerWrites(dir)),
+	}
+}
+
+// claudeWorkerPermissions is the file-tool part of a worker's level.
+//
+// blockWritesOutsideWorkingDirectories refuses Write, Edit and NotebookEdit
+// outside the session's working directory in every permission mode, and no
+// allow rule lifts it (Claude Code 2.1.314). The worker's working directory is
+// its own worktree. A read-only worker also gets a deny rule for the worktree
+// itself, since the block above permits writes inside it.
+//
+// A sandboxed Bash command starts with no allowed host and nobody can answer
+// its prompt in a background session, so the allow rule pre-allows every host
+// for the sandbox (Claude Code 2.1.186). The no-network level leaves it out.
+func claudeWorkerPermissions(level, dir string) map[string]any {
+	rules := map[string]any{"blockWritesOutsideWorkingDirectories": true}
+	if level == protocol.WorkersReadOnly {
+		rules["deny"] = []string{claudeWriteRule(dir)}
+		rules["allow"] = []string{"WebFetch(domain:*)"}
+		return rules
+	}
+	if level == protocol.WorkersNoNetwork {
+		return rules
+	}
+	rules["allow"] = []string{"WebFetch(domain:*)"}
+	return rules
+}
+
+// claudeWriteRule is the permission rule that matches every file write below
+// dir. Permission rules use "//" for an absolute path.
+func claudeWriteRule(dir string) string {
+	return "Edit(//" + strings.TrimPrefix(filepath.ToSlash(filepath.Clean(dir)), "/") + "/**)"
+}
+
+// claudeWorkerWrites is the writable folders a Claude worker needs beyond its
+// working directory: the folders git writes in the main repository for a
+// commit in the worktree, the Go module cache, and the shared Go build cache
+// and Go temp folder (under /tmp). The sandbox's own per-user temp folder is
+// writable already.
+//
+// The git folders are the narrow set Codex gets (workerGitRoots), not the whole
+// git directory: hooks and config stay read-only, since a hook runs outside
+// the sandbox's rules when the owner commits.
+func (d *Daemon) claudeWorkerWrites(dir string) []string {
+	paths := []string{dir}
+	paths = append(paths, workerGitRoots(context.Background(), dir)...)
+	paths = append(paths, d.workerGoModCache(dir), d.workerGoCacheDir(), d.workerGoTmpDir())
+	var out []string
+	seen := map[string]bool{}
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
+}
+
+// prepareClaudeWorkerWrites makes the folders of the sandbox's allowWrite list
+// before the session starts: on Linux a sandbox path must exist when the
+// command that writes there starts, and the shared cache is outside the
+// worktree. A folder that cannot be made is logged; the worker still starts,
+// and its builds then find that folder read-only.
+func (d *Daemon) prepareClaudeWorkerWrites(w *worker) {
+	d.wmu.Lock()
+	dir := w.path
+	d.wmu.Unlock()
+	for _, p := range d.claudeWorkerWrites(dir) {
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			d.Logf("worker %s: Claude write path %s: %v", w.id, p, err)
+		}
+	}
+}
+
+// claudeWorkerSandbox is the Bash sandbox of a worker's level. It applies to
+// the commands Claude runs, with everything they start, and not to Claude's
+// own file tools (those are permissions rules). Missing sandbox dependencies
+// make Claude Code warn and run the commands unsandboxed, so a machine without
+// them still gets a worker with the file-tool boundary; a worker never starts
+// with the file-tool boundary missing.
+func claudeWorkerSandbox(level, dir string, writes []string) map[string]any {
+	files := map[string]any{}
+	if level == protocol.WorkersReadOnly {
+		files["denyWrite"] = []string{dir}
+	} else {
+		files["allowWrite"] = writes
+	}
+	return map[string]any{
+		"enabled":                  true,
+		"allowUnsandboxedCommands": false,
+		"filesystem":               files,
 	}
 }
 

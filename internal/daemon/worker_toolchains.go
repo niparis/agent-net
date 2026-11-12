@@ -12,6 +12,50 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// workerGoBinary finds the go command a worker with this environment would
+// run, or returns "" when the machine has none.
+func (d *Daemon) workerGoBinary(ctx context.Context, env []string) string {
+	opts := harnesses.Options{}
+	if d.cfg.HarnessSearch != nil {
+		opts = *d.cfg.HarnessSearch
+	}
+	if opts.PATH == "" {
+		for _, kv := range env {
+			if v, ok := strings.CutPrefix(kv, "PATH="); ok {
+				opts.PATH = v
+			}
+		}
+	}
+	bin := harnesses.Executable(ctx, "go", opts)
+	if bin == "" {
+		bin = standardGo(opts.Home)
+	}
+	return bin
+}
+
+// workerGoModCache is the Go module cache a worker's go command downloads
+// into, or "" when the machine has no Go.
+func (d *Daemon) workerGoModCache(dir string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	env := os.Environ()
+	bin := d.workerGoBinary(ctx, env)
+	if bin == "" {
+		return ""
+	}
+	cmd := exec.CommandContext(ctx, bin, "env", "GOMODCACHE")
+	cmd.Dir, cmd.Env = dir, env
+	cmd.WaitDelay = 250 * time.Millisecond
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	if p := strings.TrimSpace(string(out)); filepath.IsAbs(p) {
+		return p
+	}
+	return ""
+}
+
 // workerToolchainDirs lists the folders agy's terminal sandbox must expose.
 // Keep toolchain probes here so other languages can be added in one place.
 func (d *Daemon) workerToolchainDirs(ctx context.Context, dir string, env []string) []string {
@@ -82,21 +126,7 @@ func (d *Daemon) workerToolchainPATH(ctx context.Context, dir string, env []stri
 // workerGoEnv finds go the way a worker does and asks it where its files are.
 // An empty bin means go was not found; an empty goroot means the probe failed.
 func (d *Daemon) workerGoEnv(ctx context.Context, dir string, env []string) (bin, goroot, modcache string) {
-	opts := harnesses.Options{}
-	if d.cfg.HarnessSearch != nil {
-		opts = *d.cfg.HarnessSearch
-	}
-	if opts.PATH == "" {
-		for _, kv := range env {
-			if v, ok := strings.CutPrefix(kv, "PATH="); ok {
-				opts.PATH = v
-			}
-		}
-	}
-	bin = harnesses.Executable(ctx, "go", opts)
-	if bin == "" {
-		bin = standardGo(opts.Home)
-	}
+	bin = d.workerGoBinary(ctx, env)
 	if bin == "" {
 		return "", "", ""
 	}

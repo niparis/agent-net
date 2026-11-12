@@ -554,7 +554,7 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 	charter := d.charterBrief(ctx, ans.Project)
 	end = ph.begin("task")
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest, WorkerTask: true, WorkerTaskRef: ans.StartRef,
-		Body: protocol.WorkerTaskBodyBriefBar(ans.Harness, brief, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, ans.OSSandbox, d.SettingsSnapshot(), ans.Project, d.barOf(ctx, ans.Project))})
+		Body: protocol.WorkerTaskBodyBriefBar(ans.Harness, brief, ans.Worktree, ans.Branch, ans.Base, ans.ProjectRules, charter, ans.Permissions, ans.OSSandbox, d.SettingsSnapshot(), ans.Project, d.barOf(ctx, ans.Project))})
 	end()
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)
