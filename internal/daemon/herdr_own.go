@@ -93,7 +93,7 @@ func (d *Daemon) agentNetHerdr(bin string) (string, error) {
 		return socket, nil
 	}
 	cmd := exec.Command(bin, "--session", agentNetHerdrSession, "server")
-	cmd.Env = herdrCleanEnv()
+	cmd.Env = d.agentNetHerdrServerEnv(bin)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return "", err
