@@ -637,6 +637,8 @@ func New(cfg Config) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A proposal of an older version can still wait in handed_to_tui. Nothing
+	// confirms a start that way any more, so close it.
 	if _, err := st.db.Exec(`UPDATE cto_proposals SET status='failed', note='p_' || id || ' approved, failed: the daemon restarted before the TUI confirmed the start', note_delivered=0, result=json_set(CASE WHEN json_valid(result) THEN result ELSE '{}' END, '$.status', 'failed', '$.error', 'the daemon restarted before the TUI confirmed the start') WHERE status='handed_to_tui'`); err != nil {
 		st.close()
 		return nil, err

@@ -68,7 +68,7 @@ func TestCTOOperatorEnterOnRemoteOwnerTUI(t *testing.T) {
 	}
 	select {
 	case q := <-requests:
-		if q.EnterSession != sid || q.StartPlan != nil {
+		if q.EnterSession != sid {
 			t.Fatalf("wrong session: %+v", q)
 		}
 	case <-ctx.Done():

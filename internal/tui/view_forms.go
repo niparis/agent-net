@@ -29,6 +29,11 @@ func (m Model) noticeLine(w int) (string, bool) {
 		}
 		return m.noticeStyle(n).Render(line), true
 	}
+	if a := m.moveConfirm; a != nil {
+		suffix := moveQuestion + confirmSuffix
+		name := sanitize(a.Profile.Name)
+		return m.noticeStyle(n).Render("Move " + clip(name, max(w-len("Move ")-len(suffix), 0)) + suffix), true
+	}
 	if a := m.resumeConfirm; a != nil {
 		suffix := fmt.Sprintf(" (claude, last active %s ago) and enter it?", ago(m.now().Sub(time.Unix(a.LastSeen, 0)))) + confirmSuffix
 		name := sanitize(a.Profile.Name)

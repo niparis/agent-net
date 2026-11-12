@@ -40,7 +40,7 @@ var operatorMethods = map[string]bool{
 	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true, protocol.OpAppsGrant: true, protocol.OpAppsUngrant: true,
 	"tools_keep_copy": true, "tools_save_changed": true, "tools_update_plan": true, "tools_update_copies": true, "tools_import_folder": true, "tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
 	protocol.OpCTOGraphWindow: true,
-	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true, protocol.OpProposalStartAck: true,
+	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true,
 	"notification_settings": true,
 	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "mcp_coverage_plan": true, "mcp_coverage_apply": true, "mcp_coverage_undo": true, "tools_items": true, "tools_item": true, "tools_toggle": true, "tools_new_projects": true, "tools_projects": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_read_file": true, "tools_summary": true, "tools_skill_details": true, "tools_versions": true, "tools_export": true, protocol.OpToolsDifferences: true, "gateway_backup": true,
 	protocol.OpSessionStop: true, protocol.OpSessionStart: true, protocol.OpSessionStartGet: true, protocol.OpSessionResume: true,
@@ -267,30 +267,13 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 	case protocol.OpCTOGraphWindow:
 		v, err := lc.ctoGraphWindow(raw)
 		return v, true, err
-	case protocol.OpProposalStartAck:
-		var ack protocol.CTOStartAck
-		if json.Unmarshal(raw, &ack) != nil || ack.ID == "" {
-			return nil, true, errors.New("bad proposal start acknowledgment")
-		}
-		err := d.proposalRunner().ackTUI(ctx, ack.ID, ack.Started, ack.Error)
-		if errors.Is(err, errProposalNotAwaitingTUIStart) {
-			d.Logf("late TUI start acknowledgment for proposal %s started=%t", cleanLine(ack.ID), ack.Started)
-		}
-		return nil, true, err
 	case protocol.OpProposalList, protocol.OpProposalAnswer:
 		var q protocol.CTOProposalAnswer
 		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
 			return nil, true, errors.New("bad proposal request")
 		}
 		if method == protocol.OpProposalAnswer {
-			lc.mu.Lock()
-			tui := lc.client == "cli" && lc.tui
-			lc.mu.Unlock()
-			loc := proposalHerdrLocation{socket: q.HerdrSocket, pane: q.HerdrPaneID}
-			if tui {
-				loc.approver = lc
-			}
-			ctx = context.WithValue(ctx, proposalHerdrLocationKey{}, loc)
+			ctx = context.WithValue(ctx, proposalHerdrLocationKey{}, proposalHerdrLocation{socket: q.HerdrSocket, pane: q.HerdrPaneID})
 		}
 		if method == protocol.OpProposalList && q.NodeID == "" {
 			value, err := d.networkProposals(ctx)

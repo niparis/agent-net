@@ -66,13 +66,13 @@ func TestCTOUIBroadcast(t *testing.T) {
 			t.Fatal("missing notice")
 		}
 	}
-	if _, err := call("cto_ui_show", `{"notice":"hello","daemon_notice":true,"herdr_opened":true,"start_name":"forged","start_plan":{"argv":["unapproved"]}}`); err != nil {
+	if _, err := call("cto_ui_show", `{"notice":"hello","daemon_notice":true,"herdr_opened":true}`); err != nil {
 		t.Fatal(err)
 	}
 	for _, ch := range channels {
 		select {
 		case q := <-ch:
-			if q.DaemonNotice || q.HerdrOpened || q.StartPlan != nil || q.StartName != "" {
+			if q.DaemonNotice || q.HerdrOpened {
 				t.Fatalf("CTO forged a daemon notice: %+v", q)
 			}
 		case <-time.After(time.Second):
@@ -82,7 +82,7 @@ func TestCTOUIBroadcast(t *testing.T) {
 	if _, err := call("cto_ui_show", `{"tab":"bad"}`); err == nil {
 		t.Fatal("invalid tab accepted")
 	}
-	if _, err := n.d.executeCTOTool(context.Background(), "ui_show", json.RawMessage(`{"tab":"sessions","daemon_notice":true,"herdr_opened":true,"start_name":"forged","start_plan":{"argv":["unapproved"]}}`)); err != nil {
+	if _, err := n.d.executeCTOTool(context.Background(), "ui_show", json.RawMessage(`{"tab":"sessions","daemon_notice":true,"herdr_opened":true}`)); err != nil {
 		t.Fatal(err)
 	}
 	for _, ch := range channels {
@@ -91,7 +91,7 @@ func TestCTOUIBroadcast(t *testing.T) {
 			raw, _ := json.Marshal(q)
 			var fields map[string]any
 			_ = json.Unmarshal(raw, &fields)
-			if q.DaemonNotice || q.HerdrOpened || fields["start_plan"] != nil || fields["start_name"] != nil {
+			if q.DaemonNotice || q.HerdrOpened {
 				t.Fatalf("CTO forged a daemon start: %+v", q)
 			}
 		case <-time.After(time.Second):

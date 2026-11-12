@@ -77,14 +77,6 @@ func (d *Daemon) wakeGuard(a protocol.AgentView) error {
 func (d *Daemon) wakeCodex(ctx context.Context, a protocol.AgentView) error {
 	r := protocol.StartedSession{ID: protocol.NewID("wake"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: "codex", Path: a.Cwd, NativeID: a.NativeID}
 	r, err := d.prepareOwnerCodexThread(ctx, r, true)
-	if codexServerDown(err) {
-		// After a reboot nothing has started the shared app server, so its
-		// control socket is missing (or left behind with no one listening).
-		if err = d.startCodexAppServer(ctx); err != nil {
-			return fmt.Errorf("cannot start the Codex app server: %w", err)
-		}
-		r, err = d.prepareOwnerCodexThread(ctx, r, true)
-	}
 	if err != nil {
 		return fmt.Errorf("cannot resume the Codex thread: %w", err)
 	}

@@ -21,11 +21,11 @@ import (
 
 // enterMsg is the daemon's answer to session_enter.
 type enterMsg struct {
-	name       string
-	plan       protocol.EnterPlan
-	err        error
-	cto        bool
-	proposalID string
+	id   string
+	name string
+	plan protocol.EnterPlan
+	err  error
+	cto  bool
 }
 
 // enterDoneMsg is the end of the entered command.
@@ -87,13 +87,23 @@ type resumeMsg struct {
 }
 
 func (m Model) resumeOwnerSession(a protocol.AgentView) (Model, tea.Cmd) {
+	return m.resumeCmd(a, false)
+}
+
+// resumeCmd resumes an offline session, or with moveToBackground ends the
+// terminal client of a live one and resumes it as a background job.
+func (m Model) resumeCmd(a protocol.AgentView, moveToBackground bool) (Model, tea.Cmd) {
 	name := sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
-	m.say("Resuming " + name + "...")
+	if moveToBackground {
+		m.say("Moving " + name + " to the background...")
+	} else {
+		m.say("Resuming " + name + "...")
+	}
 	src := m.src
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		res, err := src.SessionResume(ctx, protocol.SessionResumeRequest{SessionID: a.SessionID, NodeID: a.NodeID, HerdrSocket: m.herdrSocket, HerdrPaneID: m.herdrPaneID})
+		res, err := src.SessionResume(ctx, protocol.SessionResumeRequest{SessionID: a.SessionID, NodeID: a.NodeID, HerdrSocket: m.herdrSocket, HerdrPaneID: m.herdrPaneID, MoveToBackground: moveToBackground})
 		for err == nil && res.Status == "starting" {
 			select {
 			case <-ctx.Done():
@@ -135,7 +145,7 @@ func (m Model) enterCmd(id, name string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, HerdrSocket: hsock, HerdrPaneID: hpane})
-		return enterMsg{name: name, plan: plan, err: err}
+		return enterMsg{id: id, name: name, plan: plan, err: err}
 	}
 }
 
@@ -143,6 +153,12 @@ func (m Model) enterCmd(id, name string) tea.Cmd {
 func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	if r.cto && m.cto != nil {
 		m.cto.opening = false
+	}
+	if r.err == nil && r.plan.MoveToBackground {
+		if a, ok := m.agentByID(r.id); ok {
+			m.moveConfirm = &a
+			return m, nil
+		}
 	}
 	if r.err == nil && r.plan.OpenedHerdr {
 		if r.cto && m.cto != nil {
@@ -186,21 +202,6 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	name := r.name
 	fallback, target := r.plan.Fallback, sshTarget(r.plan.Argv)
 	proxy := ptyproxy.New(cmd)
-	if r.proposalID != "" {
-		if caller, ok := m.src.(inboxCaller); ok {
-			proxy.OnStart = func(err error) {
-				ack := protocol.CTOStartAck{ID: r.proposalID, Started: err == nil}
-				if err != nil {
-					ack.Error = err.Error()
-				}
-				go func() {
-					ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-					defer cancel()
-					_, _ = caller.Call(ctx, protocol.OpProposalStartAck, ack)
-				}()
-			}
-		}
-	}
 	proxy.Name = name
 	proxy.Title = name + " - ctrl+] to come back"
 	ctoNotice := ""

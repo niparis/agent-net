@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -205,19 +206,38 @@ func TestSessionStartRelaysCodexThroughSSH(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startWorkerNode(t, g, shortSet, nil)
-	bins := fakeBin(t, "codex")
-	b := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	f, target := startFakeSharedStopped(t)
+	bin, _ := fakeCodexDaemonStart(t, target, false)
+	b := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.HarnessPaths = map[string]string{"codex": bin}
+		c.CodexHome = f.home
+		c.CodexInterval = 20 * time.Millisecond
+	})
 	repo := newRepo(t, "homelab")
 	b.register(t, repo)
 	var r protocol.StartedSession
 	mustJSON(t, a.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "homelab", Harness: "codex",
 		Model: "model-x", NodeID: b.d.NodeID()}), &r)
-	if r.Status != "started" || r.EnterPlan == nil || len(r.EnterPlan.Argv) < 2 || r.EnterPlan.Argv[0] != "ssh" {
+	if r.Status != "started" || r.NativeID == "" || r.SessionID == "" {
 		t.Fatalf("Codex on another machine: %+v", r)
 	}
-	run := r.EnterPlan.Argv[len(r.EnterPlan.Argv)-1]
-	if !strings.Contains(run, "codex") || !strings.Contains(run, "model-x") || !strings.Contains(run, repo) {
+	// The start opens nothing. Enter on the session shows the ssh command that
+	// resumes the thread on the other machine.
+	var p protocol.EnterPlan
+	mustJSON(t, a.cli.mustCall("session_enter", protocol.EnterRequest{SessionID: r.SessionID}), &p)
+	if len(p.Argv) < 2 || p.Argv[0] != "ssh" {
+		t.Fatalf("Enter plan: %+v", p)
+	}
+	run := p.Argv[len(p.Argv)-1]
+	if !strings.Contains(run, "codex") || !strings.Contains(run, "resume") || !strings.Contains(run, r.NativeID) || !strings.Contains(run, repo) {
 		t.Fatalf("remote Codex command %q", run)
+	}
+	// The model goes to the thread the other machine creates on its app server.
+	f.mu.Lock()
+	th := f.threads[r.NativeID]
+	f.mu.Unlock()
+	if th == nil || th.Model != "model-x" {
+		t.Fatalf("thread on the other machine: %+v, want model-x", th)
 	}
 	if r.EnterNote == "" || !strings.Contains(r.EnterNote, "ssh") {
 		t.Fatalf("enter note: %q", r.EnterNote)

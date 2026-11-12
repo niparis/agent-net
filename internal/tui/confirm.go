@@ -11,6 +11,9 @@ const confirmHint = "enter/y: yes · esc/n: no"
 
 const stopConfirmHint = "enter/y: stop · esc/n: keep"
 
+// moveQuestion ends the question of the move to the background.
+const moveQuestion = " to the background? Its terminal closes."
+
 // confirmSuffix separates a question from the hint.
 const confirmSuffix = "  " + confirmHint
 

@@ -78,31 +78,8 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 	}
 	result := protocol.SessionStopResult{Note: "Stopped " + name + ". The conversation is kept."}
 	terminalStop := func() (protocol.SessionStopResult, error) {
-		pid, token, err := d.stopTarget(ls, info)
-		if err != nil {
+		if _, err := d.stopTerminalSession(ctx, ls, info); err != nil {
 			return no(err)
-		}
-		d.markOwnerStop(ls, true)
-		fail := func(err error) (protocol.SessionStopResult, error) { d.markOwnerStop(ls, false); return no(err) }
-		if h, found := findHerdrPane(pid); found {
-			bin := d.herdrBinary(h.bin)
-			if bin != "" {
-				panes, err := d.herdrPanes(bin, h.socket)
-				if err != nil {
-					return fail(err)
-				}
-				for _, pane := range panes {
-					if herdrIDRe.MatchString(pane.PaneID) && d.herdrHolds(bin, h.socket, pane.PaneID, pidChain(pid)) {
-						if _, err := d.herdrRun(bin, h.socket, "pane", "close", pane.PaneID); err != nil {
-							return fail(err)
-						}
-						return result, nil
-					}
-				}
-			}
-		}
-		if err := stopSessionProcess(ctx, pid, token, 5*time.Second); err != nil {
-			return fail(err)
 		}
 		return result, nil
 	}
@@ -262,4 +239,37 @@ func stopSessionProcess(ctx context.Context, pid int, token string, grace time.D
 			return nil
 		}
 	}
+}
+
+// stopTerminalSession ends the program of a session that runs in a terminal:
+// it closes the herdr pane that holds it, or signals only the registered
+// process. It returns the process ID, so a caller that must start the session
+// again can wait for the process to be gone.
+func (d *Daemon) stopTerminalSession(ctx context.Context, ls *localSession, info protocol.SessionInfo) (int, error) {
+	pid, token, err := d.stopTarget(ls, info)
+	if err != nil {
+		return 0, err
+	}
+	d.markOwnerStop(ls, true)
+	fail := func(err error) (int, error) { d.markOwnerStop(ls, false); return 0, err }
+	if h, found := findHerdrPane(pid); found {
+		if bin := d.herdrBinary(h.bin); bin != "" {
+			panes, err := d.herdrPanes(bin, h.socket)
+			if err != nil {
+				return fail(err)
+			}
+			for _, pane := range panes {
+				if herdrIDRe.MatchString(pane.PaneID) && d.herdrHolds(bin, h.socket, pane.PaneID, pidChain(pid)) {
+					if _, err := d.herdrRun(bin, h.socket, "pane", "close", pane.PaneID); err != nil {
+						return fail(err)
+					}
+					return pid, nil
+				}
+			}
+		}
+	}
+	if err := stopSessionProcess(ctx, pid, token, 5*time.Second); err != nil {
+		return fail(err)
+	}
+	return pid, nil
 }

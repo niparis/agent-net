@@ -209,6 +209,7 @@ type Model struct {
 	selIdx                    int    // position in the visible list, to move on when the session leaves
 	tableTop                  int    // first table row on screen
 	resumeConfirm             *protocol.AgentView
+	moveConfirm               *protocol.AgentView // a hand-started Claude session the owner may move to the background
 	showOffline               bool
 	activeOnly                bool
 	hiddenSessions            map[string]bool
@@ -1694,6 +1695,15 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.moveConfirm != nil {
+		a := *m.moveConfirm
+		yes, _ := confirmAnswer(k)
+		m.moveConfirm = nil
+		if yes {
+			return m.resumeCmd(a, true)
+		}
+		return m, nil
+	}
 	if m.sessionPending != nil {
 		return m.sessionPendingKey(k)
 	}
@@ -2922,10 +2932,6 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		return m, m.enterCmd(q.EnterSession, q.EnterSession)
 	}
 
-	if q.StartPlan != nil {
-		m.sessionNoticeSerial++
-		return m.onEnter(enterMsg{name: sanitize(q.StartName), plan: *q.StartPlan, proposalID: q.StartProposalID})
-	}
 	if q.Text != "" {
 		if q.HerdrOpened || q.DaemonNotice {
 			m.sessionNoticeSerial++

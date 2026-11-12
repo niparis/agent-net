@@ -293,7 +293,7 @@ func (d *Daemon) openApprovedRemoteSession(ctx context.Context, node, id string)
 		if res.Status == "starting" {
 			d.watchApprovedSessionStart(ctx, res.ID)
 		} else if res.Status == "started" {
-			d.notifyApprovedSessionStart(ctx, res)
+			d.notifySessionStart(res)
 		}
 		return
 	}
@@ -304,13 +304,7 @@ func (d *Daemon) proposalRunner() proposalRunner {
 	if d.log != nil {
 		logf = d.log.Printf
 	}
-	return proposalRunner{state: d.st, now: time.Now, validate: d.validateProposal, run: d.runProposal, log: logf, handoff: func(ctx context.Context, id string, start protocol.StartedSession) {
-		if !d.notifyApprovedSessionStart(context.WithValue(ctx, proposalIDKey{}, id), start) {
-			_ = d.proposalRunner().ackTUI(context.Background(), id, false, "could not send the plan to the approving TUI")
-			return
-		}
-		time.AfterFunc(60*time.Second, func() { _ = d.proposalRunner().timeoutTUI(context.Background(), id) })
-	}}
+	return proposalRunner{state: d.st, now: time.Now, validate: d.validateProposal, run: d.runProposal, log: logf}
 }
 
 func (d *Daemon) proposalOperator(ctx context.Context, method string, q protocol.CTOProposalAnswer) (any, bool, error) {
@@ -361,15 +355,7 @@ type proposal struct {
 
 // proposalRunner is deliberately independent of the CTO tool dispatcher. A
 // caller supplies validation and execution for the calls it supports.
-type proposalIDKey struct{}
-
-func proposalIDFromContext(ctx context.Context) string {
-	id, _ := ctx.Value(proposalIDKey{}).(string)
-	return id
-}
-
 type proposalRunner struct {
-	handoff  func(context.Context, string, protocol.StartedSession)
 	log      func(string, ...any)
 	state    *state
 	now      func() time.Time
@@ -682,9 +668,6 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 				var start protocol.StartedSession
 				if json.Unmarshal(result, &start) == nil {
 					switch start.Status {
-					case "handed_to_tui":
-						status = "handed_to_tui"
-						note = "sent to the approving TUI to run in its terminal"
 					case "needs_trust":
 						note = id + " approved; Claude folder trust needs the owner's answer; no session started"
 					case "needs_create":
@@ -703,42 +686,7 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 	if saveErr != nil {
 		return saveErr
 	}
-	if status == "handed_to_tui" && p.handoff != nil {
-		var start protocol.StartedSession
-		if json.Unmarshal(result, &start) == nil {
-			p.handoff(ctx, id, start)
-		}
-	}
 	return err
-}
-
-var errProposalNotAwaitingTUIStart = errors.New("proposal is not awaiting a TUI start")
-
-func (p proposalRunner) ackTUI(ctx context.Context, id string, started bool, message string) error {
-	status, note, startStatus := "applied", id+" approved and applied", "started"
-	if !started {
-		status = "failed"
-		startStatus = "failed"
-		if strings.TrimSpace(message) == "" {
-			message = "the TUI could not start the session"
-		}
-		note = id + " approved, failed: " + cleanLine(message)
-	}
-	res, err := p.state.db.ExecContext(ctx, `UPDATE cto_proposals SET status=?,note=?,note_delivered=0,result=json_set(result,'$.status',?,'$.error',?) WHERE id=? AND status='handed_to_tui'`, status, note, startStatus, message, strings.TrimPrefix(id, "p_"))
-	if err != nil {
-		return err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n != 1 {
-		return errProposalNotAwaitingTUIStart
-	}
-	return nil
-}
-func (p proposalRunner) timeoutTUI(ctx context.Context, id string) error {
-	return p.ackTUI(ctx, id, false, "the approving TUI did not confirm the start")
 }
 
 func (p proposalRunner) approveAll(ctx context.Context) error {
@@ -755,7 +703,7 @@ func (p proposalRunner) approveAll(ctx context.Context) error {
 }
 
 // startProposal says the approved call starts a session, so its answer can say
-// that nothing started (needs_trust, handed_to_tui, failed).
+// that nothing started (needs_trust, needs_create, failed).
 func startProposal(c proposalCall) bool {
 	return c.Tool == "session_change" && (c.Action == "session_start" || c.Action == "merger_start") ||
 		c.Tool == "project_change" && c.Action == "create"

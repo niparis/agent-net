@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -246,10 +247,17 @@ func TestMaxSuccessfulClaudeStartConsumesPlace(t *testing.T) {
 	}
 }
 
-func TestMaxCodexWithoutServerUsesTerminalPlan(t *testing.T) {
+// The daemon owns the shared Codex app server. When nothing has started it, a
+// Codex start runs Codex's daemon command first, then creates the thread.
+func TestMaxCodexStartsTheAppServerWhenItIsDown(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	codexHome := t.TempDir()
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"codex": os.Args[0]}; c.CodexHome = codexHome })
+	f, target := startFakeSharedStopped(t)
+	bin, record := fakeCodexDaemonStart(t, target, false)
+	n := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.HarnessPaths = map[string]string{"codex": bin}
+		c.CodexHome = f.home
+		c.CodexInterval = 20 * time.Millisecond
+	})
 	repo := newRepo(t, "demo")
 	n.register(t, repo)
 	if _, err := g.gw.Store().UpsertSession(n.d.NodeID(), protocol.SessionInfo{Harness: "pi", NativeID: "terminal", Repo: protocol.RepoInfo{Project: "demo", Root: repo}}); err != nil {
@@ -264,7 +272,14 @@ func TestMaxCodexWithoutServerUsesTerminalPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustJSON(t, raw, &result)
-	if result.Status != "started" || result.EnterPlan == nil || len(result.EnterPlan.Argv) == 0 {
+	if result.Status != "started" || result.NativeID == "" || result.SessionID == "" || result.Error != "" {
 		t.Fatalf("start: %+v", result)
+	}
+	rec, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatalf("the Codex app server was not started: %v", err)
+	}
+	if got, want := strings.TrimSpace(string(rec)), "app-server daemon start|"+f.home; got != want {
+		t.Fatalf("Codex ran as %q, want %q", got, want)
 	}
 }

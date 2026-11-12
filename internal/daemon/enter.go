@@ -184,6 +184,12 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 	if err != nil {
 		return base, err
 	}
+	if base.MoveToBackground {
+		if viaGateway {
+			return protocol.EnterPlan{Host: base.Host, Note: base.Note + " Open agent-net on " + firstNonEmpty(base.Host, "its machine") + " and press Enter on it."}, nil
+		}
+		return base, nil
+	}
 	base = claudePlanEnv(base)
 	// A TUI outside herdr hands over its terminal.
 	if !viaGateway && !insideHerdr {
@@ -282,12 +288,14 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 			d.wmu.Unlock()
 		}
 		if kind != "bg" {
-			bin, err := d.harnessBinary("claude")
-			if err != nil || info.NativeID == "" {
-				return no("cannot resume %s: %v", name, firstNonNil(err, errors.New("no session id")))
+			// A session the owner started in a terminal has no background job
+			// to attach to. A second `claude --resume` client would fight the
+			// first, so the front end offers to move it to the background.
+			if info.NativeID == "" {
+				return no("cannot move %s to the background: no session id", name)
 			}
-			plan.Argv = []string{bin, "--resume", info.NativeID}
-			plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
+			plan.MoveToBackground = true
+			plan.Note = fmt.Sprintf("%s runs in a terminal outside agent-net. Move it to the background to open it here.", name)
 			return plan, nil
 		}
 		id := job
@@ -322,18 +330,22 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 			if info.NativeID == "" {
 				return no("%s has no OpenCode session ID to open it with", name)
 			}
+			// The service owns every owner OpenCode session. Without it there is
+			// nothing to attach to, and a bare `opencode --session` would host
+			// the session in a terminal of its own.
+			service, serviceErr := d.ownerOpenCodeService()
+			if serviceErr != nil {
+				return no("the OpenCode service is not running on %s: start it with `opencode service start`, then press Enter again", plan.Host)
+			}
+			if viaGateway && service.Password != "" {
+				return no("%s uses a private OpenCode service and can only be entered on its own machine", name)
+			}
 			if err := reopen(); err != nil {
 				return no("could not reopen session: %v", err)
 			}
-			plan.Argv = []string{bin, "--session", info.NativeID}
-			if service, serviceErr := d.ownerOpenCodeService(); serviceErr == nil {
-				if viaGateway && service.Password != "" {
-					return no("%s uses a private OpenCode service and can only be entered on its own machine", name)
-				}
-				plan.Argv = []string{bin, "--server", service.URL, "--session", info.NativeID}
-				if service.Password != "" {
-					plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": service.Password}
-				}
+			plan.Argv = []string{bin, "--server", service.URL, "--session", info.NativeID}
+			if service.Password != "" {
+				plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": service.Password}
 			}
 			plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 			return plan, nil
