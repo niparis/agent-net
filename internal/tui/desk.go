@@ -754,6 +754,8 @@ func (m Model) deskRowKey(k tea.KeyPressMsg, key actionID) (Model, tea.Cmd, bool
 			return m, m.deskAskUndo(h.Ask), true
 		case key == "should_have_asked":
 			return m.deskMarkStart(h.Ask, protocol.MarkShouldHaveAsked), nil, true
+		case key == "didnt_need" && h.Result == protocol.AskSortOwner:
+			return m.deskMarkStart(h.Ask, protocol.MarkDidntNeedMe), nil, true
 		}
 		return m, nil, true
 	case deskSecLog:

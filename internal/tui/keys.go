@@ -253,7 +253,7 @@ var keyBindings = []keyBinding{
 	bind(contextInbox, "x", "dismiss", "dismiss the ask", 1),
 	withHelp(bind(contextInbox, "i", "signin", "Open sign-in", 1), "on a sign-in ask: open that CLI's login in a herdr pane on the machine that needs it"),
 	bind(contextInbox, "u", "undo", "undo", 1),
-	withHelp(bind(contextInbox, "n", "didnt_need", "didn't need me", 1), "on an ask that reached you: the chief did not need to send it. Type one optional line of why; the chief reads it in its next batch."),
+	withHelp(bind(contextInbox, "n", "didnt_need", "didn't need me", 1), "on an ask that reached you, open or answered (in Handled for you): the chief did not need to send it. Type one optional line of why; the chief reads it in its next batch."),
 	withHelp(bind(contextInbox, "m", "should_have_asked", "should have asked me", 1), "on a handled ask: the chief should have asked you. Type one optional line of why; the chief reads it in its next batch."),
 	withHelp(bind(contextInbox, "v", "show all", "show all changes", 2), "show or hide the done and stale changes in the In flight section"),
 	withHelp(bind(contextInbox, "l", "log", "open the log", 1), "open or close the Log section: what the CTO and the gateway did, with the undo of a CTO change"),

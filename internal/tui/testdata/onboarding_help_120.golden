@@ -22,8 +22,8 @@ Keys · all screens ────────────────────
   x                      dismiss the ask
   i                      on a sign-in ask: open that CLI's login in a herdr pane on the machine that needs it
   u                      undo
-  n                      on an ask that reached you: the chief did not need to send it. Type one optional line of why;
-                         the chief reads it in its next batch.
+  n                      on an ask that reached you, open or answered (in Handled for you): the chief did not need to
+                         send it. Type one optional line of why; the chief reads it in its next batch.
   m                      on a handled ask: the chief should have asked you. Type one optional line of why; the chief
                          reads it in its next batch.
   v                      show or hide the done and stale changes in the In flight section

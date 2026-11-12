@@ -264,3 +264,34 @@ func TestDeskUndoAndMarkKeys(t *testing.T) {
 		t.Fatalf("n stored %+v", last)
 	}
 }
+
+// An ask the chief sent to the owner stays in Handled for you after he answers
+// it. There n stores a didn't-need-me mark (decision 0150, Desk marks on an
+// answered item). Run with -v to see the frames at 80x24 and 120x34.
+func TestDidntNeedMeOnAnAnsweredAskTheChiefSent(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		src := &deskCallSource{}
+		m := deskModel(t, size[0], size[1])
+		m.src = src
+		m.tab = inboxTab
+		m.now = func() time.Time { return t0 }
+		m.asks = nil
+		m.handled = []protocol.ChiefSort{{AskSort: protocol.AskSort{Ask: "i_9", Result: protocol.AskSortOwner, Priority: 2, WhyYou: "spends money", Reason: "a purchase", At: t0.Add(-time.Hour)}, Question: "Buy more DeepSeek credit?"}}
+		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
+		view := ansi.Strip(m.testView())
+		t.Logf("frame %dx%d:\n%s", size[0], size[1], view)
+		if !strings.Contains(view, "didn't need me") {
+			t.Fatalf("%dx%d: the answered ask offers no didn't-need-me mark:\n%s", size[0], size[1], view)
+		}
+		m, _ = deskPress(t, m, tea.KeyPressMsg{Text: "n", Code: 'n'})
+		if m.deskPending == nil || !m.inboxEditing {
+			t.Fatal("n did not open the line of why on a handled ask sent to the owner")
+		}
+		m, cmd := deskPress(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = deskRun(t, m, cmd)
+		last := src.args[len(src.args)-1]
+		if src.calls[len(src.calls)-1] != protocol.OpAskMark || last != (protocol.AskMarkRequest{Ask: "i_9", Mark: protocol.MarkDidntNeedMe}) {
+			t.Fatalf("mark calls %v args %+v", src.calls, last)
+		}
+	}
+}

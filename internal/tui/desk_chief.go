@@ -281,7 +281,13 @@ func (m Model) deskHandledHints(h protocol.ChiefSort) []hint {
 		undo.label = "undo the sort"
 		out = append(out, undo)
 	}
-	out = append(out, bindingHint(contextInbox, "should_have_asked"))
+	// An ask the chief sent to the owner reached him: the mark that fits is
+	// didn't need me, also after he answered it (decision 0150).
+	if h.Result == protocol.AskSortOwner {
+		out = append(out, bindingHint(contextInbox, "didnt_need"))
+	} else {
+		out = append(out, bindingHint(contextInbox, "should_have_asked"))
+	}
 	return keepChoices(out)
 }
 
