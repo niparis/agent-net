@@ -388,7 +388,7 @@ func TestMessageWakesOpenCodeSessionWithAutonomy(t *testing.T) {
 		if push.ID != m.ID || push.Body != "wake the opencode session" {
 			t.Fatalf("delivery: %+v", push)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(scaled(5 * time.Second)):
 		t.Fatal("message was not delivered to the woken session")
 	}
 	if got := n.d.SessionID("opencode", "ses_old"); got != id {
