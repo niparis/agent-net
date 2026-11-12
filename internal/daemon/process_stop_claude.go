@@ -15,14 +15,12 @@ import (
 // stop must never end one of them, so processRefusal checks the roster too.
 //
 // A roster with a supervisor is trusted while that same user process lives.
-// When the supervisor cannot be verified, the
-// daemon cannot tell which Claude processes are live, so it refuses every
+// When the supervisor cannot be verified, the daemon cannot tell which Claude processes are live, so it refuses every
 // Claude background process. The daemon_status file is not used: it can be
 // hours old.
 
 const (
-	// claudeRosterMaxAge is how old the roster may be (in either direction)
-	// and still be trusted.
+	// claudeRosterMaxAge applies only to legacy rosters without a supervisor.
 	claudeRosterMaxAge = 60 * time.Second
 	// claudeAncestorMax bounds the walk up the parents of a process.
 	claudeAncestorMax = 64
@@ -104,10 +102,13 @@ func (d *Daemon) readClaudeRosterWithProcess(now time.Time, read func(int) (proc
 // Claude background session, or is inside one, or returns "". A stale or
 // missing roster refuses every Claude background process.
 func (d *Daemon) claudeProcessRefusal(v procView) string {
-	roster := d.readClaudeRoster(time.Now())
+	return d.claudeRosterProcessRefusal(v, d.readClaudeRoster(time.Now()))
+}
+
+func (d *Daemon) claudeRosterProcessRefusal(v procView, roster *claudeRoster) string {
 	if roster == nil {
 		if isClaudeBackgroundCommand(v.Command) {
-			return "Claude roster not fresh; cannot tell live sessions"
+			return "Claude roster not fresh; cannot tell live sessions (missing, invalid, or supervisor not verified alive)"
 		}
 		return ""
 	}

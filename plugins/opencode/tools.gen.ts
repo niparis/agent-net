@@ -568,7 +568,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machine_get",
-    "description": "Read a machine's health, load, CPU and busiest processes, or one detail category: models, quotas, track record or playbook. Pages long lists.",
+    "description": "Read a machine's health, load, CPU and busiest processes, or one detail category: processes, models, quotas, track record or playbook. Processes accepts sort rss (default) or cpu and reports stop refusals. Pages long lists.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -584,7 +584,8 @@ export const TOOL_CATALOG = [
               "models",
               "quotas",
               "track_record",
-              "playbook"
+              "playbook",
+              "processes"
             ]
           },
           "description": "Requested categories of machine details.",
@@ -615,6 +616,14 @@ export const TOOL_CATALOG = [
         "cursor": {
           "type": "string",
           "description": "Cursor from the previous page."
+        },
+        "sort": {
+          "type": "string",
+          "enum": [
+            "rss",
+            "cpu"
+          ],
+          "description": "Process order, default rss. Used with include processes."
         }
       },
       "required": [

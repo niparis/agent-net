@@ -4281,3 +4281,21 @@ The TUI Settings tab has a Nudges section with the total and the five kinds
 with the most fires. `agent_nudge_pause` in preview mode also returns a
 `useful_line`, for example `useful 2 of 14 in 24h`; preview still writes
 nothing. No nudge behaviour, default or setting changes.
+
+### Machine process inspection
+
+`agent_machine_get` with `include: ["processes"]` reads the target daemon's
+machine-wide process table. `sort` is `rss` (default) or `cpu`. The existing
+`limit` and `cursor` page the ordered rows. Each row includes pid, ppid, user,
+RSS in bytes, CPU percent of one core, elapsed seconds, command, owner kind
+and owner ID, and `refusal` when `process_stop` would refuse it. Commands use
+the sampler's existing redaction. The CTO can use this read to choose pids.
+Process tables can change between pages. Refusals are advisory; stopping
+checks the process again through the existing safeguards.
+
+Claude background rosters with a supervisor are trusted regardless of age
+only when the supervisor is alive, belongs to the daemon user, and started
+before the roster was written. A dead or unverifiable supervisor keeps the
+conservative refusal for Claude background commands. Live sessions, their
+children, and the supervisor remain protected. Legacy rosters without a
+supervisor retain their existing short freshness window.

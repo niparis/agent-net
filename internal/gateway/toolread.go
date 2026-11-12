@@ -597,9 +597,9 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 	if len(p.Include) == 1 {
 		category = p.Include[0]
 		switch category {
-		case "models", "quotas", "track_record", "playbook":
+		case "models", "quotas", "track_record", "playbook", "processes":
 		default:
-			return protocol.MachineGetResult{}, fmt.Errorf("include must be models, quotas, track_record or playbook. Example: {\"include\":[\"track_record\"]}")
+			return protocol.MachineGetResult{}, fmt.Errorf("include must be processes, models, quotas, track_record or playbook. Example: {\"include\":[\"track_record\"]}")
 		}
 	}
 	nodes, err := g.store.Nodes()
@@ -637,13 +637,29 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 		return out, nil
 	}
 	query := readQueryHash(struct {
-		Machine, Category, Harness, ModelFilter string
-	}{node.NodeID, category, p.Harness, p.ModelFilter})
+		Machine, Category, Harness, ModelFilter, Sort string
+	}{node.NodeID, category, p.Harness, p.ModelFilter, p.Sort})
 	paging, err := newReadPaging(p.Caller, p.Cursor, query, p.Limit)
 	if err != nil {
 		return protocol.MachineGetResult{}, err
 	}
 	switch category {
+	case "processes":
+		nc := g.conn(node.NodeID)
+		if nc == nil {
+			return out, fmt.Errorf("machine is offline")
+		}
+		raw, err := nc.request(ctx, "node.machine_processes", p, machineUsageWait)
+		if err != nil {
+			return out, err
+		}
+		var rows []protocol.MachineProcessRow
+		if err := json.Unmarshal(raw, &rows); err != nil {
+			return out, err
+		}
+		start, end, next := paging.page(len(rows))
+		out.Processes = &protocol.MachineProcessPage{Items: rows[start:end], Total: len(rows), NextCursor: next}
+
 	case "models":
 		live, err := g.liveModels(ctx, node, p.Harness, p.ModelFilter)
 		if err != nil {
