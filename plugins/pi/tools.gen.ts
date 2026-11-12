@@ -2196,7 +2196,7 @@ export const TOOL_CATALOG = [
       "properties": {
         "worker": {
           "type": "string",
-          "description": "Worker session ID or queued start ID."
+          "description": "Worker session ID, queued start ID (q_...), or start ID (a_...) from worker_start."
         }
       },
       "required": [

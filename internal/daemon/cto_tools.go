@@ -508,7 +508,11 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if sid == "" {
 			return nil, errNotConnected
 		}
-		_, err := d.call(withCallWait(ctx, 30*time.Second), "worker.stop", protocol.WorkerStopFrame{Session: p.Session, Requester: sid})
+		target, err := d.startTarget(p.Session)
+		if err != nil {
+			return nil, err
+		}
+		_, err = d.call(withCallWait(ctx, 30*time.Second), "worker.stop", protocol.WorkerStopFrame{Session: target, Requester: sid})
 		if err != nil {
 			return nil, tooOldGateway(err)
 		}

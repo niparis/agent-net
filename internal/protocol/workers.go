@@ -25,6 +25,9 @@ var (
 const (
 	WorkerQueueTick = 15 * time.Second
 	QueueIDPrefix   = "q_"
+	// StartIDPrefix is the prefix of the start id that an accepted start is
+	// answered with, before its queue id or session id is known.
+	StartIDPrefix = "a_"
 )
 
 // WorkerAutoContinueText is the default reserved continuation message.
@@ -75,6 +78,9 @@ func AutoContinueEnabled(p *bool) bool { return p == nil || *p }
 
 // IsQueueID tells whether id names a queued start and not a session.
 func IsQueueID(id string) bool { return strings.HasPrefix(id, QueueIDPrefix) }
+
+// IsStartID tells whether id is the start id of an accepted start.
+func IsStartID(id string) bool { return strings.HasPrefix(id, StartIDPrefix) }
 
 // Why a worker ended. They are the "reason" of worker.stopped.
 const (
