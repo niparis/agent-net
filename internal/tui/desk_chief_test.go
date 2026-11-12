@@ -34,6 +34,8 @@ func (s *deskCallSource) Call(_ context.Context, method string, params any) (jso
 		return json.Marshal(protocol.DeskLogResult{Entries: s.log})
 	case protocol.OpAskUndo, protocol.OpAskMark:
 		return json.RawMessage(`{"ok":true}`), nil
+	case protocol.OpAskDiscuss:
+		return json.Marshal(protocol.AskDiscussResult{Open: protocol.DeskOwnerChief, Session: "s_chief", Woken: true})
 	}
 	return nil, errors.New("fake: no such method " + method)
 }
@@ -292,6 +294,43 @@ func TestDidntNeedMeOnAnAnsweredAskTheChiefSent(t *testing.T) {
 		last := src.args[len(src.args)-1]
 		if src.calls[len(src.calls)-1] != protocol.OpAskMark || last != (protocol.AskMarkRequest{Ask: "i_9", Mark: protocol.MarkDidntNeedMe}) {
 			t.Fatalf("mark calls %v args %+v", src.calls, last)
+		}
+	}
+}
+
+// d on a Needs you ask discusses it (decision 0150): for a chief item the
+// gateway tells and wakes the chief, and the TUI enters the chief's session
+// the way Enter does. Run with -v to see the frames at 80x24 and 120x34.
+func TestDiscussOpensTheChiefsSession(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		src := &deskCallSource{}
+		m := deskModel(t, size[0], size[1])
+		m.src = src
+		m.tab = inboxTab
+		m.now = func() time.Time { return t0 }
+		m.inboxIndex = 0
+		view := ansi.Strip(m.testView())
+		t.Logf("frame %dx%d:\n%s", size[0], size[1], view)
+		if !strings.Contains(view, "d discuss") {
+			t.Fatalf("%dx%d: no discuss hint on an open ask:\n%s", size[0], size[1], view)
+		}
+		m, cmd := deskPress(t, m, tea.KeyPressMsg{Text: "d", Code: 'd'})
+		if cmd == nil {
+			t.Fatal("d did nothing")
+		}
+		next, enter := m.Update(cmd())
+		m = next.(Model)
+		if src.calls[len(src.calls)-1] != protocol.OpAskDiscuss || src.args[len(src.args)-1] != (protocol.AskDiscussRequest{Ask: "i_q"}) {
+			t.Fatalf("discuss calls %v %v", src.calls, src.args)
+		}
+		if enter == nil {
+			t.Fatal("no enter of the chief's session")
+		}
+		if msg, ok := enter().(enterMsg); !ok || msg.name != "chief of staff" || len(src.enters) != 1 || src.enters[0].SessionID != "s_chief" {
+			t.Fatalf("enter %+v, enters %+v", msg, src.enters)
+		}
+		if !strings.Contains(ansi.Strip(m.testView()), "Waking the chief of staff") {
+			t.Fatal("the owner is not told that the chief is woken")
 		}
 	}
 }

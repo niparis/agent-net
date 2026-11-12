@@ -536,3 +536,29 @@ func TestWaitingAskWaitsForTheDebounce(t *testing.T) {
 		t.Fatalf("a wait past the debounce made no ask: %+v", asks)
 	}
 }
+
+// "Discuss" on a chief item sends the chief a message about the ask (which
+// wakes it when it is offline) and names its session for the owner to open.
+// On a CTO item it only says to open the CTO chat: the owner is there.
+func TestDiscussOpensTheOwnersThread(t *testing.T) {
+	s, _, chief, asker, cto, node := deskRig(t)
+	id := chiefAsk(t, s, asker, "Which region for the new box?")
+	res, m, err := s.discussAsk(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Open != protocol.DeskOwnerChief || res.Session != chief || m.To != chief || !strings.Contains(m.Body, id) || !strings.Contains(m.Body, "Which region") {
+		t.Fatalf("discuss of a chief item = %+v, message to %s: %q", res, m.To, m.Body)
+	}
+	if _, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: id, Result: protocol.AskSortSend, To: cto, Reason: "infra is the CTO's"}); err != nil {
+		t.Fatal(err)
+	}
+	before := len(chiefMessages(t, s, chief))
+	res, m, err = s.discussAsk(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Open != protocol.DeskOwnerCTO || m.ID != "" || len(chiefMessages(t, s, chief)) != before {
+		t.Fatalf("discuss of a CTO item = %+v, message %+v", res, m)
+	}
+}

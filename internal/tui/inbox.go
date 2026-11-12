@@ -1419,6 +1419,10 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if row.ask.ID != "" {
 			return m.deskMarkStart(row.ask.ID, protocol.MarkDidntNeedMe), nil
 		}
+	case "discuss":
+		if row.ask.ID != "" {
+			return m, m.askDiscussCmd(row.ask.ID)
+		}
 	case "signin":
 		if row.kind == "signin" {
 			return m, m.inboxSignIn(row)
@@ -1554,6 +1558,19 @@ func (m Model) inboxResolveOutcome(row inboxRow, action string) tea.Cmd {
 // inboxItemHints lists only the keys that act on the selected row. A key
 // that acts on every proposal or on the whole inbox is not listed here.
 func (m Model) inboxItemHints(row inboxRow) []hint {
+	h := m.inboxKindHints(row)
+	// A decision on the Desk can be talked over (decision 0150).
+	switch row.kind {
+	case protocol.AskKindQuestion, protocol.AskKindApproval, protocol.AskKindIdea, protocol.AskKindCheck:
+		if row.ask.ID != "" {
+			h = append(h, bindingHint(contextInbox, "discuss"))
+		}
+	}
+	return h
+}
+
+// inboxKindHints are the answer keys of a row's kind.
+func (m Model) inboxKindHints(row inboxRow) []hint {
 	details := bindingHint(contextInbox, "details")
 	switch row.kind {
 	case "held":
@@ -1669,6 +1686,58 @@ func (m Model) inboxHints() []hint {
 		return []hint{bindingPairHint(contextInbox, actUp, actDown), logHint, help, bindingHint(contextInbox, actQuit)}
 	}
 	return append(append(m.inboxItemHints(row), bindingHint(contextInbox, "didnt_need")), move, logHint, help)
+}
+
+// askDiscussMsg is the gateway's answer to the owner's discuss.
+type askDiscussMsg struct {
+	res protocol.AskDiscussResult
+	err error
+}
+
+// askDiscussCmd asks the gateway where to discuss an ask (decision 0150).
+func (m Model) askDiscussCmd(ask string) tea.Cmd {
+	c, ok := m.src.(inboxCaller)
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		raw, err := c.Call(ctx, protocol.OpAskDiscuss, protocol.AskDiscussRequest{Ask: ask})
+		var res protocol.AskDiscussResult
+		if err == nil {
+			err = json.Unmarshal(raw, &res)
+		}
+		return askDiscussMsg{res: res, err: err}
+	}
+}
+
+// onAskDiscuss opens the thread: the CTO chat the way c does, or the chief's
+// session the way Enter does on its row. Both go through session_enter, so
+// herdr is used whenever it is there (decision 0046).
+func (m Model) onAskDiscuss(msg askDiscussMsg) (Model, tea.Cmd) {
+	if msg.err != nil {
+		m.fail(sanitize(msg.err.Error()))
+		return m, nil
+	}
+	if msg.res.Open == protocol.DeskOwnerCTO {
+		var poll tea.Cmd
+		if m.cto == nil {
+			next, cmd := m.startCTO()
+			m, poll = next.(Model), cmd
+			if m.cto == nil {
+				return m, nil
+			}
+		}
+		next, enter := m.openCTO(m.ctoSessionID())
+		return next, tea.Batch(poll, enter)
+	}
+	if msg.res.Woken {
+		m.say("Waking the chief of staff; it has the ask.")
+	} else {
+		m.say("The chief of staff has the ask.")
+	}
+	return m, m.enterCmd(msg.res.Session, "chief of staff")
 }
 
 // inboxCaller is the local call the Inbox and the CTO box need.

@@ -21,6 +21,8 @@ Keys · all screens ────────────────────
   t                      type answer
   x                      dismiss the ask
   i                      on a sign-in ask: open that CLI's login in a herdr pane on the machine that needs it
+  d                      on an open ask: talk it over. A chief item opens the chief's session and wakes it; a CTO item
+                         opens your CTO chat.
   u                      undo
   n                      on an ask that reached you, open or answered (in Handled for you): the chief did not need to
                          send it. Type one optional line of why; the chief reads it in its next batch.
@@ -34,7 +36,5 @@ Keys · all screens ────────────────────
   r                      refuse the request
 
  On a learned suggestion row
-  a                      accept it
-  r                      reject it
   more below
 up/down scroll  ? this screen  esc close

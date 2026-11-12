@@ -3161,6 +3161,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, st.MarkAsk(p, graphActor(raw))
 
+	case "ask.discuss":
+		p, err := decodeOperator[protocol.AskDiscussRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !actorAllowed(graphActor(raw), "rule") {
+			return nil, reject("only the owner discusses a Desk item")
+		}
+		return g.discussAsk(ctx, p.Ask)
+
 	case "chief.sorts":
 		sorts, err := st.ChiefSorts(st.now().Add(-protocol.ChiefSortsWindow))
 		return protocol.ChiefSortsResult{Sorts: sorts}, err

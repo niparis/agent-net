@@ -584,8 +584,8 @@ func TestInboxItemKeysPerKind(t *testing.T) {
 	cases := []struct{ kind, item, bar string }{
 		{"held", "enter open the session  a send it to strategies  r keep it held", "enter open the session  a send it to strategies  r keep it held  n didn't need me  ↑↓ select  l open the log  ? help"},
 		{"waiting", "enter open tenebrae-53", "enter open tenebrae-53  n didn't need me  ↑↓ select  l open the log  ? help"},
-		{"question", "t answer ci-runner  x dismiss the ask  enter open details", "t answer ci-runner  x dismiss the ask  enter open details  n didn't need me  ↑↓ select  l open the log  ? help"},
-		{"approval", "a approve ci-runner's request  r refuse ci-runner's request  x dismiss the ask  enter open details", "a approve ci-runner's request  r refuse ci-runner's request  x dismiss the ask  enter open details  ↑↓ select  ? help"},
+		{"question", "t answer ci-runner  x dismiss the ask  enter open details  d discuss", "t answer ci-runner  x dismiss the ask  enter open details  n didn't need me  ↑↓ select  l open the log  ? help"},
+		{"approval", "a approve ci-runner's request  r refuse ci-runner's request  x dismiss the ask  enter open details  d discuss", "a approve ci-runner's request  r refuse ci-runner's request  x dismiss the ask  enter open details  ↑↓ select  ? help"},
 		{"proposal", "a approve the change  r decline the change", "a approve the change  r decline the change  n didn't need me  ↑↓ select  l open the log  ? help"},
 		{"learned", "a accept the suggestion  r reject the suggestion", "a accept the suggestion  r reject the suggestion  n didn't need me  ↑↓ select  l open the log  ? help"},
 		{"outcome", "s Keep refusal: app denied deploy app  O Overrule: app gets deploy app", "s Keep refusal: app denied deploy app  O Overrule: app gets deploy app  n didn't need me  ↑↓ select  ? help"},

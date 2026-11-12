@@ -69,7 +69,23 @@ const (
 	OpChiefSorts = "chief_sorts"
 	OpAskUndo    = "ask_undo"
 	OpAskMark    = "ask_mark"
+	// OpAskDiscuss is the owner's "discuss" on a Desk item (decision 0150).
+	OpAskDiscuss = "ask_discuss"
 )
+
+// AskDiscussRequest names the item the owner wants to discuss.
+type AskDiscussRequest struct {
+	Ask string `json:"ask"`
+}
+
+// AskDiscussResult says where the discussion is: Open is chief (Session is the
+// chief's, told about the item and woken when offline) or cto (the owner's
+// CTO chat; nothing is woken).
+type AskDiscussResult struct {
+	Open    string `json:"open"`
+	Session string `json:"session,omitempty"`
+	Woken   bool   `json:"woken,omitempty"`
+}
 
 // The two marks of the Desk (decision 0114, part 2). The owner puts one on an
 // ask that reached him (didnt_need_me) or on a handled ask (should_have_asked).
