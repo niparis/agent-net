@@ -1,8 +1,13 @@
 package daemon
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -120,5 +125,45 @@ func TestClaudeWorkerPermissionLevels(t *testing.T) {
 	}
 	if deny := stringList(t, fs["denyWrite"], "denyWrite"); !hasString(deny, dir) {
 		t.Errorf("a read-only worker may write its worktree with Bash: %v", deny)
+	}
+}
+
+// A worktree's git data lives in its repository, and a Go change may need a
+// module the machine has not downloaded: both stay writable, or git commit and
+// go mod download fail inside the sandbox. Hooks and config stay closed.
+func TestClaudeWorkerWritesCoverGitDataAndModuleCache(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	base := t.TempDir()
+	modCache := filepath.Join(base, "modules")
+	script := "#!/bin/sh\ncase \"$*\" in\n'env GOMODCACHE') echo \"$FAKE_GO_CACHE\";;\n*) exit 1;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(base, "go"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_GO_CACHE", modCache)
+	c.d.cfg.HarnessSearch = &harnesses.Options{PATH: base, Dirs: []string{}, Home: t.TempDir(),
+		LoginShellPATH: func(context.Context) string { return "" }}
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+
+	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Model: "fake/m1",
+		Task: "FAKE:ignore hold the turn", Isolation: protocol.IsolationWorktree})
+	rec := readClaude(t, res.Worktree)
+
+	files := rec.Settings["sandbox"].(map[string]any)["filesystem"].(map[string]any)
+	writes := stringList(t, files["allowWrite"], "sandbox.filesystem.allowWrite")
+	gitRoots := workerGitRoots(context.Background(), res.Worktree)
+	if len(gitRoots) < 3 {
+		t.Fatalf("test setup: git roots of the worktree = %v", gitRoots)
+	}
+	for _, want := range append(gitRoots, modCache) {
+		if !hasString(writes, want) {
+			t.Errorf("the worker cannot write %s: %v", want, writes)
+		}
+	}
+	for _, p := range writes {
+		if p == filepath.Join(repo, ".git") || strings.HasPrefix(p, filepath.Join(repo, ".git", "hooks")) || p == filepath.Join(repo, ".git", "config") {
+			t.Errorf("the worker may write %s, which can run code outside the sandbox: %v", p, writes)
+		}
 	}
 }

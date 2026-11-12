@@ -267,13 +267,21 @@ func claudeWriteRule(dir string) string {
 }
 
 // claudeWorkerWrites is the writable folders a Claude worker needs beyond its
-// working directory: the shared Go build cache and Go temp folder, which live
-// outside the worktree under /tmp. The sandbox's own per-user temp folder is
+// working directory: the folders git writes in the main repository for a
+// commit in the worktree, the Go module cache, and the shared Go build cache
+// and Go temp folder (under /tmp). The sandbox's own per-user temp folder is
 // writable already.
+//
+// The git folders are the narrow set Codex gets (workerGitRoots), not the whole
+// git directory: hooks and config stay read-only, since a hook runs outside
+// the sandbox's rules when the owner commits.
 func (d *Daemon) claudeWorkerWrites(dir string) []string {
+	paths := []string{dir}
+	paths = append(paths, workerGitRoots(context.Background(), dir)...)
+	paths = append(paths, d.workerGoModCache(dir), d.workerGoCacheDir(), d.workerGoTmpDir())
 	var out []string
 	seen := map[string]bool{}
-	for _, p := range []string{dir, d.workerGoCacheDir(), d.workerGoTmpDir()} {
+	for _, p := range paths {
 		p = strings.TrimSpace(p)
 		if p == "" || seen[p] {
 			continue
