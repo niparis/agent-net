@@ -56,7 +56,7 @@ func publicCall(t *testing.T, g *Gateway, op string, p any) map[string]any {
 	return out
 }
 func TestAppsPublicLifecycle(t *testing.T) {
-	dir := t.TempDir()
+	dir := seededDataDir(t)
 	runner := &publicRunner{}
 	opts := Options{DataDir: dir, AppsListen: "127.0.0.1:0", FunnelRunner: runner}
 	g, err := New(opts)
@@ -106,7 +106,7 @@ func TestAppsPublicLifecycle(t *testing.T) {
 	}
 }
 func TestAppsPublicPastedURLAndLastRevoke(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir(), AppsListen: "127.0.0.1:0", FunnelRunner: &publicRunner{missing: true}})
+	g, err := New(Options{DataDir: seededDataDir(t), AppsListen: "127.0.0.1:0", FunnelRunner: &publicRunner{missing: true}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,7 @@ import (
 )
 
 func TestSkillBackupRestoreAndCorruption(t *testing.T) {
-	data := t.TempDir()
+	data := seededDataDir(t)
 	g, err := New(Options{DataDir: data})
 	if err != nil {
 		t.Fatal(err)

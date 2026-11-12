@@ -218,7 +218,7 @@ func connectTestNode(t *testing.T, g *Gateway, nodeID string) (*websocket.Conn, 
 // An ack to a request whose sender is an ended worker leaves the worker ended:
 // no resume, and no delivery frame to it.
 func TestAckToEndedWorkerLeavesWorkerEndedNoResume(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestAckToEndedWorkerClosesRequestNoReminder(t *testing.T) {
 
 // A real reply with a body to an ended worker still resumes it, as today.
 func TestRealReplyToEndedWorkerResumesWorker(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

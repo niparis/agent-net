@@ -86,7 +86,7 @@ func TestAdminInfoFile(t *testing.T) {
 }
 
 func TestVersionAndChecksumsEndpoints(t *testing.T) {
-	data, dist := t.TempDir(), t.TempDir()
+	data, dist := seededDataDir(t), t.TempDir()
 	gw, err := New(Options{DataDir: data, DistDir: dist, Version: "v1.2.3"})
 	if err != nil {
 		t.Fatal(err)

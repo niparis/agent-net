@@ -53,7 +53,7 @@ func (x e2eTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func TestAppsEndToEnd(t *testing.T) {
 	runner := &publicRunner{}
 	phoneOperator := &e2ePhoneOperator{actions: make(chan protocol.HeldAnswer, 1)}
-	g, err := New(Options{DataDir: t.TempDir(), AppsListen: "127.0.0.1:0", FunnelRunner: runner, PhoneApp: phone.New(phoneOperator)})
+	g, err := New(Options{DataDir: seededDataDir(t), AppsListen: "127.0.0.1:0", FunnelRunner: runner, PhoneApp: phone.New(phoneOperator)})
 	if err != nil {
 		t.Fatal(err)
 	}

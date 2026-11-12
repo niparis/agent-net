@@ -91,7 +91,7 @@ func TestAppConsentRequiresOwnerAnswer(t *testing.T) {
 }
 
 func TestPublicConsentAskAutoCloses(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir(), AppsListen: "127.0.0.1:0", FunnelRunner: &publicRunner{}})
+	g, err := New(Options{DataDir: seededDataDir(t), AppsListen: "127.0.0.1:0", FunnelRunner: &publicRunner{}})
 	if err != nil {
 		t.Fatal(err)
 	}

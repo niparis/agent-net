@@ -38,7 +38,7 @@ func TestEnrollRateLimitPerIP(t *testing.T) {
 	clock := newFakeClock(time.Now())
 	var logBuf bytes.Buffer
 	logger := log.New(&logBuf, "", 0)
-	gw, err := New(Options{DataDir: t.TempDir(), Now: clock.now, Logger: logger})
+	gw, err := New(Options{DataDir: seededDataDir(t), Now: clock.now, Logger: logger})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestEnrollRateLimitPerIP(t *testing.T) {
 
 func TestEnrollRateLimitGlobal(t *testing.T) {
 	clock := newFakeClock(time.Now())
-	gw, err := New(Options{DataDir: t.TempDir(), Now: clock.now})
+	gw, err := New(Options{DataDir: seededDataDir(t), Now: clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}

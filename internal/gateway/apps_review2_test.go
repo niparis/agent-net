@@ -16,7 +16,7 @@ import (
 )
 
 func TestReviewPublicOffSurvivesRestart(t *testing.T) {
-	dir := t.TempDir()
+	dir := seededDataDir(t)
 	r := &publicRunner{}
 	opts := Options{DataDir: dir, AppsListen: "127.0.0.1:0", FunnelRunner: r}
 	g, err := New(opts)
@@ -40,7 +40,7 @@ func TestReviewPublicOffSurvivesRestart(t *testing.T) {
 
 func TestReviewPublicOffFailureStopsAndRetries(t *testing.T) {
 	r := &publicRunner{}
-	opts := Options{DataDir: t.TempDir(), AppsListen: "127.0.0.1:0", FunnelRunner: r}
+	opts := Options{DataDir: seededDataDir(t), AppsListen: "127.0.0.1:0", FunnelRunner: r}
 	g, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestReviewPublicOffFailureStopsAndRetries(t *testing.T) {
 
 func TestReviewOtherRoutes(t *testing.T) {
 	r := &publicRunner{}
-	g, err := New(Options{DataDir: t.TempDir(), AppsListen: "127.0.0.1:0", FunnelRunner: r})
+	g, err := New(Options{DataDir: seededDataDir(t), AppsListen: "127.0.0.1:0", FunnelRunner: r})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestReviewBadHostUsesAddressRate(t *testing.T) {
 
 func TestReviewPublicURLFlagNeedsSwitch(t *testing.T) {
 	r := &publicRunner{missing: true}
-	g, err := New(Options{DataDir: t.TempDir(), AppsListen: "127.0.0.1:0", PublicURL: "https://tunnel.example", FunnelRunner: r})
+	g, err := New(Options{DataDir: seededDataDir(t), AppsListen: "127.0.0.1:0", PublicURL: "https://tunnel.example", FunnelRunner: r})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func (noRoutesRunner) Run(_ context.Context, args ...string) (string, string, er
 	return "", "", nil
 }
 func TestReviewOtherRoutesEmpty(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir(), AppsListen: "127.0.0.1:0", FunnelRunner: noRoutesRunner{}})
+	g, err := New(Options{DataDir: seededDataDir(t), AppsListen: "127.0.0.1:0", FunnelRunner: noRoutesRunner{}})
 	if err != nil {
 		t.Fatal(err)
 	}

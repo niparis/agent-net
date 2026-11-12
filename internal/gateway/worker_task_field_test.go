@@ -77,7 +77,7 @@ func TestWorkerTaskFieldAndLateRuns(t *testing.T) {
 }
 
 func TestWorkerTaskMarkerStrippedFromOtherNode(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

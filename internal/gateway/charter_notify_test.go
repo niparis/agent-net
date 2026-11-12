@@ -68,7 +68,7 @@ func TestNodeConnWriteWithoutWebsocketFails(t *testing.T) {
 // with no websocket in the table must not crash the broadcast, and the live
 // connections still hear it, whichever order the table is walked in.
 func TestCharterWriteSkipsConnectionsWithoutWebsocket(t *testing.T) {
-	gw, err := New(Options{DataDir: t.TempDir()})
+	gw, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestCharterWriteSkipsConnectionsWithoutWebsocket(t *testing.T) {
 // The settings broadcast and the mcp.changed broadcast walk the same table, so
 // the same fake must not crash them either.
 func TestOtherBroadcastsSkipConnectionsWithoutWebsocket(t *testing.T) {
-	gw, err := New(Options{DataDir: t.TempDir()})
+	gw, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func goroutineRunning(name string) bool {
 // stops it and waits for it, so it never outlives the gateway or the test that
 // started it.
 func TestCharterBroadcastStopsWithTheGateway(t *testing.T) {
-	gw, err := New(Options{DataDir: t.TempDir()})
+	gw, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
