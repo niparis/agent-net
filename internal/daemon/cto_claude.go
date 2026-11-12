@@ -283,24 +283,21 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		launch["tui"] = tui
 	}
 	settings, _ := json.Marshal(launch)
-	args := []string{"--bg", "--tools", "", "--setting-sources", "", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", d.ctoSystemPrompt(ctx)}
-	if id != "" {
-		args = append(args, "--resume", id)
-	}
-	if model != "" {
-		args = append(args, "--model", model)
-	}
 	mcp, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agent-net-cto": map[string]any{"command": d.cfg.Exe, "args": []string{"cto-mcp"}}}})
-	args = append(args, "--mcp-config", string(mcp), "--strict-mcp-config")
+	spec := claudeBackground{Name: "agent-net-cto", Settings: string(settings), Resume: id,
+		Flags: []string{"--tools", "", "--setting-sources", "", "--system-prompt", d.ctoSystemPrompt(ctx), "--mcp-config", string(mcp), "--strict-mcp-config"}}
+	if model != "" {
+		spec.ModelArgs = []string{"--model", model}
+	}
 	c.starting.Store(true)
 	defer c.starting.Store(false)
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = dir
+	// The CTO keeps its own job tracking (private directory, crash detail, a
+	// restart without the old conversation), so it waits for the job itself;
+	// the command comes from the one launcher.
 	// The first launch can start Claude's background service, and every session
 	// that service starts later inherits this environment. Do not hand it a
 	// variable that turns the wheel off.
-	cmd.Env = claudeLaunchEnv(withoutEnvKey(os.Environ(), "CLAUDE_CODE_DISABLE_MOUSE"))
-	output, err := cmd.CombinedOutput()
+	output, ref, err := runClaudeBackground(ctx, bin, dir, spec, claudeLaunchEnv(withoutEnvKey(os.Environ(), "CLAUDE_CODE_DISABLE_MOUSE")))
 	if err != nil {
 		if claudeTrustPrompt(output) {
 			return fmt.Errorf("Claude Code does not trust %s", dir)
@@ -314,11 +311,9 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		}
 		return fmt.Errorf("start CTO Claude: %w", err)
 	}
-	m := claudeBgID.FindStringSubmatch(string(output))
-	if m == nil {
+	if ref == "" {
 		return errors.New("Claude did not return a background session id")
 	}
-	ref := m[1]
 	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	for {

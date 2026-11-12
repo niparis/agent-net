@@ -138,10 +138,7 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	launchSettings := claudeSettingsWithMCPAnswers(string(settings), w.path)
 	// No flag that turns permission checks off (decision 0002, W6). The first
 	// prompt is not an argument: the task arrives as a normal message.
-	args := []string{"--bg", "--name", claudeWorkerName(w), "--settings", launchSettings}
-	if resume != "" {
-		args = append(args, "--resume", resume)
-	}
+	spec := claudeBackground{Name: claudeWorkerName(w), Settings: launchSettings, Resume: resume}
 	// The agent-net MCP server of the worker is this daemon's own binary, so the
 	// tools it offers (agent_handback) are those of this version. --mcp-config
 	// takes the place of the server of the same name in the user's config, for
@@ -149,13 +146,13 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	if d.cfg.Exe != "" {
 		mcp, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{
 			"agent-net": map[string]any{"command": d.cfg.Exe, "args": []string{"mcp"}}}})
-		args = append(args, "--mcp-config", string(mcp))
+		spec.Flags = []string{"--mcp-config", string(mcp)}
 	}
 	modelArgs, err := protocol.ParseModelSelection("claude", "", w.model, "").Arguments(nil)
 	if err != nil {
 		return err
 	}
-	args = append(args, modelArgs...)
+	spec.ModelArgs = modelArgs
 
 	d.claudeStartMu.Lock()
 	locked := true
@@ -165,7 +162,7 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 		}
 	}()
 	launchedJob := ""
-	sf, err := d.launchClaudeBackground(ctx, bin, w.path, args, filepath.Join(dir, "worker.log"), resume, commitEnv, func(id string) {
+	sf, err := d.startBackground(ctx, bin, w.path, spec, filepath.Join(dir, "worker.log"), commitEnv, func(id string) {
 		launchedJob = id
 		d.wmu.Lock()
 		w.ref = id
@@ -830,9 +827,8 @@ func claudeProviderFailure(text string) bool { return providererr.Failure(text) 
 // launchClaudeBackground is shared by workers and owner sessions. The caller
 // holds claudeStartMu until the session file is known, before discovery runs.
 // Worker settings, records and lifetime rules belong to the caller.
-func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, args []string, logPath, resume string, extraEnv map[string]string, onJob func(string)) (claudeSessionFile, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = path
+func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, spec claudeBackground, logPath string, extraEnv map[string]string, onJob func(string)) (claudeSessionFile, error) {
+	resume := spec.Resume
 	env := os.Environ()
 	if logPath == "" {
 		filtered := env[:0]
@@ -853,8 +849,7 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, a
 		}
 		filtered = append(filtered, item)
 	}
-	cmd.Env = claudeLaunchEnv(workerEnv(filtered, extraEnv))
-	out, err := cmd.CombinedOutput()
+	out, id, err := runClaudeBackground(ctx, bin, path, spec, claudeLaunchEnv(workerEnv(filtered, extraEnv)))
 	if logPath != "" {
 		logf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if lerr == nil {
@@ -868,11 +863,9 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, a
 		}
 		return claudeSessionFile{}, fmt.Errorf("claude --bg failed: %v", err) // its output is added from the log
 	}
-	m := claudeBgID.FindStringSubmatch(string(out))
-	if m == nil {
+	if id == "" {
 		return claudeSessionFile{}, errors.New("claude --bg did not say the background session id")
 	}
-	id := m[1]
 	if onJob != nil {
 		onJob(id)
 	}

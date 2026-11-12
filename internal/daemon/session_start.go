@@ -353,7 +353,6 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.Merger {
 		name += " merger"
 	}
-	args := []string{"--bg", "--name", name}
 	// The MCP choice for the .mcp.json servers of this folder goes in the
 	// launch settings too, so the start does not depend on the settings file.
 	// Mouse tracking comes from the user's Claude settings, which the daemon
@@ -362,16 +361,15 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.Merger {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
-	if settings = claudeSettingsWithMCPAnswers(settings, r.Path); settings != "" {
-		args = append(args, "--settings", settings)
-	}
+	spec := claudeBackground{Name: name, Settings: claudeSettingsWithMCPAnswers(settings, r.Path)}
 	if p.Model != "" {
-		args = append(args, "--model", p.Model)
+		spec.ModelArgs = []string{"--model", p.Model}
 	}
-	if p.FirstMessage != "" && p.AgentID == "" {
-		args = append(args, "--", p.FirstMessage)
+	if p.AgentID == "" {
+		spec.FirstMessage = p.FirstMessage
 	}
-	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner, p.CTOProposal, p.FirstMessage), nil
+	view := claudeStartView{socket: p.HerdrSocket, pane: p.HerdrPaneID, relayed: remoteOwner, background: p.CTOProposal}
+	return d.launchOwnerClaude(r, bin, spec, view, notify, p.FirstMessage), nil
 }
 
 // relaySessionStart asks the gateway to start the session on another machine.
@@ -561,21 +559,17 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	return d.launchOwnerClaude(r, bin, d.claudeResumeArgs(a), a.NativeID, socket, pane, false, false, false), nil
+	return d.launchOwnerClaude(r, bin, d.claudeResumeSpec(a), claudeStartView{socket: socket, pane: pane}, false, ""), nil
 }
 
-// claudeResumeArgs is the argument list of the owner resume. The wake fallback
-// uses the same list, so a wake and session_change resume open the same way.
-func (d *Daemon) claudeResumeArgs(a protocol.AgentView) []string {
-	args := []string{"--bg", "--resume", a.NativeID}
+// claudeResumeSpec is the owner resume. The wake fallback uses the same spec,
+// so a wake and session_change resume open the same way.
+func (d *Daemon) claudeResumeSpec(a protocol.AgentView) claudeBackground {
 	settings := ""
 	if a.Type == "merger" {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
-	if settings = claudeSettingsWithMCPAnswers(settings, a.Cwd); settings != "" {
-		args = append(args, "--settings", settings)
-	}
-	return args
+	return claudeBackground{Resume: a.NativeID, Settings: claudeSettingsWithMCPAnswers(settings, a.Cwd)}
 }
 
 func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {
@@ -596,10 +590,22 @@ func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, s
 	return d.remoteStartResult(ctx, res, socket, pane), nil
 }
 
-// relayed says the owner approved the start from another machine. That machine
-// has no herdr location for the owner's TUI, so this one must return the attach
-// plan for the owner's machine to wrap and open.
-func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume, socket, pane string, notify, relayed, background bool, firstMessage ...string) protocol.StartedSession {
+// claudeStartView says where the start may show the new session. It is only
+// the optional view step after the start: the start itself works without a
+// herdr pane or an approving TUI. relayed says the owner approved the start
+// from another machine. That machine has no herdr location for the owner's
+// TUI, so this one must return the attach plan for the owner's machine to wrap
+// and open. background says nobody views the start now (a CTO proposal).
+type claudeStartView struct {
+	socket, pane        string
+	relayed, background bool
+}
+
+// launchOwnerClaude starts an owner Claude session through startBackground and
+// tracks it until the daemon has registered it. firstMessage is sent to the
+// session after the start when it has an agent identity.
+func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, spec claudeBackground, view claudeStartView, notify bool, firstMessage string) protocol.StartedSession {
+	resume := spec.Resume
 	d.mu.Lock()
 	if d.startedSessions == nil {
 		d.startedSessions = make(map[string]protocol.StartedSession)
@@ -614,7 +620,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		cctx, cancel := context.WithTimeout(d.ctoCtx, d.workerSettings("").StartTimeout)
 		defer cancel()
 		d.claudeStartMu.Lock()
-		sf, err := d.launchClaudeBackground(cctx, bin, r.Path, args, "", resume, nil, nil)
+		sf, err := d.startBackground(cctx, bin, r.Path, spec, "", nil, nil)
 		if err == nil && r.Resumes != "" && sf.SessionID != "" && sf.SessionID != resume {
 			// Claude gives a resumed background conversation a new native ID.
 			// Keep the gateway record, and with it every worker, change and
@@ -670,8 +676,8 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		if err == nil && r.Type == "merger" {
 			_, err = d.call(cctx, "merger.set", map[string]any{"project": r.Project, "node_id": d.cfg.NodeID, "session_id": r.SessionID, "configure": true, "by": "owner"})
 		}
-		if err == nil && r.AgentID != "" && len(firstMessage) > 0 && firstMessage[0] != "" {
-			_, err = d.send(cctx, protocol.MsgSend{Sender: d.ownerSessionID(), Recipient: r.SessionID, Type: protocol.TypeRequest, Body: firstMessage[0]})
+		if err == nil && r.AgentID != "" && firstMessage != "" {
+			_, err = d.send(cctx, protocol.MsgSend{Sender: d.ownerSessionID(), Recipient: r.SessionID, Type: protocol.TypeRequest, Body: firstMessage})
 		}
 		if err != nil {
 			r.Status = "failed"
@@ -698,12 +704,12 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 				plan.Note = "The session started but has no Claude background ID to attach."
 			}
 			opened := plan
-			if !background {
-				opened = d.viewPlan(r.SessionID, r.Project, socket, pane, false, plan)
+			if !view.background {
+				opened = d.viewPlan(r.SessionID, r.Project, view.socket, view.pane, false, plan)
 			}
-			if background {
+			if view.background {
 				r.EnterNote = "Enter opens it."
-			} else if opened.OpenedHerdr || len(opened.Argv) == 0 || relayed {
+			} else if opened.OpenedHerdr || len(opened.Argv) == 0 || view.relayed {
 				r.EnterPlan = &opened
 			} else {
 				r.EnterNote = "Enter opens it."
