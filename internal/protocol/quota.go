@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/niparis/agent-net/internal/providererr"
 )
 
 // Quotas are the subscription windows of the owner's model providers, read
@@ -446,14 +448,30 @@ const quotaAccountKind = "account"
 // rate limit or an overload is short and does not block the account.
 var accountQuotaMarkers = []string{"quota reached", "quota exceeded", "quota exhausted", "out of quota"}
 
-// AccountQuotaBlock reads a worker's failure text. When the run failed because
-// the provider account is out of quota, and the text says when it resets, it
-// returns the quota provider and how long to wait. Only agy is read this way:
-// quota-axi reads agy per model family and does not see the account limit.
+// AccountQuotaBlock reads a worker's failure text at the current time. See
+// AccountQuotaBlockAt.
 func AccountQuotaBlock(harness, failure string) (string, time.Duration, bool) {
-	if !strings.EqualFold(strings.TrimSpace(harness), "agy") {
-		return "", 0, false
+	return AccountQuotaBlockAt(harness, failure, time.Now())
+}
+
+// AccountQuotaBlockAt reads a worker's failure text. When the run failed because
+// the provider account is out of quota, and the text says when it resets, it
+// returns the quota provider and how long to wait from now. Two harnesses are
+// read this way, because quota-axi does not see their account limit in time:
+// agy ("Individual quota reached ... Resets in 134h28m52s", read per model
+// family by quota-axi) and Codex ("You've hit your usage limit ... try again
+// at 3:39 AM"). A failure with no reset time blocks nothing.
+func AccountQuotaBlockAt(harness, failure string, now time.Time) (string, time.Duration, bool) {
+	switch strings.ToLower(strings.TrimSpace(harness)) {
+	case "agy":
+		return agyQuotaBlock(failure)
+	case "codex":
+		return codexQuotaBlock(failure, now)
 	}
+	return "", 0, false
+}
+
+func agyQuotaBlock(failure string) (string, time.Duration, bool) {
 	text := strings.ToLower(failure)
 	found := false
 	for _, m := range accountQuotaMarkers {
@@ -474,6 +492,19 @@ func AccountQuotaBlock(harness, failure string) (string, time.Duration, bool) {
 		return "", 0, false
 	}
 	return "agy", wait, true
+}
+
+// codexQuotaBlock reads Codex's usage limit. It must name its reset time; a
+// short rate limit ("try again in 30s") is not an account block.
+func codexQuotaBlock(failure string, now time.Time) (string, time.Duration, bool) {
+	if !strings.Contains(strings.ToLower(failure), "usage limit") {
+		return "", 0, false
+	}
+	l, ok := providererr.Limit(failure, now)
+	if !ok || !l.Known {
+		return "", 0, false
+	}
+	return "codex", l.Until.Sub(now), true
 }
 
 // parseResetDelay reads a delay such as "160h24m5s" or "2d 3h" from the start

@@ -255,7 +255,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		// its model draws on, on this machine, until the reset the provider named,
 		// so the next start does not fail the same way minutes later. A model that
 		// no window serves blocks the whole provider.
-		if provider, wait, ok := protocol.AccountQuotaBlock(p.Harness, p.Failure); ok {
+		if provider, wait, ok := protocol.AccountQuotaBlockAt(p.Harness, p.Failure, g.store.now()); ok {
 			until := g.store.now().Add(wait)
 			block := protocol.QuotaBlock{Provider: provider, Until: until}
 			if w, ok := protocol.QuotaBlockWindowFor(g.lastQuotas(nc.id), provider, p.Model, until); ok {
@@ -1823,6 +1823,12 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 	if a.Worker.Owner != p.Sender {
 		return "", reject("worker %s has ended, and only the session that started it can start it again", p.Recipient)
 	}
+	// A worker whose model is known to be out of quota would fail within
+	// seconds. Say so now, with the reset, instead of starting it.
+	if why := g.resumeQuotaRefusal(a); why != "" {
+		g.logLine("worker.resume_refused_quota", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "reason", why)
+		return "", reject("worker %s was not started again: %s. Start a new worker on the same branch with agent_worker_start and base set to that branch, so the picker chooses another model", p.Recipient, why)
+	}
 	g.mu.Lock()
 	target := g.conns[a.NodeID]
 	g.mu.Unlock()
@@ -1862,6 +1868,21 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 	}
 	g.logLine("worker.resumed", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "owner", p.Sender)
 	return "", nil
+}
+
+// resumeQuotaRefusal says why an ended worker's harness and model cannot run
+// now because their quota is spent, with the reset time when it is known. It
+// reads what a new start reads: the quota reading and the blocks that worker
+// runs reported. It is "" when the worker may start again.
+func (g *Gateway) resumeQuotaRefusal(a protocol.AgentView) string {
+	_, harness, model, _, err := g.store.WorkerSessionFacts(a.SessionID)
+	if err != nil {
+		return ""
+	}
+	if harness == "" {
+		harness = a.Harness
+	}
+	return protocol.QuotaRefusal(g.ownerQuotas(a.NodeID), harness, model)
 }
 
 // notifyResumeRefusal reports a failed restart even when the original send

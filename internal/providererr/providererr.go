@@ -44,6 +44,9 @@ func Failure(text string) bool {
 type Limited struct {
 	Until  time.Time
 	Reason string
+	// Known is true when the error named the reset time. Otherwise Until is
+	// only a guess, DefaultWait after the error.
+	Known bool
 }
 
 // DefaultWait is used when the error names no reset time.
@@ -53,17 +56,20 @@ const DefaultWait = time.Hour
 const maxWait = 8 * 24 * time.Hour
 
 var (
-	hitYour   = regexp.MustCompile(`(?i)hit (?:your|the) ([A-Za-z0-9][A-Za-z0-9 .\-]{0,30}?) (usage limit|rate limit|session limit|limit)`)
-	relative  = regexp.MustCompile(`(?i)(?:try again|retry|resets?|available again)(?: after)? in\s+(.{1,60})`)
-	unitPair  = regexp.MustCompile(`(?i)(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b`)
-	retryAft  = regexp.MustCompile(`(?i)retry[-_ ]after"?\s*[:=]?\s*"?(\d+)`)
+	hitYour  = regexp.MustCompile(`(?i)hit (?:your|the) ([A-Za-z0-9][A-Za-z0-9 .\-]{0,30}?) (usage limit|rate limit|session limit|limit)`)
+	relative = regexp.MustCompile(`(?i)(?:try again|retry|resets?|available again)(?: after)? in\s+(.{1,60})`)
+	unitPair = regexp.MustCompile(`(?i)(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b`)
+	glued    = regexp.MustCompile(`([A-Za-z])(\d)`)
+	retryAft = regexp.MustCompile(`(?i)retry[-_ ]after"?\s*[:=]?\s*"?(\d+)`)
+	// tryAt is Codex's "try again at 3:39 AM" and "try again at Nov 14th, 2026 4:21 PM".
+	tryAt     = regexp.MustCompile(`(?i)try again at\s+(?:([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4}),?\s+)?(\d{1,2}):(\d{2})\s*(am|pm)?`)
 	clockTime = regexp.MustCompile(`(?i)resets?(?: at| by)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*\(([A-Za-z_/+\-0-9]+)\))?`)
 )
 
 // Limit reports whether text is a usage or rate limit, and when it ends,
 // counted from at. The reset time comes from "try again in ~N min", a
-// retry-after number of seconds or "resets 8am (UTC)"; otherwise it is one
-// hour after at.
+// retry-after number of seconds, "resets 8am (UTC)" or Codex's "try again at
+// 3:39 AM"; otherwise it is one hour after at and Known is false.
 func Limit(text string, at time.Time) (Limited, bool) {
 	s := strings.ToLower(text)
 	if text == "" || hasAny(s, local) || !hasAny(s, limitMarkers) {
@@ -71,13 +77,15 @@ func Limit(text string, at time.Time) (Limited, bool) {
 	}
 	l := Limited{Until: at.Add(DefaultWait), Reason: reasonOf(text)}
 	if d, ok := relativeWait(text); ok {
-		l.Until = at.Add(d)
+		l.Until, l.Known = at.Add(d), true
 	} else if m := retryAft.FindStringSubmatch(text); m != nil {
 		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 {
-			l.Until = at.Add(clampWait(time.Duration(n) * time.Second))
+			l.Until, l.Known = at.Add(clampWait(time.Duration(n)*time.Second)), true
 		}
+	} else if t, ok := tryAgainAt(text, at); ok {
+		l.Until, l.Known = t, true
 	} else if t, ok := clockReset(text, at); ok {
-		l.Until = t
+		l.Until, l.Known = t, true
 	}
 	return l, true
 }
@@ -95,7 +103,9 @@ func relativeWait(text string) (time.Duration, bool) {
 		return 0, false
 	}
 	var total time.Duration
-	for _, p := range unitPair.FindAllStringSubmatch(m[1], -1) {
+	// "134h28m52s" has no spaces: split it so each unit ends at a word boundary.
+	spaced := glued.ReplaceAllString(m[1], "$1 $2")
+	for _, p := range unitPair.FindAllStringSubmatch(spaced, -1) {
 		n, err := strconv.ParseFloat(p[1], 64)
 		if err != nil {
 			continue
@@ -113,6 +123,65 @@ func relativeWait(text string) (time.Duration, bool) {
 		return 0, false
 	}
 	return clampWait(total), true
+}
+
+// tryAgainAt reads "try again at 3:39 AM", with or without a date before the
+// time. The clock is the daemon's local time, as Codex prints it. A time that
+// has passed today means tomorrow.
+func tryAgainAt(text string, at time.Time) (time.Time, bool) {
+	m := tryAt.FindStringSubmatch(text)
+	if m == nil {
+		return time.Time{}, false
+	}
+	hour, _ := strconv.Atoi(m[4])
+	minute, _ := strconv.Atoi(m[5])
+	switch strings.ToLower(m[6]) {
+	case "am":
+		if hour == 12 {
+			hour = 0
+		}
+	case "pm":
+		if hour < 12 {
+			hour += 12
+		}
+	}
+	if hour > 23 || minute > 59 {
+		return time.Time{}, false
+	}
+	loc := time.Local
+	var t time.Time
+	if m[1] != "" {
+		month, ok := monthByName(m[1])
+		day, _ := strconv.Atoi(m[2])
+		year, _ := strconv.Atoi(m[3])
+		if !ok || day < 1 || day > 31 {
+			return time.Time{}, false
+		}
+		t = time.Date(year, month, day, hour, minute, 0, 0, loc)
+	} else {
+		local := at.In(loc)
+		t = time.Date(local.Year(), local.Month(), local.Day(), hour, minute, 0, 0, loc)
+		if !t.After(at) {
+			t = t.AddDate(0, 0, 1)
+		}
+	}
+	if !t.After(at) || t.Sub(at) > maxWait {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+func monthByName(name string) (time.Month, bool) {
+	name = strings.ToLower(name)
+	if len(name) < 3 {
+		return 0, false
+	}
+	for m := time.January; m <= time.December; m++ {
+		if strings.HasPrefix(strings.ToLower(m.String()), name[:3]) {
+			return m, true
+		}
+	}
+	return 0, false
 }
 
 // clockReset reads "resets 8am (UTC)" or "resets at 15:30". Without a zone
