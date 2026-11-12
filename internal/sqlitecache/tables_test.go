@@ -3,17 +3,26 @@ package sqlitecache
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // openTables opens a database with three tables and a trigger-free schema.
 func openTables(t testing.TB, size int, pragmas string) (*sql.DB, *Connector) {
 	t.Helper()
-	dsn := "file:" + filepath.Join(t.TempDir(), "t.db") + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)" + pragmas
+	return openTablesBusy(t, size, 5000, pragmas)
+}
+
+// openTablesBusy is openTables with busy_timeout set to busyMS milliseconds.
+func openTablesBusy(t testing.TB, size, busyMS int, pragmas string) (*sql.DB, *Connector) {
+	t.Helper()
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)%s", filepath.Join(t.TempDir(), "t.db"), busyMS, pragmas)
 	c, err := New(dsn, size)
 	if err != nil {
 		t.Fatal(err)
@@ -517,10 +526,66 @@ func TestLongInsertDoesNotExpireKeptStatements(t *testing.T) {
 	}
 }
 
+// A write that fails with SQLITE_BUSY never took the write lock, so it changed
+// no row and moves no count. Another connection holds the lock here, and the
+// busy timeout is 1 ms so the write fails at once.
+func TestBusyWriteMovesNoCount(t *testing.T) {
+	db, c := openTablesBusy(t, 16, 1, "")
+	ctx := context.Background()
+	var file string
+	if err := db.QueryRow(`SELECT file FROM pragma_database_list WHERE name='main'`).Scan(&file); err != nil {
+		t.Fatal(err)
+	}
+	other, err := sql.Open("sqlite", "file:"+file+"?_pragma=busy_timeout(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { other.Close() })
+	holder, err := other.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	if _, err := holder.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		t.Fatal(err)
+	}
+	before := c.Stamp("a")
+	if _, err := db.Exec(`INSERT INTO a(n) VALUES (1)`); err == nil || !strings.Contains(err.Error(), "SQLITE_BUSY") {
+		t.Fatalf("insert under another connection's lock: %v, want SQLITE_BUSY", err)
+	}
+	if got := c.Stamp("a"); got != before {
+		t.Fatalf("a busy insert moved the stamp of a: %d, was %d", got, before)
+	}
+	if _, err := holder.ExecContext(ctx, `COMMIT`); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM a WHERE n=1`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("a busy insert changed a row: %d %v", n, err)
+	}
+}
+
+// execWhenFree runs query and runs it again while SQLite reports the database
+// locked. SQLite does not queue writers, so under load one writer can wait out
+// busy_timeout while the others keep taking the lock. A busy statement changed
+// nothing, so the retry is the same write, and it counts once.
+func execWhenFree(db *sql.DB, query string, args ...any) error {
+	deadline := time.Now().Add(time.Minute)
+	for {
+		_, err := db.Exec(query, args...)
+		if err == nil || !isBusy(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // Several connections write and read at once. Every changed row is counted
-// once, on the right table, and nothing races (run with -race).
+// once, on the right table, and nothing races (run with -race). The busy
+// timeout is short: a writer that loses the lock retries through execWhenFree
+// rather than waiting inside SQLite.
 func TestStampsWithSeveralConnections(t *testing.T) {
-	db, c := openTables(t, 16, "")
+	db, c := openTablesBusy(t, 16, 10, "")
 	db.SetMaxOpenConns(4)
 	const workers, each = 4, 60
 	startA, startB := c.Stamp("a"), c.Stamp("b")
@@ -532,7 +597,7 @@ func TestStampsWithSeveralConnections(t *testing.T) {
 			for i := 0; i < each; i++ {
 				n := w*1000 + i
 				table := []string{"a", "b"}[w%2]
-				if _, err := db.Exec(`INSERT INTO `+table+`(n) VALUES (?)`, n); err != nil {
+				if err := execWhenFree(db, `INSERT INTO `+table+`(n) VALUES (?)`, n); err != nil {
 					t.Error(err)
 					return
 				}
