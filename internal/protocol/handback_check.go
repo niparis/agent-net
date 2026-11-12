@@ -49,8 +49,11 @@ type HandbackCheck struct {
 	Status     string `json:"status"`
 	ExitCode   int    `json:"exit_code,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
-	OutputTail string `json:"output_tail,omitempty"`
-	Detail     string `json:"detail,omitempty"`
+	// QueueWaitMS is how long the check waited for the machine's test slot.
+	// DurationMS and the timeout do not include it.
+	QueueWaitMS int64  `json:"queue_wait_ms,omitempty"`
+	OutputTail  string `json:"output_tail,omitempty"`
+	Detail      string `json:"detail,omitempty"`
 }
 
 // Validate checks one result before a submit carries it.
@@ -72,7 +75,7 @@ func (c HandbackCheck) Validate() error {
 	if strings.ContainsAny(c.Detail, "\r\n") {
 		return errors.New("handback check detail must be one line")
 	}
-	if c.DurationMS < 0 {
+	if c.DurationMS < 0 || c.QueueWaitMS < 0 {
 		return errors.New("handback check duration must not be negative")
 	}
 	if len(c.OutputTail) > MaxHandbackCheckOutputBytes {
@@ -84,8 +87,18 @@ func (c HandbackCheck) Validate() error {
 	return nil
 }
 
-// NoticeLine is the one line a worker notice shows for the check.
+// NoticeLine is the one line a worker notice shows for the check. A wait of a
+// second or more for the test slot is named, so a long run time is not blamed
+// on the check.
 func (c HandbackCheck) NoticeLine() string {
+	line := c.noticeLine()
+	if c.QueueWaitMS >= 1000 && (c.Status == HandbackCheckPassed || c.Status == HandbackCheckFailed || c.Status == HandbackCheckTimedOut) {
+		line += ", after " + checkDuration(c.QueueWaitMS) + " in the test queue"
+	}
+	return line
+}
+
+func (c HandbackCheck) noticeLine() string {
 	switch c.Status {
 	case HandbackCheckPassed:
 		return "hand-back check: passed in " + checkDuration(c.DurationMS)
