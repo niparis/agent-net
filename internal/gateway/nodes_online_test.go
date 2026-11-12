@@ -178,7 +178,9 @@ func TestQuickReconnectEndsOnline(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitLink(t, "the link to drop", func() bool { return !nodeConnected(g, node) })
-	waitLink(t, "the drop to be recorded", func() bool { return storedLastSeen(t, g, node) >= frameAt })
+	// The outage row is the last thing the old link's cleanup writes. Wait for
+	// it, so the return below cannot overtake that cleanup.
+	waitLink(t, "the drop to be recorded", func() bool { return silenceRows(t, g, node) == 1 })
 
 	// The outage is dated by the last frame, so the machine's last seen
 	// survives the drop instead of freezing at its connect time.
