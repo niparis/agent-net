@@ -1,0 +1,367 @@
+diff --git a/docs/reference.md b/docs/reference.md
+index 345cea389..9ab409bfe 100644
+--- a/docs/reference.md
++++ b/docs/reference.md
+@@ -2612 +2612 @@ The Graph tab keeps its graph, camera, selection and traffic in a headless state
+-- **Sessions,** grouped as Needs you, Working and Idle: NAME, MACHINE (short host name), PROJECT, MODEL (harness and model, shortened: no provider, no `claude-` prefix), STATUS (`idle`, `wait`, `owes`, `busy`, `shell`, `exited`, `needs you`, `limited` for a session that hit its provider usage limit, `dorm` for dormant, `off` for offline; `shell` comes from Claude Code and means no turn is running but a shell command the session started is still alive, such as a background command; `exited` means the harness process ended, so the session counts as ended and is not Working), TRUST (`-`, `ask` or `auto` for the node wildcard rule, with `+N` for sender-specific edges; always shown), RULE (the request rule: `normal`, `ask` or `auto`), DELEGATE (the [delegation policy](#delegation-policy): `off`, `native` or `workers`, or `-` if unset), CPU, RAM and TASK (the task the session announced; a worker without one shows the first line of its task; otherwise the harness title if it differs from NAME, else blank; a task that names an ended worker session id gets `(worker s_.. ended Nov 9 01:07 UTC)` after it, see [decision 0111](decisions/0111-blocked-members-reach-the-lead.md)). A session that hit its provider usage limit shows `limited` in STATUS and `until HH:MM` at the start of TASK, in your time zone, until the limit ends or the session completes a turn (the [usage limit](#provider-usage-limits) section says how it is found). An idle session with unanswered requests shows `wait` or `owes` in STATUS and the peer and age in TASK. The detail pane lists each peer, time and message ID. Requests older than 24 hours and notifications do not count. The operator counts call includes `pending_stalls`, the number of observed idle periods with an open request for over 20 minutes since gateway start. Sampling runs once a minute. The same loop sends at most one reminder per unanswered request to an online, idle recipient, after both the request and the last reported activity are over two minutes old. A missing activity time prevents a reminder. A session under a provider usage limit (see below) gets no reminder and no idle check until the limit ends. Notifications, held or closed requests, owner conversations, CTO recipients, and edges with `ask` or `never` are excluded. Delivery rechecks these conditions. The notification comes from the reserved `agent-net` sender and asks the recipient to answer the original message with `agent_message_reply`, or say it cannot. A request that needs no answer is closed with `agent_message_reply` and `ack: true`: the gateway records the acknowledgement, delivers nothing to the sender, and the request counts as answered for the reminder, the wait/owes status and the idle check. A `reminded` flag on the request survives a gateway restart. The operator `query.counts` call also returns `pending_reminders` (reminders put into the delivery queue), `pending_answered_after_reminder` (requests answered within 30 minutes of their reminder), and `pending_reminders_offline` (distinct eligible requests skipped while their recipient was offline, since gateway start). The first two counts are derived from retained messages and can decrease when message history is pruned. Offline requests create no notification; they may receive their one reminder after reconnecting. An online, idle session with open work gets at most one idle check per idle period. Open work is a request it owes an answer, a running worker it started, or a non-empty announced task. Workers, the CTO and offline sessions are never checked. The check is a notification from the reserved `agent-net` sender and asks for the next `agent_announce`: `done`, `more` with one line, or `blocked on X`. `done` stops checks until new activity. `more` follows the node's autonomy setting: `off` leaves an Inbox row, `<name> stopped with work left: <line>`; `wake` sends one continue notification, `[agent-net] continue: you said you have work left (<line>). Carry on, then answer the next check.`, and leaves no row. An offline session is not woken. `blocked on X` always leaves a row naming X, whatever the autonomy. Wake-ups have their own daily cap of 6 and stop after two in a row with no new message or change in open work; the second leaves one row, `<name> was woken twice with no progress`. Two `more` answers with no progress stop the checks and leave one row. A session gets at most 6 checks a day. The operator `query.counts` call also returns `checks_sent`, `check_answers_done`, `check_answers_more`, `check_answers_blocked` and `wake_ups_today`. The check count comes from retained messages and can decrease when history is pruned; the answer counts and today's wake count are small stored counters. Whole caller trees take their most urgent live member's group and position: Needs you (a wait or open owner question), Working (any busy member), then Idle. An ended or exited member never lifts a tree. A session that did something in the last hour stays in Working too; after an hour of quiet it moves to Idle. Empty groups are hidden. Idle shows pinned sessions; other idle trees fold into `N more idle · v to show`. Connected bots have their own Bots group at the bottom: a bot has no turns, so it is never Working. Press `v` to show all idle and ended sessions, and `H` to show hidden sessions. `z` toggles the selected tree, including when a child is selected; `Z` toggles all visible trees. Collapse state lasts for the TUI run, and a collapsed task ends with `+N (M busy)`. Within each group, activity bands order root trees by their most urgent live member: busy or needs you, active within 10 minutes, within one hour, within 24 hours, then older or offline. Activity is the last time the session did something (a turn started or ended, a message was sent or received, it announced a task, a wait started, or its harness wrote output), not the last time its daemon reported it. A daemon restart or a re-report does not make an idle session look active. Within a band the most recently active session comes first; ties never use the oldest start. A session entering a band moves to its top; idle margins reduce moves near band boundaries. The order freezes for three seconds after a key press, and selection follows the session. Workers stay under their caller. A merger belongs to its explicit online repo lead, then its starter if known, otherwise it stays at the top level. Trees stay together even when a text filter matches only a child. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL and PROJECT give way first. TRUST, RULE and DELEGATE stay visible. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row. CTO and merger roles appear as dim tags after NAME, and a session whose node has a standing loop gets a dim `↻` after its name. The CTO is a normal row in its urgency group; NAME shows the owner's CTO title, and Enter enters it through `session_enter`, the same plan as Enter in the CTO box.
++- **Sessions,** grouped as Needs you, Working and Idle: NAME, MACHINE (short host name), PROJECT, MODEL (harness and model, shortened: no provider, no `claude-` prefix), STATUS (`idle`, `wait`, `owes`, `busy`, `shell`, `exited`, `needs you`, `limited` for a session that hit its provider usage limit, `dorm` for dormant, `off` for offline; `shell` comes from Claude Code and means no turn is running but a shell command the session started is still alive, such as a background command; `exited` means the harness process ended, so the session counts as ended and is not Working), TRUST (`-`, `ask` or `auto` for the node wildcard rule, with `+N` for sender-specific edges; always shown), RULE (the request rule: `normal`, `ask` or `auto`), DELEGATE (the [delegation policy](#delegation-policy): `off`, `native` or `workers`, or `-` if unset), CPU, RAM and TASK (the task the session announced; a worker without one shows the first line of its task; otherwise the harness title if it differs from NAME, else blank; a task that names an ended worker session id gets `(worker s_.. ended Nov 9 01:07 UTC)` after it, see [decision 0111](decisions/0111-blocked-members-reach-the-lead.md)). A session that hit its provider usage limit shows `limited` in STATUS and `until HH:MM` at the start of TASK, in your time zone, until the limit ends or the session completes a turn (the [usage limit](#provider-usage-limits) section says how it is found). An idle session with unanswered requests shows `wait` or `owes` in STATUS and the peer and age in TASK. The detail pane lists each peer, time and message ID. Requests older than 24 hours and notifications do not count. The operator counts call includes `pending_stalls`, the number of observed idle periods with an open request for over 20 minutes since gateway start. Sampling runs once a minute. The same loop sends at most one reminder per unanswered request to an online, idle recipient, after both the request and the last reported activity are over two minutes old. A missing activity time prevents a reminder. A session under a provider usage limit (see below) gets no reminder and no idle check until the limit ends. Notifications, held or closed requests, owner conversations, CTO recipients, and edges with `ask` or `never` are excluded. Delivery rechecks these conditions. The notification comes from the reserved `agent-net` sender and asks the recipient to answer the original message with `agent_message_reply`, or say it cannot. A request that needs no answer is closed with `agent_message_reply` and `ack: true`: the gateway records the acknowledgement, delivers nothing to the sender, and the request counts as answered for the reminder, the wait/owes status and the idle check. Closing a request this way never wakes a session and never resumes an ended worker. A `reminded` flag on the request survives a gateway restart. The operator `query.counts` call also returns `pending_reminders` (reminders put into the delivery queue), `pending_answered_after_reminder` (requests answered within 30 minutes of their reminder), and `pending_reminders_offline` (distinct eligible requests skipped while their recipient was offline, since gateway start). The first two counts are derived from retained messages and can decrease when message history is pruned. Offline requests create no notification; they may receive their one reminder after reconnecting. An online, idle session with open work gets at most one idle check per idle period. Open work is a request it owes an answer, a running worker it started, or a non-empty announced task. Workers, the CTO and offline sessions are never checked. The check is a notification from the reserved `agent-net` sender and asks for the next `agent_announce`: `done`, `more` with one line, or `blocked on X`. `done` stops checks until new activity. `more` follows the node's autonomy setting: `off` leaves an Inbox row, `<name> stopped with work left: <line>`; `wake` sends one continue notification, `[agent-net] continue: you said you have work left (<line>). Carry on, then answer the next check.`, and leaves no row. An offline session is not woken. `blocked on X` always leaves a row naming X, whatever the autonomy. Wake-ups have their own daily cap of 6 and stop after two in a row with no new message or change in open work; the second leaves one row, `<name> was woken twice with no progress`. Two `more` answers with no progress stop the checks and leave one row. A session gets at most 6 checks a day. The operator `query.counts` call also returns `checks_sent`, `check_answers_done`, `check_answers_more`, `check_answers_blocked` and `wake_ups_today`. The check count comes from retained messages and can decrease when history is pruned; the answer counts and today's wake count are small stored counters. Whole caller trees take their most urgent live member's group and position: Needs you (a wait or open owner question), Working (any busy member), then Idle. An ended or exited member never lifts a tree. A session that did something in the last hour stays in Working too; after an hour of quiet it moves to Idle. Empty groups are hidden. Idle shows pinned sessions; other idle trees fold into `N more idle · v to show`. Connected bots have their own Bots group at the bottom: a bot has no turns, so it is never Working. Press `v` to show all idle and ended sessions, and `H` to show hidden sessions. `z` toggles the selected tree, including when a child is selected; `Z` toggles all visible trees. Collapse state lasts for the TUI run, and a collapsed task ends with `+N (M busy)`. Within each group, activity bands order root trees by their most urgent live member: busy or needs you, active within 10 minutes, within one hour, within 24 hours, then older or offline. Activity is the last time the session did something (a turn started or ended, a message was sent or received, it announced a task, a wait started, or its harness wrote output), not the last time its daemon reported it. A daemon restart or a re-report does not make an idle session look active. Within a band the most recently active session comes first; ties never use the oldest start. A session entering a band moves to its top; idle margins reduce moves near band boundaries. The order freezes for three seconds after a key press, and selection follows the session. Workers stay under their caller. A merger belongs to its explicit online repo lead, then its starter if known, otherwise it stays at the top level. Trees stay together even when a text filter matches only a child. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL and PROJECT give way first. TRUST, RULE and DELEGATE stay visible. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row. CTO and merger roles appear as dim tags after NAME, and a session whose node has a standing loop gets a dim `↻` after its name. The CTO is a normal row in its urgency group; NAME shows the owner's CTO title, and Enter enters it through `session_enter`, the same plan as Enter in the CTO box.
+diff --git a/internal/gateway/ack_test.go b/internal/gateway/ack_test.go
+index c203a3235..deaa0257d 100644
+--- a/internal/gateway/ack_test.go
++++ b/internal/gateway/ack_test.go
+@@ -4,0 +5,3 @@ import (
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
+@@ -8,0 +12 @@ import (
++	"github.com/coder/websocket"
+@@ -154,0 +159,323 @@ func TestAckDoesNotWakeTheSender(t *testing.T) {
++
++func connectTestNode(t *testing.T, g *Gateway, nodeID string) (*websocket.Conn, chan []byte) {
++	t.Helper()
++	ctx := t.Context()
++	accepted := make(chan *websocket.Conn, 1)
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		ws, err := websocket.Accept(w, r, nil)
++		if err != nil {
++			t.Errorf("accept: %v", err)
++			return
++		}
++		accepted <- ws
++	}))
++	t.Cleanup(server.Close)
++
++	client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { _ = client.Close(websocket.StatusNormalClosure, "") })
++
++	ws := <-accepted
++	cancelCtx, cancel := context.WithCancel(ctx)
++	t.Cleanup(cancel)
++	nc := &nodeConn{id: nodeID, ws: ws, dead: make(chan struct{}), cancel: cancel}
++	g.mu.Lock()
++	g.conns[nodeID] = nc
++	g.mu.Unlock()
++
++	received := make(chan []byte, 100)
++	go func() {
++		for {
++			_, raw, e := client.Read(cancelCtx)
++			if e != nil {
++				return
++			}
++			received <- raw
++			var h protocol.Header
++			if json.Unmarshal(raw, &h) == nil && h.Type == "worker.resume" {
++				res, _ := protocol.EncodeResult(h.ID, protocol.WorkerResumeResult{}, nil)
++				_ = client.Write(cancelCtx, websocket.MessageText, res)
++			}
++		}
++	}()
++	go func() {
++		for {
++			_, raw, e := ws.Read(cancelCtx)
++			if e != nil {
++				return
++			}
++			var h protocol.Header
++			if json.Unmarshal(raw, &h) == nil && h.Type == "result" {
++				nc.answer(h)
++			}
++		}
++	}()
++	return client, received
++}
++
++// An ack to a request whose sender is an ended worker leaves the worker ended:
++// no resume, and no delivery frame to it.
++func TestAckToEndedWorkerLeavesWorkerEndedNoResume(t *testing.T) {
++	g, err := New(Options{DataDir: t.TempDir()})
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { g.Close() })
++
++	node, _, err := g.store.CreateNode("host1", "linux")
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, received := connectTestNode(t, g, node)
++
++	ownerID, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "owner"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	workerID, err := g.store.UpsertSession(node, protocol.SessionInfo{
++		Harness:  "opencode",
++		NativeID: "worker1",
++		Worker:   &protocol.WorkerInfo{ID: "w_1", Owner: ownerID, RunGeneration: 1},
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++
++	req, _, err := g.store.StoreMessage(protocol.MsgSend{
++		Sender:    workerID,
++		Recipient: ownerID,
++		Type:      protocol.TypeRequest,
++		Body:      "need guidance",
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++
++	if err := g.store.SetWorkerSessionEnded(node, workerID, 1); err != nil {
++		t.Fatal(err)
++	}
++
++	a, ok, err := g.store.Agent(workerID)
++	if err != nil || !ok || a.Online || a.Status != "ended" {
++		t.Fatalf("worker before ack: online=%v status=%q ok=%v err=%v", a.Online, a.Status, ok, err)
++	}
++
++	// Drain any messages received during setup.
++	for len(received) > 0 {
++		<-received
++	}
++
++	raw, _ := json.Marshal(protocol.MsgSend{
++		Sender:    ownerID,
++		Recipient: workerID,
++		ParentID:  req.ID,
++		Ack:       true,
++	})
++	g.mu.Lock()
++	nc := g.conns[node]
++	g.mu.Unlock()
++
++	res, err := g.handle(t.Context(), nc, "msg.send", raw)
++	if err != nil {
++		t.Fatalf("msg.send ack: %v", err)
++	}
++	m := res.(map[string]any)["message"].(protocol.Message)
++	if m.State != protocol.StateAcknowledged {
++		t.Fatalf("ack state = %q; want %q", m.State, protocol.StateAcknowledged)
++	}
++
++	// Worker must remain ended and inactive.
++	a, ok, err = g.store.Agent(workerID)
++	if err != nil || !ok || a.Online || a.Status != "ended" {
++		t.Fatalf("worker after ack: online=%v status=%q", a.Online, a.Status)
++	}
++	var active int
++	if err := g.store.db.QueryRow("SELECT worker_run_active FROM sessions WHERE id=?", workerID).Scan(&active); err != nil || active != 0 {
++		t.Fatalf("worker_run_active = %d, want 0 (err=%v)", active, err)
++	}
++
++	// No worker.resume or delivery frame was sent.
++	select {
++	case frame := <-received:
++		t.Fatalf("unexpected frame sent to node: %s", string(frame))
++	case <-time.After(50 * time.Millisecond):
++	}
++}
++
++// An ack closes the request: no reply reminder later.
++func TestAckToEndedWorkerClosesRequestNoReminder(t *testing.T) {
++	s, c := newTestStore(t)
++	node, _, _ := s.CreateNode("host1", "linux")
++	ownerID, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "owner", Status: "idle"})
++	workerID, _ := s.UpsertSession(node, protocol.SessionInfo{
++		Harness:  "opencode",
++		NativeID: "worker1",
++		Worker:   &protocol.WorkerInfo{ID: "w_1", Owner: ownerID, RunGeneration: 1},
++	})
++
++	req, _, err := s.StoreMessage(protocol.MsgSend{
++		Sender:    workerID,
++		Recipient: ownerID,
++		Type:      protocol.TypeRequest,
++		Body:      "need guidance",
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++
++	if err := s.SetWorkerSessionEnded(node, workerID, 1); err != nil {
++		t.Fatal(err)
++	}
++
++	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), ownerID); err != nil {
++		t.Fatal(err)
++	}
++
++	c.t = c.t.Add(3 * time.Minute)
++
++	if _, _, err := s.StoreMessage(protocol.MsgSend{
++		Sender:    ownerID,
++		Recipient: workerID,
++		ParentID:  req.ID,
++		Ack:       true,
++	}); err != nil {
++		t.Fatalf("store ack: %v", err)
++	}
++
++	got, _, err := s.Message(req.ID)
++	if err != nil || got.State != protocol.StateAcknowledged {
++		t.Fatalf("request state = %q; want %q", got.State, protocol.StateAcknowledged)
++	}
++
++	reminders, err := s.remindPending()
++	if err != nil || len(reminders) != 0 {
++		t.Fatalf("reminders after ack: %+v, %v", reminders, err)
++	}
++
++	// Batch message carrier attributed to ended worker also closed on ack.
++	carrier, _, err := s.StoreMessage(protocol.MsgSend{
++		Sender:    workerID,
++		Recipient: ownerID,
++		Type:      protocol.TypeRequest,
++		Body:      "batch carrier",
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	child, _, err := s.StoreMessage(protocol.MsgSend{
++		Sender:    workerID,
++		Recipient: ownerID,
++		Type:      protocol.TypeRequest,
++		Body:      "child request",
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err := s.db.Exec("UPDATE messages SET batch_id=? WHERE id=?", carrier.ID, child.ID); err != nil {
++		t.Fatal(err)
++	}
++
++	c.t = c.t.Add(3 * time.Minute)
++	if _, _, err := s.StoreMessage(protocol.MsgSend{
++		Sender:    ownerID,
++		Recipient: workerID,
++		ParentID:  carrier.ID,
++		Ack:       true,
++	}); err != nil {
++		t.Fatalf("store batch carrier ack: %v", err)
++	}
++
++	childGot, _, err := s.Message(child.ID)
++	if err != nil || childGot.State != protocol.StateAcknowledged {
++		t.Fatalf("child request state = %q; want %q", childGot.State, protocol.StateAcknowledged)
++	}
++
++	reminders, err = s.remindPending()
++	if err != nil || len(reminders) != 0 {
++		t.Fatalf("reminders after batch ack: %+v, %v", reminders, err)
++	}
++}
++
++// A real reply with a body to an ended worker still resumes it, as today.
++func TestRealReplyToEndedWorkerResumesWorker(t *testing.T) {
++	g, err := New(Options{DataDir: t.TempDir()})
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { g.Close() })
++
++	node, _, err := g.store.CreateNode("host1", "linux")
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, received := connectTestNode(t, g, node)
++
++	ownerID, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "owner"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	workerID, err := g.store.UpsertSession(node, protocol.SessionInfo{
++		Harness:  "opencode",
++		NativeID: "worker1",
++		Worker:   &protocol.WorkerInfo{ID: "w_1", Owner: ownerID, RunGeneration: 1},
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++
++	req, _, err := g.store.StoreMessage(protocol.MsgSend{
++		Sender:    workerID,
++		Recipient: ownerID,
++		Type:      protocol.TypeRequest,
++		Body:      "need guidance",
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++
++	if err := g.store.SetWorkerSessionEnded(node, workerID, 1); err != nil {
++		t.Fatal(err)
++	}
++
++	// Drain any messages received during setup.
++	for len(received) > 0 {
++		<-received
++	}
++
++	raw, _ := json.Marshal(protocol.MsgSend{
++		Sender:    ownerID,
++		Recipient: workerID,
++		ParentID:  req.ID,
++		Body:      "here is the guidance to continue",
++	})
++	g.mu.Lock()
++	nc := g.conns[node]
++	g.mu.Unlock()
++
++	res, err := g.handle(t.Context(), nc, "msg.send", raw)
++	if err != nil {
++		t.Fatalf("msg.send reply: %v", err)
++	}
++	m := res.(map[string]any)["message"].(protocol.Message)
++	if m.State != protocol.StateStored {
++		t.Fatalf("reply state = %q; want %q", m.State, protocol.StateStored)
++	}
++
++	// Worker must have been resumed.
++	select {
++	case frame := <-received:
++		var h protocol.Header
++		if err := json.Unmarshal(frame, &h); err != nil || h.Type != "worker.resume" {
++			t.Fatalf("unexpected frame: %s", string(frame))
++		}
++	case <-time.After(500 * time.Millisecond):
++		t.Fatal("expected worker.resume frame, none received")
++	}
++
++	var active int
++	if err := g.store.db.QueryRow("SELECT worker_run_active FROM sessions WHERE id=?", workerID).Scan(&active); err != nil || active != 1 {
++		t.Fatalf("worker_run_active = %d, want 1 (err=%v)", active, err)
++	}
++}
+diff --git a/internal/gateway/server.go b/internal/gateway/server.go
+index 0d6d75a9c..799d2e677 100644
+--- a/internal/gateway/server.go
++++ b/internal/gateway/server.go
+@@ -939,0 +940,3 @@ func (g *Gateway) msgSendMayResume(raw []byte) bool {
++	if p.Ack || p.Type == protocol.TypeAck {
++		return false
++	}
+@@ -2904 +2907 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
+-		if !workerTask {
++		if !workerTask && !p.Ack && p.Type != protocol.TypeAck {
+@@ -3188 +3191 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) bool {
+-	if m.Type == protocol.TypeAck {
++	if m.Type == protocol.TypeAck || m.State == protocol.StateAcknowledged {
+diff --git a/internal/gateway/workers.go b/internal/gateway/workers.go
+index 67c8dd0a6..20e36026e 100644
+--- a/internal/gateway/workers.go
++++ b/internal/gateway/workers.go
+@@ -1681,0 +1682,3 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
++	if p.Ack || p.Type == protocol.TypeAck {
++		return "", nil
++	}
+@@ -1735,0 +1739,3 @@ func (g *Gateway) notifyResumeRefusal(ctx context.Context, p protocol.MsgSend, r
++	if p.Ack || p.Type == protocol.TypeAck {
++		return
++	}

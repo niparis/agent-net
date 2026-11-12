@@ -489,6 +489,12 @@ func (m Model) deskPanel(w, h int) []string {
 		if finding := deliveryRowFinding(ch); finding != "" {
 			body = append(body, wrapText(finding, innerW)...)
 		}
+		if lines := deliverySignalLines(ch.Signals); len(lines) > 0 {
+			body = append(body, wrapText("quality signals:", innerW)...)
+			for _, line := range lines {
+				body = append(body, wrapText(line, innerW)...)
+			}
+		}
 		for _, a := range m.deskAsksAbout(ch.ID) {
 			body = append(body, wrapText("Asks you: "+inboxFirstLine(a.Question), innerW)...)
 		}

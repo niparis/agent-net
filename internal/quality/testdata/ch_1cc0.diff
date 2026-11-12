@@ -1,0 +1,414 @@
+diff --git a/internal/daemon/delivery_tools.go b/internal/daemon/delivery_tools.go
+index 64f7d0bfe..a7f3899a2 100644
+--- a/internal/daemon/delivery_tools.go
++++ b/internal/daemon/delivery_tools.go
+@@ -95 +95 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
+-			err = d.deliveryCall(ctx, protocol.FrameNudgeResume, protocol.NudgeResumeRequest{SessionID: sid, NudgeResumeArgs: a}, &out)
++			err = d.deliveryCall(ctx, protocol.FrameNudgeResume, protocol.NudgeResumeRequest{SessionID: sid, PauseID: a.ID}, &out)
+diff --git a/internal/daemon/nudge_test.go b/internal/daemon/nudge_test.go
+index 2535f99ac..f1ae353ca 100644
+--- a/internal/daemon/nudge_test.go
++++ b/internal/daemon/nudge_test.go
+@@ -3,0 +4 @@ import (
++	"database/sql"
+@@ -4,0 +6 @@ import (
++	"path/filepath"
+@@ -34,0 +37,140 @@ func TestNudgeForwardsCallerSession(t *testing.T) {
++
++// nudgeChiefRig starts a gateway and a node with one chief session and one
++// target agent. It returns the node so a test can open a CLI connection too.
++func nudgeChiefRig(t *testing.T) (*node, *testGateway, *localClient, string) {
++	t.Helper()
++	g := startGateway(t, t.TempDir(), "")
++	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
++	lc := dialLocal(t, n.sock)
++	lc.AutoAck = true
++	res := lc.mustCall("hello", map[string]any{"client": "pi", "harness": "pi", "native_id": "nudge-chief",
++		"cwd": "/w/chief", "status": "busy"})
++	var hello struct {
++		SessionID string `json:"session_id"`
++	}
++	if err := json.Unmarshal(res, &hello); err != nil || hello.SessionID == "" {
++		t.Fatalf("chief hello = %s: %v", res, err)
++	}
++	eventually(t, "chief online", func() bool {
++		a, ok, err := g.gw.Store().Agent(hello.SessionID)
++		return err == nil && ok && a.Online
++	})
++	if err := g.gw.Store().SetChief(protocol.ChiefSetRequest{SessionID: hello.SessionID}, "owner"); err != nil {
++		t.Fatal(err)
++	}
++	db, err := sql.Open("sqlite", "file:"+filepath.Join(g.dir, "gateway.db")+"?_pragma=busy_timeout(5000)")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer db.Close()
++	if _, err = db.Exec(`INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('target-agent','target-agent',0,0)`); err != nil {
++		t.Fatal(err)
++	}
++	return n, g, lc, hello.SessionID
++}
++
++func nudgeChiefPause(t *testing.T, g *testGateway, chief string) (node, pauseID string) {
++	t.Helper()
++	n, err := g.gw.Store().SessionNode(chief)
++	if err != nil {
++		t.Fatal(err)
++	}
++	out, err := g.gw.Store().PauseNudge(n, protocol.NudgePauseRequest{SessionID: chief,
++		NudgePauseArgs: protocol.NudgePauseArgs{Kind: "idle_check", Agent: "target-agent", Mode: "apply"}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	return n, out.ID
++}
++
++func nudgeEnded(t *testing.T, g *testGateway, node, chief, id string) bool {
++	t.Helper()
++	found, err := g.gw.Store().FindNudgePauses(node, chief)
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, p := range found.Pauses {
++		if p.ID == id {
++			return p.EndedAt != 0
++		}
++	}
++	t.Fatalf("pause %s not found", id)
++	return false
++}
++
++// The chief's agent_nudge_resume {id} goes through the daemon request encoding
++// and ends the pause. The shipped test bypassed the encoder, so it missed the
++// id clash.
++func TestNudgeResumeThroughDaemonRequestPath(t *testing.T) {
++	_, g, lc, chief := nudgeChiefRig(t)
++	node, id := nudgeChiefPause(t, g, chief)
++	raw := lc.mustCall(protocol.OpNudgeResume, protocol.NudgeResumeArgs{ID: id})
++	var out protocol.NudgeResult
++	if err := json.Unmarshal(raw, &out); err != nil || out.ID != id {
++		t.Fatalf("resume answer = %s: %v", raw, err)
++	}
++	if !nudgeEnded(t, g, node, chief, id) {
++		t.Fatal("pause still active after resume")
++	}
++}
++
++// The owner's Desk Undo reads both the old {"id":...} and the new
++// {"pause_id":...} option, and goes through the daemon request encoding.
++func TestNudgeDeskUndoThroughDaemonRequestPath(t *testing.T) {
++	undoOption := func(t *testing.T, g *testGateway, old bool) map[string]any {
++		t.Helper()
++		log, err := g.gw.Store().DeskLog(1)
++		if err != nil || len(log) != 1 || len(log[0].Options) != 2 {
++			t.Fatalf("desk log = %+v, %v", log, err)
++		}
++		var option map[string]any
++		if err := json.Unmarshal([]byte(log[0].Options[1]), &option); err != nil {
++			t.Fatal(err)
++		}
++		id := option["pause_id"]
++		if id == nil {
++			id = option["id"]
++		}
++		if id == nil || id == "" || option["receipt"] == nil {
++			t.Fatalf("undo option = %v", option)
++		}
++		if old {
++			return map[string]any{"id": id, "receipt": option["receipt"]}
++		}
++		return map[string]any{"pause_id": id, "receipt": option["receipt"]}
++	}
++	ownerUndo := func(t *testing.T, n *node, option map[string]any) {
++		t.Helper()
++		cli := dialLocal(t, n.sock)
++		cli.mustCall("hello", map[string]any{"client": "cli"})
++		cli.mustCall(protocol.OpNudgeUndo, option)
++	}
++	t.Run("old pause option ends the pause", func(t *testing.T) {
++		n, g, _, chief := nudgeChiefRig(t)
++		node, id := nudgeChiefPause(t, g, chief)
++		ownerUndo(t, n, undoOption(t, g, true))
++		if !nudgeEnded(t, g, node, chief, id) {
++			t.Fatal("pause still active after old-form undo")
++		}
++	})
++	t.Run("new pause option ends the pause", func(t *testing.T) {
++		n, g, _, chief := nudgeChiefRig(t)
++		node, id := nudgeChiefPause(t, g, chief)
++		ownerUndo(t, n, undoOption(t, g, false))
++		if !nudgeEnded(t, g, node, chief, id) {
++			t.Fatal("pause still active after new-form undo")
++		}
++	})
++	t.Run("new resume option restores the pause", func(t *testing.T) {
++		n, g, lc, chief := nudgeChiefRig(t)
++		node, id := nudgeChiefPause(t, g, chief)
++		lc.mustCall(protocol.OpNudgeResume, protocol.NudgeResumeArgs{ID: id})
++		if !nudgeEnded(t, g, node, chief, id) {
++			t.Fatal("pause still active after resume")
++		}
++		ownerUndo(t, n, undoOption(t, g, false))
++		if nudgeEnded(t, g, node, chief, id) {
++			t.Fatal("pause still ended after undo of the resume")
++		}
++	})
++}
+diff --git a/internal/daemon/sessiontext.go b/internal/daemon/sessiontext.go
+index bebdeaf50..f35f4bd42 100644
+--- a/internal/daemon/sessiontext.go
++++ b/internal/daemon/sessiontext.go
+@@ -910 +910 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
+-		if json.Unmarshal(raw, &q) != nil || q.ID == "" || q.Receipt == "" {
++		if json.Unmarshal(raw, &q) != nil || q.Pause() == "" || q.Receipt == "" {
+@@ -913 +913 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
+-		res, err = d.call(ctx, protocol.FrameNudgeUndo, protocol.NudgeUndoRequest{NudgeUndoArgs: q, Owner: d.ownerSessionID()})
++		res, err = d.call(ctx, protocol.FrameNudgeUndo, protocol.NudgeUndoRequest{PauseID: q.Pause(), Receipt: q.Receipt, Owner: d.ownerSessionID()})
+diff --git a/internal/gateway/nudge_pause.go b/internal/gateway/nudge_pause.go
+index 1bcd9042e..af013ceea 100644
+--- a/internal/gateway/nudge_pause.go
++++ b/internal/gateway/nudge_pause.go
+@@ -221 +221 @@ func (s *Store) logNudge(tx *sql.Tx, p protocol.NudgePause, action, receipt stri
+-		raw, _ := json.Marshal(protocol.NudgeUndoArgs{ID: p.ID, Receipt: receipt})
++		raw, _ := json.Marshal(protocol.NudgeUndoArgs{PauseID: p.ID, Receipt: receipt})
+@@ -240 +240 @@ func (s *Store) ResumeNudge(node string, r protocol.NudgeResumeRequest) (protoco
+-	out := protocol.NudgeResult{ID: r.ID}
++	out := protocol.NudgeResult{ID: r.PauseID}
+@@ -252 +252 @@ func (s *Store) ResumeNudge(node string, r protocol.NudgeResumeRequest) (protoco
+-	p, _, _, err := readNudge(tx, r.ID)
++	p, _, _, err := readNudge(tx, r.PauseID)
+@@ -260 +260 @@ func (s *Store) ResumeNudge(node string, r protocol.NudgeResumeRequest) (protoco
+-	_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=?,ended_by=?,receipt=?,undo_action='resume' WHERE id=?`, s.now().UnixNano(), r.SessionID, receipt, r.ID)
++	_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=?,ended_by=?,receipt=?,undo_action='resume' WHERE id=?`, s.now().UnixNano(), r.SessionID, receipt, r.PauseID)
+@@ -310 +310 @@ func (s *Store) undoNudge(a protocol.NudgeUndoArgs) (protocol.NudgeResult, error
+-	out := protocol.NudgeResult{ID: a.ID}
++	out := protocol.NudgeResult{ID: a.Pause()}
+@@ -316 +316 @@ func (s *Store) undoNudge(a protocol.NudgeUndoArgs) (protocol.NudgeResult, error
+-	p, receipt, action, err := readNudge(tx, a.ID)
++	p, receipt, action, err := readNudge(tx, a.Pause())
+@@ -324 +324 @@ func (s *Store) undoNudge(a protocol.NudgeUndoArgs) (protocol.NudgeResult, error
+-		_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=?,ended_by='owner_undo',receipt='',undo_action='' WHERE id=?`, s.now().UnixNano(), a.ID)
++		_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=?,ended_by='owner_undo',receipt='',undo_action='' WHERE id=?`, s.now().UnixNano(), a.Pause())
+@@ -326 +326 @@ func (s *Store) undoNudge(a protocol.NudgeUndoArgs) (protocol.NudgeResult, error
+-		_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=0,ended_by='',receipt='',undo_action='' WHERE id=?`, a.ID)
++		_, err = tx.Exec(`UPDATE nudge_pauses SET ended_at=0,ended_by='',receipt='',undo_action='' WHERE id=?`, a.Pause())
+diff --git a/internal/gateway/nudge_pause_test.go b/internal/gateway/nudge_pause_test.go
+index 74cd16611..090070f8f 100644
+--- a/internal/gateway/nudge_pause_test.go
++++ b/internal/gateway/nudge_pause_test.go
+@@ -110 +110 @@ func TestNudgeResumeNoBacklog(t *testing.T) {
+-	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"id": id}); err != nil {
++	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
+@@ -192 +192 @@ func TestNudgeChiefOnly(t *testing.T) {
+-	for frame, args := range map[string]map[string]any{"nudge.pause": {"kind": "idle_check", "agent": "target-agent", "mode": "apply"}, "nudge.resume": {"id": id}, "nudge.pauses.find": {}} {
++	for frame, args := range map[string]map[string]any{"nudge.pause": {"kind": "idle_check", "agent": "target-agent", "mode": "apply"}, "nudge.resume": {"pause_id": id}, "nudge.pauses.find": {}} {
+@@ -277 +277 @@ func TestNudgeUndoResumeRestoresPause(t *testing.T) {
+-	if _, err := nudgeCall(t, s, chief, "nudge.resume", map[string]any{"id": id}); err != nil {
++	if _, err := nudgeCall(t, s, chief, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
+@@ -325 +325 @@ func TestNudgeExpiredQueueSnapshotNotReplayed(t *testing.T) {
+-	if _, err := nudgeCall(t, s, chief, "nudge.resume", map[string]any{"id": id}); err != nil {
++	if _, err := nudgeCall(t, s, chief, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
+@@ -336 +336 @@ func TestNudgeStepExpiredReminderStillPaused(t *testing.T) {
+-	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"id": id}); err != nil {
++	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
+diff --git a/internal/gateway/server.go b/internal/gateway/server.go
+index f2ca36bc3..0d6d75a9c 100644
+--- a/internal/gateway/server.go
++++ b/internal/gateway/server.go
+@@ -1799 +1799 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
+-		return st.undoNudge(p.NudgeUndoArgs)
++		return st.undoNudge(protocol.NudgeUndoArgs{PauseID: p.PauseID, Receipt: p.Receipt})
+diff --git a/internal/protocol/nudge.go b/internal/protocol/nudge.go
+index 113b007b1..890770469 100644
+--- a/internal/protocol/nudge.go
++++ b/internal/protocol/nudge.go
+@@ -58,0 +59,3 @@ type NudgePauseRequest struct {
++
++// NudgeResumeArgs is the input of the chief's agent_nudge_resume tool. The
++// wire field is pause_id: a frame already owns id.
+@@ -64 +67 @@ type NudgeResumeRequest struct {
+-	NudgeResumeArgs
++	PauseID   string `json:"pause_id"`
+@@ -92 +95,2 @@ type NudgeResult struct {
+-// NudgeUndoArgs is an owner-only Desk receipt, never an agent tool.
++// NudgeUndoArgs is an owner-only Desk receipt, never an agent tool. Old rows
++// store the pause as id; new rows store pause_id. Read both.
+@@ -94 +98,2 @@ type NudgeUndoArgs struct {
+-	ID      string `json:"id"`
++	ID      string `json:"id,omitempty"`
++	PauseID string `json:"pause_id,omitempty"`
+@@ -96,0 +102,9 @@ type NudgeUndoArgs struct {
++
++// Pause returns the pause id from the old or the new field.
++func (a NudgeUndoArgs) Pause() string {
++	if a.PauseID != "" {
++		return a.PauseID
++	}
++	return a.ID
++}
++
+@@ -98,2 +112,3 @@ type NudgeUndoRequest struct {
+-	NudgeUndoArgs
+-	Owner string `json:"owner"`
++	PauseID string `json:"pause_id"`
++	Receipt string `json:"receipt"`
++	Owner   string `json:"owner"`
+diff --git a/internal/protocol/request_params_test.go b/internal/protocol/request_params_test.go
+new file mode 100644
+index 000000000..10c160cfc
+--- /dev/null
++++ b/internal/protocol/request_params_test.go
+@@ -0,0 +1,153 @@
++package protocol
++
++import (
++	"reflect"
++	"strings"
++	"testing"
++)
++
++// requestParams are the structs the daemon and the gateway send as request
++// parameters. Each one must survive EncodeRequestVia: a top-level id or type
++// would be silently replaced by the frame's own field.
++//
++// This is the regression test for nudge.resume and nudge.undo, which shipped
++// with an id parameter and failed on every call.
++var requestParams = []any{
++	NudgePauseRequest{},
++	NudgeResumeRequest{},
++	NudgeUndoRequest{},
++	NudgePausesFindRequest{},
++	ChangeSubmitRequest{},
++	ChangeGetRequest{},
++	ChangeListRequest{},
++	ChangeReconcileRequest{},
++	StepClaimRequest{},
++	StepReportRequest{},
++	DeliveryNeedsPushRequest{},
++	AskSortRequest{},
++	AskIntakeRequest{},
++	OwnerBriefRequest{},
++	RecentWorkerChangesRequest{},
++	PolicyGet{},
++	QueryAgents{},
++	QueryAgent{},
++	QueryProjects{},
++	QueryMessage{},
++	QueryConversations{},
++	QueryTeamLead{},
++	WorkersWatch{},
++	ToolsFilter{},
++	MCPCall{},
++	MCPCatalog{},
++	MCPSync{},
++	OwnerSendRequest{},
++	WorkerStartRequest{},
++	WorkerStopRequest{},
++	WorkerHandbackRequest{},
++	SessionTrustRequest{},
++	SessionRenameRequest{},
++	NodeRenameRequest{},
++	ProjectDisplayRequest{},
++	SessionAgentSetRequest{},
++	SettingsWrite{},
++	SettingsUndo{},
++	DeskLogQuery{},
++	GraphRead{},
++	GraphHistoryRequest{},
++	GraphLifecycleRequest{},
++	GraphNodeRequest{},
++	GraphUndoFrame{},
++	CharterSetRequest{},
++	CharterDraftFrame{},
++	LearnFrame{},
++	RateFrame{},
++	PermissionProposeFrame{},
++	PermissionTrustAsk{},
++	PermissionApplyFrame{},
++	PermissionUndoFrame{},
++	MsgSend{},
++	MsgWithdraw{},
++	MsgHandoff{},
++	SessionUpsert{},
++	SessionSync{},
++	SessionRemove{},
++	SessionRelay{},
++	SessionFolderTrustRelay{},
++	SessionFolderMCPRelay{},
++	SessionProcessStopRelay{},
++	EnterRequest{},
++	ProcessStopRequest{},
++	FolderMCPRequest{},
++	ProjectAddRequest{},
++	ProjectsLayoutRequest{},
++	FileSendRequest{},
++	WorkerLaunch{},
++	WorkerContinue{},
++	WorkerResume{},
++	WorkerKill{},
++	WorkerStopped{},
++	WorkerRunState{},
++	WorkerCleanup{},
++	WorkerProfileFrame{},
++	TransferBegin{},
++	TransferStatus{},
++	TransferPart{},
++	TransferFinish{},
++	TransferGet{},
++	TransferConfirm{},
++	NodeUpgrade{},
++	NodeName{},
++	NodeHarnesses{},
++	PlaybookGetRequest{},
++	MCPItemsChanged{},
++	DeliveryUpdate{},
++	ToolVersionRequest{},
++	SkillBundleRequest{},
++	HintRequest{},
++	MachineLogRequest{},
++	ScoreSetRequest{},
++	RateRequest{},
++	DefectRequest{},
++	LearnRequest{},
++	ApprovalRequest{},
++	NodeSettingsGetRequest{},
++	NodeSettingsSetRequest{},
++	CTOProposalAnswer{},
++	DifficultyJudgePick{},
++	SessionStartFailure{},
++	SessionAgentReservation{},
++}
++
++// TestRequestParamsAvoidFrameFields encodes every request parameter struct
++// through the same function the daemon link uses. It fails on a top-level id
++// or type, even one hidden behind omitempty, and on any struct that no longer
++// encodes.
++func TestRequestParamsAvoidFrameFields(t *testing.T) {
++	for _, params := range requestParams {
++		rt := reflect.TypeOf(params)
++		checkFrameFields(t, rt)
++		if _, err := EncodeRequestVia("test.frame", "1", ViaTUI, params); err != nil {
++			t.Errorf("%s: %v", rt, err)
++		}
++	}
++}
++
++// checkFrameFields walks the top-level JSON names, including anonymous
++// embedded structs, which end up next to type and id in the frame.
++func checkFrameFields(t *testing.T, rt reflect.Type) {
++	t.Helper()
++	for i := 0; i < rt.NumField(); i++ {
++		f := rt.Field(i)
++		if f.Anonymous {
++			checkFrameFields(t, f.Type)
++			continue
++		}
++		name := strings.Split(f.Tag.Get("json"), ",")[0]
++		if name == "-" || name == "" {
++			continue
++		}
++		if name == "id" || name == "type" {
++			t.Errorf("%s has a top-level parameter named %q", rt, name)
++		}
++	}
++}

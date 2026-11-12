@@ -46,7 +46,10 @@ type deliveryChange struct {
 	ClaimedBy string
 	Waiting   time.Duration
 	Evidence  []deliveryEvidence
-	Steps     []deliveryStep
+	// Signals are the free quality signals of the current revision. They
+	// inform the owner; they never block a step.
+	Signals []protocol.QualitySignal
+	Steps   []deliveryStep
 	// Marks is the strip as the source worked it out from the step states. A
 	// source that has no step states leaves it empty, and the strip follows
 	// the evidence.
