@@ -87,8 +87,12 @@ sampling is available and the process is not shared. A warning is a prompt to
 inspect the session; it never stops or restarts it. Workers use their own idle
 notices. A session raises one warning for one activity time. Once it is open,
 answered or closed by the chief of staff, the same activity time raises no new
-warning; only later activity can. Offline sessions, and non-busy sessions that
-announced done, are not warned about.
+warning; only later activity can. No new warning opens within the stall time
+after the last one closed, so activity that the harness reports late cannot
+bring one back at once. Offline sessions, and non-busy sessions that
+announced done, are not warned about. A session that waits for work it handed
+to others is not warned about either: it has a worker online that it started, or
+another session has claimed an open step task of a change it submitted.
 
 Agents, workers and the CTO can read public settings with `agent_settings_read`.
 It accepts an optional `key` and `repo` and returns definitions, effective

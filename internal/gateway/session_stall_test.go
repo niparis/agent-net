@@ -550,3 +550,115 @@ func TestSessionStallLongBusyRunWithCPUProgress(t *testing.T) {
 		t.Fatal("silent session did not stall after CPU stopped")
 	}
 }
+
+// A session that started workers waits for them: no output for 20 minutes is
+// its normal state, not a stall. The 2026-11-12 asks about the lead session
+// came about once an hour while it waited for workers and step tasks.
+func TestSessionStallNoAskWhileSessionWaitsForItsWorkers(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("test-host", "linux")
+	lead, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead", Status: "busy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "worker", Status: "busy",
+		Worker: &protocol.WorkerInfo{ID: "w_1", Owner: lead, Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stallItems(t, s); len(got) != 0 {
+		t.Fatalf("stall ask while the session waits for its worker: %+v", got)
+	}
+	// The worker ended: the session has nothing to wait for and is silent.
+	if err := s.SetSessionOffline(node, worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stallItems(t, s); len(got) != 1 || got[0].SessionID != lead {
+		t.Fatalf("silent session with no worker running: %+v", got)
+	}
+}
+
+func TestSessionStallNoAskWhileItsStepTaskIsClaimed(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("test-host", "linux")
+	lead, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead", Status: "busy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO delivery_changes(id,project,branch,head_commit,revision,origin,caller,state,created_at) VALUES('ch_1','demo','b','h',1,'{}',?,'open',1)`, lead); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO delivery_step_tasks(change_id,revision,step,owner_node,claimed_by,completed,created_at) VALUES('ch_1',1,'test','n','s_merger',0,1)`); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stallItems(t, s); len(got) != 0 {
+		t.Fatalf("stall ask while the merger works on the session's change: %+v", got)
+	}
+	if _, err := s.db.Exec(`UPDATE delivery_step_tasks SET completed=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stallItems(t, s); len(got) != 1 {
+		t.Fatalf("silent session with no step task claimed: %+v", got)
+	}
+}
+
+// No new ask while one is open, and none within the stall window after one
+// closed. Activity that the harness reports late has a time before the close,
+// so the session can look stalled again at once.
+func TestSessionStallNoNewAskWithinTheWindowAfterAClose(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("test-host", "linux")
+	in := protocol.SessionInfo{Harness: "claude", NativeID: "late", Status: "busy"}
+	if _, err := s.UpsertSession(node, in); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stallItems(t, s); len(got) != 1 || got[0].Status != "open" {
+		t.Fatalf("first ask: %+v", got)
+	}
+	// Activity from 5 minutes ago arrives now: it closes the ask.
+	in.HarnessActivity = c.t.Add(-5 * time.Minute).Unix()
+	if _, err := s.UpsertSession(node, in); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stallItems(t, s); len(got) != 1 || got[0].Status == "open" {
+		t.Fatalf("activity did not close the ask: %+v", got)
+	}
+	// 16 minutes later that activity is 21 minutes old, but the ask closed 16
+	// minutes ago: still inside the window.
+	c.t = c.t.Add(16 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stallItems(t, s); len(got) != 1 {
+		t.Fatalf("new ask %d minutes after the last one closed: %+v", 16, got)
+	}
+	// Once the window has passed the session may be asked about again.
+	c.t = c.t.Add(5 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stallItems(t, s); len(got) != 2 || got[1].Status != "open" {
+		t.Fatalf("no ask after the window passed: %+v", got)
+	}
+}

@@ -26,6 +26,14 @@ func announcedDone(task string) bool {
 	return kind == "done"
 }
 
+// sessionWaitsForOthersSQL is true for a session that waits for work it handed
+// to others: a worker it started is online, or another session has claimed an
+// open step task of a change it submitted. It has no output while it waits, and
+// 20 minutes or more of that is normal (decision of 2026-11-12).
+const sessionWaitsForOthersSQL = `(EXISTS(SELECT 1 FROM sessions w WHERE w.online=1 AND w.worker<>'' AND json_extract(w.worker,'$.owner')=s.id)
+ OR EXISTS(SELECT 1 FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
+ WHERE c.caller=s.id AND c.state='open' AND t.completed=0 AND t.claimed_by<>'' AND t.claimed_by<>s.id))`
+
 // checkSessionStalls runs on the gateway's minute tick. A poll of a harness is
 // not progress: only output, a turn boundary or a delivery acknowledgement is.
 // One ask covers one activity time: it is not raised again for that time after
@@ -46,7 +54,8 @@ func (s *Store) checkSessionStalls() error {
 	rows, err := tx.Query(`SELECT s.id,s.harness,s.status,s.online,s.worker,s.waiting,
  COALESCE(NULLIF(s.repo_project,''),p.project,''),s.harness_activity,COALESCE(p.task,''),
  COALESCE((SELECT MIN(m.created_at) FROM messages m WHERE m.recipient=s.id AND
- (m.state IN ('stored','dispatched') OR (m.state='failed' AND EXISTS(SELECT 1 FROM delivery_retries r WHERE r.message_id=m.id)))),0)
+ (m.state IN ('stored','dispatched') OR (m.state='failed' AND EXISTS(SELECT 1 FROM delivery_retries r WHERE r.message_id=m.id)))),0),
+ ` + sessionWaitsForOthersSQL + `
  FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
  WHERE s.harness IN ('claude','codex','opencode','pi')`)
 	if err != nil {
@@ -56,11 +65,12 @@ func (s *Store) checkSessionStalls() error {
 		id, harness, status, worker, waiting, repo, task string
 		online                                           int
 		active, pending                                  int64
+		waitsForOthers                                   bool
 	}
 	var sessions []candidate
 	for rows.Next() {
 		var c candidate
-		if err := rows.Scan(&c.id, &c.harness, &c.status, &c.online, &c.worker, &c.waiting, &c.repo, &c.active, &c.task, &c.pending); err != nil {
+		if err := rows.Scan(&c.id, &c.harness, &c.status, &c.online, &c.worker, &c.waiting, &c.repo, &c.active, &c.task, &c.pending, &c.waitsForOthers); err != nil {
 			rows.Close()
 			return err
 		}
@@ -77,7 +87,7 @@ func (s *Store) checkSessionStalls() error {
 		// has nothing to stall. A busy session that stopped making progress
 		// still does, and so does an idle session with a stuck delivery.
 		idleDone := c.status != "busy" && announcedDone(c.task)
-		eligible := c.online != 0 && c.worker == "" && c.waiting == "" && !idleDone && (c.pending > 0 || c.status == "busy")
+		eligible := c.online != 0 && c.worker == "" && c.waiting == "" && !c.waitsForOthers && !idleDone && (c.pending > 0 || c.status == "busy")
 		baseline := c.active
 		if c.status != "busy" && c.pending > baseline {
 			baseline = c.pending
@@ -105,6 +115,18 @@ func (s *Store) checkSessionStalls() error {
 		}
 		timeout := snap.Duration("sessions.stall_timeout", settings.Where{Repo: c.repo})
 		if timeout <= 0 || now.Sub(time.Unix(0, baseline)) <= timeout {
+			continue
+		}
+		// One ask at a time, and none within the stall window after the last
+		// one ended. Activity that the harness reports late can make a session
+		// look stalled again at once, and the asks then came about every hour.
+		var lastStatus string
+		var lastAt int64
+		err = tx.QueryRow(`SELECT status,CASE WHEN answered_at>0 THEN answered_at ELSE created_at END FROM inbox_items WHERE session_id=? AND message_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1`, c.id, sessionStallMarker).Scan(&lastStatus, &lastAt)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if err == nil && (lastStatus == "open" || lastStatus == "dismissed" || now.Sub(time.Unix(0, lastAt)) < timeout) {
 			continue
 		}
 		_, err = s.createInboxItem(tx, protocol.InboxItem{Kind: "session_stall", SessionID: c.id, Node: c.repo, MessageID: sessionStallMarker,
