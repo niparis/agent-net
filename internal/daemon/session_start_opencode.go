@@ -168,8 +168,8 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 		if err != nil {
 			return protocol.StartedSession{}, err
 		}
-		plan := protocol.EnterPlan{Argv: []string{bin, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname, Note: "Press ctrl+] to come back here; the session keeps running."}
-		opened := d.openForCaller("opencode:"+r.NativeID, r.Project, socket, pane, plan)
+		plan := protocol.EnterPlan{Argv: []string{bin, "--server", service.URL, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname, Env: map[string]string{"OPENCODE_SERVER_PASSWORD": service.Password}, Note: "Press ctrl+] to come back here; the session keeps running."}
+		opened := d.viewPlan("opencode:"+r.NativeID, r.Project, socket, pane, false, plan)
 		r.Status = "started"
 		r.EnterPlan = &opened
 		d.mu.Lock()
@@ -275,7 +275,7 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 			if err == nil {
 				plan := protocol.EnterPlan{Argv: []string{bin, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname,
 					Note: "Press ctrl+] to come back here; the session keeps running."}
-				opened := d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
+				opened := d.viewPlan(r.SessionID, r.Project, socket, pane, false, plan)
 				if opened.OpenedHerdr || len(opened.Argv) == 0 || relayed {
 					r.EnterPlan = &opened
 				} else {

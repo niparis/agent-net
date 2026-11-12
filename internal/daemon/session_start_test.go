@@ -471,7 +471,7 @@ func TestSessionStartOpenCode(t *testing.T) {
 				t.Fatalf("owner row: %+v", a)
 			}
 			plan, err := n.d.localEnter(context.Background(), protocol.EnterRequest{SessionID: r.SessionID}, false)
-			if err != nil || len(plan.Argv) != 3 || plan.Argv[1] != "--session" || plan.Argv[2] != "ses_owner" {
+			if err != nil || len(plan.Argv) != 5 || plan.Argv[1] != "--server" || plan.Argv[2] != server.URL || plan.Argv[3] != "--session" || plan.Argv[4] != "ses_owner" || plan.Env["OPENCODE_SERVER_PASSWORD"] != "test-owner-password" {
 				t.Fatalf("enter plan: %+v %v", plan, err)
 			}
 			rows, _ := n.d.st.workers()
@@ -935,6 +935,9 @@ func TestSessionResumeCodexRegistered(t *testing.T) {
 	}
 	if r.EnterPlan == nil || r.EnterPlan.Env["CODEX_HOME"] != f.home {
 		t.Fatalf("home missing: %+v", r.EnterPlan)
+	}
+	if want := []string{bins["codex"], "resume", "--remote", "unix://", native}; !reflect.DeepEqual(r.EnterPlan.Argv, want) {
+		t.Fatalf("resume argv %v, want %v", r.EnterPlan.Argv, want)
 	}
 }
 

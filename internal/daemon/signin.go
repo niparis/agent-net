@@ -183,14 +183,14 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 		Argv: []string{bin, "--remote", targetHost}, Host: host,
 		Note: fmt.Sprintf("Opens herdr on %s; the sign-in is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here.", host, cleanLine(res.Pane)),
 	}
-	return d.openForCaller("signin-remote:"+q.AskID, "sign in: "+info.Label, q.HerdrSocket, q.HerdrPaneID, plan), nil
+	return d.viewPlan("signin-remote:"+q.AskID, "sign in: "+info.Label, q.HerdrSocket, q.HerdrPaneID, false, plan), nil
 }
 
 // openSignInPane opens the allowlisted login command in this machine's herdr.
 // It runs the argv from the table, never a value from an ask or an agent.
 func (d *Daemon) openSignInPane(info protocol.SignInProviderInfo, socket, callerPane string) (protocol.EnterPlan, error) {
 	plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
-	opened := d.openInHerdr("signin:"+info.Provider, "sign in: "+info.Label, socket, callerPane, plan)
+	opened := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, socket, callerPane, true, plan)
 	if !opened.OpenedHerdr {
 		return protocol.EnterPlan{Host: d.hostName(), Note: firstNonEmpty(opened.Note, herdrInstallNote)}, nil
 	}

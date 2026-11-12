@@ -203,7 +203,7 @@ func (d *Daemon) ctoEnterWithLocation(ctx context.Context, socket, pane string, 
 	if existing, found := d.focusHerdrSession(socket, harness, native, plan.Host, "CTO"); found {
 		return herdrOpenNotice(existing, plan), nil
 	}
-	return d.openInHerdr("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", socket, pane, plan), nil
+	return d.viewPlan("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", socket, pane, true, plan), nil
 }
 
 func (d *Daemon) ctoEnterBase(ctx context.Context) (protocol.EnterPlan, error) {

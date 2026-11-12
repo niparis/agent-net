@@ -72,7 +72,7 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	}
 	name := firstNonEmpty(plan.Name, q.SessionID)
 	remote := d.wrapRemoteEnter(host, plan)
-	return d.openForCaller("remote:"+q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, remote), nil
+	return d.viewPlan("remote:"+q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, false, remote), nil
 }
 
 // wrapRemoteEnter turns the other machine's local plan into the command this
@@ -240,7 +240,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		if viaGateway {
 			return base, nil
 		}
-		return d.openInHerdr(q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, base), nil
+		return d.viewPlan(q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, true, base), nil
 	}
 	private := viaGateway && (base.Env["OPENCODE_SERVER_PASSWORD"] != "" || base.Env["AGENT_NET_CODEX_TOKEN"] != "")
 	remotePane := func(pane string) protocol.EnterPlan {
@@ -282,7 +282,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		}
 		return p, nil
 	}
-	opened := d.openInHerdr(q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, base)
+	opened := d.viewPlan(q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, true, base)
 	if viaGateway && opened.OpenedHerdr {
 		// Keep the attach command for old clients and the remote wrapper; the
 		// pane ID lets the asking machine use Herdr's remote client.
@@ -398,6 +398,15 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 				return no("could not reopen session: %v", err)
 			}
 			plan.Argv = []string{bin, "--session", info.NativeID}
+			if service, serviceErr := d.ownerOpenCodeService(); serviceErr == nil {
+				if viaGateway && service.Password != "" {
+					return no("%s uses a private OpenCode service and can only be entered on its own machine", name)
+				}
+				plan.Argv = []string{bin, "--server", service.URL, "--session", info.NativeID}
+				if service.Password != "" {
+					plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": service.Password}
+				}
+			}
 			plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 			return plan, nil
 		}
@@ -435,7 +444,7 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 			if err != nil {
 				return no("%v", err)
 			}
-			plan.Argv = []string{bin, "resume", info.NativeID}
+			plan.Argv = []string{bin, "resume", "--remote", "unix://", info.NativeID}
 			if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
 				// The thread was found in another Codex home, so say which.
 				plan.Argv = append([]string{"env", "CODEX_HOME=" + home}, plan.Argv...)

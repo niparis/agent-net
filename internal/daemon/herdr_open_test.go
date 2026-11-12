@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -1340,5 +1341,23 @@ func TestCTOApprovedCodexWithoutHerdrOrTUIFails(t *testing.T) {
 	}
 	if items[0].Status != "failed" || start.Status != "failed" || start.Error == "" || !strings.Contains(items[0].Note, start.Error) {
 		t.Fatalf("proposal %#v start %#v", items[0], start)
+	}
+}
+
+func TestViewPlanUsesCallerTerminalOrFullTab(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	d := &Daemon{}
+	base := protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}}
+	outside := d.viewPlan("outside", "garden", "", "", false, base)
+	if outside.OpenedHerdr || !reflect.DeepEqual(outside.Argv, base.Argv) {
+		t.Fatalf("outside plan %+v", outside)
+	}
+	inside := d.viewPlan("inside", "garden", "/tmp/fake-herdr.sock", "w1:p0", false, base)
+	if !inside.OpenedHerdr {
+		t.Fatalf("inside plan %+v", inside)
+	}
+	calls := string(mustRead(t, log))
+	if !strings.Contains(calls, "tab create --label garden") || strings.Contains(calls, "pane split") {
+		t.Fatalf("calls %s", calls)
 	}
 }

@@ -107,10 +107,10 @@ func callerInHerdr(socket, pane string) bool {
 	return filepath.IsAbs(socket) && herdrIDRe.MatchString(pane)
 }
 
-// openForCaller opens the plan in herdr when the asking TUI runs in herdr, and
-// otherwise returns the terminal handover plan unchanged.
-func (d *Daemon) openForCaller(key, name, socket, pane string, plan protocol.EnterPlan) protocol.EnterPlan {
-	if !callerInHerdr(socket, pane) {
+// viewPlan chooses terminal handover or a full herdr tab. Host is set when
+// the command must run in a headless herdr server for a remote viewer or Pi.
+func (d *Daemon) viewPlan(key, name, socket, pane string, host bool, plan protocol.EnterPlan) protocol.EnterPlan {
+	if !host && !callerInHerdr(socket, pane) {
 		return plan
 	}
 	return d.openInHerdr(key, name, socket, pane, plan)
