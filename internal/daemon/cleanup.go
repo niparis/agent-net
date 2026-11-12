@@ -64,14 +64,22 @@ func checkProjectWorkTree(ctx context.Context, projectPath string) error {
 		return fmt.Errorf("not a directory: %s", projectPath)
 	}
 	out, err := gitOut(ctx, projectPath, "rev-parse", "--is-inside-work-tree")
+	var ge *workerGitError
+	if errors.As(err, &ge) && strings.Contains(ge.stderr, "not a git repository") {
+		return errNotGitRepo
+	}
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(out) != "true" {
-		return errors.New("not a git repository")
+		return errNotGitRepo
 	}
 	return nil
 }
+
+// errNotGitRepo marks a registered folder that is not a git repository, such
+// as a home folder. Cleanup has nothing to do there, so it is not a failure.
+var errNotGitRepo = errors.New("not a git repository")
 
 func (d *Daemon) shouldLogProjectCleanup(project string, now time.Time) bool {
 	d.cleanupLogMu.Lock()
@@ -119,6 +127,9 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 		}
 		now := d.cleanupNow()
 		if projErr := checkProjectWorkTree(ctx, p.Path); projErr != nil {
+			if errors.Is(projErr, errNotGitRepo) {
+				continue
+			}
 			if d.log != nil && d.shouldLogProjectCleanup(p.Path, now) {
 				d.Logf("worker.cleanup project=%q error=%v", p.Path, projErr)
 			}
