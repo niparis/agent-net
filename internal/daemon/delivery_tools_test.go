@@ -830,3 +830,41 @@ func TestChangeSubmitCrossProjectCaller(t *testing.T) {
 		t.Fatal("non-caller accepted")
 	}
 }
+
+// The CTO has no agent session, so its step report goes through cto_op. It is
+// sent for the CTO's own network session and never for another one.
+func TestCTOStepReportOpReportsAsTheCTOSession(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	f := &fakeDeliveryGateway{sent: map[string][]json.RawMessage{}, answers: map[string]func(json.RawMessage) (any, error){}}
+	f.answer(protocol.FrameStepReport, func(raw json.RawMessage) (any, error) {
+		return protocol.StepReportResult{Change: deliveryTestView(protocol.Change{ID: "ch_1"})}, nil
+	})
+	w := startWorkerNode(t, g, WorkerSettings{}, func(c *Config) { c.testGatewayCall = f.call })
+	w.cli.mustCall("cto_send", map[string]string{"text": "start"})
+	var cto string
+	eventually(t, "the CTO has a network session", func() bool { cto = w.d.ctoSessionID(); return cto != "" })
+	commit := strings.Repeat("a", 40)
+	op := func(args map[string]any) error {
+		raw, _ := json.Marshal(map[string]any{"method": "step_report", "args": args})
+		_, err := w.d.runCTOTool(context.Background(), "cto_op", raw)
+		return err
+	}
+	if err := op(map[string]any{"change": "ch_1", "step": "review", "result": "pass", "commit": commit, "fields": map[string]string{"findings_open": "0"}, "note": "CTO method review: pass"}); err != nil {
+		t.Fatal(err)
+	}
+	frames := f.frames(protocol.FrameStepReport)
+	if len(frames) != 1 {
+		t.Fatalf("report frames: %d", len(frames))
+	}
+	var sent protocol.StepReportRequest
+	if err := json.Unmarshal(frames[0], &sent); err != nil || sent.SessionID != cto || sent.DoneBy != "" || sent.Step != protocol.StepReview || sent.Note == "" {
+		t.Fatalf("CTO report: %+v, %v", sent, err)
+	}
+	if err := op(map[string]any{"change": "ch_1", "step": "review", "result": "pass", "commit": commit, "done_by": "s_other"}); err == nil {
+		t.Fatal("the CTO reported for another session")
+	}
+	if n := len(f.frames(protocol.FrameStepReport)); n != 1 {
+		t.Fatalf("a refused CTO report reached the gateway: %d frames", n)
+	}
+}

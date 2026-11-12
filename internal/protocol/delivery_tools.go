@@ -33,6 +33,11 @@ type StepClaimArgs struct {
 	Change string `json:"change"`
 	StepRef
 	Commit string `json:"commit"`
+	// Reviewer is a session id. Set it to name that session, for example the
+	// CTO or the chief of staff, as the one who reports this accept or review
+	// step instead of you. Only the caller may name one. Naming ends with the
+	// revision.
+	Reviewer string `json:"reviewer,omitempty"`
 }
 
 // StepReportArgs are the arguments of agent_step_report. DoneBy defaults to
@@ -46,6 +51,18 @@ type StepReportArgs struct {
 	DoneBy string            `json:"done_by,omitempty"`
 	Note   string            `json:"note,omitempty"`
 	Until  string            `json:"until,omitempty"`
+}
+
+// CTOStepReportArgs are the arguments of the CTO's step_report op. The CTO
+// reports as itself: there is no done_by. The gateway accepts the report only
+// for a step whose caller named the CTO as its reviewer.
+type CTOStepReportArgs struct {
+	Change string `json:"change"`
+	StepRef
+	Result string            `json:"result"`
+	Commit string            `json:"commit"`
+	Fields map[string]string `json:"fields,omitempty"`
+	Note   string            `json:"note,omitempty"`
 }
 
 // OpChangesOwnerFind is the owner's read of the same data, for the TUI: it

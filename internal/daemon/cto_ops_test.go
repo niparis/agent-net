@@ -40,6 +40,13 @@ func TestCTOOpsHavePurposeSchemaExampleAndGate(t *testing.T) {
 			}
 			continue
 		}
+		if op.Action == "" {
+			// A typed tool, such as step_report, has one class of its own.
+			if _, ok := ctoToolClasses[op.Tool]; !ok {
+				t.Errorf("%s runs unclassified tool %s", op.Name, op.Tool)
+			}
+			continue
+		}
 		class, ok := ctoActionClasses[op.Tool][op.Action]
 		if !ok {
 			t.Errorf("%s action %s.%s has no class", op.Name, op.Tool, op.Action)
@@ -81,7 +88,7 @@ func TestCTOOpsListGroupsAndFilter(t *testing.T) {
 			seen[op.Name] = true
 		}
 	}
-	for _, name := range []string{"apps_list", "process_stop", "node_remove", "mcp_import", "gateway_backup", "charter_history", "inbox_list", "session_replace"} {
+	for _, name := range []string{"apps_list", "process_stop", "node_remove", "mcp_import", "gateway_backup", "charter_history", "inbox_list", "session_replace", "step_report"} {
 		if !seen[name] {
 			t.Errorf("op list misses %s", name)
 		}

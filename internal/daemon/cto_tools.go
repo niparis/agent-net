@@ -409,6 +409,20 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			out["note"] = "Your earlier pending asks are still open. Pass replaces with one of their IDs to retire it."
 		}
 		return out, nil
+	case "agent_step_report":
+		// The CTO reports as itself, never for another session.
+		var a protocol.StepReportArgs
+		if err := decodeDeliveryArgs("step_report", raw, &a); err != nil {
+			return nil, err
+		}
+		if a.DoneBy != "" {
+			return nil, errors.New("the CTO reports as itself: leave done_by out")
+		}
+		sid := d.ctoSessionID()
+		if sid == "" {
+			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
+		}
+		return d.stepReport(ctx, sid, protocol.SessionInfo{}, a)
 	case "agent_permission_propose":
 		var p protocol.PermissionProposeRequest
 		if json.Unmarshal(raw, &p) != nil {

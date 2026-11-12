@@ -38,7 +38,7 @@ type CTOOp struct {
 	Method string
 }
 
-var ctoOpGroupOrder = []string{"Connected apps", "Machines", "Sessions", "Graph", "Tools", "Owner reads", "Owner changes"}
+var ctoOpGroupOrder = []string{"Connected apps", "Machines", "Sessions", "Graph", "Delivery", "Tools", "Owner reads", "Owner changes"}
 
 // ctoOwnerOpTypes is the argument schema of owner operations that moved to the
 // op tier with a strict contract. Every other owner operation keeps the free
@@ -168,8 +168,28 @@ var ctoMovedOps = []CTOOp{
 	mergedOp("mcp_import", "Tools", "Import a native MCP server, by candidate or by plan.", "tools_change", "import", "mcp_import", nil, false, `{"candidate":"mcp-candidate"}`),
 }
 
+// ctoStepReportOp reports one delivery step as the CTO itself. It is not a
+// merged action tool: it runs the typed agent_step_report path of the daemon
+// with the CTO's own session, and the gateway checks that the caller named the
+// CTO as the reviewer of that step.
+func ctoStepReportOp() CTOOp {
+	schema := map[string]any{"type": "object", "additionalProperties": true}
+	if s, err := jsonschema.ForType(reflect.TypeOf(protocol.CTOStepReportArgs{}), nil); err == nil {
+		if raw, err := json.Marshal(s); err == nil {
+			var out map[string]any
+			if json.Unmarshal(raw, &out) == nil {
+				schema = out
+			}
+		}
+	}
+	return CTOOp{Name: "step_report", Group: "Delivery", Tool: "agent_step_report", Schema: schema,
+		Purpose: "Report pass, fail or needs_owner for the accept or review step that a change's caller named you to report. Name the full head commit you checked. Refused when the caller did not name you for that step.",
+		Example: `{"change":"ch_1","step":"review","result":"pass","commit":"0123456789012345678901234567890123456789","fields":{"findings_open":"0"},"note":"CTO method review: pass"}`}
+}
+
 var ctoOps = func() []CTOOp {
 	ops := append([]CTOOp(nil), ctoMovedOps...)
+	ops = append(ops, ctoStepReportOp())
 	seen := map[string]bool{}
 	for _, op := range ops {
 		seen[op.Name] = true

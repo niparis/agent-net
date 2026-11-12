@@ -63,7 +63,7 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
 			return nil, true, err
 		}
-		q := protocol.StepClaimRequest{SessionID: sid, ChangeID: a.Change, StepRef: a.StepRef, Commit: a.Commit}
+		q := protocol.StepClaimRequest{SessionID: sid, ChangeID: a.Change, StepRef: a.StepRef, Commit: a.Commit, Reviewer: a.Reviewer}
 		if err := q.Validate(); err != nil {
 			return nil, true, err
 		}

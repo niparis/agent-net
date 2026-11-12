@@ -1787,7 +1787,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_step_claim",
-    "description": "Claim a ready node-owned delivery step before starting it. The first eligible session to claim or report it takes it. Name the exact commit in the task.",
+    "description": "Claim a ready node-owned delivery step before starting it. The first eligible session to claim or report it takes it. Name the exact commit in the task. As the caller of a change, set reviewer to another session id (for example the CTO or the chief of staff) to hand that change's accept or review step to it; you cannot name yourself or a session of your own agent.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1824,6 +1824,10 @@ export const TOOL_CATALOG = [
           "type": "string",
           "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$",
           "description": "Full commit hash from the task."
+        },
+        "reviewer": {
+          "type": "string",
+          "description": "Session id of another agent or the CTO. As the caller of the change, name it to hand this accept or review step to it: it reports the step as itself and you do not. Naming ends with the revision."
         }
       },
       "required": [
