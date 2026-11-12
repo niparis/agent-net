@@ -218,6 +218,21 @@ func mapCharterBlock(c protocol.Charter, w int) []string {
 	return out
 }
 
+// mapBarLines lists the rules of a project's bar, one ID and text per rule.
+func mapBarLines(bar []protocol.BarRule, w int) []string {
+	var out []string
+	for _, r := range bar {
+		for i, l := range wrap(sanitize(r.Text), max(w-5, 8)) {
+			label := "    "
+			if i == 0 {
+				label = sDim.Render(cell(r.ID, 4))
+			}
+			out = append(out, label+" "+l)
+		}
+	}
+	return out
+}
+
 // mapRecentLine lists the newest graph changes of a node on one line.
 func (m Model) mapRecentLine(node string, w int) string {
 	head := sDim.Render("RECENT") + "  "
@@ -436,6 +451,10 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 		charter = []string{sDim.Render("no charter set")}
 	}
 	out = append(out, charter...)
+	if len(node.Bar) > 0 {
+		out = append(out, section("Project rules", w))
+		out = append(out, mapBarLines(node.Bar, w)...)
+	}
 	out = append(out, m.mapDraftLines(node, w)...)
 	out = append(out, m.mapLearnedLines(node.Name, w)...)
 	if node.Loop != nil {

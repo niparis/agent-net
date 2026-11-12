@@ -176,6 +176,16 @@ func (s *Store) charterDraftAskFor(session string, c resolvedContext, hash strin
 				"agent-net asks once, and again only if AGENTS.md changes.\n")
 		}
 	}
+	barText, err := s.barAskText(tx, session, c, hash, record)
+	if err != nil {
+		return "", err
+	}
+	if barText != "" {
+		if text.Len() > 0 {
+			text.WriteString("\n")
+		}
+		text.WriteString(barText + "\n")
+	}
 	if c.Agent != "" {
 		teamText, err := s.draftTeamAsk(tx, session, c.Agent, record)
 		if err != nil {

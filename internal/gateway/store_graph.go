@@ -1340,7 +1340,7 @@ var graphNodesTables = []string{"graph_nodes", "projects", "sessions.repo_projec
 // snapshot, the loops (loopTables), the delegation policies and the edges.
 // Keep it equal to those queries (see readThrough).
 var graphTables = tableUnion(graphNodesTables, charterTables, settingsTables, loopTables,
-	[]string{"graph_charter", "agent_charter", "project_policies", "graph_edges"})
+	[]string{"graph_charter", "agent_charter", "project_policies", "graph_edges", "project_bar_rules"})
 
 // Graph returns explicit and implicit nodes and all edges.
 //
@@ -1459,6 +1459,15 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 	}
 	if err = s.applyEffectiveCharters(&g); err != nil {
 		return g, err
+	}
+	bars, err := s.allBarRules()
+	if err != nil {
+		return g, err
+	}
+	for project, rules := range bars {
+		if n := byName[project]; n != nil {
+			n.Bar = rules
+		}
 	}
 
 	var snap settings.Snapshot

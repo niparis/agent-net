@@ -2041,6 +2041,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.flushLeadRequests(ctx)
 		return res, err
 
+	case "bar.edit":
+		p, err := decode[protocol.BarEditFrame](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad bar.edit")
+		}
+		owner, err := st.SessionNode(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("session %q does not belong to this node", p.SessionID)
+		}
+		return st.EditBar(p.SessionID, p.BarEditRequest)
+
 	case "permission.propose":
 		p, err := decode[protocol.PermissionProposeFrame](raw)
 		if err != nil || p.SessionID == "" {

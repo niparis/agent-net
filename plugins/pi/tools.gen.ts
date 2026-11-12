@@ -215,6 +215,60 @@ export const TOOL_CATALOG = [
     "method": "ask_sort"
   },
   {
+    "name": "agent_bar_edit",
+    "description": "Add, edit or remove the project rules that workers and reviewers check diffs against. Lead of the project, owner or CTO only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "description": "Owner and CTO only."
+        },
+        "add": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 400
+          },
+          "description": "New one-line rules."
+        },
+        "edit": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Such as B3."
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 400
+              }
+            },
+            "required": [
+              "id",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "remove": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Rule IDs."
+        }
+      },
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "agent_bar_edit"
+  },
+  {
     "name": "agent_change_submit",
     "description": "Submit work done outside a worker as a change, so agent-net moves it through the project's delivery steps. A worker's complete hand-back submits its change by itself. A new head commit on the same change makes a new revision.",
     "inputSchema": {

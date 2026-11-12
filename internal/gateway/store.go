@@ -1311,7 +1311,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1524,6 +1524,20 @@ CREATE TRIGGER IF NOT EXISTS sessions_worker_ad AFTER DELETE ON sessions WHEN ol
 END;
 `
 }
+
+// projectBarMigration stores each project's bar: a short list of rules that
+// workers and reviewers check a diff against. n is the number in the ID (B1,
+// B2, ...); project_bar_next keeps the next one, so a removed rule's ID is not
+// given to a new rule.
+const projectBarMigration = `
+-- Project bar rules.
+CREATE TABLE IF NOT EXISTS project_bar_rules (
+  project TEXT NOT NULL, n INTEGER NOT NULL, text TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
+  PRIMARY KEY(project,n));
+CREATE TABLE IF NOT EXISTS project_bar_next (
+  project TEXT PRIMARY KEY, next INTEGER NOT NULL);
+`
 
 // nodeSleepMigration keeps one row for an outage the gateway saw start. It
 // lets a sleep report from the returning daemon explain the gap, and lets the
@@ -4036,8 +4050,9 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 
 // agentOneTables are the tables Agent reads, through every function it calls:
 // the agent row (agentListTables), its delegation, its charter and its loop.
+// The long view reads the graph, which carries each project's bar.
 // Keep it equal to those queries (see readThrough).
-var agentOneTables = tableUnion(agentListTables, delegationTables, shortAgentChartersTables, loopTables)
+var agentOneTables = tableUnion(agentListTables, delegationTables, shortAgentChartersTables, loopTables, []string{"project_bar_rules"})
 
 type agentOne struct {
 	a  protocol.AgentView
