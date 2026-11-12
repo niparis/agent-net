@@ -18,13 +18,14 @@ func (s *Store) storeAutomaticMessage(p protocol.MsgSend) (protocol.Message, boo
 	if m, ok, err := s.message(tx, "m.sender='agent-net' AND m.idem_key=?", p.IdempotencyKey); err != nil || ok {
 		return m, false, err
 	}
-	var exists bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?)`, p.Recipient).Scan(&exists); err != nil {
+	live, exists, err := liveSession(tx, p.Recipient)
+	if err != nil {
 		return protocol.Message{}, false, err
 	}
 	if !exists {
 		return protocol.Message{}, false, reject("unknown recipient session %q", p.Recipient)
 	}
+	p.Recipient = live
 	if p.WorkerTask {
 		var stopped bool
 		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE id=? AND worker<>'' AND (online=0 OR worker_run_active=0))`, p.Recipient).Scan(&stopped); err != nil {

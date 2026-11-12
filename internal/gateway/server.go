@@ -3649,7 +3649,22 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) bool {
 		return false
 	}
 	a, ok, err := g.store.Agent(m.To)
-	if err != nil || !ok || a.Harness == "bot" {
+	if err != nil || !ok {
+		return false
+	}
+	if a.ReplacedBy != "" {
+		moved := false
+		if m, moved, err = g.store.redirectReplaced(m); err != nil {
+			g.logLine("error", "where", "redirect replaced recipient", "msg", m.ID, "err", err)
+		}
+		if !moved {
+			return false
+		}
+		if a, ok, err = g.store.Agent(m.To); err != nil || !ok {
+			return false
+		}
+	}
+	if a.Harness == "bot" {
 		return false
 	}
 	if !a.Online {

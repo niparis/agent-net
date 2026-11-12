@@ -136,7 +136,9 @@ func (g *Gateway) wakeSession(ctx context.Context, a protocol.AgentView) {
 // permitted by wakeForMessage (e.g. by wake_on_message). It reports whether it
 // started a wake: the claim is taken and the call to the machine is under way.
 func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop bool, fromMessage bool) bool {
-	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online {
+	// A replaced session was stopped on purpose: its work and its messages
+	// belong to the session that replaced it.
+	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online || a.ReplacedBy != "" {
 		return false
 	}
 	autonomy := loop || g.autonomyWake(a)
@@ -249,11 +251,9 @@ func (g *Gateway) wakePending(ctx context.Context, node string) {
 		g.logLine("error", "where", "wake pending", "err", err)
 		return
 	}
+	// dispatch moves a message for a replaced session to its replacement first.
 	for _, m := range pending {
-		a, ok, err := g.store.Agent(m.To)
-		if err == nil && ok {
-			g.wakeForMessage(ctx, a, m)
-		}
+		g.dispatch(ctx, m)
 	}
 }
 
