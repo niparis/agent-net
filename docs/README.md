@@ -63,6 +63,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0019](decisions/0019-opencode-worker-logins.md): OpenCode workers get a private data folder and a copy of all the owner's OpenCode logins; the OAuth sign-out risk and when to revisit.
 - [0006](decisions/0006-phone-app.md): phone app, planned: same data and actions as the TUI, through one shared operator interface.
 - [0122](decisions/0122-web-console.md): the web console replaces the phone app: Desk and Sessions first, read and answer only. The design mockup is [design/web-console-mockup.html](design/web-console-mockup.html).
+- [0133](decisions/0133-picker-override-needs-a-human.md): an agent cannot override the worker picker without a human: the owner's words or his confirmation on the Desk.
 - [spike/](spike/): what we measured about each agent before building.
 - [step2-design.md](step2-design.md): protocol and message design for the gateway, daemon and Claude and Pi adapters. Still a good description of the wire protocol.
 - [step2-run.md](step2-run.md): how to run the pieces by hand, one by one.

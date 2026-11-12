@@ -309,6 +309,9 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	if item, handled, err := s.answerLoopAsk(id, answer, validate...); handled || err != nil {
 		return item, err
 	}
+	if item, handled, err := s.answerStartAsk(id, answer, actor, validate...); handled || err != nil {
+		return item, err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.InboxItem{}, err

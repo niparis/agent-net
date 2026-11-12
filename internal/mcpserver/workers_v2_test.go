@@ -202,7 +202,7 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
 		switch method {
 		case "worker_start":
-			return json.RawMessage(`{"status":"started","session_id":"s_w1","harness":"opencode","model":"deepseek-v4.1-flash","project":"shop","hostname":"research","permissions":"sandboxed","owner_line":"Tell your user: worker on deepseek-v4.1-flash, difficulty normal (D 2.60; R3 S2 C3 U2 V2 K2).","reminder":"You named the model.","hint":"If this fixes earlier work, pass fixes=<change id> so agent-net counts the defect. Recent changes in shop: ch_1"}`), nil
+			return json.RawMessage(`{"status":"started","session_id":"s_w1","harness":"opencode","model":"deepseek-v4.1-flash","project":"shop","hostname":"research","permissions":"sandboxed","owner_line":"Tell your user: worker on deepseek-v4.1-flash, difficulty normal (D 2.60; R3 S2 C3 U2 V2 K2).","selection_path":"owner_words","hint":"If this fixes earlier work, pass fixes=<change id> so agent-net counts the defect. Recent changes in shop: ch_1"}`), nil
 		case "list":
 			return list, nil
 		}
@@ -225,11 +225,42 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	if line, _ := out["owner_line"].(string); !strings.HasPrefix(line, "Tell your user: worker on deepseek-v4.1-flash, difficulty normal") {
 		t.Fatalf("owner line: %q", line)
 	}
-	if r, _ := out["reminder"].(string); r != "You named the model." {
-		t.Fatalf("reminder: %q", r)
+	if out["selection_path"] != "owner_words" {
+		t.Fatalf("selection_path: %v", out["selection_path"])
+	}
+	if _, ok := out["reminder"]; ok {
+		t.Fatal("the soft reminder is gone: the daemon holds an override instead")
 	}
 	if h, _ := out["hint"].(string); !strings.Contains(h, "fixes=<change id>") || !strings.Contains(h, "ch_1") {
 		t.Fatalf("hint: %q", h)
+	}
+}
+
+// owner_words and reason reach the daemon, which checks them; a held start is
+// answered as accepted with the selection path.
+func TestAgentWorkerStartPassesOwnerWordsAndReason(t *testing.T) {
+	var got protocol.WorkerStartRequest
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "worker_start" {
+			got, _ = params.(protocol.WorkerStartRequest)
+			return json.RawMessage(`{"status":"accepted","start_id":"a_1","note":"held for the owner","selection_path":"held"}`), nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start",
+		Arguments: map[string]any{"task": "do it", "model": "gpt-6", "owner_words": "use gpt-6 for this", "reason": "second opinion"}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_worker_start: %v %+v", err, res)
+	}
+	if got.OwnerWords != "use gpt-6 for this" || got.Reason != "second opinion" || got.Model != "gpt-6" {
+		t.Fatalf("daemon request: %+v", got)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	if out["selection_path"] != "held" {
+		t.Fatalf("selection_path: %v", out["selection_path"])
+	}
+	if acc, _ := out["accepted"].(map[string]any); acc["start_id"] != "a_1" {
+		t.Fatalf("accepted: %v", out["accepted"])
 	}
 }
 

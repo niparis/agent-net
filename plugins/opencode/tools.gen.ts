@@ -1847,7 +1847,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start a worker session with a complete brief, or continue one. Only when the owner asked for a worker, or when your effective work mode says workers write code. The difficulty judge chooses the level; difficulty and touches are accepted for older callers but ignored.",
+    "description": "Start a worker session with a complete brief, or continue one. Only when the owner asked for a worker, or when your effective work mode says workers write code. The difficulty judge chooses the level; difficulty and touches are accepted for older callers but ignored. Leave harness, model, provider, effort, not_family and machine empty: the picker chooses. Set them only when your owner names them, and pass owner_words with his quote; without it the start waits for his confirmation on the Desk.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1890,7 +1890,7 @@ export const TOOL_CATALOG = [
         },
         "machine": {
           "type": "string",
-          "description": "Machine name or ID."
+          "description": "Leave empty: a selection field. Set only when your owner named it, with owner_words."
         },
         "harness": {
           "type": "string",
@@ -1901,7 +1901,7 @@ export const TOOL_CATALOG = [
             "pi",
             "agy"
           ],
-          "description": "Harness name."
+          "description": "Leave empty: a selection field. Set only when your owner named it, with owner_words."
         },
         "model": {
           "type": "string",
@@ -1947,7 +1947,7 @@ export const TOOL_CATALOG = [
           "items": {
             "type": "string"
           },
-          "description": "Exclude model families from automatic selection, for example [\"openai\"]."
+          "description": "Leave empty: a selection field. Excludes model families, for example [\"openai\"]; set only when your owner named it, with owner_words."
         },
         "fixes": {
           "type": "string",
@@ -1958,6 +1958,16 @@ export const TOOL_CATALOG = [
           "minimum": 1,
           "maximum": 4,
           "description": "Severity of that defect, 1 to 4. Default 2."
+        },
+        "owner_words": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "A short quote of your owner's own request that names harness, model, provider, effort, family or machine, for example \"use a codex worker for this\". Needed to set any of those: agent-net checks it appears in what he typed in this session in the last 3 hours. Leave them empty otherwise."
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Why you set selection fields without owner_words. The start then waits for your owner to confirm it or let the picker choose."
         }
       },
       "required": [],

@@ -386,6 +386,16 @@ type WorkerStartRequest struct {
 	// top of the choice copied from the project's main checkout. Empty records
 	// nothing. Not allowed with Continue.
 	MCPServers string `json:"mcp_servers,omitempty"`
+	// OwnerWords is a short quote of the owner's own request that names the
+	// harness, model, provider, effort, family or machine. It is read only from
+	// an agent's start. The daemon checks that the quote appears in what the
+	// owner typed in the caller's session in the last hours (OwnerWordsMatch).
+	OwnerWords string `json:"owner_words,omitempty"`
+	// Reason is why the caller sets selection fields without the owner's
+	// words. It is read only from an agent's start, and only when OwnerWords is
+	// empty or does not match. It goes to the owner in the ask that holds the
+	// start.
+	Reason string `json:"reason,omitempty"`
 }
 
 // WorkerStartResult answers OpWorkerStart.
@@ -407,9 +417,11 @@ type WorkerStartResult struct {
 	// OwnerLine is one line for the caller to pass on to its user: the model
 	// and the judge's difficulty. Empty for a continued worker.
 	OwnerLine string `json:"owner_line,omitempty"`
-	// Reminder is a short note for the caller when it named a model itself
-	// instead of leaving the choice to the picker. Empty otherwise.
-	Reminder string `json:"reminder,omitempty"`
+	// SelectionPath says how a start that set selection fields went ahead:
+	// SelectionOwnerWords (the owner's own words were found in his prompts) or
+	// SelectionHeld (the start waits for the owner's answer on the Desk). Empty
+	// when the caller set no selection field.
+	SelectionPath string `json:"selection_path,omitempty"`
 	// Hint is one line about a defect this start may fix: the recent changes
 	// in the project that `fixes` can name. Empty when the task does not sound
 	// like a fix or when `fixes` was set.

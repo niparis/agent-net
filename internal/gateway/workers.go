@@ -139,6 +139,17 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		return out, err
 
+	case "worker.override_ask":
+		p, err := decode[protocol.StartOverrideAsk](raw)
+		if err != nil || p.Session == "" || p.StartID == "" || strings.TrimSpace(p.Text) == "" {
+			return nil, reject("bad worker.override_ask")
+		}
+		item, err := g.store.CreateStartOverrideAsk(nc.id, p.Session, p.StartID, p.Text)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"item_id": item.ID}, nil
+
 	case "worker.start_report":
 		p, err := decode[protocol.WorkerStartReport](raw)
 		if err != nil {

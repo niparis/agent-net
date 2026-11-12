@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/settings"
 )
 
 // The operator interface on the daemon (decision 0007). The methods and their
@@ -376,6 +375,14 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	if err != nil {
 		return nil, err
 	}
+	// An agent cannot override the picker without a human: the owner's words
+	// or his answer on the Desk (worker_override.go). The owner's command line
+	// and TUI and the CTO are not agents here.
+	agent, _ := ctx.Value(answerEarlyKey{}).(bool)
+	selection, hold, reason, err := d.checkOverride(caller, &p, agent && !cto)
+	if err != nil {
+		return nil, err
+	}
 	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto}
 	if p.Continue == "" {
 		// Everything that needs no judge is checked first, in a moment: the
@@ -387,13 +394,22 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 			return nil, err
 		}
 	}
+	if hold {
+		return d.holdStart(ctx, caller, p, reason, callerProject, callerPath)
+	}
 	run := func(ctx context.Context) (*protocol.WorkerStartResult, error) {
 		return d.runWorkerStartCall(ctx, caller, p, frame, callerPath, cto, ph)
 	}
-	if early, _ := ctx.Value(answerEarlyKey{}).(bool); !early || cto || p.Continue != "" {
-		return run(ctx)
+	var res *protocol.WorkerStartResult
+	if !agent || cto || p.Continue != "" {
+		res, err = run(ctx)
+	} else {
+		res, err = d.startWithinBudget(ctx, caller, p, ph, run)
 	}
-	return d.startWithinBudget(ctx, caller, p, ph, run)
+	if res != nil && selection != "" {
+		res.SelectionPath = selection
+	}
+	return res, err
 }
 
 // runWorkerStartCall judges the brief, asks the gateway to start the worker,
@@ -440,12 +456,12 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
 			Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, MachineNote: ans.MachineNote,
 			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
-			Reminder: d.namedModelReminder(p), Hint: ans.Hint}, nil
+			Hint: ans.Hint}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
 		Permissions: ans.Permissions, OSSandbox: ans.OSSandbox, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
-		Reminder: d.namedModelReminder(p), Hint: ans.Hint}
+		Hint: ans.Hint}
 	if ans.Starting {
 		out.Status = "starting"
 		return out, nil
@@ -468,16 +484,6 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 		out.Task, out.Queued = sent.Message, sent.Queued
 	}
 	return out, nil
-}
-
-// namedModelReminder is the note a start result carries when the caller chose
-// the model itself. The picker's own choice, a harness alone and a continued
-// worker get none. The text is the network setting workers.named_model_reminder.
-func (d *Daemon) namedModelReminder(p protocol.WorkerStartRequest) string {
-	if p.Continue != "" || p.Model == "" || p.Model == "auto" {
-		return ""
-	}
-	return strings.TrimSpace(d.SettingsSnapshot().String("workers.named_model_reminder", settings.Where{}))
 }
 
 // workersView lists the workers on the network with their owners. The optional
