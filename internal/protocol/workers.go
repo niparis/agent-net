@@ -1017,6 +1017,10 @@ type WorkerNotice struct {
 	// DeliveryBranch is the branch the change records when it is not the
 	// start branch (Branch), empty otherwise.
 	DeliveryBranch string
+
+	// HandbackCheck is the project's pre-hand-back check, nil when it did not
+	// run (nothing changed, or the worker had no worktree).
+	HandbackCheck *HandbackCheck
 }
 
 // ReportMarker separates the facts from the worker's report in a notice.
@@ -1087,6 +1091,16 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		}
 		if n.DeliveryError != "" {
 			b.WriteString("delivery record: " + n.DeliveryError + "\n")
+		}
+		if n.HandbackCheck != nil {
+			b.WriteString(n.HandbackCheck.NoticeLine() + "\n")
+			if n.HandbackCheck.Status == HandbackCheckFailed || n.HandbackCheck.Status == HandbackCheckTimedOut {
+				if tail := strings.TrimRight(n.HandbackCheck.OutputTail, "\n"); tail != "" {
+					// The command runs project code; its output must not pass
+					// for agent-net's own markers.
+					b.WriteString("hand-back check output:\n" + NeutralizeMarkers(tail) + "\n")
+				}
+			}
 		}
 		if n.Saved {
 			b.WriteString("unfinished changes were saved as a commit on branch " + n.Branch + "\n")

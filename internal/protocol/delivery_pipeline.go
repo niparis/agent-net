@@ -1528,6 +1528,9 @@ type ChangeSubmitRequest struct {
 	// Signals are the free quality signals the daemon computed from the
 	// commit range. The gateway stores them with this revision.
 	Signals []QualitySignal `json:"signals,omitempty"`
+	// HandbackCheck is the project's pre-hand-back check, when the worker's
+	// daemon ran it. The gateway stores it with this revision.
+	HandbackCheck *HandbackCheck `json:"handback_check,omitempty"`
 	// Fixes names a shipped change this new change fixes, and FixesSeverity
 	// (1 to 4, default 2) is the defect agent-net records on that change's
 	// worker. They count only when the submit creates the change.
@@ -1564,6 +1567,11 @@ func (q ChangeSubmitRequest) Validate() error {
 			return err
 		}
 	}
+	if q.HandbackCheck != nil {
+		if err := q.HandbackCheck.Validate(); err != nil {
+			return err
+		}
+	}
 	return Change{Project: q.Project, Branch: q.Branch, TargetBranch: q.TargetBranch, BaseCommit: q.BaseCommit, HeadCommit: q.HeadCommit, Origin: q.Origin, Difficulty: q.Difficulty, Risk: q.Risk, SensitivePath: q.SensitivePath, Title: q.Title}.validateWork()
 }
 
@@ -1580,6 +1588,9 @@ type ChangeView struct {
 	// Signals are the free quality signals of the revision in Change. They
 	// inform the caller and the owner; nothing uses them to block a step.
 	Signals []QualitySignal `json:"signals,omitempty"`
+	// HandbackCheck is the project's pre-hand-back check for the revision in
+	// Change, nil when the revision recorded none.
+	HandbackCheck *HandbackCheck `json:"handback_check,omitempty"`
 }
 
 // ChangeSubmitResult answers change.submit.

@@ -261,7 +261,7 @@ func TestDeliveryHandbackComputesQualitySignals(t *testing.T) {
 	gitIn(t, wt, "add", ".")
 	gitIn(t, wt, "commit", "-qm", "signals")
 	w := &worker{id: "w_signals", worktree: wt, branch: "feat/x", base: gitHead(t, repo, "main"), owner: "s_owner", sessionID: "s_worker", project: "demo", difficultyUsed: "normal"}
-	id, problem := n.d.recordHandbackChange(context.Background(), w)
+	id, problem := n.d.recordHandbackChange(context.Background(), w, nil)
 	if id == "" || problem != "" {
 		t.Fatalf("id=%q problem=%q", id, problem)
 	}

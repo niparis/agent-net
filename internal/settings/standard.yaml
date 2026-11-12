@@ -424,6 +424,23 @@ settings:
     levels: [network]
     default: true
     live: true
+  - key: delivery.handback_check
+    description: One shell command line run in the worker's worktree at a complete hand-back after the commit; empty runs nothing.
+    kind: rule
+    stricter: owner
+    type: text
+    levels: [network, repo]
+    default: ""
+    live: true
+  - key: delivery.handback_check_timeout
+    description: Wall-clock limit for the hand-back check, including its wait for the machine's test slot.
+    kind: rule
+    type: duration
+    stricter: lower
+    min: "1s"
+    levels: [network, repo]
+    default: "30m"
+    live: true
   - key: delivery.trailer_worker
     rows: [135]
     description: Git trailer name for the worker worker.

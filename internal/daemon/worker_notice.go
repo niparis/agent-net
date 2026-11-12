@@ -1161,10 +1161,22 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 		}
 	}
 	// A complete hand-back is a revision of a delivery change (delivery
-	// pipeline build step 1). A partial one records nothing.
+	// pipeline build step 1). A partial one records nothing. The project's
+	// pre-hand-back check runs after the commit and before the change is
+	// recorded, so the change carries its result (owner decision 2026-11-12).
 	changeID, deliveryProblem := "", ""
+	var handbackCheck *protocol.HandbackCheck
 	if req.Status == protocol.StatusDone && req.IsComplete() {
-		changeID, deliveryProblem = d.recordHandbackChange(ctx, w)
+		// Mark the check: the tick must not end the worker by age or
+		// idleness while the project's command runs.
+		d.wmu.Lock()
+		w.checking = true
+		d.wmu.Unlock()
+		handbackCheck = d.runHandbackCheck(ctx, w)
+		d.wmu.Lock()
+		w.checking = false
+		d.wmu.Unlock()
+		changeID, deliveryProblem = d.recordHandbackChange(ctx, w, handbackCheck)
 	}
 	st := d.workerStats(w)
 	d.wmu.Lock()
@@ -1191,6 +1203,7 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 	}
 	n := d.notice(w, req.Status, note, st)
 	n.Committed = committed
+	n.HandbackCheck = handbackCheck
 	n.WIPDetail = wipDetail
 	n.Change, n.DeliveryError = changeID, deliveryProblem
 	if changeID != "" {

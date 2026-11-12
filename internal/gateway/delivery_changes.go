@@ -450,6 +450,16 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 			return protocol.ChangeSubmitResult{}, err
 		}
 	}
+	if q.HandbackCheck != nil {
+		check, err := json.Marshal(q.HandbackCheck)
+		if err != nil {
+			return protocol.ChangeSubmitResult{}, err
+		}
+		if _, err := tx.Exec(`INSERT INTO delivery_revision_stats(change_id,revision,diff_stat,handback_check) VALUES(?,?,'',?)
+			ON CONFLICT(change_id,revision) DO UPDATE SET handback_check=excluded.handback_check`, c.ID, c.Revision, string(check)); err != nil {
+			return protocol.ChangeSubmitResult{}, err
+		}
+	}
 	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision<>?)`, s.now().UnixNano(), c.ID, c.Revision); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
@@ -883,6 +893,11 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		return protocol.ChangeView{}, err
 	}
 	v.Signals = signals
+	check, err := changeHandbackCheck(s.db, c.ID, c.Revision)
+	if err != nil {
+		return protocol.ChangeView{}, err
+	}
+	v.HandbackCheck = check
 	startedSteps := map[protocol.StepRef]bool{}
 	for i := range v.Steps {
 		st := &v.Steps[i]
@@ -1128,6 +1143,27 @@ func changeSignals(q deliveryQuerier, id string, revision int) ([]protocol.Quali
 		return nil, err
 	}
 	return out, nil
+}
+
+// changeHandbackCheck reads the pre-hand-back check stored with one revision.
+// A revision recorded before checks existed has none.
+func changeHandbackCheck(q deliveryQuerier, id string, revision int) (*protocol.HandbackCheck, error) {
+	var raw string
+	err := q.QueryRow(`SELECT handback_check FROM delivery_revision_stats WHERE change_id=? AND revision=?`, id, revision).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(raw) == "" || raw == "null" {
+		return nil, nil
+	}
+	var out protocol.HandbackCheck
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // changeEvidence is every piece of evidence of change id, oldest first, so
