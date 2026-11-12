@@ -116,6 +116,9 @@ func initWIPRepo(t *testing.T) string {
 
 func gitRunT(t *testing.T, dir string, args ...string) {
 	t.Helper()
+	// The machine has no git identity (scripts/test.sh and CI hide it), so the
+	// helper sets one. A command with its own -c user.name still wins.
+	args = append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.test"}, args...)
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
