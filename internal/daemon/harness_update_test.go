@@ -359,3 +359,102 @@ func TestHarnessUpdateAgyFoundEvenWhenVersionProbeFails(t *testing.T) {
 	startHarnessUpdateTest(t, d)
 	eventually(t, "agy update despite failed version", func() bool { _, err := os.Stat(filepath.Join(dir, "ran")); return err == nil })
 }
+
+// Keep package-manager discovery and updates on the fixture PATH, including
+// copies linked beside brew rather than into its Cellar or Caskroom.
+func installUpdateFixture(t *testing.T, name, target, metadata string) (*Daemon, string, protocol.HarnessInfo) {
+	t.Helper()
+	d, dir := updateFixture(t, map[string]string{
+		name: `case "$1" in --version) echo 1 ;; update|upgrade) echo self > "$(dirname "$0")/self-ran" ;; esac`,
+		"brew": `case "$*" in
+ 'info --json=v2 --installed') cat "$(dirname "$0")/installed.json" ;;
+ *) printf '%s' "$*" > "$(dirname "$0")/manager-args" ;;
+ esac`,
+		"npm": `case "$*" in
+ 'root -g') printf '%s/../lib/node_modules\n' "$(dirname "$0")" ;;
+ *) printf '%s' "$*" > "$(dirname "$0")/manager-args" ;;
+ esac`,
+	})
+	original := dir
+	dir = filepath.Join(original, "opt", "homebrew", "bin")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{name, "brew", "npm"} {
+		if err := os.Rename(filepath.Join(original, command), filepath.Join(dir, command)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.cfg.HarnessSearch.PATH = dir + ":/bin:/usr/bin"
+	d.refreshHarnessInventory(context.Background())
+	if target != "" {
+		real := filepath.Join(dir, "..", target)
+		if err := os.MkdirAll(filepath.Dir(real), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(filepath.Join(dir, name), real); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(real, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	metadata = strings.ReplaceAll(metadata, "$ROOT", filepath.Dir(dir))
+	if err := os.WriteFile(filepath.Join(dir, "installed.json"), []byte(metadata), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		logs := d.log.Writer().(*logBuf).String()
+		for _, line := range strings.Split(logs, "\n") {
+			if strings.HasPrefix(line, "harness update:") {
+				t.Logf("frame: %s", strings.ReplaceAll(line, original, "/fixture"))
+			}
+		}
+	})
+	return d, dir, protocol.HarnessInfo{Name: name, Path: filepath.Join(dir, name), Version: "1"}
+}
+
+func TestHarnessUpdateBrewInstalledCaskOwnership(t *testing.T) {
+	d, dir, h := installUpdateFixture(t, "claude", "native/claude", `{"formulae":[],"casks":[{"token":"claude-desktop-cli","full_token":"tools/tap/claude-desktop-cli","installed":"1","artifacts":[{"binary":["$ROOT/native/claude",{"target":"claude"}]}]}]}`)
+	d.updateHarness(context.Background(), h)
+	got, err := os.ReadFile(filepath.Join(dir, "manager-args"))
+	if err != nil || string(got) != "upgrade --cask tools/tap/claude-desktop-cli" {
+		t.Fatalf("cask ownership: command=%q, err=%v", got, err)
+	}
+}
+
+func TestHarnessUpdateBrewTappedFormulaOwnership(t *testing.T) {
+	d, dir, h := installUpdateFixture(t, "opencode", "Cellar/opencode-cli/1/bin/opencode", `{"formulae":[{"name":"opencode-cli","full_name":"sst/tap/opencode-cli","installed":[{"version":"1"}]}],"casks":[]}`)
+	d.updateHarness(context.Background(), h)
+	got, err := os.ReadFile(filepath.Join(dir, "manager-args"))
+	if err != nil || string(got) != "upgrade sst/tap/opencode-cli" {
+		t.Fatalf("tapped formula ownership: command=%q, err=%v", got, err)
+	}
+}
+
+func TestHarnessUpdateNPMGlobalOwnership(t *testing.T) {
+	d, dir, h := installUpdateFixture(t, "claude", "lib/node_modules/@example/claude-cli/cli.js", `{"formulae":[],"casks":[]}`)
+	pkg := filepath.Join(dir, "../lib/node_modules/@example/claude-cli/package.json")
+	if err := os.WriteFile(pkg, []byte(`{"name":"@example/claude-cli","bin":{"claude":"cli.js"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	d.updateHarness(context.Background(), h)
+	got, err := os.ReadFile(filepath.Join(dir, "manager-args"))
+	if err != nil || string(got) != "install --global @example/claude-cli@latest" {
+		t.Fatalf("npm ownership: command=%q, err=%v", got, err)
+	}
+}
+
+func TestHarnessUpdateUnknownOwnershipSkipped(t *testing.T) {
+	d, dir, h := installUpdateFixture(t, "opencode", "", `{"formulae":[],"casks":[]}`)
+	d.updateHarness(context.Background(), h)
+	u := updateResult(d, h.Name)
+	if u == nil || u.Result != "skipped" || !strings.Contains(u.Detail, h.Path) {
+		t.Fatalf("unknown install must skip and name its path: %+v", u)
+	}
+	for _, file := range []string{"manager-args", "self-ran"} {
+		if _, err := os.Stat(filepath.Join(dir, file)); !os.IsNotExist(err) {
+			t.Fatalf("unknown install ran an updater: %s, %v", file, err)
+		}
+	}
+}
