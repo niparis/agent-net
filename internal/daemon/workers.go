@@ -212,6 +212,10 @@ type worker struct {
 	// last hand-back ("" if none); taskText is the short line of that request;
 	// title is the worker's one-line title, empty when it is derived.
 	taskMsg, doneStatus, taskText, title string
+	// handbackReport is the last hand-back's report. At a hand-back end it is
+	// the failure text of a failed run, so worker.stopped carries the provider
+	// error a failed Codex turn reports (decision 0145). It is not persisted.
+	handbackReport string
 	// donePartial is true when the last hand-back said complete:false.
 	donePartial bool
 	evidence    *protocol.WorkerEvidence
@@ -1098,6 +1102,12 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 	}
 	w.stopping = true
 	d.closeEndedLocked(w)
+	// A failed hand-back is the run's failure: worker.stopped carries its text,
+	// so the gateway can tell a provider limit from a code failure (decision
+	// 0145). A hand-back that did not fail clears an older text.
+	if reason == protocol.StopHandback {
+		w.failure = handbackFailure(w.doneStatus, w.handbackReport)
+	}
 	if err := d.st.deleteWorkerIdleNotice(w.id); err != nil {
 		d.Logf("worker %s: remove idle notice: %v", w.id, err)
 	}
@@ -1660,6 +1670,18 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// handbackFailure is the failure text of a hand-back that ends the run, or ""
+// when it did not fail. A failed Codex turn reports the provider error in its
+// hand-back report ("The Codex turn failed: ..."), so this is where a usage
+// limit reaches worker.stopped (decision 0145). A hand-back that did not fail
+// clears an older text.
+func handbackFailure(status, report string) string {
+	if status != protocol.StatusFailed {
+		return ""
+	}
+	return cleanFailure(report)
 }
 
 // endFailedWorker ends a worker whose harness reports a failed run, and says

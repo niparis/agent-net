@@ -2,10 +2,13 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -68,10 +71,16 @@ func TestWorkerBriefOverlapsRunningWorker(t *testing.T) {
 // delivery code stores it: the change row and its current diff stat.
 func insertOpenChange(t *testing.T, s *Store, id, branch, path string) {
 	t.Helper()
+	insertOpenChangeIn(t, s, "shop", id, branch, path)
+}
+
+// insertOpenChangeIn is insertOpenChange for a named project.
+func insertOpenChangeIn(t *testing.T, s *Store, project, id, branch, path string) {
+	t.Helper()
 	if _, err := s.db.Exec(`INSERT INTO delivery_changes
 		(id,project,machine,branch,target_branch,base_commit,head_commit,uncommitted,revision,origin,caller,title,difficulty,state,merged_commit,created_at,updated_at)
-		VALUES(?,'shop','',?,'','',?,0,1,'{}','s_caller','parser','','open','',1,1)`,
-		id, branch, strings.Repeat("a", 40)); err != nil {
+		VALUES(?,?,'',?,'','',?,0,1,'{}','s_caller','parser','','open','',1,1)`,
+		id, project, branch, strings.Repeat("a", 40)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`INSERT INTO delivery_revision_stats(change_id,revision,diff_stat) VALUES(?,1,?)`,
@@ -184,8 +193,10 @@ func TestBriefRejectionsAreCountedPerTaskFor24Hours(t *testing.T) {
 // brief defect against the caller.
 func TestThirdBriefAttemptStartsAndRecordsADefect(t *testing.T) {
 	a := newAgyGate(t)
+	client, received := connectTestNode(t, a.g, a.node)
+	serveBriefRepo(t, client, received, briefTestRepo())
+	insertOpenChangeIn(t, a.g.store, "alpha", "ch_open", "agent-net/x", "internal/gateway/brief.go")
 	task := gatewayBrief("internal/gateway/brief.go")
-	task = strings.Replace(task, "Evidence:\n- the owner's words\n- the failing test\n- the diff\n", "", 1)
 	start := func() error {
 		_, err := a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
 			WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: task, Harness: "agy", Model: "gemini-3.8-flash-low"}})
@@ -198,7 +209,7 @@ func TestThirdBriefAttemptStartsAndRecordsADefect(t *testing.T) {
 		}
 	}
 	err := start()
-	if err == nil || strings.Contains(err.Error(), "brief refused") {
+	if err != nil && strings.Contains(err.Error(), "brief refused") {
 		t.Fatalf("third attempt was still refused: %v", err)
 	}
 	var defects int
@@ -212,14 +223,44 @@ func TestThirdBriefAttemptStartsAndRecordsADefect(t *testing.T) {
 	if err := a.g.store.db.QueryRow(`SELECT note FROM worker_brief_defects WHERE caller=?`, a.owner).Scan(&note); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(note, "Evidence:") {
+	if !strings.Contains(note, "overlaps open change ch_open") {
 		t.Fatalf("defect note = %q", note)
+	}
+}
+
+// A brief with none of the six old format sections starts: decision 0145
+// retired them, and no warning took their place.
+func TestWorkerBriefWithoutTheSixSectionsStarts(t *testing.T) {
+	a := newAgyGate(t)
+	task := "Fix the crash when the parser sees an empty file.\n"
+	_, err := a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
+		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: task, Harness: "agy", Model: "gemini-3.8-flash-low"}})
+	if err != nil && strings.Contains(err.Error(), "brief refused") {
+		t.Fatalf("a plain brief was refused: %v", err)
+	}
+	var rejections int
+	if err := a.g.store.db.QueryRow(`SELECT COUNT(*) FROM worker_brief_rejections`).Scan(&rejections); err != nil {
+		t.Fatal(err)
+	}
+	if rejections != 0 {
+		t.Fatalf("the start counted %d refusals", rejections)
+	}
+	answer, err := a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
+		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: task, Harness: "agy", Model: "gemini-3.8-flash-low", Mode: protocol.WorkerStartModeCheck}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !answer.Checked || len(answer.BriefFailures) != 0 {
+		t.Fatalf("check mode on a plain brief = %+v", answer)
 	}
 }
 
 // mode check returns the failures, or an empty list, and starts nothing.
 func TestWorkerStartCheckModeStartsNothing(t *testing.T) {
 	a := newAgyGate(t)
+	// Overlap names only files the base tree holds, so the node must serve it.
+	client, received := connectTestNode(t, a.g, a.node)
+	serveBriefRepo(t, client, received, briefTestRepo())
 	answer, err := a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
 		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: gatewayBrief("internal/gateway/brief.go"), Harness: "agy", Model: "gemini-3.8-flash-low", Mode: protocol.WorkerStartModeCheck}})
 	if err != nil {
@@ -236,8 +277,9 @@ func TestWorkerStartCheckModeStartsNothing(t *testing.T) {
 		t.Fatalf("check mode tracked %d starts", starts)
 	}
 
+	insertOpenChangeIn(t, a.g.store, "alpha", "ch_open", "agent-net/x", "internal/gateway/brief.go")
 	answer, err = a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
-		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "Goal: no owner citation\n", Harness: "agy", Model: "gemini-3.8-flash-low", Mode: protocol.WorkerStartModeCheck}})
+		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: gatewayBrief("internal/gateway/brief.go"), Harness: "agy", Model: "gemini-3.8-flash-low", Mode: protocol.WorkerStartModeCheck}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,4 +327,35 @@ func briefTestRepo() protocol.WorkerBriefRepo {
 		"internal/gateway/brief.go", "internal/tui/other.go", "internal/toolcatalog/catalog.go",
 		"docs/reference.md", "AGENTS.md", "README.md", "internal/README.md", "migrations.lock",
 	}}
+}
+
+// serveBriefRepo answers the node's base-tree read with repo, which the overlap
+// check needs. Any other call fails at once, so a start that reaches the launch
+// does not wait for a worker the test never runs.
+func serveBriefRepo(t *testing.T, client *websocket.Conn, received <-chan []byte, repo protocol.WorkerBriefRepo) {
+	t.Helper()
+	ctx := t.Context()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case raw := <-received:
+				var h protocol.Header
+				if json.Unmarshal(raw, &h) != nil || h.ID == "" {
+					continue
+				}
+				var res []byte
+				var err error
+				if h.Type == "worker.brief_repo" {
+					res, err = protocol.EncodeResult(h.ID, repo, nil)
+				} else {
+					res, err = protocol.EncodeResult(h.ID, nil, errors.New("test node runs no worker"))
+				}
+				if err == nil {
+					_ = client.Write(ctx, websocket.MessageText, res)
+				}
+			}
+		}
+	}()
 }

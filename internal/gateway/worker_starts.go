@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -69,17 +70,45 @@ func (s *Store) TrackWorkerStart(ref, nodeID, owner, project, harness, permissio
 	return s.trackWorkerStart(ref, nodeID, owner, project, harness, permissions)
 }
 
-// trackWorkerStart records a start that the gateway handed to a machine.
-func (s *Store) trackWorkerStart(ref, nodeID, owner, project, harness, permissions string) error {
+// trackWorkerStart records a start that the gateway handed to a machine. done
+// is the brief's done list, kept so the change the worker delivers can carry
+// it (decision 0146).
+func (s *Store) trackWorkerStart(ref, nodeID, owner, project, harness, permissions string, done ...[]string) error {
 	if ref == "" || nodeID == "" || owner == "" {
 		return nil
 	}
 	if _, err := s.db.Exec(`DELETE FROM worker_starts WHERE state <> 'open' AND closed_at > 0 AND closed_at < ?`, s.now().Add(-closedStartKeep).UnixNano()); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`INSERT OR IGNORE INTO worker_starts(ref,node_id,owner,project,harness,permissions,created_at,caller_agent_id)
-		VALUES(?,?,?,?,?,?,?,(SELECT agent_id FROM sessions WHERE id=?))`, ref, nodeID, owner, project, harness, permissions, s.now().UnixNano(), owner)
+	list := "[]"
+	if len(done) > 0 && len(done[0]) > 0 {
+		raw, err := json.Marshal(done[0])
+		if err != nil {
+			return err
+		}
+		list = string(raw)
+	}
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO worker_starts(ref,node_id,owner,project,harness,permissions,created_at,caller_agent_id,done)
+		VALUES(?,?,?,?,?,?,?,(SELECT agent_id FROM sessions WHERE id=?),?)`, ref, nodeID, owner, project, harness, permissions, s.now().UnixNano(), owner, list)
 	return err
+}
+
+// startDoneForSession reads the done list of the start that became a worker
+// session. An older start, or one from a caller that did not use the
+// structured brief, has none.
+func (s *Store) startDoneForSession(sessionID string) []string {
+	if sessionID == "" {
+		return nil
+	}
+	var raw string
+	if err := s.db.QueryRow(`SELECT done FROM worker_starts WHERE session_id=? ORDER BY created_at DESC LIMIT 1`, sessionID).Scan(&raw); err != nil {
+		return nil
+	}
+	var done []string
+	if err := json.Unmarshal([]byte(raw), &done); err != nil {
+		return nil
+	}
+	return done
 }
 
 // startSession records the session a start became, when the machine's launch

@@ -3433,7 +3433,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		// the read cache.
 		ifETag, wantETag := p.IfETag, p.WantETag || p.IfETag != ""
 		p.IfVersion, p.IfETag, p.WantETag = 0, "", false
-		agents, err := st.Agents(p)
+		agents, err := st.AgentsWithCauses(p)
 		if err != nil {
 			return nil, err
 		}

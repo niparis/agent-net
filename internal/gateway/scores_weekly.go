@@ -38,6 +38,7 @@ type weekBuckets struct {
 	tokens                int64
 	scoreSum              float64
 	tasks                 int
+	causes                protocol.CauseCounts
 }
 
 // ScoresWeeklyAt computes the last 8 ISO weeks relative to the given reference time.
@@ -88,9 +89,9 @@ func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error
 		return nil, err
 	}
 
-	// Runs, early quits, fix rounds and tokens per week.
+	// Runs, early quits, fix rounds, tokens and causes per week.
 	rows, err := s.db.Query(`
-		SELECT r.ended_at, r.early_quit, r.fix_count,
+		SELECT r.ended_at, r.early_quit, r.fix_count, COALESCE(r.cause,''),
 			COALESCE(CAST(json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END, '$.tokens') AS INTEGER), 0)
 		FROM worker_runs r LEFT JOIN sessions s ON s.id = r.session_id
 		WHERE r.ended_at >= ? AND r.ended_at < ?`, startUnix, endUnix)
@@ -100,8 +101,9 @@ func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error
 	for rows.Next() {
 		var ended int64
 		var early, fix int
+		var cause string
 		var tokens int64
-		if err := rows.Scan(&ended, &early, &fix, &tokens); err != nil {
+		if err := rows.Scan(&ended, &early, &fix, &cause, &tokens); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -113,6 +115,14 @@ func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error
 		buckets[i].early += early
 		buckets[i].fixes += fix
 		buckets[i].tokens += tokens
+		switch cause {
+		case protocol.CauseQuotaAuth, protocol.CauseSandbox, protocol.CauseHarness:
+			buckets[i].causes.Machine++
+		case protocol.CauseTestFailure, protocol.CauseAcceptFinding:
+			buckets[i].causes.Work++
+		case protocol.CauseBriefDefect:
+			buckets[i].causes.Brief++
+		}
 	}
 	err = rows.Err()
 	rows.Close()
@@ -147,6 +157,34 @@ func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error
 		return nil, err
 	}
 	if err := s.countWeeklyAt(`SELECT at FROM worker_defects WHERE moved_at = 0 AND at >= ? AND at < ?`, startUnix, endUnix, index, buckets, func(b *weekBuckets) { b.defects++ }); err != nil {
+		return nil, err
+	}
+	// A defect found later is caught before release or escaped (decision 0145).
+	rows, err = s.db.Query(`SELECT at, COALESCE(escape_phase,'') FROM worker_defects WHERE moved_at = 0 AND at >= ? AND at < ?`, startUnix, endUnix)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var at int64
+		var phase string
+		if err := rows.Scan(&at, &phase); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		i, ok := index[isoWeekKey(at)]
+		if !ok {
+			continue
+		}
+		switch phase {
+		case protocol.DefectCaught:
+			buckets[i].causes.Caught++
+		case protocol.DefectEscaped:
+			buckets[i].causes.Escaped++
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
 		return nil, err
 	}
 
@@ -195,6 +233,7 @@ func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error
 		}
 		out[i].BriefDefects = b.briefDefects
 		out[i].Defects = b.defects
+		out[i].Causes = b.causes
 		out[i].Releases = releases[i]
 	}
 	return out, nil

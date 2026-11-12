@@ -43,7 +43,10 @@ type roWorkerRow struct {
 	Branch     string                     `json:"branch,omitempty"`
 	// Struggle is the run-end sign count, shown by detail full only.
 	Struggle *protocol.Struggle `json:"struggle,omitempty"`
-	key      string
+	// Cause is why the latest run failed or needed rework, shown by detail
+	// full only. Empty when none is known.
+	Cause string `json:"cause,omitempty"`
+	key   string
 }
 
 type roWorkersFindOut struct {
@@ -173,6 +176,7 @@ func roWorkerRowOf(agent protocol.AgentView, names map[string]string, full bool)
 	if full {
 		row.Assessment = agent.Worker.Assessment
 		row.Started = roUnixText(agent.Worker.StartedAt)
+		row.Cause = agent.Worker.Cause
 		row.Struggle = agent.Worker.Struggle
 		if row.Struggle == nil {
 			row.Struggle = &protocol.Struggle{Trace: protocol.StruggleNoTrace}

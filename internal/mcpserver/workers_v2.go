@@ -52,8 +52,10 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 	switch name {
 	case "agent_worker_start":
 		task, continuation := str("task"), str("continue")
-		if (task == "") == (continuation == "") {
-			return nil, errors.New(`set exactly one of task or continue, for example {"task":"Fix the login bug"}`)
+		if continuation != "" && task != "" {
+			// Task is extra notes now. A continue still refuses it, so an
+			// older caller's mistake is not silently changed.
+			return nil, errors.New(`set exactly one of task or continue, for example {"continue":"s_..."}`)
 		}
 		touches, _ := a["touches"].([]any)
 		var areas []string
@@ -62,14 +64,15 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 				areas = append(areas, x)
 			}
 		}
-		in := startIn{Touches: areas, Project: str("project"), Task: task, Title: str("title"), Harness: str("harness"), Difficulty: str("difficulty"), Model: str("model"), Provider: str("provider"), Effort: str("effort"), Machine: str("machine"), Isolation: str("isolation"), Base: str("base"), MCPServers: str("mcp_servers"), Continue: continuation}
+		in := startIn{Touches: areas, Project: str("project"), Task: task, Title: str("title"), Harness: str("harness"), Difficulty: str("difficulty"), Model: str("model"), Provider: str("provider"), Effort: str("effort"), Machine: str("machine"), Isolation: str("isolation"), Base: str("base"), MCPServers: str("mcp_servers"), Continue: continuation,
+			Problem: str("problem"), Evidence: stringSlice(a["evidence"]), Done: stringSlice(a["done"]), Hypothesis: str("hypothesis"), Scope: str("scope")}
 		if v, ok := a["auto_continue"].(bool); ok {
 			in.AutoContinue = &v
 		}
 		if in.Harness == "" && in.Model != "" && in.Model != "auto" {
 			in.Harness = "opencode"
 		}
-		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Mode: str("mode"), Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue, OwnerWords: str("owner_words"), Reason: str("reason")})
+		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Problem: in.Problem, Evidence: in.Evidence, Done: in.Done, Hypothesis: in.Hypothesis, Scope: in.Scope, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Mode: str("mode"), Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue, OwnerWords: str("owner_words"), Reason: str("reason")})
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +117,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		// it. The difficulty comes from the worker record, never from the
 		// caller's ignored field.
 		if m["task"] == nil {
-			m["task"] = in.Task
+			m["task"] = firstNonEmptyString(in.Task, in.Problem)
 		}
 		if m["difficulty"] == nil {
 			m["difficulty"] = "normal"

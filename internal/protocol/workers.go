@@ -302,6 +302,9 @@ type WorkerInfo struct {
 	// Struggle is the sign count of the worker's latest run, computed at its
 	// end from the run's own tool record (decision 0133).
 	Struggle *Struggle `json:"struggle,omitempty"`
+	// Cause is the recorded reason for the latest run's failure or rework,
+	// one of the Cause constants (decision 0145). Empty when none is known.
+	Cause string `json:"cause,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -409,10 +412,10 @@ type (
 		// and model, and the fresh notes about it (decision 0022).
 		Track     *TrackRecord   `json:"track,omitempty"`
 		Playbooks []PlaybookNote `json:"playbooks,omitempty"`
-		// Checked means the start was mode "check": the brief checks ran and
+		// Checked means the start was mode "check": the overlap check ran and
 		// no worker started.
 		Checked bool `json:"checked,omitempty"`
-		// BriefFailures lists the failed brief items of a check, one per line
+		// BriefFailures lists the overlaps that refuse a brief, one per line
 		// when it is shown. Empty means the brief passed.
 		BriefFailures []string `json:"brief_failures,omitempty"`
 	}
@@ -560,7 +563,10 @@ type (
 		Project          string          `json:"project"`
 		Harness          string          `json:"harness"`
 		Reason           string          `json:"reason"`
-		// Failure is the cleaned model-call error, used to remember provider auth failures.
+		// Failure is the cleaned error text of the run: a failed model call, or
+		// the report of a failed hand-back (a failed Codex turn reports its
+		// provider error there). It is used to remember provider auth and quota
+		// failures and to record the run's cause.
 		Failure string `json:"failure,omitempty"`
 		// Model is the model the worker ran, as the gateway resolved it. The
 		// gateway uses it with Reason model_failed to rank the model last for a
@@ -701,6 +707,81 @@ func testStepElsewhere(snap settings.Snapshot, repo string) bool {
 	return ok && test.Owner.Kind != OwnerCaller
 }
 
+// WorkerBrief is the structured task of a worker start (decision 0146). Text
+// renders it in one fixed order, so a worker sees the same shape from every
+// caller in every project.
+type WorkerBrief struct {
+	Problem    string
+	Evidence   []string
+	Done       []string
+	Hypothesis string
+	Scope      string
+	Notes      string
+}
+
+// WorkerBriefFromStart reads the structured fields of a start. Task is the
+// notes.
+func WorkerBriefFromStart(p WorkerStartRequest) WorkerBrief {
+	return WorkerBrief{Problem: p.Problem, Evidence: p.Evidence, Done: p.Done,
+		Hypothesis: p.Hypothesis, Scope: p.Scope, Notes: p.Task}
+}
+
+// BriefText is the task text of a start: the structured brief when it has any
+// structured field, else the old Task text unchanged.
+func (p WorkerStartRequest) BriefText() string { return WorkerBriefFromStart(p).Text() }
+
+// Structured tells whether the brief has any field beyond the old Task.
+func (b WorkerBrief) Structured() bool {
+	return strings.TrimSpace(b.Problem) != "" || strings.TrimSpace(b.Hypothesis) != "" ||
+		strings.TrimSpace(b.Scope) != "" || len(cleanBriefLines(b.Evidence)) > 0 || len(cleanBriefLines(b.Done)) > 0
+}
+
+// Text renders the brief in the fixed order Problem, Evidence, Done,
+// Hypothesis, Scope, Notes. Every non-empty section is its own block, so a
+// worker can see what was asked, what was known and what counts as done.
+// A brief with no structured field is the old Task text, unchanged.
+func (b WorkerBrief) Text() string {
+	if !b.Structured() {
+		return strings.TrimSpace(b.Notes)
+	}
+	var parts []string
+	add := func(heading, text string) {
+		if text = strings.TrimSpace(text); text != "" {
+			parts = append(parts, heading+":\n"+text)
+		}
+	}
+	addList := func(heading string, lines []string) {
+		lines = cleanBriefLines(lines)
+		if len(lines) == 0 {
+			return
+		}
+		var s strings.Builder
+		s.WriteString(heading + ":")
+		for _, line := range lines {
+			s.WriteString("\n- " + line)
+		}
+		parts = append(parts, s.String())
+	}
+	add("Problem", b.Problem)
+	addList("Evidence", b.Evidence)
+	addList("Done", b.Done)
+	add("Hypothesis (yours to drop if wrong)", b.Hypothesis)
+	add("Scope", b.Scope)
+	add("Notes", b.Notes)
+	return strings.Join(parts, "\n\n")
+}
+
+// cleanBriefLines trims each line and drops empty ones.
+func cleanBriefLines(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line = strings.TrimSpace(line); line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
 // WorkerTaskBody builds the body of the task message for an OpenCode worker.
 func WorkerTaskBody(task, worktree, branch string) string {
 	return WorkerTaskBodyFor("", task, worktree, branch)
@@ -779,11 +860,22 @@ func WorkerTaskBodyWithSettingsForRepo(harness, task, worktree, branch, rules, c
 // WorkerTaskBodyOS is WorkerTaskBodyWithSettingsForRepo for a worker that may
 // run in the OS sandbox: osSandbox names the wrapper, "" when there is none.
 func WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
-	return WorkerTaskBodyBar(harness, task, worktree, branch, rules, charter, level, osSandbox, snap, repo, nil)
+	return WorkerTaskBodyBrief(harness, WorkerBrief{Notes: task}, worktree, branch, rules, charter, level, osSandbox, snap, repo)
 }
 
 // WorkerTaskBodyBar is WorkerTaskBodyOS with the project's bar in the header.
 func WorkerTaskBodyBar(harness, task, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string, bar []BarRule) string {
+	return WorkerTaskBodyBriefBar(harness, WorkerBrief{Notes: task}, worktree, branch, rules, charter, level, osSandbox, snap, repo, bar)
+}
+
+// WorkerTaskBodyBrief is WorkerTaskBodyOS for a structured brief.
+func WorkerTaskBodyBrief(harness string, brief WorkerBrief, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
+	return WorkerTaskBodyBriefBar(harness, brief, worktree, branch, rules, charter, level, osSandbox, snap, repo, nil)
+}
+
+// WorkerTaskBodyBriefBar renders a structured brief with the project's bar in
+// the header.
+func WorkerTaskBodyBriefBar(harness string, brief WorkerBrief, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string, bar []BarRule) string {
 	b := workerPreambleBar(harness, snap, repo, bar)
 	if harness == "agy" {
 		b += "\n- " + snap.String("delivery.worker_agy_commit_instruction", settings.Where{})
@@ -812,7 +904,7 @@ func WorkerTaskBodyBar(harness, task, worktree, branch, rules, charter, level, o
 	if charter != "" {
 		b += "\n\n" + charter
 	}
-	return b + "\n\nTask:\n" + strings.TrimSpace(task)
+	return b + "\n\nTask:\n" + brief.Text()
 }
 
 // WorkerTaskSummaryMax is the longest task line a status view gets.
@@ -825,7 +917,7 @@ func WorkerTaskSummary(body string) string {
 	if i := strings.Index(body, "\n\nTask:\n"); i >= 0 {
 		body = body[i+len("\n\nTask:\n"):]
 	}
-	line := strings.TrimSpace(body)
+	line := strings.TrimSpace(workerBriefBody(body))
 	if j := strings.IndexByte(line, '\n'); j >= 0 {
 		line = strings.TrimSpace(line[:j])
 	}
@@ -834,6 +926,20 @@ func WorkerTaskSummary(body string) string {
 		line = strings.TrimSpace(string(runes[:WorkerTaskSummaryMax-3])) + "..."
 	}
 	return line
+}
+
+// workerBriefBody drops a leading section heading from a structured brief, so
+// a one-line summary shows the problem and not the word "Problem:".
+func workerBriefBody(body string) string {
+	body = strings.TrimSpace(body)
+	for _, heading := range []string{"Problem:", "Evidence:", "Done:", "Hypothesis (yours to drop if wrong):", "Scope:", "Notes:"} {
+		if strings.HasPrefix(body, heading) {
+			if rest := strings.TrimSpace(strings.TrimPrefix(body, heading)); rest != "" {
+				return rest
+			}
+		}
+	}
+	return body
 }
 
 // WorkerTitleMax is the longest worker title a caller may give.
@@ -857,6 +963,7 @@ func ValidWorkerTitle(title string) error {
 var workerBriefSetup = []string{
 	"repo:", "base:", "branch:", "worktree:", "project:", "setup:", "environment:",
 	"read agents.md", "read claude.md", "read docs/", "read the docs", "read readme",
+	"problem:", "evidence:", "done:", "hypothesis", "scope:", "notes:",
 }
 
 func workerBriefBoilerplate(sentence string) bool {

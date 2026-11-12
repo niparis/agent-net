@@ -485,10 +485,14 @@ type Change struct {
 	Difficulty    string       `json:"difficulty,omitempty"`
 	Risk          int          `json:"risk,omitempty"`
 	SensitivePath string       `json:"sensitive_path,omitempty"`
-	State         string       `json:"state"`
-	MergedCommit  string       `json:"merged_commit,omitempty"`
-	CreatedAt     int64        `json:"created_at"`
-	UpdatedAt     int64        `json:"updated_at,omitempty"`
+	// Done lists the outcomes the worker's brief said it can check itself.
+	// The accept and review step tasks repeat it, so grading equals the
+	// brief (decision 0146).
+	Done         []string `json:"done,omitempty"`
+	State        string   `json:"state"`
+	MergedCommit string   `json:"merged_commit,omitempty"`
+	CreatedAt    int64    `json:"created_at"`
+	UpdatedAt    int64    `json:"updated_at,omitempty"`
 }
 
 // Revision is the head of a change at one complete hand-back or one submit.
@@ -1526,6 +1530,9 @@ type ChangeSubmitRequest struct {
 	SensitivePath string       `json:"sensitive_path,omitempty"`
 	Title         string       `json:"title,omitempty"`
 	DiffStat      string       `json:"diff_stat,omitempty"`
+	// Done lists the outcomes the worker's brief said it can check itself.
+	// Empty means the gateway reads them from the worker's start record.
+	Done []string `json:"done,omitempty"`
 	// Signals are the free quality signals the daemon computed from the
 	// commit range. The gateway stores them with this revision.
 	Signals []QualitySignal `json:"signals,omitempty"`

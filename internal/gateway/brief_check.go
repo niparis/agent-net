@@ -15,20 +15,23 @@ import (
 // After it, a caller gets two fresh rejections.
 const briefRetryWindow = 24 * time.Hour
 
-// checkWorkerBrief runs the brief checks that need the store, on top of the
-// text checks in protocol.CheckWorkerBrief. Overlap compares the paths named
-// in this brief with the briefs of running workers in the same project and the
-// changed files of open changes there. A brief that says "overlap ok: reason"
-// passes the overlap check. A change or worker this start itself targets is
-// not an overlap: the change's id or the worker's id named in the brief, an
-// open change whose branch is the start's base, or the continue or fixes
-// target. A fix round starts from its own change's branch and names its files.
+// checkWorkerBrief runs the brief check that needs the store: overlap. The
+// six format rules were retired (decision 0145); a brief is refused only for
+// a file it shares with a running worker or an open change in the same
+// project. Overlap compares the paths named in this brief with the briefs of
+// running workers in the same project and the changed files of open changes
+// there. A brief that says "overlap ok: reason" passes. A change or worker
+// this start itself targets is not an overlap: the change's id or the worker's
+// id named in the brief, an open change whose branch is the start's base, or
+// the continue or fixes target. A fix round starts from its own change's
+// branch and names its files.
 func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, repo protocol.WorkerBriefRepo) ([]string, []string, error) {
-	failures := protocol.CheckWorkerBrief(p.Task)
-	if _, ok := protocol.BriefOverlapAllowed(p.Task); ok {
+	text := p.BriefText()
+	var failures []string
+	if _, ok := protocol.BriefOverlapAllowed(text); ok {
 		return failures, nil, nil
 	}
-	mine := repo.Paths(p.Task)
+	mine := repo.Paths(text)
 	if len(mine) == 0 {
 		return failures, nil, nil
 	}
@@ -36,7 +39,7 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, re
 	for _, file := range mine {
 		mineSet[file] = true
 	}
-	targets := protocol.BriefTargetIDs(p.Task)
+	targets := protocol.BriefTargetIDs(text)
 	for _, id := range []string{p.Continue, p.Fixes} {
 		if id = strings.TrimSpace(id); id != "" {
 			targets[strings.ToLower(id)] = true
@@ -199,7 +202,7 @@ func (s *Store) BriefRejectionCountsByCaller(cut int64) (map[string]int, error) 
 }
 
 // recordBriefDefectFromBrief charges one brief defect to the caller when the
-// third attempt starts with items still missing.
+// third attempt starts with overlaps still there.
 func (s *Store) recordBriefDefectFromBrief(caller string, failures []string) error {
 	note := "brief started after 2 rejections: " + strings.Join(failures, "; ")
 	_, err := s.db.Exec(`INSERT INTO worker_brief_defects

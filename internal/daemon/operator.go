@@ -367,6 +367,8 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 // a message from the caller.
 func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequest, error) {
 	p.Project, p.Harness, p.Task = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness), strings.TrimSpace(p.Task)
+	p.Problem, p.Hypothesis, p.Scope = strings.TrimSpace(p.Problem), strings.TrimSpace(p.Hypothesis), strings.TrimSpace(p.Scope)
+	p.Evidence, p.Done = trimBriefLines(p.Evidence), trimBriefLines(p.Done)
 	p.Continue, p.Title = strings.TrimSpace(p.Continue), strings.TrimSpace(p.Title)
 	if err := protocol.ValidWorkerTitle(p.Title); err != nil {
 		return p, err
@@ -375,8 +377,22 @@ func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequ
 		if p.Machine != "" || p.Base != "" || p.Isolation != "" {
 			return p, errors.New("a continued worker keeps the machine, the branch and the isolation of the old one: leave machine, base and isolation empty")
 		}
-	} else if p.Project == "" || p.Task == "" {
-		return p, errors.New("worker_start needs project, harness and task")
+	} else {
+		// A caller that knows the structured brief sets Problem and Done. A
+		// caller that still sends only Task keeps working during the change
+		// (decision 0146).
+		structured := p.Problem != "" || p.Hypothesis != "" || p.Scope != "" || len(p.Evidence) > 0 || len(p.Done) > 0
+		switch {
+		case structured && p.Problem == "":
+			return p, errors.New("problem is required: what is wrong or wanted, in the requester's words, with who asked")
+		case structured && len(p.Done) == 0:
+			return p, errors.New("done is required: the outcomes the worker can check itself, one per line")
+		case !structured && p.Task == "":
+			return p, errors.New("problem is required: what is wrong or wanted, in the requester's words, with who asked")
+		}
+		if p.Project == "" {
+			return p, errors.New("worker_start needs project")
+		}
 	}
 	if !protocol.ValidIsolation(p.Isolation) {
 		return p, fmt.Errorf("isolation can be %q, %q or empty, not %q", protocol.IsolationWorktree, protocol.IsolationNone, p.Isolation)
@@ -400,11 +416,23 @@ func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequ
 			return p, errors.New("mcp_servers applies to Claude Code workers only")
 		}
 	}
-	if len(protocol.WorkerTaskBody(p.Task, "/x", "b")) > protocol.MaxBodyBytes {
+	if len(protocol.WorkerTaskBody(p.BriefText(), "/x", "b")) > protocol.MaxBodyBytes {
 		return p, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
 	}
 
 	return p, nil
+}
+
+// trimBriefLines trims each brief line and drops empty ones, so a list of
+// blanks does not count as the field being set.
+func trimBriefLines(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line = strings.TrimSpace(line); line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool, callerPath string, fromCTO ...bool) (*protocol.WorkerStartResult, error) {
@@ -463,7 +491,7 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 		// Its label is the level. The caller's difficulty is ignored, and a
 		// failed judge never blocks the start.
 		end := ph.begin("judge")
-		frame.Assessment = d.assessWorkerStart(ctx, d.judgeDir(callerPath, p.Project), p.Task)
+		frame.Assessment = d.assessWorkerStart(ctx, d.judgeDir(callerPath, p.Project), p.BriefText())
 		end()
 		frame.Level = protocol.WorkerLevel(frame.Assessment)
 		// An older gateway still reads Difficulty; give it the judge's label.
@@ -517,14 +545,16 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 		return out, nil
 	}
 	// The task is a normal message from the caller, with the fixed preamble.
-	task := p.Task
+	brief := protocol.WorkerBriefFromStart(p)
 	if ans.Task != "" {
-		task = ans.Task // a continued worker gets the old first task
+		// A continued worker gets the old first task, with the new brief
+		// already rendered into it by the machine that continued it.
+		brief = protocol.WorkerBrief{Notes: ans.Task}
 	}
 	charter := d.charterBrief(ctx, ans.Project)
 	end = ph.begin("task")
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest, WorkerTask: true, WorkerTaskRef: ans.StartRef,
-		Body: protocol.WorkerTaskBodyBar(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, ans.OSSandbox, d.SettingsSnapshot(), ans.Project, d.barOf(ctx, ans.Project))})
+		Body: protocol.WorkerTaskBodyBriefBar(ans.Harness, brief, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions, ans.OSSandbox, d.SettingsSnapshot(), ans.Project, d.barOf(ctx, ans.Project))})
 	end()
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)

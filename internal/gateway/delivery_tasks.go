@@ -1537,13 +1537,20 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 					header = "[agent-net step task reminder]"
 					reminderNote = "\n" + readyNote
 				}
-				body = fmt.Sprintf("%s%s\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session.",
+				body = fmt.Sprintf("%s%s\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nstep: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields: %s",
 					header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, t.ref.String()+"\n"+s.stepContract(c.Project, t.ref.Step), protocol.NeutralizeMarkers(displayOwner),
 					protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(d.pipeline.ReportFields(t.ref), ", "))
+				if doneText := changeDoneText(c, []protocol.StepRef{t.ref}); doneText != "" {
+					body += "\n" + doneText
+				}
+				body += "\nClaim the task with agent_step_claim before starting, then report the result with agent_step_report from your session."
 			}
 			waitNote := s.wasWaiting(group)
 			body += waitNote
 			line += waitNote
+			if doneLine := changeDoneLine(c, []protocol.StepRef{t.ref}); doneLine != "" {
+				line += doneLine
+			}
 			if stLine != "" {
 				body += "\n" + stLine
 				line += " | " + stLine
@@ -1610,12 +1617,19 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			header = "[agent-net step task reminder]"
 			reminderNote = "\n" + readyNote
 		}
-		body := fmt.Sprintf("%s%s\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nsteps: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields:\n%s\nClaim and report each step in order: %s.",
+		body := fmt.Sprintf("%s%s\nchange: %s\nproject: %s\nbranch: %s\nrevision: %d\ncommit: %s\nuncommitted: %t\nsteps: %s\nowner: %s\ntitle: %s\ndiff stat:\n%s\nevidence: %s\nreport fields:\n%s",
 			header, reminderNote, c.ID, protocol.NeutralizeMarkers(c.Project), protocol.NeutralizeMarkers(c.Branch), c.Revision, commit, c.Uncommitted, steps+"\n"+s.stepContracts(c.Project, run), protocol.NeutralizeMarkers(displayOwner),
-			protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(fields, "\n"), order)
+			protocol.NeutralizeMarkers(c.Title), protocol.NeutralizeMarkers(stat), protocol.NeutralizeMarkers(string(encoded)), strings.Join(fields, "\n"))
+		if doneText := changeDoneText(c, run); doneText != "" {
+			body += "\n" + doneText
+		}
+		body += "\nClaim and report each step in order: " + order + "."
 		waitNote := s.wasWaiting(group)
 		body += waitNote
 		line += waitNote
+		if doneLine := changeDoneLine(c, run); doneLine != "" {
+			line += doneLine
+		}
 		if stLine := s.changeStruggleLine(c, run); stLine != "" {
 			body += "\n" + stLine
 			line += " | " + stLine
@@ -1978,6 +1992,56 @@ func (s *Store) queueOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.S
 	_, err = tx.Exec(`INSERT INTO delivery_step_inbox(change_id,revision,step,for_step,after_merge,commit_hash,item_id) VALUES(?,?,?,?,?,?,?)`,
 		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), commit, item.ID)
 	return err
+}
+
+// changeDoneText is the done list the accept and review step tasks repeat, so
+// the reviewer grades the same outcomes the brief named. Other steps get none.
+func changeDoneText(c protocol.Change, refs []protocol.StepRef) string {
+	if len(c.Done) == 0 || !stepChecksDone(refs) {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("definition of done (check each):")
+	wrote := false
+	for _, item := range c.Done {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		b.WriteString("\n- " + protocol.NeutralizeMarkers(item))
+		wrote = true
+	}
+	if !wrote {
+		return ""
+	}
+	return b.String()
+}
+
+// changeDoneLine is changeDoneText as one line, for a batch notice.
+func changeDoneLine(c protocol.Change, refs []protocol.StepRef) string {
+	if len(c.Done) == 0 || !stepChecksDone(refs) {
+		return ""
+	}
+	var items []string
+	for _, item := range c.Done {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, protocol.NeutralizeMarkers(item))
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	return " | check each: " + strings.Join(items, "; ")
+}
+
+// stepChecksDone tells whether one of these steps is an accept or a review.
+func stepChecksDone(refs []protocol.StepRef) bool {
+	for _, ref := range refs {
+		if ref.Step == protocol.StepAccept || ref.Step == protocol.StepReview {
+			return true
+		}
+	}
+	return false
 }
 
 // changeStruggleLine is the struggle line the caller's accept task carries.

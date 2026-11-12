@@ -273,9 +273,10 @@ func (s *Store) addDefect(f protocol.RateFrame) (protocol.RateResult, error) {
 	s.db.QueryRow(`SELECT model FROM sessions WHERE id = ?`, rater).Scan(&raterModel)
 	at := s.now().Unix()
 	res, err := s.db.Exec(`INSERT INTO worker_defects
-		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, rater, raterModel, facts.harness,
-		facts.model, facts.effort, facts.difficulty, f.Severity, note, at)
+		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at, cause, escape_phase)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, rater, raterModel, facts.harness,
+		facts.model, facts.effort, facts.difficulty, f.Severity, note, at,
+		protocol.CauseUnknown, protocol.DefectPhase("", f.Severity))
 	if err != nil {
 		return out, err
 	}
@@ -348,6 +349,9 @@ func (s *Store) addBriefDefect(f protocol.RateFrame) (protocol.RateResult, error
 	}
 	// No refreshQuality: the worker's quality and the picker never read this
 	// table.
+	if err := s.setWorkerRunCause(worker, protocol.CauseBriefDefect); err != nil {
+		return out, err
+	}
 	out.Accepted, out.BriefDefect, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
 		true, id, facts.model, facts.harness, facts.effort, facts.difficulty, at
 	return out, nil
@@ -457,6 +461,9 @@ func (s *Store) moveToBriefDefect(f protocol.RateFrame) (protocol.RateResult, er
 	if n == 0 {
 		out.Reason = "this defect was already moved to a brief defect"
 		return out, nil
+	}
+	if err := setWorkerRunCauseTx(tx, worker, protocol.CauseBriefDefect); err != nil {
+		return out, err
 	}
 	if err := tx.Commit(); err != nil {
 		return out, err

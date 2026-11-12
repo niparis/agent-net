@@ -1,7 +1,7 @@
 # 0135 - Worker brief checks before launch
 
 Date: 2026-11-11
-Status: Built.
+Status: Superseded by [0145](0145-retire-brief-format-rules.md) for the six format rules; the overlap refusal stays.
 
 ## Context
 

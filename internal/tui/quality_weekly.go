@@ -78,8 +78,27 @@ func weeklyHeader(w int) string {
 	b.WriteString(" ")
 	b.WriteString(cellR("TOKENS", 6))
 	b.WriteString(" ")
+	if weeklyShowsCause(w) {
+		b.WriteString(cell("CAUSE m/w/b c/e", weeklyCauseWidth))
+		b.WriteString(" ")
+	}
 	b.WriteString("RELEASES")
 	return b.String()
+}
+
+// weeklyCauseWidth is the column of the rework causes. The table leaves it
+// out on a narrow screen, where the release tags need the room.
+const weeklyCauseWidth = 17
+
+func weeklyShowsCause(w int) bool { return w >= 100 }
+
+// weeklyCauseText writes the week's causes: machine, work and brief rework,
+// then the defects caught before release and the ones that escaped.
+func weeklyCauseText(c protocol.CauseCounts) string {
+	if c.Machine == 0 && c.Work == 0 && c.Brief == 0 && c.Caught == 0 && c.Escaped == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("m%d w%d b%d c%d e%d", c.Machine, c.Work, c.Brief, c.Caught, c.Escaped)
 }
 
 func weeklyRowLine(r protocol.ScoresWeeklyRow, w int) string {
@@ -107,6 +126,10 @@ func weeklyRowLine(r protocol.ScoresWeeklyRow, w int) string {
 	}
 	b.WriteString(cellR(tokensStr, 6))
 	b.WriteString(" ")
+	if weeklyShowsCause(w) {
+		b.WriteString(cell(weeklyCauseText(r.Causes), weeklyCauseWidth))
+		b.WriteString(" ")
+	}
 	if len(r.Releases) > 0 {
 		b.WriteString(releasesText(r.Releases))
 	}

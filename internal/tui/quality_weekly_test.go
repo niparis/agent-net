@@ -17,8 +17,10 @@ func weeklyScoresFixture() []protocol.ScoresWeeklyRow {
 		{Week: "2026-W42"},
 		{Week: "2026-W43"},
 		{Week: "2026-W44"},
-		{Week: "2026-W45", Runs: 14, MeanScore: 0.82, EarlyQuitRate: 0.0, MeanFixRounds: 0.25, BriefDefects: 1, Defects: 0, MeanTokens: 12400, Releases: []string{"v0.5.21"}},
-		{Week: "2026-W46", Runs: 18, MeanScore: 0.88, EarlyQuitRate: 0.05, MeanFixRounds: 0.10, BriefDefects: 0, Defects: 1, MeanTokens: 15100, Releases: []string{"v0.5.22", "v0.5.23"}},
+		{Week: "2026-W45", Runs: 14, MeanScore: 0.82, EarlyQuitRate: 0.0, MeanFixRounds: 0.25, BriefDefects: 1, Defects: 0, MeanTokens: 12400,
+			Causes: protocol.CauseCounts{Machine: 2, Work: 1, Brief: 1, Caught: 2, Escaped: 1}, Releases: []string{"v0.5.21"}},
+		{Week: "2026-W46", Runs: 18, MeanScore: 0.88, EarlyQuitRate: 0.05, MeanFixRounds: 0.10, BriefDefects: 0, Defects: 1, MeanTokens: 15100,
+			Causes: protocol.CauseCounts{Caught: 1}, Releases: []string{"v0.5.22", "v0.5.23"}},
 	}
 }
 
@@ -55,5 +57,21 @@ func TestQualityWeeklyCompactReleases(t *testing.T) {
 	}
 	if got := releasesText(nil); got != "" {
 		t.Errorf("no tags = %q, want empty", got)
+	}
+}
+
+// TestWeeklyCauseColumn covers the CAUSE column: it shows the rework causes
+// and the caught/escaped split on a wide screen, and is left out when the
+// release tags need the room.
+func TestWeeklyCauseColumn(t *testing.T) {
+	row := protocol.ScoresWeeklyRow{Week: "2026-W46", Causes: protocol.CauseCounts{Machine: 2, Work: 1, Brief: 1, Caught: 3, Escaped: 1}}
+	if line := weeklyRowLine(row, 116); !strings.Contains(line, "m2 w1 b1 c3 e1") {
+		t.Fatalf("wide row has no cause column: %q", line)
+	}
+	if line := weeklyRowLine(row, 76); strings.Contains(line, "m2 w1") {
+		t.Fatalf("narrow row kept the cause column: %q", line)
+	}
+	if got := weeklyCauseText(protocol.CauseCounts{}); got != "-" {
+		t.Fatalf("empty causes = %q, want -", got)
 	}
 }
