@@ -1,4 +1,4 @@
-# 0148 - One start path: the daemon owns every session
+# 0149 - One start path: the daemon owns every session
 
 Date: 2026-11-12
 Status: Accepted by the owner, through the CTO ("Parts 2 and 3 of the approved session redesign as one brief: one start path ... then delete the old start paths")
@@ -49,8 +49,10 @@ fails if any plan runs `--session` without `--server`.
 ### Codex
 
 The start creates the thread on the app server and sends the first message
-itself. The refusal `no herdr pane and no approving TUI available to confirm
-the start` is gone with the code that needed it.
+itself. When the app server is down, the start runs Codex's own
+`app-server daemon start` and dials again. The refusal `no herdr pane and no
+approving TUI available to confirm the start` is gone with the code that
+needed it.
 
 ### What was deleted
 
