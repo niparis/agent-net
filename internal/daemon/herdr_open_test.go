@@ -30,9 +30,15 @@ func fakeOpenHerdr(t *testing.T) (string, string) {
 	own := fakeOwnHerdrSocket(log)
 	running := filepath.Join(dir, "own-running")
 	created := filepath.Join(dir, "created")
+	defaults := filepath.Join(dir, "default-config")
+	if err := os.WriteFile(defaults, []byte(fakeHerdrDefaultConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	script := `#!/bin/sh
+printf '%s|%s\n' "$*" "$HERDR_CONFIG_PATH" >> ` + shellQuote(filepath.Join(dir, "env")) + `
 printf '[%s] %s\n' "$HERDR_SOCKET_PATH" "$*" >> ` + shellQuote(log) + `
 case "$1 $2" in
+  "--default-config ") cat ` + shellQuote(defaults) + ` ;;
   "session list") if [ -f ` + shellQuote(running) + ` ]; then r=true; else r=false; fi
     printf '{"sessions":[{"name":"default","running":true,"socket_path":"/nonexistent/herdr.sock"},{"name":"agent-net","running":%s,"socket_path":"%s"}]}\n' "$r" ` + shellQuote(own) + ` ;;
   "--session agent-net") [ "$3" = server ] && : > ` + shellQuote(running) + ` ;;
@@ -49,6 +55,16 @@ esac
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return filepath.Join(dir, "herdr"), log
+}
+
+// fakeHerdrDefaultConfig is what the fake prints for `herdr --default-config`:
+// a herdr that knows the sidebar setting.
+const fakeHerdrDefaultConfig = "[ui]\n# sidebar_collapsed_mode = \"compact\"\n"
+
+// fakeHerdrEnvLog is the fake's record of each call with the HERDR_CONFIG_PATH
+// it ran with, one line per call as "args|config path".
+func fakeHerdrEnvLog(log string) string {
+	return filepath.Join(filepath.Dir(log), "env")
 }
 
 // fakeOwnHerdrSocket is the socket of the fake's "agent-net" session.
@@ -83,7 +99,8 @@ func requireHerdrRules(t *testing.T, log string) {
 			continue
 		}
 		read := false
-		for _, ok := range []string{"pane list", "pane process-info", "session list", "--session agent-net server"} {
+		// --default-config prints herdr's defaults and reaches no server.
+		for _, ok := range []string{"pane list", "pane process-info", "session list", "--session agent-net server", "--default-config"} {
 			read = read || strings.HasPrefix(command, ok)
 		}
 		if !read {
