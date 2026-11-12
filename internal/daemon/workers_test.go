@@ -771,7 +771,11 @@ func TestWorkerEndsWhenItsOwnerIsGone(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.OwnerGrace = 500 * time.Millisecond
-	w := startWorkerNode(t, g, set, func(c *Config) { c.Workers.Tick = 25 * time.Millisecond })
+	w := startWorkerNode(t, g, set, func(c *Config) {
+		c.Workers.Tick = 25 * time.Millisecond
+		// Wait for launch before exercising the owner's disconnect.
+		c.testStartBudget = shortSet.StartTimeout
+	})
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	// The owner is an agent session (Pi) that starts the worker itself.
@@ -1013,7 +1017,8 @@ func TestWorkerStartFailures(t *testing.T) {
 			t.Setenv(c.env, "1")
 			g := startGateway(t, t.TempDir(), "")
 			set := shortSet
-			set.StartTimeout = scaled(1500 * time.Millisecond)
+			// Let the fake server bind before testing a missing plugin.
+			set.StartTimeout = scaled(3 * time.Second)
 			w := startWorkerNode(t, g, set, nil)
 			repo := newRepo(t, "shop")
 			w.register(t, repo)

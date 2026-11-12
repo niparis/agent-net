@@ -25,6 +25,7 @@ import (
 type fakeAgyRecord struct {
 	Args                        []string
 	Cwd, Native, Worker, Socket string
+	ConfigDir                   string
 	PID, PGID, Child            int
 	Turns                       []string
 	MCPError                    string
@@ -51,6 +52,7 @@ func TestAgyProcess(t *testing.T) {
 	}
 	pgid, _ := syscall.Getpgid(0)
 	r := fakeAgyRecord{Args: args, Cwd: cwd, Native: native, Worker: os.Getenv("AGENT_NET_WORKER"), Socket: os.Getenv("AGENT_NET_SOCKET"), PID: os.Getpid(), PGID: pgid}
+	r.ConfigDir = os.Getenv("AGENT_NET_CONFIG_DIR")
 	path := filepath.Join(os.Getenv("FAKE_AGY_RECORDS"), strconv.Itoa(r.PID)+".json")
 	save := func() {
 		b, _ := json.Marshal(r)
@@ -222,7 +224,27 @@ func TestAgyProcess(t *testing.T) {
 	os.Exit(0)
 }
 
+func TestAgyProcessKeepsParentConfig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestAgyProcess$", "--")
+	cmd.Dir = dir
+	cmd.Env = workerEnv(os.Environ(), map[string]string{
+		"FAKE_AGY_PROCESS": "1", "FAKE_AGY_RECORDS": dir,
+		"AGENT_NET_CONFIG_DIR": config, "TMPDIR": dir,
+	})
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fake agy: %v: %s", err, out)
+	}
+	records := agyRecords(dir)
+	if len(records) != 1 || records[0].ConfigDir != config {
+		t.Fatalf("fake agy replaced its parent's isolated config: %+v, want %s", records, config)
+	}
+}
+
 func TestAgyWorkerHandbackFiles(t *testing.T) {
+	t.Parallel()
 	w, _, _ := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback FAKE:filehandback", Isolation: protocol.IsolationWorktree})
 	n := w.waitNotice(t, 1)[0]
@@ -234,6 +256,7 @@ func TestAgyWorkerHandbackFiles(t *testing.T) {
 }
 
 func TestAgyWorkerHandbackFilesSnapshotOnce(t *testing.T) {
+	t.Parallel()
 	w, dir, _ := startAgyNode(t, shortSet)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback FAKE:filehandback FAKE:result-gate", Isolation: protocol.IsolationWorktree})
 	wk := w.d.workerBySession(res.SessionID)
@@ -257,6 +280,7 @@ func TestAgyWorkerHandbackFilesSnapshotOnce(t *testing.T) {
 }
 
 func TestAgyWorkerHandbackFilesAfterRestart(t *testing.T) {
+	t.Parallel()
 	set := shortSet
 	set.Idle, set.IdleNotice = time.Hour, time.Hour
 	w, dir, _ := startAgyNode(t, set)

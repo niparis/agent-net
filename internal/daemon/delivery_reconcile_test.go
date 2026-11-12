@@ -16,6 +16,7 @@ import (
 )
 
 func TestDeliveryReconcileRepo(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name         string
 		merged, gone bool
@@ -67,6 +68,7 @@ func TestDeliveryReconcileRepo(t *testing.T) {
 }
 
 func TestDeliveryReconcileFetchesRemoteDefault(t *testing.T) {
+	t.Parallel()
 	repo, wt := deliveryWorktree(t)
 	head := gitHead(t, wt, "HEAD")
 	remote := filepath.Join(t.TempDir(), "remote.git")
@@ -87,6 +89,7 @@ func TestDeliveryReconcileFetchesRemoteDefault(t *testing.T) {
 }
 
 func TestDeliveryReconcileKeepsRemoteBranchAndFetchFailures(t *testing.T) {
+	t.Parallel()
 	repo, wt := deliveryWorktree(t)
 	head := gitHead(t, wt, "HEAD")
 	remote := filepath.Join(t.TempDir(), "remote.git")
@@ -112,6 +115,7 @@ func TestDeliveryReconcileKeepsRemoteBranchAndFetchFailures(t *testing.T) {
 }
 
 func TestDeliveryReconcileRateAndMachine(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	repo, wt := deliveryWorktree(t)
 	head := gitHead(t, wt, "HEAD")
@@ -153,6 +157,7 @@ func TestDeliveryReconcileRateAndMachine(t *testing.T) {
 }
 
 func TestDeliveryReconcileNoOwnCommitsStaysOpen(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"head equals base", "head precedes base", "unknown base"} {
 		t.Run(kind, func(t *testing.T) {
 			repo, wt := deliveryWorktree(t)

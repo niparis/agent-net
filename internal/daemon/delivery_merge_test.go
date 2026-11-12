@@ -14,6 +14,7 @@ import (
 )
 
 func TestDeliveryMergeChecksGitAncestry(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	repo, wt := deliveryWorktree(t)
 	lc, _ := helloDelivery(t, n, "merge-reporter", wt, "claude-opus-5-5")
@@ -70,6 +71,7 @@ func TestDeliveryMergeChecksGitAncestry(t *testing.T) {
 }
 
 func TestDeliveryMergeUsesRegisteredChangeRepo(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	repo := newRepo(t, "demo")
 	other := newRepo(t, "merger")
@@ -108,6 +110,7 @@ func TestDeliveryMergeUsesRegisteredChangeRepo(t *testing.T) {
 }
 
 func TestDeliveryMergeSquash(t *testing.T) {
+	t.Parallel()
 	repo, wt := deliveryWorktree(t)
 	head := gitHead(t, wt, "HEAD")
 	gitIn(t, repo, "merge", "--squash", "feat/x")
@@ -127,6 +130,7 @@ func TestDeliveryMergeSquash(t *testing.T) {
 }
 
 func TestDeliveryMergeRejectsUnrelatedTwoParentCommit(t *testing.T) {
+	t.Parallel()
 	repo, wt := deliveryWorktree(t)
 	head := gitHead(t, wt, "HEAD")
 	gitIn(t, repo, "checkout", "-b", "other")
@@ -143,6 +147,7 @@ func TestDeliveryMergeRejectsUnrelatedTwoParentCommit(t *testing.T) {
 }
 
 func TestDeliveryMergeSquashEvidence(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	repo, wt := deliveryWorktree(t)
 	lc, _ := helloDelivery(t, n, "merge-reporter", wt, "claude-opus-5-5")
@@ -170,6 +175,7 @@ func TestDeliveryMergeSquashEvidence(t *testing.T) {
 }
 
 func TestDeliveryReleaseFindsSquashTag(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	repo, wt := deliveryWorktree(t)
 	lc, _ := helloDelivery(t, n, "release-reporter", wt, "claude-opus-5-5")

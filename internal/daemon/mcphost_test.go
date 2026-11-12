@@ -30,6 +30,12 @@ func TestMain(m *testing.M) {
 	// A test daemon must never run npm. The quota tests use a fake binary.
 	ensureQuotaAXI = func(context.Context, func(string, ...any)) error { return nil }
 
+	// A fake Agy child inherits the parent's isolation. Database warming here
+	// delays every worker start and replaces that child's fixture environment.
+	if os.Getenv("FAKE_AGY_PROCESS") == "1" {
+		os.Exit(m.Run())
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "fake-tui" {
 		if err := tui.Run(context.Background(), tui.NewDaemonSource(os.Getenv("AGENT_NET_SOCKET"))); err != nil {
 			fmt.Fprintln(os.Stderr, err)

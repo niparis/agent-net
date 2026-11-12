@@ -125,6 +125,7 @@ func TestCTOReservedNameUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer db.Close()
 	oldVersion := 0
 	for i, migration := range migrations {
 		if strings.Contains(migration, "-- Reserve CTO for the network session") {
@@ -135,10 +136,19 @@ func TestCTOReservedNameUpgrade(t *testing.T) {
 	if oldVersion == 0 {
 		t.Fatal("reserved CTO name migration missing")
 	}
+	// Avoid syncing each old-schema statement; OpenStore still runs the upgrade.
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
 	for _, migration := range migrations[:oldVersion] {
-		if _, err := db.Exec(migration); err != nil {
+		if _, err := tx.Exec(migration); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := db.Exec(`CREATE TABLE schema_version(version INTEGER NOT NULL); INSERT INTO schema_version VALUES(?)`, oldVersion); err != nil {
 		t.Fatal(err)

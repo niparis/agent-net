@@ -9,7 +9,7 @@ Usage: scripts/test.sh [--shards N | --package NAME --shard-index I --shard-coun
 
 Run the test suite. The tests of internal/daemon, internal/gateway,
 internal/setup, internal/tui and cmd/agent-net are split across processes by
-test name. Every other package
+test name, balancing measured test times when available. Every other package
 runs in one go test process.
 TEST_SHARDS sets the local shard count for each sharded package. The default is
 half the available CPUs, rounded down, with a minimum of one and a maximum of
@@ -44,6 +44,9 @@ cpu_count() {
 # Packages whose tests are split into shards by test name.
 sharded_packages=(daemon gateway setup tui agent-net)
 module=github.com/niparis/agent-net
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+timings_file=${TEST_TIMINGS_FILE:-$script_dir/test-timings.tsv}
+[[ -r $timings_file ]] || fail "cannot read test timings: $timings_file"
 
 package_path() {
   if [[ $1 == agent-net ]]; then
@@ -191,13 +194,40 @@ plan_package() {
     count=$test_count
   fi
 
+  # Longest-first scheduling keeps a handful of expensive tests from piling
+  # up in one shard. Untimed tests inherit their package's measured mean (or
+  # one second without a profile). Only names in the current listing enter.
+  if awk -v package="$name" '$1 == package { found = 1 } END { exit !found }' "$timings_file"; then
+    LC_ALL=C awk -v package="$name" '
+      FILENAME == ARGV[1] { if ($1 == package) times[$2] = $3; next }
+      {
+        weight = ($0 in times) ? times[$0] : (("*" in times) ? times["*"] : 1)
+        print (weight > 0.01 ? weight : 0.01), $0
+      }
+    ' "$timings_file" "$dir/tests" | LC_ALL=C sort -k1,1nr -k2,2 >"$dir/weighted-tests"
+  else
+    # Keep the existing round-robin split for packages without measurements.
+    awk '{ print 1, $0 }' "$dir/tests" >"$dir/weighted-tests"
+  fi
+
   # Go's per-argument size limit is 128 KiB on common Unix systems. Keep the
   # generated -run pattern below 100 KiB to leave room for the rest of argv.
   local regex_limit=100000
   while :; do
     oversized=0
     for ((i=0; i<count; i++)); do
-      awk -v n="$count" -v i="$i" '((NR - 1) % n) == i { print }' "$dir/tests" >"$dir/shard-$i"
+      : >"$dir/shard-$i"
+    done
+    LC_ALL=C awk -v n="$count" -v dir="$dir" '
+      {
+        shard = 0
+        for (i = 1; i < n; i++)
+          if (load[i] < load[shard]) shard = i
+        print $2 >> (dir "/shard-" shard)
+        load[shard] += $1
+      }
+    ' "$dir/weighted-tests"
+    for ((i=0; i<count; i++)); do
       regex=$(paste -sd '|' "$dir/shard-$i")
       regex_length=$(printf '%s' "$regex" | wc -c | tr -d ' ')
       if ((regex_length + 4 > regex_limit)); then

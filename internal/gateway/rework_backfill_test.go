@@ -136,19 +136,38 @@ func TestReworkBackfillTenThousandMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 2500; i++ {
+	defer tx.Rollback()
+	runs, err := tx.Prepare(`INSERT INTO worker_runs (node_id,session_id,harness,outcome,ended_at) VALUES ('node',?,'codex','complete',1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runs.Close()
+	// Avoid reparsing 10,000 message inserts under the race detector.
+	messages, err := tx.Prepare(`INSERT INTO messages (id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES
+  (?,'conv',?,?,?,?,0,?,?,0,'delivered'),
+  (?,'conv',?,?,?,?,0,?,?,0,'delivered'),
+  (?,'conv',?,?,?,?,0,?,?,0,'delivered'),
+  (?,'conv',?,?,?,?,0,?,?,0,'delivered')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer messages.Close()
+	const workers = 2500
+	for i := 0; i < workers; i++ {
 		worker := fmt.Sprintf("worker%d", i)
-		if _, err := tx.Exec(`INSERT INTO worker_runs (node_id,session_id,harness,outcome,ended_at) VALUES ('node',?,'codex','complete',1)`, worker); err != nil {
+		if _, err := runs.Exec(worker); err != nil {
 			t.Fatal(err)
 		}
+		args := make([]any, 0, 28)
 		for j := 0; j < 4; j++ {
 			from, to, typ, body := "caller", worker, protocol.TypeRequest, "task"
 			if j == 1 {
 				from, to, typ, body = worker, "caller", protocol.TypeReply, protocol.FormatWorkerNotice(protocol.WorkerNotice{Status: "done", Session: worker}, "")
 			}
-			if _, err := tx.Exec(`INSERT INTO messages (id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES (?,'conv',?,?,?,?,0,?,?,0,'delivered')`, fmt.Sprintf("m%d", i*4+j), from, to, typ, body, fmt.Sprintf("k%d", i*4+j), i*4+j); err != nil {
-				t.Fatal(err)
-			}
+			args = append(args, fmt.Sprintf("m%d", i*4+j), from, to, typ, body, fmt.Sprintf("k%d", i*4+j), i*4+j)
+		}
+		if _, err := messages.Exec(args...); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

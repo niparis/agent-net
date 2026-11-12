@@ -30,6 +30,7 @@ func startCTOTeamFixture(t *testing.T) (*testGateway, *workerNode) {
 }
 
 func TestCTOTeamCharterWorkModeReachesMember(t *testing.T) {
+	t.Parallel()
 	g, w := startCTOTeamFixture(t)
 	raw := json.RawMessage(`{"action":"team_charter","team":"forge","attr":"work_mode","value":"workers_code"}`)
 	if class, err := ctoClass("graph_change", raw); err != nil || class != ctoMinor {
@@ -58,6 +59,7 @@ func TestCTOTeamCharterWorkModeReachesMember(t *testing.T) {
 }
 
 func TestCTOTeamWriteCharterShape(t *testing.T) {
+	t.Parallel()
 	g, w := startCTOTeamFixture(t)
 	raw, err := json.Marshal(map[string]any{
 		"area": "operator", "method": "team_write",
@@ -76,6 +78,7 @@ func TestCTOTeamWriteCharterShape(t *testing.T) {
 }
 
 func TestCTOTeamSettingsSetTeamRef(t *testing.T) {
+	t.Parallel()
 	g, w := startCTOTeamFixture(t)
 	for _, raw := range []json.RawMessage{
 		json.RawMessage(`{"action":"settings_set","ref":{"kind":"team","id":"forge"},"setting":"asks_to","value":"lead"}`),
@@ -113,6 +116,7 @@ func TestCTOTeamSettingsSetTeamRef(t *testing.T) {
 // gateway validation as the owner's Teams list keys, and graph undo restores
 // each earlier value.
 func TestCTOTeamModeAndHeldBackUndo(t *testing.T) {
+	t.Parallel()
 	g, w := startCTOTeamFixture(t)
 	ctx := context.Background()
 	team := func() protocol.Team {
@@ -186,6 +190,7 @@ func TestCTOTeamModeAndHeldBackUndo(t *testing.T) {
 // An ordinary agent session cannot reach the CTO's team write or owner item
 // read, whatever the arguments.
 func TestCTOTeamModeAndOwnerItemsAreCTOOnly(t *testing.T) {
+	t.Parallel()
 	_, w := startCTOTeamFixture(t)
 	agent, _ := helloPi(t, w.node, "not-the-cto", "/w/not-the-cto", true)
 	for _, method := range []string{"graph_change", "cto_proposals_find"} {
