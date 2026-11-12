@@ -187,6 +187,12 @@ type Model struct {
 	convAutoPages     int
 	convDetail        map[string]convDetail
 	convDetailLoading map[string]bool
+	// The owner's scroll in the open conversation: the first line shown, for
+	// the conversation threadFor. Without it the pane follows the newest line
+	// or the selected message.
+	threadScrolled bool
+	threadTop      int
+	threadFor      string
 
 	// What the person chose.
 	collapsedTrees            map[string]bool
@@ -783,6 +789,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionPinMsg:
 		return m.sessionPinResult(msg)
 	case tea.MouseMsg:
+		if m.messagesMouseActive() {
+			return m.messagesMouse(msg), nil
+		}
 		return m.graphMouse(msg), nil
 	case tea.PasteMsg:
 		return m.paste(msg)
@@ -2198,14 +2207,28 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.fetching = true
 			return m, m.fetchCmd()
 		}
+	case "scroll thread up":
+		m.scrollThread(-1)
+		return m, nil
+	case "scroll thread down":
+		m.scrollThread(1)
+		return m, nil
 	case "previous message", "next message":
 		if m.tab == messagesTab && m.focus == focusFeed {
 			rows := m.messageConversations()
 			if len(rows) > 0 {
 				r := rows[m.selectedConversationIndex(rows)]
 				if len(r.items) == 0 {
+					// A stored conversation has no marked message to move
+					// along, so the keys scroll it.
+					if key == "next message" {
+						m.scrollThread(wheelLines)
+					} else {
+						m.scrollThread(-wheelLines)
+					}
 					return m, nil
 				}
+				m.threadScrolled = false
 				pos := 0
 				for i, v := range r.items {
 					if v == m.feedCur {
@@ -2239,6 +2262,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			row := rows[m.selectedConversationIndex(rows)]
+			m.threadScrolled = false
 			if len(row.items) == 0 {
 				return m, m.wantConversationDetails()
 			}

@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 online
+[ Agents ]    Workers      System
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
+│   ✓ peer21 ↔ strategies · stored conversation 21                21m · 3 msgs │
+│   ✓ peer22 ↔ strategies · stored conversation 22                22m · 3 msgs │
+│   ✓ peer23 ↔ strategies · stored conversation 23                23m · 3 msgs │
+│   ✓ peer24 ↔ strategies · stored conversation 24                24m · 3 msgs │
+│ ▸ ✓ peer25 ↔ strategies · stored conversation 25                25m · 3 msgs │
+│ 60 threads · 0 system events                                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ peer25 ↔ strategies                                                          │
+│ loading messages                                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down thread  left/right msg  enter body  end latest  c CTO  ? help  q quit

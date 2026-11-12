@@ -211,6 +211,8 @@ var keyBindings = []keyBinding{
 	bind(contextMessages, "pgdown", actPageDown, "page", -1),
 	bind(contextMessages, "home|g", actFirst, "first thread", -1),
 	withHelp(bind(contextMessages, "end", actLast, "latest", 1), "latest message"),
+	withHelp(bind(contextMessages, "ctrl+u", "scroll thread up", "scroll", -1), "scroll the open conversation up; the mouse wheel over it works too"),
+	withHelp(bind(contextMessages, "ctrl+d", "scroll thread down", "scroll", -1), "scroll the open conversation down"),
 	withLocal(withHelp(bind(contextMessages, "enter", "message body", "body", 1), "open the selected message body")),
 	withHelp(bind(contextMessages, "f", "defect", "defect", -1), "report a defect found later on the selected worker conversation"),
 	bind(contextMessages, "tab", "next message subtab", "sub tab", 0),

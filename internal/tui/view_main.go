@@ -143,7 +143,7 @@ func (m Model) layout() layout {
 func (m Model) View() tea.View {
 	v := tea.NewView(m.renderView())
 	v.AltScreen = true
-	if m.graphMouseActive() && !m.quitting {
+	if (m.graphMouseActive() || m.messagesMouseActive()) && !m.quitting {
 		v.MouseMode = tea.MouseModeCellMotion
 	}
 	return v
@@ -1824,22 +1824,40 @@ func (m Model) requestRuleBadge(a protocol.AgentView) string {
 	return rule
 }
 
-func (m Model) messagesView(w, h int) []string {
-	out := []string{m.titleLine(w)}
-	if m.open != nil {
-		return append(out, m.messageView(w, h-1)...)
-	}
-	out = append(out, m.messageSubtabs(w))
-	out = append(out, sDim.Render(clip(m.messageLegend(), w)))
-	rows := m.messageConversations()
-	selected := m.selectedConversationIndex(rows)
-	listW := w - 4
-	chatW := w - 4
+// messagesGeometry is the layout of the Messages tab for a body of w by h
+// rows: the widths, and the rows the list and the conversation get. The view,
+// the keys and the mouse wheel all read it, so they agree on what is on screen.
+type messagesGeometry struct {
+	wide               bool
+	listW, chatW       int
+	listRows, chatRows int
+}
+
+func messagesLayout(w, h int) messagesGeometry {
+	g := messagesGeometry{listW: w - 4, chatW: w - 4}
 	if w >= 100 {
 		// The list is narrower than before; the conversation gets the room.
-		listW = min(max(w*45/100-4, 30), 72)
-		chatW = max(w-(listW+4)-4, 1)
+		g.wide = true
+		g.listW = min(max(w*45/100-4, 30), 72)
+		g.chatW = max(w-(g.listW+4)-4, 1)
+		g.listRows = max(h-4, 0)
+		g.chatRows = g.listRows
+		return g
 	}
+	available := max(h-6, 0)
+	g.listRows = max(available/2, 1)
+	g.chatRows = max(available-g.listRows, 0)
+	return g
+}
+
+// messagesBodyHeight is the height messagesView gets from renderView.
+func (m Model) messagesBodyHeight() int {
+	return max(m.height, 10) - 1 - m.ctoBoxHeight(messagesTab)
+}
+
+// messageThread is the lines of the selected conversation, with the header
+// lines on top, and the line to keep in view when the owner has not scrolled.
+func (m Model) messageThread(rows []messageConversation, selected, chatW int) ([]string, int) {
 	var chat []string
 	if len(rows) > 0 {
 		chat = m.conversationChat(rows[selected], chatW)
@@ -1861,23 +1879,43 @@ func (m Model) messagesView(w, h int) []string {
 	} else {
 		chat = []string{sDim.Render("Select a thread")}
 	}
-	chatSelected := 0
+	// With no marked message the newest line stays in view, like a chat.
+	chatSelected := len(chat) - 1
 	for i, line := range chat {
 		if strings.HasPrefix(ansi.Strip(line), "▸ ") {
 			chatSelected = min(i+1, len(chat)-1)
 			break
 		}
 	}
+	return chat, chatSelected
+}
+
+func (m Model) messagesView(w, h int) []string {
+	out := []string{m.titleLine(w)}
+	if m.open != nil {
+		return append(out, m.messageView(w, h-1)...)
+	}
+	out = append(out, m.messageSubtabs(w))
+	out = append(out, sDim.Render(clip(m.messageLegend(), w)))
+	rows := m.messageConversations()
+	selected := m.selectedConversationIndex(rows)
+	g := messagesLayout(w, h)
+	listW, chatW := g.listW, g.chatW
+	chat, chatSelected := m.messageThread(rows, selected, chatW)
+	rowID := ""
+	if len(rows) > 0 {
+		rowID = rows[selected].id
+	}
 	footer := m.messageFooter(rows)
-	if w >= 100 {
-		height := max(h-4, 0)
+	if g.wide {
+		height := g.chatRows
 		list, listSel := m.threadListLines(rows, listW, selected, max(height-1, 0))
 		if len(list) == 0 {
 			list = m.emptyThreadLines(listW)
 		}
 		list = messageFit(list, max(height-1, 0), listSel)
 		list = append(list, sDim.Render(clip(footer, listW)))
-		chat = messageFit(chat, height, chatSelected)
+		chat = m.threadWindow(chat, height, chatSelected, rowID)
 		left := panelWithRightHeader("Threads", m.messageFilterLine(), list, listW+4, roleAccent)
 		right := panel("Conversation", chat, chatW+4, roleAccent)
 		for i := range left {
@@ -1885,9 +1923,7 @@ func (m Model) messagesView(w, h int) []string {
 		}
 		return out
 	}
-	available := max(h-6, 0)
-	listHeight := max(available/2, 1)
-	chatHeight := max(available-listHeight, 0)
+	listHeight, chatHeight := g.listRows, g.chatRows
 	if len(chat) < chatHeight {
 		chatHeight = len(chat)
 	}
@@ -1899,10 +1935,20 @@ func (m Model) messagesView(w, h int) []string {
 	if listHeight > 0 {
 		list = append(list, sDim.Render(clip(footer, listW)))
 	}
-	chat = messageFit(chat, chatHeight, chatSelected)
+	chat = m.threadWindow(chat, chatHeight, chatSelected, rowID)
 	out = append(out, panelWithRightHeader("Threads", m.messageFilterLine(), list, w, roleAccent)...)
 	out = append(out, panel("Conversation", chat, w, roleAccent)...)
 	return out
+}
+
+// threadWindow cuts the conversation to the rows it has. After the owner
+// scrolls it keeps that place, whatever arrives; before, it follows the
+// selected message, or the newest line.
+func (m Model) threadWindow(chat []string, height, selected int, rowID string) []string {
+	if m.threadScrolled && m.threadFor == rowID {
+		return sliceFrom(chat, height, m.threadTop)
+	}
+	return messageFit(chat, height, selected)
 }
 
 // threadListLines draws the rows around the selection and, for an expanded
@@ -2009,12 +2055,23 @@ func (m Model) messageFooter(rows []messageConversation) string {
 }
 
 func messageFit(lines []string, height, selected int) []string {
+	return sliceFrom(lines, height, messageStart(lines, height, selected))
+}
+
+// messageStart is the first line of the window that keeps selected in view.
+func messageStart(lines []string, height, selected int) int {
 	height = max(height, 0)
 	start := 0
 	if selected >= height {
 		start = selected - height + 1
 	}
-	start = min(start, max(len(lines)-height, 0))
+	return min(start, max(len(lines)-height, 0))
+}
+
+// sliceFrom is height lines from start, padded with blank lines.
+func sliceFrom(lines []string, height, start int) []string {
+	height = max(height, 0)
+	start = min(max(start, 0), max(len(lines)-height, 0))
 	end := min(start+height, len(lines))
 	lines = append([]string(nil), lines[start:end]...)
 	for len(lines) < height {
