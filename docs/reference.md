@@ -4399,4 +4399,3 @@ Received proof stays in agent-net's inbox for 30 days by default. The network
 setting `files.proof_retention` changes this duration (default `720h`). Normal
 received files still expire after seven days. A message containing proof keeps
 all its files for the proof retention period. File cleanup runs hourly.
-
