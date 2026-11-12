@@ -342,6 +342,9 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 		if !found {
 			return protocol.ChangeSubmitResult{}, reject("unknown change %q", q.ChangeID)
 		}
+		if q.SessionID != c.Caller {
+			return protocol.ChangeSubmitResult{}, reject("change %s belongs to caller %s", c.ID, c.Caller)
+		}
 		if c.Project != q.Project {
 			return protocol.ChangeSubmitResult{}, reject("change %s is for project %s, not %s", c.ID, c.Project, q.Project)
 		}

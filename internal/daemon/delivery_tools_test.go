@@ -787,3 +787,46 @@ func TestDeliverySubmitRejectsRepoContextMismatch(t *testing.T) {
 		t.Fatal("submitted from a different repo")
 	}
 }
+
+func TestChangeSubmitCrossProjectCaller(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	_, wt := deliveryWorktree(t)
+	other := newRepo(t, "other")
+	lc, sid := helloDelivery(t, n, "cross-caller", other, "model")
+	head := gitHead(t, wt, "feat/x")
+	f.answer(protocol.FrameChangeGet, func(json.RawMessage) (any, error) {
+		return deliveryTestView(protocol.Change{ID: "ch_cross", Project: "demo", Caller: sid}), nil
+	})
+	f.answer("query.projects", func(json.RawMessage) (any, error) {
+		return protocol.ProjectsResult{Projects: []protocol.ProjectView{{Name: "demo", Path: wt, NodeID: n.d.NodeID(), Source: protocol.SourceRegistered}}}, nil
+	})
+	f.answer(protocol.FrameChangeSubmit, func(raw json.RawMessage) (any, error) {
+		var q protocol.ChangeSubmitRequest
+		_ = json.Unmarshal(raw, &q)
+		return protocol.ChangeSubmitResult{Change: deliveryTestView(protocol.Change{ID: q.ChangeID, Project: q.Project, HeadCommit: q.HeadCommit, Revision: 2})}, nil
+	})
+	res, err := lc.call(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Change: "ch_cross", Branch: "feat/x", Commit: head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.ChangeSubmitResult
+	_ = json.Unmarshal(res, &got)
+	if got.Change.Change.Revision != 2 || got.Change.Change.HeadCommit != head {
+		t.Fatalf("result: %+v", got)
+	}
+	_, err = lc.call(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Change: "ch_cross", Branch: "main", Commit: head})
+	if err == nil || !strings.Contains(err.Error(), "not on branch") {
+		t.Fatalf("off branch: %v", err)
+	}
+	_, err = lc.call(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Project: "demo", Branch: "feat/x"})
+	if err == nil {
+		t.Fatal("new cross-project change accepted")
+	}
+	f.answer(protocol.FrameChangeGet, func(json.RawMessage) (any, error) {
+		return deliveryTestView(protocol.Change{ID: "ch_cross", Project: "demo", Caller: "s_other"}), nil
+	})
+	_, err = lc.call(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Change: "ch_cross", Project: "demo", Branch: "feat/x"})
+	if err == nil {
+		t.Fatal("non-caller accepted")
+	}
+}

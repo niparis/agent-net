@@ -241,6 +241,46 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 	if project != info.Repo.Project {
 		return out, fmt.Errorf("session's repo context %q does not match its folder's project %q", project, info.Repo.Project)
 	}
+	if a.Change != "" {
+		var view protocol.ChangeView
+		if err := d.deliveryCall(ctx, protocol.FrameChangeGet, protocol.ChangeGetRequest{ChangeID: a.Change}, &view); err == nil && view.Change.Project != "" && view.Change.Project != project && view.Change.Caller == sid {
+			if a.Project != "" && a.Project != view.Change.Project {
+				return out, fmt.Errorf("change %s is for project %s, not %s", a.Change, view.Change.Project, a.Project)
+			}
+			var projects protocol.ProjectsResult
+			raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
+			if err != nil {
+				return out, err
+			}
+			if err := json.Unmarshal(raw, &projects); err != nil {
+				return out, err
+			}
+			var machines []string
+			var local string
+			for _, p := range projects.Projects {
+				if p.Name != view.Change.Project || (p.Source != protocol.SourceRegistered && p.Source != protocol.SourceBoth) {
+					continue
+				}
+				if p.NodeID == d.cfg.NodeID {
+					if local != "" && local != p.Path {
+						return out, fmt.Errorf("project %q has multiple registered folders on this machine", p.Name)
+					}
+					local = p.Path
+				} else if p.Hostname != "" {
+					machines = append(machines, p.Hostname)
+				} else {
+					machines = append(machines, p.NodeID)
+				}
+			}
+			if local == "" {
+				return out, fmt.Errorf("project %q is not registered on this machine; registered machines: %s", view.Change.Project, strings.Join(machines, ", "))
+			}
+			folder, project = local, view.Change.Project
+			if !isGitRepo(ctx, folder) {
+				return out, fmt.Errorf("registered project folder %s is not a git repository with a commit", folder)
+			}
+		}
+	}
 	if a.Project != "" && a.Project != project {
 		return out, fmt.Errorf("project %q is not your session's project %q: submit from a session in %q", a.Project, project, a.Project)
 	}
