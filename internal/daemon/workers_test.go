@@ -104,8 +104,10 @@ func killAllWorkers(t *testing.T, d *Daemon) {
 }
 
 func inventoryOf(t *testing.T, cli *localClient, n *node) bool {
-	// Callers poll this. A slow gateway reply under load is "not yet", not a failure.
-	raw, err := cli.call("nodes", nil)
+	// Callers poll this, so use a short answer budget: a slow gateway reply
+	// under load is "not yet", and the next poll must still happen before the
+	// caller's wait runs out.
+	raw, err := cli.callWithin(scaled(2*time.Second), "nodes", nil)
 	if err != nil {
 		return false
 	}

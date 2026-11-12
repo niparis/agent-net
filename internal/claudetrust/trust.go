@@ -119,6 +119,14 @@ func change(dir string, set bool) error {
 		time.Sleep(20 * time.Millisecond)
 	}
 	defer os.Remove(lock)
+	if set {
+		// Another caller may have trusted the folder while this one waited
+		// for the lock. Writing again would sync and rename the file for
+		// nothing, and a queue of such writes is what makes the wait expire.
+		if ok, err := Trusted(dir); err == nil && ok {
+			return nil
+		}
+	}
 	raw, err := os.ReadFile(path)
 	mode := os.FileMode(0600)
 	if errors.Is(err, os.ErrNotExist) {

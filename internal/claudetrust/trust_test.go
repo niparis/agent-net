@@ -155,6 +155,49 @@ func TestSetSkipsTheLockWhenAlreadyTrusted(t *testing.T) {
 	}
 }
 
+// Two callers that start the CTO at once both find the folder untrusted and
+// wait for Claude's config lock. The first one writes the answer. The second
+// must not rewrite the file once it gets the lock: every write is a sync and a
+// rename, and a queue of them on a busy disk is what makes the wait expire.
+// The other writer's bytes must survive untouched.
+func TestSetKeepsTheAnswerWrittenWhileItWaited(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	path := filepath.Join(dir, ".claude.json")
+	project := filepath.Join(t.TempDir(), "cto")
+	lock := path + ".lock"
+	if err := os.Mkdir(lock, 0700); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- Set(project) }()
+	// Set has passed its "already trusted" answer (the file is absent) and is
+	// waiting for the lock. A second writer takes the lock, trusts the folder
+	// and releases it.
+	select {
+	case err := <-done:
+		t.Fatalf("Set returned while the lock was held: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	written := []byte(`{"projects":{"` + project + `":{"hasTrustDialogAccepted":true}}}`)
+	if err := os.WriteFile(path, written, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != string(written) {
+		t.Fatalf("Set rewrote the answer another writer left:\n%s", raw)
+	}
+}
+
 // Claude Code refreshes its lock while it holds it. A lock untouched for long
 // is left by a Claude that crashed: it is removed and the edit goes on.
 func TestSetRemovesAStaleLock(t *testing.T) {

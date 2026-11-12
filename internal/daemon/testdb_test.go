@@ -90,6 +90,19 @@ func seedDatabase(t *testing.T, dir, name string, template func() ([]byte, error
 	}
 }
 
+// warmTemplates migrates the templates before the first test runs. The
+// migration is many synced statements, ten seconds or more with the race
+// detector on a busy disk. A test that pays for it while other tests run makes
+// them race their scaled deadlines against that disk work, so pay it once,
+// before any of them starts. TestMain calls it.
+func warmTemplates() error {
+	if _, err := gatewayTemplateBytes(); err != nil {
+		return err
+	}
+	_, err := stateTemplateBytes()
+	return err
+}
+
 // seededStateDir is a new state directory holding an empty migrated database.
 func seededStateDir(t *testing.T) string {
 	t.Helper()

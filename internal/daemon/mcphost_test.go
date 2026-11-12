@@ -149,6 +149,11 @@ func TestMain(m *testing.M) {
 	os.Setenv("GOCACHE", filepath.Join(cacheTemp, "gocache"))
 	os.Setenv("AGENT_NET_GOTMPDIR", filepath.Join(cacheTemp, "gotmp"))
 	os.Setenv("UV_CACHE_DIR", filepath.Join(cacheTemp, "uv"))
+	if err := warmTemplates(); err != nil {
+		fmt.Fprintln(os.Stderr, "database template:", err)
+		os.RemoveAll(cacheTemp)
+		os.Exit(1)
+	}
 	code := m.Run()
 	os.RemoveAll(cacheTemp)
 	if leaked := reapFakes(fakes); len(leaked) > 0 && code == 0 {
