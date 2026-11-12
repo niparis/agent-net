@@ -16,6 +16,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/quotaaxi"
+	"github.com/niparis/agent-net/internal/tui/tabs"
 )
 
 var execSetupTUI = func(exe string) error {
@@ -41,6 +42,16 @@ type setupPoint struct {
 	label   string
 	first   string
 	details []string
+}
+
+// setupLabel names the key that opens a screen. The key comes from the TUI tab
+// table, so a tab reorder updates the setup summary too.
+func setupLabel(name, tab string) string {
+	key := tabs.Key(tab)
+	if key == "" {
+		return name
+	}
+	return key + " " + name
 }
 
 func setupHarness(step string) string {
@@ -187,18 +198,18 @@ func (r *runner) setupPoints(summary setupSummary, host string) []setupPoint {
 		points = append(points, r.seePoint(summary, host))
 		if r.joining {
 			if summary.nodesKnown && len(summary.nodes) > 1 {
-				points = append(points, setupPoint{label: "2 Talk", first: "They can now ask your agents on " + strings.Join(r.otherHosts(summary), ", ") + ", and the reverse."})
+				points = append(points, setupPoint{label: setupLabel("Talk", "Messages"), first: "They can now ask your agents on " + strings.Join(r.otherHosts(summary), ", ") + ", and the reverse."})
 			}
 		} else if summary.nodesKnown {
 			if len(summary.agents) == 0 {
-				points = append(points, setupPoint{label: "2 Talk", first: "Your agents will be able to ask each other."})
+				points = append(points, setupPoint{label: setupLabel("Talk", "Messages"), first: "Your agents will be able to ask each other."})
 			} else {
-				points = append(points, setupPoint{label: "2 Talk", first: "Your agents can now ask each other. New sessions get the", details: []string{"tools; open ones get them after a restart."}})
+				points = append(points, setupPoint{label: setupLabel("Talk", "Messages"), first: "Your agents can now ask each other. New sessions get the", details: []string{"tools; open ones get them after a restart."}})
 			}
 		}
 	}
 	if !r.joining && r.statusClient != nil {
-		points = append(points, setupPoint{label: "3 CTO", first: "Your CTO runs the network for you. Ask it in plain words."})
+		points = append(points, setupPoint{label: tabs.CTOKey + " CTO", first: "Your CTO runs the network for you. Ask it in plain words."})
 		if summary.projectsKnown {
 			points = append(points, r.mapPoint(summary))
 		}
@@ -206,7 +217,7 @@ func (r *runner) setupPoints(summary setupSummary, host string) []setupPoint {
 			points = append(points, point)
 		}
 		if summary.toolsKnown {
-			points = append(points, setupPoint{label: "6 Tools", first: "Skills and MCP servers are checked on every machine."})
+			points = append(points, setupPoint{label: setupLabel("Tools", "Tools"), first: "Skills and MCP servers are checked on every machine."})
 		}
 	} else if r.joining && r.statusClient != nil {
 		if point, ok := r.workPoint(summary); ok {
@@ -225,7 +236,7 @@ func (r *runner) seePoint(summary setupSummary, host string) setupPoint {
 	}
 	if r.joining {
 		if len(sessions) == 0 {
-			return setupPoint{label: "1 See", first: "No agent sessions here yet. Start claude, codex, pi or opencode in", details: []string{"a project: it shows up here by itself."}}
+			return setupPoint{label: setupLabel("See", "Sessions"), first: "No agent sessions here yet. Start claude, codex, pi or opencode in", details: []string{"a project: it shows up here by itself."}}
 		}
 		text := sessionCounts(sessions)
 		line := fmt.Sprintf("%d %s here: %s", len(sessions), plural(len(sessions), "session", "sessions"), text)
@@ -234,13 +245,13 @@ func (r *runner) seePoint(summary setupSummary, host string) setupPoint {
 		} else {
 			line += "."
 		}
-		return setupPoint{label: "1 See", first: line}
+		return setupPoint{label: setupLabel("See", "Sessions"), first: line}
 	}
 	if len(sessions) == 0 && len(summary.agents) == 0 {
-		return setupPoint{label: "1 See", first: "No agent sessions yet. Start claude, codex, pi or opencode in", details: []string{"a project: it shows up here by itself."}}
+		return setupPoint{label: setupLabel("See", "Sessions"), first: "No agent sessions yet. Start claude, codex, pi or opencode in", details: []string{"a project: it shows up here by itself."}}
 	}
 	if len(sessions) == 0 {
-		return setupPoint{label: "1 See", first: "No agent sessions on " + host + " yet. Start claude, codex, pi or opencode in", details: []string{"a project: it shows up here by itself."}}
+		return setupPoint{label: setupLabel("See", "Sessions"), first: "No agent sessions on " + host + " yet. Start claude, codex, pi or opencode in", details: []string{"a project: it shows up here by itself."}}
 	}
 	line := fmt.Sprintf("%d %s on %s: %s", len(sessions), plural(len(sessions), "session", "sessions"), host, sessionCounts(sessions))
 	busy, waiting := 0, 0
@@ -263,7 +274,7 @@ func (r *runner) seePoint(summary setupSummary, host string) setupPoint {
 		}
 	}
 	line += "."
-	point := setupPoint{label: "1 See", first: line}
+	point := setupPoint{label: setupLabel("See", "Sessions"), first: line}
 	if summary.nodesKnown && len(summary.nodes) <= 1 {
 		point.details = []string{"Your other machines appear when you add them."}
 	}
@@ -333,21 +344,21 @@ func (r *runner) mapPoint(summary setupSummary) setupPoint {
 	} else {
 		// Without the graph there is no honest count: the folder list holds
 		// every checkout ever seen, worktrees and temporary folders included.
-		return setupPoint{label: "2 Graph", first: "Your projects appear on the Graph as agents work in them."}
+		return setupPoint{label: setupLabel("Graph", "Graph"), first: "Your projects appear on the Graph as agents work in them."}
 	}
 	if len(projects) == 0 {
-		return setupPoint{label: "2 Graph", first: "No projects yet. Each project you work in becomes one."}
+		return setupPoint{label: setupLabel("Graph", "Graph"), first: "No projects yet. Each project you work in becomes one."}
 	}
 	missing := len(projects) - len(chartered)
 	switch {
 	case missing == 0:
-		return setupPoint{label: "2 Graph", first: fmt.Sprintf("%d %s seen. All have charters.", len(projects), plural(len(projects), "project", "projects"))}
+		return setupPoint{label: setupLabel("Graph", "Graph"), first: fmt.Sprintf("%d %s seen. All have charters.", len(projects), plural(len(projects), "project", "projects"))}
 	case missing == len(projects):
-		return setupPoint{label: "2 Graph", first: fmt.Sprintf("%d projects seen. None has a charter yet: the CTO drafts", len(projects)), details: []string{"them with you."}}
+		return setupPoint{label: setupLabel("Graph", "Graph"), first: fmt.Sprintf("%d projects seen. None has a charter yet: the CTO drafts", len(projects)), details: []string{"them with you."}}
 	case missing == 1:
-		return setupPoint{label: "2 Graph", first: fmt.Sprintf("%d projects seen. One has no charter yet: the CTO drafts", len(projects)), details: []string{"it with you."}}
+		return setupPoint{label: setupLabel("Graph", "Graph"), first: fmt.Sprintf("%d projects seen. One has no charter yet: the CTO drafts", len(projects)), details: []string{"it with you."}}
 	default:
-		return setupPoint{label: "2 Graph", first: fmt.Sprintf("%d projects seen. %d have no charter yet: the CTO drafts", len(projects), missing), details: []string{"them with you."}}
+		return setupPoint{label: setupLabel("Graph", "Graph"), first: fmt.Sprintf("%d projects seen. %d have no charter yet: the CTO drafts", len(projects), missing), details: []string{"them with you."}}
 	}
 }
 
@@ -373,7 +384,7 @@ func (r *runner) workPoint(summary setupSummary) (setupPoint, bool) {
 		if len(harnesses) > 0 {
 			text += " Harnesses: " + strings.Join(harnesses, ", ") + "."
 		}
-		return setupPoint{label: "5 Work", first: text}, true
+		return setupPoint{label: setupLabel("Work", "Quotas"), first: text}, true
 	}
 	auth, err := quotaaxi.LoadAuth(daemon.ConfigDir())
 	if err != nil || !summary.protectedKnown {
@@ -390,7 +401,7 @@ func (r *runner) workPoint(summary setupSummary) (setupPoint, bool) {
 		if !summary.protectedKnown {
 			return setupPoint{}, false
 		}
-		return setupPoint{label: "5 Work", first: "Nothing to protect yet."}, true
+		return setupPoint{label: setupLabel("Work", "Quotas"), first: "Nothing to protect yet."}, true
 	}
 	text := "Workers can use: " + strings.Join(providers, ", ") + "."
 	if len(providers) > 1 {
@@ -423,7 +434,7 @@ func (r *runner) workPoint(summary setupSummary) (setupPoint, bool) {
 	} else if summary.protectedKnown {
 		text += " Nothing to protect yet."
 	}
-	return setupPoint{label: "5 Work", first: text}, true
+	return setupPoint{label: setupLabel("Work", "Quotas"), first: text}, true
 }
 
 func protectableProvider(provider string) bool {

@@ -3,8 +3,8 @@ daemon status         connected to https://gateway.example:7420 as node n_build
 
 [1mWhat you have now[0m
 [36m1 See[0m   2 sessions here: 1 pi, 1 opencode. They show on laptop too.
-[36m2 Talk[0m  They can now ask your agents on laptop, and the reverse.
-[36m5 Work[0m  build-vm takes workers. Harnesses: pi, opencode.
+[36m4 Talk[0m  They can now ask your agents on laptop, and the reverse.
+[36m3 Work[0m  build-vm takes workers. Harnesses: pi, opencode.
 
 [33;1mDo this first[0m
 [33m![0m Restart 2 sessions (pi, opencode) so they get the agent-net tools.

@@ -4,13 +4,13 @@ agent-net is running on laptop.
 What you have now
 1 See   4 sessions on laptop: 3 claude, 1 codex. 2 busy.
         Your other machines appear when you add them.
-2 Talk  Your agents can now ask each other. New sessions get the
+4 Talk  Your agents can now ask each other. New sessions get the
         tools; open ones get them after a restart.
-3 CTO   Your CTO runs the network for you. Ask it in plain words.
+c CTO   Your CTO runs the network for you. Ask it in plain words.
 2 Graph 8 projects seen. None has a charter yet: the CTO drafts
         them with you.
-5 Work  Workers use claude, codex. Your claude plan is protected.
-6 Tools Skills and MCP servers are checked on every machine.
+3 Work  Workers use claude, codex. Your claude plan is protected.
+5 Tools Skills and MCP servers are checked on every machine.
 
 Do this first
 ! Restart 2 pi sessions so they get the agent-net tools.
