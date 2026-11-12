@@ -354,11 +354,12 @@ func TestEnterHerdrStalePane(t *testing.T) {
 }
 
 // An OpenCode session is not lost when its herdr pane closes: the session is
-// still in the OpenCode service, so enter opens it there, not with a note.
-// Only when the service cannot be reached either does the note say what was
-// tried.
+// still in the OpenCode service, so enter opens it there with --server. When
+// the service is not running there is no plan: a bare `opencode --session`
+// would host the session in a terminal of its own, outside the daemon.
 func TestEnterOpenCodeClosedHerdrPaneUsesTheService(t *testing.T) {
-	t.Parallel()
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "opencode")
 	cwd := t.TempDir()
@@ -369,10 +370,16 @@ func TestEnterOpenCodeClosedHerdrPaneUsesTheService(t *testing.T) {
 
 	n, _, id := enterNode(t, g, "opencode", info, bins, nil)
 	p := enterOf(t, n, id, "")
-	if want := []string{bins["opencode"], "--session", "ses_1"}; !reflect.DeepEqual(p.Argv, want) {
+	if len(p.Argv) != 0 || !strings.Contains(p.Note, "OpenCode service is not running") {
+		t.Fatalf("no service: %+v", p)
+	}
+
+	writeOwnerOpenCodeService(t, state, "http://127.0.0.1:9999")
+	p = enterOf(t, n, id, "")
+	if want := []string{bins["opencode"], "--server", "http://127.0.0.1:9999", "--session", "ses_1"}; !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("closed herdr pane: %+v, want %v", p, want)
 	}
-	if p.Dir != cwd || len(p.Env) != 0 || strings.Contains(p.Note, "has closed") {
+	if p.Dir != cwd || strings.Contains(p.Note, "has closed") {
 		t.Fatalf("closed herdr pane: %+v", p)
 	}
 

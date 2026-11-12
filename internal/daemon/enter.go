@@ -330,18 +330,22 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 			if info.NativeID == "" {
 				return no("%s has no OpenCode session ID to open it with", name)
 			}
+			// The service owns every owner OpenCode session. Without it there is
+			// nothing to attach to, and a bare `opencode --session` would host
+			// the session in a terminal of its own.
+			service, serviceErr := d.ownerOpenCodeService()
+			if serviceErr != nil {
+				return no("the OpenCode service is not running on %s: start it with `opencode service start`, then press Enter again", plan.Host)
+			}
+			if viaGateway && service.Password != "" {
+				return no("%s uses a private OpenCode service and can only be entered on its own machine", name)
+			}
 			if err := reopen(); err != nil {
 				return no("could not reopen session: %v", err)
 			}
-			plan.Argv = []string{bin, "--session", info.NativeID}
-			if service, serviceErr := d.ownerOpenCodeService(); serviceErr == nil {
-				if viaGateway && service.Password != "" {
-					return no("%s uses a private OpenCode service and can only be entered on its own machine", name)
-				}
-				plan.Argv = []string{bin, "--server", service.URL, "--session", info.NativeID}
-				if service.Password != "" {
-					plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": service.Password}
-				}
+			plan.Argv = []string{bin, "--server", service.URL, "--session", info.NativeID}
+			if service.Password != "" {
+				plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": service.Password}
 			}
 			plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 			return plan, nil
