@@ -83,7 +83,7 @@ func (s *Store) RebindResumedSession(nodeID, sessionID, nativeID string) (bool, 
 // a new conversation is a new session, but it is still the same caller.
 //
 // It moves the caller role of running and queued workers, the caller ownership
-// of open delivery changes and their steps, undelivered messages and open
+// of open and merged delivery changes and their steps, undelivered messages and open
 // requests, the agent and repo binding, and the name. The old record keeps its
 // name and says which session replaced it, so nothing is renamed to "name 2".
 func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, error) {
@@ -111,6 +111,20 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 	// The restart may be reported twice (a poll and a retry). The first move
 	// wins; a second one must not touch anything. A session that still works
 	// is not the one a restart replaced.
+	if replaced == newSessionID {
+		// Repair ownership missed by an earlier version without moving names,
+		// inbox entries or bindings again. Finished changes retain history.
+		for _, query := range []string{
+			"UPDATE delivery_changes SET caller=? WHERE caller=? AND state IN ('open','merged')",
+			"UPDATE delivery_step_tasks SET claimed_by=? WHERE claimed_by=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))",
+			"UPDATE delivery_step_messages SET session_id=? WHERE session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))",
+		} {
+			if _, err := tx.Exec(query, newSessionID, sessionID); err != nil {
+				return false, err
+			}
+		}
+		return false, tx.Commit()
+	}
 	if replaced != "" || (online != 0 && status == "busy") {
 		return false, nil
 	}
@@ -142,9 +156,9 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		{`UPDATE worker_runs SET caller_session_id=? WHERE caller_session_id=?`, []any{newSessionID, sessionID}},
 		{`UPDATE worker_rate_offers SET caller=? WHERE caller=?`, []any{newSessionID, sessionID}},
 		// The caller's open changes and the steps it has claimed.
-		{`UPDATE delivery_changes SET caller=?, updated_at=? WHERE caller=? AND state='open'`, []any{newSessionID, now, sessionID}},
-		{`UPDATE delivery_step_tasks SET claimed_by=? WHERE claimed_by=? AND change_id IN (SELECT id FROM delivery_changes WHERE state='open')`, []any{newSessionID, sessionID}},
-		{`UPDATE delivery_step_messages SET session_id=? WHERE session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state='open')`, []any{newSessionID, sessionID}},
+		{`UPDATE delivery_changes SET caller=?, updated_at=? WHERE caller=? AND state IN ('open','merged')`, []any{newSessionID, now, sessionID}},
+		{`UPDATE delivery_step_tasks SET claimed_by=? WHERE claimed_by=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`, []any{newSessionID, sessionID}},
+		{`UPDATE delivery_step_messages SET session_id=? WHERE session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`, []any{newSessionID, sessionID}},
 		// The inbox and the open requests: anything the session has not been
 		// given yet follows the new record instead of a dead ID.
 		{`UPDATE messages SET recipient=? WHERE recipient=? AND state IN ('held','stored','dispatched','failed')`, []any{newSessionID, sessionID}},
