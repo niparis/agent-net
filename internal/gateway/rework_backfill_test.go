@@ -136,24 +136,38 @@ func TestReworkBackfillTenThousandMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workers := 2500
-	if raceEnabled {
-		// Keep the full scale in ordinary runs; race checks still replay 1,000 messages.
-		workers = 250
+	defer tx.Rollback()
+	runs, err := tx.Prepare(`INSERT INTO worker_runs (node_id,session_id,harness,outcome,ended_at) VALUES ('node',?,'codex','complete',1)`)
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer runs.Close()
+	// Avoid reparsing 10,000 message inserts under the race detector.
+	messages, err := tx.Prepare(`INSERT INTO messages (id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES
+  (?,'conv',?,?,?,?,0,?,?,0,'delivered'),
+  (?,'conv',?,?,?,?,0,?,?,0,'delivered'),
+  (?,'conv',?,?,?,?,0,?,?,0,'delivered'),
+  (?,'conv',?,?,?,?,0,?,?,0,'delivered')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer messages.Close()
+	const workers = 2500
 	for i := 0; i < workers; i++ {
 		worker := fmt.Sprintf("worker%d", i)
-		if _, err := tx.Exec(`INSERT INTO worker_runs (node_id,session_id,harness,outcome,ended_at) VALUES ('node',?,'codex','complete',1)`, worker); err != nil {
+		if _, err := runs.Exec(worker); err != nil {
 			t.Fatal(err)
 		}
+		args := make([]any, 0, 28)
 		for j := 0; j < 4; j++ {
 			from, to, typ, body := "caller", worker, protocol.TypeRequest, "task"
 			if j == 1 {
 				from, to, typ, body = worker, "caller", protocol.TypeReply, protocol.FormatWorkerNotice(protocol.WorkerNotice{Status: "done", Session: worker}, "")
 			}
-			if _, err := tx.Exec(`INSERT INTO messages (id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES (?,'conv',?,?,?,?,0,?,?,0,'delivered')`, fmt.Sprintf("m%d", i*4+j), from, to, typ, body, fmt.Sprintf("k%d", i*4+j), i*4+j); err != nil {
-				t.Fatal(err)
-			}
+			args = append(args, fmt.Sprintf("m%d", i*4+j), from, to, typ, body, fmt.Sprintf("k%d", i*4+j), i*4+j)
+		}
+		if _, err := messages.Exec(args...); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -164,12 +178,12 @@ func TestReworkBackfillTenThousandMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	elapsed := time.Since(start)
-	t.Logf("backfilled %d messages in %s", workers*4, elapsed)
+	t.Logf("backfilled 10,000 messages in %s", elapsed)
 	if elapsed > 5*time.Second {
 		t.Fatalf("backfill took %s", elapsed)
 	}
 	var known, fix int
-	if err := s.db.QueryRow(`SELECT SUM(counters_known),SUM(fix_count) FROM worker_runs`).Scan(&known, &fix); err != nil || known != workers || fix != workers*2 {
+	if err := s.db.QueryRow(`SELECT SUM(counters_known),SUM(fix_count) FROM worker_runs`).Scan(&known, &fix); err != nil || known != 2500 || fix != 5000 {
 		t.Fatalf("known=%d fix=%d err=%v", known, fix, err)
 	}
 }
