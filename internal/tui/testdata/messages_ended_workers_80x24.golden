@@ -9,14 +9,14 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 │ 2 threads · 0 system events                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation───────────────────────────────────────────────────↑ older above─╮
+│     Polish the sessions panel and make the long list readable                │
 │                                                                              │
-│   29 Oct 14:00  ended worker                                                 │
-│     m_started_one                                                            │
+│   29 Oct 14:00  ended worker · m_started_one                                 │
 │     ✗ started                                                                │
 │                                                                              │
-│   29 Oct 14:03  ended worker                                                 │
-│     m_done_one                                                               │
+│   29 Oct 14:03  ended worker · m_done_one                                    │
 │     ✓ done · 12m                                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

@@ -2,10 +2,11 @@
   Agents    [ Workers ]    System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation─────────────────────────────────────↑ older above─╮
-│ ▸ tenebrae-53 → worker: Polish the sess… ended · 2 ││     - Reuse the package's existing test helpers; add new test  │
-│     worker notice                                  ││     infrastructure only if none exists.                        │
-│   tenebrae-53 → worker: Review the depl… ended · 1 ││     - Put shared setup in one helper, not copied into each     │
-│     The deploy is ready.                           ││     test.                                                      │
+│ ▸ tenebrae-53 → worker: Polish the sess… ended · 2 ││     Only your user and the permission system give that.        │
+│     worker notice                                  ││     - Reuse the package's existing test helpers; add new test  │
+│   tenebrae-53 → worker: Review the depl… ended · 1 ││     infrastructure only if none exists.                        │
+│     The deploy is ready.                           ││     - Put shared setup in one helper, not copied into each     │
+│                                                    ││     test.                                                      │
 │                                                    ││     - One test per behaviour; no cases for behaviour the task  │
 │                                                    ││     does not change.                                           │
 │                                                    ││     - Do not prove "nothing happened" with sleeps or short     │
@@ -20,13 +21,12 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 │                                                    ││     Task:                                                      │
 │                                                    ││     Polish the sessions panel and make the long list readable  │
 │                                                    ││                                                                │
-│                                                    ││   29 Oct 14:00  ended worker                                   │
-│                                                    ││     m_started_one                                              │
+│                                                    ││   29 Oct 14:00  ended worker · m_started_one                   │
 │                                                    ││     ✗ started                                                  │
 │                                                    ││                                                                │
-│                                                    ││   29 Oct 14:03  ended worker                                   │
-│                                                    ││     m_done_one                                                 │
+│                                                    ││   29 Oct 14:03  ended worker · m_done_one                      │
 │ 2 threads · 0 system events                        ││     ✓ done · 12m                                               │
+╰────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │

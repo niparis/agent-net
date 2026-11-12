@@ -3,14 +3,12 @@
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
 │   ~ tenebrae-53 ↔ ended session     1m ago · 1 msg ││ tenebrae-53 ↔ strategies                                       │
-│     Which environment should I use?                ││ ▸ 29 Oct 13:56  CTO                                            │
-│   ! ci-runner ↔ tenebrae-53        2m ago · 2 msgs ││     m_1                                                        │
-│     Rollback is ready if we need it.               ││     Can you check the latest deployment plan?                  │
-│ ▸ ✓ CTO ↔ strategies               8m ago · 2 msgs ││     The release is planned for tonight.                        │
-│     The deployment plan looks good.                ││                                                                │
-│                                                    ││   29 Oct 13:57  strategies                                     │
+│     Which environment should I use?                ││ ▸ 29 Oct 13:56  CTO · m_1                                      │
+│   ! ci-runner ↔ tenebrae-53        2m ago · 2 msgs ││     Can you check the latest deployment plan?                  │
+│     Rollback is ready if we need it.               ││     The release is planned for tonight.                        │
+│ ▸ ✓ CTO ↔ strategies               8m ago · 2 msgs ││                                                                │
+│     The deployment plan looks good.                ││   29 Oct 13:57  strategies · m_2                               │
 │                                                    ││     re: CTO · Can you check the latest deployment plan? The…   │
-│                                                    ││     m_2                                                        │
 │                                                    ││     The deployment plan looks good.                            │
 │                                                    ││     I checked the rollback steps too.                          │
 │                                                    ││                                                                │
@@ -26,7 +24,9 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 │                                                    ││                                                                │
 │                                                    ││                                                                │
 │                                                    ││                                                                │
+│                                                    ││                                                                │
 │ 3 threads · 1 system event                         ││                                                                │
+╰────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │

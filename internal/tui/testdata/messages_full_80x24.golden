@@ -8,15 +8,15 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 │     Stored conversation 01: keep the list full and readable                  │
 │ 29 threads · 0 system events                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Conversation───────────────────────────────────────────────────↑ older above─╮
-│   29 Oct 14:03  tenebrae-53                                                  │
-│     m_c_00                                                                   │
+╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ tenebrae-53 ↔ strategies                                                     │
+│   29 Oct 14:03  tenebrae-53 · m_c_00                                         │
 │     Show the whole stored history of this conversation.                      │
 │                                                                              │
-│   29 Oct 14:04  strategies                                                   │
-│     m_c_00_reply                                                             │
+│   29 Oct 14:04  strategies · m_c_00_reply                                    │
 │     The full stored conversation is in the right pane.                       │
 │     It comes from the gateway, not the feed.                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

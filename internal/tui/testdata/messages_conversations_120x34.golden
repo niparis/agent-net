@@ -3,30 +3,30 @@
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
 │ ▸ tenebrae-53 → worker 8:… done · 4 · claude · 12m ││ tenebrae-53 ↔ worker 8 (worker) · Polish the sessions panel    │
-│     ✓ done · 12m · 3 files                         ││   29 Oct 13:56  tenebrae-53                                    │
-│                                                    ││     m_a                                                        │
+│     ✓ done · 12m · 3 files                         ││   29 Oct 13:56  tenebrae-53 · m_a                              │
 │                                                    ││     Review the change                                          │
 │                                                    ││     Check the tests.                                           │
 │                                                    ││                                                                │
-│                                                    ││   29 Oct 13:58  worker 8                                       │
+│                                                    ││   29 Oct 13:58  worker 8 · m_b                                 │
 │                                                    ││     re: tenebrae-53 · Review the change Check the tests.       │
-│                                                    ││     m_b                                                        │
 │                                                    ││     ✓ done · 1h5m · 15 files                                   │
 │                                                    ││                                                                │
-│                                                    ││   29 Oct 14:02  tenebrae-53                                    │
-│                                                    ││     m_d                                                        │
+│                                                    ││   29 Oct 14:02  tenebrae-53 · m_d                              │
 │                                                    ││     Polish the sessions panel                                  │
 │                                                    ││     Run the checks.                                            │
 │                                                    ││                                                                │
-│                                                    ││ ▸ 29 Oct 14:04  worker 8                                       │
+│                                                    ││ ▸ 29 Oct 14:04  worker 8 · m_e                                 │
 │                                                    ││     re: tenebrae-53 · Polish the sessions panel Run the…       │
-│                                                    ││     m_e                                                        │
 │                                                    ││     ✓ done · 12m · 3 files                                     │
 │                                                    ││                                                                │
 │                                                    ││                                                                │
 │                                                    ││                                                                │
 │                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
+│                                                    ││                                                                │
 │ 1 thread · 2 system events                         ││                                                                │
+╰────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │

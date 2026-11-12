@@ -10,13 +10,13 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │ tenebrae-53 ↔ strategies                                                     │
-│ ▸ 29 Oct 13:56  CTO                                                          │
-│     m_1                                                                      │
+│ ▸ 29 Oct 13:56  CTO · m_1                                                    │
 │     Can you check the latest deployment plan?                                │
 │     The release is planned for tonight.                                      │
 │                                                                              │
-│   29 Oct 13:57  strategies                                                   │
+│   29 Oct 13:57  strategies · m_2                                             │
 │     re: CTO · Can you check the latest deployment plan? The release is…      │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

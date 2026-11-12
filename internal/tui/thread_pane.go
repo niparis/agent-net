@@ -121,8 +121,12 @@ func (m Model) messageHeader(msg threadMsg, colours map[string]color.Color) stri
 	if msg.ownerInstruction != "" {
 		marker = lipglossAccent("you→ ")
 	}
+	id := ""
+	if msg.id != "" {
+		id = sDim.Render(" · " + msg.id)
+	}
 	return lead + sDim.Render(m.messageStamp(msg.at)+"  ") + marker +
-		lipgloss.NewStyle().Foreground(senderColour).Bold(true).Render(sender)
+		lipgloss.NewStyle().Foreground(senderColour).Bold(true).Render(sender) + id
 }
 
 // messageStamp is the day and time of a header. The day is always there, so a
@@ -142,7 +146,8 @@ func (m Model) dateRule(t time.Time, w int) string {
 	if t.Year() != now.Year() {
 		layout = "Mon 02 Jan 2006"
 	}
-	label := "── " + t.Format(layout) + " "
+	// Set in two columns, where the headers start, so the left edge lines up.
+	label := "  ── " + t.Format(layout) + " "
 	return sDim.Render(label + strings.Repeat("─", max(w-lipgloss.Width(label), 2)))
 }
 
@@ -179,13 +184,10 @@ func firstWords(body string, limit int) string {
 	return cut + "…"
 }
 
-// messageLinks is the message's own id, then the PRs, changes and Desk asks
-// its body names, so the body does not have to carry them as noise.
+// messageLinks is the PRs, changes and Desk asks the body names, so the body
+// does not have to carry them as noise. A body that names none has no line.
 func messageLinks(msg threadMsg) []string {
 	var out []string
-	if msg.id != "" {
-		out = append(out, msg.id)
-	}
 	for _, link := range linksIn(msg.body) {
 		out = append(out, linkLabel(link))
 	}

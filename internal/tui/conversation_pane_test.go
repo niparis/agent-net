@@ -185,9 +185,12 @@ func TestThreadPaneMessageLayout(t *testing.T) {
 	if !strings.Contains(pane[h3], "tenebrae-strats") {
 		t.Fatalf("the header has day, time and sender: %q", pane[h3])
 	}
-	// The links sit on one dim line under the header, before the body.
+	// The message id ends the header; the links sit on one dim line under it.
+	if !strings.HasSuffix(pane[h3], " · m_3") {
+		t.Fatalf("the header ends with the message id: %q", pane[h3])
+	}
 	links := pane[h3+1]
-	for _, want := range []string{"m_3", "ch_8c3bc9d80f8dd4aa", "ask i_4d2a91c0d4e5", "PR #182"} {
+	for _, want := range []string{"ch_8c3bc9d80f8dd4aa", "ask i_4d2a91c0d4e5", "PR #182"} {
 		if !strings.Contains(links, want) {
 			t.Fatalf("links line is missing %q: %q", want, links)
 		}
@@ -230,6 +233,72 @@ func TestMessagesTabCTOStripIsSmall(t *testing.T) {
 		m := readingScene(t, size[0], size[1])
 		if h := m.ctoBoxHeight(messagesTab); h > 4 {
 			t.Errorf("%dx%d: the CTO strip takes %d rows", size[0], size[1], h)
+		}
+	}
+}
+
+func TestThreadPaneHasNoLinksLineWhenTheBodyNamesNothing(t *testing.T) {
+	m := readingScene(t, 160, 45)
+	for _, l := range paneText(t, m) {
+		l = strings.TrimSpace(l)
+		if regexp.MustCompile(`^m_\d+$`).MatchString(l) {
+			t.Fatalf("a line holds only a message id: %q", l)
+		}
+	}
+	if v := screen(m); !strings.Contains(v, "29 Oct 13:30  tenebrae 3 · m_4") {
+		t.Fatalf("the id belongs at the end of the header:\n%s", v)
+	}
+}
+
+func TestThreadPaneDateRuleLinesUpWithTheHeaders(t *testing.T) {
+	m := readingScene(t, 160, 45)
+	for _, l := range paneText(t, m) {
+		if strings.Contains(l, "── Thu 29 Oct") {
+			if !strings.HasPrefix(l, "   ──") { // the border pad, then the two columns of the headers
+				t.Fatalf("the date rule is not set in to the header column: %q", l)
+			}
+			return
+		}
+	}
+	t.Fatal("no date rule")
+}
+
+func TestThreadPaneDoesNotStartOnABlankRow(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}, {120, 28}} {
+		m := readingScene(t, size[0], size[1])
+		pane := paneText(t, m)
+		if size[0] < 100 {
+			// Narrow screens stack the panels; the pane starts under its heading.
+			pane = nil
+			for _, l := range frameLines(m) {
+				if len(pane) > 0 || strings.Contains(l, "╭─Conversation") {
+					pane = append(pane, strings.Trim(l, "│ "))
+				}
+			}
+		}
+		if len(pane) < 2 || strings.TrimSpace(pane[1]) == "" {
+			t.Fatalf("%dx%d: the first row of the pane is blank:\n%s", size[0], size[1], screen(m))
+		}
+	}
+}
+
+func TestMessagesBoxesAreClosedAtEverySize(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}, {160, 45}} {
+		m := readingScene(t, size[0], size[1])
+		var open, closed int
+		for _, l := range frameLines(m) {
+			if strings.Contains(l, "╭") {
+				open++
+			}
+			if strings.Contains(l, "╰") {
+				closed++
+			}
+		}
+		if open != closed {
+			t.Errorf("%dx%d: %d box tops, %d bottoms:\n%s", size[0], size[1], open, closed, screen(m))
+		}
+		if n := len(frameLines(m)); n > size[1] {
+			t.Errorf("%dx%d: the frame is %d rows", size[0], size[1], n)
 		}
 	}
 }

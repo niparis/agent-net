@@ -10,13 +10,13 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │ tenebrae-53 ↔ strategies                                                     │
-│ ▸ 29 Oct 13:56  tenebrae-53                                                  │
-│     m_1                                                                      │
+│ ▸ 29 Oct 13:56  tenebrae-53 · m_1                                            │
 │     Which model do you run?                                                  │
 │     Please answer in one line.                                               │
 │                                                                              │
-│   29 Oct 13:57  strategies                                                   │
+│   29 Oct 13:57  strategies · m_2                                             │
 │     re: tenebrae-53 · Which model do you run? Please answer in one line.     │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

@@ -1846,11 +1846,13 @@ func messagesLayout(w, h int) messagesGeometry {
 		g.wide = true
 		g.listW = min(max(w*45/100-4, 30), 72)
 		g.chatW = max(w-(g.listW+4)-4, 1)
-		g.listRows = max(h-4, 0)
+		// Title, sub-tabs and legend above, and two border rows per panel.
+		g.listRows = max(h-5, 0)
 		g.chatRows = g.listRows
 		return g
 	}
-	available := max(h-6, 0)
+	// Three header rows and the borders of two panels.
+	available := max(h-7, 0)
 	// The conversation is what the owner reads, so on a narrow screen it gets
 	// the larger share. The list still shows two rows of two lines.
 	g.listRows = max(available*2/5, 1)
@@ -1956,6 +1958,16 @@ func (m Model) messagesView(w, h int) []string {
 // newest line, so a thread opens at its newest message.
 func (m Model) threadWindow(chat []string, height, selected int, rowID string) ([]string, bool) {
 	top := m.threadTopFor(chat, height, selected, rowID)
+	top = min(top, max(len(chat)-max(height, 0), 0))
+	// The blank line that separates two messages is not worth the first row
+	// of the window. The window starts after it and pads at the bottom.
+	if top > 0 && top+1 < len(chat) && ansi.Strip(chat[top]) == "" {
+		window := append([]string(nil), chat[top+1:min(top+1+max(height, 0), len(chat))]...)
+		for len(window) < height {
+			window = append(window, "")
+		}
+		return window, true
+	}
 	return sliceFrom(chat, height, top), top > 0
 }
 
