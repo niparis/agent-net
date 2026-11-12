@@ -108,22 +108,38 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 	if node != nodeID {
 		return false, reject("only the machine that holds a session can replace it")
 	}
-	// The restart may be reported twice (a poll and a retry). The first move
-	// wins; a second one must not touch anything. A session that still works
-	// is not the one a restart replaced.
+	// The restart may be reported twice (a poll and a retry), and the owner may
+	// run the repair again for a pair that an earlier version moved only in
+	// part. The first move wins; a repeat only repairs change ownership that
+	// was missed, without renaming or moving the inbox twice. A session that
+	// still works is not the one a restart replaced.
 	if replaced == newSessionID {
 		// Repair ownership missed by an earlier version without moving names,
-		// inbox entries or bindings again. Finished changes retain history.
+		// inbox entries or bindings again. A change still has work only while
+		// it is open or merged; done and stopped changes keep their history
+		// under the old caller. The move is reported when it repairs a row, so
+		// the owner's retry is not mistaken for a no-op. A session that already
+		// holds both a stale and a current association keeps the current one.
+		var repaired int64
 		for _, query := range []string{
 			"UPDATE delivery_changes SET caller=? WHERE caller=? AND state IN ('open','merged')",
 			"UPDATE delivery_step_tasks SET claimed_by=? WHERE claimed_by=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))",
-			"UPDATE delivery_step_messages SET session_id=? WHERE session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))",
+			"UPDATE OR IGNORE delivery_step_messages SET session_id=? WHERE session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))",
 		} {
-			if _, err := tx.Exec(query, newSessionID, sessionID); err != nil {
+			res, err := tx.Exec(query, newSessionID, sessionID)
+			if err != nil {
 				return false, err
 			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return false, err
+			}
+			repaired += n
 		}
-		return false, tx.Commit()
+		if err := tx.Commit(); err != nil {
+			return false, err
+		}
+		return repaired > 0, nil
 	}
 	if replaced != "" || (online != 0 && status == "busy") {
 		return false, nil

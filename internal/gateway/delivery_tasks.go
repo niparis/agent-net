@@ -150,6 +150,118 @@ func retireStepMessages(tx *sql.Tx, change string) error {
 	return err
 }
 
+// retireObsoleteStepTasks ends step tasks that can no longer be reported:
+// every task of a done or stopped change, and a before-merge task once its
+// change has merged. State changes retire these themselves; this is the
+// safety net for a state written before the tasks existed, for a task that was
+// claimed (queueSteps leaves claims alone), and for an old record repaired
+// later. The undelivered notices those tasks carried expire with them.
+func (s *Store) retireObsoleteStepTasks() error {
+	rows, err := s.db.Query(`SELECT c.id,c.state FROM delivery_changes c
+		WHERE (c.state IN ('done','stopped') AND EXISTS (
+			SELECT 1 FROM delivery_step_tasks t WHERE t.change_id=c.id AND t.completed=0))
+		OR (c.state='merged' AND EXISTS (
+			SELECT 1 FROM delivery_step_tasks t WHERE t.change_id=c.id AND t.completed=0 AND t.after_merge=0))`)
+	if err != nil {
+		return err
+	}
+	type obsoleteChange struct{ id, state string }
+	var changes []obsoleteChange
+	for rows.Next() {
+		var c obsoleteChange
+		if err := rows.Scan(&c.id, &c.state); err != nil {
+			rows.Close()
+			return err
+		}
+		changes = append(changes, c)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	// A stuck notice is a plain message, not linked through
+	// delivery_step_messages, so it needs its own retirement even when its
+	// task row is already gone.
+	var stuck int
+	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM messages WHERE sender='agent-net'
+		AND state IN ('stored','dispatched') AND idem_key LIKE 'delivery:stuck:%')`).Scan(&stuck); err != nil {
+		return err
+	}
+	if len(changes) == 0 && stuck == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, c := range changes {
+		if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND completed=0
+			AND ((after_merge=0 AND ?<>'open') OR (after_merge=1 AND ?<>'merged'))`, c.id, c.state, c.state); err != nil {
+			return err
+		}
+		if err := retireStepMessages(tx, c.id); err != nil {
+			return err
+		}
+	}
+	if stuck != 0 {
+		// The change id follows the prefix "delivery:stuck:", and the last
+		// field of the key is the after-merge flag.
+		const id = `substr(idem_key,16,instr(substr(idem_key,16),':')-1)`
+		if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE sender='agent-net'
+			AND state IN ('stored','dispatched') AND idem_key LIKE 'delivery:stuck:%'
+			AND (EXISTS (SELECT 1 FROM delivery_changes c WHERE c.id=` + id + ` AND c.state IN ('done','stopped'))
+			 OR (substr(idem_key,-1)='0' AND EXISTS (SELECT 1 FROM delivery_changes c WHERE c.id=` + id + ` AND c.state='merged')))`); err != nil {
+			return err
+		}
+	}
+	if _, err := retireUnlinkedStepMessages(tx); err != nil {
+		return err
+	}
+	if _, err := retireEmptyNudgeBatches(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+type sqlExecer interface {
+	Exec(string, ...any) (sql.Result, error)
+}
+
+// retireUnlinkedStepMessages expires a step notice that no task association
+// points at any more. Creating a reminder moves the association to the new
+// message, so the earlier notice is stale even when its task is still open.
+func retireUnlinkedStepMessages(ex sqlExecer) (int64, error) {
+	res, err := ex.Exec(`UPDATE messages SET state='expired'
+ WHERE sender='agent-net' AND state IN ('stored','dispatched') AND idem_key GLOB 'step_*'
+ AND NOT EXISTS (
+   SELECT 1 FROM delivery_step_messages d
+   JOIN delivery_step_tasks t ON t.change_id=d.change_id AND t.revision=d.revision AND t.step=d.step
+    AND t.for_step=d.for_step AND t.after_merge=d.after_merge
+   JOIN delivery_changes c ON c.id=t.change_id
+   WHERE d.message_id=messages.id AND t.revision=c.revision AND t.completed=0
+    AND (t.claimed_by='' OR t.claimed_by=d.session_id)
+    AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged')))`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// retireEmptyNudgeBatches expires a nudge carrier whose messages have all
+// expired. The carrier is the text a session sees, so retiring only the
+// originals would still deliver a reminder that no longer applies.
+func retireEmptyNudgeBatches(ex sqlExecer) (int64, error) {
+	res, err := ex.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched')
+		AND idem_key LIKE 'nudge:%'
+		AND NOT EXISTS (SELECT 1 FROM messages o WHERE o.batch_id=messages.id AND o.state<>'expired')`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // closeStepTasks ends every pending step task of c and returns the sessions
 // that had claimed one, so each can be told to drop the change. A closed
 // change keeps its evidence; only the open tasks end.
@@ -626,6 +738,11 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 
 	g.stepDispatchRuns.Add(1)
 	defer g.slowLoop("dispatchStepTasks", time.Now())
+	// End tasks the change's state has already made unreportable before
+	// choosing what to hand out; their notices must not become reminders.
+	if err := g.store.retireObsoleteStepTasks(); err != nil {
+		g.logLine("error", "where", "retire obsolete step tasks", "err", err)
+	}
 	snap, err := g.store.SettingsSnapshot()
 	stuckLimit := 12 * time.Hour
 	if err == nil {
@@ -1605,6 +1722,15 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, now int64) error {
 	evidence, err := changeEvidence(tx, c.ID)
 	if err != nil {
+		return err
+	}
+	// A step whose phase has ended can no longer be reported: a before-merge
+	// step once the change merged, and any step once it is done or stopped.
+	// Complete it even when it was claimed, so no reminder or notice outlives
+	// the phase it belonged to.
+	if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND completed=0
+		AND ((after_merge=0 AND ?<>'open') OR (after_merge=1 AND ?<>'merged'))`,
+		c.ID, c.Revision, c.State, c.State); err != nil {
 		return err
 	}
 	for _, step := range p.Steps {
