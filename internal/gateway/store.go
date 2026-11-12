@@ -1311,7 +1311,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, workerCauseMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, workerCauseMigration, workerBriefDoneMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1734,6 +1734,14 @@ const struggleMigration = `
 SELECT 1 /* worker run struggle columns */;
 `
 
+// workerBriefDoneMigration adds the brief done list to worker starts and
+// delivery changes. The columns are added in the migration loop so replaying
+// the migration is safe (decision 0146).
+const workerBriefDoneMigration = `
+-- Worker brief done list: stored with the start and carried to the change.
+SELECT 1 /* worker brief done list */;
+`
+
 // stmtCacheSize is how many prepared statements the connection keeps. The
 // gateway runs a few hundred different statements.
 const stmtCacheSize = 1024
@@ -1938,6 +1946,21 @@ func (s *Store) migrate() error {
 				}
 				if has == 0 {
 					if _, err := tx.Exec("ALTER TABLE worker_runs ADD COLUMN " + col.name + " " + col.decl); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker brief done list") {
+			for _, table := range []string{"worker_starts", "delivery_changes"} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name='done'`, table).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN done TEXT NOT NULL DEFAULT '[]'`); err != nil {
 						tx.Rollback()
 						return err
 					}

@@ -152,7 +152,7 @@ type heldStart struct {
 // does not.
 func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.WorkerStartRequest, reason string, callerProject bool, callerPath string) (*protocol.WorkerStartResult, error) {
 	id := protocol.NewID("a")
-	title := protocol.WorkerTitle(p.Title, p.Task, "worker")
+	title := protocol.WorkerTitle(p.Title, p.BriefText(), "worker")
 	text := protocol.StartOverrideText(d.sessionName(ctx, caller), p.SelectionFields(), title, reason)
 	if _, err := d.call(ctx, "worker.override_ask", protocol.StartOverrideAsk{Session: caller, StartID: id, Text: text}); err != nil {
 		if strings.Contains(err.Error(), "unknown frame type") {

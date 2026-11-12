@@ -698,6 +698,81 @@ func testStepElsewhere(snap settings.Snapshot, repo string) bool {
 	return ok && test.Owner.Kind != OwnerCaller
 }
 
+// WorkerBrief is the structured task of a worker start (decision 0146). Text
+// renders it in one fixed order, so a worker sees the same shape from every
+// caller in every project.
+type WorkerBrief struct {
+	Problem    string
+	Evidence   []string
+	Done       []string
+	Hypothesis string
+	Scope      string
+	Notes      string
+}
+
+// WorkerBriefFromStart reads the structured fields of a start. Task is the
+// notes.
+func WorkerBriefFromStart(p WorkerStartRequest) WorkerBrief {
+	return WorkerBrief{Problem: p.Problem, Evidence: p.Evidence, Done: p.Done,
+		Hypothesis: p.Hypothesis, Scope: p.Scope, Notes: p.Task}
+}
+
+// BriefText is the task text of a start: the structured brief when it has any
+// structured field, else the old Task text unchanged.
+func (p WorkerStartRequest) BriefText() string { return WorkerBriefFromStart(p).Text() }
+
+// Structured tells whether the brief has any field beyond the old Task.
+func (b WorkerBrief) Structured() bool {
+	return strings.TrimSpace(b.Problem) != "" || strings.TrimSpace(b.Hypothesis) != "" ||
+		strings.TrimSpace(b.Scope) != "" || len(cleanBriefLines(b.Evidence)) > 0 || len(cleanBriefLines(b.Done)) > 0
+}
+
+// Text renders the brief in the fixed order Problem, Evidence, Done,
+// Hypothesis, Scope, Notes. Every non-empty section is its own block, so a
+// worker can see what was asked, what was known and what counts as done.
+// A brief with no structured field is the old Task text, unchanged.
+func (b WorkerBrief) Text() string {
+	if !b.Structured() {
+		return strings.TrimSpace(b.Notes)
+	}
+	var parts []string
+	add := func(heading, text string) {
+		if text = strings.TrimSpace(text); text != "" {
+			parts = append(parts, heading+":\n"+text)
+		}
+	}
+	addList := func(heading string, lines []string) {
+		lines = cleanBriefLines(lines)
+		if len(lines) == 0 {
+			return
+		}
+		var s strings.Builder
+		s.WriteString(heading + ":")
+		for _, line := range lines {
+			s.WriteString("\n- " + line)
+		}
+		parts = append(parts, s.String())
+	}
+	add("Problem", b.Problem)
+	addList("Evidence", b.Evidence)
+	addList("Done", b.Done)
+	add("Hypothesis (yours to drop if wrong)", b.Hypothesis)
+	add("Scope", b.Scope)
+	add("Notes", b.Notes)
+	return strings.Join(parts, "\n\n")
+}
+
+// cleanBriefLines trims each line and drops empty ones.
+func cleanBriefLines(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line = strings.TrimSpace(line); line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
 // WorkerTaskBody builds the body of the task message for an OpenCode worker.
 func WorkerTaskBody(task, worktree, branch string) string {
 	return WorkerTaskBodyFor("", task, worktree, branch)
@@ -776,6 +851,11 @@ func WorkerTaskBodyWithSettingsForRepo(harness, task, worktree, branch, rules, c
 // WorkerTaskBodyOS is WorkerTaskBodyWithSettingsForRepo for a worker that may
 // run in the OS sandbox: osSandbox names the wrapper, "" when there is none.
 func WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
+	return WorkerTaskBodyBrief(harness, WorkerBrief{Notes: task}, worktree, branch, rules, charter, level, osSandbox, snap, repo)
+}
+
+// WorkerTaskBodyBrief is WorkerTaskBodyOS for a structured brief.
+func WorkerTaskBodyBrief(harness string, brief WorkerBrief, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
 	b := workerPreamble(harness, snap, repo)
 	if harness == "agy" {
 		b += "\n- " + snap.String("delivery.worker_agy_commit_instruction", settings.Where{})
@@ -804,7 +884,7 @@ func WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, os
 	if charter != "" {
 		b += "\n\n" + charter
 	}
-	return b + "\n\nTask:\n" + strings.TrimSpace(task)
+	return b + "\n\nTask:\n" + brief.Text()
 }
 
 // WorkerTaskSummaryMax is the longest task line a status view gets.
@@ -817,7 +897,7 @@ func WorkerTaskSummary(body string) string {
 	if i := strings.Index(body, "\n\nTask:\n"); i >= 0 {
 		body = body[i+len("\n\nTask:\n"):]
 	}
-	line := strings.TrimSpace(body)
+	line := strings.TrimSpace(workerBriefBody(body))
 	if j := strings.IndexByte(line, '\n'); j >= 0 {
 		line = strings.TrimSpace(line[:j])
 	}
@@ -826,6 +906,20 @@ func WorkerTaskSummary(body string) string {
 		line = strings.TrimSpace(string(runes[:WorkerTaskSummaryMax-3])) + "..."
 	}
 	return line
+}
+
+// workerBriefBody drops a leading section heading from a structured brief, so
+// a one-line summary shows the problem and not the word "Problem:".
+func workerBriefBody(body string) string {
+	body = strings.TrimSpace(body)
+	for _, heading := range []string{"Problem:", "Evidence:", "Done:", "Hypothesis (yours to drop if wrong):", "Scope:", "Notes:"} {
+		if strings.HasPrefix(body, heading) {
+			if rest := strings.TrimSpace(strings.TrimPrefix(body, heading)); rest != "" {
+				return rest
+			}
+		}
+	}
+	return body
 }
 
 // WorkerTitleMax is the longest worker title a caller may give.
@@ -849,6 +943,7 @@ func ValidWorkerTitle(title string) error {
 var workerBriefSetup = []string{
 	"repo:", "base:", "branch:", "worktree:", "project:", "setup:", "environment:",
 	"read agents.md", "read claude.md", "read docs/", "read the docs", "read readme",
+	"problem:", "evidence:", "done:", "hypothesis", "scope:", "notes:",
 }
 
 func workerBriefBoilerplate(sentence string) bool {

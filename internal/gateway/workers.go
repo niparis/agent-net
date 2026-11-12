@@ -521,8 +521,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if p.Harness != "" && !protocol.WorkerHarnessSupported(p.Harness) {
 		return none, reject("workers can run these harnesses: %s (not %q)", strings.Join(protocol.WorkerHarnesses, ", "), p.Harness)
 	}
-	if p.Continue == "" && strings.TrimSpace(p.Task) == "" {
-		return none, reject("a worker needs a task")
+	if p.Continue == "" && strings.TrimSpace(p.Task) == "" && strings.TrimSpace(p.Problem) == "" {
+		return none, reject("a worker needs a problem")
 	}
 	if !protocol.ValidIsolation(p.Isolation) {
 		return none, reject("isolation can be %q, %q or empty, not %q", protocol.IsolationWorktree, protocol.IsolationNone, p.Isolation)
@@ -749,7 +749,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model}, nil
 		}
 		if len(failures) > 0 {
-			key := protocol.BriefTaskKey(p.Owner, pick.Name, p.Title, p.Task)
+			key := protocol.BriefTaskKey(p.Owner, pick.Name, p.Title, p.BriefText())
 			rejected, err := g.store.briefRejectionCount(p.Owner, key, g.store.now().Add(-briefRetryWindow).Unix())
 			if err != nil {
 				return none, err
@@ -1018,12 +1018,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// The gateway tracks the start before the machine begins it, so a report
 	// that arrives at once finds it.
 	startRef := protocol.NewID("q")
-	if err := g.store.trackWorkerStart(startRef, pick.NodeID, p.Owner, pick.Name, p.Harness, perms); err != nil {
+	if err := g.store.trackWorkerStart(startRef, pick.NodeID, p.Owner, pick.Name, p.Harness, perms, p.Done); err != nil {
 		return none, err
 	}
 	launchBegan := time.Now()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
+		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.BriefText(), Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
 		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: p.Assessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
@@ -1053,7 +1053,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	hint := ""
 	if err == nil {
-		hint = g.store.WorkerStartHint(pick.Name, p.Title, p.Task, p.Fixes)
+		hint = g.store.WorkerStartHint(pick.Name, p.Title, p.BriefText(), p.Fixes)
 	}
 	if err == nil && launched.Queued && launched.QueueID != "" {
 		if launched.QueueID != startRef {
@@ -1514,11 +1514,15 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return none, err
 	}
 	startRef := protocol.NewID("q")
-	if err := g.store.trackWorkerStart(startRef, old.NodeID, p.Owner, old.Worker.Project, p.Harness, old.Worker.Permissions); err != nil {
+	done := p.Done
+	if len(done) == 0 {
+		done = g.store.startDoneForSession(old.SessionID)
+	}
+	if err := g.store.trackWorkerStart(startRef, old.NodeID, p.Owner, old.Worker.Project, p.Harness, old.Worker.Permissions, done); err != nil {
 		return none, err
 	}
 	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{StartRef: startRef, Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
-		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task), Title: p.Title, Touches: p.Touches,
+		Harness: p.Harness, Model: p.Model, Task: p.BriefText(), Title: p.Title, Touches: p.Touches,
 		Assessment: old.Worker.Assessment})
 	if err != nil {
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {

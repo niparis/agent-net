@@ -258,6 +258,9 @@ func TestWorkerBriefWithoutTheSixSectionsStarts(t *testing.T) {
 // mode check returns the failures, or an empty list, and starts nothing.
 func TestWorkerStartCheckModeStartsNothing(t *testing.T) {
 	a := newAgyGate(t)
+	// Overlap names only files the base tree holds, so the node must serve it.
+	client, received := connectTestNode(t, a.g, a.node)
+	serveBriefRepo(t, client, received, briefTestRepo())
 	answer, err := a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
 		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: gatewayBrief("internal/gateway/brief.go"), Harness: "agy", Model: "gemini-3.8-flash-low", Mode: protocol.WorkerStartModeCheck}})
 	if err != nil {

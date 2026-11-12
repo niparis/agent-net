@@ -393,7 +393,23 @@ type WorkerStartRequest struct {
 	// FixesSeverity is 1 to 4 (default 2).
 	Fixes         string `json:"fixes,omitempty"`
 	FixesSeverity int    `json:"fixes_severity,omitempty"`
-	// Task is what the worker should do. It is sent as a message from the caller.
+	// Problem is what is wrong or wanted, in the requester's words, with who
+	// asked. It is required for a new start, unless the caller still uses the
+	// old Task alone (decision 0146).
+	Problem string `json:"problem,omitempty"`
+	// Evidence lists the facts the caller already has, one line each.
+	Evidence []string `json:"evidence,omitempty"`
+	// Done lists outcomes the worker can check itself, one line each. It is
+	// required with Problem, and it is what the accept and review tasks check.
+	Done []string `json:"done,omitempty"`
+	// Hypothesis is the caller's guess at the cause or the fix. The brief
+	// marks it as the worker's to drop if it is wrong.
+	Hypothesis string `json:"hypothesis,omitempty"`
+	// Scope says what not to touch and the known traps. It is not a limit on
+	// what the worker may read.
+	Scope string `json:"scope,omitempty"`
+	// Task is extra notes, or the whole task for a caller that does not know
+	// the structured fields yet. It becomes the Notes section.
 	Task string `json:"task"`
 	// Isolation is "" (the default: a new worktree on the branch
 	// agent-net/<worker-id> when the project is a repository), "worktree"

@@ -161,7 +161,7 @@ func TestChangeSubmitCreatesChange(t *testing.T) {
 		t.Fatalf("submit view %+v", res.Change)
 	}
 	v := r.get(c.ID)
-	if v.Change != c {
+	if changeDiffers(v.Change, c) {
 		t.Fatalf("get %+v, submit %+v", v.Change, c)
 	}
 	if len(v.Revisions) != 1 || v.Revisions[0] != (protocol.Revision{ChangeID: c.ID, Number: 1, Branch: "agent-net/w_1", Commit: commitA, Uncommitted: true, At: c.CreatedAt}) {

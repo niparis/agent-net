@@ -1946,14 +1946,43 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start a worker, or continue one. Only when the owner asked or work mode says. A brief is refused only when it names a file a running worker or an open change in the same project is working on, unless it says \"overlap ok: reason\". The brief's format is not checked or scored: docs/brief-template.md is a template, not a rule. mode \"check\" checks only.",
+    "description": "Start or continue a worker with a structured brief. Only if the owner asked or work mode says. problem and done required; evidence, hypothesis, scope optional; task is extra notes. Refused only for a file a running worker or open change holds, unless \"overlap ok: reason\". mode \"check\" checks only.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "problem": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "What is wrong or wanted, in your owner's words, with who asked. Required for a new start, unless you send only the old task."
+        },
+        "done": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Outcomes the worker can check itself, one line each. Required with problem. The accept and review tasks check exactly this list."
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The facts you already have, one line each."
+        },
+        "hypothesis": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Your guess at the cause or the fix. The brief marks it as the worker's to drop if it is wrong."
+        },
+        "scope": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "What not to touch and the known traps."
+        },
         "task": {
           "type": "string",
           "maxLength": 65536,
-          "description": "Brief describing the task and limits."
+          "description": "Extra notes only: the old free-text task. Optional now. A call with only task still works for older callers. The whole brief is refused when it names a file a running worker or open change in the project holds, unless it says \"overlap ok: reason\". The change or worker this start targets (continue, fixes, base) is not an overlap."
         },
         "difficulty": {
           "type": "string",
