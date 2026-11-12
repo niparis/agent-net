@@ -371,10 +371,22 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	hctx, hcancel := context.WithTimeout(ctx, 20*time.Second)
 	defer hcancel()
 	inv, gen := d.inventory()
-	hello, err := l.call(hctx, "hello", protocol.Hello{SessionAgents: true, GraphRefs: true, Version: d.helloVersion(), Hostname: d.cfg.Hostname, TimeZone: machineTimeZone(), Harnesses: inv, Launch: d.launchFlag(), TailscaleIP: d.fileConfig().TailscaleIP(), Health: d.machineHealth()})
+	var sleeps []protocol.NodeSleep
+	if d.sleep != nil {
+		// A wake often reconnects before the next ticker fires. Observe now so
+		// the hello carries the span that explains the gap.
+		d.sleep.addPending(d.sleep.observe(d.sleep.now(), d.sleep.mono()))
+		sleeps = d.sleep.takePending()
+	}
+	hello, err := l.call(hctx, "hello", protocol.Hello{SessionAgents: true, GraphRefs: true, Version: d.helloVersion(), Hostname: d.cfg.Hostname, TimeZone: machineTimeZone(), Harnesses: inv, Launch: d.launchFlag(), TailscaleIP: d.fileConfig().TailscaleIP(), Health: d.machineHealth(), Sleeps: sleeps})
 	if err != nil {
+		if d.sleep != nil {
+			d.sleep.restorePending(sleeps)
+		}
 		return false, err
 	}
+	// A sleep detected while this handshake ran arrived after the hello.
+	d.flushSleepReports(hctx, l)
 	var hr protocol.NodeName
 	if json.Unmarshal(hello, &hr) == nil && hr.Hostname != "" {
 		d.shownHost.Store(hr.Hostname)

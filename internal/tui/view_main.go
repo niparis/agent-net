@@ -670,6 +670,13 @@ func (m Model) machineLineFor(r machineRow, rows []machineRow, w, nameW int) str
 		if _, st := m.nodeUsage(r.nodeID); st == usageStale {
 			style = sNeeds
 		}
+	} else {
+		switch r.state {
+		case "asleep":
+			style = sNeeds
+		case "silent":
+			style = sBad
+		}
 	}
 	line := " " + style.Render(dot) + " " + cell(name, layout.nameW)
 	if layout.versionW > 0 {
@@ -715,6 +722,12 @@ func (m Model) machineVersionCell(r machineRow, rows []machineRow, width int) st
 func (m Model) machineFigures(r machineRow, rows []machineRow) machineFigures {
 	f := machineFigures{cpu: "cpu ?", mem: "mem ?", disk: "disk ?", note: m.machineHarnessNote(r, rows)}
 	if !r.online {
+		switch r.state {
+		case "asleep":
+			f.note = "asleep since " + m.clock(time.Unix(r.since, 0))
+		case "silent":
+			f.note = "silent since " + m.clock(time.Unix(r.since, 0))
+		}
 		return f
 	}
 	n, st := m.nodeUsage(r.nodeID)

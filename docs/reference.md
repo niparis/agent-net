@@ -37,6 +37,27 @@ with `{node_id}`. The CTO uses `settings_change` with `area: machine_remove` or
 `area: machine_rotate` and `node_id`. These create proposals for the owner's
 approval in Inbox. Agent sessions cannot invoke the owner methods directly.
 
+## Machine states and sleep
+
+A machine row shows one of three states. `online` means its daemon is
+connected now. `asleep since T` means the gateway saw the link drop and the
+daemon reported that the machine slept from T. `silent since T` means the link
+dropped at T and the machine stayed away for 15 minutes without a sleep
+report. A machine that is offline for less than 15 minutes shows only the
+offline dot.
+
+The gateway raises one Desk item for an outage that stays silent for 15
+minutes: `<machine> went silent at <time> without sleeping; it may be hung`.
+The item closes by itself when the machine returns, or when a sleep report
+explains the gap. A sleep report is never a second item.
+
+Each daemon watches its own machine. It notices a jump in the wall clock
+against the monotonic clock, which works on every OS and reports the sleep
+when it wakes. After that jump it reads the exact span from the OS: `pmset -g
+log` on macOS, and suspend entry and exit lines from the kernel journal on
+Linux. If the OS gives no answer, the clock estimate is used. No setting and
+no per-machine setup is needed.
+
 ## Working rules and guidance
 
 Settings tab 6 has a Working rules and guidance section. Choose network or a

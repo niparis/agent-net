@@ -519,10 +519,17 @@ func machineRow(n protocol.NodeView, online bool, counts [2]int, full bool) prot
 		ID:             n.NodeID,
 		Name:           n.Hostname,
 		Online:         online,
+		State:          "offline",
 		Version:        n.Version,
 		Harnesses:      []protocol.HarnessRow{},
 		SessionsOnline: counts[0],
 		WorkersRunning: counts[1],
+	}
+	if online {
+		row.State = "online"
+	} else if n.DownState != "" {
+		row.State = n.DownState
+		row.Since = rfc3339(n.DownSince)
 	}
 	for _, h := range n.Harnesses {
 		row.Harnesses = append(row.Harnesses, protocol.HarnessRow{Name: h.Name, Version: h.Version})
