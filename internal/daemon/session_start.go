@@ -510,6 +510,12 @@ func (d *Daemon) sessionResume(ctx context.Context, p protocol.SessionResumeRequ
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
+	if p.MoveToBackground {
+		if a.NodeID != d.cfg.NodeID {
+			return protocol.StartedSession{}, errors.New("a session on another machine moves to the background from agent-net on that machine")
+		}
+		return d.moveToBackground(ctx, a, p.HerdrSocket, p.HerdrPaneID)
+	}
 	if a.NodeID != d.cfg.NodeID {
 		return d.relaySessionResume(ctx, a, p.SessionID, p.HerdrSocket, p.HerdrPaneID)
 	}
@@ -545,7 +551,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil || !info.IsDir() {
 		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
 	}
-	r := protocol.StartedSession{Resumes: a.SessionID, ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: firstNonEmpty(a.Profile.Name, a.Title, a.NativeID), Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
+	r := d.resumeRecord(a)
 	if a.Harness == "opencode" {
 		return d.resumeOwnerOpenCode(ctx, r, socket, pane)
 	}
@@ -560,6 +566,53 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 		return protocol.StartedSession{}, err
 	}
 	return d.launchOwnerClaude(r, bin, d.claudeResumeSpec(a), claudeStartView{socket: socket, pane: pane}, false, ""), nil
+}
+
+func (d *Daemon) resumeRecord(a protocol.AgentView) protocol.StartedSession {
+	return protocol.StartedSession{Resumes: a.SessionID, ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: firstNonEmpty(a.Profile.Name, a.Title, a.NativeID), Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
+}
+
+// moveToBackground ends the terminal client of a Claude session the owner
+// started by hand and resumes it as a background job. The agent-net session
+// ID stays (launchOwnerClaude rebinds it, as for any resume), so its workers,
+// changes and messages stay with it. The owner confirmed this in the front
+// end; it is never done on its own.
+func (d *Daemon) moveToBackground(ctx context.Context, a protocol.AgentView, socket, pane string) (protocol.StartedSession, error) {
+	ls := d.sessionByID(a.SessionID)
+	if ls == nil {
+		return protocol.StartedSession{}, errors.New("session is not known on this machine")
+	}
+	info := d.infoOf(ls)
+	kind := ""
+	if p, ok := d.adapters["claude"].(EnterRefProvider); ok {
+		kind, _ = p.EnterRef(info.NativeID)
+	}
+	if info.Harness != "claude" || info.Worker != nil || kind == "bg" || info.Mode == protocol.ModeBackground || info.NativeID == "" {
+		return protocol.StartedSession{}, errors.New("only a Claude session started in a terminal can be moved to the background")
+	}
+	if st, err := os.Stat(a.Cwd); err != nil || !st.IsDir() {
+		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
+	}
+	bin, err := d.harnessBinary("claude")
+	if err != nil {
+		return protocol.StartedSession{}, err
+	}
+	pid, err := d.stopTerminalSession(ctx, ls, info)
+	if err != nil {
+		return protocol.StartedSession{}, err
+	}
+	// Claude refuses to resume a conversation while its first client lives.
+	for {
+		if _, live := procToken(pid); !live {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return protocol.StartedSession{}, ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	return d.launchOwnerClaude(d.resumeRecord(a), bin, d.claudeResumeSpec(a), claudeStartView{socket: socket, pane: pane}, false, ""), nil
 }
 
 // claudeResumeSpec is the owner resume. The wake fallback uses the same spec,

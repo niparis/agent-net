@@ -290,7 +290,14 @@ func fakeClaudeProcess(t *testing.T) int {
 // while the process and the file may still be there.
 func seedClaudeSessionFile(t *testing.T, sessions string, pid int, native, cwd, status string) {
 	t.Helper()
-	sf := map[string]any{"pid": pid, "sessionId": native, "cwd": cwd, "name": "shop", "status": status, "kind": "bg", "jobId": "old-job"}
+	seedClaudeSessionFileKind(t, sessions, pid, native, cwd, status, "bg")
+}
+
+// seedClaudeSessionFileKind is the same for a session of another kind: "bg",
+// or "interactive" for one the owner started in a terminal.
+func seedClaudeSessionFileKind(t *testing.T, sessions string, pid int, native, cwd, status, kind string) {
+	t.Helper()
+	sf := map[string]any{"pid": pid, "sessionId": native, "cwd": cwd, "name": "shop", "status": status, "kind": kind, "jobId": "old-job"}
 	raw, err := json.Marshal(sf)
 	if err != nil {
 		t.Fatal(err)

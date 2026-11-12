@@ -211,6 +211,10 @@ type SessionResumeRequest struct {
 	NodeID      string `json:"node_id,omitempty"`
 	HerdrSocket string `json:"herdr_socket,omitempty"`
 	HerdrPaneID string `json:"herdr_pane_id,omitempty"`
+	// MoveToBackground asks to end the foreground client of a live Claude
+	// session on this machine and resume it as a background job, keeping the
+	// session ID.
+	MoveToBackground bool `json:"move_to_background,omitempty"`
 }
 
 // SessionStopResult describes the harness stop without removing the conversation.

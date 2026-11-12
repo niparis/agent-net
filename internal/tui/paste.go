@@ -5,7 +5,7 @@ import tea "charm.land/bubbletea/v2"
 // paste routes bracketed input only to the active editor. It must never be
 // interpreted as shortcuts, even when it contains q, enter, or other commands.
 func (m Model) paste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
-	if m.archive != nil || m.resumeConfirm != nil || m.sessionPending != nil || m.proposalConfirm || (m.proposalHistory && !m.help) || (m.proposalDetail != nil && !m.help) {
+	if m.archive != nil || m.resumeConfirm != nil || m.moveConfirm != nil || m.sessionPending != nil || m.proposalConfirm || (m.proposalHistory && !m.help) || (m.proposalDetail != nil && !m.help) {
 		return m, nil
 	}
 	var cmd tea.Cmd

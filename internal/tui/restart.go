@@ -37,7 +37,7 @@ func (m *Model) restartTick() bool {
 			r.target = m.snap.Version
 		}
 	}
-	if !r.pending || m.mode != modeNormal || m.filtering || m.finder || m.help || m.archive != nil || m.resumeConfirm != nil || m.sessionPending != nil || m.proposalConfirm || m.proposalDetail != nil || m.proposalHistory || m.open != nil || m.inboxDetail || m.inboxEditing || m.delivery.detail || m.mp.finding || m.mp.removal != nil || m.tl.capturing() || m.focus == focusCTO {
+	if !r.pending || m.mode != modeNormal || m.filtering || m.finder || m.help || m.archive != nil || m.resumeConfirm != nil || m.moveConfirm != nil || m.sessionPending != nil || m.proposalConfirm || m.proposalDetail != nil || m.proposalHistory || m.open != nil || m.inboxDetail || m.inboxEditing || m.delivery.detail || m.mp.finding || m.mp.removal != nil || m.tl.capturing() || m.focus == focusCTO {
 		return false
 	}
 	r.requested = true

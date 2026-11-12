@@ -91,6 +91,9 @@ func (m Model) activeNotice() *notice {
 	if a := m.sessionPending; a != nil {
 		return &notice{text: a.question() + confirmSuffix, at: m.now()}
 	}
+	if a := m.moveConfirm; a != nil {
+		return &notice{text: "Move " + sanitize(a.Profile.Name) + moveQuestion + confirmSuffix, at: m.now()}
+	}
 	if a := m.resumeConfirm; a != nil {
 		return &notice{text: fmt.Sprintf("Resume %s (claude, last active %s ago) and enter it?", sanitize(a.Profile.Name), ago(m.now().Sub(time.Unix(a.LastSeen, 0)))) + confirmSuffix, at: m.now()}
 	}

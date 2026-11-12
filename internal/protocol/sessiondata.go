@@ -258,6 +258,10 @@ type EnterPlan struct {
 	HerdrPane string `json:"herdr_pane,omitempty"`
 	// OpenedHerdr means the daemon already opened or focused the session.
 	OpenedHerdr bool `json:"opened_herdr,omitempty"`
+	// MoveToBackground says the session runs in a terminal the owner started,
+	// so it has nothing to attach to. The front end offers to move it to the
+	// background (SessionResumeRequest.MoveToBackground); the plan has no Argv.
+	MoveToBackground bool `json:"move_to_background,omitempty"`
 }
 
 // TextEntry is one step of a session: a prompt, a reply, a tool call or a tool

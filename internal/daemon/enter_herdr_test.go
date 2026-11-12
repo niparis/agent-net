@@ -652,9 +652,10 @@ func TestEnterLocalHerdrStaysAttach(t *testing.T) {
 	}
 }
 
-// The whole path: session_enter on a node answers a herdr plan for an
-// interactive Claude session, and the TUI's herdr socket is read from the request.
-func TestEnterHerdrThroughSessionEnter(t *testing.T) {
+// A hand-started Claude session has no background job, so session_enter from
+// a TUI inside herdr opens nothing: it offers the move to the background and
+// leaves herdr alone.
+func TestEnterHerdrHandStartedClaudeOpensNothing(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "claude")
@@ -669,10 +670,12 @@ func TestEnterHerdrThroughSessionEnter(t *testing.T) {
 		return id != ""
 	})
 	p := enterOfHerdr(t, n, id, fakeHerdrSocket(log))
-	if !p.OpenedHerdr {
+	if p.OpenedHerdr || !p.MoveToBackground {
 		t.Fatalf("plan %+v", p)
 	}
-	requireHerdrOpened(t, log, "inter", "--resume", "i1")
+	if calls, _ := os.ReadFile(log); strings.Contains(string(calls), "tab create") {
+		t.Fatalf("herdr opened a tab: %s", calls)
+	}
 }
 
 func TestSessionStopPiHerdrPane(t *testing.T) {

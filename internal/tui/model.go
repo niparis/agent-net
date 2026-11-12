@@ -209,6 +209,7 @@ type Model struct {
 	selIdx                    int    // position in the visible list, to move on when the session leaves
 	tableTop                  int    // first table row on screen
 	resumeConfirm             *protocol.AgentView
+	moveConfirm               *protocol.AgentView // a hand-started Claude session the owner may move to the background
 	showOffline               bool
 	activeOnly                bool
 	hiddenSessions            map[string]bool
@@ -1689,6 +1690,15 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.resumeConfirm = nil
 		if yes {
 			return m.resumeOwnerSession(a)
+		}
+		return m, nil
+	}
+	if m.moveConfirm != nil {
+		a := *m.moveConfirm
+		yes, _ := confirmAnswer(k)
+		m.moveConfirm = nil
+		if yes {
+			return m.resumeCmd(a, true)
 		}
 		return m, nil
 	}
