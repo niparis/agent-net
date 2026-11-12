@@ -18,12 +18,56 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// wakeCall is one session wake in flight. Later wakes of the same session
+// wait for it and share its result.
+type wakeCall struct {
+	done chan struct{}
+	err  error
+}
+
 // wakeSession resumes an offline owner session so queued messages can be
 // delivered. Claude keeps its own rules (session_wake.go). Codex and OpenCode
 // are woken only when the gateway says the agent's autonomy is wake. Pi cannot
 // be woken: its rpc mode cannot open an existing session. A wake never starts
 // a new session, never opens a view or a herdr pane, and never touches workers.
+//
+// A session runs one wake at a time. The gateway shows a woken session offline
+// until it registers, so a second wake in that window would start a second
+// copy of the same agent. It joins the first wake instead. A session this
+// daemon already holds live is not woken at all.
 func (d *Daemon) wakeSession(ctx context.Context, id, token string, autonomy bool) error {
+	if d.sessionByID(id) != nil {
+		d.Logf("session wake: %s is already live; nothing to start", id)
+		return nil
+	}
+	d.wakeMu.Lock()
+	if call, ok := d.wakes[id]; ok {
+		d.wakeMu.Unlock()
+		d.Logf("session wake: %s is already being woken; waiting for that wake", id)
+		select {
+		case <-call.done:
+			return call.err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if d.wakes == nil {
+		d.wakes = make(map[string]*wakeCall)
+	}
+	call := &wakeCall{done: make(chan struct{})}
+	d.wakes[id] = call
+	d.wakeMu.Unlock()
+	defer func() {
+		d.wakeMu.Lock()
+		delete(d.wakes, id)
+		d.wakeMu.Unlock()
+		close(call.done)
+	}()
+	call.err = d.wakeSessionOnce(ctx, id, token, autonomy)
+	return call.err
+}
+
+func (d *Daemon) wakeSessionOnce(ctx context.Context, id, token string, autonomy bool) error {
 	a, err := d.agentView(ctx, id)
 	if err != nil {
 		return err
