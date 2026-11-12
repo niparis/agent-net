@@ -3065,6 +3065,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, st.AddDeskNote(nc.id, p.Text, p.Detail)
 
+	case "intake.report":
+		var p protocol.IntakeReport
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad intake.report")
+		}
+		return map[string]bool{"ok": true}, st.ReportIntake(nc.id, p)
+
+	case protocol.FrameIntakeFind:
+		var p protocol.IntakeFindArgs
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad %s", protocol.FrameIntakeFind)
+		}
+		return st.CTOIntake(p.Limit)
+
 	case "desk.settle":
 		var p struct {
 			ID int64 `json:"id"`

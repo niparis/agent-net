@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (8) │ 12 online · 1 busy · 8 needs you       14:05:00
+Desk · no chief of staff · sorted 0 asks today · log closed (l opens it)
+╭─Needs you · 8───────────────────────────────────────────────────────╮ ╭─Notice───────────────────────────────────────╮
+│   ci-runner     [question] which branch?                        10m │ │ CTO alert: zai ran out (5h; resets 14:00)    │
+│   ci-runner     [approval] deploy abc                            9m │ │                                              │
+│   alice         held request → strategies                        5m │ │ session agent-net                            │
+│   ops → app     deploy app refused: "not now"                    6m │ │ 5 minutes ago                                │
+│   CTO           start a Pi session in shop, on Mac               8m │ │                                              │
+│   ops (learned) add "deploys" to what it refuses                 7m │ │ x dismiss the notice                         │
+│ ▸ Notice        CTO alert: zai ran out (5h; resets 14:00)        5m │ │                                              │
+│   Notice        checker is blocked on the deploy key            11m │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─In flight · 0───────────────────────────────────────────────────────╮ │                                              │
+│ Loading changes...                                                  │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─Handled for you · 0─────────────────────────────────────────────────╮ │                                              │
+│ The chief of staff sorted nothing in the last day.                  │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+╭─CTO · 1 open proposal────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ 1/7 See  All your agents, live. Enter opens tenebrae-53.                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+x dismiss the notice  n didn't need me  ↑↓ select  l open the log  ? help

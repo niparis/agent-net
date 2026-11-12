@@ -47,10 +47,12 @@ dropped at T and the machine stayed away for 15 minutes without a sleep
 report. A machine that is offline for less than 15 minutes shows only the
 offline dot.
 
-The gateway raises one Desk item for an outage that stays silent for 15
-minutes: `<machine> went silent at <time> without sleeping; it may be hung`.
-The item closes by itself when the machine returns, or when a sleep report
-explains the gap. A sleep report is never a second item.
+An outage that stays silent for 15 minutes goes to the CTO intake queue, not
+to the owner (decision 0152): one entry `<machine> went silent at <time>
+without sleeping; it may be hung`, and one P1 "CTO alert" item in the chief's
+queue. The entry and the alert close by themselves when the machine returns,
+or when a sleep report explains the gap. A machine that reported sleep raises
+nothing. See [Automatic routes and the CTO intake queue](#automatic-routes-and-the-cto-intake-queue).
 
 Each daemon watches its own machine. It notices a jump in the wall clock
 against the monotonic clock, which works on every OS and reports the sleep
@@ -404,6 +406,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | `agent_settings_read`, `agent_worker_profiles_find` | Public settings values and history, and public worker profiles |
 | `projects_layout` | Read-only project layout of online machines (roots, groups, remotes, newest commits). Cached for 10 minutes. |
 | `cto_ops_list` | The rare operations, grouped, with their purpose, example and owner gate. Filter by text. |
+| `cto_intake_find` | The CTO intake queue (decision 0152): the open system-health entries, newest first, at most `limit` (default and maximum 200), with `total`. Each entry has `kind`, `subject`, `severity` (1 woke the CTO, 2 alert, 3 digest line), `text`, `detail`, `first_seen`, `last_seen`, `count`, `alert` (the chief's CTO alert item), `stuck` (the chief's stuck-work item for a quota entry) and `lead` (the lead that owns the cause). The CTO reads it at the start of each owner conversation. Gateway frame `cto.intake`. |
 | `cto_proposals_find` | The CTO's own proposals; `id` selects one. `kind` filters the list: `proposal` is the default, `all` lists every pending owner item, and `draft` (charter suggestions), `learned` (pending major learned proposals), `held`, `inbox`, `approval`, `question`, `escalation` and `rejection` narrow it. Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
@@ -1342,7 +1345,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `CLAUDE_CODE_DISABLE_MOUSE` | daemon | `0` in the `env` of your Claude Code settings (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`), written by setup and kept there by the daemon. Claude Code applies it inside every session, so the wheel scrolls the conversation in every session however it was started. agent-net adds no per-launch copy. |
 | `DISABLE_AUTOUPDATER` | daemon | `1` in the `env` of every Claude Code process agent-net starts (owner starts and resumes, workers, the merger, the CTO, sign-in and the compaction attach), and in the `env` of your Claude Code settings for sessions you start by hand. Claude Code's own background updater stays off, so agent-net's daemon is the only updater ([decision 0139](decisions/0139-agent-net-is-the-only-harness-updater.md)). |
 
-The daemon owns one value for mouse tracking: it writes `CLAUDE_CODE_DISABLE_MOUSE=0` to the `env` of your Claude Code settings file at start and checks it every minute, so a drifted value is set back without touching another key. A file that is not valid JSON is left alone and reported. Claude Code applies the user settings inside each session, and the launch settings of a managed session no longer carry a copy ([decision 0128](decisions/0128-cto-keeps-mouse-tracking-on.md)). The CTO keeps its own deliberate exception in its launch settings. The daemon also reports a live Claude session whose inherited environment still turns the wheel off, once per session per day, in the owner TUI and the Desk log. A Claude session that was already running keeps its old setting until it is started again. When Claude's background service itself carries the old value, the daemon reports it once and stops it with `claude daemon stop --any --keep-workers` only when Claude's fresh roster lists no live session, so even a session that starts during the check survives; the next launch starts a clean service.
+The daemon owns one value for mouse tracking: it writes `CLAUDE_CODE_DISABLE_MOUSE=0` to the `env` of your Claude Code settings file at start and checks it every minute, so a drifted value is set back without touching another key. A file that is not valid JSON is left alone and reported. Claude Code applies the user settings inside each session, and the launch settings of a managed session no longer carry a copy ([decision 0128](decisions/0128-cto-keeps-mouse-tracking-on.md)). The CTO keeps its own deliberate exception in its launch settings. The daemon also reports a live Claude session whose inherited environment still turns the wheel off, once per session per day, as a digest line of the CTO intake queue (kind `claude_mouse`, decision 0152); it no longer shows in the owner TUI or the Desk log. A Claude session that was already running keeps its old setting until it is started again. When Claude's background service itself carries the old value, the daemon reports it once and stops it with `claude daemon stop --any --keep-workers` only when Claude's fresh roster lists no live session, so even a session that starts during the check survives; the next launch starts a clean service.
 
 With mouse tracking on, the wheel scrolls the conversation, and selecting text needs Shift while dragging (Option on some terminals), because a plain drag is a mouse event for the session.
 
@@ -2908,6 +2911,75 @@ provider's quota check once. When the login error is gone the ask closes
 itself with `signed in`; a persisting error keeps it open. The web console
 shows the same ask with an Open sign-in button when it lists the Desk.
 
+## Automatic routes and the CTO intake queue
+
+One route table in the gateway (`internal/gateway/routes.go`) says where each
+automatic message, each Desk ask kind and each CTO intake kind goes. It
+follows [decision 0152](decisions/0152-automatic-message-routes.md). The
+gateway refuses an ask kind that has no route, and a test reads every ask
+kind and intake kind from the source and fails on one with no row.
+
+- **Agent only.** Step tasks, reminders, idle checks, worker notices,
+  undelivered notices, tools disconnected, member blocked and charter
+  requests go to the session that must act, as before.
+- **The chief.** Every ask that wants the owner goes to the chief of staff
+  first: approvals, questions, ideas, checks, waiting sessions, rejections,
+  escalations, stalls, held requests, charter drafts, learned suggestions,
+  CTO proposals, steps that need the owner, CTO alerts and quota stuck work.
+- **The owner directly.** Only sign-in asks and OAuth consents (the Connected
+  apps approval and the Tailscale public link consent) skip the chief, as
+  one-click asks. The chief's own daily brief and an agent's permission
+  proposal also show to the owner; neither is automatic. Nothing else that
+  agent-net makes by itself reaches the owner.
+- **The CTO intake queue.** System-health alerts go to the table `cto_intake`.
+
+### The CTO intake queue
+
+One row per `(kind, subject)` while it is open. A repeat raises `count` and
+`last_seen` and refreshes the text; it never adds a row. Each row has a
+`severity`: 1 when it woke the CTO, 2 for an alert kind that has not woken it
+yet, 3 for a digest line. The CTO reads the open rows, newest first, with
+`cto_intake_find` at the start of each owner conversation.
+
+| Kind | Subject | Fed by | Wakes the CTO when |
+|---|---|---|---|
+| `machine_silent` | machine | the gateway, after 15 minutes offline without a sleep report | at once; a machine that reported sleep never alerts (decision 0137) |
+| `harness_update_failed` | machine/harness | the daemon, after a failed harness update; a later update resolves it | the alert repeats for over an hour |
+| `compaction_failed` | machine/harness | the daemon, after a failed automatic compaction; a later one that works resolves it | the alert repeats for over an hour |
+| `mcp_repair_failed` | machine/agent-net | the gateway, from the daemon's ask about a session whose agent-net tools could not be connected after its one restart; that check ask still goes to the chief | the alert repeats for over an hour |
+| `struggle` | model | the gateway, when 3 distinct workers ended with struggle signs on the same model within 6 hours | at once |
+| `merge_queue_failing` | project | the gateway, when 3 test runs in a row failed on the merger's train tip in `delivery.ci_mode` `train`. Every change of a train cites the same `run`, so a run counts once; a failure marked `flake: yes` does not count; a pass resets the count and closes the entry | at once |
+| `quota` | provider | the gateway: a usage report with a used-up window, a start refused by the worker floor, or a start refused because the provider has no quota left; a usable reading with room closes it | the alert repeats for over an hour |
+| `claude_mouse` | machine/claude | the daemon's mouse notice (one per key per day); it no longer goes to the Desk log or the CTO chat | never: a digest line |
+| `phone_paired` | the device | a phone paired by Tailscale sign-in; it is no longer an owner notice. The device shows in Connected apps | never: a digest line |
+| `picker_override` | the start | reserved; held overrides go to the chief first (decision 0151) | never |
+
+A daemon reports its kinds with the frame `intake.report` (`kind`, `subject`,
+`text`, `detail`, `resolved`). The gateway puts the machine's name in front of
+the subject and refuses the kinds it detects itself.
+
+**A wake is never a CTO turn.** A CTO turn starts only from the owner. When a
+wake rule holds, the gateway opens one P1 item of kind `cto_alert` in the
+chief's queue (`CTO alert: <text>`). Its `why_you` names the lead that owns
+the cause: the project's lead for the merge queue, else the lead of the
+`agent-net` repo, or "none: the CTO owns it". The chief routes it to that
+lead and tells the CTO; it goes to the owner only for money, secrets or
+security. An entry raises one alert at most. The chief's 15-minute timeout
+never hands a CTO alert or a quota stuck item to the owner.
+
+**One quota event, one thread.** A start refused because its provider has no
+quota left opens the provider's `quota` entry and one chief item of kind
+`quota_stuck` (`Work is stuck: ...`). Its detail names the CTO entry, and the
+entry's `stuck` names the item. When a usage report shows the provider with
+room again, the entry closes, and so do its stuck-work item and its CTO alert.
+
+**The morning brief.** When the chief delivers the daily brief, the gateway
+adds two parts after the chief's text: one system-health line from the open
+entries (`System health: 2 open alerts, 1 woke the CTO (quota, machine
+silent).`, or `System health: no open alerts.`), and `Decisions recorded
+today:` with the owner's answers and rules recorded in the last 24 hours (at
+most 20 lines, then `and N more`), or `Decisions recorded today: none.`
+
 ## The chief of staff (decision 0114)
 
 A registered agent session sorts the asks that would go to the owner first. The
@@ -3735,8 +3807,9 @@ machine's node. A fresh browser pairs automatically, with no code or TUI
 approval. There is no login setting: the gateway reads the node owner's login
 from local Tailscale status. Connected apps lists the device as
 `Tailscale sign-in: <login>, <device and browser>`. Each browser has its own
-entry, with a number added when names match. The owner Inbox receives one
-information notice: `Paired <device> by Tailscale sign-in`.
+entry, with a number added when names match. The CTO intake queue gets one
+digest line, `Paired <device> by Tailscale sign-in` (kind `phone_paired`,
+decision 0152); the owner gets no notice.
 
 Revoke that entry to block the device's cookie. It will show the pairing page
 on its next visit, even from the tailnet. A browser whose cookie was cleared

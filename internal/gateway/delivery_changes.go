@@ -582,6 +582,7 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		return protocol.StepReportResult{}, err
 	}
 	now := s.now().Unix()
+	trainRun := q.Step == protocol.StepTest && s.trainMode(c.Project)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.StepReportResult{}, err
@@ -712,6 +713,11 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	}
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
+	}
+	if trainRun {
+		if err := s.trainRunFeed(tx, c.Project, e, s.now()); err != nil {
+			return protocol.StepReportResult{}, err
+		}
 	}
 	defectAdded, err := s.autoDefectFromReport(tx, c, e)
 	if err != nil {

@@ -243,6 +243,14 @@ func (s *Store) putOwnerBrief(session string, a protocol.OwnerBriefArgs, now tim
 	}
 	date := strings.TrimSpace(a.Date)
 	body := strings.TrimRight(a.Body, "\r\n")
+	// The gateway adds the system-health line from the CTO intake queue and
+	// the day's recorded decisions (decision 0152), so the brief always has
+	// them, whatever the chief wrote.
+	extra, err := s.briefFacts(now)
+	if err != nil {
+		return protocol.OwnerBriefResult{}, err
+	}
+	body += "\n\n" + extra
 	label := "Daily brief " + date
 	ref := protocol.BriefSourceRef(date)
 	tx, err := s.db.Begin()
@@ -283,4 +291,46 @@ func (s *Store) putOwnerBrief(session string, a protocol.OwnerBriefArgs, now tim
 		return protocol.OwnerBriefResult{}, err
 	}
 	return protocol.OwnerBriefResult{ItemID: id, Date: date, Status: "delivered"}, nil
+}
+
+// briefDecisionsMax caps the decision list of one brief.
+const briefDecisionsMax = 20
+
+// briefFacts is what the gateway adds to the morning brief: one
+// system-health line and the decisions recorded in the last 24 hours.
+func (s *Store) briefFacts(now time.Time) (string, error) {
+	health, err := s.healthLine(s.db)
+	if err != nil {
+		return "", err
+	}
+	rows, err := s.db.Query(`SELECT text FROM standing_orders WHERE kind IN (?,?) AND saved_at>=? ORDER BY saved_at,id`,
+		protocol.StandingKindAnswer, protocol.StandingKindRule, now.Add(-24*time.Hour).Unix())
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var lines []string
+	n := 0
+	for rows.Next() {
+		var text string
+		if err := rows.Scan(&text); err != nil {
+			return "", err
+		}
+		n++
+		if len(lines) < briefDecisionsMax {
+			lines = append(lines, "- "+askFirstLine(text, 160))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	out := health + "\n"
+	if n == 0 {
+		return out + "Decisions recorded today: none.", nil
+	}
+	out += "Decisions recorded today:\n" + strings.Join(lines, "\n")
+	if n > len(lines) {
+		out += fmt.Sprintf("\n- and %d more", n-len(lines))
+	}
+	return out, nil
 }

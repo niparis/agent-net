@@ -53,6 +53,7 @@ var Tools = []Tool{
 	toolEntry("cto_placement_memory", "Read or save placement answers explicitly given by the owner.", []Role{RoleCTO}, Hints{Idempotent: true}, false, false),
 	toolEntry("cto_ui_show", "Show the owner a TUI tab with an item selected, or a short notice. Fails with no TUI open when no local TUI is connected.", []Role{RoleCTO}, Hints{Idempotent: true}, false, false),
 	toolEntry("cto_proposals_find", "Find proposals, or all pending owner items, each with its answer call.", []Role{RoleCTO}, Hints{ReadOnly: true, Idempotent: true}, false, false),
+	toolEntry("cto_intake_find", "Open system-health alerts of the CTO intake queue, newest first. Read it at the start of each owner conversation.", []Role{RoleCTO}, Hints{ReadOnly: true, Idempotent: true}, false, false),
 	toolEntry("graph_change", "Change the graph or undo. Lifecycle removal (node_remove, agent_tombstone, repo_archive) is a rare op in cto_op and needs owner approval; other actions apply at once.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("session_change", "Change a session: rename, replace, trust, policy, start, stop, resume, restart, or merger start or stop.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),
 	toolEntry("worker_change", "Start or stop a worker with a complete brief.", []Role{RoleCTO}, Hints{Destructive: true, OpenWorld: true}, false, false),

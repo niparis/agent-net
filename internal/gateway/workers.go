@@ -964,6 +964,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if under, floorSentence, _ := protocol.CheckWorkerFloor(quotas, floors, p.Harness, p.Model); under {
 			isOwner := protocol.IsOwner(owner.Harness) && !p.FromCTO
 			if !isOwner {
+				if !(len(validate) > 0 && validate[0]) {
+					g.quotaFloorFeed(p.Harness, p.Model, floorSentence)
+				}
 				return none, g.refuseWithAlternative(ctx, nc, p, floorSentence)
 			}
 		}
@@ -971,6 +974,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// A provider with no allowance left refuses the start now, with the reset
 	// time, instead of failing at the first model call (decision 0022).
 	if reason := protocol.QuotaRefusal(quotas, p.Harness, p.Model); reason != "" {
+		if !(len(validate) > 0 && validate[0]) {
+			g.quotaStuckFeed(p.Harness, p.Model, reason)
+		}
 		return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
 	}
 	pickerMS := time.Since(began).Milliseconds()

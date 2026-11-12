@@ -636,6 +636,20 @@ func (s *Store) OpenExternalAsk(node string, a protocol.AskOpen) (protocol.Ask, 
 	if a.Kind == protocol.AskKindCheck || a.Kind == protocol.AskKindSignIn {
 		fromKind = protocol.AskFromGateway
 	}
+	// A failed MCP repair is also a CTO intake entry for the machine (decision
+	// 0152). A repeat of the same ask is not a new failure.
+	if a.Kind == protocol.AskKindCheck && strings.HasPrefix(a.Ref, mcpRepairRefPrefix) {
+		var open bool
+		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE source_ref=? AND status='open')`, a.Kind+":"+ref).Scan(&open); err != nil {
+			return protocol.Ask{}, err
+		}
+		if !open {
+			if _, err := s.RecordIntake(intakeEvent{Kind: protocol.IntakeMCPRepair, Subject: s.hostname(node) + "/agent-net",
+				Text: a.Question, Detail: a.Detail}); err != nil {
+				return protocol.Ask{}, err
+			}
+		}
+	}
 	item, err := s.createInboxItem(s.db, protocol.InboxItem{
 		Kind: a.Kind, SessionID: node, Node: node, FromKind: fromKind, AskerName: a.From, SourceRef: a.Kind + ":" + ref,
 		AboutKind: a.AboutKind, AboutID: a.AboutID, Text: a.Question, Options: a.Options, Recommendation: a.Recommendation, Detail: a.Detail,
@@ -645,6 +659,10 @@ func (s *Store) OpenExternalAsk(node string, a protocol.AskOpen) (protocol.Ask, 
 	}
 	return protocol.Ask{ID: item.ID, Kind: item.Kind, Ref: item.SourceRef, Question: item.Text, State: protocol.AskStateOpen, Next: protocol.AskNextOwner, CreatedAt: item.CreatedAt}, nil
 }
+
+// mcpRepairRefPrefix starts the ref of the daemon's ask about a failed MCP
+// repair (daemon/mcp_repair.go).
+const mcpRepairRefPrefix = "mcp:"
 
 // CloseExternalAsk closes the ask that OpenExternalAsk opened for a key.
 func (s *Store) CloseExternalAsk(node string, c protocol.AskClose) error {

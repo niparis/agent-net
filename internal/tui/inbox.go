@@ -163,7 +163,7 @@ func (m Model) askRow(a protocol.Ask) (inboxRow, bool) {
 	case protocol.AskKindWaiting:
 		row.group, row.key, row.kind = inboxApproval, "waiting:"+a.FromSession, "waiting"
 		row.name, row.text = m.inboxSessionName(a.FromSession), inboxWaitingText(a)
-	case protocol.AskKindCheck, protocol.AskKindStall, protocol.AskKindMachine:
+	case protocol.AskKindCheck, protocol.AskKindStall, protocol.AskKindMachine, protocol.AskKindCTOAlert, protocol.AskKindQuotaStuck:
 		name, text := inboxNoticeParts(item)
 		if a.Kind == protocol.AskKindStall {
 			name = m.inboxSessionName(a.FromSession)

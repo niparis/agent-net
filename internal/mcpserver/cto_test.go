@@ -234,14 +234,14 @@ func TestCTOParityTools(t *testing.T) {
 	for _, tool := range list.Tools {
 		got[tool.Name] = true
 	}
-	for _, name := range []string{"cto_proposals_find", "cto_placement_memory", "cto_standing_orders", "cto_ui_show", "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "sessions_archive", "proposal_ask", "cto_new",
+	for _, name := range []string{"cto_proposals_find", "cto_intake_find", "cto_placement_memory", "cto_standing_orders", "cto_ui_show", "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "sessions_archive", "proposal_ask", "cto_new",
 		"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "agent_message_send", "agent_message_reply", "agent_message_withdraw", "agent_owner_ask", "agent_learn", "agent_permission_propose", "projects_layout", "agent_owner_judgments_find", "agent_owner_judgment_record", "cto_ops_list", "cto_op"} {
 		if !got[name] {
 			t.Errorf("missing CTO tool %s", name)
 		}
 	}
-	if len(got) != 40 {
-		t.Errorf("CTO exposes %d tools, want 40: %v", len(got), got)
+	if len(got) != 41 {
+		t.Errorf("CTO exposes %d tools, want 41: %v", len(got), got)
 	}
 	for _, name := range []string{"overview", "sessions", "session", "proposals", "feed", "messages", "graph", "machines", "projects", "workers", "tools", "settings", "message", "ask_owner", "learn", "ui", "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "session_rename", "session_trust", "session_policy", "worker_start", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "tools_plan", "tools_apply", "tools_undo", "mcp_import", "mcp_native_remove", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "send", "reply", "ui_show", "ui_notice", "cto_send"} {
 		if got[name] {
@@ -379,7 +379,8 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	// agent_permission_propose, owner-approved permission rules, 2026-11-09
 	// scores_weekly, weekly scores table with release markers, 2026-11-11
 	// agent_owner_judgment_record, owner-approved front door (0150), 2026-11-12
-	const schemaBudget = 36*1024 + 1192
+	// cto_intake_find, owner-approved front door step (b) (0152), 2026-11-12
+	const schemaBudget = 36*1024 + 1592
 	const headroom = 1024
 	t.Logf("total schema: %d bytes, %d bytes left of the %d byte budget", len(schema), schemaBudget-len(schema), schemaBudget)
 	if len(schema) >= schemaBudget {

@@ -270,7 +270,9 @@ func (g *Gateway) handleUsage(nc *nodeConn, typ string, raw []byte) (data any, o
 		if err != nil {
 			return nil, true, reject("bad node.usage")
 		}
-		g.usage.set(nc.id, g.store.now(), cleanUsage(rep))
+		rep = cleanUsage(rep)
+		g.usage.set(nc.id, g.store.now(), rep)
+		g.quotaFeed(rep.Quotas)
 		return nil, true, nil
 
 	case "query.usage":

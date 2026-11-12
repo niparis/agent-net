@@ -104,12 +104,18 @@ func (s *Store) RequestWrittenApproval(session, node string, req protocol.Approv
 }
 
 func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.InboxItem, error) {
-	switch item.Kind {
-	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
-		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindPermission, protocol.AskKindStep, protocol.AskKindWaiting,
-		protocol.AskKindBrief, protocol.AskKindSignIn, protocol.AskKindMachine:
-	default:
+	// Every kind has a route (decision 0152); a kind without one is refused.
+	rt, ok := routeOf(routeAsk, item.Kind)
+	if !ok {
 		return item, reject("invalid inbox kind")
+	}
+	if key := askRouteKey(item); key != item.Kind {
+		rt, _ = routeOf(routeAsk, key)
+	}
+	// An automatic item routed to the owner (sign-in and OAuth) skips the
+	// chief: it is a one-click ask only the owner can do.
+	if rt.Auto && rt.To == routeOwner && item.NextWho == "" {
+		item.NextWho = protocol.AskNextOwner
 	}
 	if strings.TrimSpace(item.SessionID) == "" || strings.TrimSpace(item.Text) == "" {
 		return item, reject("inbox session and text are required")

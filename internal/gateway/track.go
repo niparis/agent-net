@@ -76,6 +76,11 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1, ?,?,?,?, CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=? AND owner=?) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=? AND owner=? ORDER BY created_at DESC,rowid DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=?) END, ?,?,?,?,?,?,?,?,?)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.CallerSessionID, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed, r.TaskID, r.Midrun, files, lines, complete, early, r.SessionID, r.CallerSessionID, r.SessionID, r.CallerSessionID, r.CallerSessionID, sf, sr, srt, se, senv, stop, strace, scapped, causeOrUnknown(r.Cause)); err != nil {
 		return err
 	}
+	if protocol.StruggleShown(r.Struggle) && r.Model != "" {
+		if err := s.struggleFeed(tx, r.Model, s.now()); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Exec(`UPDATE sessions SET worker_run_active=0 WHERE id=? AND node_id=? AND worker<>'' AND (?=0 OR worker_run_generation=?)`, r.SessionID, r.NodeID, r.RunGeneration, r.RunGeneration); err != nil {
 		return err
 	}
