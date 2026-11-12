@@ -1677,6 +1677,10 @@ returns report pages with an `offset` request field and a `next` cursor.
 `tools_items` returns item pages with optional `kind` (`skill`, `prompt`, `agent`, `mcp`, or `bundles` for the first three), `harness`, `project`,
 `state` and `offset` filters. `tools_item` takes an `id` from that list and
 returns its locations and file-list differences against same-name variants.
+List items carry a `file_count` per location and no file lists. `tools_item`
+carries each file list capped at 500 paths, with `files_more` and an item
+`note` for the rest. A list item that is still too large is trimmed and
+carries a `note`; it never fails the page.
 The owner-only `tools_skill_details` reads the file manifest of one observed
 copy on one machine, so a comparison does not wait for a whole scan. The
 machine checks that the skill is still observed and that its hash has not
