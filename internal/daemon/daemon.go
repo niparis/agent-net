@@ -547,7 +547,10 @@ type Daemon struct {
 	recent map[string]recentWorker
 	// resumeMu serializes starting an ended worker again, so two messages
 	// from its owner cannot start two processes.
-	resumeMu      sync.Mutex
+	resumeMu sync.Mutex
+	// checkRuns holds the running hand-back check of each worker, by worker
+	// ID, until its notice is sent. wmu guards it.
+	checkRuns     map[string]*handbackCheckRun
 	claudeStartMu sync.Mutex
 	// mcpHello is when the MCP server of each Claude session first said hello.
 	// A Claude worker waits for it before it gets its task.

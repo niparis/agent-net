@@ -22,6 +22,15 @@ const (
 	HandbackCheckCouldNotRun = "could_not_run"
 )
 
+// The state of a hand-back check that has not ended yet, as a worker list
+// shows it (WorkerView.Check).
+const (
+	// HandbackCheckQueued waits for the machine's test slot.
+	HandbackCheckQueued = "queued"
+	// HandbackCheckRunning runs the project's command.
+	HandbackCheckRunning = "running"
+)
+
 const (
 	// MaxHandbackCheckOutputBytes bounds the output tail kept for a change and
 	// its notice.

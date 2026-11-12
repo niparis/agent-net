@@ -96,11 +96,12 @@ func (d *Daemon) planHandbackCheck(ctx context.Context, w *worker) handbackCheck
 // runs is true when the plan has a command to run.
 func (p handbackCheckPlan) runs() bool { return p.command != "" }
 
-// run runs the command for the plan and returns its result. The timeout covers
+// runHandbackCheckPlan runs the command for the plan and returns its result.
+// run, when set, is marked running once the check has the test slot. The timeout covers
 // the queue as well as the command, so a busy machine can never hold the
 // hand-back forever. It never returns an error: a check that cannot run is
 // reported as a failed or timed-out result, so the notice is always sent.
-func (d *Daemon) runHandbackCheckPlan(ctx context.Context, p handbackCheckPlan) *protocol.HandbackCheck {
+func (d *Daemon) runHandbackCheckPlan(ctx context.Context, p handbackCheckPlan, run *handbackCheckRun) *protocol.HandbackCheck {
 	runCtx, cancelRun := context.WithTimeout(ctx, p.timeout)
 	defer cancelRun()
 	if d.checksDone != nil {
@@ -118,6 +119,9 @@ func (d *Daemon) runHandbackCheckPlan(ctx context.Context, p handbackCheckPlan) 
 			OutputTail: "timed out waiting for the machine's test slot"}
 	}
 	defer d.releaseTestSlot(slot)
+	if run != nil {
+		run.running.Store(true)
+	}
 	check := d.runCheckCommand(runCtx, p.dir, p.command, parallel, p.worker)
 	if check.Status == protocol.HandbackCheckTimedOut && d.checksStopped() {
 		return d.interruptedCheck(p.worker, started, check.OutputTail)

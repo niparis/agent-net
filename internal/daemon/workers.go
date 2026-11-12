@@ -185,10 +185,6 @@ type worker struct {
 	// while a saved hand-back waits for the gateway (handback_replay.go). The
 	// hand-back ends the worker itself, so the tick must not race it.
 	checking bool
-	// checkRun is the check a hand-back started in the background, until its
-	// notice goes out. A second hand-back on the same head sees it and starts
-	// nothing; a new head cancels it.
-	checkRun *handbackCheckRun
 	// endedCh is closed when the worker starts to end (endWorker). Made on first use.
 	endedCh                           chan struct{}
 	turnActive                        bool
@@ -1800,20 +1796,47 @@ func (d *Daemon) rememberEnded(w *worker, status, note string, at time.Time) {
 }
 
 // recentWorkers returns the workers that ended in the last two minutes, the
-// newest first, and forgets the older ones.
+// newest first, and forgets the older ones. A worker whose hand-back check has
+// not ended stays, with the check's state, however long the check waits.
 func (d *Daemon) recentWorkers(now time.Time) []protocol.WorkerView {
+	checks := d.checkStates()
 	d.rmu.Lock()
 	defer d.rmu.Unlock()
 	out := []protocol.WorkerView{}
 	for sid, r := range d.recent {
-		if now.Sub(r.at) > recentWindow {
+		check := checks[sid]
+		if check == "" && now.Sub(r.at) > recentWindow {
 			delete(d.recent, sid)
 			continue
 		}
-		out = append(out, r.view)
+		v := r.view
+		v.Check = check
+		out = append(out, v)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].EndedAt > out[j].EndedAt })
 	return out
+}
+
+// checkStates is the state of each running hand-back check, by session ID.
+func (d *Daemon) checkStates() map[string]string {
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	out := make(map[string]string, len(d.checkRuns))
+	for _, run := range d.checkRuns {
+		out[run.sessionID] = run.checkState()
+	}
+	return out
+}
+
+// touchRecent restarts the recent window of an ended worker, so its end stays
+// in a list for a while after its hand-back check ends.
+func (d *Daemon) touchRecent(sessionID string, at time.Time) {
+	d.rmu.Lock()
+	defer d.rmu.Unlock()
+	if r, ok := d.recent[sessionID]; ok {
+		r.at = at
+		d.recent[sessionID] = r
+	}
 }
 
 // workerTask is the short task line of the worker with this session, "" when

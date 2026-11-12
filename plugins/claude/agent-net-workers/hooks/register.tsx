@@ -39,6 +39,7 @@ type RawWorker = {
   ended_at?: number
   end_status?: string
   end_note?: string
+  check?: string
   difficulty_used?: string
   assessment?: { d?: number; label?: string; picker_label?: string; error?: string }
 }
@@ -61,6 +62,7 @@ function workerOf(raw: RawWorker): AgentNetWorker | null {
     endedAt: raw.ended_at ?? 0,
     endStatus: raw.end_status ?? '',
     endNote: raw.end_note ?? '',
+    check: raw.check ?? '',
     difficulty: difficultyOf(raw),
   }
 }
@@ -155,6 +157,12 @@ function stateOf(w: AgentNetWorker): { symbol: string; color: WorkerRow['symbolC
   return { symbol: '●', color: 'accent', ended: false }
 }
 
+// checkText is the last column of a worker that ended done while its
+// project's hand-back check has not ended: the notice follows the check.
+function checkText(check: string): string {
+  return check === 'running' ? 'checking' : 'check queued'
+}
+
 // One row per worker:
 // " <symbol> <title padded>  <harness> <model, full>  <run time>  <ctx or end>"
 // The title takes the remaining width. On a narrow pane the context column is
@@ -170,6 +178,9 @@ export function formatWorkerRows(workers: AgentNetWorker[], now: number, columns
     const model = displayModel(w.model)
     const difficulty = w.difficulty
     const tail = `${harness} ${model}${difficulty ? ' '.repeat(gap) + difficulty : ''}${' '.repeat(gap)}${runTime}`
+    if (ended && w.check !== '') {
+      return { w, state, harness, model, difficulty, runTime, tail, last: checkText(w.check), lastColor: 'dim' as WorkerRow['lastColor'], lastIsContext: false }
+    }
     if (ended) {
       return { w, state, harness, model, difficulty, runTime, tail, last: w.endStatus, lastColor: (w.endStatus === 'done' ? 'success' : 'error') as WorkerRow['lastColor'], lastIsContext: false }
     }
@@ -231,7 +242,8 @@ function endNotice(w: AgentNetWorker): string {
   const title = w.title ? ` (${w.title})` : ''
   const run = noticeDuration((w.endedAt - w.startedAt) * 1000)
   const what = w.endNote || w.task
-  return `agent-net worker ${who}${title} ${w.endStatus} · ${run}` + (what ? `: ${what}` : '')
+  const check = w.check ? ` (${checkText(w.check)})` : ''
+  return `agent-net worker ${who}${title} ${w.endStatus}${check} · ${run}` + (what ? `: ${what}` : '')
 }
 
 // notifyEnds appends one notice per ended worker, and remembers the worker in

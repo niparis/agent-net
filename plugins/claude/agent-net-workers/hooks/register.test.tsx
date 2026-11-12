@@ -65,6 +65,38 @@ test('the band lists a running worker and the status line counts it', async ($, 
   expect(statuses.at(-1)).toBe('agent-net: 1 busy')
 })
 
+test('a worker that ended done while its check runs shows its tick with checking', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const session = mock.session(on)
+  const payload = {
+    workers: [{
+      session_id: 's_abcdefcd35', harness: 'claude', model: 'claude-sonnet-5', project: 'shop',
+      status: 'done', online: false, started_at: Math.floor(NOW / 1000) - 300,
+      task: 'fix the parser', title: 'Fix the parser',
+      ended_at: Math.floor(NOW / 1000), end_status: 'done', check: 'running',
+    }],
+  }
+  on('process.run', () => ({ value: runResult(JSON.stringify(payload)) }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'test-session' }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /✓/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /checking/ })).toBeDefined()
+  await ui.unmount()
+  expect(session.appended()[0]?.message.content).toEqual([{
+    type: 'text',
+    text: 'agent-net worker claude · claude-sonnet-5 (Fix the parser) done (checking) · 5m 0s: fix the parser',
+  }])
+})
+
 test('an ended worker shows its end note, and none clears the line', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const session = mock.session(on)
@@ -366,7 +398,7 @@ function running(overrides: Partial<AgentNetWorker> = {}): AgentNetWorker {
     project: 'shop', status: 'busy', online: true, startedAt: NOW / 1000 - 720,
     task: 'Build part 5 of the documentation', title: 'Build the documentation',
     contextTokens: 105000, contextLimit: 475000,
-    tokens: 0, endedAt: 0, endStatus: '', endNote: '', difficulty: '', ...overrides,
+    tokens: 0, endedAt: 0, endStatus: '', endNote: '', check: '', difficulty: '', ...overrides,
   }
 }
 
@@ -453,6 +485,21 @@ test('every state has its symbol, colour and last column', () => {
   expect(rows[3]?.last).toBe('failed')
   expect(rows[4]?.last).toBe('stopped')
   expect(rows[5]?.last).toBe('timed out')
+})
+
+test('a worker that ended done while its check runs shows its tick and the check', () => {
+  const rows = formatWorkerRows([
+    running({ endStatus: 'done', endedAt: NOW / 1000, check: 'running' }),
+    running({ endStatus: 'done', endedAt: NOW / 1000, check: 'queued' }),
+  ], NOW / 1000, 100)
+  for (const row of rows) {
+    expect(row.symbol).toBe('✓')
+    expect(row.symbolColor).toBe('success')
+    expect(row.lastColor).toBe('dim')
+  }
+  expect(rows[0]?.last).toBe('checking')
+  expect(rows[0]?.line.endsWith('checking')).toBe(true)
+  expect(rows[1]?.last).toBe('check queued')
 })
 
 test('high context has the warning and error colours it had before', () => {

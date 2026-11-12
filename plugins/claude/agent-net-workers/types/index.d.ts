@@ -15,6 +15,9 @@ export type AgentNetWorker = {
   endedAt: number
   endStatus: string
   endNote: string
+  // The state of the hand-back check of a worker that ended done, until its
+  // notice is sent: "queued" or "running". Empty otherwise.
+  check: string
   // The level the picker used, with the judge's D: "normal 2.60".
   difficulty: string
 }

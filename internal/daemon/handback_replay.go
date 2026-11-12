@@ -44,6 +44,7 @@ type pendingHandback struct {
 	Recorded        bool                           `json:"recorded,omitempty"`
 	ChangeID        string                         `json:"change_id,omitempty"`
 	DeliveryProblem string                         `json:"delivery_problem,omitempty"`
+	Stats           *workerStats                   `json:"stats,omitempty"`
 }
 
 // errHandbackDeferred ends a hand-back that is saved for the next connect.
@@ -52,14 +53,14 @@ var errHandbackDeferred = errors.New("the hand-back is saved; the next connectio
 func (t *handbackTail) saved() pendingHandback {
 	return pendingHandback{Req: t.req, To: t.to, ReplyTo: t.replyTo, SandboxNote: t.sandboxNote, End: t.end, Files: t.files,
 		SessionID: t.sessionID, Committed: t.committed, WIPDetail: t.wipDetail, Head: t.head, NoticeKey: t.noticeKey,
-		Check: t.check, Recorded: t.recorded, ChangeID: t.changeID, DeliveryProblem: t.deliveryProblem}
+		Check: t.check, Recorded: t.recorded, ChangeID: t.changeID, DeliveryProblem: t.deliveryProblem, Stats: t.stats}
 }
 
 func (p pendingHandback) tail() *handbackTail {
 	return &handbackTail{req: p.Req, to: p.To, replyTo: p.ReplyTo, sandboxNote: p.SandboxNote, end: p.End, files: p.Files,
 		sessionID: p.SessionID, committed: p.Committed, wipDetail: p.WIPDetail, complete: true,
 		head: p.Head, noticeKey: p.NoticeKey, persisted: true, check: p.Check,
-		recorded: p.Recorded, changeID: p.ChangeID, deliveryProblem: p.DeliveryProblem}
+		recorded: p.Recorded, changeID: p.ChangeID, deliveryProblem: p.DeliveryProblem, stats: p.Stats}
 }
 
 // persistHandback saves a complete hand-back before its check runs. An
@@ -186,20 +187,22 @@ func (d *Daemon) replayHandback(workerID string, p pendingHandback) {
 		check = d.interruptedCheck(workerID, time.Now(), "")
 	}
 	d.wmu.Lock()
+	if d.checkRuns[workerID] != nil {
+		// A newer hand-back of the same worker runs now. It saved its own row.
+		d.wmu.Unlock()
+		return
+	}
 	w := d.workers[workerID]
-	var run *handbackCheckRun
-	if w != nil {
-		if w.checkRun != nil {
-			// A newer hand-back of the same worker runs now. It saved its own row.
-			d.wmu.Unlock()
-			return
-		}
-		if w.stopping {
-			t.end = false
-		} else {
-			run = &handbackCheckRun{ctx: context.Background(), cancel: func() {}, head: p.Head}
-			w.checkRun, w.checking = run, true
-		}
+	run := &handbackCheckRun{ctx: context.Background(), cancel: func() {}, head: p.Head, sessionID: p.SessionID}
+	run.running.Store(true)
+	if d.checkRuns == nil {
+		d.checkRuns = map[string]*handbackCheckRun{}
+	}
+	d.checkRuns[workerID] = run
+	if w != nil && w.stopping {
+		t.end = false
+	} else if w != nil {
+		w.checking = true
 	}
 	d.wmu.Unlock()
 	if w == nil {
@@ -208,6 +211,11 @@ func (d *Daemon) replayHandback(workerID string, p pendingHandback) {
 		w = d.endedHandbackWorker(p.SessionID)
 		if w == nil {
 			d.Logf("worker.handback_dropped worker=%s reason=%q", workerID, "no record of the worker")
+			d.wmu.Lock()
+			if d.checkRuns[workerID] == run {
+				delete(d.checkRuns, workerID)
+			}
+			d.wmu.Unlock()
 			d.dropHandback(workerID, p.Head)
 			p.Files.Remove()
 			return
@@ -217,13 +225,12 @@ func (d *Daemon) replayHandback(workerID string, p pendingHandback) {
 	d.Logf("worker.handback_replay worker=%s head=%s", workerID, p.Head)
 	_, err := d.finishHandback(context.Background(), w, t, handbackCheckPlan{result: check, head: p.Head}, run)
 	deferred := errors.Is(err, errHandbackDeferred)
-	if run != nil {
-		d.wmu.Lock()
-		if w.checkRun == run {
-			w.checkRun, w.checking = nil, deferred
-		}
-		d.wmu.Unlock()
+	d.wmu.Lock()
+	if d.checkRuns[workerID] == run {
+		delete(d.checkRuns, workerID)
+		w.checking = deferred
 	}
+	d.wmu.Unlock()
 	if deferred {
 		return
 	}

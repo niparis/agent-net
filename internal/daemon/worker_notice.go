@@ -1128,6 +1128,9 @@ type handbackTail struct {
 	check                     *protocol.HandbackCheck
 	recorded                  bool
 	changeID, deliveryProblem string
+	// stats is the worker's usage, read before a worker that ended at its
+	// hand-back stopped (endAtHandback).
+	stats *workerStats
 }
 
 // handbackFlow records a hand-back and sends its notice. With early set, a
@@ -1244,26 +1247,47 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 }
 
 // handbackCheckRun is one running check of a worker. A newer hand-back on a
-// new head cancels it and takes its place.
+// new head cancels it and takes its place. The daemon keeps it by worker ID,
+// not on the worker: the worker ends at its hand-back, and a later run of the
+// same worker (a follow-up message) must still find and replace it.
 type handbackCheckRun struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	head   string
+	ctx       context.Context
+	cancel    context.CancelFunc
+	head      string
+	sessionID string
+	// running is false while the check waits for the machine's test slot.
+	running atomic.Bool
 }
 
-// startHandbackCheck starts the check, the change and the notice in the
-// background and answers the worker at once. A check that already runs on the
-// same head is not started again; a new head cancels the old check first. The
-// second result says whether the background run took over the snapshot files.
+// checkState is what a worker list shows for the run.
+func (r *handbackCheckRun) checkState() string {
+	if r.running.Load() {
+		return protocol.HandbackCheckRunning
+	}
+	return protocol.HandbackCheckQueued
+}
+
+// startHandbackCheck answers the worker at once and ends it as done: its run
+// is over, so it frees its worker slot and shows its end while the check
+// waits for the machine's test slot. The check, the change and the notice
+// follow in the background. A check that already runs on the same head is not
+// started again; a new head cancels the old check first. The second result
+// says whether the background run took over the snapshot files.
 func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackTail, plan handbackCheckPlan) (*protocol.WorkerHandbackResult, bool, error) {
 	out := &protocol.WorkerHandbackResult{Status: t.req.Status, Complete: true, Checking: true,
-		Note: "handed back; the check runs now and its result comes in the notice to the caller; you can end"}
+		Note: "handed back; you end now, and the check runs on its own: its result comes in the notice to the caller"}
 	d.wmu.Lock()
-	if old := w.checkRun; old != nil {
+	// A worker with queued messages runs them after its notice (see
+	// finishHandback), so it keeps running until then.
+	endNow := len(w.turnQueue) == 0 && w.codex == nil
+	if old := d.checkRuns[w.id]; old != nil {
 		if old.head == plan.head {
 			d.wmu.Unlock()
 			d.Logf("worker.handback worker=%s head=%s already_checking=1", w.id, plan.head)
 			out.Note = "already handed back; check running"
+			if endNow {
+				d.goBackground(func() { d.endAtHandback(w, t) })
+			}
 			return out, false, nil
 		}
 		old.cancel()
@@ -1271,19 +1295,29 @@ func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackT
 	// The run lasts until its notice is sent, not until the request ends.
 	baseCtx := context.WithoutCancel(ctx)
 	runCtx, cancel := context.WithCancel(baseCtx)
-	run := &handbackCheckRun{ctx: runCtx, cancel: cancel, head: plan.head}
-	w.checkRun = run
+	run := &handbackCheckRun{ctx: runCtx, cancel: cancel, head: plan.head, sessionID: w.sessionID}
+	if d.checkRuns == nil {
+		d.checkRuns = map[string]*handbackCheckRun{}
+	}
+	d.checkRuns[w.id] = run
 	// Mark the check: the tick must not end the worker by age or idleness
-	// while the project's command runs.
+	// before the end below begins.
 	w.checking = true
 	d.wmu.Unlock()
-	stopping := func() (*protocol.WorkerHandbackResult, bool, error) {
-		cancel()
+	if !endNow {
+		out.Note = "handed back; the check runs now and its result comes in the notice to the caller"
+	}
+	release := func(held bool) {
 		d.wmu.Lock()
-		if w.checkRun == run {
-			w.checkRun, w.checking = nil, false
+		if d.checkRuns[w.id] == run {
+			delete(d.checkRuns, w.id)
+			w.checking = held
 		}
 		d.wmu.Unlock()
+	}
+	stopping := func() (*protocol.WorkerHandbackResult, bool, error) {
+		cancel()
+		release(false)
 		return nil, false, errDaemonStopping
 	}
 	if !d.holdCheck() {
@@ -1295,6 +1329,9 @@ func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackT
 	started := d.goBackground(func() {
 		defer d.checks.Done()
 		defer cancel()
+		if endNow {
+			d.endAtHandback(w, t)
+		}
 		// Only the check stops when a newer hand-back replaces this one; the
 		// change and the notice use a context that stays open.
 		_, err := d.finishHandback(baseCtx, w, t, plan, run)
@@ -1307,12 +1344,12 @@ func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackT
 		}
 		// The run stays registered until its notice is sent, so a repeated
 		// hand-back on this head never starts a second check. A saved
-		// hand-back still owns the worker's end: no nudge and no idle end.
-		d.wmu.Lock()
-		if w.checkRun == run {
-			w.checkRun, w.checking = nil, deferred
-		}
-		d.wmu.Unlock()
+		// hand-back of a worker that still runs owns its end: no nudge and no
+		// idle end.
+		release(deferred)
+		// The ended worker's row in a list keeps its end for a while after
+		// the notice, as for any other end.
+		d.touchRecent(run.sessionID, time.Now())
 	})
 	if !started {
 		d.checks.Done()
@@ -1322,6 +1359,28 @@ func (d *Daemon) startHandbackCheck(ctx context.Context, w *worker, t *handbackT
 		return stopping()
 	}
 	return out, true, nil
+}
+
+// endAtHandback ends a worker that handed back complete, as done, before its
+// check runs. Its usage is read first, while the harness still runs, so the
+// notice carries it.
+func (d *Daemon) endAtHandback(w *worker, t *handbackTail) {
+	st := d.workerStats(w)
+	t.stats = &st
+	if t.persisted {
+		if err := d.saveHandback(w.id, t); err != nil {
+			d.Logf("worker %s: save the hand-back: %v", w.id, err)
+		}
+	}
+	d.wmu.Lock()
+	w.doneStatus, w.donePartial, w.handbackReport = t.req.Status, false, t.req.Report
+	w.pendingHandback, w.pendingPartial = true, false
+	// The hand-back answers the last request; the notice only adds the check.
+	w.noticeSinceRequest = true
+	d.saveWorkerLocked(w)
+	d.wmu.Unlock()
+	d.Logf("worker.handback worker=%s session=%s status=%s complete=true ended_before_check=1", w.id, t.sessionID, t.req.Status)
+	d.endWorker(w, protocol.StopHandback)
 }
 
 // errDaemonStopping refuses a hand-back that arrives while the daemon stops:
@@ -1355,9 +1414,9 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail,
 			if run != nil {
 				runCtx = run.ctx
 			}
-			handbackCheck = d.runHandbackCheckPlan(runCtx, plan)
+			handbackCheck = d.runHandbackCheckPlan(runCtx, plan, run)
 			d.wmu.Lock()
-			superseded := run != nil && w.checkRun != run
+			superseded := run != nil && d.checkRuns[w.id] != run
 			if !superseded && run == nil {
 				w.checking = false
 			}
@@ -1382,7 +1441,12 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail,
 			t.recorded, t.changeID, t.deliveryProblem = true, changeID, deliveryProblem
 		}
 	}
-	st := d.workerStats(w)
+	var st workerStats
+	if t.stats != nil {
+		st = *t.stats
+	} else {
+		st = d.workerStats(w)
+	}
 	d.wmu.Lock()
 	pending, cc := len(w.turnQueue) > 0, w.codex
 	d.wmu.Unlock()

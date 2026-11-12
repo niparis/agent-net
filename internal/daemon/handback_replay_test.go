@@ -22,7 +22,8 @@ type savedHandback struct {
 
 func startSavedHandback(t *testing.T, autoContinue *bool) *savedHandback {
 	t.Helper()
-	a := startAsyncCheckWith(t, autoContinue)
+	a := startAsyncCheckWith(t, autoContinue, queueSet)
+	workerID := a.workerID(t)
 	proof := filepath.Join(a.res.Worktree, "proof.txt")
 	if err := os.WriteFile(proof, []byte("proof\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -33,10 +34,37 @@ func startSavedHandback(t *testing.T, autoContinue *bool) *savedHandback {
 		t.Fatalf("handback: %+v %v", out, err)
 	}
 	a.waitStarts(t, 1)
-	s := &savedHandback{asyncCheck: a, workerID: a.w.d.workerBySession(a.res.SessionID).id,
+	s := &savedHandback{asyncCheck: a, workerID: workerID,
 		head: gitOutT(t, a.res.Worktree, "rev-parse", "HEAD"), gatewayDir: a.g.dir, gatewayAddr: a.g.addr}
-	a.g.stop()
-	eventually(t, "the daemon sees the gateway go", func() bool { return !a.w.d.Connected() })
+	s.gatewayDown(t)
+	return s
+}
+
+func (s *savedHandback) gatewayDown(t *testing.T) {
+	t.Helper()
+	s.g.stop()
+	eventually(t, "the daemon sees the gateway go", func() bool { return !s.w.d.Connected() })
+}
+
+// startLiveSavedHandback is a worker that still runs while its complete
+// hand-back is saved: a worker with queued messages runs them before it ends,
+// and the daemon may stop before its notice. The row is saved as
+// handbackFlow saves it.
+func startLiveSavedHandback(t *testing.T, autoContinue *bool) *savedHandback {
+	t.Helper()
+	a := startAsyncCheckWith(t, autoContinue, queueSet)
+	wk := a.w.d.workerBySession(a.res.SessionID)
+	gitIn(t, a.res.Worktree, "add", "-A")
+	gitIn(t, a.res.Worktree, "commit", "-q", "-m", "work")
+	s := &savedHandback{asyncCheck: a, workerID: wk.id, head: gitOutT(t, a.res.Worktree, "rev-parse", "HEAD"),
+		gatewayDir: a.g.dir, gatewayAddr: a.g.addr}
+	tail := &handbackTail{req: protocol.WorkerHandbackRequest{Report: "the report of the saved hand-back", Status: protocol.StatusDone},
+		end: true, sessionID: a.res.SessionID, complete: true}
+	a.w.d.persistHandback(wk, tail, s.head)
+	if !tail.persisted {
+		t.Fatal("the hand-back was not saved")
+	}
+	s.gatewayDown(t)
 	return s
 }
 
@@ -101,7 +129,7 @@ func TestHandbackSavedWhileGatewayDownIsRecordedAfterRestart(t *testing.T) {
 // send it an automatic continue or an idle notice. Before, the adopted worker
 // looked like one that stopped early, and got continue nudges.
 func TestSavedHandbackWorkerGetsNoNudge(t *testing.T) {
-	s := startSavedHandback(t, nil)
+	s := startLiveSavedHandback(t, nil)
 	s.w.node.restartWith(nil, false)
 	w := s.w.d.workerBySession(s.res.SessionID)
 	if w == nil {
@@ -208,7 +236,7 @@ func TestSlowResumeAnswersBeforeTheGatewayGivesUp(t *testing.T) {
 // still records the change and sends the notice, it is not reported as lost,
 // and its session can be started again like any worker that handed back.
 func TestSavedHandbackOfWorkerThatEndedWhileDaemonWasDown(t *testing.T) {
-	s := startSavedHandback(t, autoContinueOff())
+	s := startLiveSavedHandback(t, autoContinueOff())
 	s.w.d.wmu.Lock()
 	pgid := s.w.d.workers[s.workerID].pgid
 	s.w.d.wmu.Unlock()
@@ -224,9 +252,6 @@ func TestSavedHandbackOfWorkerThatEndedWhileDaemonWasDown(t *testing.T) {
 	n := s.w.waitNotice(t, 1)[0]
 	if !strings.Contains(n.Body, "the report of the saved hand-back") || strings.Contains(n.Body, "lost") {
 		t.Fatalf("notice:\n%s", n.Body)
-	}
-	if len(n.Files) != 1 {
-		t.Fatalf("notice files: %+v", n.Files)
 	}
 	if change := changeView(t, g2, noticeChangeID(t, n.Body)); change.Change.HeadCommit != s.head {
 		t.Errorf("change head %s, want %s", change.Change.HeadCommit, s.head)
