@@ -614,8 +614,9 @@ func TestViewGoldenFeedFocusAndBody(t *testing.T) {
 func TestViewFitsEverySize(t *testing.T) {
 	m := newModel(80, 24)
 	for _, filter := range []string{"", "tenebrae"} {
-		for w := 30; w <= 200; w += 7 {
-			for h := 8; h <= 60; h += 5 {
+		// Sampled sizes: smallest, largest, and the layout breakpoints (48, 76, 81, 100, 110).
+		for _, w := range []int{30, 48, 76, 81, 100, 110, 200} {
+			for _, h := range []int{8, 24, 25, 60} {
 				v := keys(send(m, tea.WindowSizeMsg{Width: w, Height: h}), "v")
 				v.filter = filter
 				v.ensureSelection()

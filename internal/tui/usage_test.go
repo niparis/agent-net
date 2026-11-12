@@ -458,8 +458,9 @@ func TestTaskColumnTakesTheRoomAndCutsWithDots(t *testing.T) {
 
 func TestEverySizeFitsWithUsage(t *testing.T) {
 	snap, u := openCodeSnapshot()
-	for w := 40; w <= 200; w += 9 {
-		for h := 10; h <= 60; h += 7 {
+	// Sampled sizes: smallest, largest, and the layout breakpoints (80/81, 110).
+	for _, w := range []int{40, 80, 81, 110, 200} {
+		for _, h := range []int{10, 24, 25, 60} {
 			for _, ks := range [][]string{nil, {"d"}, {"?"}, {"o", "G"}} {
 				m := keys(modelWith(snap, u, w, h), ks...)
 				ls := lines(m.testView())

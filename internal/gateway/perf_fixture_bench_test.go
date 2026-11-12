@@ -26,6 +26,13 @@ type benchFixture struct {
 
 func newBenchFixture(b testing.TB) *benchFixture {
 	b.Helper()
+	return newBenchFixtureChanges(b, 300)
+}
+
+// newBenchFixtureChanges is newBenchFixture with a chosen number of changes,
+// for tests that do not read changes and only need the nodes and sessions.
+func newBenchFixtureChanges(b testing.TB, changes int) *benchFixture {
+	b.Helper()
 	s, err := OpenStore(filepath.Join(b.TempDir(), "gw.db"))
 	if err != nil {
 		b.Fatal(err)
@@ -60,7 +67,7 @@ func newBenchFixture(b testing.TB) *benchFixture {
 		f.ids = append(f.ids, id)
 		f.idNode[id] = node
 	}
-	for i := 0; i < 300; i++ {
+	for i := 0; i < changes; i++ {
 		id := f.ids[i%len(f.ids)]
 		_, err := s.SubmitChange(f.idNode[id], protocol.ChangeSubmitRequest{SessionID: id, Project: fmt.Sprintf("proj%02d", i%20),
 			Branch: fmt.Sprintf("feature/b%d", i), TargetBranch: "main", BaseCommit: fmt.Sprintf("%040x", i), HeadCommit: fmt.Sprintf("%040x", i+1000),

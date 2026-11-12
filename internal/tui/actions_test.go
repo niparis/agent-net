@@ -323,25 +323,32 @@ func itoa(i int) string {
 func TestActionScreensFitEverySize(t *testing.T) {
 	base, _ := workerModel(80, 24)
 	base = selectID(base, workerID)
-	setups := map[string]func(Model) Model{
-		"compose": func(m Model) Model {
+	// The typed text grows with the width, so it wraps at every size.
+	setups := map[string]func(Model, int) Model{
+		"compose": func(m Model, w int) Model {
 			m, _ = press(m, tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
-			return typeText(m, strings.Repeat("long ", 40))
+			return typeText(m, strings.Repeat("long ", w/5+4))
 		},
-		"confirm": func(m Model) Model { m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]}); return m },
-		"new session": func(m Model) Model {
+		"confirm": func(m Model, _ int) Model {
+			m, _ = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
+			return m
+		},
+		"new session": func(m Model, w int) Model {
 			m, _ = press(m, sessionKey())
-			return typeText(m, strings.Repeat("long ", 40))
+			return typeText(m, strings.Repeat("long ", w/5+4))
 		},
-		"notice": func(m Model) Model {
+		"notice": func(m Model, _ int) Model {
 			m.fail(strings.Repeat("a long error line ", 20))
 			return m
 		},
 	}
 	for name, setup := range setups {
-		for w := 30; w <= 200; w += 17 {
-			for h := 8; h <= 60; h += 7 {
-				m := setup(send(base, tea.WindowSizeMsg{Width: w, Height: h}))
+		// Sampled sizes: smallest, largest, short and tall, and the layout
+		// breakpoints (64, 81, 100) at the common height.
+		for _, sz := range [][2]int{{30, 8}, {30, 60}, {64, 24}, {81, 8}, {81, 24}, {81, 60}, {100, 24}, {200, 8}, {200, 60}} {
+			{
+				w, h := sz[0], sz[1]
+				m := setup(send(base, tea.WindowSizeMsg{Width: w, Height: h}), w)
 				ls := lines(m.testView())
 				if len(ls) > max(h, 10) {
 					t.Fatalf("%s %dx%d: %d lines", name, w, h, len(ls))

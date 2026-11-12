@@ -33,8 +33,8 @@ func handleBytes(t *testing.T, g *Gateway, node, typ string, params any) []byte 
 // agent row carries the whole effective charter of its project. The TUI never
 // draws that copy; it reads the graph for charters.
 func TestTUIAgentsLiteCutsBytes(t *testing.T) {
-	f := newBenchFixture(t)
-	long := strings.Repeat("x", 2000)
+	f := newBenchFixtureChanges(t, 0) // the agents and nodes queries do not read changes
+	long := strings.Repeat("x", 600)
 	for i := 0; i < 20; i++ {
 		project := fmt.Sprintf("proj%02d", i)
 		for _, attr := range []string{"purpose", "maturity_note", "accepts", "refuses", "feature_requests"} {
@@ -67,7 +67,7 @@ func TestTUIAgentsLiteCutsBytes(t *testing.T) {
 // TestTUIVersionMatchesSendNoAgentsOrNodes says a safety refresh whose topic
 // did not move costs almost nothing.
 func TestTUIVersionMatchesSendNoAgentsOrNodes(t *testing.T) {
-	f := newBenchFixture(t)
+	f := newBenchFixtureChanges(t, 0) // the agents and nodes queries do not read changes
 	for _, tc := range []struct {
 		name   string
 		typ    string

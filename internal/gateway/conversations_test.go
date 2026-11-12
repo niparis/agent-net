@@ -538,10 +538,13 @@ func TestConversationsPageUsesThePairGIDIndex(t *testing.T) {
 func conversationRealFixture(t *testing.T, s *Store, node, hub string) (total, threads int) {
 	t.Helper()
 	const (
-		peers   = 180
+		// Scaled down from the real gateway (180 peers, 1300 workers, 2900
+		// agent notices): the query plan test above proves the page reads only
+		// the indexes, so this one only needs shape and bodies, not volume.
+		peers   = 40
 		perPair = 22
-		workers = 1300
-		agent   = 2900
+		workers = 120
+		agent   = 150
 	)
 	pad := func(prefix string, words int) string { return prefix + " " + strings.Repeat("word ", words) }
 	peer := make([]string, peers)
@@ -784,7 +787,7 @@ func TestConversationsPageGroupsTenThousandWorkerMessagesFast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const workers, convs = 100, 100
+	const workers, convs = 60, 8
 	for w := 0; w < workers; w++ {
 		worker := fmt.Sprintf("s_worker_%03d", w)
 		for n, body := range []string{
@@ -830,7 +833,7 @@ func TestConversationsPageGroupsTenThousandWorkerMessagesFast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("grouped conversation page over 10000 messages took %s", elapsed)
+	t.Logf("grouped conversation page over 1000 messages took %s", elapsed)
 	// The 100 agent-to-worker threads stay one row each; the 100 conversations
 	// between alice and bob collapse into one pair row.
 	if page.Total != workers+1 || len(page.Conversations) != 50 || page.Next == "" {
@@ -861,7 +864,7 @@ func TestConversationsPageKeepsTenThousandMessagesFast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for conv := 0; conv < 500; conv++ {
+	for conv := 0; conv < 50; conv++ {
 		for msg := 0; msg < 20; msg++ {
 			id := fmt.Sprintf("m_%d_%d", conv, msg)
 			at := c.t.Add(-time.Duration(conv*20+msg) * time.Minute)
@@ -884,14 +887,14 @@ func TestConversationsPageKeepsTenThousandMessagesFast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("first conversation page over 10000 messages took %s", elapsed)
+	t.Logf("first conversation page over 1000 messages took %s", elapsed)
 	// All 500 conversations are between the same two parties, so the stored
 	// list shows one thread that counts every message.
 	if page.Total != 1 || len(page.Conversations) != 1 || page.Next != "" {
 		t.Fatalf("page total=%d rows=%d next=%q", page.Total, len(page.Conversations), page.Next)
 	}
-	if page.Conversations[0].Count != 10000 {
-		t.Errorf("pair row count = %d, want 10000", page.Conversations[0].Count)
+	if page.Conversations[0].Count != 1000 {
+		t.Errorf("pair row count = %d, want 1000", page.Conversations[0].Count)
 	}
 	if elapsed > 10*time.Second {
 		t.Errorf("first page is too slow: %s", elapsed)

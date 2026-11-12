@@ -21,14 +21,19 @@ func TestHelpListsSettings(t *testing.T) {
 func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 	m := keys(newModel(80, 24), "?", "?")
 	var seen strings.Builder
-	for i := 0; i < len(m.helpContent(80))+20; i++ {
+	// Scroll a few lines per frame, fewer than the lines the help shows at
+	// 80x24, so every line still appears in some frame.
+	const step = 6
+	for i := 0; i < (len(m.helpContent(80))+20)/step+1; i++ {
 		v := ansi.Strip(m.testView())
 		if strings.Contains(v, "…") {
 			t.Fatalf("help has an ellipsis:\n%s", v)
 		}
 		seen.WriteString(v)
 		seen.WriteByte('\n')
-		m = keys(m, "down")
+		for j := 0; j < step; j++ {
+			m = keys(m, "down")
+		}
 	}
 	all := strings.Join(strings.Fields(seen.String()), " ")
 	for _, line := range m.helpContent(80) {
