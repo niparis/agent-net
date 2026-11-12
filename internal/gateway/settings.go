@@ -66,7 +66,8 @@ func bumpSettingsRevision(tx *sql.Tx) error {
 
 // settingsTables are the tables settingsSnapshotTx reads. Keep it equal to the
 // queries there (see readThrough).
-var settingsTables = []string{"setting_revision", "setting_values", "graph_charter", "graph_edges", "repos", "team_members", "teams"}
+var settingsTables = []string{"setting_revision", "setting_values", "graph_charter", "graph_edges",
+	"repos.id", "repos.owner_agent_id", "teams", "team_members"}
 
 // SettingsSnapshot reads all settings. The read is kept until one of
 // settingsTables is written, and each caller gets a copy.
