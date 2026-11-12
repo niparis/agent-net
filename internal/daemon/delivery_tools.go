@@ -638,6 +638,48 @@ func deliveryDiffStat(stat string) string {
 
 const handbackUncommittedPushProblem = "the branch was not pushed for the remote step owner because the worktree has uncommitted changes"
 
+// openChangeAtBase returns the open change of project whose head is the commit
+// the worker started from: that commit is the head of the change's branch. Only
+// a change of the same caller can take the work, because the gateway refuses a
+// submit from another session's change.
+func (d *Daemon) openChangeAtBase(ctx context.Context, project, base, owner string) string {
+	if project == "" || owner == "" || !protocol.ValidCommit(base) {
+		return ""
+	}
+	var list protocol.ChangeListResult
+	q := protocol.ChangeListRequest{Project: project, State: protocol.ChangeOpen, Limit: 100} // the change.list maximum
+	if err := d.deliveryCall(ctx, protocol.FrameChangeList, q, &list); err != nil {
+		return ""
+	}
+	for _, v := range list.Changes {
+		if v.Change.HeadCommit == base && v.Change.Caller == owner {
+			return v.Change.ID
+		}
+	}
+	return ""
+}
+
+// handbackDiffBase is the commit a change is measured from: the merge-base of
+// its head with the project's default branch. A worker that rebased onto a
+// newer default branch would otherwise count other people's commits in its
+// diff stat and signals, because its start commit is no longer an ancestor. A
+// missing default branch or merge-base keeps the start commit.
+func handbackDiffBase(ctx context.Context, dir, start, head string) string {
+	if !protocol.ValidCommit(start) || !protocol.ValidCommit(head) || head == start {
+		return start
+	}
+	target := cleanupDefaultBranch(ctx, dir, "")
+	if target == "" {
+		return start
+	}
+	for _, ref := range []string{target, "origin/" + target} {
+		if base, err := gitOut(ctx, dir, "merge-base", ref, head); err == nil && protocol.ValidCommit(base) {
+			return base
+		}
+	}
+	return start
+}
+
 // recordHandbackChange submits the change of a worker's complete hand-back
 // (origin worker), after commitAtHandback made the head hold the work. The
 // caller is the worker's owner. A continued worker carries the change of the
@@ -700,18 +742,25 @@ func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker, check *pro
 	if err := d.st.db.QueryRow(`SELECT risk FROM worker_delivery_risk WHERE worker_id=?`, w.id).Scan(&risk); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fail(fmt.Errorf("read delivery risk: %w", err))
 	}
-	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: base,
-		HeadCommit: head, Uncommitted: uncommitted, Risk: risk, SensitivePath: deliverySensitivePath(ctx, dir, base, head), Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
+	// A worker started on the branch of an open change continues that change:
+	// its hand-back is its next revision, not a second change. Only a change of
+	// the same caller can take the work.
+	if kept == "" {
+		kept = d.openChangeAtBase(ctx, project, base, owner)
+	}
+	diffBase := handbackDiffBase(ctx, dir, base, head)
+	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: diffBase,
+		HeadCommit: head, Uncommitted: uncommitted, Risk: risk, SensitivePath: deliverySensitivePath(ctx, dir, diffBase, head), Title: strings.TrimSpace(strings.SplitN(title, "\n", 2)[0]), Difficulty: difficulty,
 		HandbackCheck: check, Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, WorkerID: w.id, SessionID: sid, Model: model, Struggle: struggle}}
 	var visualDiff string
 	if len(visual) > 0 {
 		q.Origin.VisualEvidence = &visual[0]
 	}
-	if base != "" {
-		if stat, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil {
+	if diffBase != "" {
+		if stat, err := gitOut(ctx, dir, "diff", "--stat", diffBase); err == nil {
 			q.DiffStat = deliveryDiffStat(stat)
 		}
-		if patch, err := gitOut(ctx, dir, "diff", "-U0", base, head, "--"); err == nil {
+		if patch, err := gitOut(ctx, dir, "diff", "-U0", diffBase, head, "--"); err == nil {
 			visualDiff = patch
 			q.Signals = quality.Signals(patch, difficulty)
 		}
