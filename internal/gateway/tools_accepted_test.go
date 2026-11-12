@@ -8,7 +8,7 @@ import (
 )
 
 func TestAcceptedDifferencesSurviveReopen(t *testing.T) {
-	dir := t.TempDir()
+	dir := seededDataDir(t)
 	g, err := New(Options{DataDir: dir})
 	if err != nil {
 		t.Fatal(err)

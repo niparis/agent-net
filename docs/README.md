@@ -10,6 +10,7 @@
 - [reference.md](reference.md): ports, files, environment variables, flags, and what setup changes on your machine.
 - [security.md](security.md): the trust model, and what agent-net does not protect against.
 - [troubleshooting.md](troubleshooting.md): first checks and fixes for common problems.
+- [test-speed.md](test-speed.md): what made the slowest tests slow and how each was fixed (2026-11-12).
 - [agent-guidance.md](agent-guidance.md): the text agent-net adds to your agents' instruction files.
 - [../plugins/pi/README.md](../plugins/pi/README.md): the Pi extension.
 - [mcp-registry.md](mcp-registry.md): the shared MCP server registry (tools of one machine's servers, used by agents on all machines).

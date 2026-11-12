@@ -43,9 +43,10 @@ func TestAutoContinuePartialHandbackStopsAtTwo(t *testing.T) {
 		row := reworkRow(t, w, res.SessionID)
 		return row.AutoContinueCount == 2 && row.AutoContinueRun == 2 && fakeAutoContinueCount(repo) == 2
 	})
-	if got := len(w.notices(t)); got != 0 {
-		t.Fatalf("the caller got %d notices after the second automatic continue, want none", got)
-	}
+	// No check for "no notice yet" here: the worker hands back a third time as
+	// soon as it gets the second continue, so the notice can already be in
+	// when this line runs. The end of the test checks that the caller got
+	// exactly one notice, which covers the same thing without a race.
 
 	// The third partial hand-back is not continued: the caller is told.
 	n := w.waitNotice(t, 1)[0]
@@ -56,6 +57,9 @@ func TestAutoContinuePartialHandbackStopsAtTwo(t *testing.T) {
 		t.Errorf("the notice facts do not carry the automatic continues:\n%s", n.Body)
 	}
 	eventually(t, "the worker ends after the third partial hand-back", func() bool { return w.d.workerCount() == 0 })
+	if got := len(w.notices(t)); got != 1 {
+		t.Fatalf("the caller got %d notices, want only the one for the third hand-back", got)
+	}
 	row := reworkRow(t, w, res.SessionID)
 	if row.AutoContinueCount != 2 || row.AutoContinueRun != 2 {
 		t.Errorf("the worker record: auto continues %d/%d", row.AutoContinueCount, row.AutoContinueRun)

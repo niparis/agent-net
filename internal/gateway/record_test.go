@@ -542,7 +542,7 @@ func TestOfflineSessionClockStartsWhenItGoesOffline(t *testing.T) {
 }
 
 func TestRunRetentionPrunesAtStart(t *testing.T) {
-	data := t.TempDir()
+	data := seededDataDir(t)
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	gw, err := New(Options{DataDir: data, Now: func() time.Time { return now }, Retention: DefaultRetention()})
 	if err != nil {

@@ -15,7 +15,7 @@ import (
 
 func newInstallGateway(t *testing.T) (*Gateway, string) {
 	t.Helper()
-	data, dist := t.TempDir(), t.TempDir()
+	data, dist := seededDataDir(t), t.TempDir()
 	gw, err := New(Options{DataDir: data, DistDir: dist})
 	if err != nil {
 		t.Fatal(err)

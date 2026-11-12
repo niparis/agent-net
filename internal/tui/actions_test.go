@@ -323,6 +323,9 @@ func itoa(i int) string {
 func TestActionScreensFitEverySize(t *testing.T) {
 	base, _ := workerModel(80, 24)
 	base = selectID(base, workerID)
+	// Each screen is set up once. Typing is the slow part (every key redraws the
+	// lists), and a resize keeps what was typed, so the same long text wraps
+	// at every size below.
 	setups := map[string]func(Model) Model{
 		"compose": func(m Model) Model {
 			m, _ = press(m, tea.KeyPressMsg{Text: "m", Code: []rune("m")[0]})
@@ -339,9 +342,10 @@ func TestActionScreensFitEverySize(t *testing.T) {
 		},
 	}
 	for name, setup := range setups {
+		open := setup(base)
 		for w := 30; w <= 200; w += 17 {
 			for h := 8; h <= 60; h += 7 {
-				m := setup(send(base, tea.WindowSizeMsg{Width: w, Height: h}))
+				m := send(open, tea.WindowSizeMsg{Width: w, Height: h})
 				ls := lines(m.testView())
 				if len(ls) > max(h, 10) {
 					t.Fatalf("%s %dx%d: %d lines", name, w, h, len(ls))

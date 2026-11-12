@@ -52,7 +52,7 @@ func TestAppsPublicOwnerFacingFunnelErrors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			g, err := New(Options{DataDir: t.TempDir(), AppsListen: "127.0.0.1:0", FunnelRunner: ownerErrorRunner{kind: tt.kind}})
+			g, err := New(Options{DataDir: seededDataDir(t), AppsListen: "127.0.0.1:0", FunnelRunner: ownerErrorRunner{kind: tt.kind}})
 			if err != nil {
 				t.Fatal(err)
 			}

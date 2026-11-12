@@ -6,7 +6,7 @@ import (
 )
 
 func TestInviteLinesFromGatewayData(t *testing.T) {
-	dir := t.TempDir()
+	dir := seededDataDir(t)
 	gw, err := New(Options{DataDir: dir})
 	if err != nil {
 		t.Fatal(err)

@@ -537,12 +537,14 @@ func TestConversationsPageUsesThePairGIDIndex(t *testing.T) {
 // every one of those bodies twice, so body size is part of the fixture.
 func conversationRealFixture(t *testing.T, s *Store, node, hub string) (total, threads int) {
 	t.Helper()
-	const (
-		peers   = 180
-		perPair = 22
-		workers = 1300
-		agent   = 2900
-	)
+	// The real gateway has 180 peers, 1300 workers and 2900 agent notices. Each
+	// row costs about 2 ms to insert under the race detector, so a race run
+	// uses a smaller fixture with the same shape and bodies: the query plan
+	// test above proves the page reads only the indexes.
+	peers, perPair, workers, agent := 180, 22, 1300, 2900
+	if raceEnabled {
+		peers, workers, agent = 40, 120, 150
+	}
 	pad := func(prefix string, words int) string { return prefix + " " + strings.Repeat("word ", words) }
 	peer := make([]string, peers)
 	for i := range peer {
@@ -784,7 +786,12 @@ func TestConversationsPageGroupsTenThousandWorkerMessagesFast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const workers, convs = 100, 100
+	// 100 workers and 100 conversations of 97 messages without the race
+	// detector; about 1000 messages with it, where every insert is slow.
+	workers, convs := 100, 100
+	if raceEnabled {
+		workers, convs = 60, 8
+	}
 	for w := 0; w < workers; w++ {
 		worker := fmt.Sprintf("s_worker_%03d", w)
 		for n, body := range []string{
@@ -830,8 +837,8 @@ func TestConversationsPageGroupsTenThousandWorkerMessagesFast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("grouped conversation page over 10000 messages took %s", elapsed)
-	// The 100 agent-to-worker threads stay one row each; the 100 conversations
+	t.Logf("grouped conversation page over %d messages took %s", workers*3+convs*97, elapsed)
+	// The agent-to-worker threads stay one row each; the conversations
 	// between alice and bob collapse into one pair row.
 	if page.Total != workers+1 || len(page.Conversations) != 50 || page.Next == "" {
 		t.Fatalf("page total=%d rows=%d next=%q", page.Total, len(page.Conversations), page.Next)
@@ -861,7 +868,13 @@ func TestConversationsPageKeepsTenThousandMessagesFast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for conv := 0; conv < 500; conv++ {
+	// 500 conversations of 20 messages; 50 under the race detector, where every
+	// insert is slow.
+	convs := 500
+	if raceEnabled {
+		convs = 50
+	}
+	for conv := 0; conv < convs; conv++ {
 		for msg := 0; msg < 20; msg++ {
 			id := fmt.Sprintf("m_%d_%d", conv, msg)
 			at := c.t.Add(-time.Duration(conv*20+msg) * time.Minute)
@@ -884,14 +897,14 @@ func TestConversationsPageKeepsTenThousandMessagesFast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("first conversation page over 10000 messages took %s", elapsed)
-	// All 500 conversations are between the same two parties, so the stored
+	t.Logf("first conversation page over %d messages took %s", convs*20, elapsed)
+	// All conversations are between the same two parties, so the stored
 	// list shows one thread that counts every message.
 	if page.Total != 1 || len(page.Conversations) != 1 || page.Next != "" {
 		t.Fatalf("page total=%d rows=%d next=%q", page.Total, len(page.Conversations), page.Next)
 	}
-	if page.Conversations[0].Count != 10000 {
-		t.Errorf("pair row count = %d, want 10000", page.Conversations[0].Count)
+	if page.Conversations[0].Count != convs*20 {
+		t.Errorf("pair row count = %d, want %d", page.Conversations[0].Count, convs*20)
 	}
 	if elapsed > 10*time.Second {
 		t.Errorf("first page is too slow: %s", elapsed)

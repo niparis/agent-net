@@ -135,7 +135,7 @@ func TestGraphRefsAgentHistoryAndUndo(t *testing.T) {
 }
 
 func TestGraphRefsAutomaticCutoverBacksUpAndMigratesCharter(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

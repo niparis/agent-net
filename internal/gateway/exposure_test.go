@@ -8,7 +8,7 @@ import (
 
 func TestExposureWarningAppearsWithPublicAddressAndNotWithout(t *testing.T) {
 	// Case 1: listener has a public address -> warning appears
-	gwPublic, err := New(Options{DataDir: t.TempDir()})
+	gwPublic, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestExposureWarningAppearsWithPublicAddressAndNotWithout(t *testing.T) {
 	}
 
 	// Case 2: listener has a private / CGNAT / loopback address -> no warning
-	gwPrivate, err := New(Options{DataDir: t.TempDir()})
+	gwPrivate, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestExposureWarningAppearsWithPublicAddressAndNotWithout(t *testing.T) {
 	}
 
 	// Case 3: 0.0.0.0 with public interface vs without public interface
-	gwAll, err := New(Options{DataDir: t.TempDir()})
+	gwAll, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -211,7 +211,7 @@ func TestOwnerUseNonWorkerCleanupKeepsPinsAndRecentUse(t *testing.T) {
 }
 
 func TestOwnerUseDoesNotArchiveBeforeReconnect(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir(), Retention: DefaultRetention()})
+	g, err := New(Options{DataDir: seededDataDir(t), Retention: DefaultRetention()})
 	if err != nil {
 		t.Fatal(err)
 	}

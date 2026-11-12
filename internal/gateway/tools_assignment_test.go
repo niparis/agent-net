@@ -495,7 +495,7 @@ func TestUninstallPlanShowsOfflineMachinesWithoutObservedCopies(t *testing.T) {
 }
 
 func TestToolApplyRejectsCorruptStoredVersion(t *testing.T) {
-	data := t.TempDir()
+	data := seededDataDir(t)
 	g, err := New(Options{DataDir: data})
 	if err != nil {
 		t.Fatal(err)
