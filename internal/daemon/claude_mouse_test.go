@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -401,5 +402,40 @@ func TestClaudeMouseDriftRetryBacksOffWhileGatewayOffline(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond)
 	if got := calls.Load(); got > 2 {
 		t.Fatalf("desk.note calls while offline = %d, want at most 2 during 1.1 seconds", got)
+	}
+}
+
+const claudeMouseEnvChild = "TEST_CLAUDE_MOUSE_ENV_CHILD"
+
+// TestClaudeMouseTestEnvCannotChangeTests proves TestMain scrubs the launch
+// variables a Claude Code shell exports for its own sessions. A worker test
+// that read the shell's CLAUDE_CODE_DISABLE_MOUSE failed only in such a shell,
+// so the package decides these values, not the caller.
+func TestClaudeMouseTestEnvCannotChangeTests(t *testing.T) {
+	if os.Getenv(claudeMouseEnvChild) == "1" {
+		for _, key := range []string{claudesettings.MouseKey, "CLAUDE_CODE_SESSION_ID", "AGENT_NET_WORKER", "AGENT_NET_TRAILER_WORKER"} {
+			if v, ok := os.LookupEnv(key); ok {
+				t.Fatalf("the tests inherited %s=%s from the shell", key, v)
+			}
+		}
+		if os.Getenv("PATH") == "" {
+			t.Fatal("the scrub removed PATH")
+		}
+		if os.Getenv("AGENT_NET_TEST_SCALE") != "1" {
+			t.Fatal("the scrub removed a test switch")
+		}
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestClaudeMouseTestEnvCannotChangeTests$", "-test.v")
+	cmd.Env = append(os.Environ(),
+		claudeMouseEnvChild+"=1",
+		claudesettings.MouseKey+"=0",
+		"CLAUDE_CODE_SESSION_ID=n_from_the_shell",
+		"AGENT_NET_WORKER=w_from_the_shell",
+		"AGENT_NET_TRAILER_WORKER=from-the-shell",
+		"AGENT_NET_TEST_SCALE=1",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("a Claude Code shell changed the tests: %v\n%s", err, out)
 	}
 }

@@ -77,6 +77,11 @@ func TestMain(m *testing.M) {
 		runFakeOpenCode()
 		return
 	}
+	// A shell that runs the tests can carry the launch settings of its own
+	// agent (a Claude Code session exports CLAUDE_CODE_DISABLE_MOUSE). Worker
+	// launches inherit this process's environment, so drop those values here
+	// once: a test sets what it needs with t.Setenv.
+	scrubLaunchEnv()
 	// The race runtime has already initialized in this process. Child test
 	// binaries do not need its one-second exit delay.
 	os.Setenv("GORACE", "atexit_sleep_ms=0")
@@ -162,6 +167,39 @@ func TestMain(m *testing.M) {
 	}
 	os.RemoveAll(fakes)
 	os.Exit(code)
+}
+
+// launchEnvLeak reports whether a variable from the shell that runs the tests
+// can reach a worker launch or the brief it receives. The daemon passes its own
+// environment on to harnesses and reads these names at launch time. Test
+// switches such as AGENT_NET_TEST_SCALE are not on this list: they choose what
+// the tests do, not how a worker starts.
+func launchEnvLeak(key string) bool {
+	if strings.HasPrefix(key, "CLAUDE_CODE_") || strings.HasPrefix(key, "AGENT_NET_TRAILER_") {
+		return true
+	}
+	switch key {
+	case "CLAUDE_CONFIG_DIR",
+		"AGENT_NET_WORKER",
+		"AGENT_NET_WORKER_SESSION_FILE",
+		"AGENT_NET_CTO",
+		"AGENT_NET_SOCKET",
+		"AGENT_NET_CLAUDE_SESSIONS_DIR",
+		"AGENT_NET_HOME_DIR":
+		return true
+	}
+	return false
+}
+
+// scrubLaunchEnv removes those inherited values once per test run. Tests that
+// need one of them call t.Setenv, so the shell around the tests decides nothing.
+func scrubLaunchEnv() {
+	for _, kv := range os.Environ() {
+		key, _, _ := strings.Cut(kv, "=")
+		if launchEnvLeak(key) {
+			os.Unsetenv(key)
+		}
+	}
 }
 
 // useHelper makes the daemon (this process) pass the helper variable on to hosted servers.
