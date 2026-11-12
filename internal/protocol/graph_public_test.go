@@ -226,3 +226,23 @@ func TestPublicGraphPagesWithTotals(t *testing.T) {
 		t.Fatalf("offset past the end: %+v", over)
 	}
 }
+
+// The public read is what the CTO and every agent read, so the lead level must
+// reach it, and only when the Agent has one.
+func TestPublicGraphCarriesLeadLevel(t *testing.T) {
+	g := Graph{Nodes: []Node{
+		{Name: "lead-agent", Kind: "agent", LeadLevel: LeadLevelGrant},
+		{Name: "plain-agent", Kind: "agent"},
+	}}
+	page := PublicGraph(g, PublicGraphQuery{})
+	raw, err := json.Marshal(page.Nodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"lead_level":"grant"`) {
+		t.Fatalf("lead level missing from the public read: %s", raw)
+	}
+	if strings.Count(string(raw), "lead_level") != 1 {
+		t.Fatalf("lead level shown on a node without one: %s", raw)
+	}
+}

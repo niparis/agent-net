@@ -51,6 +51,7 @@ type PublicGraphNode struct {
 	AgentCount int              `json:"agent_count,omitempty"`
 	OverMax    bool             `json:"over_max,omitempty"`
 	Role       string           `json:"role,omitempty"`
+	LeadLevel  string           `json:"lead_level,omitempty"`
 	Name       string           `json:"name"`
 	Kind       string           `json:"kind,omitempty"`
 	Maturity   string           `json:"maturity,omitempty"`
@@ -172,6 +173,7 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 func publicNode(n Node) PublicGraphNode {
 	return PublicGraphNode{
 		Ref: n.Ref, Owner: n.Owner, Lead: n.Lead, MaxAgents: n.MaxAgents, AgentCount: n.AgentCount, OverMax: n.OverMax, Role: n.Role, Active: n.Active,
+		LeadLevel:  n.LeadLevel,
 		Name:       n.Name,
 		Kind:       n.Kind,
 		Maturity:   n.Charter.Maturity,

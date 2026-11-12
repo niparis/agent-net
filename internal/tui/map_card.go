@@ -425,6 +425,9 @@ func mapLegendLines(w int) []string {
 // in the help overlay.
 func (m Model) mapCardBody(node protocol.Node, w int) []string {
 	var out []string
+	if node.LeadLevel != "" {
+		out = append(out, sDim.Render("lead level")+": "+node.LeadLevel, "")
+	}
 	if p := m.nodePlace(node); hasPlace(p) {
 		out = append(out, section("PLACE", w))
 		out = append(out, placeLines(p, w)...)
