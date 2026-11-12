@@ -3,15 +3,34 @@ package gateway
 import (
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-type clock struct{ t time.Time }
+// clock is the test clock. The gateway reads it from its own goroutines (the
+// link handler, the cutover check) while a test moves it, so both sides take
+// the lock.
+type clock struct {
+	mu sync.Mutex
+	t  time.Time
+}
 
-func (c *clock) now() time.Time { return c.t }
+func (c *clock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+// advance moves the test clock forward, for a machine that stays connected
+// while the gateway's silence windows pass.
+func (c *clock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
 
 func newTestStore(t testing.TB) (*Store, *clock) {
 	t.Helper()

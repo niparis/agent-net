@@ -222,6 +222,10 @@ type nodeConn struct {
 	cancel          context.CancelFunc
 	dead            chan struct{} // closed when the connection ends
 	health          *linkkeepalive.Monitor
+	// lastFrame is the Unix nano time of the last frame of any kind from this
+	// node, keepalive pings and pongs included. A quiet but connected machine
+	// keeps it fresh; a stale last seen never makes a live link look offline.
+	lastFrame *atomic.Int64
 
 	pmu     sync.Mutex
 	nextID  int
@@ -230,6 +234,26 @@ type nodeConn struct {
 
 // errNodeGone means the connection to the node ended before it answered.
 var errNodeGone = errors.New("node is not connected")
+
+// touchFrame records that a frame of any kind arrived from the node. The
+// connection is the proof that the machine is live; this time is its last seen.
+func (nc *nodeConn) touchFrame(t time.Time) {
+	if nc.lastFrame != nil {
+		nc.lastFrame.Store(t.UnixNano())
+	}
+}
+
+// lastFrameTime is when the node last sent any frame, or the zero time when
+// none arrived on this connection.
+func (nc *nodeConn) lastFrameTime() time.Time {
+	if nc.lastFrame == nil {
+		return time.Time{}
+	}
+	if ns := nc.lastFrame.Load(); ns > 0 {
+		return time.Unix(0, ns)
+	}
+	return time.Time{}
+}
 
 // call sends a request to the node and waits for its result frame.
 func (nc *nodeConn) call(ctx context.Context, typ string, params any) (json.RawMessage, error) {
@@ -747,9 +771,13 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	health := linkkeepalive.New()
+	// A keepalive ping or pong from the node is a frame like any other, so a
+	// machine that is quiet but connected still keeps a fresh last seen.
+	var lastFrame atomic.Int64
+	frames := func() { lastFrame.Store(g.store.now().UnixNano()) }
 	ws, err := websocket.Accept(health.ResponseWriter(w), r, &websocket.AcceptOptions{
-		OnPingReceived: func(context.Context, []byte) bool { health.Received(); return true },
-		OnPongReceived: func(context.Context, []byte) { health.Received() },
+		OnPingReceived: func(context.Context, []byte) bool { health.Received(); frames(); return true },
+		OnPongReceived: func(context.Context, []byte) { health.Received(); frames() },
 	})
 	if err != nil {
 		g.machineAuthMu.Unlock()
@@ -757,7 +785,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(4 << 20)
 	ctx, cancel := context.WithCancel(context.Background())
-	nc := &nodeConn{id: nodeID, tokenHash: hashHex(token), ws: ws, cancel: cancel, dead: make(chan struct{}), health: health}
+	nc := &nodeConn{id: nodeID, tokenHash: hashHex(token), ws: ws, cancel: cancel, dead: make(chan struct{}), health: health, lastFrame: &lastFrame}
 	// After cutover require a fresh hello before routing. Its capability
 	// controls Graph access, but older daemons can still connect and upgrade.
 	if on, err := g.store.graphRefsEnabled(); err != nil || on {
@@ -806,6 +834,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 		t.timer.Stop()
 		delete(g.timers, nodeID)
 	}
+	nc.touchFrame(g.store.now())
 	g.mu.Unlock()
 	g.machineAuthMu.Unlock()
 	if old != nil {
@@ -833,7 +862,16 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	}
 	g.mu.Unlock()
 	if dropped {
-		if err := g.store.NodeLinkDown(nodeID, g.store.now()); err != nil {
+		// The outage began with the last frame the machine sent, not with the
+		// moment the gateway noticed the silence.
+		at := nc.lastFrameTime()
+		if at.IsZero() {
+			at = g.store.now()
+		}
+		if err := g.store.SetNodeSeen(nodeID, at); err != nil {
+			g.logLine("error", "where", "node last seen", "err", err)
+		}
+		if err := g.store.NodeLinkDown(nodeID, at); err != nil {
 			g.logLine("error", "where", "node drop", "err", err)
 		}
 	}
@@ -866,6 +904,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 		if err != nil {
 			return
 		}
+		nc.touchFrame(g.store.now())
 		var h protocol.Header
 		if json.Unmarshal(raw, &h) != nil {
 			continue
@@ -1760,7 +1799,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return protocol.NodesInfo{NotModified: true}, nil
 		}
 		if p.Brief {
-			nodes, err := g.nodesWithOnline()
+			nodes, err := g.nodesWithState()
 			return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes}, err
 		}
 		info, err := g.NodesInfo()

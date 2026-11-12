@@ -91,21 +91,36 @@ func writeJSON(w http.ResponseWriter, v any, err error) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// nodesWithOnline is the stored nodes with their connection state. A caller
-// that needs only that (and the harnesses and models a node reports) uses it
-// instead of NodesInfo, which also reads track records, quotas and the quality
-// picks of each node.
-func (g *Gateway) nodesWithOnline() ([]protocol.NodeView, error) {
+// nodesWithState is the stored nodes with their connection state, and the one
+// place the machine state is read from, so the nodes list, agent_machine_get,
+// agent_machines_find and the TUI always agree. A live connection makes a node
+// online and keeps it online while frames arrive on it; LastSeen is when the
+// last frame of any kind arrived. DownState names why a machine is away, or
+// why a live link with no frames reads silent. A caller that needs only that
+// (and the harnesses and models a node reports) uses it instead of NodesInfo,
+// which also reads track records, quotas and the quality picks of each node.
+func (g *Gateway) nodesWithState() ([]protocol.NodeView, error) {
 	nodes, err := g.store.Nodes()
 	if err != nil {
 		return nil, err
 	}
+	now := g.store.now()
 	g.mu.Lock()
 	for i := range nodes {
-		_, nodes[i].Online = g.conns[nodes[i].NodeID]
-		if nodes[i].Online {
-			nodes[i].DownState = ""
-			nodes[i].DownSince = 0
+		nc := g.conns[nodes[i].NodeID]
+		var lastFrame time.Time
+		if nc != nil {
+			lastFrame = nc.lastFrameTime()
+			nodes[i].Online = true
+			if seen := time.Unix(nodes[i].LastSeen, 0); lastFrame.After(seen) {
+				nodes[i].LastSeen = lastFrame.Unix()
+			}
+		}
+		state, since := machineState(nodes[i].Online, lastFrame, now, nodes[i].DownState, nodes[i].DownSince)
+		if state == "online" {
+			nodes[i].DownState, nodes[i].DownSince = "", 0
+		} else {
+			nodes[i].DownState, nodes[i].DownSince = state, since
 		}
 	}
 	g.mu.Unlock()
@@ -115,7 +130,7 @@ func (g *Gateway) nodesWithOnline() ([]protocol.NodeView, error) {
 // NodesInfo lists the nodes with their versions; Online comes from the live
 // connections.
 func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
-	nodes, err := g.nodesWithOnline()
+	nodes, err := g.nodesWithState()
 	if err != nil {
 		return protocol.NodesInfo{}, err
 	}

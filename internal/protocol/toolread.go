@@ -175,8 +175,10 @@ type MachineRow struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Online bool   `json:"online"`
-	// State is "online", "asleep" or "silent". Since says when an asleep or
-	// silent machine last connected, or when it went silent (RFC 3339).
+	// State is "online", "asleep", "silent" or "offline". A machine with a live
+	// link is online, and reads silent only when the link is open but no frame
+	// arrived for 15 minutes. Since says when an asleep or silent machine last
+	// connected, or when it went silent (RFC 3339).
 	State          string       `json:"state"`
 	Since          string       `json:"since,omitempty"`
 	Version        string       `json:"version"`

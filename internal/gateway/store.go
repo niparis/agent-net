@@ -60,7 +60,11 @@ type Store struct {
 	pendingStalls   int
 	leadOutMu       sync.Mutex
 	leadOut         []protocol.Message
-	db              *storeDB
+	// linkMu makes the link down and up writes of a machine take turns, so a
+	// late drop cannot read an old last frame and then write itself on top of
+	// the return that already cleared the outage.
+	linkMu sync.Mutex
+	db     *storeDB
 	// connector opens the database connection. Its write count says when
 	// data read from the database may be out of date.
 	connector *sqlitecache.Connector

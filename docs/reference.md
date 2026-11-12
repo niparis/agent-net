@@ -41,11 +41,16 @@ directly.
 ## Machine states and sleep
 
 A machine row shows one of three states. `online` means its daemon is
-connected now. `asleep since T` means the gateway saw the link drop and the
+connected now. A live link stays online while frames of any kind arrive on it,
+including keepalive pings, and the machine's last seen is the time of the last
+such frame. `asleep since T` means the gateway saw the link drop and the
 daemon reported that the machine slept from T. `silent since T` means the link
 dropped at T and the machine stayed away for 15 minutes without a sleep
-report. A machine that is offline for less than 15 minutes shows only the
-offline dot.
+report; a link that is open but has carried no frame for 15 minutes also reads
+silent. A machine that is offline for less than 15 minutes shows only the
+offline dot. The gateway dates a drop by the last frame it saw, so last seen
+keeps its meaning after the link goes. A late cleanup of a replaced link never
+records an outage on a machine that has already returned.
 
 The gateway raises one Desk item for an outage that stays silent for 15
 minutes: `<machine> went silent at <time> without sleeping; it may be hung`.

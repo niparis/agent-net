@@ -277,7 +277,7 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 		if err != nil {
 			return nil, err
 		}
-		nodes, err := g.nodesWithOnline()
+		nodes, err := g.nodesWithState()
 		if err != nil {
 			return nil, err
 		}
