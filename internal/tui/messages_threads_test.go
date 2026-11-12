@@ -82,8 +82,7 @@ func TestMessageListLoadsEveryStoredThread(t *testing.T) {
 		t.Fatalf("the list did not reach its last row: %d", got)
 	}
 	view = ansi.Strip(strings.Join(m.messagesView(120, 34), "\n"))
-	age := t0.Sub(rows[len(rows)-1].at).Truncate(time.Minute)
-	ageText := strings.TrimSuffix(age.String(), "0s") + " ago"
+	ageText := threadAge(t0.Sub(rows[len(rows)-1].at), true)
 	if !strings.Contains(view, ageText) {
 		t.Fatalf("the oldest thread (%s) is not on screen:\n%s", ageText, view)
 	}

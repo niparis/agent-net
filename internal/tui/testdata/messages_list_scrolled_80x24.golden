@@ -2,17 +2,17 @@
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
-│   ✓ peer21 ↔ strategies · stored conversation 21                21m · 3 msgs │
-│   ✓ peer22 ↔ strategies · stored conversation 22                22m · 3 msgs │
-│   ✓ peer23 ↔ strategies · stored conversation 23                23m · 3 msgs │
-│   ✓ peer24 ↔ strategies · stored conversation 24                24m · 3 msgs │
-│ ▸ ✓ peer25 ↔ strategies · stored conversation 25                25m · 3 msgs │
+│   ✓ peer24 ↔ strategies                                         24m · 3 msgs │
+│     stored conversation 24                                                   │
+│ ▸ ✓ peer25 ↔ strategies                                         25m · 3 msgs │
+│     stored conversation 25                                                   │
 │ 60 threads · 0 system events                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │ peer25 ↔ strategies                                                          │
 │ loading messages                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
 
 
 

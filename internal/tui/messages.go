@@ -247,21 +247,75 @@ func messagePairID(from, to string) string {
 	return "pair:" + from + "\x00" + to
 }
 
-func (m Model) messageConversationLine(c messageConversation, w int, selected bool) string {
-	if c.system {
-		return m.systemConversationLine(c, w, selected)
-	}
-	if c.worker {
-		return m.workerConversationLine(c, w, selected)
-	}
+// messageConversationRow is one thread in the list. Two lines: the names, the
+// flags and the time on the first, the last line of text on the second. A
+// system event is one line, since it has no thread behind it.
+func (m Model) messageConversationRow(c messageConversation, w int, selected bool) []string {
 	if c.event {
 		it := m.feed.items[c.items[0]]
 		line := sDim.Render(clip("  "+m.clock(it.At)+" "+m.infoText(it), w))
 		if selected {
 			line = selectedRow(line)
 		}
-		return line
+		return []string{line}
 	}
+	var head, preview string
+	switch {
+	case c.system:
+		head, preview = m.systemConversationLine(c, w, selected), c.lastLine
+	case c.worker:
+		head, preview = m.workerConversationLine(c, w, selected), m.workerLastLine(c)
+	default:
+		head, preview = m.peerConversationLine(c, w, selected)
+	}
+	return []string{head, m.previewLine(preview, w, selected)}
+}
+
+// previewLine is the second line of a thread row: the last line of text, set
+// in under the names and cut to the row. It is a preview, so it may end in an
+// ellipsis; the pane holds the whole text.
+func (m Model) previewLine(text string, w int, selected bool) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if text == "" {
+		text = "no text yet"
+	}
+	line := sDim.Render(clip(threadBodyIndent+text, w))
+	if selected {
+		line = selectedRow(line)
+	}
+	return line
+}
+
+// workerLastLine is a worker thread's last line of text. A lifecycle or result
+// notice reads as its summary, not as the marker that opens every notice.
+func (m Model) workerLastLine(c messageConversation) string {
+	text := c.lastLine
+	for i := len(c.items) - 1; i >= 0; i-- {
+		it := m.feedItemAt(c.items[i])
+		if it == nil || it.Body == "" || workerNoticeLifecycle(it.Body) {
+			continue
+		}
+		if line, ok := workerNoticeLine(it.Body); ok {
+			return line
+		}
+		break
+	}
+	if strings.HasPrefix(strings.TrimSpace(text), "[agent-net worker notice]") {
+		for i := len(c.items) - 1; i >= 0; i-- {
+			if it := m.feedItemAt(c.items[i]); it != nil {
+				if line, ok := workerNoticeLine(it.Body); ok {
+					return line
+				}
+			}
+		}
+		return "worker notice"
+	}
+	return text
+}
+
+// peerConversationLine is the first line of a peer thread, and the text its
+// second line carries.
+func (m Model) peerConversationLine(c messageConversation, w int, selected bool) (string, string) {
 	from, to := c.from, c.to
 	fromName, toName := c.fromName, c.toName
 	topic, state, typ := c.lastLine, c.state, c.typ
@@ -303,30 +357,19 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	toName = m.partyName(to, toName)
 	toTag := m.typeTag(to, toHarness)
 	if w <= 80 {
-		// Two long peer names leave no room for the preview at 80 columns.
-		fromName = ansi.Truncate(fromName, 14, "…")
-		toName = ansi.Truncate(toName, 14, "…")
+		fromName = ansi.Truncate(fromName, 20, "…")
+		toName = ansi.Truncate(toName, 20, "…")
 	}
 	// The type tag stays after the cut, so "app" or "worker" is never lost.
 	fromName += fromTag
 	toName += toTag
 	names := fromName + " ↔ " + toName
-	age := m.now().Sub(c.at)
-	if age < 0 {
-		age = 0
-	}
-	age = age.Truncate(time.Minute)
-	ageText := strings.TrimSuffix(age.String(), "0s")
-	if age < time.Minute {
-		ageText = "now"
-	} else if m.width > 80 {
-		ageText += " ago"
-	}
+	ageText := threadAge(m.now().Sub(c.at), m.width > 80)
 	lead := "  "
 	if selected {
 		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
-	content := names + " · " + topic
+	content := names
 	count := c.count
 	if count == 0 {
 		count = len(c.items)
@@ -381,7 +424,32 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	if selected {
 		line = selectedRow(line)
 	}
-	return clip(line, w)
+	return clip(line, w), topic
+}
+
+// threadAge is how long ago a thread last moved, in the list's small form:
+// minutes, then hours, then days. A thread a day old is not "30h0m".
+func threadAge(age time.Duration, wide bool) string {
+	if age < time.Minute {
+		return "now"
+	}
+	var text string
+	switch {
+	case age < time.Hour:
+		text = fmt.Sprintf("%dm", int(age.Minutes()))
+	case age < 24*time.Hour:
+		h, min := int(age.Hours()), int(age.Minutes())%60
+		text = fmt.Sprintf("%dh", h)
+		if min > 0 {
+			text += fmt.Sprintf("%02dm", min)
+		}
+	default:
+		text = fmt.Sprintf("%dd", int(age.Hours())/24)
+	}
+	if wide {
+		text += " ago"
+	}
+	return text
 }
 
 // stateMark is the compact state at 80 columns, where the full word would
@@ -699,7 +767,7 @@ func (m Model) conversationChat(c messageConversation, w int) []string {
 // conversation's full messages come from the normal detail read; the older
 // rows keep their stored last line, which is what the page holds.
 func (m Model) systemConversationLines(c messageConversation, w int) []string {
-	out := []string{}
+	var msgs []threadMsg
 	seen := map[string]bool{}
 	if d, ok := m.convDetail[c.convID]; ok && d.err == "" {
 		for i := len(d.msgs) - 1; i >= 0; i-- {
@@ -708,10 +776,11 @@ func (m Model) systemConversationLines(c messageConversation, w int) []string {
 				continue
 			}
 			seen[msg.ID] = true
-			out = append(out, m.messageLines(msg.From, "", msg.FromCTO, msg.OwnerInstruction,
-				m.clock(msg.CreatedAt), msg.Body, false, w)...)
+			msgs = append(msgs, threadMsg{id: msg.ID, parent: msg.ParentID, from: msg.From, fromCTO: msg.FromCTO,
+				ownerInstruction: msg.OwnerInstruction, at: msg.CreatedAt, body: msg.Body})
 		}
 	}
+	out := m.threadLines(msgs, w)
 	for _, line := range c.systemLines {
 		for _, wrapped := range wrap(line, w) {
 			out = append(out, sDim.Render(wrapped))

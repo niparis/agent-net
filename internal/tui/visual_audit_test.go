@@ -144,7 +144,7 @@ func TestVisualAuditFixes(t *testing.T) {
 			at:    t0.Add(-8 * time.Minute),
 			items: []int{0, 1},
 		}
-		line := ansi.Strip(m.messageConversationLine(r, 58, false))
+		line := ansi.Strip(m.messageConversationText(r, 58, false))
 		if !strings.Contains(line, "8m") || !strings.Contains(line, "2 msgs") {
 			t.Errorf("expected abbreviated timestamp/count in 58-col list, got: %q", line)
 		}

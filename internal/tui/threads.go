@@ -437,11 +437,6 @@ func (m Model) visibleConversations(rows []messageConversation) []messageConvers
 			if out[i].today != out[j].today {
 				return out[i].today > out[j].today
 			}
-		} else {
-			ri, rj := m.threadRank(out[i]), m.threadRank(out[j])
-			if ri != rj {
-				return ri < rj
-			}
 		}
 		if out[i].at.Equal(out[j].at) {
 			return out[i].id > out[j].id
@@ -449,19 +444,6 @@ func (m Model) visibleConversations(rows []messageConversation) []messageConvers
 		return out[i].at.After(out[j].at)
 	})
 	return out
-}
-
-// threadRank puts what needs the owner first: an owner instruction, then an
-// unanswered request, then everything else.
-func (m Model) threadRank(c messageConversation) int {
-	switch {
-	case c.ownerNamed || c.ownerInstruction:
-		return 0
-	case m.threadState(c) == "waiting":
-		return 1
-	default:
-		return 2
-	}
 }
 
 // systemThreads groups system messages by kind and recipient. Each stored
@@ -614,18 +596,24 @@ func (m Model) threadLinks(c messageConversation) []string {
 		out = append(out, s)
 	}
 	for _, text := range texts {
-		for _, u := range prURLRE.FindAllString(text, -1) {
-			add(u)
+		for _, link := range linksIn(text) {
+			add(link)
 		}
-		for _, id := range changeLinkRE.FindAllString(text, -1) {
-			add(id)
-		}
-		for _, id := range askLinkRE.FindAllString(text, -1) {
-			add("ask " + id)
-		}
-		for _, m := range prNumberRE.FindAllStringSubmatch(text, -1) {
-			add("PR #" + m[1])
-		}
+	}
+	return out
+}
+
+// linksIn finds the PRs, changes and Desk asks one text names, in the order the
+// thread header lists them: PR URLs, changes, asks, then bare PR numbers.
+func linksIn(text string) []string {
+	var out []string
+	out = append(out, prURLRE.FindAllString(text, -1)...)
+	out = append(out, changeLinkRE.FindAllString(text, -1)...)
+	for _, id := range askLinkRE.FindAllString(text, -1) {
+		out = append(out, "ask "+id)
+	}
+	for _, m := range prNumberRE.FindAllStringSubmatch(text, -1) {
+		out = append(out, "PR #"+m[1])
 	}
 	return out
 }

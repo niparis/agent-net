@@ -57,7 +57,7 @@ func TestCTOTitleOnOwnerScreens(t *testing.T) {
 	if !strings.Contains(chat, "Atlas") || strings.Contains(chat, "CTO") {
 		t.Errorf("Messages sender is not the owner's title:\n%s", chat)
 	}
-	line := ansi.Strip(m.messageConversationLine(rows[0], 100, false))
+	line := ansi.Strip(m.messageConversationText(rows[0], 100, false))
 	if !strings.Contains(line, "Atlas ↔") || strings.Contains(line, "CTO ↔") {
 		t.Errorf("conversation row is not the owner's title: %s", line)
 	}

@@ -137,7 +137,7 @@ func TestWorkerRunCollapsesToOneLineAndExpands(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("the run should collapse to one row: %+v", rows)
 	}
-	line := ansi.Strip(m.messageConversationLine(rows[0], 120, false))
+	line := ansi.Strip(m.messageConversationText(rows[0], 120, false))
 	for _, want := range []string{"tenebrae-strats → worker 1", "T8 registration", "codex", "PR #182", "done"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("worker run line is missing %q: %q", want, line)
@@ -205,7 +205,7 @@ func TestThreadStateLabels(t *testing.T) {
 	if got := waiting.threadState(row); got != "waiting" {
 		t.Fatalf("waiting state = %q", got)
 	}
-	if line := ansi.Strip(waiting.messageConversationLine(row, 120, false)); !strings.Contains(line, "waiting") {
+	if line := ansi.Strip(waiting.messageConversationText(row, 120, false)); !strings.Contains(line, "waiting") {
 		t.Fatalf("waiting row = %q", line)
 	}
 
@@ -229,7 +229,7 @@ func TestThreadStateLabels(t *testing.T) {
 	if got := held.threadState(row); got != "gw 3" {
 		t.Fatalf("held state = %q", got)
 	}
-	if line := ansi.Strip(held.messageConversationLine(row, 120, false)); !strings.Contains(line, "gw 3") {
+	if line := ansi.Strip(held.messageConversationText(row, 120, false)); !strings.Contains(line, "gw 3") {
 		t.Fatalf("held row = %q", line)
 	}
 }
@@ -242,28 +242,28 @@ func TestThreadFlagsAndBurstRule(t *testing.T) {
 		id: "owner", from: "s_a", to: "s_b", fromName: "lead", toName: "peer",
 		lastLine: "deploy the fix", at: t0.Add(-time.Minute), ownerInstruction: true,
 	}
-	if line := ansi.Strip(m.messageConversationLine(owner, 120, false)); !strings.Contains(line, "you→") {
+	if line := ansi.Strip(m.messageConversationText(owner, 120, false)); !strings.Contains(line, "you→") {
 		t.Fatalf("owner marker missing: %q", line)
 	}
 	app := messageConversation{
 		id: "app", from: "s_app", to: "s_b", fromName: "CTO (Trade)", toName: "peer",
 		fromHarness: "bot", lastLine: "approve the trade", at: t0.Add(-time.Minute),
 	}
-	if line := ansi.Strip(m.messageConversationLine(app, 120, false)); !strings.Contains(line, "(app)") {
+	if line := ansi.Strip(m.messageConversationText(app, 120, false)); !strings.Contains(line, "(app)") {
 		t.Fatalf("app sender type missing: %q", line)
 	}
 	blocked := messageConversation{
 		id: "blocked", from: "s_a", to: "s_b", fromName: "lead", toName: "peer",
 		lastLine: "blocked on the deploy", at: t0.Add(-time.Minute), blocked: true,
 	}
-	if line := ansi.Strip(m.messageConversationLine(blocked, 120, false)); !strings.Contains(line, "blocked") {
+	if line := ansi.Strip(m.messageConversationText(blocked, 120, false)); !strings.Contains(line, "blocked") {
 		t.Fatalf("blocked marker missing: %q", line)
 	}
 	burst := messageConversation{
 		id: "burst", from: "s_a", to: "s_b", fromName: "tenebrae-strats", toName: "tenebrae 3",
 		lastLine: "many", at: t0.Add(-time.Minute), peakHour: 30, medianHour: 2,
 	}
-	if line := ansi.Strip(m.messageConversationLine(burst, 120, false)); !strings.Contains(line, "burst 30/h") {
+	if line := ansi.Strip(m.messageConversationText(burst, 120, false)); !strings.Contains(line, "burst 30/h") {
 		t.Fatalf("burst marker missing: %q", line)
 	}
 	for _, tc := range []struct {
@@ -285,12 +285,12 @@ func TestStoredPairRowShowsTheBurstFlag(t *testing.T) {
 		id: "pair:s_a\x00s_b", from: "s_a", to: "s_b", fromName: "tenebrae-strats", toName: "tenebrae 3",
 		lastLine: "busy", count: 36, peakHour: 22, medianHour: 1, at: t0.Add(-time.Minute),
 	}
-	line := ansi.Strip(m.messageConversationLine(row, 120, false))
+	line := ansi.Strip(m.messageConversationText(row, 120, false))
 	if !strings.Contains(line, "burst 22/h") {
 		t.Fatalf("stored pair row does not show its burst: %q", line)
 	}
 	row.peakHour, row.medianHour = 19, 1
-	line = ansi.Strip(m.messageConversationLine(row, 120, false))
+	line = ansi.Strip(m.messageConversationText(row, 120, false))
 	if strings.Contains(line, "burst") {
 		t.Fatalf("19 messages in an hour is not a burst: %q", line)
 	}

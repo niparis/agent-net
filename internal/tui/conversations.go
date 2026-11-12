@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"sort"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -405,7 +404,7 @@ func (m *Model) applyConversationMessages(msg conversationMessagesMsg) {
 // conversationLines returns the chat lines of a stored conversation, oldest
 // first. Feed lines that arrived after the fetched page go at the end.
 func (m Model) conversationLines(c messageConversation, w int) []string {
-	out := []string{}
+	var msgs []threadMsg
 	seen := map[string]bool{}
 	selectedID := ""
 	if m.feedCur >= 0 && m.feedCur < len(m.feed.items) {
@@ -418,8 +417,9 @@ func (m Model) conversationLines(c messageConversation, w int) []string {
 				continue
 			}
 			seen[msg.ID] = true
-			out = append(out, m.messageLines(msg.From, c.workerSession, msg.FromCTO, msg.OwnerInstruction,
-				m.clock(msg.CreatedAt), msg.Body, msg.ID == selectedID, w)...)
+			msgs = append(msgs, threadMsg{id: msg.ID, parent: msg.ParentID, from: msg.From, workerSession: c.workerSession,
+				fromCTO: msg.FromCTO, ownerInstruction: msg.OwnerInstruction, at: msg.CreatedAt, body: msg.Body,
+				selected: msg.ID == selectedID})
 		}
 	}
 	for _, i := range c.items {
@@ -434,10 +434,11 @@ func (m Model) conversationLines(c messageConversation, w int) []string {
 		if body == "" {
 			body = m.missingMessageBody(it)
 		}
-		out = append(out, m.messageLines(it.From, c.workerSession, it.FromCTO, it.OwnerInstruction,
-			m.clock(it.At), body, i == m.feedCur, w)...)
+		msgs = append(msgs, threadMsg{id: it.MsgID, parent: it.Parent, from: it.From, workerSession: c.workerSession,
+			fromCTO: it.FromCTO, ownerInstruction: it.OwnerInstruction, at: it.At, body: body,
+			bodyMissing: it.Body == "", selected: i == m.feedCur})
 	}
-	if len(out) == 0 {
+	if len(msgs) == 0 {
 		if d, ok := m.convDetail[c.convID]; ok && d.err != "" {
 			return []string{sDim.Render(clip(d.err, w))}
 		}
@@ -445,60 +446,7 @@ func (m Model) conversationLines(c messageConversation, w int) []string {
 			return []string{sDim.Render("loading messages")}
 		}
 	}
-	return out
-}
-
-// messageLines draws one message: its header and up to three body lines.
-func (m Model) messageLines(senderID, workerSession string, fromCTO bool, ownerInstruction, clock, body string, selected bool, w int) []string {
-	sender := m.conversationName(senderID)
-	if sender == "ended session" && workerSession != "" && senderID == workerSession {
-		sender = "ended worker"
-	}
-	if fromCTO {
-		sender = m.ctoTitle()
-	}
-	marker := ""
-	if ownerInstruction != "" {
-		marker = lipglossAccent("you→ ")
-	}
-	header := sDim.Render(clock+" ") + marker + sDim.Render(sender)
-	if selected {
-		header = lipglossAccent("▸ ") + header
-	} else {
-		header = "  " + header
-	}
-	out := []string{header}
-	if ownerInstruction != "" {
-		for _, line := range wrap("Your instruction: "+ownerInstruction, w) {
-			out = append(out, sDim.Render(line))
-		}
-	}
-	if text, ok := workerNoticeLine(body); ok {
-		style := sBad
-		switch {
-		case workerNoticeLifecycle(body):
-			style = sDim
-		case strings.Contains(text, "✓ done"):
-			style = sBusy
-		}
-		for _, line := range wrap(text, w) {
-			out = append(out, style.Render(line))
-		}
-		return out
-	}
-	if body == "" {
-		out = append(out, sDim.Render(clip("empty message", w)))
-		return out
-	}
-	// Wrap every line of the body. No line is cut with an ellipsis: the panel
-	// scrolls to the selected message instead.
-	bodyStyle := lipgloss.NewStyle().Foreground(roleText)
-	for _, line := range strings.Split(body, "\n") {
-		for _, wrapped := range wrap(line, w) {
-			out = append(out, bodyStyle.Render(wrapped))
-		}
-	}
-	return out
+	return m.threadLines(msgs, w)
 }
 
 // lipglossAccent is the selected-row and owner-marker colour.

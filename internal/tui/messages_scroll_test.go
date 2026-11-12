@@ -155,13 +155,13 @@ func TestMessagesThreadScrollsWithKeysAndWheel(t *testing.T) {
 				t.Fatalf("wheel down did not return to the newest message:\n%s", screen(back))
 			}
 			// Keys: page up scrolls the thread all the way to its oldest message.
-			top := pressRun(t, m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, 40)
+			top := pressRun(t, m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, 120)
 			if !strings.Contains(screen(top), "thread message 00") {
-				t.Fatalf("ctrl+u x40 did not reach the oldest message:\n%s", screen(top))
+				t.Fatalf("ctrl+u x120 did not reach the oldest message:\n%s", screen(top))
 			}
-			down := pressRun(t, top, tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, 40)
+			down := pressRun(t, top, tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, 120)
 			if !strings.Contains(screen(down), "thread message 79") {
-				t.Fatalf("ctrl+d x40 did not return to the newest message:\n%s", screen(down))
+				t.Fatalf("ctrl+d x120 did not return to the newest message:\n%s", screen(down))
 			}
 			// A stored thread has no marked message, so left and right scroll it.
 			sel := pressRun(t, m, tea.KeyPressMsg{Code: tea.KeyLeft}, 10)

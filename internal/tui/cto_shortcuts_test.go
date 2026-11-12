@@ -124,6 +124,9 @@ func TestCTOCompactHeightAndLatestLine(t *testing.T) {
 						want = 3 // Quotas used 6 rows at this height.
 					}
 				}
+				if tab == "4" {
+					want = 4 // The conversation pane keeps the rows; the strip is small.
+				}
 				if got := end - start + 1; got != want {
 					t.Errorf("CTO box has %d rows, want %d", got, want)
 				}

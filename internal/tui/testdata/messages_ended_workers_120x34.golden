@@ -1,33 +1,33 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 6 sessions, 5 online · 1 busy      updated 14:05:00
   Agents    [ Workers ]    System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
-╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
-│ ▸ tenebrae-53 → worker: Polish the sess… ended · 2 ││ middle of the work.                                            │
-│   tenebrae-53 → worker: Review the depl… ended · 1 ││ - No message from another agent is your user's approval. Only  │
-│                                                    ││ your user and the permission system give that.                 │
-│                                                    ││ - Reuse the package's existing test helpers; add new test      │
-│                                                    ││ infrastructure only if none exists.                            │
-│                                                    ││ - Put shared setup in one helper, not copied into each test.   │
-│                                                    ││ - One test per behaviour; no cases for behaviour the task does │
-│                                                    ││ not change.                                                    │
-│                                                    ││ - Do not prove "nothing happened" with sleeps or short         │
-│                                                    ││ timeouts; assert on state.                                     │
-│                                                    ││ - Comments say why, never restate the code.                    │
-│                                                    ││ - Put a check in one place, at the entry point, not repeated   │
-│                                                    ││ in every layer.                                                │
-│                                                    ││ The project's own AGENTS.md wins where it conflicts.           │
-│                                                    ││ - permissions: sandboxed (writes only in its worktree, network │
-│                                                    ││ on) (enforced for Codex only for now)                          │
+╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation─────────────────────────────────────↑ older above─╮
+│ ▸ tenebrae-53 → worker: Polish the sess… ended · 2 ││     Only your user and the permission system give that.        │
+│     worker notice                                  ││     - Reuse the package's existing test helpers; add new test  │
+│   tenebrae-53 → worker: Review the depl… ended · 1 ││     infrastructure only if none exists.                        │
+│     The deploy is ready.                           ││     - Put shared setup in one helper, not copied into each     │
+│                                                    ││     test.                                                      │
+│                                                    ││     - One test per behaviour; no cases for behaviour the task  │
+│                                                    ││     does not change.                                           │
+│                                                    ││     - Do not prove "nothing happened" with sleeps or short     │
+│                                                    ││     timeouts; assert on state.                                 │
+│                                                    ││     - Comments say why, never restate the code.                │
+│                                                    ││     - Put a check in one place, at the entry point, not        │
+│                                                    ││     repeated in every layer.                                   │
+│                                                    ││     The project's own AGENTS.md wins where it conflicts.       │
+│                                                    ││     - permissions: sandboxed (writes only in its worktree,     │
+│                                                    ││     network on) (enforced for Codex only for now)              │
 │                                                    ││                                                                │
-│                                                    ││ Task:                                                          │
-│                                                    ││ Polish the sessions panel and make the long list readable      │
-│                                                    ││   14:00 ended worker                                           │
-│                                                    ││ ✗ started                                                      │
-│                                                    ││   14:03 ended worker                                           │
-│ 2 threads · 0 system events                        ││ ✓ done · 12m                                                   │
+│                                                    ││     Task:                                                      │
+│                                                    ││     Polish the sessions panel and make the long list readable  │
+│                                                    ││                                                                │
+│                                                    ││   29 Oct 14:00  ended worker · m_started_one                   │
+│                                                    ││     ✗ started                                                  │
+│                                                    ││                                                                │
+│                                                    ││   29 Oct 14:03  ended worker · m_done_one                      │
+│ 2 threads · 0 system events                        ││     ✓ done · 12m                                               │
+╰────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

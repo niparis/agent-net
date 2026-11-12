@@ -2,14 +2,15 @@
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
-│   ~ tenebrae-53 ↔ ended session · … 1m ago · 1 msg ││ tenebrae-53 ↔ strategies                                       │
-│   ! ci-runner ↔ tenebrae-53 · Rol… 2m ago · 2 msgs ││ ▸ 13:56 tenebrae-53                                            │
-│ ▸ ✓ tenebrae-53 ↔ strategies · Th… 8m ago · 2 msgs ││ Can you check the latest deployment plan?                      │
-│                                                    ││ The release is planned for tonight.                            │
-│                                                    ││   13:57 strategies                                             │
-│                                                    ││ The deployment plan looks good.                                │
-│                                                    ││ I checked the rollback steps too.                              │
-│                                                    ││                                                                │
+│   ~ tenebrae-53 ↔ ended session     1m ago · 1 msg ││ tenebrae-53 ↔ strategies                                       │
+│     Which environment should I use?                ││ ▸ 29 Oct 13:56  tenebrae-53 · m_1                              │
+│   ! ci-runner ↔ tenebrae-53        2m ago · 2 msgs ││     Can you check the latest deployment plan?                  │
+│     Rollback is ready if we need it.               ││     The release is planned for tonight.                        │
+│ ▸ ✓ tenebrae-53 ↔ strategies       8m ago · 2 msgs ││                                                                │
+│     The deployment plan looks good.                ││   29 Oct 13:57  strategies · m_2                               │
+│                                                    ││     re: tenebrae-53 · Can you check the latest deployment…     │
+│                                                    ││     The deployment plan looks good.                            │
+│                                                    ││     I checked the rollback steps too.                          │
 │                                                    ││                                                                │
 │                                                    ││                                                                │
 │                                                    ││                                                                │
@@ -25,9 +26,8 @@ you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 │                                                    ││                                                                │
 │                                                    ││                                                                │
 │ 3 threads · 1 system event                         ││                                                                │
+╰────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

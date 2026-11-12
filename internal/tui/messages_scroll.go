@@ -59,11 +59,7 @@ func (m Model) threadView() (lines []string, rows int, top int, id string) {
 		id = convs[selected].id
 	}
 	rows = g.chatRows
-	if m.threadScrolled && m.threadFor == id {
-		top = min(max(m.threadTop, 0), max(len(chat)-rows, 0))
-	} else {
-		top = messageStart(chat, rows, chatSelected)
-	}
+	top = m.threadTopFor(chat, rows, chatSelected, id)
 	return chat, rows, top, id
 }
 

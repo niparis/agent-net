@@ -1,33 +1,33 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 6 sessions, 5 online · 1 busy      updated 14:05:00
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
-╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
-│ ▸ ✓ tenebrae-53 ↔ strategies · store… now · 3 msgs ││ thread message 35                                              │
-│   ✓ peer01 ↔ strategies · stored … 1m ago · 3 msgs ││   14:04 tenebrae-53                                            │
-│   ✓ peer02 ↔ strategies · stored … 2m ago · 3 msgs ││ thread message 36                                              │
-│   ✓ peer03 ↔ strategies · stored … 3m ago · 3 msgs ││   14:04 strategies                                             │
-│   ✓ peer04 ↔ strategies · stored … 4m ago · 3 msgs ││ thread message 37                                              │
-│   ✓ peer05 ↔ strategies · stored … 5m ago · 3 msgs ││   14:04 tenebrae-53                                            │
-│   ✓ peer06 ↔ strategies · stored … 6m ago · 3 msgs ││ thread message 38                                              │
-│   ✓ peer07 ↔ strategies · stored … 7m ago · 3 msgs ││   14:04 strategies                                             │
-│   ✓ peer08 ↔ strategies · stored … 8m ago · 3 msgs ││ thread message 39                                              │
-│   ✓ peer09 ↔ strategies · stored … 9m ago · 3 msgs ││   14:04 tenebrae-53                                            │
-│   ✓ peer10 ↔ strategies · stored… 10m ago · 3 msgs ││ thread message 40                                              │
-│   ✓ peer11 ↔ strategies · stored… 11m ago · 3 msgs ││   14:04 strategies                                             │
-│   ✓ peer12 ↔ strategies · stored… 12m ago · 3 msgs ││ thread message 41                                              │
-│   ✓ peer13 ↔ strategies · stored… 13m ago · 3 msgs ││   14:04 tenebrae-53                                            │
-│   ✓ peer14 ↔ strategies · stored… 14m ago · 3 msgs ││ thread message 42                                              │
-│   ✓ peer15 ↔ strategies · stored… 15m ago · 3 msgs ││   14:04 strategies                                             │
-│   ✓ peer16 ↔ strategies · stored… 16m ago · 3 msgs ││ thread message 43                                              │
-│   ✓ peer17 ↔ strategies · stored… 17m ago · 3 msgs ││   14:04 tenebrae-53                                            │
-│   ✓ peer18 ↔ strategies · stored… 18m ago · 3 msgs ││ thread message 44                                              │
-│   ✓ peer19 ↔ strategies · stored… 19m ago · 3 msgs ││   14:04 strategies                                             │
-│   ✓ peer20 ↔ strategies · stored… 20m ago · 3 msgs ││ thread message 45                                              │
-│   ✓ peer21 ↔ strategies · stored… 21m ago · 3 msgs ││   14:04 tenebrae-53                                            │
-│ 60 threads · 0 system events                       ││ thread message 46                                              │
+╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation─────────────────────────────────────↑ older above─╮
+│ ▸ ✓ tenebrae-53 ↔ strategies          now · 3 msgs ││   29 Oct 14:04  strategies · m_49                              │
+│     stored conversation 00                         ││     thread message 49                                          │
+│   ✓ peer01 ↔ strategies            1m ago · 3 msgs ││                                                                │
+│     stored conversation 01                         ││   29 Oct 14:04  tenebrae-53 · m_50                             │
+│   ✓ peer02 ↔ strategies            2m ago · 3 msgs ││     thread message 50                                          │
+│     stored conversation 02                         ││                                                                │
+│   ✓ peer03 ↔ strategies            3m ago · 3 msgs ││   29 Oct 14:04  strategies · m_51                              │
+│     stored conversation 03                         ││     thread message 51                                          │
+│   ✓ peer04 ↔ strategies            4m ago · 3 msgs ││                                                                │
+│     stored conversation 04                         ││   29 Oct 14:04  tenebrae-53 · m_52                             │
+│   ✓ peer05 ↔ strategies            5m ago · 3 msgs ││     thread message 52                                          │
+│     stored conversation 05                         ││                                                                │
+│   ✓ peer06 ↔ strategies            6m ago · 3 msgs ││   29 Oct 14:04  strategies · m_53                              │
+│     stored conversation 06                         ││     thread message 53                                          │
+│   ✓ peer07 ↔ strategies            7m ago · 3 msgs ││                                                                │
+│     stored conversation 07                         ││   29 Oct 14:04  tenebrae-53 · m_54                             │
+│   ✓ peer08 ↔ strategies            8m ago · 3 msgs ││     thread message 54                                          │
+│     stored conversation 08                         ││                                                                │
+│   ✓ peer09 ↔ strategies            9m ago · 3 msgs ││   29 Oct 14:04  strategies · m_55                              │
+│     stored conversation 09                         ││     thread message 55                                          │
+│   ✓ peer10 ↔ strategies           10m ago · 3 msgs ││                                                                │
+│     stored conversation 10                         ││   29 Oct 14:04  tenebrae-53 · m_56                             │
+│   ✓ peer11 ↔ strategies           11m ago · 3 msgs ││     thread message 56                                          │
+│ 60 threads · 0 system events                       ││                                                                │
+╰────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

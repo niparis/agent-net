@@ -2,20 +2,20 @@
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
-│ ▸ ! tenebrae-53 ↔ strategies · Stored conversation 00: keep the… now · 1 msg │
-│   ✓ tenebrae-53 ↔ strategies · Stored conversation 01: keep the… 7m · 2 msgs │
-│   ✓ tenebrae-53 ↔ strategies · Stored conversation 03: keep th… 21m · 4 msgs │
-│   ✓ tenebrae-53 ↔ strategies · Stored conversation 04: keep th… 28m · 5 msgs │
-│   ✓ tenebrae-53 ↔ strategies · Stored conversation 05: keep the… 35m · 1 msg │
+│ ▸ ! tenebrae-53 ↔ strategies                                     now · 1 msg │
+│     Stored conversation 00: keep the list full and readable                  │
+│   ✓ tenebrae-53 ↔ strategies                                     7m · 2 msgs │
+│     Stored conversation 01: keep the list full and readable                  │
 │ 29 threads · 0 system events                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │ tenebrae-53 ↔ strategies                                                     │
-│   14:03 tenebrae-53                                                          │
-│ Show the whole stored history of this conversation.                          │
-│   14:04 strategies                                                           │
-│ The full stored conversation is in the right pane.                           │
-│ It comes from the gateway, not the feed.                                     │
+│   29 Oct 14:03  tenebrae-53 · m_c_00                                         │
+│     Show the whole stored history of this conversation.                      │
+│                                                                              │
+│   29 Oct 14:04  strategies · m_c_00_reply                                    │
+│     The full stored conversation is in the right pane.                       │
+│     It comes from the gateway, not the feed.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

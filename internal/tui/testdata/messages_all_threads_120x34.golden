@@ -2,32 +2,32 @@
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
-│ ▸ ~ tenebrae-53 ↔ strategies ·… 1h26m ago · 2 msgs ││ tenebrae-53 ↔ strategies                                       │
-│   ~ tenebrae-53 ↔ strategies · … 7h12m ago · 1 msg ││ loading messages                                               │
-│   ~ tenebrae-53 ↔ strategies … 12h57m ago · 5 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 18h43m ago · 4 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 24h28m ago · 3 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 30h14m ago · 2 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies · … 36h0m ago · 1 msg ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 41h45m ago · 5 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 47h31m ago · 4 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 53h16m ago · 3 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies ·… 59h2m ago · 2 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies ·… 64h48m ago · 1 msg ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 70h33m ago · 5 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 76h19m ago · 4 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies ·… 82h4m ago · 3 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 87h50m ago · 2 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies ·… 93h36m ago · 1 msg ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 99h21m ago · 5 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 105h7m ago · 4 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies… 110h52m ago · 3 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies… 116h38m ago · 2 msgs ││                                                                │
-│   ~ tenebrae-53 ↔ strategies … 122h24m ago · 1 msg ││                                                                │
+│ ▸ ✓ tenebrae-53 ↔ strategies           now · 1 msg ││ tenebrae-53 ↔ strategies                                       │
+│     Thread 000: the last line of the conversation  ││ loading messages                                               │
+│   ~ tenebrae-53 ↔ strategies    1h26m ago · 2 msgs ││                                                                │
+│     Thread 001: the last line of the conversation  ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies    2h52m ago · 3 msgs ││                                                                │
+│     Thread 002: the last line of the conversation  ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies    4h19m ago · 4 msgs ││                                                                │
+│     Thread 003: the last line of the conversation  ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies    5h45m ago · 5 msgs ││                                                                │
+│     Thread 004: the last line of the conversation  ││                                                                │
+│   ~ tenebrae-53 ↔ strategies     7h12m ago · 1 msg ││                                                                │
+│     Thread 005: the last line of the conversation  ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies    8h38m ago · 2 msgs ││                                                                │
+│     Thread 006: the last line of the conversation  ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies   10h04m ago · 3 msgs ││                                                                │
+│     Thread 007: the last line of the conversation  ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies   11h31m ago · 4 msgs ││                                                                │
+│     Thread 008: the last line of the conversation  ││                                                                │
+│   ~ tenebrae-53 ↔ strategies   12h57m ago · 5 msgs ││                                                                │
+│     Thread 009: the last line of the conversation  ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies    14h24m ago · 1 msg ││                                                                │
+│     Thread 010: the last line of the conversation  ││                                                                │
+│   ✓ tenebrae-53 ↔ strategies   15h50m ago · 2 msgs ││                                                                │
 │ 500 threads · 0 system events                      ││                                                                │
+╰────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

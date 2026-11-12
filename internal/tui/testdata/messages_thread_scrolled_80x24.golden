@@ -2,21 +2,21 @@
 [ Agents ]    Workers      System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
-│ ▸ ✓ tenebrae-53 ↔ strategies · stored conversation 00           now · 3 msgs │
-│   ✓ peer01 ↔ strategies · stored conversation 01                 1m · 3 msgs │
-│   ✓ peer02 ↔ strategies · stored conversation 02                 2m · 3 msgs │
-│   ✓ peer03 ↔ strategies · stored conversation 03                 3m · 3 msgs │
-│   ✓ peer04 ↔ strategies · stored conversation 04                 4m · 3 msgs │
+│ ▸ ✓ tenebrae-53 ↔ strategies                                    now · 3 msgs │
+│     stored conversation 00                                                   │
+│   ✓ peer01 ↔ strategies                                          1m · 3 msgs │
+│     stored conversation 01                                                   │
 │ 60 threads · 0 system events                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Conversation─────────────────────────────────────────────────────────────────╮
-│ thread message 67                                                            │
-│   14:04 tenebrae-53                                                          │
-│ thread message 68                                                            │
-│   14:04 strategies                                                           │
-│ thread message 69                                                            │
-│   14:04 tenebrae-53                                                          │
-│ thread message 70                                                            │
+╭─Conversation───────────────────────────────────────────────────↑ older above─╮
+│     thread message 71                                                        │
+│                                                                              │
+│   29 Oct 14:04  tenebrae-53 · m_72                                           │
+│     thread message 72                                                        │
+│                                                                              │
+│   29 Oct 14:04  strategies · m_73                                            │
+│     thread message 73                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
