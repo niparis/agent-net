@@ -476,6 +476,15 @@ A message from the person at a machine is sent from that machine's **owner sessi
 - **Nothing is deleted.** Each sort keeps the ask as it was in `ask_sorts`, so a sort can be undone.
 - **Only the owner or the CTO undoes any sort; the chief undoes only its own newest one.** `ask.undo` (operator `ask_undo`) and `ask.mark` (operator `ask_mark`) need the owner or CTO actor, and the daemon gate for both is the owner gate, so no agent tool calls them. The chief's own undo is `agent_ask_sort` with `result: "undo"`; it is refused unless the newest sort is the chief's, and the ask goes back to the chief. An undo is refused when the ask changed since the sort.
 
+- **No timer sends an ask to the owner while the chief works.** The 15 minute
+  fallback is removed (decision 0150). A chief that cannot work is covered by a
+  safety net: an ask in security, outage or money goes to the owner after one
+  missed wake (10 minutes), the rest after two, and a claimed ask that goes quiet
+  pings the chief after the stuck-work limit (`delivery.step_stuck`) and never
+  reaches the owner. An item idle that long with the CTO goes back to the chief.
+  The owner asked for this (decision 0150). It only moves items between the
+  chief, the CTO and the owner path; it answers, closes and approves nothing.
+
 See [decision 0114](decisions/0114-chief-of-staff.md) and [reference](reference.md#the-chief-of-staff-decision-0114).
 
 ## Delivery records

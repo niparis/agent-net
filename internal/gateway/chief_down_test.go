@@ -48,6 +48,7 @@ func TestChiefQuotaExhaustedMovesWaitingAsks(t *testing.T) {
 		t.Fatal("the healthy chief got no batch")
 	}
 	s.setChiefQuota(chief, "codex quota exhausted (weekly window)")
+	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
@@ -83,8 +84,16 @@ func TestChiefSilentWithNoActivityIsUnavailable(t *testing.T) {
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
+	// One wake is missed: a normal ask needs two (decision 0150).
+	if next := askNext(t, s, id); next != protocol.AskNextChief {
+		t.Fatalf("next = %q after one missed wake, want chief", next)
+	}
+	c.t = c.t.Add(protocol.ChiefWakeInterval)
+	if err := s.releaseChiefAsks(c.t); err != nil {
+		t.Fatal(err)
+	}
 	if next := askNext(t, s, id); next != protocol.AskNextOwner {
-		t.Fatalf("next = %q after the silence limit, want owner", next)
+		t.Fatalf("next = %q after two missed wakes, want owner", next)
 	}
 	st, err := s.ChiefStatus()
 	if err != nil {
@@ -178,6 +187,12 @@ func TestChiefSilentRetriesAfterWait(t *testing.T) {
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
+	// The first ask has missed two wakes and is with the owner, so the chief
+	// has nothing waiting when the retry wait ends.
+	c.t = c.t.Add(protocol.ChiefWakeInterval)
+	if err := s.releaseChiefAsks(c.t); err != nil {
+		t.Fatal(err)
+	}
 	c.t = c.t.Add(protocol.ChiefRetryAfter + time.Second)
 	id := chiefAskKind(t, s, asker, "approval", "Probe?")
 	if next := askNext(t, s, id); next != protocol.AskNextChief {
@@ -191,6 +206,7 @@ func TestChiefRecoveryRoutesNewAsksToChiefAndKeepsMovedOnes(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
 	old := chiefAsk(t, s, asker, "Old one?")
 	s.setChiefQuota(chief, "codex quota exhausted (weekly window)")
+	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
@@ -284,8 +300,15 @@ func TestFlushChiefReadsMachineQuotaAndMovesAsks(t *testing.T) {
 	g.usage.set(node, c.t, protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: c.t.Unix(), Providers: []protocol.QuotaProvider{{Provider: "codex",
 		Windows: []protocol.QuotaWindow{{ID: "weekly", Label: "weekly", PercentUsed: 100, ResetsAt: reset.Unix()}}}}}})
 	g.flushChief(context.Background())
+	if next := askNext(t, st, ask); next != protocol.AskNextChief {
+		t.Fatalf("next = %q right after the quota ran out, want chief until two wakes are missed", next)
+	}
+	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
+	g.usage.set(node, c.t, protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: c.t.Unix(), Providers: []protocol.QuotaProvider{{Provider: "codex",
+		Windows: []protocol.QuotaWindow{{ID: "weekly", Label: "weekly", PercentUsed: 100, ResetsAt: reset.Unix()}}}}}})
+	g.flushChief(context.Background())
 	if next := askNext(t, st, ask); next != protocol.AskNextOwner {
-		t.Fatalf("next = %q after the gateway saw the quota used up, want owner", next)
+		t.Fatalf("next = %q after the gateway saw the quota used up for two wakes, want owner", next)
 	}
 	status, err := st.ChiefStatus()
 	if err != nil {

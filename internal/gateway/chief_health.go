@@ -134,39 +134,90 @@ func (s *Store) chiefSilent(q askDB, chief string, now time.Time) (bool, error) 
 	return err == nil, err
 }
 
-// releaseChiefAsks gives the asks that wait for the chief to the owner path
-// when the chief cannot work, and the ones it has held for ChiefTimeout. Each
-// gets a log line that says why. The gateway tick runs it, so a chief that
-// stopped working loses its asks in seconds, not at the next minute reconcile.
+// chiefMissedWakes counts the wakes the chief has missed on one ask, and
+// chiefWakesAllowed says how many it may miss. A wake is the batch message (or,
+// for a harness that cannot be woken, the unanswered batch): it is missed when
+// the chief has not claimed or sorted the ask within ChiefWakeInterval. The
+// clock starts when the ask was last sent to the chief, or when it started
+// waiting for it if no batch went out.
+func chiefMissedWakes(now time.Time, created, chiefAt, sentAt int64) int {
+	start := created
+	if chiefAt > start {
+		start = chiefAt
+	}
+	if sentAt > start {
+		start = sentAt
+	}
+	return int(max(now.UnixNano()-start, 0) / int64(protocol.ChiefWakeInterval))
+}
+
+// chiefWakesAllowed is one missed wake for an ask in security, outage or money,
+// and two for every other (decision 0150).
+func chiefWakesAllowed(category string) int {
+	switch category {
+	case protocol.CategorySecurity, protocol.CategoryOutage, protocol.CategoryMoney:
+		return 1
+	}
+	return 2
+}
+
+// wakeableChief is the chief session when its harness can be woken by a
+// message, "" otherwise.
+func (s *Store) wakeableChief() (string, error) {
+	id, err := chiefSession(s.db)
+	if err != nil || id == "" {
+		return "", err
+	}
+	var harness string
+	if err := s.db.QueryRow(`SELECT harness FROM sessions WHERE id=?`, id).Scan(&harness); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	if !wakeHarness(harness) {
+		return "", nil
+	}
+	return id, nil
+}
+
+// releaseChiefAsks is the safety net of decision 0150. No timer sends an ask to
+// the owner while the chief is live and working. When the chief cannot work
+// (offline, no quota, a harness error, silent), an ask that waits for it goes to
+// the owner path once it has missed enough wakes: one for security, outage and
+// money, two for the rest. Each gets a log line that says why. The gateway tick
+// runs it, so a chief that stopped working loses its asks in minutes, not at the
+// next minute reconcile.
 func (s *Store) releaseChiefAsks(now time.Time) error {
 	h, err := s.availableChief(s.db, now)
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.Query(`SELECT id,kind,text,about_kind,about_id,created_at,chief_at FROM inbox_items WHERE status='open' AND next_who=?`, protocol.AskNextChief)
+	if h.id != "" {
+		return nil
+	}
+	noChief := !h.offline && h.down == ""
+	rows, err := s.db.Query(`SELECT id,kind,text,about_kind,about_id,category,created_at,chief_at,chief_sent_at FROM inbox_items WHERE status='open' AND next_who=?`, protocol.AskNextChief)
 	if err != nil {
 		return err
 	}
 	type held struct {
 		id, kind, text, aboutKind, aboutID string
-		created, chiefAt                   int64
 	}
 	var late []held
-	cutoff := now.Add(-protocol.ChiefTimeout).UnixNano()
 	for rows.Next() {
 		var x held
-		if err := rows.Scan(&x.id, &x.kind, &x.text, &x.aboutKind, &x.aboutID, &x.created, &x.chiefAt); err != nil {
+		var category string
+		var created, chiefAt, sentAt int64
+		if err := rows.Scan(&x.id, &x.kind, &x.text, &x.aboutKind, &x.aboutID, &category, &created, &chiefAt, &sentAt); err != nil {
 			rows.Close()
 			return err
 		}
 		if neverOwnerAsk(x.kind) {
 			continue
 		}
-		anchor := x.created
-		if x.chiefAt != 0 {
-			anchor = x.chiefAt
-		}
-		if h.id == "" || anchor < cutoff {
+		// With no chief registered nobody can miss a wake: the ask goes at once.
+		if noChief || chiefMissedWakes(now, created, chiefAt, sentAt) >= chiefWakesAllowed(category) {
 			late = append(late, x)
 		}
 	}
@@ -176,17 +227,14 @@ func (s *Store) releaseChiefAsks(now time.Time) error {
 		return err
 	}
 	for _, x := range late {
-		why := "The chief of staff did not sort it in 15 minutes, so it is with you: "
-		switch {
-		case h.offline || (h.id == "" && h.down == ""):
-			why = "The chief of staff is offline, so it is with you: "
-		case h.id == "":
+		why := "The chief of staff is offline, so it is with you: "
+		if h.id == "" && !h.offline && h.down != "" {
 			why = "The chief of staff cannot work (" + h.down + "), so it is with you: "
 		}
 		// An ask moved past a chief that is online but cannot work is not
 		// offered to it again when it is back (route_fixed).
 		fixed := 0
-		if h.id == "" && !h.offline && h.down != "" {
+		if !h.offline && h.down != "" {
 			fixed = 1
 		}
 		if _, err := s.db.Exec(`UPDATE inbox_items SET next_who=?, route_fixed=MAX(route_fixed,?) WHERE id=? AND next_who=?`, protocol.AskNextOwner, fixed, x.id, protocol.AskNextChief); err != nil {
