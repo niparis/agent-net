@@ -38,7 +38,7 @@ type CTOOp struct {
 	Method string
 }
 
-var ctoOpGroupOrder = []string{"Connected apps", "Machines", "Graph", "Tools", "Owner reads", "Owner changes"}
+var ctoOpGroupOrder = []string{"Connected apps", "Machines", "Sessions", "Graph", "Tools", "Owner reads", "Owner changes"}
 
 // ctoOwnerOpTypes is the argument schema of owner operations that moved to the
 // op tier with a strict contract. Every other owner operation keeps the free
@@ -141,6 +141,8 @@ var ctoMovedOps = []CTOOp{
 	mergedOp("machine_rotate", "Machines", "Rotate an online machine token; owner approval.", "settings_change", "machine_rotate", "machine_rotate", []string{"node_id"}, true, `{"node_id":"node-id"}`),
 	mergedOp("process_stop", "Machines", "Stop processes on a machine: TERM then KILL; no undo.", "settings_change", "process_stop", "process_stop", []string{"node_id", "pids"}, false, `{"node_id":"node-id","pids":[1234,5678]}`),
 
+	mergedOp("session_replace", "Sessions", "Move an old session's work to the session that replaced it.", "session_change", "replace", "session_replace", []string{"old_session", "new_session"}, false, `{"old_session":"old-session-id","new_session":"new-session-id"}`),
+
 	mergedOp("node_remove", "Graph", "Remove an edgeless architect; owner approval.", "graph_change", "node_remove", "node_remove", []string{"name"}, true, `{"name":"old-node","reason":"retired"}`),
 	mergedOp("repo_archive", "Graph", "Deactivate a typed repo identity; owner approval.", "graph_change", "repo_archive", "repo_archive", []string{"ref"}, true, `{"ref":{"kind":"repo","id":"old-repo"},"reason":"retired"}`),
 	mergedOp("agent_tombstone", "Graph", "Deactivate a typed agent identity; owner approval.", "graph_change", "agent_tombstone", "agent_tombstone", []string{"ref"}, true, `{"ref":{"kind":"agent","id":"old-agent"},"reason":"retired"}`),
@@ -150,25 +152,29 @@ var ctoMovedOps = []CTOOp{
 
 var ctoOps = func() []CTOOp {
 	ops := append([]CTOOp(nil), ctoMovedOps...)
-	for _, method := range strings.Fields(protocol.CTOOperatorReads) {
+	seen := map[string]bool{}
+	for _, op := range ops {
+		seen[op.Name] = true
+	}
+	addOwner := func(method, group string, read bool) {
+		if seen[method] {
+			return
+		}
+		seen[method] = true
 		ops = append(ops, CTOOp{
 			Name:    method,
-			Group:   "Owner reads",
-			Purpose: ownerOpPurpose(method, true),
+			Group:   group,
+			Purpose: ownerOpPurpose(method, read),
 			Example: ownerOpExample(method),
 			Schema:  ownerOpSchema(method),
 			Method:  method,
 		})
 	}
+	for _, method := range strings.Fields(protocol.CTOOperatorReads) {
+		addOwner(method, "Owner reads", true)
+	}
 	for _, method := range strings.Fields(protocol.CTOOperatorChanges) {
-		ops = append(ops, CTOOp{
-			Name:    method,
-			Group:   "Owner changes",
-			Purpose: ownerOpPurpose(method, false),
-			Example: ownerOpExample(method),
-			Schema:  ownerOpSchema(method),
-			Method:  method,
-		})
+		addOwner(method, "Owner changes", false)
 	}
 	sort.Slice(ops, func(i, j int) bool { return ops[i].Name < ops[j].Name })
 	return ops

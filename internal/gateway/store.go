@@ -1780,6 +1780,30 @@ func (s *Store) migrate() error {
 		if err != nil {
 			return err
 		}
+		stmt := migrations[i]
+		// The typed-graph migration inserts into agents by position. A rewind
+		// can replay it after a later migration added a column to agents, so
+		// name the columns and replace the old triggers on replay.
+		if strings.Contains(stmt, "Repo and agent records, preserving legacy graph keys") {
+			for _, trigger := range []string{"repo_agent_project_insert", "repo_agent_project_update", "repo_agent_session_insert", "repo_agent_session_update", "repo_agent_architect_insert"} {
+				if _, err := tx.Exec(`DROP TRIGGER IF EXISTS ` + trigger); err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
+			stmt = strings.NewReplacer(
+				"INSERT OR IGNORE INTO agents SELECT name,name,'',0,0,0 FROM split_components;",
+				"INSERT OR IGNORE INTO agents(id,display_name,role,created_at,updated_at,tombstone) SELECT name,name,'',0,0,0 FROM split_components;",
+				"INSERT OR IGNORE INTO agents SELECT name,name,'architect',created_at,created_at,0 FROM graph_nodes WHERE kind='architect';",
+				"INSERT OR IGNORE INTO agents(id,display_name,role,created_at,updated_at,tombstone) SELECT name,name,'architect',created_at,created_at,0 FROM graph_nodes WHERE kind='architect';",
+				"INSERT OR IGNORE INTO repos SELECT name,name,0,0,name FROM split_components;",
+				"INSERT OR IGNORE INTO repos(id,display_name,created_at,updated_at,owner_agent_id) SELECT name,name,0,0,name FROM split_components;",
+				"INSERT INTO agents VALUES(",
+				"INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(",
+				"INSERT INTO repos VALUES(",
+				"INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES(",
+			).Replace(stmt)
+		}
 		if strings.Contains(migrations[i], "Standing order search columns") {
 			for _, col := range []struct{ name, decl string }{{"tags", "TEXT NOT NULL DEFAULT '[]'"}, {"pinned", "INTEGER NOT NULL DEFAULT 0"}, {"updated_at", "INTEGER NOT NULL DEFAULT 0"}} {
 				var has int
@@ -2161,8 +2185,6 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
-			}
-		}
 		var result sql.Result
 		if strings.Contains(migrations[i], "ALTER TABLE repo_leads ADD COLUMN lead_session") {
 			for _, table := range []string{"repo_leads", "teams"} {
@@ -2279,14 +2301,14 @@ func (s *Store) migrate() error {
 				}
 			}
 			if err == nil {
-				result, err = tx.Exec(migrations[i])
+				result, err = tx.Exec(stmt)
 			}
 		} else if strings.Contains(migrations[i], "Team asks_to (decision 0100)") {
 			var has int
 			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('teams') WHERE name='asks_to'`).Scan(&has)
 			if err == nil {
 				if has == 0 {
-					result, err = tx.Exec(migrations[i])
+					result, err = tx.Exec(stmt)
 				} else {
 					result, err = tx.Exec(`SELECT 1`)
 				}
@@ -2296,7 +2318,7 @@ func (s *Store) migrate() error {
 			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('teams') WHERE name='lead_merges'`).Scan(&has)
 			if err == nil {
 				if has == 0 {
-					result, err = tx.Exec(migrations[i])
+					result, err = tx.Exec(stmt)
 				} else {
 					result, err = tx.Exec(`SELECT 1`)
 				}
@@ -2306,7 +2328,7 @@ func (s *Store) migrate() error {
 			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name='handed_off_by'`).Scan(&has)
 			if err == nil {
 				if has == 0 {
-					result, err = tx.Exec(migrations[i])
+					result, err = tx.Exec(stmt)
 				} else {
 					result, err = tx.Exec(`SELECT 1`)
 				}
@@ -2316,13 +2338,13 @@ func (s *Store) migrate() error {
 			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='worker_run_generation'`).Scan(&has)
 			if err == nil {
 				if has == 0 {
-					result, err = tx.Exec(migrations[i])
+					result, err = tx.Exec(stmt)
 				} else {
 					result, err = tx.Exec(`SELECT 1`)
 				}
 			}
 		} else {
-			result, err = tx.Exec(migrations[i])
+			result, err = tx.Exec(stmt)
 		}
 		if err != nil {
 			tx.Rollback()

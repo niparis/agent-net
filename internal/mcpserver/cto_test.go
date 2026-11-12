@@ -92,7 +92,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 			"action": {"charter_set", "node_add", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "agent_create", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set"},
 			"rule":   {"normal", "auto", "ask", "never"},
 		},
-		"session_change": {"action": {"rename", "replace", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}, "folder": {"project", "worktree"}, "harness": {"opencode", "claude", "pi", "codex"}},
+		"session_change": {"action": {"rename", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}, "folder": {"project", "worktree"}, "harness": {"opencode", "claude", "pi", "codex"}},
 		"worker_change":  {"action": {"start", "stop"}, "harness": {"opencode", "claude", "pi", "codex", "agy"}, "isolation": {"worktree", "none"}},
 		"answer":         {"kind": {"held", "inbox", "outcome"}},
 		"tools_change":   {"action": {"plan", "apply", "undo", "native_remove", "toggle", "new_projects"}},

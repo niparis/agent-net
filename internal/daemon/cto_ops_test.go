@@ -50,11 +50,12 @@ func TestCTOOpsHavePurposeSchemaExampleAndGate(t *testing.T) {
 		}
 	}
 	for name, want := range map[string]string{
-		"apps_list":      "direct",
-		"process_stop":   "irreversible",
-		"app_revoke":     "irreversible",
-		"node_remove":    "proposal",
-		"machine_remove": "proposal",
+		"apps_list":       "direct",
+		"process_stop":    "irreversible",
+		"app_revoke":      "irreversible",
+		"node_remove":     "proposal",
+		"machine_remove":  "proposal",
+		"session_replace": "direct",
 	} {
 		op, ok := mcpserver.CTOOpByName(name)
 		if !ok {
@@ -80,7 +81,7 @@ func TestCTOOpsListGroupsAndFilter(t *testing.T) {
 			seen[op.Name] = true
 		}
 	}
-	for _, name := range []string{"apps_list", "process_stop", "node_remove", "mcp_import", "gateway_backup", "charter_history", "inbox_list"} {
+	for _, name := range []string{"apps_list", "process_stop", "node_remove", "mcp_import", "gateway_backup", "charter_history", "inbox_list", "session_replace"} {
 		if !seen[name] {
 			t.Errorf("op list misses %s", name)
 		}

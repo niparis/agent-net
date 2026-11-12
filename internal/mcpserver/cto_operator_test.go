@@ -12,7 +12,7 @@ import (
 func TestCTOOperatorActionSchemas(t *testing.T) {
 	for method := range protocol.CTOOperatorMethods() {
 		op, ok := CTOOpByName(method)
-		if !ok || op.Method != method {
+		if !ok || (op.Method != method && op.Name != method) {
 			t.Errorf("owner operation %s is not an op", method)
 			continue
 		}
@@ -76,13 +76,17 @@ func TestCTOOperatorCatalogParity(t *testing.T) {
 	wanted := protocol.CTOOperatorMethods()
 	seen := map[string]bool{}
 	for _, op := range CTOOps() {
-		if op.Method == "" {
-			continue
+		name := op.Method
+		if name == "" {
+			if _, ok := wanted[op.Name]; !ok {
+				continue // A merged op that is not an owner method.
+			}
+			name = op.Name
 		}
-		if _, ok := wanted[op.Method]; !ok {
-			t.Errorf("op advertises unknown owner operation %s", op.Method)
+		if _, ok := wanted[name]; !ok {
+			t.Errorf("op advertises unknown owner operation %s", name)
 		}
-		seen[op.Method] = true
+		seen[name] = true
 	}
 	for name := range wanted {
 		if !seen[name] {
@@ -109,43 +113,40 @@ func TestCTOActionResultKeepsBackendStateFields(t *testing.T) {
 
 // A restart that already orphaned a session is repaired by the CTO with the
 // owner operation session_replace, which is in the operator allowlist and the
-// session_change catalog.
+// op tier. The typed session_change tool no longer lists it.
 func TestCTOOperatorSessionReplaceListed(t *testing.T) {
 	if _, ok := protocol.CTOOperatorMethods()["session_replace"]; !ok {
 		t.Fatal("session_replace is not a CTO owner operation")
+	}
+	op, ok := CTOOpByName("session_replace")
+	if !ok {
+		t.Fatal("session_replace is not an op")
+	}
+	if op.Tool != "session_change" || op.Action != "replace" {
+		t.Fatalf("session_replace routes to %s %s", op.Tool, op.Action)
+	}
+	if err := ValidateCTOOpArgs(op, json.RawMessage(`{"old_session":"s_old","new_session":"s_new"}`)); err != nil {
+		t.Fatalf("the replace op was refused: %v", err)
+	}
+	if err := ValidateCTOOpArgs(op, json.RawMessage(`{"old_session":"s_old"}`)); err == nil {
+		t.Fatal("the replace op accepted a missing new_session")
 	}
 	var input struct {
 		Properties map[string]struct {
 			Enum []string `json:"enum"`
 		} `json:"properties"`
 	}
-	found := false
 	for _, entry := range toolcatalog.ForRole(toolcatalog.RoleCTO) {
 		if entry.Name != "session_change" {
 			continue
 		}
-		found = true
 		if err := json.Unmarshal(entry.InputSchema, &input); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if !found {
-		t.Fatal("session_change is not in the CTO catalog")
-	}
-	listed := false
 	for _, action := range input.Properties["action"].Enum {
 		if action == "replace" {
-			listed = true
+			t.Fatalf("session_change still lists the replace action: %v", input.Properties["action"].Enum)
 		}
-	}
-	if !listed {
-		t.Fatalf("the catalog does not list the replace action: %v", input.Properties["action"].Enum)
-	}
-	raw := json.RawMessage(`{"action":"replace","old_session":"s_old","new_session":"s_new"}`)
-	if err := ValidateCTOActionSchema("session_change", raw); err != nil {
-		t.Fatalf("the replace action was refused: %v", err)
-	}
-	if err := ValidateCTOActionSchema("session_change", json.RawMessage(`{"action":"replace","old_session":"s_old"}`)); err == nil {
-		t.Fatal("the replace action accepted a missing new_session")
 	}
 }

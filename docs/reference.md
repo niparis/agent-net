@@ -339,6 +339,11 @@ change, standing orders, proposals, `cto_ui_show`, machines and projects. The
 op tier holds every rare operation behind `cto_ops_list` and `cto_op`. The core
 tools stay typed as before, and their schemas no longer carry the rare actions.
 
+The op tier holds the rare operations: session replacement, app grants and
+revokes, machine removal and rotation, process stop, graph lifecycle removal,
+tool import, export and versions, the owner operations, gateway backup and
+charter history.
+
 `cto_ops_list` takes an optional `filter`. It returns the ops grouped, each
 with a one-line purpose, an example and an owner gate: `direct` runs at once,
 `proposal` waits for the owner's approval, and `irreversible` runs at once and
