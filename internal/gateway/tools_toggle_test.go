@@ -393,7 +393,14 @@ func TestToolToggleGatewayOwnerAndStandingActor(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, op := range []string{"tools.toggle", "tools.new_projects"} {
-		raw, _ = json.Marshal(map[string]any{"item": id, "project": "one", "on": false, "owner": ownerID, "actor": "standing choice"})
+		// tools.new_projects sets the choice for future projects and takes no
+		// project; only tools.toggle names one. The strict decode names the
+		// extra field, which would hide the forged actor this test watches.
+		payload := map[string]any{"item": id, "on": false, "owner": ownerID, "actor": "standing choice"}
+		if op == "tools.toggle" {
+			payload["project"] = "one"
+		}
+		raw, _ = json.Marshal(payload)
 		if _, err = g.handle(t.Context(), &nodeConn{id: n}, op, raw); err == nil || !strings.Contains(err.Error(), "owner authority") {
 			t.Fatalf("forged actor: %s %v", op, err)
 		}

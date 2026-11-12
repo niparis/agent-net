@@ -1013,18 +1013,29 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 				err = d.recordCTOAction(fmt.Sprintf("undid graph change #%d", q.ID))
 			}
 		}
-	case protocol.OpPlaybookGet, protocol.OpPlaybookSet:
+	case protocol.OpPlaybookGet:
 		// The note goes into every start result for that model: only the
-		// owner at the keyboard writes or reads it (decision 0022).
+		// owner at the keyboard writes or reads it (decision 0022). A read
+		// sends the get request alone; the gateway refuses a set-only field
+		// such as note here.
+		var q protocol.PlaybookGetRequest
+		if err := json.Unmarshal(raw, &q); err != nil || strings.TrimSpace(q.Model) == "" {
+			return nil, true, errors.New(method + " needs model")
+		}
+		var data json.RawMessage
+		if data, err = d.call(ctx, "playbook.get", q); err == nil {
+			res = data
+			d.Logf("playbook.get model=%s harness=%s", q.Model, q.Harness)
+		}
+	case protocol.OpPlaybookSet:
 		var q protocol.PlaybookSetRequest
 		if err := json.Unmarshal(raw, &q); err != nil || strings.TrimSpace(q.Model) == "" {
 			return nil, true, errors.New(method + " needs model")
 		}
-		frame := strings.ReplaceAll(method, "_", ".")
 		var data json.RawMessage
-		if data, err = d.call(ctx, frame, q); err == nil {
+		if data, err = d.call(ctx, "playbook.set", q); err == nil {
 			res = data
-			d.Logf("playbook.%s model=%s harness=%s", strings.TrimPrefix(method, "playbook_"), q.Model, q.Harness)
+			d.Logf("playbook.set model=%s harness=%s", q.Model, q.Harness)
 		}
 	case protocol.OpSessionPolicy:
 		// The policy is owner text that goes into the model's context every
