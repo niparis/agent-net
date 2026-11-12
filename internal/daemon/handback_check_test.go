@@ -97,6 +97,8 @@ func TestHandbackCheckNotConfiguredRunsNothing(t *testing.T) {
 // A passing check is recorded on the change with its output tail and the
 // parallelism the machine's test slot granted.
 func TestHandbackCheckPassed(t *testing.T) {
+	// The output assertion below expects only the check's granted parallelism.
+	t.Setenv("GOFLAGS", "")
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, queueSet, withLoad(&fakeLoad{l: roomyLoad()}))
 	repo := newRepo(t, "shop")
