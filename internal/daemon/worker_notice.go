@@ -1151,14 +1151,6 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 // rebase in progress leaves the worktree as it is (saveWorkerChanges says so
 // in the notice). It returns the short hash of the commit it made, or "".
 func (d *Daemon) commitAtHandback(w *worker, req protocol.WorkerHandbackRequest) string {
-	// Keep the explicit inability report for every ended run, including blocked
-	// workers and workers without a delivery change. It survives daemon restarts.
-	d.wmu.Lock()
-	workerID, generation := w.id, w.runGeneration
-	d.wmu.Unlock()
-	if _, err := d.st.db.Exec(`INSERT INTO worker_visual_reports(worker_id,generation,reason) VALUES(?,?,?) ON CONFLICT(worker_id,generation) DO UPDATE SET reason=excluded.reason`, workerID, generation, req.ProofUnavailable); err != nil {
-		d.Logf("worker visual report: %v", err)
-	}
 	complete := req.Status == protocol.StatusDone && req.IsComplete()
 	// The merge line is about this hand-back, not an earlier one.
 	d.wmu.Lock()

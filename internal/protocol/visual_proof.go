@@ -1,6 +1,9 @@
 package protocol
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // VisualProof names a transferred frame and the action or state it proves.
 // File is an absolute worktree path at hand-back and a manifest name on a change.
@@ -23,7 +26,9 @@ func (v VisualEvidence) Lines() string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("user_visible: " + v.UserVisible + "\n")
+	if v.UserVisible != "" {
+		b.WriteString("user_visible: " + v.UserVisible + "\n")
+	}
 	for _, p := range v.VisualProof {
 		b.WriteString("visual proof: " + p.File + " - " + p.Caption + "\n")
 	}
@@ -33,11 +38,13 @@ func (v VisualEvidence) Lines() string {
 	return b.String()
 }
 
+var visualTUIWord = regexp.MustCompile(`\btui\b`)
+
 // VisualBriefWarning is separate from CheckWorkerBrief: it never refuses a start.
 func VisualBriefWarning(task string) string {
 	lower := strings.ToLower(task)
-	visible := false
-	for _, term := range []string{"user-visible", "user visible", "tui", "frontend", "front-end", "screen", "scroll", "layout", "template", ".css", ".tsx", ".html"} {
+	visible := visualTUIWord.MatchString(lower)
+	for _, term := range []string{"user-visible", "user visible", "frontend", "front-end", "screen", "scroll", "layout", "template", ".css", ".tsx", ".html"} {
 		if strings.Contains(lower, term) {
 			visible = true
 			break

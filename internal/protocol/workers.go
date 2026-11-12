@@ -1016,7 +1016,6 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings.Snapshot) string {
 	var b strings.Builder
 	b.WriteString("[agent-net worker notice]\n")
-	b.WriteString(n.VisualEvidence.Lines())
 	b.WriteString("status: " + n.Status + "\n")
 	if n.Note != "" {
 		b.WriteString("note: " + n.Note + "\n")
@@ -1084,6 +1083,7 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 			b.WriteString("changes (git diff --stat):\n" + n.DiffStat + "\n")
 		}
 	}
+	b.WriteString(n.VisualEvidence.Lines())
 	if n.DefectHint != "" {
 		b.WriteString(n.DefectHint + "\n")
 	}

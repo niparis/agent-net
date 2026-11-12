@@ -726,10 +726,6 @@ CREATE TABLE IF NOT EXISTS delivery_step_messages (
  PRIMARY KEY(change_id, revision, step, for_step, after_merge, session_id));
 `, `
 -- A diff stat belongs to the revision named by its head commit.
-CREATE TABLE IF NOT EXISTS worker_visual_proof (
- node_id TEXT NOT NULL, session_id TEXT NOT NULL, generation INTEGER NOT NULL, model TEXT NOT NULL,
- unavailable TEXT NOT NULL, at INTEGER NOT NULL,
- PRIMARY KEY(node_id,session_id,generation));
 CREATE TABLE IF NOT EXISTS delivery_revision_stats (
  change_id TEXT NOT NULL, revision INTEGER NOT NULL, diff_stat TEXT NOT NULL,
  PRIMARY KEY(change_id, revision));
@@ -1285,7 +1281,16 @@ CREATE TABLE IF NOT EXISTS worker_brief_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_caller ON worker_brief_defects (caller, at);
 CREATE INDEX IF NOT EXISTS worker_brief_defects_worker ON worker_brief_defects (worker_session_id, at);
-`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration}
+`, chiefMigration, chiefCorrectionsMigration, ownerJudgmentsMigration, briefDefectMoveMigration, ownerMarksMigration, botNamesMigration, leadMergesMigration, chiefAdoptMigration, memberBlockedTicksMigration, permissionProposalMigration, busyHoldMigration, askSortHideMigration, `SELECT 1 /* verify reminder state */;`, `SELECT 1 /* delivery step waiting */;`, nudgePauseMigration, `SELECT 1 /* idle announce fingerprint columns */;`, `SELECT 1 /* nudge covered due column */;`, `SELECT 1 /* change quality signals column */;`, struggleMigration, `SELECT 1 /* replaced session column */;`, nudgeFiresMigration, workerBriefRejectionMigration, messagesThreadMigration, workerVisualProofMigration}
+
+// workerVisualProofMigration adds proof reports to stores already at version 180.
+const workerVisualProofMigration = `
+-- Worker visual proof reports, deduplicated by ended run.
+CREATE TABLE IF NOT EXISTS worker_visual_proof (
+ node_id TEXT NOT NULL, session_id TEXT NOT NULL, generation INTEGER NOT NULL, model TEXT NOT NULL,
+ unavailable TEXT NOT NULL, at INTEGER NOT NULL,
+ PRIMARY KEY(node_id,session_id,generation));
+`
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries
 // of one task can be counted and the weekly table can show rejections per
