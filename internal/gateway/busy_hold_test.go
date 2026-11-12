@@ -44,11 +44,11 @@ func TestBusySessionHoldsThenDeliversOneBatch(t *testing.T) {
 		}
 		ids = append(ids, m.ID)
 	}
-	if _, n, err := s.ReleaseBusyHold(b, false); err != nil || n != 0 {
+	if _, n, err := releaseOne(t, s, b, false); err != nil || n != 0 {
 		t.Fatalf("released while still busy: n=%d err=%v", n, err)
 	}
 	busyStatus(t, s, b, "idle")
-	carrier, n, err := s.ReleaseBusyHold(b, false)
+	carrier, n, err := releaseOne(t, s, b, false)
 	if err != nil || n != 3 {
 		t.Fatalf("release: n=%d err=%v", n, err)
 	}
@@ -108,7 +108,7 @@ func TestBusyBatchCarrierKeepsSenderNameAndHarness(t *testing.T) {
 		}
 	}
 	busyStatus(t, s, b, "idle")
-	carrier, n, err := s.ReleaseBusyHold(b, false)
+	carrier, n, err := releaseOne(t, s, b, false)
 	if err != nil || n != 3 {
 		t.Fatalf("release: n=%d err=%v", n, err)
 	}
@@ -135,7 +135,7 @@ func TestBusySessionSingleMessageKeepsItsID(t *testing.T) {
 		t.Fatal("not held")
 	}
 	busyStatus(t, s, b, "idle")
-	carrier, n, err := s.ReleaseBusyHold(b, false)
+	carrier, n, err := releaseOne(t, s, b, false)
 	if err != nil || n != 1 || carrier.ID != m.ID || len(carrier.Batch) != 0 {
 		t.Fatalf("single release = %+v n=%d err=%v, want the original", carrier, n, err)
 	}
@@ -166,7 +166,7 @@ func TestBusyHoldFallbackAfterLimit(t *testing.T) {
 	if err != nil || len(stuck) != 1 || stuck[0] != b {
 		t.Fatalf("stuck after the limit = %v, %v", stuck, err)
 	}
-	carrier, n, err := s.ReleaseBusyHold(b, true)
+	carrier, n, err := releaseOne(t, s, b, true)
 	if err != nil || n != 1 || carrier.ID != m.ID {
 		t.Fatalf("fallback release = %+v n=%d err=%v", carrier, n, err)
 	}
@@ -315,7 +315,7 @@ func TestUrgentJumpsTheBatchButCounts(t *testing.T) {
 		ids = append(ids, m.ID)
 	}
 	busyStatus(t, s, b, "idle")
-	carrier, n, err := s.ReleaseBusyHold(b, false)
+	carrier, n, err := releaseOne(t, s, b, false)
 	if err != nil || n != 3 {
 		t.Fatalf("release: %d %v", n, err)
 	}
@@ -402,4 +402,80 @@ func TestSendToBusySessionIsHeldAndReportsQueue(t *testing.T) {
 	if a, _, _ := s.Agent(b); a.GatewayHeld != 1 || a.InSession != 0 {
 		t.Fatalf("session counts after ready = gw %d, in %d; want gw 1, in 0", a.GatewayHeld, a.InSession)
 	}
+}
+
+// A file message that waits for a busy session is released on its own. The
+// daemon collects files only from a message it is handed with its manifest,
+// so a batch of messages with files would leave the files on the machine.
+func TestBusyReleaseKeepsFilesOutOfTheBatch(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	busyStatus(t, s, b, "busy")
+	files := []protocol.FileEntry{{ID: "f1", Name: "verify-attach.txt", Size: 90, SHA256: filesTestSum}}
+	var fileID string
+	var plainIDs []string
+	for i := 0; i < 3; i++ {
+		c.t = c.t.Add(time.Minute)
+		send := protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeRequest,
+			Body: "body-" + strconv.Itoa(i), IdempotencyKey: "k-" + strconv.Itoa(i)}
+		if i == 1 {
+			send.Files = files
+		}
+		m, _, err := s.StoreMessage(send)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !s.HoldForBusy(m) {
+			t.Fatalf("message %d was not held for a busy session", i)
+		}
+		if i == 1 {
+			fileID = m.ID
+		} else {
+			plainIDs = append(plainIDs, m.ID)
+		}
+	}
+	busyStatus(t, s, b, "idle")
+	carriers, n, err := s.ReleaseBusyHold(b, false)
+	if err != nil || n != 3 {
+		t.Fatalf("release: n=%d err=%v", n, err)
+	}
+	if len(carriers) != 2 {
+		t.Fatalf("released %d messages, want the file message alone and one batch of the rest", len(carriers))
+	}
+	var alone, batch protocol.Message
+	for _, carrier := range carriers {
+		if len(carrier.Batch) == 0 {
+			alone = carrier
+		} else {
+			batch = carrier
+		}
+	}
+	if alone.ID != fileID || len(alone.Files) != 1 {
+		t.Fatalf("file message released as %q with %d files, want %q alone with its file", alone.ID, len(alone.Files), fileID)
+	}
+	if len(batch.Batch) != 2 || len(batch.Files) != 0 {
+		t.Fatalf("batch carries %d messages and %d files, want 2 plain messages and no files", len(batch.Batch), len(batch.Files))
+	}
+	for _, m := range batch.Batch {
+		if len(m.Files) != 0 {
+			t.Fatalf("batch member %s has files, want none", m.ID)
+		}
+	}
+	if batch.Batch[0].ID != plainIDs[1] || batch.Batch[1].ID != plainIDs[0] {
+		t.Fatalf("batch order = %s, %s; want newest first", batch.Batch[0].ID, batch.Batch[1].ID)
+	}
+}
+
+// releaseOne releases a session's held messages for a test that expects them
+// to go as one carrier, which holds when no held message has files.
+func releaseOne(t *testing.T, s *Store, id string, force bool) (protocol.Message, int, error) {
+	t.Helper()
+	carriers, n, err := s.ReleaseBusyHold(id, force)
+	if len(carriers) > 1 {
+		t.Fatalf("released %d carriers, want one", len(carriers))
+	}
+	if len(carriers) == 0 {
+		return protocol.Message{}, n, err
+	}
+	return carriers[0], n, err
 }

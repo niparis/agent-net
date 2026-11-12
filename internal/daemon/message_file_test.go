@@ -174,3 +174,113 @@ func TestCTOMessageGetReadsAttachmentPages(t *testing.T) {
 		t.Fatalf("joined pages differ: got %d bytes, want %d", got.Len(), len(want))
 	}
 }
+
+// A file from a session on the same machine reaches the receiver's inbox
+// through the local handoff folder. The receiver reads it in pages, the same
+// as a file from another machine.
+func TestMessageFileSameMachinePagesJoinToTheExactBytes(t *testing.T) {
+	n := startFilesNet(t, filesNetOpts{})
+	n.fa.setSessions(
+		protocol.SessionInfo{Harness: "fake", NativeID: "na", PID: 1, Cwd: n.project, Name: "alice", Status: "idle"},
+		protocol.SessionInfo{Harness: "fake", NativeID: "nc", PID: 1, Cwd: t.TempDir(), Name: "carol", Status: "idle"},
+	)
+	eventually(t, "carol has an id", func() bool { return n.fa.host.SessionID("fake", "nc") != "" })
+	carol := n.fa.host.SessionID("fake", "nc")
+	want := []byte(strings.Repeat("héllo wörld, línea\n", 40))
+	src := writeTestFile(t, filepath.Join(n.project, "verify-attach.txt"), want)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(20*time.Second))
+	defer cancel()
+	res, err := n.a.d.SendFiles(ctx, FileSend{From: n.alice, To: carol, Body: "a local file", Paths: []string{src}})
+	if err != nil {
+		t.Fatalf("SendFiles: %v", err)
+	}
+	if res.Files[0].Path != FilePathLocal {
+		t.Fatalf("path = %q, want local", res.Files[0].Path)
+	}
+	n.waitDelivered(res.Message.ID)
+	var got []byte
+	var offset int64
+	for pages := 0; ; pages++ {
+		if pages > len(want) {
+			t.Fatal("paging never ended")
+		}
+		page, err := n.readMessageFile(n.a, carol, protocol.MessageFileRequest{MessageID: res.Message.ID, File: "verify-attach.txt", Offset: offset, MaxBytes: protocol.MessageFileMinBytes})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, page.Text...)
+		if page.NextOffset == 0 {
+			break
+		}
+		offset = page.NextOffset
+	}
+	if string(got) != string(want) {
+		t.Fatalf("joined pages differ: got %d bytes, want %d", len(got), len(want))
+	}
+}
+
+// A session in a turn holds its messages at the gateway, and they go out
+// together when it is ready. A file message in that batch must still reach the
+// receiver's inbox, so the receiver can read it.
+func TestMessageFileHeldWhileReceiverBusyReachesInbox(t *testing.T) {
+	n := startFilesNet(t, filesNetOpts{})
+	n.fa.setSessions(
+		protocol.SessionInfo{Harness: "fake", NativeID: "na", PID: 1, Cwd: n.project, Name: "alice", Status: "idle"},
+		protocol.SessionInfo{Harness: "fake", NativeID: "nc", PID: 1, Cwd: t.TempDir(), Name: "carol", Status: "busy"},
+	)
+	eventually(t, "carol has an id", func() bool { return n.fa.host.SessionID("fake", "nc") != "" })
+	carol := n.fa.host.SessionID("fake", "nc")
+	eventually(t, "the gateway sees carol busy", func() bool {
+		a, ok, err := n.g.gw.Store().Agent(carol)
+		return err == nil && ok && a.Status == "busy"
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(20*time.Second))
+	defer cancel()
+	sendText := func(body string) string {
+		t.Helper()
+		raw, err := n.a.d.send(ctx, protocol.MsgSend{Sender: n.alice, Recipient: carol, Type: protocol.TypeRequest, Body: body})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stored struct {
+			Message protocol.Message `json:"message"`
+		}
+		if err := json.Unmarshal(raw, &stored); err != nil || stored.Message.ID == "" {
+			t.Fatalf("msg.send answered %s: %v", raw, err)
+		}
+		return stored.Message.ID
+	}
+	want := "held with the others"
+	src := writeTestFile(t, filepath.Join(n.project, "verify-attach.txt"), []byte(want))
+	first := sendText("first")
+	res, err := n.a.d.SendFiles(ctx, FileSend{From: n.alice, To: carol, Body: "a file", Paths: []string{src}})
+	if err != nil {
+		t.Fatalf("SendFiles: %v", err)
+	}
+	second := sendText("second")
+	fileID := res.Message.ID
+	eventually(t, "the messages wait at the gateway", func() bool {
+		for _, id := range []string{first, fileID, second} {
+			m, ok, err := n.g.gw.Store().Message(id)
+			if err != nil || !ok || !m.HeldForBusy {
+				return false
+			}
+		}
+		return true
+	})
+	n.fa.setSessions(
+		protocol.SessionInfo{Harness: "fake", NativeID: "na", PID: 1, Cwd: n.project, Name: "alice", Status: "idle"},
+		protocol.SessionInfo{Harness: "fake", NativeID: "nc", PID: 1, Cwd: t.TempDir(), Name: "carol", Status: "idle"},
+	)
+	for _, id := range []string{first, second} {
+		n.waitDelivered(id)
+	}
+	n.waitDelivered(fileID)
+	page, err := n.readMessageFile(n.a, carol, protocol.MessageFileRequest{MessageID: fileID, File: "verify-attach.txt"})
+	if err != nil {
+		t.Fatalf("read the file that waited for a busy receiver: %v", err)
+	}
+	if page.Text != want || page.NextOffset != 0 {
+		t.Fatalf("page = %+v, want the whole file %q", page, want)
+	}
+}

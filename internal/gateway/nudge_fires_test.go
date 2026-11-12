@@ -412,7 +412,7 @@ func TestNudgeBatchedEnvelopeWritesARowPerPart(t *testing.T) {
 	if _, err := s.db.Exec("UPDATE sessions SET status='idle' WHERE id=?", b); err != nil {
 		t.Fatal(err)
 	}
-	carrier, n, err := s.ReleaseBusyHold(b, false)
+	carrier, n, err := releaseOne(t, s, b, false)
 	if err != nil || n != 2 || len(carrier.Batch) != 2 {
 		t.Fatalf("release: carrier=%+v n=%d err=%v", carrier, n, err)
 	}

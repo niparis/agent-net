@@ -64,72 +64,93 @@ func (s *Store) busyForSeconds(sessionID string, now int64) int64 {
 	return (now - since) / int64(time.Second)
 }
 
-// ReleaseBusyHold builds the one message that carries everything held for a
-// session and returns it, ready to dispatch. force ignores the current status:
-// the 30-minute fallback uses it. It returns no message when the session is
-// still busy, is offline, or has nothing held.
-func (s *Store) ReleaseBusyHold(sessionID string, force bool) (protocol.Message, int, error) {
+// ReleaseBusyHold builds the messages that deliver what was held for a
+// session, ready to dispatch. A message with files goes on its own: the
+// daemon takes files only from a message it is handed with its manifest, so a
+// file inside a batch would never reach the inbox. The other held messages go
+// as one batch. force ignores the current status: the 30-minute fallback uses
+// it. It returns no messages when the session is still busy, is offline, or
+// has nothing held. The count is the number of held messages released.
+func (s *Store) ReleaseBusyHold(sessionID string, force bool) ([]protocol.Message, int, error) {
 	if !force {
 		a, ok, err := s.Agent(sessionID)
 		if err != nil {
-			return protocol.Message{}, 0, err
+			return nil, 0, err
 		}
 		if !ok || !a.Online || a.Status == "busy" {
-			return protocol.Message{}, 0, nil
+			return nil, 0, nil
 		}
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return protocol.Message{}, 0, err
+		return nil, 0, err
 	}
 	defer tx.Rollback()
 	now := s.now()
 	rows, err := tx.Query(msgSelect+` WHERE m.recipient=? AND m.held_for_busy=1 AND m.state='stored' AND m.batch_id='' AND m.expires_at>?
 		ORDER BY m.urgent DESC, m.created_at DESC, m.rowid DESC`, sessionID, now.UnixNano())
 	if err != nil {
-		return protocol.Message{}, 0, err
+		return nil, 0, err
 	}
 	var held []protocol.Message
 	for rows.Next() {
 		m, err := scanMessage(rows)
 		if err != nil {
 			rows.Close()
-			return protocol.Message{}, 0, err
+			return nil, 0, err
 		}
 		held = append(held, m)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return protocol.Message{}, 0, err
+		return nil, 0, err
 	}
 	rows.Close()
 	if len(held) == 0 {
-		return protocol.Message{}, 0, nil
+		return nil, 0, nil
 	}
 	busy := s.busyForSeconds(sessionID, now.UnixNano())
-	if len(held) == 1 {
-		if _, err := tx.Exec(`UPDATE messages SET held_for_busy=0, held_at=0 WHERE id=?`, held[0].ID); err != nil {
-			return protocol.Message{}, 0, err
+	var carriers []protocol.Message
+	var plain []protocol.Message
+	for _, m := range held {
+		if len(m.Files) == 0 {
+			plain = append(plain, m)
+			continue
 		}
-		if err := tx.Commit(); err != nil {
-			return protocol.Message{}, 0, err
+		if _, err := tx.Exec(`UPDATE messages SET held_for_busy=0, held_at=0 WHERE id=?`, m.ID); err != nil {
+			return nil, 0, err
 		}
-		carrier := held[0]
-		carrier.HeldForBusy = false
-		s.Event("msg.released_busy", "", sessionID, carrier.ID, "")
-		s.logStep("msg.released_busy", carrier.ID, "count", 1, "busy_for_s", busy)
-		return carrier, 1, nil
+		m.HeldForBusy = false
+		carriers = append(carriers, m)
 	}
-	carrier, err := s.insertBusyBatch(tx, sessionID, held, now)
-	if err != nil {
-		return protocol.Message{}, 0, err
+	switch {
+	case len(plain) == 1:
+		if _, err := tx.Exec(`UPDATE messages SET held_for_busy=0, held_at=0 WHERE id=?`, plain[0].ID); err != nil {
+			return nil, 0, err
+		}
+		carrier := plain[0]
+		carrier.HeldForBusy = false
+		carriers = append(carriers, carrier)
+	case len(plain) > 1:
+		carrier, err := s.insertBusyBatch(tx, sessionID, plain, now)
+		if err != nil {
+			return nil, 0, err
+		}
+		carriers = append(carriers, carrier)
 	}
 	if err := tx.Commit(); err != nil {
-		return protocol.Message{}, 0, err
+		return nil, 0, err
 	}
-	s.Event("msg.batch", "", sessionID, carrier.ID, fmt.Sprintf("messages=%d", len(held)))
-	s.logStep("msg.batch", carrier.ID, "count", len(held), "busy_for_s", busy)
-	return carrier, len(held), nil
+	for _, carrier := range carriers {
+		if len(carrier.Batch) > 0 {
+			s.Event("msg.batch", "", sessionID, carrier.ID, fmt.Sprintf("messages=%d", len(carrier.Batch)))
+			s.logStep("msg.batch", carrier.ID, "count", len(carrier.Batch), "busy_for_s", busy)
+			continue
+		}
+		s.Event("msg.released_busy", "", sessionID, carrier.ID, "")
+		s.logStep("msg.released_busy", carrier.ID, "count", 1, "busy_for_s", busy)
+	}
+	return carriers, len(held), nil
 }
 
 // insertBusyBatch writes the batch message and marks every held message as
