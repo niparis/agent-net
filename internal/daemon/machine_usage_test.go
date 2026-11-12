@@ -193,6 +193,7 @@ func TestMachineUsageNowWithoutSampler(t *testing.T) {
 // The whole path: the gateway asks the machine's daemon and the answer reaches
 // agent_machine_get. A machine that is gone gives an offline note instead.
 func TestMachineGetUsageThroughGateway(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{detect: fakeInventory}, withSampler(os.Getpid()))
 	ctx := context.Background()

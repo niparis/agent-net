@@ -15,6 +15,7 @@ import (
 // call through the operator path: the method has no preview mode, so the
 // argument must fail and be named instead of dropped.
 func TestOperatorDeliveryOwnerSetRefusesUnknownArgument(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	_, err := cliClient(t, n).call(protocol.OpDeliveryOwnerSet, map[string]any{
@@ -27,6 +28,7 @@ func TestOperatorDeliveryOwnerSetRefusesUnknownArgument(t *testing.T) {
 
 // The two daemons use a real gateway and local, fake Pi sessions.
 func TestDeliveryNodeStepReachesOtherMachine(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startNode(t, g, nodeOpts{cmdline: "pi"})
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})
@@ -97,6 +99,7 @@ func TestDeliveryNodeStepReachesOtherMachine(t *testing.T) {
 }
 
 func TestDeliveryNodeStepWaitsForSession(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startNode(t, g, nodeOpts{cmdline: "pi"})
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})
@@ -188,6 +191,7 @@ func TestDeliveryPushesWorkerBranchForRemoteOwner(t *testing.T) {
 }
 
 func TestDeliveryOwnerApprovalRoutesNextNodeStep(t *testing.T) {
+	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	a := startNode(t, g, nodeOpts{cmdline: "pi"})
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})

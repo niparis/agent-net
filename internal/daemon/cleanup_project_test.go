@@ -59,7 +59,7 @@ func TestCleanupWorktreeMergedRunningAndUnique(t *testing.T) {
 
 func TestCleanupWorktreeEndTimePersists(t *testing.T) {
 	t.Parallel()
-	st, err := openState(t.TempDir())
+	st, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestCleanupWorktreeEndTimePersists(t *testing.T) {
 func TestCleanupWorktreeObservesLegacy(t *testing.T) {
 	t.Parallel()
 	project := newRepo(t, "project")
-	stateDir := t.TempDir()
+	stateDir := seededStateDir(t)
 	dir := filepath.Join(stateDir, "worktrees", "w_legacy")
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestCleanupWorktreeObservesLegacy(t *testing.T) {
 func TestCleanupWorktreeKeepsQueuedBranch(t *testing.T) {
 	t.Parallel()
 	project := newRepo(t, "project")
-	stateDir := t.TempDir()
+	stateDir := seededStateDir(t)
 	dir := filepath.Join(stateDir, "worktrees", "w_old")
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		t.Fatal(err)
@@ -141,7 +141,7 @@ func TestCleanupWorktreeKeepsQueuedBranch(t *testing.T) {
 func TestCleanupWorktreeKeepsPersistedRunning(t *testing.T) {
 	t.Parallel()
 	project := newRepo(t, "project")
-	stateDir := t.TempDir()
+	stateDir := seededStateDir(t)
 	dir := filepath.Join(stateDir, "worktrees", "w_running")
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		t.Fatal(err)
@@ -169,7 +169,7 @@ func TestCleanupWorktreeKeepsPersistedRunning(t *testing.T) {
 func TestCleanupWorktreeRemovesLedger(t *testing.T) {
 	t.Parallel()
 	project := newRepo(t, "project")
-	stateDir := t.TempDir()
+	stateDir := seededStateDir(t)
 	dir := filepath.Join(stateDir, "worktrees", "w_done")
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		t.Fatal(err)
@@ -270,7 +270,7 @@ func TestCleanupWorktreeBranchWhenWorktreeAlreadyGone(t *testing.T) {
 func TestCleanupWorktreeForgetsAlreadyRemoved(t *testing.T) {
 	t.Parallel()
 	project := newRepo(t, "project")
-	stateDir := t.TempDir()
+	stateDir := seededStateDir(t)
 	dir := filepath.Join(stateDir, "worktrees", "w_removed")
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		t.Fatal(err)
@@ -337,7 +337,7 @@ func TestCleanupIgnoresDeclaredFolders(t *testing.T) {
 func TestCleanupWorktreeKeepsRecentlyRestarted(t *testing.T) {
 	t.Parallel()
 	project := newRepo(t, "project")
-	stateDir := t.TempDir()
+	stateDir := seededStateDir(t)
 	dir := filepath.Join(stateDir, "worktrees", "w_recent")
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		t.Fatal(err)
@@ -413,7 +413,7 @@ func TestCleanupWorktreeKeepsStartingBase(t *testing.T) {
 
 func TestCleanupStartingBranchReservedByAdmission(t *testing.T) {
 	t.Parallel()
-	st, err := openState(t.TempDir())
+	st, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +563,7 @@ func TestCleanupSeenProjectRemovesEndedWorktree(t *testing.T) {
 func TestCleanupWorktreeFindsPreviousCustomPrefix(t *testing.T) {
 	t.Parallel()
 	project := newRepo(t, "project")
-	state := t.TempDir()
+	state := seededStateDir(t)
 	dir := filepath.Join(state, "worktrees", "w_old")
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		t.Fatal(err)
@@ -605,7 +605,7 @@ func TestCleanupBranchValidatesRecordedPrefix(t *testing.T) {
 
 func TestCleanupWorktreeDeliveryRetention(t *testing.T) {
 	project := newRepo(t, "project")
-	stateDir := t.TempDir()
+	stateDir := seededStateDir(t)
 	dir := filepath.Join(stateDir, "worktrees", "w_delivery")
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		t.Fatal(err)
@@ -984,7 +984,7 @@ func TestCleanupProjectsSkipsMissingAndNonGitAndRateLimits(t *testing.T) {
 
 func TestCleanupWorktreeErrorRateLimited(t *testing.T) {
 	project := newRepo(t, "project")
-	state := t.TempDir()
+	state := seededStateDir(t)
 	dir := filepath.Join(state, "worktrees", "w_err_ratelimit")
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		t.Fatal(err)
@@ -1092,7 +1092,7 @@ func TestCleanupMergedBranchImmediately(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			project := newRepo(t, "project")
-			stateDir := t.TempDir()
+			stateDir := seededStateDir(t)
 			dir := filepath.Join(stateDir, "worktrees", "w_merged")
 			if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 				t.Fatal(err)

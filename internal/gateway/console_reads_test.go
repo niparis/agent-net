@@ -50,7 +50,11 @@ func TestConsoleCachesLatestConversationsWithLargeHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const conversations = 5000
+	conversations := 5000
+	if raceEnabled {
+		// A history ten times the page size still exposes repeated or unbounded reads.
+		conversations = 500
+	}
 	for conv := 0; conv < conversations; conv++ {
 		id := fmt.Sprintf("m_console_%05d", conv)
 		at := c.t.Add(-time.Duration(conv) * time.Minute)

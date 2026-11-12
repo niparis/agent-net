@@ -12,6 +12,7 @@ import (
 )
 
 func TestDeliverySensitiveDiff(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ path, want string }{
 		{"testdata/migrations.lock", "migrations"},
 		{"internal/gateway/testdata/migrations.lock", "migrations"},
@@ -48,6 +49,7 @@ func TestDeliverySensitiveDiff(t *testing.T) {
 }
 
 func TestDeliveryHandbackCarriesReviewRisk(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	f.answer(protocol.FrameDeliveryNeedsPush, func(json.RawMessage) (any, error) {
 		return protocol.DeliveryNeedsPushResult{}, nil
@@ -80,6 +82,7 @@ func TestDeliveryHandbackCarriesReviewRisk(t *testing.T) {
 }
 
 func TestDeliverySensitiveRenameAndDeletion(t *testing.T) {
+	t.Parallel()
 	repo := newRepo(t, "demo")
 	if err := os.WriteFile(filepath.Join(repo, "auth.go"), []byte("sensitive\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -125,6 +128,7 @@ func TestDeliveryHandbackUsesJudgeRisk(t *testing.T) {
 }
 
 func TestDeliverySubmitWithoutDiffRequiresReview(t *testing.T) {
+	t.Parallel()
 	n, f := startDeliveryNode(t)
 	_, wt := deliveryWorktree(t)
 	if err := os.WriteFile(filepath.Join(wt, "install.sh"), []byte("changed\n"), 0600); err != nil {
