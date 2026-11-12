@@ -820,3 +820,20 @@ func TestProcessRefusalForClaudeCommandLines(t *testing.T) {
 		}
 	}
 }
+
+func TestClaudeRosterQuietSupervisor(t *testing.T) {
+	now := time.Now()
+	me := os.Getuid()
+	d := processStopDaemon(&signalGuard{})
+	d.cfg.claudeRosterPath = writeClaudeRoster(t, 500, now.Add(-time.Hour), map[string]any{"live": map[string]any{"pid": 501}})
+	read := func(pid int) (procView, error) {
+		return procView{PID: pid, UID: me, EUID: me, Started: now.Add(-2 * time.Hour)}, nil
+	}
+	if r := d.readClaudeRosterWithProcess(now, read); r == nil || r.Workers["live"].PID != 501 {
+		t.Fatal("quiet live supervisor must keep roster trustworthy")
+	}
+	read = func(pid int) (procView, error) { return procView{PID: pid, UID: me, EUID: me, Started: now}, nil }
+	if d.readClaudeRosterWithProcess(now, read) != nil {
+		t.Fatal("reused supervisor pid must not authenticate old roster")
+	}
+}

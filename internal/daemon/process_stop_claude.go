@@ -10,11 +10,12 @@ import (
 )
 
 // Claude Code runs its background sessions outside agent-net. Its supervisor
-// rewrites a roster file every few seconds with the live sessions: each entry
+// rewrites a roster file when its live sessions change: each entry
 // names the background host (pid) and the session process (replPid). A process
 // stop must never end one of them, so processRefusal checks the roster too.
 //
-// The roster is read only while it is fresh. When it is missing or stale, the
+// A roster with a supervisor is trusted while that same user process lives.
+// When the supervisor cannot be verified, the
 // daemon cannot tell which Claude processes are live, so it refuses every
 // Claude background process. The daemon_status file is not used: it can be
 // hours old.
@@ -67,9 +68,13 @@ func (d *Daemon) claudeRosterFile() string {
 	return filepath.Join(dir, "daemon", "roster.json")
 }
 
-// readClaudeRoster returns the roster when it reads and was written within
-// claudeRosterMaxAge of now, or nil.
+// readClaudeRoster verifies the supervisor identity against the write time.
+// Legacy rosters without a supervisor retain the bounded freshness check.
 func (d *Daemon) readClaudeRoster(now time.Time) *claudeRoster {
+	return d.readClaudeRosterWithProcess(now, readProcView)
+}
+
+func (d *Daemon) readClaudeRosterWithProcess(now time.Time, read func(int) (procView, error)) *claudeRoster {
 	path := d.claudeRosterFile()
 	if path == "" {
 		return nil
@@ -81,6 +86,13 @@ func (d *Daemon) readClaudeRoster(now time.Time) *claudeRoster {
 	var r claudeRoster
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return nil
+	}
+	if r.SupervisorPID > 1 {
+		supervisor, err := read(r.SupervisorPID)
+		if err != nil || supervisor.Zombie || supervisor.UID != os.Getuid() || supervisor.EUID != os.Getuid() || supervisor.Started.IsZero() || supervisor.Started.After(time.UnixMilli(r.UpdatedAt)) || r.UpdatedAt > now.UnixMilli() {
+			return nil
+		}
+		return &r
 	}
 	if age := now.Sub(time.UnixMilli(r.UpdatedAt)); age > claudeRosterMaxAge || age < -claudeRosterMaxAge {
 		return nil
