@@ -69,7 +69,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if in.Harness == "" && in.Model != "" && in.Model != "auto" {
 			in.Harness = "opencode"
 		}
-		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Mode: str("mode"), Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue})
+		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Mode: str("mode"), Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue, OwnerWords: str("owner_words"), Reason: str("reason")})
 		if err != nil {
 			return nil, err
 		}
@@ -82,9 +82,10 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if line, ok := m["owner_line"].(string); ok && line != "" {
 			out["owner_line"] = line
 		}
-		// Set only when the caller named the model instead of the picker.
-		if r, ok := m["reminder"].(string); ok && r != "" {
-			out["reminder"] = r
+		// How a start with selection fields went ahead: the owner's words, or
+		// held for his answer.
+		if path, ok := m["selection_path"].(string); ok && path != "" {
+			out["selection_path"] = path
 		}
 		status, _ := m["status"].(string)
 		if status == "accepted" {

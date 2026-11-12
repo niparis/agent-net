@@ -1933,7 +1933,7 @@ export const TOOL_CATALOG = [
         },
         "machine": {
           "type": "string",
-          "description": "Machine name or ID."
+          "description": "Leave empty: a selection field. Set only when your owner named it, with owner_words."
         },
         "harness": {
           "type": "string",
@@ -1944,7 +1944,7 @@ export const TOOL_CATALOG = [
             "pi",
             "agy"
           ],
-          "description": "Harness name."
+          "description": "Leave empty: a selection field. Set only when your owner named it, with owner_words."
         },
         "model": {
           "type": "string",
@@ -1990,7 +1990,7 @@ export const TOOL_CATALOG = [
           "items": {
             "type": "string"
           },
-          "description": "Exclude model families from automatic selection, for example [\"openai\"]."
+          "description": "Leave empty: a selection field. Excludes model families, for example [\"openai\"]; set only when your owner named it, with owner_words."
         },
         "fixes": {
           "type": "string",
@@ -2008,6 +2008,16 @@ export const TOOL_CATALOG = [
             "check"
           ],
           "description": "check runs the brief checks and starts nothing."
+        },
+        "owner_words": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "A short quote of your owner's own request that names harness, model, provider, effort, family or machine, for example \"use a codex worker for this\". Needed to set any of those: agent-net checks it appears in what he typed in this session in the last 3 hours. Leave them empty otherwise."
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Why you set selection fields without owner_words. The start then waits for your owner to confirm it or let the picker choose."
         }
       },
       "required": [],

@@ -374,7 +374,9 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 		t.Fatal(err)
 	}
 	sock := filepath.Join(shortDir(t), "d.sock")
-	cfg := Config{testStopCTOOnExit: true, testNoDifficulty: true, GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
+	// Most worker tests start workers as an agent with a model or harness: the
+	// override check is off unless a test turns it on (worker_override_test.go).
+	cfg := Config{testStopCTOOnExit: true, testNoDifficulty: true, testOpenSelection: true, GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
 		NodeConfigDir: cfgDir, Hostname: "host-" + nc.NodeID, StateDir: seededStateDir(t), SocketPath: sock,
 		HomeDir:       t.TempDir(),
 		WorkerGoCache: t.TempDir(),

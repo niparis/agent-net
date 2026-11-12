@@ -126,6 +126,10 @@ type Config struct {
 	testAssess func(ctx context.Context, project, task string) *protocol.WorkerAssessment
 	// testStartBudget replaces workerStartAnswerBudget.
 	testStartBudget time.Duration
+	// testOpenSelection lets an agent's start set selection fields without the
+	// owner's confirmation (worker_override.go). The worker tests that start
+	// as an agent with a model or harness turn it on; the override tests do not.
+	testOpenSelection bool
 	// testGatewayCall is a fake gateway for chosen frame types: when it
 	// returns handled, Daemon.call returns its answer and the real gateway
 	// never sees the frame.
@@ -332,6 +336,10 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	ownerPrompts        ownerPrompts
+	ownerPromptClock    func() time.Time // test hook
+	heldMu              sync.Mutex
+	heldStarts          map[string]*heldStart // start id -> a start that waits for the owner, guarded by heldMu
 	openCodeRoutes      opencodeapi.Cache
 	startedAt           time.Time
 	cloneProject        func(context.Context, string, string) error // test hook

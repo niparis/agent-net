@@ -163,6 +163,15 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onModelsFrame(ctx, l, h, raw)
 			}()
+		case protocol.FrameStartDecision:
+			var p protocol.StartDecision
+			if json.Unmarshal(raw, &p) == nil && p.Ref != "" {
+				d.wg.Add(1)
+				go func() {
+					defer d.wg.Done()
+					d.onStartDecision(p)
+				}()
+			}
 		case "node.name":
 			var p protocol.NodeName
 			if json.Unmarshal(raw, &p) == nil && p.Hostname != "" {

@@ -2897,6 +2897,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				g.logLine("permission.apply.refused", "id", p.ID, "reason", permissionErr.Error())
 			}
 		}
+		if ref := st.startOverrideRef(item.ID); ref != "" && item.Status != "open" {
+			g.sendStartDecision(ctx, item, ref)
+		}
 		g.dispatchStepTasks(ctx)
 		node, err := st.SessionNode(item.SessionID)
 		if err == nil {

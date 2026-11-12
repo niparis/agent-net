@@ -219,6 +219,7 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		if isHumanClaudePrompt(p.Prompt) {
 			_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
 			d.ownerTyped(ctx, ls, sid, p.Prompt)
+			d.rememberOwnerPrompt(sid, p.Prompt)
 		}
 	}
 	got, ok := d.policyOf(ctx, sid, d.agentsHashOf(ls))
