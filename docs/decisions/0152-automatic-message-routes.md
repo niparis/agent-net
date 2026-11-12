@@ -1,9 +1,9 @@
-# 0151 - Where each automatic message goes
+# 0152 - Where each automatic message goes
 
 Date: 2026-11-12
 Status: Approved by the owner on 2026-11-12 (reshape brief v2). Not built:
 step (b) of [the plan](../design/owner-front-door-plan.md).
-Follows [0149](0149-owner-front-door.md).
+Follows [0150](0150-owner-front-door.md).
 
 ## Context
 
@@ -39,7 +39,7 @@ code read behind this is in the agent-net lead's fact check for the owner
 | approval, step needs_owner | becomes a decision item |
 | check: blocked, or woken twice without progress | raw input; never reaches the owner as is |
 | loop paused | |
-| waiting session | created only after the debounce (0149) |
+| waiting session | created only after the debounce (0150) |
 | rejection, escalation | |
 | session stall | |
 | held request | |
@@ -56,16 +56,28 @@ each owner conversation. Entries are deduplicated by (kind, subject), where the
 subject is the machine, harness or project. Each entry has a severity, a first
 seen time, a last seen time and a count.
 
+**What "wakes the CTO" means.** A CTO turn starts only from the owner, so
+there is no CTO turn without him. A wake is a P1 item in the chief's queue,
+"CTO alert". The chief routes it to the lead that owns the cause (the
+agent-net lead for agent-net), with the CTO informed. It goes to the owner
+only for money, secrets or security. The CTO acts on it at the next owner
+conversation, or at once if the owner opens one.
+
+**One event, one thread.** Quota exhaustion reaches the CTO (the cause) and
+the chief (the stuck work). It is one thread: the chief's stuck-work item
+links the CTO queue entry for the same provider, and closing the cause closes
+both.
+
 | Kind | Subject | Wakes the CTO when |
 |---|---|---|
-| machine offline or silent | machine | silent for N = 15 minutes |
+| machine offline or silent | machine | silent for N = 15 minutes; a machine that reported sleep never alerts (decision 0137 tells asleep from silent) |
 | harness update failure | machine and harness | the alert repeats for over an hour |
 | compaction failure | machine and harness | the alert repeats for over an hour |
 | MCP repair failure | machine and server | the alert repeats for over an hour |
 | struggle pattern across workers (not per worker) | model or project | failures across many workers |
 | merge queue failing (new detector) | project | K = 3 failed test runs in a row on the merger's train tip, counted per train |
 | quota floor reached, provider exhausted | provider | the alert repeats for over an hour |
-| picker override (decision 0150) | the start | never wakes; the CTO answers it from the queue, or the chief does |
+| picker override (decision 0151) | the start | never wakes; it goes to the chief first, and the CTO answers it from the queue only if the chief has not |
 | Claude mouse notice | machine | never; one digest line |
 
 Everything that does not wake the CTO goes to its digest. The chief's morning
@@ -80,8 +92,8 @@ becomes a digest line for the CTO.
 ## Consequences
 
 - No automatic message goes to the owner except sign-in and OAuth.
-- The CTO needs a queue read at conversation start, so an alert does not
-  start a CTO conversation unless it is on the wake list.
+- The CTO needs a queue read at conversation start. An alert never starts a
+  CTO conversation; a wake is a P1 item for the chief.
 - A new detector is needed for the merge queue (K failed runs in a row).
 - Every kind not listed here keeps its current route until this table is
   updated, and a test lists every kind so that a new kind fails until it has a
