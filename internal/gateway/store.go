@@ -1311,7 +1311,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1320,6 +1320,16 @@ CREATE TABLE IF NOT EXISTS worker_visual_proof (
  node_id TEXT NOT NULL, session_id TEXT NOT NULL, generation INTEGER NOT NULL, model TEXT NOT NULL,
  unavailable TEXT NOT NULL, at INTEGER NOT NULL,
  PRIMARY KEY(node_id,session_id,generation));
+`
+
+// quotaBudgetMigration stores the size of a provider's quota window in tokens,
+// learned from a quota failure (decision 0144): the tokens its workers used in
+// the window before the failure. One row per provider and window length; the
+// newest failure wins.
+const quotaBudgetMigration = `
+CREATE TABLE IF NOT EXISTS quota_budgets (
+ provider TEXT NOT NULL, window_seconds INTEGER NOT NULL, tokens INTEGER NOT NULL, at INTEGER NOT NULL,
+ PRIMARY KEY (provider, window_seconds));
 `
 
 // workerBriefRejectionMigration stores every refused worker brief, so retries

@@ -255,6 +255,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		// its model draws on, on this machine, until the reset the provider named,
 		// so the next start does not fail the same way minutes later. A model that
 		// no window serves blocks the whole provider.
+		var learnedBlock *protocol.QuotaBlock
 		if provider, wait, ok := protocol.AccountQuotaBlockAt(p.Harness, p.Failure, g.store.now()); ok {
 			until := g.store.now().Add(wait)
 			block := protocol.QuotaBlock{Provider: provider, Until: until}
@@ -264,6 +265,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			if err := g.store.RecordQuotaBlock(nc.id, block, p.Failure); err != nil {
 				return nil, err
 			}
+			learnedBlock = &block
 			g.logLine("quota.blocked", "node", nc.id, "provider", provider, "window", block.WindowID, "until", until.UTC().Format(time.RFC3339), "session", p.SessionID)
 		}
 		if p.StartedAt == 0 {
@@ -290,6 +292,14 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, AutoContinue: p.AutoContinueRun, Caller: caller, CallerSessionID: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches, TaskID: p.TaskID, Midrun: p.MidrunRun, Struggle: p.Struggle}
 		if err := g.store.RecordWorkerRun(run); err != nil {
 			return nil, err
+		}
+		// A quota failure teaches the size of the provider's quota window: the
+		// tokens its workers used before it (decision 0144). The run is
+		// recorded, so its own tokens count.
+		if learnedBlock != nil {
+			if err := g.store.learnQuotaBudget(learnedBlock.Provider, g.store.now(), learnedBlock.Until); err != nil {
+				g.logLine("quota.budget_error", "provider", learnedBlock.Provider, "error", err)
+			}
 		}
 		if err := g.store.SetSessionWorkerRework(nc.id, p.SessionID, p.Continue, p.Fix, p.DifficultyAsked, p.DifficultyUsed, p.AutoContinue); err != nil {
 			return nil, err
@@ -784,6 +794,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
 			}
 		}
+		// The burn of the providers' running workers, across every machine,
+		// decides whether one more worker would last until the reset
+		// (decision 0144).
+		quotas = g.withQuotaBurn(quotas, agents)
 		profiles, err := g.store.WorkerProfiles()
 		if err != nil {
 			return none, err
