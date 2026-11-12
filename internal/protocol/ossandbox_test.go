@@ -14,11 +14,11 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 	for _, tc := range []struct{ level, harness, os, want string }{
 		{WorkersSandboxed, "pi", "bubblewrap", "permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap)"},
 		{WorkersReadOnly, "opencode", "bubblewrap", "permissions: read-only (no writes) (sandboxed by bubblewrap)"},
-		{WorkersSandboxed, "pi", "", "permissions: sandboxed (writes only in its worktree, network on) (enforced for Codex only for now)"},
+		{WorkersSandboxed, "pi", "", "permissions: sandboxed (writes only in its worktree, network on) (enforced for claude, codex and agy only for now)"},
 		{WorkersSandboxed, "claude", "", "permissions: sandboxed (writes only in its worktree, network on)"},
 		{WorkersReadOnly, "codex", "", "permissions: read-only (no writes)"},
 		{WorkersSandboxed, "agy", "", "permissions: sandboxed (writes only in its worktree, network on)"},
-		{WorkersNoNetwork, "agy", "", "permissions: no-network (writes only in its worktree, network off) (enforced for Codex only for now)"},
+		{WorkersNoNetwork, "agy", "", "permissions: no-network (writes only in its worktree, network off) (enforced for claude and codex only for now)"},
 	} {
 		if got := WorkerPermissionsLine(tc.level, tc.harness, tc.os); got != tc.want {
 			t.Errorf("%s %s %q:\n got %q\nwant %q", tc.level, tc.harness, tc.os, got, tc.want)
@@ -42,7 +42,7 @@ func TestWorkerBriefNamesTheWrapper(t *testing.T) {
 		t.Fatalf("brief:\n%s", body)
 	}
 	plain := WorkerTaskBodyWithSettings("pi", "do it", "/wt", "agent-net/w_1", "", "", WorkersSandboxed, settings.Snapshot{})
-	if strings.Contains(plain, "bubblewrap") || !strings.Contains(plain, "(enforced for Codex only for now)") {
+	if strings.Contains(plain, "bubblewrap") || !strings.Contains(plain, "(enforced for claude, codex and agy only for now)") {
 		t.Fatalf("brief without the wrapper:\n%s", plain)
 	}
 	ro := WorkerTaskBodyOS("opencode", "look", "", "", "", "", WorkersReadOnly, "bubblewrap", settings.Snapshot{}, "")

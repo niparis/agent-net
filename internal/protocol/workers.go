@@ -837,8 +837,32 @@ func WorkerBaseNote(base, worktree string, snap settings.Snapshot) string {
 	return "Your worktree already starts at the head of " + base + " (another worker's branch); edit and commit only in " + worktree + ", never in another worker's worktree."
 }
 
+// workerHarnesses are the harnesses a worker can run in, by the names the
+// owner and the tools use.
+var workerHarnesses = []string{"claude", "codex", "agy", "opencode", "pi"}
+
+// WorkerEnforcedBy names the harnesses whose own sandbox enforces a level, for
+// example "claude, codex and agy". It asks WorkerEnforcer, the place that
+// decides it, so the names follow the launch code.
+func WorkerEnforcedBy(level string) string {
+	var names []string
+	for _, h := range workerHarnesses {
+		if WorkerEnforcer(level, h, "") != "" {
+			names = append(names, h)
+		}
+	}
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
 // WorkerPermissionsLine describes the effective project level, and what
-// enforces it (docs/design/worker-os-sandbox.md).
+// enforces it (docs/design/worker-os-sandbox.md). A harness that does not
+// enforce the level has the names of the harnesses that do.
 func WorkerPermissionsLine(level, harness, osSandbox string) string {
 	level = WorkerPermissionsOrDefault(level)
 	detail := "writes only in its worktree, network on"
@@ -853,7 +877,7 @@ func WorkerPermissionsLine(level, harness, osSandbox string) string {
 	case osSandbox != "":
 		text += " (sandboxed by " + osSandbox + ")"
 	case WorkerEnforcer(level, harness, "") == "":
-		text += " (enforced for Codex only for now)"
+		text += " (enforced for " + WorkerEnforcedBy(level) + " only for now)"
 	}
 	return text
 }

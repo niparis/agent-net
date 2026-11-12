@@ -400,7 +400,9 @@ func (m Model) policyView(w, rows int) []string {
 	for _, s := range m.policySupport(a, f.preview) {
 		out = append(out, sDim.Render(clip("  note: "+s, w)))
 	}
-	out = append(out, sDim.Render(clip("  Workers: "+workersHelp(workersChoices[f.workers]), w)))
+	level := protocol.WorkerPermissionsOrDefault(workersChoices[f.workers])
+	out = append(out, sDim.Render(clip("  Workers: "+workersHelp(level), w)))
+	out = append(out, sDim.Render(clip("  Enforced for "+protocol.WorkerEnforcedBy(level)+" only for now.", w)))
 	out = append(out, sDim.Render(clip("  left/right changes a choice. Enter on Scope saves. The policy is added to the session's context on every turn.", w)))
 	for len(out) < rows {
 		out = append(out, "")
@@ -408,15 +410,16 @@ func (m Model) policyView(w, rows int) []string {
 	return out[:rows]
 }
 
-// workersHelp says in plain words what a workers level lets a worker do.
+// workersHelp says in plain words what a workers level lets a worker do. Which
+// harnesses enforce it is on the line under it (protocol.WorkerEnforcedBy).
 func workersHelp(level string) string {
 	switch level {
 	case protocol.WorkersNoNetwork:
-		return "no-network: writes only in its worktree, network off, no approval prompts (Codex only for now)"
+		return "no-network: writes only in its worktree, network off, no approval prompts"
 	case protocol.WorkersReadOnly:
-		return "read-only: no writes at all, network on (Codex only for now)"
+		return "read-only: no writes at all, network on"
 	}
-	return "sandboxed: writes only in its worktree, network on, no approval prompts (Codex only for now)"
+	return "sandboxed: writes only in its worktree, network on, no approval prompts"
 }
 
 // policyResolveLine says what a model field resolves to.

@@ -807,12 +807,6 @@ export default function (pi: ExtensionAPI) {
       .join("\n");
   }
 
-  function workerPermissions(r: any): string {
-  const level = r.permissions || "sandboxed";
-  const detail = level === "read-only" ? "no writes" : level === "no-network" ? "writes only in its worktree, network off" : "writes only in its worktree, network on";
-  return `permissions: ${level} (${detail})${r.harness === "codex" ? "" : " (enforced for Codex only for now)"}`;
-}
-
   function formatProjects(r: any): string {
     const ps: any[] = r.projects ?? [];
     if (!ps.length) return "No projects found.";
