@@ -200,10 +200,10 @@ func (m Model) helpLine(w int) string {
 		return clip("find: "+sanitize(m.mp.findQuery)+sDim.Render("  enter focus  esc cancel"), w)
 	}
 	if m.tab == inboxTab && m.inboxEditing {
-		return clip(m.inboxInput.View()+" enter sends, esc cancels", w)
+		return clip(m.inboxInput.View()+sDim.Render("   enter sends, esc cancels"), w)
 	}
 	if m.tab == inboxTab && m.delivery.reporting {
-		return clip(m.delivery.reportInput.View()+" enter sends, esc cancels", w)
+		return clip(m.delivery.reportInput.View()+sDim.Render("   enter sends, esc cancels"), w)
 	}
 
 	if m.filtering {

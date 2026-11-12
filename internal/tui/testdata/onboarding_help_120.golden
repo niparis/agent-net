@@ -21,6 +21,9 @@ Keys · all screens ────────────────────
   t                      type answer
   x                      dismiss the ask
   i                      on a sign-in ask: open that CLI's login in a herdr pane on the machine that needs it
+  w                      in the details of a question or approval: answer the marked option and keep it as a standing
+                         rule. Type the action and its area: merge in repo:<name>, team:<name> or network. A rule
+                         applies only on an exact match; undo it on its Log line.
   d                      on an open ask: talk it over. A chief item opens the chief's session and wakes it; a CTO item
                          opens your CTO chat.
   u                      undo
@@ -33,8 +36,5 @@ Keys · all screens ────────────────────
 
  On a held request row
   a                      approve the request
-  r                      refuse the request
-
- On a learned suggestion row
   more below
 up/down scroll  ? this screen  esc close

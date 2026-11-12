@@ -1349,6 +1349,11 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, m.inboxAnswer(row.item.ID, row.item.Options[m.inboxDetailOption])
 			}
 			return m, nil
+		case "always":
+			if hasOptions && row.ask.ID != "" {
+				return m.deskRuleStart(row.ask.ID, row.item.Options[m.inboxDetailOption], row.ask.Node), nil
+			}
+			return m, nil
 		case "answer", "approve", "refuse", "dismiss", "signin":
 		default:
 			return m, nil
@@ -1651,6 +1656,9 @@ func (m Model) inboxHints() []hint {
 		if ok && (row.kind == "question" || row.kind == "approval") {
 			if len(row.item.Options) > 0 {
 				h = append(h, hint{key: "↑↓", label: "choose an answer", prio: 1}, hint{key: "enter", label: "answer", prio: 1})
+				if row.ask.ID != "" {
+					h = append(h, bindingHint(contextInbox, "always"))
+				}
 			}
 			h = append(h, bindingHint(contextInbox, "answer"))
 			if row.kind == "approval" {

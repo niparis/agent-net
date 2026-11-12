@@ -34,6 +34,8 @@ func (s *deskCallSource) Call(_ context.Context, method string, params any) (jso
 		return json.Marshal(protocol.DeskLogResult{Entries: s.log})
 	case protocol.OpAskUndo, protocol.OpAskMark:
 		return json.RawMessage(`{"ok":true}`), nil
+	case "inbox_answer":
+		return json.RawMessage(`{"item":{}}`), nil
 	case protocol.OpAskDiscuss:
 		return json.Marshal(protocol.AskDiscussResult{Open: protocol.DeskOwnerChief, Session: "s_chief", Woken: true})
 	}
@@ -331,6 +333,48 @@ func TestDiscussOpensTheChiefsSession(t *testing.T) {
 		}
 		if !strings.Contains(ansi.Strip(m.testView()), "Waking the chief of staff") {
 			t.Fatal("the owner is not told that the chief is woken")
+		}
+	}
+}
+
+// In the details of a question, w answers the marked option and keeps it as a
+// standing rule: the owner types "<action> in <area>" (decision 0150). Run
+// with -v to see the frames at 80x24 and 120x34.
+func TestAnswerAlwaysSendsTheScope(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		src := &deskCallSource{}
+		m := deskModel(t, size[0], size[1])
+		m.src = src
+		m.tab = inboxTab
+		m.now = func() time.Time { return t0 }
+		m.asks[0].Node = "ingest-forge"
+		m.inboxIndex = 0
+		m, _ = deskPress(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		view := ansi.Strip(m.testView())
+		if !strings.Contains(view, "w answer always") {
+			t.Fatalf("%dx%d: details offer no answer always:\n%s", size[0], size[1], view)
+		}
+		m, _ = deskPress(t, m, tea.KeyPressMsg{Text: "w", Code: 'w'})
+		if !m.inboxEditing {
+			t.Fatal("w did not open the rule line")
+		}
+		for _, r := range "merge" {
+			m, _ = deskPress(t, m, tea.KeyPressMsg{Text: string(r), Code: r})
+		}
+		view = ansi.Strip(m.testView())
+		t.Logf("frame %dx%d:\n%s", size[0], size[1], view)
+		if !strings.Contains(view, "merge in repo:ingest-forge") {
+			t.Fatalf("%dx%d: the rule line is not prefilled with the ask's repo:\n%s", size[0], size[1], view)
+		}
+		m, cmd := deskPress(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if cmd == nil {
+			t.Fatal("enter sent nothing")
+		}
+		cmd()
+		b, _ := json.Marshal(src.args[len(src.args)-1])
+		if src.calls[len(src.calls)-1] != "inbox_answer" || !strings.Contains(string(b), `"answer":"yes"`) ||
+			!strings.Contains(string(b), `"area":"repo:ingest-forge"`) || !strings.Contains(string(b), `"action":"merge"`) {
+			t.Fatalf("answer call %v %s", src.calls, b)
 		}
 	}
 }
