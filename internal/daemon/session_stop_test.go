@@ -93,6 +93,8 @@ func TestSessionStopChangedPID(t *testing.T) {
 	}
 }
 
+// A terminal session in the owner's own herdr is stopped by signalling its
+// process; its pane is not closed (decision 0149).
 func TestSessionStopTerminalHerdr(t *testing.T) {
 	f := newFakeHerdr(t)
 	pid := f.session(t, "pane-1")
@@ -103,9 +105,8 @@ func TestSessionStopTerminalHerdr(t *testing.T) {
 	if _, err := n.d.sessionStopLocal(context.Background(), id); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(f.calls(t), "pane close pane-1") {
-		t.Fatal(f.calls(t))
-	}
+	eventually(t, "the process ends", func() bool { _, live := procToken(pid); return !live })
+	f.readOnly(t)
 }
 
 func TestSessionStopOpenCodeService(t *testing.T) {

@@ -185,6 +185,11 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 				return terminalStop()
 			}
 		}
+		// A pane of the owner's own herdr is read-only (decision 0149): the
+		// process is signalled instead.
+		if !d.isAgentNetHerdr(bin, h.socket) {
+			return terminalStop()
+		}
 		for _, pane := range panes {
 			if herdrIDRe.MatchString(pane.PaneID) && d.herdrHolds(bin, h.socket, pane.PaneID, pidChain(info.PID)) {
 				d.markOwnerStop(ls, true)
@@ -253,7 +258,7 @@ func (d *Daemon) stopTerminalSession(ctx context.Context, ls *localSession, info
 	d.markOwnerStop(ls, true)
 	fail := func(err error) (int, error) { d.markOwnerStop(ls, false); return 0, err }
 	if h, found := findHerdrPane(pid); found {
-		if bin := d.herdrBinary(h.bin); bin != "" {
+		if bin := d.herdrBinary(h.bin); bin != "" && d.isAgentNetHerdr(bin, h.socket) {
 			panes, err := d.herdrPanes(bin, h.socket)
 			if err != nil {
 				return fail(err)

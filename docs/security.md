@@ -220,9 +220,9 @@ machine and provider, and closes it with `signed_in` when that error clears.
 The CTO may call `sign_in_raise` with a provider key and a machine; a command
 field is refused. It may list sign-in asks with `sign_in_list`. Raising grants
 nothing. Only the owner's click (`sign_in_open`) opens a pane, and the CTO
-cannot call that owner-only method. The pane runs on the machine the ask names:
-a local herdr pane, or the target machine's herdr pane shown here with
-`herdr --remote`. There is no ssh fallback, and a machine without herdr answers
+cannot call that owner-only method. The login runs on the machine the ask names:
+in the TUI's own terminal or pane, or in a pane of the target machine's own
+`agent-net` herdr shown here with `herdr --remote --session agent-net`. There is no ssh fallback, and a machine without herdr answers
 with a note instead. The gateway relay carries only the ask ID and provider
 key, so a compromised machine cannot make another machine run a command of its
 choosing.
@@ -1093,7 +1093,7 @@ Decision [0007](decisions/0007-usage-and-session-text.md). Two kinds of data are
 - Nothing of it is written to the gateway log, the events table or the daemon's database.
 - The gateway cannot tell an owner's CLI from a program on that machine that says it is one. A compromised enrolled machine can therefore ask for the text of any online session on the network. This widens the trust note under [what agent-net does not protect against](#what-agent-net-does-not-protect-against).
 
-**Entering a session** (`session_enter`, the TUI keys Enter and `e`): same gate and same relay as the session text. The daemon opens a herdr pane or returns a terminal fallback plan. A worker's private OpenCode password or Codex token is used only on the worker's machine. When both machines have herdr, the remote daemon may open that worker locally and return a pane ID; the owner reaches it through herdr's SSH client. The gateway trusts enrolled daemons, so a compromised daemon can request that a remote pane be opened; control of the pane still needs an SSH login. The secret never goes through the gateway, and the asking daemon drops any `env` it receives from the gateway. Herdr command arguments and pane input contain no private server credentials. The daemon writes a one-use mode 0600 environment file in the temporary directory, which the pane removes after reading; the daemon also removes it after one minute while it is running. Without herdr on the worker's machine, private workers can only be entered there.
+**Entering a session** (`session_enter`, the TUI keys Enter and `e`): same gate and same relay as the session text. The daemon returns a plan that the TUI runs in its own terminal or herdr pane. It never writes to a herdr server the owner runs himself: it only lists panes and reads their process info there (decision 0149). A worker's private OpenCode password or Codex token is used only on the worker's machine. When both machines have herdr, the remote daemon may open that worker in its own `agent-net` herdr and return a pane ID; the owner reaches it through herdr's SSH client. The gateway trusts enrolled daemons, so a compromised daemon can request that a remote pane be opened; control of the pane still needs an SSH login. The secret never goes through the gateway, and the asking daemon drops any `env` it receives from the gateway. Herdr command arguments and pane input contain no private server credentials. The daemon writes a one-use mode 0600 environment file in the temporary directory, which the pane removes after reading; the daemon also removes it after one minute while it is running. Without herdr on the worker's machine, private workers can only be entered there.
 
 For another session on another machine, the owner may use herdr's remote client or `ssh -t -o ConnectTimeout=5`, with the owner's keys and SSH config. `"enter_ssh": false` in `node.json` turns this off. agent-net stores no SSH key. The target is the host name the gateway lists for the session (or the owner's `enter_ssh_hosts` entry), never a name inside the other machine's answer. A target that starts with `-` or has spaces or shell characters is refused. A compromised enrolled machine can still make an enter run a command of its choice on itself through the owner's SSH login, so enter sessions only on machines you trust.
 

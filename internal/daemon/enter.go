@@ -13,10 +13,11 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Enter a session through the harness client. The view selector opens a full
-// herdr tab for a TUI in herdr, or returns the command for terminal handover.
-// Pi stays in its existing herdr terminal because it has no attach client.
-// Remote views use herdr's client when it is available on the asking machine.
+// Enter a session through the harness client. The TUI hands over its own
+// terminal or herdr pane to the command, and ctrl+] returns; the daemon never
+// opens a tab in the owner's herdr (decision 0149). Pi stays in the herdr
+// terminal it runs in because it has no attach client. Remote views use
+// herdr's client when it is available on the asking machine.
 //
 // Same gate as session_text: the owner's CLI or TUI, never an agent session.
 
@@ -58,7 +59,7 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	}
 	name := firstNonEmpty(plan.Name, q.SessionID)
 	remote := d.wrapRemoteEnter(host, plan)
-	return d.viewPlan("remote:"+q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, false, remote), nil
+	return d.viewPlan("remote:"+q.SessionID, name, false, remote), nil
 }
 
 // wrapRemoteEnter turns the other machine's local plan into the command this
@@ -68,6 +69,9 @@ func (d *Daemon) wrapRemoteEnter(host string, plan protocol.EnterPlan) protocol.
 	plan.Note = cleanLine(plan.Note)
 	plan.Host, plan.Env = cleanLine(plan.Host), nil // a secret never crosses the gateway; ignore one
 	plan.HerdrPane = cleanLine(plan.HerdrPane)
+	if !herdrSessionRe.MatchString(plan.HerdrSession) {
+		plan.HerdrSession = ""
+	}
 	if len(plan.Argv) == 0 {
 		return protocol.EnterPlan{Host: plan.Host, Note: plan.Note}
 	}
@@ -89,14 +93,18 @@ func (d *Daemon) wrapRemoteEnter(host string, plan protocol.EnterPlan) protocol.
 	}
 	// The session runs in herdr and this machine has a herdr client: use it.
 	// herdr's remote client carries the clipboard, so an image copied here can
-	// be pasted into the session there. The other machine focused the pane
-	// before answering.
+	// be pasted into the session there. The session names the herdr session
+	// that holds the pane: agent-net's own, or one the owner runs there.
 	if localHerdr := d.herdrBinary(""); localHerdr != "" {
 		if !herdrIDRe.MatchString(plan.HerdrPane) {
 			return protocol.EnterPlan{Host: host, Note: "The remote session could not be opened in herdr. " + plan.Note}
 		}
+		argv := []string{localHerdr, "--remote", target}
+		if plan.HerdrSession != "" {
+			argv = append(argv, "--session", plan.HerdrSession)
+		}
 		return protocol.EnterPlan{
-			Argv: []string{localHerdr, "--remote", target}, Host: host,
+			Argv: argv, Host: host,
 			Note: fmt.Sprintf("Opens herdr on %s; the session is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here; the session keeps running.", host, plan.HerdrPane),
 		}
 	}
@@ -175,9 +183,8 @@ func remoteCommand(dir string, argv []string) string {
 func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGateway bool) (protocol.EnterPlan, error) {
 	// A remote owner with a Herdr client can open a private worker on the
 	// worker's own machine, without sending its credentials through the gateway.
-	insideHerdr := !viaGateway && callerInHerdr(q.HerdrSocket, q.HerdrPaneID)
 	var focused *string
-	if insideHerdr || q.HerdrClient {
+	if viaGateway && q.HerdrClient {
 		focused = new(string)
 	}
 	base, err := d.localEnterBase(ctx, q, viaGateway && !q.HerdrClient, focused)
@@ -191,13 +198,13 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		return base, nil
 	}
 	base = claudePlanEnv(base)
-	// A TUI outside herdr hands over its terminal.
-	if !viaGateway && !insideHerdr {
-		return d.viewPlan(q.SessionID, base.Name, q.HerdrSocket, q.HerdrPaneID, false, base), nil
+	// The TUI on this machine hands over its terminal, in herdr or not.
+	if !viaGateway {
+		return d.viewPlan(q.SessionID, base.Name, false, base), nil
 	}
 	if focused != nil && *focused != "" {
-		// localEnterBase already found and focused the pane. Do not walk the
-		// same herdr server a second time.
+		// localEnterBase already found the pane. Do not walk the same herdr
+		// server a second time.
 		ls := d.sessionByID(q.SessionID)
 		info := d.infoOf(ls)
 		name := firstNonEmpty(info.Name, info.NativeID)
@@ -207,10 +214,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 			}
 		}
 		base.Name = name
-		if viaGateway {
-			return base, nil
-		}
-		return openedHerdrPlan(base.Host, name, *focused), nil
+		return base, nil
 	}
 	ls := d.sessionByID(q.SessionID)
 	if ls == nil {
@@ -230,16 +234,18 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		}
 	}
 	base.Name = name
-	private := viaGateway && (base.Env["OPENCODE_SERVER_PASSWORD"] != "" || base.Env["AGENT_NET_CODEX_TOKEN"] != "")
-	if viaGateway && (!q.HerdrClient || len(base.Argv) == 0) {
+	private := base.Env["OPENCODE_SERVER_PASSWORD"] != "" || base.Env["AGENT_NET_CODEX_TOKEN"] != ""
+	if !q.HerdrClient || len(base.Argv) == 0 {
 		return base, nil
 	}
-	opened := d.viewPlan(q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, true, base)
-	if viaGateway && opened.OpenedHerdr {
+	// The asking machine opens the view with herdr --remote, so this machine
+	// hosts it in agent-net's herdr server.
+	opened := d.viewPlan(q.SessionID, name, true, base)
+	if opened.OpenedHerdr {
 		if private {
-			return protocol.EnterPlan{Argv: []string{"herdr", "agent", "attach", opened.HerdrPane}, Host: base.Host, Name: name, HerdrPane: opened.HerdrPane}, nil
+			return protocol.EnterPlan{Argv: herdrSessionAttach(opened.HerdrSession, opened.HerdrPane), Host: base.Host, Name: name, HerdrPane: opened.HerdrPane, HerdrSession: opened.HerdrSession}, nil
 		}
-		base.HerdrPane = opened.HerdrPane
+		base.HerdrPane, base.HerdrSession = opened.HerdrPane, opened.HerdrSession
 		return base, nil
 	}
 	if private {
@@ -248,9 +254,8 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 	return opened, nil
 }
 
-// focused receives the pane when this machine already has a herdr client that
-// can show it. The caller passes nil when the asking terminal cannot see a
-// herdr pane, so no focus command is sent.
+// focused receives the herdr pane of a Pi session for a machine that asks
+// with a herdr client. The caller passes nil otherwise.
 func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, viaGateway bool, focused *string) (protocol.EnterPlan, error) {
 	herdrQuery := q
 	if focused != nil {

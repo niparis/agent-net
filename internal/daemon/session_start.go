@@ -414,23 +414,14 @@ func (d *Daemon) remoteStartResult(ctx context.Context, res protocol.StartedSess
 			return res
 		}
 	}
-	if res.EnterPlan != nil {
-		remote := *res.EnterPlan
-		if remote.OpenedHerdr && herdrIDRe.MatchString(remote.HerdrPane) {
-			remote.Argv = []string{"herdr", "agent", "attach", remote.HerdrPane}
-			remote.OpenedHerdr = false
-		}
-		plan := d.wrapRemoteEnter(res.Hostname, remote)
-		key := "start:" + res.ID
-		if res.SessionID != "" {
-			key = "remote:" + res.SessionID
-		}
-		plan = d.viewPlan(key, res.Project, socket, pane, false, plan)
+	if res.EnterPlan != nil && res.EnterPlan.OpenedHerdr {
+		// The other machine runs the session in its own agent-net herdr
+		// (a Pi session): nothing runs here until Enter.
+		plan := protocol.EnterPlan{Host: res.Hostname, Note: cleanLine(res.EnterPlan.Note), OpenedHerdr: true}
 		res.EnterPlan = &plan
-	} else if res.Status == "started" && res.SessionID != "" && d.herdrBinary("") != "" {
-		if plan, err := d.enterPlan(ctx, protocol.EnterRequest{SessionID: res.SessionID, HerdrSocket: socket, HerdrPaneID: pane}); err == nil && plan.OpenedHerdr {
-			res.EnterPlan = &plan
-		}
+	} else if res.EnterPlan != nil {
+		plan := d.viewPlan("", res.Project, false, d.wrapRemoteEnter(res.Hostname, *res.EnterPlan))
+		res.EnterPlan = &plan
 	}
 	res.EnterNote = d.remoteEnterNote(res.Hostname)
 	if d.herdrBinary("") == "" {
@@ -608,15 +599,15 @@ type startView struct {
 	relayed, background bool
 }
 
-// showStart is the optional view step of a start that worked: the plan opens
-// a herdr tab now, or goes to the owner's machine, or Enter opens it later.
+// showStart is the optional view step of a start that worked: the plan goes
+// to the owner's machine, or Enter opens it later.
 func (d *Daemon) showStart(r *protocol.StartedSession, plan protocol.EnterPlan, view startView) {
 	if view.background {
 		r.EnterNote = "Enter opens it."
 		return
 	}
-	opened := d.viewPlan(r.SessionID, r.Project, view.socket, view.pane, false, plan)
-	if opened.OpenedHerdr || len(opened.Argv) == 0 || view.relayed {
+	opened := d.viewPlan(r.SessionID, r.Project, false, plan)
+	if len(opened.Argv) == 0 || view.relayed {
 		r.EnterPlan = &opened
 		return
 	}

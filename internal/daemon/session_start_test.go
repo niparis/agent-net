@@ -887,10 +887,11 @@ func TestSessionResumeOpenCodeRegistered(t *testing.T) {
 	writeOwnerOpenCodeService(t, state, server.URL)
 	var r protocol.StartedSession
 	mustJSON(t, n.cli.mustCall("session_resume", map[string]string{"session_id": id, "herdr_socket": "/tmp/herdr-test.sock", "herdr_pane_id": "w1:p0"}), &r)
-	if r.Status != "started" || r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
-		t.Fatalf("viewer not opened: %+v", r)
+	// The TUI in the owner's herdr hands its pane to the viewer.
+	if r.Status != "started" || r.EnterPlan == nil || r.EnterPlan.OpenedHerdr || !strings.Contains(strings.Join(r.EnterPlan.Argv, " "), bins["opencode"]+" --server "+server.URL+" --session "+native) {
+		t.Fatalf("viewer plan: %+v", r.EnterPlan)
 	}
-	requireHerdrOpened(t, viewerLog, "shop", bins["opencode"], "--session", native)
+	requireNoHerdrCalls(t, viewerLog)
 	// Only viewing emits session.viewed; reading through HTTP does not register.
 	helloOpenCode(t, n.node, native, repo)
 	eventually(t, "resume registered", func() bool {

@@ -153,7 +153,7 @@ func (d *Daemon) resumeOwnerCodex(ctx context.Context, r protocol.StartedSession
 	// A Codex thread the app server could not find is a new conversation: the
 	// old session's work moves to it.
 	d.adoptResumedSession(ctx, r.Resumes, r.SessionID)
-	opened := d.viewPlan(r.SessionID, r.Project, socket, pane, false, d.codexViewPlan(bin, r))
+	opened := d.viewPlan(r.SessionID, r.Project, false, d.codexViewPlan(bin, r))
 	r.EnterPlan = &opened
 	r.Status = "started"
 	return r, nil

@@ -104,6 +104,9 @@ type SignInPrepareResult struct {
 	Host   string `json:"host,omitempty"`
 	Pane   string `json:"pane,omitempty"`
 	Note   string `json:"note,omitempty"`
+	// Session is the named herdr session of Pane ("agent-net"). An older
+	// daemon leaves it empty: its pane is in the default session.
+	Session string `json:"session,omitempty"`
 }
 
 // SignInRaise is the CTO operation sign_in_raise and the daemon's own raise:

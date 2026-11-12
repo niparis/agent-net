@@ -180,15 +180,11 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 	}
 	plan, err := d.ctoEnter(ctx)
 	if err == nil {
-		socket, pane := q.HerdrSocket, q.HerdrPaneID
-		if viaGateway {
-			socket, pane = "", "" // the asker's terminal means nothing here
-		}
-		plan = d.viewPlan("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", socket, pane, viaGateway && q.HerdrClient, plan)
+		plan = d.viewPlan("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", viaGateway && q.HerdrClient, plan)
 	}
 	if viaGateway && err == nil {
 		if plan.OpenedHerdr && q.HerdrClient {
-			plan.Argv = []string{"herdr", "agent", "attach", plan.HerdrPane}
+			plan.Argv = herdrSessionAttach(plan.HerdrSession, plan.HerdrPane)
 			plan.OpenedHerdr = false
 		} else if len(plan.Env) > 0 {
 			// OpenCode's private server password must stay on this machine.
