@@ -34,7 +34,7 @@ func readProcView(pid int) (procView, error) {
 		return v, err
 	}
 	v.Zombie = strings.HasPrefix(f[2], "Z")
-	start := strings.Join(f[3:8], " ")
+	start := startToken(strings.Join(f[3:8], " "))
 	v.Token = start
 	if t, err := time.ParseInLocation("Mon Jan _2 15:04:05 2006", start, time.Local); err == nil {
 		v.Started = t.UTC()
