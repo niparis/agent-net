@@ -2,9 +2,13 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -156,26 +160,18 @@ func (d *Daemon) updateHarness(ctx context.Context, h protocol.HarnessInfo) (ret
 		opts = *d.cfg.HarnessSearch
 	}
 	timeout := updateDelay(d.cfg.HarnessUpdateTimeout, 5*time.Minute)
-	bin, args := h.Path, updateArgs(h.Name)
-	usedBrew := false
-	if brewInstall(h.Path) {
-		// A Homebrew copy is upgraded by Homebrew. Its own updater defers to
-		// the package manager and leaves the version alone.
-		brew := harnesses.Executable(ctx, "brew", opts)
-		if brew == "" {
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	bin, args, usedBrew := harnessUpdateCommand(runCtx, h, opts)
+	if bin == "" || args == nil {
+		if ctx.Err() == nil {
 			d.setHarnessUpdate(ctx, h.Name, &protocol.HarnessUpdate{
 				CheckedAt: time.Now().UTC(), Before: h.Version, After: h.Version,
-				Result: "failed", Detail: "a Homebrew install, but brew was not found",
+				Result: "skipped", Detail: "unknown install method for " + h.Path,
 			})
-			return false
 		}
-		bin, args = brew, brewUpgradeArgs(h.Name, h.Path)
-		usedBrew = true
-	}
-	if bin == "" || args == nil {
 		return false
 	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	out, err := harnesses.RunUpdate(runCtx, bin, opts, args...)
 	timedOut := runCtx.Err() == context.DeadlineExceeded
 	cancel()
@@ -264,31 +260,163 @@ func packageManagerOutput(lower string) bool {
 	return false
 }
 
-// brewUpgradeArgs is the Homebrew command that upgrades one harness. Claude
-// Code's cask and formula are both named claude-code.
-func brewUpgradeArgs(name, path string) []string {
-	pkg := name
-	if name == "claude" {
-		pkg = "claude-code"
+// Installation ownership comes from the resolved binary, not its command name:
+// a Homebrew bin directory can also contain npm links and native installers.
+func harnessUpdateCommand(ctx context.Context, h protocol.HarnessInfo, opts harnesses.Options) (string, []string, bool) {
+	real := realPath(h.Path)
+	brew := harnesses.Executable(ctx, "brew", opts)
+	candidate := brewInstall(h.Path) || (brew != "" && filepath.Dir(h.Path) == filepath.Dir(brew))
+	if candidate && brew != "" {
+		if args := installedBrewArgs(ctx, brew, h.Path, real, opts); args != nil {
+			return brew, args, true
+		}
 	}
-	if brewCask(name, path) {
-		return []string{"upgrade", "--cask", pkg}
+	if strings.Contains(real, "/node_modules/") {
+		if npm := harnesses.Executable(ctx, "npm", opts); npm != "" {
+			if pkg := npmGlobalPackage(ctx, npm, real, h.Name, opts); pkg != "" {
+				return npm, []string{"install", "--global", pkg + "@latest"}, false
+			}
+		}
+		return "", nil, false
 	}
-	return []string{"upgrade", pkg}
+	if candidate {
+		return "", nil, false
+	}
+	return h.Path, updateArgs(h.Name), false
 }
 
-// brewCask says whether path belongs to a Homebrew cask. A plain Homebrew
-// prefix with no Cellar or Caskroom in the resolved path is the cask for
-// Claude Code, which is the documented install, and a formula for the others.
-func brewCask(name, path string) bool {
-	real := realPath(path)
-	if strings.Contains(real, "/Caskroom/") {
-		return true
+// Brew metadata can exceed RunUpdate's log tail. Discovery needs the full JSON
+// and shares the update deadline and process-group cancellation.
+func installProbe(ctx context.Context, bin string, opts harnesses.Options, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Dir = os.TempDir()
+	path := opts.PATH
+	if path == "" {
+		path = os.Getenv("PATH")
 	}
-	if strings.Contains(real, "/Cellar/") {
-		return false
+	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(bin)+string(os.PathListSeparator)+path)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 500 * time.Millisecond
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+func brewPathPackage(real, room string) string {
+	_, tail, ok := strings.Cut(real, "/"+room+"/")
+	if !ok {
+		return ""
 	}
-	return name == "claude"
+	pkg, _, ok := strings.Cut(tail, "/")
+	if !ok {
+		return ""
+	}
+	return pkg
+}
+
+func installedBrewArgs(ctx context.Context, brew, path, real string, opts harnesses.Options) []string {
+	formula, cask := brewPathPackage(real, "Cellar"), brewPathPackage(real, "Caskroom")
+	var info struct {
+		Formulae []struct {
+			Name      string            `json:"name"`
+			FullName  string            `json:"full_name"`
+			Installed []json.RawMessage `json:"installed"`
+		} `json:"formulae"`
+		Casks []struct {
+			Token     string          `json:"token"`
+			FullToken string          `json:"full_token"`
+			Installed json.RawMessage `json:"installed"`
+			Artifacts []struct {
+				Binary []json.RawMessage `json:"binary"`
+			} `json:"artifacts"`
+		} `json:"casks"`
+	}
+	out, err := installProbe(ctx, brew, opts, "info", "--json=v2", "--installed")
+	if err == nil && json.Unmarshal([]byte(out), &info) == nil {
+		for _, f := range info.Formulae {
+			if formula != "" && f.Name == formula && len(f.Installed) > 0 {
+				return []string{"upgrade", firstNonEmpty(f.FullName, f.Name)}
+			}
+		}
+		for _, c := range info.Casks {
+			if len(c.Installed) == 0 || string(c.Installed) == "null" || string(c.Installed) == "[]" {
+				continue
+			}
+			owned := cask != "" && c.Token == cask
+			for _, artifact := range c.Artifacts {
+				if len(artifact.Binary) == 0 {
+					continue
+				}
+				var source string
+				if json.Unmarshal(artifact.Binary[0], &source) == nil && filepath.IsAbs(source) && realPath(source) == real {
+					owned = true
+				}
+				// Casks can link a native install outside Caskroom. An absolute
+				// artifact target also proves ownership when the source is relative.
+				if len(artifact.Binary) > 1 {
+					var target struct {
+						Target string `json:"target"`
+					}
+					if json.Unmarshal(artifact.Binary[1], &target) == nil && filepath.IsAbs(target.Target) && filepath.Clean(target.Target) == filepath.Clean(path) {
+						owned = true
+					}
+				}
+			}
+			if owned {
+				return []string{"upgrade", "--cask", firstNonEmpty(c.FullToken, c.Token)}
+			}
+		}
+	}
+	// Cellar and Caskroom encode the actual installed package, even if brew
+	// cannot return metadata. A bin prefix alone never identifies a package.
+	if formula != "" {
+		return []string{"upgrade", formula}
+	}
+	if cask != "" {
+		return []string{"upgrade", "--cask", cask}
+	}
+	return nil
+}
+
+func npmGlobalPackage(ctx context.Context, npm, real, name string, opts harnesses.Options) string {
+	prefix, tail, ok := strings.Cut(real, "/node_modules/")
+	if !ok {
+		return ""
+	}
+	parts := strings.Split(tail, "/")
+	count := 1
+	if strings.HasPrefix(parts[0], "@") {
+		count = 2
+	}
+	if len(parts) <= count {
+		return ""
+	}
+	root := prefix + "/node_modules"
+	out, err := installProbe(ctx, npm, opts, "root", "-g")
+	if err != nil || realPath(strings.TrimSpace(out)) != realPath(root) {
+		return ""
+	}
+	dir := filepath.Join(root, filepath.Join(parts[:count]...))
+	var pkg struct {
+		Name string          `json:"name"`
+		Bin  json.RawMessage `json:"bin"`
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "package.json"))
+	if err != nil || json.Unmarshal(data, &pkg) != nil || pkg.Name != strings.Join(parts[:count], "/") {
+		return ""
+	}
+	var bin string
+	if json.Unmarshal(pkg.Bin, &bin) != nil {
+		var bins map[string]string
+		if json.Unmarshal(pkg.Bin, &bins) != nil {
+			return ""
+		}
+		bin = bins[name]
+	}
+	if bin == "" || realPath(filepath.Join(dir, bin)) != real {
+		return ""
+	}
+	return pkg.Name
 }
 
 func realPath(path string) string {
