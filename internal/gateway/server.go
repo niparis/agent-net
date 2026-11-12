@@ -3131,6 +3131,22 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"moved": moved}, nil
 
+	case protocol.FrameSessionOwnerReplace:
+		// The owner or the CTO repairs a restart that already orphaned a
+		// session. The move uses the old session's own node, so the request
+		// may come from any machine.
+		var p protocol.SessionOwnerReplace
+		if json.Unmarshal(raw, &p) != nil || p.OldSession == "" || p.NewSession == "" {
+			return nil, reject("bad session owner replace")
+		}
+		res, err := st.ReplaceSessionForOwner(p.OldSession, p.NewSession, p.Actor)
+		if err != nil {
+			return nil, err
+		}
+		g.logLine("session.replaced", "by", nc.id, "old", p.OldSession, "new", p.NewSession,
+			"actor", p.Actor, "moved", res.Moved)
+		return res, nil
+
 	case "query.agent":
 		p, err := decode[protocol.QueryAgent](raw)
 		if err != nil {

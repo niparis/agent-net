@@ -630,7 +630,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machine_log",
-    "description": "Read a machine's redacted daemon or gateway log for a time window, with an optional text filter. Returns the newest lines, at most 1000 and 256 KB.",
+    "description": "Read a machine's redacted daemon or gateway log for a time window, with an optional text filter. At most 1000 lines and 256 KB.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1019,7 +1019,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_messages_find",
-    "description": "Find messages by conversation, peer, direction or time. Rows hold a short text preview; use agent_message_get for the full body.",
+    "description": "Find messages by conversation, peer, direction or time. Rows hold a preview; use agent_message_get for the body.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1428,7 +1428,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_projects_find",
-    "description": "Find registered projects and the machines and folders that hold them. Use agent_sessions_find for the sessions working in a project.",
+    "description": "Find registered projects and the machines and folders that hold them. Use agent_sessions_find for their sessions.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1498,7 +1498,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_sessions_find",
-    "description": "Find sessions by machine, project, harness, model, kind, online state or text. Use agent_session_get for one profile and charter.",
+    "description": "Find sessions by machine, project, harness, model, kind, online state or text. Use agent_session_get for one.",
     "inputSchema": {
       "type": "object",
       "properties": {

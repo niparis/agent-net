@@ -3,8 +3,11 @@ package gateway
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // RebindResumedSession keeps a session's ID when a restart resumed the same
@@ -178,6 +181,42 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		return false, err
 	}
 	return true, nil
+}
+
+// ReplaceSessionForOwner is the owner's repair for a restart that already
+// orphaned a session. It uses the same move as the automatic restart path, and
+// the old session's own node, so the owner or the CTO may ask from any
+// machine. It writes one Desk line saying who moved the work and where.
+func (s *Store) ReplaceSessionForOwner(oldSessionID, newSessionID, actor string) (protocol.SessionReplaceResult, error) {
+	res := protocol.SessionReplaceResult{OldSession: oldSessionID, NewSession: newSessionID}
+	old, ok, err := s.Agent(oldSessionID)
+	if err != nil {
+		return res, err
+	}
+	if !ok {
+		return res, reject("unknown session %s", oldSessionID)
+	}
+	moved, err := s.ReplaceSession(old.NodeID, oldSessionID, newSessionID)
+	if err != nil {
+		return res, err
+	}
+	res.Moved, res.OldName = moved, old.Profile.Name
+	if !moved {
+		return res, nil
+	}
+	if fresh, ok, err := s.Agent(newSessionID); err == nil && ok {
+		res.NewName = fresh.Profile.Name
+	}
+	source, who := "owner", "The owner"
+	if actor == "cto" {
+		source, who = "cto", "The CTO"
+	}
+	text := fmt.Sprintf("%s moved the work of %s (%s) to %s (%s)", who,
+		oldSessionID, res.OldName, newSessionID, res.NewName)
+	if err := s.deskLog(s.db, source, "session", oldSessionID, text, "", nil); err != nil {
+		return res, err
+	}
+	return res, nil
 }
 
 // replacedSessionName picks the name a restarted conversation keeps. An

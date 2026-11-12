@@ -3255,6 +3255,8 @@ A restart, and the owner's resume with Enter, keeps the session ID. A session ID
 
 The old record is marked replaced (`sessions.replaced_by`), not renamed to `<name> 2`: it keeps the conversation's name, offline, and the TUI shows `replaced by <new name>` (the STATUS cell says `replaced`). A later discovery report of the old conversation does not rename it. Pi cannot reopen an old session, so `resume` and `restart` refuse a Pi session and no move applies.
 
+A restart that already orphaned its work is repaired with the same move. The operator method `session_replace` takes `{"old_session": "s_...", "new_session": "s_..."}` and is served only to the owner's command line or TUI, like `session_rename`; the CTO calls `session_change` with action `replace` and the same two IDs. It calls the same `ReplaceSession` move, uses the old session's own machine so the owner may ask from any machine, and refuses a worker or a new session on another machine. A successful move writes one Desk line naming who moved the work and the two sessions. It has no undo: the old conversation is gone and the new one holds the work. A move that finds the old session already replaced, or still working, changes nothing.
+
 All three refuse a worker (use `worker_change` with `stop`) and the CTO's own session. They are immediate changes with an Inbox notice and an audit line (`session_stop`, `session_resume` or `session_restart`). Only `stop` has an undo. `resume` and `restart` have none, because the session is already running again.
 
 ### CTO folder trust

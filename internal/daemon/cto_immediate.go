@@ -224,11 +224,17 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 		return nil, err
 	}
 	text := "CTO applied " + strings.ReplaceAll(concrete, "_", " ")
-	for _, key := range []string{"team", "name", "node", "project", "path", "session", "session_id", "server", "node_id"} {
+	for _, key := range []string{"team", "name", "node", "project", "path", "session", "session_id", "old_session", "server", "node_id"} {
 		var value string
 		if json.Unmarshal(fields[key], &value) == nil && strings.TrimSpace(value) != "" {
 			text += " " + cleanLine(value)
 			break
+		}
+	}
+	if concrete == "session_replace" {
+		var q protocol.SessionReplaceRequest
+		if json.Unmarshal(args, &q) == nil {
+			text = fmt.Sprintf("CTO moved the work of %s to %s", cleanLine(q.OldSession), cleanLine(q.NewSession))
 		}
 	}
 	var options []string

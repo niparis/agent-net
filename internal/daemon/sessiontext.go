@@ -47,7 +47,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
-	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpFolderMCP: true, protocol.OpProcessStop: true, protocol.OpStandingOrders: true, protocol.OpJudgmentAdd: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
+	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpFolderMCP: true, protocol.OpProcessStop: true, protocol.OpStandingOrders: true, protocol.OpJudgmentAdd: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpSessionRename: true, protocol.OpSessionReplace: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpScoresWeekly: true, protocol.OpWorkerRotationGet: true, protocol.OpPickerGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
@@ -851,6 +851,33 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			if err = json.Unmarshal(data, &out); err == nil {
 				res = out
 				d.Logf("session.rename session=%s name=%q", q.SessionID, out.Name)
+			}
+		}
+	case protocol.OpSessionReplace:
+		// The owner, or the CTO through its checked operator path, repairs a
+		// restart that already orphaned a session. Both sessions must be on
+		// the same machine; the gateway passes the old session's node.
+		var q protocol.SessionReplaceRequest
+		if json.Unmarshal(raw, &q) != nil || q.OldSession == "" || q.NewSession == "" {
+			return nil, true, errors.New("session_replace needs old_session and new_session")
+		}
+		actor := "owner"
+		if proposalActor(ctx) == "cto" {
+			actor = "cto"
+		}
+		var data json.RawMessage
+		if data, err = d.call(ctx, protocol.FrameSessionOwnerReplace, protocol.SessionOwnerReplace{
+			OldSession: q.OldSession, NewSession: q.NewSession, Actor: actor,
+		}); err == nil {
+			var out protocol.SessionReplaceResult
+			if err = json.Unmarshal(data, &out); err == nil {
+				res = out
+				if out.Moved {
+					// A hand-back and a step task name the caller from the
+					// daemon's own worker records too.
+					d.reassignWorkerOwner(q.OldSession, q.NewSession)
+				}
+				d.Logf("session.replace old=%s new=%s moved=%t", q.OldSession, q.NewSession, out.Moved)
 			}
 		}
 	case protocol.OpProjectDisplayGet, protocol.OpProjectDisplaySet:

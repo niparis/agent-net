@@ -46,6 +46,8 @@ var requestParams = []any{
 	WorkerHandbackRequest{},
 	SessionTrustRequest{},
 	SessionRenameRequest{},
+	SessionReplaceRequest{},
+	SessionOwnerReplace{},
 	NodeRenameRequest{},
 	ProjectDisplayRequest{},
 	SessionAgentSetRequest{},
