@@ -518,10 +518,10 @@ func TestClaudeCTOCompatibilityAndStartupError(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(`if [ "$1" = --help ]; then echo '--strict-mcp-config'; elif [ "$1" = --version ]; then echo '2.1.289 (Claude Code)'; fi`)
+	write(`if [ "$1" = --help ]; then echo '--tools'; elif [ "$1" = --version ]; then echo '2.1.289 (Claude Code)'; fi`)
 	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
 	err := d.startClaudeRole(context.Background(), roleCTO, "", "opus")
-	if err == nil || !strings.Contains(err.Error(), "required capability --tools is missing") {
+	if err == nil || !strings.Contains(err.Error(), "required capability --strict-mcp-config is missing") {
 		t.Fatalf("old Claude: %v", err)
 	}
 	write(`if [ "$1" = --help ]; then echo '--bg --strict-mcp-config --tools'; elif [ "$1" = --version ]; then echo '2.1.316'; else echo 'unknown option --bg' >&2; echo 'token=topsecretvalue' >&2; echo 'third line' >&2; exit 1; fi`)
