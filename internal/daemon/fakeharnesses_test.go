@@ -603,6 +603,11 @@ func fakeAgentAct(send func(string, any), body, cwd string) {
 	if strings.Contains(body, "FAKE:partial") {
 		call["complete"] = false
 	}
+	if strings.Contains(body, "FAKE:textno") {
+		// The worker says it is not done in the report text only: the
+		// complete field stays absent, as with a Codex report.
+		call["report"] = call["report"].(string) + "\ncomplete: no"
+	}
 	send("worker_handback", call)
 }
 

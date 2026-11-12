@@ -995,6 +995,14 @@ func (d *Daemon) handbackToNoteWithFiles(ctx context.Context, w *worker, req pro
 		}
 		defer files.Remove()
 	}
+	// A report that ends with "complete: no" is partial, whatever the harness
+	// and even when the hand-back has no complete field (Codex reports are
+	// read the same way). An explicit field wins.
+	if req.Status == protocol.StatusDone && req.Complete == nil {
+		if v, ok := protocol.WorkerReportComplete(req.Report); ok {
+			req.Complete = &v
+		}
+	}
 	// A partial hand-back is a worker that stopped early. Send it one more
 	// message ourselves, up to the limit, and do not tell the caller yet.
 	if req.Status == protocol.StatusDone && !req.IsComplete() && d.tryAutoContinue(ctx, w) {
