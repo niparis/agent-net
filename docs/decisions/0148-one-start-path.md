@@ -62,7 +62,6 @@ the start` is gone with the code that needed it.
   location, `ptyproxy.Proxy.OnStart`;
 - the three copies of the "show the new session" step of the Claude, OpenCode
   and Codex starts: they share `showStart`;
-- the Codex branch of `remoteStartResult` that wrapped a Codex plan.
 
 The daemon still closes a `handed_to_tui` proposal left by an older version at
 startup, so none stays open for ever. That one statement can go once no such
