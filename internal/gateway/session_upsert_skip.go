@@ -23,8 +23,8 @@ const sessionKeepalive = 2 * time.Minute
 type sessionSeen struct {
 	hash     [sha256.Size]byte
 	id       string
-	lastSeen int64 // the last_seen value that write left in the row
-	online   int
+	lastSeen int64  // the last_seen value that write left in the row
+	columns  string // sessionDispatchKey of the row after that write
 }
 
 func sessionSeenKey(nodeID string, in protocol.SessionInfo) string {
@@ -46,28 +46,42 @@ func (s *Store) skipSessionReport(key string, hash [sha256.Size]byte) (string, b
 	if s.now().UnixNano()-seen.lastSeen >= int64(sessionKeepalive) {
 		return "", false
 	}
+	// The row must still be what that write left, in every column the report
+	// sets: a column changed by another path (a name repair, an offline mark)
+	// is put right by writing again.
 	var lastSeen int64
-	var online, archived, lost int
-	if err := s.db.QueryRow(`SELECT last_seen,online,archived_at,harness_lost FROM sessions WHERE id=?`, seen.id).Scan(&lastSeen, &online, &archived, &lost); err != nil {
+	if err := s.db.QueryRow(`SELECT last_seen FROM sessions WHERE id=?`, seen.id).Scan(&lastSeen); err != nil || lastSeen != seen.lastSeen {
 		return "", false
 	}
-	if lastSeen != seen.lastSeen || online != seen.online || archived != 0 || lost != 0 {
+	if cols, err := sessionColumnsByID(s.db, seen.id); err != nil || cols != seen.columns {
 		return "", false
 	}
 	return seen.id, true
 }
 
 // sessionDispatchKey reads the columns of a session that the delivery sweeps
-// depend on, as one string. Time stamps that advance with activity are left
-// out. A session that is not stored yet gives "".
+// depend on, as one string. Time stamps that advance with activity and a
+// worker's token counters are left out. A session that is not stored yet gives "".
 func sessionDispatchKey(q interface {
 	QueryRow(string, ...any) *sql.Row
 }, nodeID, harness, native string) (string, error) {
+	return sessionColumns(q, `node_id=? AND harness=? AND native_id=?`, nodeID, harness, native)
+}
+
+func sessionColumnsByID(q interface {
+	QueryRow(string, ...any) *sql.Row
+}, id string) (string, error) {
+	return sessionColumns(q, `id=?`, id)
+}
+
+func sessionColumns(q interface {
+	QueryRow(string, ...any) *sql.Row
+}, where string, args ...any) (string, error) {
 	var key string
-	err := q.QueryRow(`SELECT json_array(id,online,status,waiting,name,title,cwd,pid,delivery,mode,model,worker,worker_title,worker_run_active,
+	err := q.QueryRow(`SELECT json_array(id,online,status,waiting,name,title,cwd,pid,delivery,mode,model,CASE WHEN json_valid(worker) THEN json_remove(worker,'$.context_tokens','$.context_limit','$.tokens') ELSE worker END,worker_title,worker_run_active,
 		repo_root,repo_project,repo_remote,repo_branch,repo_worktree,repo_description,repo_id,agent_id,no_project,graph_excluded,
 		limited_until,limited_reason,idle_compacted_at,tools_version,tools_old,archived_at,harness_lost)
-		FROM sessions WHERE node_id=? AND harness=? AND native_id=?`, nodeID, harness, native).Scan(&key)
+		FROM sessions WHERE `+where, args...).Scan(&key)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -109,8 +123,7 @@ func (s *Store) UpsertSessionReport(nodeID string, in protocol.SessionInfo) (id 
 		return "", false, err
 	}
 	var lastSeen int64
-	var online int
-	if err = tx.QueryRow(`SELECT last_seen,online FROM sessions WHERE id=?`, id).Scan(&lastSeen, &online); err != nil {
+	if err = tx.QueryRow(`SELECT last_seen FROM sessions WHERE id=?`, id).Scan(&lastSeen); err != nil {
 		return "", false, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -120,7 +133,7 @@ func (s *Store) UpsertSessionReport(nodeID string, in protocol.SessionInfo) (id 
 		s.logNewSessions([]newSession{{id, nodeID, in}})
 	}
 	if lastSeen >= started {
-		s.upsertSeen.Store(key, sessionSeen{hash: hash, id: id, lastSeen: lastSeen, online: online})
+		s.upsertSeen.Store(key, sessionSeen{hash: hash, id: id, lastSeen: lastSeen, columns: after})
 	} else {
 		s.upsertSeen.Delete(key)
 	}

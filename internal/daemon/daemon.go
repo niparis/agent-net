@@ -962,7 +962,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		d.saveActivity(u.harness, u.native, u.at)
 	}
 	for _, ls := range changed {
-		d.pushSession(ls)
+		d.pushSessionChanged(ls)
 	}
 	for _, goneSession := range gone {
 		// A resumed worker may replace a native session while retaining its
@@ -1087,7 +1087,7 @@ func (d *Daemon) touchSession(ls *localSession, at time.Time) {
 		return
 	}
 	d.saveActivity(harness, native, at)
-	d.pushSession(ls)
+	d.pushSessionChanged(ls)
 }
 
 // touchHarness records a sign of progress: harness output, not a discovery
@@ -1110,7 +1110,7 @@ func (d *Daemon) touchHarness(ls *localSession, at time.Time) {
 	if changed {
 		d.saveActivity(harness, native, at)
 	}
-	d.goBackground(func() { d.pushSession(ls) })
+	d.goBackground(func() { d.pushSessionChanged(ls) })
 }
 
 // saveActivity keeps a session's real activity time across a daemon restart.
@@ -1132,9 +1132,16 @@ func (d *Daemon) persistActivity(ls *localSession) {
 	d.saveActivity(harness, native, at)
 }
 
-// pushSession tells the gateway about a session if the link is up. It sends
-// nothing when the gateway already has the same report (see pushState).
-func (d *Daemon) pushSession(ls *localSession) {
+// pushSession tells the gateway about a session if the link is up. It always
+// sends. A caller that may repeat itself many times a second (output, polls,
+// status reports) uses pushSessionChanged.
+func (d *Daemon) pushSession(ls *localSession) { d.pushSessionMode(ls, true) }
+
+// pushSessionChanged is pushSession for a frequent caller: it sends nothing
+// when the gateway already has the same report (see pushState).
+func (d *Daemon) pushSessionChanged(ls *localSession) { d.pushSessionMode(ls, false) }
+
+func (d *Daemon) pushSessionMode(ls *localSession, force bool) {
 	// Connection setup and discovery can push the same session concurrently.
 	// Read its current state only after older registrations have completed.
 	ls.pushMu.Lock()
@@ -1151,7 +1158,7 @@ func (d *Daemon) pushSession(ls *localSession) {
 	info := d.infoLocked(ls)
 	epoch := d.linkEpoch
 	now := time.Now()
-	invalid := ls.pushInvalid.Swap(false)
+	invalid := ls.pushInvalid.Swap(false) || force
 	if wait, send := ls.push.due(info, epoch, now, d.pushTiming()); !send && !invalid {
 		d.mu.Unlock()
 		d.armPush(ls, wait)

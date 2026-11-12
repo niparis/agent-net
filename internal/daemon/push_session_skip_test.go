@@ -58,7 +58,7 @@ func TestPushSessionSkipsUnchangedReport(t *testing.T) {
 	n, log, ls := pushSkipNode(t, time.Hour, time.Hour)
 	before := log.count()
 	for i := 0; i < 5; i++ {
-		n.d.pushSession(ls)
+		n.d.pushSessionChanged(ls)
 	}
 	if got := log.count(); got != before {
 		t.Fatalf("%d unchanged reports sent %d session.upsert calls, want 0", 5, got-before)
@@ -71,7 +71,7 @@ func TestPushSessionSendsChangedReport(t *testing.T) {
 	n.d.mu.Lock()
 	ls.info.Status = "busy"
 	n.d.mu.Unlock()
-	n.d.pushSession(ls)
+	n.d.pushSessionChanged(ls)
 	if got := log.count(); got != before+1 || log.last().Status != "busy" {
 		t.Fatalf("a changed status sent %d calls (last status %q), want one with busy", got-before, log.last().Status)
 	}
@@ -88,7 +88,7 @@ func TestPushSessionCoalescesActivity(t *testing.T) {
 		n.d.mu.Lock()
 		ls.harnessActivity, ls.lastActive = last, last
 		n.d.mu.Unlock()
-		n.d.pushSession(ls)
+		n.d.pushSessionChanged(ls)
 	}
 	if got := log.count(); got != before {
 		t.Fatalf("activity-only reports sent %d calls at once, want 0", got-before)
@@ -107,7 +107,7 @@ func TestPushSessionCoalescesActivity(t *testing.T) {
 func TestPushSessionKeepalive(t *testing.T) {
 	n, log, ls := pushSkipNode(t, time.Hour, 300*time.Millisecond)
 	before := log.count()
-	n.d.pushSession(ls)
+	n.d.pushSessionChanged(ls)
 	if log.count() != before {
 		t.Fatal("an unchanged report was sent before the keepalive")
 	}
@@ -122,7 +122,7 @@ func TestPushSessionSendsAgainAfterReconnect(t *testing.T) {
 	n.d.mu.Lock()
 	n.d.linkEpoch++
 	n.d.mu.Unlock()
-	n.d.pushSession(ls)
+	n.d.pushSessionChanged(ls)
 	if got := log.count(); got != before+1 {
 		t.Fatalf("a report after a new link sent %d calls, want 1", got-before)
 	}
@@ -136,8 +136,32 @@ func TestPushSessionSendsAfterRemoval(t *testing.T) {
 	if _, err := n.d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: n.d.SessionID("codex", "t-skip")}); err != nil {
 		t.Fatal(err)
 	}
-	n.d.pushSession(ls)
+	n.d.pushSessionChanged(ls)
 	if got := log.count(); got != before+1 {
 		t.Fatalf("a report after a removal sent %d calls, want 1", got-before)
+	}
+}
+
+// A busy worker's token counters move on every stats tick. They wait for the
+// activity interval like the activity time does, and any other worker field
+// goes out at once.
+func TestPushStateHoldsWorkerTokenCounters(t *testing.T) {
+	timing := pushTiming{activity: 30 * time.Second, keepalive: 2 * time.Minute}
+	now := time.Now()
+	in := protocol.SessionInfo{Harness: "codex", NativeID: "w", Worker: &protocol.WorkerInfo{ID: "w_1", Task: "a"}}
+	var p pushState
+	p.record(in, 1, now)
+	tokens := in
+	tokens.Worker = &protocol.WorkerInfo{ID: "w_1", Task: "a", Tokens: 500, ContextTokens: 100}
+	if wait, send := p.due(tokens, 1, now.Add(time.Second), timing); send || wait <= 0 {
+		t.Fatalf("a token-only change: send=%v wait=%v, want held", send, wait)
+	}
+	if _, send := p.due(tokens, 1, now.Add(31*time.Second), timing); !send {
+		t.Fatal("a token-only change was not sent after the interval")
+	}
+	task := in
+	task.Worker = &protocol.WorkerInfo{ID: "w_1", Task: "b"}
+	if _, send := p.due(task, 1, now.Add(time.Second), timing); !send {
+		t.Fatal("a changed task was held")
 	}
 }

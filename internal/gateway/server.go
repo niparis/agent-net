@@ -980,16 +980,14 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 		g.wakePending(ctx, nc.id)
 	}
 	if (h.Type == "session.upsert" || h.Type == "session.agent.reserve") && err == nil {
-		if r, ok := data.(sessionUpsertResult); !ok || r.relevant {
-			g.dispatchPending(ctx, nc.id, false)
-		}
+		// Cheap, and a stored message may wait for exactly this report.
+		g.dispatchPending(ctx, nc.id, false)
 	}
 	return nil
 }
 
 // sessionUpsertResult is the answer to session.upsert. relevant stays at the
-// gateway: it tells whether the report changed anything the delivery sweeps
-// read.
+// gateway: it tells whether the report changed anything the step sweeps read.
 type sessionUpsertResult struct {
 	SessionID string `json:"session_id"`
 	relevant  bool
@@ -1610,7 +1608,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		// A report that repeats what the gateway stores, or only moves the
-		// activity time, has nothing for the delivery sweeps to do. They run
+		// activity time, has nothing for the step sweeps to do. They run
 		// again on the next change and on the gateway's minute tick.
 		if relevant {
 			g.releaseBusyHold(ctx, id, false)

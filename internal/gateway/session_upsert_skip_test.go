@@ -145,3 +145,26 @@ func TestSessionUpsertKeepaliveRefreshesLastSeen(t *testing.T) {
 		t.Fatalf("last_seen = %d after the keepalive, want it past %d", now, seen)
 	}
 }
+
+// A column that another path changed is put right by the next report, even
+// when the report repeats the last one (a Pi name repair relies on this).
+func TestSessionUpsertRepairsColumnChangedElsewhere(t *testing.T) {
+	p := newUpsertProbe(t)
+	id := p.report(t, probeSession)
+	var want string
+	if err := p.g.store.db.QueryRow(`SELECT name FROM sessions WHERE id=?`, id).Scan(&want); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.g.store.db.Exec(`UPDATE sessions SET name='drifted' WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	p.c.t = p.c.t.Add(10 * time.Second)
+	p.report(t, probeSession)
+	var got string
+	if err := p.g.store.db.QueryRow(`SELECT name FROM sessions WHERE id=?`, id).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("name = %q after the report, want %q", got, want)
+	}
+}

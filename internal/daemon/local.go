@@ -949,7 +949,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		d.mu.Lock()
 		ls.info.Repo = repo
 		d.mu.Unlock()
-		d.pushSession(ls)
+		d.pushSessionChanged(ls)
 		return nil, nil
 
 	case "turn_error", "turn_ok":

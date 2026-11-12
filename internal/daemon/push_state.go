@@ -8,8 +8,9 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// A session's report to the gateway changes often in one way only: its
-// activity time moves each time its harness prints something. Sending every
+// A session's report to the gateway changes often in two ways only: its
+// activity time moves each time its harness prints something, and a busy
+// worker's token counters move on every stats tick. Sending every
 // one cost the gateway a write and a round of delivery sweeps, about three
 // times a second for a handful of sessions. So the daemon sends a report when
 //
@@ -45,7 +46,7 @@ func (d *Daemon) pushTiming() pushTiming {
 type pushState struct {
 	sent     bool
 	hash     [sha256.Size]byte // of the report without its activity times
-	activity [2]int64          // harness activity and last active, in seconds
+	activity [5]int64          // activity times in seconds and the worker's token counters
 	at       time.Time
 	epoch    uint64
 	timer    *time.Timer
@@ -65,13 +66,20 @@ func (d *Daemon) invalidatePush(sessionID string) {
 
 // pushDigest splits a report into what is sent at once when it changes and
 // the activity times that are sent on a delay.
-func pushDigest(in protocol.SessionInfo) ([sha256.Size]byte, [2]int64) {
-	act := [2]int64{in.HarnessActivity, in.LastActive}
+func pushDigest(in protocol.SessionInfo) ([sha256.Size]byte, [5]int64) {
+	act := [5]int64{in.HarnessActivity, in.LastActive}
 	in.HarnessActivity, in.LastActive, in.SessionID = 0, 0, ""
+	if in.Worker != nil {
+		// A busy worker's token counters change on every stats tick.
+		w := *in.Worker
+		act[2], act[3], act[4] = w.ContextTokens, w.ContextLimit, w.Tokens
+		w.ContextTokens, w.ContextLimit, w.Tokens = 0, 0, 0
+		in.Worker = &w
+	}
 	raw, err := json.Marshal(in)
 	if err != nil {
 		// Cannot compare: send every time, as before.
-		return [sha256.Size]byte{}, [2]int64{-1, -1}
+		return [sha256.Size]byte{}, [5]int64{-1}
 	}
 	return sha256.Sum256(raw), act
 }
@@ -115,6 +123,6 @@ func (d *Daemon) armPush(ls *localSession, wait time.Duration) {
 	}
 	ls.push.timerAt = due
 	ls.push.timer = time.AfterFunc(wait, func() {
-		d.goBackground(func() { d.pushSession(ls) })
+		d.goBackground(func() { d.pushSessionChanged(ls) })
 	})
 }
