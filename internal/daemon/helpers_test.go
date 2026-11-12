@@ -391,7 +391,21 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	if o.adapter != nil {
 		cfg.Adapters = []Adapter{o.adapter}
 	}
-	cfg.DetectHarnesses, cfg.HarnessInterval = o.detect, o.interval
+	cfg.DetectHarnesses = o.detect
+	// A live model read in a test never runs the machine's harness. It uses
+	// the same fake inventory, and a test that needs a different live list
+	// sets cfg.ListModels in o.cfg.
+	detect := o.detect
+	cfg.ListModels = func(ctx context.Context, name string) ([]string, error) {
+		if detect != nil {
+			for _, h := range detect(ctx) {
+				if h.Name == name {
+					return append([]string(nil), h.Models...), nil
+				}
+			}
+		}
+		return nil, fmt.Errorf("%s has no live model list in this test", name)
+	}
 	// A test must never find a harness of the machine it runs on. A test that
 	// wants the direct lookup sets HarnessSearch itself.
 	cfg.HarnessSearch = &harnesses.Options{PATH: t.TempDir(), Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }}

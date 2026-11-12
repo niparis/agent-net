@@ -638,17 +638,26 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 	}
 	switch category {
 	case "models":
+		live, err := g.liveModels(ctx, node, p.Harness, p.ModelFilter)
+		if err != nil {
+			return protocol.MachineGetResult{}, err
+		}
 		scores, err := g.store.scores()
 		if err != nil {
 			return protocol.MachineGetResult{}, err
 		}
 		var rows []protocol.MachineModelRow
-		for _, h := range node.Harnesses {
-			if p.Harness != "" && !strings.EqualFold(h.Name, p.Harness) {
+		var harnessErrors []string
+		for _, h := range live.Harnesses {
+			if h.Error != "" {
+				if p.Harness != "" {
+					return protocol.MachineGetResult{}, fmt.Errorf("machine %s could not list %s models live: %s", node.Hostname, h.Name, h.Error)
+				}
+				harnessErrors = append(harnessErrors, h.Name+": "+h.Error)
 				continue
 			}
 			for _, id := range h.Models {
-				if p.ModelFilter != "" && !strings.Contains(strings.ToLower(id), strings.ToLower(p.ModelFilter)) {
+				if p.ModelFilter != "" && !containsFold(id, p.ModelFilter) {
 					continue
 				}
 				rows = append(rows, protocol.MachineModelRow{Harness: h.Name, ID: id, Scores: protocol.ModelScoresFor(id, scores)})
@@ -665,6 +674,9 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 		page := &protocol.MachineModelPage{Items: []protocol.MachineModelRow{}, Total: total, NextCursor: next}
 		page.Items = append(page.Items, rows[start:end]...)
 		page.Note = pageNote(len(page.Items), total, next)
+		if len(harnessErrors) > 0 {
+			page.Note = strings.TrimSpace(fmt.Sprintf("%s Some harnesses could not list live: %s.", page.Note, strings.Join(harnessErrors, "; ")))
+		}
 		out.Models = page
 
 	case "quotas":

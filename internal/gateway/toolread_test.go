@@ -371,6 +371,17 @@ func TestFindMachinesAndMachineGet(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	nc, _ := fakeModelNodeFor(t, map[string][]string{
+		"claude":   {"claude-a", "claude-b"},
+		"opencode": {"opencode/x"},
+	})
+	nc.id = research.NodeID
+	g.mu.Lock()
+	if g.conns == nil {
+		g.conns = map[string]*nodeConn{}
+	}
+	g.conns[research.NodeID] = nc
+	g.mu.Unlock()
 
 	one, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "research", Include: []string{"models"}, Limit: 2})
 	if err != nil {

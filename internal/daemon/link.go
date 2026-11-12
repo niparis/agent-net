@@ -157,6 +157,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 					d.onWaitClear(p.SessionID)
 				}()
 			}
+		case protocol.FrameNodeModels:
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.onModelsFrame(ctx, l, h, raw)
+			}()
 		case "node.name":
 			var p protocol.NodeName
 			if json.Unmarshal(raw, &p) == nil && p.Hostname != "" {
@@ -168,7 +174,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onOperatorFrame(ctx, l, h.Type, h.ID, raw)
 			}()
-		case "worker.launch", "worker.kill", "worker.validate_stop", "worker.resume", "worker.task", "worker.continue", "cto.worker_capabilities":
+		case "worker.launch", "worker.kill", "worker.validate_stop", "worker.resume", "worker.task", "worker.continue", "cto.worker_capabilities", protocol.FrameModelTest:
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()

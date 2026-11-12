@@ -312,24 +312,35 @@ func (d *Daemon) ctoModel(ctx context.Context) (string, error) {
 		return "", err
 	}
 	list, _ := d.inventory()
+	var providers []string
+	found := false
 	for _, h := range list {
-		if h.Name != "opencode" {
-			continue
+		if h.Name == "opencode" {
+			found = true
+			providers = h.ModelProviders
 		}
-		if settings.OpenCodeModel != "" {
-			return protocol.ResolveModel(settings.OpenCodeModel, h.Models, nil, h.ModelProviders)
-		}
-		for _, q := range []string{"gpt 6.1", "opus 5.5", "deepseek v4 pro"} {
-			if model, e := protocol.ResolveModel(q, h.Models, nil, h.ModelProviders); e == nil {
-				return model, nil
-			}
-		}
-		if len(h.Models) > 0 {
-			return h.Models[0], nil
-		}
+	}
+	if !found {
+		return "", errors.New("OpenCode is not installed on this machine")
+	}
+	// The model list is read live: a provider added since the daemon started
+	// must be usable without a restart.
+	models, err := d.readHarnessModels(ctx, "opencode")
+	if err != nil {
+		return "", err
+	}
+	if len(models) == 0 {
 		return "", errors.New("OpenCode has no available models")
 	}
-	return "", errors.New("OpenCode model inventory is not available")
+	if settings.OpenCodeModel != "" {
+		return protocol.ResolveModel(settings.OpenCodeModel, models, nil, providers)
+	}
+	for _, q := range []string{"gpt 6.1", "opus 5.5", "deepseek v4 pro"} {
+		if model, e := protocol.ResolveModel(q, models, nil, providers); e == nil {
+			return model, nil
+		}
+	}
+	return models[0], nil
 }
 func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	model, err := d.ctoModel(ctx)

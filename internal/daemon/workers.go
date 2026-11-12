@@ -855,6 +855,7 @@ func (d *Daemon) finishWorkerStart(ctx context.Context, l protocol.WorkerLaunch,
 		if tail != "" {
 			err = fmt.Errorf("%w (harness output: %s)", err, tail)
 		}
+		err = d.explainStartFailure(ctx, l.Harness, l.Model, err)
 		d.Logf("worker.refused project=%s harness=%s owner=%s reason=%q", l.Project, l.Harness, l.Owner, err.Error())
 		return protocol.WorkerLaunched{}, err
 	}

@@ -91,13 +91,13 @@ func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
 		h.SignedIn, h.SignIn = signIn(ctx, o, n, installs[0])
 		if n == "codex" {
 			mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
-			h.Models, h.ModelDefaultEfforts = codexModels(mctx, installs[0], s.path)
+			h.Models, h.ModelDefaultEfforts, _ = codexModels(mctx, installs[0], s.path)
 			cancel()
 		} else if n == "agy" {
 			// `agy models` needs the network and a sign-in, so the same probe
 			// says whether the machine is signed in (decision 0049 D4).
 			mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
-			h.Models, h.SignedIn = agyModels(mctx, installs[0], s.path)
+			h.Models, h.SignedIn, _ = agyModels(mctx, installs[0], s.path)
 			cancel()
 		} else {
 			h.Models = models(ctx, o, n, installs[0], s.dirs)
@@ -350,6 +350,11 @@ func runProgram(ctx context.Context, path, searchPATH string, args ...string) (s
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	if len(args) == 2 && args[0] == "login" && args[1] == "status" {
+		cmd.Stderr = &buf
+	}
+	// A model list that fails usually says why on stderr ("please run opencode
+	// auth login"), and that text belongs in the caller's error.
+	if len(args) == 1 && (args[0] == "models" || args[0] == "--list-models") {
 		cmd.Stderr = &buf
 	}
 	cmd.WaitDelay = 500 * time.Millisecond

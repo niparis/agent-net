@@ -242,9 +242,9 @@ func TestHarnessUpdateInventoryStillRetriesFailedModelProbe(t *testing.T) {
 	d.cfg.DetectHarnesses = func(context.Context) []protocol.HarnessInfo {
 		return []protocol.HarnessInfo{{Name: "pi", Path: d.installed[0].Path, Version: "1"}}
 	}
-	hs, incomplete := d.refreshHarnessInventory(context.Background())
-	if !incomplete || len(hs[0].Models) != 1 {
-		t.Fatalf("must retain models and retry: incomplete=%v inventory=%+v", incomplete, hs)
+	hs := d.refreshHarnessInventory(context.Background())
+	if len(hs[0].Models) != 1 {
+		t.Fatalf("must retain models: inventory=%+v", hs)
 	}
 }
 

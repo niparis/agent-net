@@ -5,12 +5,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/niparis/agent-net/internal/protocol"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,8 +23,8 @@ import (
 // Claude Code has no list command: its aliases and the full names we know are
 // a small table below.
 //
-// A harness whose list cannot be read reports no list, and a loose model name
-// for it is passed through as the caller gave it.
+// A harness whose list cannot be read reports the harness's own output in an
+// error, and a loose model name for it is passed through as the caller gave it.
 
 // claudeModels are the values Claude Code accepts after --model. The aliases
 // are documented in its help text. The full names are the families we have
@@ -99,25 +102,46 @@ type codexRPCResult struct {
 	} `json:"error"`
 }
 
+// syncBuffer is a bytes.Buffer that can be read while a process still writes
+// to it. exec copies a non-file Stderr from its own goroutine, which only Wait
+// joins, so codexModels must not read a plain buffer to report a failure before
+// it waits.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // codexModels asks `codex app-server` (stdio) for its model list. It says
-// initialize, then model/list, and follows nextCursor. Any failure gives no
-// list. The caller's context bounds the whole call.
-func codexModels(ctx context.Context, path, searchPATH string) ([]string, map[string]string) {
+// initialize, then model/list, and follows nextCursor. A failure returns the
+// server's own stderr in the error. The caller's context bounds the whole call.
+func codexModels(ctx context.Context, path, searchPATH string) ([]string, map[string]string, error) {
 	cmd := exec.CommandContext(ctx, path, "app-server")
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+searchPATH)
 	cmd.WaitDelay = 500 * time.Millisecond // as in runProgram
-	var stderr bytes.Buffer
+	var stderr syncBuffer
 	cmd.Stderr = &stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("codex app-server: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("codex app-server: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("codex app-server: %w", err)
 	}
 	defer func() {
 		stdin.Close()
@@ -126,17 +150,27 @@ func codexModels(ctx context.Context, path, searchPATH string) ([]string, map[st
 		}
 		cmd.Wait()
 	}()
+	fail := func(what string) ([]string, map[string]string, error) {
+		if detail := harnessOutput(stderr.String()); detail != "" {
+			return nil, nil, fmt.Errorf("codex app-server %s: %s", what, detail)
+		}
+		return nil, nil, fmt.Errorf("codex app-server %s", what)
+	}
 	enc := json.NewEncoder(stdin)
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
-	enc.Encode(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{
+	if err := enc.Encode(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{
 		"clientInfo":   map[string]any{"name": "agent-net", "version": "model-list"},
 		"capabilities": map[string]any{"experimentalApi": true},
-	}})
-	if _, ok := readCodexAnswer(sc, 1); !ok {
-		return nil, nil
+	}}); err != nil {
+		return fail("closed its input")
 	}
-	enc.Encode(map[string]any{"method": "initialized"})
+	if _, ok := readCodexAnswer(sc, 1); !ok {
+		return fail("did not answer initialize")
+	}
+	if err := enc.Encode(map[string]any{"method": "initialized"}); err != nil {
+		return fail("closed its input")
+	}
 
 	seen := map[string]bool{}
 	var models []string
@@ -151,15 +185,15 @@ func codexModels(ctx context.Context, path, searchPATH string) ([]string, map[st
 		reqID := nextID
 		nextID++
 		if err := enc.Encode(map[string]any{"id": reqID, "method": "model/list", "params": params}); err != nil {
-			break
+			return fail("closed its input")
 		}
 		res, ok := readCodexAnswer(sc, reqID)
 		if !ok {
-			break
+			return fail("did not answer model/list")
 		}
 		var list codexModelList
 		if json.Unmarshal(res, &list) != nil {
-			break
+			return fail("gave a bad model/list answer")
 		}
 		for _, m := range list.Data {
 			id := strings.TrimSpace(m.ID)
@@ -185,9 +219,9 @@ func codexModels(ctx context.Context, path, searchPATH string) ([]string, map[st
 		models = models[:MaxModels]
 	}
 	if len(models) == 0 {
-		return nil, nil
+		return fail("listed no models")
 	}
-	return models, efforts
+	return models, efforts, nil
 }
 
 // readCodexAnswer reads lines until the answer with the wanted id. Server
@@ -210,6 +244,72 @@ func readCodexAnswer(sc *bufio.Scanner, id int) (json.RawMessage, bool) {
 		return m.Result, true
 	}
 	return nil, false
+}
+
+// ListModels reads a harness's model list right now, with the same bounded
+// probe the detector uses. A failure, including an empty read, returns the
+// harness's own output in the error. Claude has a fixed list. The caller's
+// context bounds the opencode, pi, agy and codex reads with ModelsTimeout.
+func ListModels(ctx context.Context, name, path string, o Options) ([]string, error) {
+	s := prepare(ctx, &o)
+	switch name {
+	case "claude":
+		return ClaudeModels(), nil
+	case "opencode":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		out, err := o.Run(mctx, path, "models")
+		if err != nil {
+			return nil, withHarnessOutput(fmt.Errorf("opencode models: %w", err), out)
+		}
+		models := ParseModels(out)
+		if len(models) == 0 {
+			return nil, withHarnessOutput(errors.New("opencode models listed no models"), out)
+		}
+		return models, nil
+	case "pi":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		out, err := o.Run(mctx, path, "--list-models")
+		if err != nil {
+			return nil, withHarnessOutput(fmt.Errorf("pi --list-models: %w", err), out)
+		}
+		models := ParsePiModels(out)
+		if len(models) == 0 {
+			return nil, withHarnessOutput(errors.New("pi --list-models listed no models"), out)
+		}
+		return models, nil
+	case "agy":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		models, _, err := agyModels(mctx, path, s.path)
+		return models, err
+	case "codex":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		models, _, err := codexModels(mctx, path, s.path)
+		return models, err
+	}
+	return nil, fmt.Errorf("unknown harness %q", name)
+}
+
+// harnessOutput keeps a harness's failure text short enough for one error
+// line, with its whitespace collapsed.
+func harnessOutput(out string) string {
+	text := strings.Join(strings.Fields(out), " ")
+	if len(text) > 300 {
+		text = text[:300] + "..."
+	}
+	return text
+}
+
+// withHarnessOutput adds the harness's own words to an error when there are
+// any, so a login or quota message reaches the owner.
+func withHarnessOutput(err error, out string) error {
+	if detail := harnessOutput(out); detail != "" {
+		return fmt.Errorf("%w: %s", err, detail)
+	}
+	return err
 }
 
 // ParseAgyModels reads the output of `agy models`: a first line "Fetching
@@ -245,26 +345,30 @@ func ParseAgyModels(out string) []string {
 // agyModels reads the model list of Antigravity (agy). The list arrives only
 // when the machine is signed in, so this is also the sign-in check: a list
 // means "yes", a signed-out message means "no", and a failure or timeout leaves
-// the state unknown ("") rather than guessing. The caller's context bounds the
-// whole read. Account details in the output are never kept.
-func agyModels(ctx context.Context, path, searchPATH string) ([]string, string) {
+// the state unknown ("") rather than guessing. A failure returns the harness's
+// own output in the error. The caller's context bounds the whole read. Account
+// details in the output are never kept.
+func agyModels(ctx context.Context, path, searchPATH string) ([]string, string, error) {
 	cmd := exec.CommandContext(ctx, path, "models")
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+searchPATH)
 	cmd.WaitDelay = 500 * time.Millisecond // as in runProgram
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
-	_ = cmd.Run()
+	runErr := cmd.Run()
 	if ctx.Err() != nil {
-		return nil, ""
+		return nil, "", ctx.Err()
 	}
 	text := out.String()
 	if agySignedOut(text) {
-		return nil, "no"
+		return nil, "no", withHarnessOutput(errors.New("agy is not signed in"), text)
 	}
 	if models := ParseAgyModels(text); len(models) > 0 {
-		return models, "yes"
+		return models, "yes", nil
 	}
-	return nil, ""
+	if runErr != nil {
+		return nil, "", withHarnessOutput(fmt.Errorf("agy models: %w", runErr), text)
+	}
+	return nil, "", withHarnessOutput(errors.New("agy models listed no models"), text)
 }
 
 // agySignedOut matches the messages agy prints when it has no usable login.

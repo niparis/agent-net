@@ -63,24 +63,19 @@ func TestCodexLooseModelNameIsResolved(t *testing.T) {
 	}
 }
 
-// A Codex name that matches nothing is refused before the worker starts, with
-// the closest names and the machine in the message. Nothing is launched.
-func TestCodexNoModelMatchRefusesWithClosest(t *testing.T) {
+// A Codex name that matches nothing in the stored list is still tried: the
+// start itself is the test, and the note says the stored list is only a hint.
+func TestCodexModelMissingFromStoredListIsTried(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNodeWithModels(t, g, shortSet, []string{"gpt-6-luna", "gpt-6.1-luna", "gpt-6.1"})
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Model: "luna 9", Task: "x"})
-	if err == nil {
-		t.Fatal("want a refusal")
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Model: "luna 9", Task: "say ok"})
+	if res.Model != "luna 9" {
+		t.Fatalf("start model = %q, want the requested name", res.Model)
 	}
-	for _, want := range []string{`no codex model matches "luna 9" on ` + w.cfg.Hostname, "closest:", "gpt-6-luna", "gpt-6.1-luna"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q lacks %q", err, want)
-		}
-	}
-	if _, statErr := os.Stat(repo + "/fake-codex.json"); statErr == nil {
-		t.Error("Codex was started")
+	if !strings.Contains(res.ModelNote, "not in the last model list") || !strings.Contains(res.ModelNote, "the start will test it") {
+		t.Fatalf("start note does not explain the live test: %q", res.ModelNote)
 	}
 }
 

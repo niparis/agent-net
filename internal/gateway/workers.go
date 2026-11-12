@@ -1155,7 +1155,13 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 			return result, modelNote, nil
 		}
 	}
-	if model != "" && len(hi.Models) > 0 {
+	if model == "" {
+		return model, modelNote, nil
+	}
+	if len(hi.Models) == 0 {
+		return model, appendModelNote(modelNote, fmt.Sprintf("no %s model list is stored on %s; the start will test %s", harness, node.Hostname, model)), nil
+	}
+	{
 		usage, err := g.store.ModelUsage(node.NodeID, harness, time.Duration(protocol.ModelUsageDays)*24*time.Hour)
 		if err != nil {
 			return "", "", err
@@ -1168,7 +1174,7 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 			}
 			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Selection().ModelID(), hi.Models)
 			if len(ambiguous) > 0 {
-				return "", "", reject("worker profile %q model %s is ambiguous on %s (%s)", profile.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
+				modelNote = appendModelNote(modelNote, fmt.Sprintf("worker profile %q model %s is ambiguous on %s (%s); the start will test the profile model", profile.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", ")))
 			}
 			if resolved != "" {
 				if resolved != profile.Model {
@@ -1197,11 +1203,10 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 			case errors.As(err, &pu):
 				return "", "", reject("%s model %v on %s", harness, err, node.Hostname)
 			case errors.As(err, &nm):
-				msg := fmt.Sprintf("no %s model matches %q on %s", harness, asked, node.Hostname)
-				if len(nm.Closest) > 0 {
-					msg += "; closest: " + strings.Join(nm.Closest, ", ")
-				}
-				return "", "", reject("%s", msg)
+				// The stored list is only a hint. A model the list does not
+				// have may still be new: the start itself tests it.
+				modelNote = appendModelNote(modelNote, fmt.Sprintf("%s is not in the last model list from %s; the start will test it", asked, node.Hostname))
+				return model, modelNote, nil
 			}
 			return "", "", reject("model on %s: %v", node.Hostname, err)
 		}
@@ -1244,6 +1249,7 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 		signedIn     bool
 		subscription bool
 		exact        bool
+		listed       bool
 		order        int
 	}
 	profiles, err := g.store.WorkerProfiles()
@@ -1262,7 +1268,7 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 	var payErr, opencodeErr, firstErr error
 	for i := range node.Harnesses {
 		h := &node.Harnesses[i]
-		if !protocol.WorkerHarnessSupported(h.Name) || len(h.Models) == 0 || h.SignedIn == "no" || profileHarness != "" && profileHarness != h.Name {
+		if !protocol.WorkerHarnessSupported(h.Name) || h.SignedIn == "no" || profileHarness != "" && profileHarness != h.Name {
 			continue
 		}
 		if requireReadOnly && !protocol.WorkerReadOnlySupported(h.Name) {
@@ -1294,6 +1300,7 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 			signedIn:     h.SignedIn == "yes",
 			subscription: protocol.SubscriptionProvider(h.Name, resolved, quotas),
 			exact:        protocol.ModelIDWrittenInFull(model, resolved),
+			listed:       len(h.Models) > 0,
 			order:        i,
 		})
 	}
@@ -1308,7 +1315,32 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 		}
 		return "", reject("no harness on %s lists %q", node.Hostname, model)
 	}
+	// A harness with no stored list is a fallback only: it must not hide a
+	// harness that actually lists the model, nor a pay-per-use refusal from a
+	// listed harness.
+	var listed, unlisted []candidate
+	for _, c := range cands {
+		if c.listed {
+			listed = append(listed, c)
+		} else {
+			unlisted = append(unlisted, c)
+		}
+	}
+	if len(listed) > 0 {
+		cands = listed
+	} else {
+		switch {
+		case payErr != nil:
+			return "", payErr
+		case opencodeErr != nil:
+			return "", opencodeErr
+		}
+		cands = unlisted
+	}
 	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].listed != cands[j].listed {
+			return cands[i].listed
+		}
 		if cands[i].signedIn != cands[j].signedIn {
 			return cands[i].signedIn
 		}
@@ -2012,14 +2044,14 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, node *protoco
 			}
 			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Selection().ModelID(), h.Models)
 			if resolved == "" {
-				message := fmt.Sprintf("stale profile %q skipped: %s model %s is not listed by %s", profile.Name, h.Name, profile.Model, node.Hostname)
+				// The stored list is a hint, not the source of truth. The
+				// profile model is tried on the machine and the start reports
+				// the harness's own answer.
+				resolved = profile.Selection().ModelID()
 				if len(ambiguous) > 0 {
-					message = fmt.Sprintf("stale profile %q skipped: %s model %s is ambiguous on %s (%s)", profile.Name, h.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
-				} else if closest := protocol.ClosestModels(profile.Model, h.Models, 3); len(closest) > 0 {
-					message += "; closest: " + strings.Join(closest, ", ")
+					resolutionNotes[h.Name+"\x00"+protocol.ParseModelSelection(profile.Harness, "", resolved, profile.Effort).LegacyModel()] =
+						fmt.Sprintf("%s: model %s is ambiguous on %s (%s); the start will test it", profile.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
 				}
-				skippedProfiles = append(skippedProfiles, message)
-				continue
 			}
 			blocked, err := facts.authBlocked(g.store, node.NodeID, h.Name, resolved)
 			if err != nil {

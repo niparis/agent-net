@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -116,7 +117,15 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The connection has no wire: attempting a probe or invocation would panic.
+	// Worker profile validation reads the model list live, so serve that one
+	// read from the cache instead of asking the node.
 	nc := &nodeConn{id: node}
+	g.modelCache = map[string]gatewayModelCacheEntry{
+		node + "\x00claude": {
+			result: protocol.ModelListResult{Harnesses: []protocol.HarnessModels{{Name: "claude", Models: []string{"model"}}}},
+			at:     time.Now(),
+		},
+	}
 	g.conns[node] = nc
 	t.Cleanup(func() { delete(g.conns, node) })
 	tests := []struct {

@@ -215,13 +215,13 @@ type Config struct {
 	// list turns the rule off, which tests use for their own temp sessions.
 	TempFolders []string
 	// DetectHarnesses lists the installed harnesses. Default: harnesses.Detect
-	// with the usual install folders.
+	// with the usual install folders. It runs once at start, and again when a
+	// harness update check needs it. Model lists are read live instead.
 	DetectHarnesses func(ctx context.Context) []protocol.HarnessInfo
-	// HarnessInterval is how often DetectHarnesses runs after the first time.
-	// Default: 6 hours.
-	HarnessInterval time.Duration
-	// HarnessRetryDelay is the initial delay after an empty model probe.
-	HarnessRetryDelay time.Duration
+	// ListModels reads one harness's model list live. Default: run the
+	// harness (`opencode models`, `pi --list-models`, `agy models`, codex's
+	// app server, or Claude's fixed list). Tests set a fake.
+	ListModels func(ctx context.Context, harness string) ([]string, error)
 	// Harness update delays are configurable for tests; zero uses production defaults.
 	HarnessUpdateInitialDelay, HarnessUpdateInterval, HarnessUpdateRetryDelay, HarnessUpdateTimeout time.Duration
 	// UsageSampler measures CPU and memory (see usage.go). Nil turns that off.
@@ -509,6 +509,9 @@ type Daemon struct {
 	hdetectMu sync.Mutex             // serializes inventory probes and publication
 	installed []protocol.HarnessInfo // nil until the first detection ends
 	hgen      int
+	// modelMu guards modelCache, the short-lived live model reads.
+	modelMu    sync.Mutex
+	modelCache map[string]modelCacheEntry
 
 	// cmdline is replaced in tests.
 	cmdline func(pid int) string
@@ -581,12 +584,6 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	if cfg.DetectHarnesses == nil {
 		cfg.DetectHarnesses = defaultDetect
-	}
-	if cfg.HarnessInterval == 0 {
-		cfg.HarnessInterval = 6 * time.Hour
-	}
-	if cfg.HarnessRetryDelay <= 0 {
-		cfg.HarnessRetryDelay = time.Minute
 	}
 	st, err := openState(cfg.StateDir)
 	if err != nil {
