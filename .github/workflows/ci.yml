@@ -50,12 +50,13 @@ jobs:
       - name: test script syntax
         run: bash -n scripts/test.sh
 
-  test-daemon:
-    name: daemon shard ${{ matrix.shard }} of 4
+  test-sharded:
+    name: ${{ matrix.package }} shard ${{ matrix.shard }} of 4
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        package: [daemon, gateway, setup, tui, agent-net]
         shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4.2.2
@@ -83,42 +84,7 @@ jobs:
       - uses: actions/setup-go@v5.5.0
         with:
           go-version-file: go.mod
-      - run: scripts/test.sh --package daemon --shard-index ${{ matrix.shard }} --shard-count 4 -- -timeout 30m
-
-  test-gateway:
-    name: gateway shard ${{ matrix.shard }} of 4
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
-    steps:
-      - uses: actions/checkout@v4.2.2
-      - name: Go toolchain location
-        id: go
-        run: |
-          version="$(awk '$1 == "go" { print $2; exit }' go.mod)"
-          case "$RUNNER_ARCH" in
-            X64) arch=x64 ;;
-            ARM64) arch=arm64 ;;
-            *) echo "unsupported runner arch: $RUNNER_ARCH" >&2; exit 1 ;;
-          esac
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "dir=$RUNNER_TOOL_CACHE/go/$version/$arch" >> "$GITHUB_OUTPUT"
-      # Restore the Go toolchain before setup-go runs. setup-go uses a toolchain
-      # found in the tool cache and downloads one only when it is missing. On a
-      # miss, setup-go downloads it as before and this cache saves it after a
-      # successful job.
-      - uses: actions/cache@v5.1.0
-        with:
-          path: |
-            ${{ steps.go.outputs.dir }}
-            ${{ steps.go.outputs.dir }}.complete
-          key: go-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.version }}
-      - uses: actions/setup-go@v5.5.0
-        with:
-          go-version-file: go.mod
-      - run: scripts/test.sh --package gateway --shard-index ${{ matrix.shard }} --shard-count 4 -- -timeout 30m
+      - run: scripts/test.sh --package ${{ matrix.package }} --shard-index ${{ matrix.shard }} --shard-count 4 -- -timeout 30m
 
   test-other:
     runs-on: ubuntu-latest
@@ -148,7 +114,7 @@ jobs:
       - uses: actions/setup-go@v5.5.0
         with:
           go-version-file: go.mod
-      - run: go test -race -timeout 30m $(go list ./... | grep -v -e '/internal/daemon$' -e '/internal/gateway$')
+      - run: go test -race -timeout 30m $(go list ./... | grep -v -e '/internal/daemon$' -e '/internal/gateway$' -e '/internal/setup$' -e '/internal/tui$' -e '/cmd/agent-net$')
 
   test-plugins:
     name: pi, opencode and claude plugins
