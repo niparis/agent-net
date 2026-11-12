@@ -633,3 +633,112 @@ func TestChiefSortRefusesNonChief(t *testing.T) {
 		t.Fatal("the chief sorted an ask that was not waiting for it")
 	}
 }
+
+// chiefModelRig gives the chief's node a claude model list, so a model change
+// has an inventory to resolve against.
+func chiefModelRig(t *testing.T) (s *Store, chief string) {
+	t.Helper()
+	s, _, chief, _, node := chiefRig(t)
+	if _, err := s.SetNodeHarnesses(node, []protocol.HarnessInfo{
+		{Name: "claude", Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE nodes SET seen_at = 1 WHERE id = ?`, node); err != nil {
+		t.Fatal(err)
+	}
+	return s, chief
+}
+
+// A model-only chief_set writes chief.model and leaves the chief session where
+// it is. This is the call that used to clear the chief.
+func TestChiefSetModelKeepsSession(t *testing.T) {
+	s, chief := chiefModelRig(t)
+	if err := s.SetChief(protocol.ChiefSetRequest{Harness: "claude", Model: "claude-opus-5-5", Effort: "medium"}, "cto"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.ChiefStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.SessionID != chief {
+		t.Fatalf("chief session = %q after a model change, want %q", st.SessionID, chief)
+	}
+	if want := "claude · anthropic · claude-opus-5-5 · medium"; st.Model != want {
+		t.Fatalf("model = %q, want %q", st.Model, want)
+	}
+}
+
+// A loose model name resolves like a worker start, and one field alone keeps
+// the rest of the line.
+func TestChiefSetModelResolvesAndMerges(t *testing.T) {
+	s, _ := chiefModelRig(t)
+	if err := s.SetChief(protocol.ChiefSetRequest{Harness: "claude", Model: "opus", Effort: "high"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{Effort: "low"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := s.ChiefStatus()
+	if want := "claude · anthropic · claude-opus-5-5 · low"; st.Model != want {
+		t.Fatalf("model = %q, want %q", st.Model, want)
+	}
+}
+
+// A model no machine lists is refused, and nothing changes.
+func TestChiefSetUnknownModelRefused(t *testing.T) {
+	s, chief := chiefModelRig(t)
+	err := s.SetChief(protocol.ChiefSetRequest{Harness: "claude", Model: "claude-nonesuch-9", Effort: "medium"}, "owner")
+	if err == nil || !strings.Contains(err.Error(), "claude-nonesuch-9") {
+		t.Fatalf("err = %v, want a refusal naming the model", err)
+	}
+	st, _ := s.ChiefStatus()
+	if st.Model != protocol.DefaultChiefModel || st.SessionID != chief {
+		t.Fatalf("status = %+v after a refused model, want no change", st)
+	}
+}
+
+// A harness no machine reports a model list for cannot be checked, so it is
+// refused too.
+func TestChiefSetModelWithoutInventoryRefused(t *testing.T) {
+	s, _ := chiefModelRig(t)
+	if err := s.SetChief(protocol.ChiefSetRequest{Harness: "codex", Model: "gpt-6.1-sol"}, "owner"); err == nil {
+		t.Fatal("a model of a harness with no model list was accepted")
+	}
+}
+
+// The model change needs the owner or the CTO, like naming the chief.
+func TestChiefSetModelNeedsOwnerOrCTO(t *testing.T) {
+	s, _ := chiefModelRig(t)
+	if err := s.SetChief(protocol.ChiefSetRequest{Harness: "claude", Model: "claude-opus-5-5"}, "agent"); err == nil {
+		t.Fatal("an agent changed the chief model")
+	}
+}
+
+// An empty chief_set is refused and leaves the chief in place; only an explicit
+// clear unassigns it.
+func TestChiefSetEmptyRefusedClearClears(t *testing.T) {
+	s, chief := chiefModelRig(t)
+	if err := s.SetChief(protocol.ChiefSetRequest{}, "owner"); err == nil {
+		t.Fatal("an empty chief_set was accepted")
+	}
+	if id, _ := chiefSession(s.db); id != chief {
+		t.Fatalf("chief = %q after an empty call, want %q", id, chief)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{Clear: true, SessionID: chief}, "owner"); err == nil {
+		t.Fatal("clear with a session_id was accepted")
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{Clear: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if id, _ := chiefSession(s.db); id != "" {
+		t.Fatalf("chief = %q after clear, want none", id)
+	}
+}
+
+// The operator frame refuses an argument chief_set does not have, by name.
+func TestChiefSetFrameRefusesUnknownArgument(t *testing.T) {
+	if _, err := decodeOperator[protocol.ChiefSetRequest]([]byte(`{"foo":1}`)); err == nil || !strings.Contains(err.Error(), "foo") {
+		t.Fatalf("err = %v, want the unknown argument foo named", err)
+	}
+}

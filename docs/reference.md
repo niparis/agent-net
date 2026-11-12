@@ -2866,11 +2866,26 @@ shows the same ask with an Open sign-in button when it lists the Desk.
 ## The chief of staff (decision 0114)
 
 A registered agent session sorts the asks that would go to the owner first. The
-owner or the CTO names it with `chief.set` (operator `chief_set`, `{session_id}`;
-an empty id clears it). The session must be a live agent session, not a worker,
-the owner, the CTO or a bot. Its model is the setting `chief.model`, default
+owner or the CTO changes it with `chief.set` (operator `chief_set`). The call
+does what it names or is refused:
+
+- `session_id` names the chief. The session must be a live agent session, not
+  a worker, the owner, the CTO or a bot.
+- `clear: true` unassigns the chief. It is the only way to do so, and it cannot
+  be combined with another field. A call that names nothing is refused.
+- `harness`, `provider`, `model` and `effort` (all optional) write the setting
+  `chief.model`. The model is resolved like a worker start's model against the
+  model lists the network's machines report, and a model no machine lists is
+  refused. A field not given keeps its value from the current setting. Naming a
+  session and a model in one call is allowed; a model-only call leaves the
+  chief session in place.
+- An argument `chief_set` does not have is refused by name, in the daemon and
+  in the gateway.
+
+The model is the setting `chief.model`, default
 `codex · openai · gpt-6.1-sol · medium`, which `chief.get` (operator `chief_get`)
-returns with the session, its name and whether it is online.
+returns with the session, its name and whether it is online. Changing it does
+not restart the chief: the setting is used when the owner or the CTO starts it.
 
 **Routing.** A new ask goes to the chief (`next = chief`, the Desk shows it as
 "with someone") when a chief is online and the ask does not name another next.

@@ -312,9 +312,36 @@ type AskHistoryResult struct {
 	Sorts []AskSort `json:"sorts"`
 }
 
-// ChiefSetRequest names the chief session. An empty id clears the role.
+// ChiefSetRequest changes the chief of staff. It does what it names and
+// nothing else: SessionID names the chief session, Clear unassigns it, and
+// Harness, Provider, Model and Effort set the chief.model setting. A request
+// that names none of them is refused, so a call can never unassign the chief
+// by accident. Model fields not given keep their value from the current
+// setting. The fields may come in one call or in separate calls.
 type ChiefSetRequest struct {
-	SessionID string `json:"session_id"`
+	SessionID string `json:"session_id,omitempty" jsonschema:"the live agent session to make the chief"`
+	Clear     bool   `json:"clear,omitempty" jsonschema:"true unassigns the chief; it cannot be combined with other fields"`
+	Harness   string `json:"harness,omitempty" jsonschema:"harness of the chief model, for example claude"`
+	Provider  string `json:"provider,omitempty" jsonschema:"provider of the chief model; derived from the model when empty"`
+	Model     string `json:"model,omitempty" jsonschema:"chief model, resolved like a worker model; a model no machine lists is refused"`
+	Effort    string `json:"effort,omitempty" jsonschema:"effort of the chief model, for example medium"`
+}
+
+// HasModel reports whether the request changes the chief's model.
+func (r ChiefSetRequest) HasModel() bool {
+	return r.Harness != "" || r.Provider != "" || r.Model != "" || r.Effort != ""
+}
+
+// Validate refuses a request that names nothing to do, or that asks to clear
+// the chief and set something in the same call.
+func (r ChiefSetRequest) Validate() error {
+	switch {
+	case r.Clear && (r.SessionID != "" || r.HasModel()):
+		return errors.New("clear cannot be combined with session_id or model fields")
+	case !r.Clear && r.SessionID == "" && !r.HasModel():
+		return errors.New("chief_set needs session_id, clear: true, or model fields (harness, provider, model, effort)")
+	}
+	return nil
 }
 
 // ChiefStatus is the registered chief and the model it is set to run on.
