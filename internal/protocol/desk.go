@@ -158,9 +158,11 @@ func (r RuleScope) Matches(repo, team, action string) bool {
 	return false
 }
 
-// askIDPattern matches the ids agent-net writes into text (i_..., m_...,
-// ch_..., so_...) and long runs of hex or digits such as commits and times.
-var askIDPattern = regexp.MustCompile(`\b[a-z]{1,6}_[0-9a-z]{6,}\b|\b[0-9a-f]{7,}\b|\b[0-9]{3,}\b`)
+// askIDPattern matches ids only: an agent-net id (a short prefix such as i_,
+// m_, s_, ch_ or so_ and hex) and a run of 7 or more hex characters, such as
+// a commit. Plain numbers stay, so "merge 100 files" and "merge 900 files"
+// are different asks.
+var askIDPattern = regexp.MustCompile(`\b[a-z]{1,4}_[0-9a-f]{4,}\b|\b[0-9a-f]{7,}\b`)
 
 // NormalizeAskText is the duplicate key of an ask's text: case and white
 // space folded, ids removed.

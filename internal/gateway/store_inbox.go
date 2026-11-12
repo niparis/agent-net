@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -392,11 +393,31 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 // AnswerInboxAs records an answer from the owner or the CTO and queues its
 // delivery in one transaction.
 func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (protocol.InboxItem, error) {
+	return s.answerInbox(id, answer, actor, nil, validate...)
+}
+
+// answerInbox records an answer. A rule scope makes the answer a standing rule
+// too, written in the same transaction (decision 0150): a refused rule stores
+// no answer. Only the answer of a plain question, approval or idea carries a
+// scope.
+func (s *Store) answerInbox(id, answer, actor string, scope *protocol.RuleScope, validate ...bool) (protocol.InboxItem, error) {
 	if actor == "" {
 		actor = "owner"
 	}
 	if actor != "owner" && actor != "cto" {
 		return protocol.InboxItem{}, reject("unknown answer actor")
+	}
+	if scope != nil {
+		// The answers of these asks run their own operation; none keeps a rule.
+		for _, special := range []func() (protocol.InboxItem, bool, error){
+			func() (protocol.InboxItem, bool, error) { return s.answerDeliveryApproval(id, answer, true) },
+			func() (protocol.InboxItem, bool, error) { return s.answerLoopAsk(id, answer, true) },
+			func() (protocol.InboxItem, bool, error) { return s.answerStartAsk(id, answer, actor, true) },
+		} {
+			if _, handled, _ := special(); handled {
+				return protocol.InboxItem{}, reject("a standing rule comes only from the answer of a question, approval or idea")
+			}
+		}
 	}
 	if item, handled, err := s.answerDeliveryApproval(id, answer, validate...); handled || err != nil {
 		return item, err
@@ -432,6 +453,9 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	// an old approval can outlive the session that asked for it, and the owner
 	// must still be able to clear it from the Inbox. "seen" is the older
 	// notice answer and means the same thing.
+	if scope != nil && (answer == "dismiss" || answer == "seen" || item.Kind == protocol.AskKindPermission || item.Kind == protocol.AskKindDraft || item.Kind == protocol.AskKindBrief) {
+		return item, reject("a standing rule comes only from the answer of a question, approval or idea")
+	}
 	if answer == "dismiss" || answer == "seen" {
 		item.Status = "dismissed"
 		item.Answer = ""
@@ -558,6 +582,13 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 			return item, err
 		}
 	}
+	if scope != nil {
+		text := fmt.Sprintf("Always %s for %s in %s. From ask %s: %s", strings.TrimSpace(answer), scope.Action, scope.Area, id, askFirstLine(item.Text, 120))
+		if _, err = s.addRuleTx(tx, protocol.JudgmentAddRequest{Kind: protocol.StandingKindRule, Text: text, Ref: id,
+			Area: scope.Area, Action: scope.Action, Category: scope.Category}, deskSource(actor)); err != nil {
+			return item, err
+		}
+	}
 	if len(validate) > 0 && validate[0] {
 		return item, nil
 	}
@@ -567,11 +598,12 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 	return item, nil
 }
 
-// joinedAskers lists the sessions that joined an open item, other than its
-// own asker.
+// joinedAskers lists the sessions that joined an item, other than its own
+// asker. Joined rows follow their item, so they are read whatever their
+// status.
 func joinedAskers(q askDB, id string) ([]string, error) {
 	rows, err := q.Query(`SELECT DISTINCT j.session_id FROM inbox_items j JOIN inbox_items i ON i.id=j.dup_of
-		WHERE j.dup_of=? AND j.status=? AND j.session_id<>i.session_id ORDER BY j.session_id`, id, protocol.ItemStatusJoined)
+		WHERE j.dup_of=? AND j.session_id<>i.session_id ORDER BY j.session_id`, id)
 	if err != nil {
 		return nil, err
 	}

@@ -173,19 +173,28 @@ func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.Worker
 		Note:          "the start is held: " + strings.Join(fieldNames(p.SelectionFields()), ", ") + " need someone else to agree. The ask goes to the chief of staff (or the CTO, or your owner): confirm starts the worker with those fields, picker starts it with the picker's own choice. A worker notice arrives in your inbox when it starts or does not start. Do not start it again."}, nil
 }
 
-// reviewWord marks a task that reviews work. A confirm rule forbids the
-// caller's own model family for a review of its own work (decision 0151), so
-// the word errs on the side of sending the ask on to the CTO.
-var reviewWord = regexp.MustCompile(`(?i)\breview`)
+// reviewWords mark a task that reviews work. Only the title and the done
+// lines are read, the parts that say what the worker delivers: the problem
+// and the notes mention reviews in passing ("after review, merge"). The words
+// are review, audit, second opinion and "check the diff", whole words, any
+// case. The confirm rule forbids the caller's own model family for a review
+// of its own work (decision 0151).
+var reviewWords = regexp.MustCompile(`(?i)\b(review|reviews|reviewing|audit|audits|auditing|second opinion|check the diff)\b`)
 
-// overrideFacts are the facts the confirm rule checks for a held start.
+// isReviewTask tells whether a start reviews work, by reviewWords.
+func isReviewTask(p protocol.WorkerStartRequest) bool {
+	return reviewWords.MatchString(p.Title + "\n" + strings.Join(p.Done, "\n"))
+}
+
+// overrideFacts are the facts the confirm rule checks for a held start. The
+// provider is resolved the way the start resolves it; a fact that stays
+// unknown is left empty, and the rule then sends the ask to the CTO.
 func (d *Daemon) overrideFacts(caller string, p protocol.WorkerStartRequest) protocol.OverrideFacts {
-	f := protocol.OverrideFacts{Provider: strings.TrimSpace(p.Provider), Review: reviewWord.MatchString(p.Title + "\n" + p.BriefText())}
+	f := protocol.OverrideFacts{Harness: strings.TrimSpace(p.Harness), Effort: strings.TrimSpace(p.Effort), Level: strings.TrimSpace(p.Difficulty),
+		Provider: protocol.OverrideProvider(p), Review: isReviewTask(p)}
 	if model := strings.TrimSpace(p.Model); model != "" && model != "auto" {
+		f.Model = model
 		f.OverrideFamily = protocol.ModelFamily(p.Harness, model)
-		if f.Provider == "" {
-			f.Provider = protocol.ProfileProvider(p.Harness, model)
-		}
 	}
 	if ls := d.sessionByID(caller); ls != nil {
 		d.mu.Lock()

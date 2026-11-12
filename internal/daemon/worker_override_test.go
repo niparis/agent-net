@@ -245,17 +245,34 @@ func TestOwnerPromptsAreKeptFromTheClaudeHook(t *testing.T) {
 }
 
 // The held start carries the facts of the confirm rule (decision 0151): the
-// provider and model family it picks, and whether the task reviews work.
+// provider resolved as the start does, the model family, and whether the task
+// reviews work, read from the title and the done lines only.
 func TestOverrideFactsOfAReview(t *testing.T) {
 	d := &Daemon{}
 	p := overrideRequest()
-	p.Title = "Review the parser change"
+	p.Title, p.Done = "Audit the parser change", []string{"every finding has a file and line"}
 	f := d.overrideFacts("s_unknown", p)
-	if f.Provider != protocol.ProfileProvider("opencode", "fake/m2") || f.OverrideFamily != protocol.ModelFamily("opencode", "fake/m2") || !f.Review {
+	if f.Provider != protocol.ProfileProvider("opencode", "fake/m2") || f.OverrideFamily != protocol.ModelFamily("opencode", "fake/m2") || f.Model != "fake/m2" || !f.Review {
 		t.Fatalf("facts = %+v", f)
 	}
-	p.Title = "Do the work"
+	p.Title, p.Problem, p.Done = "Do the work", "after review, merge the branch", []string{"the branch is merged"}
 	if f := d.overrideFacts("s_unknown", p); f.Review {
-		t.Fatalf("a task with no review is marked as one: %+v", f)
+		t.Fatalf("a problem that mentions a review made the task one: %+v", f)
+	}
+	p.Done = []string{"a second opinion on the schema"}
+	if f := d.overrideFacts("s_unknown", p); !f.Review {
+		t.Fatalf("a done line asking for a second opinion is not a review: %+v", f)
+	}
+}
+
+// A harness-only override still names its provider when the harness fixes
+// it; an effort-only one leaves it unknown, so the chief cannot confirm it.
+func TestOverrideProviderResolvedLikeTheStart(t *testing.T) {
+	d := &Daemon{}
+	if f := d.overrideFacts("s_unknown", protocol.WorkerStartRequest{Harness: "claude"}); f.Provider != "anthropic" {
+		t.Fatalf("claude harness provider = %q", f.Provider)
+	}
+	if f := d.overrideFacts("s_unknown", protocol.WorkerStartRequest{Effort: "high", Model: "auto"}); f.Provider != "" || f.Model != "" {
+		t.Fatalf("effort-only facts = %+v", f)
 	}
 }

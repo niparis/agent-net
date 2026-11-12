@@ -1769,7 +1769,8 @@ const deskItemShapeMigration = `
 CREATE INDEX IF NOT EXISTS inbox_items_dup_of ON inbox_items(dup_of) WHERE dup_of<>'';
 -- The facts of a held picker override (decision 0151), by its ask.
 CREATE TABLE IF NOT EXISTS start_override_facts (
- ask_id TEXT PRIMARY KEY, provider TEXT NOT NULL DEFAULT '', caller_family TEXT NOT NULL DEFAULT '',
+ ask_id TEXT PRIMARY KEY, harness TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', effort TEXT NOT NULL DEFAULT '',
+ level TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL DEFAULT '', caller_family TEXT NOT NULL DEFAULT '',
  override_family TEXT NOT NULL DEFAULT '', review INTEGER NOT NULL DEFAULT 0);
 DROP TRIGGER IF EXISTS inbox_items_desk_insert;
 DROP TRIGGER IF EXISTS inbox_items_desk_update;

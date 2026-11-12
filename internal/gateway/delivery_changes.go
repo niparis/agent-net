@@ -110,9 +110,30 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 		if derr != nil {
 			return nil, true, reject("bad %s", typ)
 		}
-		res, m, serr := g.store.SortAsk(nc.id, q)
+		var confirm *protocol.ConfirmContext
+		if q.Result == protocol.AskSortConfirm && q.Ask != "" {
+			c, cerr := g.confirmContext(q.Ask)
+			if cerr != nil {
+				return nil, true, cerr
+			}
+			confirm = &c
+		}
+		res, m, serr := g.store.SortAskWith(nc.id, q, confirm)
 		if serr == nil && m.ID != "" {
 			g.dispatch(ctx, m)
+		}
+		// A carried-out notice goes to every asker of the ask.
+		if serr == nil && q.Result == protocol.AskSortDone {
+			nodes, _ := g.store.joinedNodes(q.Ask)
+			var asker string
+			if g.store.db.QueryRow(`SELECT session_id FROM inbox_items WHERE id=?`, q.Ask).Scan(&asker) == nil {
+				if node, nerr := g.store.SessionNode(asker); nerr == nil {
+					nodes = append(nodes, node)
+				}
+			}
+			for _, node := range nodes {
+				g.dispatchPending(ctx, node, false)
+			}
 		}
 		// The chief's confirm or picker reaches the machine that holds the
 		// start, as the owner's answer does.

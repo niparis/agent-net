@@ -378,3 +378,34 @@ func TestAnswerAlwaysSendsTheScope(t *testing.T) {
 		}
 	}
 }
+
+// An ask the chief handled (here sent to a session, which answered it) stays
+// in Handled for you; m stores a should-have-asked-me mark there. Run with -v
+// to see the frames at 80x24 and 120x34.
+func TestShouldHaveAskedOnAnAnsweredHandledAsk(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		src := &deskCallSource{}
+		m := deskModel(t, size[0], size[1])
+		m.src = src
+		m.tab = inboxTab
+		m.now = func() time.Time { return t0 }
+		m.asks = nil
+		m.handled = []protocol.ChiefSort{{AskSort: protocol.AskSort{Ask: "i_7", Result: protocol.AskSortSend, To: "s_00000000000000f1", Reason: "ingest-forge owns the parser", At: t0.Add(-time.Hour)}, Question: "Drop the old parser?"}}
+		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
+		view := ansi.Strip(m.testView())
+		t.Logf("frame %dx%d:\n%s", size[0], size[1], view)
+		if !strings.Contains(view, "m should have asked me") {
+			t.Fatalf("%dx%d: no should-have-asked mark on a handled ask:\n%s", size[0], size[1], view)
+		}
+		m, _ = deskPress(t, m, tea.KeyPressMsg{Text: "m", Code: 'm'})
+		if m.deskPending == nil || !m.inboxEditing {
+			t.Fatal("m did not open the line of why")
+		}
+		m, cmd := deskPress(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = deskRun(t, m, cmd)
+		last := src.args[len(src.args)-1]
+		if src.calls[len(src.calls)-1] != protocol.OpAskMark || last != (protocol.AskMarkRequest{Ask: "i_7", Mark: protocol.MarkShouldHaveAsked}) {
+			t.Fatalf("mark calls %v args %+v", src.calls, last)
+		}
+	}
+}

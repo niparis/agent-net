@@ -93,24 +93,27 @@ func (s *Store) AnswerInboxScoped(id, answer, actor string, scope protocol.RuleS
 	if err := scope.Validate(); err != nil {
 		return protocol.InboxItem{}, reject("%v", err)
 	}
-	item, err := s.AnswerInboxAs(id, answer, actor)
-	if err != nil {
-		return item, err
-	}
-	text := fmt.Sprintf("Always %s for %s in %s. From ask %s: %s", strings.TrimSpace(answer), scope.Action, scope.Area, id, askFirstLine(item.Text, 120))
-	_, err = s.addRule(protocol.JudgmentAddRequest{Kind: protocol.StandingKindRule, Text: text, Ref: id,
-		Area: scope.Area, Action: scope.Action, Category: scope.Category}, deskSource(actor))
-	return item, err
+	return s.answerInbox(id, answer, actor, &scope)
 }
 
 // addRule stores a judgment and its Desk log line with the undo that removes
-// it.
+// it, in its own transaction.
 func (s *Store) addRule(q protocol.JudgmentAddRequest, source string) (protocol.StandingOrder, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.StandingOrder{}, err
 	}
 	defer tx.Rollback()
+	o, err := s.addRuleTx(tx, q, source)
+	if err != nil {
+		return o, err
+	}
+	return o, tx.Commit()
+}
+
+// addRuleTx stores a judgment and its Desk log line in the caller's
+// transaction.
+func (s *Store) addRuleTx(tx *sql.Tx, q protocol.JudgmentAddRequest, source string) (protocol.StandingOrder, error) {
 	o, err := addJudgment(tx, s.now(), q)
 	if err != nil {
 		return o, reject("%v", err)
@@ -123,10 +126,7 @@ func (s *Store) addRule(q protocol.JudgmentAddRequest, source string) (protocol.
 	if o.Kind == protocol.StandingKindRule {
 		line = "Standing rule " + o.ID + " (" + o.Action + " in " + o.Area + "): " + askFirstLine(o.Text, 160)
 	}
-	if err := s.deskLog(tx, source, "", "", line, "", []string{protocol.OpStandingOrders, string(undo)}); err != nil {
-		return o, err
-	}
-	return o, tx.Commit()
+	return o, s.deskLog(tx, source, "", "", line, "", []string{protocol.OpStandingOrders, string(undo)})
 }
 
 // RecordJudgment records a decision the owner made in a live chat with the

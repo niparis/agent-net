@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -38,8 +37,8 @@ func (s *Store) CreateStartOverrideAsk(node string, p protocol.StartOverrideAsk)
 	if p.Review {
 		review = 1
 	}
-	_, err = s.db.Exec(`INSERT OR REPLACE INTO start_override_facts(ask_id,provider,caller_family,override_family,review) VALUES(?,?,?,?,?)`,
-		item.ID, p.Provider, p.CallerFamily, p.OverrideFamily, review)
+	_, err = s.db.Exec(`INSERT OR REPLACE INTO start_override_facts(ask_id,harness,model,effort,level,provider,caller_family,override_family,review) VALUES(?,?,?,?,?,?,?,?,?)`,
+		item.ID, p.Harness, p.Model, p.Effort, p.Level, p.Provider, p.CallerFamily, p.OverrideFamily, review)
 	return item, err
 }
 
@@ -47,31 +46,56 @@ func (s *Store) CreateStartOverrideAsk(node string, p protocol.StartOverrideAsk)
 // the facts were kept has none.
 func overrideFacts(q askDB, id string) (protocol.OverrideFacts, error) {
 	var f protocol.OverrideFacts
-	err := q.QueryRow(`SELECT provider,caller_family,override_family,review<>0 FROM start_override_facts WHERE ask_id=?`, id).
-		Scan(&f.Provider, &f.CallerFamily, &f.OverrideFamily, &f.Review)
+	err := q.QueryRow(`SELECT harness,model,effort,level,provider,caller_family,override_family,review<>0 FROM start_override_facts WHERE ask_id=?`, id).
+		Scan(&f.Harness, &f.Model, &f.Effort, &f.Level, &f.Provider, &f.CallerFamily, &f.OverrideFamily, &f.Review)
 	if errors.Is(err, sql.ErrNoRows) {
 		return f, nil
 	}
 	return f, err
 }
 
-// confirmOverrideCheck applies the confirm rule for the chief or the CTO.
-func confirmOverrideCheck(q askDB, id string, chief bool) error {
+// confirmOverrideCheck applies the confirm rule for the chief (with the
+// context the gateway read) or the CTO (no context: only the family rule).
+func confirmOverrideCheck(q askDB, id string, chief bool, c protocol.ConfirmContext) error {
 	f, err := overrideFacts(q, id)
 	if err != nil {
 		return err
 	}
-	var raw string
-	var protected protocol.ProtectedProviders
-	if err := q.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, protectedProvidersKey).Scan(&raw); err == nil {
-		_ = json.Unmarshal([]byte(raw), &protected)
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	if err := protocol.ConfirmOverride(f, protected.Providers, chief); err != nil {
+	if err := protocol.ConfirmOverride(f, c, chief); err != nil {
 		return reject("%v", err)
 	}
 	return nil
+}
+
+// confirmContext reads what the chief's confirm of a held start is checked
+// against: the protected providers, the quota reading the start would use on
+// the machine that holds it, the worker floors, and the picker's scores and
+// level minimums.
+func (g *Gateway) confirmContext(ask string) (protocol.ConfirmContext, error) {
+	var c protocol.ConfirmContext
+	var session string
+	if err := g.store.db.QueryRow(`SELECT session_id FROM inbox_items WHERE id=?`, ask).Scan(&session); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return c, reject("unknown ask %q", ask)
+		}
+		return c, err
+	}
+	protected, err := g.store.protectedProviders()
+	if err != nil {
+		return c, err
+	}
+	c.Protected = protected.Providers
+	if node, err := g.store.SessionNode(session); err == nil {
+		c.Quotas = g.ownerQuotas(node)
+	}
+	if c.Floors, err = g.store.workerFloors(); err != nil {
+		return c, err
+	}
+	if c.Scores, err = g.store.scores(); err != nil {
+		return c, err
+	}
+	c.Minimums, err = g.store.difficultyMinimums()
+	return c, err
 }
 
 // startOverrideRef is the source key of an ask that holds a start, or "".
@@ -99,7 +123,7 @@ func (s *Store) answerStartAsk(id, answer, actor string, validate ...bool) (item
 		return item, true, reject("invalid answer")
 	}
 	if actor == "cto" && answer == protocol.StartAnswerConfirm {
-		if err := confirmOverrideCheck(s.db, id, false); err != nil {
+		if err := confirmOverrideCheck(s.db, id, false, protocol.ConfirmContext{}); err != nil {
 			return item, true, err
 		}
 	}

@@ -419,7 +419,7 @@ func TestCheckItemHasNoGeneratedRecommendation(t *testing.T) {
 func overrideAsk(t *testing.T, s *Store, node, caller, startID string, facts protocol.StartOverrideAsk) string {
 	t.Helper()
 	facts.Session, facts.StartID = caller, startID
-	facts.Text = "bob wants model=" + facts.OverrideFamily + "/m for 'Review the parser': cheaper. Confirm, or let the picker choose."
+	facts.Text = "bob wants model=" + facts.Model + " for 'Review the parser': cheaper. Confirm, or let the picker choose."
 	item, err := s.CreateStartOverrideAsk(node, facts)
 	if err != nil {
 		t.Fatal(err)
@@ -427,20 +427,37 @@ func overrideAsk(t *testing.T, s *Store, node, caller, startID string, facts pro
 	return item.ID
 }
 
+// cheapOverride are the facts of a held deepseek/cheap-1 override for a
+// normal start, and confirmOK the gateway reading under which the chief may
+// confirm it: quota 20% used, cheap-1 scored at the normal level.
+var cheapOverride = protocol.OverrideFacts{Harness: "opencode", Model: "deepseek/cheap-1", Level: "normal", Provider: "deepseek", CallerFamily: "openai", OverrideFamily: "deepseek"}
+
+func confirmOK() *protocol.ConfirmContext {
+	return &protocol.ConfirmContext{
+		Quotas: &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "deepseek", Windows: []protocol.QuotaWindow{{ID: "5h", PercentUsed: 20}}}}},
+		Scores: []protocol.ModelScore{{Match: "cheap-1", Score: 32}},
+	}
+}
+
 // Decision 0151: a held override goes to the chief first, and the chief
-// confirms it when the override is no dearer than the picker's choice, quota
-// allows it and the provider is not protected.
+// confirms it when the override is the same tier or cheaper, quota allows it
+// and the provider is not protected. A confirm without the gateway's reading
+// is refused.
 func TestChiefConfirmsCheaperOverride(t *testing.T) {
 	s, _, chief, asker, node := chiefRig(t)
 	var askerNode string
 	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, asker).Scan(&askerNode); err != nil {
 		t.Fatal(err)
 	}
-	id := overrideAsk(t, s, askerNode, asker, "a_1", protocol.StartOverrideAsk{Provider: "deepseek", CallerFamily: "openai", OverrideFamily: "deepseek"})
+	id := overrideAsk(t, s, askerNode, asker, "a_1", protocol.StartOverrideAsk{OverrideFacts: cheapOverride})
 	if next := askNext(t, s, id); next != protocol.AskNextChief {
 		t.Fatalf("held override next = %q, want the chief", next)
 	}
-	if _, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: id, Result: protocol.AskSortConfirm, Reason: "cheaper tier than the picker's, quota has room"}); err != nil {
+	confirm := protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Ask: id, Result: protocol.AskSortConfirm, Reason: "cheaper tier than the picker's, quota has room"}}
+	if _, _, err := s.SortAsk(node, confirm); err == nil {
+		t.Fatal("a confirm without the gateway's quota reading went through")
+	}
+	if _, _, err := s.SortAskWith(node, confirm, confirmOK()); err != nil {
 		t.Fatalf("chief confirm of a cheaper override: %v", err)
 	}
 	var status, answer string
@@ -472,8 +489,10 @@ func TestOwnFamilyOverrideForOwnReviewRoutesToCTO(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, asker).Scan(&askerNode); err != nil {
 		t.Fatal(err)
 	}
-	id := overrideAsk(t, s, askerNode, asker, "a_2", protocol.StartOverrideAsk{Provider: "openai", CallerFamily: "openai", OverrideFamily: "openai", Review: true})
-	_, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: id, Result: protocol.AskSortConfirm, Reason: "same tier"})
+	facts := cheapOverride
+	facts.CallerFamily, facts.Review = "deepseek", true
+	id := overrideAsk(t, s, askerNode, asker, "a_2", protocol.StartOverrideAsk{OverrideFacts: facts})
+	_, _, err := s.SortAskWith(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Ask: id, Result: protocol.AskSortConfirm, Reason: "same tier"}}, confirmOK())
 	if err == nil || !strings.Contains(err.Error(), "CTO") {
 		t.Fatalf("chief confirm of own family for own review: err = %v, want a refusal that routes to the CTO", err)
 	}
@@ -491,15 +510,14 @@ func TestOwnFamilyOverrideForOwnReviewRoutesToCTO(t *testing.T) {
 // A protected provider is not the chief's to confirm; the CTO may.
 func TestProtectedProviderOverrideRoutesToCTO(t *testing.T) {
 	s, _, chief, asker, _, node := deskRig(t)
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,0)`, protectedProvidersKey, `{"protected_providers":["anthropic"]}`); err != nil {
-		t.Fatal(err)
-	}
 	var askerNode string
 	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, asker).Scan(&askerNode); err != nil {
 		t.Fatal(err)
 	}
-	id := overrideAsk(t, s, askerNode, asker, "a_3", protocol.StartOverrideAsk{Provider: "anthropic", CallerFamily: "openai", OverrideFamily: "anthropic"})
-	_, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: id, Result: protocol.AskSortConfirm, Reason: "cheaper"})
+	id := overrideAsk(t, s, askerNode, asker, "a_3", protocol.StartOverrideAsk{OverrideFacts: cheapOverride})
+	reading := confirmOK()
+	reading.Protected = []string{"deepseek"}
+	_, _, err := s.SortAskWith(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Ask: id, Result: protocol.AskSortConfirm, Reason: "cheaper"}}, reading)
 	if err == nil || !strings.Contains(err.Error(), "protected") {
 		t.Fatalf("chief confirm of a protected provider: err = %v", err)
 	}
@@ -560,5 +578,83 @@ func TestDiscussOpensTheOwnersThread(t *testing.T) {
 	}
 	if res.Open != protocol.DeskOwnerCTO || m.ID != "" || len(chiefMessages(t, s, chief)) != before {
 		t.Fatalf("discuss of a CTO item = %+v, message %+v", res, m)
+	}
+}
+
+// The chief reports that an answer was carried out: the item moves from
+// answered to carried_out, and every asker, joined ones included, is told.
+func TestChiefReportsAnswerCarriedOut(t *testing.T) {
+	s, _, chief, asker, node := chiefRig(t)
+	other := carolSession(t, s, node)
+	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: asker, Node: "demo", Text: "Rotate the deploy key?", Options: []string{"yes", "no"}, SourceRef: "key:1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: other, Node: "demo", Text: "Rotate the deploy key?", Options: []string{"yes", "no"}, SourceRef: "key:1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: item.ID, Result: protocol.AskSortDone, Reason: "rotated"}); err == nil {
+		t.Fatal("an open ask was marked carried out")
+	}
+	if _, err := s.AnswerInbox(item.ID, "yes"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, state, _, _ := itemRow(t, s, item.ID); state != protocol.DeskAnswered {
+		t.Fatalf("answered item state %q", state)
+	}
+	if _, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: item.ID, Result: protocol.AskSortDone, Reason: "the key is rotated on every machine"}); err != nil {
+		t.Fatal(err)
+	}
+	var notCarried int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE (id=? OR dup_of=?) AND state<>?`, item.ID, item.ID, protocol.DeskCarriedOut).Scan(&notCarried); err != nil {
+		t.Fatal(err)
+	}
+	if notCarried != 0 {
+		t.Fatalf("%d of the item and its joined rows are not carried_out", notCarried)
+	}
+	for _, who := range []string{asker, other} {
+		got := false
+		for _, body := range chiefMessages(t, s, who) {
+			got = got || (strings.Contains(body, "carried out") && strings.Contains(body, "the key is rotated"))
+		}
+		if !got {
+			t.Fatalf("asker %s was not told the answer was carried out", who)
+		}
+	}
+}
+
+// The answer and its rule are one write: when the rule cannot be stored, the
+// answer is not stored either and the ask stays open.
+func TestScopedAnswerIsOneWrite(t *testing.T) {
+	s, _, _, asker, _ := chiefRig(t)
+	id := chiefAsk(t, s, asker, "Merge the picker change?")
+	if _, err := s.db.Exec(`CREATE TRIGGER fail_rule BEFORE INSERT ON standing_orders WHEN NEW.kind='rule' BEGIN SELECT RAISE(ABORT,'rule store down'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerInboxScoped(id, "yes", "owner", protocol.RuleScope{Area: "repo:demo", Action: "merge"}); err == nil {
+		t.Fatal("the scoped answer went through with no rule")
+	}
+	if status, _, _, _, _ := itemRow(t, s, id); status != "open" {
+		t.Fatalf("a failed rule left the ask %q", status)
+	}
+	var sent int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE recipient=? AND body='yes'`, asker).Scan(&sent); err != nil || sent != 0 {
+		t.Fatalf("a failed rule still sent the answer: %d (%v)", sent, err)
+	}
+}
+
+// Only ids are folded out of the duplicate key: numbers stay.
+func TestSameTextKeepsNumbersApart(t *testing.T) {
+	s, _, _, asker, _ := chiefRig(t)
+	a, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: asker, Node: "demo", Text: "Merge 100 files?", Options: []string{"yes", "no"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: asker, Node: "demo", Text: "Merge 900 files?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ID == b.ID {
+		t.Fatal("two asks that differ in a number were joined as duplicates")
 	}
 }

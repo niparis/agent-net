@@ -27,6 +27,9 @@ const (
 	// 0151): confirm starts it with the caller's fields, picker without them.
 	AskSortConfirm = "confirm"
 	AskSortPicker  = "picker"
+	// AskSortDone reports that the answer of an answered ask was carried out
+	// (decision 0150): the ask moves to carried_out and its askers are told.
+	AskSortDone = "done"
 )
 
 // ChiefTimeout is how long the chief has to sort an ask before it goes to the
@@ -211,7 +214,7 @@ func (a AskSortArgs) Validate() error {
 		return errors.New("rule applies only to close")
 	}
 	switch a.Result {
-	case AskSortClose, AskSortConfirm, AskSortPicker:
+	case AskSortClose, AskSortConfirm, AskSortPicker, AskSortDone:
 	case AskSortMerge:
 		if a.Into == "" {
 			return errors.New("merge needs into: the ask id to merge into")
@@ -228,7 +231,7 @@ func (a AskSortArgs) Validate() error {
 			return errors.New("owner needs why_you: why the owner must decide")
 		}
 	default:
-		return errors.New("result must be close, merge, send, owner, confirm, picker, list or undo")
+		return errors.New("result must be close, merge, send, owner, confirm, picker, done, list or undo")
 	}
 	return nil
 }

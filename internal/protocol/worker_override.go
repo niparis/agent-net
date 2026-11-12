@@ -55,36 +55,127 @@ type StartOverrideAsk struct {
 	OverrideFacts
 }
 
-// OverrideFacts are what the chief's confirm rule checks (decision 0151): the
-// provider the override picks, the model family of the caller and of the
-// override, and whether the task reviews work.
+// OverrideFacts are what the confirm rule checks (decision 0151): the
+// override's harness, model and effort, the provider it picks, the model
+// family of the caller and of the override, the level the start runs at
+// (empty when the caller set none), and whether the task reviews work.
 type OverrideFacts struct {
+	Harness        string `json:"harness,omitempty"`
+	Model          string `json:"model,omitempty"`
+	Effort         string `json:"effort,omitempty"`
+	Level          string `json:"level,omitempty"`
 	Provider       string `json:"provider,omitempty"`
 	CallerFamily   string `json:"caller_family,omitempty"`
 	OverrideFamily string `json:"override_family,omitempty"`
 	Review         bool   `json:"review,omitempty"`
 }
 
-// ConfirmOverride checks a confirm of a held override (decision 0151). The
-// chief does not confirm a protected provider: that goes to the CTO. Nobody
-// confirms an override that picks the caller's own family for a review of its
-// own work. That the override is no dearer than the picker's choice and that
-// quota allows it is the confirmer's judgment, given in its reason.
-func ConfirmOverride(f OverrideFacts, protected []string, chief bool) error {
+// OverrideProvider is the provider a held start picks, as the start resolves
+// it: the named provider, else the one of the model, else the one a harness
+// fixes by itself. It is "" when only a start could tell.
+func OverrideProvider(p WorkerStartRequest) string {
+	if provider := strings.TrimSpace(p.Provider); provider != "" {
+		return strings.ToLower(provider)
+	}
+	if model := strings.TrimSpace(p.Model); model != "" && model != "auto" {
+		return ProfileProvider(p.Harness, model)
+	}
+	switch strings.ToLower(strings.TrimSpace(p.Harness)) {
+	case "claude":
+		return "anthropic"
+	case "codex":
+		return "openai"
+	}
+	return ""
+}
+
+// ConfirmContext is what the gateway reads when a confirm comes: the
+// protected providers, the quota reading the start uses, the worker floors,
+// and the scores and level minimums the picker uses.
+type ConfirmContext struct {
+	Protected []string
+	Quotas    *Quotas
+	Floors    WorkerFloors
+	Scores    []ModelScore
+	Minimums  map[string]float64
+}
+
+// ConfirmOverride checks a confirm of a held override (decision 0151).
+//
+// Nobody confirms an override that picks the caller's own model family for a
+// review of its own work. The chief confirms only when all of these hold, and
+// otherwise the ask goes to the CTO: the provider is known and not protected;
+// quota allows it (a usable reading, not exhausted, not held by the burn
+// rate, not under the worker floor); and the override is the same tier or
+// cheaper: the highest level its score meets is at or below the level the
+// start runs at. A fact that is missing (an unknown provider, caller family,
+// level or score, or no quota reading) never opens the gate: the chief sends
+// the ask to the CTO.
+func ConfirmOverride(f OverrideFacts, c ConfirmContext, chief bool) error {
 	if f.Review && f.OverrideFamily != "" && f.OverrideFamily == f.CallerFamily {
 		if chief {
 			return errors.New("this override picks the caller's own model family (" + f.OverrideFamily + ") for a review of its own work: nobody confirms it. Send it to the CTO, or answer picker")
 		}
 		return errors.New("this override picks the caller's own model family (" + f.OverrideFamily + ") for a review of its own work: nobody confirms it; answer picker")
 	}
-	if chief {
-		for _, p := range protected {
-			if strings.EqualFold(strings.TrimSpace(p), f.Provider) && f.Provider != "" {
-				return errors.New("provider " + f.Provider + " is protected: the chief does not confirm it. Send it to the CTO")
-			}
+	if !chief {
+		return nil
+	}
+	route := func(why string) error { return errors.New(why + ": the chief does not confirm it. Send it to the CTO") }
+	if f.Review && (f.CallerFamily == "" || f.OverrideFamily == "") {
+		return route("the task reviews work and the caller's or the override's model family is unknown")
+	}
+	if f.Provider == "" {
+		return route("the override's provider is unknown")
+	}
+	for _, p := range c.Protected {
+		if strings.EqualFold(strings.TrimSpace(p), f.Provider) {
+			return route("provider " + f.Provider + " is protected")
 		}
 	}
+	model := strings.TrimSpace(f.Model)
+	if model == "" || model == "auto" {
+		return route("the override names no model, so its tier is unknown")
+	}
+	quota := QuotaProviderForStart(f.Harness, model)
+	if quota == "" {
+		quota = QuotaProviderForModelProvider(f.Provider)
+	}
+	reading, ok := c.Quotas.Provider(quota)
+	if !ok || !reading.usable() {
+		return route("there is no quota reading for " + f.Provider)
+	}
+	if refusal := QuotaRefusal(c.Quotas, f.Harness, model); refusal != "" {
+		return route("quota does not allow it (" + refusal + ")")
+	}
+	if reason, hold := QuotaBurnHold(c.Quotas, quota, model); hold {
+		return route("quota does not allow it (" + reason + ")")
+	}
+	if under, note, _ := CheckWorkerFloor(c.Quotas, c.Floors, f.Harness, model); under {
+		return route("quota does not allow it (" + note + ")")
+	}
+	start := levelIndex(f.Level)
+	if start < 0 {
+		return route("the start's level is not known")
+	}
+	_, level, _, scored := WorkerBenchmarkCeiling(WorkerModelCandidate{Harness: f.Harness, Model: model, Effort: f.Effort}, c.Scores, c.Minimums)
+	if !scored {
+		return route("model " + model + " has no score")
+	}
+	if levelIndex(level) > start {
+		return route("model " + model + " meets " + level + ", above the " + f.Level + " level of the start")
+	}
 	return nil
+}
+
+// levelIndex is the place of a level in DifficultyLevels, or -1.
+func levelIndex(level string) int {
+	for i, l := range DifficultyLevels {
+		if l == level {
+			return i
+		}
+	}
+	return -1
 }
 
 // MinOwnerWordsRunes and MaxOwnerWordsRunes bound the quote of owner_words. A

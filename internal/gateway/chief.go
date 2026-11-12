@@ -487,6 +487,13 @@ func askAge(now, created time.Time) string {
 // status and answer in ask_sorts. It returns the message to send when the ask
 // went to a session; the caller dispatches it.
 func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSortResult, protocol.Message, error) {
+	return s.SortAskWith(node, q, nil)
+}
+
+// SortAskWith is SortAsk with the context a confirm of a held worker start is
+// checked against (decision 0151). The gateway reads it before the sort; a
+// confirm without it is refused.
+func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *protocol.ConfirmContext) (protocol.AskSortResult, protocol.Message, error) {
 	var out protocol.AskSortResult
 	var none protocol.Message
 	if err := q.Validate(); err != nil {
@@ -575,6 +582,13 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 	if err != nil {
 		return out, none, err
 	}
+	if q.Result == protocol.AskSortDone {
+		out, err := s.carriedOut(tx, chief, q.Ask, strings.TrimSpace(q.Reason), a)
+		if err != nil {
+			return out, none, err
+		}
+		return out, none, tx.Commit()
+	}
 	// Either side of a routed item may close it (decision 0150): the chief
 	// still closes or merges an ask it sent to the CTO.
 	closing := q.Result == protocol.AskSortClose || q.Result == protocol.AskSortMerge
@@ -635,7 +649,10 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 			return out, none, reject("confirm and picker answer only a held worker start")
 		}
 		if q.Result == protocol.AskSortConfirm {
-			if err := confirmOverrideCheck(tx, q.Ask, true); err != nil {
+			if confirm == nil {
+				return out, none, reject("confirm needs the gateway's quota reading: try again")
+			}
+			if err := confirmOverrideCheck(tx, q.Ask, true, *confirm); err != nil {
 				return out, none, err
 			}
 			logText = "Chief confirmed a picker override: " + text
@@ -710,6 +727,42 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		}
 	}
 	return out, none, tx.Commit()
+}
+
+// carriedOut records that the answer of an answered ask was carried out
+// (decision 0150). The ask and its joined rows move to carried_out, and every
+// asker gets a message; the gateway sends the messages on.
+func (s *Store) carriedOut(tx *sql.Tx, chief, ask, reason string, a askSortRow) (protocol.AskSortResult, error) {
+	var out protocol.AskSortResult
+	if a.status != "answered" && a.status != "approved" && a.status != "refused" {
+		return out, reject("ask %s is not answered, so its answer cannot be carried out yet", ask)
+	}
+	var state string
+	if err := tx.QueryRow(`SELECT state FROM inbox_items WHERE id=?`, ask).Scan(&state); err != nil {
+		return out, err
+	}
+	if state == protocol.DeskCarriedOut {
+		return out, reject("ask %s is already carried out", ask)
+	}
+	if _, err := tx.Exec(`UPDATE inbox_items SET state=? WHERE id=? OR dup_of=?`, protocol.DeskCarriedOut, ask, ask); err != nil {
+		return out, err
+	}
+	joined, err := joinedAskers(tx, ask)
+	if err != nil {
+		return out, err
+	}
+	now := s.now()
+	body := fmt.Sprintf("Ask %s is carried out: %s\nThe owner's answer was: %s", ask, reason, a.answer)
+	for _, to := range append([]string{a.session}, joined...) {
+		if _, err := s.storeAgentNetMessage(tx, to, body, ask, now); err != nil {
+			return out, err
+		}
+	}
+	rec := protocol.AskSort{Ask: ask, At: now, Sorter: chief, Result: protocol.AskSortDone, Reason: reason, PrevNext: a.next, PrevStatus: a.status, PrevAnswer: a.answer}
+	if err := s.commitSort(tx, rec, now, "Chief carried out the answer: "+askFirstLine(a.text, 120), a, "chief"); err != nil {
+		return out, err
+	}
+	return protocol.AskSortResult{Ask: ask, Result: protocol.AskSortDone, State: protocol.DeskCarriedOut}, nil
 }
 
 // commitSort writes the history row and the log line of one sort.
