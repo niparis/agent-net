@@ -21,12 +21,11 @@ import (
 
 // enterMsg is the daemon's answer to session_enter.
 type enterMsg struct {
-	id         string
-	name       string
-	plan       protocol.EnterPlan
-	err        error
-	cto        bool
-	proposalID string
+	id   string
+	name string
+	plan protocol.EnterPlan
+	err  error
+	cto  bool
 }
 
 // enterDoneMsg is the end of the entered command.
@@ -203,21 +202,6 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	name := r.name
 	fallback, target := r.plan.Fallback, sshTarget(r.plan.Argv)
 	proxy := ptyproxy.New(cmd)
-	if r.proposalID != "" {
-		if caller, ok := m.src.(inboxCaller); ok {
-			proxy.OnStart = func(err error) {
-				ack := protocol.CTOStartAck{ID: r.proposalID, Started: err == nil}
-				if err != nil {
-					ack.Error = err.Error()
-				}
-				go func() {
-					ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-					defer cancel()
-					_, _ = caller.Call(ctx, protocol.OpProposalStartAck, ack)
-				}()
-			}
-		}
-	}
 	proxy.Name = name
 	proxy.Title = name + " - ctrl+] to come back"
 	ctoNotice := ""

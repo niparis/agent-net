@@ -20,7 +20,6 @@ type proposalRemoteOwnerKey struct{}
 
 type proposalHerdrLocation struct {
 	socket, pane string
-	approver     *localConn
 }
 
 func proposalActor(ctx context.Context) string {

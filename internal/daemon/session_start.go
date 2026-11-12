@@ -295,53 +295,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
 	notify := p.CTOProposal && !remoteOwner
 	if p.Harness == "codex" {
-		args := []string{bin}
-		// Pin a running shared server. Without an explicit target Codex can
-		// silently fall back to an embedded server, invisible to discovery.
-		// When it is not running, let Codex's normal startup create it.
-		if ca, ok := d.adapters["codex"].(*codexAdapter); ok && ca.serverPID() != 0 {
-			args = append(args, "--remote", "unix://")
-		}
-		if r.AgentID != "" {
-			var err error
-			r, err = d.prepareOwnerCodex(ctx, r)
-			if err != nil {
-				return protocol.StartedSession{}, err
-			}
-			args = append(args, "resume", r.NativeID)
-		}
-		if p.Model != "" {
-			args = append(args, "-m", p.Model)
-		}
-		if p.FirstMessage != "" {
-			args = append(args, p.FirstMessage)
-		}
-		r.Status = "started"
-		r.EnterPlan = &protocol.EnterPlan{Argv: args, Dir: r.Path, Host: d.hostName(), Note: "Press ctrl+] to come back here; Codex keeps running."}
-		if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
-			r.EnterPlan.Env = map[string]string{"CODEX_HOME": home}
-		}
-		plan := d.viewPlan("start:"+r.ID, r.Project, p.HerdrSocket, p.HerdrPaneID, p.HerdrClient, *r.EnterPlan)
-		r.EnterPlan = &plan
-		if p.CTOProposal && !plan.OpenedHerdr {
-			loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
-			if remoteOwner || loc.approver == nil || len(plan.Argv) == 0 {
-				r.Status = "failed"
-				r.Error = "session could not start on " + d.hostName() + ": no herdr pane and no approving TUI available to confirm the start"
-				if remoteOwner {
-					r.Error = "remote fallback plan cannot be confirmed by the approving TUI"
-				}
-				if len(plan.Argv) == 0 && plan.Note != "" {
-					r.Error += ": " + plan.Note
-				}
-			} else {
-				r.Status = "handed_to_tui"
-			}
-		} else if notify {
-			d.notifyApprovedSessionStart(ctx, r)
-		}
-
-		return r, nil
+		return d.launchOwnerCodex(ctx, r, p.FirstMessage, startView{socket: p.HerdrSocket, pane: p.HerdrPaneID, relayed: remoteOwner, background: p.CTOProposal}, notify)
 	}
 	if p.Harness == "opencode" {
 		return d.launchOwnerOpenCode(ctx, r, p.FirstMessage, p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner)
@@ -368,7 +322,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.AgentID == "" {
 		spec.FirstMessage = p.FirstMessage
 	}
-	view := claudeStartView{socket: p.HerdrSocket, pane: p.HerdrPaneID, relayed: remoteOwner, background: p.CTOProposal}
+	view := startView{socket: p.HerdrSocket, pane: p.HerdrPaneID, relayed: remoteOwner, background: p.CTOProposal}
 	return d.launchOwnerClaude(r, bin, spec, view, notify, p.FirstMessage), nil
 }
 
@@ -403,7 +357,7 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 	if p.CTOProposal && !p.Merger && !remoteOwner && res.Status == "starting" {
 		d.watchApprovedSessionStart(ctx, res.ID)
 	} else if p.CTOProposal && !p.Merger && !remoteOwner && res.Status == "started" {
-		d.notifyApprovedSessionStart(ctx, res)
+		d.notifySessionStart(res)
 	}
 	return res, nil
 }
@@ -429,7 +383,7 @@ func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) 
 					// The machine that runs the start logs and records a failure.
 					// This machine only tells the owner, as for a successful start.
 					if err == nil && result.Status == "started" {
-						d.notifyApprovedSessionStart(ctx, result)
+						d.notifySessionStart(result)
 					} else if err == nil && result.Status == "failed" {
 						d.notifySessionStartFailed(result)
 						d.notifyRequesterStartFailed(requester, result)
@@ -565,7 +519,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	return d.launchOwnerClaude(r, bin, d.claudeResumeSpec(a), claudeStartView{socket: socket, pane: pane}, false, ""), nil
+	return d.launchOwnerClaude(r, bin, d.claudeResumeSpec(a), startView{socket: socket, pane: pane}, false, ""), nil
 }
 
 func (d *Daemon) resumeRecord(a protocol.AgentView) protocol.StartedSession {
@@ -612,7 +566,7 @@ func (d *Daemon) moveToBackground(ctx context.Context, a protocol.AgentView, soc
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	return d.launchOwnerClaude(d.resumeRecord(a), bin, d.claudeResumeSpec(a), claudeStartView{socket: socket, pane: pane}, false, ""), nil
+	return d.launchOwnerClaude(d.resumeRecord(a), bin, d.claudeResumeSpec(a), startView{socket: socket, pane: pane}, false, ""), nil
 }
 
 // claudeResumeSpec is the owner resume. The wake fallback uses the same spec,
@@ -643,21 +597,39 @@ func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, s
 	return d.remoteStartResult(ctx, res, socket, pane), nil
 }
 
-// claudeStartView says where the start may show the new session. It is only
+// startView says where the start may show the new session. It is only
 // the optional view step after the start: the start itself works without a
-// herdr pane or an approving TUI. relayed says the owner approved the start
+// herdr pane or a TUI. relayed says the owner approved the start
 // from another machine. That machine has no herdr location for the owner's
 // TUI, so this one must return the attach plan for the owner's machine to wrap
 // and open. background says nobody views the start now (a CTO proposal).
-type claudeStartView struct {
+type startView struct {
 	socket, pane        string
 	relayed, background bool
+}
+
+// showStart is the optional view step of a start that worked: the plan opens
+// a herdr tab now, or goes to the owner's machine, or Enter opens it later.
+func (d *Daemon) showStart(r *protocol.StartedSession, plan protocol.EnterPlan, view startView) {
+	if view.background {
+		r.EnterNote = "Enter opens it."
+		return
+	}
+	opened := d.viewPlan(r.SessionID, r.Project, view.socket, view.pane, false, plan)
+	if opened.OpenedHerdr || len(opened.Argv) == 0 || view.relayed {
+		r.EnterPlan = &opened
+		return
+	}
+	r.EnterNote = "Enter opens it."
+	if d.herdrBinary("") == "" {
+		r.EnterNote += " " + herdrInstallNote
+	}
 }
 
 // launchOwnerClaude starts an owner Claude session through startBackground and
 // tracks it until the daemon has registered it. firstMessage is sent to the
 // session after the start when it has an agent identity.
-func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, spec claudeBackground, view claudeStartView, notify bool, firstMessage string) protocol.StartedSession {
+func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, spec claudeBackground, view startView, notify bool, firstMessage string) protocol.StartedSession {
 	resume := spec.Resume
 	d.mu.Lock()
 	if d.startedSessions == nil {
@@ -756,20 +728,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, spec c
 				plan.Argv = nil
 				plan.Note = "The session started but has no Claude background ID to attach."
 			}
-			opened := plan
-			if !view.background {
-				opened = d.viewPlan(r.SessionID, r.Project, view.socket, view.pane, false, plan)
-			}
-			if view.background {
-				r.EnterNote = "Enter opens it."
-			} else if opened.OpenedHerdr || len(opened.Argv) == 0 || view.relayed {
-				r.EnterPlan = &opened
-			} else {
-				r.EnterNote = "Enter opens it."
-				if d.herdrBinary("") == "" {
-					r.EnterNote += " " + herdrInstallNote
-				}
-			}
+			d.showStart(&r, plan, view)
 			r.Status = "started"
 		}
 		// Report a failure before the failed state is visible, so a poller that

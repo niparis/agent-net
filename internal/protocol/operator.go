@@ -21,12 +21,11 @@ import (
 
 // Operator method names.
 const (
-	OpProposalList     = "proposal_list"
-	OpProposalAnswer   = "proposal_answer"
-	OpProposalStartAck = "proposal_start_ack"
-	OpAppsRename       = "apps.rename"
-	OpAppsGrant        = "apps.grant"
-	OpAppsUngrant      = "apps.ungrant"
+	OpProposalList   = "proposal_list"
+	OpProposalAnswer = "proposal_answer"
+	OpAppsRename     = "apps.rename"
+	OpAppsGrant      = "apps.grant"
+	OpAppsUngrant    = "apps.ungrant"
 	// Data. These only read.
 	OpInfo          = "info"          // answers OperatorInfo
 	OpNodes         = "nodes"         // answers NodesInfo
@@ -177,7 +176,7 @@ const (
 )
 
 // OperatorMethods lists every operator method, for tests and docs.
-var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpProposalList, OpProposalAnswer, OpProposalStartAck, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
+var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpChiefSorts, OpAskUndo, OpAskMark, OpDeskLog, OpDeskSettle, OpNudgeStats, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
@@ -847,13 +846,6 @@ type AppsPublicStatus struct {
 	// Node is the Tailscale name of agent-net's own node when the Funnel
 	// runs there (decision 0058). Empty for the machine's node or a tunnel.
 	Node string `json:"node,omitempty"`
-}
-
-// CTOStartAck reports the outcome of a terminal handoff.
-type CTOStartAck struct {
-	ID      string `json:"proposal_id"`
-	Started bool   `json:"started"`
-	Error   string `json:"error,omitempty"`
 }
 
 // SessionAgentOption is one active agent the owner can assign.

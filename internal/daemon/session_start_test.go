@@ -611,56 +611,36 @@ func TestSessionStartOpenCodeRejectsUnsafeServiceAddress(t *testing.T) {
 	}
 }
 
-func TestSessionStartCodexPlan(t *testing.T) {
-	t.Parallel()
-	g := startGateway(t, t.TempDir(), "")
-	bins := fakeBin(t, "codex")
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
-	repo := newRepo(t, "shop space")
-	n.register(t, repo)
-	for _, tc := range []struct {
-		model, prompt string
-		args          []string
-	}{
-		{"", "", []string{bins["codex"]}},
-		{"model-x", "Inspect this project", []string{bins["codex"], "-m", "model-x", "Inspect this project"}},
-	} {
-		var r struct {
-			Status string             `json:"status"`
-			Plan   protocol.EnterPlan `json:"enter_plan"`
-		}
-		mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "codex", Model: tc.model, FirstMessage: tc.prompt}), &r)
-		if r.Status != "started" || r.Plan.Dir != repo || !reflect.DeepEqual(r.Plan.Argv, tc.args) {
-			t.Fatalf("plan: %+v, want %v in %s", r, tc.args, repo)
-		}
-	}
-}
-
-// A running shared server must own the thread. Otherwise Codex may silently
-// start an embedded server, whose MCP child the daemon refuses.
-func TestSessionStartCodexUsesConnectedServer(t *testing.T) {
+// A Codex start creates the thread on the app server and sends the first
+// message itself. It needs no terminal: the plan is only the optional viewer.
+func TestSessionStartCodexRunsOnTheAppServer(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	f := startFakeShared(t)
 	bins := fakeBin(t, "codex")
 	n := startWorkerNode(t, g, shortSet, func(c *Config) {
 		c.HarnessPaths = bins
 		c.CodexHome = f.home
-		c.CodexInterval = 50 * time.Millisecond
+		c.CodexInterval = 20 * time.Millisecond
 	})
-	eventually(t, "connected to shared server", func() bool {
-		return n.d.adapters["codex"].(*codexAdapter).serverPID() != 0
-	})
-	repo := newRepo(t, "shop")
+	repo := newRepo(t, "shop space")
 	n.register(t, repo)
-	var r struct {
-		Plan protocol.EnterPlan `json:"enter_plan"`
+	var r protocol.StartedSession
+	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "codex", Model: "model-x", FirstMessage: "Inspect this project"}), &r)
+	if r.Status != "started" || r.NativeID == "" || r.SessionID == "" || r.Error != "" {
+		t.Fatalf("start: %+v", r)
 	}
-	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{
-		Project: repo, Harness: "codex", Model: "model-x", FirstMessage: "hello",
-	}), &r)
-	want := []string{bins["codex"], "--remote", "unix://", "-m", "model-x", "hello"}
-	if !reflect.DeepEqual(r.Plan.Argv, want) {
-		t.Fatalf("plan: %v, want %v", r.Plan.Argv, want)
+	eventually(t, "first message queued on the thread", func() bool {
+		for _, q := range f.queue() {
+			if q.Thread == r.NativeID && strings.Contains(q.Text, "Inspect this project") {
+				return true
+			}
+		}
+		return false
+	})
+	if r.EnterPlan != nil && len(r.EnterPlan.Argv) != 0 {
+		if want := []string{bins["codex"], "resume", "--remote", "unix://", r.NativeID}; !reflect.DeepEqual(r.EnterPlan.Argv, want) {
+			t.Fatalf("viewer plan: %v, want %v", r.EnterPlan.Argv, want)
+		}
 	}
 }
 
@@ -695,9 +675,6 @@ func TestSessionStartCodexAgent(t *testing.T) {
 	a := n.agentOf(t, r.SessionID)
 	if a == nil || a.AgentID != "chosen" {
 		t.Fatalf("first identity: %+v", a)
-	}
-	if r.EnterPlan == nil || !reflect.DeepEqual(r.EnterPlan.Argv, []string{bins["codex"], "--remote", "unix://", "resume", r.NativeID, "Inspect this project"}) {
-		t.Fatalf("plan: %+v", r.EnterPlan)
 	}
 }
 

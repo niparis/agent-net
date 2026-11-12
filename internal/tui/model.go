@@ -2925,10 +2925,6 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		return m, m.enterCmd(q.EnterSession, q.EnterSession)
 	}
 
-	if q.StartPlan != nil {
-		m.sessionNoticeSerial++
-		return m.onEnter(enterMsg{name: sanitize(q.StartName), plan: *q.StartPlan, proposalID: q.StartProposalID})
-	}
 	if q.Text != "" {
 		if q.HerdrOpened || q.DaemonNotice {
 			m.sessionNoticeSerial++

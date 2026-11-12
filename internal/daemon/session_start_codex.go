@@ -90,6 +90,41 @@ func (d *Daemon) codexThreadInstructions(ctx context.Context, project string) st
 	return d.orGlobalCharter(ctx, d.charterContext(ctx, project))
 }
 
+// launchOwnerCodex starts an owner Codex session on the shared app server and
+// registers it. Nothing here needs a terminal: the thread lives in the app
+// server, and a viewer (`codex resume --remote`) is the optional view step.
+// The first message goes in through the daemon, as for a Claude session.
+func (d *Daemon) launchOwnerCodex(ctx context.Context, r protocol.StartedSession, firstMessage string, view startView, notify bool) (protocol.StartedSession, error) {
+	bin, err := d.harnessBinary("codex")
+	if err != nil {
+		return r, err
+	}
+	r, err = d.prepareOwnerCodex(ctx, r)
+	if err != nil {
+		return r, err
+	}
+	if firstMessage != "" {
+		if _, err := d.send(ctx, protocol.MsgSend{Sender: d.ownerSessionID(), Recipient: r.SessionID, Type: protocol.TypeRequest, Body: firstMessage}); err != nil {
+			return r, err
+		}
+	}
+	r.Status = "started"
+	d.showStart(&r, d.codexViewPlan(bin, r), view)
+	if notify {
+		d.notifySessionStart(r)
+	}
+	return r, nil
+}
+
+// codexViewPlan is the command that shows a thread of the shared app server.
+func (d *Daemon) codexViewPlan(bin string, r protocol.StartedSession) protocol.EnterPlan {
+	plan := protocol.EnterPlan{Argv: []string{bin, "resume", "--remote", "unix://", r.NativeID}, Dir: r.Path, Host: r.Hostname, Note: "Press ctrl+] to come back here; Codex keeps running."}
+	if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
+		plan.Env = map[string]string{"CODEX_HOME": home}
+	}
+	return plan
+}
+
 func (d *Daemon) resumeOwnerCodex(ctx context.Context, r protocol.StartedSession, socket, pane string) (protocol.StartedSession, error) {
 	bin, err := d.harnessBinary("codex")
 	if err != nil {
@@ -102,11 +137,7 @@ func (d *Daemon) resumeOwnerCodex(ctx context.Context, r protocol.StartedSession
 	// A Codex thread the app server could not find is a new conversation: the
 	// old session's work moves to it.
 	d.adoptResumedSession(ctx, r.Resumes, r.SessionID)
-	plan := protocol.EnterPlan{Argv: []string{bin, "resume", "--remote", "unix://", r.NativeID}, Dir: r.Path, Host: r.Hostname, Note: "Press ctrl+] to come back here; Codex keeps running."}
-	if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
-		plan.Env = map[string]string{"CODEX_HOME": home}
-	}
-	opened := d.viewPlan(r.SessionID, r.Project, socket, pane, false, plan)
+	opened := d.viewPlan(r.SessionID, r.Project, socket, pane, false, d.codexViewPlan(bin, r))
 	r.EnterPlan = &opened
 	r.Status = "started"
 	return r, nil

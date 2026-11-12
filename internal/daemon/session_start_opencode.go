@@ -271,20 +271,10 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 			r.Status, r.Error = "failed", startErr.Error()
 			d.failStartAgent(r)
 		} else {
-			bin, err := d.harnessBinary("opencode")
-			if err == nil {
-				plan := protocol.EnterPlan{Argv: []string{bin, "--server", service.URL, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname,
+			if bin, err := d.harnessBinary("opencode"); err == nil {
+				d.showStart(&r, protocol.EnterPlan{Argv: []string{bin, "--server", service.URL, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname,
 					Env:  map[string]string{"OPENCODE_SERVER_PASSWORD": service.Password},
-					Note: "Press ctrl+] to come back here; the session keeps running."}
-				opened := d.viewPlan(r.SessionID, r.Project, socket, pane, false, plan)
-				if opened.OpenedHerdr || len(opened.Argv) == 0 || relayed {
-					r.EnterPlan = &opened
-				} else {
-					r.EnterNote = "Enter opens it."
-					if d.herdrBinary("") == "" {
-						r.EnterNote += " " + herdrInstallNote
-					}
-				}
+					Note: "Press ctrl+] to come back here; the session keeps running."}, startView{socket: socket, pane: pane, relayed: relayed})
 			}
 			r.Status = "started"
 		}

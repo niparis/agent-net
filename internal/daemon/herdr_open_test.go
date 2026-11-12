@@ -195,8 +195,9 @@ func TestEnterHerdrOpensCTO(t *testing.T) {
 func TestSessionStartHerdrCodex(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
+	f := startFakeShared(t)
 	bins := fakeBin(t, "codex")
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins; c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond })
 	repo := newRepo(t, "garden")
 	n.register(t, repo)
 	var r protocol.StartedSession
@@ -205,7 +206,7 @@ func TestSessionStartHerdrCodex(t *testing.T) {
 	if r.EnterPlan == nil || len(r.EnterPlan.Argv) != 0 || !strings.Contains(r.EnterPlan.Note, "opened garden in herdr") {
 		t.Errorf("start %+v", r)
 	}
-	requireHerdrOpened(t, log, "garden", bins["codex"], "hello")
+	requireHerdrOpened(t, log, "garden", bins["codex"], "resume", "--remote", "unix://")
 }
 
 // A worker opens no view by itself: a view would take the owner's focus and,
@@ -357,18 +358,19 @@ func TestEnterOutsideHerdrHandsOverTerminal(t *testing.T) {
 	}
 }
 
-// A start asked by a TUI outside herdr hands the terminal plan back, and no
-// herdr view is opened.
-func TestSessionStartOutsideHerdrHandsOverTerminal(t *testing.T) {
+// A start asked by a TUI outside herdr keeps the session in the daemon and
+// opens no view: Enter opens it later. No herdr view is opened either.
+func TestSessionStartCodexOutsideHerdrOpensNoView(t *testing.T) {
 	bins := fakeBin(t, "codex")
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	f := startFakeShared(t)
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins; c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond })
 	repo := newRepo(t, "garden")
 	n.register(t, repo)
 	var r protocol.StartedSession
 	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "codex", FirstMessage: "hello"}), &r)
-	if r.EnterPlan == nil || r.EnterPlan.OpenedHerdr || len(r.EnterPlan.Argv) != 2 || r.EnterPlan.Argv[0] != bins["codex"] || r.EnterPlan.Argv[1] != "hello" {
+	if r.Status != "started" || r.EnterPlan != nil || r.EnterNote != "Enter opens it." {
 		t.Fatalf("start %+v", r)
 	}
 	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "tab create") || strings.Contains(string(raw), "pane split") || strings.Contains(string(raw), "pane run") {
@@ -484,7 +486,8 @@ func TestSessionStartHerdrRemoteCodex(t *testing.T) {
 	local := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} })
 	bins := fakeBin(t, "codex")
 	bins["herdr"] = remoteBin
-	remote := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	f := startFakeShared(t)
+	remote := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins; c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond })
 	repo := newRepo(t, "garden")
 	remote.register(t, repo)
 	var r protocol.StartedSession
@@ -493,8 +496,10 @@ func TestSessionStartHerdrRemoteCodex(t *testing.T) {
 	if r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
 		t.Fatalf("remote start %+v", r)
 	}
-	requireHerdrOpened(t, remoteLog, "garden", bins["codex"])
-	requireHerdrOpened(t, localLog, "garden", "--remote", remote.d.cfg.Hostname)
+	// A Codex thread has no name of its own, so the tab carries its ID, as when
+	// the owner presses Enter on it.
+	requireHerdrOpened(t, remoteLog, r.NativeID, bins["codex"])
+	requireHerdrOpened(t, localLog, r.NativeID, "--remote", remote.d.cfg.Hostname)
 	if raw, _ := os.ReadFile(localLog); strings.Contains(string(raw), "ssh") {
 		t.Fatalf("remote start used ssh: %s", raw)
 	}
@@ -1024,16 +1029,18 @@ func TestCTOProposalWithoutHerdrShowsEnterNotice(t *testing.T) {
 	}
 }
 
-func TestCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
+// A Codex start needs no herdr pane and no approving TUI: the daemon creates
+// the thread on the app server and sends the first message itself.
+func TestCTOApprovedCodexWithoutHerdrNeedsNoTUI(t *testing.T) {
 	withoutLocalHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
+	f := startFakeShared(t)
 	bins := fakeBin(t, "codex")
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins; c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond })
 	repo := newHomeRepo(t, home, "code/garden")
 	n.register(t, repo)
-	other := herdrNoticeChannel(t, n.node)
-	approver, notices := herdrUIClient(t, n.node)
+	approver, _ := herdrUIClient(t, n.node)
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex", "first_message": "hello"})
 	if _, err := legacyProposalFixture(context.Background(), n.d, "session_change", args); err != nil {
 		t.Fatal(err)
@@ -1042,63 +1049,16 @@ func TestCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
 	if err != nil || len(items) != 1 {
 		t.Fatalf("proposals %v %v", items, err)
 	}
-	if _, err := approver.Call(context.Background(), "proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}, filepath.Join(t.TempDir(), "h.sock"))); err != nil {
-		t.Fatal(err)
-	}
-	q := waitHerdrNotice(t, notices)
-	items, err = n.d.proposalRunner().list()
-	if err != nil || items[0].Status != "handed_to_tui" || items[0].Note != "sent to the approving TUI to run in its terminal" || q["start_proposal_id"] != items[0].ID {
-		t.Fatalf("handoff: %+v notice %v error %v", items, q, err)
-	}
-	if _, err = approver.Call(context.Background(), protocol.OpProposalStartAck, protocol.CTOStartAck{ID: items[0].ID, Started: true}); err != nil {
+	if _, err := approver.Call(context.Background(), "proposal_answer", protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	items, err = n.d.proposalRunner().list()
 	if err != nil || items[0].Status != "applied" {
-		t.Fatalf("acknowledgment: %+v error %v", items, err)
+		t.Fatalf("proposal: %+v error %v", items, err)
 	}
-	plan, ok := q["start_plan"].(map[string]any)
-	if !ok || q["start_name"] != "garden ("+n.d.hostName()+")" {
-		t.Fatalf("approving TUI did not receive the start: %v", q)
-	}
-	argv, ok := plan["argv"].([]any)
-	if !ok || len(argv) != 2 || argv[0] != bins["codex"] || argv[1] != "hello" || plan["dir"] != repo || !strings.Contains(plan["note"].(string), "herdr not found (looked in:") {
-		t.Fatalf("incorrect fallback plan: %v", plan)
-	}
-	select {
-	case q := <-other:
-		if q["start_plan"] != nil {
-			t.Fatalf("another TUI received the same start: %v", q)
-		}
-	default:
-	}
-}
-
-func TestRemoteCTOApprovedCodexWithoutHerdrFails(t *testing.T) {
-	withoutLocalHerdr(t)
-	g := startGateway(t, t.TempDir(), "")
-	home := pathTestHome(t)
-	local := startWorkerNode(t, g, shortSet, nil)
-	bins := fakeBin(t, "codex")
-	remote := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
-	repo := newHomeRepo(t, home, "code/garden")
-	remote.register(t, repo)
-	approver, _ := herdrUIClient(t, local.node)
-	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex"})
-	if _, err := legacyProposalFixture(context.Background(), remote.d, "session_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := remote.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals %v %v", items, err)
-	}
-	_, _ = approver.Call(context.Background(), "proposal_answer", protocol.CTOProposalAnswer{NodeID: remote.d.NodeID(), ID: items[0].ID, Action: "a"})
-	items, err = remote.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if items[0].Status != "failed" || !strings.Contains(items[0].Note, "remote fallback plan cannot be confirmed") {
-		t.Fatalf("proposal %+v", items[0])
+	var start protocol.StartedSession
+	if err := json.Unmarshal(items[0].Result, &start); err != nil || start.Status != "started" || start.NativeID == "" || start.SessionID == "" || start.Error != "" {
+		t.Fatalf("start: %+v error %v", start, err)
 	}
 }
 
@@ -1125,36 +1085,6 @@ func TestHerdrEnvironmentFailureDoesNotUseTerminalFallback(t *testing.T) {
 	p := (&Daemon{}).openInHerdr("a", "garden", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Env: map[string]string{"BAD-KEY": "value"}})
 	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(strings.ToLower(p.Note), "could not prepare") {
 		t.Fatalf("plan %+v", p)
-	}
-}
-
-func TestCTOApprovedCodexWithoutHerdrOrTUIFails(t *testing.T) {
-	withoutLocalHerdr(t)
-	g := startGateway(t, t.TempDir(), "")
-	home := pathTestHome(t)
-	bins := fakeBin(t, "codex")
-	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
-	repo := newHomeRepo(t, home, "code/garden")
-	n.register(t, repo)
-	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex"})
-	if _, err := legacyProposalFixture(context.Background(), n.d, "session_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := n.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals %v %v", items, err)
-	}
-	_ = n.d.proposalRunner().decide(context.Background(), items[0].ID, true)
-	items, err = n.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var start protocol.StartedSession
-	if err := json.Unmarshal(items[0].Result, &start); err != nil {
-		t.Fatal(err)
-	}
-	if items[0].Status != "failed" || start.Status != "failed" || start.Error == "" || !strings.Contains(items[0].Note, start.Error) {
-		t.Fatalf("proposal %#v start %#v", items[0], start)
 	}
 }
 
