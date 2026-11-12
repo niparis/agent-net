@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"time"
 

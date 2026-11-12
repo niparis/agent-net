@@ -294,18 +294,6 @@ func (d *Daemon) herdrPaneProcesses(bin, socket, pane string) []int {
 	return pids
 }
 
-// claudeAttachJob returns the job ID of a `claude attach <job>` command line,
-// or "". The program may be started through an interpreter, so the word
-// `claude` may be the first or the second argument.
-func claudeAttachJob(args []string) string {
-	for i := 0; i < len(args) && i < 2; i++ {
-		if filepath.Base(args[i]) == "claude" && i+2 < len(args) && args[i+1] == "attach" {
-			return args[i+2]
-		}
-	}
-	return ""
-}
-
 // pidChain is pid and its parents.
 func pidChain(pid int) map[int]bool {
 	chain := map[int]bool{}
@@ -323,9 +311,8 @@ func pidChain(pid int) map[int]bool {
 // herdrPlan finds the herdr pane of a session. ok is false when
 // the session does not run in herdr. When ok is
 // true the plan is final, with a command or with a note that says why not.
-// viaGateway is true when another machine asked: whether its terminal is
-// inside herdr is not known, so the note names both detach keys.
-func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string, viaGateway bool) (protocol.EnterPlan, bool) {
+// Pi uses it because it has no attach client: its view is the pane it runs in.
+func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string) (protocol.EnterPlan, bool) {
 	h, found := findHerdrPane(info.PID)
 	fromServer := false
 	if !found {

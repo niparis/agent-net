@@ -398,7 +398,7 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		if w != nil {
 			return no("Pi workers run in RPC mode without a terminal; read this session with agent-net show %s", cleanLine(q.SessionID))
 		}
-		p, err := d.terminalPlan(info, herdrQuery, plan, name, viaGateway)
+		p, err := d.terminalPlan(info, herdrQuery, plan, name)
 		if focused != nil && p.HerdrPane != "" {
 			*focused = p.HerdrPane
 		}
@@ -416,9 +416,10 @@ func firstNonNil(errs ...error) error {
 	return nil
 }
 
-// terminalPlan finds the herdr pane holding a session without an attach command.
-func (d *Daemon) terminalPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string, viaGateway bool) (protocol.EnterPlan, error) {
-	if p, ok := d.herdrPlan(info, q, plan, name, viaGateway); ok {
+// terminalPlan finds the herdr pane holding a session without an attach
+// command, which is how a Pi session is viewed.
+func (d *Daemon) terminalPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string) (protocol.EnterPlan, error) {
+	if p, ok := d.herdrPlan(info, q, plan, name); ok {
 		return p, nil
 	}
 	return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("%s is not in a herdr pane agent-net can reach (no herdr variables and no herdr server above the process): open its window on %s", name, firstNonEmpty(plan.Host, "its machine"))}, nil

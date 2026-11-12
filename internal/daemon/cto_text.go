@@ -180,7 +180,11 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 	}
 	plan, err := d.ctoEnter(ctx)
 	if err == nil {
-		plan = d.viewPlan("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", q.HerdrSocket, q.HerdrPaneID, viaGateway && q.HerdrClient, plan)
+		socket, pane := q.HerdrSocket, q.HerdrPaneID
+		if viaGateway {
+			socket, pane = "", "" // the asker's terminal means nothing here
+		}
+		plan = d.viewPlan("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", socket, pane, viaGateway && q.HerdrClient, plan)
 	}
 	if viaGateway && err == nil {
 		if plan.OpenedHerdr && q.HerdrClient {

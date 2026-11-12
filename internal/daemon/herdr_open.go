@@ -113,13 +113,13 @@ func (d *Daemon) viewPlan(key, name, socket, pane string, host bool, plan protoc
 	if !host && !callerInHerdr(socket, pane) {
 		return plan
 	}
-	return d.openInHerdr(key, name, socket, pane, plan)
+	return d.openInHerdr(key, name, socket, plan)
 }
 
 // openInHerdr opens a plan in a full tab. It serializes the lookup and
 // creation so concurrent Enter calls cannot create duplicate clients. When the
 // server is unavailable the original plan remains the fallback.
-func (d *Daemon) openInHerdr(key, name, socket, callerPane string, plan protocol.EnterPlan) protocol.EnterPlan {
+func (d *Daemon) openInHerdr(key, name, socket string, plan protocol.EnterPlan) protocol.EnterPlan {
 	bin, lookupErr := d.lookupHerdrBinary()
 	if lookupErr != nil {
 		plan.Note = strings.TrimSpace(plan.Note + " " + lookupErr.Error())

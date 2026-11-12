@@ -520,7 +520,7 @@ esac
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			p := (&Daemon{}).openInHerdr("session", "garden", "", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Note: "fallback"})
+			p := (&Daemon{}).openInHerdr("session", "garden", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Note: "fallback"})
 			calls, _ := os.ReadFile(log)
 			if !strings.Contains(string(calls), "server\n") {
 				t.Fatalf("no server start: %s", calls)
@@ -538,7 +538,7 @@ esac
 func TestHerdrKeepsCredentialsOutOfCommand(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	secret := "a secret 'with spaces'"
-	p := (&Daemon{}).openInHerdr("worker", "garden", "", "", protocol.EnterPlan{Argv: []string{"opencode", "--server", "http://127.0.0.1:9"}, Env: map[string]string{"OPENCODE_SERVER_PASSWORD": secret, "CLAUDE_CODE_DISABLE_MOUSE": "1"}})
+	p := (&Daemon{}).openInHerdr("worker", "garden", "", protocol.EnterPlan{Argv: []string{"opencode", "--server", "http://127.0.0.1:9"}, Env: map[string]string{"OPENCODE_SERVER_PASSWORD": secret, "CLAUDE_CODE_DISABLE_MOUSE": "1"}})
 	if !p.OpenedHerdr || len(p.Env) != 0 {
 		t.Fatalf("plan %+v", p)
 	}
@@ -642,7 +642,7 @@ func TestHerdrRunsQuotedCommandFromAnyShell(t *testing.T) {
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	p := (&Daemon{}).openInHerdr("a", "garden", "", "", protocol.EnterPlan{Argv: []string{bin, "a 'quoted' $prompt"}, Env: map[string]string{"TOKEN": "secret with ' quote"}})
+	p := (&Daemon{}).openInHerdr("a", "garden", "", protocol.EnterPlan{Argv: []string{bin, "a 'quoted' $prompt"}, Env: map[string]string{"TOKEN": "secret with ' quote"}})
 	if !p.OpenedHerdr {
 		t.Fatalf("plan %+v", p)
 	}
@@ -670,7 +670,7 @@ func TestEnterHerdrReopensWhenClientExited(t *testing.T) {
 	bin, log := fakeOpenHerdr(t)
 	d := &Daemon{}
 	plan := protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}}
-	if p := d.openInHerdr("session", "garden", "", "", plan); !p.OpenedHerdr {
+	if p := d.openInHerdr("session", "garden", "", plan); !p.OpenedHerdr {
 		t.Fatalf("first plan %+v", p)
 	}
 	if err := os.WriteFile(filepath.Join(filepath.Dir(bin), "idle"), nil, 0600); err != nil {
@@ -679,7 +679,7 @@ func TestEnterHerdrReopensWhenClientExited(t *testing.T) {
 	old := d.herdrOpened["session"]
 	old.started = time.Now().Add(-2 * time.Second)
 	d.herdrOpened["session"] = old
-	if p := d.openInHerdr("session", "garden", "", "", plan); !p.OpenedHerdr {
+	if p := d.openInHerdr("session", "garden", "", plan); !p.OpenedHerdr {
 		t.Fatalf("second plan %+v", p)
 	}
 	raw, _ := os.ReadFile(log)
@@ -750,7 +750,7 @@ func TestEnterHerdrRemotePrivateCodexKeepsTokenLocal(t *testing.T) {
 
 func TestCTOEnterHerdrReportsConversationRestart(t *testing.T) {
 	fakeOpenHerdr(t)
-	p := (&Daemon{}).openInHerdr("cto", "CTO", "", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Note: claudeCTORestartNotice})
+	p := (&Daemon{}).openInHerdr("cto", "CTO", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Note: claudeCTORestartNotice})
 	if !p.OpenedHerdr || !strings.Contains(p.Note, "opened CTO in herdr") || !strings.Contains(p.Note, claudeCTORestartNotice) {
 		t.Fatalf("restart notice lost: %+v", p)
 	}
@@ -1114,7 +1114,7 @@ esac
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	p := (&Daemon{}).openInHerdr("a", "garden", "", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}})
+	p := (&Daemon{}).openInHerdr("a", "garden", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}})
 	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(p.Note, "could not create") {
 		t.Fatalf("plan %+v", p)
 	}
@@ -1122,7 +1122,7 @@ esac
 
 func TestHerdrEnvironmentFailureDoesNotUseTerminalFallback(t *testing.T) {
 	fakeOpenHerdr(t)
-	p := (&Daemon{}).openInHerdr("a", "garden", "", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Env: map[string]string{"BAD-KEY": "value"}})
+	p := (&Daemon{}).openInHerdr("a", "garden", "", protocol.EnterPlan{Argv: []string{"claude", "attach", "job"}, Env: map[string]string{"BAD-KEY": "value"}})
 	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(strings.ToLower(p.Note), "could not prepare") {
 		t.Fatalf("plan %+v", p)
 	}
