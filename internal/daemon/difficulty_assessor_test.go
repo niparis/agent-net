@@ -172,7 +172,7 @@ func TestJudgeOpenCodeUsesPrivateServerAndDisabledSocket(t *testing.T) {
 	if err := json.Unmarshal(raw, &rec); err != nil {
 		t.Fatal(err)
 	}
-	if len(rec.Args) < 4 || rec.Args[0] != "run" || rec.Args[1] != "--standalone" || rec.Args[2] != "-m" {
+	if len(rec.Args) < 4 || rec.Args[0] != "run" || rec.Args[1] != "--standalone" || rec.Args[2] != "--model" {
 		t.Errorf("judge arguments: %v", rec.Args)
 	}
 	if rec.Socket == "" || rec.Socket == parentSocket || rec.SocketExists || !filepath.IsAbs(rec.Socket) {

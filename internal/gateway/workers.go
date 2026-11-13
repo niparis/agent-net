@@ -851,7 +851,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
 			var protectionNote string
-			choice, protectionNote, err = g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(p.Assessment, difficulty), scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
+			choice, protectionNote, err = g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(p.Assessment, difficulty), workerDifficultyWhy(p.Assessment, difficulty), scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
 			if err != nil {
 				// The chooser records why it dropped each candidate, so the
 				// roster reports the same decision instead of guessing again.
@@ -1989,6 +1989,22 @@ func workerDifficultyLead(a *protocol.WorkerAssessment, level string) string {
 	return "difficulty: no assessment (no judge result); started at " + level
 }
 
+// workerDifficultyWhy is the first part of the short why line when the judge
+// gave no assessment. It stays short on purpose: the full judge error is in the
+// start note. Empty means the judge scored the task, so the usual
+// "difficulty <level> (D x.xx)" is true.
+func workerDifficultyWhy(a *protocol.WorkerAssessment, level string) string {
+	switch {
+	case a == nil:
+		return "difficulty: not judged (no judge result), started at " + level
+	case a.Error != "":
+		return "difficulty: not judged (judge failed), started at " + level
+	case a.Label != "" && protocol.WorkerLevel(a) != a.Label:
+		return "difficulty: not judged (the judge confidence is low), started at " + level
+	}
+	return ""
+}
+
 func appendModelNote(note, more string) string {
 	switch {
 	case more == "":
@@ -2249,14 +2265,14 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notSt
 // chooseAutomaticWorker applies the same weights and rotation for a start or a
 // preview. Without a judge result it picks at the middle of the level's D range.
 func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	return g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(nil, difficulty), scores, minimums, quotas, running, protected, persist)
+	return g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(nil, difficulty), "", scores, minimums, quotas, running, protected, persist)
 }
 
 // chooseAutomaticWorkerAt picks for a task with judge D d. The picker table is
 // the cached one, so a pick makes no query of its own besides the model health
 // and the rotation.
-func (g *Gateway) chooseAutomaticWorkerAt(candidates []protocol.WorkerModelCandidate, difficulty string, d float64, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	pick := &protocol.PickerInput{D: d, Table: g.store.pickerTable(), Prices: g.store.priceBook()}
+func (g *Gateway) chooseAutomaticWorkerAt(candidates []protocol.WorkerModelCandidate, difficulty string, d float64, difficultyNote string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
+	pick := &protocol.PickerInput{D: d, DifficultyNote: difficultyNote, Table: g.store.pickerTable(), Prices: g.store.priceBook()}
 	return g.chooseAutomaticWorkerCore(g.store.ModelHealth, g.store.WorkerRotation, pick, candidates, difficulty, scores, minimums, quotas, running, protected, persist)
 }
 

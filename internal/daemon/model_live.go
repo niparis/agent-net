@@ -135,9 +135,9 @@ func (d *Daemon) explainStartFailure(ctx context.Context, harness, model string,
 
 // modelTestArgs builds one small test turn. The effort is built through
 // protocol.ModelSelection.Arguments, the same helper each worker launcher uses
-// (worker_claude.go, worker_opencode.go, worker_codex.go): no harness takes it
-// glued to the model id.
-func modelTestArgs(harness, model, effort string) ([]string, error) {
+// (worker_claude.go, worker_opencode.go, worker_codex.go). OpenCode alone has
+// two shapes for the effort, so both it and the judge use openCodeModelFlags.
+func modelTestArgs(ctx context.Context, bin, harness, model, effort string) ([]string, error) {
 	selection := protocol.ParseModelSelection(harness, "", model, effort)
 	switch harness {
 	case "claude":
@@ -147,16 +147,9 @@ func modelTestArgs(harness, model, effort string) ([]string, error) {
 		}
 		return append([]string{"-p"}, append(modelArgs, "Reply with OK.")...), nil
 	case "opencode":
-		modelArgs, err := selection.Arguments(nil)
-		if err != nil {
-			return nil, err
-		}
-		// The launcher sends the effort as the session variant, and
-		// `opencode run` takes that as --variant.
-		args := []string{"run", "--model", modelArgs[0]}
-		if modelArgs[1] != "" {
-			args = append(args, "--variant", modelArgs[1])
-		}
+		// One builder with the judge path, so the effort reaches opencode in
+		// the form this installed build takes (model#variant, or --variant).
+		args := append([]string{"run"}, openCodeModelFlags(ctx, bin, selection)...)
 		return append(args, "Reply with OK."), nil
 	case "codex":
 		modelArgs, err := selection.Arguments(nil)
@@ -182,7 +175,7 @@ func (d *Daemon) testModel(ctx context.Context, p protocol.ModelTestRequest) pro
 	if err != nil {
 		return protocol.ModelTestResult{Output: err.Error()}
 	}
-	args, err := modelTestArgs(p.Harness, p.Model, p.Effort)
+	args, err := modelTestArgs(ctx, path, p.Harness, p.Model, p.Effort)
 	if err != nil {
 		return protocol.ModelTestResult{Output: err.Error()}
 	}

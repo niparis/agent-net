@@ -939,12 +939,25 @@ func TestPickerWhyGivesAQuotaReasonForALeftOutProfile(t *testing.T) {
 // with no reason after its quota label.
 func TestPickerWhyNeverPrintsEmptyParentheses(t *testing.T) {
 	chosen := &pickerEntry{name: "deepseek"}
-	got := pickerShortWhy("simple", 1.65, chosen, 0, nil, []string{"flash agy left out (quota: )"})
+	got := pickerShortWhy("simple", 1.65, "", chosen, 0, nil, []string{"flash agy left out (quota: )"})
 	if strings.Contains(got, "()") {
 		t.Errorf("why has empty parentheses: %s", got)
 	}
 	if !strings.Contains(got, "flash agy (out of quota)") {
 		t.Errorf("why lacks a fallback reason: %s", got)
+	}
+}
+
+// A start whose judge gave no assessment has no judged D. The why line says
+// that instead of printing the level's default D as if it were a score.
+func TestPickerWhySaysWhenTheJudgeGaveNoD(t *testing.T) {
+	chosen := &pickerEntry{name: "deepseek"}
+	got := pickerShortWhy("normal", 2.62, "difficulty: not judged (judge failed), started at normal", chosen, 0, nil, nil)
+	if !strings.HasPrefix(got, "difficulty: not judged (judge failed), started at normal") {
+		t.Errorf("why does not say the judge failed: %s", got)
+	}
+	if strings.Contains(got, "D 2.62") {
+		t.Errorf("why prints a D the judge never gave: %s", got)
 	}
 }
 
@@ -964,7 +977,7 @@ func TestPickerWhyCountsTheOtherQualifyingProfiles(t *testing.T) {
 	}
 	for _, c := range cases {
 		chosen := &pickerEntry{name: "deepseek", qualified: c.qualified}
-		got := pickerShortWhy("simple", 1.65, chosen, c.count, nil, nil)
+		got := pickerShortWhy("simple", 1.65, "", chosen, c.count, nil, nil)
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: why lacks %q: %s", c.name, c.want, got)
 		}

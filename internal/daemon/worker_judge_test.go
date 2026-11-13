@@ -80,6 +80,9 @@ func TestWorkerJudgeLabelDecidesLevel(t *testing.T) {
 	if strings.Contains(res.ModelNote, "touches") {
 		t.Fatalf("touches changed the note: %q", res.ModelNote)
 	}
+	if !strings.HasPrefix(res.Why, "difficulty trivial (D 1.20)") {
+		t.Fatalf("why line lost the judged D: %q", res.Why)
+	}
 	row := reworkRow(t, w, res.SessionID)
 	if row.DifficultyAsked != "trivial" || row.DifficultyUsed != "trivial" {
 		t.Fatalf("worker record kept the caller's level: %+v", row)
@@ -106,6 +109,14 @@ func TestWorkerJudgeFailureStartsNormal(t *testing.T) {
 	}
 	if !strings.HasPrefix(res.ModelNote, "difficulty: no assessment (") || !strings.Contains(res.ModelNote, "started at normal") {
 		t.Fatalf("fallback note: %q", res.ModelNote)
+	}
+	// The notice's why line must not print the level's default D as if the
+	// judge had scored the task.
+	if !strings.HasPrefix(res.Why, "difficulty: not judged (judge failed), started at normal") {
+		t.Fatalf("why line does not say the judge failed: %q", res.Why)
+	}
+	if strings.Contains(res.Why, "D 2.6") {
+		t.Fatalf("why line prints a D for a judge that gave none: %q", res.Why)
 	}
 	row := reworkRow(t, w, res.SessionID)
 	if row.DifficultyAsked != "normal" || row.DifficultyUsed != "normal" {
