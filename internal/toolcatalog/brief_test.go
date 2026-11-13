@@ -21,6 +21,8 @@ func TestWorkerStartDescriptionNamesTheOverlapRefusalOnly(t *testing.T) {
 	for _, want := range []string{
 		"structured brief", "problem and done required", "evidence", "hypothesis", "scope",
 		"extra notes", "overlap ok:", `mode "check"`,
+		"For a feature with several tasks, list the tasks first, then group them into sessions",
+		"continue one session (continue) instead of starting new workers",
 	} {
 		if !strings.Contains(found.Description, want) {
 			t.Errorf("description does not contain %q: %s", want, found.Description)
