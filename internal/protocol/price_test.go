@@ -92,3 +92,20 @@ func TestWorkerNoticeShowsTheCostAtAPIPrices(t *testing.T) {
 		t.Errorf("a notice with no cost names API prices:\n%s", out)
 	}
 }
+
+// The "tokens:" line of a stored notice reads back into the same counts, for
+// every shape tokenText writes.
+func TestParseTokenTextReadsTheNoticeLine(t *testing.T) {
+	for text, want := range map[string]RunTokens{
+		"1200 in, 340 out": {In: 1200, Out: 340},
+		"1200 in, 340 out, 50 reasoning, 90 cache read, 5 cache write": {In: 1200, Out: 340, Reasoning: 50, CacheRead: 90, CacheWrite: 5},
+		"13 in, 11 out, 100 cache read, 5 cache write":                 {In: 13, Out: 11, CacheRead: 100, CacheWrite: 5},
+	} {
+		if got, ok := ParseTokenText(text); !ok || got != want {
+			t.Errorf("ParseTokenText(%q) = %+v, %v; want %+v", text, got, ok, want)
+		}
+	}
+	if _, ok := ParseTokenText("none"); ok {
+		t.Error("text with no count must not parse")
+	}
+}

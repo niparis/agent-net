@@ -83,6 +83,13 @@ type pickerTaskRecord struct {
 // once per chain; a continuation costs nothing. Stopped and infrastructure runs
 // do not contribute. No time cut is applied.
 func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
+	return s.pickerTaskRecordsUsing(nil)
+}
+
+// pickerTaskRecordsUsing is pickerTaskRecords with the usage of each session
+// given. Nil reads worker_usage. The backtest passes the usage it parsed from
+// stored notices for runs that have none recorded.
+func (s *Store) pickerTaskRecordsUsing(usage map[string]protocol.RunTokens) ([]pickerTaskRecord, error) {
 	snap, err := s.runsSnapshot()
 	if err != nil {
 		return nil, err
@@ -157,9 +164,10 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 		return nil, err
 	}
 
-	usage, err := s.workerUsage()
-	if err != nil {
-		return nil, err
+	if usage == nil {
+		if usage, err = s.workerUsage(); err != nil {
+			return nil, err
+		}
 	}
 	counts := func(outcome string) bool {
 		return outcome != protocol.OutcomeStopped && outcome != protocol.OutcomeInfra
@@ -220,6 +228,23 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 	return out, nil
 }
 
+// pickerTasksFrom turns task records into picker tasks, pricing each one's
+// tokens with the book.
+func pickerTasksFrom(records []pickerTaskRecord, book *protocol.PriceBook) []protocol.PickerTask {
+	out := make([]protocol.PickerTask, 0, len(records))
+	for _, r := range records {
+		if r.d <= 0 || r.key == "" {
+			continue
+		}
+		t := protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts), Tokens: r.tokens}
+		if p, _, ok := book.PriceOf(r.key); ok && !r.tokens.Zero() {
+			t.Cost = p.Cost(r.tokens)
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 // pickerTasks is the picker's task list: the records with a judge result and a
 // model key, scored by PickerTaskScore.
 func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
@@ -227,18 +252,7 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]protocol.PickerTask, 0, len(records))
-	for _, r := range records {
-		if r.d <= 0 || r.key == "" {
-			continue
-		}
-		t := protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts), Tokens: r.tokens}
-		if !r.tokens.Zero() {
-			t.Cost, _, _ = s.RunCost(r.key, r.tokens)
-		}
-		out = append(out, t)
-	}
-	return out, nil
+	return pickerTasksFrom(records, s.priceBook()), nil
 }
 
 // refreshPicker rebuilds the cached table from the whole data set.

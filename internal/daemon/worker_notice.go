@@ -2036,7 +2036,7 @@ func handbackPaths(req protocol.WorkerHandbackRequest) []string {
 }
 
 // apiCostText is the run's cost at API prices for the notice, asked of the
-// gateway, which keeps the price list (decision 0160). It is empty when the
+// gateway, which keeps the price list (decision 0161). It is empty when the
 // harness reported no usage, the gateway has no price list, or it cannot be
 // reached in two seconds: the notice never waits longer for a cost.
 func (d *Daemon) apiCostText(harness, model string, usage protocol.RunTokens) string {

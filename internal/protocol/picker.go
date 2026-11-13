@@ -183,7 +183,7 @@ type PickerTable struct {
 	buckets   map[int]pickerStat
 	cells     map[string]map[int]pickerStat
 	maxBucket int
-	// cost and tokens read only the tasks with recorded usage (decision 0160).
+	// cost and tokens read only the tasks with recorded usage (decision 0161).
 	cellCost     map[string]map[int]pickerCostStat
 	bucketTokens map[int]pickerCostStat
 	allTokens    pickerCostStat
@@ -531,7 +531,7 @@ func WorkerBenchmarkCeiling(c WorkerModelCandidate, scores []ModelScore, minimum
 type PickerInput struct {
 	D     float64
 	Table *PickerTable
-	// Prices are the API prices (decision 0160). Nil means no price is known.
+	// Prices are the API prices (decision 0161). Nil means no price is known.
 	Prices *PriceBook
 }
 

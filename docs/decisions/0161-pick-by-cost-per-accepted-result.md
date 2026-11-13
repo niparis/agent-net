@@ -1,4 +1,4 @@
-# 0160 - The picker takes the lowest cost per accepted result
+# 0161 - The picker takes the lowest cost per accepted result
 
 Date: 2026-11-13
 Status: Approved by the owner on 2026-11-13.
@@ -60,5 +60,8 @@ later, as a separate decision.
 - A task that ended before the daemon reported usage by kind has no cost. Those
   tasks do not count in a cell's average cost; the price times the average run
   of the bucket stands in.
-- `TestPickerBacktestReport` re-runs the rule on a copy of a real gateway
-  database and prints the table.
+- `TestPickerCostBacktestReport` re-runs the rule on a copy of a real gateway
+  database and prints the table. It reads the price list from a saved OpenRouter
+  JSON (`AGENT_NET_PICKER_BACKTEST_PRICES`), takes the tokens of old runs from the
+  `tokens:` line of their stored notices, and applies today's worker floors to a
+  quota reading (`AGENT_NET_PICKER_BACKTEST_USED` or `..._QUOTAS`).

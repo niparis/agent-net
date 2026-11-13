@@ -16,13 +16,13 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// API prices and run usage (decision 0160). The picker ranks models by
+// API prices and run usage (decision 0161). The picker ranks models by
 // expected cost per accepted result at OpenRouter's public prices. model_prices
 // is the last good copy of that list, and worker_usage keeps the tokens of each
 // worker session by kind, so a run's cost can be computed after the session
 // record is gone.
 const modelPricesMigration = `
--- API prices and run usage (decision 0160).
+-- API prices and run usage (decision 0161).
 CREATE TABLE IF NOT EXISTS model_prices (
   id TEXT PRIMARY KEY, prompt REAL NOT NULL, completion REAL NOT NULL,
   cache_read REAL NOT NULL DEFAULT 0, cache_write REAL NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL);

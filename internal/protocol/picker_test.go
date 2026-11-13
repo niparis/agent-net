@@ -255,7 +255,7 @@ func TestPickLeavesOutAModelBelowTheQualifyingScore(t *testing.T) {
 }
 
 // The cheapest expected cost per accepted result wins, however much better the
-// dearer model is (decision 0160). Opus 0.86 at $2.00 a run, Sonnet 0.71 at
+// dearer model is (decision 0161). Opus 0.86 at $2.00 a run, Sonnet 0.71 at
 // $0.60 and DeepSeek 0.59 at $0.05: DeepSeek costs $0.085 per accepted result,
 // Sonnet $0.85 and Opus $2.33.
 func TestPickTakesTheLowestCostPerAcceptedResult(t *testing.T) {

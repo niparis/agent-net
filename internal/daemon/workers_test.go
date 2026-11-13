@@ -1678,7 +1678,7 @@ func TestWorkerContextWithoutLimit(t *testing.T) {
 }
 
 // The run's tokens by kind reach the worker's session record, and a later read
-// that reports less never lowers them (decision 0160).
+// that reports less never lowers them (decision 0161).
 func TestWorkerUsageByKindReachesTheSessionAndOnlyGrows(t *testing.T) {
 	d := &Daemon{}
 	w := &worker{harness: "claude"}

@@ -1,31 +1,122 @@
 package gateway
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// PickerCostBacktestRow is one finished task: the model that ran it then and what it
-// cost, and the model the cost rule picks now and what one run of it is
-// expected to cost (decision 0160).
+// PickerCostBacktestRow is one finished task: the model that ran it then and what
+// it cost, and the model the cost rule picks now and what one run of it is
+// expected to cost (decision 0161).
 type PickerCostBacktestRow struct {
 	EndedAt  int64
 	D        float64
 	Then     string
-	ThenCost float64 // 0 when the task has no recorded usage
+	ThenCost float64 // 0 when the task has no usage on record
 	Now      string
 	NowCost  float64 // 0 when it cannot be priced
 }
 
-// PickerCostBacktest re-runs the pick for the last limit finished tasks with a D,
-// using today's table, prices and registered profiles, with no quota and a fresh
-// rotation. It is a read-only check of the rule against real history.
-func (s *Store) PickerCostBacktest(limit int) ([]PickerCostBacktestRow, error) {
-	records, err := s.pickerTaskRecords()
+// PickerCostBacktestOptions are the inputs the live picker reads from memory
+// or the network, which a database copy does not hold.
+type PickerCostBacktestOptions struct {
+	// Prices is the price list. Nil uses the copy in model_prices.
+	Prices *protocol.PriceBook
+	// Quotas is a quota reading. The backtest applies today's worker floors
+	// (from the database) to it, and the chooser's own limits. Nil means no
+	// reading, so no floor applies.
+	Quotas *protocol.Quotas
+}
+
+// PickerCostBacktestResult is the table plus what shaped it.
+type PickerCostBacktestResult struct {
+	Rows []PickerCostBacktestRow
+	// OutByFloor names the profiles today's worker floors keep out.
+	OutByFloor []string
+	// Tasks is how many tasks with a D the table holds, TasksWithUsage how many
+	// of them have tokens on record.
+	Tasks, TasksWithUsage int
+	// Prices is how many models the price list holds.
+	Prices int
+}
+
+// noticeUsage reads the "tokens:" line of every stored worker notice, by worker
+// session. Runs that ended before the gateway kept usage by kind have only
+// this. A session's notices are cumulative, so the largest count of each kind
+// stands. It is for the backtest only.
+func (s *Store) noticeUsage() (map[string]protocol.RunTokens, error) {
+	rows, err := s.db.Query(`SELECT body FROM messages WHERE body LIKE '%[agent-net worker notice]%' AND body LIKE '%' || char(10) || 'tokens: %'`)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
+	out := map[string]protocol.RunTokens{}
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		var session string
+		var tokens protocol.RunTokens
+		var found bool
+		for _, line := range strings.Split(body, "\n") {
+			switch {
+			case strings.HasPrefix(line, "worker: "):
+				session, _, _ = strings.Cut(strings.TrimPrefix(line, "worker: "), " ")
+			case strings.HasPrefix(line, "tokens: "):
+				tokens, found = protocol.ParseTokenText(strings.TrimPrefix(line, "tokens: "))
+			}
+		}
+		if found && strings.HasPrefix(session, "s_") {
+			out[session] = out[session].Max(tokens)
+		}
+	}
+	return out, rows.Err()
+}
+
+// PickerCostBacktest re-runs the pick for the last limit finished tasks with a D.
+// It uses today's registered profiles, the given prices and quota reading and
+// the database's worker floors, with a fresh rotation. The table is built with
+// the usage of each task: what the gateway recorded, else the tokens line of its
+// stored notices. It is a read-only check of the rule against real history.
+func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (PickerCostBacktestResult, error) {
+	var res PickerCostBacktestResult
+	prices := o.Prices
+	if prices == nil {
+		prices = s.priceBook()
+	}
+	res.Prices = prices.Len()
+	usage, err := s.noticeUsage()
+	if err != nil {
+		return res, err
+	}
+	recorded, err := s.workerUsage()
+	if err != nil {
+		return res, err
+	}
+	for session, t := range recorded {
+		usage[session] = t
+	}
+	records, err := s.pickerTaskRecordsUsing(usage)
+	if err != nil {
+		return res, err
+	}
+	tasks := pickerTasksFrom(records, prices)
+	set, err := s.pickerSettings()
+	if err != nil {
+		return res, err
+	}
+	table := protocol.BuildPickerTable(tasks, set)
+	res.Tasks = len(tasks)
+	for _, t := range tasks {
+		if !t.Tokens.Zero() {
+			res.TasksWithUsage++
+		}
+	}
+
 	var done []pickerTaskRecord
 	for _, r := range records {
 		if r.d > 0 && r.key != "" {
@@ -36,28 +127,36 @@ func (s *Store) PickerCostBacktest(limit int) ([]PickerCostBacktestRow, error) {
 	if len(done) > limit {
 		done = done[len(done)-limit:]
 	}
+
 	profiles, err := s.WorkerProfiles()
 	if err != nil {
-		return nil, err
+		return res, err
+	}
+	floors, err := s.workerFloors()
+	if err != nil {
+		return res, err
 	}
 	var candidates []protocol.WorkerModelCandidate
 	for _, p := range profiles {
-		candidates = append(candidates, protocol.WorkerModelCandidate{Name: p.Name, Harness: p.Harness, Model: p.Selection().LegacyModel()})
+		c := protocol.WorkerModelCandidate{Name: p.Name, Harness: p.Harness, Model: p.Selection().LegacyModel(), DefaultEffort: p.Effort}
+		if under, sentence, _ := protocol.CheckWorkerFloor(o.Quotas, floors, c.Harness, c.Model); under {
+			res.OutByFloor = append(res.OutByFloor, fmt.Sprintf("%s: %s", c.Name, sentence))
+			continue
+		}
+		candidates = append(candidates, c)
 	}
 	scores, err := s.scores()
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	minimums, err := s.difficultyMinimums()
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	table, prices := s.pickerTable(), s.priceBook()
-	var out []PickerCostBacktestRow
 	for _, r := range done {
 		row := PickerCostBacktestRow{EndedAt: r.end, D: r.d, Then: r.key}
-		if !r.tokens.Zero() {
-			row.ThenCost, _, _ = s.RunCost(r.key, r.tokens)
+		if p, _, ok := prices.PriceOf(r.key); ok && !r.tokens.Zero() {
+			row.ThenCost = p.Cost(r.tokens)
 		}
 		level := "normal"
 		for _, l := range protocol.DifficultyLevels {
@@ -65,12 +164,12 @@ func (s *Store) PickerCostBacktest(limit int) ([]PickerCostBacktestRow, error) {
 				level = l
 			}
 		}
-		choice, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, nil, nil, &protocol.WorkerRotation{}, &protocol.PickerInput{D: r.d, Table: table, Prices: prices})
+		choice, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, o.Quotas, nil, &protocol.WorkerRotation{}, &protocol.PickerInput{D: r.d, Table: table, Prices: prices})
 		if err == nil {
 			row.Now = protocol.PickerModelKey(choice.Harness, choice.Model)
 			row.NowCost, _, _, _ = table.ExpectedCost(row.Now, table.Bucket(r.d), prices)
 		}
-		out = append(out, row)
+		res.Rows = append(res.Rows, row)
 	}
-	return out, nil
+	return res, nil
 }

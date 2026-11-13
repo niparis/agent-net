@@ -299,7 +299,7 @@ type WorkerInfo struct {
 	// without cache reads. 0 when the harness cannot say.
 	Tokens int64 `json:"tokens,omitempty"`
 	// Usage is the same run by kind of token, cache reads and writes included.
-	// The gateway keeps it with the run to price it (decision 0160).
+	// The gateway keeps it with the run to price it (decision 0161).
 	Usage *RunTokens `json:"usage,omitempty"`
 	// Permissions is the level the worker was started with (decision 0020):
 	// sandboxed, no-network or read-only. Codex, Antigravity and Claude
@@ -588,7 +588,7 @@ type (
 		AsOwner   bool   `json:"as_owner,omitempty"`
 	}
 	// WorkerCostQuery is "worker.cost", machine to gateway: the cost of a
-	// run's tokens at API prices (decision 0160).
+	// run's tokens at API prices (decision 0161).
 	WorkerCostQuery struct {
 		Model  string    `json:"model"`
 		Tokens RunTokens `json:"tokens"`
@@ -1190,7 +1190,7 @@ type WorkerNotice struct {
 	Context string
 	Cost    string // "0.0123", empty when unknown
 	// APICost is the run's cost at API prices, as "$0.43 at API prices", empty
-	// when no price list is known (decision 0160).
+	// when no price list is known (decision 0161).
 	APICost  string
 	Worktree string
 	Branch   string

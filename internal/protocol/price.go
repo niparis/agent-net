@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -118,6 +119,14 @@ func priceVendor(name string) string {
 	return ""
 }
 
+// Len is how many priced models the book holds.
+func (b *PriceBook) Len() int {
+	if b == nil {
+		return 0
+	}
+	return len(b.all)
+}
+
 // Lookup finds the price of one of our model ids. ok is false when no listed
 // model has that name.
 func (b *PriceBook) Lookup(model string) (ModelPrice, bool) {
@@ -188,4 +197,32 @@ func (t RunTokens) Text() string {
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+var tokenTextPart = regexp.MustCompile(`(\d+) (in|out|reasoning|cache read|cache write)`)
+
+// ParseTokenText reads the "tokens:" line of a worker notice back into tokens
+// by kind ("1200 in, 340 out, 50 reasoning, 90 cache read, 5 cache write"). ok
+// is false when the text names no count.
+func ParseTokenText(text string) (t RunTokens, ok bool) {
+	for _, m := range tokenTextPart.FindAllStringSubmatch(text, -1) {
+		n, err := strconv.ParseFloat(m[1], 64)
+		if err != nil {
+			continue
+		}
+		ok = true
+		switch m[2] {
+		case "in":
+			t.In = n
+		case "out":
+			t.Out = n
+		case "reasoning":
+			t.Reasoning = n
+		case "cache read":
+			t.CacheRead = n
+		case "cache write":
+			t.CacheWrite = n
+		}
+	}
+	return t, ok
 }

@@ -9,7 +9,7 @@ import (
 
 // The cell pick (decision 0105) keeps the interval-based allowed set, then
 // picks the proven candidate with the lowest expected cost per accepted result
-// (decision 0160). Allowed thin cells receive an exploration share. When no candidates qualify,
+// (decision 0161). Allowed thin cells receive an exploration share. When no candidates qualify,
 // the original allowed rotation applies. When nothing is allowed the caller
 // falls back to the level rule.
 
