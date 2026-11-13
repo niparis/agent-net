@@ -174,7 +174,16 @@ func (d *Daemon) executeCTOOperator(ctx context.Context, raw json.RawMessage) (a
 				ID     int64  `json:"suggestion_id"`
 				Action string `json:"action"`
 			}
-			if json.Unmarshal(p.Arguments, &request) == nil && request.Action == "accept" {
+			if json.Unmarshal(p.Arguments, &request) == nil && request.Action == "accept" && request.ID < 0 {
+				// A charter draft: the answer is the stored row, and it names the
+				// graph entry the accept wrote.
+				var row struct {
+					HistoryID int64 `json:"history_id"`
+				}
+				if json.Unmarshal(data, &row) == nil && row.HistoryID != 0 {
+					plan = append(plan, undoCall("graph_undo", protocol.GraphUndoRequest{ID: row.HistoryID}))
+				}
+			} else if json.Unmarshal(p.Arguments, &request) == nil && request.Action == "accept" {
 				list, e := call("learned_list", json.RawMessage(`{}`))
 				if e != nil {
 					return nil, e

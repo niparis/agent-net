@@ -121,12 +121,18 @@ func (s *Store) MarkLearnedViewed(node string, id int64) error {
 
 // DecideLearned applies a reviewed major suggestion or records its rejection.
 func (s *Store) DecideLearned(id int64, action string) error {
+	return s.decideLearned(id, action, "owner")
+}
+
+// decideLearned is DecideLearned for the owner or the CTO. The actor is
+// recorded in the graph history of the change.
+func (s *Store) decideLearned(id int64, action, actor string) error {
 	if action != "accept" && action != "reject" {
 		return reject("action must be accept or reject")
 	}
 	if id < 0 {
 		// A charter draft (decision 0088) shares the owner's learned list.
-		return s.DecideCharterDraft(-id, action, "owner")
+		return s.DecideCharterDraft(-id, action, actor)
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -164,7 +170,7 @@ func (s *Store) DecideLearned(id int64, action string) error {
 			return err
 		}
 		if exists == 0 {
-			err = setEdgeTx(tx, protocol.Edge{From: v.Node, To: v.Phrase, Kind: v.EdgeKind}, "owner", now)
+			err = setEdgeTx(tx, protocol.Edge{From: v.Node, To: v.Phrase, Kind: v.EdgeKind}, actor, now)
 		}
 	} else {
 		if v.Kind != "add" && v.Kind != "remove" {
@@ -178,7 +184,7 @@ func (s *Store) DecideLearned(id int64, action string) error {
 		if err != nil {
 			return err
 		}
-		err = setCharterTx(tx, v.Node, v.Field, learnedValue(old, v.Phrase, v.Kind), "owner", now)
+		err = setCharterTx(tx, v.Node, v.Field, learnedValue(old, v.Phrase, v.Kind), actor, now)
 	}
 	if err != nil {
 		return err
@@ -204,6 +210,89 @@ func (s *Store) DecideLearned(id int64, action string) error {
 	}
 	if settingsRevisionAfter != settingsRevisionBefore {
 		s.settingsNotify()
+	}
+	return nil
+}
+
+// carryOutLearned settles a learned suggestion whose ask was answered in free
+// text, as the CTO does when it made the change itself. A refusal rejects it;
+// anything else says the change is carried out, so it is marked applied. The
+// change is not made again. A suggestion that is no longer pending is left
+// alone.
+func (s *Store) carryOutLearned(id int64, answer string) error {
+	status := "applied"
+	if learnedRefusal(answer) {
+		status = "rejected"
+	}
+	_, err := s.db.Exec(`UPDATE learned_suggestions SET status=?,decided_at=? WHERE id=? AND status='pending'`, status, s.now().UnixNano(), id)
+	return err
+}
+
+// learnedRefusal says whether a free-text answer declines the suggestion.
+func learnedRefusal(answer string) bool {
+	first := strings.ToLower(strings.TrimSpace(answer))
+	for _, w := range []string{"no", "not", "don't", "dont", "do not", "reject", "decline", "refuse", "never"} {
+		if first == w || strings.HasPrefix(first, w+" ") || strings.HasPrefix(first, w+",") || strings.HasPrefix(first, w+":") || strings.HasPrefix(first, w+".") {
+			return true
+		}
+	}
+	return false
+}
+
+// settleLearnedDone marks a pending major suggestion as applied when its change
+// already exists: the edge is in the graph, or the charter value already holds
+// the phrase (or no longer holds it, for a removal). Whoever made the change,
+// the owner, the CTO or a session, there is nothing left to ask.
+func (s *Store) settleLearnedDone() error {
+	rows, err := s.db.Query(`SELECT id,node,field,edge_kind,kind,phrase FROM learned_suggestions WHERE status='pending' AND severity='major' AND ready_at<=?`, s.now().UnixNano())
+	if err != nil {
+		return err
+	}
+	var pending []LearnedSuggestion
+	for rows.Next() {
+		var v LearnedSuggestion
+		if err = rows.Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, v)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, v := range pending {
+		done := false
+		if v.Field == "edge" {
+			if v.Kind == "add" {
+				err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_edges WHERE source=? AND target=? AND kind=?)`, v.Node, v.Phrase, v.EdgeKind).Scan(&done)
+			}
+		} else {
+			var old string
+			err = s.db.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, v.Node, v.Field).Scan(&old)
+			if err == sql.ErrNoRows {
+				err = nil
+			}
+			if err == nil {
+				has := false
+				for _, item := range strings.Split(old, ";") {
+					if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(v.Phrase)) {
+						has = true
+					}
+				}
+				done = has == (v.Kind == "add")
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if !done {
+			continue
+		}
+		if _, err = s.db.Exec(`UPDATE learned_suggestions SET status='applied',decided_at=? WHERE id=? AND status='pending'`, s.now().UnixNano(), v.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

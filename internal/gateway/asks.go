@@ -543,6 +543,11 @@ func (s *Store) reconcileLearnedAsks() error {
 	if err != nil {
 		return err
 	}
+	// A change made by hand settles its suggestion before any ask is raised
+	// for it, so an answered ask is never raised again.
+	if err := s.settleLearnedDone(); err != nil {
+		return err
+	}
 	if _, err := s.closeAsks(s.db, `kind='learned' AND source_ref LIKE 'learned:%' AND NOT EXISTS (SELECT 1 FROM learned_suggestions l WHERE l.id=CAST(substr(inbox_items.source_ref,9) AS INTEGER) AND l.status='pending')`, nil, protocol.AskReasonResolved); err != nil {
 		return err
 	}

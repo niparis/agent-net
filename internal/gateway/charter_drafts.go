@@ -477,29 +477,68 @@ func (s *Store) PendingCharterDrafts() ([]protocol.CharterDraft, error) {
 // value with the normal charter write at the draft's level, as the actor (the
 // owner or the CTO). The draft row keeps its source.
 func (s *Store) DecideCharterDraft(id int64, action, actor string) error {
+	_, err := s.DecideCharterDraftRow(id, action, actor)
+	return err
+}
+
+// DecideCharterDraftRow is DecideCharterDraft that returns the stored row. For
+// an accept it carries the graph history entry the charter write made, so the
+// caller can undo it with graph_undo.
+func (s *Store) DecideCharterDraftRow(id int64, action, actor string) (protocol.CharterDraft, error) {
+	var none protocol.CharterDraft
 	if action != "accept" && action != "reject" {
-		return reject("action must be accept or reject")
+		return none, reject("action must be accept or reject")
 	}
 	if actor != "owner" && actor != "cto" {
-		return reject("only the owner or the CTO decides a charter draft")
+		return none, reject("only the owner or the CTO decides a charter draft")
 	}
 	var d protocol.CharterDraft
 	err := s.db.QueryRow(`SELECT level,scope,attr,value FROM charter_drafts WHERE id=? AND status='pending'`, id).Scan(&d.Level, &d.Scope, &d.Attr, &d.Value)
 	if err == sql.ErrNoRows {
-		return reject("charter draft is not pending")
+		return none, reject("charter draft is not pending")
 	}
 	if err != nil {
-		return err
+		return none, err
 	}
 	status := "rejected"
+	var history int64
 	if action == "accept" {
+		var before, after int64
+		if err = s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history`).Scan(&before); err != nil {
+			return none, err
+		}
 		if err = s.SetLevelCharter(protocol.CharterSetRequest{Level: d.Level, Node: d.Scope, Attr: d.Attr, Value: d.Value}, actor, false); err != nil {
-			return err
+			return none, err
+		}
+		if err = s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history`).Scan(&after); err != nil {
+			return none, err
+		}
+		if after > before {
+			history = after
 		}
 		status = "accepted"
 	}
-	_, err = s.db.Exec(`UPDATE charter_drafts SET status=?,decided_at=?,decided_by=? WHERE id=?`, status, s.now().UnixNano(), actor, id)
-	return err
+	if _, err = s.db.Exec(`UPDATE charter_drafts SET status=?,decided_at=?,decided_by=? WHERE id=?`, status, s.now().UnixNano(), actor, id); err != nil {
+		return none, err
+	}
+	row, err := s.CharterDraftByID(id)
+	row.HistoryID = history
+	return row, err
+}
+
+// CharterDraftByID reads one draft in any status.
+func (s *Store) CharterDraftByID(id int64) (protocol.CharterDraft, error) {
+	var d protocol.CharterDraft
+	err := s.db.QueryRow(`SELECT id,level,scope,attr,value,source,status,drafted_by,created_at,COALESCE(decided_at,0),COALESCE(decided_by,'') FROM charter_drafts WHERE id=?`, id).
+		Scan(&d.ID, &d.Level, &d.Scope, &d.Attr, &d.Value, &d.Source, &d.Status, &d.DraftedBy, &d.CreatedAt, &d.DecidedAt, &d.DecidedBy)
+	if err == sql.ErrNoRows {
+		return d, reject("unknown charter draft")
+	}
+	if err != nil {
+		return d, err
+	}
+	d.Name = s.draftName(d.Level, d.Scope)
+	return d, nil
 }
 
 // ownerDrafts shows pending drafts in the owner's learned list. They carry the

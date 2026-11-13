@@ -66,4 +66,7 @@ type CharterDraft struct {
 	CreatedAt int64  `json:"created_at"`
 	DecidedAt int64  `json:"decided_at,omitempty"`
 	DecidedBy string `json:"decided_by,omitempty"`
+	// HistoryID is the graph history entry an accept wrote, for graph_undo. It
+	// is set on the answer of a decision only.
+	HistoryID int64 `json:"history_id,omitempty"`
 }

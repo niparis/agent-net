@@ -127,6 +127,9 @@ const (
 	// the owner answers an owner-only ask, and only then does the gateway tell
 	// each target machine to apply.
 	OpPermissionPropose = "agent_permission_propose" // takes PermissionProposeRequest, answers PermissionProposeResult
+	// OpLearnedAnswer decides a learned suggestion or, with a negative
+	// suggestion_id, a charter draft (minus its draft number).
+	OpLearnedAnswer = "learned_answer"
 	// OpPermissionUndo removes exactly the rules one approval added. Owner only,
 	// and the CTO through its process-checked operator path.
 	OpPermissionUndo = "permission_undo" // takes PermissionUndoRequest, answers PermissionUndoResult

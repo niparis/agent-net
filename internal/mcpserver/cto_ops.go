@@ -77,6 +77,7 @@ var ctoOwnerOpPurposes = map[string]string{
 	"bar_edit":         "Add, edit or remove the short rules that workers and reviewers check a project's diffs against. Name the project.",
 	"tools_items":      "List skills and MCP servers. With compact true, one short row per item: id, name, kind, machines, file_count, trimmed and a one-line description, paged by limit and cursor. Read one item in full with tools_item and its id.",
 	"permission_apply": "When the owner tells you in this chat to grant a Claude Code permission rule or folder trust, apply it now with his words quoted in owner_words; do not file a Desk proposal. Give rules and targets (registered repo names) as agent_permission_propose takes them, kind trust with machine and folders, or id alone to approve a pp_ proposal that waits on the Desk. Returns the stored record: each target's status, the rules added and the file written. Undo with permission_undo.",
+	"learned_answer":   "Decide a learned suggestion (suggestion_id, action accept or reject), or a charter draft with suggestion_id as minus its draft number. Read drafts with cto_proposals_find kind draft. Accept on a draft writes the value and returns the stored row with history_id; undo it with graph_change action undo on that id. Reject writes nothing.",
 	"permission_undo":  "Remove exactly the rules or trust one permission approval added, by its pp_ id.",
 }
 

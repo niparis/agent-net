@@ -58,6 +58,9 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		if strings.HasPrefix(q.ID, "pp_") {
 			return d.ctoPermissionProposal(ctx, q.ID)
 		}
+		if draft, ok := ctoCharterDraftID(q.ID); ok {
+			return d.ctoCharterDraft(ctx, draft)
+		}
 		if q.ID != "" {
 			p, ok, err := d.proposalRunner().get(q.ID)
 			if err != nil {
