@@ -1618,6 +1618,17 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	m.fixScroll()
 }
 
+// stopSettled says a pending stop is over: the session left, ended, or went
+// dormant. A session that wakes on message (the CTO) stays online after a
+// stop and only turns dormant, so online alone does not mean the stop is
+// still running.
+func stopSettled(a protocol.AgentView) bool {
+	return !a.Online ||
+		strings.EqualFold(a.Status, "ended") ||
+		strings.EqualFold(a.Status, "offline") ||
+		strings.EqualFold(a.Status, protocol.StatusDormant)
+}
+
 func (m *Model) prunePendingStops() {
 	for id := range m.pendingStops {
 		found, done := false, false
@@ -1626,7 +1637,7 @@ func (m *Model) prunePendingStops() {
 				continue
 			}
 			found = true
-			done = !a.Online || strings.EqualFold(a.Status, "ended") || strings.EqualFold(a.Status, "offline")
+			done = stopSettled(a)
 			break
 		}
 		if !found || done {
@@ -1640,15 +1651,17 @@ func (m *Model) expirePendingStops() {
 		if m.now().Sub(pending.at) < 30*time.Second {
 			continue
 		}
-		name := id
+		name, settled := id, false
 		for _, a := range m.snap.Agents {
 			if a.SessionID == id {
-				name = rowName(a)
+				name, settled = rowName(a), stopSettled(a)
 				break
 			}
 		}
 		delete(m.pendingStops, id)
-		m.say("still running: " + name)
+		if !settled {
+			m.say("still running: " + name)
+		}
 	}
 }
 
