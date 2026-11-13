@@ -161,6 +161,37 @@ type CharterChange struct {
 // hosts a shared MCP server the bot is granted. It is never stored or edited.
 const EdgeCalls = "calls"
 
+// EdgeReportsTo is the org tree (decision 0160): the source Agent reports to
+// the target Agent, or to OrgRoot. An Agent has at most one parent, and the
+// tree has no cycle. A role merger Agent is never a target.
+const EdgeReportsTo = "reports_to"
+
+// OrgRoot is the top of the org tree: the owner. It is not an Agent.
+const OrgRoot = "owner"
+
+// Who started a session (sessions.started_by): agent-net, through a start,
+// a worker, a merger or the CTO, or the owner, for a session agent-net only
+// discovered.
+const (
+	StartedByAgentNet = "agent-net"
+	StartedByOwner    = "owner"
+)
+
+// LeadSetResult is the stored row lead_set answers: the lead Agent and its
+// lead session, when the request named one.
+type LeadSetResult struct {
+	OK          bool     `json:"ok"`
+	Ref         GraphRef `json:"ref"`
+	Agent       string   `json:"agent,omitempty"`
+	LeadSession string   `json:"lead_session,omitempty"`
+}
+
+// EdgeSetResult is the stored edge edge_set answers.
+type EdgeSetResult struct {
+	OK   bool `json:"ok"`
+	Edge Edge `json:"edge"`
+}
+
 // Edge is a directed dependency, deploy or delivery owner relationship.
 type Edge struct {
 	FromRef *GraphRef `json:"-"`

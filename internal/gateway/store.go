@@ -1322,7 +1322,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, orgTreeMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -3137,6 +3137,12 @@ func (s *Store) migrate() error {
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
+		if strings.Contains(migrations[i], orgTreeMarker) {
+			if err := buildOrgTreeOnceTx(tx, s.now().UnixNano()); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
 		var merges, conflicts [][2]string
 		if strings.Contains(migrations[i], "project identity migration") {
 			merges, conflicts, err = migrateProjectIdentities(tx)
@@ -3533,6 +3539,13 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 	n, err := removed.RowsAffected()
 	if err != nil {
 		return "", false, err
+	}
+	// A new record says who started it: agent-net for a worker, the CTO and
+	// a start it reserved; the column default says the owner for the rest.
+	if !known && (in.Worker != nil || in.Harness == "cto" || n > 0) {
+		if _, err = q.Exec(`UPDATE sessions SET started_by=? WHERE id=?`, protocol.StartedByAgentNet, id); err != nil {
+			return "", false, err
+		}
 	}
 	if n == 0 && !known && in.Worker == nil {
 		// Codex can hand a new terminal to the owner before it has a native
@@ -4145,7 +4158,7 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
  'picker_label',wa.picker_label,'picker_note',wa.picker_note,'error',wa.error) FROM worker_assessments wa
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
- COALESCE((COALESCE((SELECT lead_session FROM repo_leads WHERE repo_id=s.repo_id),s.id)=s.id) AND s.agent_id=(SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=r.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=r.id) ELSE r.owner_agent_id END FROM repos r WHERE r.id=s.repo_id),0),
+ COALESCE((COALESCE((SELECT lead_session FROM repo_leads WHERE repo_id=s.repo_id),s.id)=s.id) AND s.agent_id=(SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=r.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=r.id) ELSE r.owner_agent_id END FROM repos r WHERE r.id=s.repo_id) AND NOT EXISTS(SELECT 1 FROM agents ma WHERE ma.id=s.agent_id AND ma.role='merger'),0),
 	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id AND (rl.lead_session IS NULL OR rl.lead_session=s.id)),
  EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (t.lead_session IS NULL OR t.lead_session=s.id) AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
  @MAX@

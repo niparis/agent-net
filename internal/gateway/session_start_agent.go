@@ -106,7 +106,7 @@ func (s *Store) applyStartedAgent(q interface {
 	if !active {
 		return reject("selected Agent was tombstoned before registration")
 	}
-	if _, err = q.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, agent, id); err != nil {
+	if _, err = q.Exec(`UPDATE sessions SET agent_id=?, started_by=? WHERE id=?`, agent, protocol.StartedByAgentNet, id); err != nil {
 		return err
 	}
 	_, err = q.Exec(`DELETE FROM session_agent_starts WHERE node_id=? AND harness=? AND native_id=?`, node, in.Harness, in.NativeID)
@@ -148,7 +148,7 @@ func (s *Store) bindStartedAgent(tx *sql.Tx, node string, p protocol.SessionAgen
 		if old || worker != "" || actualCwd != cwd {
 			return reject("start must bind its newly created session")
 		}
-		if _, err = tx.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, p.AgentID, id); err != nil {
+		if _, err = tx.Exec(`UPDATE sessions SET agent_id=?, started_by=? WHERE id=?`, p.AgentID, protocol.StartedByAgentNet, id); err != nil {
 			return err
 		}
 	} else {

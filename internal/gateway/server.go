@@ -2421,8 +2421,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
-		err = st.SetLead(p, graphActor(raw), false)
-		return map[string]bool{"ok": err == nil}, err
+		if err = st.SetLead(p, graphActor(raw), false); err != nil {
+			return map[string]bool{"ok": false}, err
+		}
+		return st.StoredLead(p.Ref)
 	case "repo.create", "repo.archive", "agent.create", "agent.tombstone":
 		if err := st.requireGraphRefs(); err != nil {
 			return nil, err
@@ -2490,10 +2492,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		} else {
 			err = st.RemoveEdge(p, graphActor(raw))
 		}
-		if err == nil {
-			g.dispatchStepTasks(ctx)
+		if err != nil {
+			return map[string]bool{"ok": true}, err
 		}
-		return map[string]bool{"ok": true}, err
+		g.dispatchStepTasks(ctx)
+		if typ == "edge.remove" {
+			return map[string]bool{"ok": true}, nil
+		}
+		stored, err := st.StoredEdge(p)
+		return protocol.EdgeSetResult{OK: true, Edge: stored}, err
 	case "merger.restore":
 		var p struct {
 			Owner       string                      `json:"owner_session"`
