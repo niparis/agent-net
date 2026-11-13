@@ -65,8 +65,11 @@ both views.
    gets the answer when it is carried out, not only the first. Closing an
    item closes its joined duplicates too.
    Either side of a routed item may close it: when the chief routes an ask to
-   the CTO, both the chief and the CTO can still close it (today the chief is
-   refused once it has routed it, as with i_16a5a8022de2c7d6).
+   a session, the CTO included, both the chief and that session can still
+   close it (the chief was refused once it had routed it, as with
+   i_16a5a8022de2c7d6, and the holder was refused too). Each close keeps who
+   closed it and why. When the holder is offline, the chief may sort the ask
+   again.
 5. **Owner-bound items** (next = owner) must have a one-line question, the
    evidence, a "verified by chief" line (or "unverified" with the reason), a
    recommendation, options, and "discuss". The gateway refuses an owner-bound
@@ -155,7 +158,12 @@ goes on the route as well.
 3. **Claim age:** a claimed ask idle past the stuck-work limit pings the chief,
    never the owner. The morning brief shows it as "still open, N hours". A
    CTO-owned item (state with_cto) idle past the same limit goes back to the
-   chief, because the CTO acts only during owner conversations.
+   chief, because the CTO acts only during owner conversations. A routed ask
+   whose holder session has been offline past the same limit goes back to the
+   chief too, or to the session that replaced the holder (asks routed to
+   offline sessions sat for 76 hours on 2026-11-13). Each return carries a
+   one-line note, such as "back from homelab-agent 4: offline for 76 h", that
+   the chief reads in its batch, and one Desk log line.
 4. **Safety net when the chief is down.** It is based on presence plus missed
    wakes. A wake counts as missed when the chief has not claimed or sorted the
    batch within the wake interval (10 minutes). Items with category security,

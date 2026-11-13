@@ -357,19 +357,19 @@ func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 			return nil, err
 		}
 	}
-	rows, err := s.db.Query(`SELECT id,kind,session_id,from_kind,about_kind,about_id,text,recommendation,options,created_at
+	rows, err := s.db.Query(`SELECT id,kind,session_id,from_kind,about_kind,about_id,text,recommendation,options,back_note,created_at
 		FROM inbox_items WHERE status='open' AND next_who=? AND chief_sent_at=0 ORDER BY created_at,id LIMIT ?`, protocol.AskNextChief, protocol.ChiefBatchCap)
 	if err != nil {
 		return nil, err
 	}
 	type pending struct {
-		id, kind, session, fromKind, aboutKind, aboutID, text, rec, options string
-		created                                                             int64
+		id, kind, session, fromKind, aboutKind, aboutID, text, rec, options, back string
+		created                                                                   int64
 	}
 	var list []pending
 	for rows.Next() {
 		var p pending
-		if err := rows.Scan(&p.id, &p.kind, &p.session, &p.fromKind, &p.aboutKind, &p.aboutID, &p.text, &p.rec, &p.options, &p.created); err != nil {
+		if err := rows.Scan(&p.id, &p.kind, &p.session, &p.fromKind, &p.aboutKind, &p.aboutID, &p.text, &p.rec, &p.options, &p.back, &p.created); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -399,6 +399,9 @@ func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 			fmt.Fprintf(&b, ", about %s %s", p.aboutKind, p.aboutID)
 		}
 		fmt.Fprintf(&b, "\nQuestion: %s", p.text)
+		if p.back != "" {
+			fmt.Fprintf(&b, "\nWhy it is back: %s", p.back)
+		}
 		if p.options != "" && p.options != "[]" {
 			fmt.Fprintf(&b, "\nOptions: %s", p.options)
 		}
@@ -688,11 +691,14 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 		owner = n > 0
 	}
-	if !owner && (chief == "" || chief != q.SessionID) {
+	// The session that holds a routed ask may close it (decision 0150): either
+	// side of a routed item may close it. It may not sort it any other way.
+	holder := !owner && q.Result == protocol.AskSortClose && q.SessionID != "" && q.SessionID != chief
+	if !owner && !holder && (chief == "" || chief != q.SessionID) {
 		return out, none, reject("only the chief of staff may sort asks")
 	}
 	var chiefNode string
-	if !owner {
+	if !owner && !holder {
 		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil || chiefNode != node {
 			return out, none, reject("the chief of staff is not on this machine")
 		}
@@ -758,11 +764,16 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 		return out, none, tx.Commit()
 	}
-	// Either side of a routed item may close it (decision 0150): the chief
-	// still closes or merges an ask it sent to the CTO.
-	closing := q.Result == protocol.AskSortClose || q.Result == protocol.AskSortMerge
-	if a.status != "open" || (a.next != protocol.AskNextChief && !(closing && a.owner == protocol.DeskOwnerCTO)) {
-		return out, none, reject("ask %s is not waiting for the chief of staff", q.Ask)
+	sorter, sorterName, source := chief, "chief", "chief"
+	if holder {
+		var holderNode string
+		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, q.SessionID).Scan(&holderNode); err != nil || holderNode != node ||
+			a.status != "open" || a.next != q.SessionID {
+			return out, none, reject("only the chief of staff or the session that holds ask %s may close it", q.Ask)
+		}
+		sorter, sorterName, source = q.SessionID, sessionLabel(tx, q.SessionID), "desk"
+	} else if err := chiefMaySort(tx, q, a); err != nil {
+		return out, none, err
 	}
 	now := s.now()
 	reason := strings.TrimSpace(q.Reason)
@@ -777,7 +788,7 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 			return out, none, err
 		}
 	}
-	rec := protocol.AskSort{Ask: q.Ask, At: now, Sorter: chief, Result: q.Result, Into: q.Into, To: q.To, Reason: reason,
+	rec := protocol.AskSort{Ask: q.Ask, At: now, Sorter: sorter, Result: q.Result, Into: q.Into, To: q.To, Reason: reason,
 		Priority: q.Priority, WhyYou: strings.TrimSpace(q.WhyYou), PrevNext: a.next, PrevStatus: a.status, PrevAnswer: a.answer}
 	if a.answeredAt != 0 {
 		rec.PrevAnsweredAt = time.Unix(0, a.answeredAt).UTC()
@@ -801,10 +812,12 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 				return out, none, err
 			}
 			logText = fmt.Sprintf("Chief merged ask into %s: %s", q.Into, text)
+		} else if holder {
+			logText = sorterName + " closed ask: " + text
 		} else {
 			logText = "Chief closed ask: " + text
 		}
-		if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer=?, answered_at=? WHERE id=?`, "chief: "+reason, now.UnixNano(), q.Ask); err != nil {
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer=?, answered_at=? WHERE id=?`, sorterName+": "+reason, now.UnixNano(), q.Ask); err != nil {
 			return out, none, err
 		}
 		out.Next, out.State = "", protocol.AskClosed
@@ -848,7 +861,7 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		if _, err := tx.Exec(`UPDATE inbox_items SET next_who=? WHERE id=?`, q.To, q.Ask); err != nil {
 			return out, none, err
 		}
-		body := fmt.Sprintf("The chief of staff sent you ask %s from %s: %s\nWhy it reached you: %s\nAnswer it yourself only if you can. Anything that needs the owner goes to them with agent_owner_ask.",
+		body := fmt.Sprintf("The chief of staff sent you ask %s from %s: %s\nWhy it reached you: %s\nAnswer it yourself only if you can, and close it with agent_ask_sort (result close) once it is resolved. Anything that needs the owner goes to them with agent_owner_ask.",
 			q.Ask, sessionLabel(tx, a.session), strings.TrimSpace(a.text), reason)
 		m, err := s.storeAgentNetMessage(tx, q.To, body, q.Ask, now)
 		if err != nil {
@@ -886,7 +899,7 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 		logText = fmt.Sprintf("Chief sent ask to you (priority %d): %s", q.Priority, text)
 	}
-	if err := s.commitSort(tx, rec, now, logText, a, "chief"); err != nil {
+	if err := s.commitSort(tx, rec, now, logText, a, source); err != nil {
 		return out, none, err
 	}
 	if q.Rule != "" {
@@ -896,6 +909,37 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 	}
 	return out, none, tx.Commit()
+}
+
+// chiefMaySort says whether the chief may sort ask a now. It may sort an ask
+// that waits for it. It may close or merge an ask it routed to a session, the
+// CTO included, because either side of a routed item may close it (decision
+// 0150). It may sort again an ask it routed whose holder is offline, so an ask
+// does not stay with a session that is gone.
+func chiefMaySort(tx *sql.Tx, q protocol.AskSortRequest, a askSortRow) error {
+	refuse := reject("ask %s is not waiting for the chief of staff", q.Ask)
+	if a.status != "open" {
+		return refuse
+	}
+	if a.next == protocol.AskNextChief {
+		return nil
+	}
+	closing := q.Result == protocol.AskSortClose || q.Result == protocol.AskSortMerge
+	if closing && a.owner == protocol.DeskOwnerCTO {
+		return nil
+	}
+	if a.next == "" || a.next == protocol.AskNextOwner {
+		return refuse
+	}
+	var routed, online int
+	if err := tx.QueryRow(`SELECT EXISTS (SELECT 1 FROM ask_sorts WHERE ask_id=? AND result=?),
+		EXISTS (SELECT 1 FROM sessions WHERE id=? AND online=1 AND archived_at=0)`, q.Ask, protocol.AskSortSend, a.next).Scan(&routed, &online); err != nil {
+		return err
+	}
+	if routed == 1 && (closing || online == 0) {
+		return nil
+	}
+	return refuse
 }
 
 // carriedOut records that the answer of an answered ask was carried out
@@ -934,8 +978,12 @@ func (s *Store) carriedOut(tx *sql.Tx, chief, ask, reason string, a askSortRow) 
 	return protocol.AskSortResult{Ask: ask, Result: protocol.AskSortDone, State: protocol.DeskCarriedOut}, nil
 }
 
-// commitSort writes the history row and the log line of one sort.
+// commitSort writes the history row and the log line of one sort. A sort
+// answers the note of a return, so the note goes.
 func (s *Store) commitSort(tx *sql.Tx, rec protocol.AskSort, now time.Time, logText string, a askSortRow, source string) error {
+	if _, err := tx.Exec(`UPDATE inbox_items SET back_note='' WHERE id=? AND back_note<>''`, rec.Ask); err != nil {
+		return err
+	}
 	var answered int64
 	if !rec.PrevAnsweredAt.IsZero() {
 		answered = rec.PrevAnsweredAt.UnixNano()

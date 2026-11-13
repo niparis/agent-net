@@ -2916,7 +2916,7 @@ Intake rules:
 - **Waiting sessions.** A wait that is not an explicit `agent_owner_ask` becomes a `waiting` ask at once when the owner has not typed in that session in the last 30 minutes. While he works in it, the ask comes only after the session has waited 2 minutes (see "Waiting sessions on the Desk").
 - **Joined askers.** When the item is answered, every joined asker gets the answer as a message too. When the item is answered or closed, its joined rows follow it.
 - **Owner-bound items need options.** An item an agent creates with `next_who` owner, and a chief sort with `result: "owner"`, are refused when the kind has no fixed answers (`question`, `feature_idea`, `check`, `waiting`, `session_stall`) and there are no options. The error names `options`. Generated notices (sign-in, machine, brief, permission and the other gateway kinds) are not affected, and an ask that falls to the owner because no chief can work keeps its old path.
-- **Routed items.** After the chief sends an ask to the CTO's session, both may close it: the chief with `agent_ask_sort` `close` or `merge`, the CTO with `answer` `dismiss`. Closing it closes its joined rows.
+- **Routed items.** Either side of a routed item may close it. After the chief sends an ask to a session, the CTO included, the chief may still `close` or `merge` it with `agent_ask_sort`. The session that holds it may `close` it with `agent_ask_sort` too (only `close`); the CTO can also use `answer` `dismiss`. A close keeps who closed it and why: the answer is `<closer>: <reason>`, and the `ask_sorts` row names the closer as the sorter. When the holder is offline, the chief may sort the ask again with any result (for example `send` it to another session). Closing it closes its joined rows.
 - **Check items** carry no generated recommendation any more; the chief turns them into a decision or resolves them.
 - **Upgrade (plan step (d)).** On the owner's words ("note that i dont care if the inbox is flushed. Right now it's pretty bad, i only use it when forced."), one migration closes every open item that waits on the owner (`next_who` empty or `owner`), once. Each row is kept: `status` closed, `answer` `flushed_by_front_door`, `answered_at` the time of the flush. A duplicate that joined such an item closes with it. Two kinds stay open because nothing asks them again: a delivery approval (it gates a merge) and a permission ask (it holds a proposal). Items that wait on the chief, the CTO or a lead stay as they are. Nothing is sent to the askers. The Desk log gets one line, `Front door: closed N open Desk items that waited on you (flushed_by_front_door)`, and `owner_settings` keeps the key `front_door_flush_v1` with the count. A store that has that key never flushes again, so a replay of the migrations closes nothing opened after the front door.
 
@@ -3107,8 +3107,21 @@ asks from holding a batch back.
   newest sort. The daily brief wake carries the same lines under "Still open". The gateway looks for them once a minute.
 - *With the CTO.* An open item with the CTO (state `with_cto`) that has not moved
   for the same limit goes back to the chief (`next = chief`, a new clock, sent in
-  the next batch), with the Desk log line `The CTO did not act on it in N hours,
-  so it is back with the chief: ...`. The CTO acts only in owner conversations.
+  the next batch), with the Desk log line `Ask <id> is back with the chief, back
+  from <CTO>: no move for N h: ...`. The CTO acts only in owner conversations.
+- *Offline holder.* An ask the chief sent to a session (state `verifying`) whose
+  holder has been offline (or archived) for the same limit, and that has not
+  moved for the limit either, moves on the same minute tick. When the holder was
+  replaced (`replaced_by`) and the replacement is not itself offline past the
+  limit, the ask goes to the replacement, which gets a message from `agent-net`
+  with the ask and the note. Otherwise it goes back to the chief like a CTO item.
+  No new limit: both use `delivery.step_stuck`.
+- *Back note.* Every return keeps a one-line note in `inbox_items.back_note`,
+  such as `back from homelab-agent 4: offline for 76 h` or `back from the CTO: no
+  move for 12 h`. The chief's batch shows it under the ask as `Why it is back:
+  <note>`, and the Desk log gets one line (`Ask <id> is back with the chief,
+  <note>: ...` or `Ask <id> went to <replacement>, <note>: ...`). The next sort
+  of the ask clears the note.
 - *Safety net.* It applies only when the chief cannot work (offline, no quota, a
   harness error or silent, see below). A wake is the batch message to the chief.
   It is missed when the chief has not claimed or sorted the ask within
@@ -3158,11 +3171,13 @@ asks that wait for it. `chief_get` returns the reason in `down` (empty when the
 chief can work). No setting and no approval gate comes with this.
 
 **`agent_ask_sort {ask, result, reason, into, to, priority, why_you, sorter, since, until, from_id, to_id}`**
-(any agent session; only the live chief may call it, others are refused).
+(any agent session; only the live chief may sort, others are refused, except
+that the session that holds a routed ask may `close` it).
 `reason` is required for every sort except `undo` and `list`, up to 300
 characters. `result` is one of:
 
-- `close`: the ask closes; its answer is `chief: <reason>`.
+- `close`: the ask closes; its answer is `chief: <reason>`, or `<holder>:
+  <reason>` when the session that holds it closes it.
 - `merge`: the ask closes; `into` is another open ask, which gets the line
   `merged: <id>` in its detail.
 - `send`: `to` is a live session that gets the ask as a message from `agent-net`
@@ -3372,7 +3387,7 @@ A session can wait for you: it asks permission for a tool, asks a question, or w
 
 Non-worker sessions on Claude Code, Codex, Pi and OpenCode can call `agent_owner_ask` with `kind: "question"`, `text`, optional `options`, optional `urgency`, and optional `replaces` (the ID of one earlier pending ask from this session to retire). A new ask adds to the pending ones: it never retires an earlier ask by itself, of the same kind or any other, so an approval for a data delete stays open when the same session later asks about money. Giving `replaces` closes exactly the named Inbox item as replaced; an empty question closes it without creating a new one. The result lists the session's other open asks in `other_open` (each with `id`, `kind` and the first line of `text`, at most 100 characters), with a note that `replaces` retires one of them, so the asking agent can retire a stale ask on purpose. This holds for questions, approvals and ideas, for asks sent to a team lead, and for the CTO's `agent_owner_ask`. The question is one line, cut to 200 characters with control characters removed. Options are up to four short strings, cleaned the same way. Urgency is `normal` or `high`. The guidance says that owner questions go to the chief of staff with this tool, and that an agent does not end a turn waiting on you. A plain turn end is not a question; a turn that ends on a question to you is caught as described in [owner questions go to the chief](#owner-questions-go-to-the-chief). A worker cannot call this tool; it must put the question in its hand-back or ask its caller with `agent_message_reply`. Worker rows do not appear in the TUI Inbox. When a worker reports a wait, its caller receives one blocked notice for that wait, naming the kind (approval or answer), the start time and the question text. The caller started the worker and must unblock it, so the text is for the caller, not an outside peer.
 
-The daemon stores the question as a `question` waiting state with the options, urgency and start time. It sends the state with the session to the gateway, and every machine reads it from the agent list. A wait that is not an explicit `agent_owner_ask` becomes a Desk ask (kind `waiting`) at once, bound for the chief, when you have not typed in that session in the last 30 minutes. While you work in it, the ask comes only after the session has waited 2 minutes (decision 0150): a shorter wait makes no ask. The gateway's minute reconcile opens the ask of a wait that is old enough. The existing harness hooks still report permission prompts, forms and input dialogs. `agent_announce` also accepts an optional `waiting` string as a fallback.
+The daemon stores the question as a `question` waiting state with the options, urgency and start time. It sends the state with the session to the gateway, and every machine reads it from the agent list. A wait that is not an explicit `agent_owner_ask` becomes a Desk ask (kind `waiting`) at once, bound for the chief, when you have not typed in that session in the last 30 minutes. While you work in it, the ask comes only after the session has waited 2 minutes (decision 0150): a shorter wait makes no ask. The gateway's minute reconcile opens the ask of a wait that is old enough. A wait has one ask: once that ask is answered or closed, the same wait (same session and the same text once case, white space and ids are folded) is not raised again. A new wait, one with a new start time after the session stopped waiting, makes a new ask. The existing harness hooks still report permission prompts, forms and input dialogs. `agent_announce` also accepts an optional `waiting` string as a fallback.
 
 Open the Desk, select a waiting session and press Enter to go into it. On an inbox question, `t` opens a one-line answer box. The first option, if any, is filled in. Enter sends the text as an owner message; Esc cancels. On a question or approval with options, Enter opens the details, up and down mark an option, and Enter answers the marked one. The digits `1` to `7` keep switching tabs there. The wait clears when the owner message is delivered. It also clears when the owner types a Claude Code prompt (with the `needs-hook` installed), a Pi or OpenCode prompt, or a Codex turn starts; when a permission or form settles; when the session becomes busy; or on an announce without `waiting`. A wait that a harness event reported (a permission, a form, a dialog) also ends with the turn: when a session goes from busy to idle, or a plugin says hello again while busy, that wait is dropped. This covers a permission that was denied or interrupted. An explicit `agent_owner_ask` and an announced `waiting` outlive the turn. Dismissing the question or approval on the Desk ends the wait too: the gateway tells the session's machine. If the gateway is down, a queued owner message clears the wait when delivered.
 

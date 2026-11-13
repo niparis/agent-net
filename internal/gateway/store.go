@@ -1322,7 +1322,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1777,6 +1777,15 @@ const ownerTypedMigration = `
 SELECT 1 /* session owner typed column */;
 `
 
+// askBackNoteMigration keeps why a routed ask came back to the chief or went
+// on to a replacement (decision 0150, claim age): its holder went offline, or
+// the CTO did not act. The chief reads the note in its next batch. The column
+// is added in the migration loop, so replaying it is safe.
+const askBackNoteMigration = `
+-- Claim age (decision 0150): inbox back note column.
+SELECT 1 /* inbox back note column */;
+`
+
 // deskItemShapeMigration gives each Desk item an owner (chief or cto), a
 // state and a category, and links a duplicate to the open item it joined
 // (decision 0150). A rule judgment gains its action and category, a sort
@@ -2102,6 +2111,17 @@ func (s *Store) migrate() error {
 			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='owner_typed_at'`).Scan(&has)
 			if err == nil && has == 0 {
 				_, err = tx.Exec(`ALTER TABLE sessions ADD COLUMN owner_typed_at INTEGER NOT NULL DEFAULT 0`)
+			}
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "inbox back note column") {
+			var has int
+			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name='back_note'`).Scan(&has)
+			if err == nil && has == 0 {
+				_, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN back_note TEXT NOT NULL DEFAULT ''`)
 			}
 			if err != nil {
 				tx.Rollback()
