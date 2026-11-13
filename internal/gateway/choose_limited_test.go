@@ -60,6 +60,7 @@ func TestChooseSkipsAProviderALiveSessionReportedLimited(t *testing.T) {
 	if result.Choice.Name != "deepseek" {
 		t.Fatalf("chose %q, want the provider without a reported limit", result.Choice.Name)
 	}
+	t.Logf("chosen %s, note: %s", result.Choice.Name, result.Note)
 	for _, want := range []string{"terra", "limited until", "ChatGPT usage limit"} {
 		if !strings.Contains(result.Note, want) {
 			t.Errorf("note %q lacks %q", result.Note, want)
