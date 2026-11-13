@@ -80,7 +80,10 @@ func (d *Daemon) applyCTOClaudeRole(ctx context.Context, spec *claudeBackground)
 	spec.Name, spec.Settings = ctoClaudeJobName, string(settings)
 	// --strict-mcp-config keeps the CTO's identity: its one agent-net server
 	// is cto-mcp, never the owner's ordinary agent-net server.
-	spec.Flags = []string{"--system-prompt", d.ctoSystemPrompt(ctx), "--mcp-config", string(mcp), "--strict-mcp-config"}
+	// The prompt is appended, never a replacement: --system-prompt would drop
+	// Claude Code's default prompt and with it the built-in tool guidance. The
+	// CTO has full tools (decision 0157), so it needs that guidance.
+	spec.Flags = []string{"--append-system-prompt", d.ctoSystemPrompt(ctx), "--mcp-config", string(mcp), "--strict-mcp-config"}
 	// Every session that Claude's service starts later inherits the environment
 	// of the first launch: do not hand it a variable that turns the wheel off.
 	spec.DropEnv = []string{"CLAUDE_CODE_DISABLE_MOUSE"}

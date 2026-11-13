@@ -115,20 +115,34 @@ func (d *Daemon) standingOrdersBrief(ctx context.Context) string {
 	return protocol.StandingOrdersBrief(res.Orders)
 }
 
-// ctoSystemPrompt is the CTO brief plus the owner's standing orders, for a
-// harness that starts a conversation with a system prompt.
+// ctoStartBlock is what a new CTO conversation reads besides its brief: the
+// owner's standing orders and the titles of its gateway notes (decision 0158).
+// The CTO has no policy-hook turn, which is how a coding Claude session gets
+// the notes index, so its start text is the one place it can arrive. Before the
+// CTO's network session exists there are no notes to show.
+func (d *Daemon) ctoStartBlock(ctx context.Context) string {
+	block := d.standingOrdersBrief(ctx)
+	if sid := d.ctoSessionID(); sid != "" {
+		_, notes := d.sessionContext(ctx, sid, "")
+		block = joinCharter(block, notes)
+	}
+	return block
+}
+
+// ctoSystemPrompt is the CTO brief plus its start block, for a harness that
+// starts a conversation with a system prompt.
 func (d *Daemon) ctoSystemPrompt(ctx context.Context) string {
-	if brief := d.standingOrdersBrief(ctx); brief != "" {
-		return ctoBrief + "\n\n" + brief
+	if block := d.ctoStartBlock(ctx); block != "" {
+		return ctoBrief + "\n\n" + block
 	}
 	return ctoBrief
 }
 
-// ctoFirstTurn puts the standing orders in front of the first message of a
+// ctoFirstTurn puts the start block in front of the first message of a
 // conversation, for a harness whose system prompt is fixed at process start.
 func (d *Daemon) ctoFirstTurn(ctx context.Context, text string) string {
-	if brief := d.standingOrdersBrief(ctx); brief != "" {
-		return brief + "\n\n" + text
+	if block := d.ctoStartBlock(ctx); block != "" {
+		return block + "\n\n" + text
 	}
 	return text
 }

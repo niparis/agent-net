@@ -32,6 +32,14 @@ This replaces decision 0035 rule 5.
   and the `general` subagent is no longer disabled. The startup check that
   refused a CTO with built-in tools is removed. Claude's `--help` must still list
   `--strict-mcp-config`.
+- **The CTO keeps Claude Code's default system prompt.** The CTO prompt is
+  added with `--append-system-prompt`, not `--system-prompt`. `--system-prompt`
+  replaces Claude Code's whole default prompt, including its guidance for the
+  built-in tools. That fitted a CTO with no tools. It is wrong for one with full
+  tools. The CTO also gets the titles of its gateway notes (decision 0158) in
+  its start text, after the standing orders. A coding session gets them through
+  the policy hook on each turn, but the CTO has no such turn, so its start text
+  is the only place they can arrive.
 - **Its own MCP server stays the only agent-net server.** The CTO keeps
   `--strict-mcp-config` with only `agent-net cto-mcp`. This is its identity, not
   a tool limit: with the ordinary agent-net server it would register a second

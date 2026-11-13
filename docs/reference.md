@@ -334,6 +334,10 @@ state. The daemon passes a private MCP configuration with `--mcp-config` and
 ordinary agent-net MCP tools are not registered for this session.
 Claude has its built-in tools and reads the owner's Claude settings, hooks and
 plugins, as a coding session does ([decision 0157](decisions/0157-cto-full-power-and-own-folders.md)).
+The CTO prompt is added with `--append-system-prompt`, so Claude Code's default
+system prompt, with its built-in tool guidance, stays. The CTO's start text
+(its brief, the owner's standing orders and the titles of its gateway notes)
+is part of that prompt, or of the first message for OpenCode.
 The CTO starts through the same start path as every other session (decision
 0156). Its role (name `agent-net-cto`, the system prompt, the private MCP config,
 `--strict-mcp-config` and the `cto_op` hook in its launch settings) is
@@ -767,7 +771,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 
 Standing orders are the owner's lasting instructions to the CTO. The gateway keeps them in the `standing_orders` table, so they survive CTO restarts and machine changes. Each order has an `id`, `text`, `saved_at` and `source`: `owner` for the owner's own words typed in the TUI, `cto` when the CTO saved it on the owner's instruction.
 
-The CTO tool `cto_standing_orders` has the actions `save` (`text`), `read` (`order_id`), `list` and `remove` (`order_id`). It answers with `orders` (all, oldest first) and `order`. A save or a remove leaves an Inbox notice with an undo (remove for a save, restore for a remove). The CTO reads the orders at the start of every conversation: a Claude CTO gets them after the brief in its system prompt, an OpenCode CTO gets them in front of the first message of a new conversation.
+The CTO tool `cto_standing_orders` has the actions `save` (`text`), `read` (`order_id`), `list` and `remove` (`order_id`). It answers with `orders` (all, oldest first) and `order`. A save or a remove leaves an Inbox notice with an undo (remove for a save, restore for a remove). The CTO reads the orders at the start of every conversation: a Claude CTO gets them after the brief in its appended system prompt, an OpenCode CTO gets them in front of the first message of a new conversation. The titles of the CTO's gateway notes follow the orders in the same place ([decision 0158](decisions/0158-gateway-notes-v1.md)).
 
 The owner sees and edits them in the TUI, Settings, section "Standing orders and notes": enter adds one, `x` removes the selected one and `u` puts the last removed one back. The same section lists the gateway notes (below). The operator method is `standing_orders` (`action`, `order_id`, `text`, `restore`); a save from the operator method is always source `owner`. The gateway frames are `standing.list`, `standing.save` and `standing.remove`.
 

@@ -25,8 +25,14 @@ func TestClaudeStartSpecAppliesTheCTORole(t *testing.T) {
 			t.Errorf("%s = %q (present %v), want %q in %q", flag, got, contains(args, flag), want, args)
 		}
 	}
-	if !contains(args, "--strict-mcp-config") || !strings.Contains(argValue(args, "--system-prompt"), "You are the CTO") {
+	// The CTO's prompt is appended, so Claude Code's default prompt stays: auto
+	// memory and the built-in tool guidance are in the CTO's context as in any
+	// coding session (decision 0157). --system-prompt would replace all of it.
+	if !contains(args, "--strict-mcp-config") || !strings.Contains(argValue(args, "--append-system-prompt"), "You are the CTO") {
 		t.Errorf("role flags missing: %q", args)
+	}
+	if contains(args, "--system-prompt") {
+		t.Errorf("the CTO must keep Claude Code's default system prompt: %q", args)
 	}
 	var mcp struct {
 		Servers map[string]struct {
