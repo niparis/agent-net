@@ -1,9 +1,9 @@
 # 0163 - A decision made in two places is a defect: find, fix, lock
 
 Date: 2026-11-13
-Status: Approach approved by the owner on 2026-11-13 ("I think that's a great
-approach btw i would like to codify it"). This file codifies it. Building the
-pieces in "Build" needs a design per piece and the owner's go.
+Status: Proposed, NOT approved. The owner agrees with the direction but says
+it is not a complete solution (2026-11-13). Nothing in "Build" starts from this
+file.
 
 ## Problem
 
