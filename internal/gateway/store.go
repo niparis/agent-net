@@ -1787,7 +1787,7 @@ SELECT 1 /* inbox back note column */;
 `
 
 // permissionOwnerWordsMigration keeps the owner's quoted chat words on a
-// permission proposal the CTO applied on his instruction (decision 0159). The
+// permission proposal the CTO applied on his instruction. The
 // column is added in the migration loop, so replaying it is safe.
 const permissionOwnerWordsMigration = `
 -- CTO applies permissions on the owner's words (decision 0159): owner words column.

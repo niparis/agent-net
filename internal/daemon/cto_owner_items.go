@@ -215,7 +215,7 @@ func ctoOwnerAskRow(ask protocol.Ask) map[string]any {
 }
 
 // ctoPermissionApplyCall is the call that applies a waiting permission
-// proposal on the owner's own chat words (decision 0159).
+// proposal on the owner's own chat words.
 func ctoPermissionApplyCall(id string) string {
 	return ctoOwnerCall("cto_op", map[string]any{"method": protocol.OpPermissionApply, "args": map[string]any{"id": id, "owner_words": "<quote the owner's instruction>"}})
 }

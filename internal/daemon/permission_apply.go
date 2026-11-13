@@ -15,7 +15,7 @@ import (
 
 // Claude Code permission rules (decision 0127). The gateway sends these frames
 // only after the owner answered a permission ask, or after the CTO applied the
-// owner's direct chat instruction (decision 0159). They are handled on the
+// owner's direct chat instruction. They are handled on the
 // gateway link and nowhere else: a local session has no method that can write
 // these files.
 //

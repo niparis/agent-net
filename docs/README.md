@@ -38,7 +38,6 @@ These files record how the project was planned and built. They are kept for cont
 - [brief.md](brief.md): the original brief.
 - [review.md](review.md): review of the brief and the build order.
 - [decisions/](decisions/): decisions taken, one file each. [0003](decisions/0003-gateway-record-and-inventory.md) covers the gateway log, repo info, harness inventory and retention. [0005](decisions/0005-registered-projects.md) covers registered projects. [0004](decisions/0004-tui-and-event-feed.md) covers the TUI, session mode and model, and the event feed.
-- [0159](decisions/0159-cto-applies-permissions-on-owner-words.md): the CTO applies a permission rule or folder trust the owner gives in its chat, with his quoted words as the record; the Desk stays for sessions he does not watch.
 - [0158](decisions/0158-gateway-notes-v1.md): gateway notes version 1: named notes in the owner judgment store, with scope, kind and rules that keep the start text short.
 - [0156](decisions/0156-one-session-model.md): the CTO is an ordinary session with a role; one start path for it (part A).
 - [0157](decisions/0157-cto-full-power-and-own-folders.md): the CTO has full built-in tools and a hook that allows easily reverted ops; it opens like a coding Claude session; the merger has its own folder (part B).

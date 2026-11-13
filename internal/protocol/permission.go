@@ -6,7 +6,7 @@ package protocol
 // the target machines to write <repo>/.claude/settings.local.json. No agent
 // can apply a proposal without that answer. The one other path is the owner's
 // direct instruction in the CTO chat: the CTO applies it with his quoted words
-// as the record (decision 0159).
+// as the record.
 
 // The two proposal kinds. A permissions proposal carries allow rules for
 // repositories; a trust proposal carries folders on one machine.
@@ -89,7 +89,7 @@ type PermissionProposal struct {
 	DeskLogID    int64                   `json:"desk_log_id,omitempty"`
 	DedupeKey    string                  `json:"dedupe_key,omitempty"`
 	// OwnerWords quotes the owner's chat instruction when the CTO applied the
-	// proposal on his words instead of a Desk answer (decision 0159).
+	// proposal on his words instead of a Desk answer.
 	OwnerWords string `json:"owner_words,omitempty"`
 }
 
@@ -127,7 +127,7 @@ type PermissionApplyResult struct {
 }
 
 // FramePermissionOwnerApply is the gateway frame behind the owner operation
-// permission_apply (decision 0159). The owner's direct instruction is his
+// permission_apply. The owner's direct instruction is his
 // approval: the gateway stores his quoted words as the record and applies
 // through the same per-machine frames as a Desk approval. Only the owner's own
 // operator path, or the CTO's process-checked one, reaches it.

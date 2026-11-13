@@ -13,8 +13,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The owner told the CTO in its chat to grant a rule, and the CTO applied it
-// (decision 0159). The Desk log shows the grant with the owner's words, and
+// The owner told the CTO in its chat to grant a rule, and the CTO applied it. The Desk log shows the grant with the owner's words, and
 // its undo removes exactly that grant. Frames at 80x24 and 120x34 go to
 // AGENT_NET_PROOF_DIR when it is set (scripts/visual-proof.sh).
 func TestVisualProofCTOPermissionGrant(t *testing.T) {

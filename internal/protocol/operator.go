@@ -131,7 +131,7 @@ const (
 	// and the CTO through its process-checked operator path.
 	OpPermissionUndo = "permission_undo" // takes PermissionUndoRequest, answers PermissionUndoResult
 	// OpPermissionApply applies permission rules or folder trust on the
-	// owner's quoted words (decision 0159). Owner only, and the CTO through its
+	// owner's quoted words. Owner only, and the CTO through its
 	// process-checked operator path.
 	OpPermissionApply = "permission_apply" // takes PermissionOwnerApplyRequest, answers PermissionProposal
 

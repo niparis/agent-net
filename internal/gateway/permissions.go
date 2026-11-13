@@ -24,7 +24,7 @@ import (
 // route-fixed to the owner, so the chief of staff never adopts it. No agent can
 // apply a proposal. The owner's direct instruction in the CTO chat is the one
 // other approval: the CTO applies it with his quoted words, which the proposal
-// keeps as the record (decision 0159).
+// keeps as the record.
 
 const permissionAskPrefix = "permission:"
 
@@ -495,7 +495,7 @@ func (s *Store) rejectPermissionTx(tx *sql.Tx, itemID string) error {
 }
 
 // ApprovePermissionOnOwnerWords records the owner's direct chat instruction as
-// the approval of one permission change (decision 0159). With an id it
+// the approval of one permission change. With an id it
 // approves a proposal that waits on the Desk and closes its Desk item with an
 // answer that names who acted and the owner's words. Without one it stores a
 // new, already approved proposal and opens no ask. The owner's words are
@@ -736,7 +736,7 @@ func (g *Gateway) applyPermissionProposal(ctx context.Context, itemID string) ([
 
 // ownerApplyPermission is the owner operation permission_apply: it records the
 // owner's words as the approval, applies on each target machine, and returns
-// the stored proposal with its per-target results (decision 0159).
+// the stored proposal with its per-target results.
 func (g *Gateway) ownerApplyPermission(ctx context.Context, frame protocol.PermissionOwnerApplyFrame) (protocol.PermissionProposal, error) {
 	id, err := g.store.ApprovePermissionOnOwnerWords(frame)
 	if err != nil {

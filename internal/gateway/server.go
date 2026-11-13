@@ -2186,7 +2186,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case protocol.FramePermissionOwnerApply:
 		// The owner's operator path, or the CTO's process-checked one, on the
-		// owner's quoted words (decision 0159). The daemon sends it only from
+		// owner's quoted words. The daemon sends it only from
 		// those paths; the owner session it names is checked here.
 		var p protocol.PermissionOwnerApplyFrame
 		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
