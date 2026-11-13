@@ -57,44 +57,6 @@ type PickerCostBacktestResult struct {
 	Prices int
 }
 
-// noticeUsage reads the "tokens:" line of every stored worker notice, by worker
-// session. Runs that ended before the gateway kept usage by kind have only
-// this. A session's notices are cumulative, so the largest count of each kind
-// stands. It is for the backtest only.
-func (s *Store) noticeUsage() (map[string]protocol.RunTokens, error) {
-	rows, err := s.db.Query(`SELECT body FROM messages WHERE body LIKE '%[agent-net worker notice]%' AND body LIKE '%tokens: %'`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]protocol.RunTokens{}
-	for rows.Next() {
-		var body string
-		if err := rows.Scan(&body); err != nil {
-			return nil, err
-		}
-		if !strings.Contains(body, "\n") {
-			// A body kept with its line breaks escaped.
-			body = strings.ReplaceAll(body, `\n`, "\n")
-		}
-		var session string
-		var tokens protocol.RunTokens
-		var found bool
-		for _, line := range strings.Split(body, "\n") {
-			switch {
-			case strings.HasPrefix(line, "worker: "):
-				session, _, _ = strings.Cut(strings.TrimPrefix(line, "worker: "), " ")
-			case strings.HasPrefix(line, "tokens: "):
-				tokens, found = protocol.ParseTokenText(strings.TrimPrefix(line, "tokens: "))
-			}
-		}
-		if found && strings.HasPrefix(session, "s_") {
-			out[session] = out[session].Max(tokens)
-		}
-	}
-	return out, rows.Err()
-}
-
 // PickerCostBacktest re-runs the pick for the last limit finished tasks with a D
 // (every task when limit is 0), and summarizes each bucket they fall in.
 // It uses today's registered profiles, the given prices and quota reading and

@@ -56,7 +56,9 @@ to the worker screen ? (worker log to be exact)".
 5. The cost of a run is its tokens by kind times the price of that kind: input at
    the prompt price, output and reasoning at the completion price, cache reads
    and writes at their own prices, and at the prompt price when a cache price is
-   missing. The tokens by kind are kept per worker session in `worker_usage`.
+   missing. The tokens by kind are kept per worker session in `worker_usage`: the
+   daemon's report when it sends one, else the `tokens:` line of the run's
+   stored notice.
 6. The worker log and the worker notice show `cost: $X.XX at API prices` next to
    the tokens. The cost OpenCode reports stays on its own line.
 
@@ -73,9 +75,10 @@ later, as a separate decision.
   the defect and a quarter for its severity on top of the quarter for the failed
   step. The score now skips that automatic defect and keeps the failed step. A
   manual defect and a failed verify still count.
-- A task that ended before the daemon reported usage by kind has no cost. Those
-  tasks do not count in a cell's average cost; the price times the average run
-  of the bucket stands in.
+- A task that ended before the daemon reported usage by kind takes its tokens
+  from the `tokens:` line of its stored notice, so it still counts in a cell's
+  average cost. A task with neither has no cost. It does not count in a cell's
+  average cost; the price times the average run of the bucket stands in.
 - `TestPickerCostBacktestReport` re-runs the rule on a copy of a real gateway
   database and prints a per-bucket summary (candidates, run cost, p, rescue, expected cost and the winner), then one row per finished task. It reads the price list from a saved OpenRouter
   JSON (`AGENT_NET_PICKER_BACKTEST_PRICES`), takes the tokens of old runs from the

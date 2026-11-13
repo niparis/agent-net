@@ -221,16 +221,23 @@ func (s *Store) RunCost(model string, t protocol.RunTokens) (cost float64, price
 }
 
 // recordWorkerUsageTx keeps the session's last reported usage with its run. It
-// runs in the transaction that records the run.
+// runs in the transaction that records the run. A daemon that reported no
+// usage by kind still wrote the run's tokens in its notice, and those stand in.
 func recordWorkerUsageTx(tx *sql.Tx, session string, now int64) error {
 	if session == "" {
 		return nil
 	}
-	_, err := tx.Exec(`INSERT INTO worker_usage(session_id,usage,updated_at)
+	res, err := tx.Exec(`INSERT INTO worker_usage(session_id,usage,updated_at)
 		SELECT id, json_extract(w,'$.usage'), ? FROM (SELECT id, CASE WHEN json_valid(worker) THEN worker ELSE '{}' END AS w FROM sessions WHERE id=?)
 		WHERE json_type(w,'$.usage')='object'
 		ON CONFLICT(session_id) DO UPDATE SET usage=excluded.usage, updated_at=excluded.updated_at`, now, session)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n > 0 {
+		return err
+	}
+	return recordNoticeUsageTx(tx, session, now)
 }
 
 // workerUsage reads the stored usage of the given sessions, or of every session
@@ -260,4 +267,108 @@ func (s *Store) workerUsage(sessions ...string) (map[string]protocol.RunTokens, 
 		}
 	}
 	return out, rows.Err()
+}
+
+// noticeUsageLine reads the worker and the "tokens:" line of one stored notice.
+// A body kept with its line breaks escaped is read too.
+func noticeUsageLine(body string) (session string, tokens protocol.RunTokens, ok bool) {
+	if !strings.Contains(body, "\n") {
+		body = strings.ReplaceAll(body, `\n`, "\n")
+	}
+	for _, line := range strings.Split(body, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worker: "):
+			session, _, _ = strings.Cut(strings.TrimPrefix(line, "worker: "), " ")
+		case strings.HasPrefix(line, "tokens: "):
+			tokens, ok = protocol.ParseTokenText(strings.TrimPrefix(line, "tokens: "))
+		}
+	}
+	return session, tokens, ok
+}
+
+// noticeUsage reads the "tokens:" line of every stored worker notice, by worker
+// session. Runs that ended before the gateway kept usage by kind have only
+// this. A session's notices are cumulative, so the largest count of each kind
+// stands.
+func (s *Store) noticeUsage() (map[string]protocol.RunTokens, error) {
+	rows, err := s.db.Query(`SELECT body FROM messages WHERE body LIKE '%[agent-net worker notice]%' AND body LIKE '%tokens: %'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]protocol.RunTokens{}
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		session, tokens, found := noticeUsageLine(body)
+		if found && strings.HasPrefix(session, "s_") {
+			out[session] = out[session].Max(tokens)
+		}
+	}
+	return out, rows.Err()
+}
+
+// backfillNoticeUsage keeps the tokens of runs that ended before the daemon
+// reported usage by kind, from the "tokens:" line of their stored notices
+// (decision 0161). The gateway runs it when it opens, so the picker table and
+// the worker log can price those runs. A session that has a recorded usage
+// keeps it: a report by kind is always the better figure.
+func (s *Store) backfillNoticeUsage() error {
+	usage, err := s.noticeUsage()
+	if err != nil || len(usage) == 0 {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := s.now().Unix()
+	for session, t := range usage {
+		raw, err := json.Marshal(t)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO worker_usage(session_id,usage,updated_at) VALUES(?,?,?)
+			ON CONFLICT(session_id) DO NOTHING`, session, string(raw), now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// recordNoticeUsageTx keeps the tokens of the session's stored notices as its
+// usage. It stands in when a daemon reported no usage by kind, so a run is
+// priced without waiting for the next gateway start.
+func recordNoticeUsageTx(tx *sql.Tx, session string, now int64) error {
+	rows, err := tx.Query(`SELECT body FROM messages
+		WHERE body LIKE '[agent-net worker notice]%' AND body LIKE ?`, "%worker: "+session+" (%")
+	if err != nil {
+		return err
+	}
+	var tokens protocol.RunTokens
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, t, ok := noticeUsageLine(body); ok {
+			tokens = tokens.Max(t)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil || tokens.Zero() {
+		return err
+	}
+	raw, err := json.Marshal(tokens)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO worker_usage(session_id,usage,updated_at) VALUES(?,?,?)
+		ON CONFLICT(session_id) DO UPDATE SET usage=excluded.usage, updated_at=excluded.updated_at`, session, string(raw), now)
+	return err
 }

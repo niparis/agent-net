@@ -154,6 +154,26 @@ func TestRunUsageIsKeptAndPricesTheTaskAndTheWorkerLog(t *testing.T) {
 	}
 }
 
+// A run whose daemon reported no usage by kind is priced from the tokens of its
+// stored notice, so the picker prices it without waiting for a restart.
+func TestRecordWorkerRunKeepsNoticeTokensWhenNoUsageWasReported(t *testing.T) {
+	r := newDeliveryRig(t)
+	want := protocol.RunTokens{In: 100000, Out: 20000, CacheRead: 3e6}
+	body := "[agent-net worker notice]\nstatus: done\nworker: " + r.worker + " (claude, claude-opus-5-5:high), project demo on ha\nrun time: 1m\ntokens: 100000 in, 20000 out, 3000000 cache read\n"
+	if _, err := r.s.db.Exec(`INSERT INTO messages(id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES(?,?,?,?,?,?,0,?,?,?,?)`,
+		"m_usage_notice", "c_usage", r.worker, r.caller, "notice", body, "k_usage_notice", 1, int64(1<<40), "delivered"); err != nil {
+		t.Fatal(err)
+	}
+	pickerRun(t, r.s, r.a, r.worker, "claude", "claude-opus-5-5:high", protocol.OutcomeComplete, 0, 60)
+	usage, err := r.s.workerUsage(r.worker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage[r.worker] != want {
+		t.Fatalf("usage %+v, want the notice tokens %+v", usage[r.worker], want)
+	}
+}
+
 func TestRunCostOfAnUnlistedModelUsesTheMiddlePrice(t *testing.T) {
 	s, _ := newTestStore(t)
 	if _, _, known := s.RunCost("claude-opus-5-5", protocol.RunTokens{In: 1}); known {
