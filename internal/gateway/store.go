@@ -1945,6 +1945,10 @@ func openStore(path string, seed func(path string) error) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := s.backfillNoticeUsage(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("notice usage backfill: %w", err)
+	}
 	if err := s.refreshQuality(); err != nil {
 		db.Close()
 		return nil, err
