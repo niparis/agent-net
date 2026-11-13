@@ -72,8 +72,9 @@ func TestSessionAgentOwnerAssignmentAndHistory(t *testing.T) {
 	if err := r.s.db.QueryRow(`SELECT session_id FROM project_mergers WHERE project='demo' AND node_id=?`, r.a).Scan(&merger); err != nil || merger != r.caller {
 		t.Fatalf("merger changed %q: %v", merger, err)
 	}
+	// The merger ran as its own Agent (decision 0160) before the owner's choice.
 	var previous, current, by string
-	if err := r.s.db.QueryRow(`SELECT old_agent_id,new_agent_id,actor FROM session_agent_history WHERE session_id=?`, r.caller).Scan(&previous, &current, &by); err != nil || previous != "demo" || current != "advisor" || by != owner {
+	if err := r.s.db.QueryRow(`SELECT old_agent_id,new_agent_id,actor FROM session_agent_history WHERE session_id=?`, r.caller).Scan(&previous, &current, &by); err != nil || previous != "demo merger" || current != "advisor" || by != owner {
 		t.Fatalf("history %q -> %q by %q: %v", previous, current, by, err)
 	}
 	cto, _, err := r.s.upsertSession(r.s.db, r.a, protocol.SessionInfo{Harness: "cto", NativeID: "cto"}, true)

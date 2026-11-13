@@ -369,6 +369,11 @@ func TestMergerSessionOfCallerAgentNeverGetsCallerSteps(t *testing.T) {
 	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: merger}, "owner"); err != nil {
 		t.Fatal(err)
 	}
+	// A merger now gets its own Agent (decision 0160). One registered before
+	// still runs as the caller's Agent, and must still never get its steps.
+	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='alpha' WHERE id=?`, merger); err != nil {
+		t.Fatal(err)
+	}
 	lead := r.leadOf()
 	if err := r.s.SetSessionOffline(r.a, r.caller); err != nil {
 		t.Fatal(err)

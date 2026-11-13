@@ -107,6 +107,11 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 	if agent == "" {
 		return "", nil
 	}
+	// A merger runs as its own Agent (decision 0160). A message addressed to
+	// it stays with it, as when it ran as the Repo's Agent.
+	if merger, err := isProjectMerger(tx, m.To); err != nil || merger {
+		return "", err
+	}
 	var repoLead, repoSession sql.NullString
 	var repoName string
 	if repo != "" {

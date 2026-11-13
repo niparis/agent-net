@@ -41,6 +41,11 @@ func TestEdgeKindsMetadata(t *testing.T) {
 // Return a freshly opened store to the schema just before typed edge metadata.
 func removeEdgeKindsForTest(t *testing.T, s *Store) {
 	t.Helper()
+	// The org tree edges came later (decision 0160); the old migrations would
+	// read their Agent endpoints as Repo names.
+	if _, err := s.db.Exec(`DELETE FROM graph_edges WHERE kind='reports_to'`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.db.Exec(`DROP TRIGGER edge_kinds_insert; DROP TRIGGER edge_history_kinds_insert; DROP TRIGGER merger_removed; DROP TRIGGER merger_replaced;`); err != nil {
 		t.Fatal(err)
 	}

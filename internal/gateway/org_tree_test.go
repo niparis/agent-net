@@ -463,3 +463,21 @@ func TestOrgTreeMigrationRunsOnce(t *testing.T) {
 		t.Fatalf("a replay rebuilt a removed edge: helper reports to %q", got)
 	}
 }
+
+// A merger runs as its own Agent now. A message sent to it from outside its
+// Repo still reaches it, as when it ran as the Repo's Agent; it is not
+// redirected to the Repo lead.
+func TestLeadRouteKeepsAMessageToTheMerger(t *testing.T) {
+	s, merger := mergerRig(t)
+	var outsider string
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE native_id='n-other'`).Scan(&outsider); err != nil {
+		t.Fatal(err)
+	}
+	m, _, route, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: merger, Body: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.To != merger || route != "" {
+		t.Fatalf("a message to the merger went to %s (%q)", m.To, route)
+	}
+}
