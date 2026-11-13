@@ -548,6 +548,10 @@ export const TOOL_CATALOG = [
         },
         "typed": {
           "type": "boolean"
+        },
+        "root": {
+          "type": "string",
+          "description": "Agent ID: read only it and the Agents under it in the org tree."
         }
       },
       "required": [],

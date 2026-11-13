@@ -62,10 +62,12 @@ type GraphLocation struct {
 }
 
 type GraphSession struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Machine string `json:"machine"`
-	Status  string `json:"status"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Machine   string `json:"machine"`
+	Status    string `json:"status"`
+	Online    bool   `json:"online"`
+	StartedBy string `json:"started_by,omitempty"`
 }
 
 // NodeDelegation is the delegation policy the owner set for a node's project
@@ -143,6 +145,12 @@ type Node struct {
 	Locations    []GraphLocation  `json:"locations,omitempty"`
 	Sessions     []GraphSession   `json:"sessions,omitempty"`
 	SessionCount int              `json:"session_count,omitempty"`
+	// The org tree (decision 0160), on Agent nodes only: the parent Agent ID
+	// or OrgRoot, the Agent's lead session, and the scopes it holds. Sessions
+	// lists the online sessions; LeadSession is there even when offline.
+	ReportsTo   string        `json:"reports_to,omitempty"`
+	LeadSession *GraphSession `json:"lead_session,omitempty"`
+	Scopes      []Scope       `json:"scopes,omitempty"`
 }
 
 // CharterChange is an immutable charter history entry.

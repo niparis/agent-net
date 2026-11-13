@@ -112,6 +112,10 @@ type SessionRow struct {
 	Worker       *SessionWorker    `json:"worker,omitempty"`
 	// Loop is the standing loop of the session's node (decision 0094).
 	Loop *LoopView `json:"loop,omitempty"`
+	// ReportsTo and AlsoAnswersTo come from the org tree and the scopes
+	// (decision 0160); only agent_session_get sets them.
+	ReportsTo     string `json:"reports_to,omitempty"`
+	AlsoAnswersTo string `json:"also_answers_to,omitempty"`
 }
 
 // WaitingRow says that a session waits for its user: the kind (permission,

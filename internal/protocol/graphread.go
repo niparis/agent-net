@@ -11,6 +11,8 @@ type GraphRead struct {
 	// (a repo and an agent can) after the node found by name. Only the public
 	// read sets it; the per-turn charter read does not.
 	Also bool `json:"also,omitempty"`
+	// Root limits the typed read to one subtree of the org tree.
+	Root string `json:"root,omitempty"`
 }
 
 // GraphGot answers "graph.read": the node's charter and the nodes and edges

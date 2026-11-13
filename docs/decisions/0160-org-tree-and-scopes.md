@@ -59,6 +59,10 @@ The readers stay as they are: `place.go`, the TUI (`mergerParent` included) and 
 
 Because the merger no longer shares the Repo's Agent, two readers get a one-line guard so they behave as before: lead routing delivers a message addressed to a merger to the merger (it is not redirected to the Repo lead), and the Repo lead's place text does not list the merger as crew.
 
+### T3: one read of the tree
+
+The typed graph read is the one read of the tree, for the CTO, the chief, agent sessions and later the TUI. It extends the existing read and its types; there is no new endpoint. Each Agent node carries `reports_to`, `lead_session`, its online sessions with `online` and `started_by`, and its `scopes`. The read adds three queries in all (Agents with parent and lead session, `started_by` of online sessions, all scopes), not one per Agent. On a fixture of 52 Agents and 602 sessions the whole read took about 20 ms before and after. `reports_to` edges still stay out of the edge list: the parent is a node field. An optional `root` keeps one subtree. `agent_session_get` shows `reports_to` and `also_answers_to` from the same rows. The readers that decide (place.go, routing, wakes) and the TUI do not move yet (T4, T6).
+
 ## Consequences
 
 - `edge_set` answers the stored edge with typed endpoints, and `lead_set` answers the stored lead row, both with `ok: true` kept for older callers.

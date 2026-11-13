@@ -97,8 +97,8 @@ func (g *Gateway) handleGraphRead(raw []byte) (any, error) {
 		return nil, reject("bad graph.read")
 	}
 	var graph protocol.Graph
-	if p.Typed || p.Ref != nil {
-		graph, err = g.store.GraphForRef(p.Ref)
+	if p.Typed || p.Ref != nil || p.Root != "" {
+		graph, err = g.store.GraphForRoot(p.Ref, p.Root)
 	} else {
 		graph, err = g.store.GraphFor(p.Project)
 		if err == nil && p.Also && p.Project != "" {

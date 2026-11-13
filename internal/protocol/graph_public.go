@@ -30,6 +30,8 @@ type PublicGraphQuery struct {
 	Node   string    `json:"node,omitempty"`
 	Offset int       `json:"offset,omitempty"`
 	Limit  int       `json:"limit,omitempty"`
+	// Root limits the read to one subtree of the org tree.
+	Root string `json:"root,omitempty"`
 }
 
 // PublicRule is one node rule an agent follows: the setting name and its
@@ -60,6 +62,11 @@ type PublicGraphNode struct {
 	Delegation []NodeDelegation `json:"delegation,omitempty"`
 	Charter    *Charter         `json:"charter,omitempty"`
 	Loop       *LoopView        `json:"loop,omitempty"`
+	// The org tree of an Agent node; see Node.
+	ReportsTo   string         `json:"reports_to,omitempty"`
+	LeadSession *GraphSession  `json:"lead_session,omitempty"`
+	Sessions    []GraphSession `json:"sessions,omitempty"`
+	Scopes      []Scope        `json:"scopes,omitempty"`
 }
 
 // PublicGraphEdge is the public part of an edge: who, what kind, and the request
@@ -181,6 +188,8 @@ func publicNode(n Node) PublicGraphNode {
 		Rules:      publicRules(n),
 		Delegation: publicDelegation(n.Delegation),
 		Loop:       n.Loop,
+
+		ReportsTo: n.ReportsTo, LeadSession: n.LeadSession, Sessions: n.Sessions, Scopes: n.Scopes,
 	}
 }
 

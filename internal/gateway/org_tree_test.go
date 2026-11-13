@@ -61,8 +61,8 @@ func TestReportsToRefusesACycle(t *testing.T) {
 	}
 }
 
-// The tree is stored now; the Graph reads take it in a later task. Until then
-// a reports_to edge must not show as a graph edge or add an implicit node.
+// The typed read carries the tree on each Agent node (reports_to), so a
+// reports_to edge never shows as a graph edge or adds an implicit node.
 func TestReportsToStaysOutOfTheGraphReads(t *testing.T) {
 	s := teamStore(t)
 	if err := s.SetEdge(reportsEdge("cto", protocol.OrgRoot), "owner"); err != nil {

@@ -543,6 +543,7 @@ func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (
 		Typed  bool               `json:"typed"`
 		View   string             `json:"view"`
 		Node   string             `json:"node"`
+		Root   string             `json:"root"`
 		Limit  int                `json:"limit"`
 		Cursor string             `json:"cursor"`
 	}
@@ -558,7 +559,7 @@ func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (
 	}
 	limit := ctoCatalogLimit(q.Limit)
 	if strings.TrimSpace(q.Node) != "" || q.Ref != nil {
-		page, err := d.agentGraph(ctx, protocol.PublicGraphQuery{Node: q.Node, Ref: q.Ref, Typed: q.Typed})
+		page, err := d.agentGraph(ctx, protocol.PublicGraphQuery{Node: q.Node, Ref: q.Ref, Typed: q.Typed, Root: q.Root})
 		if err != nil {
 			return nil, err
 		}
@@ -575,7 +576,7 @@ func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (
 	var edges []map[string]any
 	offset := 0
 	for page := 0; page < 1000; page++ {
-		got, err := d.agentGraph(ctx, protocol.PublicGraphQuery{Offset: offset, Limit: protocol.PublicGraphMaxLimit, Typed: q.Typed})
+		got, err := d.agentGraph(ctx, protocol.PublicGraphQuery{Offset: offset, Limit: protocol.PublicGraphMaxLimit, Typed: q.Typed, Root: q.Root})
 		if err != nil {
 			return nil, err
 		}
@@ -651,6 +652,18 @@ func ctoCatalogGraphNodes(nodes []protocol.PublicGraphNode) []map[string]any {
 		}
 		if charter := ctoCatalogCharter(node.Charter); charter != nil {
 			row["charter"] = charter
+		}
+		if node.ReportsTo != "" {
+			row["reports_to"] = node.ReportsTo
+		}
+		if node.LeadSession != nil {
+			row["lead_session"] = node.LeadSession
+		}
+		if len(node.Sessions) > 0 {
+			row["sessions"] = node.Sessions
+		}
+		if len(node.Scopes) > 0 {
+			row["scopes"] = node.Scopes
 		}
 		out = append(out, row)
 	}

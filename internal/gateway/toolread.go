@@ -483,7 +483,11 @@ func (s *Store) GetSession(p protocol.SessionGetRequest) (protocol.SessionGetRes
 			names[a.Worker.Owner] = owner.Profile.Name
 		}
 	}
-	return protocol.SessionGetResult{Session: sessionRow(a, true, s.now(), func(name string) string { return names[name] })}, nil
+	row := sessionRow(a, true, s.now(), func(name string) string { return names[name] })
+	if row.ReportsTo, row.AlsoAnswersTo, err = s.sessionOrgLines(a.SessionID); err != nil {
+		return protocol.SessionGetResult{}, err
+	}
+	return protocol.SessionGetResult{Session: row}, nil
 }
 
 // sessionCountsByNode counts online sessions and running workers per machine.
