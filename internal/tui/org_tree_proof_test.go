@@ -32,11 +32,11 @@ func TestOrgTreeMergerProofScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := protocol.RepoInfo{Root: "/work/demo", Project: "demo"}
-	lead, err := st.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead", Status: "idle", Cwd: "/work/demo", Repo: repo})
+	lead, err := st.UpsertSession(node, protocol.SessionInfo{SessionID: "s_00000000000000a1", Harness: "claude", NativeID: "lead", Status: "idle", Cwd: "/work/demo", Repo: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	merger, err := st.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "merge", Status: "idle", Cwd: "/work/demo", Repo: repo})
+	merger, err := st.UpsertSession(node, protocol.SessionInfo{SessionID: "s_00000000000000a2", Harness: "claude", NativeID: "merge", Status: "idle", Cwd: "/work/demo", Repo: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
