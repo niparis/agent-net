@@ -58,6 +58,9 @@ func TestPickerCostBacktestPricesTasksFromNoticeTokens(t *testing.T) {
 	if len(res.Rows) != 8 || res.Tasks != 8 || res.TasksWithUsage != 8 || res.Prices != 2 {
 		t.Fatalf("result: %+v", res)
 	}
+	if len(res.Buckets) != 1 || res.Buckets[0].Tasks != 8 || len(res.Buckets[0].Rows) != 2 || res.Buckets[0].Winner == "" || res.Buckets[0].Rows[0].Expected <= 0 {
+		t.Fatalf("bucket summary: %+v", res.Buckets)
+	}
 	for i, row := range res.Rows {
 		want := 100000*4e-6 + 20000*2e-5 + 3e6*2e-7 // opus
 		if i%2 == 1 {
@@ -193,7 +196,7 @@ func TestPickerCostBacktestReport(t *testing.T) {
 		opts.Prices = protocol.NewPriceBook(list)
 	}
 	opts.Quotas = backtestQuotasFromEnv(t)
-	res, err := s.PickerCostBacktest(40, opts)
+	res, err := s.PickerCostBacktest(0, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,6 +207,20 @@ func TestPickerCostBacktestReport(t *testing.T) {
 	for _, line := range res.OutByFloor {
 		fmt.Println("out by floor:", line)
 	}
+	for _, b := range res.Buckets {
+		fmt.Printf("\nbucket %.2f-%.2f: %d tasks, winner %s\n", b.Lo, b.Hi, b.Tasks, b.Winner)
+		fmt.Printf("  %-22s %-44s %4s %9s %5s %9s %9s\n", "profile", "model", "n", "run cost", "p", "rescue", "expected")
+		for _, r := range b.Rows {
+			mark := ""
+			if !r.CostKnown {
+				mark = " (no cost data)"
+			} else if !r.Recorded {
+				mark = " (est)"
+			}
+			fmt.Printf("  %-22s %-44s %4d %9.4f %5.2f %9.4f %9.4f%s\n", r.Name, r.Key, r.N, r.Cost, r.Pass, r.Rescue, r.Expected, mark)
+		}
+	}
+	fmt.Println()
 	var then, now float64
 	fmt.Printf("%-3s %-5s %-46s %10s  %-46s %10s\n", "#", "D", "chosen then", "cost then", "cost rule now", "cost now")
 	for i, r := range res.Rows {

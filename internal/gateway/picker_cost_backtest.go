@@ -20,6 +20,15 @@ type PickerCostBacktestRow struct {
 	NowCost  float64 // 0 when it cannot be priced
 }
 
+// PickerCostBacktestBucket is what the rule compares in one D bucket: each
+// candidate's average run cost, p, rescue and expected cost, and the winner.
+type PickerCostBacktestBucket struct {
+	Lo, Hi float64
+	Tasks  int
+	Winner string
+	Rows   []protocol.PickerCostRow
+}
+
 // PickerCostBacktestOptions are the inputs the live picker reads from memory
 // or the network, which a database copy does not hold.
 type PickerCostBacktestOptions struct {
@@ -33,7 +42,8 @@ type PickerCostBacktestOptions struct {
 
 // PickerCostBacktestResult is the table plus what shaped it.
 type PickerCostBacktestResult struct {
-	Rows []PickerCostBacktestRow
+	Rows    []PickerCostBacktestRow
+	Buckets []PickerCostBacktestBucket
 	// OutByFloor names the profiles today's worker floors keep out.
 	OutByFloor []string
 	// QuotaReadings says, for each registered profile, which quota reading it
@@ -85,7 +95,8 @@ func (s *Store) noticeUsage() (map[string]protocol.RunTokens, error) {
 	return out, rows.Err()
 }
 
-// PickerCostBacktest re-runs the pick for the last limit finished tasks with a D.
+// PickerCostBacktest re-runs the pick for the last limit finished tasks with a D
+// (every task when limit is 0), and summarizes each bucket they fall in.
 // It uses today's registered profiles, the given prices and quota reading and
 // the database's worker floors, with a fresh rotation. The table is built with
 // the usage of each task: what the gateway recorded, else the tokens line of its
@@ -132,7 +143,7 @@ func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (Pick
 		}
 	}
 	sort.SliceStable(done, func(i, j int) bool { return done[i].end < done[j].end })
-	if len(done) > limit {
+	if limit > 0 && len(done) > limit {
 		done = done[len(done)-limit:]
 	}
 
@@ -176,18 +187,42 @@ func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (Pick
 	if err != nil {
 		return res, err
 	}
+	levelOf := func(d float64) string {
+		level := "normal"
+		for _, l := range protocol.DifficultyLevels {
+			if lo, hi, ok := protocol.LevelDRange(l); ok && d >= lo && d < hi {
+				level = l
+			}
+		}
+		return level
+	}
+	buckets := map[int]*PickerCostBacktestBucket{}
+	var order []int
+	for _, r := range done {
+		b := table.Bucket(r.d)
+		if buckets[b] == nil {
+			lo, hi := table.BucketRange(b)
+			buckets[b] = &PickerCostBacktestBucket{Lo: lo, Hi: hi}
+			order = append(order, b)
+		}
+		buckets[b].Tasks++
+	}
+	sort.Ints(order)
+	for _, b := range order {
+		sum := buckets[b]
+		in := &protocol.PickerInput{D: (sum.Lo + sum.Hi) / 2, Table: table, Prices: prices}
+		sum.Rows = protocol.PickerCostRows(candidates, in)
+		if choice, err := protocol.ChooseWorkerModel(candidates, levelOf(in.D), scores, minimums, o.Quotas, nil, &protocol.WorkerRotation{}, in); err == nil {
+			sum.Winner = protocol.PickerModelKey(choice.Harness, choice.Model)
+		}
+		res.Buckets = append(res.Buckets, *sum)
+	}
 	for _, r := range done {
 		row := PickerCostBacktestRow{EndedAt: r.end, D: r.d, Then: r.key}
 		if p, _, ok := prices.PriceOf(r.key); ok && !r.tokens.Zero() {
 			row.ThenCost = p.Cost(r.tokens)
 		}
-		level := "normal"
-		for _, l := range protocol.DifficultyLevels {
-			if lo, hi, ok := protocol.LevelDRange(l); ok && r.d >= lo && r.d < hi {
-				level = l
-			}
-		}
-		choice, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, o.Quotas, nil, &protocol.WorkerRotation{}, &protocol.PickerInput{D: r.d, Table: table, Prices: prices})
+		choice, err := protocol.ChooseWorkerModel(candidates, levelOf(r.d), scores, minimums, o.Quotas, nil, &protocol.WorkerRotation{}, &protocol.PickerInput{D: r.d, Table: table, Prices: prices})
 		if err == nil {
 			row.Now = protocol.PickerModelKey(choice.Harness, choice.Model)
 			row.NowCost, _, _, _ = table.ExpectedCost(row.Now, table.Bucket(r.d), prices)

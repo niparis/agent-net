@@ -22,12 +22,23 @@ to the worker screen ? (worker log to be exact)".
 
 1. This replaces the relative 0.9 x best qualifying rule of decision 0105. Among
    the allowed candidates with at least 3 tasks in the bucket, the picker takes
-   the one with the lowest expected cost per accepted result:
-   `average run cost in the bucket / cell score`. While a cell has fewer than
-   `picker.uncertain_n` tasks the score is the lower end of its interval. A
-   candidate with no run in the bucket costs its price times the tokens of an
-   average run there.
-2. Unchanged: quota floors and pace (a lagging provider counts as cheaper), the
+   the one with the lowest expected cost:
+   `expected = run cost + (1 - p) x rescue`.
+   - Run cost is the model's average run cost in the bucket at API prices. A run's
+     tokens are cumulative per task, so its cost already holds its fix rounds. A
+     model with no run in the bucket costs its price times the tokens of an
+     average run there.
+   - p is the share of the model's tasks in the bucket that ended clean: complete,
+     with no failed accept, review or test step and no defect found later. A fix
+     round alone does not count against p, because the cost has it. p is shrunk
+     to the bucket mean with the same k as the score, and takes the lower end of
+     its interval while the cell has fewer than `picker.uncertain_n` tasks.
+   - Rescue is the average run cost of the next dearer model in the bucket. The
+     ladder is ordered by price per token (prompt plus completion) from the price
+     book. The dearest model's rescue is itself.
+   The cell score stays in use for the allowed test, the exploration rules and the
+   notes.
+2. Unchanged: quota floors and pace (a lagging provider counts as cheaper, its expected cost divided by the pace factor), the
    "above its benchmark" rule, the exploration share and "explore is up only",
    the allowed test of the interval (the top of a cell's interval against
    `picker.allowed_fraction` x best, which the Quality sub-tab shows), and the
@@ -56,12 +67,17 @@ later, as a separate decision.
 
 ## Consequences
 
-- The picker note names each candidate's expected cost per run and per result.
+- The picker note names each candidate's run cost, p and expected cost.
+- A failed merger test step counts once in the task score. Agent-net also records
+  an automatic severity 1 defect for it (decision 0103), which cost a quarter for
+  the defect and a quarter for its severity on top of the quarter for the failed
+  step. The score now skips that automatic defect and keeps the failed step. A
+  manual defect and a failed verify still count.
 - A task that ended before the daemon reported usage by kind has no cost. Those
   tasks do not count in a cell's average cost; the price times the average run
   of the bucket stands in.
 - `TestPickerCostBacktestReport` re-runs the rule on a copy of a real gateway
-  database and prints the table. It reads the price list from a saved OpenRouter
+  database and prints a per-bucket summary (candidates, run cost, p, rescue, expected cost and the winner), then one row per finished task. It reads the price list from a saved OpenRouter
   JSON (`AGENT_NET_PICKER_BACKTEST_PRICES`), takes the tokens of old runs from the
   `tokens:` line of their stored notices, and applies today's worker floors to a
   quota reading (`AGENT_NET_PICKER_BACKTEST_USED` or `..._QUOTAS`).

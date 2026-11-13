@@ -118,7 +118,11 @@ func (s *Store) pickerTaskRecordsUsing(usage map[string]protocol.RunTokens) ([]p
 	}
 
 	defects := map[string][2]int{}
-	rows, err = s.db.Query(`SELECT session_id, COUNT(*), COALESCE(SUM(severity), 0) FROM worker_defects WHERE moved_at = 0 GROUP BY session_id`)
+	// The defect agent-net records for a failed merger test step is skipped:
+	// the failed step is already counted, and one failure costs once (decision
+	// 0161).
+	rows, err = s.db.Query(`SELECT session_id, COUNT(*), COALESCE(SUM(severity), 0) FROM worker_defects
+		WHERE moved_at = 0 AND id NOT IN (SELECT defect_id FROM worker_defect_auto WHERE kind = 'test') GROUP BY session_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +240,8 @@ func pickerTasksFrom(records []pickerTaskRecord, book *protocol.PriceBook) []pro
 		if r.d <= 0 || r.key == "" {
 			continue
 		}
-		t := protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts), Tokens: r.tokens}
+		t := protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts), Tokens: r.tokens,
+			Dirty: !r.facts.Complete || r.facts.FailedSteps > 0 || r.facts.Defects > 0}
 		if p, _, ok := book.PriceOf(r.key); ok && !r.tokens.Zero() {
 			t.Cost = p.Cost(r.tokens)
 		}

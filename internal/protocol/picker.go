@@ -116,6 +116,11 @@ type PickerTask struct {
 	// API prices. Both are zero when the task has no recorded usage.
 	Tokens RunTokens
 	Cost   float64
+	// Dirty is true when the task did not end clean: it did not end complete,
+	// a later accept, review or test step failed, or a defect was found. A fix
+	// round alone does not make a task dirty: its cost is already in the run's
+	// tokens (decision 0161).
+	Dirty bool
 }
 
 // PickerModelKey is the key of a model and its effort. Two efforts of one
@@ -187,6 +192,8 @@ type PickerTable struct {
 	cellCost     map[string]map[int]pickerCostStat
 	bucketTokens map[int]pickerCostStat
 	allTokens    pickerCostStat
+	// clean is the table of the clean share (see CleanCell).
+	clean *PickerTable
 }
 
 // pickerCostStat sums the cost and the tokens of the tasks that have usage.
@@ -211,6 +218,22 @@ const (
 
 // BuildPickerTable groups the tasks by key and bucket.
 func BuildPickerTable(tasks []PickerTask, s PickerSettings) *PickerTable {
+	t := buildPickerCells(tasks, s)
+	// The clean share is a table of its own over the same tasks, scored 1 for a
+	// task that ended clean and 0 for one that did not, so it shrinks to the
+	// bucket mean exactly as the score does.
+	clean := make([]PickerTask, len(tasks))
+	for i, task := range tasks {
+		clean[i] = PickerTask{Key: task.Key, D: task.D, Score: 1}
+		if task.Dirty {
+			clean[i].Score = 0
+		}
+	}
+	t.clean = buildPickerCells(clean, s)
+	return t
+}
+
+func buildPickerCells(tasks []PickerTask, s PickerSettings) *PickerTable {
 	t := &PickerTable{settings: s.Normalized(), buckets: map[int]pickerStat{}, cells: map[string]map[int]pickerStat{},
 		cellCost: map[string]map[int]pickerCostStat{}, bucketTokens: map[int]pickerCostStat{}}
 	for _, task := range tasks {
@@ -249,6 +272,11 @@ func BuildPickerTable(tasks []PickerTask, s PickerSettings) *PickerTable {
 	}
 	return t
 }
+
+// CleanCell is the shrunk share of a key's tasks in a bucket that ended clean:
+// complete, with no failed accept, review or test step and no defect found
+// later. It is the p of the rescue cost (decision 0161).
+func (t *PickerTable) CleanCell(key string, bucket int) PickerCell { return t.clean.Cell(key, bucket) }
 
 // AvgCost is the average cost at API prices of a model key's tasks in a
 // bucket, and how many tasks have a recorded cost. n is 0 when none has.

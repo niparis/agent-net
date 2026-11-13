@@ -172,6 +172,8 @@ func costTasks(key string, d, cost float64, scores ...float64) []PickerTask {
 	out := pickTasks(key, d, scores...)
 	for i := range out {
 		out[i].Tokens, out[i].Cost = RunTokens{In: 1000, Out: 100}, cost
+		// A score under a half is a task that did not end clean.
+		out[i].Dirty = out[i].Score < .5
 	}
 	return out
 }
@@ -372,7 +374,7 @@ func TestPickNoteNamesTheExpectedCostOfEachQualifier(t *testing.T) {
 	if choice.Name != "cheap" {
 		t.Fatalf("picked %s: %s", choice.Name, choice.PickNote)
 	}
-	for _, want := range []string{"cheap 0.", "$1.00/run, $", "strong 0.97", "$3.00/run, $3.", "cheapest per result"} {
+	for _, want := range []string{"cheap 0.", "$1.00/run, p 1.00, $1.00 expected", "strong 0.97", "$3.00/run, p 1.00, $3.00 expected", "lowest expected cost"} {
 		if !strings.Contains(choice.PickNote, want) {
 			t.Fatalf("note misses %q: %q", want, choice.PickNote)
 		}
@@ -966,5 +968,90 @@ func TestPickerWhyCountsTheOtherQualifyingProfiles(t *testing.T) {
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: why lacks %q: %s", c.name, c.want, got)
 		}
+	}
+}
+
+// priceLadder is a price list whose models are the names of the test models, in
+// the order of the ladder: each one costs more per token than the one before.
+func priceLadder(names ...string) *PriceBook {
+	var list []ModelPrice
+	for i, n := range names {
+		list = append(list, ModelPrice{ID: "x/" + n, Prompt: float64(i+1) * 1e-6, Completion: float64(i+1) * 5e-6})
+	}
+	return NewPriceBook(list)
+}
+
+func pickWith(t *testing.T, tasks []PickerTask, prices *PriceBook, names ...string) WorkerModelChoice {
+	t.Helper()
+	scores := map[string]float64{}
+	for _, n := range names {
+		scores[n] = 51
+	}
+	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings()), Prices: prices}
+	choice, err := ChooseWorkerModel(pickCandidates(names...), "normal", pickScores(scores), nil, nil, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return choice
+}
+
+// Expected cost = the model's run cost + (1 - p) x the run cost of the next
+// dearer model, where p is the share of its tasks that ended clean (decision
+// 0161). Cheap costs $0.25 and fails 15 of 40 tasks (p about 0.65 once shrunk):
+// $0.25 + 0.35 x $0.30 = $0.355. Mid costs $0.30 and fails one in a hundred: $0.30 + 0.01 x
+// $2.00 = $0.32. Dear costs $2.00 and is the top of the ladder, so its rescue
+// is itself: $2.00 + 0.01 x $2.00. The old rule, run cost / score, picked cheap.
+func TestPickTakesTheLowestExpectedCostWithTheRescueOfTheNextDearerModel(t *testing.T) {
+	// withDirty marks the last bad tasks of n as not clean. A task with a failed
+	// step still scores 0.75, so the model stays allowed by its interval.
+	withDirty := func(key string, cost float64, n, bad int) []PickerTask {
+		out := costTasks(key, 2.5, cost, repeat(n, 1)...)
+		for i := n - bad; i < n; i++ {
+			out[i].Score, out[i].Dirty = .75, true
+		}
+		return out
+	}
+	var tasks []PickerTask
+	tasks = append(tasks, withDirty("cheap", .25, 40, 15)...)
+	tasks = append(tasks, withDirty("mid", .30, 100, 1)...)
+	tasks = append(tasks, withDirty("dear", 2, 100, 1)...)
+	choice := pickWith(t, tasks, priceLadder("cheap", "mid", "dear"), "cheap", "mid", "dear")
+	if choice.Name != "mid" {
+		t.Fatalf("picked %s: %s", choice.Name, choice.PickNote)
+	}
+	for _, want := range []string{"mid 1.00", "$0.30/run, p 0.99, $0.33 expected", "cheap 0.91", "dear 1.00"} {
+		if !strings.Contains(choice.PickNote, want) {
+			t.Errorf("note misses %q: %s", want, choice.PickNote)
+		}
+	}
+}
+
+// A fix round is in the run's cost already, so the score's quarter per fix
+// round must not count a second time. A scores 0.875 at $1.00. B needs a fix
+// round on every task (score 0.75) and costs $0.95: B is cheaper, and p is 1
+// for both. The old rule, run cost / score, picked A.
+func TestPickDoesNotCountFixRoundsTwice(t *testing.T) {
+	var tasks []PickerTask
+	tasks = append(tasks, costTasks("a", 2.5, 1.0, repeat(10, 1, .75)...)...)
+	tasks = append(tasks, costTasks("b", 2.5, .95, repeat(20, .75)...)...)
+	choice := pickWith(t, tasks, priceLadder("b", "a"), "a", "b")
+	if choice.Name != "b" {
+		t.Fatalf("picked %s: %s", choice.Name, choice.PickNote)
+	}
+}
+
+// p is the clean share of a cell, shrunk to the bucket mean like the score: a
+// thin cell is pulled toward the mean and its interval is wide.
+func TestPickerCleanCellIsShrunkLikeTheScore(t *testing.T) {
+	tasks := append(pickTasks("a", 2.5, 1, 1, 1), pickTasks("b", 2.5, repeat(10, 1, 0)...)...)
+	for i := range tasks {
+		tasks[i].Dirty = tasks[i].Score < .5
+	}
+	table := BuildPickerTable(tasks, DefaultPickerSettings())
+	a, b := table.CleanCell("a", 4), table.CleanCell("b", 4)
+	// a: 3 clean of 3, bucket mean 13/23, k = 5: (3 + 5 x 0.609) / 8.
+	near(t, "a score", a.Score, (3+5*13.0/23)/8)
+	if a.N != 3 || a.Lo >= a.Score || b.N != 20 || b.Score >= a.Score {
+		t.Fatalf("a %+v b %+v", a, b)
 	}
 }
