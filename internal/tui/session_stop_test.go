@@ -80,6 +80,82 @@ func TestStopShowsPendingRowBeforeReply(t *testing.T) {
 	}
 }
 
+// ctoStopModel is the Sessions screen with the CTO row in a filter of its own.
+func ctoStopModel(w, h int) (Model, *fakeSource) {
+	src := &fakeSource{snap: ctoSnapshot(), events: fakeEvents(), usage: fakeUsage(), counts: fakeCounts(), tops: fakeTops()}
+	m := New(src)
+	m.activeOnly = false
+	m.filter = "CTO"
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m = send(m, tea.WindowSizeMsg{Width: w, Height: h})
+	return selectID(quietFixtures(refresh(m, src)), ctoTestSession), src
+}
+
+// sessionRowLine finds a session row by its NAME column, so a header or a
+// panel that mentions the same name cannot stand in for the row.
+func sessionRowLine(view, name string) string {
+	for _, line := range lines(view) {
+		f := strings.Fields(line)
+		if len(f) > 1 && (f[0] == name || f[1] == name) {
+			return line
+		}
+	}
+	return ""
+}
+
+// dormantAfterStop is the snapshot the gateway serves after a CTO stop: the
+// session stays online and wakes on message, and its status is dormant.
+func dormantAfterStop(snap Snapshot, id string) Snapshot {
+	agents := append([]protocol.AgentView(nil), snap.Agents...)
+	for i := range agents {
+		if agents[i].SessionID == id {
+			agents[i].Online, agents[i].Status = true, protocol.StatusDormant
+		}
+	}
+	snap.Agents = agents
+	return snap
+}
+
+func TestStopPendingClearsOnDormantSnapshot(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
+		m, _ := ctoStopModel(size.w, size.h)
+		m, _ = press(m, keyRune("x"))
+		m, cmd := press(m, keyRune("y"))
+		if _, ok := m.pendingStops[ctoTestSession]; !ok {
+			t.Fatalf("%dx%d: the stop did not mark the row", size.w, size.h)
+		}
+		m = finish(t, m, cmd)
+		m.applyFetch(fetchedMsg{snap: dormantAfterStop(m.snap, ctoTestSession), at: t0})
+		if _, ok := m.pendingStops[ctoTestSession]; ok {
+			t.Fatalf("%dx%d: a dormant stop is still pending", size.w, size.h)
+		}
+		view := ansi.Strip(m.testView())
+		if strings.Contains(view, "stopping") {
+			t.Fatalf("%dx%d: the row still says stopping:\n%s", size.w, size.h, view)
+		}
+		row := sessionRowLine(view, "CTO")
+		if !strings.Contains(row, "dormant") {
+			t.Fatalf("%dx%d: the stopped CTO row does not read dormant: %q\n%s", size.w, size.h, row, view)
+		}
+		golden(t, fmt.Sprintf("sessions_cto_stopped_%dx%d", size.w, size.h), m.testView())
+	}
+}
+
+func TestStopExpiryIsQuietForDormantRow(t *testing.T) {
+	m, _ := ctoStopModel(120, 34)
+	m.pendingStops = map[string]pendingStop{ctoTestSession: {verb: "stopping…", at: t0}}
+	m.snap = dormantAfterStop(m.snap, ctoTestSession)
+	m.now = func() time.Time { return t0.Add(31 * time.Second) }
+	next, _ := m.update(tickMsg{})
+	m = next.(Model)
+	if strings.Contains(m.notice.text, "still running") {
+		t.Fatalf("a dormant session reported as still running: %+v", m.notice)
+	}
+	if _, ok := m.pendingStops[ctoTestSession]; ok {
+		t.Fatal("the timeout left the dormant stop pending")
+	}
+}
+
 func TestStopPendingClearsOnErrorSnapshotAndTimeout(t *testing.T) {
 	m, src := workerModel(120, 34)
 	id := "s_0000000000000001"
