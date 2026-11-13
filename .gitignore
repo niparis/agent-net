@@ -11,3 +11,6 @@ node_modules/
 
 # scratch copies and exports of local analysis runs
 /tmp/
+
+# proof frames from a hand run into the worktree (scripts/*-proof.sh write to a temp folder)
+/.proof*/

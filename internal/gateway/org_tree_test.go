@@ -206,14 +206,14 @@ func mergerRig(t *testing.T) (*Store, string) {
 
 func TestMergerStartGivesTheMergerItsOwnAgent(t *testing.T) {
 	s, merger := mergerRig(t)
-	var agent, role, startedBy string
-	if err := s.db.QueryRow(`SELECT s.agent_id,a.role,s.started_by FROM sessions s JOIN agents a ON a.id=s.agent_id WHERE s.id=?`, merger).Scan(&agent, &role, &startedBy); err != nil {
+	var agent, name, role, startedBy string
+	if err := s.db.QueryRow(`SELECT s.agent_id,a.display_name,a.role,s.started_by FROM sessions s JOIN agents a ON a.id=s.agent_id WHERE s.id=?`, merger).Scan(&agent, &name, &role, &startedBy); err != nil {
 		t.Fatal(err)
 	}
-	if agent != "demo merger" || role != "merger" || startedBy != protocol.StartedByAgentNet {
-		t.Fatalf("merger session: agent=%q role=%q started_by=%q", agent, role, startedBy)
+	if agent != "demo-merger" || name != "demo merger" || role != "merger" || startedBy != protocol.StartedByAgentNet {
+		t.Fatalf("merger session: agent=%q name=%q role=%q started_by=%q", agent, name, role, startedBy)
 	}
-	if got := reportsTo(t, s, "demo merger"); got != "demo" {
+	if got := reportsTo(t, s, "demo-merger"); got != "demo" {
 		t.Fatalf("merger reports to %q, want the repo's top agent demo", got)
 	}
 }
@@ -224,12 +224,12 @@ func TestMergerIsNeverALead(t *testing.T) {
 	if err != nil || !ok || a.RepoLead {
 		t.Fatalf("merger counts as repo lead: %+v %v", a, err)
 	}
-	for _, lead := range []protocol.GraphRef{{Kind: "agent", ID: "demo merger"}, {Kind: "session", ID: merger}} {
+	for _, lead := range []protocol.GraphRef{{Kind: "agent", ID: "demo-merger"}, {Kind: "session", ID: merger}} {
 		if err := s.SetLead(protocol.LeadSetRequest{Ref: protocol.GraphRef{Kind: "repo", ID: "demo"}, Lead: &lead}, "owner", false); err == nil {
 			t.Fatalf("lead_set accepted the merger as %s", lead.Kind)
 		}
 	}
-	if err := s.SetEdge(reportsEdge("other", "demo merger"), "owner"); err == nil {
+	if err := s.SetEdge(reportsEdge("other", "demo-merger"), "owner"); err == nil {
 		t.Fatal("an Agent may not report to a merger")
 	}
 }
@@ -242,7 +242,7 @@ func TestReplaceSessionMovesTheTreePlaces(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, merger).Scan(&node); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='demo merger'`, merger); err != nil {
+	if _, err := s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='demo-merger'`, merger); err != nil {
 		t.Fatal(err)
 	}
 	worker, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "w", Worker: &protocol.WorkerInfo{ID: "w_1", Owner: merger}})
@@ -260,7 +260,7 @@ func TestReplaceSessionMovesTheTreePlaces(t *testing.T) {
 		t.Fatalf("replace: %v %v", moved, err)
 	}
 	var lead, owner, place string
-	if err := s.db.QueryRow(`SELECT (SELECT lead_session FROM agents WHERE id='demo merger'),
+	if err := s.db.QueryRow(`SELECT (SELECT lead_session FROM agents WHERE id='demo-merger'),
 		(SELECT json_extract(worker,'$.owner') FROM sessions WHERE id=?),
 		(SELECT session_id FROM project_mergers WHERE project='demo')`, worker).Scan(&lead, &owner, &place); err != nil {
 		t.Fatal(err)
@@ -420,7 +420,7 @@ func TestOrgTreeMigrationBuildsTheTreeFromTodaysData(t *testing.T) {
 		"visitor":          "solo",
 		"misc":             "",
 		"solo":             "",
-		"agent-net merger": "agent-net",
+		"agent-net-merger": "agent-net",
 	} {
 		if got := reportsTo(t, s, agent); got != parent {
 			t.Errorf("%s reports to %q, want %q", agent, got, parent)
@@ -428,10 +428,10 @@ func TestOrgTreeMigrationBuildsTheTreeFromTodaysData(t *testing.T) {
 	}
 	var lead, mergerAgent, role string
 	if err := s.db.QueryRow(`SELECT (SELECT lead_session FROM agents WHERE id='homelab-agent'),
-		(SELECT agent_id FROM sessions WHERE id=?),(SELECT role FROM agents WHERE id='agent-net merger')`, ids["merge"]).Scan(&lead, &mergerAgent, &role); err != nil {
+		(SELECT agent_id FROM sessions WHERE id=?),(SELECT role FROM agents WHERE id='agent-net-merger')`, ids["merge"]).Scan(&lead, &mergerAgent, &role); err != nil {
 		t.Fatal(err)
 	}
-	if lead != ids["h2"] || mergerAgent != "agent-net merger" || role != "merger" {
+	if lead != ids["h2"] || mergerAgent != "agent-net-merger" || role != "merger" {
 		t.Fatalf("lead_session=%q merger agent=%q role=%q", lead, mergerAgent, role)
 	}
 	for key, want := range map[string]string{"merge": protocol.StartedByAgentNet, "worker": protocol.StartedByAgentNet,

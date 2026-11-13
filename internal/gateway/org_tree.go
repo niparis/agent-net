@@ -76,12 +76,13 @@ func addReportsToTx(tx *sql.Tx, from, to, actor string, now int64) error {
 }
 
 // bindMergerAgentTx gives a project's merger session its own Agent, role
-// merger, under the Repo's top Agent. The merger then never runs as the
+// merger, under the Repo's top Agent. Its ID has no space, as Agent IDs are
+// used in scope refs and command arguments; the name keeps the session's. The merger then never runs as the
 // Repo's Agent, so it is never taken for the Repo lead.
 func bindMergerAgentTx(tx *sql.Tx, project, session, actor string, now int64) error {
-	agent := project + " merger"
+	agent := project + "-merger"
 	if _, err := tx.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(?,?,'merger',?,?,0)
-		ON CONFLICT(id) DO UPDATE SET role='merger',tombstone=0,updated_at=excluded.updated_at`, agent, agent, now, now); err != nil {
+		ON CONFLICT(id) DO UPDATE SET role='merger',tombstone=0,updated_at=excluded.updated_at`, agent, project+" merger", now, now); err != nil {
 		return err
 	}
 	var top string

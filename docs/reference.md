@@ -4077,8 +4077,8 @@ It does not open a view. Enter on its Sessions row opens it as usual. The
 merger session gets `GOCACHE` set to the shared worker Go build cache, so its
 builds and tests do not grow your own `~/.cache/go-build`.
 
-The session is named `<project> merger`. It runs as its own Agent, also
-`<project> merger`, with role `merger`, which reports to the Repo's lead (or
+The session is named `<project> merger`. It runs as its own Agent, ID
+`<project>-merger`, named `<project> merger`, with role `merger`, which reports to the Repo's lead (or
 owner) in the org tree. It is never a Repo or Team lead. Its type is `merger`; other types are
 `agent` (the default), `worker`, `cto`, `owner`, and `bot`. Session info and
 `agent_sessions_find` and `agent_session_get` include `type`. The read tools

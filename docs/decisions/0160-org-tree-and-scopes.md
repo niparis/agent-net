@@ -28,7 +28,7 @@ Table by table:
 | `teams.lead_session`, `repo_leads.lead_session` | Become read-only copies of `agents.lead_session`. A copy that names a session follows the Agent's lead session; a copy that is empty (any session of the Agent) stays empty. | The current readers keep working until they move to the Agent (T4). |
 | `team_members` (Agent members) | Becomes derived from `reports_to` edges once the readers move. In T1 it is unchanged. | One place to say who is under whom. |
 | `repo_leads` | Becomes a read-only copy. In T1 `lead_set` still writes it. | Same reason as above. |
-| `project_mergers` | Unchanged. Each merger also gets its own `agents` row, `<project> merger`, role `merger`, with a `reports_to` edge to the Repo's top Agent (its lead, else its owner). `merger_start` and `merger_set` create or reuse that row and bind the merger session to it. | The merger no longer runs as the Repo's Agent, so it is never taken for the Repo lead, and it has its own place in the tree. |
+| `project_mergers` | Unchanged. Each merger also gets its own `agents` row, ID `<project>-merger` (no space: Agent IDs are used in scope refs and command arguments), name `<project> merger`, role `merger`, with a `reports_to` edge to the Repo's top Agent (its lead, else its owner). `merger_start` and `merger_set` create or reuse that row and bind the merger session to it. | The merger no longer runs as the Repo's Agent, so it is never taken for the Repo lead, and it has its own place in the tree. |
 
 The rules the owner's design asks for, and no others:
 
@@ -47,7 +47,7 @@ One migration, appended at the end, builds the tree from today's records. It run
 3. Team members report to their Team lead (`teams.owner_agent_id`): Agent members, then the top Agent of each member Repo.
 4. Team leads with no parent yet report to `cto`.
 5. An Agent that works in a Repo it does not own, and has no parent yet, reports to the Repo owner (`repos.owner_agent_id`).
-6. Each `project_mergers` row gets its merger Agent, under the Repo's top Agent. The live `agent-net` merger becomes Agent `agent-net merger`, under `agent-net`.
+6. Each `project_mergers` row gets its merger Agent, under the Repo's top Agent. The live `agent-net` merger becomes Agent `agent-net-merger` (name `agent-net merger`), under `agent-net`.
 7. `agents.lead_session` is taken from `repo_leads`, then from `teams`.
 8. `sessions.started_by` is `agent-net` for workers, mergers, the CTO and sessions that match a pending Agent start; `owner` for the rest.
 
@@ -55,7 +55,7 @@ An edge the rules refuse during the build is skipped, not an error.
 
 ### What does not change in T1
 
-The readers stay as they are: `place.go`, the TUI (`mergerParent` included) and routing. The Graph reads leave `reports_to` edges out, so the graph view shows no new edges and no node for the root. The new merger Agents do show as Agent nodes in the typed graph, and the merger row's Agent reads `<project> merger`.
+The readers stay as they are: `place.go`, the TUI (`mergerParent` included) and routing. The Graph reads leave `reports_to` edges out, so the graph view shows no new edges and no node for the root. The new merger Agents do show as Agent nodes in the typed graph, and the merger row's Agent reads its name, `<project> merger`.
 
 Because the merger no longer shares the Repo's Agent, two readers get a one-line guard so they behave as before: lead routing delivers a message addressed to a merger to the merger (it is not redirected to the Repo lead), and the Repo lead's place text does not list the merger as crew.
 
