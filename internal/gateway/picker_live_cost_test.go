@@ -10,10 +10,12 @@ import (
 
 // livePickerFixture is a gateway database as the live one looked when the cost
 // rule failed to show a price: the runs, the judge results and the prices are
-// stored, but the only tokens are the "tokens:" line of each stored worker
-// notice. It returns the store reopened the way the gateway opens it at start,
-// so the picker table is the cached one a live pick reads.
-func livePickerFixture(t *testing.T) (*Store, []protocol.WorkerModelCandidate) {
+// stored, and the tokens are only the "tokens:" line of each stored worker
+// notice. With noticeTokens false the notices carry no tokens, which is the
+// state just after a start, before any run reported usage. It returns the store
+// reopened the way the gateway opens it at start, so the picker table is the
+// cached one a live pick reads.
+func livePickerFixture(t *testing.T, noticeTokens bool) (*Store, []protocol.WorkerModelCandidate) {
 	t.Helper()
 	path := seededStorePath(t, "gateway.db")
 	s, err := OpenStore(path)
@@ -45,7 +47,11 @@ func livePickerFixture(t *testing.T) (*Store, []protocol.WorkerModelCandidate) {
 	for i := 0; i < 8; i++ {
 		c := candidates[i%len(candidates)]
 		session := fmt.Sprintf("s_live_%d", i)
-		body := fmt.Sprintf("[agent-net worker notice]\nstatus: done\nworker: %s (%s, %s), project p on h\nrun time: 1m\ntokens: 100000 in, 20000 out, 3000000 cache read\n", session, c.Harness, c.Model)
+		tokens := "tokens: 100000 in, 20000 out, 3000000 cache read\n"
+		if !noticeTokens {
+			tokens = ""
+		}
+		body := fmt.Sprintf("[agent-net worker notice]\nstatus: done\nworker: %s (%s, %s), project p on h\nrun time: 1m\n%s", session, c.Harness, c.Model, tokens)
 		if _, err := s.db.Exec(`INSERT INTO messages(id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES(?,?,?,?,?,?,0,?,?,?,?)`,
 			fmt.Sprintf("m_live_%d", i), "c_live", session, "o", "notice", body, fmt.Sprintf("k_live_%d", i), int64(i), int64(1<<40), "delivered"); err != nil {
 			t.Fatal(err)
@@ -67,7 +73,7 @@ func livePickerFixture(t *testing.T) (*Store, []protocol.WorkerModelCandidate) {
 // before the daemon reported usage by kind, and its note carries the same cost
 // as the backtest over the same data.
 func TestLivePickerPricesTasksFromStoredNoticeTokens(t *testing.T) {
-	s, candidates := livePickerFixture(t)
+	s, candidates := livePickerFixture(t, true)
 	defer s.Close()
 	g := &Gateway{store: s}
 	choice, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
@@ -102,4 +108,45 @@ func TestLivePickerPricesTasksFromStoredNoticeTokens(t *testing.T) {
 		t.Fatalf("picked %s, want the lowest expected cost %s (%+v): %s", got, cheapest.Key, cheapest, choice.PickNote)
 	}
 	t.Logf("pick note: %s", choice.PickNote)
+}
+
+// The live gateway showed no cost at start and costs minutes later without a
+// restart: its first table held no task with tokens, and a write that added one
+// rebuilt it. The cached table must follow that write and price the new run,
+// while a cell with no priced run takes the bucket average.
+func TestPickerCostAppearsAfterAWriteWithoutARestart(t *testing.T) {
+	s, candidates := livePickerFixture(t, false)
+	defer s.Close()
+	g := &Gateway{store: s}
+	first, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(first.PickNote, "/run") {
+		t.Fatalf("the fixture already has a cost: %s", first.PickNote)
+	}
+	before := s.pickerTable().Revision
+	node, _, err := s.CreateNode("h2", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "live-new", Model: "alibaba-token-plan/deepseek-v4.1-flash-1017:high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	setSessionUsage(t, s, session, protocol.RunTokens{In: 1e6, Out: 1e5, CacheRead: 1e7})
+	pickerRun(t, s, node, session, "opencode", "alibaba-token-plan/deepseek-v4.1-flash-1017:high", protocol.OutcomeComplete, 0, 2000)
+	pickerAssessment(t, s, session, 2.83)
+	if s.pickerTable().Revision <= before {
+		t.Fatal("the write did not rebuild the cached table")
+	}
+	second, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(second.PickNote, "/run") || !strings.Contains(second.PickNote, " est $") {
+		t.Fatalf("the later pick has no cost, or no estimate for the unpriced cell: %s", second.PickNote)
+	}
+	t.Logf("first note: %s", first.PickNote)
+	t.Logf("second note: %s", second.PickNote)
 }
