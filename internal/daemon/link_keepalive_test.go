@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -213,5 +214,51 @@ func TestLinkKeepaliveDaemonLiveTraffic(t *testing.T) {
 			default:
 			}
 		})
+	}
+}
+
+// A dropped link says why it ended. The 2026-11-12 20:32 UTC drop logged only
+// "link closed", so a keepalive timeout and a close by the gateway looked the
+// same.
+func TestLinkCloseCauseNamesKeepaliveTimeout(t *testing.T) {
+	t.Parallel()
+	peer := &keepaliveGateway{}
+	d := startKeepaliveDaemon(t, peer)
+	first := currentLink(d)
+	waitDaemonLink(t, "silent gateway link to close", func() bool {
+		select {
+		case <-first.dead:
+			return true
+		default:
+			return false
+		}
+	})
+	if got := first.closeCause(); !strings.Contains(got, "no traffic from the gateway") {
+		t.Fatalf("close cause %q does not name the keepalive timeout", got)
+	}
+}
+
+func TestLinkCloseCauseNamesReadError(t *testing.T) {
+	t.Parallel()
+	peer := &keepaliveGateway{}
+	peer.respond.Store(true)
+	peer.traffic.Store(true)
+	d := startKeepaliveDaemon(t, peer)
+	first := currentLink(d)
+	// The gateway answers the daemon's pings and sends data, so the monitor
+	// stays quiet. Closing the daemon's own socket ends the read loop with an
+	// error that is not a keepalive timeout.
+	first.ws.CloseNow()
+	waitDaemonLink(t, "link to close", func() bool {
+		select {
+		case <-first.dead:
+			return true
+		default:
+			return false
+		}
+	})
+	got := first.closeCause()
+	if got == "unknown" || strings.Contains(got, "no traffic from the gateway") {
+		t.Fatalf("close cause %q does not carry the read error", got)
 	}
 }

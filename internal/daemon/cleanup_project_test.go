@@ -947,14 +947,15 @@ func TestCleanupProjectsSkipsMissingAndNonGitAndRateLimits(t *testing.T) {
 		},
 	}
 
-	// Pass 1: should log once for missing and once for nongit.
+	// Pass 1: should log once for missing. A folder that is not a git repo is
+	// skipped without a log line: it is not a failure.
 	d.cleanupProjects(context.Background())
 	out1 := logs.String()
 	if !strings.Contains(out1, `project="`+missingPath+`"`) {
 		t.Fatalf("pass 1 missingPath not logged: %s", out1)
 	}
-	if !strings.Contains(out1, `project="`+nonGitPath+`"`) {
-		t.Fatalf("pass 1 nonGitPath not logged: %s", out1)
+	if strings.Contains(out1, nonGitPath) {
+		t.Fatalf("pass 1 logged a folder that is not a git repository: %s", out1)
 	}
 
 	// Pass 2: 1 hour later (within 24h), should NOT log again.
@@ -977,8 +978,8 @@ func TestCleanupProjectsSkipsMissingAndNonGitAndRateLimits(t *testing.T) {
 	if !strings.Contains(out3, `project="`+missingPath+`"`) {
 		t.Fatalf("pass 3 missingPath should log after 24h: %s", out3)
 	}
-	if !strings.Contains(out3, `project="`+nonGitPath+`"`) {
-		t.Fatalf("pass 3 nonGitPath should log after 24h: %s", out3)
+	if strings.Contains(out3, nonGitPath) {
+		t.Fatalf("pass 3 logged a folder that is not a git repository: %s", out3)
 	}
 }
 

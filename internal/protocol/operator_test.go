@@ -195,3 +195,23 @@ func TestOperatorMethodsExcludeAgentOnlyCalls(t *testing.T) {
 		}
 	}
 }
+
+// Claude reports its model without the effort the worker was started with, so
+// the list shows the start effort when the live model has none.
+func TestWorkersOfShowsStartEffortWhenLiveModelHasNone(t *testing.T) {
+	agents := []AgentView{
+		{SessionID: "s_c", Harness: "claude", Model: "claude-opus-5-5", Online: true, Worker: &WorkerInfo{Project: "a", StartedAt: 3, Effort: "high"}},
+		{SessionID: "s_p", Harness: "pi", Model: "gpt-5:low", Online: true, Worker: &WorkerInfo{Project: "a", StartedAt: 2, Effort: "high"}},
+		{SessionID: "s_n", Harness: "claude", Model: "claude-opus-5-5", Online: true, Worker: &WorkerInfo{Project: "a", StartedAt: 1}},
+	}
+	got := map[string]string{}
+	for _, w := range WorkersOf(agents) {
+		got[w.SessionID] = w.Model
+	}
+	want := map[string]string{"s_c": "claude-opus-5-5:high", "s_p": "gpt-5:low", "s_n": "claude-opus-5-5"}
+	for id, m := range want {
+		if got[id] != m {
+			t.Errorf("%s: model %q, want %q", id, got[id], m)
+		}
+	}
+}

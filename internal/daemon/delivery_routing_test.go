@@ -93,8 +93,12 @@ func TestDeliveryNodeStepReachesOtherMachine(t *testing.T) {
 		t.Fatalf("claim: %+v, %v", claim, err)
 	}
 	result := reportStep(t, owner, protocol.StepReportArgs{Change: id, StepRef: protocol.StepRef{Step: protocol.StepAccept}, Result: protocol.StepResultPass, Commit: submitted.Change.Change.HeadCommit})
-	if result.Evidence.By != ownerID {
-		t.Fatalf("reported by %q, want %q", result.Evidence.By, ownerID)
+	if result.Step != "accept" || result.Result != protocol.StepResultPass {
+		t.Fatalf("report reply: %+v", result)
+	}
+	stored, err := g.gw.Store().GetChange(id)
+	if err != nil || len(stored.Evidence) != 1 || stored.Evidence[0].By != ownerID {
+		t.Fatalf("evidence %+v, want one reported by %q (%v)", stored.Evidence, ownerID, err)
 	}
 }
 

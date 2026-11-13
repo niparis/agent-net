@@ -356,3 +356,43 @@ func TestHandbackCheckWaitsForTestSlot(t *testing.T) {
 		t.Fatalf("the check did not run after the slot freed: %v", err)
 	}
 }
+
+// The time budget starts when the check gets the test slot. A check that waits
+// in the queue longer than its budget still runs and passes, and the wait is
+// reported apart from the run time.
+func TestHandbackCheckBudgetStartsAtSlotAdmission(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, queueSet, withLoad(&fakeLoad{l: roomyLoad()}))
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	command := handbackCheckScript(t, "echo ran\n")
+	setHandbackCheck(t, g, "shop", command, "1s")
+	eventually(t, "the daemon has the hand-back check", func() bool {
+		cmd, timeout := w.d.handbackCheckSettings("shop")
+		return cmd == command && timeout == time.Second
+	})
+
+	holder := cliClient(t, w.node)
+	if first := acquireTestSlot(t, holder, ""); !first.Admitted {
+		t.Fatalf("the held suite was not admitted: %+v", first)
+	}
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:handback FAKE:edit", Isolation: protocol.IsolationWorktree})
+	// Longer than the 1s budget, shorter than the 2s test limit.
+	time.Sleep(1500 * time.Millisecond)
+	holder.c.Close()
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "hand-back check: passed in ") {
+		t.Fatalf("a check that waited in the queue was not run with a fresh budget:\n%s", n.Body)
+	}
+	check := changeView(t, g, noticeChangeID(t, n.Body)).HandbackCheck
+	if check == nil || check.Status != protocol.HandbackCheckPassed {
+		t.Fatalf("change hand-back check: %+v", check)
+	}
+	if check.QueueWaitMS < 1000 {
+		t.Errorf("queue wait %dms, want at least 1000ms", check.QueueWaitMS)
+	}
+	if check.DurationMS >= 1000 {
+		t.Errorf("run time %dms includes the queue wait", check.DurationMS)
+	}
+}

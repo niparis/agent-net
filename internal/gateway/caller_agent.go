@@ -192,6 +192,22 @@ func (s *Store) dropCallerEscalations(keep []string) error {
 // the repo lead at once.
 func (g *Gateway) wakeCallerAgent(ctx context.Context, key string, tasks []waitingCallerTask) {
 	now := g.store.now()
+	// A session that is online but owns another step of the change (it is the
+	// merger, say) may not act on these steps. The agent is still not offline,
+	// so "no session of yours was online" would be false.
+	var live bool
+	if err := g.store.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions x WHERE (x.id=? OR x.agent_id=?) AND `+liveSessionSQL+`)`, key, key).Scan(&live); err != nil {
+		g.logLine("error", "where", "caller agent live check", "err", err)
+		return
+	}
+	if live {
+		// Nobody can be woken, and the live session may not act on the steps,
+		// so the repo lead may act on them at once.
+		if _, err := g.store.db.Exec(`INSERT OR IGNORE INTO caller_step_escalations(owner_key,woken_at,lead_offered) VALUES(?,?,1)`, key, now.UnixNano()); err != nil {
+			g.logLine("error", "where", "caller escalation write", "err", err)
+		}
+		return
+	}
 	var target string
 	err := g.store.db.QueryRow(`SELECT s.id FROM sessions s JOIN delivery_changes c ON c.id=?
 		WHERE s.online=0 AND s.worker='' AND s.harness IN ('claude','codex','opencode') AND s.archived_at=0 AND s.replaced_by=''

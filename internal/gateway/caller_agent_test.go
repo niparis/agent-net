@@ -384,13 +384,14 @@ func TestMergerSessionOfCallerAgentNeverGetsCallerSteps(t *testing.T) {
 	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: merger, ChangeID: id, StepRef: stepAccept, Commit: commitA}); err == nil {
 		t.Fatal("the merger claimed the caller's accept")
 	}
-	// The task follows the wake of the offline caller, then the lead.
+	// The agent has an online session (the merger), so nobody is woken: the
+	// task goes to the lead once it waited past the stuck limit.
 	r.clk.t = r.clk.t.Add(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
-	if got := r.waitWake(); got != r.caller {
-		t.Fatalf("woke %s, want the caller %s", got, r.caller)
+	var wakes int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:agentwake:%'`).Scan(&wakes); err != nil || wakes != 0 {
+		t.Fatalf("woke the agent while its merger session is online: %d, %v", wakes, err)
 	}
-	r.clk.t = r.clk.t.Add(wakeTimeout + time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	if n := r.stepMessageCount(merger); n != 0 {
 		t.Fatalf("the merger got %d caller step messages after the offer", n)
@@ -416,5 +417,26 @@ func TestCallerOnlyStepNoticeWaitsForTheReminderInterval(t *testing.T) {
 	var n int
 	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("a caller step that waited past the reminder interval sent %d messages, want 1 (%v)", n, err)
+	}
+}
+
+// A session of the caller's agent that is online but owns another step of the
+// change (here it is the project's merger) may not act on the caller's steps,
+// yet the agent is not offline. The "no session of yours was online" wake must
+// not be sent to it.
+func TestCallerWakeNotSentWhileASessionOfTheAgentIsOnline(t *testing.T) {
+	r := newCallerAgentRig(t)
+	if err := r.s.SetSessionOffline(r.a, r.caller); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES('demo',?,?)`, r.a, r.second); err != nil {
+		t.Fatal(err)
+	}
+	r.submitAs(r.caller, "feature/online-merger", commitA)
+	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.g.dispatchStepTasks(context.Background())
+	var n int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:agentwake:%'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("woke the agent while its session %s is online: %d wake messages, %v", r.second, n, err)
 	}
 }

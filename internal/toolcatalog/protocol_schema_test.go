@@ -19,7 +19,7 @@ var protocolOutputs = map[string]reflect.Type{
 	"agent_machine_log":           reflect.TypeOf(protocol.MachineLogResult{}),
 	"agent_change_submit":         reflect.TypeOf(protocol.ChangeSubmitResult{}),
 	"agent_step_claim":            reflect.TypeOf(protocol.StepClaimResult{}),
-	"agent_step_report":           reflect.TypeOf(protocol.StepReportResult{}),
+	"agent_step_report":           reflect.TypeOf(protocol.StepReportReply{}),
 	"agent_changes_find":          reflect.TypeOf(protocol.ChangesFindResult{}),
 	"agent_owner_judgment_record": reflect.TypeOf(protocol.JudgmentRecordResult{}),
 	"agent_note_write":            reflect.TypeOf(protocol.NoteWriteResult{}),

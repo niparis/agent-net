@@ -1829,6 +1829,55 @@ type StepReportResult struct {
 	Change   ChangeView `json:"change"`
 }
 
+// StepReportShort is what agent_step_report tells the reporter about one
+// report: where the change stands, not the whole change. The full change
+// (hand-back check output, done list, evidence of every step) is for
+// agent_changes_find. State and Missing are the reported step's own.
+type StepReportShort struct {
+	Change string `json:"change"`
+	// Step names the reported step, as StepRef.String does.
+	Step string `json:"step"`
+	// Result is the result recorded for the step.
+	Result string `json:"result,omitempty"`
+	// State is the reported step's state after the report (passed, failed, ...).
+	State string `json:"state,omitempty"`
+	// Note says why a pass did not count, when it did not.
+	Note string `json:"note,omitempty"`
+	// ChangeState is the change's state: open, merged or closed.
+	ChangeState string `json:"change_state,omitempty"`
+	// Next lists the steps that may start now.
+	Next []string `json:"next,omitempty"`
+	// Missing lists what the reported step still waits for.
+	Missing []string `json:"missing,omitempty"`
+	// Error is set in a batch when this report was refused. Nothing was
+	// recorded for it.
+	Error string `json:"error,omitempty"`
+}
+
+// StepReportReply answers agent_step_report. A single report fills the fields
+// of StepReportShort. A batch leaves them empty and fills Reports, one entry
+// for each report, in the order sent.
+type StepReportReply struct {
+	StepReportShort
+	Reports []StepReportShort `json:"reports,omitempty"`
+}
+
+// ShortStepReport reduces a full step report result to a StepReportShort.
+func ShortStepReport(res StepReportResult) StepReportShort {
+	out := StepReportShort{Change: res.Change.Change.ID, Step: res.Evidence.StepRef.String(), Result: res.Evidence.Result,
+		ChangeState: res.Change.Change.State}
+	for _, r := range res.Change.Next {
+		out.Next = append(out.Next, r.String())
+	}
+	for _, st := range res.Change.Steps {
+		if st.StepRef == res.Evidence.StepRef {
+			out.State, out.Note, out.Missing = st.State, st.Note, st.Missing
+			break
+		}
+	}
+	return out
+}
+
 // StepTask is step.task: the gateway gives one step of one change to a
 // session of the step owner, in the same form as a worker notice. Commit is the
 // commit to work on (the head, or the merged commit after merge). Evidence is

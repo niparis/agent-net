@@ -433,7 +433,7 @@ settings:
     default: ""
     live: true
   - key: delivery.handback_check_timeout
-    description: Wall-clock limit for the hand-back check, including its wait for the machine's test slot.
+    description: Wall-clock limit for the hand-back check command. It starts when the check gets the machine's test slot, not when it queues.
     kind: rule
     type: duration
     stricter: lower

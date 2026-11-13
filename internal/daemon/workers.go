@@ -365,6 +365,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	// encoding (noteAsk hands it out), so never write into it: replace it.
 	next := *w.info
 	next.RunGeneration = w.runGeneration
+	next.Effort = protocol.ParseModelSelection(w.harness, "", w.model, "").Effort
 	next.ContextTokens, next.ContextLimit, next.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
 	next.OSSandbox = w.osSandbox
 	next.Continue, next.Fix = w.continueCount, w.fixCount
@@ -1338,7 +1339,15 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	// so every later resume on this machine timed out at the gateway too.
 	ctx, cancel := context.WithTimeout(ctx, d.resumeWait())
 	defer cancel()
-	d.resumeMu.Lock()
+	// Waiting for the lock counts against the same wait. A resume that queued
+	// behind another one without a bound ran past the gateway's launch wait.
+	for !d.resumeMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("another resume of a worker on this machine is still running; send the message again in a minute")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 	defer d.resumeMu.Unlock()
 	// A hand-back ends the worker right after its notice, and the owner's next
 	// message may arrive while the old process is still being killed. Wait for
@@ -1448,6 +1457,10 @@ func (d *Daemon) runWorkerResume(ctx context.Context, row workerRow, set WorkerS
 		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, changeID: row.ChangeID, fixes: row.Fixes, ready: make(chan struct{}), osSandbox: sandbox}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.wmu.Lock()
+	if d.cleaningWorkers[w.id] {
+		d.wmu.Unlock()
+		return nil, fmt.Errorf("worker %s is being cleaned up now; send the message again in a minute", w.id)
+	}
 	d.workers[w.id] = w
 	row.EndedReason, row.Reported, row.Resumable = "", false, false
 	d.saveWorkerLocked(w)

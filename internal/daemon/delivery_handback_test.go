@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,9 +110,9 @@ func findChanges(t *testing.T, lc *localClient, args protocol.ChangesFindArgs) p
 	return out
 }
 
-func reportStep(t *testing.T, lc *localClient, args protocol.StepReportArgs) protocol.StepReportResult {
+func reportStep(t *testing.T, lc *localClient, args protocol.StepReportArgs) protocol.StepReportReply {
 	t.Helper()
-	var out protocol.StepReportResult
+	var out protocol.StepReportReply
 	if err := json.Unmarshal(lc.mustCall(protocol.OpStepReport, args), &out); err != nil {
 		t.Fatal(err)
 	}
@@ -184,23 +185,32 @@ func TestCompleteHandbackRecordsAChange(t *testing.T) {
 	// family.
 	acc := reportStep(t, caller, protocol.StepReportArgs{Change: ch.ID, StepRef: protocol.StepRef{Step: protocol.StepAccept},
 		Result: protocol.StepResultPass, Commit: head, Note: "read the diff"})
-	if acc.Evidence.By != callerID || acc.Evidence.Revision != 1 || acc.Evidence.Commit != head {
-		t.Errorf("accept evidence: %+v", acc.Evidence)
+	if acc.Step != "accept" || acc.State != protocol.StepStatePassed {
+		t.Errorf("accept reply: %+v", acc)
 	}
-	if hasStep(acc.Change.Next, protocol.StepAccept) {
-		t.Errorf("accept is still next after its pass: %+v", acc.Change.Next)
+	if slices.Contains(acc.Next, protocol.StepAccept) {
+		t.Errorf("accept is still next after its pass: %+v", acc.Next)
 	}
-	rev := reportStep(t, caller, protocol.StepReportArgs{Change: ch.ID, StepRef: protocol.StepRef{Step: protocol.StepReview},
+	reportStep(t, caller, protocol.StepReportArgs{Change: ch.ID, StepRef: protocol.StepRef{Step: protocol.StepReview},
 		Result: protocol.StepResultPass, Commit: head, Fields: map[string]string{protocol.FieldFindingsOpen: "0"}})
-	if got := rev.Evidence.Fields[protocol.FieldIndependent]; got != protocol.IndependentSession {
-		t.Errorf("a review by the same model maker is independent=%q, want %q", got, protocol.IndependentSession)
-	}
-	if rev.Evidence.ByModelFamily != "anthropic" {
-		t.Errorf("review model family %q", rev.Evidence.ByModelFamily)
-	}
 	stored, err = g.gw.Store().GetChange(ch.ID)
 	if err != nil || len(stored.Evidence) != 2 {
 		t.Fatalf("stored evidence: %+v %v", stored.Evidence, err)
+	}
+	for _, ev := range stored.Evidence {
+		switch ev.Step {
+		case protocol.StepAccept:
+			if ev.By != callerID || ev.Revision != 1 || ev.Commit != head {
+				t.Errorf("accept evidence: %+v", ev)
+			}
+		case protocol.StepReview:
+			if got := ev.Fields[protocol.FieldIndependent]; got != protocol.IndependentSession {
+				t.Errorf("a review by the same model maker is independent=%q, want %q", got, protocol.IndependentSession)
+			}
+			if ev.ByModelFamily != "anthropic" {
+				t.Errorf("review model family %q", ev.ByModelFamily)
+			}
+		}
 	}
 
 	// The worker ended after its hand-back. A continue makes a new branch;

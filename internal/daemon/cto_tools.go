@@ -418,11 +418,16 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if a.DoneBy != "" {
 			return nil, errors.New("the CTO reports as itself: leave done_by out")
 		}
+		for _, item := range a.Reports {
+			if item.DoneBy != "" {
+				return nil, errors.New("the CTO reports as itself: leave done_by out")
+			}
+		}
 		sid := d.ctoSessionID()
 		if sid == "" {
 			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
 		}
-		return d.stepReport(ctx, sid, protocol.SessionInfo{}, a)
+		return d.stepReportReply(ctx, sid, protocol.SessionInfo{}, a)
 	case "agent_permission_propose":
 		var p protocol.PermissionProposeRequest
 		if json.Unmarshal(raw, &p) != nil {
