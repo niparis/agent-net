@@ -508,6 +508,13 @@ func WorkerRotationShares(level string, candidates []WorkerModelCandidate, rotat
 	return rotationShareNote(level, names, state.Recent)
 }
 
+// QuotaRoomForProvider reports the room a start has under a provider's
+// windows, with the pace note. blocked is true when a window that serves the
+// model is exhausted or above 90 percent used (decision 0162's 90% step).
+func QuotaRoomForProvider(q *Quotas, provider, model string) (room float64, note string, measured, blocked bool) {
+	return workerQuotaRoom(q, provider, model)
+}
+
 func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, bool) {
 	p, ok := q.Provider(provider)
 	if !ok || !p.usable() {

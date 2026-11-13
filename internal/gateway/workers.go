@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -819,7 +820,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, reject("no registered workers qualify for %s; register a profile for %s, or pass model explicitly", difficulty, difficulty)
 		} else {
 			roster := newNotStartedRoster()
-			candidates, skippedProfiles, resolutionNotes, err := g.workerModelCandidatesWith(&candidateFacts{}, roster, node, profiles, providers, quotas, p.Harness, p.RequireReadOnly, protected)
+			candidateReads := &candidateFacts{}
+			candidates, skippedProfiles, resolutionNotes, err := g.workerModelCandidatesWith(candidateReads, roster, node, profiles, providers, quotas, p.Harness, p.RequireReadOnly, protected)
 			if err != nil {
 				return none, err
 			}
@@ -851,13 +853,29 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
 			var protectionNote string
-			choice, protectionNote, err = g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(p.Assessment, difficulty), scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
+			chosen, chooseErr := g.Choose(ChooseRequest{
+				Purpose:    model.PurposeWorkerAutomatic,
+				Node:       node,
+				Candidates: candidates,
+				Difficulty: difficulty,
+				D:          protocol.PickerD(p.Assessment, difficulty),
+				Scores:     scores,
+				Minimums:   minimums,
+				Quotas:     quotas,
+				Running:    running,
+				Protected:  protected,
+				Floors:     floors,
+				Auth:       candidateReads.auth,
+				Persist:    !(len(validate) > 0 && validate[0]),
+			})
+			choice, protectionNote, err = chosen.Choice, chosen.Note, chooseErr
 			if err != nil {
 				// The chooser records why it dropped each candidate, so the
 				// roster reports the same decision instead of guessing again.
 				for _, lo := range choice.LeftOut {
 					roster.add(lo.Name, lo.Reason, lo.Rank)
 				}
+				appendGateSkips(roster, chosen.Skips)
 				if !(len(validate) > 0 && validate[0]) {
 					g.noProviderFeed(candidates, quotas)
 				}
