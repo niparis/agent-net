@@ -73,20 +73,33 @@ func agentNetHerdrConfig(ownerPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(StateDir(), "herdr")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, "agent-net-config.toml")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, body, 0o600); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	path := agentNetHerdrConfigPath()
+	if err := writeHerdrStateFile(path, body, 0o600); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// agentNetHerdrConfigPath is where agent-net keeps its herdr config.
+func agentNetHerdrConfigPath() string {
+	return filepath.Join(StateDir(), "herdr", "agent-net-config.toml")
+}
+
+// writeHerdrStateFile replaces a file of agent-net's herdr folder in one step,
+// so a herdr that reads it never sees half a file.
+func writeHerdrStateFile(path string, body []byte, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, body, mode); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // herdrHasSidebarSetting says whether bin is a herdr that knows the sidebar
