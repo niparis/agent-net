@@ -2273,7 +2273,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start or continue a worker with a structured brief. Only if the owner asked or work mode says. problem and done required; evidence, hypothesis, scope optional; task is extra notes. Refused only for a file a running worker or open change holds, unless \"overlap ok: reason\". mode \"check\" checks only.",
+    "description": "Start or continue a worker with a structured brief. Only if the owner asked or work mode says. problem and done required; evidence, hypothesis, scope optional; task is extra notes. Refused only for a file a running worker or open change holds, unless \"overlap ok: reason\". mode \"check\" checks only. For a feature with several tasks, list the tasks first, then group them into sessions: tasks that share code and design continue one session (continue) instead of starting new workers.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -141,8 +141,10 @@ func TestDescriptions(t *testing.T) {
 		if tool.Description == "" {
 			t.Errorf("tool %q has no description", tool.Name)
 		}
-		if n := utf8.RuneCountInString(tool.Description); n > 300 {
-			t.Errorf("tool %q description is %d characters, want at most 300", tool.Name, n)
+		// The owner approved a second rule in agent_worker_start, to group
+		// tasks into sessions, so the limit leaves room for it.
+		if n := utf8.RuneCountInString(tool.Description); n > 500 {
+			t.Errorf("tool %q description is %d characters, want at most 500", tool.Name, n)
 		}
 		if strings.ContainsRune(tool.Description, '\u2014') {
 			t.Errorf("tool %q description contains an em dash", tool.Name)
