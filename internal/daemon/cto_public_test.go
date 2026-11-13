@@ -14,7 +14,7 @@ import (
 // This independent allowlist pins every data view to its ordinary tool. Static
 // guide text and the CTO's own timeline are the only non-agent sources.
 var wantCTOReads = map[string]string{
-	"cto_proposals_find":  "own proposals,asks.list",
+	"cto_proposals_find":  "own proposals,asks.list,permission.get",
 	"cto_intake_find":     protocol.FrameIntakeFind,
 	"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
 	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get", "agent_machine_log": "machine_log",

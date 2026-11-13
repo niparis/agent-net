@@ -162,3 +162,23 @@ func TestCTOOpChiefSetSchemaIsStrict(t *testing.T) {
 		t.Fatalf("err = %v, want chief_set to refuse foo by name", err)
 	}
 }
+
+// The CTO applies a permission on the owner's chat words. The op's schema asks
+// for owner_words, so a call without them returns the schema and runs nothing.
+func TestCTOOpPermissionApplyNeedsOwnerWords(t *testing.T) {
+	op, ok := CTOOpByName("permission_apply")
+	if !ok {
+		t.Fatal("permission_apply is not a cto_op")
+	}
+	if err := ValidateCTOOpArgs(op, json.RawMessage(op.Example)); err != nil {
+		t.Fatalf("the permission_apply example does not validate: %v", err)
+	}
+	for _, args := range []string{`{"rules":["Bash(gh pr merge:*)"],"targets":["demo"]}`, `{"id":"pp_1"}`, `{"id":"pp_1","owner_words":"yes","bogus":1}`} {
+		if err := ValidateCTOOpArgs(op, json.RawMessage(args)); err == nil {
+			t.Errorf("permission_apply %s validated", args)
+		}
+	}
+	if err := ValidateCTOOpArgs(op, json.RawMessage(`{"id":"pp_1","owner_words":"approve that merge rule"}`)); err != nil {
+		t.Errorf("approve by id: %v", err)
+	}
+}

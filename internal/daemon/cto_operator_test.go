@@ -299,7 +299,6 @@ func TestCTOOperatorAllowlistCoversOwnerMethods(t *testing.T) {
 		"proposal_start_ack": "the TUI acknowledges its actual terminal start",
 		"cto_graph_window":   "the owner declares that they are driving their TUI",
 		"desk_settle":        "the TUI marks a Desk log line undone after its own undo",
-		"permission_undo":    "only the owner may undo a Claude Code permission approval",
 		"nudge_undo":         "only the owner may undo the chief of staff nudge pause or resume",
 		"sign_in_open":       "only the owner's click may open a sign-in pane",
 		"ask_discuss":        "the owner's discuss opens his own chat with the chief or the CTO",

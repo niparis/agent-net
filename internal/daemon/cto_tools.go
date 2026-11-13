@@ -314,6 +314,11 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if p.ID == "" {
 			return nil, errors.New("proposal_ask needs id")
 		}
+		if strings.HasPrefix(p.ID, "pp_") {
+			// A permission proposal waits on the Desk, not in the CTO dialog.
+			// Answer its state and the call that applies it.
+			return d.ctoPermissionProposal(ctx, p.ID)
+		}
 		found, haveItem, err := d.proposalRunner().get(p.ID)
 		if err != nil {
 			return nil, err

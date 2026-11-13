@@ -2184,6 +2184,27 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		res, err := g.undoPermissionProposal(ctx, p.ProposalID)
 		return res, err
 
+	case protocol.FramePermissionOwnerApply:
+		// The owner's operator path, or the CTO's process-checked one, on the
+		// owner's quoted words (decision 0159). The daemon sends it only from
+		// those paths; the owner session it names is checked here.
+		var p protocol.PermissionOwnerApplyFrame
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.ownerApplyPermission(ctx, p)
+
+	case protocol.FramePermissionGet:
+		var p protocol.PermissionGetFrame
+		if json.Unmarshal(raw, &p) != nil || p.ProposalID == "" || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		res, err := st.PermissionProposal(p.ProposalID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, reject("unknown permission proposal %s", p.ProposalID)
+		}
+		return res, err
+
 	case "rate.offer":
 		p, err := decode[protocol.RateOfferFrame](raw)
 		if err != nil || p.SessionID == "" {

@@ -27,7 +27,8 @@ sign_in_list nudge_stats`
 const CTOOperatorChanges = `operator_undo sessions_archive cto_enter cto_send session_enter apps.public.restore session_pin apps.refuse apps.public.url tools_keep_copy tools_save_changed tools_update_copies tools_import_folder
 mcp_coverage_plan mcp_coverage_apply mcp_coverage_undo tools_accept tools_import tools_export gateway_backup
 session_stop session_resume session_replace session_agent_set learned_answer hidden_set onboarding_set quality_set timezone_set
-worker_floors_set worker_floors_reset difficulty_set team_write delivery_owner_set merger_set merger_restore chief_set ask_undo ask_mark changes_owner_report worker_defect sign_in_raise bar_edit`
+worker_floors_set worker_floors_reset difficulty_set team_write delivery_owner_set merger_set merger_restore chief_set ask_undo ask_mark changes_owner_report worker_defect sign_in_raise bar_edit
+permission_apply permission_undo`
 
 // CTOOperatorMethods is an explicit allowlist, shared by schema generation and
 // daemon dispatch. It never accepts arbitrary daemon methods or consent approval.

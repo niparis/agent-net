@@ -14,7 +14,8 @@ import (
 )
 
 // Claude Code permission rules (decision 0127). The gateway sends these frames
-// only after the owner answered a permission ask. They are handled on the
+// only after the owner answered a permission ask, or after the CTO applied the
+// owner's direct chat instruction (decision 0159). They are handled on the
 // gateway link and nowhere else: a local session has no method that can write
 // these files.
 //
@@ -189,6 +190,7 @@ func (d *Daemon) permissionApply(ctx context.Context, p protocol.PermissionApply
 	}
 	added, err := claudePermissionAdd(p.Target.Path, p.Rules)
 	res.Added = added
+	res.File = claudeLocalSettingsFile(p.Target.Path)
 	if err != nil {
 		res.Error = err.Error()
 		return res

@@ -1322,7 +1322,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, permissionOwnerWordsMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1786,6 +1786,14 @@ const askBackNoteMigration = `
 SELECT 1 /* inbox back note column */;
 `
 
+// permissionOwnerWordsMigration keeps the owner's quoted chat words on a
+// permission proposal the CTO applied on his instruction (decision 0159). The
+// column is added in the migration loop, so replaying it is safe.
+const permissionOwnerWordsMigration = `
+-- CTO applies permissions on the owner's words (decision 0159): owner words column.
+SELECT 1 /* permission owner words column */;
+`
+
 // deskItemShapeMigration gives each Desk item an owner (chief or cto), a
 // state and a category, and links a duplicate to the open item it joined
 // (decision 0150). A rule judgment gains its action and category, a sort
@@ -2111,6 +2119,17 @@ func (s *Store) migrate() error {
 			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='owner_typed_at'`).Scan(&has)
 			if err == nil && has == 0 {
 				_, err = tx.Exec(`ALTER TABLE sessions ADD COLUMN owner_typed_at INTEGER NOT NULL DEFAULT 0`)
+			}
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "permission owner words column") {
+			var has int
+			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('permission_proposals') WHERE name='owner_words'`).Scan(&has)
+			if err == nil && has == 0 {
+				_, err = tx.Exec(`ALTER TABLE permission_proposals ADD COLUMN owner_words TEXT NOT NULL DEFAULT ''`)
 			}
 			if err != nil {
 				tx.Rollback()

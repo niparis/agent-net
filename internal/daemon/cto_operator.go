@@ -196,6 +196,11 @@ func (d *Daemon) executeCTOOperator(ctx context.Context, raw json.RawMessage) (a
 		}
 		return plan, nil
 	}, d.recordCTOAction, func(text string, options []string) error {
+		// The gateway already logs a permission grant with the owner's words,
+		// each target's result and its undo. A second line would repeat it.
+		if p.Method == protocol.OpPermissionApply {
+			return nil
+		}
 		_, e := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": text, "options": options})
 		return e
 	})
