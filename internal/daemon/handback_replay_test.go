@@ -295,3 +295,29 @@ func TestResumeWaitingForTheResumeLockAnswersWithinItsWait(t *testing.T) {
 		t.Fatal("the resume kept waiting for the resume lock past its own wait")
 	}
 }
+
+// A worker that cleanup is working on is not started again: the worktree and
+// the branch are going away. The resume says so and the owner sends again.
+func TestResumeRefusedWhileCleanupWorksOnTheWorker(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:ignore", Isolation: protocol.IsolationNone})
+	wk := w.d.workerBySession(res.SessionID)
+	w.d.wmu.Lock()
+	id := wk.id
+	wk.doneStatus, wk.handbackReport = protocol.StatusDone, "done"
+	w.d.saveWorkerLocked(wk)
+	w.d.wmu.Unlock()
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	w.d.wmu.Lock()
+	w.d.cleaningWorkers = map[string]bool{id: true}
+	w.d.wmu.Unlock()
+	_, err := w.cli.call("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"})
+	if err == nil || !strings.Contains(err.Error(), "being cleaned up") {
+		t.Fatalf("owner_send: %v", err)
+	}
+}

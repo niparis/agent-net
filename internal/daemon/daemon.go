@@ -528,6 +528,9 @@ type Daemon struct {
 	// that fails, or a worker that ends within 30 seconds, clears it.
 	lastStart     time.Time
 	startingBases map[string]int // guarded by qmu
+	// cleaningWorkers are the workers whose worktree cleanup is working on.
+	// guarded by wmu
+	cleaningWorkers map[string]bool
 	// qGone is when the owner of a queued start was first seen offline.
 	qGone map[string]time.Time
 	// wmu guards the workers started by this daemon (workers.go).

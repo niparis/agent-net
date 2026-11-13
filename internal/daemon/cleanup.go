@@ -232,6 +232,68 @@ func cleanupBranch(branch, id string) bool {
 	return err == nil
 }
 
+// cleanupClaim reads the state that decides whether a worktree may go, under
+// the queue and worker locks and with no git command. It is false when a worker
+// of that ID runs, a start or queue entry uses the branch, or the row changed.
+// With claim set it also marks the worker as being cleaned up, so a resume
+// waits for the next pass instead of using a worktree that is going away.
+func (d *Daemon) cleanupClaim(w cleanupWorktree, claim bool) (bool, error) {
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	if d.startingBases[w.Branch] > 0 {
+		return false, nil
+	}
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	if _, ok := d.workers[w.ID]; ok {
+		return false, nil
+	}
+	if claim && d.cleaningWorkers[w.ID] {
+		return false, nil
+	}
+	if d.st != nil {
+		var active int
+		if err := d.st.db.QueryRow(`SELECT count(*) FROM workers WHERE id=? AND ended_reason=''`, w.ID).Scan(&active); err != nil {
+			return false, err
+		}
+		if active != 0 {
+			return false, nil
+		}
+		queued, err := d.st.queue()
+		if err != nil {
+			return false, err
+		}
+		for _, q := range queued {
+			if q.Base == w.Branch || filepath.Clean(q.Path) == filepath.Clean(w.Path) {
+				return false, nil
+			}
+		}
+		var current int
+		if err := d.st.db.QueryRow(`SELECT count(*) FROM cleanup_worktrees WHERE worker_id=? AND project=? AND path=? AND branch=? AND ended_at=?`, w.ID, w.Project, w.Path, w.Branch, w.EndedAt.UnixNano()).Scan(&current); err != nil {
+			return false, err
+		}
+		if current == 0 {
+			return false, nil
+		}
+	}
+	if d.isOwnerWorktree(w.Path) {
+		return false, nil
+	}
+	if claim {
+		if d.cleaningWorkers == nil {
+			d.cleaningWorkers = make(map[string]bool)
+		}
+		d.cleaningWorkers[w.ID] = true
+	}
+	return true, nil
+}
+
+func (d *Daemon) cleanupRelease(id string) {
+	d.wmu.Lock()
+	delete(d.cleaningWorkers, id)
+	d.wmu.Unlock()
+}
+
 // cleanupWorktree never removes a worktree with uncommitted files or a branch
 // containing commits absent from the project default branch.
 func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now time.Time) error {
@@ -241,46 +303,14 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	if !strings.HasPrefix(w.ID, "w_") || filepath.Base(w.ID) != w.ID || !cleanupBranch(w.Branch, w.ID) || filepath.Clean(w.Path) != filepath.Join(d.worktreesDir(), w.ID) {
 		return nil
 	}
-	d.resumeMu.Lock()
-	defer d.resumeMu.Unlock()
-	d.qmu.Lock()
-	defer d.qmu.Unlock()
-	if d.startingBases[w.Branch] > 0 {
-		return nil
+	// The state is read under the locks and the claim is taken there. The git
+	// commands below run without them: a slow git (75 worktrees on a busy
+	// machine) held up every resume and start. The claim keeps a resume of this
+	// worker out, and the state is read again before anything is removed.
+	if ok, err := d.cleanupClaim(w, true); err != nil || !ok {
+		return err
 	}
-	d.wmu.Lock()
-	defer d.wmu.Unlock()
-	if _, ok := d.workers[w.ID]; ok {
-		return nil
-	}
-	if d.st != nil {
-		var active int
-		if err := d.st.db.QueryRow(`SELECT count(*) FROM workers WHERE id=? AND ended_reason=''`, w.ID).Scan(&active); err != nil {
-			return err
-		}
-		if active != 0 {
-			return nil
-		}
-		queued, err := d.st.queue()
-		if err != nil {
-			return err
-		}
-		for _, q := range queued {
-			if q.Base == w.Branch || filepath.Clean(q.Path) == filepath.Clean(w.Path) {
-				return nil
-			}
-		}
-		var current int
-		if err := d.st.db.QueryRow(`SELECT count(*) FROM cleanup_worktrees WHERE worker_id=? AND project=? AND path=? AND branch=? AND ended_at=?`, w.ID, w.Project, w.Path, w.Branch, w.EndedAt.UnixNano()).Scan(&current); err != nil {
-			return err
-		}
-		if current == 0 {
-			return nil
-		}
-	}
-	if d.isOwnerWorktree(w.Path) {
-		return nil
-	}
+	defer d.cleanupRelease(w.ID)
 	info, err := os.Lstat(w.Path)
 	missing := os.IsNotExist(err)
 	if err != nil && !missing {
@@ -474,6 +504,11 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 		}
 		return nil
 	})
+	// The git reads above ran with no lock. Read the state again before the
+	// first removal: a worker may have been registered or a start queued.
+	if ok, err := d.cleanupClaim(w, false); err != nil || !ok {
+		return err
+	}
 	if !missing {
 		if _, err := gitOut(ctx, w.Project, "worktree", "remove", w.Path); err != nil {
 			unlocked := false
@@ -510,6 +545,10 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	}
 	if (w.ChangeState == protocol.ChangeStopped && !closedSafe) || (!retainUntil.IsZero() && now.Before(retainUntil)) {
 		return nil
+	}
+	// A start may have taken this branch as its base while the worktree went.
+	if ok, err := d.cleanupClaim(w, false); err != nil || !ok {
+		return err
 	}
 	if _, err := gitOut(ctx, w.Project, "update-ref", "-d", branchRef, head); err != nil {
 		return err

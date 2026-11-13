@@ -1457,6 +1457,10 @@ func (d *Daemon) runWorkerResume(ctx context.Context, row workerRow, set WorkerS
 		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, changeID: row.ChangeID, fixes: row.Fixes, ready: make(chan struct{}), osSandbox: sandbox}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.wmu.Lock()
+	if d.cleaningWorkers[w.id] {
+		d.wmu.Unlock()
+		return nil, fmt.Errorf("worker %s is being cleaned up now; send the message again in a minute", w.id)
+	}
 	d.workers[w.id] = w
 	row.EndedReason, row.Reported, row.Resumable = "", false, false
 	d.saveWorkerLocked(w)
