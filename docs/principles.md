@@ -90,3 +90,7 @@ Where a principle is a goal that the product does not fully meet yet, it says so
     of them by the CTO for you.
 18. **Plain words.** Docs, messages and screens use short sentences and
     concrete words.
+19. **Each decision is made in one place.** A question the system answers
+    (which model, who leads, may this tool run, where a message goes) has one
+    owner in the code. A second place that makes the same decision is a
+    defect, found and fixed like any other ([decision 0163](decisions/0163-split-decisions-are-defects.md)).
