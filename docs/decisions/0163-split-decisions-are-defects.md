@@ -1,9 +1,9 @@
-# 0163 - A decision made in two places is a defect: find, fix, lock
+# 0163 - Find and fix decisions made in two places
 
 Date: 2026-11-13
-Status: Proposed, NOT approved. The owner agrees with the direction but says
-it is not a complete solution (2026-11-13). Nothing in "Build" starts from this
-file.
+Status: Proposed (revision 2), waiting for the owner's approval. Revision 1 (a
+decision register and a CI check) was not approved: the owner wants no
+deterministic step and no list of decisions he has to keep approved.
 
 ## Problem
 
@@ -34,110 +34,77 @@ Why it happens here:
   2026-11-13.
 - **Adding a route costs nothing; removing one earns nothing.**
 
-Rules in docs, reviewer checklists, clone linters and periodic audits do not
-hold this off: docs go stale at this rate, a diff-scoped reviewer cannot see a
-copy elsewhere, the routes are not textual clones, and an audit finds the
-problem after the copies exist.
+The owner's limits for the answer:
 
-The owner asked for a process that both prevents and fixes these, for any
-decision and any project, not one fix for model choice.
+- no deterministic step: a script cannot judge whether two pieces of code make
+  the same decision;
+- no LLM on every change: too expensive;
+- no list of decisions to keep approved: there are too many, and he cannot keep
+  track of them.
 
 ## Decision
 
-A decision made in more than one place is a defect class: a **split decision**.
-It has one record, one way to prevent it, three ways to find it, one way to fix
-it, and two numbers that show whether the process works.
+Two parts, both done by the agents that already run, with judgment, not rules.
 
-A **decision** is a question the system answers for many callers: which model a
-session runs on, who leads a node, whether a tool call may run, which session
-gets a message, whether a provider has quota left.
+### 1. Instructions in agent-net's guidance
 
-### 1. The decision register
+Every session gets these through agent-net's guidance, so they reach every
+harness and every project.
 
-Each project keeps one register, as data in its repo. For each decision:
+- **Leads, before a brief.** Before you brief a change that decides something
+  (which model, who leads, whether a tool may run, where a message goes),
+  search for code that already decides it. Brief the worker to use or extend
+  that code. Never brief a second copy beside it.
+- **Workers, while coding.** Before you add a check, a lookup or a choice,
+  search for a function that already does it, and reuse or extend it. When you
+  find two places that already do the same thing, do not fix them (it is out of
+  scope): name both in your hand-back under "Duplicates seen".
+- **Reviewers, in the review step.** For each piece of decision logic in the
+  diff, search the code base for another place that makes the same decision.
+  Report it as a finding with both locations.
+- **Defect fixes.** Say whether the defect came from two parts of the system
+  that disagree, and name them.
 
-- its name and the question it answers;
-- its **owner**: the one package or function allowed to make it;
-- its **owned facts**: the tables, columns, settings and functions that only
-  the owner may use to make it;
-- its status: `unified`, `split` (with the routes found) or `unknown`;
-- the decision file that designed it.
+These reuse work that already happens: the worker already reads the code
+around its change, the reviewer already reads the diff, and the fixer already
+investigates the defect. The added cost is a search and a sentence.
 
-Everything below reads or writes the register. Nothing depends on an agent
-remembering it.
+### 2. One investigation a week per project
 
-### 2. Prevent
+Once a week agent-net gives each project lead one task:
 
-- **One CI check, driven by the register.** It fails when code outside a
-  decision's owner uses one of that decision's owned facts. It is one generic
-  check for every decision, not a test per domain, so adding a decision to the
-  register is enough to protect it. A violation fails the build, so it does not
-  decay.
-- **The shortcut does not compile where the language allows it.** A unified
-  decision returns a value that only its owner can make (for model choice, the
-  `Granted` value), and the action it guards requires that value.
-- **Briefs and reviews carry the register.** When a brief or a change touches a
-  decision's owned facts, agent-net adds that decision's owner and entry point
-  to the worker brief and to the review task, so a worker learns the path
-  before the CI check has to stop it.
+1. **Gather.** Read the week's "Duplicates seen" lines from hand-backs, the
+   duplication findings from reviews, and the defects marked as two parts that
+   disagree.
+2. **Pick one area.** The one with the most reports, or, in a quiet week, the
+   next area in a rotation the lead keeps.
+3. **Investigate.** List every route that makes the decision in that area, with
+   a table of which checks each route applies.
+4. **Propose.** Send the owner a design that gives the decision one owner in the
+   code. He approves it or drops it.
 
-### 3. Find
+One investigation costs about 130,000 to 160,000 tokens (measured on
+2026-11-13 for the model routes and the lead routes): cents on a low-cost model,
+a few dollars on the strongest.
 
-Three signals put a candidate in one queue that the owner can see:
+### 3. Fixing
 
-- **Incidents.** Every fixed defect gets one triage question: "did two parts of
-  the system disagree?" A yes names the decision and opens a candidate. This is
-  the strongest signal, because it comes from real failures.
-- **Spread.** A weekly count of how many places read each table, setting and
-  state flag to make a choice. A fact that gains readers and has no register
-  entry becomes a candidate.
-- **Review.** A change that adds a reader of a fact that already has several
-  readers is flagged as a candidate, not refused.
-
-### 4. Fix
-
-Every candidate gets the same five steps:
-
-1. **Inventory.** Every route that makes the decision, with a matrix of which
-   checks each one applies.
-2. **Design.** Separate policy (what we would like) from mechanism (what can
-   run now). Name the one owner. Decide which checks are locked for every
-   caller and which each kind of caller chooses, in one table.
-3. **Owner approval** of the design.
-4. **Build** in parts, by one worker session. The first part changes no
-   behaviour, and the existing tests pin that.
-5. **Lock.** Add the decision to the register as `unified` with its owned
-   facts, so the CI check protects it, and make the shortcut fail to compile
-   where the language allows it.
-
-Decision 0162 (model choice) is the first run of these steps. Org leads (T4) is
-the second.
-
-### 5. Measure
-
-Two numbers per week, per project:
-
-- split and unknown decisions in the register, which should fall;
-- defects triaged as "two parts disagreed", which should fall to zero.
-
-If the first falls and the second does not, the register is missing
-decisions.
+An approved proposal is built like any feature: tasks first, then sessions
+(the lead guidance "Plan before you start workers"), with a first part that
+changes no behaviour. When it ships, the decision has one owner in the code.
+Nothing is added to a list.
 
 ### Generic
 
-The register format, the CI check, the weekly count, the triage question and
-the five fix steps are agent-net features that work on any project agent-net
-builds. Nothing in them names agent-net's own decisions.
+The instructions and the weekly task name no agent-net decision. They work on
+any project agent-net builds.
 
 ## Build
 
-Each piece below needs its own design and the owner's go before a worker
-starts.
+Each piece needs the owner's go.
 
-1. The register format and seed entries for three decisions: model choice
-   (after 0162 ships), leads (after T4), permissions.
-2. The generic CI check driven by the register.
-3. The triage question on fixed defects, and the candidate queue.
-4. The weekly spread count.
-5. The register in briefs and review tasks.
-6. The five fix steps as a playbook agent-net runs for a candidate.
+1. The instruction text: the lead, worker, reviewer and defect lines, and the
+   "Duplicates seen" line in the hand-back. One small worker, text and goldens
+   only.
+2. The weekly task to each project lead. Its own short design first: how it is
+   scheduled, what it reads, and where its proposal goes.
