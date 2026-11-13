@@ -77,6 +77,9 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1, ?,?,?,?, CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=? AND owner=?) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=? AND owner=? ORDER BY created_at DESC,rowid DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=?) END, ?,?,?,?,?,?,?,?,?)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.CallerSessionID, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed, r.TaskID, r.Midrun, files, lines, complete, early, r.SessionID, r.CallerSessionID, r.SessionID, r.CallerSessionID, r.CallerSessionID, sf, sr, srt, se, senv, stop, strace, scapped, causeOrUnknown(r.Cause)); err != nil {
 		return err
 	}
+	if err := recordWorkerUsageTx(tx, r.SessionID, r.EndedAt); err != nil {
+		return err
+	}
 	// Work that failed on quota after it started joins the provider's quota
 	// thread (decision 0152).
 	if r.Outcome == protocol.OutcomeFailed && r.Cause == protocol.CauseQuotaAuth {

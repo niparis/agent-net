@@ -84,8 +84,8 @@ func TestPickerBuckets(t *testing.T) {
 // tasks and model B's one. Bucket 6 (D 3.00-3.33) holds one task each.
 func shrinkFixture() []PickerTask {
 	return []PickerTask{
-		{"A", 2.4, 1}, {"A", 2.5, 1}, {"A", 2.6, .5}, {"B", 2.5, .5},
-		{"A", 3.1, 0}, {"B", 3.1, 1},
+		{Key: "A", D: 2.4, Score: 1}, {Key: "A", D: 2.5, Score: 1}, {Key: "A", D: 2.6, Score: .5}, {Key: "B", D: 2.5, Score: .5},
+		{Key: "A", D: 3.1, Score: 0}, {Key: "B", D: 3.1, Score: 1},
 	}
 }
 
@@ -129,7 +129,7 @@ func TestPickerEmptyCellTakesTheBucketMeanWithAFlooredVariance(t *testing.T) {
 func TestPickerIntervalIsClippedToZeroAndOne(t *testing.T) {
 	var tasks []PickerTask
 	for i := 0; i < 3; i++ {
-		tasks = append(tasks, PickerTask{"top", 1.1, 1}, PickerTask{"low", 1.1, 0})
+		tasks = append(tasks, PickerTask{Key: "top", D: 1.1, Score: 1}, PickerTask{Key: "low", D: 1.1, Score: 0})
 	}
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
 	top, low := table.Cell("top", 0), table.Cell("low", 0)
@@ -142,8 +142,8 @@ func TestPickerVarianceFloorStopsThinCellsLookingCertain(t *testing.T) {
 	// Bucket 4 holds only 0.5 scores, so its variance and the cell's own are
 	// 0. Without the floor the interval of "x" would have no width. The
 	// variance of all ten tasks is .1, so the floor is .05.
-	tasks := []PickerTask{{"x", 2.5, .5}, {"x", 2.5, .5}, {"z", 2.5, .5}, {"z", 2.5, .5}, {"z", 2.5, .5}, {"z", 2.5, .5},
-		{"y", 3.5, 1}, {"y", 3.5, 0}, {"y", 3.5, 1}, {"y", 3.5, 0}}
+	tasks := []PickerTask{{Key: "x", D: 2.5, Score: .5}, {Key: "x", D: 2.5, Score: .5}, {Key: "z", D: 2.5, Score: .5}, {Key: "z", D: 2.5, Score: .5}, {Key: "z", D: 2.5, Score: .5}, {Key: "z", D: 2.5, Score: .5},
+		{Key: "y", D: 3.5, Score: 1}, {Key: "y", D: 3.5, Score: 0}, {Key: "y", D: 3.5, Score: 1}, {Key: "y", D: 3.5, Score: 0}}
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
 	x := table.Cell("x", 4)
 	half := 1.645 * math.Sqrt(.05/7)
@@ -163,6 +163,17 @@ func pickTasks(key string, d float64, scores ...float64) []PickerTask {
 	out := make([]PickerTask, len(scores))
 	for i, s := range scores {
 		out[i] = PickerTask{Key: key, D: d, Score: s}
+	}
+	return out
+}
+
+// costTasks is pickTasks with a recorded usage and cost per task.
+func costTasks(key string, d, cost float64, scores ...float64) []PickerTask {
+	out := pickTasks(key, d, scores...)
+	for i := range out {
+		out[i].Tokens, out[i].Cost = RunTokens{In: 1000, Out: 100}, cost
+		// A score under a half is a task that did not end clean.
+		out[i].Dirty = out[i].Score < .5
 	}
 	return out
 }
@@ -245,17 +256,27 @@ func TestPickLeavesOutAModelBelowTheQualifyingScore(t *testing.T) {
 	}
 }
 
-// The score decides, not the better model's lead: two qualifying models with
-// the same benchmark and quota share the picks evenly.
-func TestPickQualifyingModelsShareEvenlyAtTheSameBenchmark(t *testing.T) {
-	tasks := append(pickTasks("a", 2.5, repeat(10, 1, .5, 1, .5)...), pickTasks("b", 2.5, repeat(10, 1, .5, .5, 1)...)...)
-	scores := pickScores(map[string]float64{"a": 51, "b": 51})
-	counts := pickN(t, pickCandidates("a", "b"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 60)
-	if counts["a"] != 30 || counts["b"] != 30 {
+// The cheapest expected cost per accepted result wins, however much better the
+// dearer model is (decision 0161). Opus 0.86 at $2.00 a run, Sonnet 0.71 at
+// $0.60 and DeepSeek 0.59 at $0.05: DeepSeek costs $0.085 per accepted result,
+// Sonnet $0.85 and Opus $2.33.
+func TestPickTakesTheLowestCostPerAcceptedResult(t *testing.T) {
+	var tasks []PickerTask
+	tasks = append(tasks, costTasks("opus", 2.5, 2, repeat(10, 1, .75)...)...)
+	tasks = append(tasks, costTasks("sonnet", 2.5, .6, repeat(10, 1, .5)...)...)
+	tasks = append(tasks, costTasks("deepseek", 2.5, .05, repeat(10, .75)...)...)
+	scores := pickScores(map[string]float64{"opus": 51, "sonnet": 51, "deepseek": 51})
+	counts := pickN(t, pickCandidates("opus", "sonnet", "deepseek"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 20)
+	if counts["deepseek"] != 20 {
 		t.Fatalf("picks: %v", counts)
 	}
+	// A cheap model that rarely succeeds is not cheap per accepted result.
+	tasks = append(costTasks("opus", 2.5, 2, repeat(10, 1)...), costTasks("flaky", 2.5, .5, repeat(10, .1)...)...)
+	counts = pickN(t, pickCandidates("opus", "flaky"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 20)
+	if counts["opus"] != 20 {
+		t.Fatalf("flaky: picks: %v", counts)
+	}
 }
-
 func TestPickUncertainBoostIsOnTheWeight(t *testing.T) {
 	tasks := append(pickTasks("known", 2.5, repeat(10, 1, 0)...), pickTasks("fresh", 2.5, 1, 0)...)
 	// Both benchmark at normal: the ceiling (D 3.0) is one bucket above D 2.5.
@@ -272,8 +293,8 @@ func TestPickUncertainBoostIsOnTheWeight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A qualifying model weighs its quota pace times the benchmark factor: 1.
-	near(t, "weight", choice.Weight, 1)
+	// The cost rule picked "known", not the rotation: it has no weight.
+	near(t, "weight", choice.Weight, 0)
 }
 
 // A cell more than one bucket below the model's benchmark ceiling gets no
@@ -338,33 +359,56 @@ func TestPickModelFarAboveTheWorkIsNotCutByItsBenchmark(t *testing.T) {
 	}
 }
 
-func TestPickModelUnderTheBestIsLeftOutByTheQualifyingRule(t *testing.T) {
-	// "strong" has 10 tasks scoring about 0.12 under the best cell. Its
-	// interval is wide enough to be allowed, so only the qualifying rule
-	// (cell score under 0.9 x best) keeps it out of the rotation. The note
-	// says so, and never says "overqualified".
+// A weaker model is no longer left out for being under 0.9 x best. The note
+// gives each qualifier's expected cost.
+func TestPickNoteNamesTheExpectedCostOfEachQualifier(t *testing.T) {
 	var tasks []PickerTask
-	tasks = append(tasks, pickTasks("cheap", 1.8, repeat(10, 1)...)...)
-	tasks = append(tasks, pickTasks("strong", 1.8, repeat(3, 1, .75, .75, .75)...)...)
+	tasks = append(tasks, costTasks("strong", 1.8, 3, repeat(10, 1)...)...)
+	tasks = append(tasks, costTasks("cheap", 1.8, 1, repeat(3, 1, .75, .75, .75)...)...)
 	scores := pickScores(map[string]float64{"cheap": 29, "strong": 51})
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
-	cheapScore, strongScore := table.Cell("cheap", 2).Score, table.Cell("strong", 2).Score
-	if gap := cheapScore - strongScore; gap < .1 || gap > .14 {
-		t.Fatalf("fixture gap %.3f, want about 0.12 (cheap %.3f, strong %.3f)", gap, cheapScore, strongScore)
-	}
-	counts := pickN(t, pickCandidates("cheap", "strong"), "simple", 1.8, tasks, scores, DefaultPickerSettings(), 20)
-	if counts["strong"] != 0 || counts["cheap"] != 20 {
-		t.Fatalf("picks: %v", counts)
-	}
 	choice, err := ChooseWorkerModel(pickCandidates("cheap", "strong"), "simple", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 1.8, Table: table})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(choice.PickNote, "strong ") || !strings.Contains(choice.PickNote, "left out (score below 0.9×best)") || strings.Contains(choice.PickNote, "overqualified") {
-		t.Fatalf("note: %q", choice.PickNote)
+	if choice.Name != "cheap" {
+		t.Fatalf("picked %s: %s", choice.Name, choice.PickNote)
+	}
+	for _, want := range []string{"cheap 0.", "$1.00/run, p 1.00, $1.00 expected", "strong 0.97", "$3.00/run, p 1.00, $3.00 expected", "lowest expected cost"} {
+		if !strings.Contains(choice.PickNote, want) {
+			t.Fatalf("note misses %q: %q", want, choice.PickNote)
+		}
+	}
+	if strings.Contains(choice.PickNote, "0.9×best") {
+		t.Fatalf("note still names the old bar: %q", choice.PickNote)
 	}
 }
 
+// A model with no run in the bucket costs its price times the tokens of an
+// average run there, and says so. A model with no listed price takes the
+// middle price and says "price unknown".
+func TestPickCostOfAModelWithNoRunsIsPriceTimesAverageTokens(t *testing.T) {
+	prices := fakePrices()
+	tasks := costTasks("claude-opus-5-5:high", 2.5, 1, repeat(10, 1)...)
+	table := BuildPickerTable(tasks, DefaultPickerSettings())
+	in := &PickerInput{D: 2.5, Table: table, Prices: prices}
+	c := []WorkerModelCandidate{
+		{Name: "opus", Harness: "claude", Model: "claude-opus-5-5:high"},
+		{Name: "haiku", Harness: "claude", Model: "claude-haiku-5-5:high"},
+		{Name: "mystery", Harness: "claude", Model: "mystery-9:high"},
+	}
+	scores := pickScores(map[string]float64{"claude-opus-5-5": 51, "claude-haiku-5-5": 51, "mystery-9": 51})
+	choice, err := ChooseWorkerModel(c, "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Average run: 1000 in, 100 out. Haiku: 1000*1e-7 + 100*5e-7 = $0.00015.
+	for _, want := range []string{"haiku", "haiku n0 est $0.00/run", "(price unknown)"} {
+		if !strings.Contains(choice.PickNote, want) {
+			t.Fatalf("note misses %q: %q", want, choice.PickNote)
+		}
+	}
+}
 func TestPickKeepsAModelAboveItsBenchmarkOut(t *testing.T) {
 	// A thin model whose benchmark ceiling is below the task stays out. D 4.5
 	// is far above "weak" (ceiling D 2.25).
@@ -564,7 +608,7 @@ func TestPickNoteNamesTheCellsAndWhatWasLeftOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30 weight 1.00; flash 0.63 [0.44-0.81] n6 left out (score below 0.9×best); terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)"
+	want := "bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)"
 	if choice.Name != "deepseek" || choice.PickNote != want {
 		t.Fatalf("choice %s\nnote %q\nwant %q", choice.Name, choice.PickNote, want)
 	}
@@ -583,7 +627,7 @@ func TestPickNoteShowsPriorAndChosenNotBest(t *testing.T) {
 	// The lenient fraction lets "strong" qualify. "fresh" has no record and its
 	// benchmark (very_complex) is above this simple task, so exploring it would
 	// be a step down. Nothing is left out as overqualified.
-	for _, want := range []string{"cheap 0.90 [0.86-0.95] n30, best", "strong 0.53 [0.49-0.58] n30 weight", "fresh n0 left out (explore is up only)"} {
+	for _, want := range []string{"cheap 0.90 [0.86-0.95] n30, best", "qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30", "fresh n0 left out (explore is up only)"} {
 		if !strings.Contains(choice.PickNote, want) {
 			t.Fatalf("note misses %q: %q", want, choice.PickNote)
 		}
@@ -703,11 +747,10 @@ func TestPickerBPrimeRotation(t *testing.T) {
 	tasks := append(pickTasks("strong", 2.5, repeat(5, 1)...), pickTasks("weak", 2.5, repeat(5, 1)...)...)
 	scores := pickScores(map[string]float64{"strong": 51, "weak": 39, "fresh": 39})
 	got := pickN(t, pickCandidates("strong", "weak", "fresh"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 100)
-	if got["fresh"] != 10 || got["weak"] <= got["strong"] || got["strong"] == 0 {
+	if got["fresh"] != 10 || got["strong"]+got["weak"] != 90 {
 		t.Fatalf("rotation: %v", got)
 	}
 }
-
 func TestPickerBPrimeUsesScoreNotInterval(t *testing.T) {
 	tasks := append(pickTasks("good", 2.5, repeat(10, 1)...), pickTasks("weak", 2.5, repeat(10, .7)...)...)
 	scores := pickScores(map[string]float64{"good": 39, "weak": 39})
@@ -717,27 +760,10 @@ func TestPickerBPrimeUsesScoreNotInterval(t *testing.T) {
 	}
 }
 
-// Weight = quota pace x (best benchmark / benchmark) ^ weaker_bias. With
-// benchmarks 50 and 40 the weights are 1 and 1.25, so 90 smooth picks split
-// 40 and 50.
-func TestPickerBPrimeWeakerBiasSetsTheShares(t *testing.T) {
-	tasks := append(pickTasks("strong", 2.5, repeat(5, 1)...), pickTasks("weak", 2.5, repeat(5, 1)...)...)
-	scores := pickScores(map[string]float64{"strong": 50, "weak": 40})
-	got := pickN(t, pickCandidates("strong", "weak"), "normal", 2.5, tasks, scores, DefaultPickerSettings(), 90)
-	if got["strong"] != 40 || got["weak"] != 50 {
-		t.Fatalf("bias 1: %v, want 40 and 50", got)
-	}
-	set := DefaultPickerSettings()
-	set.WeakerBias = 2 // weights 1 and 1.5625
-	got = pickN(t, pickCandidates("strong", "weak"), "normal", 2.5, tasks, scores, set, 256)
-	if got["strong"] != 100 || got["weak"] != 156 {
-		t.Fatalf("bias 2: %v, want 100 and 156", got)
-	}
-}
-
-// A provider behind its quota pace gets more weight, with equal benchmarks.
-func TestPickerBPrimeQuotaPaceScalesTheWeight(t *testing.T) {
-	tasks := append(pickTasks("a", 2.5, repeat(5, 1)...), pickTasks("b", 2.5, repeat(5, 1)...)...)
+// A provider behind its quota pace counts as cheaper: with equal cost and
+// score, the model on the lagging provider is picked.
+func TestPickQuotaPaceBreaksACostTie(t *testing.T) {
+	tasks := append(costTasks("a", 2.5, 1, repeat(5, 1)...), costTasks("b", 2.5, 1, repeat(5, 1)...)...)
 	scores := pickScores(map[string]float64{"a": 50, "b": 50})
 	c := pickCandidates("a", "b")
 	c[0].Provider, c[1].Provider = "pa", "pb"
@@ -746,23 +772,22 @@ func TestPickerBPrimeQuotaPaceScalesTheWeight(t *testing.T) {
 	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
 	rotation := &WorkerRotation{}
 	counts := map[string]int{}
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 20; i++ {
 		choice, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, rotation, in)
 		if err != nil {
 			t.Fatal(err)
 		}
 		counts[choice.Name]++
 	}
-	// exp(20/20) = 2.718 against 1: about 73 and 27.
-	if counts["a"] < 70 || counts["a"] > 76 {
+	if counts["a"] != 20 {
 		t.Fatalf("picks: %v", counts)
 	}
 }
 
-// The qualifying set is the models with three tasks or more and a cell score
-// of 0.9 x best or more. The note names it with the weights, names the thin
-// cells open to exploration and gives the reason for each model left out.
-func TestPickerBPrimeNoteNamesTheQualifyingSetAndWeights(t *testing.T) {
+// The qualifying set is the models with three tasks or more. The note names
+// it, names the thin cells open to exploration and gives the reason for each
+// model left out.
+func TestPickerBPrimeNoteNamesTheQualifyingSet(t *testing.T) {
 	tasks := append(pickTasks("a", 2.5, repeat(10, 1)...), pickTasks("b", 2.5, repeat(10, 1)...)...)
 	tasks = append(tasks, pickTasks("c", 2.5, repeat(10, 0)...)...)
 	tasks = append(tasks, pickTasks("thin", 2.5, 1)...)
@@ -772,7 +797,7 @@ func TestPickerBPrimeNoteNamesTheQualifyingSetAndWeights(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"qualifying: ", "a 0.89 [0.75-1.00] n10 weight 1.00", "b 0.89 [0.75-1.00] n10 weight 1.25", "thin cells (explore share 0.1): thin ", "(benchmark) weight 1.43", "c 0.23 [0.09-0.37] n10 left out (below 0.9×best)"} {
+	for _, want := range []string{"qualifying: a 0.89 [0.75-1.00] n10, b 0.89 [0.75-1.00] n10", "thin cells (explore share 0.1): thin ", "(benchmark)", "c 0.23 [0.09-0.37] n10 left out (below 0.9×best)"} {
 		if !strings.Contains(choice.PickNote, want) {
 			t.Errorf("note lacks %q: %s", want, choice.PickNote)
 		}
@@ -943,5 +968,90 @@ func TestPickerWhyCountsTheOtherQualifyingProfiles(t *testing.T) {
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: why lacks %q: %s", c.name, c.want, got)
 		}
+	}
+}
+
+// priceLadder is a price list whose models are the names of the test models, in
+// the order of the ladder: each one costs more per token than the one before.
+func priceLadder(names ...string) *PriceBook {
+	var list []ModelPrice
+	for i, n := range names {
+		list = append(list, ModelPrice{ID: "x/" + n, Prompt: float64(i+1) * 1e-6, Completion: float64(i+1) * 5e-6})
+	}
+	return NewPriceBook(list)
+}
+
+func pickWith(t *testing.T, tasks []PickerTask, prices *PriceBook, names ...string) WorkerModelChoice {
+	t.Helper()
+	scores := map[string]float64{}
+	for _, n := range names {
+		scores[n] = 51
+	}
+	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings()), Prices: prices}
+	choice, err := ChooseWorkerModel(pickCandidates(names...), "normal", pickScores(scores), nil, nil, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return choice
+}
+
+// Expected cost = the model's run cost + (1 - p) x the run cost of the next
+// dearer model, where p is the share of its tasks that ended clean (decision
+// 0161). Cheap costs $0.25 and fails 15 of 40 tasks (p about 0.65 once shrunk):
+// $0.25 + 0.35 x $0.30 = $0.355. Mid costs $0.30 and fails one in a hundred: $0.30 + 0.01 x
+// $2.00 = $0.32. Dear costs $2.00 and is the top of the ladder, so its rescue
+// is itself: $2.00 + 0.01 x $2.00. The old rule, run cost / score, picked cheap.
+func TestPickTakesTheLowestExpectedCostWithTheRescueOfTheNextDearerModel(t *testing.T) {
+	// withDirty marks the last bad tasks of n as not clean. A task with a failed
+	// step still scores 0.75, so the model stays allowed by its interval.
+	withDirty := func(key string, cost float64, n, bad int) []PickerTask {
+		out := costTasks(key, 2.5, cost, repeat(n, 1)...)
+		for i := n - bad; i < n; i++ {
+			out[i].Score, out[i].Dirty = .75, true
+		}
+		return out
+	}
+	var tasks []PickerTask
+	tasks = append(tasks, withDirty("cheap", .25, 40, 15)...)
+	tasks = append(tasks, withDirty("mid", .30, 100, 1)...)
+	tasks = append(tasks, withDirty("dear", 2, 100, 1)...)
+	choice := pickWith(t, tasks, priceLadder("cheap", "mid", "dear"), "cheap", "mid", "dear")
+	if choice.Name != "mid" {
+		t.Fatalf("picked %s: %s", choice.Name, choice.PickNote)
+	}
+	for _, want := range []string{"mid 1.00", "$0.30/run, p 0.99, $0.33 expected", "cheap 0.91", "dear 1.00"} {
+		if !strings.Contains(choice.PickNote, want) {
+			t.Errorf("note misses %q: %s", want, choice.PickNote)
+		}
+	}
+}
+
+// A fix round is in the run's cost already, so the score's quarter per fix
+// round must not count a second time. A scores 0.875 at $1.00. B needs a fix
+// round on every task (score 0.75) and costs $0.95: B is cheaper, and p is 1
+// for both. The old rule, run cost / score, picked A.
+func TestPickDoesNotCountFixRoundsTwice(t *testing.T) {
+	var tasks []PickerTask
+	tasks = append(tasks, costTasks("a", 2.5, 1.0, repeat(10, 1, .75)...)...)
+	tasks = append(tasks, costTasks("b", 2.5, .95, repeat(20, .75)...)...)
+	choice := pickWith(t, tasks, priceLadder("b", "a"), "a", "b")
+	if choice.Name != "b" {
+		t.Fatalf("picked %s: %s", choice.Name, choice.PickNote)
+	}
+}
+
+// p is the clean share of a cell, shrunk to the bucket mean like the score: a
+// thin cell is pulled toward the mean and its interval is wide.
+func TestPickerCleanCellIsShrunkLikeTheScore(t *testing.T) {
+	tasks := append(pickTasks("a", 2.5, 1, 1, 1), pickTasks("b", 2.5, repeat(10, 1, 0)...)...)
+	for i := range tasks {
+		tasks[i].Dirty = tasks[i].Score < .5
+	}
+	table := BuildPickerTable(tasks, DefaultPickerSettings())
+	a, b := table.CleanCell("a", 4), table.CleanCell("b", 4)
+	// a: 3 clean of 3, bucket mean 13/23, k = 5: (3 + 5 x 0.609) / 8.
+	near(t, "a score", a.Score, (3+5*13.0/23)/8)
+	if a.N != 3 || a.Lo >= a.Score || b.N != 20 || b.Score >= a.Score {
+		t.Fatalf("a %+v b %+v", a, b)
 	}
 }

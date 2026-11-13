@@ -399,7 +399,8 @@ func (c *agyConn) noteStepUsage(stepType, state string, usage *agyUsage) {
 
 func agyStats(u agyUsage, model string) workerStats {
 	return workerStats{Tokens: tokenText(u.Input, u.Output, u.Thinking, u.CacheRead, 0), ContextLimit: agyContextLimit(model),
-		TotalTokens: int64(u.Input + u.Output + u.Thinking), Model: model}
+		TotalTokens: int64(u.Input + u.Output + u.Thinking), Model: model,
+		Usage: protocol.RunTokens{In: u.Input, Out: u.Output, Reasoning: u.Thinking, CacheRead: u.CacheRead}}
 }
 
 // agyContextLimit is the context window of an Antigravity model, by family.

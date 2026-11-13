@@ -400,6 +400,9 @@ func TestClaudeTranscriptStats(t *testing.T) {
 	if st.Tokens != "13 in, 11 out, 100 cache read, 5 cache write" || st.Model != "claude-haiku-5-5" {
 		t.Errorf("stats: %+v", st)
 	}
+	if want := (protocol.RunTokens{In: 13, Out: 11, CacheRead: 100, CacheWrite: 5}); st.Usage != want {
+		t.Errorf("usage by kind: %+v, want %+v", st.Usage, want)
+	}
 	// The last assistant message is m2: its input plus cache read and write.
 	// A haiku 5 has a 1M context window.
 	if st.ContextTokens != 3 || st.ContextLimit != 1000000 || st.TotalTokens != 24 {

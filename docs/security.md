@@ -41,6 +41,8 @@ The gateway listens on `0.0.0.0:7420` by default, so it accepts connections on e
 
 This fits a LAN or tailnet where the gateway port is reachable only by machines you control. Do not expose port 7420 to the open internet. The public routes would be reachable by anyone, and the enrollment route could be probed or abused if an invite code leaked. Keep invite codes private.
 
+The gateway makes one outbound request a day, a plain `GET https://openrouter.ai/api/v1/models` with no key, cookie or owner detail, to keep the public model price list for the worker picker's cost rule (decision [0161](decisions/0161-pick-by-cost-per-accepted-result.md)). A failed fetch keeps the old prices.
+
 The daemon runs each installed harness's own update command as the current user, with input closed and a five-minute timeout. It does not run sudo. The commands can change the harness installation and may access the network. Busy harnesses are skipped and retried later. The owner can turn this off for the network with **Keep harnesses updated** in Settings under Integrations. Update results, including the last line of a failed command's output, are sent with the machine's harness inventory.
 
 Decision [0036](decisions/0036-primitives.md) distinguishes authority over actions from autonomy over decisions about work. An agent is a chartered identity; a session is its running process. The checks below describe current behavior, including the autonomy setting and its guard rails.

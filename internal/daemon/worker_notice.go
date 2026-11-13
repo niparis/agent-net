@@ -769,6 +769,8 @@ type workerStats struct {
 	// TotalTokens is input plus output plus reasoning for the run, no cache
 	// reads. 0 when the harness cannot say.
 	TotalTokens int64
+	// Usage is the same run by kind of token. Zero when the harness cannot say.
+	Usage protocol.RunTokens
 }
 
 // workerStats asks the launcher, with a short time limit. When the harness
@@ -838,6 +840,7 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project, Title: title, Permissions: permissions, OSSandbox: osSandbox,
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
 		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, AutoContinue: auto, Difficulty: difficulty, Struggle: struggle}
+	n.APICost = d.apiCostText(harness, model, st.Usage)
 	d.wmu.Lock()
 	n.Evidence = w.evidence
 	d.wmu.Unlock()
@@ -2030,4 +2033,25 @@ func handbackPaths(req protocol.WorkerHandbackRequest) []string {
 		}
 	}
 	return paths
+}
+
+// apiCostText is the run's cost at API prices for the notice, asked of the
+// gateway, which keeps the price list (decision 0161). It is empty when the
+// harness reported no usage, the gateway has no price list, or it cannot be
+// reached in two seconds: the notice never waits longer for a cost.
+func (d *Daemon) apiCostText(harness, model string, usage protocol.RunTokens) string {
+	if usage.Zero() || model == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	raw, err := d.call(ctx, "worker.cost", protocol.WorkerCostQuery{Model: protocol.PickerModelKey(harness, model), Tokens: usage})
+	if err != nil {
+		return ""
+	}
+	var r protocol.WorkerCostReply
+	if json.Unmarshal(raw, &r) != nil || !r.Known {
+		return ""
+	}
+	return protocol.APICostText(r.Cost, r.PriceKnown)
 }

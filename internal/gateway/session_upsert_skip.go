@@ -78,7 +78,7 @@ func sessionColumns(q interface {
 	QueryRow(string, ...any) *sql.Row
 }, where string, args ...any) (string, error) {
 	var key string
-	err := q.QueryRow(`SELECT json_array(id,online,status,waiting,name,title,cwd,pid,delivery,mode,model,CASE WHEN json_valid(worker) THEN json_remove(worker,'$.context_tokens','$.context_limit','$.tokens') ELSE worker END,worker_title,worker_run_active,
+	err := q.QueryRow(`SELECT json_array(id,online,status,waiting,name,title,cwd,pid,delivery,mode,model,CASE WHEN json_valid(worker) THEN json_remove(worker,'$.context_tokens','$.context_limit','$.tokens','$.usage') ELSE worker END,worker_title,worker_run_active,
 		repo_root,repo_project,repo_remote,repo_branch,repo_worktree,repo_description,repo_id,agent_id,no_project,graph_excluded,
 		limited_until,limited_reason,idle_compacted_at,tools_version,tools_old,archived_at,harness_lost)
 		FROM sessions WHERE `+where, args...).Scan(&key)

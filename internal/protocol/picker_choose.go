@@ -8,8 +8,8 @@ import (
 )
 
 // The cell pick (decision 0105) keeps the interval-based allowed set, then
-// rotates proven candidates whose cell scores reach the qualifying threshold.
-// Allowed thin cells receive an exploration share. When no candidates qualify,
+// picks the proven candidate with the lowest expected cost, a run's cost plus
+// the rescue of the next dearer model when it fails (decision 0161). Allowed thin cells receive an exploration share. When no candidates qualify,
 // the original allowed rotation applies. When nothing is allowed the caller
 // falls back to the level rule.
 
@@ -106,6 +106,95 @@ type pickerEntry struct {
 	reason    string
 	weight    float64
 	qualified bool
+	// cost is the expected cost of one run in this bucket at API prices.
+	// recorded is true when cost is the average of real runs; otherwise it is
+	// the price times the tokens of an average run. priceUnknown is true when
+	// the model had no listed price. pass is p, the clean share of its tasks;
+	// rescue is the run cost of the next dearer model; expected is
+	// cost + (1 - pass) x rescue (decision 0161).
+	cost, pass, rescue, expected float64
+	costKnown                    bool
+	recorded                     bool
+	priceUnknown                 bool
+}
+
+// expectedCosts fills the cost terms of the entries. A run's cost already
+// holds its fix rounds, so p counts only the tasks that ended clean (complete,
+// no failed accept, review or test step, no defect found later) and the
+// score's quarter per fix round is not used a second time. p is shrunk to the
+// bucket mean like the score, and takes the lower end of its interval while the
+// cell is thin. The rescue is the average run cost of the next dearer model in
+// the bucket, the ladder being ordered by price per token; the dearest model's
+// rescue is itself. An entry with no cost data takes the mean of the others, or
+// 1 when none has any, so the ranking then follows p.
+func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, prices *PriceBook, set PickerSettings) {
+	var sum float64
+	var known int
+	rank := make(map[*pickerEntry]float64, len(entries))
+	for _, e := range entries {
+		var listed bool
+		e.cost, e.recorded, listed, e.costKnown = table.ExpectedCost(e.key, bucket, prices)
+		e.priceUnknown = e.costKnown && !e.recorded && !listed
+		if e.costKnown {
+			sum += e.cost
+			known++
+		}
+		if p, _, ok := prices.PriceOf(e.key); ok {
+			rank[e] = p.Prompt + p.Completion
+		}
+	}
+	fallback := 1.0
+	if known > 0 {
+		fallback = sum / float64(known)
+	}
+	noPrices := len(rank) == 0
+	for _, e := range entries {
+		if !e.costKnown {
+			e.cost = fallback
+		}
+		if noPrices {
+			// No price list: the run cost stands in for the price per token.
+			rank[e] = e.cost
+		}
+	}
+	ladder := append([]*pickerEntry(nil), entries...)
+	sort.SliceStable(ladder, func(i, j int) bool {
+		if rank[ladder[i]] != rank[ladder[j]] {
+			return rank[ladder[i]] < rank[ladder[j]]
+		}
+		return ladder[i].name < ladder[j].name
+	})
+	for _, e := range entries {
+		e.rescue = e.cost
+		for _, up := range ladder {
+			if rank[up] > rank[e] {
+				e.rescue = up.cost
+				break
+			}
+		}
+		c := table.CleanCell(e.key, bucket)
+		e.pass = c.Score
+		if c.N < set.UncertainN {
+			e.pass = c.Lo
+		}
+		e.expected = e.cost + (1-e.pass)*e.rescue
+	}
+}
+
+// pickerCostText is the expected cost of an entry for the note. Nothing when
+// no cost is known; "est" when the run cost is a price times an average run.
+func pickerCostText(e *pickerEntry) string {
+	if !e.costKnown {
+		return ""
+	}
+	text := fmt.Sprintf(" $%.2f/run, p %.2f, $%.2f expected", e.cost, e.pass, e.expected)
+	if !e.recorded {
+		text = " est" + text
+	}
+	if e.priceUnknown {
+		text += " (price unknown)"
+	}
+	return text
 }
 
 // chooseByCells runs the cell rule. A non-empty fallback says why it chose
@@ -171,11 +260,8 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		e.reason = verdicts[i].Reason
 	}
 
+	expectedCosts(entries, table, bucket, in.Prices, set)
 	var qualified, thin, thinOut, allowed []*pickerEntry
-	best := table.BucketMean(bucket)
-	if bestEntry != nil {
-		best = bestEntry.cell.Score
-	}
 	bestBench := 0.0
 	for _, e := range entries {
 		if !e.allowed {
@@ -195,12 +281,8 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			}
 			continue
 		}
-		if e.cell.Score >= set.AllowedFraction*best {
-			e.qualified = true
-			qualified = append(qualified, e)
-		} else {
-			e.reason = fmt.Sprintf("score below %g×best", set.AllowedFraction)
-		}
+		e.qualified = true
+		qualified = append(qualified, e)
 	}
 	if len(qualified) > 0 {
 		for _, e := range thinOut {
@@ -237,7 +319,18 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		}
 
 	} else {
-		final = qualified
+		// The proven model with the lowest expected cost per accepted result
+		// wins. A provider behind its quota pace counts as cheaper, one ahead
+		// of it as dearer; a quota floor has already left a model out.
+		winner := qualified[0]
+		adjusted := func(e *pickerEntry) float64 { return e.expected / quotaPaceFactor(e.room, e.measured) }
+		for _, e := range qualified[1:] {
+			a, w := adjusted(e), adjusted(winner)
+			if a < w || a == w && (e.cell.Score > winner.cell.Score || e.cell.Score == winner.cell.Score && e.name < winner.name) {
+				winner = e
+			}
+		}
+		final = []*pickerEntry{winner}
 		if len(thin) > 0 {
 			lvl := state.level(level)
 			lvl.ExploreCredit += set.ExploreShare
@@ -254,8 +347,12 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			e.weight = weight
 		}
 		for _, e := range final {
+			weight := e.weight
+			if !exploring {
+				weight = 1
+			}
 			choice := WorkerModelChoice{WorkerModelCandidate: e.c, Fit: "cell", QuotaNote: e.quotaNote, Score: e.bench}
-			eligible = append(eligible, rankedChoice{choice: choice, weight: e.weight})
+			eligible = append(eligible, rankedChoice{choice: choice, weight: weight})
 		}
 	}
 	var saved map[string]float64
@@ -282,6 +379,10 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		}
 	}
 	if len(qualified) > 0 {
+		if !exploring {
+			// The cost rule picked, not the rotation: a weight would mislead.
+			picked.Weight = 0
+		}
 		picked.PickNote = pickerNoteQualifying(header, entries, chosen, bestEntry, exploring, set)
 	} else {
 		picked.PickNote = pickerNote(header, entries, chosen, bestEntry)
@@ -402,7 +503,7 @@ func exploreIsUp(table *PickerTable, e *pickerEntry, level string, bucket int) b
 // five left out models.
 func pickerNote(header string, entries []*pickerEntry, chosen, best *pickerEntry) string {
 	item := func(e *pickerEntry, tail string) string {
-		return strings.TrimSpace(e.name+" "+pickerCellText(e.cell)) + tail
+		return strings.TrimSpace(e.name+" "+pickerCellText(e.cell)) + pickerCostText(e) + tail
 	}
 	var allowed, left []*pickerEntry
 	for _, e := range entries {
@@ -460,7 +561,7 @@ func pickerNote(header string, entries []*pickerEntry, chosen, best *pickerEntry
 }
 
 // pickerNoteQualifying is the note of a pick made from the qualifying set. It
-// names the chosen cell, every qualifier with its rotation weight, the thin
+// names the chosen cell, every qualifier with its expected cost, the thin
 // cells that were open to the exploration share, and each candidate that was
 // left out with the reason.
 func pickerNoteQualifying(header string, entries []*pickerEntry, chosen, best *pickerEntry, exploring bool, set PickerSettings) string {
@@ -471,14 +572,14 @@ func pickerNoteQualifying(header string, entries []*pickerEntry, chosen, best *p
 	for _, e := range entries {
 		switch {
 		case e.qualified:
-			qualifying = append(qualifying, fmt.Sprintf("%s weight %.2f", cell(e), e.weight))
+			qualifying = append(qualifying, cell(e)+pickerCostText(e))
 		case e.allowed && e.cell.N < PickerMinCellTasks && e.reason == "":
-			thin = append(thin, fmt.Sprintf("%s (benchmark) weight %.2f", cell(e), e.weight))
+			thin = append(thin, cell(e)+" (benchmark)"+pickerCostText(e))
 		case e.reason != "":
-			left = append(left, cell(e)+" left out ("+e.reason+")")
+			left = append(left, cell(e)+pickerCostText(e)+" left out ("+e.reason+")")
 		}
 	}
-	tag := ", chosen"
+	tag := ", lowest expected cost"
 	switch {
 	case exploring:
 		tag = ", exploration pick"
@@ -495,4 +596,39 @@ func pickerNoteQualifying(header string, entries []*pickerEntry, chosen, best *p
 		parts = append(parts, strings.Join(left, "; "))
 	}
 	return header + ": " + strings.Join(parts, "; ")
+}
+
+// PickerCostRow is the cost terms of one candidate in one bucket.
+type PickerCostRow struct {
+	Name, Key              string
+	N                      int
+	Cost, Pass, Rescue     float64
+	Expected               float64
+	Recorded, PriceUnknown bool
+	CostKnown              bool
+}
+
+// PickerCostRows gives the cost terms the pick compares for each candidate at
+// the D of the input, dearest last. It applies no quota and no allowed test: it
+// is for reports.
+func PickerCostRows(candidates []WorkerModelCandidate, in *PickerInput) []PickerCostRow {
+	table := in.Table
+	bucket := table.Bucket(in.D)
+	var entries []*pickerEntry
+	for _, c := range candidates {
+		key := PickerModelKey(c.Harness, c.Model)
+		e := &pickerEntry{c: c, key: key, name: c.Name, cell: table.Cell(key, bucket), allowed: true}
+		if e.name == "" {
+			e.name = PickerModelDisplay(key)
+		}
+		entries = append(entries, e)
+	}
+	expectedCosts(entries, table, bucket, in.Prices, table.Settings())
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].expected < entries[j].expected })
+	out := make([]PickerCostRow, len(entries))
+	for i, e := range entries {
+		out[i] = PickerCostRow{Name: e.name, Key: e.key, N: e.cell.N, Cost: e.cost, Pass: e.pass, Rescue: e.rescue, Expected: e.expected,
+			Recorded: e.recorded, PriceUnknown: e.priceUnknown, CostKnown: e.costKnown}
+	}
+	return out
 }

@@ -1676,3 +1676,18 @@ func TestWorkerContextWithoutLimit(t *testing.T) {
 		t.Fatalf("final stats lost the token-only context: %+v", st)
 	}
 }
+
+// The run's tokens by kind reach the worker's session record, and a later read
+// that reports less never lowers them (decision 0161).
+func TestWorkerUsageByKindReachesTheSessionAndOnlyGrows(t *testing.T) {
+	d := &Daemon{}
+	w := &worker{harness: "claude"}
+	if got := d.workerInfo(w); got.Usage != nil {
+		t.Fatalf("a worker with no usage reports one: %+v", got.Usage)
+	}
+	d.noteWorkerUsage(w, workerStats{TotalTokens: 100, Usage: protocol.RunTokens{In: 60, Out: 40, CacheRead: 900}})
+	d.noteWorkerUsage(w, workerStats{TotalTokens: 100, Usage: protocol.RunTokens{In: 10}})
+	if got := d.workerInfo(w); got.Usage == nil || *got.Usage != (protocol.RunTokens{In: 60, Out: 40, CacheRead: 900}) {
+		t.Fatalf("usage in the session record: %+v", got.Usage)
+	}
+}

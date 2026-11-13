@@ -128,9 +128,9 @@ func backtestLevel(d float64) string {
 
 // backtestShares runs the real picker 1000 times from a fresh rotation, with
 // no quota, and returns the share of each profile and the first pick's note.
-func backtestShares(t *testing.T, candidates []protocol.WorkerModelCandidate, level string, d float64, table *protocol.PickerTable, scores []protocol.ModelScore, minimums map[string]float64) (string, string) {
+func backtestShares(t *testing.T, candidates []protocol.WorkerModelCandidate, level string, d float64, table *protocol.PickerTable, prices *protocol.PriceBook, scores []protocol.ModelScore, minimums map[string]float64) (string, string) {
 	t.Helper()
-	in := &protocol.PickerInput{D: d, Table: table}
+	in := &protocol.PickerInput{D: d, Table: table, Prices: prices}
 	rotation := &protocol.WorkerRotation{}
 	shares := map[string]int{}
 	note := ""
@@ -229,14 +229,14 @@ func TestPickerBacktest(t *testing.T) {
 		if level == "" {
 			level = "normal"
 		}
-		share, note := backtestShares(t, candidates, level, r.d, after, scores, minimums)
+		share, note := backtestShares(t, candidates, level, r.d, after, s.priceBook(), scores, minimums)
 		fmt.Printf("TASK\t%d\t%.2f\t%s\t%s\t%s\t%s\n", i+1, r.d, level, r.model, share, note)
 	}
 	for bucket := 0; bucket <= 11; bucket++ {
 		lo, hi := after.BucketRange(bucket)
 		mid := (lo + hi) / 2
 		level := backtestLevel(mid)
-		share, note := backtestShares(t, candidates, level, mid, after, scores, minimums)
+		share, note := backtestShares(t, candidates, level, mid, after, s.priceBook(), scores, minimums)
 		fmt.Printf("COLUMN\t%.2f\t%s\t%s\t%s\n", lo, level, share, note)
 	}
 }

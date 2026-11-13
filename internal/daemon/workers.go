@@ -289,6 +289,8 @@ type worker struct {
 	info *protocol.WorkerInfo
 	// usage is the last figures the harness reported, and the copy in info.
 	contextTokens, contextLimit, totalTokens int64
+	// tokenUsage is the run by kind of token, for the cost at API prices.
+	tokenUsage protocol.RunTokens
 	// codex is the connection to the worker's Codex app server.
 	codex        *codexConn
 	agy          *agyConn
@@ -367,6 +369,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	next.RunGeneration = w.runGeneration
 	next.Effort = protocol.ParseModelSelection(w.harness, "", w.model, "").Effort
 	next.ContextTokens, next.ContextLimit, next.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
+	next.Usage = usagePtr(w.tokenUsage)
 	next.OSSandbox = w.osSandbox
 	next.Continue, next.Fix = w.continueCount, w.fixCount
 	next.AutoContinue = w.autoContinueCount
@@ -395,17 +398,19 @@ func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) (grew bool) {
 	// A missing read must not reset activity tracking either: recovering the
 	// same total on the next tick is not new work.
 	st.TotalTokens = max(w.totalTokens, st.TotalTokens)
-	if w.contextTokens == st.ContextTokens && w.contextLimit == st.ContextLimit && w.totalTokens == st.TotalTokens {
+	st.Usage = w.tokenUsage.Max(st.Usage)
+	if w.contextTokens == st.ContextTokens && w.contextLimit == st.ContextLimit && w.totalTokens == st.TotalTokens && w.tokenUsage == st.Usage {
 		d.wmu.Unlock()
 		return false
 	}
 	grew = st.TotalTokens > w.totalTokens
-	w.contextTokens, w.contextLimit, w.totalTokens = st.ContextTokens, st.ContextLimit, st.TotalTokens
+	w.contextTokens, w.contextLimit, w.totalTokens, w.tokenUsage = st.ContextTokens, st.ContextLimit, st.TotalTokens, st.Usage
 	if w.info == nil {
 		w.info = &protocol.WorkerInfo{ID: w.id, StartRef: w.startRef, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText, Title: w.title}
 	}
 	cp := *w.info
 	cp.ContextTokens, cp.ContextLimit, cp.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
+	cp.Usage = usagePtr(w.tokenUsage)
 	w.info = &cp
 	sessionID := w.sessionID
 	d.wmu.Unlock()
@@ -2028,4 +2033,13 @@ func splitTouches(s string) []string {
 		return nil
 	}
 	return strings.Split(s, ",")
+}
+
+// usagePtr is the usage for a WorkerInfo: nil when none was reported, so the
+// field is left out of the session record.
+func usagePtr(t protocol.RunTokens) *protocol.RunTokens {
+	if t.Zero() {
+		return nil
+	}
+	return &t
 }

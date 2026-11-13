@@ -68,6 +68,8 @@ type pickerTaskRecord struct {
 	d     float64
 	facts protocol.PickerTaskFacts
 	end   int64
+	// tokens is the usage of the task's sessions, zero when none was recorded.
+	tokens protocol.RunTokens
 }
 
 // pickerTaskRecords reads each task's facts once, whatever its judge result.
@@ -81,6 +83,13 @@ type pickerTaskRecord struct {
 // once per chain; a continuation costs nothing. Stopped and infrastructure runs
 // do not contribute. No time cut is applied.
 func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
+	return s.pickerTaskRecordsUsing(nil)
+}
+
+// pickerTaskRecordsUsing is pickerTaskRecords with the usage of each session
+// given. Nil reads worker_usage. The backtest passes the usage it parsed from
+// stored notices for runs that have none recorded.
+func (s *Store) pickerTaskRecordsUsing(usage map[string]protocol.RunTokens) ([]pickerTaskRecord, error) {
 	snap, err := s.runsSnapshot()
 	if err != nil {
 		return nil, err
@@ -109,7 +118,11 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 	}
 
 	defects := map[string][2]int{}
-	rows, err = s.db.Query(`SELECT session_id, COUNT(*), COALESCE(SUM(severity), 0) FROM worker_defects WHERE moved_at = 0 GROUP BY session_id`)
+	// The defect agent-net records for a failed merger test step is skipped:
+	// the failed step is already counted, and one failure costs once (decision
+	// 0161).
+	rows, err = s.db.Query(`SELECT session_id, COUNT(*), COALESCE(SUM(severity), 0) FROM worker_defects
+		WHERE moved_at = 0 AND id NOT IN (SELECT defect_id FROM worker_defect_auto WHERE kind = 'test') GROUP BY session_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +168,11 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 		return nil, err
 	}
 
+	if usage == nil {
+		if usage, err = s.workerUsage(); err != nil {
+			return nil, err
+		}
+	}
 	counts := func(outcome string) bool {
 		return outcome != protocol.OutcomeStopped && outcome != protocol.OutcomeInfra
 	}
@@ -164,6 +182,7 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 		facts    protocol.PickerTaskFacts
 		end      int64
 		sessions []string
+		tokens   protocol.RunTokens
 	}
 	groups := map[string]*chain{}
 	var order []*chain
@@ -188,6 +207,9 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 		c.end = r.ended
 		if !slices.Contains(c.sessions, r.session) {
 			c.sessions = append(c.sessions, r.session)
+			// A session's usage is its running total, so it counts once even
+			// when the session had several runs.
+			c.tokens = c.tokens.Plus(usage[r.session])
 		}
 	}
 	out := make([]pickerTaskRecord, 0, len(order))
@@ -204,10 +226,28 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 				d = judged[session]
 			}
 		}
-		out = append(out, pickerTaskRecord{key: c.key, d: d, facts: c.facts, end: c.end})
+		out = append(out, pickerTaskRecord{key: c.key, d: d, facts: c.facts, end: c.end, tokens: c.tokens})
 	}
 
 	return out, nil
+}
+
+// pickerTasksFrom turns task records into picker tasks, pricing each one's
+// tokens with the book.
+func pickerTasksFrom(records []pickerTaskRecord, book *protocol.PriceBook) []protocol.PickerTask {
+	out := make([]protocol.PickerTask, 0, len(records))
+	for _, r := range records {
+		if r.d <= 0 || r.key == "" {
+			continue
+		}
+		t := protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts), Tokens: r.tokens,
+			Dirty: !r.facts.Complete || r.facts.FailedSteps > 0 || r.facts.Defects > 0}
+		if p, _, ok := book.PriceOf(r.key); ok && !r.tokens.Zero() {
+			t.Cost = p.Cost(r.tokens)
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 // pickerTasks is the picker's task list: the records with a judge result and a
@@ -217,14 +257,7 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]protocol.PickerTask, 0, len(records))
-	for _, r := range records {
-		if r.d <= 0 || r.key == "" {
-			continue
-		}
-		out = append(out, protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts)})
-	}
-	return out, nil
+	return pickerTasksFrom(records, s.priceBook()), nil
 }
 
 // refreshPicker rebuilds the cached table from the whole data set.

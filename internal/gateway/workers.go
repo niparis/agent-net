@@ -150,6 +150,14 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		return map[string]string{"item_id": item.ID}, nil
 
+	case "worker.cost":
+		p, err := decode[protocol.WorkerCostQuery](raw)
+		if err != nil {
+			return nil, reject("bad worker.cost")
+		}
+		cost, priceKnown, known := g.store.RunCost(p.Model, p.Tokens)
+		return protocol.WorkerCostReply{Cost: cost, Known: known, PriceKnown: priceKnown}, nil
+
 	case "worker.start_report":
 		p, err := decode[protocol.WorkerStartReport](raw)
 		if err != nil {
@@ -2248,7 +2256,7 @@ func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandida
 // the cached one, so a pick makes no query of its own besides the model health
 // and the rotation.
 func (g *Gateway) chooseAutomaticWorkerAt(candidates []protocol.WorkerModelCandidate, difficulty string, d float64, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	pick := &protocol.PickerInput{D: d, Table: g.store.pickerTable()}
+	pick := &protocol.PickerInput{D: d, Table: g.store.pickerTable(), Prices: g.store.priceBook()}
 	return g.chooseAutomaticWorkerCore(g.store.ModelHealth, g.store.WorkerRotation, pick, candidates, difficulty, scores, minimums, quotas, running, protected, persist)
 }
 

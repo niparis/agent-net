@@ -64,6 +64,10 @@ func TestPickerTaskScoresFromEveryDataSource(t *testing.T) {
 	if len(got) != 1 || got[0].D != 2.5 || math.Abs(got[0].Score-.75) > 1e-9 {
 		t.Fatalf("after the fix round: %+v", got)
 	}
+	// A fix round alone is not dirty: its cost is already in the run's tokens.
+	if got[0].Dirty {
+		t.Fatalf("a task with only a fix round is dirty: %+v", got)
+	}
 	// A failed accept step on the change this worker opened costs a quarter.
 	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
 	before = rev()
@@ -71,7 +75,7 @@ func TestPickerTaskScoresFromEveryDataSource(t *testing.T) {
 	if rev() <= before {
 		t.Fatal("a failed accept step did not refresh the picker table")
 	}
-	if got := pickerTasksByKey(t, s)["claude-opus-5-5:high"]; len(got) != 1 || math.Abs(got[0].Score-.5) > 1e-9 {
+	if got := pickerTasksByKey(t, s)["claude-opus-5-5:high"]; len(got) != 1 || math.Abs(got[0].Score-.5) > 1e-9 || !got[0].Dirty {
 		t.Fatalf("after the failed step: %+v", got)
 	}
 	// A late defect of severity 2 costs a quarter for the defect and a half for
@@ -483,5 +487,46 @@ func TestPickerSameSessionAutoContinueChain(t *testing.T) {
 	got := pickerTasksByKey(t, s)["gpt-6.1-terra:high"]
 	if len(got) != 1 || got[0].Score != 1 || got[0].D != 3.0 {
 		t.Fatalf("auto-continuation = %+v", got)
+	}
+}
+
+// taskAfterStep runs one worker task through a delivery step and gives the
+// picker's view of it.
+func taskAfterStep(t *testing.T, step func(r *deliveryRig, id string)) protocol.PickerTask {
+	t.Helper()
+	r := newDeliveryRig(t)
+	pickerRun(t, r.s, r.a, r.worker, "claude", "claude-opus-5-5:high", protocol.OutcomeComplete, 0, 1000)
+	pickerAssessment(t, r.s, r.worker, 2.5)
+	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
+	step(r, id)
+	got := pickerTasksByKey(t, r.s)["claude-opus-5-5:high"]
+	if len(got) != 1 {
+		t.Fatalf("tasks: %+v", got)
+	}
+	return got[0]
+}
+
+// A failed merger test step costs the task once. Agent-net also records a
+// severity 1 defect for it (decision 0103), which would add a quarter for the
+// defect and a quarter for its severity on top of the quarter for the failed
+// step: 0.75 for one failure. The score takes the failed step and skips the
+// defect, so a failed test step scores like any other failed step (decision
+// 0161).
+func TestPickerCountsAFailedTestStepOnce(t *testing.T) {
+	failedTest := taskAfterStep(t, func(r *deliveryRig, id string) {
+		r.report1(stepAccept, id, commitA, protocol.StepResultPass, nil, "")
+		r.report1(protocol.StepRef{Step: protocol.StepTest}, id, commitA, protocol.StepResultFail, map[string]string{protocol.FieldSuite: protocol.SuiteChanged}, "TestFoo fails")
+		if rows := autoDefectRows(t, r.s); len(rows) != 1 {
+			t.Fatalf("the failed test step should record its automatic defect: %+v", rows)
+		}
+	})
+	failedAccept := taskAfterStep(t, func(r *deliveryRig, id string) {
+		r.report1(stepAccept, id, commitA, protocol.StepResultFail, nil, "needs work")
+	})
+	if math.Abs(failedTest.Score-.75) > 1e-9 || failedTest.Score != failedAccept.Score {
+		t.Fatalf("failed test step scores %v, failed accept step %v, want both 0.75", failedTest.Score, failedAccept.Score)
+	}
+	if !failedTest.Dirty || !failedAccept.Dirty {
+		t.Fatalf("a failed step makes a task dirty: test %+v accept %+v", failedTest, failedAccept)
 	}
 }
