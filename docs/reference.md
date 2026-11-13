@@ -864,7 +864,8 @@ Agent list and get include the public charter fields purpose, maturity, accepts,
 - `graph_get {}` returns `nodes` and `edges`, hiding unregistered empty implicit projects without a live or recently seen session for seven days. Each project node includes registered and observed `locations` (machine and path), up to five live `sessions` (id, name, machine and status), and `session_count`. `graph_get {"all":true}` includes those projects. The Graph uses the same default filter.
 - `charter_set {node, attr, value}` sets an attribute; an empty value clears it. `charter_history {node, limit}` returns newest changes first.
 - `node_add {name}` and `node_remove {name}` add or remove an architect. Removal requires no edges, and clears the node's settings with it.
-- `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.
+- `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_set` answers `ok` and the stored `edge`, with typed endpoints. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.
+- The kind `reports_to` is the org tree (decision 0160): `from` is an Agent, `to` is the Agent it reports to, or `owner`, the root. An Agent has at most one parent, the tree has no cycle, and nothing reports to a merger; `edge_set` refuses an edge that breaks one of these. The Graph reads do not show `reports_to` edges yet.
 - `node_settings_get {node}` returns the node's maturity, its overrides, the defaults its maturity gives, the effective values and `autonomy`.
 - `node_settings_set {node, setting, value}` sets or clears one override. Settings are `tests_before_merge` (`optional`, `suite`, `suite-new-tests`, `suite-new-tests-review`), `merge_authority` (`full`, `delegated`, `ask`), `worker_sandbox` (`sandboxed`, `no-network`, `read-only`), `judge_consumers` (`free`, `charter`, `strict`, `escalate`), `deploy_rule` (`brief`, `ask`, `owner`), `autonomy` (`off`, `wake`), `wake_on_message` (`on`, `off`), `loop_every` (a duration above zero, such as `4h`), `loop_prompt` (free text), `loop_mode` (`always`, `on_change`), `loop_plan` (a relative path) and `work_mode` (`workers_code`, `on_request`; stored as the repo level charter attribute, see Work mode). An empty value clears the override; autonomy is off when unset, wake_on_message is on when unset, and a loop is off when `loop_every` is unset. The CTO sets `wake_on_message`, `loop_every` and `loop_prompt` without a proposal (minor / advice). The method is behind the owner gate and refuses agent sessions. The effective values, the autonomy and the delegation policies are readable by every agent through `agent_graph_read` and `agent_session_get`; only the change is owner-gated.
 - `graph_undo {id}` reverts a history row, or the latest row if id is omitted. Undo is recorded as another change and refuses a stale value. Node undo refuses to remove a node with a charter, settings or edges. Old graph history for a moved node setting cannot be undone through graph undo; use settings history for later changes.
@@ -4094,7 +4095,9 @@ It does not open a view. Enter on its Sessions row opens it as usual. The
 merger session gets `GOCACHE` set to the shared worker Go build cache, so its
 builds and tests do not grow your own `~/.cache/go-build`.
 
-The session is named `<project> merger`. Its type is `merger`; other types are
+The session is named `<project> merger`. It runs as its own Agent, ID
+`<project>-merger`, named `<project> merger`, with role `merger`, which reports to the Repo's lead (or
+owner) in the org tree. It is never a Repo or Team lead. Its type is `merger`; other types are
 `agent` (the default), `worker`, `cto`, `owner`, and `bot`. Session info and
 `agent_sessions_find` and `agent_session_get` include `type`. The read tools
 also use it as `kind`. The Sessions table shows CTO and merger roles as dim tags after NAME, and the machine in its own column.
@@ -4274,7 +4277,7 @@ instead of hiding Teams.
 ### Leads and agent counts
 
 The owner operator `lead_set` takes a typed `ref` for a Repo or Team and a
-`lead` Agent or session ref. A session lead records its Agent as the fallback. Omit `lead` to clear it. The CTO runs the same action
+`lead` Agent or session ref. A session lead records its Agent as the fallback, and is stored as that Agent's `lead_session`; the Team and Repo copies that name a session follow it. The answer is the stored row: `ok`, `ref`, `agent` and `lead_session`. A merger Agent is never a lead. Omit `lead` to clear it. The CTO runs the same action
 with `graph_change` at once; the Inbox notice has an undo. A Repo defaults to its owner Agent
 until explicitly set or cleared. A Repo lead must own the Repo or have a
 session recorded there. A Team lead can be an Agent or a session.

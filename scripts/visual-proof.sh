@@ -8,5 +8,9 @@ export GOTMPDIR=/tmp/agent-net-gotmp
 mkdir -p "$GOTMPDIR"
 export AGENT_NET_PROOF_BUILD
 AGENT_NET_PROOF_BUILD="$(git rev-parse HEAD)"
-export AGENT_NET_PROOF_DIR="${1:-/tmp/agent-net-visual-proof}"
-go test ./internal/tui -run '^TestVisualProof' -count=1
+out="${1:-$(mktemp -d "${TMPDIR:-/tmp}/agent-net-visual-proof.XXXXXX")}"
+mkdir -p "$out"
+export AGENT_NET_PROOF_DIR
+AGENT_NET_PROOF_DIR="$(cd "$out" && pwd)"
+go test ./internal/tui -run '^(TestVisualProof|TestOrgTreeMergerProofScenario)' -count=1
+echo "frames: $AGENT_NET_PROOF_DIR"

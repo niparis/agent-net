@@ -27,6 +27,8 @@ func (s *Store) RepoAgentLimit(repo string) (protocol.RepoAgentLimit, error) {
 
 // SetLead changes a typed Repo or Team lead under owner authority. A nil lead
 // explicitly clears it; an unconfigured Repo defaults to its existing owner.
+// A lead named by its session also stores that session as the Agent's lead
+// session (decision 0160).
 func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) error {
 	if err := s.requireGraphRefs(); err != nil {
 		return err
@@ -142,6 +144,11 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	}
 	if err != nil {
 		return err
+	}
+	if session != nil {
+		if err = setAgentLeadSessionTx(tx, lead.(string), session.(string)); err != nil {
+			return err
+		}
 	}
 	next := ""
 	if q.Lead != nil {

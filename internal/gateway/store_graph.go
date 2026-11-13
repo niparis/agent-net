@@ -140,7 +140,7 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 		return reject("not an architect")
 	}
 	var n int
-	if err = tx.QueryRow(`SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?`, name, name).Scan(&n); err != nil {
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM graph_edges WHERE (source=? OR target=?) AND kind<>'reports_to'`, name, name).Scan(&n); err != nil {
 		return err
 	}
 	if n != 0 {
@@ -930,6 +930,11 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 					return reject("%s already has an owner for %s", e.To, deliveryEdgeStep(e.Kind))
 				}
 			}
+			if e.Kind == protocol.EdgeReportsTo {
+				if err = checkReportsTo(tx, e.From, e.To); err != nil {
+					return err
+				}
+			}
 			owner := protocol.DeliveryOwnerFromSource(e.From)
 			if owner.Kind != protocol.OwnerNode {
 				source, ownerErr := protocol.DeliveryOwnerSource("@"+owner.Kind, deliveryEdgeStep(e.Kind))
@@ -937,7 +942,8 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 					return reject("invalid special delivery owner")
 				}
 			}
-			if s.graphRefsOn.Load() {
+			// The tree's endpoints are Agents, which only the typed check knows.
+			if s.graphRefsOn.Load() || e.Kind == protocol.EdgeReportsTo {
 				if err = liveEdgeEndpoints(tx, e); err != nil {
 					return err
 				}
@@ -964,7 +970,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		}
 		if old == "" {
 			var n int
-			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?) + (SELECT COUNT(*) FROM graph_charter WHERE node=?) + (SELECT COUNT(*) FROM setting_values WHERE level='repo' AND scope=?)`, node, node, node, node).Scan(&n); err != nil {
+			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE (source=? OR target=?) AND kind<>'reports_to') + (SELECT COUNT(*) FROM graph_charter WHERE node=?) + (SELECT COUNT(*) FROM setting_values WHERE level='repo' AND scope=?)`, node, node, node, node).Scan(&n); err != nil {
 				return err
 			}
 			if n != 0 {
@@ -1192,6 +1198,15 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" && e.Rule != "never" {
 		return reject("invalid edge rule")
 	}
+	if e.Kind == protocol.EdgeReportsTo {
+		if e.Mode != "" {
+			return reject("an edge has no mode")
+		}
+		if err := checkReportsTo(tx, e.From, e.To); err != nil {
+			return err
+		}
+		return storeEdgeTx(tx, e, actor, now)
+	}
 	deliveryEdge := deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys"
 	if e.Kind != "depends" && e.Kind != "deploys" && !deliveryEdge {
 		return reject("invalid edge kind")
@@ -1247,11 +1262,16 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 			return reject("%s already has an owner for %s", e.To, deliveryEdgeStep(e.Kind))
 		}
 	}
+	return storeEdgeTx(tx, e, actor, now)
+}
+
+// storeEdgeTx writes a checked edge and its history entry.
+func storeEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	var old protocol.Edge
 	old.From = e.From
 	old.To = e.To
 	old.Kind = e.Kind
-	err = tx.QueryRow(`SELECT mode,rule FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind).Scan(&old.Mode, &old.Rule)
+	err := tx.QueryRow(`SELECT mode,rule FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind).Scan(&old.Mode, &old.Rule)
 	previous := ""
 	if err == nil {
 		b, _ := json.Marshal(old)
@@ -1369,8 +1389,8 @@ func (s *Store) graphNodes() ([]protocol.Node, error) {
 	rows, err := s.db.Query(`SELECT name,kind,created_at,1,'',2 FROM graph_nodes
  UNION ALL SELECT name,'component',0,0,path,graph_excluded FROM projects WHERE graph_excluded<>1 AND name NOT IN (SELECT name FROM graph_nodes)
  UNION ALL SELECT repo_project,'component',0,0,repo_root,graph_excluded FROM sessions WHERE archived_at=0 AND graph_excluded<>1 AND repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes)
- UNION ALL SELECT source,'component',0,1,'',2 FROM graph_edges WHERE source<>'*' AND source NOT LIKE '/delivery/%' AND source NOT IN (SELECT name FROM graph_nodes)
- UNION ALL SELECT target,'component',0,1,'',2 FROM graph_edges WHERE target NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
+ UNION ALL SELECT source,'component',0,1,'',2 FROM graph_edges WHERE kind<>'reports_to' AND source<>'*' AND source NOT LIKE '/delivery/%' AND source NOT IN (SELECT name FROM graph_nodes)
+ UNION ALL SELECT target,'component',0,1,'',2 FROM graph_edges WHERE kind<>'reports_to' AND target NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
 	if err != nil {
 		return nil, err
 	}
@@ -1541,7 +1561,9 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 	if err != nil {
 		return g, err
 	}
-	rows, err = s.db.Query(`SELECT source,target,kind,mode,rule FROM graph_edges ORDER BY source,target,kind`)
+	// The org tree (reports_to) is read on its own; the Graph shows it once
+	// its readers move (decision 0160).
+	rows, err = s.db.Query(`SELECT source,target,kind,mode,rule FROM graph_edges WHERE kind<>'reports_to' ORDER BY source,target,kind`)
 	if err != nil {
 		return g, err
 	}

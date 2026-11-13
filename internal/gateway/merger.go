@@ -37,6 +37,13 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 			return reject("merger must be a Claude session of this project on this machine")
 		}
 		_, err = tx.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES(?,?,?) ON CONFLICT(project,node_id) DO UPDATE SET session_id=excluded.session_id`, q.Project, q.NodeID, q.SessionID)
+		if err == nil {
+			err = bindMergerAgentTx(tx, q.Project, q.SessionID, actor, s.now().UnixNano())
+		}
+		// Configure is merger_start: agent-net started this session.
+		if err == nil && q.Configure {
+			_, err = tx.Exec(`UPDATE sessions SET started_by=? WHERE id=?`, protocol.StartedByAgentNet, q.SessionID)
+		}
 	}
 	if err != nil {
 		return err

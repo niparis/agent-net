@@ -288,7 +288,7 @@ func (s *Store) graphForRefRecords(ref *protocol.GraphRef, places bool) (protoco
 		return g, err
 	}
 
-	rows, err = s.db.Query(`SELECT source,target,kind,mode,rule,source_kind,target_kind FROM graph_edges ORDER BY source_kind,source,target_kind,target,kind`)
+	rows, err = s.db.Query(`SELECT source,target,kind,mode,rule,source_kind,target_kind FROM graph_edges WHERE kind<>'reports_to' ORDER BY source_kind,source,target_kind,target,kind`)
 	if err != nil {
 		return g, err
 	}
@@ -516,6 +516,17 @@ func (s *Store) RefCharterHistory(ref protocol.GraphRef, limit int) ([]protocol.
 }
 
 func legacyRefEdge(e protocol.Edge) protocol.Edge {
+	// The org tree is new, so it keys the CTO by its Agent ID, not by the
+	// legacy graph node name.
+	if e.Kind == protocol.EdgeReportsTo {
+		for _, end := range []*string{&e.From, &e.To} {
+			if *end == protocol.CTONodeName {
+				*end = "cto"
+			}
+		}
+		e.FromRef, e.ToRef = nil, nil
+		return e
+	}
 	if e.FromRef != nil && e.FromRef.Kind == "agent" && e.FromRef.ID == "cto" {
 		e.From = protocol.CTONodeName
 	}

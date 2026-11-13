@@ -236,10 +236,11 @@ func (s *Store) teamMemberNames(team, ownRepo, ownAgent string) ([]string, error
 	return sortedNames(rows)
 }
 
-// repoMemberNames lists the other agents that have sessions in a repo.
+// repoMemberNames lists the other agents that have sessions in a repo. A
+// merger has its own Agent but is not crew the lead answers for (decision 0160).
 func (s *Store) repoMemberNames(repo, ownAgent string) ([]string, error) {
 	rows, err := s.db.Query(`SELECT DISTINCT a.display_name FROM sessions x JOIN agents a ON a.id=x.agent_id
-		WHERE x.repo_id=? AND x.agent_id<>? AND x.worker='' AND x.archived_at=0 AND x.harness NOT IN ('owner','cto')`, repo, ownAgent)
+		WHERE x.repo_id=? AND x.agent_id<>? AND a.role<>'merger' AND x.worker='' AND x.archived_at=0 AND x.harness NOT IN ('owner','cto')`, repo, ownAgent)
 	if err != nil {
 		return nil, err
 	}

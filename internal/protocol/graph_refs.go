@@ -24,6 +24,12 @@ func (e Edge) EndpointKinds() (string, string) {
 	if e.Kind == "depends" {
 		return "repo", "repo"
 	}
+	if e.Kind == EdgeReportsTo {
+		if e.To == OrgRoot {
+			return "agent", "special"
+		}
+		return "agent", "agent"
+	}
 	if len(e.From) >= 10 && e.From[:10] == "/delivery/" {
 		return "special", "repo"
 	}

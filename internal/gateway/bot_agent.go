@@ -49,15 +49,17 @@ const botAgentMigration = "-- Bots are agents (decision 0092).\n" + botAgentTrig
 // from the bot's grants on read, so only a grant changes it.
 var errCallsEdge = reject("a calls edge comes from the bot's grants; change the grant in Connected apps")
 
-// refuseBotLead stops a bot from becoming the owner or lead of a Team or Repo.
-// A bot reads no charter by itself and cannot take orders, so it cannot lead.
+// refuseBotLead stops a bot or a merger from becoming the owner or lead of a
+// Team or Repo. A bot reads no charter by itself and cannot take orders, so it
+// cannot lead. A merger merges for its Repo's lead; it leads no one (decision
+// 0160).
 func refuseBotLead(tx *sql.Tx, agent string) error {
-	var bot bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND role='bot')`, agent).Scan(&bot); err != nil {
+	var role string
+	if err := tx.QueryRow(`SELECT COALESCE((SELECT role FROM agents WHERE id=? AND role IN ('bot','merger')),'')`, agent).Scan(&role); err != nil {
 		return err
 	}
-	if bot {
-		return reject("a bot can never be a Team or Repo lead")
+	if role != "" {
+		return reject("a %s can never be a Team or Repo lead", role)
 	}
 	return nil
 }

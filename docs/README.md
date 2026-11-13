@@ -38,6 +38,7 @@ These files record how the project was planned and built. They are kept for cont
 - [brief.md](brief.md): the original brief.
 - [review.md](review.md): review of the brief and the build order.
 - [decisions/](decisions/): decisions taken, one file each. [0003](decisions/0003-gateway-record-and-inventory.md) covers the gateway log, repo info, harness inventory and retention. [0005](decisions/0005-registered-projects.md) covers registered projects. [0004](decisions/0004-tui-and-event-feed.md) covers the TUI, session mode and model, and the event feed.
+- [0160](decisions/0160-org-tree-and-scopes.md): the org tree is stored in the graph records: a `reports_to` edge kind, `agents.lead_session`, `sessions.started_by`, and a merger Agent per project (part T1).
 - [0158](decisions/0158-gateway-notes-v1.md): gateway notes version 1: named notes in the owner judgment store, with scope, kind and rules that keep the start text short.
 - [0159](decisions/0159-cto-default-charter.md): the CTO ships with a default agent-level charter, seeded once into empty fields only.
 - [0156](decisions/0156-one-session-model.md): the CTO is an ordinary session with a role; one start path for it (part A).

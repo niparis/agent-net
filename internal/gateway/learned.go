@@ -324,7 +324,7 @@ func (s *Store) learnDelivery(tx *sql.Tx, id string, at int64) error {
 		return err
 	}
 	var connected int
-	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_edges WHERE (source=? AND target=?) OR (source=? AND target=?))`, from, to, to, from).Scan(&connected); err != nil {
+	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_edges WHERE kind<>'reports_to' AND ((source=? AND target=?) OR (source=? AND target=?)))`, from, to, to, from).Scan(&connected); err != nil {
 		return err
 	}
 	if connected != 0 {
