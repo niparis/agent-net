@@ -303,6 +303,10 @@ func TestWithCTOItemIdlePastLimitGoesBackToChief(t *testing.T) {
 	if len(entries) == 0 || !strings.Contains(entries[0].Text, "back with the chief") {
 		t.Fatalf("desk log = %+v, want the back-with-the-chief line", entries)
 	}
+	// The chief's batch says why it is back.
+	if note := backNote(t, s, id); !strings.HasPrefix(note, "back from ") || !strings.HasSuffix(note, ": no move for 12 h") {
+		t.Fatalf("back note = %q, want back from the CTO: no move for 12 h", note)
+	}
 	// It starts a fresh clock: it waits for the chief's batch like a new ask.
 	var sent int64
 	if err := s.db.QueryRow(`SELECT chief_sent_at FROM inbox_items WHERE id=?`, id).Scan(&sent); err != nil || sent != 0 {

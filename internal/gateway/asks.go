@@ -457,12 +457,44 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 			return s.closeAskRef(q, ref, protocol.AskReasonResolved)
 		}
 	}
+	if settled, err := waitAlreadySettled(q, ref, w); err != nil || settled {
+		return err
+	}
 	_, err := s.createInboxItem(q, protocol.InboxItem{
 		Kind: protocol.AskKindWaiting, SessionID: session, SourceRef: ref,
 		AboutKind: protocol.AskAboutSession, AboutID: session,
 		Text: w.Text, Options: w.Options, Detail: w.Kind,
 	})
 	return err
+}
+
+// waitAlreadySettled says whether this wait already had its ask and someone
+// answered or closed it. That ask is not raised again until the session
+// reports a new wait, which gets a new start (Since, in whole seconds, so an
+// ask made in the same second belongs to it). Without this the minute
+// reconcile opened a fresh copy every minute after each close.
+func waitAlreadySettled(q askDB, ref string, w protocol.Waiting) (bool, error) {
+	rows, err := q.Query(`SELECT status,text FROM inbox_items WHERE source_ref=? AND created_at>=? AND status<>?`,
+		ref, w.Since*int64(time.Second), protocol.ItemStatusJoined)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	key := protocol.NormalizeAskText(w.Text)
+	settled := false
+	for rows.Next() {
+		var status, text string
+		if err := rows.Scan(&status, &text); err != nil {
+			return false, err
+		}
+		if status == "open" {
+			return false, rows.Close()
+		}
+		if protocol.NormalizeAskText(text) == key {
+			settled = true
+		}
+	}
+	return settled, rows.Err()
 }
 
 // waitingAskDebounce is how long a session waits for its user before the

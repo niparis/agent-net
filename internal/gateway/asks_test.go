@@ -257,6 +257,66 @@ func TestWaitingSessionIsAnAsk(t *testing.T) {
 	}
 }
 
+// A waiting ask someone closed is not raised again for the same wait: the
+// minute reconcile once made a new copy every minute after each close. Only a
+// new wait from the session raises it again.
+func TestClosedWaitingAskIsNotRaisedAgainForTheSameWait(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	info := protocol.SessionInfo{Harness: "claude", NativeID: "w", Name: "waiter", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Delete worktree w_1?"}}
+	id, err := s.UpsertSession(node, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitingRows := func() (open, all int) {
+		t.Helper()
+		if err := s.db.QueryRow(`SELECT COALESCE(SUM(status='open'),0), COUNT(*) FROM inbox_items WHERE source_ref=?`, "waiting:"+id).Scan(&open, &all); err != nil {
+			t.Fatal(err)
+		}
+		return open, all
+	}
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	if open, all := waitingRows(); open != 1 || all != 1 {
+		t.Fatalf("after the debounce: %d open of %d, want one ask", open, all)
+	}
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed', answer='lead: done' WHERE source_ref=?`, "waiting:"+id); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		c.t = c.t.Add(time.Minute)
+		if err := s.reconcileAsks(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The session reports the same wait again; it is still the same wait.
+	if _, err := s.UpsertSession(node, info); err != nil {
+		t.Fatal(err)
+	}
+	if open, all := waitingRows(); open != 0 || all != 1 {
+		t.Fatalf("after the close: %d open of %d, want the closed ask only", open, all)
+	}
+	// A new wait (the session stopped waiting, then waits again) is a new ask.
+	info.Waiting = nil
+	if _, err := s.UpsertSession(node, info); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Minute)
+	info.Waiting = &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Delete worktree w_1?"}
+	if _, err := s.UpsertSession(node, info); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	if open, all := waitingRows(); open != 1 || all != 2 {
+		t.Fatalf("after a new wait: %d open of %d, want a new ask", open, all)
+	}
+}
+
 // An ask closes when its asker's session ends, and keeps the reason.
 func TestAskClosesWhenAskerSessionEnds(t *testing.T) {
 	s, _ := newTestStore(t)
