@@ -105,7 +105,9 @@ func (s *Store) checkSessionStalls() error {
 			return err
 		}
 		old, _ := strconv.ParseInt(saved, 10, 64)
+		closedNow := false
 		if id != "" && (!eligible || baselineSec > old) {
+			closedNow = true
 			if _, err := tx.Exec(`UPDATE inbox_items SET status='closed',answer='activity_or_end',answered_at=? WHERE id=?`, now.UnixNano(), id); err != nil {
 				return err
 			}
@@ -120,13 +122,15 @@ func (s *Store) checkSessionStalls() error {
 		// One ask at a time, and none within the stall window after the last
 		// one ended. Activity that the harness reports late can make a session
 		// look stalled again at once, and the asks then came about every hour.
+		// An ask this sweep just closed for newer activity starts no window:
+		// the sweep closed it late, and it ended when that activity came.
 		var lastStatus string
 		var lastAt int64
 		err = tx.QueryRow(`SELECT status,CASE WHEN answered_at>0 THEN answered_at ELSE created_at END FROM inbox_items WHERE session_id=? AND message_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1`, c.id, sessionStallMarker).Scan(&lastStatus, &lastAt)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
-		if err == nil && (lastStatus == "open" || lastStatus == "dismissed" || now.Sub(time.Unix(0, lastAt)) < timeout) {
+		if err == nil && (lastStatus == "open" || (!closedNow && now.Sub(time.Unix(0, lastAt)) < timeout)) {
 			continue
 		}
 		_, err = s.createInboxItem(tx, protocol.InboxItem{Kind: "session_stall", SessionID: c.id, Node: c.repo, MessageID: sessionStallMarker,

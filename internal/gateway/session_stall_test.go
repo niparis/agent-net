@@ -662,3 +662,40 @@ func TestSessionStallNoNewAskWithinTheWindowAfterAClose(t *testing.T) {
 		t.Fatalf("no ask after the window passed: %+v", got)
 	}
 }
+
+// A dismissed ask blocks a new one only inside the stall window after the
+// dismissal. Two hours later a new stall gets a new ask, even when the sweep
+// is the first to see the new activity (it then closes the old ask itself,
+// and that close must not start a window).
+func TestSessionStallDismissedLongAgoDoesNotBlockANewStall(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("test-host", "linux")
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "dismissed", Status: "busy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	first := stallItems(t, s)
+	if len(first) != 1 {
+		t.Fatalf("first ask: %+v", first)
+	}
+	if _, err := s.AnswerInbox(first[0].ID, "dismiss"); err != nil {
+		t.Fatal(err)
+	}
+	// Two hours later the session is busy again, then silent for 21 minutes.
+	c.t = c.t.Add(2 * time.Hour)
+	if _, err := s.db.Exec(`UPDATE sessions SET harness_activity=? WHERE id=?`, c.t.UnixNano(), id); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	got := stallItems(t, s)
+	if len(got) != 2 || got[1].Status != "open" {
+		t.Fatalf("no new ask for a new stall after an old dismissal: %+v", got)
+	}
+}
