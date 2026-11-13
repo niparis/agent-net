@@ -2446,6 +2446,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return map[string]bool{"ok": false}, err
 		}
 		return st.StoredLead(p.Ref)
+	case "scope.set", "scope.remove":
+		p, err := decodeOperator[protocol.ScopeSetRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		if typ == "scope.set" {
+			return st.SetScope(p, graphActor(raw), false)
+		}
+		return st.RemoveScope(p, graphActor(raw), false)
 	case "repo.create", "repo.archive", "agent.create", "agent.tombstone":
 		if err := st.requireGraphRefs(); err != nil {
 			return nil, err

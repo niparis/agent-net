@@ -109,7 +109,7 @@ func (s *Store) graphFrameAllowed(nc *nodeConn, typ string) error {
 			}
 		}
 		switch typ {
-		case "lead.set", "query.graph", "query.graph_talk", "node.add", "node.remove", "repo.create", "repo.archive", "agent.create", "agent.tombstone":
+		case "lead.set", "scope.set", "scope.remove", "query.graph", "query.graph_talk", "node.add", "node.remove", "repo.create", "repo.archive", "agent.create", "agent.tombstone":
 			return reject("upgrade required: daemon must report typed Graph support in hello")
 		}
 	}

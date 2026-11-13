@@ -570,9 +570,9 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		}
 		res, _, err := lc.dispatchOwner(ctx, protocol.OpTeamWrite, b)
 		return res, err
-	case "lead_set", "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "node_settings_set", "repo_create", "repo_archive", "agent_create", "agent_tombstone":
+	case "lead_set", "scope_set", "scope_remove", "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "node_settings_set", "repo_create", "repo_archive", "agent_create", "agent_tombstone":
 		delete(args, "by")
-		if name == "lead_set" || name == "repo_create" || name == "repo_archive" || name == "agent_create" || name == "agent_tombstone" {
+		if name == "lead_set" || name == "scope_set" || name == "scope_remove" || name == "repo_create" || name == "repo_archive" || name == "agent_create" || name == "agent_tombstone" {
 			args["owner"] = d.ownerSessionID()
 		}
 		if name == "graph_undo" {

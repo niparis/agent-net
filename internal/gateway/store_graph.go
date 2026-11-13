@@ -626,6 +626,14 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		} else {
 			_, err = tx.Exec(`INSERT INTO charter_values VALUES(?,?,?,?,?,?) ON CONFLICT(level,scope,attr) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, level, node, key, old, now, actor)
 		}
+	case "scope":
+		if err := undoScopeTx(tx, node, attr, old, value, actor, now); err != nil {
+			return err
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil
+		}
+		return tx.Commit()
 	case "lead":
 		if !actorAllowed(actor, "rule") {
 			return reject("only the owner or CTO may set a lead")

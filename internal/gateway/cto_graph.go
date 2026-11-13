@@ -33,6 +33,9 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 	if err := json.Unmarshal(raw, &target); err != nil {
 		return "", err
 	}
+	if tool == "scope_set" || tool == "scope_remove" {
+		return "rule", nil
+	}
 	if tool == "lead_set" || tool == "repo_create" || tool == "repo_archive" || tool == "agent_create" || tool == "agent_tombstone" ||
 		tool == "team_create" || tool == "team_rename" || tool == "team_purpose" || tool == "team_charter" || tool == "team_archive" || tool == "team_member_add" || tool == "team_member_remove" {
 		if err := s.requireGraphRefs(); err != nil {
@@ -179,7 +182,7 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 		strings.HasPrefix(attr, protocol.SettingWakeOnMessage+"@") {
 		return "minor", nil
 	}
-	if typ == "lifecycle" || typ == "level_charter" {
+	if typ == "lifecycle" || typ == "level_charter" || typ == "scope" {
 		return "rule", nil
 	}
 	if typ == "edge" && deliveryEdgeStep(attr) != "" {
