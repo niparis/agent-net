@@ -122,7 +122,7 @@ var ctoTools = map[string]ctoToolDef{
 	"graph_change": {
 		desc: "Change the graph: charters, edges and typed repo or agent lifecycle. Node removal, agent tombstone and repo archive require owner approval; other changes apply at once.",
 		fields: map[string]ctoField{
-			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set"}},
+			"action":  {typ: "string", enum: []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set", "scope_set", "scope_remove"}},
 			"ref":     {typ: "graph_ref", desc: "Typed target."},
 			"lead":    {typ: "graph_ref", desc: "Agent lead; omit to clear."},
 			"member":  {typ: "graph_ref", desc: "Member ref (agent or repo)."},
@@ -135,8 +135,8 @@ var ctoTools = map[string]ctoToolDef{
 			"name":    {typ: "string", desc: "Display name."},
 			"role":    {typ: "string", desc: "Agent role; optional."},
 			"from":    {typ: "graph_endpoint", desc: "Source."},
-			"to":      {typ: "graph_endpoint", desc: "Target."},
-			"kind":    {typ: "string", desc: "Dependency, deploy or delivery owner edge.", enum: ctoEdgeKinds},
+			"to":      {typ: "graph_endpoint", desc: "Target or scope over."},
+			"kind":    {typ: "string", desc: "Dependency, deploy or delivery owner edge.", enum: append(append([]string{}, ctoEdgeKinds...), protocol.ScopeKinds...)},
 			"rule":    {typ: "string", desc: "Deliver, own, hold, refuse.", enum: []string{"normal", "auto", "ask", "never"}},
 			"id":      {typ: "integer", desc: "History ID; omit for latest."},
 			"setting": {typ: "string", desc: "Node setting, or team asks_to or work_mode.", enum: ctoGraphSettings},

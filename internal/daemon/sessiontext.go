@@ -54,7 +54,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpScoresWeekly: true, protocol.OpWorkerRotationGet: true, protocol.OpPickerGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
 	protocol.OpSignInOpen: true, "sign_in_list": true, "sign_in_raise": true,
-	protocol.OpLeadSet: true, protocol.OpTeamWrite: true, protocol.OpTeamHistory: true, protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpDeliveryOwnerSet: true, protocol.OpMergerSet: true, protocol.OpGraphUndo: true, protocol.OpRepoCreate: true, protocol.OpRepoArchive: true, protocol.OpAgentCreate: true, protocol.OpAgentTombstone: true,
+	protocol.OpLeadSet: true, protocol.OpTeamWrite: true, protocol.OpTeamHistory: true, protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpDeliveryOwnerSet: true, protocol.OpMergerSet: true, protocol.OpGraphUndo: true, protocol.OpRepoCreate: true, protocol.OpRepoArchive: true, protocol.OpAgentCreate: true, protocol.OpAgentTombstone: true, protocol.OpScopeSet: true, protocol.OpScopeRemove: true,
 	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
 	"settings_write": true, "settings_undo": true, "settings_owner_read": true, protocol.OpChangesOwnerFind: true, protocol.OpChangesOwnerReport: true,
 	protocol.OpPlaybookGet: true, protocol.OpPlaybookSet: true,
@@ -1007,7 +1007,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			}
 		}
 		res, err = d.call(ctx, protocol.FramePermissionOwnerApply, frame)
-	case protocol.OpLeadSet, protocol.OpTeamWrite, protocol.OpTeamHistory, protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpDeliveryOwnerSet, protocol.OpMergerSet, protocol.OpGraphUndo, protocol.OpRepoCreate, protocol.OpRepoArchive, protocol.OpAgentCreate, protocol.OpAgentTombstone, protocol.OpNodeSettingsGet, protocol.OpNodeSettingsSet:
+	case protocol.OpLeadSet, protocol.OpTeamWrite, protocol.OpTeamHistory, protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpDeliveryOwnerSet, protocol.OpMergerSet, protocol.OpGraphUndo, protocol.OpRepoCreate, protocol.OpRepoArchive, protocol.OpAgentCreate, protocol.OpAgentTombstone, protocol.OpScopeSet, protocol.OpScopeRemove, protocol.OpNodeSettingsGet, protocol.OpNodeSettingsSet:
 		// The gateway trusts enrolled daemons as with session.policy. The owner
 		// gate above must run before forwarding any graph operation.
 		frame := strings.ReplaceAll(method, "_", ".")
@@ -1018,7 +1018,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if p == nil {
 			p = map[string]any{}
 		}
-		if method == protocol.OpLeadSet || method == protocol.OpRepoCreate || method == protocol.OpRepoArchive || method == protocol.OpAgentCreate || method == protocol.OpAgentTombstone {
+		if method == protocol.OpLeadSet || method == protocol.OpScopeSet || method == protocol.OpScopeRemove || method == protocol.OpRepoCreate || method == protocol.OpRepoArchive || method == protocol.OpAgentCreate || method == protocol.OpAgentTombstone {
 			p["owner"] = d.ownerSessionID()
 		}
 		if method == protocol.OpMergerSet || method == protocol.OpTeamWrite || method == protocol.OpTeamHistory {

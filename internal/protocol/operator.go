@@ -173,6 +173,10 @@ const (
 	OpRepoArchive      = "repo_archive"
 	OpAgentCreate      = "agent_create"
 	OpAgentTombstone   = "agent_tombstone"
+	// OpScopeSet and OpScopeRemove change the scopes stored on a role node.
+	// Owner only; stored, not used yet.
+	OpScopeSet    = "scope_set"
+	OpScopeRemove = "scope_remove"
 	// OpNodeSettingsGet and OpNodeSettingsSet read and change a node's
 	// overrides of its maturity defaults (decision 0022). Owner only, no
 	// agent tool.
@@ -183,7 +187,7 @@ const (
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
-	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpChiefSorts, OpAskUndo, OpAskMark, OpAskDiscuss, OpDeskLog, OpDeskSettle, OpNudgeStats, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone,
+	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpChiefSorts, OpAskUndo, OpAskMark, OpAskDiscuss, OpDeskLog, OpDeskSettle, OpNudgeStats, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone, OpScopeSet, OpScopeRemove,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick, OpJudgmentAdd, OpPermissionUndo, OpPermissionApply, OpSignInOpen}
 

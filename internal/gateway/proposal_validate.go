@@ -52,6 +52,17 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 			return nil, err
 		}
 		return nil, st.SetLead(p, "owner", true)
+	case "scope_set", "scope_remove":
+		var p protocol.ScopeSetRequest
+		if err := json.Unmarshal(q.Args, &p); err != nil {
+			return nil, err
+		}
+		if q.Tool == "scope_set" {
+			_, err := st.SetScope(p, "owner", true)
+			return nil, err
+		}
+		_, err := st.RemoveScope(p, "owner", true)
+		return nil, err
 	case "repo_create", "repo_archive", "agent_create", "agent_tombstone":
 		var p protocol.GraphLifecycleRequest
 		if err := json.Unmarshal(q.Args, &p); err != nil {
