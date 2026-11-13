@@ -20,7 +20,7 @@ func TestCTOHookAllowsRevertibleOps(t *testing.T) {
 		raw, _ := json.Marshal(map[string]any{"hook_event_name": "PreToolUse", "tool_name": "mcp__agent-net-cto__cto_op", "tool_input": map[string]any{"method": method, "args": map[string]any{}}})
 		return string(raw)
 	}
-	for _, method := range []string{"session_replace", "merger_start", "settings_values_write", "mcp_import"} {
+	for _, method := range []string{"session_replace", "merger_start", "settings_values_write", "mcp_import", "permission_apply", "permission_undo"} {
 		var got struct {
 			Out struct {
 				Event    string `json:"hookEventName"`

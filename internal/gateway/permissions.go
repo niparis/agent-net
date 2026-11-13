@@ -21,8 +21,10 @@ import (
 // one owner-only ask. The ask names every rule or folder, every target with its
 // machine and path, the reason and the proposer. Only an owner answer on that
 // ask makes the gateway tell each target machine's daemon to apply. The ask is
-// route-fixed to the owner, so the chief of staff never adopts it. No agent,
-// the CTO included, can apply a proposal.
+// route-fixed to the owner, so the chief of staff never adopts it. No agent can
+// apply a proposal. The owner's direct instruction in the CTO chat is the one
+// other approval: the CTO applies it with his quoted words, which the proposal
+// keeps as the record.
 
 const permissionAskPrefix = "permission:"
 
@@ -197,13 +199,19 @@ func permissionAskText(p protocol.PermissionProposal) string {
 	return b.String()
 }
 
+// insertPermissionRow stores one proposal row. It writes no file.
+func insertPermissionRow(tx *sql.Tx, p protocol.PermissionProposal) error {
+	rulesRaw, _ := json.Marshal(p.Rules)
+	targetsRaw, _ := json.Marshal(p.Targets)
+	_, err := tx.Exec(`INSERT INTO permission_proposals(id,kind,rules,targets,reason,proposed_by,proposed_name,status,created_at,decided_at,decided_by,dedupe_key,owner_words) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		p.ID, p.Kind, string(rulesRaw), string(targetsRaw), p.Reason, p.ProposedBy, p.ProposedName, p.Status, p.CreatedAt, p.DecidedAt, p.DecidedBy, p.DedupeKey, p.OwnerWords)
+	return err
+}
+
 // insertPermissionProposal stores the proposal row and opens its owner-only
 // ask in the same transaction. It writes no file and changes no setting.
 func (s *Store) insertPermissionProposal(tx *sql.Tx, p protocol.PermissionProposal, session, why string) error {
-	rulesRaw, _ := json.Marshal(p.Rules)
-	targetsRaw, _ := json.Marshal(p.Targets)
-	if _, err := tx.Exec(`INSERT INTO permission_proposals(id,kind,rules,targets,reason,proposed_by,proposed_name,status,created_at,dedupe_key) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		p.ID, p.Kind, string(rulesRaw), string(targetsRaw), p.Reason, p.ProposedBy, p.ProposedName, p.Status, p.CreatedAt, p.DedupeKey); err != nil {
+	if err := insertPermissionRow(tx, p); err != nil {
 		return err
 	}
 	about := ""
@@ -226,6 +234,46 @@ func (s *Store) insertPermissionProposal(tx *sql.Tx, p protocol.PermissionPropos
 	return err
 }
 
+// permissionRulesAndTargets checks the rules and resolves the targets of one
+// proposal kind. A proposal and the CTO's apply on the owner's words resolve
+// them the same way.
+func (s *Store) permissionRulesAndTargets(kind string, rawRules, rawTargets []string, machine string) ([]string, []protocol.PermissionTarget, error) {
+	switch kind {
+	case protocol.PermissionKindRules:
+		if strings.TrimSpace(machine) != "" {
+			return nil, nil, reject("permission rules take repo names, not a machine")
+		}
+		rules, err := cleanPermissionRules(rawRules)
+		if err != nil {
+			return nil, nil, err
+		}
+		targets, err := s.resolvePermissionTargets(rawTargets)
+		if err != nil {
+			return nil, nil, err
+		}
+		return rules, targets, nil
+	case protocol.PermissionKindTrust:
+		if strings.TrimSpace(machine) == "" {
+			return nil, nil, reject("folder trust needs a machine")
+		}
+		for _, rule := range rawRules {
+			if strings.TrimSpace(rule) != "" {
+				return nil, nil, reject("folder trust takes no permission rules")
+			}
+		}
+		nodeID, hostname, err := s.resolveTrustMachine(machine)
+		if err != nil {
+			return nil, nil, err
+		}
+		paths, err := cleanTrustPaths(rawTargets)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, trustTargets(nodeID, hostname, paths), nil
+	}
+	return nil, nil, reject("kind must be permissions or trust")
+}
+
 // ProposePermission stores an agent's proposal and opens its owner-only ask.
 // It writes no file and changes no setting.
 func (s *Store) ProposePermission(frame protocol.PermissionProposeFrame) (protocol.PermissionProposeResult, error) {
@@ -245,38 +293,9 @@ func (s *Store) ProposePermission(frame protocol.PermissionProposeFrame) (protoc
 	if len(reason) > protocol.MaxBodyBytes {
 		return res, reject("the reason is too long")
 	}
-	var rules []string
-	var targets []protocol.PermissionTarget
-	var err error
-	switch kind {
-	case protocol.PermissionKindRules:
-		if strings.TrimSpace(frame.Machine) != "" {
-			return res, reject("permission rules take repo names, not a machine")
-		}
-		if rules, err = cleanPermissionRules(frame.Rules); err != nil {
-			return res, err
-		}
-		if targets, err = s.resolvePermissionTargets(frame.Targets); err != nil {
-			return res, err
-		}
-	case protocol.PermissionKindTrust:
-		if strings.TrimSpace(frame.Machine) == "" {
-			return res, reject("folder trust needs a machine")
-		}
-		for _, rule := range frame.Rules {
-			if strings.TrimSpace(rule) != "" {
-				return res, reject("folder trust takes no permission rules")
-			}
-		}
-		nodeID, hostname, err := s.resolveTrustMachine(frame.Machine)
-		if err != nil {
-			return res, err
-		}
-		paths, err := cleanTrustPaths(frame.Targets)
-		if err != nil {
-			return res, err
-		}
-		targets = trustTargets(nodeID, hostname, paths)
+	rules, targets, err := s.permissionRulesAndTargets(kind, frame.Rules, frame.Targets, frame.Machine)
+	if err != nil {
+		return res, err
 	}
 	p := protocol.PermissionProposal{
 		ID:           protocol.NewID("pp"),
@@ -375,9 +394,9 @@ func (s *Store) RaiseTrustAsk(session, nodeID, hostname, path, project, reason s
 func (s *Store) PermissionProposal(id string) (protocol.PermissionProposal, error) {
 	var p protocol.PermissionProposal
 	var rules, targets, results string
-	err := s.db.QueryRow(`SELECT id,kind,rules,targets,reason,proposed_by,proposed_name,status,created_at,decided_at,decided_by,results,desk_log_id,dedupe_key
+	err := s.db.QueryRow(`SELECT id,kind,rules,targets,reason,proposed_by,proposed_name,status,created_at,decided_at,decided_by,results,desk_log_id,dedupe_key,owner_words
 		FROM permission_proposals WHERE id=?`, id).Scan(&p.ID, &p.Kind, &rules, &targets, &p.Reason, &p.ProposedBy, &p.ProposedName,
-		&p.Status, &p.CreatedAt, &p.DecidedAt, &p.DecidedBy, &results, &p.DeskLogID, &p.DedupeKey)
+		&p.Status, &p.CreatedAt, &p.DecidedAt, &p.DecidedBy, &results, &p.DeskLogID, &p.DedupeKey, &p.OwnerWords)
 	if err != nil {
 		return p, err
 	}
@@ -475,6 +494,89 @@ func (s *Store) rejectPermissionTx(tx *sql.Tx, itemID string) error {
 	return err
 }
 
+// ApprovePermissionOnOwnerWords records the owner's direct chat instruction as
+// the approval of one permission change. With an id it
+// approves a proposal that waits on the Desk and closes its Desk item with an
+// answer that names who acted and the owner's words. Without one it stores a
+// new, already approved proposal and opens no ask. The owner's words are
+// required: they are the record of his approval. It writes no file.
+func (s *Store) ApprovePermissionOnOwnerWords(frame protocol.PermissionOwnerApplyFrame) (string, error) {
+	req := frame.Request
+	words := strings.TrimSpace(req.OwnerWords)
+	if words == "" {
+		return "", reject("owner_words is required: quote the owner's instruction from this chat")
+	}
+	by := "owner"
+	if frame.By == "cto" {
+		by = "cto"
+	}
+	now := s.now()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	id := strings.TrimSpace(req.ID)
+	if id != "" {
+		if strings.TrimSpace(req.Kind) != "" || len(req.Rules) > 0 || len(req.Targets) > 0 || strings.TrimSpace(req.Machine) != "" {
+			return "", reject("give id alone to approve a proposal, or kind, rules and targets for a new grant")
+		}
+		var status string
+		if err := tx.QueryRow(`SELECT status FROM permission_proposals WHERE id=?`, id).Scan(&status); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", reject("unknown permission proposal %s", id)
+			}
+			return "", err
+		}
+		if status != "pending" {
+			return "", reject("permission proposal %s is %s, not pending", id, status)
+		}
+		if _, err := tx.Exec(`UPDATE permission_proposals SET status='approved',decided_at=?,decided_by=?,owner_words=? WHERE id=?`, now.UnixNano(), by, words, id); err != nil {
+			return "", err
+		}
+		who := "the owner"
+		if by == "cto" {
+			who = "the CTO"
+		}
+		answer := fmt.Sprintf("approve: %s applied it on the owner's words %q", who, words)
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='approved',answer=?,answered_at=? WHERE source_ref=? AND status='open'`,
+			answer, now.UTC().UnixNano(), permissionAskPrefix+id); err != nil {
+			return "", err
+		}
+		return id, tx.Commit()
+	}
+	kind := normalizePermissionKind(req.Kind)
+	if kind == "" {
+		return "", reject("kind must be permissions or trust")
+	}
+	rules, targets, err := s.permissionRulesAndTargets(kind, req.Rules, req.Targets, req.Machine)
+	if err != nil {
+		return "", err
+	}
+	session := strings.TrimSpace(frame.Session)
+	if session == "" {
+		session = frame.Owner
+	}
+	p := protocol.PermissionProposal{
+		ID:           protocol.NewID("pp"),
+		Kind:         kind,
+		Rules:        rules,
+		Targets:      targets,
+		Reason:       words,
+		ProposedBy:   session,
+		ProposedName: sessionLabel(s.db, session),
+		Status:       "approved",
+		CreatedAt:    now.UnixNano(),
+		DecidedAt:    now.UnixNano(),
+		DecidedBy:    by,
+		OwnerWords:   words,
+	}
+	if err := insertPermissionRow(tx, p); err != nil {
+		return "", err
+	}
+	return p.ID, tx.Commit()
+}
+
 // permissionResultLine says what happened to one target, in the owner's words.
 func permissionResultLine(r protocol.PermissionApplyResult) string {
 	host := r.Target.Hostname
@@ -544,6 +646,10 @@ func (s *Store) RecordPermissionResult(id string, results []protocol.PermissionA
 	if _, err = tx.Exec(`UPDATE permission_proposals SET status=?,results=? WHERE id=?`, status, string(resultsRaw), id); err != nil {
 		return err
 	}
+	var decidedBy, words string
+	if err = tx.QueryRow(`SELECT decided_by,owner_words FROM permission_proposals WHERE id=?`, id).Scan(&decidedBy, &words); err != nil {
+		return err
+	}
 	var detail strings.Builder
 	var names []string
 	for _, r := range results {
@@ -559,6 +665,15 @@ func (s *Store) RecordPermissionResult(id string, results []protocol.PermissionA
 	if kind == protocol.PermissionKindTrust {
 		text = fmt.Sprintf("Trusted Claude Code folders: %s", strings.Join(names, ", "))
 	}
+	// A grant the CTO applied on the owner's words is the CTO's log line, and
+	// it quotes his words.
+	source := "gateway"
+	if decidedBy == "cto" {
+		source = "cto"
+	}
+	if words != "" {
+		fmt.Fprintf(&detail, "Owner's words: %q\n", words)
+	}
 	var options []string
 	offer := status != "failed"
 	if kind == protocol.PermissionKindTrust {
@@ -568,7 +683,7 @@ func (s *Store) RecordPermissionResult(id string, results []protocol.PermissionA
 		raw, _ := json.Marshal(map[string]string{"id": id})
 		options = []string{protocol.OpPermissionUndo, string(raw)}
 	}
-	if err = s.deskLog(tx, "gateway", "permission", id, text, strings.TrimRight(detail.String(), "\n"), options); err != nil {
+	if err = s.deskLog(tx, source, "permission", id, text, strings.TrimRight(detail.String(), "\n"), options); err != nil {
 		return err
 	}
 	var logID int64
@@ -616,7 +731,32 @@ func (g *Gateway) applyPermissionProposal(ctx context.Context, itemID string) ([
 	if err != nil {
 		return nil, err
 	}
-	if p.Status != "approved" || p.DecidedBy != "owner" {
+	return g.applyApprovedPermission(ctx, p)
+}
+
+// ownerApplyPermission is the owner operation permission_apply: it records the
+// owner's words as the approval, applies on each target machine, and returns
+// the stored proposal with its per-target results.
+func (g *Gateway) ownerApplyPermission(ctx context.Context, frame protocol.PermissionOwnerApplyFrame) (protocol.PermissionProposal, error) {
+	id, err := g.store.ApprovePermissionOnOwnerWords(frame)
+	if err != nil {
+		return protocol.PermissionProposal{}, err
+	}
+	p, err := g.store.PermissionProposal(id)
+	if err != nil {
+		return p, err
+	}
+	if _, err := g.applyApprovedPermission(ctx, p); err != nil {
+		return p, err
+	}
+	return g.store.PermissionProposal(id)
+}
+
+// applyApprovedPermission tells each target machine to apply one approved
+// proposal and records what happened. The approval is the owner's Desk answer,
+// or the owner's quoted chat words.
+func (g *Gateway) applyApprovedPermission(ctx context.Context, p protocol.PermissionProposal) ([]protocol.PermissionApplyResult, error) {
+	if p.Status != "approved" || (p.DecidedBy != "owner" && p.OwnerWords == "") {
 		return nil, reject("permission proposal is not approved by the owner")
 	}
 	results := make([]protocol.PermissionApplyResult, 0, len(p.Targets))
@@ -650,7 +790,7 @@ func (g *Gateway) applyPermissionProposal(ctx context.Context, itemID string) ([
 		return results, err
 	}
 	for _, r := range results {
-		g.logLine("permission.apply", "proposal", p.ID, "kind", p.Kind, "node", r.Target.NodeID, "target", r.Target.Name,
+		g.logLine("permission.apply", "proposal", p.ID, "kind", p.Kind, "by", p.DecidedBy, "node", r.Target.NodeID, "target", r.Target.Name,
 			"path", r.Target.Path, "status", r.Status, "added", strings.Join(r.Added, ","), "trust_added", r.TrustAdded, "error", r.Error)
 	}
 	return results, nil

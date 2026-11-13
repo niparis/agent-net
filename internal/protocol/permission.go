@@ -3,8 +3,10 @@ package protocol
 // Claude Code permission proposals. An agent session proposes exact allow
 // rules for named, registered repositories. The gateway stores the proposal
 // and opens one owner-only ask. Only the owner's answer lets the gateway tell
-// the target machines to write <repo>/.claude/settings.local.json. No agent,
-// the CTO included, can apply a proposal without that answer.
+// the target machines to write <repo>/.claude/settings.local.json. No agent
+// can apply a proposal without that answer. The one other path is the owner's
+// direct instruction in the CTO chat: the CTO applies it with his quoted words
+// as the record.
 
 // The two proposal kinds. A permissions proposal carries allow rules for
 // repositories; a trust proposal carries folders on one machine.
@@ -86,6 +88,9 @@ type PermissionProposal struct {
 	Results      []PermissionApplyResult `json:"results,omitempty"`
 	DeskLogID    int64                   `json:"desk_log_id,omitempty"`
 	DedupeKey    string                  `json:"dedupe_key,omitempty"`
+	// OwnerWords quotes the owner's chat instruction when the CTO applied the
+	// proposal on his words instead of a Desk answer.
+	OwnerWords string `json:"owner_words,omitempty"`
 }
 
 // PermissionApplyFrame asks one daemon to add rules to one repository's
@@ -116,7 +121,47 @@ type PermissionApplyResult struct {
 	Added      []string         `json:"added,omitempty"`
 	Removed    []string         `json:"removed,omitempty"`
 	TrustAdded bool             `json:"trust_added,omitempty"`
-	Error      string           `json:"error,omitempty"`
+	// File is the settings file a rules apply wrote or read.
+	File  string `json:"file,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+// FramePermissionOwnerApply is the gateway frame behind the owner operation
+// permission_apply. The owner's direct instruction is his
+// approval: the gateway stores his quoted words as the record and applies
+// through the same per-machine frames as a Desk approval. Only the owner's own
+// operator path, or the CTO's process-checked one, reaches it.
+const FramePermissionOwnerApply = "permission.owner_apply"
+
+// FramePermissionGet reads one stored proposal for the owner or the CTO.
+const FramePermissionGet = "permission.get"
+
+// PermissionOwnerApplyRequest is cto_op permission_apply. Give id alone to
+// approve a proposal that waits on the Desk, or kind, rules, targets and
+// machine as agent_permission_propose takes them for a new grant.
+type PermissionOwnerApplyRequest struct {
+	ID         string   `json:"id,omitempty" jsonschema:"a pending proposal (pp_...) to approve; give it alone"`
+	Kind       string   `json:"kind,omitempty" jsonschema:"permissions (default) or trust"`
+	Rules      []string `json:"rules,omitempty" jsonschema:"exact Claude Code allow rules, for kind permissions"`
+	Targets    []string `json:"targets,omitempty" jsonschema:"registered repo names for permissions, or folders for trust"`
+	Machine    string   `json:"machine,omitempty" jsonschema:"the machine of the folders, for kind trust"`
+	OwnerWords string   `json:"owner_words" jsonschema:"a short quote of the owner's instruction in this chat; stored as the record"`
+}
+
+// PermissionOwnerApplyFrame is FramePermissionOwnerApply. The daemon adds the
+// owner session it checked, the session that acted and who it was. The request
+// is nested because a frame's own id is a header field.
+type PermissionOwnerApplyFrame struct {
+	Request PermissionOwnerApplyRequest `json:"request"`
+	Owner   string                      `json:"owner"`
+	Session string                      `json:"session,omitempty"`
+	By      string                      `json:"by,omitempty"`
+}
+
+// PermissionGetFrame is FramePermissionGet.
+type PermissionGetFrame struct {
+	ProposalID string `json:"proposal_id"`
+	Owner      string `json:"owner"`
 }
 
 // PermissionUndoRequest asks the owner's undo of one approval.

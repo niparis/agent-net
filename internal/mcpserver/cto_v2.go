@@ -485,6 +485,12 @@ func normalizeProposalOutput(value any) any {
 	if id, ok := m["id"].(string); ok {
 		item := map[string]any{"id": id, "tool": proposalText(m["tool"]), "action": proposalText(m["action"]),
 			"status": proposalText(m["status"]), "reason": proposalText(m["reason"]), "created": proposalText(m["created_at"])}
+		// A permission proposal row names its own kind and answer call.
+		for _, key := range []string{"kind", "from", "summary", "options", "answer"} {
+			if v, ok := m[key]; ok {
+				item[key] = v
+			}
+		}
 		normalizeOwnerItem(item)
 		return map[string]any{"items": []any{item}, "total": 1, "note": m["note"]}
 	}

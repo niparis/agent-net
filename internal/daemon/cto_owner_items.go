@@ -1,7 +1,8 @@
 package daemon
 
 // The CTO's one read of everything that waits for the owner: charter drafts,
-// its own open proposals, held requests and open Inbox asks. Each row names the
+// its own open proposals, held requests, permission proposals and open Inbox
+// asks. Each row names the
 // exact call that resolves it, so the CTO can act without the owner's screen.
 // cto_proposals_find carries it as a kind, so the CTO tool list does not grow.
 
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -20,6 +22,7 @@ var ctoOwnerItemKinds = map[string]bool{
 	protocol.AskKindDraft: true, protocol.AskKindHeld: true, protocol.AskKindLearned: true,
 	protocol.AskKindApproval: true, protocol.AskKindQuestion: true,
 	protocol.AskKindEscalation: true, protocol.AskKindRejection: true,
+	protocol.AskKindPermission: true,
 }
 
 func ctoOwnerInboxKind(kind string) bool {
@@ -38,10 +41,10 @@ func ctoOwnerKindFilter(kind string) (string, error) {
 	}
 	switch kind {
 	case "all", "inbox", protocol.AskKindDraft, protocol.AskKindLearned, protocol.AskKindProposal, protocol.AskKindHeld,
-		protocol.AskKindApproval, protocol.AskKindQuestion, protocol.AskKindEscalation, protocol.AskKindRejection:
+		protocol.AskKindApproval, protocol.AskKindQuestion, protocol.AskKindEscalation, protocol.AskKindRejection, protocol.AskKindPermission:
 		return kind, nil
 	}
-	return "", errors.New(`kind must be all, draft, learned, proposal, held, inbox, approval, question, escalation or rejection. Example: {"kind":"draft"}`)
+	return "", errors.New(`kind must be all, draft, learned, proposal, held, inbox, approval, question, escalation, rejection or permission. Example: {"kind":"draft"}`)
 }
 
 // ctoOwnerItemRows reads the gateway's open asks and the daemon's own open
@@ -189,6 +192,12 @@ func ctoOwnerAskRow(ask protocol.Ask) map[string]any {
 		}
 		row["action"] = action
 		row["answer"] = ctoOwnerCall("answer", map[string]any{"kind": "outcome", "reply_id": ask.MessageID, "action": action})
+	case protocol.AskKindPermission:
+		// The row is the proposal itself, by its pp_ id. An open ask means the
+		// proposal is pending. The CTO applies it on the owner's chat words.
+		id := strings.TrimPrefix(ask.Ref, "permission:")
+		row["id"], row["status"], row["tool"], row["action"] = id, "pending", "cto_op", protocol.OpPermissionApply
+		row["answer"] = ctoPermissionApplyCall(id)
 	case protocol.AskKindApproval:
 		if len(options) == 0 {
 			options = []string{"approve", "refuse"}
@@ -203,6 +212,48 @@ func ctoOwnerAskRow(ask protocol.Ask) map[string]any {
 		row["answer"] = ctoOwnerCall("answer", map[string]any{"kind": "inbox", "id": ask.ID, "answer": answer})
 	}
 	return row
+}
+
+// ctoPermissionApplyCall is the call that applies a waiting permission
+// proposal on the owner's own chat words.
+func ctoPermissionApplyCall(id string) string {
+	return ctoOwnerCall("cto_op", map[string]any{"method": protocol.OpPermissionApply, "args": map[string]any{"id": id, "owner_words": "<quote the owner's instruction>"}})
+}
+
+// ctoPermissionNote tells the CTO when it may apply a permission proposal.
+const ctoPermissionNote = "A permission proposal waits on the owner's Desk. If the owner told you in this chat to grant it, apply it with the answer call and quote his words as owner_words. Otherwise leave it on the Desk."
+
+// ctoPermissionProposal reads one permission proposal by its pp_ id as a
+// cto_proposals_find row.
+func (d *Daemon) ctoPermissionProposal(ctx context.Context, id string) (map[string]any, error) {
+	value, err := d.call(ctx, protocol.FramePermissionGet, protocol.PermissionGetFrame{ProposalID: id, Owner: d.ownerSessionID()})
+	if err != nil {
+		return nil, err
+	}
+	var p protocol.PermissionProposal
+	if err := ctoDecode(value, &p); err != nil {
+		return nil, err
+	}
+	var targets []string
+	for _, t := range p.Targets {
+		targets = append(targets, t.Name)
+	}
+	summary := "Permission proposal for " + strings.Join(targets, ", ")
+	if len(p.Rules) > 0 {
+		summary += ": " + strings.Join(p.Rules, ", ")
+	}
+	row := map[string]any{
+		"id": p.ID, "tool": "cto_op", "action": protocol.OpPermissionApply, "status": p.Status,
+		"reason": ctoCut(p.Reason, 80), "created_at": ctoCatalogTime(time.Unix(0, p.CreatedAt)),
+		"kind": protocol.AskKindPermission, "from": p.ProposedName, "summary": ctoCut(summary, 200),
+		"options": []string{"approve", "reject"}, "note": ctoPermissionNote,
+	}
+	if p.Status == "pending" {
+		row["answer"] = ctoPermissionApplyCall(p.ID)
+	} else {
+		row["note"] = "This permission proposal is " + p.Status + "; nothing waits."
+	}
+	return row, nil
 }
 
 func ctoOwnerProposalRow(item proposal) map[string]any {
