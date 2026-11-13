@@ -76,7 +76,7 @@ func TestLivePickerPricesTasksFromStoredNoticeTokens(t *testing.T) {
 	s, candidates := livePickerFixture(t, true)
 	defer s.Close()
 	g := &Gateway{store: s}
-	choice, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
+	choice, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, "", nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestPickerCostAppearsAfterAWriteWithoutARestart(t *testing.T) {
 	s, candidates := livePickerFixture(t, false)
 	defer s.Close()
 	g := &Gateway{store: s}
-	first, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
+	first, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, "", nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestPickerCostAppearsAfterAWriteWithoutARestart(t *testing.T) {
 	if s.pickerTable().Revision <= before {
 		t.Fatal("the write did not rebuild the cached table")
 	}
-	second, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
+	second, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, "", nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
