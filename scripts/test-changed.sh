@@ -204,6 +204,22 @@ fi
 sort -u "$work/runs" | awk '!seen[$1 "\t" $2 "\t" $3]++' >"$work/runs.unique"
 mv "$work/runs.unique" "$work/runs"
 
+# go test gives each package binary 10 minutes by default. A slow package on a
+# busy machine then fails with a timeout panic and no failed assertion. The
+# daemon kills the whole check at delivery.handback_check_timeout (default 30
+# minutes), so every run gets what is left of test_budget. The runs together
+# stay inside that limit, and go test names the test that was running.
+test_budget=1500
+
+# test_timeout prints the -timeout for the next run: the time left of the budget,
+# and at least one second.
+test_timeout() {
+  left=$((deadline - $(date +%s)))
+  [ "$left" -ge 1 ] || left=1
+  printf '%ss\n' "$left"
+}
+deadline=$(($(date +%s) + test_budget))
+
 # describe_run prints the command a run line stands for, with ./ packages.
 describe_run() {
   mode=$1
@@ -213,6 +229,7 @@ describe_run() {
   line="go test -count=1"
   [ "$mode" = race ] && line="$line -race"
   [ "$pattern" = all ] || line="$line -run '$pattern'"
+  line="$line -timeout $(test_timeout)"
   printf '%s%s %s\n' "$line" "${extra:+ $extra}" "$pkg"
 }
 
@@ -295,6 +312,7 @@ go_test() {
 
 failed=0
 index=0
+: >"$work/failed"
 while read -r mode pkg pattern rule; do
   [ -n "${pkg:-}" ] || continue
   index=$((index + 1))
@@ -302,6 +320,7 @@ while read -r mode pkg pattern rule; do
   set -- -count=1
   [ "$mode" = race ] && set -- "$@" -race
   [ "$pattern" = all ] || set -- "$@" -run "$pattern"
+  set -- "$@" -timeout "$(test_timeout)"
   [ -z "$extra" ] || set -- "$@" $extra
   pkg_arg="./${pkg#"$module/"}"
   set -- "$@" "$pkg_arg"
@@ -320,7 +339,28 @@ while read -r mode pkg pattern rule; do
     failed=1
     printf 'FAIL [%s] %s (%ss)\n' "$rule" "$pkg_display" "$((end - start))"
     cat "$work/output-$index"
+    # go test lists the tests that were running when it timed out. Keep that
+    # line and the failed test names for the summary.
+    reason=failed
+    if grep -q '^panic: test timed out' "$work/output-$index"; then
+      reason=$(awk '
+        /^panic: test timed out/ { sub(/^panic: /, ""); msg = $0 }
+        /^[[:space:]]*running tests:/ { running = 1; next }
+        running && /^[[:space:]]*$/ { running = 0 }
+        running { sub(/^[[:space:]]+/, ""); names = names (names ? ", " : "") $0 }
+        END { printf "%s; running %s", msg, names }' "$work/output-$index")
+    fi
+    printf '%s\t%s\t%s\n' "$pkg_display" "$rule" "$reason" >>"$work/failed"
   fi
 done <"$work/runs"
+
+# The summary is the last thing printed, so the tail of the output that the
+# daemon keeps still names the failed runs.
+if [ -s "$work/failed" ]; then
+  printf 'test-changed: failed runs:\n'
+  while IFS="$(printf '\t')" read -r pkg_display rule reason; do
+    printf '  FAIL [%s] %s: %s\n' "$rule" "$pkg_display" "$reason"
+  done <"$work/failed"
+fi
 
 exit "$((failed + checks_failed))"
