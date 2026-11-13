@@ -80,8 +80,12 @@ Once a week agent-net gives each project lead one task:
    next area in a rotation the lead keeps.
 3. **Investigate.** List every route that makes the decision in that area, with
    a table of which checks each route applies.
-4. **Propose.** Send the owner a design that gives the decision one owner in the
-   code. He approves it or drops it.
+4. **Propose, only with a real find.** When the investigation finds a real
+   duplicate, with the routes and the evidence, the project lead writes a design
+   that gives the decision one owner in the code. Like any design, it goes to the
+   owner for approval before a worker starts. A week with no real find sends
+   nothing: no "nothing found" report, no low-value item. (CTO input,
+   2026-11-13.)
 
 One investigation costs about 130,000 to 160,000 tokens (measured on
 2026-11-13 for the model routes and the lead routes): cents on a low-cost model,
