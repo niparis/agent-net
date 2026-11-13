@@ -159,3 +159,33 @@ func TestStandingOrdersSearchUpdateHistoryTool(t *testing.T) {
 		t.Fatalf("%+v", history)
 	}
 }
+
+// The CTO's start text carries the titles of its gateway notes, as a coding
+// Claude session's does (decision 0158). The CTO has no policy hook turn, so
+// its start text is the only place they can arrive.
+func TestCTOStartTextCarriesTheNotesIndex(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startWorkerNode(t, g, shortSet, nil)
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.gw.Store().WriteNote(n.d.ctoSessionID(), protocol.NoteWriteRequest{Name: "cto-habit", Description: "how the CTO reviews", Body: "body text", Scope: protocol.NoteScopeAgent, Kind: "feedback"}); err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]string{"system prompt": n.d.ctoSystemPrompt(ctx), "first turn": n.d.ctoFirstTurn(ctx, "hello")} {
+		if !strings.Contains(got, "cto-habit") || strings.Contains(got, "body text") {
+			t.Errorf("%s: want the title and not the body: %q", name, got)
+		}
+	}
+}
+
+// The CTO's memory is its gateway notes. Its prompt says how to save and read
+// them, and its start text lists the titles (owner decision 2026-11-13).
+func TestCTOPromptNamesGatewayNotesAsItsMemory(t *testing.T) {
+	for _, want := range []string{"memory", "agent_note_write", "agent_notes_find", "titles"} {
+		if !strings.Contains(ctoBrief, want) {
+			t.Errorf("ctoBrief does not mention %q", want)
+		}
+	}
+}

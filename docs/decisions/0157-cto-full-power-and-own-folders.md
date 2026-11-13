@@ -32,6 +32,21 @@ This replaces decision 0035 rule 5.
   and the `general` subagent is no longer disabled. The startup check that
   refused a CTO with built-in tools is removed. Claude's `--help` must still list
   `--strict-mcp-config`.
+- **The CTO keeps Claude Code's default system prompt.** The CTO prompt is
+  added with `--append-system-prompt`, not `--system-prompt`. `--system-prompt`
+  replaces Claude Code's whole default prompt, including its guidance for the
+  built-in tools. That fitted a CTO with no tools. It is wrong for one with full
+  tools. The CTO also gets the titles of its gateway notes (decision 0158) in
+  its start text, after the standing orders. A coding session gets them through
+  the policy hook on each turn, but the CTO has no such turn, so its start text
+  is the only place they can arrive.
+- **The CTO has Claude Code auto memory off and uses gateway notes only.** Owner
+  decision 2026-11-13, "A". The CTO's launch settings carry
+  `autoMemoryEnabled: false` (the Claude Code setting that stops it reading or
+  writing its auto memory folder); a coding session does not get it. The CTO
+  brief says its memory is its gateway notes: save with `agent_note_write`, read
+  with `agent_notes_find`. Why: the owner sees and deletes notes in the TUI, they
+  are not tied to one Mac, and there is one memory, not two.
 - **Its own MCP server stays the only agent-net server.** The CTO keeps
   `--strict-mcp-config` with only `agent-net cto-mcp`. This is its identity, not
   a tool limit: with the ordinary agent-net server it would register a second

@@ -25,8 +25,14 @@ func TestClaudeStartSpecAppliesTheCTORole(t *testing.T) {
 			t.Errorf("%s = %q (present %v), want %q in %q", flag, got, contains(args, flag), want, args)
 		}
 	}
-	if !contains(args, "--strict-mcp-config") || !strings.Contains(argValue(args, "--system-prompt"), "You are the CTO") {
+	// The CTO's prompt is appended, so Claude Code's default prompt stays: auto
+	// memory and the built-in tool guidance are in the CTO's context as in any
+	// coding session (decision 0157). --system-prompt would replace all of it.
+	if !contains(args, "--strict-mcp-config") || !strings.Contains(argValue(args, "--append-system-prompt"), "You are the CTO") {
 		t.Errorf("role flags missing: %q", args)
+	}
+	if contains(args, "--system-prompt") {
+		t.Errorf("the CTO must keep Claude Code's default system prompt: %q", args)
 	}
 	var mcp struct {
 		Servers map[string]struct {
@@ -36,6 +42,11 @@ func TestClaudeStartSpecAppliesTheCTORole(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(argValue(args, "--mcp-config")), &mcp); err != nil || mcp.Servers["agent-net-cto"].Command != "/bin/agent-net" || strings.Join(mcp.Servers["agent-net-cto"].Args, " ") != "cto-mcp" {
 		t.Errorf("mcp config %q: %v", argValue(args, "--mcp-config"), err)
+	}
+	// The owner's decision of 2026-11-13: the CTO's memory is gateway notes
+	// only, so Claude Code's auto memory is off for its launch and for no other.
+	if !strings.Contains(cto.Settings, `"autoMemoryEnabled":false`) || strings.Contains(coding.Settings, "autoMemoryEnabled") {
+		t.Errorf("auto memory must be off for the CTO launch only: cto %s, coding %q", cto.Settings, coding.Settings)
 	}
 	if !strings.Contains(cto.Settings, `"AGENT_NET_CTO":"1"`) || !strings.Contains(cto.Settings, "mcp__agent-net-cto__agent_message_send") {
 		t.Errorf("role settings: %s", cto.Settings)

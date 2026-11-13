@@ -71,7 +71,10 @@ func (d *Daemon) applyCTOClaudeRole(ctx context.Context, spec *claudeBackground)
 	// The CTO's message tool is allowed, so Claude Code's auto-mode check does not
 	// block it. The name is the cto-mcp server's tool: mcp__<server>__<tool>.
 	hook := map[string]any{"type": "command", "command": shellQuote(d.cfg.Exe) + " cto-hook"}
-	launch := map[string]any{"crossSessionInbound": "accept",
+	// autoMemoryEnabled false turns Claude Code's auto memory off for this launch
+	// only (owner decision 2026-11-13: the CTO's memory is gateway notes, which
+	// the owner sees and deletes in the TUI). A coding session does not get it.
+	launch := map[string]any{"crossSessionInbound": "accept", "autoMemoryEnabled": false,
 		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": ctoHookMatcher, "hooks": []any{hook}}}},
 		"permissions": map[string]any{"allow": []string{"mcp__agent-net-cto__agent_message_send"}},
 		"env":         map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0", "DISABLE_AUTOUPDATER": "1"}}
@@ -80,7 +83,10 @@ func (d *Daemon) applyCTOClaudeRole(ctx context.Context, spec *claudeBackground)
 	spec.Name, spec.Settings = ctoClaudeJobName, string(settings)
 	// --strict-mcp-config keeps the CTO's identity: its one agent-net server
 	// is cto-mcp, never the owner's ordinary agent-net server.
-	spec.Flags = []string{"--system-prompt", d.ctoSystemPrompt(ctx), "--mcp-config", string(mcp), "--strict-mcp-config"}
+	// The prompt is appended, never a replacement: --system-prompt would drop
+	// Claude Code's default prompt and with it the built-in tool guidance. The
+	// CTO has full tools (decision 0157), so it needs that guidance.
+	spec.Flags = []string{"--append-system-prompt", d.ctoSystemPrompt(ctx), "--mcp-config", string(mcp), "--strict-mcp-config"}
 	// Every session that Claude's service starts later inherits the environment
 	// of the first launch: do not hand it a variable that turns the wheel off.
 	spec.DropEnv = []string{"CLAUDE_CODE_DISABLE_MOUSE"}
