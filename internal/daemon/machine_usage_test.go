@@ -195,7 +195,13 @@ func TestMachineUsageNowWithoutSampler(t *testing.T) {
 func TestMachineGetUsageThroughGateway(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
-	n := startNodeCfg(t, g, nodeOpts{detect: fakeInventory}, withSampler(os.Getpid()))
+	// The models call below would otherwise start this test binary as fake
+	// opencode, pi and codex, one after another, inside the gateway's 40 s
+	// liveModelTimeout. A busy CI shard ran past that limit.
+	n := startNodeCfg(t, g, nodeOpts{detect: fakeInventory}, func(c *Config) {
+		withSampler(os.Getpid())(c)
+		c.ListModels = func(context.Context, string) ([]string, error) { return []string{"fake/m1"}, nil }
+	})
 	ctx := context.Background()
 	var out protocol.MachineGetResult
 	eventually(t, "usage block", func() bool {
@@ -218,8 +224,5 @@ func TestMachineGetUsageThroughGateway(t *testing.T) {
 	cat, err := g.gw.MachineGet(ctx, protocol.MachineGetRequest{Machine: n.d.NodeID(), Include: []string{"models"}})
 	if err != nil || cat.Usage != nil {
 		t.Errorf("a category call must not carry the usage block: err=%v usage=%+v", err, cat.Usage)
-	}
-	if _, err := os.Stat("fake-codex.json"); !os.IsNotExist(err) {
-		t.Fatalf("test left fake-codex.json in package folder: %v", err)
 	}
 }

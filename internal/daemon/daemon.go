@@ -140,6 +140,10 @@ type Config struct {
 	// returns handled, Daemon.call returns its answer and the real gateway
 	// never sees the frame.
 	testGatewayCall func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error)
+	// testAfterSyncSnapshot runs in the gateway handshake after the session
+	// snapshot is taken and before it is sent, so a test can change the
+	// local sessions inside that window.
+	testAfterSyncSnapshot func()
 	// testPushActivityEvery and testPushKeepalive replace the push timing.
 	testPushActivityEvery, testPushKeepalive time.Duration
 	InventoryHome                            string // Empty disables tools inventory (used by tests).

@@ -432,6 +432,9 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 		d.shownHost.Store(hr.Hostname)
 	}
 	snap := d.snapshot()
+	if d.cfg.testAfterSyncSnapshot != nil {
+		d.cfg.testAfterSyncSnapshot()
+	}
 	data, err := l.call(hctx, "session.sync", protocol.SessionSync{Sessions: snap})
 	if err != nil {
 		return false, err
@@ -447,9 +450,16 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 		return false, err
 	}
 	d.mu.Lock()
+	// A session in the snapshot can end before the gateway answers. Its
+	// remove found no link and was dropped, and the sync has just marked it
+	// online. Nothing else would take it offline before the next reconnect.
+	var left []sessionRemoval
 	for _, s := range r.Sessions {
-		if ls := d.sessions[key(s.Harness, s.NativeID)]; ls != nil {
+		k := key(s.Harness, s.NativeID)
+		if ls := d.sessions[k]; ls != nil {
 			ls.sessionID = s.SessionID
+		} else if s.SessionID != "" {
+			left = append(left, sessionRemoval{key: k, remove: protocol.SessionRemove{SessionID: s.SessionID}})
 		}
 	}
 	d.lk = l
@@ -473,6 +483,11 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}
 	d.mu.Unlock()
 	d.Logf("connected to gateway")
+	for _, rm := range left {
+		if d.sessionByID(rm.remove.SessionID) == nil {
+			d.removeSession(rm.remove, rm.key)
+		}
+	}
 	d.scheduleCTOPresence()
 	d.wakeToolsPlan()
 	if _, now := d.inventory(); now != gen {
