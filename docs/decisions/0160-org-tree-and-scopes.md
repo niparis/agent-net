@@ -57,6 +57,8 @@ An edge the rules refuse during the build is skipped, not an error.
 
 The readers stay as they are: `place.go`, the TUI (`mergerParent` included) and routing. The Graph reads leave `reports_to` edges out, so the graph view shows no new edges and no node for the root. The new merger Agents do show as Agent nodes in the typed graph, and the merger row's Agent reads `<project> merger`.
 
+Because the merger no longer shares the Repo's Agent, two readers get a one-line guard so they behave as before: lead routing delivers a message addressed to a merger to the merger (it is not redirected to the Repo lead), and the Repo lead's place text does not list the merger as crew.
+
 ## Consequences
 
 - `edge_set` answers the stored edge with typed endpoints, and `lead_set` answers the stored lead row, both with `ok: true` kept for older callers.
