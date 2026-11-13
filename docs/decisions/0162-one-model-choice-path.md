@@ -1,8 +1,8 @@
 # 0162 - One path chooses every model: rank, reorder, gate
 
 Date: 2026-11-13
-Status: Direction approved by the owner on 2026-11-13 ("yes write the decision
-file"). Three choices at the end wait for his answer.
+Status: Approved by the owner on 2026-11-13, with all six choices as
+recommended ("fully approved").
 
 ## Problem
 
@@ -32,92 +32,112 @@ provider, model or effort. Only the automatic worker start applies every check.
 | R10 phrasing worker | R1 | as R1 |
 | R11 previews and the backtest (`quality_preview.go`, `picker_cost_backtest.go`) | R1's chooser with other inputs | their own subset, so a preview can differ from a real start |
 
-Other findings:
-
-- Three quota readings are in use: `ownerQuotas`, `nodeQuotas` and
-  `withQuotaBurn`. The judge, the chief and the preview use the node reading that
-  `ownerQuotas` was written to replace.
-- `sessions.limited_until`, a provider limit that a live session reported, never
-  takes part in a model choice.
-- A queued start is not checked again when it leaves the queue.
-- When a chosen model fails at launch, no route takes the next one, except the
-  judge with its own retry.
+Other findings: three quota readings are in use (`ownerQuotas`, `nodeQuotas`,
+`withQuotaBurn`); `sessions.limited_until` never takes part in a model choice; a
+queued start is not checked again when it leaves the queue; when a chosen model
+fails at launch, no route takes the next one, except the judge with its own
+retry.
 
 ## Decision
 
-Every model choice goes through one path with three layers. Ranking is policy.
-Whether a candidate can run now is mechanism. They live in different functions.
+### Scope
+
+Every session start that launches a model goes through this path: workers (new,
+continue, resume), the difficulty judge, the CTO, the chief of staff, the
+mergers, and sessions the owner starts. The CTO, chief and merger are roles of
+the one session start (decision 0156), not separate launch paths. The path does
+not run inside a running session and does not route messages.
+
+### Layers
+
+Ranking is policy. Whether a candidate can run now is mechanism. They live in
+different functions.
 
 1. **Rankers** return an ordered list of candidates (harness, provider, model,
    effort). A ranker never checks quota, auth or installation.
-   - Cost ranker: the cell rule of decision 0161, returning the whole order
-     instead of one winner. The level rule stays as its fallback order.
-   - Fixed-list ranker: an ordered list from a setting or from the caller. It
-     serves a model the owner names, and the CTO, chief, merger and judge
-     settings.
+   - Cost ranker: the cell rule of decision 0161, returning the whole order. The
+     level rule stays as its fallback order.
+   - Fixed-list ranker: an ordered list from a setting or from the caller (a
+     model the owner names; the CTO, chief, merger and judge settings).
    - Same-model ranker: a list of one, for continue and resume.
-2. **Modifiers** reorder a list and never remove a candidate.
-   - Pace: a provider behind its quota pace moves up, one ahead moves down. Today
-     this divides the expected cost inside the chooser; it moves out.
-   - Protected providers last.
-   - Rotation among equal candidates.
-3. **The gate** takes a list and returns the first candidate that can run now,
-   with a reason for each one it skipped. It is the only code that applies these
-   checks:
-   - harness installed and signed in on the machine;
-   - provider auth not blocked;
-   - provider not exhausted and under the 90% block;
-   - the provider limit that a live session reported (`limited_until`);
-   - the worker floor (an owner's own start stays exempt, as today);
-   - the burn hold;
-   - model cooling after infrastructure failures, as a last resort only.
-   It reads one quota reading, `ownerQuotas` with burn.
+2. **Modifiers** reorder a list and never remove a candidate: pace order,
+   protected providers last, rotation among equals.
+3. **The gate** returns the first candidate that can run now, with a reason for
+   each one it skipped. It reads one fact snapshot: `ownerQuotas` with burn,
+   harnesses per machine, auth blocks, model health, `limited_until`.
+4. **Granted.** Only the gate can make a `Granted` value (its own package,
+   unexported fields). The worker launch and the session start require one. A new
+   route cannot skip the gate: it would not compile.
 
-Every route calls this path:
+### Locked and optional steps
 
-- Workers (R1 to R4, R10) through the worker start.
-- agent-net's own model calls: the judge (R5) asks the gateway for its choice.
-  The judge's private retry goes. The analyzer (R6), which the owner put on ice,
-  is deleted.
-- The CTO, the chief and the merger (R7 to R9) are roles of the one session start
-  (decision 0156), not separate launch paths. Each role's model setting is an
-  ordered list that goes through the fixed-list ranker and the gate. The models
-  hard-coded in Go code and in the CTO text go.
-- Previews and the backtest (R11) call the same function with "decide, do not
-  start". The backtest passes past data as its inputs. No preview has its own
-  chooser.
+Locked checks have no switch. They are not in the caller's options, so no
+caller can turn them off:
 
-Two behaviours change on purpose:
+- harness installed and signed in on the machine;
+- provider auth not blocked;
+- provider not exhausted (0% left, or refused);
+- a provider limit that a live session reported (`limited_until`).
+
+Optional steps are switches in the caller's policy: the worker floor, the 90%
+used block, the burn hold, skipping models that cool after failures (as a last
+resort), pace order, protected providers last, rotation.
+
+### Policy per caller
+
+One table, `PolicyFor(purpose)`, in one file, sets each kind of caller's
+optional steps. A test pins it. A caller does not change it at run time. The
+one run-time exception: a start the owner makes himself turns the floor off, as
+today.
+
+| Caller | Ranker | Floor | 90% | Burn | Cooling | Pace | Protected last | Rotation |
+|---|---|---|---|---|---|---|---|---|
+| Worker, automatic | cost | on | on | on | on | on | on | on |
+| Worker, model named by an agent | fixed | on | on | on | on | off | off | off |
+| Worker or session, model named by the owner | fixed | off | off | off | off | off | off | off |
+| Continue or resume | same | off | off | off | off | off | off | off |
+| Difficulty judge | fixed list | on | on | on | on | on | on | off |
+| CTO, chief of staff, merger | fixed list | off | off | off | on | off | off | off |
+| Preview, backtest | the row of the caller it previews, with "decide, do not start" |
+
+Continue and resume keep everything off because the task already runs on that
+model; a locked check still refuses an exhausted provider, and the caller then
+starts a new worker. The CTO, chief and merger keep cooling on so a failing
+model drops to the next one in their list.
+
+### Behaviour changes on purpose
 
 - A queued start passes the gate again when it leaves the queue.
-- When a chosen candidate fails at launch, the route asks the gate for the next
-  candidate in the same list. Its failure is recorded as today, so the gate skips
-  it while it cools.
+- When a chosen candidate fails at launch, the route asks for the next
+  candidate in the same list. The failure is recorded as today.
+- The CTO, chief and merger model settings become ordered lists. The models
+  hard-coded in Go code and in the CTO text go.
+- Previews and the backtest call the same function with "decide, do not start".
+- The skip reasons are the one note format for every route.
 
-The skip reasons are the one note format for every route, so the CTO, the judge
-and a worker explain a choice the same way.
+### Deleted
 
-A test pins the gate: no Go file outside it calls the floor, quota refusal, burn
-hold or 90% block functions, or reads the quota tables to decide a model.
+The judge's own picker and retry (`pickJudge`, `judgeWithRetry`); the
+difficulty analyzer (`difficultyModel`, `cheapestDifficultyProfile`); the CTO's
+model choice and fixed list (`ctoModel`, the `claude_model` default); the
+merger default model and its `harness='claude'` checks; the quota checks inside
+`resolveWorkerModelRankedQuota` and `ConfirmOverride`; the preview's own chooser
+inputs; `nodeQuotas` as a choice input.
 
-## Build
+A test pins the gate: no Go file outside the gate's package calls the floor,
+quota refusal, burn hold or 90% block functions, and nothing outside it can
+build a `Granted`.
 
-One worker, three hand-backs, each releasable:
+## Owner choices (all approved as recommended)
 
-1. Pull the gate out of R1 with no change in behaviour. The existing chooser and
-   picker tests, and the 0161 backtest, must give the same results.
-2. The cost ranker returns a list; pace and rotation become modifiers. The
-   backtest winners must not change.
-3. Move R2 to R11 to the path one at a time and delete their own checks. Add the
-   gate pin test, the re-check when a start leaves the queue, and the fallback to
-   the next candidate. Report the net line count.
+1. Locked list as above.
+2. Policy fixed per caller in one table; the owner's own start is the only
+   run-time exception.
+3. The policy table values above, including the floor off for the CTO, chief
+   and merger.
+4. Continue or resume on an exhausted provider stays refused.
+5. CTO, chief and merger settings become ordered lists.
+6. This comes before org T4.
 
-## Choices for the owner
-
-1. Continue or resume when the same model's provider is exhausted. Today it is
-   refused and the caller starts a new worker. A different model would be a new
-   session without the old context. Recommendation: keep the refusal.
-2. CTO, chief and merger model settings become ordered lists, so the gate has a
-   fallback. Recommendation: yes.
-3. Order of work: this before org T4. Recommendation: yes. The two picker fixes
-   in flight (live cost data, the OpenCode effort flag) stay valid under it.
+User documentation: `docs/model-choice.md`, written with this decision and
+shipped with the last build task, so it never describes code that is not out.
