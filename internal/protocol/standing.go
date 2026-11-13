@@ -96,6 +96,17 @@ type StandingOrder struct {
 	// area and action match exactly.
 	Action   string `json:"action,omitempty"`
 	Category string `json:"category,omitempty"`
+	// A gateway note (decision 0158) also has a scope, the agent or project it
+	// belongs to, a name and a one-line description. Uses and UsedAt say how
+	// often and when it was last read or written. Stale is true when nobody did
+	// for 30 days.
+	Scope       string `json:"scope,omitempty"`
+	ScopeRef    string `json:"scope_ref,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	UsedAt      int64  `json:"used_at,omitempty"`
+	Uses        int    `json:"uses,omitempty"`
+	Stale       bool   `json:"stale,omitempty"`
 	// Mark rows (a correction with area chief) also carry the ask they mark,
 	// its whole question, what the chief did with it, and the mark.
 	Ask         string `json:"ask,omitempty"`
@@ -130,6 +141,8 @@ type JudgmentsFindRequest struct {
 	Limit  int    `json:"limit,omitempty"`
 	Offset int    `json:"offset,omitempty"`
 	Marks  bool   `json:"marks,omitempty"`
+	// Stale lists only gateway notes that nobody read or wrote for 30 days.
+	Stale bool `json:"stale,omitempty"`
 }
 
 // StandingOrdersRequest is OpStandingOrders and the gateway frames
@@ -156,7 +169,10 @@ type StandingOrdersRequest struct {
 type StandingOrdersResult struct {
 	History []StandingOrder `json:"history,omitempty"`
 	Orders  []StandingOrder `json:"orders"`
-	Order   *StandingOrder  `json:"order,omitempty"`
+	// Notes are the gateway notes (decision 0158), newest first. The list
+	// action fills them; orders keeps only orders and rules.
+	Notes []StandingOrder `json:"notes,omitempty"`
+	Order *StandingOrder  `json:"order,omitempty"`
 }
 
 // CleanStandingText trims an order and checks it is not empty.

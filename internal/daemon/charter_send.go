@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -22,6 +25,14 @@ type charterSendState struct {
 	// generation counts the compactions of a session. A change sends the
 	// block again on the next prompt.
 	generation map[string]uint64
+	// notes is, per session, the title lines of the notes index it was last
+	// sent, and the compaction generation of that send.
+	notes map[string]notesSent
+}
+
+type notesSent struct {
+	titles map[string]string // key (heading and name) to the title line
+	gen    uint64
 }
 
 type charterSent struct {
@@ -109,4 +120,77 @@ func (d *Daemon) charterBlockForTurn(sid, charter string) string {
 		return protocol.CharterChangedNotice + "\n" + charter
 	}
 	return charter
+}
+
+// notesTitles reads the title lines of a notes index. The key of a line is the
+// heading it is under and its name, so the same name in two scopes is two keys.
+func notesTitles(index string) map[string]string {
+	out := map[string]string{}
+	heading := ""
+	for _, line := range strings.Split(index, "\n") {
+		switch {
+		case strings.HasPrefix(line, "- "):
+			name, _, _ := strings.Cut(strings.TrimPrefix(line, "- "), " (")
+			out[heading+"|"+name] = line
+		case strings.HasSuffix(line, ":") && !strings.HasPrefix(line, "["):
+			heading = line
+		}
+	}
+	return out
+}
+
+// notesNoticeMaxLines keeps a notes notice short: more changed titles than
+// this are counted, and the session reads the rest with agent_notes_find.
+const notesNoticeMaxLines = 8
+
+// notesBlockForTurn is the notes text the Claude Code hook prints this turn.
+// The whole index goes in on the first prompt and after a compaction. Later,
+// only a change to a title (a new note, a new description, a note that came in
+// or left the list) sends anything, and then only the changed titles. A new
+// body with the same title sends nothing: the session was not told the body.
+func (d *Daemon) notesBlockForTurn(sid, index string) string {
+	c := &d.charterSends
+	titles := notesTitles(index)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.notes == nil {
+		c.notes = map[string]notesSent{}
+	}
+	gen := c.generation[sid]
+	prev, have := c.notes[sid]
+	c.notes[sid] = notesSent{titles: titles, gen: gen}
+	if !have || prev.gen != gen {
+		return index
+	}
+	var lines []string
+	for key, line := range titles {
+		if prev.titles[key] != line {
+			lines = append(lines, line)
+		}
+	}
+	sort.Strings(lines)
+	var gone []string
+	for key := range prev.titles {
+		if _, ok := titles[key]; !ok {
+			_, name, _ := strings.Cut(key, "|")
+			gone = append(gone, name)
+		}
+	}
+	sort.Strings(gone)
+	for _, name := range gone {
+		lines = append(lines, "- no longer listed: "+name)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	more := 0
+	if len(lines) > notesNoticeMaxLines {
+		more = len(lines) - notesNoticeMaxLines
+		lines = lines[:notesNoticeMaxLines]
+	}
+	text := "[agent-net] Your notes changed. Changed titles:\n" + strings.Join(lines, "\n")
+	if more > 0 {
+		text += fmt.Sprintf("\n%d more changed: list them with agent_notes_find.", more)
+	}
+	return text
 }

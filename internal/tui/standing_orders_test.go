@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 type standingFake struct {
 	fakeSource
 	orders []protocol.StandingOrder
+	notes  []protocol.StandingOrder
 	calls  []protocol.StandingOrdersRequest
 }
 
@@ -24,6 +26,7 @@ func (f *standingFake) Call(_ context.Context, op string, params any) (json.RawM
 	q := params.(protocol.StandingOrdersRequest)
 	f.calls = append(f.calls, q)
 	var res protocol.StandingOrdersResult
+	res.Notes = f.notes
 	switch {
 	case q.Restore != nil:
 		f.orders = append(f.orders, *q.Restore)
@@ -32,6 +35,14 @@ func (f *standingFake) Call(_ context.Context, op string, params any) (json.RawM
 		f.orders = append(f.orders, o)
 		res.Order = &o
 	case q.Action == protocol.StandingActionRemove:
+		for i, o := range f.notes {
+			if o.ID == q.ID {
+				cp := o
+				res.Order = &cp
+				f.notes = append(f.notes[:i], f.notes[i+1:]...)
+				res.Notes = f.notes
+			}
+		}
 		for i, o := range f.orders {
 			if o.ID == q.ID {
 				cp := o
@@ -61,7 +72,7 @@ func TestSettingsStandingOrdersAddRemoveUndo(t *testing.T) {
 	m.tab = settingsTab
 	m = runStanding(t, m, m.loadStandingOrders())
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"CTO standing orders", "Do what I say.", "CTO,", "Add a standing order"} {
+	for _, want := range []string{"Standing orders and notes", "Do what I say.", "CTO,", "Add a standing order"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("settings lacks %q:\n%s", want, view)
 		}
@@ -103,5 +114,55 @@ func TestSettingsStandingOrdersAddRemoveUndo(t *testing.T) {
 	last = f.calls[len(f.calls)-1]
 	if last.Restore == nil || last.Restore.ID != "so_1" || last.Restore.Source != protocol.StandingSourceCTO || len(m.standing) != 2 {
 		t.Fatalf("undo: %+v standing=%+v", last, m.standing)
+	}
+}
+
+// The owner sees the notes agents keep where the standing orders are, with
+// their scope and kind, sees which ones nobody used for 30 days, and deletes one
+// with x. The frames are the text the owner reads at 80x24 and 120x34.
+func TestSettingsListsNotesWithScopeKindAndStaleFlagAndDeletes(t *testing.T) {
+	notes := []protocol.StandingOrder{
+		{ID: "so_n1", Name: "deploy-order", Description: "what ships first", Kind: "fact", Scope: "project", ScopeRef: "demo", SavedAt: 1700000000, Source: protocol.StandingSourceAgent},
+		{ID: "so_n2", Name: "report-style", Description: "short plain words", Kind: "feedback", Scope: "owner", SavedAt: 1700000000, Source: protocol.StandingSourceAgent, Stale: true},
+	}
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		f := &standingFake{fakeSource: fakeSource{snap: fakeSnapshot()}, notes: append([]protocol.StandingOrder(nil), notes...),
+			orders: []protocol.StandingOrder{{ID: "so_1", Text: "Do what I say.", SavedAt: 1700000000, Source: protocol.StandingSourceOwner}}}
+		m := newModel(size[0], size[1])
+		m.src = f
+		m.tab = settingsTab
+		m = runStanding(t, m, m.loadStandingOrders())
+		// The last row is selected, so the list is on screen down to it.
+		m.settingsRow = len(m.settingsItems()) - 1
+		for i, row := range m.settingsItems() {
+			if row.kind == "note" {
+				m.settingsRow = i
+			}
+		}
+		view := ansi.Strip(m.testView())
+		for _, want := range []string{"Standing orders and notes", "Note [fact] deploy-order", "(project demo)", "Note [feedback] report-style", "(owner)", "unused 30 days"} {
+			if !strings.Contains(view, want) {
+				t.Errorf("%dx%d lacks %q:\n%s", size[0], size[1], want, view)
+			}
+		}
+		golden(t, fmt.Sprintf("settings_notes_%dx%d", size[0], size[1]), m.testView())
+	}
+
+	f := &standingFake{fakeSource: fakeSource{snap: fakeSnapshot()}, notes: append([]protocol.StandingOrder(nil), notes...)}
+	m := newModel(120, 34)
+	m.src = f
+	m.tab = settingsTab
+	m = runStanding(t, m, m.loadStandingOrders())
+	m = selectSettingsKind(m, "note")
+	m, cmd := press(m, keyRunes("x"))
+	m = runStanding(t, m, cmd)
+	last := f.calls[len(f.calls)-1]
+	if last.Action != protocol.StandingActionRemove || last.ID != "so_n1" || len(m.notes) != 1 {
+		t.Fatalf("delete note: %+v notes=%+v", last, m.notes)
+	}
+	m, cmd = press(m, keyRunes("u"))
+	m = runStanding(t, m, cmd)
+	if last = f.calls[len(f.calls)-1]; last.Restore == nil || last.Restore.Name != "deploy-order" {
+		t.Fatalf("undo must carry the whole note: %+v", last)
 	}
 }

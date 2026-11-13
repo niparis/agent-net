@@ -211,6 +211,10 @@ type PolicyGot struct {
 	// Charter is the node's per-turn context, filled by the daemon after it
 	// read the graph. Empty when the node has no charter.
 	Charter string `json:"charter,omitempty"`
+	// Notes is the titles of the session's gateway notes (decision 0158). It
+	// is kept apart from Charter, which is hashed to decide when to send it
+	// again. Empty when the session has no notes.
+	Notes string `json:"notes,omitempty"`
 	// DraftRequest is the one-time request to draft the charter from AGENTS.md
 	// (decision 0088). It is set once, for a turn, and is never cached.
 	DraftRequest string `json:"draft_request,omitempty"`

@@ -419,6 +419,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 |---|---|
 | `agent_sessions_find`, `agent_session_get` | Sessions and one session's full profile, as for an agent |
 | `agent_owner_judgments_find` | The owner's judgments (orders, rules, answers, corrections) by query, area or kind |
+| `agent_notes_find`, `agent_note_write` | The CTO's notes (agent `cto`) and the owner-wide ones, as for an agent (see Gateway notes) |
 | `agent_machines_find`, `agent_machine_get` | Machines, and one machine's health, load and busiest processes, or its models, quotas, track record or playbook |
 | `agent_machine_log` | Redacted daemon or gateway log on one online machine |
 | `agent_projects_find` | Public projects and where they live |
@@ -764,7 +765,7 @@ Standing orders are the owner's lasting instructions to the CTO. The gateway kee
 
 The CTO tool `cto_standing_orders` has the actions `save` (`text`), `read` (`order_id`), `list` and `remove` (`order_id`). It answers with `orders` (all, oldest first) and `order`. A save or a remove leaves an Inbox notice with an undo (remove for a save, restore for a remove). The CTO reads the orders at the start of every conversation: a Claude CTO gets them after the brief in its system prompt, an OpenCode CTO gets them in front of the first message of a new conversation.
 
-The owner sees and edits them in the TUI, Settings, section "CTO standing orders": enter adds one, `x` removes the selected one and `u` puts the last removed one back. The operator method is `standing_orders` (`action`, `order_id`, `text`, `restore`); a save from the operator method is always source `owner`. The gateway frames are `standing.list`, `standing.save` and `standing.remove`.
+The owner sees and edits them in the TUI, Settings, section "Standing orders and notes": enter adds one, `x` removes the selected one and `u` puts the last removed one back. The same section lists the gateway notes (below). The operator method is `standing_orders` (`action`, `order_id`, `text`, `restore`); a save from the operator method is always source `owner`. The gateway frames are `standing.list`, `standing.save` and `standing.remove`.
 
 ## Commands
 
@@ -4549,6 +4550,21 @@ precede the first owner message, depending on the harness. Only orders and rules
 load. Up to 4096 bytes of order text load as before. Above that budget, pinned orders always load, then
 the newest orders that fit. Pins may exceed the budget. Omitted orders add:
 "N more standing orders: search them with cto_standing_orders search".
+
+### Gateway notes
+
+Notes are named memory kept at the gateway, in the same `standing_orders` table as the owner judgments ([decision 0158](decisions/0158-gateway-notes-v1.md)). A note is a row with a `name`. The migration adds the columns `scope` (`agent`, `project` or `owner`; old rows are `owner`), `scope_ref` (the agent node or the project; empty for `owner`), `name`, `description`, `used_at` and `uses`. One note exists per `(scope, scope_ref, name)`.
+
+Two agent tools, in the catalog for agents, workers and the CTO (Pi and OpenCode get them through `tools.gen.ts`):
+
+- **`agent_note_write` `{name, description, body, scope, kind}`** (daemon method `note_write`, gateway frame `note.write`). `name` is lower case with hyphens. `scope` is `agent` (default), `project` or `owner`; only the owner and the CTO write `owner`, and the gateway refuses it from any other session. `kind` is `feedback`, `fact` (default) or `reference`; `rule` is the owner's and is refused. The same name in the same scope updates the note and keeps the old text in the history. The answer has `created`, `similar` (up to 3 notes of the session's visible scopes that look alike) and `note`.
+- **`agent_notes_find` `{text, scope, stale}`** (`notes_find`, `notes.find`). It answers with at most 20 notes, bodies included, `total` and `stale_count`. With `text` the best 3 matches count as used. `stale: true` lists notes that were not read or written for 30 days. A stale note carries `stale: true`. Nothing is deleted by age.
+
+The gateway reads the agent and the project from the calling session. A worker uses the agent that called it. The CTO uses the agent `cto`, no project. The command line has no notes.
+
+At session start `context.get` answers the charter text in `charter` and the notes block in a separate field, `notes`: titles and one-line descriptions of the agent's, the project's and the owner-wide notes, at most 8 per scope (so at most 24 title lines of at most 160 characters), the most used first, listed by name, then "N more notes: search them with agent_notes_find". A session with no notes gets no block. Bodies are never in it. The notes are kept out of the charter text because the daemon hashes that text to decide when to send it again. A Claude Code session gets the whole block on its first prompt and after a compaction; later, a change to a title sends only `[agent-net] Your notes changed. Changed titles:` with the changed title lines (and `- no longer listed: name`), at most 8 lines. A body-only update sends nothing. Pi and OpenCode get the block with every request.
+
+The owner judgments view lists notes when `agent_owner_judgments_find` has `kind` `feedback`, `fact` or `reference`, or `stale: true`; rows then carry `scope`, `scope_ref`, `name`, `description`, `uses`, `used_at` and `stale`. Without these, notes are not returned as judgments. In the TUI, Settings, "Standing orders and notes" lists each note with kind, name, description and scope, and marks stale ones; `x` deletes one and `u` puts it back (`standing_orders` with `action` `list` also answers `notes`).
 
 ### Chief of staff nudge pauses
 

@@ -452,6 +452,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		var out protocol.JudgmentRecordResult
 		err := d.deliveryCall(ctx, protocol.FrameJudgmentRecord, protocol.JudgmentRecordRequest{SessionID: sid, JudgmentRecordArgs: p}, &out)
 		return out, err
+	case "agent_note_write", "agent_notes_find":
+		return d.ctoNotes(ctx, name, raw)
 	case "agent_learn":
 		var p protocol.LearnRequest
 		if json.Unmarshal(raw, &p) != nil {

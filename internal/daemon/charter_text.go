@@ -51,7 +51,8 @@ func (d *Daemon) charterTextFor(ctx context.Context, ls *localSession) string {
 			cancel()
 			var got protocol.PolicyGot
 			if err == nil && json.Unmarshal(raw, &got) == nil {
-				if text := joinCharter(d.sessionCharterContext(ctx, sid, got.Project), got.Charter); text != "" {
+				charter, notes := d.sessionContext(ctx, sid, got.Project)
+				if text := joinCharter(joinCharter(charter, got.Charter), notes); text != "" {
 					return text
 				}
 			}

@@ -1237,6 +1237,91 @@ export const TOOL_CATALOG = [
     "method": "messages"
   },
   {
+    "name": "agent_note_write",
+    "description": "Save a note that outlives this session, for your agent or project: name, one-line description, body. The same name in the same scope updates it. The answer lists up to 3 similar notes: merge instead of adding. One fact per note. Owner-wide notes are for the owner and the CTO.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Short name, lower case with hyphens. In a scope, the same name updates the note."
+        },
+        "description": {
+          "type": "string",
+          "description": "One line that says what the note is for. Sessions see it in their start text."
+        },
+        "body": {
+          "type": "string",
+          "description": "The note itself. One fact or rule per note."
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "agent",
+            "project",
+            "owner"
+          ],
+          "default": "agent",
+          "description": "Who sees it: your agent (default), your project, or every session. Only the owner and the CTO write owner; an agent's owner write is refused."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "feedback",
+            "fact",
+            "reference"
+          ],
+          "default": "fact",
+          "description": "feedback: how to work. fact: something true about the work. reference: where to look."
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "note_write"
+  },
+  {
+    "name": "agent_notes_find",
+    "description": "Read notes with their bodies. Your start text lists only titles, the most used first. Give text to search names, descriptions and bodies, scope to narrow, stale to list notes nobody used for 30 days.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Words to look for in names, descriptions and bodies. Empty lists the most used."
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "agent",
+            "project",
+            "owner"
+          ],
+          "description": "Only this scope."
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "Only notes nobody read or wrote for 30 days, for review."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "notes_find"
+  },
+  {
     "name": "agent_nudge_pause",
     "description": "Chief of staff only: preview or pause one automatic nudge kind for a team or agent. Preview lists sessions and the last 24h message count, without writes. Apply logs an owner-undoable pause. Real messages and first step notices are unaffected.",
     "inputSchema": {
@@ -1488,7 +1573,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_judgments_find",
-    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages.",
+    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1506,9 +1591,12 @@ export const TOOL_CATALOG = [
             "order",
             "rule",
             "answer",
-            "correction"
+            "correction",
+            "feedback",
+            "fact",
+            "reference"
           ],
-          "description": "Optional judgment kind: order, rule, answer, correction."
+          "description": "Optional judgment kind: order, rule, answer, correction. feedback, fact and reference list gateway notes."
         },
         "marks": {
           "type": "boolean",
@@ -1526,6 +1614,10 @@ export const TOOL_CATALOG = [
           "minimum": 0,
           "default": 0,
           "description": "Rows to skip, for the next page."
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "Only gateway notes nobody read or wrote for 30 days, for review."
         }
       },
       "required": [],

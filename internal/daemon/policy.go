@@ -99,7 +99,9 @@ func (d *Daemon) policyOf(ctx context.Context, sid, agentsHash string) (protocol
 	if err == nil {
 		// The node's charter travels with the policy answer, so a harness hook
 		// asks once per turn (decision 0022).
-		got.Charter = joinCharter(d.sessionCharterContext(ctx, sid, got.Project), got.Charter)
+		charter, notes := d.sessionContext(ctx, sid, got.Project)
+		got.Charter = joinCharter(charter, got.Charter)
+		got.Notes = notes
 	}
 	if err != nil {
 		if have && now.Sub(e.at) < policyStale {
@@ -236,8 +238,13 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	// charter block once, again when it changed, and again after a compaction.
 	// Pi and OpenCode put it into the system prompt of each request, which does
 	// not accumulate, so they keep getting it every turn.
+	// The notes index follows the same rule, but a change sends a short
+	// notice, not the charter (decision 0158).
 	if client == "cli" && p.Harness == "claude" {
 		res.Charter = d.charterBlockForTurn(sid, res.Charter)
+		res.Charter = joinCharter(res.Charter, d.notesBlockForTurn(sid, got.Notes))
+	} else {
+		res.Charter = joinCharter(res.Charter, got.Notes)
 	}
 	// The one-time draft request belongs to this turn and follows the charter.
 	if got.DraftRequest != "" {

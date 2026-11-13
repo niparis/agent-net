@@ -89,14 +89,22 @@ func (d *Daemon) charterContext(ctx context.Context, project string) string {
 }
 
 func (d *Daemon) sessionCharterContext(ctx context.Context, sid, project string) string {
+	charter, _ := d.sessionContext(ctx, sid, project)
+	return charter
+}
+
+// sessionContext is the charter text of a session and, beside it, the titles
+// of its notes. When the gateway cannot answer, the charter comes from the
+// graph and there are no notes.
+func (d *Daemon) sessionContext(ctx context.Context, sid, project string) (charter, notes string) {
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	raw, err := d.call(cctx, "context.get", protocol.PolicyGet{SessionID: sid})
 	var got protocol.PolicyGot
 	if err == nil && json.Unmarshal(raw, &got) == nil {
-		return got.Charter
+		return got.Charter, got.Notes
 	}
-	return d.charterContext(ctx, project)
+	return d.charterContext(ctx, project), ""
 }
 
 // barOf returns the bar of a project from the cached graph read, nil when

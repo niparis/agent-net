@@ -1322,7 +1322,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2014,6 +2014,28 @@ func (s *Store) migrate() error {
 				if err != nil {
 					tx.Rollback()
 					return err
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "gateway notes columns") {
+			for _, col := range []struct{ name, decl string }{
+				{"scope", "TEXT NOT NULL DEFAULT 'owner'"},
+				{"scope_ref", "TEXT NOT NULL DEFAULT ''"},
+				{"name", "TEXT NOT NULL DEFAULT ''"},
+				{"description", "TEXT NOT NULL DEFAULT ''"},
+				{"used_at", "INTEGER NOT NULL DEFAULT 0"},
+				{"uses", "INTEGER NOT NULL DEFAULT 0"},
+			} {
+				var has int
+				if err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info('standing_orders') WHERE name=?", col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec("ALTER TABLE standing_orders ADD COLUMN " + col.name + " " + col.decl); err != nil {
+						tx.Rollback()
+						return err
+					}
 				}
 			}
 		}

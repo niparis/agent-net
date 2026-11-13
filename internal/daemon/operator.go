@@ -161,6 +161,40 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		}
 		return out, true, nil
 
+	case protocol.OpNoteWrite, protocol.OpNotesFind:
+		// Notes belong to a session's agent and project, so the call needs a
+		// session. The command line never gets here: the dispatch refuses it
+		// for every method outside its list. The gateway reads the agent and
+		// the project from the session.
+		sid, _, err := lc.callerSession(client, method)
+		if err != nil {
+			return nil, true, err
+		}
+		var frame string
+		var arg any
+		var out any
+		if method == protocol.OpNoteWrite {
+			var p protocol.NoteWriteRequest
+			if json.Unmarshal(raw, &p) != nil {
+				return nil, true, errors.New("bad agent_note_write params")
+			}
+			frame, arg, out = "note.write", protocol.NoteWriteFrame{NoteWriteRequest: p, Session: sid}, &protocol.NoteWriteResult{}
+		} else {
+			var p protocol.NotesFindRequest
+			if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+				return nil, true, errors.New("bad agent_notes_find params")
+			}
+			frame, arg, out = "notes.find", protocol.NotesFindFrame{NotesFindRequest: p, Session: sid}, &protocol.NotesFindResult{}
+		}
+		data, err := lc.d.call(ctx, frame, arg)
+		if err != nil {
+			return nil, true, oldGateway(err)
+		}
+		if err := json.Unmarshal(data, out); err != nil {
+			return nil, true, err
+		}
+		return out, true, nil
+
 	case protocol.OpPermissionPropose:
 		// A proposal comes from a session, never from the command line. It
 		// writes no file; the owner answers one owner-only ask.

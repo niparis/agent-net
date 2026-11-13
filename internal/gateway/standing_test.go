@@ -68,6 +68,13 @@ func TestStandingOrdersOldMigration(t *testing.T) {
 	s, _ := newTestStore(t)
 	_, err := s.db.Exec(`DROP TRIGGER standing_orders_ai; DROP TRIGGER standing_orders_ad; DROP TRIGGER standing_orders_au;
  DROP TABLE standing_orders_fts; DROP TABLE standing_order_history;
+ DROP INDEX standing_orders_note_name;
+ ALTER TABLE standing_orders DROP COLUMN scope;
+ ALTER TABLE standing_orders DROP COLUMN scope_ref;
+ ALTER TABLE standing_orders DROP COLUMN name;
+ ALTER TABLE standing_orders DROP COLUMN description;
+ ALTER TABLE standing_orders DROP COLUMN used_at;
+ ALTER TABLE standing_orders DROP COLUMN uses;
  ALTER TABLE standing_orders DROP COLUMN tags;
  ALTER TABLE standing_orders DROP COLUMN pinned;
  ALTER TABLE standing_orders DROP COLUMN updated_at;
