@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -245,4 +246,184 @@ func buildOrgTreeOnceTx(tx *sql.Tx, now int64) error {
 	}
 	_, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,'1',?)`, orgTreeBuiltKey, now)
 	return err
+}
+
+// orgSessionNameSQL names session x the way the graph lists a session: its
+// profile name, else its stored name, else its harness title.
+const orgSessionNameSQL = `COALESCE(NULLIF(p.name,''),NULLIF(x.name,''),x.title,'')`
+
+// addOrgTree puts the org tree on the Agent nodes of a typed read: the
+// parent, the lead session, who started each listed session, and the
+// scopes. It reads each table once, whatever the number of Agents.
+func (s *Store) addOrgTree(byRef map[protocol.GraphRef]*protocol.Node) error {
+	agent := func(id string) *protocol.Node { return byRef[protocol.GraphRef{Kind: "agent", ID: id}] }
+	rows, err := s.db.Query(`SELECT a.id, COALESCE(e.target,''), COALESCE(a.lead_session,''), ` + orgSessionNameSQL + `, COALESCE(x.online,0), COALESCE(x.started_by,'')
+		FROM agents a
+		LEFT JOIN graph_edges e ON e.source=a.id AND e.kind='reports_to'
+		LEFT JOIN sessions x ON x.id=a.lead_session
+		LEFT JOIN profiles p ON p.session_id=a.lead_session
+		WHERE a.tombstone=0 AND (e.target IS NOT NULL OR a.lead_session IS NOT NULL)`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id, parent string
+		var lead protocol.GraphSession
+		if err = rows.Scan(&id, &parent, &lead.ID, &lead.Name, &lead.Online, &lead.StartedBy); err != nil {
+			rows.Close()
+			return err
+		}
+		if n := agent(id); n != nil {
+			n.ReportsTo = parent
+			if lead.ID != "" {
+				n.LeadSession = &lead
+			}
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	rows, err = s.db.Query(`SELECT id, started_by FROM sessions WHERE online=1 AND agent_id IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+	startedBy := map[string]string{}
+	for rows.Next() {
+		var id, by string
+		if err = rows.Scan(&id, &by); err != nil {
+			rows.Close()
+			return err
+		}
+		startedBy[id] = by
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, n := range byRef {
+		for i := range n.Sessions {
+			n.Sessions[i].StartedBy = startedBy[n.Sessions[i].ID]
+		}
+	}
+	scopes, err := s.AllScopes()
+	if err != nil {
+		return err
+	}
+	for _, sc := range scopes {
+		if n := agent(sc.Node); n != nil {
+			n.Scopes = append(n.Scopes, sc)
+		}
+	}
+	return nil
+}
+
+// GraphForRoot is GraphForRef limited, when root is set, to one subtree of
+// the org tree: the Agent root and every Agent under it, with the edges
+// between them. root OrgRoot keeps every Agent the tree places under the
+// owner.
+func (s *Store) GraphForRoot(ref *protocol.GraphRef, root string) (protocol.Graph, error) {
+	g, err := s.GraphForRef(ref)
+	if err != nil || root == "" {
+		return g, err
+	}
+	children := map[string][]string{}
+	found := root == protocol.OrgRoot
+	for _, n := range g.Nodes {
+		if n.Ref == nil || n.Ref.Kind != "agent" {
+			continue
+		}
+		found = found || n.Ref.ID == root
+		if n.ReportsTo != "" {
+			children[n.ReportsTo] = append(children[n.ReportsTo], n.Ref.ID)
+		}
+	}
+	if !found {
+		return protocol.Graph{}, reject("unknown agent %q in root", root)
+	}
+	keep := map[string]bool{}
+	for queue := []string{root}; len(queue) > 0; queue = queue[1:] {
+		if !keep[queue[0]] {
+			keep[queue[0]] = true
+			queue = append(queue, children[queue[0]]...)
+		}
+	}
+	kept := func(r *protocol.GraphRef) bool { return r != nil && r.Kind == "agent" && keep[r.ID] }
+	out := protocol.Graph{Warnings: g.Warnings, Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}
+	for _, n := range g.Nodes {
+		if kept(n.Ref) {
+			out.Nodes = append(out.Nodes, n)
+		}
+	}
+	for _, e := range g.Edges {
+		if kept(e.FromRef) && kept(e.ToRef) {
+			out.Edges = append(out.Edges, e)
+		}
+	}
+	return out, nil
+}
+
+// sessionOrgLines are the two org lines of agent_session_get. A session that
+// is not its Agent's lead session reports to that lead session; the lead
+// session, or a session of an Agent with none, reports to the Agent's parent.
+// Every scope another Agent holds over the session's Agent, Repo, one of
+// their Teams, or all, is someone it also answers to.
+func (s *Store) sessionOrgLines(session string) (reportsTo, also string, err error) {
+	var repo, agent, lead, leadName, parent, parentLead, parentLeadName string
+	name := func(col string) string {
+		return `COALESCE((SELECT ` + orgSessionNameSQL + ` FROM sessions x LEFT JOIN profiles p ON p.session_id=x.id WHERE x.id=` + col + `),'')`
+	}
+	err = s.db.QueryRow(`SELECT COALESCE(s.repo_id,''), COALESCE(a.id,''), COALESCE(a.lead_session,''), `+name("a.lead_session")+`,
+		COALESCE(e.target,''), COALESCE(pa.lead_session,''), `+name("pa.lead_session")+`
+		FROM sessions s
+		LEFT JOIN agents a ON a.id=s.agent_id AND a.tombstone=0
+		LEFT JOIN graph_edges e ON e.source=a.id AND e.kind='reports_to'
+		LEFT JOIN agents pa ON pa.id=e.target
+		WHERE s.id=?`, session).Scan(&repo, &agent, &lead, &leadName, &parent, &parentLead, &parentLeadName)
+	if err != nil {
+		return "", "", err
+	}
+	line := func(who, lead, leadName string) string {
+		if lead == "" {
+			return who
+		}
+		if leadName == "" {
+			leadName = lead
+		}
+		return who + " (lead session " + leadName + ")"
+	}
+	switch {
+	case lead != "" && lead != session:
+		reportsTo = line(agent, lead, leadName)
+	case parent != "":
+		reportsTo = line(parent, parentLead, parentLeadName)
+	}
+	rows, err := s.db.Query(`SELECT ns.node, ns.kind FROM node_scopes ns WHERE ns.node<>?1 AND (ns.over_ref='all'
+		OR ns.over_ref='agent:'||?1 OR ns.over_ref='repo:'||?2
+		OR EXISTS(SELECT 1 FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE t.active=1 AND ns.over_ref='team:'||t.id
+			AND ((tm.member_kind='agent' AND tm.member_id=?1) OR (tm.member_kind='repo' AND tm.member_id=?2))))
+		ORDER BY ns.node, ns.kind`, agent, repo)
+	if err != nil {
+		return "", "", err
+	}
+	defer rows.Close()
+	var holders []string
+	kinds := map[string][]string{}
+	for rows.Next() {
+		var node, kind string
+		if err := rows.Scan(&node, &kind); err != nil {
+			return "", "", err
+		}
+		if kinds[node] == nil {
+			holders = append(holders, node)
+		}
+		kinds[node] = append(kinds[node], kind)
+	}
+	parts := make([]string, 0, len(holders))
+	for _, node := range holders {
+		parts = append(parts, node+" ("+strings.Join(kinds[node], ", ")+")")
+	}
+	return reportsTo, strings.Join(parts, ", "), rows.Err()
 }

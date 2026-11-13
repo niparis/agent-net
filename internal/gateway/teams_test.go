@@ -11,7 +11,7 @@ import (
 	"github.com/niparis/agent-net/internal/settings"
 )
 
-func teamStore(t *testing.T) *Store {
+func teamStore(t testing.TB) *Store {
 	t.Helper()
 	s, _ := newTestStore(t)
 	graphSessions(t, s, "demo", "other")

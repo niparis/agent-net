@@ -345,9 +345,12 @@ func (s *Store) graphForRefRecords(ref *protocol.GraphRef, places bool) (protoco
 				if name == "" {
 					name = a.Title
 				}
-				n.Sessions = append(n.Sessions, protocol.GraphSession{ID: a.SessionID, Name: name, Machine: a.Hostname, Status: a.Status})
+				n.Sessions = append(n.Sessions, protocol.GraphSession{ID: a.SessionID, Name: name, Machine: a.Hostname, Status: a.Status, Online: a.Online})
 			}
 		}
+	}
+	if err = s.addOrgTree(byRef); err != nil {
+		return g, err
 	}
 	now := s.now()
 	if places {

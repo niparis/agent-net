@@ -16,6 +16,7 @@ type roGraphReadIn struct {
 	Ref    *protocol.GraphRef `json:"ref,omitempty"`
 	Typed  bool               `json:"typed,omitempty"`
 	Node   string             `json:"node"`
+	Root   string             `json:"root,omitempty"`
 	Limit  int                `json:"limit"`
 	Cursor string             `json:"cursor"`
 }
@@ -36,6 +37,11 @@ type roGraphNode struct {
 	Purpose    string                `json:"purpose"`
 	Charter    *protocol.ReadCharter `json:"charter,omitempty"`
 	Rules      map[string]string     `json:"rules"`
+
+	ReportsTo   string                  `json:"reports_to,omitempty"`
+	LeadSession *protocol.GraphSession  `json:"lead_session,omitempty"`
+	Sessions    []protocol.GraphSession `json:"sessions,omitempty"`
+	Scopes      []protocol.Scope        `json:"scopes,omitempty"`
 }
 
 type roGraphEdge struct {
@@ -69,13 +75,14 @@ func roReadGraph(ctx context.Context, call Caller, in roGraphReadIn) (roGraphRea
 		Node  string
 		Ref   *protocol.GraphRef
 		Typed bool
-	}{in.Node, in.Ref, in.Typed})
+		Root  string
+	}{in.Node, in.Ref, in.Typed, in.Root})
 	after, err := roDecodeCursor(in.Cursor, "agent_graph_read", roCursorCaller(ctx), filters)
 	if err != nil {
 		return roGraphReadOut{}, err
 	}
 	if in.Node != "" || in.Ref != nil {
-		page, err := roGraphPage(ctx, call, in.Node, 0, 0, in.Ref, in.Typed)
+		page, err := roGraphPage(ctx, call, protocol.PublicGraphQuery{Node: in.Node, Ref: in.Ref, Typed: in.Typed, Root: in.Root})
 		if err != nil {
 			return roGraphReadOut{}, err
 		}
@@ -87,7 +94,7 @@ func roReadGraph(ctx context.Context, call Caller, in roGraphReadIn) (roGraphRea
 		return out, nil
 	}
 
-	nodes, edges, err := roAllGraphNodes(ctx, call, in.Typed)
+	nodes, edges, err := roAllGraphNodes(ctx, call, in.Typed, in.Root)
 	if err != nil {
 		return roGraphReadOut{}, err
 	}
@@ -107,8 +114,8 @@ func roReadGraph(ctx context.Context, call Caller, in roGraphReadIn) (roGraphRea
 	return out, nil
 }
 
-func roGraphPage(ctx context.Context, call Caller, node string, offset, limit int, ref *protocol.GraphRef, typed bool) (protocol.PublicGraphPage, error) {
-	raw, err := call(ctx, "agent_graph", protocol.PublicGraphQuery{Node: node, Offset: offset, Limit: limit, Ref: ref, Typed: typed})
+func roGraphPage(ctx context.Context, call Caller, q protocol.PublicGraphQuery) (protocol.PublicGraphPage, error) {
+	raw, err := call(ctx, "agent_graph", q)
 	if err != nil {
 		return protocol.PublicGraphPage{}, err
 	}
@@ -121,12 +128,12 @@ func roGraphPage(ctx context.Context, call Caller, node string, offset, limit in
 
 // roAllGraphNodes reads every node. The daemon pages the node list; every page
 // carries all edges.
-func roAllGraphNodes(ctx context.Context, call Caller, typed bool) ([]roGraphNode, []roGraphEdge, error) {
+func roAllGraphNodes(ctx context.Context, call Caller, typed bool, root string) ([]roGraphNode, []roGraphEdge, error) {
 	var nodes []roGraphNode
 	var edges []roGraphEdge
 	offset := 0
 	for page := 0; page < 1000; page++ {
-		got, err := roGraphPage(ctx, call, "", offset, protocol.PublicGraphMaxLimit, nil, typed)
+		got, err := roGraphPage(ctx, call, protocol.PublicGraphQuery{Offset: offset, Limit: protocol.PublicGraphMaxLimit, Typed: typed, Root: root})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -169,7 +176,8 @@ func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
 		for _, rule := range node.Rules {
 			rules[rule.Name] = rule.Value
 		}
-		out = append(out, roGraphNode{Active: node.Active, Ref: node.Ref, Owner: node.Owner, Lead: node.Lead, MaxAgents: node.MaxAgents, AgentCount: node.AgentCount, OverMax: node.OverMax, Role: node.Role, LeadLevel: node.LeadLevel, Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
+		out = append(out, roGraphNode{Active: node.Active, Ref: node.Ref, Owner: node.Owner, Lead: node.Lead, MaxAgents: node.MaxAgents, AgentCount: node.AgentCount, OverMax: node.OverMax, Role: node.Role, LeadLevel: node.LeadLevel, Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules,
+			ReportsTo: node.ReportsTo, LeadSession: node.LeadSession, Sessions: node.Sessions, Scopes: node.Scopes})
 	}
 	return out
 }

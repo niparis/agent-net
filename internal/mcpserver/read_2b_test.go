@@ -24,6 +24,7 @@ type roFakeDaemon struct {
 	messages      []protocol.Message
 	message       protocol.Message
 	graph         protocol.PublicGraphPage
+	graphRoots    []string
 	servers       []protocol.MCPServer
 	profiles      []protocol.WorkerProfile
 	methods       []string
@@ -81,6 +82,7 @@ func (f *roFakeDaemon) call(_ context.Context, method string, params any) (json.
 	case "agent_graph":
 		var q protocol.PublicGraphQuery
 		json.Unmarshal(raw, &q)
+		f.graphRoots = append(f.graphRoots, q.Root)
 		page := f.graph
 		if q.Node != "" {
 			page.Nodes = nil

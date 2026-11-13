@@ -8,7 +8,7 @@ import (
 )
 
 // graphSessions makes one session for each named project, all on one node.
-func graphSessions(t *testing.T, s *Store, projects ...string) (map[string]string, string) {
+func graphSessions(t testing.TB, s *Store, projects ...string) (map[string]string, string) {
 	t.Helper()
 	node, _, err := s.CreateNode("h1", "linux")
 	if err != nil {

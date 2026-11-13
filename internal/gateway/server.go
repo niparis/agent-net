@@ -2293,8 +2293,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		if p.Typed || p.Ref != nil {
-			return st.GraphForRef(p.Ref)
+		if p.Typed || p.Ref != nil || p.Root != "" {
+			return st.GraphForRoot(p.Ref, p.Root)
 		}
 		return st.visibleGraph(p.All)
 	case "standing.list", "standing.save", "standing.remove", "standing.update", "standing.search", "standing.history":
