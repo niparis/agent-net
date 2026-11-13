@@ -83,6 +83,11 @@ func runFakeHarness() bool {
 		fakeCodex()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 1 && os.Args[1] == "exec":
 		fakeCodexExec()
+	case os.Getenv(envFakeOpenCode) != "" && len(os.Args) > 2 && os.Args[1] == "run" && os.Args[2] == "--help":
+		// opencode 2.3.0: the effort rides on the model, so there is no
+		// --variant flag to list.
+		fmt.Println("Usage: opencode run [message..]")
+		fmt.Println("  -m, --model string  provider/model#variant")
 	case os.Getenv(envFakeOpenCode) != "" && len(os.Args) > 2 && os.Args[1] == "run":
 		fakeOpenCodeRun()
 	case os.Getenv(envFakeOpenCode) != "" && len(os.Args) > 2 && os.Args[1] == "session":

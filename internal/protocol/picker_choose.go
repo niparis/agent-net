@@ -390,7 +390,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 	if len(quotaExcluded) > 0 {
 		picked.PickNote += "; " + strings.Join(quotaExcluded, "; ")
 	}
-	picked.Why = pickerShortWhy(level, in.D, chosen, len(qualified), entries, quotaExcluded)
+	picked.Why = pickerShortWhy(level, in.D, in.DifficultyNote, chosen, len(qualified), entries, quotaExcluded)
 	return picked, ""
 }
 
@@ -398,8 +398,12 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 // the difficulty and D; the chosen profile with its record (rate, n) or its score;
 // the count of other qualifying profiles; and the top reasons others were left
 // out, grouped.
-func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCount int, entries []*pickerEntry, quotaExcluded []string) string {
-	parts := []string{fmt.Sprintf("difficulty %s (D %.2f)", level, d)}
+func pickerShortWhy(level string, d float64, difficultyNote string, chosen *pickerEntry, qualifyingCount int, entries []*pickerEntry, quotaExcluded []string) string {
+	first := fmt.Sprintf("difficulty %s (D %.2f)", level, d)
+	if difficultyNote != "" {
+		first = difficultyNote
+	}
+	parts := []string{first}
 	if chosen != nil {
 		if chosen.cell.N > 0 {
 			parts = append(parts, fmt.Sprintf("%s %.2f (n%d)", chosen.name, chosen.cell.Score, chosen.cell.N))

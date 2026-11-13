@@ -121,10 +121,10 @@ exit 3
 	}
 }
 
-// testModel must hand an effort to opencode as its variant, the way the worker
-// launcher does; opencode does not accept "model:high". A tiny fake harness
-// prints its argv, so the real opencode is never run and no model call is made.
-func TestModelTestOpencodeEffortIsVariant(t *testing.T) {
+// testModel must hand an effort to opencode on the model as model#variant,
+// because 2.3.0 has no --variant flag. A tiny fake harness prints its argv, so
+// the real opencode is never run and no model call is made.
+func TestModelTestOpencodeEffortOnModel(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "opencode")
 	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done\n"
@@ -151,10 +151,38 @@ func TestModelTestOpencodeEffortIsVariant(t *testing.T) {
 			t.Fatalf("the model id carries the effort, which opencode does not take: %q", line)
 		}
 	}
-	if !has("--model") || !has(model) {
-		t.Fatalf("argv does not name the model: %q", res.Output)
+	if !has("--model") || !has(model+"#high") {
+		t.Fatalf("argv does not carry the effort on the model: %q", res.Output)
 	}
-	if !has("--variant") || !has("high") {
-		t.Fatalf("argv does not carry the effort as the variant: %q", res.Output)
+	if has("--variant") {
+		t.Fatalf("argv passes a flag this opencode does not have: %q", res.Output)
+	}
+}
+
+// An older opencode still takes --variant; its own help is the evidence.
+func TestModelTestOpencodeEffortKeepsVariantOnOlderBuild(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "opencode")
+	script := "#!/bin/sh\nif [ \"$1\" = run ] && [ \"$2\" = --help ]; then echo '--variant string'; exit 0; fi\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{HarnessPaths: map[string]string{"opencode": bin}}}
+	const model = "alibaba-token-plan/deepseek-v4.1-flash-1017"
+	res := d.testModel(context.Background(), protocol.ModelTestRequest{Harness: "opencode", Model: model, Effort: "high"})
+	if !res.OK {
+		t.Fatalf("the fake harness did not run: %s", res.Output)
+	}
+	lines := strings.Split(res.Output, "\n")
+	has := func(want string) bool {
+		for _, line := range lines {
+			if line == want {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("--variant") || !has("high") || !has(model) {
+		t.Fatalf("older build did not get the variant flag: %q", res.Output)
 	}
 }

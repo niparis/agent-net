@@ -561,6 +561,10 @@ type PickerInput struct {
 	Table *PickerTable
 	// Prices are the API prices (decision 0161). Nil means no price is known.
 	Prices *PriceBook
+	// DifficultyNote replaces the opening "difficulty <level> (D x.xx)" of the
+	// why line. A start whose judge gave no assessment has no judged D, and
+	// printing the level's default D would read as a judgement it never made.
+	DifficultyNote string
 }
 
 func (p *PickerInput) usable() bool { return p != nil && p.Table != nil }

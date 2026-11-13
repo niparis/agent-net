@@ -667,10 +667,7 @@ func (a *DifficultyAssessor) runOpenCode(ctx context.Context, model, prompt stri
 	// running in OpenCode's shared service. The nonexistent socket also prevents
 	// the agent-net plugin from registering that private session or exposing tools.
 	selection := protocol.ParseModelSelection("opencode", "", model, "")
-	args := []string{"run", "--standalone", "-m", selection.ModelID()}
-	if selection.Effort != "" {
-		args = append(args, "--variant", selection.Effort)
-	}
+	args := append([]string{"run", "--standalone"}, openCodeModelFlags(ctx, bin, selection)...)
 	args = append(args, prompt)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
