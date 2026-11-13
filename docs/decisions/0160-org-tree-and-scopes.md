@@ -51,6 +51,8 @@ One migration, appended at the end, builds the tree from today's records. It run
 7. `agents.lead_session` is taken from `repo_leads`, then from `teams`.
 8. `sessions.started_by` is `agent-net` for workers, mergers, the CTO and sessions that match a pending Agent start; `owner` for the rest.
 
+The build and every later write use one function, `placeAgentTx`. It derives one Agent's parent and lead session from the same records. `lead_set`, a Team membership change, a Repo owner change, a merger start and a merger restore call it in their own transaction, for the Agents they affect. The tree therefore stays current after the build. An explicit `repo_leads` row wins over `repos.owner_agent_id` in both places. A derived move writes no graph history of its own: the old-table write that caused it carries the history.
+
 An edge the rules refuse during the build is skipped, not an error.
 
 ### What does not change in T1

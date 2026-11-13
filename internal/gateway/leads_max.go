@@ -150,6 +150,34 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 			return err
 		}
 	}
+	// Every later write keeps the stored tree in step with the old tables,
+	// in the same transaction (decision 0160).
+	newLead := ""
+	if q.Lead != nil {
+		newLead = lead.(string)
+	}
+	switch q.Ref.Kind {
+	case "repo":
+		if old.String != "" {
+			if err = placeAgentTx(tx, old.String); err != nil {
+				return err
+			}
+		}
+		if err = placeRepoAgentsTx(tx, q.Ref.ID); err != nil {
+			return err
+		}
+	case "team":
+		for _, agent := range []string{old.String, newLead} {
+			if agent != "" {
+				if err = placeAgentTx(tx, agent); err != nil {
+					return err
+				}
+			}
+		}
+		if err = placeTeamMembersTx(tx, q.Ref.ID); err != nil {
+			return err
+		}
+	}
 	next := ""
 	if q.Lead != nil {
 		next = q.Lead.ID

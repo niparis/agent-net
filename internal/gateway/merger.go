@@ -38,7 +38,7 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 		}
 		_, err = tx.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES(?,?,?) ON CONFLICT(project,node_id) DO UPDATE SET session_id=excluded.session_id`, q.Project, q.NodeID, q.SessionID)
 		if err == nil {
-			err = bindMergerAgentTx(tx, q.Project, q.SessionID, actor, s.now().UnixNano())
+			err = bindMergerAgentTx(tx, q.Project, q.SessionID, s.now().UnixNano())
 		}
 		// Configure is merger_start: agent-net started this session.
 		if err == nil && q.Configure {
