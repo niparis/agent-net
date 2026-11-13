@@ -122,23 +122,30 @@ func TestAutoContinueIdleWithoutHandback(t *testing.T) {
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
 		Task: "FAKE:ignore keep quiet"})
 
+	// The idle period is 150 ms, and the second continue follows it. The count
+	// moves on before the fake writes its file, so a busy machine can make the
+	// second continue land before the test's poll sees the first one. Wait for
+	// each value to be reached, never to equal it.
 	eventually(t, "the first automatic continue from idleness", func() bool {
 		row := reworkRow(t, w, res.SessionID)
-		return row.AutoContinueCount == 1 && fakeAutoContinueCount(repo) == 1
+		return row.AutoContinueCount >= 1 && fakeAutoContinueCount(repo) >= 1
 	})
-	if got := len(w.notices(t)); got != 0 {
-		t.Fatalf("the caller got %d notices after the first automatic continue, want none", got)
-	}
 	eventually(t, "the second automatic continue from idleness", func() bool {
 		row := reworkRow(t, w, res.SessionID)
-		return row.AutoContinueCount == 2 && fakeAutoContinueCount(repo) == 2
+		return row.AutoContinueCount >= 2 && fakeAutoContinueCount(repo) >= 2
 	})
 	if got := fakeAutoContinueCount(repo); got != 2 {
 		t.Fatalf("the worker got %d automatic continues, want 2", got)
 	}
+	// Only the third idle period reaches the caller. A notice sent after the
+	// first continue would say "1 automatic continue", so the wording below
+	// also shows that the caller was not told early.
 	n := w.waitNotice(t, 1)[0]
 	if !strings.Contains(n.Body, "status: idle without hand-back") || !strings.Contains(n.Body, "2 automatic continues") {
 		t.Errorf("the idle notice does not say how many automatic continues were sent:\n%s", n.Body)
+	}
+	if got := len(w.notices(t)); got != 1 {
+		t.Errorf("the caller got %d notices, want exactly one", got)
 	}
 }
 
