@@ -87,7 +87,7 @@ func TestScopeSetThroughCTOAndOwner(t *testing.T) {
 		}
 		return rows
 	}
-	result, err := n.d.runCTOToolRaw(context.Background(), "graph_change", json.RawMessage(`{"action":"scope_set","node":"demo","kind":"review","over":"repo:demo","note":"own repo"}`))
+	result, err := n.d.runCTOToolRaw(context.Background(), "graph_change", json.RawMessage(`{"action":"scope_set","node":"demo","kind":"review","to":"repo:demo","value":"own repo"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

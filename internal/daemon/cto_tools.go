@@ -575,6 +575,11 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if name == "lead_set" || name == "scope_set" || name == "scope_remove" || name == "repo_create" || name == "repo_archive" || name == "agent_create" || name == "agent_tombstone" {
 			args["owner"] = d.ownerSessionID()
 		}
+		if name == "scope_set" || name == "scope_remove" {
+			args["over"], args["note"] = args["to"], args["value"]
+			delete(args, "to")
+			delete(args, "value")
+		}
 		if name == "graph_undo" {
 			args["history_id"] = args["id"]
 			delete(args, "id")

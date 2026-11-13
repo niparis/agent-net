@@ -155,7 +155,7 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 		case "repo_archive", "agent_tombstone", "lead_set":
 			required = []string{"ref"}
 		case "scope_set", "scope_remove":
-			required = []string{"node", "kind", "over"}
+			required = []string{"node", "kind", "to"}
 		case "team_create":
 			required = []string{"name"}
 		case "team_rename":
@@ -292,6 +292,10 @@ func actionExampleFor(tool, action string) string {
 	switch tool {
 	case "graph_change":
 		switch action {
+		case "scope_set":
+			return `{"action":"scope_set","node":"agent-id","kind":"merge","to":"repo:repo-name","value":"note"}`
+		case "scope_remove":
+			return `{"action":"scope_remove","node":"agent-id","kind":"merge","to":"repo:repo-name"}`
 		case "team_create":
 			return `{"action":"team_create","name":"team-name"}`
 		case "team_rename":

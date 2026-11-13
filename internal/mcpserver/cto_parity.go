@@ -31,7 +31,9 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 		add(name, "Deactivate a typed identity; owner approval required.", map[string]ctoField{"ref": {typ: "graph_ref"}})
 	}
 	add("lead_set", "Set a Repo or Team lead, or grant an Agent lead level; omit lead to clear.", map[string]ctoField{"ref": {typ: "graph_ref"}, "lead": {typ: "graph_ref"}})
-	scope := map[string]ctoField{"node": s("Agent that holds the scope."), "kind": en("Scope kind.", protocol.ScopeKinds...), "over": s("all, team:<name>, repo:<name> or agent:<name>."), "note": s("Shown only.")}
+	// graph_change carries over in to and the note in value, so the CTO schema
+	// gains no fields; the daemon maps them to over and note.
+	scope := map[string]ctoField{"node": s("Agent that holds the scope."), "kind": en("Scope kind.", protocol.ScopeKinds...), "to": s("Over: all, team:<name>, repo:<name> or agent:<name>."), "value": s("Note, shown only.")}
 	add("scope_set", "Store a scope on an Agent, or change its note. Stored, not used yet.", scope)
 	add("scope_remove", "Remove a scope from an Agent.", scope)
 	add("node_add", "Add an architect node.", map[string]ctoField{"name": s("Name.")})
