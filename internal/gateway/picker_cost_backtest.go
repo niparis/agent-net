@@ -36,6 +36,10 @@ type PickerCostBacktestResult struct {
 	Rows []PickerCostBacktestRow
 	// OutByFloor names the profiles today's worker floors keep out.
 	OutByFloor []string
+	// QuotaReadings says, for each registered profile, which quota reading it
+	// met: the provider and the used percent of the windows that serve it, or
+	// "no reading".
+	QuotaReadings []string
 	// Tasks is how many tasks with a D the table holds, TasksWithUsage how many
 	// of them have tokens on record.
 	Tasks, TasksWithUsage int
@@ -48,7 +52,7 @@ type PickerCostBacktestResult struct {
 // this. A session's notices are cumulative, so the largest count of each kind
 // stands. It is for the backtest only.
 func (s *Store) noticeUsage() (map[string]protocol.RunTokens, error) {
-	rows, err := s.db.Query(`SELECT body FROM messages WHERE body LIKE '%[agent-net worker notice]%' AND body LIKE '%' || char(10) || 'tokens: %'`)
+	rows, err := s.db.Query(`SELECT body FROM messages WHERE body LIKE '%[agent-net worker notice]%' AND body LIKE '%tokens: %'`)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +62,10 @@ func (s *Store) noticeUsage() (map[string]protocol.RunTokens, error) {
 		var body string
 		if err := rows.Scan(&body); err != nil {
 			return nil, err
+		}
+		if !strings.Contains(body, "\n") {
+			// A body kept with its line breaks escaped.
+			body = strings.ReplaceAll(body, `\n`, "\n")
 		}
 		var session string
 		var tokens protocol.RunTokens
@@ -144,6 +152,21 @@ func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (Pick
 			continue
 		}
 		candidates = append(candidates, c)
+	}
+	for _, p := range profiles {
+		model := p.Selection().LegacyModel()
+		provider := protocol.QuotaProviderForStart(p.Harness, model)
+		text := "no reading"
+		if qp, ok := o.Quotas.Provider(provider); ok {
+			var used []string
+			for _, w := range qp.Windows {
+				if protocol.QuotaWindowServes(w, model) {
+					used = append(used, fmt.Sprintf("%s %.0f%% used", w.ID, w.PercentUsed))
+				}
+			}
+			text = strings.Join(used, ", ")
+		}
+		res.QuotaReadings = append(res.QuotaReadings, fmt.Sprintf("%s -> quota provider %q: %s", p.Name, provider, text))
 	}
 	scores, err := s.scores()
 	if err != nil {

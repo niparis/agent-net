@@ -119,14 +119,38 @@ func backtestQuotasFromEnv(t *testing.T) *protocol.Quotas {
 	if used == "" {
 		return nil
 	}
-	q := &protocol.Quotas{}
+	// Friendly names the owner reads in the picker notes, as a quota provider
+	// and the window id that carries the reading. agy keeps one provider with a
+	// window per model family.
+	aliases := map[string][2]string{
+		"openai":        {"codex", "weekly"},
+		"agy-anthropic": {"agy", "claude_gpt_weekly"},
+		"agy-gemini":    {"agy", "gemini_weekly"},
+		"google-argon":  {"agy", "gemini_argon_weekly"},
+	}
+	byProvider := map[string]*protocol.QuotaProvider{}
+	var order []string
 	for _, pair := range strings.Split(used, ",") {
 		name, pct, ok := strings.Cut(strings.TrimSpace(pair), "=")
 		v, err := strconv.ParseFloat(pct, 64)
 		if !ok || err != nil {
 			t.Fatalf("AGENT_NET_PICKER_BACKTEST_USED wants provider=percent pairs, got %q", pair)
 		}
-		q.Providers = append(q.Providers, protocol.QuotaProvider{Provider: name, Windows: []protocol.QuotaWindow{{ID: "weekly", Kind: "weekly", PercentUsed: v}}})
+		provider, window := name, "weekly"
+		if a, ok := aliases[name]; ok {
+			provider, window = a[0], a[1]
+		}
+		p := byProvider[provider]
+		if p == nil {
+			p = &protocol.QuotaProvider{Provider: provider}
+			byProvider[provider] = p
+			order = append(order, provider)
+		}
+		p.Windows = append(p.Windows, protocol.QuotaWindow{ID: window, Kind: "weekly", PercentUsed: v})
+	}
+	q := &protocol.Quotas{}
+	for _, name := range order {
+		q.Providers = append(q.Providers, *byProvider[name])
 	}
 	return q
 }
@@ -137,7 +161,11 @@ func backtestQuotasFromEnv(t *testing.T) *protocol.Quotas {
 //	AGENT_NET_PICKER_BACKTEST_DB      a copy of gateway.db (required)
 //	AGENT_NET_PICKER_BACKTEST_PRICES  a saved OpenRouter /api/v1/models JSON
 //	AGENT_NET_PICKER_BACKTEST_USED    percent used per quota provider, for the
-//	                                  worker floors, e.g. "codex=86,claude=40"
+//	                                  worker floors, e.g. "claude=40,openai=86".
+//	                                  Names: claude, codex (or openai), agy,
+//	                                  opencode-go, agy-anthropic, agy-gemini,
+//	                                  google-argon. A provider left out has no
+//	                                  reading, so no floor applies to it.
 //	AGENT_NET_PICKER_BACKTEST_QUOTAS  or a Quotas JSON file instead of USED
 //
 // go test ./internal/gateway -run '^TestPickerCostBacktestReport$' -v
@@ -170,6 +198,9 @@ func TestPickerCostBacktestReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Printf("prices: %d models; tasks with a D: %d, of them with tokens on record: %d; quota reading: %v\n", res.Prices, res.Tasks, res.TasksWithUsage, opts.Quotas != nil)
+	for _, line := range res.QuotaReadings {
+		fmt.Println("quota:", line)
+	}
 	for _, line := range res.OutByFloor {
 		fmt.Println("out by floor:", line)
 	}
