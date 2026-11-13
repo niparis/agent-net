@@ -1,0 +1,30 @@
+build: a72ed6c67d2e451fcf47eaa753a6adfd528cad3e
+step: open the sessions list at 80x24
+action: open the TUI with the repo lead and its merger, select the merger row
+expected: the merger row is the demo merger
+errors: none
+
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 2 online
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● h1 (here) cpu ? mem ? disk ?                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  NAME           MACHINE PROJECT   MODEL        STATUS   CPU   RAM TASK         
+ Idle (2)                                                                all (v)
+  demo           h1      demo      claude       idle       ?     ?              
+▸ demo merger    h1      demo      claude       idle       ?     ?              
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open  m msg  x stop or remove  p pin  q quit
