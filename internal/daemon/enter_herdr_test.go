@@ -805,7 +805,7 @@ func TestSignInOpenRemoteUsesHerdrRemoteNeverSSH(t *testing.T) {
 // unknown provider, is refused at that boundary.
 func TestSignInPrepareOpensAllowlistedArgv(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
-	d := &Daemon{cfg: Config{NodeID: "n_mac", Hostname: "Nicolas-MBP"}}
+	d := watchedDaemon(t, Config{NodeID: "n_mac", Hostname: "Nicolas-MBP"})
 	raw, _ := json.Marshal(protocol.SignInPrepare{AskID: "i_signin", Provider: "alibaba"})
 	res, err := d.signInPrepare(raw)
 	if err != nil {
@@ -822,6 +822,35 @@ func TestSignInPrepareOpensAllowlistedArgv(t *testing.T) {
 	if _, err := d.signInPrepare(bad); err == nil {
 		t.Fatal("an unknown provider was accepted")
 	}
+}
+
+// A sign-in watch belongs to the daemon's lifetime: once that ends, the watch
+// returns without asking herdr again.
+func TestSignInWatchStopsWithDaemon(t *testing.T) {
+	bin, log := fakeOpenHerdr(t)
+	// The fake keeps reporting the pane, so the watch would run its full 30
+	// minutes unless the daemon's lifetime ends it.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(log), "created"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d := &Daemon{cfg: Config{NodeID: "n_mac", Hostname: "mac"}, ctoCtx: ctx}
+	done := make(chan struct{})
+	go func() {
+		d.watchSignInPane(ctx, "alibaba", bin, "", "w1:p1")
+		close(done)
+	}()
+	eventually(t, "the watch to check its pane", func() bool { return len(herdrCalls(t, log)) > 0 })
+	cancel()
+	eventually(t, "the watch to stop with the daemon", func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	})
 }
 
 func TestEnterRemoteHerdrClientNeverFallsBackToSSH(t *testing.T) {
