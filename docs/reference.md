@@ -337,7 +337,10 @@ plugins, as a coding session does ([decision 0157](decisions/0157-cto-full-power
 The CTO prompt is added with `--append-system-prompt`, so Claude Code's default
 system prompt, with its built-in tool guidance, stays. The CTO's start text
 (its brief, the owner's standing orders and the titles of its gateway notes)
-is part of that prompt, or of the first message for OpenCode.
+is part of that prompt, or of the first message for OpenCode. Claude Code's auto
+memory is off for the CTO (`autoMemoryEnabled: false` in its launch settings):
+its memory is its gateway notes, saved with `agent_note_write` and read with
+`agent_notes_find` (owner decision 2026-11-13). Coding sessions keep both.
 The CTO starts through the same start path as every other session (decision
 0156). Its role (name `agent-net-cto`, the system prompt, the private MCP config,
 `--strict-mcp-config` and the `cto_op` hook in its launch settings) is

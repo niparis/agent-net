@@ -43,6 +43,11 @@ func TestClaudeStartSpecAppliesTheCTORole(t *testing.T) {
 	if err := json.Unmarshal([]byte(argValue(args, "--mcp-config")), &mcp); err != nil || mcp.Servers["agent-net-cto"].Command != "/bin/agent-net" || strings.Join(mcp.Servers["agent-net-cto"].Args, " ") != "cto-mcp" {
 		t.Errorf("mcp config %q: %v", argValue(args, "--mcp-config"), err)
 	}
+	// The owner's decision of 2026-11-13: the CTO's memory is gateway notes
+	// only, so Claude Code's auto memory is off for its launch and for no other.
+	if !strings.Contains(cto.Settings, `"autoMemoryEnabled":false`) || strings.Contains(coding.Settings, "autoMemoryEnabled") {
+		t.Errorf("auto memory must be off for the CTO launch only: cto %s, coding %q", cto.Settings, coding.Settings)
+	}
 	if !strings.Contains(cto.Settings, `"AGENT_NET_CTO":"1"`) || !strings.Contains(cto.Settings, "mcp__agent-net-cto__agent_message_send") {
 		t.Errorf("role settings: %s", cto.Settings)
 	}

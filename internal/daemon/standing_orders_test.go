@@ -179,3 +179,13 @@ func TestCTOStartTextCarriesTheNotesIndex(t *testing.T) {
 		}
 	}
 }
+
+// The CTO's memory is its gateway notes. Its prompt says how to save and read
+// them, and its start text lists the titles (owner decision 2026-11-13).
+func TestCTOPromptNamesGatewayNotesAsItsMemory(t *testing.T) {
+	for _, want := range []string{"memory", "agent_note_write", "agent_notes_find", "titles"} {
+		if !strings.Contains(ctoBrief, want) {
+			t.Errorf("ctoBrief does not mention %q", want)
+		}
+	}
+}

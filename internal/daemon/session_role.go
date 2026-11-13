@@ -71,7 +71,10 @@ func (d *Daemon) applyCTOClaudeRole(ctx context.Context, spec *claudeBackground)
 	// The CTO's message tool is allowed, so Claude Code's auto-mode check does not
 	// block it. The name is the cto-mcp server's tool: mcp__<server>__<tool>.
 	hook := map[string]any{"type": "command", "command": shellQuote(d.cfg.Exe) + " cto-hook"}
-	launch := map[string]any{"crossSessionInbound": "accept",
+	// autoMemoryEnabled false turns Claude Code's auto memory off for this launch
+	// only (owner decision 2026-11-13: the CTO's memory is gateway notes, which
+	// the owner sees and deletes in the TUI). A coding session does not get it.
+	launch := map[string]any{"crossSessionInbound": "accept", "autoMemoryEnabled": false,
 		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": ctoHookMatcher, "hooks": []any{hook}}}},
 		"permissions": map[string]any{"allow": []string{"mcp__agent-net-cto__agent_message_send"}},
 		"env":         map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "0", "DISABLE_AUTOUPDATER": "1"}}
