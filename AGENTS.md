@@ -23,6 +23,7 @@ go vet ./... && scripts/test.sh -- -timeout 30m
 gofmt -l .                  # must print nothing
 sh -n install.sh            # syntax check of the installer
 bash -n scripts/test.sh
+sh scripts/test-changed-test.sh # checks how test-changed.sh calls go test (fake go, about 1 s)
 plugins/pi/typecheck.sh     # type-check the Pi extension (needs Pi installed)
 plugins/claude/test-agent-net-workers.sh # validate and test Claude hooks (needs npm)
 ```
@@ -31,7 +32,7 @@ Before handing back, run scripts/test-changed.sh; it runs the tests your diff ne
 
 If you change guidance text, also run go test ./internal/guidance ./internal/agentfiles (both have golden fixtures; use -update).
 
-CI runs `gofmt`, `go vet`, the daemon, gateway, setup, tui and command shards (`scripts/test.sh --package daemon|gateway|setup|tui|agent-net --shard-index I --shard-count N`; N is 5 for daemon and 4 for the others), the other Go packages in one job, and `sh -n install.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
+CI runs `gofmt`, `go vet`, the daemon, gateway, setup, tui and command shards (`scripts/test.sh --package daemon|gateway|setup|tui|agent-net --shard-index I --shard-count N`; N is 5 for daemon and 4 for the others), the other Go packages in one job, `sh -n install.sh` and `sh scripts/test-changed-test.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
 
 ## Layout
 

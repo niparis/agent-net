@@ -59,6 +59,8 @@ jobs:
         run: bash -n scripts/test.sh
       - name: shard planner
         run: bash scripts/test-sharding.sh
+      - name: test-changed script
+        run: sh scripts/test-changed-test.sh
       # The checkout is shallow and has no default branch. The lock check
       # compares the lock with origin/main, so fetch it here. A failed fetch
       # fails this step, so the check cannot pass by skipping.
