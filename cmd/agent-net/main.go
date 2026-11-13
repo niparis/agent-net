@@ -287,6 +287,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 	}
 	go gw.RunExpiry(ctx)
 	go gw.RunLearning(ctx)
+	go gw.RunPrices(ctx, gateway.OpenRouterModelsURL)
 	go gw.RunRetention(ctx)
 	go gw.RunGraphCutover(ctx)
 	go gw.RunExposure(ctx, *listen)

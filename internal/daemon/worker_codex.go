@@ -895,7 +895,8 @@ func (cc *codexConn) stats() workerStats {
 	t := cc.tokens
 	return workerStats{Tokens: tokenText(t.in, t.out, t.reasoning, t.cacheRead, t.cacheWrite), Model: cc.model,
 		ContextTokens: cc.contextTokens, ContextLimit: cc.contextLimit,
-		TotalTokens: int64(t.in + t.out + t.reasoning)}
+		TotalTokens: int64(t.in + t.out + t.reasoning),
+		Usage:       protocol.RunTokens{In: t.in, Out: t.out, Reasoning: t.reasoning, CacheRead: t.cacheRead, CacheWrite: t.cacheWrite}}
 }
 
 // submit runs a message as a turn, or queues it behind the running one.

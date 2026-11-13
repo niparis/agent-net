@@ -70,7 +70,7 @@ func (g *Gateway) pickDifficultyJudge(nodeID string, req protocol.DifficultyJudg
 	}
 	// Distinguish an empty eligibility set from a storage error when persisting
 	// the rotation. The preview uses the same protection and quota rules.
-	pick := &protocol.PickerInput{D: protocol.PickerD(nil, "normal"), Table: g.store.pickerTable()}
+	pick := &protocol.PickerInput{D: protocol.PickerD(nil, "normal"), Table: g.store.pickerTable(), Prices: g.store.priceBook()}
 	if _, _, err := chooseProtectedWorker(filtered, "normal", scores, minimums, quotas, running, nil, protected, pick); err != nil {
 		return out, nil
 	}

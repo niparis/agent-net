@@ -112,6 +112,10 @@ type PickerTask struct {
 	Key   string
 	D     float64
 	Score float64
+	// Tokens is what the task used, summed over its runs, and Cost is that at
+	// API prices. Both are zero when the task has no recorded usage.
+	Tokens RunTokens
+	Cost   float64
 }
 
 // PickerModelKey is the key of a model and its effort. Two efforts of one
@@ -179,6 +183,23 @@ type PickerTable struct {
 	buckets   map[int]pickerStat
 	cells     map[string]map[int]pickerStat
 	maxBucket int
+	// cost and tokens read only the tasks with recorded usage (decision 0160).
+	cellCost     map[string]map[int]pickerCostStat
+	bucketTokens map[int]pickerCostStat
+	allTokens    pickerCostStat
+}
+
+// pickerCostStat sums the cost and the tokens of the tasks that have usage.
+type pickerCostStat struct {
+	n      int
+	cost   float64
+	tokens RunTokens
+}
+
+func (s *pickerCostStat) add(task PickerTask) {
+	s.n++
+	s.cost += task.Cost
+	s.tokens = s.tokens.Plus(task.Tokens)
 }
 
 // neutralMean and neutralVariance stand in for a table with no task: an even
@@ -190,7 +211,8 @@ const (
 
 // BuildPickerTable groups the tasks by key and bucket.
 func BuildPickerTable(tasks []PickerTask, s PickerSettings) *PickerTable {
-	t := &PickerTable{settings: s.Normalized(), buckets: map[int]pickerStat{}, cells: map[string]map[int]pickerStat{}}
+	t := &PickerTable{settings: s.Normalized(), buckets: map[int]pickerStat{}, cells: map[string]map[int]pickerStat{},
+		cellCost: map[string]map[int]pickerCostStat{}, bucketTokens: map[int]pickerCostStat{}}
 	for _, task := range tasks {
 		if task.Key == "" || task.D <= 0 {
 			continue
@@ -211,8 +233,63 @@ func BuildPickerTable(tasks []PickerTask, s PickerSettings) *PickerTable {
 		if b > t.maxBucket {
 			t.maxBucket = b
 		}
+		if task.Tokens.Zero() {
+			continue
+		}
+		if t.cellCost[task.Key] == nil {
+			t.cellCost[task.Key] = map[int]pickerCostStat{}
+		}
+		cc := t.cellCost[task.Key][b]
+		cc.add(task)
+		t.cellCost[task.Key][b] = cc
+		bt := t.bucketTokens[b]
+		bt.add(task)
+		t.bucketTokens[b] = bt
+		t.allTokens.add(task)
 	}
 	return t
+}
+
+// AvgCost is the average cost at API prices of a model key's tasks in a
+// bucket, and how many tasks have a recorded cost. n is 0 when none has.
+func (t *PickerTable) AvgCost(key string, bucket int) (avg float64, n int) {
+	cc := t.cellCost[key][bucket]
+	if cc.n == 0 {
+		return 0, 0
+	}
+	return cc.cost / float64(cc.n), cc.n
+}
+
+// ExpectedCost is what one run of a model key is expected to cost in a bucket:
+// the average of its recorded runs there, or else its price times the tokens of
+// an average run there. recorded says which. listed is false when the price was
+// the middle one. ok is false when there is nothing to price it with.
+func (t *PickerTable) ExpectedCost(key string, bucket int, prices *PriceBook) (cost float64, recorded, listed, ok bool) {
+	if avg, n := t.AvgCost(key, bucket); n > 0 {
+		return avg, true, true, true
+	}
+	tokens, found := t.AvgTokens(bucket)
+	if !found {
+		return 0, false, false, false
+	}
+	price, listed, found := prices.PriceOf(key)
+	if !found {
+		return 0, false, false, false
+	}
+	return price.Cost(tokens), false, listed, true
+}
+
+// AvgTokens is the tokens of an average task in a bucket over all models. A
+// bucket with no usage takes the average of every bucket. ok is false when no
+// task has recorded usage.
+func (t *PickerTable) AvgTokens(bucket int) (RunTokens, bool) {
+	if bt := t.bucketTokens[bucket]; bt.n > 0 {
+		return bt.tokens.Scaled(1 / float64(bt.n)), true
+	}
+	if t.allTokens.n > 0 {
+		return t.allTokens.tokens.Scaled(1 / float64(t.allTokens.n)), true
+	}
+	return RunTokens{}, false
 }
 
 // Settings are the settings the table was built with.
@@ -454,6 +531,8 @@ func WorkerBenchmarkCeiling(c WorkerModelCandidate, scores []ModelScore, minimum
 type PickerInput struct {
 	D     float64
 	Table *PickerTable
+	// Prices are the API prices (decision 0160). Nil means no price is known.
+	Prices *PriceBook
 }
 
 func (p *PickerInput) usable() bool { return p != nil && p.Table != nil }

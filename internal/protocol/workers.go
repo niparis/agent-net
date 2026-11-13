@@ -298,6 +298,9 @@ type WorkerInfo struct {
 	// Tokens is the cumulative input plus output plus reasoning of the run,
 	// without cache reads. 0 when the harness cannot say.
 	Tokens int64 `json:"tokens,omitempty"`
+	// Usage is the same run by kind of token, cache reads and writes included.
+	// The gateway keeps it with the run to price it (decision 0160).
+	Usage *RunTokens `json:"usage,omitempty"`
 	// Permissions is the level the worker was started with (decision 0020):
 	// sandboxed, no-network or read-only. Codex, Antigravity and Claude
 	// workers apply it with their own sandbox.
@@ -583,6 +586,20 @@ type (
 		// which only its owner or the person may cancel.
 		Requester string `json:"requester_session,omitempty"`
 		AsOwner   bool   `json:"as_owner,omitempty"`
+	}
+	// WorkerCostQuery is "worker.cost", machine to gateway: the cost of a
+	// run's tokens at API prices (decision 0160).
+	WorkerCostQuery struct {
+		Model  string    `json:"model"`
+		Tokens RunTokens `json:"tokens"`
+	}
+	// WorkerCostReply answers it. Known is false when the gateway has no price
+	// list. PriceKnown is false when the model has no listed price and the
+	// middle price was used.
+	WorkerCostReply struct {
+		Cost       float64 `json:"cost"`
+		Known      bool    `json:"known"`
+		PriceKnown bool    `json:"price_known"`
 	}
 	// WorkerStopped is "worker.stopped", machine to gateway.
 	WorkerStopped struct {
@@ -1170,8 +1187,11 @@ type WorkerNotice struct {
 	Tokens  string // "1200 in, 340 out", empty when the harness does not say
 	// Context is the context at the end of the run, as ContextText writes it
 	// ("210k / 1M"), empty when the harness does not say.
-	Context  string
-	Cost     string // "0.0123", empty when unknown
+	Context string
+	Cost    string // "0.0123", empty when unknown
+	// APICost is the run's cost at API prices, as "$0.43 at API prices", empty
+	// when no price list is known (decision 0160).
+	APICost  string
 	Worktree string
 	Branch   string
 	DiffStat string // git diff --stat of the worktree, empty when none
@@ -1268,6 +1288,9 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 	}
 	if n.Cost != "" {
 		b.WriteString("cost: " + n.Cost + "\n")
+	}
+	if n.APICost != "" {
+		b.WriteString("cost: " + n.APICost + "\n")
 	}
 	if n.Continue > 0 || n.Fix > 0 {
 		// A first run has no rework; the line appears once there is one.

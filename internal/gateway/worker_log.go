@@ -16,7 +16,7 @@ import (
 // that a run's lookup finds (messages), and the agent rows of the workers
 // (agentListTables, which covers the session, node and caller profile). Keep it
 // equal to those queries (see readThrough).
-var workerLogTables = tableUnion([]string{"worker_runs", "messages", "worker_brief_defects"}, agentListTables)
+var workerLogTables = tableUnion([]string{"worker_runs", "messages", "worker_brief_defects", "worker_usage", "model_prices"}, agentListTables)
 
 // WorkerLog combines ended runs and current starts, with a hard owner-view limit.
 //
@@ -94,8 +94,21 @@ func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 		}
 		return name, host, err
 	}
+	var ids []string
+	for _, run := range runs {
+		ids = append(ids, run.entry.SessionID)
+	}
+	usage, err := s.workerUsage(ids...)
+	if err != nil {
+		return nil, err
+	}
 	for _, run := range runs {
 		r := run.entry
+		if t, ok := usage[r.SessionID]; ok {
+			r.Tokens = &t
+			cost, listed, ok := s.RunCost(protocol.PickerModelKey(r.Harness, r.Model), t)
+			r.Cost, r.PriceUnknown = cost, ok && !listed
+		}
 		r.BriefDefects = briefDefects[run.callerID]
 		if r.Caller, r.CallerHost, err = workerCaller(run.callerID); err != nil {
 			return nil, err

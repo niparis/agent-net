@@ -78,7 +78,7 @@ func pushDigest(in protocol.SessionInfo) ([sha256.Size]byte, [6]int64) {
 		// A busy worker's token counters change on every stats tick.
 		w := *in.Worker
 		act[2], act[3], act[4] = w.ContextTokens, w.ContextLimit, w.Tokens
-		w.ContextTokens, w.ContextLimit, w.Tokens = 0, 0, 0
+		w.ContextTokens, w.ContextLimit, w.Tokens, w.Usage = 0, 0, 0, nil
 		in.Worker = &w
 	}
 	raw, err := json.Marshal(in)

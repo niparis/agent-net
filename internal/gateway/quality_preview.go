@@ -88,7 +88,7 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 	reasons := map[string]string{}
 	models := map[string]string{}
 	for _, level := range protocol.DifficultyLevels {
-		pick := &protocol.PickerInput{D: protocol.PickerD(nil, level), Table: table}
+		pick := &protocol.PickerInput{D: protocol.PickerD(nil, level), Table: table, Prices: g.store.priceBook()}
 		choice, _, err := g.chooseAutomaticWorkerCore(health, readRotation, pick, candidates, level, in.scores, in.minimums, node.Quotas, running, in.protected, false)
 		if err == nil {
 			out[level] = qualityModelFamily(choice.Model)

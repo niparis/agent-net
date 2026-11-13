@@ -189,7 +189,8 @@ func piSessionStats(dir, session string) workerStats {
 		}
 	}
 	return workerStats{Tokens: tokenText(total.in, total.out, 0, total.cr, total.cw), Model: model,
-		ContextTokens: int64(last.in + last.cr + last.cw), TotalTokens: int64(total.in + total.out)}
+		ContextTokens: int64(last.in + last.cr + last.cw), TotalTokens: int64(total.in + total.out),
+		Usage: protocol.RunTokens{In: total.in, Out: total.out, CacheRead: total.cr, CacheWrite: total.cw}}
 }
 
 // piSessionFile finds the JSONL file of a session: Pi groups sessions by

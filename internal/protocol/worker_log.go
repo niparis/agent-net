@@ -35,4 +35,11 @@ type WorkerLogEntry struct {
 	RunSeconds   int64             `json:"run_seconds"`
 	Failure      string            `json:"failure,omitempty"`
 	Assessment   *WorkerAssessment `json:"assessment,omitempty"`
+	// Tokens and Cost are the run's usage and its cost at API prices
+	// (decision 0160). Both are empty for a run with no recorded usage.
+	// PriceUnknown is true when the cost used the middle price because the
+	// model has no listed one.
+	Tokens       *RunTokens `json:"tokens,omitempty"`
+	Cost         float64    `json:"cost,omitempty"`
+	PriceUnknown bool       `json:"price_unknown,omitempty"`
 }

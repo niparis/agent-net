@@ -320,3 +320,43 @@ func TestWorkerPickerStructured(t *testing.T) {
 		golden(t, fmt.Sprintf("workers_log_picker_%dx%d", size[0], size[1]), m.testView())
 	}
 }
+
+// The run's tokens and its cost at API prices show in the details, at both
+// screen sizes. A model with no listed price says so.
+func TestWorkersLogShowsTokensAndCostAtAPIPrices(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		priceUnknown bool
+		want         string
+	}{
+		{"listed price", false, "Cost    $0.43 at API prices"},
+		{"unknown price", true, "(price unknown, middle price used)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(&fakeSource{snap: fakeSnapshot()})
+			m.tab = quotasTab
+			m.workersLog = true
+			m.haveData = true
+			m.loc, m.now = time.UTC, func() time.Time { return t0 }
+			m.snap.WorkerLog = []protocol.WorkerLogEntry{{
+				StartedAt: 1700000000, Title: "Price the run", Model: "claude-opus-5-5:high", Status: "done", Difficulty: "normal", Harness: "claude", RunSeconds: 754,
+				Tokens: &protocol.RunTokens{In: 1200, Out: 34000, CacheRead: 8100000, CacheWrite: 200000}, Cost: 0.43, PriceUnknown: tc.priceUnknown,
+			}}
+			for _, size := range [][2]int{{80, 24}, {120, 34}} {
+				m.width, m.height = size[0], size[1]
+				got := ansi.Strip(m.testView())
+				t.Logf("%dx%d\n%s", size[0], size[1], got)
+				for _, want := range []string{"Tokens", "1k in, 34k out, 8.1M cache read, 200k cache write", tc.want} {
+					if !strings.Contains(strings.Join(strings.Fields(got), " "), strings.Join(strings.Fields(want), " ")) {
+						t.Errorf("%dx%d missing %q: %s", size[0], size[1], want, got)
+					}
+				}
+				for _, line := range strings.Split(got, "\n") {
+					if ansi.StringWidth(line) > size[0] {
+						t.Errorf("%dx%d line overflow: %q", size[0], size[1], line)
+					}
+				}
+			}
+		})
+	}
+}

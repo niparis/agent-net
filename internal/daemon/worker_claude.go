@@ -536,7 +536,7 @@ func claudeTranscriptStats(projectsDir, session string) workerStats {
 	}
 	st := workerStats{Tokens: tokenText(t.in, t.out, 0, t.cr, t.cw), Model: model,
 		ContextTokens: int64(last.in + last.cr + last.cw), ContextLimit: claudeContextLimit(model),
-		TotalTokens: int64(t.in + t.out)}
+		TotalTokens: int64(t.in + t.out), Usage: protocol.RunTokens{In: t.in, Out: t.out, CacheRead: t.cr, CacheWrite: t.cw}}
 	return st
 }
 

@@ -357,7 +357,8 @@ func (opencodeLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerS
 	}
 	t := r.Data.Tokens
 	st := workerStats{Tokens: tokenText(t.Input, t.Output, t.Reasoning, t.Cache.Read, t.Cache.Write),
-		TotalTokens: int64(t.Input + t.Output + t.Reasoning)}
+		TotalTokens: int64(t.Input + t.Output + t.Reasoning),
+		Usage:       protocol.RunTokens{In: t.Input, Out: t.Output, Reasoning: t.Reasoning, CacheRead: t.Cache.Read, CacheWrite: t.Cache.Write}}
 	if r.Data.Cost != nil && st.Tokens != "" {
 		st.Cost = fmt.Sprintf("%.4f (as OpenCode reports it)", *r.Data.Cost)
 	}

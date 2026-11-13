@@ -68,6 +68,8 @@ type pickerTaskRecord struct {
 	d     float64
 	facts protocol.PickerTaskFacts
 	end   int64
+	// tokens is the usage of the task's sessions, zero when none was recorded.
+	tokens protocol.RunTokens
 }
 
 // pickerTaskRecords reads each task's facts once, whatever its judge result.
@@ -155,6 +157,10 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 		return nil, err
 	}
 
+	usage, err := s.workerUsage()
+	if err != nil {
+		return nil, err
+	}
 	counts := func(outcome string) bool {
 		return outcome != protocol.OutcomeStopped && outcome != protocol.OutcomeInfra
 	}
@@ -164,6 +170,7 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 		facts    protocol.PickerTaskFacts
 		end      int64
 		sessions []string
+		tokens   protocol.RunTokens
 	}
 	groups := map[string]*chain{}
 	var order []*chain
@@ -188,6 +195,9 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 		c.end = r.ended
 		if !slices.Contains(c.sessions, r.session) {
 			c.sessions = append(c.sessions, r.session)
+			// A session's usage is its running total, so it counts once even
+			// when the session had several runs.
+			c.tokens = c.tokens.Plus(usage[r.session])
 		}
 	}
 	out := make([]pickerTaskRecord, 0, len(order))
@@ -204,7 +214,7 @@ func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
 				d = judged[session]
 			}
 		}
-		out = append(out, pickerTaskRecord{key: c.key, d: d, facts: c.facts, end: c.end})
+		out = append(out, pickerTaskRecord{key: c.key, d: d, facts: c.facts, end: c.end, tokens: c.tokens})
 	}
 
 	return out, nil
@@ -222,7 +232,11 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 		if r.d <= 0 || r.key == "" {
 			continue
 		}
-		out = append(out, protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts)})
+		t := protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts), Tokens: r.tokens}
+		if !r.tokens.Zero() {
+			t.Cost, _, _ = s.RunCost(r.key, r.tokens)
+		}
+		out = append(out, t)
 	}
 	return out, nil
 }
