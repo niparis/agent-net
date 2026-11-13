@@ -62,6 +62,10 @@ func (s *Store) RestoreMergerRegistrations(project string, saved []protocol.Merg
 		if _, err := tx.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES(?,?,?)`, project, q.NodeID, q.SessionID); err != nil {
 			return err
 		}
+		// A restored merger gets the Agent and edge a started merger has.
+		if err := bindMergerAgentTx(tx, project, q.SessionID, s.now().UnixNano()); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return err

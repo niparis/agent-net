@@ -91,6 +91,15 @@ func (s *Store) AddProjects(nodeID string, in protocol.ProjectAdd) (protocol.Pro
 			}
 		}
 	}
+	if !in.DryRun {
+		// A new Repo gets its owner from the legacy trigger. Place that Repo's
+		// Agents now so the tree does not wait for the next lead change.
+		for _, e := range res.Added {
+			if err := placeRepoAgentsTx(tx, e.Name); err != nil {
+				return res, err
+			}
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return res, err
 	}

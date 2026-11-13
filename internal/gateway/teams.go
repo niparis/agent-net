@@ -312,7 +312,21 @@ func writeTeamMember(tx *sql.Tx, q protocol.TeamWrite) (string, error) {
 	} else {
 		_, err = tx.Exec(`INSERT INTO team_members(member_kind,member_id,team_id) VALUES(?,?,?) ON CONFLICT(member_kind,member_id) DO UPDATE SET team_id=excluded.team_id`, q.Member.Kind, q.Member.ID, q.ID)
 	}
-	return old, err
+	if err != nil {
+		return old, err
+	}
+	// The moved member's parent follows the old tables in the same transaction.
+	if q.Member.Kind == "agent" {
+		return old, placeAgentTx(tx, q.Member.ID)
+	}
+	var top string
+	if err := tx.QueryRow(repoTopAgentSQL, q.Member.ID).Scan(&top); err != nil && err != sql.ErrNoRows {
+		return old, err
+	}
+	if top == "" {
+		return old, nil
+	}
+	return old, placeAgentTx(tx, top)
 }
 
 // TeamHistory is owner-only through the operator relay. Retained snapshots

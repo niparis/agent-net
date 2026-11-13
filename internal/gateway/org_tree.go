@@ -10,17 +10,23 @@ import (
 
 // The org tree (decision 0160) is stored in the records the graph already
 // has: a reports_to edge in graph_edges, agents.lead_session and
-// sessions.started_by. This file holds its checks and its one-time build.
+// sessions.started_by. This file holds its checks, its one-time build and the
+// update each later write runs so the tree follows the old tables.
 
 // orgTreeBuiltKey is the owner_settings marker of the one-time build.
 const orgTreeBuiltKey = "org_tree_built"
 
-// repoTopAgentSQL is the Agent at the top of a Repo: its lead, else its owner.
-const repoTopAgentSQL = `SELECT COALESCE(CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE owner_agent_id END,'') FROM repos WHERE id=?`
+// repoTopAgentExpr is the Agent at the top of a Repo: its lead, else its
+// owner. Every reader and writer of the tree uses this one rule.
+const repoTopAgentExpr = `COALESCE(CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE repos.owner_agent_id END,'')`
 
-// checkReportsTo holds the three rules of the tree: one parent per Agent, no
-// cycle, and a merger is never a lead. The parent is a live Agent or the root.
-func checkReportsTo(tx *sql.Tx, from, to string) error {
+// repoTopAgentSQL is repoTopAgentExpr for one Repo ID.
+const repoTopAgentSQL = `SELECT ` + repoTopAgentExpr + ` FROM repos WHERE id=?`
+
+// checkReportsToTarget holds the endpoint rules of the tree: the source is a
+// live Agent, and the target is a live Agent that is not a merger, or the
+// root. It does not look at the source's current parent, so a move can use it.
+func checkReportsToTarget(tx *sql.Tx, from, to string) error {
 	var live bool
 	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0)`, from).Scan(&live); err != nil {
 		return err
@@ -40,14 +46,6 @@ func checkReportsTo(tx *sql.Tx, from, to string) error {
 			return reject("a merger is never a lead: nothing reports to %s", to)
 		}
 	}
-	var parent string
-	err := tx.QueryRow(`SELECT target FROM graph_edges WHERE source=? AND kind='reports_to' AND target<>?`, from, to).Scan(&parent)
-	if err == nil {
-		return reject("%s already reports to %s; remove that edge first", from, parent)
-	}
-	if err != sql.ErrNoRows {
-		return err
-	}
 	var cycle bool
 	if err := tx.QueryRow(`WITH RECURSIVE up(id) AS (SELECT ? UNION SELECT e.target FROM graph_edges e JOIN up ON e.source=up.id WHERE e.kind='reports_to')
 		SELECT EXISTS(SELECT 1 FROM up WHERE id=?)`, to, from).Scan(&cycle); err != nil {
@@ -59,42 +57,268 @@ func checkReportsTo(tx *sql.Tx, from, to string) error {
 	return nil
 }
 
-// addReportsToTx adds a parent where the tree has room for it. An Agent that
-// already has a parent keeps it, and an edge the rules refuse is skipped: the
-// build and a merger start fill gaps, they never move an Agent.
-func addReportsToTx(tx *sql.Tx, from, to, actor string, now int64) error {
-	if from == "" || to == "" || from == to {
+// checkReportsTo holds the three rules of the tree: one parent per Agent, no
+// cycle, and a merger is never a lead. The parent is a live Agent or the root.
+func checkReportsTo(tx *sql.Tx, from, to string) error {
+	if err := checkReportsToTarget(tx, from, to); err != nil {
+		return err
+	}
+	var parent string
+	err := tx.QueryRow(`SELECT target FROM graph_edges WHERE source=? AND kind='reports_to' AND target<>?`, from, to).Scan(&parent)
+	if err == nil {
+		return reject("%s already reports to %s; remove that edge first", from, parent)
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+	return nil
+}
+
+// agentParentTx is the parent the old tables imply for one Agent. The order is
+// the priority: a merger under its Repo's top Agent, the roots, Team members,
+// the top Agent of a Team's member Repo, Team leads, then an Agent that works
+// in a Repo whose top Agent it is not. An Agent with no rule has no parent.
+func agentParentTx(tx *sql.Tx, agent string) (string, error) {
+	var role string
+	if err := tx.QueryRow(`SELECT role FROM agents WHERE id=? AND tombstone=0`, agent).Scan(&role); err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	if role == "merger" {
+		var repo string
+		err := tx.QueryRow(`SELECT pm.project FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE s.agent_id=? ORDER BY pm.project LIMIT 1`, agent).Scan(&repo)
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		var top string
+		err = tx.QueryRow(repoTopAgentSQL, repo).Scan(&top)
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return top, err
+	}
+	if agent == "cto" {
+		return protocol.OrgRoot, nil
+	}
+	var chief bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE agent_id=? AND id=(SELECT value FROM owner_settings WHERE key='chief_session'))`, agent).Scan(&chief); err != nil {
+		return "", err
+	}
+	if chief {
+		return protocol.OrgRoot, nil
+	}
+	var parent string
+	err := tx.QueryRow(`SELECT t.owner_agent_id FROM team_members tm JOIN teams t ON t.id=tm.team_id
+		WHERE tm.member_kind='agent' AND tm.member_id=? AND t.active=1 AND COALESCE(t.owner_agent_id,'')<>'' AND t.owner_agent_id<>?
+		ORDER BY t.id LIMIT 1`, agent, agent).Scan(&parent)
+	if err == nil {
+		return parent, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", err
+	}
+	err = tx.QueryRow(`SELECT t.owner_agent_id FROM repos JOIN team_members tm ON tm.member_kind='repo' AND tm.member_id=repos.id
+		JOIN teams t ON t.id=tm.team_id
+		WHERE t.active=1 AND COALESCE(t.owner_agent_id,'')<>'' AND t.owner_agent_id<>? AND `+repoTopAgentExpr+`=?
+		ORDER BY t.id, repos.id LIMIT 1`, agent, agent).Scan(&parent)
+	if err == nil {
+		return parent, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", err
+	}
+	var leads bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM teams WHERE active=1 AND owner_agent_id=?)`, agent).Scan(&leads); err != nil {
+		return "", err
+	}
+	if leads {
+		return "cto", nil
+	}
+	err = tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM sessions s JOIN repos ON repos.id=s.repo_id
+		WHERE s.agent_id=? AND s.worker='' AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id)
+		AND `+repoTopAgentExpr+`<>'' AND `+repoTopAgentExpr+`<>s.agent_id
+		ORDER BY `+repoTopAgentExpr+` LIMIT 1`, agent).Scan(&parent)
+	if err == nil {
+		return parent, nil
+	}
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return "", err
+}
+
+// placeAgentLeadSessionTx derives an Agent's lead session from the copies that
+// name one. A copy that went away clears it.
+func placeAgentLeadSessionTx(tx *sql.Tx, agent string) error {
+	var session sql.NullString
+	if err := tx.QueryRow(`SELECT COALESCE(
+		(SELECT lead_session FROM repo_leads WHERE agent_id=? AND lead_session IS NOT NULL ORDER BY repo_id LIMIT 1),
+		(SELECT lead_session FROM teams WHERE owner_agent_id=? AND lead_session IS NOT NULL ORDER BY id LIMIT 1))`, agent, agent).Scan(&session); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, session, agent)
+	return err
+}
+
+// removeReportsToTx deletes an Agent's parent. The tree is derived, so the
+// move leaves no graph history row of its own; the old-table write that caused
+// it carries the history.
+func removeReportsToTx(tx *sql.Tx, from, to string) error {
+	if to == "" {
 		return nil
 	}
-	if err := checkReportsTo(tx, from, to); err != nil {
+	_, err := tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, from, to, protocol.EdgeReportsTo)
+	return err
+}
+
+// placeAgentTx makes one Agent's parent and lead session match the old tables.
+// A parent the rules refuse is left as it is; an Agent with no parent loses its
+// edge. The build and every later write use this one function.
+func placeAgentTx(tx *sql.Tx, agent string) error {
+	if agent == "" {
+		return nil
+	}
+	var current string
+	if err := tx.QueryRow(`SELECT target FROM graph_edges WHERE source=? AND kind='reports_to'`, agent).Scan(&current); err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err := placeAgentLeadSessionTx(tx, agent); err != nil {
+		return err
+	}
+	want, err := agentParentTx(tx, agent)
+	if err != nil {
+		return err
+	}
+	if want == agent {
+		want = ""
+	}
+	if want == current {
+		return nil
+	}
+	if want == "" {
+		return removeReportsToTx(tx, agent, current)
+	}
+	if err := checkReportsToTarget(tx, agent, want); err != nil {
 		var refused Rejection
 		if errors.As(err, &refused) {
 			return nil
 		}
 		return err
 	}
-	return storeEdgeTx(tx, protocol.Edge{From: from, To: to, Kind: protocol.EdgeReportsTo, Rule: "normal"}, actor, now)
+	if current != "" {
+		if err := removeReportsToTx(tx, agent, current); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?,?,?,'','normal')
+		ON CONFLICT(source,target,kind) DO UPDATE SET mode='',rule='normal'`, agent, want, protocol.EdgeReportsTo)
+	return err
+}
+
+// placeRepoAgentsTx moves the tree for one Repo after its lead or owner
+// changed: its top Agent and every Agent that works in it.
+func placeRepoAgentsTx(tx *sql.Tx, repo string) error {
+	var top string
+	if err := tx.QueryRow(repoTopAgentSQL, repo).Scan(&top); err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	agents := []string{}
+	seen := map[string]bool{}
+	if top != "" {
+		agents = append(agents, top)
+		seen[top] = true
+	}
+	rows, err := tx.Query(`SELECT DISTINCT s.agent_id FROM sessions s WHERE s.repo_id=? AND s.agent_id IS NOT NULL AND s.agent_id<>'' AND s.worker='' AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id) ORDER BY s.agent_id`, repo)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var agent string
+		if err = rows.Scan(&agent); err != nil {
+			rows.Close()
+			return err
+		}
+		if !seen[agent] {
+			agents = append(agents, agent)
+			seen[agent] = true
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if err := placeAgentTx(tx, agent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// placeTeamMembersTx moves the tree for one Team after its lead changed: each
+// Agent member and the top Agent of each member Repo.
+func placeTeamMembersTx(tx *sql.Tx, team string) error {
+	rows, err := tx.Query(`SELECT member_kind,member_id FROM team_members WHERE team_id=? ORDER BY member_kind,member_id`, team)
+	if err != nil {
+		return err
+	}
+	var agents []string
+	for rows.Next() {
+		var kind, id string
+		if err = rows.Scan(&kind, &id); err != nil {
+			rows.Close()
+			return err
+		}
+		if kind == "agent" {
+			agents = append(agents, id)
+			continue
+		}
+		var top string
+		err = tx.QueryRow(repoTopAgentSQL, id).Scan(&top)
+		if err != nil && err != sql.ErrNoRows {
+			rows.Close()
+			return err
+		}
+		if top != "" {
+			agents = append(agents, top)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if err := placeAgentTx(tx, agent); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // bindMergerAgentTx gives a project's merger session its own Agent, role
 // merger, under the Repo's top Agent. Its ID has no space, as Agent IDs are
 // used in scope refs and command arguments; the name keeps the session's. The merger then never runs as the
 // Repo's Agent, so it is never taken for the Repo lead.
-func bindMergerAgentTx(tx *sql.Tx, project, session, actor string, now int64) error {
+func bindMergerAgentTx(tx *sql.Tx, project, session string, now int64) error {
 	agent := project + "-merger"
 	if _, err := tx.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(?,?,'merger',?,?,0)
 		ON CONFLICT(id) DO UPDATE SET role='merger',tombstone=0,updated_at=excluded.updated_at`, agent, project+" merger", now, now); err != nil {
 		return err
 	}
-	var top string
-	if err := tx.QueryRow(repoTopAgentSQL, project).Scan(&top); err != nil && err != sql.ErrNoRows {
+	if _, err := tx.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, agent, session); err != nil {
 		return err
 	}
-	if err := addReportsToTx(tx, agent, top, actor, now); err != nil {
-		return err
-	}
-	_, err := tx.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, agent, session)
-	return err
+	return placeAgentTx(tx, agent)
 }
 
 // setAgentLeadSessionTx stores an Agent's lead session. The Team and Repo
@@ -165,48 +389,9 @@ func buildOrgTreeOnceTx(tx *sql.Tx, now int64) error {
 	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM owner_settings WHERE key=?)`, orgTreeBuiltKey).Scan(&built); err != nil || built {
 		return err
 	}
-	// The order is the priority: the roots first, then Team members to their
-	// lead, then leads with no Team above them to the CTO, then Agents that
-	// work in a Repo outside any Team to its owner. An Agent keeps the first
-	// parent it gets.
-	pairs := []string{
-		`SELECT 'cto', '` + protocol.OrgRoot + `'`,
-		`SELECT agent_id, '` + protocol.OrgRoot + `' FROM sessions WHERE id=(SELECT value FROM owner_settings WHERE key='chief_session') AND agent_id IS NOT NULL`,
-		`SELECT tm.member_id, t.owner_agent_id FROM team_members tm JOIN teams t ON t.id=tm.team_id
-			WHERE t.active=1 AND tm.member_kind='agent' AND t.owner_agent_id IS NOT NULL ORDER BY t.id, tm.member_id`,
-		`SELECT COALESCE(CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=r.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=r.id) ELSE r.owner_agent_id END,''), t.owner_agent_id
-			FROM team_members tm JOIN teams t ON t.id=tm.team_id JOIN repos r ON r.id=tm.member_id
-			WHERE t.active=1 AND tm.member_kind='repo' AND t.owner_agent_id IS NOT NULL ORDER BY t.id, tm.member_id`,
-		`SELECT DISTINCT owner_agent_id, 'cto' FROM teams WHERE active=1 AND owner_agent_id IS NOT NULL ORDER BY owner_agent_id`,
-		`SELECT DISTINCT s.agent_id, r.owner_agent_id FROM sessions s JOIN repos r ON r.id=s.repo_id
-			WHERE s.agent_id IS NOT NULL AND r.owner_agent_id IS NOT NULL AND s.agent_id<>r.owner_agent_id AND s.worker=''
-			AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id) ORDER BY s.agent_id, r.owner_agent_id`,
-	}
-	for _, query := range pairs {
-		rows, err := tx.Query(query)
-		if err != nil {
-			return err
-		}
-		var edges [][2]string
-		for rows.Next() {
-			var from, to sql.NullString
-			if err := rows.Scan(&from, &to); err != nil {
-				rows.Close()
-				return err
-			}
-			edges = append(edges, [2]string{from.String, to.String})
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return err
-		}
-		for _, e := range edges {
-			if err := addReportsToTx(tx, e[0], e[1], protocol.StartedByAgentNet, now); err != nil {
-				return err
-			}
-		}
-	}
+	// Each merger row gets its Agent first, so the Agent loop finds it. The
+	// Agent loop then uses the same rule as every later write: the old tables
+	// decide one Agent's parent and lead session.
 	rows, err := tx.Query(`SELECT project, session_id FROM project_mergers ORDER BY project, node_id`)
 	if err != nil {
 		return err
@@ -226,23 +411,38 @@ func buildOrgTreeOnceTx(tx *sql.Tx, now int64) error {
 		return err
 	}
 	for _, m := range mergers {
-		if err := bindMergerAgentTx(tx, m[0], m[1], protocol.StartedByAgentNet, now); err != nil {
+		if err := bindMergerAgentTx(tx, m[0], m[1], now); err != nil {
 			return err
 		}
 	}
-	for _, q := range []string{
-		`UPDATE agents SET lead_session=COALESCE(
-			(SELECT lead_session FROM repo_leads WHERE agent_id=agents.id AND lead_session IS NOT NULL ORDER BY repo_id LIMIT 1),
-			(SELECT lead_session FROM teams WHERE owner_agent_id=agents.id AND lead_session IS NOT NULL ORDER BY id LIMIT 1))
-			WHERE lead_session IS NULL`,
-		`UPDATE sessions SET started_by='` + protocol.StartedByAgentNet + `' WHERE worker<>'' OR harness='cto'
-			OR id=(SELECT value FROM owner_settings WHERE key='cto_session')
-			OR id IN (SELECT session_id FROM project_mergers)
-			OR EXISTS(SELECT 1 FROM session_agent_starts a WHERE a.node_id=sessions.node_id AND a.harness=sessions.harness AND a.native_id=sessions.native_id)`,
-	} {
-		if _, err := tx.Exec(q); err != nil {
+	rows, err = tx.Query(`SELECT id FROM agents WHERE tombstone=0 ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	var agents []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
 			return err
 		}
+		agents = append(agents, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if err := placeAgentTx(tx, agent); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`UPDATE sessions SET started_by='` + protocol.StartedByAgentNet + `' WHERE worker<>'' OR harness='cto'
+		OR id=(SELECT value FROM owner_settings WHERE key='cto_session')
+		OR id IN (SELECT session_id FROM project_mergers)
+		OR EXISTS(SELECT 1 FROM session_agent_starts a WHERE a.node_id=sessions.node_id AND a.harness=sessions.harness AND a.native_id=sessions.native_id)`); err != nil {
+		return err
 	}
 	_, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,'1',?)`, orgTreeBuiltKey, now)
 	return err

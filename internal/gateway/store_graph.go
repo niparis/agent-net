@@ -178,8 +178,33 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	if err != nil {
 		return err
 	}
+	// The delete trigger clears this Agent's Repo ownership. Keep the Repos it
+	// owned, so their Agents follow the new owner rule.
+	repoRows, err := tx.Query(`SELECT id FROM repos WHERE owner_agent_id=? ORDER BY id`, name)
+	if err != nil {
+		return err
+	}
+	var ownedRepos []string
+	for repoRows.Next() {
+		var repo string
+		if err = repoRows.Scan(&repo); err != nil {
+			repoRows.Close()
+			return err
+		}
+		ownedRepos = append(ownedRepos, repo)
+	}
+	err = repoRows.Err()
+	repoRows.Close()
+	if err != nil {
+		return err
+	}
 	if _, err = tx.Exec(`DELETE FROM graph_nodes WHERE name=?`, name); err != nil {
 		return err
+	}
+	for _, repo := range ownedRepos {
+		if err = placeRepoAgentsTx(tx, repo); err != nil {
+			return err
+		}
 	}
 	if err = graphRecord(tx, "node", name, "", "architect", "", actor, s.now().UnixNano()); err != nil {
 		return err
@@ -724,6 +749,22 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		}
 		if targetKind == "team" {
 			if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES('lead',?,'','','',?,?,?,?)`, node, value, old, now, actor); err != nil {
+				return err
+			}
+		}
+		// The undo is a lead write too: the tree follows it.
+		switch targetKind {
+		case "repo":
+			if err = placeRepoAgentsTx(tx, node); err != nil {
+				return err
+			}
+		case "team":
+			for _, agent := range []string{current.String, old} {
+				if err = placeAgentTx(tx, agent); err != nil {
+					return err
+				}
+			}
+			if err = placeTeamMembersTx(tx, node); err != nil {
 				return err
 			}
 		}
