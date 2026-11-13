@@ -56,8 +56,14 @@ func TestResolverAgentCharterAndWorker(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.agentText() != "" {
-			t.Fatalf("%s: %q", harness, c.agentText())
+		// The CTO reads only its own default charter (decision 0159), never
+		// the repo's agent; the owner reads none.
+		want := ""
+		if harness == "cto" {
+			want = ctoDefaultCharter[0].attr + ": " + ctoDefaultCharter[0].value
+		}
+		if text := c.agentText(); strings.Contains(text, "Agent goal") || (want == "") != (text == "") || !strings.Contains(text, want) {
+			t.Fatalf("%s: %q", harness, text)
 		}
 	}
 }
