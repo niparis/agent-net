@@ -78,7 +78,7 @@ func (d *Daemon) viewPlan(key, name string, host bool, plan protocol.EnterPlan) 
 // serializes the lookup and creation so concurrent calls cannot create
 // duplicate tabs. When herdr is unavailable the original plan remains the
 // fallback.
-func (d *Daemon) openInHerdr(key, name string, plan protocol.EnterPlan) protocol.EnterPlan {
+func (d *Daemon) openInHerdr(key, name string, plan protocol.EnterPlan) (opened protocol.EnterPlan) {
 	bin, lookupErr := d.lookupHerdrBinary()
 	if lookupErr != nil {
 		plan.Note = strings.TrimSpace(plan.Note + " " + lookupErr.Error())
@@ -90,7 +90,12 @@ func (d *Daemon) openInHerdr(key, name string, plan protocol.EnterPlan) protocol
 	plan = claudePlanEnv(plan)
 	d.herdrOpenMu.Lock()
 	defer d.herdrOpenMu.Unlock()
+	// A server that runs without agent-net's config is moved under it here,
+	// before the owner attaches (herdr_handoff.go).
+	sidebarNote := ""
+	defer func() { opened.Note = strings.TrimSpace(sidebarNote + " " + opened.Note) }()
 	if old, ok := d.herdrOpened[key]; key != "" && ok {
+		sidebarNote = d.adoptAgentNetHerdr(old.bin, old.socket)
 		if panes, err := d.herdrPanes(old.bin, old.socket); err == nil {
 			for _, pane := range panes {
 				if pane.PaneID == old.pane {
@@ -111,6 +116,9 @@ func (d *Daemon) openInHerdr(key, name string, plan protocol.EnterPlan) protocol
 	if err != nil {
 		plan.Note = strings.TrimSpace(plan.Note + " " + fmt.Sprintf("herdr at %s failed: %v", bin, err))
 		return plan
+	}
+	if sidebarNote == "" {
+		sidebarNote = d.adoptAgentNetHerdr(bin, socket)
 	}
 	// The memory above is empty after a daemon restart. Herdr still shows the
 	// tab, so ask it before creating a second one.

@@ -74,8 +74,28 @@ func TestHerdrRulesProofScenario(t *testing.T) {
 		}
 		writeHerdrProof(t, size.w, size.h, "pi-start", "start a Pi session from the new-session form, with a first message",
 			"the notice names agent-net's herdr; nothing opens in the owner's herdr", frame)
+
+		// Step 4: agent-net's herdr server still runs without agent-net's
+		// config and a herdr window is attached, so the daemon cannot move it
+		// yet. The notice says so once, in one line, with the key.
+		m, src = inOwnerHerdr()
+		src.sessionStart = startedSession("tenebrae", "pi")
+		src.sessionStart.EnterPlan = &protocol.EnterPlan{OpenedHerdr: true, HerdrPane: "w1:p1", HerdrSession: "agent-net", Note: sidebarWaitNote + " Started tenebrae in agent-net's herdr. Enter opens it."}
+		m, _ = press(m, sessionKey())
+		m = typeText(m, "Inspect it")
+		m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		m, _ = press2(m, cmd())
+		frame = ansi.Strip(m.testView())
+		if !strings.Contains(frame, "Press prefix+b to hide the herdr sidebar.") {
+			t.Fatalf("%dx%d: notice %q:\n%s", size.w, size.h, m.notice.text, frame)
+		}
+		writeHerdrProof(t, size.w, size.h, "sidebar-note", "start a Pi session while agent-net's herdr server runs without agent-net's config and a herdr window is attached",
+			"the notice starts with the key that hides the sidebar now, then says when it goes away for good", frame)
 	}
 }
+
+// sidebarWaitNote is the daemon's herdrSidebarWaitNote with the default key.
+const sidebarWaitNote = "Press prefix+b to hide the herdr sidebar. It goes away for good at the next open with no herdr window attached."
 
 func writeHerdrProof(t *testing.T, w, h int, step, action, expected, frame string) {
 	t.Helper()

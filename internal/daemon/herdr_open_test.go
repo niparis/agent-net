@@ -27,7 +27,17 @@ func fakeOpenHerdr(t *testing.T) (string, string) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	cleanupHerdrEnvironment(t, log)
-	own := fakeOwnHerdrSocket(log)
+	// A socket path must stay short (104 bytes on macOS), so the agent-net
+	// session's folder is not under the test's long temporary folder.
+	short, err := os.MkdirTemp("", "hs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(short) })
+	own := filepath.Join(short, "sessions", "agent-net", "herdr.sock")
+	if err := os.WriteFile(filepath.Join(dir, "own-socket"), []byte(own), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	running := filepath.Join(dir, "own-running")
 	created := filepath.Join(dir, "created")
 	defaults := filepath.Join(dir, "default-config")
@@ -47,6 +57,7 @@ case "$1 $2" in
   "workspace list") if [ -f ` + shellQuote(created) + ` ]; then printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1"}]}}'; else printf '%s\n' '{"result":{"workspaces":[]}}'; fi ;;
   "tab create"|"workspace create") : > ` + shellQuote(created) + `; printf '%s\n' '{"result":{"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1","terminal_id":"term_1"}}}' ;;
   "pane run"|"pane rename"|"agent focus"|"tab focus"|"pane close") printf '%s\n' '{"result":{}}' ;;
+  "server --handoff-import") ;;
   *) exit 1 ;;
 esac
 `
@@ -69,7 +80,8 @@ func fakeHerdrEnvLog(log string) string {
 
 // fakeOwnHerdrSocket is the socket of the fake's "agent-net" session.
 func fakeOwnHerdrSocket(log string) string {
-	return filepath.Join(filepath.Dir(log), "herdr", "sessions", "agent-net", "herdr.sock")
+	raw, _ := os.ReadFile(filepath.Join(filepath.Dir(log), "own-socket"))
+	return string(raw)
 }
 
 // herdrCalls splits the fake's log into the socket and the command of each call.

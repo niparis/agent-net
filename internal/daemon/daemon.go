@@ -403,6 +403,8 @@ type Daemon struct {
 	herdrOpened      map[string]herdrOpenedPane
 	herdrOwnMu       sync.Mutex
 	herdrOwnSocket   string // agent-net's herdr server, once herdr named it
+	herdrOwnConfPID  int    // the server process known to run with agent-net's config
+	herdrOwnNotePID  int    // the server process the owner was told about
 	signIn           signInState
 	cto              ctoRuntime
 	claudeCTO        claudeCTOState
