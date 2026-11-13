@@ -101,4 +101,5 @@ func TestLivePickerPricesTasksFromStoredNoticeTokens(t *testing.T) {
 	if got := protocol.PickerModelKey(choice.Harness, choice.Model); got != cheapest.Key {
 		t.Fatalf("picked %s, want the lowest expected cost %s (%+v): %s", got, cheapest.Key, cheapest, choice.PickNote)
 	}
+	t.Logf("pick note: %s", choice.PickNote)
 }
