@@ -16,14 +16,15 @@ func TestAgentCharterMigrationReopen(t *testing.T) {
 		if err := s.db.QueryRow(`SELECT count(*) FROM agent_charter`).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
-		if count != 0 {
-			t.Fatalf("agent charter starts nonempty: %d", count)
+		// Only the CTO's default charter is there, seeded once (decision 0159).
+		if count != len(ctoDefaultCharter) {
+			t.Fatalf("agent charter starts with %d rows, want the %d CTO defaults", count, len(ctoDefaultCharter))
 		}
 		if err := s.db.QueryRow(`SELECT count(*) FROM agent_charter_history`).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
-		if count != 0 {
-			t.Fatalf("agent charter history starts nonempty: %d", count)
+		if count != len(ctoDefaultCharter) {
+			t.Fatalf("agent charter history starts with %d rows, want the %d CTO defaults", count, len(ctoDefaultCharter))
 		}
 		if err := s.Close(); err != nil {
 			t.Fatal(err)
