@@ -670,14 +670,20 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if owner == "" {
 			return nil, true, errors.New("owner session not registered")
 		}
+		// The gateway records the CTO as the actor of its own answer.
+		actor := ""
+		if lc.cto || proposalActor(ctx) == "cto" {
+			actor = "cto"
+		}
 		frame := struct {
 			Owner     string `json:"owner"`
 			ID        int64  `json:"suggestion_id"`
 			Node      string `json:"node"`
 			Action    string `json:"action"`
+			Actor     string `json:"actor,omitempty"`
 			IfVersion uint64 `json:"if_version,omitempty"`
 			Lite      bool   `json:"lite,omitempty"`
-		}{owner, p.ID, p.Node, p.Action, p.IfVersion, p.Lite}
+		}{owner, p.ID, p.Node, p.Action, actor, p.IfVersion, p.Lite}
 		res, err = d.call(ctx, strings.Replace(method, "_", ".", 1), frame)
 	case "inbox_answer":
 		var p struct {

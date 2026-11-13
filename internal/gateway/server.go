@@ -2837,12 +2837,39 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.Signals()
 
+	case "charter.drafts":
+		// The CTO reads the pending charter drafts, or one draft by id.
+		var p struct {
+			Owner string `json:"owner"`
+			// Not "id": the link envelope carries its own request id there.
+			Draft int64 `json:"draft,omitempty"`
+		}
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		if p.Draft != 0 {
+			d, err := st.CharterDraftByID(p.Draft)
+			if err != nil {
+				return nil, err
+			}
+			return maskCharterDraft(d), nil
+		}
+		drafts, err := st.PendingCharterDrafts()
+		if err != nil {
+			return nil, err
+		}
+		for i := range drafts {
+			drafts[i] = maskCharterDraft(drafts[i])
+		}
+		return drafts, nil
+
 	case "learned.list", "learned.answer", "learned.view":
 		var p struct {
 			Owner  string `json:"owner"`
 			ID     int64  `json:"suggestion_id"`
 			Node   string `json:"node"`
 			Action string `json:"action"`
+			Actor  string `json:"actor,omitempty"`
 			Lite   bool   `json:"lite,omitempty"`
 		}
 		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
@@ -2859,12 +2886,25 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			}
 			return rows, nil
 		case "learned.answer":
-			if err := st.DecideLearned(p.ID, p.Action); err != nil {
-				return map[string]bool{"ok": true}, err
+			actor := "owner"
+			if p.Actor == "cto" {
+				actor = "cto"
+			}
+			var row any = map[string]bool{"ok": true}
+			if p.ID < 0 {
+				// A charter draft answers with its stored row, and the history
+				// entry of an accept, so the caller can undo it.
+				d, err := st.DecideCharterDraftRow(-p.ID, p.Action, actor)
+				if err != nil {
+					return row, err
+				}
+				row = maskCharterDraft(d)
+			} else if err := st.decideLearned(p.ID, p.Action, actor); err != nil {
+				return row, err
 			}
 			err := st.reconcileLearnedAsks()
 			g.flushLeadRequests(ctx)
-			return map[string]bool{"ok": true}, err
+			return row, err
 		default:
 			return map[string]bool{"ok": true}, st.MarkLearnedViewed(p.Node, p.ID)
 		}

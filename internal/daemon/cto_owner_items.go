@@ -51,6 +51,18 @@ func ctoOwnerKindFilter(kind string) (string, error) {
 // proposals as the flat rows of cto_proposals_find.
 func (d *Daemon) ctoOwnerItemRows(ctx context.Context, kind string) ([]map[string]any, error) {
 	rows := make([]map[string]any, 0)
+	if kind == protocol.AskKindDraft {
+		// The drafts themselves, with each one's text, besides the asks that
+		// wait for the owner: an ask the chief sent on holds no owner row, and
+		// the CTO decides a field at a time.
+		drafts, err := d.ctoCharterDrafts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, draft := range drafts {
+			rows = append(rows, ctoCharterDraftRow(draft))
+		}
+	}
 	if kind != protocol.AskKindProposal {
 		value, err := d.call(ctx, "asks.list", struct{}{})
 		if err != nil {
@@ -271,4 +283,61 @@ func ctoOwnerProposalRow(item proposal) map[string]any {
 		"options": []string{"approve", "decline"},
 		"answer":  ctoOwnerCall("proposal_ask", map[string]any{"id": item.ID}),
 	}
+}
+
+// ctoCharterDraftPrefix starts the id of a charter draft row. A draft is
+// also found by its plain number, as the chief names it.
+const ctoCharterDraftPrefix = "cd_"
+
+// ctoCharterDraftID reads a draft number from cd_<n> or <n>.
+func ctoCharterDraftID(id string) (int64, bool) {
+	n, err := strconv.ParseInt(strings.TrimPrefix(strings.TrimSpace(id), ctoCharterDraftPrefix), 10, 64)
+	return n, err == nil && n > 0
+}
+
+// ctoCharterDrafts lists the pending charter drafts, oldest first.
+func (d *Daemon) ctoCharterDrafts(ctx context.Context) ([]protocol.CharterDraft, error) {
+	value, err := d.call(ctx, "charter.drafts", map[string]any{"owner": d.ownerSessionID()})
+	if err != nil {
+		return nil, err
+	}
+	var out []protocol.CharterDraft
+	return out, ctoDecode(value, &out)
+}
+
+// ctoCharterDraft reads one draft in any status.
+func (d *Daemon) ctoCharterDraft(ctx context.Context, id int64) (map[string]any, error) {
+	value, err := d.call(ctx, "charter.drafts", map[string]any{"owner": d.ownerSessionID(), "draft": id})
+	if err != nil {
+		return nil, err
+	}
+	var draft protocol.CharterDraft
+	if err := ctoDecode(value, &draft); err != nil {
+		return nil, err
+	}
+	return ctoCharterDraftRow(draft), nil
+}
+
+// ctoCharterDraftRow is one draft as a cto_proposals_find row. A pending draft
+// names the call that applies it; the reject call is the same with action
+// reject.
+func ctoCharterDraftRow(draft protocol.CharterDraft) map[string]any {
+	row := map[string]any{
+		"id": ctoCharterDraftPrefix + strconv.FormatInt(draft.ID, 10), "kind": protocol.AskKindDraft, "tool": "cto_op", "action": protocol.OpLearnedAnswer,
+		"status": draft.Status, "level": draft.Level, "scope": draft.Scope, "attr": draft.Attr, "value": draft.Value,
+		"source": draft.Source, "drafted_by": draft.DraftedBy, "from": draft.DraftedBy,
+		"created": ctoCatalogTime(time.Unix(0, draft.CreatedAt)), "options": []string{"accept", "reject"},
+		"summary": ctoCut("Charter draft: "+draft.Level+" "+draft.Scope+" "+draft.Attr+" = "+draft.Value, 200),
+	}
+	if draft.Name != "" {
+		row["name"] = draft.Name
+	}
+	if draft.DecidedBy != "" {
+		row["decided_by"] = draft.DecidedBy
+	}
+	if draft.Status == "pending" {
+		row["answer"] = ctoOwnerCall("cto_op", map[string]any{"method": protocol.OpLearnedAnswer, "args": map[string]any{"suggestion_id": -draft.ID, "action": "accept"}})
+		row["note"] = "accept writes the value with the charter write and can be undone with graph_change action undo on the history_id it returns; reject writes nothing."
+	}
+	return row
 }

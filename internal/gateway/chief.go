@@ -863,6 +863,9 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 		body := fmt.Sprintf("The chief of staff sent you ask %s from %s: %s\nWhy it reached you: %s\nAnswer it yourself only if you can, and close it with agent_ask_sort (result close) once it is resolved. Anything that needs the owner goes to them with agent_owner_ask.",
 			q.Ask, sessionLabel(tx, a.session), strings.TrimSpace(a.text), reason)
+		// The receiver cannot read the ask itself, so a charter draft or a
+		// learned suggestion carries its proposal in the message.
+		body += askProposalText(tx, q.Ask, a.kind)
 		m, err := s.storeAgentNetMessage(tx, q.To, body, q.Ask, now)
 		if err != nil {
 			return out, none, err
@@ -1343,6 +1346,12 @@ func nextName(q interface{ QueryRow(string, ...any) *sql.Row }, next string) str
 // askFullCharter returns the proposed fields of a draft-charter ask. It reads
 // the drafts themselves, so each value is exact and not cut by a detail line.
 func (s *Store) askFullCharter(ref string) ([]protocol.CharterDraftField, error) {
+	return askCharterFields(s.db, ref)
+}
+
+// askCharterFields is askFullCharter on any reader, so a sort reads it inside
+// its own transaction.
+func askCharterFields(q askDB, ref string) ([]protocol.CharterDraftField, error) {
 	const columns = `SELECT id,level,scope,attr,value,source,status,drafted_by,created_at FROM charter_drafts`
 	var rows *sql.Rows
 	var err error
@@ -1352,7 +1361,7 @@ func (s *Store) askFullCharter(ref string) ([]protocol.CharterDraftField, error)
 		if parseErr != nil {
 			return nil, nil
 		}
-		rows, err = s.db.Query(columns+` WHERE id=?`, id)
+		rows, err = q.Query(columns+` WHERE id=?`, id)
 	case strings.HasPrefix(ref, draftGroupRefPrefix):
 		key := strings.TrimPrefix(ref, draftGroupRefPrefix)
 		level, scope, ok := strings.Cut(key, ":")
@@ -1363,11 +1372,11 @@ func (s *Store) askFullCharter(ref string) ([]protocol.CharterDraftField, error)
 		if level == "team" {
 			cond = `level='team'`
 		}
-		out, err := s.charterRows(columns+` WHERE scope=? AND `+cond+` AND status='pending' ORDER BY id`, scope)
+		out, err := charterRows(q, columns+` WHERE scope=? AND `+cond+` AND status='pending' ORDER BY id`, scope)
 		if err != nil || len(out) > 0 {
 			return out, err
 		}
-		return s.charterRows(columns+` WHERE scope=? AND `+cond+` ORDER BY id`, scope)
+		return charterRows(q, columns+` WHERE scope=? AND `+cond+` ORDER BY id`, scope)
 	default:
 		return nil, nil
 	}
@@ -1390,8 +1399,8 @@ func (s *Store) askFullCharter(ref string) ([]protocol.CharterDraftField, error)
 }
 
 // charterRows reads charter draft fields with a query of the same shape.
-func (s *Store) charterRows(query, scope string) ([]protocol.CharterDraftField, error) {
-	rows, err := s.db.Query(query, scope)
+func charterRows(q askDB, query, scope string) ([]protocol.CharterDraftField, error) {
+	rows, err := q.Query(query, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -1526,4 +1535,45 @@ func (s *Store) ChiefSorts(since time.Time) ([]protocol.ChiefSort, error) {
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// askProposalText is what a message about a charter draft or a learned ask
+// adds to its body: each proposed field with its id, level, scope, attribute
+// and value, and the calls that read and decide it. It is empty for other asks.
+func askProposalText(q askDB, ask, kind string) string {
+	var ref, detail string
+	if err := q.QueryRow(`SELECT source_ref,detail FROM inbox_items WHERE id=?`, ask).Scan(&ref, &detail); err != nil {
+		return ""
+	}
+	switch kind {
+	case protocol.AskKindDraft:
+		fields, err := askCharterFields(q, ref)
+		if err != nil || len(fields) == 0 {
+			return ""
+		}
+		var b strings.Builder
+		b.WriteString("\nThe proposed fields:\n")
+		for _, f := range fields {
+			fmt.Fprintf(&b, "- draft %d, level %s, scope %s, %s = %s (%s)\n", f.ID, f.Level, f.Scope, f.Attr, draftValueLine(redact.SecretValues(f.Value)), f.Status)
+		}
+		b.WriteString("Read one with cto_proposals_find (kind draft, id the draft number). Decide one with cto_op learned_answer (suggestion_id the negative draft number, action accept or reject).")
+		return b.String()
+	case protocol.AskKindLearned:
+		if d := strings.TrimSpace(redact.SecretValues(detail)); d != "" {
+			return "\n" + d
+		}
+	}
+	return ""
+}
+
+// maskCharterDraft masks a draft before it leaves the gateway: it can quote a
+// token in any text field.
+func maskCharterDraft(d protocol.CharterDraft) protocol.CharterDraft {
+	d.Scope = redact.SecretValues(d.Scope)
+	d.Name = redact.SecretValues(d.Name)
+	d.Attr = redact.SecretValues(d.Attr)
+	d.Value = redact.SecretValues(d.Value)
+	d.Source = redact.SecretValues(d.Source)
+	d.DraftedBy = redact.SecretValues(d.DraftedBy)
+	return d
 }
