@@ -15,6 +15,11 @@ func TestAgentsCarryScopesAndLeadSession(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, leads["demo"], "demo"); err != nil {
 		t.Fatal(err)
 	}
+	// The fixture makes "other" own a Repo, so its first session is pinned at
+	// creation. Clear that pin to read an Agent with none.
+	if _, err := s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id='other'`); err != nil {
+		t.Fatal(err)
+	}
 	// The read is cached until one of its tables changes, so a read before the
 	// scope is written must not hide the scope afterwards.
 	if _, err := s.Agents(protocol.QueryAgents{}); err != nil {

@@ -96,6 +96,9 @@ func (s *Store) setSessionAgent(node string, p protocol.SessionAgentSetRequest) 
 	if _, err = tx.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, p.Agent, p.SessionID); err != nil {
 		return err
 	}
+	if err = s.pinFirstLeadSessionQ(tx, p.SessionID); err != nil {
+		return err
+	}
 	if err = checkActiveSessionIdentity(tx, p.SessionID); err != nil {
 		return err
 	}

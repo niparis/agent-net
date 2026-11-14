@@ -113,5 +113,8 @@ func (s *Store) AutoArchiveSessions() ([]string, error) {
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
+	if err := s.repairArchivedLeadSessions(ids); err != nil {
+		return ids, err
+	}
 	return ids, nil
 }

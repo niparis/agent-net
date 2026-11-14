@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"sort"
 	"strings"
 	"time"
 
@@ -41,7 +40,6 @@ type placeIndex struct {
 	agentLead     map[string]string
 	agentParent   map[string]string
 	sessionLabel  map[string]string
-	liveByAgent   map[string][]string
 	ownedRepos    map[string][]string
 	sessionRepo   map[string]string
 }
@@ -61,7 +59,6 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 		agentLead:     map[string]string{},
 		agentParent:   map[string]string{},
 		sessionLabel:  map[string]string{},
-		liveByAgent:   map[string][]string{},
 		ownedRepos:    map[string][]string{},
 		sessionRepo:   map[string]string{},
 	}
@@ -169,12 +166,6 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 	if err != nil {
 		return nil, err
 	}
-	type liveSession struct {
-		id      string
-		limited int64
-		last    int64
-	}
-	live := map[string][]liveSession{}
 	for rows.Next() {
 		var id, agent, repo, worker, harness, label string
 		var online, limited, last int64
@@ -186,53 +177,25 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 		if agent != "" && repo != "" && idx.sessionRepo[agent] == "" {
 			idx.sessionRepo[agent] = repo
 		}
-		if online == 1 && worker == "" && harness != "owner" && harness != "cto" && agent != "" {
-			live[agent] = append(live[agent], liveSession{id: id, limited: limited, last: last})
-		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return nil, err
 	}
 	rows.Close()
-	for agent, list := range live {
-		sort.SliceStable(list, func(i, j int) bool {
-			il, jl := list[i].limited > now.Unix(), list[j].limited > now.Unix()
-			if il != jl {
-				return !il
-			}
-			if list[i].last != list[j].last {
-				return list[i].last > list[j].last
-			}
-			return list[i].id < list[j].id
-		})
-		ids := make([]string, 0, len(list))
-		for _, s := range list {
-			ids = append(ids, s.id)
-		}
-		idx.liveByAgent[agent] = ids
-	}
 	return idx, nil
 }
 
-// leadName mirrors leadNameQ: a live session of the agent, preferring the
-// pinned one, else the agent's display name, then the agent's project. It
+// leadName mirrors leadNameQ: the pinned session's label, else the agent's
+// display name, then the agent's project. A lead with no pin has no lead
+// session, so another live session of its Agent is never named as the lead. It
 // never returns an internal ID.
 func (idx *placeIndex) leadName(agent string) string {
 	if agent == "" {
 		return ""
 	}
-	if live := idx.liveByAgent[agent]; len(live) > 0 {
-		id := live[0]
-		if pinned := idx.agentLead[agent]; pinned != "" {
-			for _, candidate := range live {
-				if candidate == pinned {
-					id = pinned
-					break
-				}
-			}
-		}
-		if label := idx.sessionLabel[id]; label != "" {
+	if pinned := idx.agentLead[agent]; pinned != "" {
+		if label := idx.sessionLabel[pinned]; label != "" {
 			return label
 		}
 	}
