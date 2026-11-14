@@ -60,6 +60,27 @@ secs=$(sed -n 's/^test -count=1 -timeout \([0-9]*\)s \.\/internal\/fake$/\1/p' "
 [ "$secs" -ge 1400 ] && [ "$secs" -le 1500 ] || fail "go test -timeout ${secs}s is not within the check budget"
 [ "$status" = 0 ] || fail "a passing run exited $status"
 
+# The contract set runs for every diff, even one that matches no contract
+# file. These are the cheap tests the merge queue's gate keeps failing on when
+# a branch is behind: the migrations lock, the CTO schemas and the tool text.
+grep -Fq 'test -count=1 -run ^(TestMigrationsAreAppendOnly|TestMigrationsLockAcceptsAppendedMigration|TestDeliveryEvidenceIsAppendOnly)$' "$work/go.log" ||
+  fail "the contract set did not run the migrations lock tests: $(cat "$work/go.log")"
+grep -Fq 'test -count=1 -run ^(TestCTOSchemaBudgetAndCharterGuide)$' "$work/go.log" ||
+  fail "the contract set did not run the CTO schema budget test: $(cat "$work/go.log")"
+grep -Fq 'test -count=1 -run ^(TestDescriptions|TestOutputSchemasCoverProtocolTypes)$' "$work/go.log" ||
+  fail "the contract set did not run the tool catalog tests: $(cat "$work/go.log")"
+
+# --plan lists the contract set, so a worker can say what will run.
+run_plan() {
+  status=0
+  PATH="$work/bin:/usr/bin:/bin" FAKE_GO_LOG="$work/go.log" \
+    sh "$script" HEAD --plan >"$work/plan" 2>&1 || status=$?
+}
+run_plan
+[ "$status" = 0 ] || fail "--plan exited $status: $(cat "$work/plan")"
+grep -q '\[contract\].*TestMigrationsAreAppendOnly' "$work/plan" ||
+  fail "--plan does not list the contract set: $(cat "$work/plan")"
+
 # Arguments after -- go to go test after the script's own -timeout, so they win.
 run_check -- -timeout 5m
 grep -q '^test -count=1 -timeout [0-9]*s -timeout 5m \./internal/fake$' "$work/go.log" ||

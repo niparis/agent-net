@@ -37,7 +37,7 @@ func autoContinueEligibleWith(w *worker, snap settings.Snapshot, repo string) bo
 		_ = json.Unmarshal(e.Value, &maximum)
 	}
 	return autoContinueEnabledWith(snap, repo, &w.autoContinue) && w.autoContinueCount < maximum &&
-		!w.stopping && !w.checking && w.doneStatus == "" && w.sessionID != ""
+		!w.stopping && !w.handbackPending && w.doneStatus == "" && w.sessionID != ""
 }
 
 // tryAutoContinue sends the worker one automatic continue. It reports whether

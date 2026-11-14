@@ -24,6 +24,11 @@
 #              -> decode, strict, frame and wire tests of the wire packages
 #   (no rule)  -> go test for the changed package
 #
+# Every diff also runs the contract set: the migrations lock and append-only
+# tests, the CTO schema and read-size checks, and the tool catalog text. These
+# are small and cross-cutting, and they were the merger's most common pre-merge
+# failures when a branch fell behind the default branch.
+#
 # It also runs gofmt -l on the changed files and go vet on the changed packages,
 # and exits non-zero if a run or a check fails.
 
@@ -94,6 +99,14 @@ fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/agent-net-test-changed.XXXXXX") || fail "could not create a temporary directory"
 trap 'rm -rf "$work"' EXIT HUP INT TERM
+
+# contract_runs prints the small set every diff runs, whatever it touches.
+contract_runs() {
+  printf 'plain %s %s contract\n' "$module/internal/gateway" '^(TestMigrationsAreAppendOnly|TestMigrationsLockAcceptsAppendedMigration|TestDeliveryEvidenceIsAppendOnly)$'
+  printf 'plain %s %s contract\n' "$module/internal/mcpserver" '^(TestCTOSchemaBudgetAndCharterGuide)$'
+  printf 'plain %s %s contract\n' "$module/internal/daemon" '^(TestCTORegisteredReadSizes)$'
+  printf 'plain %s %s contract\n' "$module/internal/toolcatalog" '^(TestDescriptions|TestOutputSchemasCoverProtocolTypes)$'
+}
 
 # rule_of maps a changed path to the rule that knows what it needs.
 rule_of() {
@@ -192,6 +205,8 @@ printf '%s\n' "$changed" | while IFS= read -r path; do
   esac
   printf '%s\t%s\t%s\n' "$path" "$rule" "$pkg" >>"$work/files"
 done
+
+contract_runs >>"$work/runs"
 
 if [ -s "$work/files" ]; then
   printf 'test-changed: base %s, %s changed file(s)\n' "$(git rev-parse --short "$base")" "$(wc -l <"$work/files" | tr -d ' ')"

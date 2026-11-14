@@ -425,7 +425,7 @@ settings:
     default: true
     live: true
   - key: delivery.handback_check
-    description: One shell command line run in the worker's worktree at a complete hand-back after the commit; empty runs nothing.
+    description: Retired (decision 0164). The daemon no longer runs a hand-back check; the merge queue's CI is the single test gate. The value stays readable for old projects.
     kind: rule
     stricter: owner
     type: text
@@ -433,7 +433,7 @@ settings:
     default: ""
     live: true
   - key: delivery.handback_check_timeout
-    description: Wall-clock limit for the hand-back check command. It starts when the check gets the machine's test slot, not when it queues.
+    description: Retired (decision 0164) with delivery.handback_check. Kept so an old project value stays readable.
     kind: rule
     type: duration
     stricter: lower

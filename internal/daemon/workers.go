@@ -181,10 +181,10 @@ type worker struct {
 	sendsInFlight int
 	stopping      bool
 	handingBack   bool // from the hand-back notice until the worker has ended
-	// checking is true while the project's pre-hand-back check runs, and
-	// while a saved hand-back waits for the gateway (handback_replay.go). The
-	// hand-back ends the worker itself, so the tick must not race it.
-	checking bool
+	// handbackPending is true while a saved hand-back waits for the gateway
+	// (handback_replay.go). The hand-back ends the worker itself, so the tick
+	// must not race it with an end, a nudge or an idle notice.
+	handbackPending bool
 	// endedCh is closed when the worker starts to end (endWorker). Made on first use.
 	endedCh                           chan struct{}
 	turnActive                        bool
@@ -1645,9 +1645,9 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		age, idle, owner := now.Sub(w.startedAt), now.Sub(w.lastActive), w.owner
 		harness, native := w.harness, w.nativeID
 		sending := w.sendsInFlight > 0
-		// A hand-back may run the project's check for up to its timeout. Its
-		// own end follows the notice, so age and idleness must not race it.
-		checking := w.checking
+		// A saved hand-back may wait for the gateway. Its own end follows the
+		// notice, so age and idleness must not race it.
+		handbackPending := w.handbackPending
 		// A worker that is still starting is not idle. Until its first request
 		// is noted, it also gets the start timeout on top of the idle limit, so
 		// the task can arrive and a notice always has a request to answer.
@@ -1677,9 +1677,8 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		d.checkIdleNotice(ctx, w, now, set.IdleNotice, stats)
 		switch {
-		case checking:
-			// The hand-back sends its notice and ends the worker itself. The
-			// worker may have stopped already: its tool call returned.
+		case handbackPending:
+			// The saved hand-back sends its notice and ends the worker itself.
 		case d.gone(w) && !(harness == "agy" && agyTurnFinished(d, w)):
 			// The process may have ended after the failure check above. Ask
 			// again, so the harness's own error is not lost to the generic note.
@@ -1750,7 +1749,7 @@ func (d *Daemon) modelFailure(ctx context.Context, w *worker) (string, bool) {
 		return "", false
 	}
 	d.wmu.Lock()
-	skip := w.doneStatus != "" || w.stopping || w.sessionID == "" || w.checking
+	skip := w.doneStatus != "" || w.stopping || w.sessionID == "" || w.handbackPending
 	d.wmu.Unlock()
 	if skip {
 		return "", false
@@ -1814,47 +1813,20 @@ func (d *Daemon) rememberEnded(w *worker, status, note string, at time.Time) {
 }
 
 // recentWorkers returns the workers that ended in the last two minutes, the
-// newest first, and forgets the older ones. A worker whose hand-back check has
-// not ended stays, with the check's state, however long the check waits.
+// newest first, and forgets the older ones.
 func (d *Daemon) recentWorkers(now time.Time) []protocol.WorkerView {
-	checks := d.checkStates()
 	d.rmu.Lock()
 	defer d.rmu.Unlock()
 	out := []protocol.WorkerView{}
 	for sid, r := range d.recent {
-		check := checks[sid]
-		if check == "" && now.Sub(r.at) > recentWindow {
+		if now.Sub(r.at) > recentWindow {
 			delete(d.recent, sid)
 			continue
 		}
-		v := r.view
-		v.Check = check
-		out = append(out, v)
+		out = append(out, r.view)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].EndedAt > out[j].EndedAt })
 	return out
-}
-
-// checkStates is the state of each running hand-back check, by session ID.
-func (d *Daemon) checkStates() map[string]string {
-	d.wmu.Lock()
-	defer d.wmu.Unlock()
-	out := make(map[string]string, len(d.checkRuns))
-	for _, run := range d.checkRuns {
-		out[run.sessionID] = run.checkState()
-	}
-	return out
-}
-
-// touchRecent restarts the recent window of an ended worker, so its end stays
-// in a list for a while after its hand-back check ends.
-func (d *Daemon) touchRecent(sessionID string, at time.Time) {
-	d.rmu.Lock()
-	defer d.rmu.Unlock()
-	if r, ok := d.recent[sessionID]; ok {
-		r.at = at
-		d.recent[sessionID] = r
-	}
 }
 
 // workerTask is the short task line of the worker with this session, "" when
@@ -1980,7 +1952,7 @@ func (d *Daemon) adoptWorkers() {
 			// Its saved hand-back ends it after the notice. Until then the
 			// tick must not nudge it, report it idle, or end it.
 			d.wmu.Lock()
-			w.checking = true
+			w.handbackPending = true
 			d.wmu.Unlock()
 		case w.doneStatus != "":
 			// It handed back and its notice went out, but the daemon stopped

@@ -9,42 +9,38 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// A complete hand-back whose check runs holds what only this daemon knows: the
-// report, the file snapshots, the head and where the notice goes. A restart
-// or a lost gateway link must not lose it. On the gateway machine the
-// installer restarts the gateway first and the daemon a second later, so a
-// hand-back that ends during an upgrade always finds the link down.
+// A complete hand-back carries what only this daemon knows: the report, the
+// file snapshots, the head and where the notice goes. A restart or a lost
+// gateway link must not lose it. On the gateway machine the installer
+// restarts the gateway first and the daemon a second later, so a hand-back
+// that ends during an upgrade always finds the link down.
 //
-// The hand-back is saved in the state database before its check runs and
-// removed once its notice is sent. A daemon that stops while the check runs,
-// or that has no gateway link when it records the change or sends the notice,
-// keeps the row and the snapshots. The next connect, of this daemon or of the
-// next one, records the change and sends the notice.
-//
-// The check is not run again after a restart. A check that the stop killed is
-// recorded as could_not_run (interrupted), which proves nothing about the code
-// and raises no signal; the merger runs the suite anyway. Running it again
-// would hold the caller's notice for up to the whole check timeout after every
-// upgrade, and an upgrade can interrupt it again.
+// An older daemon saved a hand-back in the state database before running the
+// project's pre-hand-back check, and removed the row once its notice went out.
+// That check is gone (decision 2026-11-14), but the rows it left and the
+// replay path are still read: the next connect records the change and sends
+// the notice, then removes the row.
 
 // pendingHandback is the saved form of a handbackTail.
 type pendingHandback struct {
-	Req             protocol.WorkerHandbackRequest `json:"req"`
-	To              string                         `json:"to,omitempty"`
-	ReplyTo         string                         `json:"reply_to,omitempty"`
-	SandboxNote     string                         `json:"sandbox_note,omitempty"`
-	End             bool                           `json:"end"`
-	Files           *OutgoingFiles                 `json:"files,omitempty"`
-	SessionID       string                         `json:"session_id"`
-	Committed       string                         `json:"committed,omitempty"`
-	WIPDetail       string                         `json:"wip_detail,omitempty"`
-	Head            string                         `json:"head"`
-	NoticeKey       string                         `json:"notice_key"`
-	Check           *protocol.HandbackCheck        `json:"check,omitempty"`
-	Recorded        bool                           `json:"recorded,omitempty"`
-	ChangeID        string                         `json:"change_id,omitempty"`
-	DeliveryProblem string                         `json:"delivery_problem,omitempty"`
-	Stats           *workerStats                   `json:"stats,omitempty"`
+	Req         protocol.WorkerHandbackRequest `json:"req"`
+	To          string                         `json:"to,omitempty"`
+	ReplyTo     string                         `json:"reply_to,omitempty"`
+	SandboxNote string                         `json:"sandbox_note,omitempty"`
+	End         bool                           `json:"end"`
+	Files       *OutgoingFiles                 `json:"files,omitempty"`
+	SessionID   string                         `json:"session_id"`
+	Committed   string                         `json:"committed,omitempty"`
+	WIPDetail   string                         `json:"wip_detail,omitempty"`
+	Head        string                         `json:"head"`
+	NoticeKey   string                         `json:"notice_key"`
+	// Check is the hand-back check of an older daemon, kept so an upgrade
+	// still reads the row. New hand-backs carry none (decision 2026-11-14).
+	Check           *protocol.HandbackCheck `json:"check,omitempty"`
+	Recorded        bool                    `json:"recorded,omitempty"`
+	ChangeID        string                  `json:"change_id,omitempty"`
+	DeliveryProblem string                  `json:"delivery_problem,omitempty"`
+	Stats           *workerStats            `json:"stats,omitempty"`
 }
 
 // errHandbackDeferred ends a hand-back that is saved for the next connect.
@@ -63,7 +59,7 @@ func (p pendingHandback) tail() *handbackTail {
 		recorded: p.Recorded, changeID: p.ChangeID, deliveryProblem: p.DeliveryProblem, stats: p.Stats}
 }
 
-// persistHandback saves a complete hand-back before its check runs. An
+// persistHandback saves a complete hand-back for the next connect. An
 // Antigravity hand-back is left out: its stream state already carries the
 // hand-back across a restart (worker_agy_stream.go).
 func (d *Daemon) persistHandback(w *worker, t *handbackTail, head string) {
@@ -99,8 +95,7 @@ func (d *Daemon) dropHandback(workerID, head string) {
 
 // deferHandback keeps the hand-back, with what it knows so far, for the next
 // connect.
-func (d *Daemon) deferHandback(w *worker, t *handbackTail, check *protocol.HandbackCheck, why string) error {
-	t.check = check
+func (d *Daemon) deferHandback(w *worker, t *handbackTail, why string) error {
 	if err := d.saveHandback(w.id, t); err != nil {
 		d.Logf("worker %s: save the hand-back: %v", w.id, err)
 	}
@@ -138,9 +133,9 @@ func (s *state) pendingHandback(workerID string) (pendingHandback, bool) {
 }
 
 // replayHandbacks records and announces the hand-backs that a stop or a lost
-// link left saved. The link calls it after each connect. A row stays until
-// its notice is sent, so a replay that loses the link again is tried at the
-// next connect.
+// link left saved, including rows an older daemon's check left behind. The
+// link calls it after each connect. A row stays until its notice is sent, so
+// a replay that loses the link again is tried at the next connect.
 func (d *Daemon) replayHandbacks() {
 	saved, err := d.st.pendingHandbacks()
 	if err != nil {
@@ -181,28 +176,12 @@ func (d *Daemon) releaseHandbackReplay(id string) {
 
 func (d *Daemon) replayHandback(workerID string, p pendingHandback) {
 	t := p.tail()
-	check := p.Check
-	if check == nil {
-		// The daemon ended before the check did, and could not save its result.
-		check = d.interruptedCheck(workerID, time.Now(), "")
-	}
 	d.wmu.Lock()
-	if d.checkRuns[workerID] != nil {
-		// A newer hand-back of the same worker runs now. It saved its own row.
-		d.wmu.Unlock()
-		return
-	}
 	w := d.workers[workerID]
-	run := &handbackCheckRun{ctx: context.Background(), cancel: func() {}, head: p.Head, sessionID: p.SessionID}
-	run.running.Store(true)
-	if d.checkRuns == nil {
-		d.checkRuns = map[string]*handbackCheckRun{}
-	}
-	d.checkRuns[workerID] = run
 	if w != nil && w.stopping {
 		t.end = false
 	} else if w != nil {
-		w.checking = true
+		w.handbackPending = true
 	}
 	d.wmu.Unlock()
 	if w == nil {
@@ -211,11 +190,6 @@ func (d *Daemon) replayHandback(workerID string, p pendingHandback) {
 		w = d.endedHandbackWorker(p.SessionID)
 		if w == nil {
 			d.Logf("worker.handback_dropped worker=%s reason=%q", workerID, "no record of the worker")
-			d.wmu.Lock()
-			if d.checkRuns[workerID] == run {
-				delete(d.checkRuns, workerID)
-			}
-			d.wmu.Unlock()
 			d.dropHandback(workerID, p.Head)
 			p.Files.Remove()
 			return
@@ -223,12 +197,11 @@ func (d *Daemon) replayHandback(workerID string, p pendingHandback) {
 		t.end = false
 	}
 	d.Logf("worker.handback_replay worker=%s head=%s", workerID, p.Head)
-	_, err := d.finishHandback(context.Background(), w, t, handbackCheckPlan{result: check, head: p.Head}, run)
+	_, err := d.finishHandback(context.Background(), w, t)
 	deferred := errors.Is(err, errHandbackDeferred)
 	d.wmu.Lock()
-	if d.checkRuns[workerID] == run {
-		delete(d.checkRuns, workerID)
-		w.checking = deferred
+	if cur := d.workers[workerID]; cur != nil {
+		cur.handbackPending = deferred
 	}
 	d.wmu.Unlock()
 	if deferred {

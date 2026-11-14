@@ -592,7 +592,8 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		return protocol.StepReportResult{}, err
 	}
 	now := s.now().Unix()
-	trainRun := q.Step == protocol.StepTest && s.trainMode(c.Project)
+	train := s.trainMode(c.Project)
+	trainRun := q.Step == protocol.StepTest && train
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.StepReportResult{}, err
@@ -732,6 +733,11 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	}
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
+	}
+	if train && e.Step == protocol.StepMerge && e.Result == protocol.StepResultPass {
+		if err := insertTrainTipPostMergeTest(tx, c, p, e, now); err != nil {
+			return protocol.StepReportResult{}, err
+		}
 	}
 	if trainRun {
 		if err := s.trainRunFeed(tx, c.Project, e, s.now()); err != nil {
@@ -1264,6 +1270,66 @@ func insertRevision(tx *sql.Tx, c protocol.Change) error {
 	_, err := tx.Exec(`INSERT INTO delivery_revisions(change_id, number, branch, commit_hash, uncommitted, at) VALUES(?,?,?,?,?,?)`,
 		c.ID, c.Revision, c.Branch, c.HeadCommit, boolInt(c.Uncommitted), at)
 	return err
+}
+
+// insertTrainTipPostMergeTest records the after-merge test of a change whose
+// merged commit is the commit the merge queue's CI tested. In train mode the
+// merger runs CI once on the train tip and cites that run for every change
+// (delivery.ci_mode train), so the change at the tip needs no second CI. The
+// evidence copies the run link and the reporter of the tested tip, and the
+// change's own merged commit is the commit it names. A merge commit the run
+// did not test records nothing, and so does a project without an after-merge
+// test step.
+func insertTrainTipPostMergeTest(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, merge protocol.Evidence, now int64) error {
+	merged := merge.Fields[protocol.FieldMergedCommit]
+	if merged == "" {
+		return nil
+	}
+	after := protocol.StepRef{Step: protocol.StepTest, AfterMerge: true}
+	if st, ok := p.Find(after); !ok || st.Owner.Kind == protocol.OwnerNone {
+		return nil
+	}
+	evidence, err := changeEvidence(tx, c.ID)
+	if err != nil {
+		return err
+	}
+	for _, e := range evidence {
+		if e.Revision == c.Revision && e.StepRef == after && e.Commit == merged && e.Result == protocol.StepResultPass {
+			return nil // the post-merge test is already recorded
+		}
+	}
+	var tip *protocol.Evidence
+	for i := range evidence {
+		e := evidence[i]
+		if e.Revision != c.Revision || e.Step != protocol.StepTest || e.AfterMerge || e.Result != protocol.StepResultPass || e.Fields[protocol.FieldSuite] != protocol.SuiteFull {
+			continue
+		}
+		tested := e.Fields[protocol.FieldTestedCommit]
+		if tested == "" {
+			// No named tip: the run tested this commit itself (a fast-forward).
+			tested = e.Commit
+		}
+		if tested == merged {
+			tip = &evidence[i]
+		}
+	}
+	if tip == nil {
+		return nil
+	}
+	fields := map[string]string{protocol.FieldSuite: protocol.SuiteFull}
+	if run := tip.Fields[protocol.FieldRun]; run != "" {
+		fields[protocol.FieldRun] = run
+	}
+	if ind := tip.Fields[protocol.FieldIndependent]; ind != "" {
+		fields[protocol.FieldIndependent] = ind
+	}
+	auto := protocol.Evidence{ChangeID: c.ID, Revision: c.Revision, StepRef: after, Result: protocol.StepResultPass, Commit: merged,
+		Fields: fields, By: tip.By, ReportedBy: tip.ReportedBy, ByModel: tip.ByModel, ByModelFamily: tip.ByModelFamily,
+		Note: "the merge queue's CI ran on this commit, the train tip; the same run is the post-merge test", At: now}
+	if err := auto.Validate(); err != nil {
+		return err
+	}
+	return insertEvidence(tx, auto)
 }
 
 func insertEvidence(tx *sql.Tx, e protocol.Evidence) error {

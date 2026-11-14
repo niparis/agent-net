@@ -28,7 +28,12 @@ plugins/pi/typecheck.sh     # type-check the Pi extension (needs Pi installed)
 plugins/claude/test-agent-net-workers.sh # validate and test Claude hooks (needs npm)
 ```
 
-Before handing back, run scripts/test-changed.sh; it runs the tests your diff needs.
+Before handing back, run scripts/test-changed.sh. It runs the tests your diff
+needs and a small contract set (the migration lock and append-only tests,
+the CTO schema and read-size checks, and the tool catalog text). List what it
+ran, with the production and test line counts, in your hand-back. The merge
+queue's CI is the single test gate; the daemon no longer runs a hand-back
+check (decision 0164).
 
 If you change guidance text, also run go test ./internal/guidance ./internal/agentfiles (both have golden fixtures; use -update).
 

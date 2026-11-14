@@ -184,6 +184,7 @@ const (
 	FieldFindingsOpen = "findings_open" // review: count of blocker findings not fixed
 	FieldIndependent  = "independent"   // set by agent-net, never by the reporter
 	FieldRun          = "run"           // the command run, or a CI run link
+	FieldTestedCommit = "tested_commit" // test: the commit the CI run tested (the train tip)
 	FieldMergedCommit = "merged_commit" // merge: the merged commit on the target branch
 	FieldTag          = "tag"           // release: the tag
 	FieldTarget       = "target"        // deploy: where it was deployed
