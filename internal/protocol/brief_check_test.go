@@ -101,6 +101,22 @@ func TestBriefRepoPathsResolveOnlyBaseFiles(t *testing.T) {
 	}
 }
 
+// A running worker's brief names a directory as an area it reads, not every
+// file the base tree holds now. FilePaths returns only the files the text names,
+// so a file another change added since the worker started is not its work.
+func TestBriefRepoFilePathsDoNotExpandDirectories(t *testing.T) {
+	repo := WorkerBriefRepo{Root: "/repo/shop", Files: []string{"internal/gateway/brief.go", "internal/gateway/prices.go"}}
+	if got := strings.Join(repo.Paths("internal/gateway"), ","); got != "internal/gateway/brief.go,internal/gateway/prices.go" {
+		t.Fatalf("Paths = %q", got)
+	}
+	if got := repo.FilePaths("internal/gateway"); len(got) != 0 {
+		t.Fatalf("FilePaths expanded a directory: %v", got)
+	}
+	if got := strings.Join(repo.FilePaths("internal/gateway/brief.go"), ","); got != "internal/gateway/brief.go" {
+		t.Fatalf("FilePaths = %q", got)
+	}
+}
+
 func TestBriefRepoPathsMatchOnlyUniqueBareFilenames(t *testing.T) {
 	repo := WorkerBriefRepo{Root: "/repo/shop", Files: []string{
 		"internal/daemon/claude_mouse.go", "internal/daemon/workers.go", "internal/gateway/workers.go",

@@ -246,6 +246,18 @@ type WorkerBriefRepo struct {
 // A root-relative spelling such as /internal/parser is accepted, but external
 // absolute paths and environment-variable paths never become basename matches.
 func (r WorkerBriefRepo) Paths(text string) []string {
+	return r.match(text, true)
+}
+
+// FilePaths returns the tracked files a text names, without expanding a named
+// directory to the files the base tree holds now. A running worker started
+// from an older tree, so a directory it names must not pick up files another
+// change added since. A bare filename still matches only when it is unique.
+func (r WorkerBriefRepo) FilePaths(text string) []string {
+	return r.match(text, false)
+}
+
+func (r WorkerBriefRepo) match(text string, dirs bool) []string {
 	var out []string
 	seen := map[string]bool{}
 	root := strings.TrimRight(strings.ToLower(r.Root), "/")
@@ -278,7 +290,7 @@ func (r WorkerBriefRepo) Paths(text string) []string {
 		}
 		for _, file := range r.Files {
 			file = strings.ToLower(file)
-			if (file == candidate || strings.HasPrefix(file, candidate+"/")) && !seen[file] {
+			if (file == candidate || (dirs && strings.HasPrefix(file, candidate+"/"))) && !seen[file] {
 				seen[file] = true
 				out = append(out, file)
 			}

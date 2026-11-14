@@ -88,6 +88,44 @@ func TestDeliverySubmitSummarizesTargetBranchDiff(t *testing.T) {
 	}
 }
 
+// A session that rebased onto a newer origin/main reports only its own files:
+// the submit measures from the merge-base with the default branch, not from a
+// local main that is behind.
+func TestDeliverySubmitUsesTheNewerDefaultBranch(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	repo, wt := deliveryWorktree(t)
+
+	// Another person's work lands on origin/main; local main does not move.
+	gitIn(t, repo, "checkout", "-q", "-b", "upstream")
+	if err := os.WriteFile(filepath.Join(repo, "other.txt"), []byte("another change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "other_test.go"), []byte("package demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "add", "other.txt", "other_test.go")
+	gitIn(t, repo, "commit", "-q", "-m", "other people's work")
+	upstream := gitHead(t, repo, "upstream")
+	gitIn(t, repo, "update-ref", "refs/remotes/origin/main", upstream)
+	gitIn(t, repo, "checkout", "-q", "main")
+	gitIn(t, repo, "branch", "-q", "-D", "upstream")
+	gitIn(t, wt, "rebase", "-q", upstream)
+
+	lc, _ := helloDelivery(t, n, "origin-submitter", wt, "claude-opus-5-5")
+	lc.mustCall(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Branch: "feat/x", TargetBranch: "main"})
+	sent := f.frames(protocol.FrameChangeSubmit)
+	var q protocol.ChangeSubmitRequest
+	if len(sent) != 1 || json.Unmarshal(sent[0], &q) != nil {
+		t.Fatalf("submit frames: %s", sent)
+	}
+	if q.BaseCommit != upstream {
+		t.Errorf("the change base is %s, want the origin/main merge-base %s", q.BaseCommit, upstream)
+	}
+	if strings.Contains(q.DiffStat, "other.txt") || !strings.Contains(q.DiffStat, "a.txt") {
+		t.Errorf("the diff stat counts the newer origin/main:\n%s", q.DiffStat)
+	}
+}
+
 func TestDeliveryDirectOwnerReportRoutes(t *testing.T) {
 	n, f := startDeliveryNode(t)
 	_, wt := deliveryWorktree(t)

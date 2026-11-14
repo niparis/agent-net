@@ -343,19 +343,25 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 		if target, err := gitBranchHead(ctx, folder, q.TargetBranch); err == nil {
 			if base, err := gitOut(ctx, folder, "merge-base", target, commit); err == nil && protocol.ValidCommit(base) {
 				q.BaseCommit = base
+				if q.TargetBranch == cleanupDefaultBranch(ctx, folder, "") {
+					// The local default branch can be behind its remote, and
+					// its merge-base would count the remote's newer commits.
+					q.BaseCommit = handbackDiffBase(ctx, folder, base, commit)
+				}
 			}
 		}
 	}
 	// A continuation already knows the commit its work started from. Use it
 	// when the submit names no target branch, so the diff stat and the
 	// sensitive path are computed instead of "diff unavailable". The stored
-	// base is kept only when it still holds the new head.
+	// base is kept only when it still holds the new head, and the diff is
+	// measured from the merge-base with the default branch now.
 	if q.BaseCommit == "" && a.Change != "" {
 		var view protocol.ChangeView
 		if err := d.deliveryCall(ctx, protocol.FrameChangeGet, protocol.ChangeGetRequest{ChangeID: a.Change}, &view); err == nil && view.Change.Project == q.Project {
 			if base := view.Change.BaseCommit; protocol.ValidCommit(base) {
 				if _, err := gitOut(ctx, folder, "merge-base", "--is-ancestor", base, commit); err == nil {
-					q.BaseCommit = base
+					q.BaseCommit = handbackDiffBase(ctx, folder, base, commit)
 				}
 			}
 		}
@@ -709,7 +715,9 @@ func (d *Daemon) openChangeAtBase(ctx context.Context, project, base, owner stri
 // its head with the project's default branch. A worker that rebased onto a
 // newer default branch would otherwise count other people's commits in its
 // diff stat and signals, because its start commit is no longer an ancestor. A
-// missing default branch or merge-base keeps the start commit.
+// local default branch can be behind its remote, so the newest merge-base wins:
+// a stale local main would count every commit the remote got since. A missing
+// default branch or merge-base keeps the start commit.
 func handbackDiffBase(ctx context.Context, dir, start, head string) string {
 	if !protocol.ValidCommit(start) || !protocol.ValidCommit(head) || head == start {
 		return start
@@ -718,10 +726,22 @@ func handbackDiffBase(ctx context.Context, dir, start, head string) string {
 	if target == "" {
 		return start
 	}
+	var base string
 	for _, ref := range []string{target, "origin/" + target} {
-		if base, err := gitOut(ctx, dir, "merge-base", ref, head); err == nil && protocol.ValidCommit(base) {
-			return base
+		candidate, err := gitOut(ctx, dir, "merge-base", ref, head)
+		if err != nil || !protocol.ValidCommit(candidate) {
+			continue
 		}
+		if base == "" || candidate == base {
+			base = candidate
+			continue
+		}
+		if _, err := gitOut(ctx, dir, "merge-base", "--is-ancestor", base, candidate); err == nil {
+			base = candidate
+		}
+	}
+	if base != "" {
+		return base
 	}
 	return start
 }
