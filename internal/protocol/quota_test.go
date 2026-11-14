@@ -71,51 +71,19 @@ func TestQuotaStaleIsShownButNotUsed(t *testing.T) {
 	}
 }
 
-func TestResolveModelQuotaSkipsAHighProvider(t *testing.T) {
-	models := []string{"openai/flash", "opencode-go/flash"}
-	q := &Quotas{Providers: []QuotaProvider{
-		quotaAt("codex", window("weekly", "weekly", 96, QuotaPaceOnPace)),
-		quotaAt("opencode-go", window("weekly", "weekly", 20, QuotaPaceOnPace)),
-	}}
-	got, err := ResolveModelQuota("flash", models, nil, nil, nil, q)
-	if err != nil || got.Model != "opencode-go/flash" {
-		t.Fatalf("high provider was not skipped: %+v %v", got, err)
-	}
-	q.Providers[1].Windows[0].PercentUsed = 100
-	q.Providers[1].Windows[0].Exhausted = true
-	if _, err = ResolveModelQuota("flash", models, nil, nil, nil, q); err == nil ||
-		!strings.Contains(err.Error(), "out of quota") || !strings.Contains(err.Error(), "2026-11-02") {
-		t.Fatalf("all exhausted: %v", err)
-	}
-}
-
-func TestResolveModelQuotaExactStillWorksWithAWarning(t *testing.T) {
+// Quota no longer takes part in resolving a name: the gate refuses a model
+// that cannot run (decision 0162).
+func TestResolveModelQuotaLeavesTheNameAlone(t *testing.T) {
 	models := []string{"openai/gpt-6", "opencode-go/deepseek-v4.1-flash"}
-	q := &Quotas{Providers: []QuotaProvider{
-		quotaAt("codex", window("weekly", "weekly", 100, "")),
-		quotaAt("opencode-go", window("weekly", "weekly", 20, "")),
-	}}
-	got, err := ResolveModelQuota("openai/gpt-6", models, nil, nil, nil, q)
+	got, err := ResolveModelQuota("openai/gpt-6", models, nil, nil, nil)
 	if err != nil || got.Model != "openai/gpt-6" || !got.Exact {
 		t.Fatalf("exact id: %+v %v", got, err)
 	}
-	if !strings.Contains(got.QuotaNote, "codex is exhausted") || !strings.Contains(got.QuotaNote, "resets at") {
+	if got.QuotaNote != "" {
 		t.Errorf("quota note %q", got.QuotaNote)
 	}
-	if _, err := ResolveModelQuota("opencode-go/deepseek-v4.1-flash", models, nil, nil, nil, q); err != nil {
+	if _, err := ResolveModelQuota("opencode-go/deepseek-v4.1-flash", models, nil, nil, nil); err != nil {
 		t.Errorf("other exact id: %v", err)
-	}
-}
-
-func TestResolveModelQuotaRanksAheadLower(t *testing.T) {
-	models := []string{"openai/gpt-6", "opencode-go/gpt-6"}
-	q := &Quotas{Providers: []QuotaProvider{
-		quotaAt("codex", window("weekly", "weekly", 40, QuotaPaceAhead)),
-		quotaAt("opencode-go", window("weekly", "weekly", 40, QuotaPaceOnPace)),
-	}}
-	got, err := ResolveModelQuota("gpt 6", models, nil, nil, nil, q)
-	if err != nil || got.Model != "opencode-go/gpt-6" {
-		t.Fatalf("ahead provider did not rank lower: %+v %v", got, err)
 	}
 }
 

@@ -21,12 +21,17 @@ func WorkerPickOrder(candidates []WorkerModelCandidate, level string, scores []M
 		if _, err := DifficultyFit(0, level, minimums); err != nil {
 			return nil, nil, err
 		}
-		order, _, fallback := pickOrderByCells(candidates, level, scores, minimums, quotas, running, rotation, in, false)
+		order, _, fallback := pickOrderByCells(candidates, level, scores, minimums, quotas, running, rotation, in)
 		if fallback == "" {
 			return order, leftOutAfter(candidates, order, level, scores, minimums), nil
 		}
+		order, leftOut, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation)
+		if err == nil && len(order) > 0 {
+			order[0].PickNote, order[0].Fallback = fallback, true
+		}
+		return order, leftOut, err
 	}
-	order, leftOut, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation, true)
+	order, leftOut, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation)
 	return order, leftOut, err
 }
 

@@ -17,13 +17,13 @@ func TestPickerEarlyQuitDifficulty(t *testing.T) {
 	scores := []ModelScore{{Match: "a", Score: 51}}
 	base := WorkerModelCandidate{Harness: "codex", Model: "a"}
 	for _, level := range []string{"hard", "very_complex"} {
-		good, err := ChooseWorkerModel([]WorkerModelCandidate{base}, level, scores, nil, nil, nil, &WorkerRotation{})
+		good, err := chooseFirst([]WorkerModelCandidate{base}, level, scores, nil, nil, nil, &WorkerRotation{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		bad := base
 		bad.EarlyQuitLevels = map[string]bool{"hard": true}
-		quit, err := ChooseWorkerModel([]WorkerModelCandidate{bad}, level, scores, nil, nil, nil, &WorkerRotation{})
+		quit, err := chooseFirst([]WorkerModelCandidate{bad}, level, scores, nil, nil, nil, &WorkerRotation{})
 		if err != nil {
 			t.Fatal(err)
 		}

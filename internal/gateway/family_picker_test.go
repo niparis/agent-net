@@ -13,7 +13,7 @@ func TestFamilyPickerExcludesCandidates(t *testing.T) {
 	if err != nil || len(kept) != 1 || kept[0].Model != candidates[1].Model || !strings.Contains(note, "gpt-6.1-sol") {
 		t.Fatalf("kept=%v note=%q err=%v", kept, note, err)
 	}
-	choice, _, err := chooseProtectedWorker(kept, "normal", []protocol.ModelScore{{Match: "claude-sonnet", Score: 32.5}}, nil, nil, nil, nil, protocol.ProtectedProviders{})
+	choice, err := chooseModelTest(kept, "normal", []protocol.ModelScore{{Match: "claude-sonnet", Score: 32.5}}, nil, nil, nil, &protocol.WorkerRotation{})
 	if err != nil || choice.Model != candidates[1].Model {
 		t.Fatalf("choice=%v err=%v", choice, err)
 	}

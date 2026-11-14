@@ -208,7 +208,7 @@ func pickN(t *testing.T, c []WorkerModelCandidate, level string, d float64, task
 	rotation := &WorkerRotation{}
 	counts := map[string]int{}
 	for i := 0; i < n; i++ {
-		choice, err := ChooseWorkerModel(c, level, scores, nil, nil, nil, rotation, in)
+		choice, err := chooseFirst(c, level, scores, nil, nil, nil, rotation, in)
 		if err != nil {
 			t.Fatalf("pick %d: %v", i, err)
 		}
@@ -284,12 +284,12 @@ func TestPickUncertainBoostIsOnTheWeight(t *testing.T) {
 	// allowed set rotates with the cell score, as before.
 	scores := pickScores(map[string]float64{"known": 39, "fresh": 39})
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
-	choice, err := ChooseWorkerModel(pickCandidates("fresh"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
+	choice, err := chooseFirst(pickCandidates("fresh"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
 	if err != nil {
 		t.Fatal(err)
 	}
 	near(t, "weight", choice.Weight, table.Cell("fresh", 4).Score*1.5)
-	choice, err = ChooseWorkerModel(pickCandidates("known"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
+	choice, err = chooseFirst(pickCandidates("known"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestPickNoUncertainBoostMoreThanOneBucketBelowTheCeiling(t *testing.T) {
 		{"far below the ceiling", 51, 1}, // ceiling 5.0
 		{"hard model", 41, 1},            // ceiling 3.75
 	} {
-		choice, err := ChooseWorkerModel(pickCandidates("fresh"), "normal", pickScores(map[string]float64{"fresh": c.score}), nil, nil, nil, &WorkerRotation{}, in)
+		choice, err := chooseFirst(pickCandidates("fresh"), "normal", pickScores(map[string]float64{"fresh": c.score}), nil, nil, nil, &WorkerRotation{}, in)
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
@@ -367,7 +367,7 @@ func TestPickNoteNamesTheExpectedCostOfEachQualifier(t *testing.T) {
 	tasks = append(tasks, costTasks("cheap", 1.8, 1, repeat(3, 1, .75, .75, .75)...)...)
 	scores := pickScores(map[string]float64{"cheap": 29, "strong": 51})
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
-	choice, err := ChooseWorkerModel(pickCandidates("cheap", "strong"), "simple", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 1.8, Table: table})
+	choice, err := chooseFirst(pickCandidates("cheap", "strong"), "simple", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 1.8, Table: table})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +398,7 @@ func TestPickCostOfAModelWithNoRunsIsPriceTimesAverageTokens(t *testing.T) {
 		{Name: "mystery", Harness: "claude", Model: "mystery-9:high"},
 	}
 	scores := pickScores(map[string]float64{"claude-opus-5-5": 51, "claude-haiku-5-5": 51, "mystery-9": 51})
-	choice, err := ChooseWorkerModel(c, "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
+	choice, err := chooseFirst(c, "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +455,7 @@ func TestPickExploreIsUpOnly(t *testing.T) {
 	picks := func(level string, d float64, tasks []PickerTask, scores []ModelScore, names ...string) (map[string]int, string) {
 		t.Helper()
 		counts := pickN(t, pickCandidates(names...), level, d, tasks, scores, DefaultPickerSettings(), 100)
-		choice, err := ChooseWorkerModel(pickCandidates(names...), level, scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: d, Table: BuildPickerTable(tasks, DefaultPickerSettings())})
+		choice, err := chooseFirst(pickCandidates(names...), level, scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: d, Table: BuildPickerTable(tasks, DefaultPickerSettings())})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -521,7 +521,7 @@ func TestPickBenchmarkCeilingDecidesWhereACellHasFewerThanThreeTasks(t *testing.
 	rotation := &WorkerRotation{}
 	counts := map[string]int{}
 	for i := 0; i < 30; i++ {
-		choice, err := ChooseWorkerModel(pickCandidates("simple", "normal", "big"), "normal", scores, nil, nil, nil, rotation, &PickerInput{D: 2.5, Table: table})
+		choice, err := chooseFirst(pickCandidates("simple", "normal", "big"), "normal", scores, nil, nil, nil, rotation, &PickerInput{D: 2.5, Table: table})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -555,7 +555,7 @@ func TestPickFallsBackToTheLevelRule(t *testing.T) {
 	// the cell rule allows none. The level rule still takes them for "normal".
 	scores := pickScores(map[string]float64{"a": 39, "b": 39})
 	table := BuildPickerTable(nil, DefaultPickerSettings())
-	choice, err := ChooseWorkerModel(pickCandidates("a", "b"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 4.5, Table: table})
+	choice, err := chooseFirst(pickCandidates("a", "b"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 4.5, Table: table})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -569,25 +569,9 @@ func TestPickFallsBackToTheLevelRule(t *testing.T) {
 
 func TestPickWithoutAPickerInputUsesTheLevelRule(t *testing.T) {
 	scores := pickScores(map[string]float64{"a": 39})
-	choice, err := ChooseWorkerModel(pickCandidates("a"), "normal", scores, nil, nil, nil, &WorkerRotation{})
+	choice, err := chooseFirst(pickCandidates("a"), "normal", scores, nil, nil, nil, &WorkerRotation{})
 	if err != nil || choice.Model != "a" || choice.PickNote != "" {
 		t.Fatalf("choice: %+v %v", choice, err)
-	}
-}
-
-func TestPickKeepsQuotaBlockedModelsOut(t *testing.T) {
-	tasks := append(pickTasks("a", 2.5, repeat(15, 1, .5)...), pickTasks("b", 2.5, repeat(15, 1, .5)...)...)
-	scores := pickScores(map[string]float64{"a": 51, "b": 51})
-	c := pickCandidates("a", "b")
-	c[0].Provider, c[1].Provider = "pa", "pb"
-	q := &Quotas{GeneratedAt: 1000, Providers: []QuotaProvider{{Provider: "pa", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: 95, ResetsAt: 1000 + 3*24*3600}}}}}
-	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
-	rotation := &WorkerRotation{}
-	for i := 0; i < 5; i++ {
-		choice, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, rotation, in)
-		if err != nil || choice.Name != "b" {
-			t.Fatalf("pick %d: %+v %v", i, choice, err)
-		}
 	}
 }
 
@@ -604,7 +588,7 @@ func TestPickNoteNamesTheCellsAndWhatWasLeftOut(t *testing.T) {
 	}
 	// SplitModelLevel reads ":medium" as an effort, so the key is the model.
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
-	choice, err := ChooseWorkerModel(c, "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
+	choice, err := chooseFirst(c, "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +604,7 @@ func TestPickNoteShowsPriorAndChosenNotBest(t *testing.T) {
 	s := DefaultPickerSettings()
 	s.AllowedFraction = .3
 	table := BuildPickerTable(tasks, s)
-	choice, err := ChooseWorkerModel(pickCandidates("cheap", "strong", "fresh"), "simple", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 1.8, Table: table})
+	choice, err := chooseFirst(pickCandidates("cheap", "strong", "fresh"), "simple", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 1.8, Table: table})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,7 +625,7 @@ func TestPickNoteForUnscoredModelWithoutRecord(t *testing.T) {
 	tasks := pickTasks("known", 2.5, repeat(10, 1, .5)...)
 	scores := pickScores(map[string]float64{"known": 51})
 	table := BuildPickerTable(tasks, DefaultPickerSettings())
-	choice, err := ChooseWorkerModel(pickCandidates("known", "mystery"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
+	choice, err := chooseFirst(pickCandidates("known", "mystery"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -698,7 +682,7 @@ func BenchmarkPickTwentyProfiles(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := ChooseWorkerModel(candidates, "normal", modelScores, nil, nil, nil, rotation, pick); err != nil {
+		if _, err := chooseFirst(candidates, "normal", modelScores, nil, nil, nil, rotation, pick); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -773,7 +757,7 @@ func TestPickQuotaPaceBreaksACostTie(t *testing.T) {
 	rotation := &WorkerRotation{}
 	counts := map[string]int{}
 	for i := 0; i < 20; i++ {
-		choice, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, rotation, in)
+		choice, err := chooseFirst(c, "normal", scores, nil, q, nil, rotation, in)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -793,7 +777,7 @@ func TestPickerBPrimeNoteNamesTheQualifyingSet(t *testing.T) {
 	tasks = append(tasks, pickTasks("thin", 2.5, 1)...)
 	scores := pickScores(map[string]float64{"a": 50, "b": 40, "c": 40, "thin": 35})
 	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
-	choice, err := ChooseWorkerModel(pickCandidates("a", "b", "c", "thin"), "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
+	choice, err := chooseFirst(pickCandidates("a", "b", "c", "thin"), "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -827,7 +811,7 @@ func TestPickerBPrimeExplorationStateSurvivesAClone(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		clone := rotation.Clone() // the gateway stores and reloads the state between picks
 		rotation = &clone
-		choice, err := ChooseWorkerModel(pickCandidates("good", "new"), "normal", scores, nil, nil, nil, rotation, in)
+		choice, err := chooseFirst(pickCandidates("good", "new"), "normal", scores, nil, nil, nil, rotation, in)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -851,7 +835,7 @@ func TestStartedNoticeContainsWhyWithChosenProfileAndGroupedReasons(t *testing.T
 		{Name: "opus agy", Harness: "agy", Model: "thin2", Provider: "google"},
 		{Name: "unscored model", Harness: "codex", Model: "unscored", Provider: "openai"},
 	}
-	choice, err := ChooseWorkerModel(candidates, "simple", scores, nil, nil, nil, &WorkerRotation{}, in)
+	choice, err := chooseFirst(candidates, "simple", scores, nil, nil, nil, &WorkerRotation{}, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -895,7 +879,7 @@ func TestPickerWhyLeftOutNamesAreCapped(t *testing.T) {
 		{Name: "four agy", Harness: "agy", Model: "thin4", Provider: "google"},
 		{Name: "five agy", Harness: "agy", Model: "thin5", Provider: "google"},
 	}
-	choice, err := ChooseWorkerModel(candidates, "simple", scores, nil, nil, nil, &WorkerRotation{}, in)
+	choice, err := chooseFirst(candidates, "simple", scores, nil, nil, nil, &WorkerRotation{}, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -905,46 +889,6 @@ func TestPickerWhyLeftOutNamesAreCapped(t *testing.T) {
 	}
 	if strings.Contains(choice.Why, "google profiles") {
 		t.Errorf("choice.Why names a provider instead of profiles: %s", choice.Why)
-	}
-}
-
-// A profile held back by a quota window must come with the reason the window
-// gave, never empty parentheses. The owner saw "flash agy ()" in every start
-// because workerQuotaRoom returned no note for a blocked window.
-func TestPickerWhyGivesAQuotaReasonForALeftOutProfile(t *testing.T) {
-	tasks := pickTasks("deepseek", 1.65, repeat(9, .91)...)
-	scores := pickScores(map[string]float64{"deepseek": 51, "flash": 45})
-	candidates := []WorkerModelCandidate{
-		{Name: "deepseek alibaba", Harness: "opencode", Model: "deepseek", Provider: "alibaba"},
-		{Name: "flash agy", Harness: "agy", Model: "flash", Provider: "google"},
-	}
-	quotas := &Quotas{GeneratedAt: 1000, Providers: []QuotaProvider{{
-		Provider: "google",
-		Windows:  []QuotaWindow{{Kind: "weekly", PercentUsed: 95, ResetsAt: 1000 + 3*24*3600}},
-	}}}
-	in := &PickerInput{D: 1.65, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
-	choice, err := ChooseWorkerModel(candidates, "simple", scores, nil, quotas, nil, &WorkerRotation{}, in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "flash agy (google weekly at 95% used)"; !strings.Contains(choice.Why, want) {
-		t.Errorf("choice.Why lacks %q: %s", want, choice.Why)
-	}
-	if strings.Contains(choice.Why, "()") {
-		t.Errorf("choice.Why has empty parentheses: %s", choice.Why)
-	}
-}
-
-// The why line never shows empty parentheses, even if an older note arrives
-// with no reason after its quota label.
-func TestPickerWhyNeverPrintsEmptyParentheses(t *testing.T) {
-	chosen := &pickerEntry{name: "deepseek"}
-	got := pickerShortWhy("simple", 1.65, chosen, 0, nil, []string{"flash agy left out (quota: )"})
-	if strings.Contains(got, "()") {
-		t.Errorf("why has empty parentheses: %s", got)
-	}
-	if !strings.Contains(got, "flash agy (out of quota)") {
-		t.Errorf("why lacks a fallback reason: %s", got)
 	}
 }
 
@@ -964,7 +908,7 @@ func TestPickerWhyCountsTheOtherQualifyingProfiles(t *testing.T) {
 	}
 	for _, c := range cases {
 		chosen := &pickerEntry{name: "deepseek", qualified: c.qualified}
-		got := pickerShortWhy("simple", 1.65, chosen, c.count, nil, nil)
+		got := pickerShortWhy("simple", 1.65, chosen, c.count, nil)
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: why lacks %q: %s", c.name, c.want, got)
 		}
@@ -988,7 +932,7 @@ func pickWith(t *testing.T, tasks []PickerTask, prices *PriceBook, names ...stri
 		scores[n] = 51
 	}
 	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings()), Prices: prices}
-	choice, err := ChooseWorkerModel(pickCandidates(names...), "normal", pickScores(scores), nil, nil, nil, &WorkerRotation{}, in)
+	choice, err := chooseFirst(pickCandidates(names...), "normal", pickScores(scores), nil, nil, nil, &WorkerRotation{}, in)
 	if err != nil {
 		t.Fatal(err)
 	}

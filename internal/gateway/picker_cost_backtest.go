@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -156,13 +157,11 @@ func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (Pick
 		return res, err
 	}
 	var candidates []protocol.WorkerModelCandidate
+	harnesses := map[string]bool{}
 	for _, p := range profiles {
 		c := protocol.WorkerModelCandidate{Name: p.Name, Harness: p.Harness, Model: p.Selection().LegacyModel(), DefaultEffort: p.Effort}
-		if under, sentence, _ := protocol.CheckWorkerFloor(o.Quotas, floors, c.Harness, c.Model); under {
-			res.OutByFloor = append(res.OutByFloor, fmt.Sprintf("%s: %s", c.Name, sentence))
-			continue
-		}
 		candidates = append(candidates, c)
+		harnesses[p.Harness] = true
 	}
 	for _, p := range profiles {
 		model := p.Selection().LegacyModel()
@@ -196,6 +195,26 @@ func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (Pick
 		}
 		return level
 	}
+	g := &Gateway{store: s}
+	node := &protocol.NodeView{Hostname: "backtest"}
+	for name := range harnesses {
+		node.Harnesses = append(node.Harnesses, protocol.HarnessInfo{Name: name, SignedIn: "yes"})
+	}
+	sort.Slice(node.Harnesses, func(i, j int) bool { return node.Harnesses[i].Name < node.Harnesses[j].Name })
+	// One facts snapshot serves the whole report, and the floor is the gate's
+	// check now: read its skips for the roster rather than applying the floor
+	// a second time here.
+	facts, _, factErr := g.chooseFacts(node, candidates, o.Quotas, floors, nil, nil)
+	var factPtr *model.Facts
+	if factErr == nil {
+		factPtr = &facts
+		_, skips, _ := model.Gate(modelCandidatesOf(candidates), model.Checks{Floor: true}, facts)
+		for _, skip := range skips {
+			if skip.Check == "floor" {
+				res.OutByFloor = append(res.OutByFloor, fmt.Sprintf("%s: %s", skip.Candidate.Display(), skip.Reason))
+			}
+		}
+	}
 	buckets := map[int]*PickerCostBacktestBucket{}
 	var order []int
 	for _, r := range done {
@@ -208,11 +227,17 @@ func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (Pick
 		buckets[b].Tasks++
 	}
 	sort.Ints(order)
+	decide := func(d float64) (protocol.WorkerModelChoice, bool) {
+		req := ChooseRequest{Purpose: model.PurposePreview, Node: node, Candidates: candidates, Difficulty: levelOf(d), D: d,
+			Scores: scores, Minimums: minimums, Quotas: o.Quotas, Floors: floors, Rotation: &protocol.WorkerRotation{}, Facts: factPtr}
+		got, err := g.Choose(req)
+		return got.Choice, err == nil
+	}
 	for _, b := range order {
 		sum := buckets[b]
 		in := &protocol.PickerInput{D: (sum.Lo + sum.Hi) / 2, Table: table, Prices: prices}
 		sum.Rows = protocol.PickerCostRows(candidates, in)
-		if choice, err := protocol.ChooseWorkerModel(candidates, levelOf(in.D), scores, minimums, o.Quotas, nil, &protocol.WorkerRotation{}, in); err == nil {
+		if choice, ok := decide(in.D); ok {
 			sum.Winner = protocol.PickerModelKey(choice.Harness, choice.Model)
 		}
 		res.Buckets = append(res.Buckets, *sum)
@@ -222,8 +247,7 @@ func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (Pick
 		if p, _, ok := prices.PriceOf(r.key); ok && !r.tokens.Zero() {
 			row.ThenCost = p.Cost(r.tokens)
 		}
-		choice, err := protocol.ChooseWorkerModel(candidates, levelOf(r.d), scores, minimums, o.Quotas, nil, &protocol.WorkerRotation{}, &protocol.PickerInput{D: r.d, Table: table, Prices: prices})
-		if err == nil {
+		if choice, ok := decide(r.d); ok {
 			row.Now = protocol.PickerModelKey(choice.Harness, choice.Model)
 			row.NowCost, _, _, _ = table.ExpectedCost(row.Now, table.Bucket(r.d), prices)
 		}

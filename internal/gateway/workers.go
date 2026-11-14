@@ -739,6 +739,13 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		}
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path}, nil
 	}
+	// One owner reading for the whole start: the subscriptions with the burn
+	// of the running workers (decision 0162).
+	agents, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
+	if err != nil {
+		return none, err
+	}
+	quotas = g.withQuotaBurn(quotas, agents)
 	// The brief checks run after the judge's pass and before any pick or
 	// launch. Validation calls and internal read-only phrasing workers skip
 	// them: they start no caller worker and count no rejection. A check mode
@@ -792,6 +799,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	var choice protocol.WorkerModelChoice
 	var granted model.Granted
 	var chosen ChooseResult
+	var namedOrder []protocol.WorkerModelCandidate
+	var namedScores []protocol.ModelScore
+	var namedMinimums map[string]float64
+	var namedNotes map[string]string
 	if automatic {
 		difficulty := difficultyUsed
 		providers, err := g.store.workerProviders()
@@ -806,20 +817,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if err != nil {
 			return none, err
 		}
-		agents, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
-		if err != nil {
-			return none, err
-		}
 		running := map[string]int{}
 		for _, a := range agents {
 			if a.NodeID == pick.NodeID && a.Worker != nil {
 				running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
 			}
 		}
-		// The burn of the providers' running workers, across every machine,
-		// decides whether one more worker would last until the reset
-		// (decision 0144).
-		quotas = g.withQuotaBurn(quotas, agents)
 		profiles, err := g.store.WorkerProfiles()
 		if err != nil {
 			return none, err
@@ -895,22 +898,19 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			automaticNote += ")"
 		}
 	} else if p.Harness == "" {
-		if p.Model == "" {
-			p.Harness = "opencode"
-		} else {
-			harness, err := g.chooseWorkerHarness(node, p.Model, p.RequireReadOnly, quotas)
-			if err != nil {
-				return none, err
-			}
-			p.Harness = harness
-			state := "sign-in unknown"
-			for _, h := range node.Harnesses {
-				if h.Name == harness && h.SignedIn == "yes" {
-					state = "signed in"
-				}
-			}
-			harnessNote = fmt.Sprintf("selected %s on %s (%s)", harness, node.Hostname, state)
+		order, notes, err := g.workerHarnessOrder(node, p.Model, p.RequireReadOnly, quotas)
+		if err != nil {
+			return none, err
 		}
+		namedOrder, namedNotes = order, notes
+		p.Harness, p.Model = order[0].Harness, order[0].Model
+		state := "sign-in unknown"
+		for _, h := range node.Harnesses {
+			if h.Name == p.Harness && h.SignedIn == "yes" {
+				state = "signed in"
+			}
+		}
+		harnessNote = fmt.Sprintf("selected %s on %s (%s)", p.Harness, node.Hostname, state)
 	}
 	var hi *protocol.HarnessInfo
 	for i := range node.Harnesses {
@@ -930,12 +930,53 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if automatic {
 		modelNote = lead + " -> " + p.Harness + " " + p.Model + " " + automaticNote
 	} else {
-		var resolveNote string
-		p.Model, resolveNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, "", quotas, p.Effort)
-		if err != nil {
+		if len(namedOrder) == 0 {
+			var resolveNote string
+			p.Model, resolveNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, "", quotas, p.Effort)
+			if err != nil {
+				return none, err
+			}
+			modelNote = appendModelNote(appendModelNote(lead, harnessNote), resolveNote)
+			namedOrder = []protocol.WorkerModelCandidate{{Name: p.Harness, Harness: p.Harness, Model: p.Model, Effort: p.Effort}}
+		} else {
+			modelNote = appendModelNote(lead, harnessNote)
+		}
+		// The named route goes through the one gate too (decision 0162). An
+		// agent's pick gets the worker checks; the owner's own start turns the
+		// floor and the other optional steps off.
+		if namedScores, err = g.store.scores(); err != nil {
 			return none, err
 		}
-		modelNote = appendModelNote(appendModelNote(lead, harnessNote), resolveNote)
+		if namedMinimums, err = g.store.difficultyMinimums(); err != nil {
+			return none, err
+		}
+		purpose := model.PurposeWorkerNamed
+		if protocol.IsOwner(owner.Harness) && !p.FromCTO {
+			purpose = model.PurposeOwnerNamed
+		}
+		named, chooseErr := g.Choose(ChooseRequest{
+			Purpose:    purpose,
+			Node:       node,
+			Candidates: namedOrder,
+			Difficulty: difficultyUsed,
+			Scores:     namedScores,
+			Minimums:   namedMinimums,
+			Quotas:     quotas,
+			Floors:     floors,
+			Protected:  protected,
+		})
+		if chooseErr != nil {
+			if !(len(validate) > 0 && validate[0]) {
+				g.feedGateSkips(named.Skips)
+			}
+			return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, joinModelNote(skipNotes(named.Skips))))
+		}
+		granted, chosen = named.Granted, named
+		p.Harness, p.Model = named.Choice.Harness, named.Choice.Model
+		if note := namedNotes[p.Harness+"\x00"+p.Model]; note != "" {
+			modelNote = appendModelNote(modelNote, note)
+		}
+		modelNote = appendModelNote(modelNote, named.Note)
 	}
 	if briefNote != "" {
 		if modelNote != "" {
@@ -953,11 +994,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if p.Provider == "" {
 		p.Provider = protocol.ModelVendor(p.Harness, selected.Model)
 	}
-	if !automatic {
-		// The named route is moved onto the gate in part 3. Until then it
-		// launches through the one clearly named bridge.
-		granted = model.UncheckedGrant(model.Candidate{Name: p.Harness + " " + p.Model, Harness: p.Harness, Model: p.Model, Effort: p.Effort, Provider: p.Provider})
-	}
 	if p.Harness == "agy" {
 		if _, buildErr := selected.Arguments(hi.Models); buildErr != nil {
 			return none, reject("%v", buildErr)
@@ -965,15 +1001,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 
 	if !automatic {
-		scores, err := g.store.scores()
-		if err != nil {
-			return none, err
-		}
-		minimums, err := g.store.difficultyMinimums()
-		if err != nil {
-			return none, err
-		}
-		_, _, eligible, scored := protocol.WorkerCandidateFit(protocol.WorkerModelCandidate{Model: p.Model, DefaultEffort: hi.ModelDefaultEfforts[p.Model]}, difficultyUsed, scores, minimums)
+		_, _, eligible, scored := protocol.WorkerCandidateFit(protocol.WorkerModelCandidate{Model: p.Model, DefaultEffort: hi.ModelDefaultEfforts[p.Model]}, difficultyUsed, namedScores, namedMinimums)
 		if scored && !eligible {
 			if modelNote != "" {
 				modelNote += "; "
@@ -992,26 +1020,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			modelNote += "; "
 		}
 		modelNote += fmt.Sprintf("uses protected provider (%s), saved for your orchestrator", protocol.ProfileProvider(p.Harness, p.Model))
-	}
-	if !automatic {
-		if under, floorSentence, _ := protocol.CheckWorkerFloor(quotas, floors, p.Harness, p.Model); under {
-			isOwner := protocol.IsOwner(owner.Harness) && !p.FromCTO
-			if !isOwner {
-				if !(len(validate) > 0 && validate[0]) {
-					g.quotaFloorFeed(p.Harness, p.Model, floorSentence)
-				}
-				return none, g.refuseWithAlternative(ctx, nc, p, floorSentence)
-			}
-		}
-	}
-	// A provider with no allowance left refuses the start now, with the reset
-	// time, instead of failing at the first model call (decision 0022). An
-	// automatic start has already had this locked check in the gate.
-	if reason := protocol.QuotaRefusal(quotas, p.Harness, p.Model); reason != "" && !automatic {
-		if !(len(validate) > 0 && validate[0]) {
-			g.quotaStuckFeed(p.Harness, p.Model, reason)
-		}
-		return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
 	}
 	pickerMS := time.Since(began).Milliseconds()
 	track, books, err := g.choiceNotes(pick.NodeID, pick.Hostname, pick.Name, p.Harness, p.Model)
@@ -1232,6 +1240,15 @@ func (g *Gateway) workerRecheck(ctx context.Context, nc *nodeConn, p protocol.Wo
 	return answer, nil
 }
 
+// sameGrant reports whether a grant is for this harness and model.
+func sameGrant(granted model.Granted, harness, model string) bool {
+	if granted.IsZero() {
+		return false
+	}
+	c := granted.Candidate()
+	return c.Harness == harness && c.Model == model
+}
+
 // launchWorker sends the one launch frame for a start. It takes the gate's
 // Granted and refuses a frame that names another model, so no route can launch
 // a model the gate did not allow (decision 0162).
@@ -1440,8 +1457,20 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 // 0026, amendment). A bare name that only matches a pay-per-use provider is
 // refused with the full id to use. quotas is the start's owner-wide reading.
 func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, requireReadOnly bool, quotas *protocol.Quotas) (string, error) {
+	order, _, err := g.workerHarnessOrder(node, model, requireReadOnly, quotas)
+	if err != nil {
+		return "", err
+	}
+	return order[0].Harness, nil
+}
+
+// workerHarnessOrder is chooseWorkerHarness as the fixed ranker sees it: the
+// same order, with each harness's resolved model, so the gate can refuse an
+// exhausted harness and take the next one.
+func (g *Gateway) workerHarnessOrder(node *protocol.NodeView, model string, requireReadOnly bool, quotas *protocol.Quotas) ([]protocol.WorkerModelCandidate, map[string]string, error) {
 	type candidate struct {
 		harness      string
+		model        string
 		signedIn     bool
 		subscription bool
 		exact        bool
@@ -1450,8 +1479,9 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 	}
 	profiles, err := g.store.WorkerProfiles()
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
+	notes := map[string]string{}
 	profileHarness := ""
 	for _, p := range profiles {
 		name, _ := protocol.SplitModelLevel(model)
@@ -1470,7 +1500,7 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 		if requireReadOnly && !protocol.WorkerReadOnlySupported(h.Name) {
 			continue
 		}
-		resolved, _, err := g.resolveWorkerModel(node, h, h.Name, model, "", quotas)
+		resolved, note, err := g.resolveWorkerModel(node, h, h.Name, model, "", quotas)
 		if err != nil {
 			var pe *protocol.PayPerUseModelError
 			if errors.As(err, &pe) && payErr == nil {
@@ -1484,15 +1514,19 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 			}
 			continue
 		}
+		if note != "" {
+			notes[h.Name+"\x00"+resolved] = note
+		}
 		blocked, err := g.store.ModelAuthBlocked(node.NodeID, h.Name, resolved)
 		if err != nil {
-			return "", err
+			return nil, nil, err
 		}
 		if blocked {
 			continue
 		}
 		cands = append(cands, candidate{
 			harness:      h.Name,
+			model:        resolved,
 			signedIn:     h.SignedIn == "yes",
 			subscription: protocol.SubscriptionProvider(h.Name, resolved, quotas),
 			exact:        protocol.ModelIDWrittenInFull(model, resolved),
@@ -1503,13 +1537,13 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 	if len(cands) == 0 {
 		switch {
 		case payErr != nil:
-			return "", payErr
+			return nil, nil, payErr
 		case opencodeErr != nil:
-			return "", opencodeErr
+			return nil, nil, opencodeErr
 		case firstErr != nil:
-			return "", firstErr
+			return nil, nil, firstErr
 		}
-		return "", reject("no harness on %s lists %q", node.Hostname, model)
+		return nil, nil, reject("no harness on %s lists %q", node.Hostname, model)
 	}
 	// A harness with no stored list is a fallback only: it must not hide a
 	// harness that actually lists the model, nor a pay-per-use refusal from a
@@ -1527,9 +1561,9 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 	} else {
 		switch {
 		case payErr != nil:
-			return "", payErr
+			return nil, nil, payErr
 		case opencodeErr != nil:
-			return "", opencodeErr
+			return nil, nil, opencodeErr
 		}
 		cands = unlisted
 	}
@@ -1548,7 +1582,11 @@ func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, req
 		}
 		return cands[i].order < cands[j].order
 	})
-	return cands[0].harness, nil
+	out := make([]protocol.WorkerModelCandidate, len(cands))
+	for i, c := range cands {
+		out[i] = protocol.WorkerModelCandidate{Name: c.harness, Harness: c.harness, Model: c.model}
+	}
+	return out, notes, nil
 }
 
 // workerContinue starts a new worker from an ended one. The gateway knows the
@@ -1604,33 +1642,62 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		}
 		p.Model = protocol.ParseModelSelection(harness, p.Provider, model, p.Effort).LegacyModel()
 	}
+	harness := p.Harness
+	if harness == "" {
+		harness = old.Harness
+	}
+	continuedModel := p.Model
+	if continuedModel == "" {
+		continuedModel = old.Model
+	}
+	info, err := g.NodesInfo()
+	if err != nil {
+		return none, err
+	}
+	var node *protocol.NodeView
+	for i := range info.Nodes {
+		if info.Nodes[i].NodeID == old.NodeID {
+			node = &info.Nodes[i]
+			break
+		}
+	}
+	if node == nil {
+		return none, reject("machine %s is offline, so worker %s cannot be continued", old.Hostname, old.SessionID)
+	}
 	if p.Model != "" {
-		harness := p.Harness
-		if harness == "" {
-			harness = old.Harness
-		}
-		info, err := g.NodesInfo()
-		if err != nil {
-			return none, err
-		}
-		for i := range info.Nodes {
-			node := &info.Nodes[i]
-			if node.NodeID != old.NodeID {
+		for j := range node.Harnesses {
+			hi := &node.Harnesses[j]
+			if hi.Name != harness {
 				continue
 			}
-			for j := range node.Harnesses {
-				hi := &node.Harnesses[j]
-				if hi.Name != harness {
-					continue
-				}
-				p.Model, _, err = g.resolveWorkerModel(node, hi, harness, p.Model, "", quotas)
-				if err != nil {
-					return none, err
-				}
-				break
+			continuedModel, _, err = g.resolveWorkerModel(node, hi, harness, p.Model, "", quotas)
+			if err != nil {
+				return none, err
 			}
 			break
 		}
+		p.Model = continuedModel
+	}
+	// A continued worker keeps its model, so its policy is the same-model row:
+	// the locked checks still refuse a provider that cannot run now.
+	floors, err := g.store.workerFloors()
+	if err != nil {
+		return none, err
+	}
+	granted, gerr := g.Choose(ChooseRequest{
+		Purpose:    model.PurposeContinueOrResume,
+		Node:       withHarnessInstalled(node, harness),
+		Candidates: []protocol.WorkerModelCandidate{{Name: harness + " " + continuedModel, Harness: harness, Model: continuedModel}},
+		Difficulty: protocol.WorkerLevel(old.Worker.Assessment),
+		Quotas:     quotas,
+		Floors:     floors,
+	})
+	if gerr != nil {
+		g.feedGateSkips(granted.Skips)
+		return none, reject("machine %s: %s", old.Hostname, joinModelNote(skipNotes(granted.Skips)))
+	}
+	if !sameGrant(granted.Granted, harness, continuedModel) {
+		return none, reject("the gate granted another model than the continued worker runs")
 	}
 	if len(validate) > 0 && validate[0] {
 		return none, nil
@@ -1970,9 +2037,9 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 	if a.Worker.Owner != p.Sender {
 		return "", reject("worker %s has ended, and only the session that started it can start it again", p.Recipient)
 	}
-	// A worker whose model is known to be out of quota would fail within
-	// seconds. Say so now, with the reset, instead of starting it.
-	if why := g.resumeQuotaRefusal(a); why != "" {
+	// A resumed worker keeps its model, so the same-model row of the one gate
+	// decides whether it can run now (decision 0162).
+	if why := g.resumeRefusal(a); why != "" {
 		g.logLine("worker.resume_refused_quota", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "reason", why)
 		return "", reject("worker %s was not started again: %s. Start a new worker on the same branch with agent_worker_start and base set to that branch, so the picker chooses another model", p.Recipient, why)
 	}
@@ -2017,22 +2084,64 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 	return "", nil
 }
 
-// resumeQuotaRefusal says why an ended worker's harness and model cannot run
-// now because their quota is spent, with the reset time when it is known. It
-// reads what a new start reads: the quota reading and the blocks that worker
-// runs reported. It is "" when the worker may start again.
-func (g *Gateway) resumeQuotaRefusal(a protocol.AgentView) string {
-	_, harness, model, _, err := g.store.WorkerSessionFacts(a.SessionID)
+// withHarnessInstalled marks the harness a continued or resumed worker already
+// ran on as present: the machine, not the gateway, decides whether it can still
+// resume it. The other locked checks (auth, limit, exhaustion) still apply.
+func withHarnessInstalled(node *protocol.NodeView, harness string) *protocol.NodeView {
+	if node == nil {
+		return &protocol.NodeView{Hostname: "this machine", Harnesses: []protocol.HarnessInfo{{Name: harness, SignedIn: "yes"}}}
+	}
+	for _, h := range node.Harnesses {
+		if h.Name == harness {
+			return node
+		}
+	}
+	copied := *node
+	copied.Harnesses = append(append([]protocol.HarnessInfo(nil), node.Harnesses...), protocol.HarnessInfo{Name: harness, SignedIn: "yes"})
+	return &copied
+}
+
+// resumeRefusal says why an ended worker's harness and model cannot run now.
+// It asks the same gate a continue asks, with the locked checks on and every
+// optional step off. It is "" when the worker may start again.
+func (g *Gateway) resumeRefusal(a protocol.AgentView) string {
+	_, harness, resumedModel, _, err := g.store.WorkerSessionFacts(a.SessionID)
 	if err != nil {
 		return ""
 	}
 	if harness == "" {
 		harness = a.Harness
 	}
-	why := protocol.QuotaRefusal(g.ownerQuotas(a.NodeID), harness, model)
-	if why != "" {
-		// The worker is stuck on quota: it joins the provider's thread.
-		g.quotaStuckFeed(harness, model, why)
+	quotas := g.ownerQuotas(a.NodeID)
+	floors, err := g.store.workerFloors()
+	if err != nil {
+		return ""
+	}
+	info, err := g.NodesInfo()
+	if err != nil {
+		return ""
+	}
+	var node *protocol.NodeView
+	for i := range info.Nodes {
+		if info.Nodes[i].NodeID == a.NodeID {
+			node = &info.Nodes[i]
+			break
+		}
+	}
+	chosen, gerr := g.Choose(ChooseRequest{
+		Purpose:    model.PurposeContinueOrResume,
+		Node:       withHarnessInstalled(node, harness),
+		Candidates: []protocol.WorkerModelCandidate{{Name: harness + " " + resumedModel, Harness: harness, Model: resumedModel}},
+		Quotas:     quotas,
+		Floors:     floors,
+	})
+	if gerr == nil {
+		return ""
+	}
+	g.feedGateSkips(chosen.Skips)
+	why := joinModelNote(skipNotes(chosen.Skips))
+	if why == "" {
+		why = gerr.Error()
 	}
 	return why
 }
@@ -2338,63 +2447,6 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notSt
 	}
 
 	return candidates, skippedProfiles, resolutionNotes, nil
-}
-
-// chooseAutomaticWorker applies the same weights and rotation for a start or a
-// preview. Without a judge result it picks at the middle of the level's D range.
-func (g *Gateway) chooseAutomaticWorker(candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	return g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(nil, difficulty), scores, minimums, quotas, running, protected, persist)
-}
-
-// chooseAutomaticWorkerAt picks for a task with judge D d. The picker table is
-// the cached one, so a pick makes no query of its own besides the model health
-// and the rotation.
-func (g *Gateway) chooseAutomaticWorkerAt(candidates []protocol.WorkerModelCandidate, difficulty string, d float64, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	pick := &protocol.PickerInput{D: d, Table: g.store.pickerTable(), Prices: g.store.priceBook()}
-	return g.chooseAutomaticWorkerCore(g.store.ModelHealth, g.store.WorkerRotation, pick, candidates, difficulty, scores, minimums, quotas, running, protected, persist)
-}
-
-// chooseAutomaticWorkerCore is the chooser with its two store reads passed in,
-// so a preview for many levels reads the model health and the rotation once.
-func (g *Gateway) chooseAutomaticWorkerCore(modelHealth func(harness, model string) (ModelHealth, error), readRotation func() (protocol.WorkerRotation, error), pick *protocol.PickerInput, candidates []protocol.WorkerModelCandidate, difficulty string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, protected protocol.ProtectedProviders, persist bool) (protocol.WorkerModelChoice, string, error) {
-	g.rotationMu.Lock()
-	defer g.rotationMu.Unlock()
-	rotation, err := readRotation()
-	if err != nil {
-		return protocol.WorkerModelChoice{}, "", err
-	}
-	var healthy []protocol.WorkerModelCandidate
-	var cooling []string
-	for _, c := range candidates {
-		h, err := modelHealth(c.Harness, c.Model)
-		if err != nil {
-			return protocol.WorkerModelChoice{}, "", err
-		}
-		if h.Cooling {
-			cooling = append(cooling, fmt.Sprintf("skipped %s %s: cooling down after %d infrastructure failures (until %s UTC)", c.Harness, c.Model, h.Failures, h.Until.UTC().Format("15:04")))
-		} else {
-			healthy = append(healthy, c)
-		}
-	}
-	var choice protocol.WorkerModelChoice
-	var note string
-	if len(healthy) > 0 && len(cooling) > 0 {
-		choice, note, err = chooseProtectedWorker(healthy, difficulty, scores, minimums, quotas, running, &rotation, protected, pick)
-	} else if len(cooling) > 0 {
-		err = fmt.Errorf("no healthy candidates")
-	}
-	if len(cooling) == 0 || err != nil {
-		choice, note, err = chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, &rotation, protected, pick)
-		if err == nil && len(cooling) > 0 {
-			note = appendModelNote(note, "used model cooling down because no healthy alternative is adequate")
-		}
-	} else {
-		note = appendModelNote(note, strings.Join(cooling, "; "))
-	}
-	if err == nil && persist {
-		err = g.store.saveWorkerRotation(rotation)
-	}
-	return choice, note, err
 }
 
 // filterWorkerFamilies removes excluded makers before scoring and rotation. A

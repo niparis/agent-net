@@ -99,53 +99,6 @@ func TestQuotaBurnLearnedBudgetStandsInWhenThereIsNoReading(t *testing.T) {
 	_ = now
 }
 
-func TestChooseWorkerModelMovesToAnotherProviderWhenOneWouldRunOut(t *testing.T) {
-	scores := []ModelScore{{Match: "a", Score: 51}, {Match: "b", Score: 51}}
-	q, _ := burnFixture(60, 600_000)
-	candidates := []WorkerModelCandidate{
-		{Name: "a", Harness: "pi", Model: "a", Provider: "codex"},
-		{Name: "b", Harness: "pi", Model: "b", Provider: "other"},
-	}
-	for i := 0; i < 4; i++ {
-		got, err := ChooseWorkerModel(candidates, "hard", scores, nil, q, nil, &WorkerRotation{})
-		if err != nil || got.Model != "b" {
-			t.Fatalf("pick %d: %+v %v", i, got, err)
-		}
-		if !strings.Contains(got.QuotaNote+got.PickNote, "codex") {
-			t.Fatalf("the note must say why codex was left out: %q %q", got.QuotaNote, got.PickNote)
-		}
-	}
-	// With plenty of quota both providers rotate again.
-	q, _ = burnFixture(5, 600_000)
-	seen := map[string]bool{}
-	rotation := &WorkerRotation{}
-	for i := 0; i < 6; i++ {
-		got, err := ChooseWorkerModel(candidates, "hard", scores, nil, q, nil, rotation)
-		if err != nil {
-			t.Fatal(err)
-		}
-		seen[got.Model] = true
-	}
-	if !seen["a"] || !seen["b"] {
-		t.Fatalf("a provider with plenty of quota must stay in the rotation: %v", seen)
-	}
-}
-
-func TestChooseWorkerModelHoldsTheStartWhenEveryProviderWouldRunOut(t *testing.T) {
-	scores := []ModelScore{{Match: "a", Score: 51}}
-	q, _ := burnFixture(60, 600_000)
-	candidates := []WorkerModelCandidate{{Name: "a", Harness: "pi", Model: "a", Provider: "codex"}}
-	_, err := ChooseWorkerModel(candidates, "hard", scores, nil, q, nil, &WorkerRotation{})
-	if err == nil {
-		t.Fatal("the only provider would run out: the start must be held")
-	}
-	for _, want := range []string{"held", "codex", "resets in 2h"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q lacks %q", err, want)
-		}
-	}
-}
-
 func TestLearnQuotaBudgetReadsTheWindowBeforeTheFailure(t *testing.T) {
 	failed := time.Unix(5_000_000, 0)
 	runs := []BurnRun{

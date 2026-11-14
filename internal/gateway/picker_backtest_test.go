@@ -136,7 +136,7 @@ func backtestShares(t *testing.T, candidates []protocol.WorkerModelCandidate, le
 	note := ""
 	const picks = 1000
 	for k := 0; k < picks; k++ {
-		choice, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, nil, nil, rotation, in)
+		choice, err := chooseModelTest(candidates, level, scores, minimums, nil, nil, rotation, in)
 		if err != nil {
 			t.Fatal(err)
 		}

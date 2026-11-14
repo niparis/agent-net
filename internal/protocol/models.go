@@ -112,17 +112,6 @@ func modelPart(id string) string {
 	return id
 }
 
-// quotaHigh tells whether a provider is above QuotaHighPercent in a window.
-func quotaHigh(q *Quotas, provider string) bool { return quotaHighFor(q, provider, "") }
-
-func quotaHighFor(q *Quotas, provider, model string) bool {
-	if q == nil {
-		return false
-	}
-	_, ok := q.HighWindowFor(provider, model)
-	return ok
-}
-
 func providerOf(id string) string {
 	if i := strings.Index(id, "/"); i >= 0 {
 		return id[:i]
@@ -221,31 +210,29 @@ func ResolveModelFailed(query string, models []string, usage map[string]int, pro
 }
 
 // ResolveModelQuota is ResolveModelRankedQuota without the recent successes.
-func ResolveModelQuota(query string, models []string, usage map[string]int, providers []string, failed map[string]bool, quotas *Quotas) (ModelResolution, error) {
-	return ResolveModelRankedQuota(query, models, usage, providers, failed, nil, quotas)
+func ResolveModelQuota(query string, models []string, usage map[string]int, providers []string, failed map[string]bool) (ModelResolution, error) {
+	return ResolveModelRankedQuota(query, models, usage, providers, failed, nil)
 }
 
 // ResolveModelRanked is ResolveModelRankedQuota without quotas.
 func ResolveModelRanked(query string, models []string, usage map[string]int, providers []string, failed, succeeded map[string]bool) (ModelResolution, error) {
-	return ResolveModelRankedQuota(query, models, usage, providers, failed, succeeded, nil)
+	return ResolveModelRankedQuota(query, models, usage, providers, failed, succeeded)
 }
 
 // ResolveModelRankedQuota is ResolveModel with the models that failed a worker
-// recently (failed, by full id), those that finished one successfully
-// (succeeded, by full id), and the machine's quotas (decision 0022).
+// recently (failed, by full id) and those that finished one successfully
+// (succeeded, by full id) (decision 0022).
 //
 // A model that failed a worker ranks after every other model, whatever its
 // usage; the other models of the same provider rank between the two. A model
 // that recently finished a worker with a hand-back status done ranks before
-// models without such a success. A loose name skips a provider that is
-// exhausted or above QuotaHighPercent, and a provider ahead of its reset clock
-// ranks below providers on pace. An exact match still wins, with QuotaNote
-// when its provider is exhausted or nearly so.
-func ResolveModelRankedQuota(query string, models []string, usage map[string]int, providers []string, failed, succeeded map[string]bool, quotas *Quotas) (ModelResolution, error) {
+// models without such a success. Quota is not part of this ranking: the start's
+// gate refuses a model that cannot run now (decision 0162).
+func ResolveModelRankedQuota(query string, models []string, usage map[string]int, providers []string, failed, succeeded map[string]bool) (ModelResolution, error) {
 	query = strings.TrimSpace(query)
 	for _, m := range models {
 		if m == query {
-			return ModelResolution{Model: m, Exact: true, QuotaNote: QuotaWarning(quotas, "", m)}, nil
+			return ModelResolution{Model: m, Exact: true}, nil
 		}
 	}
 	// A thinking or reasoning level is not part of the id: resolve the name
@@ -277,37 +264,6 @@ func ResolveModelRankedQuota(query string, models []string, usage map[string]int
 	if len(cands) == 0 {
 		return ModelResolution{}, &NoModelMatchError{Query: query, Count: len(models), Closest: closestModels(toks, models)}
 	}
-	// A provider that is exhausted, or above QuotaHighPercent of any window,
-	// is skipped for a loose name. An exact id was handled above.
-	var blocked []string
-	if quotas != nil {
-		keep := cands[:0:0]
-		seen := map[string]bool{}
-		for _, m := range cands {
-			qp := QuotaProviderForModel(m)
-			if qp == "" {
-				keep = append(keep, m)
-				continue
-			}
-			if _, ok := quotas.ExhaustedWindowFor(qp, m); ok || quotaHighFor(quotas, qp, m) {
-				if !seen[qp] {
-					seen[qp] = true
-					if w, ok := quotas.ExhaustedWindowFor(qp, m); ok {
-						blocked = append(blocked, fmt.Sprintf("%s is exhausted (%s; %s)", qp, QuotaWindowName(w), QuotaResetText(w)))
-					} else if w, ok := quotas.HighWindowFor(qp, m); ok {
-						blocked = append(blocked, fmt.Sprintf("%s is at %.0f%% of its %s window", qp, w.PercentUsed, QuotaWindowName(w)))
-					}
-				}
-				continue
-			}
-			keep = append(keep, m)
-		}
-		if len(keep) == 0 {
-			sort.Strings(blocked)
-			return ModelResolution{}, fmt.Errorf("every model that matches %q is out of quota: %s", query, strings.Join(blocked, "; "))
-		}
-		cands = keep
-	}
 	// Sessions per provider: a provider the owner uses for other models wins
 	// over one the owner never used.
 	byProvider := map[string]int{}
@@ -325,7 +281,8 @@ func ResolveModelRankedQuota(query string, models []string, usage map[string]int
 	}
 	// r[0] ranks a recent success first (0), then a model with no recent
 	// history (1), then a model whose provider failed (2), then the model that
-	// failed (3). r[1] is the quota pace, then usage and the older rules.
+	// failed (3). r[1] is unused and kept for the older rule's layout; r[2] is
+	// usage and the rest are the older rules.
 	rank := func(m string) [8]int {
 		r := [8]int{1, 0, -usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
 		switch {
@@ -335,9 +292,6 @@ func ResolveModelRankedQuota(query string, models []string, usage map[string]int
 			r[0] = 0
 		case failedProv[providerOf(m)]:
 			r[0] = 2
-		}
-		if quotas != nil && quotas.Ahead(QuotaProviderForModel(m)) {
-			r[1] = 1
 		}
 		for i, p := range providers {
 			if providerOf(m) == p {
@@ -431,7 +385,7 @@ func ResolveWorkerModelRankedQuota(harness, query string, models []string, usage
 		if PayPerUseProvider(harness, m, quotas) && !strings.Contains(base, "/") {
 			continue
 		}
-		return ResolveModelRankedQuota(query, models, usage, providers, failed, succeeded, quotas)
+		return ResolveModelRankedQuota(query, models, usage, providers, failed, succeeded)
 	}
 	var subscription, payPerUse []string
 	for _, m := range models {
@@ -442,7 +396,7 @@ func ResolveWorkerModelRankedQuota(harness, query string, models []string, usage
 		}
 	}
 	if len(subscription) > 0 {
-		res, err := ResolveModelRankedQuota(query, subscription, usage, providers, failed, succeeded, quotas)
+		res, err := ResolveModelRankedQuota(query, subscription, usage, providers, failed, succeeded)
 		if err == nil {
 			return res, nil
 		}
@@ -471,7 +425,7 @@ func ResolveWorkerModelRankedQuota(harness, query string, models []string, usage
 		sort.Strings(matches)
 		return ModelResolution{}, &PayPerUseModelError{Query: base, Models: matches}
 	}
-	return ResolveModelRankedQuota(query, models, usage, providers, failed, succeeded, quotas)
+	return ResolveModelRankedQuota(query, models, usage, providers, failed, succeeded)
 }
 
 // closestModels ranks the models that share a word with the query, by how many

@@ -3,6 +3,7 @@ package gateway
 import (
 	"strings"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -38,7 +39,11 @@ func (g *Gateway) pickDifficultyJudge(nodeID string, req protocol.DifficultyJudg
 	if err != nil {
 		return out, err
 	}
-	quotas := g.nodeQuotas(nodeID)
+	floors, err := g.store.workerFloors()
+	if err != nil {
+		return out, err
+	}
+	quotas := g.ownerQuotas(nodeID)
 	candidates, _, _, err := g.workerModelCandidates(node, profiles, providers, quotas, "", false, protected)
 	if err != nil {
 		return out, err
@@ -68,17 +73,26 @@ func (g *Gateway) pickDifficultyJudge(nodeID string, req protocol.DifficultyJudg
 			running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
 		}
 	}
-	// Distinguish an empty eligibility set from a storage error when persisting
-	// the rotation. The preview uses the same protection and quota rules.
-	pick := &protocol.PickerInput{D: protocol.PickerD(nil, "normal"), Table: g.store.pickerTable(), Prices: g.store.priceBook()}
-	if _, _, err := chooseProtectedWorker(filtered, "normal", scores, minimums, quotas, running, nil, protected, pick); err != nil {
+	quotas = g.withQuotaBurn(quotas, agents)
+	chosen, err := g.Choose(ChooseRequest{
+		Purpose:    model.PurposeDifficultyJudge,
+		Node:       node,
+		Candidates: filtered,
+		Difficulty: "normal",
+		D:          protocol.PickerD(nil, "normal"),
+		Scores:     scores,
+		Minimums:   minimums,
+		Quotas:     quotas,
+		Running:    running,
+		Protected:  protected,
+		Floors:     floors,
+	})
+	if err != nil {
+		// No judge model can run now is not a judge error: the task starts at
+		// normal with the reason.
 		return out, nil
 	}
-	choice, _, err := g.chooseAutomaticWorker(filtered, "normal", scores, minimums, quotas, running, protected, true)
-	if err != nil {
-		return out, err
-	}
-	out.Harness, out.Model = choice.Harness, choice.Model
-	out.Provider = protocol.ProfileProvider(choice.Harness, choice.Model)
+	out.Harness, out.Model = chosen.Choice.Harness, chosen.Choice.Model
+	out.Provider = protocol.ProfileProvider(chosen.Choice.Harness, chosen.Choice.Model)
 	return out, nil
 }

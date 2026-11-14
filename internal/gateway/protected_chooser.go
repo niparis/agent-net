@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -15,49 +14,4 @@ func isProtected(harness, model string, setting protocol.ProtectedProviders) boo
 		}
 	}
 	return false
-}
-
-func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, rotation *protocol.WorkerRotation, setting protocol.ProtectedProviders, pick ...*protocol.PickerInput) (protocol.WorkerModelChoice, string, error) {
-	if len(setting.Providers) == 0 {
-		c, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, rotation, pick...)
-		return c, "", err
-	}
-	var ordinary, protected []protocol.WorkerModelCandidate
-	var skipped []string
-	for _, c := range candidates {
-		if isProtected(c.Harness, c.Model, setting) {
-			protected = append(protected, c)
-			name := c.Name
-			if name == "" {
-				name = c.Harness + " " + c.Model
-			}
-			_, _, eligible, _ := protocol.WorkerCandidateFit(c, level, scores, minimums)
-			if eligible {
-				skipped = append(skipped, fmt.Sprintf("skipped %s: protected provider (%s), saved for your orchestrator", name, protocol.ProfileProvider(c.Harness, c.Model)))
-			}
-		} else {
-			ordinary = append(ordinary, c)
-		}
-	}
-	if len(ordinary) > 0 {
-		c, err := protocol.ChooseWorkerModel(ordinary, level, scores, minimums, quotas, running, rotation, pick...)
-		if err == nil {
-			return c, strings.Join(skipped, "; "), nil
-		}
-	}
-	c, err := protocol.ChooseWorkerModel(protected, level, scores, minimums, quotas, running, rotation, pick...)
-	if err != nil {
-		// Report the full roster, including profiles excluded by level. The
-		// all-candidates choice carries every left-out reason for the roster.
-		all, allErr := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, nil, pick...)
-		if allErr != nil {
-			return all, "", allErr
-		}
-		return c, "", err
-	}
-	reason := setting.Reason
-	if reason == "" {
-		reason = "your orchestrator's provider"
-	}
-	return c, fmt.Sprintf("used %s %s (protected: %s) because no other profile meets %s, or the others are out of quota", c.Harness, c.Model, reason, level), nil
 }

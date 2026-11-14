@@ -3,6 +3,7 @@ package gateway
 import (
 	"testing"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -72,8 +73,7 @@ func TestWorkerCandidateExhaustedQuotaExcluded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workerModelCandidates error: %v", err)
 	}
-	_, _, err = g.chooseAutomaticWorker(candidates, "normal", nil, nil, quotas, nil, protocol.ProtectedProviders{}, false)
-	if err == nil {
+	if _, err = g.Choose(ChooseRequest{Purpose: model.PurposeWorkerAutomatic, Node: n, Candidates: candidates, Difficulty: "normal", Quotas: quotas}); err == nil {
 		t.Fatalf("expected exhausted quota to exclude candidate, got nil error")
 	}
 }

@@ -49,11 +49,11 @@ func pickerBucket(d float64, s PickerSettings) int {
 // PickerMinCellTasks tasks. It is -1 when no candidate has a record, and the
 // bucket mean is then the best.
 //
-// The decision here is exactly the one chooseByCells uses: a candidate with a
+// The decision here is exactly the one pickOrderByCells uses: a candidate with a
 // record is allowed unless the top of its interval is below AllowedFraction x
 // best, and a thin candidate is allowed by its benchmark ceiling. A strong
 // model is never left out for being far above the work: the weaker bias and the
-// qualifying rule in chooseByCells steer the work instead.
+// qualifying rule in pickOrderByCells steer the work instead.
 func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean float64, bucket int, s PickerSettings) ([]PickerVerdict, int) {
 	s = s.Normalized()
 	out := make([]PickerVerdict, len(facts))
@@ -197,26 +197,14 @@ func pickerCostText(e *pickerEntry) string {
 	return text
 }
 
-// chooseByCells runs the cell rule for a route that has not moved to the gate
-// yet. A non-empty fallback says why it chose nothing and the level rule must
-// be used; the rotation is then untouched.
-func chooseByCells(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput) (WorkerModelChoice, string) {
-	order, _, fallback := pickOrderByCells(candidates, level, scores, minimums, quotas, running, rotation, in, true)
-	if fallback != "" {
-		return WorkerModelChoice{}, fallback
-	}
-	return order[0], ""
-}
-
 // pickOrderByCells returns the cell rule's whole order (decision 0162). The
 // first choice is the one the rule picked; the rest follow in the order the
 // gate should try them.
 //
-// blockQuota is the rule of the routes part 3 has not moved yet: a candidate
-// whose provider has no room leaves the order. The automatic start keeps such a
-// candidate at the end, where the gate refuses it with the reason of its own
-// check, so the ranking never decides that a candidate may not run.
-func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput, blockQuota bool) ([]WorkerModelChoice, string, string) {
+// A candidate whose provider has no room stays in the order, at the end where
+// the gate refuses it with the reason of its own check: the ranking never
+// decides that a candidate may not run.
+func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput) ([]WorkerModelChoice, string, string) {
 	table, set := in.Table, in.Table.Settings()
 	bucket := table.Bucket(in.D)
 	bucketLo, bucketHi := table.BucketRange(bucket)
@@ -227,30 +215,14 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 	}
 
 	var entries []*pickerEntry
-	var quotaExcluded []string
 	for _, c := range candidates {
 		provider := c.Provider
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
 		}
-		var room float64
-		var note string
-		var measured, blocked bool
-		if blockQuota {
-			room, note, measured, blocked = workerQuotaRoom(quotas, provider, c.Model)
-		} else {
-			// The gate owns the quota check. The ranker only needs a pace for
-			// its order, so a used-up window is left out of that reading.
-			room, note, measured = WorkerQuotaPace(quotas, provider, c.Model)
-		}
-		if blocked {
-			name := c.Name
-			if name == "" {
-				name = PickerModelDisplay(PickerModelKey(c.Harness, c.Model))
-			}
-			quotaExcluded = append(quotaExcluded, name+" left out (quota: "+note+")")
-			continue
-		}
+		// The gate owns the quota check. The ranker only needs a pace for its
+		// order, so a used-up window is left out of that reading.
+		room, note, measured := WorkerQuotaPace(quotas, provider, c.Model)
 		if measured {
 			room -= 5 * float64(running[provider])
 		}
@@ -265,7 +237,7 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 		entries = append(entries, e)
 	}
 	if len(entries) == 0 {
-		return nil, header, header + ": fallback to the level rule (every profile is out of quota)"
+		return nil, header, header + ": fallback to the level rule (no candidate)"
 	}
 
 	// 1-3. The same decision the Quality subtab shows, one verdict per entry.
@@ -415,10 +387,7 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 	} else {
 		picked.PickNote = pickerNote(header, entries, chosen, bestEntry)
 	}
-	if len(quotaExcluded) > 0 {
-		picked.PickNote += "; " + strings.Join(quotaExcluded, "; ")
-	}
-	picked.Why = pickerShortWhy(level, in.D, chosen, len(qualified), entries, quotaExcluded)
+	picked.Why = pickerShortWhy(level, in.D, chosen, len(qualified), entries)
 	return pickOrder(level, picked, chosen, entries, final, qualified, allowed, choices), header, ""
 }
 
@@ -502,7 +471,7 @@ func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entr
 // the difficulty and D; the chosen profile with its record (rate, n) or its score;
 // the count of other qualifying profiles; and the top reasons others were left
 // out, grouped.
-func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCount int, entries []*pickerEntry, quotaExcluded []string) string {
+func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCount int, entries []*pickerEntry) string {
 	parts := []string{fmt.Sprintf("difficulty %s (D %.2f)", level, d)}
 	if chosen != nil {
 		if chosen.cell.N > 0 {
@@ -539,20 +508,6 @@ func pickerShortWhy(level string, d float64, chosen *pickerEntry, qualifyingCoun
 			leftItems = append(leftItems, leftOutItem{name: e.name, reason: e.reason})
 		}
 	}
-	for _, qe := range quotaExcluded {
-		name := qe
-		reason := "out of quota"
-		if idx := strings.Index(qe, " left out (quota: "); idx >= 0 {
-			name = qe[:idx]
-			reason = strings.TrimSpace(strings.TrimSuffix(qe[idx+len(" left out (quota: "):], ")"))
-			// An older note may carry no reason; never show empty parentheses.
-			if reason == "" {
-				reason = "out of quota"
-			}
-		}
-		leftItems = append(leftItems, leftOutItem{name: name, reason: reason})
-	}
-
 	// The owner reads profile names, so a group lists the profiles it covers,
 	// never a provider label. A long group keeps the count honest and the line
 	// short.

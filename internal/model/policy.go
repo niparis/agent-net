@@ -63,7 +63,7 @@ func PolicyFor(purpose Purpose) Policy {
 	case PurposeWorkerNamed:
 		return Policy{
 			Ranker: RankFixed,
-			Checks: Checks{Floor: true, Block90: true, Burn: true},
+			Checks: Checks{Floor: true, Block90: true, Burn: true, Cooling: true},
 		}
 	case PurposeOwnerNamed:
 		return Policy{Ranker: RankFixed}

@@ -6,31 +6,24 @@ import (
 )
 
 // confirmCase is a held override of deepseek/cheap-1 for a normal start, with
-// a quota reading of 20% used and scores for a cheap and a big model.
+// scores for a cheap and a big model.
 func confirmCase() (OverrideFacts, ConfirmContext) {
 	f := OverrideFacts{Harness: "opencode", Model: "deepseek/cheap-1", Level: "normal", Provider: "deepseek", CallerFamily: "openai", OverrideFamily: "deepseek"}
-	c := ConfirmContext{
-		Quotas: &Quotas{Providers: []QuotaProvider{{Provider: "deepseek", Windows: []QuotaWindow{{ID: "5h", PercentUsed: 20}}}}},
-		Scores: []ModelScore{{Match: "cheap-1", Score: 32}, {Match: "big-1", Score: 55}},
-	}
+	c := ConfirmContext{Scores: []ModelScore{{Match: "cheap-1", Score: 32}, {Match: "big-1", Score: 55}}}
 	return f, c
 }
 
 // Decision 0151: the chief confirms only when the tier is the same or
-// cheaper, quota allows it and the provider is not protected. Any missing
-// fact sends the ask to the CTO.
+// cheaper and the provider is not protected. Any missing fact sends the ask to
+// the CTO. Quota is the start's gate check.
 func TestChiefConfirmRule(t *testing.T) {
 	f, c := confirmCase()
 	if err := ConfirmOverride(f, c, true); err != nil {
 		t.Fatalf("cheaper with quota allowed: %v", err)
 	}
 	for name, change := range map[string]func(*OverrideFacts, *ConfirmContext){
-		"higher tier": func(f *OverrideFacts, _ *ConfirmContext) { f.Model = "deepseek/big-1" },
-		"under the worker floor": func(_ *OverrideFacts, c *ConfirmContext) {
-			c.Floors = WorkerFloors{Floors: map[string]int{"deepseek": 90}}
-		},
+		"higher tier":             func(f *OverrideFacts, _ *ConfirmContext) { f.Model = "deepseek/big-1" },
 		"no score":                func(f *OverrideFacts, _ *ConfirmContext) { f.Model = "deepseek/unknown-9" },
-		"no quota reading":        func(_ *OverrideFacts, c *ConfirmContext) { c.Quotas = nil },
 		"unknown start level":     func(f *OverrideFacts, _ *ConfirmContext) { f.Level = "" },
 		"unknown provider":        func(f *OverrideFacts, _ *ConfirmContext) { f.Provider = "" },
 		"no model":                func(f *OverrideFacts, _ *ConfirmContext) { f.Model = "" },

@@ -130,7 +130,7 @@ func TestWorkerChoiceMarksStayOnTheirHarness(t *testing.T) {
 		if c.Failed != (harness == "opencode") || c.Succeeded != (harness == "opencode") {
 			t.Fatalf("marks leaked: %+v", c)
 		}
-		choice, err := protocol.ChooseWorkerModel([]protocol.WorkerModelCandidate{c}, "hard", nil, nil, nil, nil, nil)
+		choice, err := chooseModelTest([]protocol.WorkerModelCandidate{c}, "hard", nil, nil, nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

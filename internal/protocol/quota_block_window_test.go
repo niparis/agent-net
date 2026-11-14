@@ -37,17 +37,6 @@ func TestRunBlockOnOneAgyWindowLeavesOtherModels(t *testing.T) {
 	if r := QuotaRefusal(q, "agy", "gemini-4-argon-high"); r != want {
 		t.Fatalf("argon refusal %q; want %q", r, want)
 	}
-	candidates := []WorkerModelCandidate{
-		{Name: "argon agy", Harness: "agy", Model: "gemini-4-argon-high"},
-		{Name: "flash agy", Harness: "agy", Model: "gemini-3.8-flash-low"},
-	}
-	scores := []ModelScore{{Match: "gemini-4-argon", Score: 30}, {Match: "gemini-3-8-flash", Score: 30}}
-	for i := 0; i < 4; i++ {
-		got, err := ChooseWorkerModel(candidates, "normal", scores, nil, q, nil, &WorkerRotation{})
-		if err != nil || got.Name != "flash agy" {
-			t.Fatalf("picker: %+v, %v", got, err)
-		}
-	}
 }
 
 // A model that no window of its provider serves has no window to block, so the

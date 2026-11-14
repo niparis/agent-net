@@ -173,9 +173,10 @@ func TestWorkerJudgeRetryStoresFirstFailure(t *testing.T) {
 	}
 }
 
-// The gateway chooses from the registered roster on this daemon's machine.
-// The scripts stand in for Claude and Pi, so no real account is used.
-func TestWorkerJudgePickerRunsClaudeAndGeminiProfiles(t *testing.T) {
+// The gateway chooses from the registered roster on this daemon's machine and
+// keeps its fixed list order. The scripts stand in for Claude and Pi, so no
+// real account is used.
+func TestWorkerJudgePickerUsesTheGatewayList(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "judge")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s\\n' '"+shadowReply+"'\n"), 0700); err != nil {
@@ -200,7 +201,7 @@ func TestWorkerJudgePickerRunsClaudeAndGeminiProfiles(t *testing.T) {
 	}
 	a := w.d.assessWorkerStart(context.Background(), dir, "brief")
 	b := w.d.assessWorkerStart(context.Background(), dir, "brief")
-	if a.Error != "" || b.Error != "" || a.JudgeHarness == b.JudgeHarness || a.Label != "trivial" || b.Label != "trivial" {
+	if a.Error != "" || b.Error != "" || a.JudgeHarness != "claude" || b.JudgeHarness != "claude" || a.Label != "trivial" || b.Label != "trivial" {
 		t.Fatalf("assessments: %+v / %+v", a, b)
 	}
 }

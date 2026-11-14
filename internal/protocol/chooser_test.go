@@ -6,7 +6,21 @@ import (
 	"time"
 )
 
-func TestChooseWorkerModel(t *testing.T) {
+// chooseFirst is the ranker's first pick, for the tests that once read the
+// chooser's single answer. The gate now decides whether that candidate runs.
+func chooseFirst(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, pick ...*PickerInput) (WorkerModelChoice, error) {
+	var in *PickerInput
+	if len(pick) > 0 {
+		in = pick[0]
+	}
+	order, _, err := WorkerPickOrder(candidates, level, scores, minimums, quotas, running, rotation, in)
+	if err != nil {
+		return WorkerModelChoice{}, err
+	}
+	return order[0], nil
+}
+
+func TestChooseFirst(t *testing.T) {
 	now := time.Unix(1000000, 0)
 	scores := []ModelScore{{Match: "a", Score: 51}, {Match: "b", Score: 51}, {Match: "c", Score: 39}, {Match: "d", Score: 29}}
 	candidates := []WorkerModelCandidate{{Harness: "pi", Model: "a"}, {Harness: "pi", Model: "b"}, {Harness: "pi", Model: "c"}, {Harness: "pi", Model: "d"}}
@@ -32,19 +46,14 @@ func TestChooseWorkerModel(t *testing.T) {
 			var got WorkerModelChoice
 			var err error
 			for i := 0; i <= tt.rotate; i++ {
-				got, err = ChooseWorkerModel(c, "hard", scores, nil, tt.q, tt.running, rotation)
+				got, err = chooseFirst(c, "hard", scores, nil, tt.q, tt.running, rotation)
 			}
 			if err != nil || got.Model != tt.want {
 				t.Fatalf("got %+v: %v", got, err)
 			}
 		})
 	}
-	q.Providers[0].Windows[0].PercentUsed = 91
-	got, err := ChooseWorkerModel(candidates, "hard", scores, nil, q, nil, &WorkerRotation{})
-	if err != nil || got.Model != "b" {
-		t.Fatalf("high quota: %+v %v", got, err)
-	}
-	_, err = ChooseWorkerModel([]WorkerModelCandidate{{Model: "d"}}, "very_complex", scores, nil, nil, nil, &WorkerRotation{})
+	_, err := chooseFirst([]WorkerModelCandidate{{Model: "d"}}, "very_complex", scores, nil, nil, nil, &WorkerRotation{})
 	if err == nil || !strings.Contains(err.Error(), "denied") {
 		t.Fatalf("no eligible: %v", err)
 	}
@@ -52,7 +61,7 @@ func TestChooseWorkerModel(t *testing.T) {
 
 func TestChooseWorkerModelUsesHarnessDefaultEffort(t *testing.T) {
 	candidates := []WorkerModelCandidate{{Harness: "codex", Model: "gpt-6.1-terra", DefaultEffort: "high"}}
-	choice, err := ChooseWorkerModel(candidates, "hard", nil, nil, nil, nil, &WorkerRotation{})
+	choice, err := chooseFirst(candidates, "hard", nil, nil, nil, nil, &WorkerRotation{})
 	if err != nil || choice.Score != 42.3 || choice.Fit != "good" {
 		t.Fatalf("choice: %+v %v", choice, err)
 	}
@@ -73,7 +82,7 @@ func TestChooseWorkerModelPrefersRecentSuccess(t *testing.T) {
 	counts := map[string]int{}
 	rotation := &WorkerRotation{}
 	for i := 0; i < 12; i++ {
-		got, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, rotation)
+		got, err := chooseFirst(candidates, "hard", scores, nil, nil, nil, rotation)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +95,7 @@ func TestChooseWorkerModelPrefersRecentSuccess(t *testing.T) {
 	counts = map[string]int{}
 	rotation = &WorkerRotation{}
 	for i := 0; i < 12; i++ {
-		got, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, rotation)
+		got, err := chooseFirst(candidates, "hard", scores, nil, nil, nil, rotation)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,7 +111,7 @@ func TestChooseWorkerModelAdequateScore(t *testing.T) {
 	scores := []ModelScore{{Match: "terra", Score: 42.3}, {Match: "deepseek", Score: 32.5}}
 	for _, tt := range []struct{ level, want string }{{"normal", "deepseek"}, {"hard", "terra"}} {
 		t.Run(tt.level, func(t *testing.T) {
-			got, err := ChooseWorkerModel(c, tt.level, scores, nil, nil, nil, &WorkerRotation{})
+			got, err := chooseFirst(c, tt.level, scores, nil, nil, nil, &WorkerRotation{})
 			if err != nil || got.Model != tt.want {
 				t.Fatalf("got %+v: %v", got, err)
 			}
@@ -135,7 +144,7 @@ func TestChooseWorkerModelOverQualificationPenalty(t *testing.T) {
 		counts := map[string]int{}
 		rotation := &WorkerRotation{}
 		for i := 0; i < starts; i++ {
-			choice, err := ChooseWorkerModel(candidates, level, scores, nil, nil, nil, rotation)
+			choice, err := chooseFirst(candidates, level, scores, nil, nil, nil, rotation)
 			if err != nil {
 				t.Fatalf("%s start %d: %v", level, i, err)
 			}
@@ -191,7 +200,7 @@ func TestChooseWorkerModelQuotaPaceBeforeScore(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "a", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: tt.a, ResetsAt: now.Add(84 * time.Hour).Unix()}}}, {Provider: "b", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: tt.b, ResetsAt: now.Add(84 * time.Hour).Unix()}}}}}
-			got, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, &WorkerRotation{})
+			got, err := chooseFirst(c, "normal", scores, nil, q, nil, &WorkerRotation{})
 			if err != nil || got.Model != tt.want {
 				t.Fatalf("got %+v: %v", got, err)
 			}
@@ -212,7 +221,7 @@ func TestChooseWorkerModelTrackRecord(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := []WorkerModelCandidate{{Model: "cheap", Track: TrackRecord{Complete: tt.complete, Partial: tt.partial, Failed: tt.failed}}, {Model: "strong"}}
-			got, err := ChooseWorkerModel(c, "normal", scores, nil, nil, nil, &WorkerRotation{})
+			got, err := chooseFirst(c, "normal", scores, nil, nil, nil, &WorkerRotation{})
 			if err != nil || got.Model != tt.want {
 				t.Fatalf("got %+v: %v", got, err)
 			}
@@ -238,7 +247,7 @@ func TestChooseWorkerModelWeightedRotationSpreads(t *testing.T) {
 	counts := map[string]int{}
 	var last WorkerModelChoice
 	for i := 0; i < 20; i++ {
-		choice, err := ChooseWorkerModel(candidates, "normal", scores, nil, q, nil, rotation)
+		choice, err := chooseFirst(candidates, "normal", scores, nil, q, nil, rotation)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -268,17 +277,17 @@ func TestChooseWorkerModelRotationIsDeterministic(t *testing.T) {
 	scores := []ModelScore{{Match: "a", Score: 41}, {Match: "b", Score: 42}, {Match: "c", Score: 43}}
 	base := &WorkerRotation{}
 	for i := 0; i < 3; i++ {
-		if _, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, base); err != nil {
+		if _, err := chooseFirst(candidates, "hard", scores, nil, nil, nil, base); err != nil {
 			t.Fatal(err)
 		}
 	}
 	left, right := base.Clone(), base.Clone()
 	for i := 0; i < 7; i++ {
-		x, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, &left)
+		x, err := chooseFirst(candidates, "hard", scores, nil, nil, nil, &left)
 		if err != nil {
 			t.Fatal(err)
 		}
-		y, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, &right)
+		y, err := chooseFirst(candidates, "hard", scores, nil, nil, nil, &right)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -288,30 +297,17 @@ func TestChooseWorkerModelRotationIsDeterministic(t *testing.T) {
 	}
 }
 
-func TestChooseWorkerModelExhaustedNeverAppears(t *testing.T) {
-	candidates := []WorkerModelCandidate{{Name: "empty", Harness: "pi", Model: "empty", Provider: "a"}, {Name: "open", Harness: "pi", Model: "open", Provider: "b"}}
-	scores := []ModelScore{{Match: "empty", Score: 40}, {Match: "open", Score: 40}}
-	q := &Quotas{Providers: []QuotaProvider{{Provider: "a", Windows: []QuotaWindow{{Exhausted: true}}}}}
-	rotation := &WorkerRotation{}
-	for i := 0; i < 10; i++ {
-		got, err := ChooseWorkerModel(candidates, "normal", scores, nil, q, nil, rotation)
-		if err != nil || got.Model != "open" {
-			t.Fatalf("start %d: %+v %v", i, got, err)
-		}
-	}
-}
-
 func TestChooseWorkerModelUsesPoorOnlyWhenAlone(t *testing.T) {
 	scores := []ModelScore{{Match: "cheap", Score: 32.5}, {Match: "strong", Score: 42.3}}
 	c := []WorkerModelCandidate{{Name: "cheap", Model: "cheap", Track: TrackRecord{Complete: 1, Partial: 4}}, {Name: "strong", Model: "strong"}}
 	rotation := &WorkerRotation{}
 	for i := 0; i < 10; i++ {
-		got, err := ChooseWorkerModel(c, "normal", scores, nil, nil, nil, rotation)
+		got, err := chooseFirst(c, "normal", scores, nil, nil, nil, rotation)
 		if err != nil || got.Model != "strong" {
 			t.Fatalf("start %d: %+v %v", i, got, err)
 		}
 	}
-	got, err := ChooseWorkerModel(c[:1], "normal", scores, nil, nil, nil, rotation)
+	got, err := chooseFirst(c[:1], "normal", scores, nil, nil, nil, rotation)
 	if err != nil || got.Model != "cheap" {
 		t.Fatalf("poor alone: %+v %v", got, err)
 	}
@@ -348,7 +344,7 @@ func TestWorkerCandidateMaximumLevelEligibility(t *testing.T) {
 				}
 				rotation := &WorkerRotation{}
 				for start := 0; start < 25; start++ {
-					_, err := ChooseWorkerModel([]WorkerModelCandidate{c}, level, scores, nil, nil, nil, rotation)
+					_, err := chooseFirst([]WorkerModelCandidate{c}, level, scores, nil, nil, nil, rotation)
 					if (err == nil) != want {
 						t.Fatalf("%s start %d: %v", level, start, err)
 					}
@@ -360,7 +356,7 @@ func TestWorkerCandidateMaximumLevelEligibility(t *testing.T) {
 
 func TestWorkerNoEligibleModelExplainsFix(t *testing.T) {
 	c := []WorkerModelCandidate{{Name: "terra max codex", Harness: "codex", Model: "terra-max"}, {Name: "unknown", Harness: "pi", Model: "unscored"}}
-	_, err := ChooseWorkerModel(c, "normal", []ModelScore{{Match: "terra-max", Score: 51}}, nil, nil, nil, nil)
+	_, err := chooseFirst(c, "normal", []ModelScore{{Match: "terra-max", Score: 51}}, nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("over-qualified model was picked")
 	}
@@ -383,7 +379,7 @@ func TestWorkerRotationExcludesModelsAboveMaximumGap(t *testing.T) {
 	for i, level := range levels {
 		rotation := &WorkerRotation{Levels: map[string]*WorkerRotationLevel{level: {Current: map[string]float64{WorkerModelKey(candidates[5]): 10000}}}}
 		for start := 0; start < 100; start++ {
-			choice, err := ChooseWorkerModel(candidates, level, scores, nil, nil, nil, rotation)
+			choice, err := chooseFirst(candidates, level, scores, nil, nil, nil, rotation)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -425,7 +421,7 @@ func TestChooseWorkerModelAgyWindowsPerFamily(t *testing.T) {
 	scores := []ModelScore{{Match: "claude-sonnet-5-5", Score: 30.3}, {Match: "gemini-3-8-flash", Score: 30}}
 	c := []WorkerModelCandidate{{Name: "sonnet agy", Harness: "agy", Model: "claude-sonnet-5-5-medium"}, {Name: "flash agy", Harness: "agy", Model: "gemini-3.8-flash-medium"}}
 	for i := 0; i < 6; i++ {
-		got, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, &WorkerRotation{})
+		got, err := chooseFirst(c, "normal", scores, nil, q, nil, &WorkerRotation{})
 		if err != nil || got.Name != "flash agy" || !strings.Contains(got.QuotaNote, "agy") {
 			t.Fatalf("got %+v: %v", got, err)
 		}
@@ -459,7 +455,7 @@ func TestWorkerCandidateFallbackRoster(t *testing.T) {
 		Model:   "alibaba-token-plan/deepseek-v4.1-flash-1017",
 		Effort:  "high",
 	}
-	_, err := ChooseWorkerModel([]WorkerModelCandidate{c}, "hard", nil, nil, nil, nil, &WorkerRotation{})
+	_, err := chooseFirst([]WorkerModelCandidate{c}, "hard", nil, nil, nil, nil, &WorkerRotation{})
 	if err == nil {
 		t.Fatal("expected error for hard level, got nil")
 	}

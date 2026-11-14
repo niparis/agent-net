@@ -2,9 +2,8 @@ package protocol
 
 import "testing"
 
-// The cost ranker returns the whole order, not one winner: the first choice is
-// the one ChooseWorkerModel makes, and a provider with no room stays in the
-// list, where the gate refuses it (decision 0162).
+// The cost ranker returns the whole order, not one winner, and a provider with
+// no room stays in the list, where the gate refuses it (decision 0162).
 func TestWorkerPickOrderAgreesWithTheChooserAndKeepsBlockedInTheList(t *testing.T) {
 	candidates := []WorkerModelCandidate{
 		{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra"},
@@ -13,7 +12,7 @@ func TestWorkerPickOrderAgreesWithTheChooserAndKeepsBlockedInTheList(t *testing.
 	}
 	scores := []ModelScore{{Match: "gpt-6.1-terra", Score: 51}, {Match: "deepseek/deepseek-v4.1-flash", Score: 45}, {Match: "opencode-go/deepseek-v4.1-flash", Score: 45}}
 	quotas := &Quotas{Providers: []QuotaProvider{{Provider: "opencode-go", Windows: []QuotaWindow{{Kind: "monthly", Exhausted: true}}}}}
-	want, err := ChooseWorkerModel(candidates, "hard", scores, nil, quotas, nil, &WorkerRotation{})
+	want, err := chooseFirst(candidates, "hard", scores, nil, quotas, nil, &WorkerRotation{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +37,7 @@ func TestWorkerPickOrderAgreesWithTheChooserAndKeepsBlockedInTheList(t *testing.
 	}
 }
 
-// The cell rule orders every candidate it allows, first one first. The order
-// starts with the same pick the single-winner chooser makes.
+// The cell rule orders every candidate it allows, first one first.
 func TestWorkerPickOrderListsEveryCellCandidate(t *testing.T) {
 	candidates := []WorkerModelCandidate{
 		{Name: "A", Harness: "pi", Model: "A"},
@@ -47,7 +45,7 @@ func TestWorkerPickOrderListsEveryCellCandidate(t *testing.T) {
 	}
 	scores := []ModelScore{{Match: "A", Score: 51}, {Match: "B", Score: 39}}
 	in := &PickerInput{D: 2.5, Table: BuildPickerTable(shrinkFixture(), DefaultPickerSettings())}
-	want, err := ChooseWorkerModel(candidates, "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
+	want, err := chooseFirst(candidates, "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
 	if err != nil {
 		t.Fatal(err)
 	}

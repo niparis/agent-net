@@ -90,12 +90,10 @@ func OverrideProvider(p WorkerStartRequest) string {
 }
 
 // ConfirmContext is what the gateway reads when a confirm comes: the
-// protected providers, the quota reading the start uses, the worker floors,
-// and the scores and level minimums the picker uses.
+// protected providers and the scores and level minimums the picker uses. The
+// quota, floor and burn checks belong to the start's gate, not to the confirm.
 type ConfirmContext struct {
 	Protected []string
-	Quotas    *Quotas
-	Floors    WorkerFloors
 	Scores    []ModelScore
 	Minimums  map[string]float64
 }
@@ -104,13 +102,12 @@ type ConfirmContext struct {
 //
 // Nobody confirms an override that picks the caller's own model family for a
 // review of its own work. The chief confirms only when all of these hold, and
-// otherwise the ask goes to the CTO: the provider is known and not protected;
-// quota allows it (a usable reading, not exhausted, not held by the burn
-// rate, not under the worker floor); and the override is the same tier or
-// cheaper: the highest level its score meets is at or below the level the
-// start runs at. A fact that is missing (an unknown provider, caller family,
-// level or score, or no quota reading) never opens the gate: the chief sends
-// the ask to the CTO.
+// otherwise the ask goes to the CTO: the provider is known and not protected,
+// and the override is the same tier or cheaper: the highest level its score
+// meets is at or below the level the start runs at. A fact that is missing (an
+// unknown provider, caller family, level or score) never opens the gate: the
+// chief sends the ask to the CTO. The start's gate still refuses a model whose
+// quota cannot run now.
 func ConfirmOverride(f OverrideFacts, c ConfirmContext, chief bool) error {
 	if f.Review && f.OverrideFamily != "" && f.OverrideFamily == f.CallerFamily {
 		if chief {
@@ -136,23 +133,6 @@ func ConfirmOverride(f OverrideFacts, c ConfirmContext, chief bool) error {
 	model := strings.TrimSpace(f.Model)
 	if model == "" || model == "auto" {
 		return route("the override names no model, so its tier is unknown")
-	}
-	quota := QuotaProviderForStart(f.Harness, model)
-	if quota == "" {
-		quota = QuotaProviderForModelProvider(f.Provider)
-	}
-	reading, ok := c.Quotas.Provider(quota)
-	if !ok || !reading.usable() {
-		return route("there is no quota reading for " + f.Provider)
-	}
-	if refusal := QuotaRefusal(c.Quotas, f.Harness, model); refusal != "" {
-		return route("quota does not allow it (" + refusal + ")")
-	}
-	if reason, hold := QuotaBurnHold(c.Quotas, quota, model); hold {
-		return route("quota does not allow it (" + reason + ")")
-	}
-	if under, note, _ := CheckWorkerFloor(c.Quotas, c.Floors, f.Harness, model); under {
-		return route("quota does not allow it (" + note + ")")
 	}
 	start := levelIndex(f.Level)
 	if start < 0 {

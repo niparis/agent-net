@@ -121,11 +121,6 @@ func (g Granted) FloorUnread() bool { return g.floorUnread }
 // zero Granted, which no route can use to launch.
 func (g Granted) IsZero() bool { return g.candidate == Candidate{} }
 
-// UncheckedGrant is the temporary bridge for the routes that decision 0162
-// part 3 still moves onto the gate. It grants a candidate without a check. It
-// is the only way to make a Granted outside Gate, and part 3 deletes it.
-func UncheckedGrant(c Candidate) Granted { return Granted{candidate: c} }
-
 // Gate returns the first candidate that can run now, with the reason for each
 // candidate it skipped. It reads the whole list, so the note names a provider
 // that was held back even when it ranked behind the pick. It is the only way

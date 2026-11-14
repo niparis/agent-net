@@ -127,91 +127,12 @@ func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
 	return state
 }
 
-// ChooseWorkerModel picks a model by weighted rotation.
-//
-// With a PickerInput it reads the cells: the models that have done well enough
-// in the bucket of the task's D rotate, weighted by their cell score (see
-// chooseByCells). When no profile is allowed that way, or without a
-// PickerInput, the old level rule applies (chooseWorkerModelBand).
-//
-// A provider whose running workers would use up its quota before the reset
-// with one more worker is left out first (decision 0144). The pick says so. When
-// no other model qualifies, the error names the hold.
-func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, pick ...*PickerInput) (WorkerModelChoice, error) {
-	kept, held, heldOut := dropBurnHeld(candidates, quotas)
-	if len(held) == 0 {
-		return chooseWorkerModelRanked(candidates, level, scores, minimums, quotas, running, rotation, pick...)
-	}
-	choice, err := chooseWorkerModelRanked(kept, level, scores, minimums, quotas, running, rotation, pick...)
-	if err != nil {
-		// The held candidates never reached the ranking, so the roster would
-		// not name them without this.
-		choice.LeftOut = append(choice.LeftOut, heldOut...)
-		return choice, fmt.Errorf("no other model qualifies, and these were held back for quota: %s; %w", strings.Join(held, "; "), err)
-	}
-	choice.QuotaNote = appendNote(choice.QuotaNote, "held back for quota: "+strings.Join(held, "; "))
-	return choice, nil
-}
-
-func appendNote(note, more string) string {
-	if note == "" {
-		return more
-	}
-	return note + "; " + more
-}
-
-func chooseWorkerModelRanked(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, pick ...*PickerInput) (WorkerModelChoice, error) {
-	if len(pick) > 0 && pick[0].usable() {
-		if level == "" {
-			level = "normal"
-		}
-		if _, err := DifficultyFit(0, level, minimums); err != nil {
-			return WorkerModelChoice{}, err
-		}
-		choice, fallback := chooseByCells(candidates, level, scores, minimums, quotas, running, rotation, pick[0])
-		if fallback == "" {
-			return choice, nil
-		}
-		choice, err := chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
-		if err == nil {
-			choice.PickNote, choice.Fallback = fallback, true
-			if choice.Why == "" {
-				choice.Why = fmt.Sprintf("difficulty %s (D %.2f): %s (fallback to level rule, score %.1f)", level, pick[0].D, choice.Model, choice.Score)
-			}
-		}
-		return choice, err
-	}
-	choice, err := chooseWorkerModelBand(candidates, level, scores, minimums, quotas, running, rotation)
-	if err == nil && choice.Why == "" {
-		choice.Why = fmt.Sprintf("difficulty %s: %s (score %.1f)", level, choice.Model, choice.Score)
-	}
-	return choice, err
-}
-
-// chooseWorkerModelBand is the level rule: it picks an adequate model by weighted
-// rotation. It is the fallback of the cell rule.
-//
-// A candidate must score at or above the difficulty minimum, and the task
-// must be its maximum level or exactly one level below it. Exhausted
-// windows and windows above 90 percent used are excluded. Unprotected
-// candidates come first, and candidates with a poor track record are used only
-// when no other adequate candidate remains. The rest rotate with a smooth
-// weighted round robin, so one model with a little more quota room does not win
-// every start.
-func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation) (WorkerModelChoice, error) {
-	order, leftOut, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation, false)
-	if err != nil {
-		return WorkerModelChoice{LeftOut: leftOut}, err
-	}
-	return order[0], nil
-}
-
 // levelOrder returns the level rule's whole order. The first choice is the one
 // the rotation picked; the rest follow by rotation weight, so the gate can try
 // them in the same order. keepBlocked leaves a candidate whose provider has no
 // room at the end, for the gate to refuse; without it the candidate leaves the
 // order, as the routes part 3 has not moved yet expect.
-func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, keepBlocked bool) ([]WorkerModelChoice, []WorkerLeftOut, error) {
+func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation) ([]WorkerModelChoice, []WorkerLeftOut, error) {
 	if level == "" {
 		level = "normal"
 	}
@@ -259,25 +180,9 @@ func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelS
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
 		}
-		var room float64
-		var note string
-		var measured bool
-		if keepBlocked {
-			// The gate owns the quota check. The ranker only needs a pace for
-			// its order, so a used-up window is left out of that reading.
-			room, note, measured = WorkerQuotaPace(quotas, provider, c.Model)
-		} else {
-			var isBlocked bool
-			room, note, measured, isBlocked = workerQuotaRoom(quotas, provider, c.Model)
-			if isBlocked {
-				reason := "out of quota"
-				if note != "" {
-					reason += " (" + note + ")"
-				}
-				leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: reason, Rank: LeftOutQuota})
-				continue
-			}
-		}
+		// The gate owns the quota check. The ranker only needs a pace for its
+		// order, so a used-up window is left out of that reading.
+		room, note, measured := WorkerQuotaPace(quotas, provider, c.Model)
 		servedRoom := room
 		if measured {
 			servedRoom -= 5 * float64(running[provider])

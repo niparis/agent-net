@@ -41,8 +41,8 @@ func TestGateReturnsAUsableGranted(t *testing.T) {
 	}
 }
 
-// A Go file outside this package may not build a Granted with a literal. The
-// temporary adapter UncheckedGrant is the one named bridge part 3 deletes.
+// A Go file outside this package may not build a Granted with a literal: the
+// gate is the only way to get one.
 func TestNoFileOutsideTheGateBuildsAGranted(t *testing.T) {
 	root := filepath.Join("..", "..", "internal")
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

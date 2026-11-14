@@ -139,6 +139,21 @@ func TestGateOptionalChecks(t *testing.T) {
 			want:   "worker floor",
 		},
 		{
+			name:   "burn hold",
+			checks: Checks{Burn: true},
+			facts: func() Facts {
+				facts := gateFacts()
+				facts.Quotas = &protocol.Quotas{GeneratedAt: now.Unix(), Burn: &protocol.QuotaBurnSet{Now: now.Unix(),
+					ByProvider: map[string]protocol.QuotaBurn{"deepseek": {
+						Runs:    []protocol.BurnRun{{StartedAt: now.Add(-100 * time.Second).Unix(), Tokens: 200_000}},
+						Budgets: []protocol.QuotaBudget{{WindowSeconds: 5 * 3600, Tokens: 100_000}},
+					}}}}
+				return facts
+			},
+			broken: Candidate{Name: "held", Harness: "opencode", Model: "deepseek/deepseek-v4.1-flash"},
+			want:   "held back for quota",
+		},
+		{
 			name:   "90 percent",
 			checks: Checks{Block90: true},
 			facts: func() Facts {

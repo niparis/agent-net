@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -17,6 +18,9 @@ type qualityPreviewInputs struct {
 	protected protocol.ProtectedProviders
 	scores    []protocol.ModelScore
 	minimums  map[string]float64
+	floors    protocol.WorkerFloors
+	// agents is the online roster the burn of the start is read from.
+	agents []protocol.AgentView
 	// running counts the online workers by quota provider, per node.
 	running map[string]map[string]int
 	// health answers model health by harness and model. It does not depend on
@@ -45,6 +49,12 @@ func (g *Gateway) qualityPreviewInputs() (qualityPreviewInputs, error) {
 	if in.running, err = g.store.onlineWorkerCounts(); err != nil {
 		return in, err
 	}
+	if in.floors, err = g.store.workerFloors(); err != nil {
+		return in, err
+	}
+	if in.agents, err = g.store.onlineWorkerAgents(); err != nil {
+		return in, err
+	}
 	return in, nil
 }
 
@@ -66,18 +76,24 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 	if running == nil {
 		running = map[string]int{}
 	}
-	candidates, _, _, err := g.workerModelCandidatesWith(facts, nil, &node, in.profiles, in.providers, node.Quotas, "", false, in.protected)
+	// The start reads the owner's subscriptions once, with the burn of the
+	// workers that run now, so the preview decides on the same reading.
+	quotas := g.withQuotaBurn(g.ownerQuotas(node.NodeID), in.agents)
+	candidates, _, _, err := g.workerModelCandidatesWith(facts, nil, &node, in.profiles, in.providers, quotas, "", false, in.protected)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	rotation, rotationErr := g.store.WorkerRotation()
-	readRotation := func() (protocol.WorkerRotation, error) { return cloneRotation(rotation), rotationErr }
 	health := in.health.health
+	snapshot, _, err := g.chooseFacts(&node, candidates, quotas, in.floors, nil, health)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	// The cell table is read once per call. A level previews at the middle of its
 	// D range. The table revision is part of the key below.
 	table := g.store.pickerTable()
-	key, keyed := g.previewKey(node.NodeID, in, node.Quotas, running, candidates, table.Revision, rotation, rotationErr, health)
+	key, keyed := g.previewKey(node.NodeID, in, quotas, running, candidates, table.Revision, rotation, rotationErr, health)
 	if keyed {
 		if out, reasons, models, ok := g.previewMemo.get(node.NodeID, key); ok {
 			return out, reasons, models, nil
@@ -88,12 +104,25 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 	reasons := map[string]string{}
 	models := map[string]string{}
 	for _, level := range protocol.DifficultyLevels {
-		pick := &protocol.PickerInput{D: protocol.PickerD(nil, level), Table: table, Prices: g.store.priceBook()}
-		choice, _, err := g.chooseAutomaticWorkerCore(health, readRotation, pick, candidates, level, in.scores, in.minimums, node.Quotas, running, in.protected, false)
+		chosen, err := g.Choose(ChooseRequest{
+			Purpose:    model.PurposePreview,
+			Node:       &node,
+			Candidates: candidates,
+			Difficulty: level,
+			D:          protocol.PickerD(nil, level),
+			Scores:     in.scores,
+			Minimums:   in.minimums,
+			Quotas:     quotas,
+			Running:    running,
+			Protected:  in.protected,
+			Floors:     in.floors,
+			Facts:      &snapshot,
+			Rotation:   &rotation,
+		})
 		if err == nil {
-			out[level] = qualityModelFamily(choice.Model)
-			models[level] = qualityModelKey(choice.Model)
-			if reason := qualityPaceClause(choice.QuotaNote); reason != "" {
+			out[level] = qualityModelFamily(chosen.Choice.Model)
+			models[level] = qualityModelKey(chosen.Choice.Model)
+			if reason := qualityPaceClause(chosen.Choice.QuotaNote); reason != "" {
 				reasons[level] = reason
 			}
 		}
@@ -102,28 +131,6 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 		g.previewMemo.put(node.NodeID, key, out, reasons, models)
 	}
 	return out, reasons, models, nil
-}
-
-func cloneRotation(r protocol.WorkerRotation) protocol.WorkerRotation {
-	if r.Levels == nil {
-		return r
-	}
-	out := protocol.WorkerRotation{Levels: make(map[string]*protocol.WorkerRotationLevel, len(r.Levels))}
-	for k, v := range r.Levels {
-		if v == nil {
-			out.Levels[k] = nil
-			continue
-		}
-		c := &protocol.WorkerRotationLevel{Recent: append([]string(nil), v.Recent...)}
-		if v.Current != nil {
-			c.Current = make(map[string]float64, len(v.Current))
-			for name, w := range v.Current {
-				c.Current[name] = w
-			}
-		}
-		out.Levels[k] = c
-	}
-	return out
 }
 
 // previewKey hashes everything the picks of one node are computed from. It
@@ -148,11 +155,12 @@ func (g *Gateway) previewKey(node string, in qualityPreviewInputs, quotas *proto
 		Healths    []ModelHealth
 		Scores     []protocol.ModelScore
 		Minimums   map[string]float64
+		Floors     protocol.WorkerFloors
 		Quotas     *protocol.Quotas
 		Running    map[string]int
 		Protected  protocol.ProtectedProviders
 		Rotation   protocol.WorkerRotation
-	}{node, candidates, pickerRevision, healths, in.scores, in.minimums, quotas, running, in.protected, rotation})
+	}{node, candidates, pickerRevision, healths, in.scores, in.minimums, in.floors, quotas, running, in.protected, rotation})
 	if err != nil {
 		return [32]byte{}, false
 	}
@@ -207,6 +215,32 @@ func qualityPaceClause(note string) string {
 		return clause
 	}
 	return ""
+}
+
+// onlineWorkerAgents reads only the worker facts the burn projection needs.
+// It is the light read for a preview, which runs on every NodesInfo call.
+func (s *Store) onlineWorkerAgents() ([]protocol.AgentView, error) {
+	rows, err := s.db.Query(`SELECT id, node_id, harness, model, worker FROM sessions
+		WHERE archived_at=0 AND online=1 AND worker<>'' AND harness NOT IN ('bot','owner')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []protocol.AgentView
+	for rows.Next() {
+		var a protocol.AgentView
+		var worker string
+		if err := rows.Scan(&a.SessionID, &a.NodeID, &a.Harness, &a.Model, &worker); err != nil {
+			return nil, err
+		}
+		var w protocol.WorkerInfo
+		if json.Unmarshal([]byte(worker), &w) != nil {
+			continue
+		}
+		a.Worker = &w
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // onlineWorkerCounts counts the online workers by node and quota provider. It
