@@ -1295,7 +1295,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("session_enter needs session_id")
 		}
 		res, err = d.enterPlan(ctx, q)
-		if plan, ok := res.(protocol.EnterPlan); err == nil && ok && (plan.OpenedHerdr || len(plan.Argv) > 0 || plan.HerdrPane != "") {
+		if err != nil {
+			d.logEnterFailure(protocol.EnterFailure{SessionID: q.SessionID, Err: err.Error()})
+		} else if plan, ok := res.(protocol.EnterPlan); ok && (plan.OpenedHerdr || len(plan.Argv) > 0 || plan.HerdrPane != "") {
 			d.recordOwnerOpen(ctx, q.SessionID)
 		}
 	case "session_text":

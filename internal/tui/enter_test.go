@@ -176,6 +176,34 @@ func TestEnterFailureShowsWhatTheCommandPrinted(t *testing.T) {
 	}
 }
 
+// A command that fails is reported to the daemon with its last output, so the
+// daemon log holds the reason that only the TUI saw.
+func TestEnterFailureIsReportedForTheDaemonLog(t *testing.T) {
+	m, src := workerModel(120, 30)
+	m = selectID(m, workerID)
+	src.enterPlan = protocol.EnterPlan{
+		Argv: []string{"sh", "-c", "printf 'herdr: terminal term_66 already has an attached client\\n' >&2; exit 1"},
+		Host: "mac-1",
+		Note: "Press ctrl+] to come back here; tenebrae (Mac) keeps running.",
+	}
+	m.execProcess = runProxy
+	m, cmd := pressE(m)
+	m, cmd = press2(m, cmd())
+	if cmd == nil {
+		t.Fatal("the plan did not lead to a command")
+	}
+	m, _ = press2(m, cmd())
+
+	if len(src.enterFailures) != 1 {
+		t.Fatalf("reported %d failures, want 1: %+v", len(src.enterFailures), src.enterFailures)
+	}
+	got := src.enterFailures[0]
+	if got.SessionID != workerID || got.Host != "mac-1" || got.Err != "exit status 1" ||
+		!strings.Contains(got.Output, "already has an attached client") {
+		t.Fatalf("report %+v", got)
+	}
+}
+
 func TestEnterWithNoCommandShowsTheNote(t *testing.T) {
 	m, src := workerModel(100, 24)
 	m = selectID(m, workerID)

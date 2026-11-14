@@ -50,9 +50,16 @@ func (lc *localConn) clientError(ctx context.Context, client string, raw json.Ra
 // clientErrorText makes a client's text safe for one log line: no control
 // characters, no runs of blanks, at most ClientErrorMaxText bytes.
 func clientErrorText(s string) string {
+	return logText(s, protocol.ClientErrorMaxText)
+}
+
+// logText makes a client's text safe for one log line: control characters
+// become blanks, runs of blanks collapse, and the text is cut to max bytes
+// without splitting a UTF-8 sequence.
+func logText(s string, max int) string {
 	s = cleanLine(s)
-	if len(s) > protocol.ClientErrorMaxText {
-		s = s[:protocol.ClientErrorMaxText]
+	if len(s) > max {
+		s = s[:max]
 		for len(s) > 0 && !utf8.ValidString(s) {
 			s = s[:len(s)-1]
 		}

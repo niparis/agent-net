@@ -167,6 +167,26 @@ func (s *Client) reportFailure(ctx context.Context, method string, start time.Ti
 	}()
 }
 
+// ReportEnterFailure tells the daemon that a session Enter failed in the
+// terminal it handed over, so the daemon log holds the command's last output.
+// The daemon never sees that command end, so without this report the reason
+// only exists on the TUI's screen. It runs in the background and never
+// changes the result on screen.
+func (s *Client) ReportEnterFailure(f protocol.EnterFailure) {
+	if f.SessionID == "" {
+		return
+	}
+	go func() {
+		rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cl, err := s.conn(rctx)
+		if err != nil {
+			return
+		}
+		_, _ = cl.Call(rctx, protocol.OpEnterFailure, f)
+	}()
+}
+
 func (s *Client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	cl, err := s.conn(ctx)
 	if err != nil {

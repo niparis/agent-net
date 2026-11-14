@@ -30,7 +30,9 @@ type enterMsg struct {
 
 // enterDoneMsg is the end of the entered command.
 type enterDoneMsg struct {
+	id        string
 	name      string
+	host      string // the machine the session runs on, from the plan
 	err       error
 	fallback  string // the manual way, when the plan uses ssh
 	target    string // the ssh target of the plan, or ""
@@ -204,12 +206,13 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	proxy := ptyproxy.New(cmd)
 	proxy.Name = name
 	proxy.Title = name + " - ctrl+] to come back"
+	host := r.plan.Host
 	ctoNotice := ""
 	if r.cto && strings.HasPrefix(r.plan.Note, "The CTO's Claude conversation was closed") {
 		ctoNotice = r.plan.Note
 	}
 	return m, run(proxy, func(err error) tea.Msg {
-		done := enterDoneMsg{name: name, err: err, fallback: fallback, target: target, ctoNotice: ctoNotice}
+		done := enterDoneMsg{id: r.id, name: name, host: host, err: err, fallback: fallback, target: target, ctoNotice: ctoNotice}
 		if err != nil {
 			done.output = proxy.LastLines(2)
 		}
@@ -228,6 +231,9 @@ func enterFailure(name string, err error) string {
 
 // onEnterDone is the return from the session.
 func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
+	if r.err != nil {
+		m.reportEnterFailure(r)
+	}
 	switch {
 	case r.err == nil && r.ctoNotice != "":
 		if m.cto != nil {
@@ -258,6 +264,27 @@ func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 		return m, m.fetchCmd()
 	}
 	return m, nil
+}
+
+// enterFailureReporter is implemented by the daemon client. The command ran in
+// the owner's terminal, so the daemon has no other way to learn why it failed.
+type enterFailureReporter interface {
+	ReportEnterFailure(protocol.EnterFailure)
+}
+
+// reportEnterFailure gives the daemon the command's own reason, so the lead
+// can read it with agent_machine_log.
+func (m Model) reportEnterFailure(r enterDoneMsg) {
+	rep, ok := m.src.(enterFailureReporter)
+	if !ok {
+		return
+	}
+	rep.ReportEnterFailure(protocol.EnterFailure{
+		SessionID: r.id,
+		Host:      r.host,
+		Err:       r.err.Error(),
+		Output:    r.output,
+	})
 }
 
 // exitReason is why the entered command ended. What it printed last comes

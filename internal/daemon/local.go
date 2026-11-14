@@ -831,6 +831,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if method == protocol.OpClientError {
 		return lc.clientError(ctx, client, raw)
 	}
+	if method == protocol.OpEnterFailure {
+		return lc.enterFailure(client, raw)
+	}
 	if method == protocol.MethodHint {
 		return lc.hintCall(ctx, client, ls, raw)
 	}

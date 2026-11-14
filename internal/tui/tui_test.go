@@ -231,9 +231,10 @@ type fakeSource struct {
 	topReqs []string
 
 	// What session_enter was asked, and the plan or error it type answers with.
-	enters    []protocol.EnterRequest
-	enterPlan protocol.EnterPlan
-	enterErr  error
+	enters        []protocol.EnterRequest
+	enterPlan     protocol.EnterPlan
+	enterErr      error
+	enterFailures []protocol.EnterFailure
 
 	// What session_start was asked, and the start or error it type answers with.
 	sessionResumes []protocol.SessionResumeRequest
@@ -395,6 +396,10 @@ func (f *fakeSource) RenameNode(_ context.Context, id, name string) (protocol.No
 func (f *fakeSource) SessionEnter(_ context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error) {
 	f.enters = append(f.enters, q)
 	return f.enterPlan, f.enterErr
+}
+
+func (f *fakeSource) ReportEnterFailure(e protocol.EnterFailure) {
+	f.enterFailures = append(f.enterFailures, e)
 }
 
 func (f *fakeSource) Snapshot(context.Context) (Snapshot, error) { return f.snap, f.snapErr }

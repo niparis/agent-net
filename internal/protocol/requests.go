@@ -88,6 +88,31 @@ const (
 	ClientErrorMaxText = 120
 )
 
+// Enter failures. A session Enter is planned by the daemon and run by the TUI
+// in the owner's terminal. The daemon never sees a command that ends with an
+// error there, so the TUI reports it: one log line, with the command's last
+// output, that the lead can read with agent_machine_log.
+const (
+	// OpEnterFailure is the local socket method the TUI uses to report one
+	// session_enter whose command failed. It answers nothing and needs no
+	// owner gate: it only writes a log line.
+	OpEnterFailure = "enter_failure"
+	// EnterFailureMaxText bounds every text field of a report.
+	EnterFailureMaxText = 1000
+)
+
+// EnterFailure is one session Enter that failed in the owner's terminal.
+type EnterFailure struct {
+	// SessionID is the session the owner asked to enter.
+	SessionID string `json:"session_id"`
+	// Host is the machine the session runs on, when the plan named it.
+	Host string `json:"host,omitempty"`
+	// Err is the command's error, usually its exit status.
+	Err string `json:"err,omitempty"`
+	// Output is the command's last output, which holds its own reason.
+	Output string `json:"output,omitempty"`
+}
+
 // ClientError is one request that failed on the client side.
 type ClientError struct {
 	// Method is the operator method that failed, for example "proposal_list".
