@@ -33,7 +33,7 @@ type toolDecideOutput struct {
 }
 
 // runToolDecide is `agent-net tool-decide`, a Claude Code PreToolUse hook for
-// Bash and agent-net tools (decision 0165). It asks the daemon whether a scope
+// Bash and agent-net tools (decision 0166). It asks the daemon whether a scope
 // the owner delegated allows the call. On allow it prints Claude Code's
 // permissionDecision allow. On anything else it prints nothing, so Claude Code
 // asks as it did before: the hook never blocks and never fails a call.

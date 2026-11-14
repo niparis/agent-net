@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/niparis/agent-net/internal/daemon/authority"
+	"github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// tool_decide (decision 0165). A harness hook asks "may this tool call run
+// tool_decide (decision 0166). A harness hook asks "may this tool call run
 // without asking the owner". The daemon answers allow from the scopes of the
 // role node the session speaks for, or gives no decision. It never answers
 // block, and every failure is "no decision": the harness then behaves exactly

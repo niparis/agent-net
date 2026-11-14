@@ -57,7 +57,7 @@ func where(over string) string {
 	kind, id, _ := protocol.ParseScopeOver(over)
 	switch kind {
 	case protocol.ScopeOverAll:
-		return "everywhere in agent-net"
+		return "everywhere"
 	case "team":
 		return "in team " + id
 	case "agent":

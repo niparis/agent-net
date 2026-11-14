@@ -1,5 +1,5 @@
 // Package authority holds what the owner delegates to agents, and what he
-// keeps (decision 0165). It has two parts, both plain data with small
+// keeps (decision 0166). It has two parts, both plain data with small
 // functions: the never list in this file, and the scope table in table.go.
 // Nothing here ever answers "block": the answer is allow or no decision, and
 // no decision leaves the harness or agent-net exactly as it was.

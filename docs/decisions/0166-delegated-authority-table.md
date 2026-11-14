@@ -17,11 +17,11 @@ proposal classes, a gateway refusal and the CTO's instructions.
 
 ## Decision
 
-- **One never list**, in `internal/daemon/authority/never.go`. It holds the
+- **One never list**, in `internal/authority/never.go`. It holds the
   owner-only CTO actions and the shell command patterns for deleting data,
   spending money and using secrets. The five old places read it and their own
   copies are gone.
-- **One scope table**, in `internal/daemon/authority/table.go`. It says what
+- **One scope table**, in `internal/authority/table.go`. It says what
   each scope kind allows. The decision method and the text both read it.
 - **`tool_decide`**, a local daemon method. It answers allow or no decision from
   the scopes of the session's role node. It never answers block. An unknown
@@ -51,7 +51,7 @@ proposal classes, a gateway refusal and the CTO's instructions.
 
 ## Checks
 
-`internal/daemon/authority` has table-driven tests for every row, the compound
+`internal/authority` has table-driven tests for every row, the compound
 and never-list cases, and the one list. The daemon test proves a removed scope
 stops allowing without waiting for a cache to run out, and that a cached answer
 is fast.

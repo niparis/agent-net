@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	delegated "github.com/niparis/agent-net/internal/daemon/authority"
+	delegated "github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 

@@ -182,7 +182,7 @@ func TestText(t *testing.T) {
 		{Kind: "merge", Over: "repo:agent-net"}, {Kind: "release", Over: "repo:agent-net"},
 		{Kind: "admin", Over: "all"}, {Kind: "review", Over: "team:core"},
 	}
-	want := "Delegated authority: you may run admin tools everywhere in agent-net; you may merge and release in agent-net; you may review and accept changes in team core."
+	want := "Delegated authority: you may run admin tools everywhere; you may merge and release in agent-net; you may review and accept changes in team core."
 	if got := Text(scopes); got != want {
 		t.Fatalf("Text =\n%s\nwant\n%s", got, want)
 	}

@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	delegated "github.com/niparis/agent-net/internal/daemon/authority"
+	delegated "github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/phrasing"

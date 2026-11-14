@@ -5,7 +5,7 @@ import "encoding/json"
 // MethodToolDecide is the local question "may this tool call run without
 // asking the owner". It is not an operator method and changes nothing: the
 // daemon answers allow from the scopes the session's role node holds, or gives
-// no decision (decision 0165). It never answers block.
+// no decision (decision 0166). It never answers block.
 const MethodToolDecide = "tool_decide"
 
 // ToolDecideRequest is MethodToolDecide. A plugin or MCP client is bound to its

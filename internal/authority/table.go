@@ -21,7 +21,7 @@ type Row struct {
 	AnyOp bool
 }
 
-// Table is the scope table of decision 0165, in display order. The deploy row
+// Table is the scope table of decision 0166, in display order. The deploy row
 // holds the repo's deploy script only: the rest of a repo's deploy rule is
 // prose, not commands the daemon can match.
 var Table = []Row{

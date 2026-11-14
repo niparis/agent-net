@@ -10,7 +10,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 )
 
-// The Claude Code tool-decide hook (decision 0165). Before a Bash call or an
+// The Claude Code tool-decide hook (decision 0166). Before a Bash call or an
 // agent-net tool call, Claude Code runs `agent-net tool-decide`. When a scope
 // the owner delegated to the session's role covers the call, the hook prints
 // permissionDecision allow, so the session is not stopped to ask. In every

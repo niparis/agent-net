@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/niparis/agent-net/internal/daemon/authority"
+	"github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
