@@ -4314,14 +4314,15 @@ with `graph_change` at once; the Inbox notice has an undo. A Repo defaults to it
 until explicitly set or cleared. A Repo lead must own the Repo or have a
 session recorded there. A Team lead can be an Agent or a session.
 
-For messages from outside the recipient's Repo or Team crew, the gateway picks a lead in this order. First the Repo lead: a message to the Repo lead's own session stays with that session, and a message to any other session of a Repo that has a Repo lead goes to that Repo lead. Otherwise the Team lead, which does not take a message addressed to a Repo lead. The gateway redirects to the selected lead session when online, otherwise to a live session of its Agent, and adds a note to the message and receipt.
-When the lead Agent has several live sessions, a session under a provider usage limit comes last, so another live session of the same Agent gets the message; if all are limited the usual order applies. The owner and CTO are exempt, as are workers messaging their caller. If there is
+For messages from outside the recipient's Repo or Team crew, the gateway picks a lead in this order. First the Repo lead: a message to the Repo lead's own session stays with that session, and a message to any other session of a Repo that has a Repo lead goes to that Repo lead. Otherwise the Team lead, which does not take a message addressed to a Repo lead. A lead is its lead session: when the lead Agent has a `lead_session`, a redirect goes to that session when online, and when offline it is queued or woken for that same session, never for another member. Only an Agent with no `lead_session` uses another live session of the Agent. A message addressed to the lead session itself never leaves it, even when the session now belongs to another Agent node than the one that pins it. The gateway adds a note to the message and receipt.
+When the lead Agent has several live sessions and no pinned one, a session under a provider usage limit comes last, so another live session of the same Agent gets the message; if all are limited the usual order applies. A session that waits for its user never receives a redirect: another live session of the lead is picked, and otherwise the message stays with the addressed session and the receipt says the lead is waiting. The owner and CTO are exempt, as are workers messaging their caller. If there is
 no lead or no live lead session, the original target receives the message and
 the receipt says why. A reply is never redirected: it goes to the session that
 sent the message it answers. Use `repo:<name>` or `team:<name>` to address a
 lead by name or ID. The same address works when the lead has no live session: the
-message waits for the newest non-archived, non-worker session of the lead and is
-queued and woken under the usual wake rules, like a send to that session ID. An
+message waits for the pinned lead session, or for the newest non-archived,
+non-worker session of the lead when it has no pin, and is queued and woken under
+the usual wake rules, like a send to that session ID. An
 exact agent name works the same way: a live session with that name comes first,
 otherwise the newest session of that agent waits and is woken. A name with no
 session at all is refused. Team addresses share the resolver, so they fall back
@@ -4330,7 +4331,9 @@ the same way. Typed Graph reads expose `lead`, `max_agents`, `agent_count` and
 
 **Your place.** Every turn, a session that leads a Team, or leads a Repo that other agents work in, gets a block from agent-net that says so. The lead block names the Team or Repo, its members, and that the lead reports to the owner. It says that requests from outside to a member come to the lead, who answers each one or hands it off. For a Team lead, requests to a member Repo that has its own lead go to that Repo lead instead. A Team block ends with the Team purpose, cut to 300 characters. A session in a Team that it does not lead gets two lines: who leads the Team, and to escalate to that lead first, not to the owner. When the Team has `asks_to=lead`, a third line follows: `Questions for the owner go to your lead, <name>.` When the Team has `lead_merges=on`, a line follows: `Merges: your lead <name> may merge this team's work on the owner's grant; hand a merge you cannot do to the lead.` A session in no Team, and not leading a Repo with other agents, gets no block. The block comes from the live Team data on each turn, with the node charter, on every harness.
 
-A routed request carries the redirect note and then one line for the lead: `You lead <scope>: answer this or hand it off to <original target> with agent_message_handoff.` The sender's receipt keeps the short note only.
+A routed request carries the redirect note and then one line for the lead: `You lead <scope>: answer this or hand it off to <original target> with agent_message_handoff.` Only the session that is the lead gets that line. When the pinned lead waits for its user and a live session of the lead takes the request instead, the line says the lead session is waiting. The sender's receipt keeps the short note only.
+
+A redirected request that still has no reply after the reply reminder's grace sends its sender one notice from agent-net, and the chief of staff one when the owner approved the request. It is the `redirect_reminder` nudge, so the chief can pause it, and it uses the same grace and window as the reply reminder, with no separate interval.
 
 **Handing off.** `agent_message_handoff(message_id, to_session, note)` passes a request or notification you received to another session (ID or exact name). The new message keeps the original sender and conversation, so the member's reply goes to the asker and not to the lead. The body starts with a line that names the lead, then the lead's optional note, then the original text without the redirect note. Your copy of the request counts as answered. When the member replies, the gateway stores a copy of the reply for the lead as a notification from the member. A reply cannot be handed off. The result is a message receipt.
 
@@ -4686,6 +4689,7 @@ sessions of its current agent members and sessions in member repos.
 | `waiting_notice` | The recipient is waiting for its user's answer |
 | `wake_failed` | The recipient is offline and could not be woken |
 | `member_blocked` | A member is blocked or waiting, sent to its lead |
+| `redirect_reminder` | A redirected or handed-off request still has no reply |
 
 The target is the recipient of the automatic message. Pauses suppress message
 creation and leave each mechanism's bookkeeping unchanged. Nothing accumulates

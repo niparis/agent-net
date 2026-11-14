@@ -3896,6 +3896,12 @@ func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol
 			return
 		}
 	}
+	if needsRedirectReminderCheck(m) {
+		ok, err := g.store.redirectReminderEligible(m.ParentID)
+		if err != nil || !ok {
+			return
+		}
+	}
 	g.mu.Lock()
 	nc := g.conns[nodeID]
 	g.mu.Unlock()

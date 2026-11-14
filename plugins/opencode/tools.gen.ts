@@ -1343,7 +1343,8 @@ export const TOOL_CATALOG = [
             "undelivered",
             "waiting_notice",
             "wake_failed",
-            "member_blocked"
+            "member_blocked",
+            "redirect_reminder"
           ]
         },
         "team": {
@@ -1437,7 +1438,8 @@ export const TOOL_CATALOG = [
             "undelivered",
             "waiting_notice",
             "wake_failed",
-            "member_blocked"
+            "member_blocked",
+            "redirect_reminder"
           ]
         },
         "team": {

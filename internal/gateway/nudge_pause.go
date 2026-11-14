@@ -116,6 +116,7 @@ func nudgeTarget(q askDB, a protocol.NudgePauseArgs) (team, agent string, err er
 var nudgePrefixes = map[string]string{
 	"idle_check": "check:", "autonomy_continue": "wake:", "reply_reminder": "reminder:", "loop_tick": "loop:",
 	"stuck_step": "delivery:stuck:", "undelivered": "undelivered:", "waiting_notice": "waiting:", "wake_failed": "wake-failed:", "member_blocked": "member_blocked:",
+	"redirect_reminder": "redirect-reminder",
 }
 
 // Match the gateway's existing reserved-sender keys. Step keys are random, so

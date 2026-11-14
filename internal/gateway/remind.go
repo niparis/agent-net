@@ -10,6 +10,10 @@ import (
 
 const reminderGrace = 2 * time.Minute
 
+// reminderWindow is how far back an unanswered request can be. It is the same
+// window for the reply reminder and the redirect notice.
+const reminderWindow = 24 * time.Hour
+
 // The request is still public, open and contactable. Use the same specific
 // edge before wildcard ordering as RequestRule. A held request is not work B
 // has received. Never send into an owner or CTO conversation. Public asks
@@ -32,7 +36,7 @@ const remindableRequest = ` FROM messages q
 
 func (s *Store) reminderArgs() []any {
 	now := s.now()
-	return []any{now.Add(-24 * time.Hour).UnixNano(), now.Add(-reminderGrace).UnixNano(), now.UnixNano(), now.Add(-reminderGrace).UnixNano(), now.Unix()}
+	return []any{now.Add(-reminderWindow).UnixNano(), now.Add(-reminderGrace).UnixNano(), now.UnixNano(), now.Add(-reminderGrace).UnixNano(), now.Unix()}
 }
 
 // The last condition is the provider usage limit: a limited session cannot
@@ -128,6 +132,11 @@ func (s *Store) remindPendingBefore(before time.Time, sessions map[string]bool) 
 		s.event(tx, "msg.stored", "", m.From, m.ID, "type=notification by=agent-net reminder")
 		out = append(out, m)
 	}
+	redirected, err := s.redirectReminders(tx)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, redirected...)
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}

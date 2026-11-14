@@ -179,10 +179,16 @@ func TestSessionLeadRoutingAndViews(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, first); err != nil {
 		t.Fatal(err)
 	}
+	// The pinned lead session keeps the address when offline. Another live
+	// session of its Agent is not the lead.
 	for _, addr := range []string{"repo:demo", "team:alpha"} {
 		got, err := s.ResolveLeadAddress(addr)
-		if err != nil || got != second {
-			t.Fatalf("fallback %s: %q %v", addr, got, err)
+		if err != nil || got != first {
+			t.Fatalf("offline pinned %s: %q %v", addr, got, err)
 		}
+	}
+	m, _, _, err = s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: second, Body: "hello again"})
+	if err != nil || m.To != first {
+		t.Fatalf("offline pinned redirect: %+v %v", m, err)
 	}
 }

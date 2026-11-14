@@ -14,7 +14,8 @@
           "undelivered",
           "waiting_notice",
           "wake_failed",
-          "member_blocked"
+          "member_blocked",
+          "redirect_reminder"
         ]
       },
       "team": {

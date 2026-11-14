@@ -82,21 +82,29 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 		} else if same {
 			return "", false, nil
 		}
-		id, name, err := liveLeadSessionQ(tx, lead, inRepo, now)
-		if err == sql.ErrNoRows {
-			return "Lead has no live session; delivered as addressed.", true, nil
-		}
+		pick, ready, err := redirectLeadSessionQ(tx, lead, inRepo, now)
 		if err != nil {
 			return "", false, err
 		}
-		if id == m.From || id == m.To {
+		if !ready {
+			if pick.fallback {
+				return "Lead is waiting for its user; delivered as addressed.", true, nil
+			}
+			return "Lead has no live session; delivered as addressed.", true, nil
+		}
+		if pick.id == m.From || pick.id == m.To {
 			return "", true, nil
 		}
-		note := fmt.Sprintf("Redirected to %s (lead of %s); originally sent to %s.", name, scope, targetName)
+		note := fmt.Sprintf("Redirected to %s (lead of %s); originally sent to %s.", pick.name, scope, targetName)
 		// The sender's receipt keeps the short note. The lead's copy also says
-		// what to do with the request.
-		m.To = id
-		m.Body = note + "\n" + fmt.Sprintf("You lead %s: answer this or hand it off to %s with agent_message_handoff.", scope, targetName) + "\n" + m.Body
+		// what to do with the request. A fallback session is not the pinned
+		// lead, so it is not told that it leads the scope.
+		line := fmt.Sprintf("You lead %s: answer this or hand it off to %s with agent_message_handoff.", scope, targetName)
+		if pick.fallback {
+			line = fmt.Sprintf("The lead session is waiting for its user. Answer this or hand it off to %s with agent_message_handoff.", targetName)
+		}
+		m.To = pick.id
+		m.Body = note + "\n" + line + "\n" + m.Body
 		return note, true, nil
 	}
 	if repo != "" && senderRepo != repo && repoLead != "" {

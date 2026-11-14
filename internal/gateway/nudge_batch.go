@@ -164,6 +164,8 @@ func (s *Store) currentNudge(m protocol.Message) (protocol.Message, bool, error)
 		var err error
 		if needsReminderCheck(part) {
 			ok, err = s.reminderEligible(part.ParentID)
+		} else if needsRedirectReminderCheck(part) {
+			ok, err = s.redirectReminderEligible(part.ParentID)
 		} else if strings.HasPrefix(part.IdempotencyKey, "step_") {
 			ok, err = s.stepMessageCurrent(part.ID)
 		}
