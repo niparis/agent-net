@@ -2803,16 +2803,19 @@ func (f sessionFlags) band() int {
 }
 
 // rank orders the rows that share a parent in the tree view: busy rows first,
-// then rows that need the owner, then the rest. The rest keep the order the
-// tree gave them before.
+// then rows that need the owner, then the rest. A busy row that also waits for
+// the owner leads the busy rows: the owner must answer it before anything else
+// that is only busy. The rest keep the order the tree gave them before.
 func (f sessionFlags) rank() int {
 	switch {
-	case f.working:
+	case f.working && f.needs:
 		return 0
-	case f.needs:
+	case f.working:
 		return 1
+	case f.needs:
+		return 2
 	}
-	return 2
+	return 3
 }
 
 // sessionWorking tells whether a live session counts as busy: its harness says
