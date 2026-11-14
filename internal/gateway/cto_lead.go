@@ -45,11 +45,11 @@ func leadBasis(grant, chief, teamLead bool) string {
 // leadBasis to three set reads. The CTO gate and the graph read both use it, so
 // they never disagree about who has lead level.
 func agentLeadBases(q leadQueryer) (map[string]string, error) {
-	grants, err := agentIDs(q, `SELECT id FROM agents WHERE lead_level<>0`)
+	grants, err := orgPairs(q, `SELECT id,id FROM agents WHERE lead_level<>0`)
 	if err != nil {
 		return nil, err
 	}
-	teamLeads, err := agentIDs(q, `SELECT DISTINCT owner_agent_id FROM teams WHERE active=1 AND owner_agent_id<>''`)
+	teamLeads, err := orgPairs(q, `SELECT DISTINCT owner_agent_id,id FROM teams WHERE active=1 AND COALESCE(owner_agent_id,'')<>''`)
 	if err != nil {
 		return nil, err
 	}
@@ -70,29 +70,11 @@ func agentLeadBases(q leadQueryer) (map[string]string, error) {
 		if id == "" {
 			continue
 		}
-		if basis := leadBasis(grants[id], chief == id, teamLeads[id]); basis != "" {
+		if basis := leadBasis(grants[id] != "", chief == id, teamLeads[id] != ""); basis != "" {
 			out[id] = basis
 		}
 	}
 	return out, nil
-}
-
-// agentIDs reads one column of Agent IDs into a set.
-func agentIDs(q leadQueryer, query string) (map[string]bool, error) {
-	rows, err := q.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]bool{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out[id] = true
-	}
-	return out, rows.Err()
 }
 
 // ctoLeadLevel reads the sending session's Agent and says whether that Agent

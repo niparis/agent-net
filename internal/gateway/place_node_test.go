@@ -44,7 +44,7 @@ func TestGraphNodePlaceMatchesTurnText(t *testing.T) {
 		t.Fatal("repo node has no place")
 	}
 	p := *member.Place
-	if p.Team != "Alpha" || p.Mode != protocol.AuthorityAbsolute || p.TeamLead != "forge-lead" || p.Repo != "demo" || p.RepoLead == "" {
+	if p.Team != "Alpha" || p.Mode != protocol.AuthorityAbsolute || p.TeamLead != "forge-lead" || p.Repo != "demo" || p.RepoLead != "" {
 		t.Fatalf("repo place: %+v", p)
 	}
 	want := []protocol.PlaceHeldBack{{Text: "deploy to production", From: "team"}, {Text: "force pushes", From: "repo"}}
@@ -80,7 +80,7 @@ func TestGraphPlaceTeamLeadNeverShowsSessionID(t *testing.T) {
 	if _, err := r.s.db.Exec(`UPDATE sessions SET name='' WHERE id=?`, r.lead); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`UPDATE teams SET lead_session=? WHERE id='alpha'`, r.lead); err != nil {
+	if _, err := r.s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='other'`, r.lead); err != nil {
 		t.Fatal(err)
 	}
 	team := protocol.GraphRef{Kind: "team", ID: "alpha"}

@@ -455,8 +455,10 @@ func TestPinnedOfflineLeadSessionIsChosenFirst(t *testing.T) {
 	if err := p.s.db.QueryRow(`SELECT agent_id FROM sessions WHERE id=?`, older).Scan(&agent); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id,lead_session) VALUES('demo',?,?)
-		ON CONFLICT(repo_id) DO UPDATE SET lead_session=excluded.lead_session`, agent, older); err != nil {
+	if _, err := p.s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES('demo',?) ON CONFLICT(repo_id) DO UPDATE SET agent_id=excluded.agent_id`, agent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, older, agent); err != nil {
 		t.Fatal(err)
 	}
 	got, err := p.s.ResolveLeadAddress("repo:demo")
@@ -599,21 +601,21 @@ func TestLeadAskSessionIsNeverTheMerger(t *testing.T) {
 		t.Fatal(err)
 	}
 	merger := mergerOfLead(t, s, node, lead, "merger")
-	got, _, err := s.leadAskSession(agent, "")
+	got, _, err := s.leadAskSession(agent)
 	if err != nil || got != lead {
 		t.Fatalf("live: lead ask session = %s, want the lead %s (%v)", got, lead, err)
 	}
 	if err := s.SetSessionOffline(node, lead); err != nil {
 		t.Fatal(err)
 	}
-	got, _, err = s.leadAskSession(agent, "")
+	got, _, err = s.leadAskSession(agent)
 	if err != nil || got != lead {
 		t.Fatalf("offline: lead ask session = %s, want the waiting lead %s (%v)", got, lead, err)
 	}
 	if _, err := s.db.Exec(`UPDATE sessions SET archived_at=1 WHERE id=?`, lead); err != nil {
 		t.Fatal(err)
 	}
-	got, _, err = s.leadAskSession(agent, "")
+	got, _, err = s.leadAskSession(agent)
 	if err != nil || got == merger {
 		t.Fatalf("merger only: lead ask session = %s (%v), want none", got, err)
 	}

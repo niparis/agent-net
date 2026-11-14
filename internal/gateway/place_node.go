@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"database/sql"
 	"sort"
 	"strings"
 	"time"
@@ -28,42 +27,41 @@ func heldBackParts(text string) []string {
 
 type placeTeam struct {
 	name, mode, held, owner string
-	pinned                  sql.NullString
 }
 
 type placeIndex struct {
-	teams           map[string]placeTeam
-	teamByRepo      map[string]string
-	teamByAgent     map[string]string
-	teamByOwner     map[string]string
-	repoName        map[string]string
-	repoLeadAgent   map[string]string
-	repoLeadSession map[string]string
-	repoHeld        map[string]string
-	agentName       map[string]string
-	sessionLabel    map[string]string
-	liveByAgent     map[string][]string
-	ownedRepos      map[string][]string
-	sessionRepo     map[string]string
+	teams         map[string]placeTeam
+	teamByRepo    map[string]string
+	teamByAgent   map[string]string
+	teamByOwner   map[string]string
+	repoName      map[string]string
+	repoLeadAgent map[string]string
+	repoHeld      map[string]string
+	agentName     map[string]string
+	agentLead     map[string]string
+	sessionLabel  map[string]string
+	liveByAgent   map[string][]string
+	ownedRepos    map[string][]string
+	sessionRepo   map[string]string
 }
 
 // buildPlaceIndex loads the tree once. The set-based queries are the same data
 // placeText reads one session at a time.
 func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now time.Time) (*placeIndex, error) {
 	idx := &placeIndex{
-		teams:           map[string]placeTeam{},
-		teamByRepo:      map[string]string{},
-		teamByAgent:     map[string]string{},
-		teamByOwner:     map[string]string{},
-		repoName:        map[string]string{},
-		repoLeadAgent:   map[string]string{},
-		repoLeadSession: map[string]string{},
-		repoHeld:        map[string]string{},
-		agentName:       map[string]string{},
-		sessionLabel:    map[string]string{},
-		liveByAgent:     map[string][]string{},
-		ownedRepos:      map[string][]string{},
-		sessionRepo:     map[string]string{},
+		teams:         map[string]placeTeam{},
+		teamByRepo:    map[string]string{},
+		teamByAgent:   map[string]string{},
+		teamByOwner:   map[string]string{},
+		repoName:      map[string]string{},
+		repoLeadAgent: map[string]string{},
+		repoHeld:      map[string]string{},
+		agentName:     map[string]string{},
+		agentLead:     map[string]string{},
+		sessionLabel:  map[string]string{},
+		liveByAgent:   map[string][]string{},
+		ownedRepos:    map[string][]string{},
+		sessionRepo:   map[string]string{},
 	}
 	for _, a := range agents {
 		idx.agentName[a.ID] = a.DisplayName
@@ -74,19 +72,25 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 		}
 		idx.repoName[r.ID] = r.DisplayName
 		if r.OwnerAgentID != nil {
-			idx.repoLeadAgent[r.ID] = *r.OwnerAgentID
 			idx.ownedRepos[*r.OwnerAgentID] = append(idx.ownedRepos[*r.OwnerAgentID], r.ID)
 		}
 	}
+	var err error
+	if idx.repoLeadAgent, err = orgPairs(s.db, `SELECT r.id,COALESCE(CASE WHEN rl.repo_id IS NULL THEN r.owner_agent_id ELSE rl.agent_id END,'') FROM repos r LEFT JOIN repo_leads rl ON rl.repo_id=r.id`); err != nil {
+		return nil, err
+	}
+	if idx.agentLead, err = orgPairs(s.db, `SELECT id,COALESCE(lead_session,'') FROM agents`); err != nil {
+		return nil, err
+	}
 
-	rows, err := s.db.Query(`SELECT id,name,authority_mode,held_back,COALESCE(owner_agent_id,''),lead_session FROM teams WHERE active=1 ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id,name,authority_mode,held_back,COALESCE(owner_agent_id,'') FROM teams WHERE active=1 ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var id string
 		var t placeTeam
-		if err := rows.Scan(&id, &t.name, &t.mode, &t.held, &t.owner, &t.pinned); err != nil {
+		if err := rows.Scan(&id, &t.name, &t.mode, &t.held, &t.owner); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -127,30 +131,6 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 			if old, ok := idx.teamByAgent[member]; !ok || team < old {
 				idx.teamByAgent[member] = team
 			}
-		}
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
-	}
-	rows.Close()
-
-	rows, err = s.db.Query(`SELECT repo_id,COALESCE(agent_id,''),lead_session FROM repo_leads`)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var repo, agent string
-		var session sql.NullString
-		if err := rows.Scan(&repo, &agent, &session); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		if agent != "" {
-			idx.repoLeadAgent[repo] = agent
-		}
-		if session.Valid {
-			idx.repoLeadSession[repo] = session.String
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -233,13 +213,13 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 // leadName mirrors leadNameQ: a live session of the agent, preferring the
 // pinned one, else the agent's display name, then the agent's project. It
 // never returns an internal ID.
-func (idx *placeIndex) leadName(agent, pinned string) string {
+func (idx *placeIndex) leadName(agent string) string {
 	if agent == "" {
 		return ""
 	}
 	if live := idx.liveByAgent[agent]; len(live) > 0 {
 		id := live[0]
-		if pinned != "" {
+		if pinned := idx.agentLead[agent]; pinned != "" {
 			for _, candidate := range live {
 				if candidate == pinned {
 					id = pinned
@@ -262,15 +242,6 @@ func (idx *placeIndex) leadName(agent, pinned string) string {
 	return ""
 }
 
-func (idx *placeIndex) repoLead(repo string) string {
-	if session := idx.repoLeadSession[repo]; session != "" {
-		if label := idx.sessionLabel[session]; label != "" {
-			return label
-		}
-	}
-	return idx.leadName(idx.repoLeadAgent[repo], "")
-}
-
 // repoForAgent is the repo that gives the agent its context: its only owned
 // repo, else the repo of its newest session.
 func (idx *placeIndex) repoForAgent(agent string) string {
@@ -289,7 +260,7 @@ func (idx *placeIndex) place(ref protocol.GraphRef, repo, agent string) (protoco
 			return p, false
 		}
 		p.Team, p.Mode = t.name, protocol.NormalAuthorityMode(t.mode)
-		p.TeamLead = idx.leadName(t.owner, t.pinned.String)
+		p.TeamLead = idx.leadName(t.owner)
 		for _, item := range heldBackParts(t.held) {
 			p.HeldBack = append(p.HeldBack, protocol.PlaceHeldBack{Text: item, From: "team"})
 		}
@@ -306,7 +277,7 @@ func (idx *placeIndex) place(ref protocol.GraphRef, repo, agent string) (protoco
 	}
 	if repo != "" {
 		p.Repo = idx.repoName[repo]
-		p.RepoLead = idx.repoLead(repo)
+		p.RepoLead = idx.leadName(idx.repoLeadAgent[repo])
 	}
 	teamID := ""
 	if repo != "" {
@@ -320,7 +291,7 @@ func (idx *placeIndex) place(ref protocol.GraphRef, repo, agent string) (protoco
 	}
 	if t, ok := idx.teams[teamID]; ok {
 		p.Team, p.Mode = t.name, protocol.NormalAuthorityMode(t.mode)
-		p.TeamLead = idx.leadName(t.owner, t.pinned.String)
+		p.TeamLead = idx.leadName(t.owner)
 		for _, item := range heldBackParts(t.held) {
 			p.HeldBack = append(p.HeldBack, protocol.PlaceHeldBack{Text: item, From: "team"})
 		}

@@ -4178,13 +4178,13 @@ func (s *Store) AnnounceNotify(nodeID string, p protocol.ProfileAnnounce) (proto
 //   - agentListSelect reads each from a join on a table that is worked out
 //     once for the whole query. It suits the list of every session, where the
 //     subqueries ran once per row.
-const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harness, s.cwd, s.native_id, s.status,
+var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harness, s.cwd, s.native_id, s.status,
 	CASE WHEN s.harness='bot' THEN EXISTS(SELECT 1 FROM apps a WHERE a.id=s.node_id AND a.kind='bot' AND a.revoked_at IS NULL) ELSE s.online END, s.last_seen, s.last_active,
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
 	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),p.project)),''),
-	CASE WHEN EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id) THEN 'merger' ELSE '' END,
+	CASE WHEN ` + registeredMergerSQL("s") + ` THEN 'merger' ELSE '' END,
  COALESCE(p.task_started,0),
  COALESCE((SELECT json_object('run_id',wa.run_id,'session_id',wa.session_id,'started_at',wa.started_at,
  'assessed_at',wa.assessed_at,'reasoning',wa.reasoning,'scope',wa.scope,'coupling',wa.coupling,
@@ -4194,9 +4194,9 @@ const agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), 
  'picker_label',wa.picker_label,'picker_note',wa.picker_note,'error',wa.error) FROM worker_assessments wa
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
- COALESCE((COALESCE((SELECT lead_session FROM repo_leads WHERE repo_id=s.repo_id),s.id)=s.id) AND s.agent_id=(SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=r.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=r.id) ELSE r.owner_agent_id END FROM repos r WHERE r.id=s.repo_id) AND NOT EXISTS(SELECT 1 FROM agents ma WHERE ma.id=s.agent_id AND ma.role='merger'),0),
-	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id AND (rl.lead_session IS NULL OR rl.lead_session=s.id)),
- EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (t.lead_session IS NULL OR t.lead_session=s.id) AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
+ COALESCE((COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id),s.id)=s.id) AND s.agent_id=(` + repoTopAgentOfSQL("s.repo_id") + `) AND NOT ` + mergerAgentSQL("s") + `,0),
+	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id AND (COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id),s.id)=s.id)),
+ EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id),s.id)=s.id) AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
  @MAX@
  @COUNT@
  s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at, s.last_compacted_reason,

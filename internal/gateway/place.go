@@ -89,12 +89,24 @@ func (s *Store) placeText(session string) (string, error) {
 	if cto == session {
 		return "", nil
 	}
+	pin, err := agentLeadSessionQ(s.db, agent)
+	if err != nil {
+		return "", err
+	}
+	parent, err := agentParentQ(s.db, agent)
+	if err != nil {
+		return "", err
+	}
+	above, err := agentParentLabelQ(s.db, agent)
+	if err != nil {
+		return "", err
+	}
 	var parts []string
 
 	// Teams this session leads.
 	type teamRow struct{ id, name, purpose, mode, held string }
 	var led []teamRow
-	rows, err := s.db.Query(`SELECT id,name,purpose,authority_mode,held_back FROM teams WHERE active=1 AND owner_agent_id=? AND (lead_session IS NULL OR lead_session=?) ORDER BY name COLLATE NOCASE,id`, agent, session)
+	rows, err := s.db.Query(`SELECT id,name,purpose,authority_mode,held_back FROM teams WHERE active=1 AND owner_agent_id=? ORDER BY name COLLATE NOCASE,id`, agent)
 	if err != nil {
 		return "", err
 	}
@@ -112,13 +124,16 @@ func (s *Store) placeText(session string) (string, error) {
 	}
 	rows.Close()
 	for _, t := range led {
+		if pin != "" && pin != session {
+			continue
+		}
 		names, err := s.teamMemberNames(t.id, repo, agent)
 		if err != nil {
 			return "", err
 		}
 		lines := []string{
 			fmt.Sprintf("You lead team %s (mode: %s). Members: %s.", t.name, protocol.AuthorityModeLabel(t.mode), namesLine(names)),
-			reportLine("the owner", t.held, "your team"),
+			reportLine(above, t.held, "your team"),
 			handoffInstruction(t.name, true),
 		}
 		if purpose := placePurpose(t.purpose); purpose != "" {
@@ -128,29 +143,14 @@ func (s *Store) placeText(session string) (string, error) {
 	}
 
 	// Repos this session leads, when other agents work in them.
-	repoRows, err := repoLeadRows(s.db, `NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`)
+	ledRepos, err := ledReposQ(s.db, agent)
 	if err != nil {
 		return "", err
 	}
-	type repoRow struct{ id, name string }
-	var ledRepos []repoRow
-	for repoRows.Next() {
-		var id, name string
-		var lead, pinned sql.NullString
-		if err = repoRows.Scan(&id, &name, &lead, &pinned); err != nil {
-			repoRows.Close()
-			return "", err
-		}
-		if lead.Valid && lead.String == agent && (!pinned.Valid || pinned.String == "" || pinned.String == session) {
-			ledRepos = append(ledRepos, repoRow{id, name})
-		}
-	}
-	if err = repoRows.Err(); err != nil {
-		repoRows.Close()
-		return "", err
-	}
-	repoRows.Close()
 	for _, r := range ledRepos {
+		if pin != "" && pin != session {
+			continue
+		}
 		names, err := s.repoMemberNames(r.id, agent)
 		if err != nil {
 			return "", err
@@ -162,57 +162,46 @@ func (s *Store) placeText(session string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		above, mode := "the owner", protocol.DefaultAuthorityMode
-		if _, tname, tmode, theld, towner, tpinned, terr := repoTeam(s.db, r.id); terr == nil {
+		repoAbove, mode := above, protocol.DefaultAuthorityMode
+		if _, tname, tmode, theld, towner, terr := repoTeam(s.db, r.id); terr == nil {
 			mode, held = tmode, joinHeldBack(theld, held)
-			if towner.Valid && towner.String != "" {
-				lead, err := s.leadName(towner.String, tpinned.String)
-				if err != nil {
-					return "", err
-				}
-				above = fmt.Sprintf("%s, who leads team %s", lead, tname)
+			if towner.Valid && towner.String == parent && parent != "" {
+				repoAbove = fmt.Sprintf("%s, who leads team %s", above, tname)
 			}
 		} else if terr != sql.ErrNoRows {
 			return "", terr
 		}
 		parts = append(parts, strings.Join([]string{
 			fmt.Sprintf("You lead repo %s (mode: %s). Members: %s.", r.name, protocol.AuthorityModeLabel(mode), namesLine(names)),
-			reportLine(above, held, "your repo"),
+			reportLine(repoAbove, held, "your repo"),
 			handoffInstruction(r.name, false),
 		}, "\n"))
 	}
 
 	// The team this session belongs to, when it does not lead it.
-	var teamID, teamName, owner, mode, held, asksTo, leadMerges string
-	var pinned sql.NullString
-	err = s.db.QueryRow(`SELECT t.id,t.name,COALESCE(t.owner_agent_id,''),t.lead_session,t.authority_mode,t.held_back,t.asks_to,t.lead_merges FROM teams t JOIN team_members tm ON tm.team_id=t.id
-		WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=? AND tm.member_id<>'') OR (tm.member_kind='agent' AND tm.member_id=?))
-		ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &teamName, &owner, &pinned, &mode, &held, &asksTo, &leadMerges)
-	if err != nil && err != sql.ErrNoRows {
+	if t, ok, err := s.memberTeamOf(session); err != nil {
 		return "", err
-	}
-	leadsIt := owner == agent && (!pinned.Valid || pinned.String == "" || pinned.String == session)
-	if err == nil && owner != "" && !leadsIt {
-		lead, err := s.leadName(owner, pinned.String)
+	} else if ok {
+		lead, err := leadNameQ(s.db, t.leadAgent, s.now())
 		if err != nil {
 			return "", err
 		}
 		lines := []string{
-			fmt.Sprintf("You are in team %s, led by %s (mode: %s).", teamName, lead, protocol.AuthorityModeLabel(mode)),
-			memberOrderLine(mode),
+			fmt.Sprintf("You are in team %s, led by %s (mode: %s).", t.name, lead, protocol.AuthorityModeLabel(t.mode)),
+			memberOrderLine(t.mode),
 		}
 		if repoHeld, err := repoHeldBack(s.db, repo); err != nil {
 			return "", err
-		} else if h := joinHeldBack(held, repoHeld); h != "" {
+		} else if h := joinHeldBack(t.held, repoHeld); h != "" {
 			lines = append(lines, "Held back from your team: "+protocol.NeutralizeMarkers(h)+".")
 		}
 		lines = append(lines, "Escalate to your lead first, not to the owner.")
-		if asksTo == protocol.AsksToLead {
+		if t.asksToLead {
 			lines = append(lines, "Questions for the owner go to your lead, "+lead+".")
 		}
 		// The owner's grant is stated as a fact. It is not a gate: nothing is
 		// blocked by it, it tells the member where a merge it cannot do goes.
-		if protocol.NormalLeadMerges(leadMerges) == protocol.LeadMergesOn {
+		if t.leadMerges {
 			lines = append(lines, "Merges: your lead "+lead+" may merge this team's work on the owner's grant; hand a merge you cannot do to the lead.")
 		}
 		parts = append(parts, strings.Join(lines, "\n"))
@@ -263,27 +252,13 @@ func sortedNames(rows *sql.Rows) ([]string, error) {
 	return names, rows.Err()
 }
 
-// leadName is the name of a team's live lead session, or the lead agent's
-// name when no session of it is online.
-func (s *Store) leadName(agent, pinned string) (string, error) {
-	return leadNameQ(s.db, agent, pinned, s.now())
-}
-
-func leadNameQ(q leadDB, agent, pinned string, now time.Time) (string, error) {
-	var id string
-	err := liveLeadSession(q, agent, "", pinned, false, now).Scan(&id)
-	if err == nil {
+func leadNameQ(q leadDB, agent string, now time.Time) (string, error) {
+	if id, _, err := liveLeadSessionQ(q, agent, "", now); err == nil {
 		return sessionLabel(q, id), nil
-	}
-	if err != sql.ErrNoRows {
+	} else if err != sql.ErrNoRows {
 		return "", err
 	}
-	var name string
-	err = q.QueryRow(`SELECT display_name FROM agents WHERE id=?`, agent).Scan(&name)
-	if err == sql.ErrNoRows {
-		return agent, nil
-	}
-	return name, err
+	return agentNameQ(q, agent)
 }
 
 // contextText is what context.get sends: the node charter, then the place.

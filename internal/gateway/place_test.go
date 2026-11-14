@@ -127,7 +127,7 @@ func TestPlaceTextFollowsTeamChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = r.s.db.Exec(`UPDATE teams SET lead_session=? WHERE id='alpha'`, second); err != nil {
+	if _, err = r.s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='other'`, second); err != nil {
 		t.Fatal(err)
 	}
 	if got, err = r.s.placeText(r.lead); err != nil || strings.Contains(got, "You lead") {

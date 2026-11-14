@@ -118,23 +118,12 @@ func (s *Store) barEditor(session, named string) (project, source string, lead b
 	if named != "" && named != project {
 		return "", "", false, reject("a lead changes the bar of its own project only")
 	}
-	rows, err := repoLeadRows(s.db, `(id=? OR display_name=? COLLATE NOCASE) AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, project, project)
+	isLead, err := sessionLeadsNamedRepoQ(s.db, project, agent, session)
 	if err != nil {
 		return "", "", false, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var id, name string
-		var leadAgent, pinned sql.NullString
-		if err = rows.Scan(&id, &name, &leadAgent, &pinned); err != nil {
-			return "", "", false, err
-		}
-		if isLeadSession(leadAgent, pinned, agent, session) {
-			return project, protocol.BarSourceLead, true, nil
-		}
-	}
-	if err = rows.Err(); err != nil {
-		return "", "", false, err
+	if isLead {
+		return project, protocol.BarSourceLead, true, nil
 	}
 	return "", "", false, reject("only the project's lead, the owner or the CTO may change a project's bar")
 }
@@ -267,26 +256,12 @@ func (s *Store) barAskText(tx *sql.Tx, session string, c resolvedContext, hash s
 	if err != nil || len(rules) > 0 {
 		return "", err
 	}
-	rows, err := repoLeadRows(tx, `(id=? OR display_name=? COLLATE NOCASE) AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, c.Repo, c.Repo)
+	lead, err := sessionLeadsNamedRepoQ(tx, c.Repo, c.Agent, session)
 	if err != nil {
 		return "", err
 	}
-	isLead := false
-	for rows.Next() {
-		var id, name string
-		var leadAgent, pinned sql.NullString
-		if err = rows.Scan(&id, &name, &leadAgent, &pinned); err != nil {
-			rows.Close()
-			return "", err
-		}
-		if isLeadSession(leadAgent, pinned, c.Agent, session) {
-			isLead = true
-		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil || !isLead {
-		return "", err
+	if !lead {
+		return "", nil
 	}
 	if err = record("bar", c.Repo, hash); err != nil {
 		return "", err

@@ -90,7 +90,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		if !explicit {
 			historyAttr = "lead/default"
 		}
-		err = tx.QueryRow(`SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE owner_agent_id END FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, q.Ref.ID).Scan(&old)
+		err = tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, q.Ref.ID).Scan(&old)
 		if err == sql.ErrNoRows {
 			return reject("unknown or archived Repo")
 		}

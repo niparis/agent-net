@@ -214,7 +214,7 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 		return nil, err
 	}
 	wait := protocol.CleanWaiting(p.Waiting)
-	team, leadAgent, pinned, ok, err := s.askerTeam(p.SessionID)
+	team, leadAgent, ok, err := s.askerTeam(p.SessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 		if err != nil || !named {
 			return nil, err
 		}
-		scope, leadAgent, pinned = lead.scope, lead.agent, lead.pinned
+		scope, leadAgent = lead.scope, lead.agent
 	}
 	key := blockedKey(text, wait)
 	var seen string
@@ -240,7 +240,7 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 	if err == nil && seen == key {
 		return nil, nil
 	}
-	leadSession, _, err := s.leadAskSession(leadAgent, pinned)
+	leadSession, _, err := s.leadAskSession(leadAgent)
 	if err != nil {
 		return nil, err
 	}
