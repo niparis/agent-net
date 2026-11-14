@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -76,7 +77,7 @@ func TestLivePickerPricesTasksFromStoredNoticeTokens(t *testing.T) {
 	s, candidates := livePickerFixture(t, true)
 	defer s.Close()
 	g := &Gateway{store: s}
-	choice, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, "", nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
+	choice, _, err := liveChoose(g, candidates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +119,7 @@ func TestPickerCostAppearsAfterAWriteWithoutARestart(t *testing.T) {
 	s, candidates := livePickerFixture(t, false)
 	defer s.Close()
 	g := &Gateway{store: s}
-	first, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, "", nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
+	first, _, err := liveChoose(g, candidates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +141,7 @@ func TestPickerCostAppearsAfterAWriteWithoutARestart(t *testing.T) {
 	if s.pickerTable().Revision <= before {
 		t.Fatal("the write did not rebuild the cached table")
 	}
-	second, _, err := g.chooseAutomaticWorkerAt(candidates, "normal", 2.83, "", nil, nil, nil, nil, protocol.ProtectedProviders{}, false)
+	second, _, err := liveChoose(g, candidates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,4 +150,19 @@ func TestPickerCostAppearsAfterAWriteWithoutARestart(t *testing.T) {
 	}
 	t.Logf("first note: %s", first.PickNote)
 	t.Logf("second note: %s", second.PickNote)
+}
+
+// liveChoose is an automatic start's pick through the gateway's one path, on a
+// node where every candidate's harness is installed and signed in.
+func liveChoose(g *Gateway, candidates []protocol.WorkerModelCandidate) (protocol.WorkerModelChoice, string, error) {
+	node := &protocol.NodeView{Hostname: "box"}
+	seen := map[string]bool{}
+	for _, c := range candidates {
+		if !seen[c.Harness] {
+			seen[c.Harness] = true
+			node.Harnesses = append(node.Harnesses, protocol.HarnessInfo{Name: c.Harness, SignedIn: "yes"})
+		}
+	}
+	res, err := g.Choose(ChooseRequest{Purpose: model.PurposeWorkerAutomatic, Node: node, Candidates: candidates, Difficulty: "normal", D: 2.83})
+	return res.Choice, res.Note, err
 }
