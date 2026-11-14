@@ -254,6 +254,14 @@ CREATE TABLE IF NOT EXISTS workers (
 			return nil, err
 		}
 	}
+	var hasAutomatic int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'automatic'`).Scan(&hasAutomatic)
+	if hasAutomatic == 0 {
+		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN automatic INTEGER NOT NULL DEFAULT 0`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	var hasOwnerName int
 	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'owner_name'`).Scan(&hasOwnerName)
 	if hasOwnerName == 0 {

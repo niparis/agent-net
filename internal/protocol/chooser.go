@@ -199,11 +199,24 @@ func chooseWorkerModelRanked(candidates []WorkerModelCandidate, level string, sc
 // weighted round robin, so one model with a little more quota room does not win
 // every start.
 func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation) (WorkerModelChoice, error) {
+	order, leftOut, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation, false)
+	if err != nil {
+		return WorkerModelChoice{LeftOut: leftOut}, err
+	}
+	return order[0], nil
+}
+
+// levelOrder returns the level rule's whole order. The first choice is the one
+// the rotation picked; the rest follow by rotation weight, so the gate can try
+// them in the same order. keepBlocked leaves a candidate whose provider has no
+// room at the end, for the gate to refuse; without it the candidate leaves the
+// order, as the routes part 3 has not moved yet expect.
+func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, keepBlocked bool) ([]WorkerModelChoice, []WorkerLeftOut, error) {
 	if level == "" {
 		level = "normal"
 	}
 	if _, err := DifficultyFit(0, level, minimums); err != nil {
-		return WorkerModelChoice{}, err
+		return nil, nil, err
 	}
 	state := rotation
 	if state == nil {
@@ -246,14 +259,24 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
 		}
-		room, note, measured, blocked := workerQuotaRoom(quotas, provider, c.Model)
-		if blocked {
-			reason := "out of quota"
-			if note != "" {
-				reason += " (" + note + ")"
+		var room float64
+		var note string
+		var measured bool
+		if keepBlocked {
+			// The gate owns the quota check. The ranker only needs a pace for
+			// its order, so a used-up window is left out of that reading.
+			room, note, measured = WorkerQuotaPace(quotas, provider, c.Model)
+		} else {
+			var isBlocked bool
+			room, note, measured, isBlocked = workerQuotaRoom(quotas, provider, c.Model)
+			if isBlocked {
+				reason := "out of quota"
+				if note != "" {
+					reason += " (" + note + ")"
+				}
+				leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: reason, Rank: LeftOutQuota})
+				continue
 			}
-			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: reason, Rank: LeftOutQuota})
-			continue
 		}
 		servedRoom := room
 		if measured {
@@ -274,9 +297,35 @@ func chooseWorkerModelBand(candidates []WorkerModelCandidate, level string, scor
 		if roster == "" {
 			roster = "none"
 		}
-		return WorkerModelChoice{LeftOut: leftOut}, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
+		return nil, leftOut, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
 	}
-	return rotateRanked(state, level, eligible)
+	picked, err := rotateRanked(state, level, eligible)
+	if err != nil {
+		return nil, leftOut, err
+	}
+	order := []WorkerModelChoice{picked}
+	seen := map[string]bool{WorkerModelKey(picked.WorkerModelCandidate): true}
+	rest := append([]rankedChoice(nil), eligible...)
+	sort.SliceStable(rest, func(i, j int) bool {
+		if rest[i].poor != rest[j].poor {
+			return !rest[i].poor
+		}
+		if rest[i].weight != rest[j].weight {
+			return rest[i].weight > rest[j].weight
+		}
+		return WorkerModelKey(rest[i].choice.WorkerModelCandidate) < WorkerModelKey(rest[j].choice.WorkerModelCandidate)
+	})
+	for _, e := range rest {
+		key := WorkerModelKey(e.choice.WorkerModelCandidate)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		ch := e.choice
+		ch.Why = WhyLine(level, ch)
+		order = append(order, ch)
+	}
+	return order, leftOut, nil
 }
 
 // rankedChoice is a candidate that passed the rules of a pick, with its
@@ -513,6 +562,40 @@ func WorkerRotationShares(level string, candidates []WorkerModelCandidate, rotat
 // model is exhausted or above 90 percent used (decision 0162's 90% step).
 func QuotaRoomForProvider(q *Quotas, provider, model string) (room float64, note string, measured, blocked bool) {
 	return workerQuotaRoom(q, provider, model)
+}
+
+// WorkerQuotaPace is the room and pace note a ranker uses to order candidates.
+// A window that is used up or above 90 percent says nothing about pace: it is
+// skipped, so the ranker can still order the candidate. The gate refuses it.
+func WorkerQuotaPace(q *Quotas, provider, model string) (room float64, note string, measured bool) {
+	p, ok := q.Provider(provider)
+	if !ok || !p.usable() {
+		return 0, "", false
+	}
+	for _, w := range p.Windows {
+		if !QuotaWindowServes(w, model) || w.Exhausted || w.PercentUsed > 90 {
+			continue
+		}
+		duration := quotaWindowDuration(w)
+		if duration == 0 || w.ResetsAt <= 0 || q.GeneratedAt <= 0 {
+			continue
+		}
+		elapsed := 100 * (1 - float64(w.ResetsAt-q.GeneratedAt)/duration.Seconds())
+		elapsed = math.Max(0, math.Min(100, elapsed))
+		current := elapsed - w.PercentUsed
+		if !measured || current < room {
+			room = current
+			pace := "on pace"
+			if current > 0.05 {
+				pace = fmt.Sprintf("%.0f%% behind pace", current)
+			} else if current < -0.05 {
+				pace = fmt.Sprintf("%.0f%% ahead of pace", -current)
+			}
+			note = fmt.Sprintf("%s %s (%s, %.0f%% used at %.0f%% elapsed)", provider, pace, QuotaWindowName(w), w.PercentUsed, elapsed)
+			measured = true
+		}
+	}
+	return room, note, measured
 }
 
 func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, bool) {

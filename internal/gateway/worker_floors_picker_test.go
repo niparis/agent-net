@@ -421,8 +421,8 @@ func TestWorkerPickerMonthlyExhaustedOnAnotherMachineRefused(t *testing.T) {
 		Level:              "hard",
 		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: "test", Harness: "opencode", Model: "auto"},
 	}, true)
-	if err == nil || !strings.Contains(err.Error(), "out of quota") {
-		t.Fatalf("workerStart = %v, want a refusal because opencode-go is out of quota", err)
+	if err == nil || !strings.Contains(err.Error(), "opencode-go is exhausted") {
+		t.Fatalf("workerStart = %v, want a refusal because opencode-go is exhausted", err)
 	}
 }
 

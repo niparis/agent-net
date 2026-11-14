@@ -34,8 +34,8 @@ func TestGateSkipsALiveSessionLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gate refused a usable provider: %v", err)
 	}
-	if got.Name != "plain" {
-		t.Fatalf("chose %q, want the provider without a reported limit", got.Name)
+	if got.Candidate().Name != "plain" {
+		t.Fatalf("chose %q, want the provider without a reported limit", got.Candidate().Name)
 	}
 	if len(skips) != 1 || skips[0].Candidate.Name != "go" {
 		t.Fatalf("skips: %+v", skips)
@@ -104,7 +104,7 @@ func TestGateLockedChecksHaveNoSwitch(t *testing.T) {
 				good = Candidate{Name: "good", Harness: "codex", Model: "gpt-6.1-terra"}
 			}
 			got, skips, err := Gate([]Candidate{tt.broken, good}, Checks{}, tt.facts())
-			if err != nil || got.Name != good.Name {
+			if err != nil || got.Candidate().Name != good.Name {
 				t.Fatalf("got %+v, skips %+v, err %v", got, skips, err)
 			}
 			if len(skips) != 1 || !strings.Contains(skips[0].Reason, tt.want) {
@@ -169,7 +169,7 @@ func TestGateOptionalChecks(t *testing.T) {
 				t.Fatalf("check off: skips %+v, err %v", skips, err)
 			}
 			got, skips, err := Gate([]Candidate{tt.broken, good}, tt.checks, tt.facts())
-			if err != nil || got.Name != good.Name {
+			if err != nil || got.Candidate().Name != good.Name {
 				t.Fatalf("check on: got %+v, skips %+v, err %v", got, skips, err)
 			}
 			if len(skips) != 1 || !strings.Contains(skips[0].Reason, tt.want) {

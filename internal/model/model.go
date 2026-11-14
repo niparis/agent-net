@@ -98,10 +98,40 @@ type Skip struct {
 	Locked bool
 }
 
+// Granted is a candidate the gate allowed to start. Only Gate makes one: the
+// fields are unexported, so no route can grant itself a model and skip the
+// checks (decision 0162).
+type Granted struct {
+	candidate   Candidate
+	checks      Checks
+	floorUnread bool
+}
+
+// Candidate is the model the gate granted.
+func (g Granted) Candidate() Candidate { return g.candidate }
+
+// Checks are the optional steps the grant was made under.
+func (g Granted) Checks() Checks { return g.checks }
+
+// FloorUnread reports that the floor was on and this provider has no quota
+// reading, so the floor could not be applied. Only the gate can say this.
+func (g Granted) FloorUnread() bool { return g.floorUnread }
+
+// IsZero reports whether the value came from nowhere. It is true only for the
+// zero Granted, which no route can use to launch.
+func (g Granted) IsZero() bool { return g.candidate == Candidate{} }
+
+// UncheckedGrant is the temporary bridge for the routes that decision 0162
+// part 3 still moves onto the gate. It grants a candidate without a check. It
+// is the only way to make a Granted outside Gate, and part 3 deletes it.
+func UncheckedGrant(c Candidate) Granted { return Granted{candidate: c} }
+
 // Gate returns the first candidate that can run now, with the reason for each
-// candidate it skipped before that one. It is the only way to know a candidate
-// may start, and it cannot be asked to skip a locked check.
-func Gate(list []Candidate, checks Checks, facts Facts) (Candidate, []Skip, error) {
+// candidate it skipped. It reads the whole list, so the note names a provider
+// that was held back even when it ranked behind the pick. It is the only way
+// to know a candidate may start, and it cannot be asked to skip a locked check.
+func Gate(list []Candidate, checks Checks, facts Facts) (Granted, []Skip, error) {
+	var granted Granted
 	var skips []Skip
 	for _, c := range list {
 		if skip, blocked := lockedSkip(c, facts); blocked {
@@ -112,9 +142,19 @@ func Gate(list []Candidate, checks Checks, facts Facts) (Candidate, []Skip, erro
 			skips = append(skips, skip)
 			continue
 		}
-		return c, skips, nil
+		if granted.IsZero() {
+			granted = Granted{candidate: c, checks: checks}
+			if checks.Floor {
+				if under, _, noReading := protocol.CheckWorkerFloor(facts.Quotas, facts.Floors, c.Harness, c.Model); !under && noReading {
+					granted.floorUnread = true
+				}
+			}
+		}
 	}
-	return Candidate{}, skips, fmt.Errorf("no candidate can run now: %s", skipSummary(skips))
+	if granted.IsZero() {
+		return Granted{}, skips, fmt.Errorf("no candidate can run now: %s", skipSummary(skips))
+	}
+	return granted, skips, nil
 }
 
 // lockedSkip applies the checks that have no switch.
@@ -187,7 +227,7 @@ func optionalSkip(c Candidate, checks Checks, facts Facts) (Skip, bool) {
 	if checks.Burn {
 		if reason, hold := protocol.QuotaBurnHold(facts.Quotas, c.QuotaProvider(), c.Model); hold {
 			skip.Check = "burn"
-			skip.Reason = reason
+			skip.Reason = "held back for quota: " + reason
 			return skip, true
 		}
 	}

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -38,7 +39,7 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 		Model: l.Model, Task: l.Task, Title: l.Title, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions,
 		DifficultyAsked: l.DifficultyAsked, DifficultyUsed: l.DifficultyUsed, Touches: strings.Join(l.Touches, ","), FromCTO: l.FromCTO, QueuedAt: time.Now(),
 		Assessment: l.Assessment, AutoContinue: protocol.AutoContinueEnabled(l.AutoContinue), TaskID: l.TaskID, ContinuationPartial: l.ContinuationPartial, ChangeID: l.ChangeID, MCPServers: l.MCPServers, Fixes: l.Fixes,
-		Why: l.Why, NotFamily: l.NotFamily}
+		Why: l.Why, NotFamily: l.NotFamily, Automatic: l.Automatic}
 	if err := d.st.addQueued(q); err != nil {
 		// Without a queue the old behaviour is the safe one: refuse.
 		return &protocol.WorkerLaunched{Reason: "cannot queue: " + err.Error()}
@@ -231,11 +232,23 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 		d.startQueuedResume(ctx, e)
 		return
 	}
+	if e.Automatic {
+		// The reading that chose this model may be old. The start asks the
+		// gate again before it leaves the queue (decision 0162).
+		if answer, ok := d.recheckQueued(ctx, &e); ok {
+			if refused := applyRecheck(&e, answer); refused != "" {
+				d.clearStartReservation()
+				d.Logf("worker.not_started queue=%s project=%s harness=%s owner=%s reason=%q", e.ID, e.Project, e.Harness, e.Owner, refused)
+				d.notStarted(ctx, e, "the gate refused the start when it left the queue: "+refused)
+				return
+			}
+		}
+	}
 	l := protocol.WorkerLaunch{StartRef: e.ID, Project: e.Project, Path: e.Path, Harness: e.Harness, Model: e.Model, Owner: e.Owner, OwnerName: e.OwnerName,
 		Task: e.Task, Title: e.Title, Isolation: e.Isolation, Base: e.Base, RecordTask: e.RecordTask, Permissions: e.Permissions,
 		DifficultyAsked: e.DifficultyAsked, DifficultyUsed: e.DifficultyUsed, Touches: splitTouches(e.Touches), Assessment: e.Assessment,
 		AutoContinue: &e.AutoContinue, TaskID: e.TaskID, ContinuationPartial: e.ContinuationPartial, ChangeID: e.ChangeID, MCPServers: e.MCPServers, Fixes: e.Fixes,
-		Why: e.Why, NotFamily: e.NotFamily}
+		Why: e.Why, NotFamily: e.NotFamily, Automatic: e.Automatic}
 	out, err := d.runWorkerStart(ctx, l)
 	if err != nil {
 		d.clearStartReservation()
@@ -282,6 +295,46 @@ func (d *Daemon) finishQueuedStart(ctx context.Context, e queuedStart, out proto
 			d.Logf("worker %s: started notice: %v", w.id, err)
 		}
 	}
+}
+
+// recheckQueued asks the gateway to pass an automatic start through the gate
+// again when it leaves the queue. It reports false when the gateway does not
+// answer, so an older gateway keeps the model the start queued with.
+func (d *Daemon) recheckQueued(ctx context.Context, e *queuedStart) (protocol.WorkerRecheckAnswer, bool) {
+	cctx, cancel := context.WithTimeout(withCallWait(ctx, 15*time.Second), 15*time.Second)
+	raw, err := d.call(cctx, "worker.recheck", protocol.WorkerRecheck{Ref: e.ID, Owner: e.Owner, Project: e.Project,
+		Harness: e.Harness, Model: e.Model, Difficulty: e.DifficultyUsed, Assessment: e.Assessment, NotFamily: e.NotFamily})
+	cancel()
+	if err != nil {
+		d.Logf("worker.recheck queue=%s: %v (keeping the queued model)", e.ID, err)
+		return protocol.WorkerRecheckAnswer{}, false
+	}
+	var answer protocol.WorkerRecheckAnswer
+	if err := json.Unmarshal(raw, &answer); err != nil {
+		d.Logf("worker.recheck queue=%s: %v (keeping the queued model)", e.ID, err)
+		return protocol.WorkerRecheckAnswer{}, false
+	}
+	return answer, true
+}
+
+// applyRecheck writes the gate's answer into the queued start. It returns the
+// refusal reason, or "" when the start may go on.
+func applyRecheck(e *queuedStart, answer protocol.WorkerRecheckAnswer) string {
+	if answer.Refused {
+		return answer.Reason
+	}
+	if answer.Harness == "" || answer.Model == "" {
+		return ""
+	}
+	changed := e.Harness != answer.Harness || e.Model != answer.Model
+	e.Harness, e.Model, e.Why = answer.Harness, answer.Model, answer.Why
+	if changed && e.Assessment != nil {
+		// The pick note belongs to the model it was written for.
+		copied := *e.Assessment
+		copied.PickerNote = answer.ModelNote
+		e.Assessment = &copied
+	}
+	return ""
 }
 
 // startQueuedResume restarts the worker for a queued resume that has room.
