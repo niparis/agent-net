@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -145,19 +146,6 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 	return "", err
 }
 
-// placeAgentLeadSessionTx derives an Agent's lead session from the copies that
-// name one. A copy that went away clears it.
-func placeAgentLeadSessionTx(tx *sql.Tx, agent string) error {
-	var session sql.NullString
-	if err := tx.QueryRow(`SELECT COALESCE(
-		(SELECT lead_session FROM repo_leads WHERE agent_id=? AND lead_session IS NOT NULL ORDER BY repo_id LIMIT 1),
-		(SELECT lead_session FROM teams WHERE owner_agent_id=? AND lead_session IS NOT NULL ORDER BY id LIMIT 1))`, agent, agent).Scan(&session); err != nil {
-		return err
-	}
-	_, err := tx.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, session, agent)
-	return err
-}
-
 // removeReportsToTx deletes an Agent's parent. The tree is derived, so the
 // move leaves no graph history row of its own; the old-table write that caused
 // it carries the history.
@@ -169,18 +157,16 @@ func removeReportsToTx(tx *sql.Tx, from, to string) error {
 	return err
 }
 
-// placeAgentTx makes one Agent's parent and lead session match the old tables.
-// A parent the rules refuse is left as it is; an Agent with no parent loses its
-// edge. The build and every later write use this one function.
+// placeAgentTx makes one Agent's parent match the old tables. A parent the
+// rules refuse is left as it is; an Agent with no parent loses its edge. The
+// build and every later write use this one function. The Agent's lead session
+// is not derived here: lead_set and session_replace own it.
 func placeAgentTx(tx *sql.Tx, agent string) error {
 	if agent == "" {
 		return nil
 	}
 	var current string
 	if err := tx.QueryRow(`SELECT target FROM graph_edges WHERE source=? AND kind='reports_to'`, agent).Scan(&current); err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	if err := placeAgentLeadSessionTx(tx, agent); err != nil {
 		return err
 	}
 	want, err := agentParentTx(tx, agent)
@@ -356,21 +342,24 @@ func bindMergerAgentTx(tx *sql.Tx, project, session string, now int64) error {
 	return placeAgentTx(tx, agent)
 }
 
-// setAgentLeadSessionTx stores an Agent's lead session. The Team and Repo
-// columns that name one are read-only copies until their readers move to the
-// Agent: a copy that names a session follows; one that allows any session of
-// the Agent stays as it is.
+// setAgentLeadSessionTx stores an Agent's lead session. The Agent is the only
+// lead session (decision 0160); the old Team and Repo copy columns are gone.
 func setAgentLeadSessionTx(tx *sql.Tx, agent, session string) error {
-	for _, q := range []string{
-		`UPDATE agents SET lead_session=? WHERE id=?`,
-		`UPDATE repo_leads SET lead_session=? WHERE agent_id=? AND lead_session IS NOT NULL`,
-		`UPDATE teams SET lead_session=? WHERE owner_agent_id=? AND lead_session IS NOT NULL`,
-	} {
-		if _, err := tx.Exec(q, session, agent); err != nil {
-			return err
-		}
+	_, err := tx.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, session, agent)
+	return err
+}
+
+// clearLostLeadSessionTx clears an Agent's lead session once the Agent leads no
+// Team or Repo. The pin would otherwise name a session from a place the Agent
+// no longer leads, the stale pin the copies caused.
+func clearLostLeadSessionTx(tx *sql.Tx, agent string) error {
+	if agent == "" {
+		return nil
 	}
-	return nil
+	_, err := tx.Exec(`UPDATE agents SET lead_session=NULL WHERE id=? AND lead_session IS NOT NULL
+		AND NOT EXISTS(SELECT 1 FROM repo_leads WHERE agent_id=?)
+		AND NOT EXISTS(SELECT 1 FROM teams WHERE active=1 AND owner_agent_id=?)`, agent, agent, agent)
+	return err
 }
 
 // StoredEdge reads an edge back as stored, with typed endpoints.
@@ -383,6 +372,80 @@ func (s *Store) StoredEdge(e protocol.Edge) (protocol.Edge, error) {
 	return e, nil
 }
 
+// leadCopyColumn reports whether a table still has its lead_session copy
+// column. The drop migration removes them, and a rewound store may replay the
+// one-time build after that.
+func leadCopyColumn(tx *sql.Tx, table string) (bool, error) {
+	var has int
+	err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name='lead_session'`, table).Scan(&has)
+	return has > 0, err
+}
+
+// seedAgentLeadSessionsTx takes each Agent's lead session from the two copies
+// once, as decision 0160's build does: a Repo copy wins over a Team copy, and
+// an Agent with no copy keeps what it has. It is the last read of the copies;
+// the drop migration removes them.
+func seedAgentLeadSessionsTx(tx *sql.Tx) error {
+	repo, err := leadCopyColumn(tx, "repo_leads")
+	if err != nil {
+		return err
+	}
+	team, err := leadCopyColumn(tx, "teams")
+	if err != nil {
+		return err
+	}
+	var source, named []string
+	if repo {
+		source = append(source, `(SELECT lead_session FROM repo_leads WHERE agent_id=agents.id AND lead_session IS NOT NULL ORDER BY repo_id LIMIT 1)`)
+		named = append(named, `EXISTS(SELECT 1 FROM repo_leads WHERE agent_id=agents.id AND lead_session IS NOT NULL)`)
+	}
+	if team {
+		source = append(source, `(SELECT lead_session FROM teams WHERE owner_agent_id=agents.id AND lead_session IS NOT NULL ORDER BY id LIMIT 1)`)
+		named = append(named, `EXISTS(SELECT 1 FROM teams WHERE owner_agent_id=agents.id AND lead_session IS NOT NULL)`)
+	}
+	if len(source) == 0 {
+		return nil
+	}
+	_, err = tx.Exec(`UPDATE agents SET lead_session=COALESCE(` + strings.Join(source, ",") + `)
+		WHERE lead_session IS NULL AND (` + strings.Join(named, " OR ") + `)`)
+	return err
+}
+
+// dropLeadSessionCopiesTx makes agents.lead_session the only lead session. A
+// non-empty Team or Repo copy must already equal its Agent's lead session;
+// otherwise the migration refuses to drop them and the gateway stops, so a
+// stale pin is seen and fixed rather than thrown away.
+func dropLeadSessionCopiesTx(tx *sql.Tx) error {
+	copies := []struct{ table, ref, owner string }{
+		{"repo_leads", "repo_id", "agent_id"},
+		{"teams", "id", "owner_agent_id"},
+	}
+	for _, c := range copies {
+		has, err := leadCopyColumn(tx, c.table)
+		if err != nil {
+			return err
+		}
+		if !has {
+			continue
+		}
+		var ref, owner, copyValue, agentValue string
+		err = tx.QueryRow(`SELECT `+c.ref+`,COALESCE(`+c.owner+`,''),lead_session,
+			COALESCE((SELECT lead_session FROM agents WHERE id=`+c.table+`.`+c.owner+`),'')
+			FROM `+c.table+` WHERE COALESCE(lead_session,'')<>''
+			AND lead_session<>COALESCE((SELECT lead_session FROM agents WHERE id=`+c.table+`.`+c.owner+`),'') LIMIT 1`).Scan(&ref, &owner, &copyValue, &agentValue)
+		if err == nil {
+			return fmt.Errorf("%s %q names lead session %q for Agent %q, which has %q: fix the copy before this gateway drops the column", c.table, ref, copyValue, owner, agentValue)
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if _, err := tx.Exec(`ALTER TABLE ` + c.table + ` DROP COLUMN lead_session`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // StoredLead reads the lead of a Repo or Team, or an Agent's own row, back as
 // stored: the lead Agent and its lead session.
 func (s *Store) StoredLead(ref protocol.GraphRef) (protocol.LeadSetResult, error) {
@@ -391,9 +454,10 @@ func (s *Store) StoredLead(ref protocol.GraphRef) (protocol.LeadSetResult, error
 	var err error
 	switch ref.Kind {
 	case "repo":
-		err = s.db.QueryRow(`SELECT (`+repoTopAgentSQL+`),(SELECT lead_session FROM repo_leads WHERE repo_id=?)`, ref.ID, ref.ID).Scan(&agent, &session)
+		err = s.db.QueryRow(`SELECT `+repoTopAgentExpr+`,
+			(SELECT a.lead_session FROM agents a WHERE a.id=`+repoTopAgentExpr+`) FROM repos WHERE id=?`, ref.ID).Scan(&agent, &session)
 	case "team":
-		err = s.db.QueryRow(`SELECT owner_agent_id,lead_session FROM teams WHERE id=?`, ref.ID).Scan(&agent, &session)
+		err = s.db.QueryRow(`SELECT t.owner_agent_id,a.lead_session FROM teams t LEFT JOIN agents a ON a.id=t.owner_agent_id WHERE t.id=?`, ref.ID).Scan(&agent, &session)
 	default:
 		err = s.db.QueryRow(`SELECT id,lead_session FROM agents WHERE id=?`, ref.ID).Scan(&agent, &session)
 	}
@@ -426,7 +490,11 @@ func buildOrgTreeOnceTx(tx *sql.Tx, now int64) error {
 	}
 	// Each merger row gets its Agent first, so the Agent loop finds it. The
 	// Agent loop then uses the same rule as every later write: the old tables
-	// decide one Agent's parent and lead session.
+	// decide one Agent's parent. The lead session comes from the two copies
+	// once, before the drop migration removes them.
+	if err := seedAgentLeadSessionsTx(tx); err != nil {
+		return err
+	}
 	rows, err := tx.Query(`SELECT project, session_id FROM project_mergers ORDER BY project, node_id`)
 	if err != nil {
 		return err
