@@ -107,7 +107,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err != nil {
 			return nil, err
 		}
-		return g.workerProfileAction(nc.id, typ, p)
+		return g.workerProfileAction(ctx, nc.id, typ, p)
 	case "worker.recheck":
 		p, err := decodeOperator[protocol.WorkerRecheck](raw)
 		if err != nil {

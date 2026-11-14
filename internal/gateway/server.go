@@ -90,7 +90,11 @@ type Gateway struct {
 	// previewMemo keeps the worker-choice preview of each node (NodesInfo).
 	previewMemo previewMemo
 	// relayWait overrides defaultRelayWait, for tests.
-	relayWait    time.Duration
+	relayWait time.Duration
+
+	// profileCheckTimeout overrides ProfileCheckTimeout, for tests.
+	profileCheckTimeout time.Duration
+
 	publicMu     sync.Mutex
 	publicURLMu  sync.RWMutex
 	publicURL    string

@@ -80,7 +80,7 @@ func TestWorkerProfileListSameAsNodesInfo(t *testing.T) {
 	}
 	// Two machines are connected, one is not.
 	g := &Gateway{store: s, conns: map[string]*nodeConn{nodes[0]: {id: nodes[0]}, nodes[1]: {id: nodes[1]}}}
-	got, err := g.workerProfileAction(nodes[0], "worker.profile.list", protocol.WorkerProfileFrame{})
+	got, err := g.workerProfileAction(context.Background(), nodes[0], "worker.profile.list", protocol.WorkerProfileFrame{})
 	if err != nil {
 		t.Fatal(err)
 	}

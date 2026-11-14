@@ -110,7 +110,7 @@ func TestWorkerProfileListOnlineAvailability(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := &Gateway{store: s, conns: map[string]*nodeConn{node: {id: node}}}
-	v, err := g.workerProfileAction(node, "worker.profile.list", protocol.WorkerProfileFrame{})
+	v, err := g.workerProfileAction(context.Background(), node, "worker.profile.list", protocol.WorkerProfileFrame{})
 	if err != nil {
 		t.Fatal(err)
 	}

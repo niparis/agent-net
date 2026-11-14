@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -40,6 +41,13 @@ func fakeModelNodeFor(t *testing.T, byHarness map[string][]string) (*nodeConn, *
 
 // fakeModelNodeAnswer is fakeModelNodeFor with full rows, errors included.
 func fakeModelNodeAnswer(t *testing.T, answer func(protocol.ModelListRequest) []protocol.HarnessModels) (*nodeConn, *atomic.Int32) {
+	t.Helper()
+	return fakeModelNodeAnswerAfter(t, 0, answer)
+}
+
+// fakeModelNodeAnswerAfter is fakeModelNodeAnswer with a machine that takes
+// its time to answer, like one whose harness is slow under load.
+func fakeModelNodeAnswerAfter(t *testing.T, delay time.Duration, answer func(protocol.ModelListRequest) []protocol.HarnessModels) (*nodeConn, *atomic.Int32) {
 	t.Helper()
 	var calls atomic.Int32
 	conns := make(chan *websocket.Conn, 1)
@@ -90,6 +98,9 @@ func fakeModelNodeAnswer(t *testing.T, answer func(protocol.ModelListRequest) []
 				json.Unmarshal(raw, &req)
 				calls.Add(1)
 				out := protocol.ModelListResult{Harnesses: answer(req)}
+				if delay > 0 {
+					time.Sleep(delay)
+				}
 				res, err := protocol.EncodeResult(h.ID, out, nil)
 				if err == nil {
 					server.Write(ctx, websocket.MessageText, res)
@@ -213,11 +224,49 @@ func TestProfileAddValidatesLiveModel(t *testing.T) {
 	nc, _ := fakeModelNode(t, []string{"alibaba-token-plan/deepseek-v4.1-flash-1017"})
 	nc.id = node
 	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0), conns: map[string]*nodeConn{node: nc}}
-	if _, err := g.workerProfileAction(node, "worker.profile.add", protocol.WorkerProfileFrame{WorkerProfileRequest: protocol.WorkerProfileRequest{Name: "deepseek", Harness: "opencode", Model: "alibaba-token-plan/deepseek-v4.1-flash-1017"}, Requester: sid}); err != nil {
+	if _, err := g.workerProfileAction(context.Background(), node, "worker.profile.add", protocol.WorkerProfileFrame{WorkerProfileRequest: protocol.WorkerProfileRequest{Name: "deepseek", Harness: "opencode", Model: "alibaba-token-plan/deepseek-v4.1-flash-1017"}, Requester: sid}); err != nil {
 		t.Fatalf("a listed model was refused: %v", err)
 	}
-	_, err = g.workerProfileAction(node, "worker.profile.add", protocol.WorkerProfileFrame{WorkerProfileRequest: protocol.WorkerProfileRequest{Name: "missing", Harness: "opencode", Model: "alibaba-token-plan/nope"}, Requester: sid})
+	_, err = g.workerProfileAction(context.Background(), node, "worker.profile.add", protocol.WorkerProfileFrame{WorkerProfileRequest: protocol.WorkerProfileRequest{Name: "missing", Harness: "opencode", Model: "alibaba-token-plan/nope"}, Requester: sid})
 	if err == nil || !strings.Contains(err.Error(), "no model in the list matches") {
 		t.Fatalf("a model the live list lacks was accepted: %v", err)
+	}
+}
+
+// A profile add stops at its own limit. A machine that answers late must not
+// add the profile after the caller was told the check is over, or the roster
+// changes behind an error.
+func TestProfileAddStopsAtItsCheckLimit(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("research", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeHello(node, "research", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetNodeHarnesses(node, []protocol.HarnessInfo{{Name: "opencode", Version: "1"}}); err != nil {
+		t.Fatal(err)
+	}
+	sid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc, _ := fakeModelNodeAnswerAfter(t, 300*time.Millisecond, func(protocol.ModelListRequest) []protocol.HarnessModels {
+		return []protocol.HarnessModels{{Name: "opencode", Models: []string{"fake/m1"}}}
+	})
+	nc.id = node
+	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0), conns: map[string]*nodeConn{node: nc},
+		profileCheckTimeout: 100 * time.Millisecond}
+	_, err = g.workerProfileAction(context.Background(), node, "worker.profile.add", protocol.WorkerProfileFrame{WorkerProfileRequest: protocol.WorkerProfileRequest{Name: "slow", Harness: "opencode", Model: "fake/m1"}, Requester: sid})
+	if err == nil || !strings.Contains(err.Error(), "did not finish within") {
+		t.Fatalf("a check past its limit: %v", err)
+	}
+	profiles, err := s.WorkerProfiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 0 {
+		t.Fatalf("the profile landed after the caller was told the check failed: %+v", profiles)
 	}
 }

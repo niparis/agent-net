@@ -145,7 +145,7 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 		if err := json.Unmarshal(q.Args, &p); err != nil {
 			return nil, err
 		}
-		return g.workerProfileAction(nc.id, strings.ReplaceAll(q.Tool, "_", "."), protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: q.Owner}, true)
+		return g.workerProfileAction(ctx, nc.id, strings.ReplaceAll(q.Tool, "_", "."), protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: q.Owner}, true)
 	case "mcp_add":
 		var p protocol.MCPAdd
 		if err := json.Unmarshal(q.Args, &p); err != nil {

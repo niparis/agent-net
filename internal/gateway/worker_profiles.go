@@ -263,8 +263,9 @@ func (s *Store) RemoveWorkerProfile(name string) error {
 }
 
 // workerProfileAction verifies the requesting session and resolves new models
-// against the advertised lists before changing the network roster.
-func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerProfileFrame, validate ...bool) (any, error) {
+// against the live lists before changing the network roster. The live check is
+// bounded by ProfileCheckTimeout, so a caller never waits past its own bound.
+func (g *Gateway) workerProfileAction(ctx context.Context, nodeID, action string, p protocol.WorkerProfileFrame, validate ...bool) (any, error) {
 	// The roster is public, like charters: any caller but a worker may read
 	// it, the CTO included. Changes also need a session on this machine.
 	if action == "worker.profile.list" {
@@ -357,10 +358,18 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 			models []string
 		}
 		var lists []liveList
+		checkCtx, cancel := context.WithTimeout(ctx, g.profileCheckLimit())
+		defer cancel()
+		checkErr := func(err error) error {
+			if checkCtx.Err() != nil {
+				return reject("the model check did not finish within %s", g.profileCheckLimit())
+			}
+			return reject("%v", err)
+		}
 		for _, node := range targets {
-			live, err := g.liveModels(context.Background(), node, harness, "")
+			live, err := g.liveModels(checkCtx, node, harness, "")
 			if err != nil {
-				return nil, reject("%v", err)
+				return nil, checkErr(err)
 			}
 			if len(live.Harnesses) == 0 {
 				return nil, reject("machine %s did not answer with a live %s model list", node.Hostname, harness)
@@ -427,9 +436,9 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 			}
 		}
 		if p.Test {
-			tested, err := g.testModel(context.Background(), targets[0], harness, resolved, effort)
+			tested, err := g.testModel(checkCtx, targets[0], harness, resolved, effort)
 			if err != nil {
-				return nil, reject("%v", err)
+				return nil, checkErr(err)
 			}
 			if !tested.OK {
 				return nil, reject("test start on %s failed: %s", targets[0].Hostname, tested.Output)

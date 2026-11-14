@@ -78,7 +78,7 @@ func BenchmarkRealWorkerProfileList(b *testing.B) {
 	g := benchRealGateway(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := g.workerProfileAction("n", "worker.profile.list", protocol.WorkerProfileFrame{}); err != nil {
+		if _, err := g.workerProfileAction(context.Background(), "n", "worker.profile.list", protocol.WorkerProfileFrame{}); err != nil {
 			b.Fatal(err)
 		}
 	}
