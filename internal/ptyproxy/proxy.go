@@ -197,10 +197,26 @@ func (p *Proxy) Run() error {
 	}
 	restoreSize()
 	status.close()
+	// The command exited, but the copier may still have its output in the pty.
+	// Close only after the copier has read it, or the last bytes, often the
+	// command's own reason for failing, are thrown away before LastLines sees
+	// them. The bound keeps a child the command left behind from holding the
+	// TUI.
+	select {
+	case <-outputDone:
+	case <-time.After(outputDrainMax):
+		_ = pt.Close()
+		<-outputDone
+	}
 	_ = pt.Close()
-	<-outputDone
 	return err
 }
+
+// outputDrainMax bounds how long the output copier may take after the command
+// exited. The command's own bytes are already in the pty and drain in a moment;
+// this limit is only for a child the command left behind that still holds the
+// terminal open.
+const outputDrainMax = 2 * time.Second
 
 // terminal is the real terminal this proxy draws on, or nil when neither end
 // is a terminal.

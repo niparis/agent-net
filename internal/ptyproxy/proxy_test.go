@@ -551,3 +551,33 @@ func TestClearsScreen(t *testing.T) {
 		}
 	}
 }
+
+// The command's own last line must reach LastLines even when it is still in
+// the pty when the command exits. The proxy used to close the pty as soon as
+// Wait returned and drop it, which is how CI lost herdr's reason on
+// 2026-11-14.
+func TestLastLinesKeepsALineStillInThePtyWhenTheCommandExits(t *testing.T) {
+	cmd := exec.Command("sh", "-c", `printf 'padding\n'; sleep 0.1; printf 'error: terminal already has an attached client\n'; exit 1`)
+	p := New(cmd)
+	p.SetStdin(strings.NewReader(""))
+	p.SetStdout(io.Discard)
+	// Hold the output copier in its work on the first line, so the proxy
+	// reaches the moment it closes the pty while the command's second line is
+	// still unread in it.
+	p.tail.mu.Lock()
+	done := make(chan error, 1)
+	go func() { done <- p.Run() }()
+	time.Sleep(300 * time.Millisecond)
+	p.tail.mu.Unlock()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected the command to fail")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the proxy did not return")
+	}
+	if got := p.LastLines(2); !strings.Contains(got, "error: terminal already has an attached client") {
+		t.Fatalf("last lines %q lost the command's own reason", got)
+	}
+}
