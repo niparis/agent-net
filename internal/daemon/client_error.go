@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -29,10 +30,19 @@ func (lc *localConn) clientError(ctx context.Context, client string, raw json.Ra
 	e.Method = clientErrorText(e.Method)
 	e.Screen = clientErrorText(e.Screen)
 	e.Err = clientErrorText(e.Err)
+	e.Text = logText(e.Text, protocol.ScreenErrorMaxText)
+	e.SessionID = clientErrorText(e.SessionID)
 	e.Ms, e.TimeoutMs = max(e.Ms, 0), max(e.TimeoutMs, 0)
 	if d.log != nil {
-		d.log.Printf("event=client_error method=%s ms=%d timeout=%d screen=%s err=%q",
+		line := fmt.Sprintf("event=client_error method=%s ms=%d timeout=%d screen=%s err=%q",
 			logToken(e.Method), e.Ms, e.TimeoutMs, logToken(e.Screen), e.Err)
+		if e.SessionID != "" {
+			line += " session=" + logToken(e.SessionID)
+		}
+		if e.Text != "" {
+			line += fmt.Sprintf(" text=%q", e.Text)
+		}
+		d.log.Printf("%s", line)
 	}
 	via := lc.via()
 	d.wg.Add(1)
@@ -50,9 +60,16 @@ func (lc *localConn) clientError(ctx context.Context, client string, raw json.Ra
 // clientErrorText makes a client's text safe for one log line: no control
 // characters, no runs of blanks, at most ClientErrorMaxText bytes.
 func clientErrorText(s string) string {
+	return logText(s, protocol.ClientErrorMaxText)
+}
+
+// logText makes a client's text safe for one log line: control characters
+// become blanks, runs of blanks collapse, and the text is cut to max bytes
+// without splitting a UTF-8 sequence.
+func logText(s string, max int) string {
 	s = cleanLine(s)
-	if len(s) > protocol.ClientErrorMaxText {
-		s = s[:protocol.ClientErrorMaxText]
+	if len(s) > max {
+		s = s[:max]
 		for len(s) > 0 && !utf8.ValidString(s) {
 			s = s[:len(s)-1]
 		}

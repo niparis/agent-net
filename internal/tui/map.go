@@ -250,7 +250,7 @@ func (m Model) toggleAutonomy() (Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
 		if err := src.SetNodeAutonomy(ctx, name, next); err != nil {
-			return actionMsg{err: fmt.Errorf("Autonomy not changed: %s", explain(err))}
+			return actionMsg{err: actionErr(err, "Autonomy not changed: %s", explain(err))}
 		}
 		return actionMsg{text: fmt.Sprintf("Autonomy %s for %s.", next, name)}
 	}
@@ -461,7 +461,7 @@ func (m Model) cycleLoop() (Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
 		if err := src.SetNodeLoop(ctx, name, next); err != nil {
-			return actionMsg{err: fmt.Errorf("Loop not changed: %s", explain(err))}
+			return actionMsg{err: actionErr(err, "Loop not changed: %s", explain(err))}
 		}
 		return actionMsg{text: fmt.Sprintf("Loop %s for %s.", label, name)}
 	}

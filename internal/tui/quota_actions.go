@@ -47,7 +47,7 @@ func (m Model) quotaConfirmKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if _, err := caller.Call(ctx, protocol.OpProtectedProvidersSet, p); err != nil {
-				return actionMsg{err: fmt.Errorf("Cannot change protection: %s", explain(err))}
+				return actionMsg{err: actionErr(err, "Cannot change protection: %s", explain(err))}
 			}
 			step := ""
 			if protecting {
@@ -132,7 +132,7 @@ func (m Model) quotaFloorKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if _, err := caller.Call(ctx, protocol.OpWorkerFloorsSet, wf); err != nil {
-				return actionMsg{err: fmt.Errorf("Cannot change worker floor: %s", explain(err))}
+				return actionMsg{err: actionErr(err, "Cannot change worker floor: %s", explain(err))}
 			}
 			return actionMsg{text: statusText}
 		}

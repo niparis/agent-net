@@ -231,9 +231,11 @@ type fakeSource struct {
 	topReqs []string
 
 	// What session_enter was asked, and the plan or error it type answers with.
-	enters    []protocol.EnterRequest
-	enterPlan protocol.EnterPlan
-	enterErr  error
+	enters        []protocol.EnterRequest
+	enterPlan     protocol.EnterPlan
+	enterErr      error
+	enterFailures []protocol.EnterFailure
+	screenErrors  []screenErrorCall
 
 	// What session_start was asked, and the start or error it type answers with.
 	sessionResumes []protocol.SessionResumeRequest
@@ -395,6 +397,17 @@ func (f *fakeSource) RenameNode(_ context.Context, id, name string) (protocol.No
 func (f *fakeSource) SessionEnter(_ context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error) {
 	f.enters = append(f.enters, q)
 	return f.enterPlan, f.enterErr
+}
+
+func (f *fakeSource) ReportEnterFailure(e protocol.EnterFailure) {
+	f.enterFailures = append(f.enterFailures, e)
+}
+
+// screenErrorCall is one error line the screen reported for the daemon log.
+type screenErrorCall struct{ text, sessionID string }
+
+func (f *fakeSource) ReportScreenError(text, sessionID string) {
+	f.screenErrors = append(f.screenErrors, screenErrorCall{text: text, sessionID: sessionID})
 }
 
 func (f *fakeSource) Snapshot(context.Context) (Snapshot, error) { return f.snap, f.snapErr }

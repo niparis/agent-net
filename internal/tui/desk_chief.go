@@ -437,7 +437,7 @@ func (m Model) deskMarkKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // once; the next refresh brings the lists back from the gateway.
 func (m Model) onDeskAsk(msg deskAskMsg) Model {
 	if msg.err != nil {
-		m.fail(sanitize(msg.err.Error()))
+		m.failErr(msg.err, sanitize(msg.err.Error()))
 		return m
 	}
 	m.inboxSeen = ""

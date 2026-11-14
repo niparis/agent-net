@@ -108,7 +108,7 @@ type ctoNewMsg struct {
 
 func (m Model) startCTO() (tea.Model, tea.Cmd) {
 	if _, ok := m.src.(ctoSource); !ok {
-		m.notice = notice{err: true, text: "CTO is unavailable"}
+		m.fail("CTO is unavailable")
 		return m, nil
 	}
 	m.cto = &ctoState{polling: true, generation: m.ctoGeneration + 1}

@@ -1725,7 +1725,7 @@ func (m Model) askDiscussCmd(ask string) tea.Cmd {
 // herdr is used whenever it is there (decision 0046).
 func (m Model) onAskDiscuss(msg askDiscussMsg) (Model, tea.Cmd) {
 	if msg.err != nil {
-		m.fail(sanitize(msg.err.Error()))
+		m.failErr(msg.err, sanitize(msg.err.Error()))
 		return m, nil
 	}
 	if msg.res.Open == protocol.DeskOwnerCTO {

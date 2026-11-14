@@ -28,8 +28,11 @@ import (
 // Two direct attaches cannot share a terminal. Without --takeover the second
 // one fails with a clear error and the first stays. With --takeover the first
 // one is thrown out. The owner's normal herdr client is not a direct attach,
-// so it is not touched either way. The plan never takes over: it must not
-// drop an attach the owner opened on purpose.
+// so it is not touched either way. Enter takes over: a client left behind by
+// an earlier Enter, or by a window the owner closed, must not block the view
+// he asks for now. The newest Enter wins, like re-attaching a multiplexer.
+// (Decision 0167 keeps this to herdr-hosted terminals, not Claude or OpenCode
+// attaches of their own.)
 
 // herdrPane is where a session's process runs in herdr.
 type herdrPane struct {
@@ -380,15 +383,15 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	}
 	switch {
 	case pane.Agent != "" && herdrIDRe.MatchString(pane.PaneID):
-		argv = append(argv, bin, "agent", "attach", pane.PaneID)
+		argv = append(argv, bin, "agent", "attach", pane.PaneID, "--takeover")
 	case herdrIDRe.MatchString(pane.TerminalID): // herdr does not know an agent there: attach the terminal
-		argv = append(argv, bin, "terminal", "attach", pane.TerminalID)
+		argv = append(argv, bin, "terminal", "attach", pane.TerminalID, "--takeover")
 	default:
 		return note("%s runs in herdr pane %s, which cannot be attached: open its window on %s", name, pane.PaneID, where)
 	}
 	out := protocol.EnterPlan{
 		Argv: argv, Host: plan.Host,
-		Note: fmt.Sprintf("Press ctrl+] to come back here; %s keeps running. If herdr says the terminal already has an attached client, close that other attach first.", name),
+		Note: fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name),
 	}
 	if q.HerdrClient && herdrIDRe.MatchString(pane.PaneID) {
 		out.HerdrPane, out.HerdrSession = pane.PaneID, d.herdrSessionOf(bin, h)

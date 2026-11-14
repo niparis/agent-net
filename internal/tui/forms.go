@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -81,8 +83,51 @@ type actionMsg struct {
 // ---- notices ----
 
 func (m *Model) say(text string) { m.notice = notice{text: text, at: m.now()} }
-func (m *Model) fail(text string) {
+
+// fail shows an error line to the owner and reports it for the daemon log.
+// Every error the owner sees goes through here (or failFor or failErr), so a
+// failure on screen is also one the lead can read with agent_machine_log.
+func (m *Model) fail(text string) { m.failFor(m.selected, text) }
+
+// failFor is fail for an error that belongs to one session, even when the
+// selection has moved on since the action began.
+func (m *Model) failFor(sessionID, text string) {
+	m.showFail(text)
+	if rep, ok := m.src.(screenErrorReporter); ok {
+		rep.ReportScreenError(text, sessionID)
+	}
+}
+
+// failErr is fail for an error a Source call returned. The operator client
+// already reported that call's failure, so the screen does not report it a
+// second time.
+func (m *Model) failErr(err error, text string) {
+	if operator.IsReported(err) {
+		m.showFail(text)
+		return
+	}
+	m.fail(text)
+}
+
+// showFail is the one place an error notice is made.
+func (m *Model) showFail(text string) {
 	m.notice = notice{text: text, err: true, at: m.now()}
+}
+
+// screenErrorReporter is implemented by the daemon client. The daemon cannot
+// see the screen, so the screen says what it showed the owner.
+type screenErrorReporter interface {
+	ReportScreenError(text, sessionID string)
+}
+
+// actionErr describes a failed action for the owner and keeps whether the
+// operator already reported the call that failed.
+func actionErr(err error, format string, args ...any) error {
+	text := fmt.Sprintf(format, args...)
+	if operator.IsReported(err) {
+		return &operator.ReportedError{Err: errors.New(text)}
+	}
+	return errors.New(text)
 }
 
 // activeNotice returns the notice to show, or nil when there is none or its
@@ -166,7 +211,7 @@ func (m Model) sendCmd(to, name, body string) tea.Cmd {
 		defer cancel()
 		res, err := src.SendAsOwner(ctx, to, body)
 		if err != nil {
-			return actionMsg{err: fmt.Errorf("Not sent to %s: %s", name, explain(err))}
+			return actionMsg{err: actionErr(err, "Not sent to %s: %s", name, explain(err))}
 		}
 		if res.Queued {
 			return actionMsg{onboarding: "talk", text: "Queued for " + name + ": the gateway is not reachable, it is sent when the link is back."}
@@ -373,7 +418,7 @@ func (m Model) defectCmd(worker, name, note string, severity int) tea.Cmd {
 		defer cancel()
 		res, err := reporter.ReportDefect(ctx, worker, note, severity)
 		if err != nil {
-			return actionMsg{err: fmt.Errorf("Defect not reported: %s", explain(err))}
+			return actionMsg{err: actionErr(err, "Defect not reported: %s", explain(err))}
 		}
 		if !res.Accepted {
 			reason := strings.TrimSpace(res.Reason)
@@ -392,7 +437,7 @@ func (m Model) stopCmd(id, name string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := src.StopWorker(ctx, id); err != nil {
-			return actionMsg{stopID: id, err: fmt.Errorf("Not stopped: %s", explain(err))}
+			return actionMsg{stopID: id, err: actionErr(err, "Not stopped: %s", explain(err))}
 		}
 		return actionMsg{stopID: id, text: "Stopped worker " + name + "."}
 	}
@@ -463,7 +508,7 @@ func (m Model) renameCmd(id, name string) tea.Cmd {
 		defer cancel()
 		res, err := src.RenameNode(ctx, id, name)
 		if err != nil {
-			return actionMsg{err: fmt.Errorf("Machine name not changed: %s", explain(err))}
+			return actionMsg{err: actionErr(err, "Machine name not changed: %s", explain(err))}
 		}
 		if name == "" {
 			return actionMsg{text: "Machine name cleared: it is " + sanitize(res.Hostname) + " again, on every machine."}
@@ -507,7 +552,7 @@ func (m Model) startTrust() (Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := setter.SetRequestRule(ctx, e); err != nil {
-			return actionMsg{err: fmt.Errorf("Request rule not changed: %s", explain(err))}
+			return actionMsg{err: actionErr(err, "Request rule not changed: %s", explain(err))}
 		}
 		return actionMsg{text: "Request rule for " + project + " is " + next + "."}
 	}
@@ -533,7 +578,7 @@ func (m Model) trustCmd(id, name string, on bool) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := src.SetPeerTrust(ctx, id, on); err != nil {
-			return actionMsg{err: fmt.Errorf("Peer trust not changed: %s", explain(err))}
+			return actionMsg{err: actionErr(err, "Peer trust not changed: %s", explain(err))}
 		}
 		if on {
 			return actionMsg{text: name + " now acts on requests from your other agents without asking. Press t on it to turn that off."}
@@ -549,7 +594,11 @@ func (m Model) onAction(r actionMsg) (Model, tea.Cmd) {
 		delete(m.pendingStops, r.stopID)
 	}
 	if r.err != nil {
-		m.fail(r.err.Error())
+		if operator.IsReported(r.err) {
+			m.showFail(r.err.Error())
+		} else {
+			m.failFor(r.stopID, r.err.Error())
+		}
 	} else {
 		m.say(r.text)
 	}
@@ -597,7 +646,7 @@ func (m Model) projectRenameKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			defer cancel()
 			_, err := src.SetProjectDisplayName(ctx, project, name)
 			if err != nil {
-				return actionMsg{err: fmt.Errorf("Project name not changed: %s", explain(err))}
+				return actionMsg{err: actionErr(err, "Project name not changed: %s", explain(err))}
 			}
 			return actionMsg{text: "Project name saved."}
 		}
@@ -614,7 +663,7 @@ func (m Model) stopSessionCmd(id string) tea.Cmd {
 		defer cancel()
 		note, err := src.SessionStop(ctx, id)
 		if err != nil {
-			return actionMsg{stopID: id, err: fmt.Errorf("Not stopped: %s", explain(err))}
+			return actionMsg{stopID: id, err: actionErr(err, "Not stopped: %s", explain(err))}
 		}
 		return actionMsg{stopID: id, text: note}
 	}

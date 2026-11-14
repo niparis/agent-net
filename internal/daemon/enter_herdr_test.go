@@ -245,7 +245,7 @@ func TestEnterHerdrFallbackFromServerWithoutEnvironment(t *testing.T) {
 		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}, 1024: {f.bin, "server"}},
 	)
 	p, ok := herdrPlanFor(31870, protocol.EnterRequest{})
-	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + socket, f.bin, "agent", "attach", "w1:p1"}
+	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + socket, f.bin, "agent", "attach", "w1:p1", "--takeover"}
 	if !ok || !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("fallback plan %+v ok=%v, want argv %v", p, ok, want)
 	}
@@ -292,16 +292,17 @@ func TestEnterHerdrAttach(t *testing.T) {
 	f.holds(t, "w1:pB", pid)
 
 	p, ok := herdrPlanFor(pid, protocol.EnterRequest{})
-	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + f.sock, f.bin, "agent", "attach", "w1:pB"}
+	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + f.sock, f.bin, "agent", "attach", "w1:pB", "--takeover"}
 	if !ok || !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("ok=%v argv %v, want %v", ok, p.Argv, want)
 	}
 	if !strings.Contains(p.Note, "Press ctrl+] to come back here;") {
 		t.Errorf("note outside herdr: %q", p.Note)
 	}
-	// Never takes the terminal over from another attach.
-	if strings.Contains(strings.Join(p.Argv, " "), "takeover") {
-		t.Errorf("takeover in %v", p.Argv)
+	// A stale attach must not block Enter: the newest one takes the terminal
+	// over, so the old client is detached (decision 0167).
+	if !strings.Contains(strings.Join(p.Argv, " "), "--takeover") {
+		t.Errorf("no takeover in %v", p.Argv)
 	}
 	// The herdr commands ran against the session's server, not the inherited session.
 	if c := f.calls(t); !strings.Contains(c, "sock="+f.sock+" session=none pane list") {
@@ -335,7 +336,7 @@ func TestEnterHerdrRemoteWrapping(t *testing.T) {
 		t.Fatalf("plan %+v ok=%v", p, ok)
 	}
 	got := remoteCommand("/work", p.Argv)
-	want := "cd /work && exec env -u HERDR_SESSION 'HERDR_SOCKET_PATH=" + f.sock + "' " + shellQuote(f.bin) + " agent attach w1:pB"
+	want := "cd /work && exec env -u HERDR_SESSION 'HERDR_SOCKET_PATH=" + f.sock + "' " + shellQuote(f.bin) + " agent attach w1:pB --takeover"
 	if got != want {
 		t.Fatalf("remote command\n got %s\nwant %s", got, want)
 	}
@@ -350,14 +351,14 @@ func TestEnterHerdrStalePane(t *testing.T) {
 	f.holds(t, "w1:p1", 999999)
 	f.holds(t, "w3:p2", pid)
 	p, ok := herdrPlanFor(pid, protocol.EnterRequest{})
-	if !ok || len(p.Argv) == 0 || p.Argv[len(p.Argv)-1] != "w3:p2" || p.Argv[len(p.Argv)-2] != "attach" {
+	if !ok || len(p.Argv) == 0 || p.Argv[len(p.Argv)-2] != "w3:p2" || p.Argv[len(p.Argv)-3] != "attach" {
 		t.Fatalf("moved pane: %+v ok=%v", p, ok)
 	}
 
 	// The old ID exists but belongs to another process now.
 	f.panes(t, herdrAgentPane("w1:pB", "term_b")+","+herdrAgentPane("w3:p2", "term_3"))
 	f.holds(t, "w1:pB", 999999)
-	if p, _ = herdrPlanFor(pid, protocol.EnterRequest{}); len(p.Argv) == 0 || p.Argv[len(p.Argv)-1] != "w3:p2" {
+	if p, _ = herdrPlanFor(pid, protocol.EnterRequest{}); len(p.Argv) == 0 || p.Argv[len(p.Argv)-2] != "w3:p2" {
 		t.Fatalf("reused id: %+v", p)
 	}
 
@@ -416,7 +417,7 @@ func TestEnterHerdrPlainTerminalAndDownServer(t *testing.T) {
 	pid := f.session(t, "w1:pB")
 	f.holds(t, "w1:pB", pid)
 	p, _ := herdrPlanFor(pid, protocol.EnterRequest{})
-	if got := strings.Join(p.Argv[len(p.Argv)-3:], " "); got != "terminal attach term_b" {
+	if got := strings.Join(p.Argv[len(p.Argv)-4:], " "); got != "terminal attach term_b --takeover" {
 		t.Fatalf("argv %v", p.Argv)
 	}
 	if err := os.WriteFile(filepath.Join(f.dir, "fail"), nil, 0o644); err != nil {
@@ -663,7 +664,7 @@ func TestEnterLocalHerdrStaysAttach(t *testing.T) {
 	if !ok || p.HerdrPane != "" {
 		t.Fatalf("plan %+v ok=%v", p, ok)
 	}
-	if got := strings.Join(p.Argv[len(p.Argv)-3:], " "); got != "agent attach w1:pB" {
+	if got := strings.Join(p.Argv[len(p.Argv)-4:], " "); got != "agent attach w1:pB --takeover" {
 		t.Fatalf("argv %v", p.Argv)
 	}
 	if calls := f.calls(t); strings.Contains(calls, "agent focus") {
@@ -724,7 +725,7 @@ func TestOwnerHerdrSessionIsListedAndEntered(t *testing.T) {
 		t.Fatalf("not listed: %+v %v", a, err)
 	}
 	p := enterOfHerdr(t, n, id, f.sock)
-	if want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + f.sock, f.bin, "agent", "attach", "w2:p4"}; p.OpenedHerdr || !reflect.DeepEqual(p.Argv, want) {
+	if want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + f.sock, f.bin, "agent", "attach", "w2:p4", "--takeover"}; p.OpenedHerdr || !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("plan %+v, want argv %v", p, want)
 	}
 	f.readOnly(t)

@@ -351,7 +351,7 @@ func (m Model) removeSessionsCmd(ids []string, name string, all bool) tea.Cmd {
 
 func (m Model) removeSessionsResult(r removeSessionsMsg) (Model, tea.Cmd) {
 	if r.err != nil {
-		m.fail(explain(r.err))
+		m.failErr(r.err, explain(r.err))
 		return m, nil
 	}
 	ids := make(map[string]bool, len(r.ids))
