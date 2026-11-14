@@ -2,7 +2,10 @@ package ctoskill
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -10,8 +13,8 @@ import (
 )
 
 // Reference returns the generated contents of reference.md. Every value comes
-// from the code lists so that the skill cannot drift from what agent-net
-// accepts.
+// from the code lists or standard.yaml so that the skill cannot drift from
+// what agent-net accepts.
 func Reference() string {
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format, args...) }
@@ -96,6 +99,34 @@ func Reference() string {
 	w("- `workers`: %s\n\n", strings.Join(protocol.WorkersLevels, ", "))
 	w("A worker start leaves harness, model, provider, effort and machine empty to let the picker choose. Naming one needs the owner's words in `owner_words`, or the start waits for the owner. The difficulty is judged automatically. `isolation` is `%s` or `%s`; `none` is for read-only or non-code work. `fixes` names a shipped change this work fixes with `fixes_severity` from 1 to 4, `continue` names an ended worker to continue, and `base` names the base branch. Worker harnesses: %s.\n\n", protocol.IsolationWorktree, protocol.IsolationNone, strings.Join(protocol.WorkerHarnesses, ", "))
 
+	w("## Worker profiles\n\n")
+	w("A worker profile is a named harness, model and effort in the network roster, added with `worker_profile_add` and removed with `worker_profile_remove`. Fields: `name`, `harness`, `model`, `effort`, `machines` (empty means any machine with the harness) and `test` (a short real start before saving). Harnesses: %s. A profile resolves on a machine by exact model id, then by the same model name under another provider when that match is unique. The picker scores a profile from its model and effort.\n\n", codeList(protocol.WorkerHarnesses))
+
+	w("## Worker providers and protected providers\n\n")
+	w("A start's provider is the quota provider of its model id, or the harness name when the id names none. With no explicit allowlist, workers may use the subscription providers: the `claude`, `codex` and `agy` harnesses, the `codex`, `opencode-go` and `alibaba` quota providers, and any provider with a fresh quota reading. Pay-per-use providers, such as `openrouter` and the `opencode/` provider, need an explicit list. `settings_change` area `worker_providers` sets the list; an empty list restores the defaults. `settings_change` area `protected_providers` reserves providers for the owner's orchestrator, with a reason; a protected provider is never chosen for a worker.\n\n")
+
+	w("## Quotas\n\n")
+	w("A quota reading comes from quota-axi on the machine that holds the logins. The network keeps the newest reading and uses it to choose a model and admit a start. Pace is %s. A provider above %v%% of a window is skipped for a loose model name; an exact model id still works, with a warning. A stale or failed reading is shown but never used to choose or refuse. A window may be exhausted. The picker and the worker floors read the worst window that serves the model.\n\n", codeList([]string{protocol.QuotaPaceAhead, protocol.QuotaPaceOnPace, protocol.QuotaPaceBehind, protocol.QuotaPaceUnknown}), protocol.QuotaHighPercent)
+
+	w("## Notifications\n\n")
+	w("Desktop notifications are one owner preference per machine: `notification_settings` with `disabled` true or false, or `settings_change` area `notifications`. The owner's Desk rows are asks of these kinds: %s. A holder reports a finished step with `agent_step_report`. An ask is answered with `agent_message_reply` or the TUI, never with a step result.\n\n", codeList(askKinds()))
+
+	w("## Integrations\n\n")
+	w("`settings_change` area `integrations` sets the network's setup answers for every machine. Each machine applies them at its next daemon start or within a minute.\n\n")
+	w("| item | question |\n|---|---|\n")
+	for _, spec := range protocol.IntegrationSpecs() {
+		w("| `%s` | %s |\n", spec.ID, cell(spec.Label))
+	}
+	w("\n")
+	w("`harness_updates` is also an integration. Its saved field is inverted (`harness_updates_off`), so an older saved answer defaults to on.\n\n")
+
+	w("## Per-project tools and skills\n\n")
+	w("`tools_change` actions: plan, apply, undo, toggle, native_remove, new_projects, import.\n\n")
+	w("Kinds: %s. Scope is `global` or one or more projects. A project skill tracked by the repository is part of the repo; an untracked project skill is a local copy. `mcp_change` covers shared MCP servers; `tools_change` covers a project's own tools and skills.\n\n", codeList(toolKinds()))
+
+	w("## Notes\n\n")
+	w("Scopes: %s. Kinds an agent writes: %s. The owner rule kind is written only by the owner. Limits: %d notes per find, %d titles per scope in a session's start text, %d similar notes on a write, and a note is stale after %d days. Nothing is deleted by age. Write with `agent_note_write` and read with `agent_notes_find`.\n\n", codeList([]string{protocol.NoteScopeAgent, protocol.NoteScopeProject, protocol.NoteScopeOwner}), codeList([]string{protocol.StandingKindFeedback, protocol.StandingKindFact, protocol.StandingKindReference}), protocol.NotesFindMax, protocol.NotesIndexPerScope, protocol.NotesSimilarMax, protocol.NotesStaleDays)
+
 	w("## Delivery\n\n")
 	w("Steps: %s.\n\n", strings.Join(protocol.StepNames(), ", "))
 	w("Results: %s. `%s` is a question's reply, not a step result.\n\n", strings.Join(protocol.StepResults, ", "), protocol.StepResultWaiting)
@@ -166,9 +197,61 @@ func Reference() string {
 	w("- `agent_owner_judgment_record` stores a standing rule: text, area (`network`, `repo:X` or `team:X`) and action. Both must match for the rule to apply.\n")
 	w("- Role models are settings: `cto.models`, `chief.model` and `merger.models`. Each is an ordered list of candidates, one per line as harness, provider, model and effort; the first one that can run now is used.\n")
 	w("- Owner sessions use harness `claude` by default; `opencode`, `codex` and `pi` are also supported. An empty model leaves the choice to the harness, and agent-net sets no default owner-session model.\n")
-	w("- Placement: `projects_layout` scans the owner's home folder for git repos and worktrees, within a bounded depth and count, and caches the result. `cto_placement_memory` saves the owner's placement answers.\n")
+	w("- Placement: `projects_layout` scans the owner's home folder for git repos and worktrees, within a bounded depth and count, and caches the result. `cto_placement_memory` saves the owner's placement answers.\n\n")
 
+	w("## Auto compaction\n\n")
+	w("Compaction applies to persistent sessions, not workers. The threshold is a percent of the context window. Idle compaction compacts a session whose provider prompt cache has expired and whose context is above the token floor. The cache window says how long a provider keeps its prompt cache; the idle trigger fires one tenth of the window before it expires. The stall timeout warns about a busy session that stops reporting, and does not compact it.\n\n")
+	w("| key | levels | default | meaning |\n|---|---|---|---|\n")
+	for _, key := range []string{
+		"sessions.compaction_threshold_percent",
+		"sessions.idle_compaction",
+		"sessions.idle_compaction_min_tokens",
+		"sessions.cache_window_seconds",
+		"sessions.stall_timeout",
+	} {
+		def, ok := settings.DefinitionFor(key)
+		if !ok {
+			continue
+		}
+		w("| `%s` | %s | %s | %s |\n", key, strings.Join(def.Levels, ", "), settingDefaultText(def), cell(def.Description))
+	}
+	w("\n")
+
+	w("## Settings by prefix\n\n")
+	w("Every key in standard.yaml, grouped by the part before its first dot. Each row is read from the recipe. Tier %d means decide with the owner, tier %d means raise it when it applies, and tier %d means leave the default.\n\n", TierOwner, TierApplicable, TierDefault)
+	writeSettingGroups(w)
 	return b.String()
+}
+
+// writeSettingGroups writes one table per key prefix, so every recipe key has
+// a row that shows its levels, default, range and tier.
+func writeSettingGroups(w func(string, ...any)) {
+	groups := map[string][]settings.Definition{}
+	var prefixes []string
+	for _, def := range settings.Standard().Definitions {
+		prefix := keyPrefix(def.Key)
+		if _, ok := groups[prefix]; !ok {
+			prefixes = append(prefixes, prefix)
+		}
+		groups[prefix] = append(groups[prefix], def)
+	}
+	sort.Strings(prefixes)
+	for _, prefix := range prefixes {
+		title := "Bare keys"
+		if prefix != "" {
+			title = "`" + prefix + ".*`"
+		}
+		w("### %s\n\n", title)
+		w("| key | levels | default | values or range | tier | description |\n|---|---|---|---|---|---|\n")
+		for _, def := range groups[prefix] {
+			tier := "-"
+			if value, ok := TierFor(def.Key); ok {
+				tier = fmt.Sprint(value)
+			}
+			w("| `%s` | %s | %s | %s | %s | %s |\n", def.Key, cell(strings.Join(def.Levels, ", ")), cell(settingDefaultText(def)), cell(settingLimitText(def)), tier, cell(def.Description))
+		}
+		w("\n")
+	}
 }
 
 func settingValues(key string) string {
@@ -185,6 +268,66 @@ func settingDefault(key string) string {
 		return ""
 	}
 	return nodeValue(def.Default.Value)
+}
+
+func settingDefaultText(def settings.Definition) string {
+	if def.Default.Kind != 0 {
+		return yamlValueText(&def.Default)
+	}
+	if def.DefaultGo == "memory_reserve" {
+		return "max(workers.memory_reserve_min, host RAM * workers.memory_reserve_share)"
+	}
+	if def.DefaultGo != "" {
+		return def.DefaultGo
+	}
+	return "empty"
+}
+
+func settingLimitText(def settings.Definition) string {
+	if len(def.Values) > 0 {
+		return strings.Join(def.Values, ", ")
+	}
+	var parts []string
+	if def.Min.Kind != 0 {
+		parts = append(parts, "min "+def.Min.Value)
+	}
+	if def.Max.Kind != 0 {
+		parts = append(parts, "max "+def.Max.Value)
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, ", ")
+}
+
+// yamlValueText renders a recipe default of any type as one table cell.
+func yamlValueText(node *yaml.Node) string {
+	switch node.Kind {
+	case yaml.SequenceNode:
+		items := make([]string, 0, len(node.Content))
+		for _, item := range node.Content {
+			items = append(items, item.Value)
+		}
+		return "[" + strings.Join(items, ", ") + "]"
+	case yaml.MappingNode:
+		items := make([]string, 0, len(node.Content)/2)
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			items = append(items, node.Content[i].Value+": "+node.Content[i+1].Value)
+		}
+		return "{" + strings.Join(items, ", ") + "}"
+	default:
+		if strings.TrimSpace(node.Value) == "" {
+			return "empty"
+		}
+		return node.Value
+	}
+}
+
+// cell keeps a value inside one Markdown table cell.
+func cell(value string) string {
+	value = strings.ReplaceAll(value, "|", "\\|")
+	value = strings.ReplaceAll(value, "\n", " ")
+	return strings.TrimSpace(value)
 }
 
 // nodeValue is a setting default as a person reads it.
@@ -256,4 +399,44 @@ func scopeOvers() string {
 		parts = append(parts, "`"+kind+":X`")
 	}
 	return strings.Join(parts, ", ")
+}
+
+// askKinds are the Desk item kinds, in the order the code declares them.
+func askKinds() []string {
+	return []string{
+		protocol.AskKindQuestion,
+		protocol.AskKindApproval,
+		protocol.AskKindIdea,
+		protocol.AskKindRejection,
+		protocol.AskKindEscalation,
+		protocol.AskKindHeld,
+		protocol.AskKindLearned,
+		protocol.AskKindDraft,
+		protocol.AskKindProposal,
+		protocol.AskKindPermission,
+		protocol.AskKindStep,
+		protocol.AskKindWaiting,
+		protocol.AskKindStall,
+		protocol.AskKindCheck,
+		protocol.AskKindBrief,
+		protocol.AskKindSignIn,
+		protocol.AskKindMachine,
+		protocol.AskKindCTOAlert,
+		protocol.AskKindQuotaStuck,
+	}
+}
+
+// toolKinds are the bundle kinds that travel through the skill store.
+func toolKinds() []string {
+	return []string{
+		protocol.InventorySkill,
+		protocol.InventoryMCP,
+		protocol.InventoryUser,
+		protocol.InventoryProject,
+		protocol.InventoryNative,
+		protocol.InventoryPlugin,
+		protocol.InventoryPackage,
+		protocol.InventorySystem,
+		protocol.InventoryFederation,
+	}
 }
