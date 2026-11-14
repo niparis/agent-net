@@ -19,7 +19,7 @@ const (
 	FrameNudgeUndo       = "nudge.undo"
 )
 
-var NudgeKinds = []string{"idle_check", "autonomy_continue", "reply_reminder", "loop_tick", "step_reminder", "stuck_step", "undelivered", "waiting_notice", "wake_failed", "member_blocked"}
+var NudgeKinds = []string{"idle_check", "autonomy_continue", "reply_reminder", "loop_tick", "step_reminder", "stuck_step", "undelivered", "waiting_notice", "wake_failed", "member_blocked", "redirect_reminder"}
 
 type NudgePauseArgs struct {
 	Kind   string `json:"kind"`
