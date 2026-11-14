@@ -4,6 +4,7 @@ Connects OpenCode v2 sessions to the local agent-net daemon. OpenCode sessions c
 
 - One OpenCode background service hosts all sessions, so one plugin instance serves many sessions. The plugin keeps one daemon connection per session (`hello` with `client:"opencode"`, `native_id` = the OpenCode session ID).
 - A session registers when it shows up (`session.created`, or any later activity), and is dropped on `session.deleted` / `session.archived`. `session.execution.started` and `succeeded` / `failed` / `interrupted` send `busy` / `idle`.
+- `hello` carries `opencode_activity`, the time of the last real turn: a new prompt or the session going busy. A reload, discovery or a view claims no activity, so a session the owner stopped stays stopped until someone prompts it.
 - Sub-agent sessions (with a parent) speak through their root session.
 - A pushed message is delivered with `ctx.session.prompt({sessionID, text, delivery: "queue"})`: it wakes an idle session and waits behind a busy turn. The text has the same footers as the Pi extension.
 - Tools: `agent_sessions_find`, `agent_machines_find`, `agent_session_get`, `agent_announce`, `agent_message_send`, `agent_message_reply`, `agent_messages_find`, `agent_message_get`, `agent_project_add`, `agent_projects_find`. Same parameters and same short text output as the Pi extension.
