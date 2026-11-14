@@ -61,7 +61,7 @@ const ctoHookMatcher = "mcp__" + ctoClaudeJobName + "__cto_op"
 // applyCTOClaudeRole is the CTO's Claude settings. The CTO has full power
 // (decision 0157): Claude Code's built-in tools and the owner's own Claude
 // settings, as in any coding session. What the role adds is its prompt, its
-// own MCP server and the hook that lets it run easily reverted ops at once.
+// own MCP server and the tool-decide hook, which lets it run the ops its scopes allow at once.
 func (d *Daemon) applyCTOClaudeRole(ctx context.Context, spec *claudeBackground) {
 	// CLAUDE_CODE_DISABLE_MOUSE is read inside the session, from its settings env
 	// and from the environment of Claude's background service. The command that
@@ -70,7 +70,7 @@ func (d *Daemon) applyCTOClaudeRole(ctx context.Context, spec *claudeBackground)
 	// service. See docs/decisions/0128-cto-keeps-mouse-tracking-on.md.
 	// The CTO's message tool is allowed, so Claude Code's auto-mode check does not
 	// block it. The name is the cto-mcp server's tool: mcp__<server>__<tool>.
-	hook := map[string]any{"type": "command", "command": shellQuote(d.cfg.Exe) + " cto-hook"}
+	hook := map[string]any{"type": "command", "command": shellQuote(d.cfg.Exe) + " tool-decide"}
 	// autoMemoryEnabled false turns Claude Code's auto memory off for this launch
 	// only (owner decision 2026-11-13: the CTO's memory is gateway notes, which
 	// the owner sees and deletes in the TUI). A coding session does not get it.

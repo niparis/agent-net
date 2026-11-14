@@ -100,10 +100,11 @@ allows the private CTO MCP namespace. The CTO runs as the owner's operating
 system user, so it can do what that user can do; the owner's Claude Code
 permission settings decide which built-in calls ask first.
 
-A `PreToolUse` hook in the Claude CTO's launch settings (`agent-net cto-hook`)
-allows `cto_op` calls at once, except `app_revoke`, `process_stop`,
-`machine_remove`, `machine_rotate`, `agent_tombstone`, `node_remove` and
-`repo_archive`. For those it gives no decision, so Claude Code asks the owner.
+A `PreToolUse` hook in the Claude CTO's launch settings (`agent-net tool-decide`)
+allows `cto_op` calls at once when the CTO's scopes cover them, except the
+owner-only list: `node_remove`, `repo_archive`, `agent_tombstone`,
+`machine_remove`, `machine_rotate`, `process_stop` and `app_revoke`.
+For those it gives no decision, so Claude Code asks the owner.
 The hook reads only the hook input and never fails open on input it cannot read.
 The OpenCode CTO has no such hook: as before, its `cto_op` calls run without a
 harness prompt. In both harnesses node removal, agent tombstone, repo archive,
@@ -1909,3 +1910,18 @@ before the roster was written. A dead or unverifiable supervisor keeps the
 conservative refusal for Claude background commands. Live sessions, their
 children, and the supervisor remain protected. Legacy rosters without a
 supervisor retain their existing short freshness window.
+
+## Delegated authority (decision 0166)
+
+The `agent-net tool-decide` hook only ever removes a prompt. It answers allow
+or prints nothing, never block, and every failure (unknown session, no scope,
+daemon down, gateway down, input it cannot read) prints nothing. It allows a
+call only when a scope the owner set on the session's role node covers it, in
+the area of that scope. A shell command that joins or expands commands is never
+matched. Commands that delete data, spend money or use secrets, and the
+owner-only CTO actions, are on one never list in `internal/daemon/authority`
+and are never allowed by a scope. Only the owner sets scopes (`scope.set`,
+`scope.remove`); a scope change reaches every daemon at once. The hook has a
+400 ms budget and a 2 second timeout. Setup adds it to `~/.claude/settings.json`
+without a question and uninstall removes it.
+

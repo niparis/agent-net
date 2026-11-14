@@ -11,16 +11,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/niparis/agent-net/internal/daemon/authority"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 )
-
-// ctoIrreversibleOps are the ops that apply at once and cannot be undone. They
-// must never run with defaults: a missing argument stops them.
-var ctoIrreversibleOps = map[string]bool{
-	"process_stop": true,
-	"app_revoke":   true,
-}
 
 // ctoOpGate returns the owner-gate class of one op: direct, proposal or
 // irreversible.
@@ -29,7 +23,7 @@ func ctoOpGate(op mcpserver.CTOOp) string {
 		if class, ok := ctoActionClasses[op.Tool][op.Action]; ok && class == ctoProposal {
 			return "proposal"
 		}
-		if ctoIrreversibleOps[op.Action] {
+		if authority.Irreversible(op.Action) {
 			return "irreversible"
 		}
 	}

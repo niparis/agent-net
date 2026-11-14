@@ -73,7 +73,9 @@ func (s *Store) writeScope(q protocol.ScopeSetRequest, note *string, actor strin
 	if err != nil || validate {
 		return row, err
 	}
-	return row, tx.Commit()
+	// A scope decides what a session may do without asking, so the daemons
+	// drop the policy they cached and a removed scope stops allowing at once.
+	return row, s.charterWrote(tx.Commit())
 }
 
 // validateScopeTx checks the node, the kind and the over target. It is the
@@ -206,6 +208,55 @@ func (s *Store) NodeScopes(node string) ([]protocol.Scope, error) {
 // AllScopes returns the scopes of every node.
 func (s *Store) AllScopes() ([]protocol.Scope, error) {
 	return s.scopes(``)
+}
+
+// ScopesWithRepos returns the scopes of one node and, for each team or agent
+// scope, the repos it covers: the repos of a team (listed as members, or owned
+// by member agents) and the repos an agent owns or leads. The daemon matches a
+// folder's repo against them without reading the graph. One indexed query for
+// the scopes, and one more per team or agent scope, which is rare.
+func (s *Store) ScopesWithRepos(node string) ([]protocol.Scope, map[string][]string, error) {
+	scopes, err := s.NodeScopes(node)
+	if err != nil || len(scopes) == 0 {
+		return nil, nil, err
+	}
+	repos := map[string][]string{}
+	for _, sc := range scopes {
+		kind, id, err := protocol.ParseScopeOver(sc.Over)
+		if err != nil || repos[sc.Over] != nil {
+			continue
+		}
+		var query string
+		switch kind {
+		case "team":
+			query = `SELECT member_id FROM team_members WHERE team_id=? AND member_kind='repo'
+ UNION SELECT r.id FROM repos r JOIN team_members m ON m.member_kind='agent' AND m.member_id=r.owner_agent_id WHERE m.team_id=?`
+		case "agent":
+			query = `SELECT id FROM repos WHERE owner_agent_id=? UNION SELECT repo_id FROM repo_leads WHERE agent_id=?`
+		default:
+			continue
+		}
+		rows, err := s.db.Query(query, id, id)
+		if err != nil {
+			return nil, nil, err
+		}
+		list := []string{}
+		for rows.Next() {
+			var repo string
+			if err := rows.Scan(&repo); err != nil {
+				rows.Close()
+				return nil, nil, err
+			}
+			list = append(list, repo)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, nil, err
+		}
+		repos[sc.Over] = list
+	}
+	return scopes, repos, nil
 }
 
 func (s *Store) scopes(where string, args ...any) ([]protocol.Scope, error) {
