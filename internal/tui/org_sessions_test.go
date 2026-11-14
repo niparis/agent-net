@@ -28,6 +28,7 @@ func orgFixture() Snapshot {
 		}),
 		agent(childSessionID, "n_mac", "Mac", "claude", "research", func(a *protocol.AgentView) {
 			a.AgentID = "org-research"
+			a.AgentName = "research"
 			a.ReportsTo = "org-strategy"
 		}))
 	return snap

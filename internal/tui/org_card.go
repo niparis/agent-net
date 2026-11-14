@@ -46,15 +46,23 @@ func (m Model) leadSessionText(lead *protocol.GraphSession) (string, lipgloss.St
 	return name + " · online", lipgloss.NewStyle()
 }
 
-// authorityLine is the Delegated authority sentence without its prefix and
-// final stop, so the card reads the same words as the session.
-func authorityLine(scopes []protocol.Scope) (string, lipgloss.Style) {
+// authorityWords is the Delegated authority sentence without its prefix and
+// final stop, so a screen reads the same words as the session. Empty when the
+// Agent holds no scope.
+func authorityWords(scopes []protocol.Scope) string {
 	text := authority.Text(scopes)
 	if text == "" {
-		return "no delegated authority", sDim
+		return ""
 	}
-	text = strings.TrimSuffix(strings.TrimPrefix(text, "Delegated authority: "), ".")
-	return text, lipgloss.NewStyle()
+	return strings.TrimSuffix(strings.TrimPrefix(text, "Delegated authority: "), ".")
+}
+
+// authorityLine is the authority row of the Agent card.
+func authorityLine(scopes []protocol.Scope) (string, lipgloss.Style) {
+	if text := authorityWords(scopes); text != "" {
+		return text, lipgloss.NewStyle()
+	}
+	return "no delegated authority", sDim
 }
 
 // orgRow is one labelled row, wrapped under the label. The style applies to

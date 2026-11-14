@@ -88,11 +88,11 @@ func TestSessionDetailShowsDelegatedAuthority(t *testing.T) {
 	m := treeModel(120, 34, snap)
 	m.expand = true
 	text := ansi.Strip(selectID(m, childSessionID).testView())
-	if !strings.Contains(text, "Delegated authority: you may merge in team forge.") {
-		t.Errorf("detail has no delegated authority line:\n%s", text)
+	if !strings.Contains(text, "auth     you may merge in team forge") {
+		t.Errorf("detail has no labelled auth row:\n%s", text)
 	}
 	text = ansi.Strip(selectID(m, leadSessionID).testView())
-	if strings.Contains(text, "Delegated authority") {
+	if strings.Contains(text, "auth     ") {
 		t.Errorf("session with no scope shows an authority line:\n%s", text)
 	}
 }

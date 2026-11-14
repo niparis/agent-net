@@ -7,9 +7,7 @@
 Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   research  claude  idle    CPU and memory need a newer daemon and gateway
   repo     -                                                                                  │
-  agent    -                                                                                  │
-Delegated authority: you may review and accept changes everywhere; you may merge in team      │
-forge.                                                                                        │
+  agent    research                                                                           │
   id       s_0000000000000302                                                                 │
   folder   -                                                                                  │
   branch   -                                                                                  │
@@ -18,8 +16,10 @@ forge.                                                                          
   trust    -                                                                                  │
   rule     normal                                                                             │
   delegate -                                                                                  │
+  auth     you may review and accept changes everywhere; you may merge in team forge          │
   remote   -                                                                                  │
   messages none seen yet                                                                      │
+                                                                                              │
                                                                                               │
                                                                                               │
                                                                                               │
