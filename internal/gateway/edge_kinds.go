@@ -46,6 +46,16 @@ const orgTreeRepairMigration = `
 SELECT 1;
 `
 
+// leadSessionCopiesMarker names the migration that drops the Team and Repo
+// lead session copies (decision 0160). The work is in Go
+// (dropLeadSessionCopiesTx), so the SQL only carries the marker.
+const leadSessionCopiesMarker = "Lead session copies dropped (decision 0160)"
+
+const leadSessionCopiesMigration = `
+-- ` + leadSessionCopiesMarker + `: agents.lead_session is the only lead session.
+SELECT 1;
+`
+
 // orgTreeMigration teaches the edge kind triggers the reports_to kind: an
 // Agent to an Agent, or to the owner root, which is special. The columns and
 // the tree itself are built in Go (buildOrgTreeOnceTx), so a replay is safe.

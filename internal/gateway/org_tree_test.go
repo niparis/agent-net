@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -155,34 +156,56 @@ func TestLeadSetStoresTheAgentLeadSession(t *testing.T) {
 	}
 }
 
-// teams.lead_session and repo_leads.lead_session are copies of the Agent's
-// lead session: a new lead session moves every copy that names one.
-func TestLeadSessionCopiesFollowTheAgent(t *testing.T) {
+// addLeadSessionCopyColumns restores the two copy columns on a store that the
+// drop migration already cleaned. It shapes a store as an older gateway left
+// it, so a test can check that a leftover copy no longer names a lead.
+func addLeadSessionCopyColumns(t *testing.T, s *Store) {
+	t.Helper()
+	for _, table := range []string{"repo_leads", "teams"} {
+		var has int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name='lead_session'`, table).Scan(&has); err != nil {
+			t.Fatal(err)
+		}
+		if has == 0 {
+			if _, err := s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN lead_session TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// A lead session copy left over from an old lead must not bring a lead
+// session back. placeAgentLeadSessionTx used to recompute every Agent's pin
+// from the copies, so a row that named a session from an earlier lead was
+// enough to restore it after a later lead change.
+func TestStaleLeadSessionCopyCannotBringBackALeadSession(t *testing.T) {
 	s := teamStore(t)
-	_, node := graphSessions(t, s)
-	second, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "demo-2", Repo: protocol.RepoInfo{Root: "/w/demo", Project: "demo"}})
+	stale := sessionID(t, s, "n-demo")
+	var node string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions LIMIT 1`).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	vendor, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "demo-vendor", Repo: protocol.RepoInfo{Root: "/w/demo", Project: "demo"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var first string
-	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE native_id='n-demo'`).Scan(&first); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET agent_id='other' WHERE id=?`, vendor); err != nil {
 		t.Fatal(err)
 	}
-	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha"})
-	for _, step := range []struct {
-		ref     protocol.GraphRef
-		session string
-	}{{protocol.GraphRef{Kind: "team", ID: "alpha"}, first}, {protocol.GraphRef{Kind: "repo", ID: "demo"}, second}} {
-		if err := s.SetLead(protocol.LeadSetRequest{Ref: step.ref, Lead: &protocol.GraphRef{Kind: "session", ID: step.session}}, "owner", false); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var team, repo, agent string
-	if err := s.db.QueryRow(`SELECT (SELECT lead_session FROM teams WHERE id='alpha'),(SELECT lead_session FROM repo_leads WHERE repo_id='demo'),(SELECT lead_session FROM agents WHERE id='demo')`).Scan(&team, &repo, &agent); err != nil {
+	// Repo shop still names demo's old lead session.
+	if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at) VALUES('shop','shop',0,0)`); err != nil {
 		t.Fatal(err)
 	}
-	if team != second || repo != second || agent != second {
-		t.Fatalf("team=%q repo=%q agent=%q, want all %q", team, repo, agent, second)
+	addLeadSessionCopyColumns(t, s)
+	if _, err := s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id,lead_session) VALUES('shop','demo',?)`, stale); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id='demo'`); err != nil {
+		t.Fatal(err)
+	}
+	leadSession(t, s, protocol.GraphRef{Kind: "repo", ID: "demo"}, vendor)
+	if got := agentLeadSession(t, s, "demo"); got != "" {
+		t.Fatalf("demo lead_session=%q after the lead change; want the stale copy ignored", got)
 	}
 }
 
@@ -312,6 +335,75 @@ func TestSessionsRecordWhoStartedThem(t *testing.T) {
 	}
 }
 
+// A store from before the drop keeps the pin it had in its copies, then loses
+// the copy columns. StoredLead reads the Agent for a Repo and a Team.
+func TestLeadSessionCopyMigrationDropsTheColumns(t *testing.T) {
+	s := teamStore(t)
+	lead := sessionID(t, s, "n-demo")
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &protocol.GraphRef{Kind: "agent", ID: "demo"}})
+	addLeadSessionCopyColumns(t, s)
+	for _, q := range []string{
+		`INSERT INTO repo_leads(repo_id,agent_id,lead_session) VALUES('demo','demo','` + lead + `')`,
+		`UPDATE teams SET lead_session='` + lead + `' WHERE id='alpha'`,
+		`UPDATE agents SET lead_session=NULL WHERE id='demo'`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	rewindOrgTree(t, s)
+	if got := agentLeadSession(t, s, "demo"); got != lead {
+		t.Fatalf("agents.lead_session=%q after the upgrade, want the copy's %q", got, lead)
+	}
+	for _, table := range []string{"repo_leads", "teams"} {
+		var has int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name='lead_session'`, table).Scan(&has); err != nil {
+			t.Fatal(err)
+		}
+		if has != 0 {
+			t.Fatalf("%s.lead_session still exists after the migration", table)
+		}
+	}
+	for _, ref := range []protocol.GraphRef{{Kind: "repo", ID: "demo"}, {Kind: "team", ID: "alpha"}} {
+		out, err := s.StoredLead(ref)
+		if err != nil || out.Agent != "demo" || out.LeadSession != lead {
+			t.Fatalf("StoredLead(%s %s)=%+v %v, want demo %q", ref.Kind, ref.ID, out, err, lead)
+		}
+	}
+}
+
+// A copy that disagrees with its Agent stops the migration: the gateway does
+// not throw the pin away, and the columns stay so the row can be fixed.
+func TestLeadSessionCopyMigrationRefusesMismatch(t *testing.T) {
+	s := teamStore(t)
+	kept := sessionID(t, s, "n-demo")
+	stale := sessionID(t, s, "n-other")
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &protocol.GraphRef{Kind: "agent", ID: "demo"}})
+	addLeadSessionCopyColumns(t, s)
+	for _, q := range []string{
+		`INSERT INTO repo_leads(repo_id,agent_id,lead_session) VALUES('demo','demo','` + kept + `')`,
+		`UPDATE teams SET lead_session='` + stale + `' WHERE id='alpha'`,
+		`UPDATE agents SET lead_session=NULL WHERE id='demo'`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	err := rewindOrgTreeErr(t, s)
+	if err == nil || !strings.Contains(err.Error(), "lead session") {
+		t.Fatalf("migration with a mismatched copy returned %v, want a refusal that names the lead session", err)
+	}
+	for _, table := range []string{"repo_leads", "teams"} {
+		var has int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name='lead_session'`, table).Scan(&has); err != nil {
+			t.Fatal(err)
+		}
+		if has == 0 {
+			t.Fatalf("%s.lead_session was dropped after a refusal", table)
+		}
+	}
+}
+
 // orgFixture is a store shaped like the live gateway before the org tree:
 // four Teams (one without a lead), repo_leads rows with and without a lead
 // session, an Agent working in a Repo it does not own, a merger that runs as
@@ -364,6 +456,7 @@ func orgFixture(t *testing.T) (*Store, map[string]string) {
 		t.Fatal(err)
 	}
 	// Today's rows, written as the old code wrote them.
+	addLeadSessionCopyColumns(t, s)
 	for _, q := range []struct {
 		sql  string
 		args []any
@@ -385,6 +478,13 @@ func orgFixture(t *testing.T) (*Store, map[string]string) {
 // runs the migrations again.
 func rewindOrgTree(t *testing.T, s *Store) {
 	t.Helper()
+	if err := rewindOrgTreeErr(t, s); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func rewindOrgTreeErr(t *testing.T, s *Store) error {
+	t.Helper()
 	version := migrationVersion(t, orgTreeMarker)
 	for _, q := range []string{
 		`DELETE FROM graph_edges WHERE kind='reports_to'`,
@@ -399,9 +499,7 @@ func rewindOrgTree(t *testing.T, s *Store) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
-		t.Fatal(err)
-	}
+	return s.migrate()
 }
 
 func TestOrgTreeMigrationBuildsTheTreeFromTodaysData(t *testing.T) {

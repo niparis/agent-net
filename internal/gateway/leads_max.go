@@ -107,7 +107,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 				return reject("lead Agent has no session in this Repo")
 			}
 		}
-		_, err = tx.Exec(`INSERT INTO repo_leads(repo_id,agent_id,lead_session) VALUES(?,?,?) ON CONFLICT(repo_id) DO UPDATE SET agent_id=excluded.agent_id,lead_session=excluded.lead_session`, q.Ref.ID, lead, session)
+		_, err = tx.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES(?,?) ON CONFLICT(repo_id) DO UPDATE SET agent_id=excluded.agent_id`, q.Ref.ID, lead)
 	case "team":
 		err = tx.QueryRow(`SELECT owner_agent_id FROM teams WHERE id=? AND active=1`, q.Ref.ID).Scan(&old)
 		if err == sql.ErrNoRows {
@@ -116,7 +116,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(`UPDATE teams SET owner_agent_id=?,lead_session=?,updated_at=? WHERE id=?`, lead, session, now, q.Ref.ID)
+		_, err = tx.Exec(`UPDATE teams SET owner_agent_id=?,updated_at=? WHERE id=?`, lead, now, q.Ref.ID)
 	case "agent":
 		if err = liveTeamMember(tx, q.Ref); err != nil {
 			return err
@@ -155,6 +155,14 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	newLead := ""
 	if q.Lead != nil {
 		newLead = lead.(string)
+	}
+	// The Agent that stops leading this Repo or Team loses its lead session
+	// once it leads no other one; the pin would name a session from the place
+	// it just left.
+	if q.Ref.Kind != "agent" && old.String != "" && old.String != newLead {
+		if err = clearLostLeadSessionTx(tx, old.String); err != nil {
+			return err
+		}
 	}
 	switch q.Ref.Kind {
 	case "repo":

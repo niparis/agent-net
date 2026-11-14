@@ -182,8 +182,6 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		// the session held.
 		{`UPDATE sessions SET agent_id=COALESCE(NULLIF((SELECT agent_id FROM sessions WHERE id=?),''),agent_id), repo_id=COALESCE((SELECT repo_id FROM sessions WHERE id=?),repo_id) WHERE id=?`, []any{sessionID, sessionID, newSessionID}},
 		{`UPDATE agents SET lead_session=? WHERE lead_session=?`, []any{newSessionID, sessionID}},
-		{`UPDATE repo_leads SET lead_session=? WHERE lead_session=?`, []any{newSessionID, sessionID}},
-		{`UPDATE teams SET lead_session=? WHERE lead_session=?`, []any{newSessionID, sessionID}},
 		// A merger place follows the conversation, unless the new record is
 		// already the merger of another project.
 		{`UPDATE project_mergers SET session_id=? WHERE session_id=? AND NOT EXISTS (SELECT 1 FROM project_mergers WHERE session_id=?)`, []any{newSessionID, sessionID, newSessionID}},

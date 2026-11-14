@@ -70,3 +70,7 @@ The typed graph read is the one read of the tree, for the CTO, the chief, agent 
 - `edge_set` answers the stored edge with typed endpoints, and `lead_set` answers the stored lead row, both with `ok: true` kept for older callers.
 - The Graph and the Session views can read the same tree once T3 and T4 move them.
 - A parallel task (T2, scopes) also appends a migration. The merger orders the two at merge time.
+
+## Dropping the copy columns
+
+`teams.lead_session` and `repo_leads.lead_session` are dropped on 2026-11-14, and `agents.lead_session` is the only lead session. A gateway from before this change refuses a database whose schema version is newer than it knows, so a rollback restores the backup taken before the upgrade, and that backup still has both columns. If a database is rewound below the add-column migration instead, that migration runs again and recreates both columns empty; this gateway reads the Agent, so a lead session already stored there stays, and the next upgrade checks the empty copies and drops them again. No other shim is needed.

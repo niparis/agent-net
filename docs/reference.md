@@ -4310,7 +4310,7 @@ instead of hiding Teams.
 ### Leads and agent counts
 
 The owner operator `lead_set` takes a typed `ref` for a Repo or Team and a
-`lead` Agent or session ref. A session lead records its Agent as the fallback, and is stored as that Agent's `lead_session`; the Team and Repo copies that name a session follow it. The answer is the stored row: `ok`, `ref`, `agent` and `lead_session`. A merger Agent is never a lead. Omit `lead` to clear it. The CTO runs the same action
+`lead` Agent or session ref. A session lead records its Agent as the fallback, and is stored as that Agent's `lead_session`, the only lead session. The answer is the stored row: `ok`, `ref`, `agent` and `lead_session`. A merger Agent is never a lead. Omit `lead` to clear it. The CTO runs the same action
 with `graph_change` at once; the Inbox notice has an undo. A Repo defaults to its owner Agent
 until explicitly set or cleared. A Repo lead must own the Repo or have a
 session recorded there. A Team lead can be an Agent or a session.
