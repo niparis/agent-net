@@ -27,7 +27,7 @@ func TestCTOSettingsCarryTheOrderedModelList(t *testing.T) {
 	if err := json.Unmarshal(cli.mustCall(protocol.OpCTOSettings, nil), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Models) != 2 || got.Models[0] != models[0] || got.Models[1] != models[1] {
+	if len(got.Models) != 2 || protocol.FormatRoleModels(got.Models) != protocol.FormatRoleModels(models) {
 		t.Fatalf("models = %+v, want %+v", got.Models, models)
 	}
 	if got.Harness != "opencode" || got.Model != "fake/m1" {

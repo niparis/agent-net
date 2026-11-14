@@ -54,6 +54,16 @@ func (g *Gateway) pickRole(nodeID string, req protocol.RolePickRequest) (protoco
 		}
 		candidates = append(candidates, m)
 	}
+	// The gate gets a copy named as its settings line reads, so a refusal
+	// names the entry the owner wrote. Its provider is cleared: the list's
+	// provider is a name for the owner, not the quota provider the gate checks
+	// (codex draws on openai, claude on its own window).
+	gateList := make([]protocol.RoleModel, len(candidates))
+	copy(gateList, candidates)
+	for i := range gateList {
+		gateList[i].Name = gateList[i].Display()
+		gateList[i].Provider = ""
+	}
 	agents, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
 	if err != nil {
 		return out, err
@@ -66,7 +76,7 @@ func (g *Gateway) pickRole(nodeID string, req protocol.RolePickRequest) (protoco
 	chosen, err := g.Choose(ChooseRequest{
 		Purpose:    model.PurposeRole,
 		Node:       node,
-		Candidates: roleCandidates(candidates),
+		Candidates: gateList,
 		Difficulty: "normal",
 		Quotas:     quotas,
 		Floors:     floors,
@@ -111,16 +121,6 @@ func (g *Gateway) roleModels(req protocol.RolePickRequest) ([]protocol.RoleModel
 		return nil, reject("%s: %v", key, err)
 	}
 	return list, nil
-}
-
-// roleCandidates turns a role list into the worker candidates the ranker and
-// the gate use.
-func roleCandidates(list []protocol.RoleModel) []protocol.WorkerModelCandidate {
-	out := make([]protocol.WorkerModelCandidate, 0, len(list))
-	for _, m := range list {
-		out = append(out, protocol.WorkerModelCandidate{Name: m.Display(), Harness: m.Harness, Model: m.Model, Effort: m.Effort})
-	}
-	return out
 }
 
 // oneRoleLine keeps a refusal on one line: the TUI shows it as one reason,

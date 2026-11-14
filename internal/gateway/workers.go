@@ -1458,22 +1458,13 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 	return model, modelNote, nil
 }
 
-// chooseWorkerHarness picks the harness for an explicit model when the caller
-// named none. It resolves the model against every harness that reported a list
-// and prefers a subscription-backed harness over a pay-per-use one (decision
-// 0026, amendment). A bare name that only matches a pay-per-use provider is
-// refused with the full id to use. quotas is the start's owner-wide reading.
-func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, requireReadOnly bool, quotas *protocol.Quotas) (string, error) {
-	order, _, err := g.workerHarnessOrder(node, model, requireReadOnly, quotas)
-	if err != nil {
-		return "", err
-	}
-	return order[0].Harness, nil
-}
-
-// workerHarnessOrder is chooseWorkerHarness as the fixed ranker sees it: the
-// same order, with each harness's resolved model, so the gate can refuse an
-// exhausted harness and take the next one.
+// workerHarnessOrder orders the harnesses for an explicit model when the
+// caller named none. It resolves the model against every harness that
+// reported a list and prefers a subscription-backed harness over a
+// pay-per-use one (decision 0026, amendment). A bare name that only matches a
+// pay-per-use provider is refused with the full id to use. Each entry carries
+// the harness's resolved model, so the gate can refuse an exhausted harness
+// and take the next one. quotas is the start's owner-wide reading.
 func (g *Gateway) workerHarnessOrder(node *protocol.NodeView, model string, requireReadOnly bool, quotas *protocol.Quotas) ([]protocol.WorkerModelCandidate, map[string]string, error) {
 	type candidate struct {
 		harness      string

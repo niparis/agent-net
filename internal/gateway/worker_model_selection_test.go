@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"strings"
@@ -12,13 +13,26 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// harnessChoice is the harness workerHarnessOrder picks first, as the start
+// uses it, and the error when no harness lists the model.
+func harnessChoice(g *Gateway, node *protocol.NodeView, model string) (string, error) {
+	order, _, err := g.workerHarnessOrder(node, model, false, nil)
+	if err != nil {
+		return "", err
+	}
+	if len(order) == 0 {
+		return "", fmt.Errorf("no harness on %s lists %q", node.Hostname, model)
+	}
+	return order[0].Harness, nil
+}
+
 func TestWorkerModelHarnessSignIn(t *testing.T) {
 	for _, tc := range []struct{ oc, codex, want string }{{"", "yes", "codex"}, {"no", "", "codex"}, {"", "", "codex"}, {"yes", "yes", "codex"}, {"yes", "", "opencode"}, {"no", "no", ""}} {
 		t.Run(tc.oc+"_"+tc.codex, func(t *testing.T) {
 			s, _ := newTestStore(t)
 			g := &Gateway{store: s, logger: log.New(io.Discard, "", 0)}
 			n := &protocol.NodeView{NodeID: "test", Hostname: "host", Harnesses: []protocol.HarnessInfo{{Name: "opencode", SignedIn: tc.oc, Models: []string{"openai/gpt-6.1-sol"}}, {Name: "codex", SignedIn: tc.codex, Models: []string{"gpt-6.1-sol"}}}}
-			got, err := g.chooseWorkerHarness(n, "gpt-6.1-sol:medium", false, nil)
+			got, err := harnessChoice(g, n, "gpt-6.1-sol:medium")
 			if got != tc.want || (err != nil) != (tc.want == "") {
 				t.Fatalf("got %q, %v; want %q", got, err, tc.want)
 			}
@@ -33,7 +47,7 @@ func TestWorkerModelProfileName(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := &protocol.NodeView{NodeID: "test", Hostname: "host", Harnesses: []protocol.HarnessInfo{{Name: "opencode", Models: []string{"openai/gpt-6.1-sol"}}, {Name: "codex", Models: []string{"gpt-6.1-sol"}}}}
-	h, err := g.chooseWorkerHarness(n, "sOL cODEX", false, nil)
+	h, err := harnessChoice(g, n, "sOL cODEX")
 	if err != nil || h != "codex" {
 		t.Fatalf("harness %q: %v", h, err)
 	}
@@ -61,22 +75,22 @@ func TestWorkerModelAuthFailure(t *testing.T) {
 			clock.t = clock.t.Add(48 * time.Hour)
 			only := *n
 			only.Harnesses = n.Harnesses[:1]
-			if got, err := g.chooseWorkerHarness(&only, "gpt-6.1-sol", false, nil); err == nil {
+			if got, err := harnessChoice(g, &only, "gpt-6.1-sol"); err == nil {
 				t.Errorf("auth-failed harness selected: %q", got)
 			}
 			for _, model := range []string{"gpt-6.1-sol", "gpt-6-luna"} {
-				got, err := g.chooseWorkerHarness(n, model, false, nil)
+				got, err := harnessChoice(g, n, model)
 				if err != nil || got != "codex" {
 					t.Errorf("%s chose %q: %v", model, got, err)
 				}
 			}
-			if got, err := g.chooseWorkerHarness(n, "other/model", false, nil); err != nil || got != "opencode" {
+			if got, err := harnessChoice(g, n, "other/model"); err != nil || got != "opencode" {
 				t.Fatalf("other provider: %q %v", got, err)
 			}
 			if err := s.RecordModelSuccess(node, "opencode", "openai/gpt-6-luna"); err != nil {
 				t.Fatal(err)
 			}
-			if got, err := g.chooseWorkerHarness(n, "gpt-6.1-sol", false, nil); err != nil || got != "opencode" {
+			if got, err := harnessChoice(g, n, "gpt-6.1-sol"); err != nil || got != "opencode" {
 				t.Fatalf("after success: %q %v", got, err)
 			}
 		})

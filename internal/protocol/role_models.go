@@ -7,35 +7,11 @@ import (
 )
 
 // RoleModel is one entry of a role's ordered model list: the CTO, the chief
-// of staff and the merger each have one (decision 0162). An entry is a full
-// candidate, harness and model, so an OpenCode or Pi CTO is just another
-// entry. Provider and Effort may be empty.
-type RoleModel struct {
-	Harness  string `json:"harness"`
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Effort   string `json:"effort,omitempty"`
-}
-
-// Display is the one-line form a note and the settings text use. An empty
-// provider is filled from the model, as the chief.model line always did.
-func (r RoleModel) Display() string {
-	provider := r.Provider
-	if provider == "" {
-		provider = ModelVendor(r.Harness, r.Model)
-	}
-	parts := []string{r.Harness, provider, r.Model, r.Effort}
-	for len(parts) > 1 && parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	return strings.Join(parts, " · ")
-}
-
-// Key identifies the harness and model of an entry.
-func (r RoleModel) Key() string { return r.Harness + "\x00" + r.Model }
-
-// IsZero reports an entry with no harness.
-func (r RoleModel) IsZero() bool { return strings.TrimSpace(r.Harness) == "" }
+// of staff and the merger each have one (decision 0162). An entry is the one
+// candidate type, harness and model, so an OpenCode or Pi CTO is just another
+// entry. Provider and Effort may be empty. Its wire form is the four fields
+// of Candidate, without the display name or any ranker fact.
+type RoleModel = Candidate
 
 // ParseRoleModelLine reads one entry in the form the chief.model setting uses:
 // harness · provider · model · effort, where provider, model and effort may be
@@ -143,9 +119,4 @@ type RolePickResult struct {
 	Note            string `json:"note,omitempty"`
 	Refused         string `json:"refused,omitempty"`
 	NewConversation bool   `json:"new_conversation,omitempty"`
-}
-
-// RoleModelOf returns the entry a result names.
-func (r RolePickResult) RoleModelOf() RoleModel {
-	return RoleModel{Harness: r.Harness, Provider: r.Provider, Model: r.Model, Effort: r.Effort}
 }

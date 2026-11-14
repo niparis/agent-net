@@ -34,6 +34,11 @@ func roleGateway(t *testing.T) (*Gateway, string) {
 	return g, node
 }
 
+// sameRolePick reports whether a role pick named the whole entry.
+func sameRolePick(got protocol.RolePickResult, want protocol.RoleModel) bool {
+	return got.Harness == want.Harness && got.Provider == want.Provider && got.Model == want.Model && got.Effort == want.Effort
+}
+
 // setRoleList writes one role's ordered list as the owner.
 func setRoleList(t *testing.T, g *Gateway, key string, models ...protocol.RoleModel) {
 	t.Helper()
@@ -90,7 +95,7 @@ func TestRoleResumeKeepsTheCurrentModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.RoleModelOf() != current || got.NewConversation {
+	if !sameRolePick(got, current) || got.NewConversation {
 		t.Fatalf("resume moved off the current model: %+v", got)
 	}
 }
@@ -109,7 +114,7 @@ func TestRoleResumeFallsToTheListOnALockedCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.RoleModelOf() != next || !got.NewConversation {
+	if !sameRolePick(got, next) || !got.NewConversation {
 		t.Fatalf("locked check did not fall to the next entry with a new conversation: %+v", got)
 	}
 }

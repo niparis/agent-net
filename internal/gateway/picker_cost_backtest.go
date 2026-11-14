@@ -170,10 +170,10 @@ func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (Pick
 	var factPtr *model.Facts
 	if factErr == nil {
 		factPtr = &facts
-		_, skips, _ := model.Gate(modelCandidatesOf(candidates), model.Checks{Floor: true}, facts)
+		_, skips, _ := model.Gate(candidates, model.Checks{Floor: true}, facts)
 		for _, skip := range skips {
 			if skip.Check == "floor" {
-				res.OutByFloor = append(res.OutByFloor, fmt.Sprintf("%s: %s", skip.Candidate.Display(), skip.Reason))
+				res.OutByFloor = append(res.OutByFloor, fmt.Sprintf("%s: %s", skip.Candidate.Label(), skip.Reason))
 			}
 		}
 	}

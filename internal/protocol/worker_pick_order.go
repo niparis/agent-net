@@ -41,11 +41,11 @@ func WorkerPickOrder(candidates []WorkerModelCandidate, level string, scores []M
 func leftOutAfter(candidates []WorkerModelCandidate, order []WorkerModelChoice, level string, scores []ModelScore, minimums map[string]float64) []WorkerLeftOut {
 	kept := make(map[string]bool, len(order))
 	for _, c := range order {
-		kept[WorkerModelKey(c.WorkerModelCandidate)] = true
+		kept[c.WorkerModelCandidate.Key()] = true
 	}
 	var out []WorkerLeftOut
 	for _, c := range candidates {
-		if kept[WorkerModelKey(c)] {
+		if kept[c.Key()] {
 			continue
 		}
 		name := c.Name

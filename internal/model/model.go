@@ -16,33 +16,9 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Candidate is one harness, provider and model a route may start.
-type Candidate struct {
-	Name     string
-	Harness  string
-	Model    string
-	Effort   string
-	Provider string
-}
-
-// Key identifies a candidate's harness and model for the facts snapshot.
-func (c Candidate) Key() string { return c.Harness + "\x00" + c.Model }
-
-// Display is the name a note uses for a candidate.
-func (c Candidate) Display() string {
-	if strings.TrimSpace(c.Name) != "" {
-		return c.Name
-	}
-	return c.Harness + " " + c.Model
-}
-
-// QuotaProvider is the provider whose windows limit this candidate.
-func (c Candidate) QuotaProvider() string {
-	if c.Provider != "" {
-		return c.Provider
-	}
-	return protocol.QuotaProviderForStart(c.Harness, c.Model)
-}
+// Candidate is one harness, provider and model a route may start. It is the
+// same type the worker rankers and the role lists carry, protocol.Candidate.
+type Candidate = protocol.Candidate
 
 // Checks are the optional steps a caller's policy may turn on. The locked
 // checks have no field here on purpose: no caller can turn them off.
@@ -105,6 +81,9 @@ type Granted struct {
 	candidate   Candidate
 	checks      Checks
 	floorUnread bool
+	// ok is true once Gate has granted a candidate. It is exact even when the
+	// candidate itself is the zero value.
+	ok bool
 }
 
 // Candidate is the model the gate granted.
@@ -119,7 +98,7 @@ func (g Granted) FloorUnread() bool { return g.floorUnread }
 
 // IsZero reports whether the value came from nowhere. It is true only for the
 // zero Granted, which no route can use to launch.
-func (g Granted) IsZero() bool { return g.candidate == Candidate{} }
+func (g Granted) IsZero() bool { return !g.ok }
 
 // Gate returns the first candidate that can run now, with the reason for each
 // candidate it skipped. It reads the whole list, so the note names a provider
@@ -138,7 +117,7 @@ func Gate(list []Candidate, checks Checks, facts Facts) (Granted, []Skip, error)
 			continue
 		}
 		if granted.IsZero() {
-			granted = Granted{candidate: c, checks: checks}
+			granted = Granted{candidate: c, checks: checks, ok: true}
 			if checks.Floor {
 				if under, _, noReading := protocol.CheckWorkerFloor(facts.Quotas, facts.Floors, c.Harness, c.Model); !under && noReading {
 					granted.floorUnread = true
@@ -249,7 +228,7 @@ func skipSummary(skips []Skip) string {
 			parts = append(parts, fmt.Sprintf("and %d more", len(skips)-3))
 			break
 		}
-		parts = append(parts, s.Candidate.Display()+": "+s.Reason)
+		parts = append(parts, s.Candidate.Label()+": "+s.Reason)
 	}
 	return strings.Join(parts, "; ")
 }

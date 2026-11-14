@@ -377,7 +377,7 @@ func TestWorkerRotationExcludesModelsAboveMaximumGap(t *testing.T) {
 	}
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
 	for i, level := range levels {
-		rotation := &WorkerRotation{Levels: map[string]*WorkerRotationLevel{level: {Current: map[string]float64{WorkerModelKey(candidates[5]): 10000}}}}
+		rotation := &WorkerRotation{Levels: map[string]*WorkerRotationLevel{level: {Current: map[string]float64{candidates[5].Key(): 10000}}}}
 		for start := 0; start < 100; start++ {
 			choice, err := chooseFirst(candidates, level, scores, nil, nil, nil, rotation)
 			if err != nil {
@@ -388,7 +388,7 @@ func TestWorkerRotationExcludesModelsAboveMaximumGap(t *testing.T) {
 				t.Fatalf("%s picked max %s", level, maxLevel)
 			}
 		}
-		if i < 3 && rotation.Levels[level].Current[WorkerModelKey(candidates[5])] != 0 {
+		if i < 3 && rotation.Levels[level].Current[candidates[5].Key()] != 0 {
 			t.Fatalf("excluded model carries rotation weight at %s", level)
 		}
 	}
