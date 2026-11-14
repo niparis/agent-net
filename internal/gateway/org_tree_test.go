@@ -453,14 +453,22 @@ func TestOrgTreeMigrationRunsOnce(t *testing.T) {
 	if err := s.RemoveEdge(reportsEdge("helper", "agent-net"), "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, orgTreeMarker)); err != nil {
+	// The repair migration re-places every Agent, so replaying the migrations
+	// from the build would rebuild the removed edge anyway. Call the hook the
+	// build migration calls, as a second run of that migration would.
+	tx, err := s.db.Begin()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	defer tx.Rollback()
+	if err := buildOrgTreeOnceTx(tx, s.now().UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	if got := reportsTo(t, s, "helper"); got != "" {
-		t.Fatalf("a replay rebuilt a removed edge: helper reports to %q", got)
+		t.Fatalf("a second build rebuilt a removed edge: helper reports to %q", got)
 	}
 }
 

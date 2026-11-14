@@ -35,6 +35,17 @@ END;
 // orgTreeMarker names the org tree migration (decision 0160).
 const orgTreeMarker = "Org tree (decision 0160)"
 
+// orgTreeRepairMarker names the one-time repair for edges left stale by a lead
+// write from before every writer re-placed its Repo or Team (decision 0160).
+const orgTreeRepairMarker = "Org tree repair after lead change (decision 0160)"
+
+// orgTreeRepairMigration re-places every Agent once. The work is in Go
+// (repairOrgTreeTx), so the SQL only carries the marker and its version.
+const orgTreeRepairMigration = `
+-- ` + orgTreeRepairMarker + `: re-place every Agent from the old tables.
+SELECT 1;
+`
+
 // orgTreeMigration teaches the edge kind triggers the reports_to kind: an
 // Agent to an Agent, or to the owner root, which is special. The columns and
 // the tree itself are built in Go (buildOrgTreeOnceTx), so a replay is safe.

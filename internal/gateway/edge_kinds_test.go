@@ -150,6 +150,13 @@ func TestEdgeKindsMigrationPreservesRouting(t *testing.T) {
 			if kind == "depends" {
 				wantS = "repo"
 			}
+			if kind == protocol.EdgeReportsTo {
+				if to == protocol.OrgRoot {
+					wantT = "special"
+				} else {
+					wantT = "agent"
+				}
+			}
 			if strings.HasPrefix(from, "/delivery/") {
 				wantS = "special"
 			}

@@ -50,7 +50,7 @@ func TestPlaceTextLead(t *testing.T) {
 	}
 	want := "[agent-net] Your place, from agent-net:\n" +
 		"You lead team Alpha (mode: charter first). Members: demo.\n" +
-		"You report to the owner.\n" +
+		"You report to the CTO.\n" +
 		"Requests from outside Alpha to a member come to you, except requests to a member repo that has its own lead, which go to that lead. Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly.\n" +
 		"Team purpose: Build the forge and keep it green."
 	if got != want {

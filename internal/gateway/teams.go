@@ -119,6 +119,9 @@ func (s *Store) writeTeamTx(q protocol.TeamWrite, actor string, dryRun bool) err
 				owner = q.Owner.ID
 			}
 			_, err = tx.Exec(`INSERT INTO teams(id,name,purpose,owner_agent_id,created_at,updated_at) VALUES(?,?,?,?,?,?)`, q.ID, q.Name, q.Purpose, owner, now, now)
+			if err == nil && q.Owner != nil {
+				err = placeAgentTx(tx, q.Owner.ID)
+			}
 		case "rename", "purpose", "archive", "mode", "held_back", "asks_to", "lead_merges":
 			var t protocol.Team
 			t, err = scanTeam(tx.QueryRow(`SELECT `+teamColumns+` FROM teams WHERE id=?`, q.ID))
@@ -195,6 +198,9 @@ func (s *Store) writeTeamTx(q protocol.TeamWrite, actor string, dryRun bool) err
 					return reject("remove or move Team members before archiving")
 				}
 				_, err = tx.Exec(`UPDATE teams SET active=0,updated_at=? WHERE id=?`, now, q.ID)
+				if err == nil && t.Owner != nil {
+					err = placeAgentTx(tx, t.Owner.ID)
+				}
 			}
 		default:
 			return reject("unknown Team action %q; use action charter with attr and value for a charter attribute, or graph_change team_charter", q.Action)
