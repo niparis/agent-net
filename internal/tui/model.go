@@ -2466,10 +2466,10 @@ func (m Model) sessionGroups(collapse bool) []group {
 	parents := map[string]string{}
 	for id, a := range shown {
 		parent := ""
-		if isMerger(a) {
-			parent = m.mergerParent(a, shown)
-		} else if a.Worker != nil {
+		if a.Worker != nil {
 			parent = a.Worker.Owner
+		} else {
+			parent = m.reportParent(a, shown)
 		}
 		if _, ok := shown[parent]; ok && parent != id {
 			parents[id] = parent
@@ -2518,6 +2518,9 @@ func (m Model) sessionGroups(collapse bool) []group {
 		treeOrder[root.SessionID] = m.treeOrder(root, children)
 	}
 	less := func(a, b protocol.AgentView) bool {
+		if ca, cb := m.isChief(a), m.isChief(b); ca != cb {
+			return ca
+		}
 		if (a.PinnedAt > 0) != (b.PinnedAt > 0) {
 			return a.PinnedAt > 0
 		}
@@ -2737,15 +2740,17 @@ func projectOf(a protocol.AgentView) string {
 	return firstNonEmpty(a.Repo.Project, a.Profile.Project)
 }
 
-// mergerParent is the session of the Agent the stored tree says the merger
-// reports to (decision 0160). A merger whose lead has no shown session stays
-// at the top level.
-func (m Model) mergerParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
+// reportParent is the shown session a session nests under: the session of the
+// Agent the stored tree says its Agent reports to (decision 0160). That holds
+// for a merger and for any other session. A session whose parent has no shown
+// session stays at the top level.
+func (m Model) reportParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
 	return m.sessionOfAgent(a.ReportsTo, a.SessionID, shown)
 }
 
-// sessionOfAgent picks the shown session that stands for an Agent: an online
-// one first, then the lowest ID, so the tree order is stable.
+// sessionOfAgent picks the shown session that stands for an Agent. The pinned
+// lead comes first, then an online session, then the lowest ID, so the tree
+// order is stable.
 func (m Model) sessionOfAgent(agent, self string, shown map[string]protocol.AgentView) string {
 	if agent == "" {
 		return ""
@@ -2755,12 +2760,33 @@ func (m Model) sessionOfAgent(agent, self string, shown map[string]protocol.Agen
 		if id == self || s.AgentID != agent || s.Worker != nil || isMerger(s) {
 			continue
 		}
-		b := shown[best]
-		if best == "" || s.Online && !b.Online || s.Online == b.Online && id < best {
+		if best == "" || standsFor(s, id, shown[best], best) {
 			best = id
 		}
 	}
 	return best
+}
+
+// isChief tells whether a session is the chief of staff. The chief is a normal
+// row, but it is the first row of its band.
+func (m Model) isChief(a protocol.AgentView) bool {
+	return m.chiefLoaded && m.chief.SessionID != "" && a.SessionID == m.chief.SessionID
+}
+
+// standsFor tells whether session a stands for its Agent before session b.
+func standsFor(a protocol.AgentView, aID string, b protocol.AgentView, bID string) bool {
+	if pinned := isPinnedLead(a); pinned != isPinnedLead(b) {
+		return pinned
+	}
+	if a.Online != b.Online {
+		return a.Online
+	}
+	return aID < bID
+}
+
+// isPinnedLead tells whether a session is its Agent's pinned lead session.
+func isPinnedLead(a protocol.AgentView) bool {
+	return a.RepoLeadExplicit || a.TeamLead
 }
 
 // mergerWorking tells whether a merger holds a ready or running step of one of

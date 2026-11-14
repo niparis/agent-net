@@ -295,7 +295,7 @@ func TestSessionsPriorityLeadOfflineAndCollapseRefresh(t *testing.T) {
 	}
 	// The tree keeps the merger under its lead when that lead is offline. The
 	// old guess fell back to the caller of an open change.
-	if p := m.mergerParent(shown["merge"], shown); p != "lead" {
+	if p := m.reportParent(shown["merge"], shown); p != "lead" {
 		t.Fatalf("offline lead parent %s", p)
 	}
 	m = priorityModel()

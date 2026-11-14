@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -155,6 +156,11 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 			line = sSel.Render(stripStyles(line))
 		}
 		out = append(out, line)
+	}
+	// The authority is the text the session reads in its instructions, so the
+	// pane and the session cannot differ (decision 0166).
+	if text := authority.Text(a.Scopes); text != "" {
+		out = append(out, wrap("  "+text, w)...)
 	}
 	// A replaced record is history: resuming it would start a second copy of a
 	// conversation that is already running under the session that replaced it.

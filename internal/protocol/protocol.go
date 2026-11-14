@@ -410,6 +410,11 @@ type AgentView struct {
 	// ReplacedBy is the session that took over this conversation when a
 	// restart could not keep the session ID. Empty for every normal session.
 	ReplacedBy string `json:"replaced_by,omitempty"`
+	// AgentLeadSession is the pinned lead session of this session's Agent, and
+	// Scopes are the scopes its Agent holds (decision 0166). Both are empty for
+	// a session without an Agent. A lead session the list does not show is gone.
+	AgentLeadSession string  `json:"agent_lead_session,omitempty"`
+	Scopes           []Scope `json:"scopes,omitempty"`
 	// TaskStarted is when the announced task last changed, in Unix seconds. It
 	// is for the read tools; the old list tools keep their output unchanged.
 	TaskStarted int64   `json:"-"`

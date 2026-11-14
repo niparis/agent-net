@@ -1733,14 +1733,27 @@ func (m Model) sessionNameCellPlain(a protocol.AgentView, mk treeMark, w int) st
 		tag = " merger"
 	}
 	if tag == "" {
-		return cellDots(name, w)
+		return m.leadNameColour(a, cellDots(name, w))
 	}
 	name = strings.TrimSuffix(name, tag)
 	if w <= ansi.StringWidth(tag) {
-		return cellDots(name, w)
+		return m.leadNameColour(a, cellDots(name, w))
 	}
-	fitted := strings.TrimRight(cellDots(name, w-ansi.StringWidth(tag)), " ") + sDim.Render(tag)
+	fitted := m.leadNameColour(a, strings.TrimRight(cellDots(name, w-ansi.StringWidth(tag)), " ")) + sDim.Render(tag)
 	return fitted + strings.Repeat(" ", max(0, w-ansi.StringWidth(fitted)))
+}
+
+// leadNameColour paints the name of a session whose Agent's pinned lead
+// session is gone, so the owner sees the lead needs a new one (decision 0160).
+// The lead is gone when the snapshot does not list it.
+func (m Model) leadNameColour(a protocol.AgentView, name string) string {
+	if a.AgentLeadSession == "" {
+		return name
+	}
+	if _, ok := m.sessionByID(a.AgentLeadSession); ok {
+		return name
+	}
+	return sBad.Render(name)
 }
 
 func (m Model) leadLive(a protocol.AgentView) bool {

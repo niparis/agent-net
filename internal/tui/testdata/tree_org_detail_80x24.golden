@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 online
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Selected session ───────────────────────────────────────────────────────────────
+  research  claude  idle    CPU and memory need a newer daemon and gateway
+  repo     -                                         │
+  agent    -                                         │
+Delegated authority: you may review and accept       │
+changes everywhere; you may merge in team forge.     │
+  id       s_0000000000000302                        │
+  folder   -                                         │
+  branch   -                                         │
+  model    -                                         │
+  function none: add a `# Project: <one line>` line… │
+  trust    -                                         │
+  rule     normal                                    │
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open  m msg  x stop or remove  p pin  q quit
