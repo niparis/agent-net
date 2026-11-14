@@ -28,6 +28,10 @@ type agyLauncher struct{}
 const agyWorkerSettings = `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}`
 const agyReadOnlySettings = `{"permissions":{"allow":["mcp(agent-net_agent-net/*)"]}}`
 
+// agyUsage is one result event's usage for its turn. Output is the model's
+// answer and Thinking its reasoning, which the Gemini API reports apart
+// (candidatesTokenCount and thoughtsTokenCount), and total_tokens is their sum
+// with Input. Gemini does not bill a cache write, so agy reports none.
 type agyUsage struct {
 	Input     float64 `json:"input_tokens"`
 	Output    float64 `json:"output_tokens"`

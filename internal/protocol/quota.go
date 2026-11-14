@@ -289,6 +289,26 @@ func QuotaWindowName(w QuotaWindow) string {
 	return "quota"
 }
 
+// QuotaWorkerReading names the provider and window that the picker's floor
+// reads for a worker's model, and how much of it is used. ok is false when
+// there is no usable reading or no window serves the model; name is "" when
+// the harness and model name no quota provider.
+func QuotaWorkerReading(q *Quotas, harness, model string) (name string, percent float64, ok bool) {
+	provider := QuotaProviderForStart(harness, model)
+	if provider == "" {
+		return "", 0, false
+	}
+	p, found := q.Provider(provider)
+	if !found || !p.usable() {
+		return provider, 0, false
+	}
+	w, found := p.worstWindowFor(model)
+	if !found {
+		return provider, 0, false
+	}
+	return provider + " " + QuotaWindowName(w), w.PercentUsed, true
+}
+
 // QuotaResetText writes a reset time for a sentence.
 func QuotaResetText(w QuotaWindow) string {
 	if w.ResetsAt <= 0 {

@@ -19,7 +19,11 @@ func fakePrices() *PriceBook {
 		{ID: "openai/gpt-6.1-terra", Prompt: 1e-6, Completion: 8e-6},
 		{ID: "openai/gpt-6.1-sol", Prompt: 3e-6, Completion: 1.2e-5},
 		{ID: "openai/gpt-6-luna", Prompt: 5e-7, Completion: 4e-6},
-		{ID: "google/gemini-4-argon", Prompt: 1.5e-6, Completion: 9e-6},
+		{ID: "google/gemini-4-argon", Prompt: 2e-6, Completion: 1e-5, CacheRead: 1e-7},
+		{ID: "google/gemini-3.8-flash", Prompt: 3e-7, Completion: 2.5e-6, CacheRead: 3e-8},
+		// A model whose own name ends in an effort word: the exact entry wins.
+		{ID: "openai/rocket-high", Prompt: 8e-6, Completion: 4e-5},
+		{ID: "openai/rocket", Prompt: 1e-7, Completion: 1e-7},
 	})
 }
 
@@ -40,6 +44,51 @@ func TestPriceLookupFindsTheIdsThePickerUses(t *testing.T) {
 		if !ok || got.ID != want {
 			t.Errorf("Lookup(%q) = %q, %v; want %q", model, got.ID, ok, want)
 		}
+	}
+}
+
+// Antigravity keeps the reasoning effort in the model id (gemini-4-argon-high),
+// so the lookup must try the name without that known suffix too.
+func TestPriceLookupFindsAgyModelIds(t *testing.T) {
+	book := fakePrices()
+	for model, want := range map[string]string{
+		"gemini-4-argon-high":      "google/gemini-4-argon",
+		"gemini-3.8-flash-medium":  "google/gemini-3.8-flash",
+		"claude-sonnet-5-5-medium": "anthropic/claude-sonnet-5.5",
+	} {
+		got, ok := book.Lookup(model)
+		if !ok || got.ID != want {
+			t.Errorf("Lookup(%q) = %q, %v; want %q", model, got.ID, ok, want)
+		}
+	}
+}
+
+// An effort suffix is only removed when the full name has no listing, so a
+// model whose real name ends in "high" keeps its own price.
+func TestPriceLookupKeepsARealNameEndingInAnEffortWord(t *testing.T) {
+	book := fakePrices()
+	got, ok := book.Lookup("rocket-high")
+	if !ok || got.ID != "openai/rocket-high" {
+		t.Fatalf("Lookup(rocket-high) = %q, %v; want the exact listing", got.ID, ok)
+	}
+}
+
+// The Argon run reported on 2026-11-14: 2,070,583 in, 454,051 out, 173,174
+// reasoning and 39,527,376 cache read tokens, cumulative over two hand-backs.
+// OpenRouter lists google/gemini-4-argon at $2/M in, $10/M out and $0.10/M
+// cache read. agy reports out without reasoning, so both are priced.
+func TestAgyArgonRunCostFromTheReport(t *testing.T) {
+	book := fakePrices()
+	p, known, ok := book.PriceOf("gemini-4-argon-high")
+	if !ok || !known || p.ID != "google/gemini-4-argon" {
+		t.Fatalf("PriceOf = %q, known %v, ok %v; want the listed Argon price", p.ID, known, ok)
+	}
+	cost := p.Cost(RunTokens{In: 2070583, Out: 454051, Reasoning: 173174, CacheRead: 39527376})
+	if want := 14.3661536; math.Abs(cost-want) > 1e-9 {
+		t.Fatalf("Cost = %v, want %v", cost, want)
+	}
+	if got := APICostText(cost, known); got != "$14.37 at API prices" {
+		t.Fatalf("APICostText = %q", got)
 	}
 }
 

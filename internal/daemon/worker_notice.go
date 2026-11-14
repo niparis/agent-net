@@ -820,6 +820,7 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	cont, fix := w.continueCount, w.fixCount
 	auto := w.autoContinueCount
 	asked, used := w.difficultyAsked, w.difficultyUsed
+	quotaStart := w.quotaStart
 	struggle := w.runStruggle()
 	d.wmu.Unlock()
 	if model == "" {
@@ -833,6 +834,7 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
 		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, AutoContinue: auto, Difficulty: difficulty, Struggle: struggle}
 	n.APICost = d.apiCostText(harness, model, st.Usage)
+	n.Quota = d.workerQuotaLine(harness, model, quotaStart)
 	d.wmu.Lock()
 	n.Evidence = w.evidence
 	d.wmu.Unlock()
@@ -853,6 +855,37 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 		n.Note = strings.TrimSpace(n.Note + " A git merge was in progress; the worktree was left as is.")
 	}
 	return n
+}
+
+// quotaWorkerReading is the cached provider quota reading for a worker's
+// model. It never runs quota-axi: the picker's floor reads the same copy.
+func (d *Daemon) quotaWorkerReading(harness, model string) quotaReading {
+	name, percent, ok := protocol.QuotaWorkerReading(d.quota.snapshot(), harness, model)
+	return quotaReading{name: name, percent: percent, ok: ok}
+}
+
+// workerQuotaLine puts the start and end readings on one line. A provider with
+// no reading says so; a harness with no quota provider has no line.
+func (d *Daemon) workerQuotaLine(harness, model string, start quotaReading) string {
+	endName, endPercent, endOK := protocol.QuotaWorkerReading(d.quota.snapshot(), harness, model)
+	if !start.ok && !endOK {
+		if start.name == "" && endName == "" {
+			return ""
+		}
+		return "no reading at start, no reading at end"
+	}
+	name := start.name
+	if !start.ok {
+		name = endName
+	}
+	startText, endText := "no reading", "no reading"
+	if start.ok {
+		startText = fmt.Sprintf("%.0f%%", start.percent)
+	}
+	if endOK {
+		endText = fmt.Sprintf("%.0f%%", endPercent)
+	}
+	return name + " " + startText + " at start, " + endText + " at end"
 }
 
 // queueWorkerEnd keeps end notices in decision order without holding up the

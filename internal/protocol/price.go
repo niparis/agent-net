@@ -90,17 +90,29 @@ var (
 	priceVersion = regexp.MustCompile(`\b(\d)-(\d)\b`)
 )
 
-// PriceName turns one of our model ids into the name part of an OpenRouter
-// id: no effort suffix, no provider prefix, no date, and a version with a dot
-// ("claude-opus-5-5:high" becomes "claude-opus-5.5").
-func PriceName(model string) string {
+// priceEfforts are the effort words that harnesses append to a model id with a
+// dash. They are a known list, not any word after a hyphen.
+var priceEfforts = map[string]bool{"minimal": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true, "ultra": true}
+
+// priceNames turns one of our model ids into the names to look for: no
+// provider prefix, no date, and a version with a dot ("claude-opus-5-5:high"
+// becomes "claude-opus-5.5"). The exact name comes first, then the name with
+// one known effort suffix removed ("gemini-4-argon-high" also tries
+// "gemini-4-argon"). The exact name wins, so a model whose real name ends in
+// an effort word keeps its own price.
+func priceNames(model string) []string {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if i := strings.IndexByte(m, ':'); i >= 0 {
 		m = m[:i]
 	}
 	m = m[strings.LastIndexByte(m, '/')+1:]
 	m = priceDate.ReplaceAllString(m, "")
-	return priceVersion.ReplaceAllString(m, "$1.$2")
+	m = priceVersion.ReplaceAllString(m, "$1.$2")
+	names := []string{m}
+	if i := strings.LastIndexByte(m, '-'); i > 0 && priceEfforts[m[i+1:]] {
+		names = append(names, m[:i])
+	}
+	return names
 }
 
 // priceVendor is the OpenRouter vendor of a model family, used only to pick
@@ -133,18 +145,20 @@ func (b *PriceBook) Lookup(model string) (ModelPrice, bool) {
 	if b == nil {
 		return ModelPrice{}, false
 	}
-	name := PriceName(model)
-	list := b.byName[name]
-	if len(list) == 0 {
-		return ModelPrice{}, false
-	}
-	vendor := priceVendor(name)
-	for _, p := range list {
-		if strings.HasPrefix(p.ID, vendor+"/") {
-			return p, true
+	for _, name := range priceNames(model) {
+		list := b.byName[name]
+		if len(list) == 0 {
+			continue
 		}
+		vendor := priceVendor(name)
+		for _, p := range list {
+			if strings.HasPrefix(p.ID, vendor+"/") {
+				return p, true
+			}
+		}
+		return list[0], true
 	}
-	return list[0], true
+	return ModelPrice{}, false
 }
 
 // Middle is the middle priced model of the book, by prompt plus completion

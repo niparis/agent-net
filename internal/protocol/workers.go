@@ -1219,6 +1219,11 @@ type WorkerNotice struct {
 	Title   string
 	RunTime time.Duration
 	Tokens  string // "1200 in, 340 out", empty when the harness does not say
+	// Quota is the provider quota the worker's model draws on when the worker
+	// started and when it ended, as the picker's floor reads it: "agy Gemini
+	// Argon weekly 0% at start, 12% at end". Empty when the harness names no
+	// quota provider.
+	Quota string
 	// Context is the context at the end of the run, as ContextText writes it
 	// ("210k / 1M"), empty when the harness does not say.
 	Context string
@@ -1320,6 +1325,9 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 	}
 	if n.Context != "" {
 		b.WriteString("context at end: " + n.Context + "\n")
+	}
+	if n.Quota != "" {
+		b.WriteString("quota: " + n.Quota + "\n")
 	}
 	if n.Cost != "" {
 		b.WriteString("cost: " + n.Cost + "\n")
