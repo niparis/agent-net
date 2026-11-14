@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -406,5 +407,55 @@ func TestPermissionProposalRejectsUnregisteredTarget(t *testing.T) {
 		if item.Kind == protocol.AskKindPermission {
 			t.Fatalf("an ask was opened for a refused target: %+v", item)
 		}
+	}
+}
+
+// A session whose role node holds the permissions scope over its repo has the
+// proposal approved by that scope: the rules reach the repo's settings file at
+// once, the proposal is decided by the scope, and the owner gets no ask.
+func TestPermissionProposalFromAScopeHolderAppliesWithoutAnAsk(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	if _, err := n.d.call(context.Background(), "hello", map[string]any{"hostname": "fixture", "version": "v0.4.145", "graph_refs": true}); err != nil {
+		t.Fatal(err)
+	}
+	waitGraphCutover(t, g)
+	cli := cliClient(t, n)
+	repo := t.TempDir()
+	gitIn(t, repo, "init", "-q", "-b", "main")
+	name := filepath.Base(repo)
+	cli.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{repo}})
+	pi, piSession := helloPi(t, n, "np", repo, false)
+	st := g.gw.Store()
+	view, ok, err := st.Agent(piSession)
+	if err != nil || !ok || view.AgentID == "" {
+		t.Fatalf("the session has no role node: %+v %v", view, err)
+	}
+	if _, err := st.SetScope(protocol.ScopeSetRequest{Node: view.AgentID, Kind: protocol.ScopePermissions, Over: "repo:" + name}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	propose := func(rule string) protocol.PermissionProposeResult {
+		var res protocol.PermissionProposeResult
+		raw := pi.mustCall(protocol.OpPermissionPropose, protocol.PermissionProposeRequest{Rules: []string{rule}, Targets: []string{name}, Reason: "merge PRs"})
+		if err := json.Unmarshal(raw, &res); err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	res := propose("Bash(gh pr merge:*)")
+	if res.Status != "applied" {
+		t.Fatalf("proposal: %+v", res)
+	}
+	if got := readPermissionSettings(t, repo); countString(got.Permissions.Allow, "Bash(gh pr merge:*)") != 1 {
+		t.Fatalf("settings after the scope approved it: %+v", got)
+	}
+	for _, it := range func() []protocol.InboxItem { items, _ := st.ListInbox(); return items }() {
+		if it.Kind == protocol.AskKindPermission && it.Status == "open" {
+			t.Fatalf("the owner got an ask: %+v", it)
+		}
+	}
+	// A rule on the never list still waits for the owner.
+	if res := propose("Bash(git push --force:*)"); res.Status != "pending" {
+		t.Fatalf("a never-list rule: %+v", res)
 	}
 }

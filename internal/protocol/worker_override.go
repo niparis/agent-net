@@ -16,7 +16,10 @@ import (
 // How a start with selection fields went ahead, in WorkerStartResult.SelectionPath.
 const (
 	SelectionOwnerWords = "owner_words"
-	SelectionHeld       = "held"
+	// SelectionScope: the caller's role node holds the admin scope over the
+	// project (decision 0166), so the owner already delegated the choice.
+	SelectionScope = "scope"
+	SelectionHeld  = "held"
 )
 
 // The answers of the Desk ask that holds an override. Any other answer, and a

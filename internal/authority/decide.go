@@ -35,6 +35,19 @@ func (h Held) covers(s protocol.Scope, repo string) bool {
 	return s.Over == "repo:"+repo || slices.Contains(h.Repos[s.Over], repo)
 }
 
+// Holds says whether the held scopes include one of kind that reaches repo. It
+// is how agent-net's own holds ask the question (a worker start that names a
+// model, a permission proposal, an ask): nothing is allowed by the harness, the
+// hold is only lifted.
+func (h Held) Holds(kind, repo string) bool {
+	for _, s := range h.Scopes {
+		if s.Kind == kind && h.covers(s, repo) {
+			return true
+		}
+	}
+	return false
+}
+
 // Allow answers one question: do the held scopes allow this call. False means
 // no decision, never "block": the harness asks as it does today.
 func Allow(h Held, c Call) bool {

@@ -201,3 +201,30 @@ func TestAdminNeverAllowsAnOwnerOnlyOp(t *testing.T) {
 		}
 	}
 }
+
+func TestHolds(t *testing.T) {
+	h := Held{Scopes: []protocol.Scope{{Kind: "admin", Over: "repo:demo"}, {Kind: "permissions", Over: "team:core"}}, Repos: map[string][]string{"team:core": {"tools"}}}
+	for _, c := range []struct {
+		kind, repo string
+		want       bool
+	}{
+		{"admin", "demo", true}, {"admin", "other", false}, {"admin", "", false},
+		{"permissions", "tools", true}, {"permissions", "demo", false}, {"merge", "demo", false},
+	} {
+		if got := h.Holds(c.kind, c.repo); got != c.want {
+			t.Errorf("Holds(%s, %q) = %v, want %v", c.kind, c.repo, got, c.want)
+		}
+	}
+}
+
+func TestPermissionRuleNever(t *testing.T) {
+	for rule, want := range map[string]bool{
+		"Bash(gh pr merge:*)": false, "Bash(go test:*)": false, "Read(./docs/**)": false,
+		"Bash": true, "Bash(*)": true, "Bash(:*)": true, "*": true,
+		"Bash(git push --force:*)": true, "Bash(rm -rf:*)": true, "Bash(cat .env)": true,
+	} {
+		if got := PermissionRuleNever(rule); got != want {
+			t.Errorf("PermissionRuleNever(%q) = %v, want %v", rule, got, want)
+		}
+	}
+}

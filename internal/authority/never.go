@@ -163,3 +163,25 @@ const compoundMarks = ";&|`$()<>\n\r{}\\"
 func Compound(command string) bool {
 	return strings.ContainsAny(command, compoundMarks)
 }
+
+// PermissionRuleNever says whether a Claude Code permission rule is too wide or
+// too dangerous for a scope to grant on its own. A rule that names a whole tool
+// (no parentheses, or a bare "*") is too wide. A Bash rule whose command is on
+// the never list is refused. Both stay with the owner.
+func PermissionRuleNever(rule string) bool {
+	rule = strings.TrimSpace(rule)
+	open := strings.Index(rule, "(")
+	if open < 0 || !strings.HasSuffix(rule, ")") {
+		return true
+	}
+	inner := strings.TrimSuffix(rule[open+1:len(rule)-1], ":*")
+	inner = strings.TrimSuffix(inner, "*")
+	if strings.TrimSpace(inner) == "" {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(rule[:open]), "bash") {
+		_, never := CommandNever(inner)
+		return never
+	}
+	return false
+}
