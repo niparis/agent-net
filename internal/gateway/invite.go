@@ -51,6 +51,9 @@ type InviteOptions struct {
 	Host string
 	Port string
 	Data string
+	// Version is the running release. The automatic backup before a migration
+	// names its folder after it.
+	Version string
 }
 
 // Invite creates a one-time code and returns the install lines: a label and
@@ -65,7 +68,7 @@ func Invite(o InviteOptions) (lines [][2]string, err error) {
 	if err != nil {
 		return nil, err
 	}
-	st, err := OpenStore(filepath.Join(o.Data, "gateway.db"))
+	st, err := openStoreWith(filepath.Join(o.Data, "gateway.db"), storeOpen{seed: freshDatabaseSeed, upgradeBackup: true, version: o.Version})
 	if err != nil {
 		return nil, err
 	}

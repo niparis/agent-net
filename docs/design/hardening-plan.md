@@ -124,7 +124,7 @@ Four independent items; they can run in parallel.
    - `upgrade` and the installer refuse an unsigned or mismatching release;
    - install.sh served from the tagged release, not from main;
    - a setup option to turn auto-upgrade off.
-Scheduled backups were dropped: the owner keeps backups outside agent-net. The manual `gateway backup` command stays.
+Scheduled backups were dropped: the owner keeps backups outside agent-net. The manual `gateway backup` command stays. The gateway also takes its own backup before an upgrade with pending migrations (see reference.md).
 
 ### W7. A sandbox for every worker
 
