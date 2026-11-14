@@ -22,8 +22,9 @@ const (
 	SelectionHeld  = "held"
 )
 
-// The answers of the Desk ask that holds an override. Any other answer, and a
-// dismissal, ends the start without a worker.
+// The answers of the Desk ask that holds an override. Only these are answers:
+// any other text is refused with the valid answers and the start stays held. A
+// dismissal ends the start without a worker.
 const (
 	StartAnswerConfirm = "confirm"
 	StartAnswerPicker  = "picker"
