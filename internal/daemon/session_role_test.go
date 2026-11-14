@@ -67,7 +67,8 @@ func TestClaudeStartSpecAppliesTheCTORole(t *testing.T) {
 }
 
 // The CTO's launch settings carry its PreToolUse hook on cto_op. It runs
-// agent-net cto-hook, which allows every op the owner can easily revert.
+// agent-net tool-decide, the same hook as every session, which allows the ops
+// the CTO's scopes cover and never the owner-only list.
 func TestCTORoleCarriesItsHook(t *testing.T) {
 	d := &Daemon{cfg: Config{Exe: "/opt/agent net/agent-net", SocketPath: "/run/agent-net.sock", StateDir: t.TempDir()}}
 	cto := d.claudeStartSpec(context.Background(), claudeStartInput{Role: roleCTO, Model: "opus"})
@@ -84,11 +85,11 @@ func TestCTORoleCarriesItsHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	pre := launch.Hooks["PreToolUse"]
-	if len(pre) != 1 || pre[0].Matcher != "mcp__agent-net-cto__cto_op" || len(pre[0].Hooks) != 1 || pre[0].Hooks[0].Type != "command" || pre[0].Hooks[0].Command != "'/opt/agent net/agent-net' cto-hook" {
+	if len(pre) != 1 || pre[0].Matcher != "mcp__agent-net-cto__cto_op" || len(pre[0].Hooks) != 1 || pre[0].Hooks[0].Type != "command" || pre[0].Hooks[0].Command != "'/opt/agent net/agent-net' tool-decide" {
 		t.Fatalf("PreToolUse hooks = %+v in %s", pre, cto.Settings)
 	}
 	coding := d.claudeStartSpec(context.Background(), claudeStartInput{Name: "shop"})
-	if strings.Contains(coding.Settings, "cto-hook") {
+	if strings.Contains(coding.Settings, "tool-decide") {
 		t.Fatalf("a coding session got the CTO hook: %s", coding.Settings)
 	}
 }

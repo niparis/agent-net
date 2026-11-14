@@ -499,6 +499,8 @@ type Daemon struct {
 	// and graph caches use an answer only from the epoch it was read in
 	// (charter_text.go).
 	charterEpoch atomic.Uint64
+	// scopes caches the scopes tool_decide reads, beside the turn policy.
+	scopes scopeCache
 	// integrations holds the last network answers this daemon applied
 	// (integrations.go).
 	intgMu             sync.Mutex

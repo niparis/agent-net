@@ -260,7 +260,9 @@ func TestApplyIntegrationsUpdatesTheNeedsHookOfAnOlderVersion(t *testing.T) {
 	if !strings.Contains(readSettingsFile(t, f), `"Bash(ls)"`) {
 		t.Fatal("the owner's settings were lost")
 	}
-	if len(logs) != 1 || !strings.Contains(logs[0], "claude needs hook: updated") {
+	// The same apply also gives a machine set up before the tool-decide hook
+	// that hook.
+	if len(logs) != 2 || !strings.Contains(logs[0], "claude needs hook: updated") || !strings.Contains(logs[1], "claude tool-decide hook: updated") {
 		t.Fatalf("logs: %q", logs)
 	}
 	// Current hooks: nothing is written and nothing is logged.

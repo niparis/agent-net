@@ -218,6 +218,12 @@ type PolicyGot struct {
 	// DraftRequest is the one-time request to draft the charter from AGENTS.md
 	// (decision 0088). It is set once, for a turn, and is never cached.
 	DraftRequest string `json:"draft_request,omitempty"`
+	// Scopes are the scopes of the role node the session speaks for (a worker
+	// speaks for its caller's node). ScopeRepos maps a team: or agent: over
+	// value to the repos it covers. The daemon answers tool_decide from them
+	// (decision 0165) and keeps them with the cached policy.
+	Scopes     []Scope             `json:"scopes,omitempty"`
+	ScopeRepos map[string][]string `json:"scope_repos,omitempty"`
 }
 
 // PolicyRequest is MethodPolicy. A plugin is bound to its session and leaves

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/niparis/agent-net/internal/daemon/authority"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -80,14 +81,23 @@ var ctoChangeActions = map[string]map[string]string{
 	"project_change": {"add": "project_add", "remove": "project_remove", "display": "project_display_set", "create": "project_create"},
 }
 
+// ownerGate is the class of an owner-only action, read from the one never
+// list: it waits for an owner proposal unless the owner's words came with it.
+func ownerGate(name string) ctoToolClass {
+	if authority.Proposal(name) {
+		return ctoProposal
+	}
+	return ctoMinor
+}
+
 // Each routed mutation has an explicit authority class. Adding an action to
 // the tool schema without classifying it here fails closed.
 var ctoActionClasses = map[string]map[string]ctoToolClass{
 	"graph_change": {
-		"charter_set": ctoMinor, "node_add": ctoMinor, "node_remove": ctoProposal,
+		"charter_set": ctoMinor, "node_add": ctoMinor, "node_remove": ownerGate("node_remove"),
 		"edge_set": ctoMinor, "edge_remove": ctoMinor, "settings_set": ctoMinor,
-		"undo": ctoMinor, "repo_create": ctoMinor, "repo_archive": ctoProposal,
-		"agent_create": ctoMinor, "agent_tombstone": ctoProposal, "lead_set": ctoMinor,
+		"undo": ctoMinor, "repo_create": ctoMinor, "repo_archive": ownerGate("repo_archive"),
+		"agent_create": ctoMinor, "agent_tombstone": ownerGate("agent_tombstone"), "lead_set": ctoMinor,
 		"team_create": ctoMinor, "team_rename": ctoMinor, "team_purpose": ctoMinor, "team_charter": ctoMinor, "team_archive": ctoMinor,
 		"team_member_add": ctoMinor, "team_member_remove": ctoMinor,
 		"scope_set": ctoMinor, "scope_remove": ctoMinor,
@@ -97,7 +107,7 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 	"answer":          {"held": ctoMinor, "inbox": ctoMinor, "outcome": ctoMinor},
 	"tools_change":    {"toggle": ctoMinor, "new_projects": ctoMinor, "plan": ctoMinor, "apply": ctoMinor, "undo": ctoMinor, "import": ctoMinor, "native_remove": ctoMinor},
 	"mcp_change":      {"add": ctoMinor, "remove": ctoMinor, "test": ctoMinor, "enable": ctoMinor, "app_ask": ctoMinor, "apps_list": ctoRead, "app_grant": ctoMinor, "app_ungrant": ctoMinor, "app_rename": ctoMinor, "app_revoke": ctoMinor, "public_status": ctoRead, "public_on": ctoMinor, "public_off": ctoMinor},
-	"settings_change": {"operator": ctoMinor, "values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ctoProposal, "machine_rotate": ctoProposal, "invite": ctoMinor, "onboarding": ctoMinor, "process_stop": ctoMinor},
+	"settings_change": {"operator": ctoMinor, "values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ownerGate("machine_remove"), "machine_rotate": ownerGate("machine_rotate"), "invite": ctoMinor, "onboarding": ctoMinor, "process_stop": ctoMinor},
 	"project_change":  {"add": ctoMinor, "remove": ctoMinor, "display": ctoMinor, "create": ctoMinor},
 }
 

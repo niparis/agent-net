@@ -6,15 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // forgeNodes starts a gateway and a node with a team lead and one member, in a
 // team that sends the questions of its members to its lead.
-func forgeNodes(t *testing.T) (n *node, lead, member *localClient, leadID, memberID string, st interface {
-	WriteTeam(protocol.TeamWrite, string) error
-}) {
+func forgeNodes(t *testing.T) (n *node, lead, member *localClient, leadID, memberID string, st *gateway.Store) {
 	t.Helper()
 	g := startGateway(t, t.TempDir(), "")
 	n = startNode(t, g, nodeOpts{adapter: &fakeAdapter{harness: "fake"}, cmdline: "pi"})

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	delegated "github.com/niparis/agent-net/internal/daemon/authority"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -21,7 +22,7 @@ func (s *Store) GraphLifecycle(action string, p protocol.GraphLifecycleRequest, 
 	if !ok || (kind != "repo" && kind != "agent") {
 		return reject("invalid lifecycle action")
 	}
-	if actor == "cto" && (action == "repo.archive" || action == "agent.tombstone") {
+	if actor == "cto" && delegated.RefusedForCTO(action) {
 		return reject("owner approval required")
 	}
 	tx, err := s.db.Begin()

@@ -132,3 +132,14 @@ func (c resolvedContext) agentText() string {
 	}
 	return "[agent-net] " + label + ":\n" + b.String()
 }
+
+// joinDelegated adds the "Delegated authority" line after the agent charter.
+func joinDelegated(charter, block string) string {
+	switch {
+	case block == "":
+		return charter
+	case charter == "":
+		return block + "\n"
+	}
+	return charter + block + "\n"
+}

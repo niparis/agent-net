@@ -100,6 +100,7 @@ func Uninstall(o Options) error {
 	r.removeHintHook()
 	r.removePolicyHook()
 	r.removeNeedsHook()
+	r.removeToolDecideHook()
 	r.removeClaudeWorkersMod()
 	r.removeQuotaAXI()
 	if err := quotaaxi.RemoveAuth(daemon.ConfigDir()); err != nil {

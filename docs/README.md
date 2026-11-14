@@ -76,6 +76,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0006](decisions/0006-phone-app.md): phone app, planned: same data and actions as the TUI, through one shared operator interface.
 - [0122](decisions/0122-web-console.md): the web console replaces the phone app: Desk and Sessions first, read and answer only. The design mockup is [design/web-console-mockup.html](design/web-console-mockup.html).
 - [0141](decisions/0141-picker-override-needs-a-human.md): an agent cannot override the worker picker without a human: the owner's words or his confirmation on the Desk.
+- [0166](decisions/0166-delegated-authority-table.md): the owner delegates authority by scope; one never list, one scope table, a `tool_decide` method that answers allow or no decision, and a Claude hook and charter text built from it.
 - [spike/](spike/): what we measured about each agent before building.
 - [step2-design.md](step2-design.md): protocol and message design for the gateway, daemon and Claude and Pi adapters. Still a good description of the wire protocol.
 - [step2-run.md](step2-run.md): how to run the pieces by hand, one by one.

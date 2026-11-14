@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	delegated "github.com/niparis/agent-net/internal/daemon/authority"
 	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/phrasing"
@@ -2961,6 +2962,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		got := protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: c.Project, Charter: c.agentText()}
+		// The scopes of the role node travel with the policy, so the daemon
+		// answers tool_decide from its cache (decision 0165). A failed read
+		// leaves them out: no scope means no decision, never a failed turn.
+		if c.Agent != "" {
+			if scopes, repos, serr := st.ScopesWithRepos(c.Agent); serr == nil && len(scopes) > 0 {
+				got.Scopes, got.ScopeRepos = scopes, repos
+				got.Charter = joinDelegated(got.Charter, delegated.Text(scopes))
+			}
+		}
 		if p.Turn {
 			// The one-time charter draft request rides on the per-turn text
 			// (decision 0088). A failure here never blocks the turn.

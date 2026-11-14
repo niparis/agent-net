@@ -133,8 +133,8 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		} else {
 			err = mcpserver.RunCTO(ctx, daemon.SocketPath(), version)
 		}
-	case "cto-hook": // hidden: the CTO's PreToolUse hook on cto_op (decision 0157)
-		err = cmdCTOHook()
+	case "tool-decide": // hidden: the Claude Code PreToolUse hook that allows delegated calls (decision 0165)
+		err = cmdToolDecide(ctx)
 	case "hook":
 		err = cmdAntigravityHook(args)
 	case "mcp":
