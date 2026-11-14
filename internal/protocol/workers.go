@@ -357,6 +357,10 @@ type (
 		// before the gateway chooses a model. Its label is the level. The
 		// machine that starts the worker stores it with the new session.
 		Assessment *WorkerAssessment `json:"assessment,omitempty"`
+		// Recheck names the harness and model a queued automatic start chose. The
+		// gateway puts that candidate first and passes the gate again, so a queued
+		// start keeps its model unless the gate refuses it now (decision 0162).
+		Recheck string `json:"recheck,omitempty"`
 		// Level is an internal caller's fixed level, used when there is no
 		// assessment (for example the read-only phrasing worker). A caller's
 		// Difficulty field is ignored.
@@ -454,13 +458,17 @@ type (
 		StartRef        string `json:"start_ref,omitempty"`
 		FromCTO         bool   `json:"sender_cto,omitempty"`
 		RequireReadOnly bool   `json:"require_read_only,omitempty"`
-		Project         string `json:"project"`
-		Path            string `json:"path"`
-		Harness         string `json:"harness"`
-		Model           string `json:"model,omitempty"`
-		Provider        string `json:"provider,omitempty"`
-		Effort          string `json:"effort,omitempty"`
-		Owner           string `json:"owner_session"`
+		// Automatic is true when the gateway chose this model itself. A queued
+		// automatic start passes the gate again when it leaves the queue
+		// (decision 0162).
+		Automatic bool   `json:"automatic,omitempty"`
+		Project   string `json:"project"`
+		Path      string `json:"path"`
+		Harness   string `json:"harness"`
+		Model     string `json:"model,omitempty"`
+		Provider  string `json:"provider,omitempty"`
+		Effort    string `json:"effort,omitempty"`
+		Owner     string `json:"owner_session"`
 		// OwnerName is the name the gateway knows for the caller, for the
 		// worker's commit trailers. Empty when the record is gone.
 		OwnerName string `json:"owner_name,omitempty"`
@@ -572,6 +580,32 @@ type (
 		ProjectRules string `json:"project_rules,omitempty"`
 		// OSSandbox is the OS wrapper the worker runs in, for the brief.
 		OSSandbox string `json:"os_sandbox,omitempty"`
+	}
+	// WorkerRecheck is "worker.recheck", machine to gateway: a queued start
+	// asks the gate again when it leaves the queue, because the reading that
+	// chose its model may be old (decision 0162).
+	WorkerRecheck struct {
+		Ref        string            `json:"ref,omitempty"`
+		Owner      string            `json:"owner_session"`
+		Project    string            `json:"project"`
+		Harness    string            `json:"harness,omitempty"`
+		Model      string            `json:"model,omitempty"`
+		Difficulty string            `json:"difficulty,omitempty"`
+		Assessment *WorkerAssessment `json:"assessment,omitempty"`
+		NotFamily  []string          `json:"not_family,omitempty"`
+	}
+	// WorkerRecheckAnswer names the model the gate grants now, or the reason
+	// it refuses the start.
+	WorkerRecheckAnswer struct {
+		Ref       string `json:"ref,omitempty"`
+		Harness   string `json:"harness,omitempty"`
+		Model     string `json:"model,omitempty"`
+		Provider  string `json:"provider,omitempty"`
+		Effort    string `json:"effort,omitempty"`
+		ModelNote string `json:"model_note,omitempty"`
+		Why       string `json:"why,omitempty"`
+		Refused   bool   `json:"refused,omitempty"`
+		Reason    string `json:"reason,omitempty"`
 	}
 	// WorkerStopFrame is "worker.stop".
 	WorkerStopFrame struct {

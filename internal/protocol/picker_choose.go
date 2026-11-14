@@ -197,9 +197,26 @@ func pickerCostText(e *pickerEntry) string {
 	return text
 }
 
-// chooseByCells runs the cell rule. A non-empty fallback says why it chose
-// nothing and the level rule must be used; the rotation is then untouched.
+// chooseByCells runs the cell rule for a route that has not moved to the gate
+// yet. A non-empty fallback says why it chose nothing and the level rule must
+// be used; the rotation is then untouched.
 func chooseByCells(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput) (WorkerModelChoice, string) {
+	order, _, fallback := pickOrderByCells(candidates, level, scores, minimums, quotas, running, rotation, in, true)
+	if fallback != "" {
+		return WorkerModelChoice{}, fallback
+	}
+	return order[0], ""
+}
+
+// pickOrderByCells returns the cell rule's whole order (decision 0162). The
+// first choice is the one the rule picked; the rest follow in the order the
+// gate should try them.
+//
+// blockQuota is the rule of the routes part 3 has not moved yet: a candidate
+// whose provider has no room leaves the order. The automatic start keeps such a
+// candidate at the end, where the gate refuses it with the reason of its own
+// check, so the ranking never decides that a candidate may not run.
+func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput, blockQuota bool) ([]WorkerModelChoice, string, string) {
 	table, set := in.Table, in.Table.Settings()
 	bucket := table.Bucket(in.D)
 	bucketLo, bucketHi := table.BucketRange(bucket)
@@ -216,7 +233,16 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
 		}
-		room, note, measured, blocked := workerQuotaRoom(quotas, provider, c.Model)
+		var room float64
+		var note string
+		var measured, blocked bool
+		if blockQuota {
+			room, note, measured, blocked = workerQuotaRoom(quotas, provider, c.Model)
+		} else {
+			// The gate owns the quota check. The ranker only needs a pace for
+			// its order, so a used-up window is left out of that reading.
+			room, note, measured = WorkerQuotaPace(quotas, provider, c.Model)
+		}
 		if blocked {
 			name := c.Name
 			if name == "" {
@@ -239,7 +265,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		entries = append(entries, e)
 	}
 	if len(entries) == 0 {
-		return WorkerModelChoice{}, header + ": fallback to the level rule (every profile is out of quota)"
+		return nil, header, header + ": fallback to the level rule (every profile is out of quota)"
 	}
 
 	// 1-3. The same decision the Quality subtab shows, one verdict per entry.
@@ -289,6 +315,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			e.reason = "explore is up only"
 		}
 	}
+	choices := map[*pickerEntry]WorkerModelChoice{}
 	var eligible []rankedChoice
 	var final []*pickerEntry
 	exploring := false
@@ -312,12 +339,12 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 			if e.scored {
 				choice.Score = e.bench
 			}
+			choices[e] = choice
 			eligible = append(eligible, rankedChoice{choice: choice, weight: weight})
 		}
 		if len(final) == 0 {
-			return WorkerModelChoice{}, header + ": fallback to the level rule (no profile is allowed by its record or its benchmark)"
+			return nil, header, header + ": fallback to the level rule (no profile is allowed by its record or its benchmark)"
 		}
-
 	} else {
 		// The proven model with the lowest expected cost per accepted result
 		// wins. A provider behind its quota pace counts as cheaper, one ahead
@@ -352,6 +379,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 				weight = 1
 			}
 			choice := WorkerModelChoice{WorkerModelCandidate: e.c, Fit: "cell", QuotaNote: e.quotaNote, Score: e.bench}
+			choices[e] = choice
 			eligible = append(eligible, rankedChoice{choice: choice, weight: weight})
 		}
 	}
@@ -368,7 +396,7 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		lvl.ExploreCurrent, lvl.Current = lvl.Current, saved
 	}
 	if err != nil {
-		return WorkerModelChoice{}, header + ": fallback to the level rule (" + err.Error() + ")"
+		return nil, header, header + ": fallback to the level rule (" + err.Error() + ")"
 	}
 	pickedKey := WorkerModelKey(picked.WorkerModelCandidate)
 	var chosen *pickerEntry
@@ -391,7 +419,83 @@ func chooseByCells(candidates []WorkerModelCandidate, level string, scores []Mod
 		picked.PickNote += "; " + strings.Join(quotaExcluded, "; ")
 	}
 	picked.Why = pickerShortWhy(level, in.D, in.DifficultyNote, chosen, len(qualified), entries, quotaExcluded)
-	return picked, ""
+	return pickOrder(level, picked, chosen, entries, final, qualified, allowed, choices), header, ""
+}
+
+// pickOrder lays the whole list behind the pick the cell rule made. A
+// candidate the rule allowed sorts by the cost rule before the fallback order;
+// one it left out comes last with its reason. A blocked candidate is already
+// last, for the gate to refuse.
+func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entries, final, qualified, allowed []*pickerEntry, choices map[*pickerEntry]WorkerModelChoice) []WorkerModelChoice {
+	order := make([]WorkerModelChoice, 0, len(entries))
+	seen := map[*pickerEntry]bool{}
+	choiceFor := func(e *pickerEntry) WorkerModelChoice {
+		ch, ok := choices[e]
+		if !ok {
+			ch = WorkerModelChoice{WorkerModelCandidate: e.c, Fit: "cell", QuotaNote: e.quotaNote}
+			if e.scored {
+				ch.Score = e.bench
+			}
+		}
+		if ch.Why == "" {
+			ch.Why = WhyLine(level, ch)
+		}
+		return ch
+	}
+	add := func(e *pickerEntry) {
+		if seen[e] {
+			return
+		}
+		seen[e] = true
+		order = append(order, choiceFor(e))
+	}
+	order = append(order, picked)
+	if chosen != nil {
+		seen[chosen] = true
+	}
+	adjusted := func(e *pickerEntry) float64 { return e.expected / quotaPaceFactor(e.room, e.measured) }
+	byWeight := func(list []*pickerEntry) {
+		sort.SliceStable(list, func(i, j int) bool {
+			if list[i].weight != list[j].weight {
+				return list[i].weight > list[j].weight
+			}
+			return list[i].name < list[j].name
+		})
+	}
+	rest := make([]*pickerEntry, 0, len(final))
+	for _, e := range final {
+		rest = append(rest, e)
+	}
+	byWeight(rest)
+	for _, e := range rest {
+		add(e)
+	}
+	rest = nil
+	for _, e := range qualified {
+		rest = append(rest, e)
+	}
+	sort.SliceStable(rest, func(i, j int) bool {
+		a, b := adjusted(rest[i]), adjusted(rest[j])
+		if a != b {
+			return a < b
+		}
+		if rest[i].cell.Score != rest[j].cell.Score {
+			return rest[i].cell.Score > rest[j].cell.Score
+		}
+		return rest[i].name < rest[j].name
+	})
+	for _, e := range rest {
+		add(e)
+	}
+	rest = nil
+	for _, e := range allowed {
+		rest = append(rest, e)
+	}
+	byWeight(rest)
+	for _, e := range rest {
+		add(e)
+	}
+	return order
 }
 
 // pickerShortWhy builds the short why line (at most 2 lines):

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -101,6 +102,12 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			return nil, err
 		}
 		return g.workerProfileAction(nc.id, typ, p)
+	case "worker.recheck":
+		p, err := decodeOperator[protocol.WorkerRecheck](raw)
+		if err != nil {
+			return nil, reject("bad worker.recheck")
+		}
+		return g.workerRecheck(ctx, nc, p)
 	case "worker.start":
 		p, err := decodeOperator[protocol.WorkerStartFrame](raw)
 		if err != nil {
@@ -783,6 +790,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		}
 	}
 	var choice protocol.WorkerModelChoice
+	var granted model.Granted
+	var chosen ChooseResult
 	if automatic {
 		difficulty := difficultyUsed
 		providers, err := g.store.workerProviders()
@@ -819,30 +828,13 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, reject("no registered workers qualify for %s; register a profile for %s, or pass model explicitly", difficulty, difficulty)
 		} else {
 			roster := newNotStartedRoster()
-			candidates, skippedProfiles, resolutionNotes, err := g.workerModelCandidatesWith(&candidateFacts{}, roster, node, profiles, providers, quotas, p.Harness, p.RequireReadOnly, protected)
+			candidateReads := &candidateFacts{}
+			candidates, skippedProfiles, resolutionNotes, err := g.workerModelCandidatesWith(candidateReads, roster, node, profiles, providers, quotas, p.Harness, p.RequireReadOnly, protected)
 			if err != nil {
 				return none, err
 			}
-			var allowedCandidates []protocol.WorkerModelCandidate
-			for _, c := range candidates {
-				under, floorSentence, noReading := protocol.CheckWorkerFloor(quotas, floors, c.Harness, c.Model)
-				if under {
-					name := rosterName(c.Name, c.Harness, c.Model)
-					skippedProfiles = append(skippedProfiles, fmt.Sprintf("skipped %s: %s", name, floorSentence))
-					roster.add(name, "skipped: "+floorSentence, rosterFloor)
-					continue
-				}
-				if noReading {
-					key := c.Harness + "\x00" + c.Model
-					if existing, ok := resolutionNotes[key]; ok && existing != "" {
-						resolutionNotes[key] = existing + "; no quota reading, floor not applied"
-					} else {
-						resolutionNotes[key] = "no quota reading, floor not applied"
-					}
-				}
-				allowedCandidates = append(allowedCandidates, c)
-			}
-			candidates = allowedCandidates
+			// The floor is one of the gate's optional checks: it is not applied
+			// here, so the automatic start has one copy of it (decision 0162).
 			if len(candidates) == 0 {
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
@@ -851,18 +843,42 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
 			var protectionNote string
-			choice, protectionNote, err = g.chooseAutomaticWorkerAt(candidates, difficulty, protocol.PickerD(p.Assessment, difficulty), workerDifficultyWhy(p.Assessment, difficulty), scores, minimums, quotas, running, protected, !(len(validate) > 0 && validate[0]))
+			var chooseErr error
+			chosen, chooseErr = g.Choose(ChooseRequest{
+				Purpose:        model.PurposeWorkerAutomatic,
+				Node:           node,
+				Candidates:     candidates,
+				Difficulty:     difficulty,
+				D:              protocol.PickerD(p.Assessment, difficulty),
+				DifficultyNote: workerDifficultyWhy(p.Assessment, difficulty),
+				Scores:         scores,
+				Minimums:       minimums,
+				Quotas:         quotas,
+				Running:        running,
+				Protected:      protected,
+				Floors:         floors,
+				Auth:           candidateReads.auth,
+				Persist:        !(len(validate) > 0 && validate[0]),
+				Prefer:         p.Recheck,
+			})
+			choice, protectionNote, err = chosen.Choice, chosen.Note, chooseErr
 			if err != nil {
-				// The chooser records why it dropped each candidate, so the
-				// roster reports the same decision instead of guessing again.
+				// The ranker and the gate record why they dropped each
+				// candidate, so the roster reports the same decision instead
+				// of guessing again.
+				for _, lo := range chosen.LeftOut {
+					roster.add(lo.Name, lo.Reason, lo.Rank)
+				}
 				for _, lo := range choice.LeftOut {
 					roster.add(lo.Name, lo.Reason, lo.Rank)
 				}
+				appendGateSkips(roster, chosen.Skips)
 				if !(len(validate) > 0 && validate[0]) {
 					g.noProviderFeed(candidates, quotas)
 				}
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
+			granted = chosen.Granted
 			p.Harness, p.Model = choice.Harness, choice.Model
 			automaticNote = "(" + workerChoiceNote(difficulty, choice, candidates, scores, minimums)
 			if note := resolutionNotes[p.Harness+"\x00"+p.Model]; note != "" {
@@ -938,6 +954,11 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if p.Provider == "" {
 		p.Provider = protocol.ModelVendor(p.Harness, selected.Model)
 	}
+	if !automatic {
+		// The named route is moved onto the gate in part 3. Until then it
+		// launches through the one clearly named bridge.
+		granted = model.UncheckedGrant(model.Candidate{Name: p.Harness + " " + p.Model, Harness: p.Harness, Model: p.Model, Effort: p.Effort, Provider: p.Provider})
+	}
 	if p.Harness == "agy" {
 		if _, buildErr := selected.Arguments(hi.Models); buildErr != nil {
 			return none, reject("%v", buildErr)
@@ -985,8 +1006,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		}
 	}
 	// A provider with no allowance left refuses the start now, with the reset
-	// time, instead of failing at the first model call (decision 0022).
-	if reason := protocol.QuotaRefusal(quotas, p.Harness, p.Model); reason != "" {
+	// time, instead of failing at the first model call (decision 0022). An
+	// automatic start has already had this locked check in the gate.
+	if reason := protocol.QuotaRefusal(quotas, p.Harness, p.Model); reason != "" && !automatic {
 		if !(len(validate) > 0 && validate[0]) {
 			g.quotaStuckFeed(p.Harness, p.Model, reason)
 		}
@@ -1030,7 +1052,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	if len(validate) > 0 && validate[0] {
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
-			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote}, nil
+			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why}, nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
@@ -1050,10 +1072,37 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		launchAssessment = &copied
 	}
 	launchBegan := time.Now()
-	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.BriefText(), Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
-		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: launchAssessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes,
-		Why: choice.Why, NotFamily: p.NotFamily})
+	var raw []byte
+	for {
+		raw, err = launchWorker(cctx, target, granted, protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
+			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.BriefText(), Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly, Automatic: automatic,
+			DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: launchAssessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes,
+			Why: choice.Why, NotFamily: p.NotFamily})
+		if err == nil || errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
+			break
+		}
+		// The machine refused this model. The gate names the next candidate in
+		// the same list, so the start does not lose its work to one provider
+		// (decision 0162).
+		next, ok := chosen.Next()
+		if !ok {
+			break
+		}
+		failed := p.Harness + " " + p.Model
+		chosen, choice, granted = next, next.Choice, next.Granted
+		selected := protocol.ParseModelSelection(choice.Harness, choice.Provider, choice.Model, choice.Effort)
+		p.Harness = choice.Harness
+		p.Provider, p.Effort, p.Model = selected.Provider, selected.Effort, selected.LegacyModel()
+		if p.Provider == "" {
+			p.Provider = protocol.ModelVendor(p.Harness, selected.Model)
+		}
+		modelNote = appendModelNote(modelNote, fmt.Sprintf("launch failed on %s: %v; tried %s %s", failed, err, p.Harness, p.Model))
+		if launchAssessment != nil {
+			copied := *launchAssessment
+			copied.PickerNote = modelNote
+			launchAssessment = &copied
+		}
+	}
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
@@ -1150,6 +1199,52 @@ func (g *Gateway) alternativeChoice(ctx context.Context, nc *nodeConn, p protoco
 		return ""
 	}
 	return ans.Harness + " " + ans.Model
+}
+
+// workerRecheck passes a queued automatic start through the gate again when
+// it leaves the queue (decision 0162). It runs the same start as a check, so
+// the choice, the policy and every check have one owner, and starts nothing.
+func (g *Gateway) workerRecheck(ctx context.Context, nc *nodeConn, p protocol.WorkerRecheck) (protocol.WorkerRecheckAnswer, error) {
+	answer := protocol.WorkerRecheckAnswer{Ref: p.Ref}
+	if p.Owner == "" || p.Project == "" {
+		return answer, reject("a recheck needs an owner and a project")
+	}
+	frame := protocol.WorkerStartFrame{
+		Owner:      p.Owner,
+		Level:      p.Difficulty,
+		Assessment: p.Assessment,
+		WorkerStartRequest: protocol.WorkerStartRequest{
+			Project:   p.Project,
+			Machine:   g.store.hostname(nc.id),
+			Model:     "auto",
+			Task:      "queued start",
+			NotFamily: p.NotFamily,
+		},
+	}
+	frame.Recheck = p.Harness + "\x00" + p.Model
+	ans, err := g.workerStart(ctx, nc, frame, true)
+	if err != nil {
+		answer.Refused, answer.Reason = true, err.Error()
+		return answer, nil
+	}
+	answer.Harness, answer.Model = ans.Harness, ans.Model
+	answer.Provider, answer.Effort = ans.Provider, ans.Effort
+	answer.ModelNote, answer.Why = ans.ModelNote, ans.Why
+	return answer, nil
+}
+
+// launchWorker sends the one launch frame for a start. It takes the gate's
+// Granted and refuses a frame that names another model, so no route can launch
+// a model the gate did not allow (decision 0162).
+func launchWorker(cctx context.Context, target *nodeConn, granted model.Granted, launch protocol.WorkerLaunch) ([]byte, error) {
+	if granted.IsZero() {
+		return nil, fmt.Errorf("no model was granted for this start")
+	}
+	c := granted.Candidate()
+	if c.Harness != launch.Harness || c.Model != launch.Model {
+		return nil, fmt.Errorf("the launch names %s %s, but the gate granted %s %s", launch.Harness, launch.Model, c.Harness, c.Model)
+	}
+	return target.call(cctx, "worker.launch", launch)
 }
 
 // workerStartReport tells the owner how a start ended that its machine had
