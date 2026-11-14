@@ -1092,6 +1092,17 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if err != nil {
 			return nil, err
 		}
+		// A text that takes an ask back withdraws it. It is not a new wait: a
+		// withdrawal must not become the question the session waits on.
+		var withdrawn struct {
+			Withdrawn bool `json:"withdrawn"`
+		}
+		if json.Unmarshal(res, &withdrawn) == nil && withdrawn.Withdrawn {
+			if ls != nil {
+				d.setWaiting(ls, nil)
+			}
+			return res, nil
+		}
 		// The team lead took the question (asks_to=lead): the session is not
 		// waiting for its user, so it carries on and a wait it had is cleared.
 		var routed struct {

@@ -30,6 +30,9 @@ const (
 	// AskSortDone reports that the answer of an answered ask was carried out
 	// (decision 0150): the ask moves to carried_out and its askers are told.
 	AskSortDone = "done"
+	// AskSortWithdraw closes an ask its asker (or a session that relayed it)
+	// takes back. The chief uses it for a Desk ask a newer ask replaces.
+	AskSortWithdraw = "withdraw"
 )
 
 // ChiefWakeInterval is the wake interval of decision 0150. A wake counts as
@@ -133,14 +136,17 @@ type AskSortArgs struct {
 	Into        string `json:"into,omitempty"`
 	To          string `json:"to,omitempty"`
 	Reason      string `json:"reason"`
-	Priority    int    `json:"priority,omitempty"`
-	WhyYou      string `json:"why_you,omitempty"`
-	Detail      string `json:"detail,omitempty"`
-	Sorter      string `json:"sorter,omitempty"`
-	Since       int64  `json:"since,omitempty"`
-	Until       int64  `json:"until,omitempty"`
-	FromID      int64  `json:"from_id,omitempty"`
-	ToID        int64  `json:"to_id,omitempty"`
+	// ReplacedBy names the newer ask of the same asker that takes this ask's
+	// place. It lets the chief withdraw an ask that is on the owner's Desk.
+	ReplacedBy string `json:"replaced_by,omitempty"`
+	Priority   int    `json:"priority,omitempty"`
+	WhyYou     string `json:"why_you,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	Sorter     string `json:"sorter,omitempty"`
+	Since      int64  `json:"since,omitempty"`
+	Until      int64  `json:"until,omitempty"`
+	FromID     int64  `json:"from_id,omitempty"`
+	ToID       int64  `json:"to_id,omitempty"`
 	// Options and Recommendation make an ask a decision when the chief sends
 	// it to the owner: an owner-bound ask needs options (decision 0150).
 	Options        []string `json:"options,omitempty"`
@@ -210,6 +216,12 @@ func (a AskSortArgs) Validate() error {
 	if len(a.Options) > 4 {
 		return errors.New("options: at most four answers")
 	}
+	if a.ReplacedBy != "" && a.Result != AskSortWithdraw {
+		return errors.New("replaced_by applies only to withdraw")
+	}
+	if a.ReplacedBy != "" && a.ReplacedBy == a.Ask {
+		return errors.New("replaced_by must name another open ask")
+	}
 	if (a.Rule != "") != (a.Action != "") {
 		return errors.New("rule and action go together: the rule id and the action the ask is about")
 	}
@@ -217,7 +229,7 @@ func (a AskSortArgs) Validate() error {
 		return errors.New("rule applies only to close")
 	}
 	switch a.Result {
-	case AskSortClose, AskSortConfirm, AskSortPicker, AskSortDone:
+	case AskSortClose, AskSortConfirm, AskSortPicker, AskSortDone, AskSortWithdraw:
 	case AskSortMerge:
 		if a.Into == "" {
 			return errors.New("merge needs into: the ask id to merge into")
@@ -234,7 +246,7 @@ func (a AskSortArgs) Validate() error {
 			return errors.New("owner needs why_you: why the owner must decide")
 		}
 	default:
-		return errors.New("result must be close, merge, send, owner, confirm, picker, done, list or undo")
+		return errors.New("result must be close, merge, send, owner, confirm, picker, done, withdraw, list or undo")
 	}
 	return nil
 }

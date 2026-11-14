@@ -100,7 +100,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), undo its own newest sort, list asks and sort counts, or read an ask with detail full. Result hide (preview, apply, undo) hides sort history reversibly. Never answer for the owner.",
+    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), withdraw an ask the asker took back or a newer ask replaces, undo its own newest sort, list asks and sort counts, or read an ask with detail full. Result hide (preview, apply, undo) hides sort history reversibly. Never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -125,15 +125,20 @@ export const TOOL_CATALOG = [
             "confirm",
             "picker",
             "done",
+            "withdraw",
             "list",
             "hide",
             "undo"
           ],
-          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. list: show the asks waiting for you, with the sorter's counts by result. confirm or picker: answer a held worker start (decision 0151). done: the answer of an answered ask was carried out; its askers are told."
+          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. withdraw: the asker (or a session that relayed it) takes the ask back; the chief uses it when a newer ask replaces one on the owner's Desk, and names that ask in replaced_by. list: show the asks waiting for you, with the sorter's counts by result. confirm or picker: answer a held worker start (decision 0151). done: the answer of an answered ask was carried out; its askers are told."
         },
         "into": {
           "type": "string",
           "description": "For merge: the open ask id to merge into."
+        },
+        "replaced_by": {
+          "type": "string",
+          "description": "For withdraw by the chief of staff: the newer open ask from the same asker that replaces this one. Naming it lets the chief withdraw an ask that is already on the owner's Desk."
         },
         "to": {
           "type": "string",

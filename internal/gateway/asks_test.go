@@ -732,9 +732,9 @@ func TestStepDispatchWritesToTheLog(t *testing.T) {
 	t.Fatalf("no dispatch line for %s in the log: %+v", id, log)
 }
 
-// A question or an approval the session raised before its earlier announce is
-// overtaken by a later announce without a wait: the Needs you tag goes. An ask
-// of the same turn as the announce stays, and so does one under a new wait.
+// A question the session raised before its earlier announce is overtaken by a
+// later announce without a wait: the Needs you tag goes. An ask of the same
+// turn as the announce stays, and so does one under a new wait.
 func TestAnnounceClosesAskOfEarlierWork(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("box", "linux")
@@ -748,12 +748,12 @@ func TestAnnounceClosesAskOfEarlierWork(t *testing.T) {
 	}
 	announce("build the grant", nil)
 	c.t = c.t.Add(time.Minute)
-	old, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: sid, Text: "Build the grant?"})
+	old, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: sid, Text: "Which region for the new box?"})
 	announce("waiting for the owner", nil) // same turn as the ask: it stays
 	if status, _, _ := askRow(t, s, `id=?`, old.ID); status != "open" {
 		t.Fatalf("an ask of the same turn closed: %s", status)
 	}
-	announce("waiting for the owner", &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Build the grant?"})
+	announce("waiting for the owner", &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Which region for the new box?"})
 	if status, _, _ := askRow(t, s, `id=?`, old.ID); status != "open" {
 		t.Fatalf("an announce with a wait closed the ask: %s", status)
 	}
@@ -761,6 +761,30 @@ func TestAnnounceClosesAskOfEarlierWork(t *testing.T) {
 	status, reason, _ := askRow(t, s, `id=?`, old.ID)
 	if status != "closed" || reason != protocol.AskReasonMovedOn {
 		t.Fatalf("ask after new work: %s %s", status, reason)
+	}
+}
+
+// An announce without a wait never closes an approval: only the owner's
+// answer, the asker's withdraw or the chief's replace-withdraw does.
+func TestAnnounceKeepsAnApprovalOpen(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
+	announce := func(task string) {
+		t.Helper()
+		c.t = c.t.Add(time.Minute)
+		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: task}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	announce("build the grant")
+	approval, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: sid, Text: "Approve merge #935 at 2143e3af"})
+	// The announce after that one has the approval before its earlier
+	// announce, the case that closed it moved_on in the live gateway.
+	announce("waiting for the owner")
+	announce("doing the next thing")
+	if status, reason, _ := askRow(t, s, `id=?`, approval.ID); status != "open" {
+		t.Fatalf("an announce closed the approval: %s %s", status, reason)
 	}
 }
 

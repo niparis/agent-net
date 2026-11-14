@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -86,8 +87,15 @@ func turnEndQuestion(agent protocol.AgentView, project, name, text string) proto
 
 // agentOwnerAsk stores an owner ask of an agent session: agent_owner_ask, or a
 // question that ended its turn. A team that sends questions to its lead keeps
-// it from the owner; otherwise the ask goes to the chief when one is live.
+// it from the owner; otherwise the ask goes to the chief when one is live. A
+// text that takes an ask back withdraws it; it never makes a new ask.
 func (g *Gateway) agentOwnerAsk(ctx context.Context, st *Store, ask protocol.InboxItem) (map[string]any, error) {
+	// Mark the ask as raised by an agent session. The repeat rule joins only
+	// these asks; an event agent-net raises itself keeps its own behaviour.
+	ask.FromKind = protocol.AskFromSession
+	if id, reason, ok := protocol.AskWithdrawal(ask.Text); ok {
+		return g.withdrawAskByText(st, ask.SessionID, id, reason)
+	}
 	redirect, m, err := st.RedirectOwnerAsk(ask)
 	if err != nil {
 		return nil, err
@@ -106,4 +114,23 @@ func (g *Gateway) agentOwnerAsk(ctx context.Context, st *Store, ask protocol.Inb
 	// still open so it can name one with replaces.
 	others, err := st.OtherOpenAsks(ask.SessionID, item.ID)
 	return map[string]any{"item": item, "other_open": others}, err
+}
+
+// withdrawAskByText takes back the ask a message names. The message comes from
+// the asker session, so the sort checks that it is the asker or a relay and
+// writes the same history and log line as any other sort.
+func (g *Gateway) withdrawAskByText(st *Store, session, id, reason string) (map[string]any, error) {
+	var node string
+	if err := st.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, session).Scan(&node); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "withdrawn by the asker"
+	}
+	res, _, err := st.SortAsk(node, protocol.AskSortRequest{SessionID: session, AskSortArgs: protocol.AskSortArgs{
+		Ask: id, Result: protocol.AskSortWithdraw, Reason: reason}})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"item": protocol.InboxItem{ID: id, SessionID: session, Status: res.State}, "withdrawn": true, "reason": reason}, nil
 }
