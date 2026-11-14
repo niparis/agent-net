@@ -274,9 +274,9 @@ func (d *Daemon) admissionForTest() Decision {
 	return d.admissionWith(snap, cost)
 }
 
-// admissionForTestNoGap is admissionForTest without the start gap. A
-// hand-back check follows the worker's own run, not a new start, so
-// workers.start_gap does not hold it. Its slot still counts as load.
+// admissionForTestNoGap is admissionForTest without the start gap, for an
+// in-process suite that follows a run rather than starting one. Its slot
+// still counts as load.
 func (d *Daemon) admissionForTestNoGap() Decision {
 	snap := d.SettingsSnapshot()
 	cost := d.testAdmissionCost(snap)

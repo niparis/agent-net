@@ -12,32 +12,14 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// savedHandback is a worker that handed back complete with a file while its
-// check ran, and a daemon that stopped while the gateway was down, as on the
-// gateway machine during an upgrade: the installer restarts the gateway first.
+// savedHandback is a worker whose complete hand-back is saved in the state
+// database, and a daemon whose gateway is down. An older daemon writes such a
+// row across an upgrade; the replay path still records it.
 type savedHandback struct {
-	*asyncCheck
+	g                                       *testGateway
+	w                                       *workerNode
+	res                                     protocol.WorkerStartResult
 	workerID, head, gatewayDir, gatewayAddr string
-}
-
-func startSavedHandback(t *testing.T, autoContinue *bool) *savedHandback {
-	t.Helper()
-	a := startAsyncCheckWith(t, autoContinue, queueSet)
-	workerID := a.workerID(t)
-	proof := filepath.Join(a.res.Worktree, "proof.txt")
-	if err := os.WriteFile(proof, []byte("proof\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	out, err := a.w.d.handback(context.Background(), a.res.SessionID,
-		protocol.WorkerHandbackRequest{Report: "the report of the saved hand-back", Files: []string{proof}})
-	if err != nil || !out.Checking {
-		t.Fatalf("handback: %+v %v", out, err)
-	}
-	a.waitStarts(t, 1)
-	s := &savedHandback{asyncCheck: a, workerID: workerID,
-		head: gitOutT(t, a.res.Worktree, "rev-parse", "HEAD"), gatewayDir: a.g.dir, gatewayAddr: a.g.addr}
-	s.gatewayDown(t)
-	return s
 }
 
 func (s *savedHandback) gatewayDown(t *testing.T) {
@@ -48,80 +30,32 @@ func (s *savedHandback) gatewayDown(t *testing.T) {
 
 // startLiveSavedHandback is a worker that still runs while its complete
 // hand-back is saved: a worker with queued messages runs them before it ends,
-// and the daemon may stop before its notice. The row is saved as
-// handbackFlow saves it.
+// and the daemon may stop before its notice. The row is saved as an older
+// daemon saved it.
 func startLiveSavedHandback(t *testing.T, autoContinue *bool) *savedHandback {
 	t.Helper()
-	a := startAsyncCheckWith(t, autoContinue, queueSet)
-	wk := a.w.d.workerBySession(a.res.SessionID)
-	gitIn(t, a.res.Worktree, "add", "-A")
-	gitIn(t, a.res.Worktree, "commit", "-q", "-m", "work")
-	s := &savedHandback{asyncCheck: a, workerID: wk.id, head: gitOutT(t, a.res.Worktree, "rev-parse", "HEAD"),
-		gatewayDir: a.g.dir, gatewayAddr: a.g.addr}
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, queueSet, withLoad(&fakeLoad{l: roomyLoad()}))
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:ignore", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinue})
+	wk := w.d.workerBySession(res.SessionID)
+	if err := os.WriteFile(filepath.Join(res.Worktree, "work.txt"), []byte("work\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, res.Worktree, "add", "-A")
+	gitIn(t, res.Worktree, "commit", "-q", "-m", "work")
+	s := &savedHandback{g: g, w: w, res: res, workerID: wk.id, head: gitOutT(t, res.Worktree, "rev-parse", "HEAD"),
+		gatewayDir: g.dir, gatewayAddr: g.addr}
 	tail := &handbackTail{req: protocol.WorkerHandbackRequest{Report: "the report of the saved hand-back", Status: protocol.StatusDone},
-		end: true, sessionID: a.res.SessionID, complete: true}
-	a.w.d.persistHandback(wk, tail, s.head)
+		end: true, sessionID: res.SessionID, complete: true}
+	w.d.persistHandback(wk, tail, s.head)
 	if !tail.persisted {
 		t.Fatal("the hand-back was not saved")
 	}
 	s.gatewayDown(t)
 	return s
-}
-
-// savedRow reads the saved hand-back from the stopped daemon's database.
-func (s *savedHandback) savedRow(t *testing.T) (pendingHandback, bool) {
-	t.Helper()
-	st, err := openState(s.w.node.cfg.StateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.close()
-	return st.pendingHandback(s.workerID)
-}
-
-// Before, the stopping daemon recorded the change and sent the notice at
-// once: with the gateway down, the record failed with "not connected to the
-// gateway", the notice with files was not sent, and the change was lost. Now
-// the hand-back is saved before Stop returns and replayed at the next
-// connect, with the interrupted check, the report and the files.
-func TestHandbackSavedWhileGatewayDownIsRecordedAfterRestart(t *testing.T) {
-	s := startSavedHandback(t, autoContinueOff())
-	var g2 *testGateway
-	s.w.node.restartWith(func() {
-		p, ok := s.savedRow(t)
-		if !ok || p.Head != s.head || len(p.Req.Files) != 1 || p.Files == nil || len(p.Files.Files) != 1 || !p.End {
-			t.Fatalf("the hand-back is not saved when Stop returns: ok=%t %+v", ok, p)
-		}
-		if p.Check == nil || p.Check.Status != protocol.HandbackCheckCouldNotRun {
-			t.Fatalf("saved check: %+v", p.Check)
-		}
-		g2 = startGateway(t, s.gatewayDir, s.gatewayAddr)
-	}, true)
-	s.w.cli = cliClient(t, s.w.node)
-
-	n := s.w.waitNotice(t, 1)[0]
-	t.Logf("the caller's notice after the restart (files: %+v):\n%s", n.Files, n.Body)
-	if !strings.Contains(n.Body, "the report of the saved hand-back") || !strings.Contains(n.Body, "hand-back check: could not run: interrupted") {
-		t.Fatalf("notice:\n%s", n.Body)
-	}
-	if strings.Contains(n.Body, "delivery record:") {
-		t.Fatalf("the notice reports a failed delivery record:\n%s", n.Body)
-	}
-	if len(n.Files) != 1 || n.Files[0].Name != "proof.txt" {
-		t.Fatalf("notice files: %+v", n.Files)
-	}
-	change := changeView(t, g2, noticeChangeID(t, n.Body))
-	if change.Change.HeadCommit != s.head {
-		t.Errorf("change head %s, want the hand-back head %s", change.Change.HeadCommit, s.head)
-	}
-	if c := change.HandbackCheck; c == nil || c.Status != protocol.HandbackCheckCouldNotRun || !strings.Contains(c.Detail, "daemon stopped") {
-		t.Errorf("change hand-back check: %+v", c)
-	}
-	eventually(t, "the saved hand-back is removed after its notice", func() bool {
-		_, ok := s.w.d.st.pendingHandback(s.workerID)
-		return !ok
-	})
-	eventually(t, "the worker ends after its hand-back", func() bool { return s.w.d.workerBySession(s.res.SessionID) == nil })
 }
 
 // The next daemon adopts the worker before it can reach the gateway. Its
@@ -138,7 +72,7 @@ func TestSavedHandbackWorkerGetsNoNudge(t *testing.T) {
 	snap := s.w.d.SettingsSnapshot()
 	s.w.d.wmu.Lock()
 	continueEligible := autoContinueEligibleWith(w, snap, "shop")
-	held := w.checking
+	held := w.handbackPending
 	s.w.d.wmu.Unlock()
 	if continueEligible {
 		t.Error("the adopted worker with a saved hand-back may get an automatic continue")

@@ -154,3 +154,26 @@ func TestWorktreeBaseRequestedBaseIgnoresUpstream(t *testing.T) {
 		t.Fatalf("a requested base must stay local: got %s want %s", got, local)
 	}
 }
+
+// A worker starts from origin's default branch even when the owner's checkout
+// is on another branch: an upgrade or a merge lands on the remote, and the
+// local branch the owner left checked out stays behind.
+func TestWorktreeBaseStartsAtOriginDefaultBranch(t *testing.T) {
+	repo, _, other := baseTestRepo(t)
+	gitIn(t, repo, "checkout", "-q", "-b", "topic")
+	gitIn(t, repo, "push", "-q", "-u", "origin", "topic")
+	gitIn(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	tip := baseTestCommit(t, other, "landed-by-pr.txt")
+	gitIn(t, other, "push", "-q", "origin", "main")
+
+	d, w, _ := baseTestWorker(t, repo)
+	if err := d.createWorktree(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	if got := baseTestHead(t, w.worktree); got != tip {
+		t.Fatalf("worktree starts at %s, want origin/main tip %s", got, tip)
+	}
+	if w.base != tip {
+		t.Fatalf("worker base %s, want %s", w.base, tip)
+	}
+}

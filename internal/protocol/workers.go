@@ -1277,7 +1277,8 @@ type WorkerNotice struct {
 	DeliveryBranch string
 
 	// HandbackCheck is the project's pre-hand-back check, nil when it did not
-	// run (nothing changed, or the worker had no worktree).
+	// run (nothing changed, or the worker had no worktree). A hand-back since
+	// decision 0164 carries none; a saved row of an older daemon still does.
 	HandbackCheck *HandbackCheck
 }
 

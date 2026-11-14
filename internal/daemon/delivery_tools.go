@@ -893,8 +893,9 @@ func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *pro
 }
 
 // withHandbackCheckSignal appends the signal of a failed or timed-out
-// pre-hand-back check. The check signal wins the last slot when the list is
-// full, because it names work the worker's own run did not finish cleanly.
+// pre-hand-back check carried by a hand-back an older daemon saved. The check
+// signal wins the last slot when the list is full, because it names work the
+// worker's own run did not finish cleanly.
 func withHandbackCheckSignal(signals []protocol.QualitySignal, check *protocol.HandbackCheck) []protocol.QualitySignal {
 	if check == nil {
 		return signals
