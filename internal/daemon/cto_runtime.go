@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -56,13 +57,79 @@ func (d *Daemon) selectedCTOHarness(ctx context.Context) (ctoHarness, error) {
 	if err != nil {
 		return nil, err
 	}
+	if d.ctoRunning() {
+		// A live CTO already runs on its model. A message does not start it,
+		// so it does not ask the gate again.
+		return d.prepareCTOHarness(settings)
+	}
+	models, err := d.ctoRoleModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	opencodeID, err := d.ctoSession()
+	if err != nil {
+		return nil, err
+	}
+	claudeID, err := d.claudeCTOSession()
+	if err != nil {
+		return nil, err
+	}
+	current := protocol.RoleModel{Harness: settings.Harness, Model: settings.Model}
+	pick, err := d.ctoPick(ctx, models, current, opencodeID != "" || claudeID != "")
+	if err != nil {
+		return nil, err
+	}
+	if pick.NewConversation {
+		// The current model failed a locked check. The role falls to its list
+		// with a new conversation; the old one stays in the other harness.
+		if err := d.clearCTOConversation(pick.Harness); err != nil {
+			return nil, err
+		}
+	}
+	if pick.Harness != settings.Harness || pick.Model != settings.Model {
+		if err := d.saveCTORoleModels(models, pick.Harness, pick.Model); err != nil {
+			return nil, err
+		}
+	}
+	settings.Harness, settings.Model = pick.Harness, pick.Model
+	switch pick.Harness {
+	case "claude":
+		settings.ClaudeModel = pick.Model
+	default:
+		settings.OpenCodeModel = pick.Model
+	}
 	return d.prepareCTOHarness(settings)
+}
+
+// prepareStoredCTOHarness prepares the harness the CTO already runs on. A
+// timeline read must not ask the gate and move the CTO to another model.
+func (d *Daemon) prepareStoredCTOHarness(ctx context.Context) (ctoHarness, error) {
+	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return d.prepareCTOHarness(settings)
+}
+
+// clearCTOConversation drops the stored conversation of one harness, so the
+// next start opens a new one.
+func (d *Daemon) clearCTOConversation(harness string) error {
+	column := "session_id"
+	if harness == "claude" {
+		column = "claude_session_id"
+	}
+	_, err := d.st.db.Exec(`UPDATE cto SET ` + column + `='' WHERE id=1`)
+	return err
 }
 
 func (d *Daemon) prepareCTOHarness(settings protocol.CTOSettings) (ctoHarness, error) {
 	var h ctoHarness = openCodeCTOHarness{}
-	if settings.Harness == "claude" {
+	switch settings.Harness {
+	case "claude":
 		h = claudeCTOHarness{}
+	case "", "opencode":
+	default:
+		return nil, fmt.Errorf("the CTO cannot run on %s yet; its list must name opencode or claude", settings.Harness)
 	}
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
@@ -148,7 +215,7 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 		return protocol.CTOEvents{}, err
 	}
 	defer d.ctoDispatchMu.unlock()
-	h, err := d.selectedCTOHarness(ctx)
+	h, err := d.prepareStoredCTOHarness(ctx)
 	if err != nil {
 		return protocol.CTOEvents{}, err
 	}
@@ -236,9 +303,6 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (protocol.Ent
 			return plan, e
 		}
 		model := settings.ClaudeModel
-		if model == "" {
-			model = "opus"
-		}
 		id, e := d.claudeCTOSession()
 		if e != nil {
 			return plan, e

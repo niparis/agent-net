@@ -373,11 +373,14 @@ type ChiefSetRequest struct {
 	Provider  string `json:"provider,omitempty" jsonschema:"provider of the chief model; derived from the model when empty"`
 	Model     string `json:"model,omitempty" jsonschema:"chief model, resolved like a worker model; a model no machine lists is refused"`
 	Effort    string `json:"effort,omitempty" jsonschema:"effort of the chief model, for example medium"`
+	// Models replaces the whole ordered list. The single fields above change
+	// its first entry, which is the chief's current choice.
+	Models []RoleModel `json:"models,omitempty" jsonschema:"ordered chief model list; each entry is a full candidate"`
 }
 
 // HasModel reports whether the request changes the chief's model.
 func (r ChiefSetRequest) HasModel() bool {
-	return r.Harness != "" || r.Provider != "" || r.Model != "" || r.Effort != ""
+	return r.Harness != "" || r.Provider != "" || r.Model != "" || r.Effort != "" || len(r.Models) > 0
 }
 
 // Validate refuses a request that names nothing to do, or that asks to clear

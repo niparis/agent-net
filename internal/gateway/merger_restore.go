@@ -19,11 +19,11 @@ func (s *Store) RestoreMergerRegistrations(project string, saved []protocol.Merg
 			return reject("invalid merger snapshot")
 		}
 		var valid bool
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='' AND s.harness='claude')`, q.SessionID, q.NodeID, project).Scan(&valid); err != nil {
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='')`, q.SessionID, q.NodeID, project).Scan(&valid); err != nil {
 			return err
 		}
 		if !valid {
-			return reject("saved merger is not a Claude session of this project")
+			return reject("saved merger is not a session of this project")
 		}
 	}
 	// The shipped deletion trigger resets merger routing. Preserve those

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -681,16 +682,18 @@ func TestNoProviderAvailableJoinsQuotaThreads(t *testing.T) {
 	out := func(provider string) protocol.QuotaProvider {
 		return protocol.QuotaProvider{Provider: provider, Windows: []protocol.QuotaWindow{{ID: "5h", Kind: "rolling", PercentUsed: 100, Exhausted: true}}}
 	}
-	room := protocol.QuotaProvider{Provider: "deepseek", Windows: []protocol.QuotaWindow{{ID: "5h", Kind: "rolling", PercentUsed: 10}}}
-	quotas := &protocol.Quotas{Providers: []protocol.QuotaProvider{out("zai"), out("kimi"), room}}
-	both := []protocol.WorkerModelCandidate{{Harness: "opencode", Model: "zai/glm-5"}, {Harness: "opencode", Model: "moonshot/kimi-k3"}}
-	withRoom := append(both, protocol.WorkerModelCandidate{Harness: "opencode", Model: "deepseek/deepseek-v4"})
-	g.noProviderFeed(withRoom, quotas)
-	if res, _ := s.CTOIntake(0); res.Total != 0 {
-		t.Fatalf("%d entries although one candidate had room", res.Total)
+	out("zai")
+	exhausted := func(harness, modelName, reason string) model.Skip {
+		return model.Skip{Candidate: model.Candidate{Harness: harness, Model: modelName}, Check: "exhausted", Reason: reason}
 	}
-	g.noProviderFeed(both, quotas)
-	g.noProviderFeed(both, quotas)
+	both := []model.Skip{exhausted("opencode", "zai/glm-5", "zai has 0% left"), exhausted("opencode", "moonshot/kimi-k3", "kimi has 0% left")}
+	withOtherReason := append(append([]model.Skip(nil), both...), model.Skip{Candidate: model.Candidate{Harness: "opencode", Model: "deepseek/deepseek-v4"}, Check: "floor", Reason: "under the worker floor"})
+	g.noProviderFeed(withOtherReason)
+	if res, _ := s.CTOIntake(0); res.Total != 0 {
+		t.Fatalf("%d entries although one candidate was skipped for another check", res.Total)
+	}
+	g.noProviderFeed(both)
+	g.noProviderFeed(both)
 	var items int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE kind=?`, protocol.AskKindQuotaStuck).Scan(&items); err != nil || items != 2 {
 		t.Fatalf("%d stuck items, want one per provider: %v", items, err)

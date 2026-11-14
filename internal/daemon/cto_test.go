@@ -834,7 +834,7 @@ func TestCTOBriefDirectsGraphLocationLookup(t *testing.T) {
 }
 
 func TestCTONewProjectRecipe(t *testing.T) {
-	for _, want := range []string{"projects_layout", "claude-opus-5-5", "one short question", "project_change", "Report the result and session location"} {
+	for _, want := range []string{"projects_layout", "your own ordered CTO list", "one short question", "project_change", "Report the result and session location"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("CTO brief lacks %q", want)
 		}

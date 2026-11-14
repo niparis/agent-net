@@ -40,7 +40,7 @@ func TestMergerStartStopProposal(t *testing.T) {
 			if err != nil || len(items) != 1 {
 				t.Fatalf("proposals=%v err=%v", items, err)
 			}
-			if !strings.Contains(items[0].Reason, "garden merger: Claude Opus session in garden on ") || strings.Contains(items[0].Reason, "default pipeline") != tc.optional {
+			if !strings.Contains(items[0].Reason, "garden merger: claude · anthropic · claude-opus-5-5 session in garden on ") || strings.Contains(items[0].Reason, "default pipeline") != tc.optional {
 				t.Fatalf("approval=%s", items[0].Reason)
 			}
 			if _, err := os.Stat(filepath.Join(repo, "fake-claude.json")); !os.IsNotExist(err) {

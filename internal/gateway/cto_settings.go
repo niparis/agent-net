@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"unicode"
 
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -114,9 +116,25 @@ func (g *Gateway) handleCTOSettingsSet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad model", http.StatusBadRequest)
 		return
 	}
-	if in.Harness != nil && *in.Harness != "opencode" && *in.Harness != "claude" {
+	if in.Harness != nil && !slices.Contains(harnesses.Names, *in.Harness) {
 		http.Error(w, "bad harness", http.StatusBadRequest)
 		return
+	}
+	if in.Models != nil {
+		if len(*in.Models) > 8 {
+			http.Error(w, "too many CTO models", http.StatusBadRequest)
+			return
+		}
+		for _, m := range *in.Models {
+			if m.IsZero() || !slices.Contains(harnesses.Names, m.Harness) {
+				http.Error(w, "bad CTO model entry", http.StatusBadRequest)
+				return
+			}
+			if strings.IndexFunc(m.Harness+m.Provider+m.Model+m.Effort, unicode.IsControl) >= 0 {
+				http.Error(w, "bad CTO model entry", http.StatusBadRequest)
+				return
+			}
+		}
 	}
 	if in.Title != nil {
 		title, err := protocol.NormalizeCTOTitle(*in.Title)
@@ -126,7 +144,7 @@ func (g *Gateway) handleCTOSettingsSet(w http.ResponseWriter, r *http.Request) {
 		}
 		*in.Title = title
 	}
-	if in.Model == nil && in.Harness == nil && in.Title == nil {
+	if in.Model == nil && in.Harness == nil && in.Title == nil && in.Models == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -140,6 +158,9 @@ func (g *Gateway) handleCTOSettingsSet(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Harness != nil {
 		current.Harness = *in.Harness
+	}
+	if in.Models != nil {
+		current.Models = *in.Models
 	}
 	if in.Title != nil {
 		current.Title = protocol.CTOTitleOrDefault(*in.Title)

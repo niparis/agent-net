@@ -29,12 +29,12 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 		err = s.stopMergerTx(tx, q.Project, actor)
 	} else {
 		var valid int
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='' AND s.harness='claude')`, q.SessionID, q.NodeID, q.Project).Scan(&valid)
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='')`, q.SessionID, q.NodeID, q.Project).Scan(&valid)
 		if err != nil {
 			return err
 		}
 		if valid == 0 {
-			return reject("merger must be a Claude session of this project on this machine")
+			return reject("merger must be a session of this project on this machine")
 		}
 		_, err = tx.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES(?,?,?) ON CONFLICT(project,node_id) DO UPDATE SET session_id=excluded.session_id`, q.Project, q.NodeID, q.SessionID)
 		if err == nil {

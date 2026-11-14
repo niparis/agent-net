@@ -404,12 +404,16 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 		if name == "merger_stop" {
 			return d.call(ctx, "merger.set", map[string]any{"project": project.Name, "node_id": node, "session_id": "", "configure": true, "by": proposalActor(ctx), "owner_session": d.ownerSessionID()})
 		}
-		p.Project, p.NodeID, p.Harness, p.Merger, p.CTOProposal = project.Name, node, "claude", true, true
+		p.Project, p.NodeID, p.Merger, p.CTOProposal = project.Name, node, true, true
 		p.Folder, p.Branch, p.Create = "", "", false
 		p.FirstMessage = MergerFirstMessage
-		if p.Model == "" {
-			p.Model = "claude-opus-5-5"
+		// The merger is a role, not a special case: its ordered list goes
+		// through the one gate (decision 0162).
+		pick, err := d.pickRoleOnMachine(ctx, protocol.RoleMerger, node, nil, protocol.RoleModel{}, false)
+		if err != nil {
+			return nil, errors.New("merger model: " + err.Error())
 		}
+		p.Harness, p.Model = pick.Harness, pick.Model
 		return d.sessionStart(ctx, p)
 	}
 	if name == "session_stop" || name == "session_resume" || name == "session_restart" {

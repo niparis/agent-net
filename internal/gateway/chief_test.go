@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // chiefRig is a store with a live chief (a), an asker (b) and a node. The chief
@@ -723,5 +724,32 @@ func TestChiefSetEmptyRefusedClearClears(t *testing.T) {
 func TestChiefSetFrameRefusesUnknownArgument(t *testing.T) {
 	if _, err := decodeOperator[protocol.ChiefSetRequest]([]byte(`{"foo":1}`)); err == nil || !strings.Contains(err.Error(), "foo") {
 		t.Fatalf("err = %v, want the unknown argument foo named", err)
+	}
+}
+
+// The chief's model setting is an ordered list. Models replaces it whole, and
+// the status names the first entry, which is the chief's current choice.
+func TestChiefSetReplacesTheOrderedList(t *testing.T) {
+	s, _ := chiefModelRig(t)
+	models := []protocol.RoleModel{
+		{Harness: "claude", Provider: "anthropic", Model: "claude-opus-5-5"},
+		{Harness: "claude", Provider: "anthropic", Model: "claude-sonnet-5-5", Effort: "high"},
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{Models: models}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := snap.String(protocol.ChiefModelKey, settings.Where{}), protocol.FormatRoleModels(models); got != want {
+		t.Fatalf("chief.model = %q, want %q", got, want)
+	}
+	st, err := s.ChiefStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Model != models[0].Display() {
+		t.Fatalf("status model = %q, want the first entry %q", st.Model, models[0].Display())
 	}
 }

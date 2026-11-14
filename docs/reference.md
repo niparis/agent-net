@@ -228,10 +228,12 @@ session, including replies through Claude Code's reply socket. Replies to
 personal owner messages stay with the owner. Peer bodies are quoted as data.
 
 The owner-only `cto_settings` operator method reads and saves the active CTO
-harness, its model, the saved model for each harness, the owner-facing title,
-and conversation auto-compaction rules. The response has `title`, `harness`,
-`model`, `opencode_model` and
-`claude_model`. A set request with `harness` and `model` saves the model for
+harness, its model, the saved model for each harness, the ordered CTO model
+list, the owner-facing title, and conversation auto-compaction rules. The
+response has `title`, `harness`, `model`, `opencode_model`, `claude_model` and
+`models`. `models` is the ordered list from [Model choice](#model-choice); a
+set request with `models` replaces it, and `harness` or `model` changes its
+first entry. A set request with `harness` and `model` saves the model for
 that harness and makes it active. A request with only `harness` switches the
 active harness without changing either model. An empty model selects that
 harness's default. A request with only `title` changes the name on the owner's
@@ -240,11 +242,13 @@ screens. The title is 1 to 24 printable characters, trimmed, and cannot contain
 gateway's `owner_settings` as `cto_title`, not in the local daemon state. Agents
 never see it: agent-net's notes always say `CTO`.
 
-The active harness and both model preferences are stored in the local daemon
-state. A legacy single model is moved to `opencode_model` when it has a
-provider prefix such as `opencode-go/deepseek-v4.1-flash`; otherwise it is moved
-to `claude_model`. OpenCode uses its inventory default when its saved model is
-empty. Claude Code uses `opus` when its saved model is empty. Pass a `compaction`
+The active harness, both model preferences and the ordered model list are
+stored in the local daemon state. A legacy single model is moved to
+`opencode_model` when it has a provider prefix such as
+`opencode-go/deepseek-v4.1-flash`; otherwise it is moved to `claude_model`. An
+install with a saved harness and model starts with a one-entry list of that
+choice; a fresh install uses the `cto.models` setting. OpenCode uses its
+inventory default when its saved model is empty, and so does Claude Code. Pass a `compaction`
 object to change the auto-compaction rules; the gateway stores those rules with
 the other owner settings. Saving settings does not start a CTO runtime.
 
@@ -786,6 +790,25 @@ the box and Esc skips the current tip. In help, `T` turns tips off or on
 and `R` restarts them from the first step. Progress is shared across machines.
 
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
+
+## Model choice
+
+Every session start that runs a model chooses it through one path (decision 0162): a ranker orders the candidates, modifiers reorder them, and the gate returns the first that can run now. The owner page is [model-choice.md](model-choice.md).
+
+The gate's locked checks are: the harness is installed and signed in on the machine, provider authentication is not blocked, the provider is not exhausted, and no live session reported a provider limit (`sessions.limited_until`). No caller can switch them off. The optional checks (worker floor, 90% block, burn hold, cooling) are fixed per caller in `internal/model/policy.go`; a test pins each row.
+
+The role lists are settings: `cto.models`, `chief.model` and `merger.models`.
+Each is an ordered list, one entry per line as
+`harness · provider · model · effort`. An install with a saved model starts
+with that model as a one-entry list; the CTO's default list also has a Claude
+entry as a fallback. The CTO list is also local daemon state; the daemon
+resolves an entry with no model to the harness's live default. The gateway
+reads the chief and merger lists from the settings snapshot. The worker frame
+`worker.role.pick` (`protocol.RolePickRequest`) returns the gate's choice, its
+one-line refusal, and whether a resume fell to a new conversation. A merger
+session no longer has to be a Claude session.
+
+The worker floor, 90% block, burn hold and quota refusal functions are called only in `internal/model`; `internal/model/pin_test.go` checks that no production file outside it calls them or builds a `Granted`.
 
 ## Standing orders
 

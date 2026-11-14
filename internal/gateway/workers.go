@@ -96,6 +96,12 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			return nil, err
 		}
 		return g.pickDifficultyJudge(nc.id, p)
+	case "worker.role.pick":
+		p, err := decodeOperator[protocol.RolePickRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		return g.pickRole(nc.id, p)
 	case "worker.profile.list", "worker.profile.add", "worker.profile.remove":
 		p, err := decodeOperator[protocol.WorkerProfileFrame](raw)
 		if err != nil {
@@ -877,7 +883,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				}
 				appendGateSkips(roster, chosen.Skips)
 				if !(len(validate) > 0 && validate[0]) {
-					g.noProviderFeed(candidates, quotas)
+					g.noProviderFeed(chosen.Skips)
 				}
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
