@@ -213,6 +213,7 @@ type Model struct {
 	moveConfirm               *protocol.AgentView // a hand-started Claude session the owner may move to the background
 	showOffline               bool
 	activeOnly                bool
+	groupedSessions           bool // the Sessions list in Needs you, Working and Idle groups; false is the tree view
 	hiddenSessions            map[string]bool
 	pendingStops              map[string]pendingStop
 	hiddenNodes               map[string]bool
@@ -2197,6 +2198,10 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.toggleSessionTrees(false)
 	case "toggle all trees":
 		m.toggleSessionTrees(true)
+	case "toggle session groups":
+		m.groupedSessions = !m.groupedSessions
+		m.ensureSelection()
+		m.fixScroll()
 	case "cycle view":
 		m.cycleSessionView()
 		m.ensureSelection()
@@ -2384,13 +2389,16 @@ func (m Model) feedItemAt(i int) *feedItem {
 
 // ---- the list of sessions ----
 
-// group is one urgency band of complete session trees.
+// group is one urgency band of session rows. The tree view has one group, with
+// tree set: its header counts the sessions and the busy ones.
 type group struct {
 	host   string
+	tree   bool
 	agents []protocol.AgentView
 	// hidden counts idle sessions folded out of the active view.
 	hidden int
 	total  int
+	busy   int
 	first  bool
 	// marks says how a worker row is drawn, by session ID. A session with no
 	// mark is a plain row.
@@ -2463,15 +2471,17 @@ func (m Model) sessionGroups(collapse bool) []group {
 		shown[a.SessionID] = a
 		eligible[a.SessionID] = live && a.Status != protocol.StatusDormant || m.showOffline || strings.TrimSpace(m.filter) != "" || a.StalledSince > 0 || m.sessionNeedsOwner(a)
 	}
+	// The sort and the walk ask each session's flags many times, so read them once.
+	flags := make(map[string]sessionFlags, len(shown))
+	for id, a := range shown {
+		flags[id] = sessionFlags{working: m.sessionWorking(a), needs: m.sessionNeedsOwner(a)}
+	}
+	// In the Groups view a row nests only under a parent in its own group, so
+	// a child never sits under a row it is not grouped with.
 	parents := map[string]string{}
 	for id, a := range shown {
-		parent := ""
-		if a.Worker != nil {
-			parent = a.Worker.Owner
-		} else {
-			parent = m.reportParent(a, shown)
-		}
-		if _, ok := shown[parent]; ok && parent != id {
+		parent := m.sessionParent(a, shown)
+		if _, ok := shown[parent]; ok && parent != id && (!m.groupedSessions || flags[parent].band() == flags[id].band()) {
 			parents[id] = parent
 		}
 	}
@@ -2521,6 +2531,11 @@ func (m Model) sessionGroups(collapse bool) []group {
 		if ca, cb := m.isChief(a), m.isChief(b); ca != cb {
 			return ca
 		}
+		if !m.groupedSessions {
+			if ra, rb := flags[a.SessionID].rank(), flags[b.SessionID].rank(); ra != rb {
+				return ra < rb
+			}
+		}
 		if (a.PinnedAt > 0) != (b.PinnedAt > 0) {
 			return a.PinnedAt > 0
 		}
@@ -2555,6 +2570,11 @@ func (m Model) sessionGroups(collapse bool) []group {
 	sort.SliceStable(roots, func(i, j int) bool { return less(roots[i], roots[j]) })
 	for _, cs := range children {
 		sort.Slice(cs, func(i, j int) bool {
+			if !m.groupedSessions {
+				if ri, rj := flags[cs[i].SessionID].rank(), flags[cs[j].SessionID].rank(); ri != rj {
+					return ri < rj
+				}
+			}
 			if isMerger(cs[i]) != isMerger(cs[j]) {
 				return !isMerger(cs[i])
 			}
@@ -2565,13 +2585,16 @@ func (m Model) sessionGroups(collapse bool) []group {
 		})
 	}
 	bands := []group{{host: "Needs you"}, {host: "Working"}, {host: "Idle"}}
+	if !m.groupedSessions {
+		bands = []group{{tree: true}}
+	}
 	for i := range bands {
 		bands[i].marks = map[string]treeMark{}
 	}
 	for _, root := range roots {
 		var tree []protocol.AgentView
 		marks := map[string]treeMark{}
-		band, busy := 2, 0
+		band, busy, working := 2, 0, 0
 		matched, pinned := false, false
 		subagent := false
 		var walk func(protocol.AgentView, string)
@@ -2580,13 +2603,11 @@ func (m Model) sessionGroups(collapse bool) []group {
 			matched = matched || matches(a, m.filter)
 			pinned = pinned || a.PinnedAt > 0
 			subagent = subagent || a.Worker != nil || isMerger(a)
-			live := !sessionEnded(a)
-			if live && m.sessionNeedsOwner(a) {
-				band = 0
-			} else if live && (m.mergerWorking(a) || a.Status == "busy" || m.activeWithin(a, workingGrace)) {
-				band = min(band, 1)
+			band = min(band, flags[a.SessionID].band())
+			if flags[a.SessionID].working {
+				working++
 			}
-			if live && a.Status == "busy" {
+			if !sessionEnded(a) && a.Status == "busy" {
 				busy++
 			}
 			cs := children[a.SessionID]
@@ -2606,8 +2627,13 @@ func (m Model) sessionGroups(collapse bool) []group {
 		if !matched {
 			continue
 		}
-		g := &bands[band]
+		slot := band
+		if !m.groupedSessions {
+			slot = 0
+		}
+		g := &bands[slot]
 		g.total += len(tree)
+		g.busy += working
 		// An idle tree with a subagent stays whole: dropping it would hide the
 		// merger or worker the owner needs to see. Only plain idle agents fold.
 		if band == 2 && m.activeOnly && m.filter == "" && !pinned && !subagent {
@@ -2746,6 +2772,56 @@ func projectOf(a protocol.AgentView) string {
 // session stays at the top level.
 func (m Model) reportParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
 	return m.sessionOfAgent(a.ReportsTo, a.SessionID, shown)
+}
+
+// sessionParent is the shown session a session nests under. A worker nests
+// under the session that started it. A merger nests under its lead in both
+// views. Any other session nests under its Agent's lead only in the tree view:
+// the Groups view nests nothing else, as it did before the org tree.
+func (m Model) sessionParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
+	if a.Worker != nil {
+		return a.Worker.Owner
+	}
+	if m.groupedSessions && !isMerger(a) {
+		return ""
+	}
+	return m.reportParent(a, shown)
+}
+
+// sessionFlags is what the list reads from a session more than once.
+type sessionFlags struct{ working, needs bool }
+
+// band is the Groups view group of a session: 0 Needs you, 1 Working or 2 Idle.
+func (f sessionFlags) band() int {
+	switch {
+	case f.needs:
+		return 0
+	case f.working:
+		return 1
+	}
+	return 2
+}
+
+// rank orders the rows that share a parent in the tree view: busy rows first,
+// then rows that need the owner, then the rest. A busy row that also waits for
+// the owner leads the busy rows: the owner must answer it before anything else
+// that is only busy. The rest keep the order the tree gave them before.
+func (f sessionFlags) rank() int {
+	switch {
+	case f.working && f.needs:
+		return 0
+	case f.working:
+		return 1
+	case f.needs:
+		return 2
+	}
+	return 3
+}
+
+// sessionWorking tells whether a live session counts as busy: its harness says
+// busy, its merger holds a step, or it was active within the grace period.
+func (m Model) sessionWorking(a protocol.AgentView) bool {
+	return !sessionEnded(a) && (m.mergerWorking(a) || a.Status == "busy" || m.activeWithin(a, workingGrace))
 }
 
 // sessionOfAgent picks the shown session that stands for an Agent. The pinned

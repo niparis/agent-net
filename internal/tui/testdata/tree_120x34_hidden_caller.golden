@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME                            MACHINE      PROJECT    MODEL                 STATUS    CPU   RAM TASK
- Idle (4)                                                                                                 view: all  (v)
+ 4 sessions · 0 busy                                                                                      view: all  (v)
 ▸ ◐ strategies                    Mac          strategies claude · sonnet-5-5   idle        ?     ? backtest v2
   ├─ backtest-a                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe
   ├─ backtest-b                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G groups  p pin  ? help  q quit

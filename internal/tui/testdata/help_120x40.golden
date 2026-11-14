@@ -12,6 +12,7 @@ Keys · Sessions ─────────────────────
   z                      collapse or expand the selected tree; on a child, act on its lead
   Z                      collapse or expand all session trees
   v                      cycle the view: active (default) or all, which includes offline sessions
+  G                      switch between one tree (the default) and groups: Needs you, Working and Idle
   H                      show or hide sessions hidden with h, and temp-folder sessions in the all view
   a                      in the offline view, preview and archive offline sessions, or show archived and restore
   p                      pin or unpin the selected session so it stays visible in Idle
@@ -31,7 +32,6 @@ Keys · Sessions ─────────────────────
   C                      focus the CTO box
   ?                      help
   q, ctrl+c              quit
-
 
 
 

@@ -5,10 +5,9 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- Working (2)                                                             all (v)
+ 6 sessions · 2 busy                                                     all (v)
 ▸ ↳ tenebrae     Mac     tenebrae  opencode · … busy        ?     ?
   tenebrae-53    Mac     tenebrae  claude · op… busy        ?     ?
- Idle (4)
   ◐ strategies   Mac     strategi… claude · so… idle        ?     ? backtest v2
   web            Mac     shop      opencode · … idle        ?     ?
   ◐ ci-runner    build-… agent-net pi · gpt-6   idle        ?     ?
@@ -17,8 +16,9 @@
 
 
 
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop or remove  p pin  q quit
+up/down select  enter open  m msg  x stop or remove  G groups  p pin  q quit

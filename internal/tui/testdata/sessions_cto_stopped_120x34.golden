@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT   MODEL                    STATUS    CPU   RAM TASK
- Idle (1)                                                                                                 view: all  (v)
+ 1 sessions · 0 busy                                                                                      view: all  (v)
 ▸ CTO cto            Mac          -         cto                      dormant
 
 

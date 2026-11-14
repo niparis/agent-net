@@ -5,10 +5,10 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- Working╭─Find session──────────────────────────────────────4 matches─╮ctive (v)
+ 5 sessi╭─Find session──────────────────────────────────────4 matches─╮ctive (v)
 ▸ tenebr│ › st▌                                                       │
- Idle (4│   NAME        PROJECT    MACHINE    HARNESS   STATE     AGE │
-  4 more│ › strategies  strategies Mac        claude    idle       2h │
+  4 more│   NAME        PROJECT    MACHINE    HARNESS   STATE     AGE │
+        │ › strategies  strategies Mac        claude    idle       2h │
         │   tenebrae-53 tenebrae   Mac        claude    busy       2h │
         │   ci-runner   agent-net  build-vm   pi        idle       2h │
         │   scratch     -          build-vm   pi        shell      2h │
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop or remove  p pin  q quit
+up/down select  enter open  m msg  x stop or remove  G groups  p pin  q quit

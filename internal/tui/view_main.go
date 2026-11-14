@@ -1296,7 +1296,11 @@ func (m Model) sessionsTable(w, n int) []string {
 
 // groupLine names an urgency band and puts the Inbox count on the first one.
 func (m Model) groupLine(g group, w int) string {
-	head := " " + sBold.Render(fmt.Sprintf("%s (%d)", g.host, g.total))
+	label := fmt.Sprintf("%s (%d)", g.host, g.total)
+	if g.tree {
+		label = fmt.Sprintf("%d sessions · %d busy", g.total, g.busy)
+	}
+	head := " " + sBold.Render(label)
 	right := ""
 	if g.first && m.waitingCount() > 0 {
 		right = fmt.Sprintf("Desk: %d to decide", m.waitingCount())

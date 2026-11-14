@@ -664,7 +664,7 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	for _, want := range []string{
 		"Mac", "old-box", "7 Desk", "cpu", "mem", "no claude",
 		"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
-		"tenebrae-53", "busy", "Idle", "CTO",
+		"tenebrae-53", "busy", "sessions ·", "CTO",
 		"up/down select", "q quit",
 	} {
 		if !strings.Contains(out, want) {
@@ -845,8 +845,8 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	}
 	// Scrolled into the middle of a machine, its heading stays on top.
 	m = keys(m, "g", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
-	if v := lines(m.testView()); !strings.Contains(strings.Join(v, "\n"), "Idle (") {
-		t.Fatalf("no machine heading above the scrolled table:\n%s", strings.Join(v, "\n"))
+	if v := lines(m.testView()); !strings.Contains(strings.Join(v, "\n"), "sessions ·") {
+		t.Fatalf("no tree heading above the scrolled table:\n%s", strings.Join(v, "\n"))
 	}
 	if !strings.Contains(m.testView(), "▸ ") {
 		t.Fatal("the selection scrolled out of the table")

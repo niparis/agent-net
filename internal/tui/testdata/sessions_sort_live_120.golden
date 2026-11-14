@@ -37,4 +37,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G tree  p pin  ? help  q quit

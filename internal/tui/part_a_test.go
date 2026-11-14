@@ -176,6 +176,7 @@ func TestSessionsAreOrderedByActivityAndStay(t *testing.T) {
 
 func TestSessionsGroupsDoNotDependOnMachineOrder(t *testing.T) {
 	m := treeModel(120, 34, fakeSnapshot())
+	m.groupedSessions = true
 	for _, g := range m.groups() {
 		if g.host != "Working" && g.host != "Idle" {
 			t.Fatalf("group %s", g.host)
@@ -217,6 +218,7 @@ func TestActiveOnlyHidesQuietIdleSessions(t *testing.T) {
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
+	m.groupedSessions = true
 	m = settle(refresh(m, src))
 	if !m.idleLong(snap.Agents[2]) {
 		t.Fatal("web is not quiet by the rule")

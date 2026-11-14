@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT    MODEL                    STATUS    CPU   RAM TASK
- Idle (5)                                                                                                 view: all  (v)
+ 5 sessions · 0 busy                                                                                      view: all  (v)
 ▸ tenebrae-53        Mac          tenebrae   claude · opus-5-5        idle      38%  1.2G ! no tools ingest the forge b…
   ◐ strategies       Mac          strategies claude · sonnet-5-5      idle     240%  4.6G backtest v2
   web                Mac          shop       opencode · sonnet-5      idle        ?     ?
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G groups  p pin  ? help  q quit

@@ -85,6 +85,7 @@ func liveSortModel(all bool) Model {
 
 func TestSessionsLiveSortOrder(t *testing.T) {
 	m := liveSortModel(false)
+	m.groupedSessions = true
 	want := []string{
 		"homelab-agent",
 		"tenebrae", "wbg-flood-wargame", // the tree rises on its most recent member
@@ -138,6 +139,7 @@ func TestExitedSessionLeavesWorking(t *testing.T) {
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return liveSortNow }
 	m.activeOnly, m.showOffline = false, true
+	m.groupedSessions = true
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = settle(refresh(m, src))
 	for _, g := range m.groups() {
@@ -166,11 +168,14 @@ func TestExitedSessionLeavesWorking(t *testing.T) {
 }
 
 func TestSessionsLiveSortScene(t *testing.T) {
-	golden(t, "sessions_sort_live_120", liveSortModel(false).testView())
+	m := liveSortModel(false)
+	m.groupedSessions = true
+	golden(t, "sessions_sort_live_120", m.testView())
 }
 
 func TestSessionsExitedScene(t *testing.T) {
 	m := liveSortModel(true)
+	m.groupedSessions = true
 	snap := m.snap
 	snap.Agents = append(snap.Agents, agent("s_exited_root", "n_mac", "Mac", "claude", "wbg-retired", func(a *protocol.AgentView) {
 		a.Status, a.Online = "exited", true

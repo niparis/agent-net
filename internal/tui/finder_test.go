@@ -394,7 +394,7 @@ func TestNarrowViewLabelPreservesModelWidth(t *testing.T) {
 		t.Fatal("view label shortened MODEL")
 	}
 	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, "active (v)") && !strings.Contains(line, "Working (") {
+		if strings.Contains(line, "active (v)") && !strings.Contains(line, "Working (") && !strings.Contains(line, "sessions ·") {
 			t.Fatal("label must be on the urgency heading")
 		}
 	}

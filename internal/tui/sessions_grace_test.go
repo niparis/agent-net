@@ -11,13 +11,16 @@ import (
 )
 
 // quietModel is one idle session that last did something at the given age.
+// It shows the Groups view, where the Working and Idle bands are drawn.
 func quietModel(age time.Duration, online bool) Model {
 	snap := Snapshot{Connected: true, Agents: []protocol.AgentView{{
 		SessionID: "quiet", NodeID: "one", Hostname: "desk", Online: online,
 		Status: "idle", Harness: "claude", LastActive: t0.Add(-age).Unix(),
 		Profile: protocol.Profile{Name: "quiet"},
 	}}}
-	return treeModel(120, 34, snap)
+	m := treeModel(120, 34, snap)
+	m.groupedSessions = true
+	return m
 }
 
 // A session that did something in the last hour stays in the Working band.
@@ -61,6 +64,7 @@ func TestEveryHarnessStaysWorkingForAnHour(t *testing.T) {
 				Online: true, Status: "idle", LastActive: t0.Add(-2 * time.Hour).Unix(), LastSeen: t0.Unix(),
 				Profile: protocol.Profile{Name: "kid"}, Worker: &protocol.WorkerInfo{ID: "w_kid", Owner: "s_root"}}
 			m := treeModel(120, 40, Snapshot{Connected: true, Agents: []protocol.AgentView{root, kid}})
+			m.groupedSessions = true
 			if got := groupOf(m, "s_root").host; got != "Working" {
 				t.Fatalf("24 minutes after activity: group %q, want Working", got)
 			}
@@ -68,7 +72,7 @@ func TestEveryHarnessStaysWorkingForAnHour(t *testing.T) {
 			// The same session quiet for over an hour is Idle.
 			root.LastActive = t0.Add(-61 * time.Minute).Unix()
 			m = treeModel(120, 40, Snapshot{Connected: true, Agents: []protocol.AgentView{root}})
-			m.activeOnly = false
+			m.activeOnly, m.groupedSessions = false, true
 			if got := groupOf(m, "s_root").host; got != "Idle" {
 				t.Fatalf("61 minutes after activity: group %q, want Idle", got)
 			}

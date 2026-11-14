@@ -161,7 +161,12 @@ func (m Model) hints() []hint {
 	}
 	pin := bindingHint(contextSessions, "pin")
 	pin.prio = 1
-	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), {key: "x", label: "stop or remove", prio: 1}, {key: "X", label: "remove all offline", prio: 2}, pin, sessionHelp, sessionQuit}
+	layout := bindingHint(contextSessions, "toggle session groups")
+	layout.prio = 1
+	if m.groupedSessions {
+		layout.label = "tree"
+	}
+	hs := []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSessions, "open session"), bindingHint(contextSessions, "compose"), {key: "x", label: "stop or remove", prio: 1}, layout, pin, sessionHelp, sessionQuit}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"

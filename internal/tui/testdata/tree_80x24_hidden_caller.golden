@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- Idle (4)                                                                all (v)
+ 4 sessions · 0 busy                                                     all (v)
 ▸ ◐ strategies   Mac     strategi… claude · so… idle        ?     ? backtest v2
   ├─ backtest-a  Mac     -         opencode · … idle        ?     ? probe
   ├─ backtest-b  Mac     -         opencode · … idle        ?     ? probe
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop or remove  p pin  q quit
+up/down select  enter open  m msg  x stop or remove  G groups  p pin  q quit

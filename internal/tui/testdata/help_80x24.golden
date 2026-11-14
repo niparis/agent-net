@@ -16,9 +16,9 @@ Keys · Sessions ─────────────────────
   Z                      collapse or expand all session trees
   v                      cycle the view: active (default) or all, which includes
                          offline sessions
+  G                      switch between one tree (the default) and groups: Needs
+                         you, Working and Idle
   H                      show or hide sessions hidden with h, and temp-folder
-                         sessions in the all view
-  a                      in the offline view, preview and archive offline
   more below
 
 up/down scroll  ? all screens  esc close

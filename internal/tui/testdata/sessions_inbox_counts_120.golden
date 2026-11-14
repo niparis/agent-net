@@ -1,5 +1,5 @@
   NAME               MACHINE      PROJECT    MODEL                    STATUS             CPU   RAM TASK
- Working (5)                                                                                              view: all  (v)
+ 5 sessions · 5 busy                                                                                      view: all  (v)
 ▸ tenebrae-53        Mac          tenebrae   claude · opus-5-5        busy gw 3 · in 1   38%  1.2G
   ◐ strategies       Mac          strategies claude · sonnet-5-5      idle              240%  4.6G backtest v2
   web                Mac          shop       opencode · sonnet-5      idle                 ?     ?

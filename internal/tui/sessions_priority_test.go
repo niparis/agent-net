@@ -24,16 +24,19 @@ func priorityModel() Model {
 
 func TestSessionsPriorityGroups(t *testing.T) {
 	m := priorityModel()
+	m.groupedSessions = true
 	g := m.groups()
 	if len(g) != 2 || g[0].host != "Working" || g[1].host != "Idle" {
 		t.Fatalf("groups: %+v", g)
 	}
-	if got := strings.Join(ids(m), ","); got != "lead,kid,merge,pin" {
+	// Each row is in the group of its own status: the busy worker is Working
+	// while its idle lead stays Idle.
+	if got := strings.Join(ids(m), ","); got != "kid,pin,lead,merge" {
 		t.Fatalf("order %s", got)
 	}
 	m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "kid", Kind: "question", Status: "open"}})
-	if g = m.groups(); g[0].host != "Needs you" || len(g[0].agents) != 3 {
-		t.Fatalf("question did not move whole tree: %+v", g)
+	if g = m.groups(); g[0].host != "Needs you" || len(g[0].agents) != 1 {
+		t.Fatalf("question did not move only its row: %+v", g)
 	}
 	m.asks = nil
 	m.snap.Agents[1].Status = "needs you"
@@ -44,6 +47,7 @@ func TestSessionsPriorityGroups(t *testing.T) {
 
 func TestOfflineWaitingSessionIsIdle(t *testing.T) {
 	m := priorityModel()
+	m.groupedSessions = true
 	m.activeOnly = false
 	m.snap.Agents[0].Online = false
 	m.snap.Agents[0].Status = "busy"
@@ -88,7 +92,9 @@ func TestSessionsPriorityCollapse(t *testing.T) {
 	m.selected = "kid"
 	m.ensureSelection()
 	m = keys(m, "z")
-	if got := strings.Join(ids(m), ","); got != "lead,pin" {
+	// The busy row comes first among its siblings; the pinned idle lead is
+	// not busy, so the pinned pin row leads.
+	if got := strings.Join(ids(m), ","); got != "pin,lead" {
 		t.Fatalf("collapsed %s", got)
 	}
 	if m.selected != "lead" {
@@ -173,7 +179,7 @@ func TestIdleMergerFollowsProjectChangeCaller(t *testing.T) {
 	m.snap.Agents[0].RepoLeadExplicit = false
 	m.delivery.changes = []deliveryChange{{ID: "ch_one", Repo: "demo", State: protocol.ChangeOpen, Caller: "lead", Updated: 100}}
 	g := groupOf(m, "merge")
-	if g.host == "" {
+	if indexOfID(agentIDs(g.agents), "merge") < 0 {
 		t.Fatalf("merger is folded: %v", ids(m))
 	}
 	if mk := g.marks["merge"]; mk.root != "lead" {
@@ -188,6 +194,7 @@ func TestIdleMergerFollowsProjectChangeCaller(t *testing.T) {
 // the lead stays as context even when it is idle itself.
 func TestIdleSubagentStaysInTree(t *testing.T) {
 	m := priorityModel()
+	m.groupedSessions = true
 	m.snap.Agents[0].Status = "busy"
 	m.snap.Agents[1].Status = "idle"
 	if indexOfID(ids(m), "kid") < 0 {
@@ -205,8 +212,9 @@ func TestIdleSubagentStaysInTree(t *testing.T) {
 
 // A merger holding a ready or running step counts as working, even when its
 // harness reports idle or shell.
-func TestMergerReadyStepMovesTreeToWorking(t *testing.T) {
+func TestMergerReadyStepMovesItToWorking(t *testing.T) {
 	m := priorityModel()
+	m.groupedSessions = true
 	m.snap.Agents[0].Status = "idle"
 	m.snap.Agents[1].Status = "idle"
 	m.delivery.changes = []deliveryChange{{ID: "ch_merge", Repo: "demo", State: protocol.ChangeOpen, Step: "merge", StepOwner: "merger", OwnerKind: protocol.OwnerMerger, StepState: protocol.StepStateReady}}
@@ -214,8 +222,9 @@ func TestMergerReadyStepMovesTreeToWorking(t *testing.T) {
 	if g.host != "Working" {
 		t.Fatalf("merger band %q, want Working: %+v", g.host, g)
 	}
-	if mk := g.marks["merge"]; mk.root != "lead" {
-		t.Fatalf("merger root %q, want the lead", mk.root)
+	// Its lead is Idle, so the merger is a top-level row of its own group.
+	if mk := g.marks["merge"]; mk.prefix != "" {
+		t.Fatalf("merger nested across groups: %+v", mk)
 	}
 	m.delivery.changes[0].StepState = protocol.StepStateRunning
 	m.delivery.changes[0].ClaimedBy = "merge"
@@ -330,7 +339,7 @@ func TestSessionsPriorityKeepsQuietCallerOfBusyWorker(t *testing.T) {
 	m.snap.Agents[0].Online = false
 	// The caller remains as context even though v has not exposed ended rows.
 	// The merger stays under its tree lead, offline or not.
-	if got := strings.Join(ids(m), ","); got != "lead,kid,merge,pin" {
+	if got := strings.Join(ids(m), ","); got != "pin,lead,kid,merge" {
 		t.Fatalf("caller split from busy worker: %s", got)
 	}
 	if mk := m.groups()[0].marks["kid"]; mk.root != "lead" || mk.prefix == "" {

@@ -4,13 +4,13 @@
 │  ● desk  cpu ? mem ? disk ?                                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT   MODEL                    STATUS      CPU   RAM TASK
- Needs you (1)                                                                                         Desk: 1 to decide
+ 26 sessions · 1 busy                                                                                  Desk: 1 to decide
   video              desk         -         claude · opus            needs you     ?     ? Combine the recorded demos
- Working (3)
-▸ ★ demo lead        desk         demo      claude · gpt-6.1-sol     idle          ?     ? Review the next … +2 (1 busy)
- Idle (22)
   ★ pinned           desk         -         claude · gpt-6.1-sol     idle          ?     ? Review the next change
+▸ ★ demo lead        desk         demo      claude · gpt-6.1-sol     idle          ?     ? Review the next … +2 (1 busy)
   21 more idle · v to show
+
+
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G groups  p pin  ? help  q quit
