@@ -381,7 +381,12 @@ class SessionLink {
   model: string | undefined;
   name: string | undefined;
   lastActive = Date.now();
-  presenceActivity = this.lastActive;
+  // The time of the last real turn, which the daemon sends to the gateway. The
+  // gateway reopens an OpenCode session that the owner closed only when this is
+  // newer than the close. Creating a link, discovery, a reload and every other
+  // event are not turns, so they leave it at 0: a session the owner closed
+  // stays closed until someone prompts it or a turn starts in it.
+  presenceActivity = 0;
   private dormantTimer: NodeJS.Timeout | undefined;
   private lastProgress = 0;
 
@@ -466,15 +471,26 @@ class SessionLink {
     if (this.connected) this.request("turn_error", { text: t }).catch(() => {});
   }
 
-  /** Working state from execution events. This is activity too. */
+  /** Working state from execution events. Going busy is a real turn. */
   setStatus(next: "idle" | "busy") {
     const before = this.status;
+    const now = Date.now();
     this.base = next;
-    if (next === "busy") this.presenceActivity = Date.now();
+    if (next === "busy") this.presenceActivity = now;
     this.dormant = false;
-    this.lastActive = Date.now();
+    this.lastActive = now;
     this.armDormancy();
     if (this.status !== before && this.connected) this.request("status", { status: this.status }).catch(() => {});
+  }
+
+  /**
+   * Record a real turn: a new prompt for the session. It is activity (the
+   * session is not dormant) and it is the only other way the gateway may reopen
+   * a session the owner closed. `at` lets a caller pass the turn's own time.
+   */
+  turnActivity(at = Date.now()) {
+    this.presenceActivity = at;
+    this.touch(at);
   }
 
   /**
@@ -1067,14 +1083,21 @@ function mapCatalogParams(name: string, params: any): any {
 // OpenCode loads this plugin once per project directory, and every instance
 // sees the events of every session. The state that decides who owns a session
 // therefore lives in one hub per process, shared by all instances.
+interface ReleasedSession {
+  lastActive: number;
+  presence: number;
+}
+
 interface Hub {
   links: Map<string, { link: SessionLink; owner: symbol }>;
   rootOf: Map<string, string>; // child session -> root session
   gone: Set<string>; // deleted or archived sessions
   // Sessions whose link was released by a disposed instance (a plugin reload)
-  // -> when they were last active. The next instance registers them again
-  // however long they were quiet, so a reload never drops a session.
-  released: Map<string, number>;
+  // -> their last activity and their last real turn. The next instance
+  // registers them again however long they were quiet, so a reload never drops
+  // a session; the turn time rides along so the gateway's reopen rule sees the
+  // same value as before the reload.
+  released: Map<string, ReleasedSession>;
   instances: Map<symbol, () => Promise<void>>; // live plugin instances -> rediscover
   // Pending permission and form requests per root session ("p:" or "f:" +
   // id). The wait ends when the last one is settled (decision 0016).
@@ -1097,7 +1120,10 @@ function hub(): Hub {
     h.released = new Map();
     for (const [id, entry] of h.links ?? []) {
       try {
-        h.released.set(id, Number(entry.link?.presenceActivity ?? entry.link?.lastActive) || Date.now());
+        h.released.set(id, {
+          lastActive: Number(entry.link?.lastActive) || Date.now(),
+          presence: Number(entry.link?.presenceActivity) || 0,
+        });
         entry.link?.stop?.();
       } catch {}
     }
@@ -1107,6 +1133,11 @@ function hub(): Hub {
   h.rootOf ??= new Map();
   h.gone ??= new Set();
   h.released ??= new Map();
+  // A hub from a version before the turn time stored a plain number: the
+  // activity clock only, which claims no turn.
+  for (const [id, v] of h.released as Map<string, ReleasedSession | number>) {
+    if (typeof v === "number") (h.released as Map<string, ReleasedSession>).set(id, { lastActive: v, presence: 0 });
+  }
   h.instances ??= new Map();
   h.asks ??= new Map();
   return h as Hub;
@@ -1202,8 +1233,13 @@ export default {
     }
 
     // The link for a session (or for the root of a sub-agent session). The
-    // first instance to see a session owns its link.
-    async function ensureLink(sessionID: string, activeAt?: number): Promise<SessionLink | undefined> {
+    // first instance to see a session owns its link. `resume` carries the
+    // activity of a link that a reload released: the dormancy clock and the
+    // last real turn, so a reload changes nothing the gateway sees.
+    async function ensureLink(
+      sessionID: string,
+      resume?: { lastActive?: number; presence?: number },
+    ): Promise<SessionLink | undefined> {
       const root = h.rootOf.get(sessionID);
       if (root) return ensureLink(root);
       if (h.gone.has(sessionID)) return undefined;
@@ -1231,10 +1267,8 @@ export default {
       const link = new SessionLink(sessionID, found.cwd, deliver, sessionText, (l) => dropLink(l.sessionID));
       link.model = found.model;
       link.name = sessionName(found.cwd, found.title);
-      if (activeAt !== undefined) {
-        link.lastActive = activeAt;
-        link.presenceActivity = activeAt;
-      }
+      if (resume?.lastActive !== undefined) link.lastActive = resume.lastActive;
+      if (resume?.presence !== undefined) link.presenceActivity = resume.presence;
       h.links.set(sessionID, { link, owner: me });
       h.released.delete(sessionID);
       link.start();
@@ -1341,9 +1375,12 @@ export default {
           return;
         }
         case "session.viewed":
-        case "session.inbox.enqueued":
         case "session.inbox.delivered":
           (await ensureLink(sessionID))?.touch();
+          return;
+        case "session.inbox.enqueued":
+          // A new prompt for the session, from the owner or from a client.
+          (await ensureLink(sessionID))?.turnActivity();
           return;
         case "session.model.selected":
         case "session.step.started": {
@@ -1415,13 +1452,16 @@ export default {
         for (const s of page?.data ?? page?.items ?? []) {
           if (events.signal.aborted) return;
           if (s?.parentID || s?.time?.archived || Number(s?.time?.updated ?? 0) < cutoff) continue;
-          const at = Math.max(Number(s.time?.updated ?? Date.now()), h.released.get(String(s.id)) ?? 0);
-          await ensureLink(String(s.id), at);
+          const released = h.released.get(String(s.id));
+          // The update time says when the session last did anything; it does
+          // not prove a turn, so only a released link's own turn time counts.
+          const at = Math.max(Number(s.time?.updated ?? Date.now()), released?.lastActive ?? 0);
+          await ensureLink(String(s.id), { lastActive: at, presence: released?.presence ?? 0 });
         }
         // Sessions that a reload released come back whatever their age.
-        for (const [id, at] of [...h.released]) {
+        for (const [id, released] of [...h.released]) {
           if (events.signal.aborted) return;
-          await ensureLink(id, at);
+          await ensureLink(id, { lastActive: released.lastActive, presence: released.presence });
         }
       } catch {
         // Discovery is best effort; events still register sessions.
@@ -1657,7 +1697,7 @@ export default {
       for (const [id, entry] of h.links) {
         if (entry.owner !== me) continue;
         h.links.delete(id);
-        h.released.set(id, entry.link.lastActive);
+        h.released.set(id, { lastActive: entry.link.lastActive, presence: entry.link.presenceActivity });
         entry.link.stop();
       }
       // Hand the sessions over right away instead of waiting for their next event.

@@ -52,7 +52,7 @@ const server = createServer((conn) => {
         conn.sessionID = line.params.native_id;
         conns.set(line.params.native_id, conn);
         hellos.push({ id: line.params.native_id, cwd: line.params.cwd, model: line.params.model, mode: line.params.mode,
-          name: line.params.name, status: line.params.status });
+          name: line.params.name, status: line.params.status, activity: line.params.opencode_activity });
       }
       if (line.method !== "hello") calls.push([line.method, line.params]);
       if (line.method === "session_text_result") textResults.push(line.params);
@@ -663,6 +663,49 @@ await test("a plugin reload keeps a quiet session registered", async () => {
     await until("dormant again", () => lastStatus("ses_reload") === "dormant");
     stopB();
   });
+});
+
+await test("a session the owner closed stays closed across a view and a reload; a new prompt reopens it", async () => {
+  // The daemon tells the gateway when a session last had a real turn. The
+  // gateway reopens a closed OpenCode session only when that time is newer than
+  // the close. Link creation, discovery, a view and a reload are not turns: an
+  // upgrade rewrites the plugin, so a reload must not resurrect what the owner
+  // stopped.
+  freshHub();
+  const sessions = new Map([["ses_closed", session("ses_closed", "/work/cl", 60 * 60 * 1000)]]);
+  const a = makeContext("/work/cl", sessions);
+  const stopA = await plugin.setup(a.ctx);
+  await until("hello", () => registered("ses_closed"));
+  const closedAt = Date.now();
+  await new Promise((resolve) => setTimeout(resolve, 10)); // the close is in the past
+  const count = () => hellos.filter((h) => h.id === "ses_closed").length;
+  const lastHello = () => hellos.filter((h) => h.id === "ses_closed").at(-1);
+
+  // Looking at the stopped session in the TUI is not a turn.
+  a.emit({ type: "session.viewed", data: { sessionID: "ses_closed" } });
+  await settle();
+  stopA(); // an upgrade reloads the plugin file
+  const b = makeContext("/work/cl", sessions);
+  const stopB = await plugin.setup(b.ctx);
+  await until("hello after the reload", () => count() > 1);
+  const reloadActivity = lastHello().activity;
+  if (reloadActivity > closedAt) throw new Error("a reload claimed activity after the close: " + JSON.stringify(lastHello()));
+
+  // A reconnect says hello again: it must not claim activity either.
+  const before = count();
+  conns.get("ses_closed").destroy();
+  await until("hello after the reconnect", () => count() > before, 4000);
+  if (lastHello().activity > closedAt) throw new Error("a reconnect claimed activity after the close: " + JSON.stringify(lastHello()));
+
+  // A new prompt in the session is a real turn, and it reopens the session.
+  b.emit({ type: "session.inbox.enqueued", data: { sessionID: "ses_closed" } });
+  await settle();
+  const n = count();
+  conns.get("ses_closed").destroy();
+  await until("hello after the prompt", () => count() > n, 4000);
+  if (!(lastHello().activity > closedAt)) throw new Error("a new prompt claimed no activity: " + JSON.stringify(lastHello()));
+  console.log(`     closed at ${closedAt}: reload hello activity ${reloadActivity}, prompt hello activity ${lastHello().activity}`);
+  stopB();
 });
 
 await test("a deleted session is not brought back by a reload", async () => {
