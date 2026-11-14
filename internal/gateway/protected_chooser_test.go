@@ -4,22 +4,41 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
+
+// protectedChoose asks the one gate for a level, with every candidate on a
+// machine that has its harness.
+func protectedChoose(t *testing.T, candidates []protocol.WorkerModelCandidate, level string, scores []protocol.ModelScore, quotas *protocol.Quotas, protected protocol.ProtectedProviders) (ChooseResult, error) {
+	t.Helper()
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s}
+	node := &protocol.NodeView{Hostname: "box"}
+	seen := map[string]bool{}
+	for _, c := range candidates {
+		if !seen[c.Harness] {
+			seen[c.Harness] = true
+			node.Harnesses = append(node.Harnesses, protocol.HarnessInfo{Name: c.Harness, SignedIn: "yes"})
+		}
+	}
+	return g.Choose(ChooseRequest{Purpose: model.PurposeWorkerAutomatic, Node: node, Candidates: candidates,
+		Difficulty: level, D: protocol.PickerD(nil, level), Scores: scores, Quotas: quotas, Protected: protected})
+}
 
 func TestProtectedChooser(t *testing.T) {
 	candidates := []protocol.WorkerModelCandidate{{Harness: "opencode", Model: "anthropic/claude-sonnet"}, {Harness: "opencode", Model: "opencode-go/luna"}}
 	scores := []protocol.ModelScore{{Match: "anthropic/claude-sonnet", Score: 55}, {Match: "opencode-go/luna", Score: 45}}
 	for _, level := range []string{"normal", "hard"} {
-		c, note, err := chooseProtectedWorker(candidates, level, scores, nil, nil, nil, &protocol.WorkerRotation{}, protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "orchestrator"})
-		if err != nil || c.Model != "opencode-go/luna" || (strings.Contains(note, "skipped") != (level == "hard")) {
-			t.Fatalf("%s: %+v %q %v", level, c, note, err)
+		got, err := protectedChoose(t, candidates, level, scores, nil, protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "orchestrator"})
+		if err != nil || got.Choice.Model != "opencode-go/luna" || (strings.Contains(got.Note, "skipped") != (level == "hard")) {
+			t.Fatalf("%s: %+v %q %v", level, got.Choice, got.Note, err)
 		}
 	}
 	scores[1].Score = 10
-	c, note, err := chooseProtectedWorker(candidates, "hard", scores, nil, nil, nil, &protocol.WorkerRotation{}, protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "orchestrator"})
-	if err != nil || c.Model != "anthropic/claude-sonnet" || !strings.Contains(note, "orchestrator") {
-		t.Fatalf("fallback: %+v %q %v", c, note, err)
+	got, err := protectedChoose(t, candidates, "hard", scores, nil, protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "orchestrator"})
+	if err != nil || got.Choice.Model != "anthropic/claude-sonnet" || !strings.Contains(got.Note, "orchestrator") {
+		t.Fatalf("fallback: %+v %q %v", got.Choice, got.Note, err)
 	}
 }
 
@@ -27,15 +46,14 @@ func TestProtectedChooserQuotaFallback(t *testing.T) {
 	candidates := []protocol.WorkerModelCandidate{{Harness: "opencode", Model: "anthropic/claude-sonnet"}, {Harness: "opencode", Model: "opencode-go/luna"}}
 	scores := []protocol.ModelScore{{Match: "claude-sonnet", Score: 55}, {Match: "luna", Score: 45}}
 	q := &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Windows: []protocol.QuotaWindow{{Exhausted: true}}}}}
-	c, note, err := chooseProtectedWorker(candidates, "hard", scores, nil, q, nil, &protocol.WorkerRotation{}, protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "keep limit"})
-	if err != nil || c.Model != candidates[0].Model || !strings.Contains(note, "keep limit") {
-		t.Fatalf("fallback: %+v %q %v", c, note, err)
+	got, err := protectedChoose(t, candidates, "hard", scores, q, protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "keep limit"})
+	if err != nil || got.Choice.Model != candidates[0].Model || !strings.Contains(got.Note, "keep limit") {
+		t.Fatalf("fallback: %+v %q %v", got.Choice, got.Note, err)
 	}
 }
 
-// A protected provider stays out of the rotation while ordinary adequate models
-// exist, and the ordinary models share the starts.
-func TestProtectedChooserRotatesOrdinaryModels(t *testing.T) {
+// A protected provider stays out while an ordinary candidate is allowed.
+func TestProtectedChooserKeepsProtectedOutOfTheCostRanker(t *testing.T) {
 	candidates := []protocol.WorkerModelCandidate{
 		{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Provider: "codex"},
 		{Name: "deepseek", Harness: "opencode", Model: "opencode-go/deepseek", Provider: "opencode-go"},
@@ -43,20 +61,20 @@ func TestProtectedChooserRotatesOrdinaryModels(t *testing.T) {
 	}
 	scores := []protocol.ModelScore{{Match: "terra", Score: 42.3}, {Match: "deepseek", Score: 32.5}, {Match: "claude", Score: 55}}
 	q := terraWellBehindPace()
-	rotation := &protocol.WorkerRotation{}
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s}
+	node := &protocol.NodeView{Hostname: "box", Harnesses: []protocol.HarnessInfo{{Name: "codex", SignedIn: "yes"}, {Name: "opencode", SignedIn: "yes"}}}
 	counts := map[string]int{}
 	for i := 0; i < 20; i++ {
-		c, _, err := chooseProtectedWorker(candidates, "normal", scores, nil, q, nil, rotation, protocol.ProtectedProviders{Providers: []string{"anthropic"}})
+		got, err := g.Choose(ChooseRequest{Purpose: model.PurposeWorkerAutomatic, Node: node, Candidates: candidates,
+			Difficulty: "normal", D: protocol.PickerD(nil, "normal"), Scores: scores, Quotas: q, Protected: protocol.ProtectedProviders{Providers: []string{"anthropic"}}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		counts[c.Name]++
+		counts[got.Choice.Name]++
 	}
-	if counts["claude"] != 0 {
-		t.Fatalf("protected provider appeared: %v", counts)
-	}
-	if counts["terra"] == 0 || counts["deepseek"] == 0 || counts["terra"] <= counts["deepseek"] {
-		t.Fatalf("ordinary models did not share the starts: %v", counts)
+	if counts["claude"] != 0 || counts["terra"] == 0 {
+		t.Fatalf("protected provider appeared, or no ordinary model ran: %v", counts)
 	}
 }
 
@@ -119,23 +137,6 @@ func TestWorkerChoiceNotePoorRecord(t *testing.T) {
 	}
 }
 
-func TestProtectedChooserNoEligibleModelReportsWholeRoster(t *testing.T) {
-	candidates := []protocol.WorkerModelCandidate{
-		{Name: "strong protected", Harness: "claude", Model: "strong"},
-		{Name: "weak ordinary", Harness: "codex", Model: "weak"},
-	}
-	scores := []protocol.ModelScore{{Match: "strong", Score: 51}, {Match: "weak", Score: 23.3}}
-	_, _, err := chooseProtectedWorker(candidates, "normal", scores, nil, nil, nil, nil, protocol.ProtectedProviders{Providers: []string{"anthropic"}})
-	if err == nil {
-		t.Fatal("over-qualified protected fallback was picked")
-	}
-	for _, want := range []string{"normal", "strong protected", "very_complex", "weak ordinary", "simple", "register a profile", "model explicitly"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q lacks %q", err, want)
-		}
-	}
-}
-
 // Claude models through agy are not the owner's Anthropic subscription, so the
 // protected rule must leave them alone (decision 0049 D4).
 func TestProtectedChooserIgnoresAgyClaudeModels(t *testing.T) {
@@ -148,8 +149,8 @@ func TestProtectedChooserIgnoresAgyClaudeModels(t *testing.T) {
 	}
 	candidates := []protocol.WorkerModelCandidate{{Name: "sonnet agy", Harness: "agy", Model: "claude-sonnet-5-5-medium"}}
 	scores := []protocol.ModelScore{{Match: "claude-sonnet-5-5-medium", Score: 55}}
-	c, note, err := chooseProtectedWorker(candidates, "very_complex", scores, nil, nil, nil, &protocol.WorkerRotation{}, protected)
-	if err != nil || c.Model != "claude-sonnet-5-5-medium" || strings.Contains(note, "orchestrator") {
-		t.Fatalf("choice: %+v %q %v", c, note, err)
+	got, err := protectedChoose(t, candidates, "very_complex", scores, nil, protected)
+	if err != nil || got.Choice.Model != "claude-sonnet-5-5-medium" || strings.Contains(got.Note, "orchestrator") {
+		t.Fatalf("choice: %+v %q %v", got.Choice, got.Note, err)
 	}
 }

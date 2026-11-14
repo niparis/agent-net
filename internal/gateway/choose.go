@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/niparis/agent-net/internal/model"
@@ -31,8 +32,18 @@ type ChooseRequest struct {
 	// does not read it twice.
 	Auth map[string]authIndex
 	// Persist saves the rotation state after a real start. A preview passes
-	// false.
+	// false, and DecideOnly forces it false.
 	Persist bool
+	// Health is the model health the caller already read for a run of many
+	// decisions, so a preview does not read the same rows once per level.
+	Health func(harness, model string) (ModelHealth, error)
+	// Rotation is a snapshot to decide on instead of the stored one: a preview
+	// passes its own copy, so its pick matches a start without moving the
+	// rotation the gateway will use next.
+	Rotation *protocol.WorkerRotation
+	// Facts is one snapshot a caller that decides many times already built
+	// (a preview for each level, a backtest for each task). Nil builds it here.
+	Facts *model.Facts
 	// Prefer is the key of a candidate to try first without re-ranking it
 	// away: a queued start asks the gate again for the model it already chose.
 	Prefer string
@@ -104,6 +115,15 @@ func (r ChooseResult) Next() (ChooseResult, bool) {
 	return ChooseResult{Choice: choice, Note: joinModelNote(note), Skips: skips, Granted: granted, list: rest, facts: r.facts, checks: r.checks, level: r.level}, true
 }
 
+// modelCandidatesOf converts a candidate list for the gate.
+func modelCandidatesOf(list []protocol.WorkerModelCandidate) []model.Candidate {
+	out := make([]model.Candidate, len(list))
+	for i, c := range list {
+		out[i] = modelCandidate(c)
+	}
+	return out
+}
+
 // modelCandidates converts an ordered list for the gate.
 func modelCandidates(list []protocol.WorkerModelChoice) []model.Candidate {
 	out := make([]model.Candidate, len(list))
@@ -131,9 +151,15 @@ func joinModelNote(lines []string) string {
 // no candidate; every check that can refuse one is in the gate.
 func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	policy := model.PolicyFor(req.Purpose)
-	facts, _, err := g.chooseFacts(req.Node, req.Candidates, req.Quotas, req.Floors, req.Auth)
-	if err != nil {
-		return ChooseResult{}, err
+	var facts model.Facts
+	var err error
+	if req.Facts != nil {
+		facts = *req.Facts
+	} else {
+		facts, _, err = g.chooseFacts(req.Node, req.Candidates, req.Quotas, req.Floors, req.Auth, req.Health)
+		if err != nil {
+			return ChooseResult{}, err
+		}
 	}
 	level := req.Difficulty
 	if level == "" {
@@ -143,11 +169,18 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	var resultLeftOut []protocol.WorkerLeftOut
 	switch policy.Ranker {
 	case model.RankCost:
-		g.rotationMu.Lock()
-		rotation, readErr := g.store.WorkerRotation()
-		if readErr != nil {
+		rotation := protocol.WorkerRotation{}
+		persist := req.Persist && !policy.DecideOnly
+		if req.Rotation != nil {
+			rotation = req.Rotation.Clone()
+		} else {
+			g.rotationMu.Lock()
+			var readErr error
+			rotation, readErr = g.store.WorkerRotation()
 			g.rotationMu.Unlock()
-			return ChooseResult{}, readErr
+			if readErr != nil {
+				return ChooseResult{}, readErr
+			}
 		}
 		pick := &protocol.PickerInput{D: req.D, DifficultyNote: req.DifficultyNote, Table: g.store.pickerTable(), Prices: g.store.priceBook()}
 		var leftOut []protocol.WorkerLeftOut
@@ -155,10 +188,11 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 		if err == nil {
 			resultLeftOut = leftOut
 		}
-		if err == nil && req.Persist {
+		if err == nil && persist {
+			g.rotationMu.Lock()
 			err = g.store.saveWorkerRotation(rotation)
+			g.rotationMu.Unlock()
 		}
-		g.rotationMu.Unlock()
 		if err != nil {
 			return ChooseResult{}, err
 		}
@@ -169,12 +203,19 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 			order[i] = protocol.WorkerModelChoice{WorkerModelCandidate: c, Score: score, Fit: fit}
 			order[i].Why = protocol.WhyLine(level, order[i])
 		}
+		if policy.Pace {
+			order = paceOrder(order, req.Quotas)
+		}
 	default:
 		return ChooseResult{}, fmt.Errorf("purpose %q has no ranker", req.Purpose)
 	}
 	if len(order) == 0 {
 		return ChooseResult{}, fmt.Errorf("no model qualifies for %s; register a profile for %s, or pass model explicitly", level, level)
 	}
+	// The ranker's note explains the whole pick: the bucket, the cells and the
+	// cost terms. Keep it when the gate moves to another candidate, or the
+	// start reads like the old level rule.
+	rankerNote := order[0].PickNote
 	if policy.ProtectedLast {
 		order = protectedLastOrder(order, req.Protected)
 	}
@@ -201,8 +242,9 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	result.Granted = granted
 	result.Choice = order[index]
 	if index != 0 {
-		// The ranker's note describes its own first pick, not this one.
-		result.Choice.PickNote, result.Choice.Weight, result.Choice.ShareNote = "", 0, ""
+		result.Choice.PickNote = rankerNote
+		result.Choice.Fallback = order[0].Fallback
+		result.Choice.Weight, result.Choice.ShareNote = 0, ""
 		if result.Choice.Why == "" {
 			result.Choice.Why = protocol.WhyLine(level, result.Choice)
 		}
@@ -305,10 +347,41 @@ func gateWithCoolingLast(list []model.Candidate, checks model.Checks, facts mode
 	}
 	lastResort := checks
 	lastResort.Cooling = false
-	if picked, skips, retryErr := model.Gate(list, lastResort, facts); retryErr == nil {
-		return picked, skips, nil
+	if retried, _, retryErr := model.Gate(list, lastResort, facts); retryErr == nil {
+		// Keep the first skips: they say which models were set aside for
+		// cooling, and the note must still name them.
+		return retried, skips, nil
 	}
 	return picked, skips, err
+}
+
+// paceOrder reorders a fixed list by quota pace: a provider behind its pace
+// comes first. It is a modifier, so it never removes a candidate.
+func paceOrder(order []protocol.WorkerModelChoice, quotas *protocol.Quotas) []protocol.WorkerModelChoice {
+	if len(order) < 2 {
+		return order
+	}
+	type paced struct {
+		choice protocol.WorkerModelChoice
+		room   float64
+		note   string
+	}
+	list := make([]paced, len(order))
+	for i, c := range order {
+		room, note, _ := protocol.WorkerQuotaPace(quotas, c.Provider, c.Model)
+		list[i] = paced{choice: c, room: room, note: note}
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].note == "" || list[j].note == "" {
+			return false
+		}
+		return list[i].room > list[j].room
+	})
+	out := make([]protocol.WorkerModelChoice, len(order))
+	for i, p := range list {
+		out[i] = p.choice
+	}
+	return out
 }
 
 // protectedLastOrder moves protected providers after the others without
@@ -372,7 +445,7 @@ func (s *Store) providerLimits(now time.Time) (map[string]providerLimit, error) 
 // harnesses, the auth and health of each candidate, and the provider limits
 // that live sessions reported. The model health it reads is passed back, so
 // the ranker reuses it instead of reading again.
-func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.WorkerModelCandidate, quotas *protocol.Quotas, floors protocol.WorkerFloors, auth map[string]authIndex) (model.Facts, map[string]ModelHealth, error) {
+func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.WorkerModelCandidate, quotas *protocol.Quotas, floors protocol.WorkerFloors, auth map[string]authIndex, health func(harness, model string) (ModelHealth, error)) (model.Facts, map[string]ModelHealth, error) {
 	now := g.store.now()
 	facts := model.Facts{
 		Now:         now,
@@ -396,7 +469,11 @@ func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.Wor
 	for provider, limit := range limits {
 		facts.Limits[provider] = model.Limit{Until: limit.until, Reason: limit.reason}
 	}
-	health := make(map[string]ModelHealth, len(candidates))
+	readHealth := health
+	if readHealth == nil {
+		readHealth = g.store.ModelHealth
+	}
+	healths := make(map[string]ModelHealth, len(candidates))
 	if auth == nil {
 		auth = map[string]authIndex{}
 	}
@@ -415,16 +492,16 @@ func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.Wor
 				facts.AuthBlocked[key] = true
 			}
 		}
-		h, err := g.store.ModelHealth(c.Harness, c.Model)
+		h, err := readHealth(c.Harness, c.Model)
 		if err != nil {
 			return model.Facts{}, nil, err
 		}
-		health[key] = h
+		healths[key] = h
 		if h.Cooling {
 			facts.Cooling[key] = model.CoolingFact{Failures: h.Failures, Until: h.Until}
 		}
 	}
-	return facts, health, nil
+	return facts, healths, nil
 }
 
 // rosterRankForSkip orders gate skips in the refusal roster.
@@ -436,6 +513,18 @@ func rosterRankForSkip(check string) int {
 		return rosterUnavailable
 	}
 	return protocol.LeftOutQuota
+}
+
+// feedGateSkips records the refusals the gate made that the owner's feeds know.
+func (g *Gateway) feedGateSkips(skips []model.Skip) {
+	for _, skip := range skips {
+		switch skip.Check {
+		case "floor":
+			g.quotaFloorFeed(skip.Candidate.Harness, skip.Candidate.Model, skip.Reason)
+		case "exhausted":
+			g.quotaStuckFeed(skip.Candidate.Harness, skip.Candidate.Model, skip.Reason)
+		}
+	}
 }
 
 // appendGateSkips adds the gate's refusals to the roster a start shows when

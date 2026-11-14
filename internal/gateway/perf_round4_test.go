@@ -6,12 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // ---- the code as it was before round 4, kept here as the reference ----
 
-// refQualityPreview is qualityPreviewWith as it was: every read per level.
+// refQualityPreview is qualityPreviewWith without its memo: the same one
+// decision path, computed fresh.
 func refQualityPreview(g *Gateway, in qualityPreviewInputs, node protocol.NodeView) (map[string]string, map[string]string, map[string]string, error) {
 	if !node.Online || node.Launch == nil || !*node.Launch {
 		return nil, nil, nil, nil
@@ -20,18 +22,30 @@ func refQualityPreview(g *Gateway, in qualityPreviewInputs, node protocol.NodeVi
 	if running == nil {
 		running = map[string]int{}
 	}
-	candidates, _, _, err := g.workerModelCandidates(&node, in.profiles, in.providers, node.Quotas, "", false, in.protected)
+	quotas := g.withQuotaBurn(g.ownerQuotas(node.NodeID), in.agents)
+	candidates, _, _, err := g.workerModelCandidatesWith(&candidateFacts{}, nil, &node, in.profiles, in.providers, quotas, "", false, in.protected)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	snapshot, _, err := g.chooseFacts(&node, candidates, quotas, in.floors, nil, in.health.health)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	rotation, rotationErr := g.store.WorkerRotation()
+	if rotationErr != nil {
+		return nil, nil, nil, rotationErr
+	}
 	out, reasons, models := map[string]string{}, map[string]string{}, map[string]string{}
 	for _, level := range protocol.DifficultyLevels {
-		levelCandidates := append([]protocol.WorkerModelCandidate(nil), candidates...)
-		choice, _, err := g.chooseAutomaticWorker(levelCandidates, level, in.scores, in.minimums, node.Quotas, running, in.protected, false)
+		chosen, err := g.Choose(ChooseRequest{
+			Purpose: model.PurposePreview, Node: &node, Candidates: candidates, Difficulty: level,
+			D: protocol.PickerD(nil, level), Scores: in.scores, Minimums: in.minimums, Quotas: quotas,
+			Running: running, Protected: in.protected, Floors: in.floors, Facts: &snapshot, Rotation: &rotation,
+		})
 		if err == nil {
-			out[level] = qualityModelFamily(choice.Model)
-			models[level] = qualityModelKey(choice.Model)
-			if reason := qualityPaceClause(choice.QuotaNote); reason != "" {
+			out[level] = qualityModelFamily(chosen.Choice.Model)
+			models[level] = qualityModelKey(chosen.Choice.Model)
+			if reason := qualityPaceClause(chosen.Choice.QuotaNote); reason != "" {
 				reasons[level] = reason
 			}
 		}

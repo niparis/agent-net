@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,11 +52,8 @@ func fakeDifficultyRun(t *testing.T, replies map[string][]string) string {
 func newDifficultyDaemon(t *testing.T, harness, model string, timeout time.Duration) *Daemon {
 	t.Helper()
 	d, err := New(Config{
-		StateDir:           t.TempDir(),
-		HarnessPaths:       map[string]string{harness: os.Args[0]},
-		DifficultyHarness:  harness,
-		DifficultyModel:    model,
-		DifficultyAnalyzer: true,
+		StateDir:     t.TempDir(),
+		HarnessPaths: map[string]string{harness: os.Args[0]},
 		testJudgePick: func(_ context.Context, _ string) (protocol.DifficultyJudgeChoice, error) {
 			return protocol.DifficultyJudgeChoice{Harness: "codex", Model: model}, nil
 		},
@@ -95,56 +91,38 @@ func difficultyCalls(t *testing.T, dir string) []difficultyCall {
 }
 
 func TestAssessDifficultyHappyPath(t *testing.T) {
-	dir := fakeDifficultyRun(t, map[string][]string{
-		"analyzer": {difficultyProfileJSON("high")},
-		"judge":    {difficultyScoresJSON},
-	})
+	dir := fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
 	d := newDifficultyDaemon(t, "codex", "gpt-cheap", 2*time.Second)
-	project := t.TempDir()
-	a, err := d.assessDifficulty(context.Background(), project, "change the settings tab")
+	a, err := d.assessDifficulty(context.Background(), t.TempDir(), "change the settings tab")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Label != "hard" || a.Bottleneck != "" || a.Confidence != "high" {
+	if a.Label != "hard" || a.Bottleneck != "" || a.Confidence != "unknown" {
 		t.Fatalf("assessment: %+v", a)
 	}
-	if a.AnalyzerModel != "codex:gpt-cheap" || a.JudgeModel != "codex:gpt-cheap" {
+	if a.JudgeModel != "codex:gpt-cheap" || a.AnalyzerModel != "" {
 		t.Fatalf("models: %q %q", a.AnalyzerModel, a.JudgeModel)
 	}
 	if a.Scores.Reasoning != 4 || a.Scores.Risk != 4 {
 		t.Fatalf("scores: %+v", a.Scores)
 	}
-	if a.Profile.Confidence != "high" {
-		t.Fatalf("profile: %+v", a.Profile)
-	}
 	if a.Elapsed <= 0 {
 		t.Fatal("elapsed is not measured")
 	}
 	calls := difficultyCalls(t, dir)
-	if len(calls) != 2 || calls[0].Kind != "analyzer" || calls[1].Kind != "judge" {
+	if len(calls) != 1 || calls[0].Kind != "judge" {
 		t.Fatalf("calls: %+v", calls)
 	}
-	if calls[0].Cwd != project {
-		t.Errorf("analyzer ran in %q, want the project %q", calls[0].Cwd, project)
+	if calls[0].Cwd == "" {
+		t.Errorf("judge ran with no folder")
 	}
-	if calls[1].Cwd == project {
-		t.Errorf("judge ran in the project folder; it needs no repository")
-	}
-	if !hasArg(calls[0].Args, "-s", "read-only") {
-		t.Errorf("analyzer args lack a read-only sandbox: %v", calls[0].Args)
-	}
-	for _, want := range []string{"Count distinct changes, not files", `"confidence"`, "Reply with the JSON only"} {
-		if !strings.Contains(calls[0].Stdin, want) {
-			t.Errorf("analyzer brief lacks %q:\n%s", want, calls[0].Stdin)
-		}
-	}
-	if !strings.Contains(calls[1].Stdin, "Score each dimension 1 to 5") {
-		t.Errorf("judge brief lacks the instruction:\n%s", calls[1].Stdin)
+	if !strings.Contains(calls[0].Stdin, "Score each dimension 1 to 5") {
+		t.Errorf("judge brief lacks the instruction:\n%s", calls[0].Stdin)
 	}
 }
 
 func TestAssessDifficultyUsesOpenCodeJudgeAndExtractsNoisyJSON(t *testing.T) {
-	dir := fakeDifficultyRun(t, map[string][]string{"analyzer": {difficultyProfileJSON("high")}})
+	dir := fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
 	judgeReply := filepath.Join(dir, "opencode-reply")
 	if err := os.WriteFile(judgeReply, []byte(difficultyScoresJSON), 0o600); err != nil {
 		t.Fatal(err)
@@ -152,11 +130,8 @@ func TestAssessDifficultyUsesOpenCodeJudgeAndExtractsNoisyJSON(t *testing.T) {
 	t.Setenv(envFakeOpenCode, "1")
 	t.Setenv(envFakeOpenCodeReply, judgeReply)
 	d, err := New(Config{
-		StateDir:           t.TempDir(),
-		HarnessPaths:       map[string]string{"codex": os.Args[0], "opencode": os.Args[0]},
-		DifficultyHarness:  "codex",
-		DifficultyModel:    "gpt-analyzer",
-		DifficultyAnalyzer: true,
+		StateDir:     t.TempDir(),
+		HarnessPaths: map[string]string{"codex": os.Args[0], "opencode": os.Args[0]},
 		testJudgePick: func(_ context.Context, _ string) (protocol.DifficultyJudgeChoice, error) {
 			return protocol.DifficultyJudgeChoice{Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash"}, nil
 		},
@@ -170,39 +145,11 @@ func TestAssessDifficultyUsesOpenCodeJudgeAndExtractsNoisyJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Label != "hard" || a.AnalyzerModel != "codex:gpt-analyzer" || a.JudgeModel != "opencode:opencode-go/deepseek-v4.1-flash" {
+	if a.Label != "hard" || a.AnalyzerModel != "" || a.JudgeModel != "opencode:opencode-go/deepseek-v4.1-flash" {
 		t.Fatalf("assessment: %+v", a)
 	}
-	calls := difficultyCalls(t, dir)
-	if len(calls) != 1 || calls[0].Kind != "analyzer" {
-		t.Fatalf("Codex calls: %+v", calls)
-	}
-}
-
-func TestAssessDifficultyFallsBackToCodexJudgeWhenOpenCodeMissing(t *testing.T) {
-	dir := fakeDifficultyRun(t, map[string][]string{
-		"analyzer": {difficultyProfileJSON("high")},
-		"judge":    {difficultyScoresJSON},
-	})
-	sources := DifficultySources{PickJudge: func(context.Context, string) (protocol.DifficultyJudgeChoice, error) {
-		return protocol.DifficultyJudgeChoice{Harness: "codex", Model: "gpt-analyzer"}, nil
-	}, Binary: func(name string) (string, error) {
-		if name == "codex" {
-			return os.Args[0], nil
-		}
-		return "", errors.New("opencode is not installed")
-	}}
-	a, err := NewDifficultyAssessor(Config{
-		DifficultyHarness: "codex", DifficultyModel: "gpt-analyzer", DifficultyAnalyzer: true, DifficultyTimeout: 2 * time.Second,
-	}, sources).Assess(context.Background(), t.TempDir(), "change a setting")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a.Label != "hard" || a.JudgeModel != "codex:gpt-analyzer" {
-		t.Fatalf("assessment lacks fallback note: %+v", a)
-	}
-	if calls := difficultyCalls(t, dir); len(calls) != 2 || calls[1].Kind != "judge" {
-		t.Fatalf("Codex calls: %+v", calls)
+	if _, err := os.Stat(filepath.Join(dir, "calls.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("the judge used Codex: %v", err)
 	}
 }
 
@@ -289,62 +236,8 @@ func hasArg(args []string, name, value string) bool {
 	return false
 }
 
-func TestAssessDifficultyAnalyzerParsesOnRetry(t *testing.T) {
-	dir := fakeDifficultyRun(t, map[string][]string{
-		"analyzer": {"this is not JSON", difficultyProfileJSON("high")},
-		"judge":    {difficultyScoresJSON},
-	})
-	d := newDifficultyDaemon(t, "codex", "gpt-cheap", 2*time.Second)
-	a, err := d.assessDifficulty(context.Background(), t.TempDir(), "rename a flag")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a.Label != "hard" {
-		t.Fatalf("assessment: %+v", a)
-	}
-	calls := difficultyCalls(t, dir)
-	if len(calls) != 3 || calls[0].Kind != "analyzer" || calls[1].Kind != "analyzer" || calls[2].Kind != "judge" {
-		t.Fatalf("calls: %+v", calls)
-	}
-	if !strings.Contains(calls[1].Stdin, "previous reply did not parse") {
-		t.Fatalf("the retry does not name the parse error:\n%s", calls[1].Stdin)
-	}
-}
-
-func TestAssessDifficultyInsufficientEvidenceThenReanalysis(t *testing.T) {
-	dir := fakeDifficultyRun(t, map[string][]string{
-		"analyzer": {difficultyProfileJSON("high")},
-		"judge": {
-			"INSUFFICIENT_EVIDENCE: risk - inspect the database migrations",
-			difficultyScoresJSON,
-		},
-		"analysis": {`{"risk":{"failures":["a migration"],"reversibility":"hard to reverse","evidence":["db/001.sql:1-9"]}}`},
-	})
-	d := newDifficultyDaemon(t, "codex", "gpt-cheap", 2*time.Second)
-	a, err := d.assessDifficulty(context.Background(), t.TempDir(), "add a migration")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a.Label != "hard" || a.Profile.Risk.Reversibility != "hard to reverse" {
-		t.Fatalf("assessment: %+v", a)
-	}
-	calls := difficultyCalls(t, dir)
-	kinds := make([]string, len(calls))
-	for i, c := range calls {
-		kinds[i] = c.Kind
-	}
-	if strings.Join(kinds, ",") != "analyzer,judge,analysis,judge" {
-		t.Fatalf("calls: %v", kinds)
-	}
-	if !strings.Contains(calls[2].Stdin, "risk") {
-		t.Fatalf("the targeted brief does not name the dimension:\n%s", calls[2].Stdin)
-	}
-}
-
 func TestAssessDifficultyTimeoutFallsBackToNormal(t *testing.T) {
-	dir := fakeDifficultyRun(t, map[string][]string{
-		"analyzer": {difficultyProfileJSON("high")},
-	})
+	dir := fakeDifficultyRun(t, map[string][]string{"judge": {difficultyScoresJSON}})
 	t.Setenv(envFakeCodexExecHang, "1")
 	// Long enough for the fake to record its call on a busy CI machine, still
 	// well under the 2 s bound below.
@@ -362,43 +255,6 @@ func TestAssessDifficultyTimeoutFallsBackToNormal(t *testing.T) {
 	}
 	if calls := difficultyCalls(t, dir); len(calls) != 1 {
 		t.Fatalf("calls after a timeout: %+v", calls)
-	}
-}
-
-func TestAssessDifficultyLowConfidenceFallsBackToNormal(t *testing.T) {
-	dir := fakeDifficultyRun(t, map[string][]string{
-		"analyzer": {difficultyProfileJSON("low")},
-	})
-	d := newDifficultyDaemon(t, "codex", "gpt-cheap", 2*time.Second)
-	a, err := d.assessDifficulty(context.Background(), t.TempDir(), "an unclear task")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a.Label != "normal" || !strings.Contains(strings.ToLower(a.Notes), "confidence") {
-		t.Fatalf("assessment: %+v", a)
-	}
-	if calls := difficultyCalls(t, dir); len(calls) != 1 || calls[0].Kind != "analyzer" {
-		t.Fatalf("a low-confidence profile still reached the judge: %+v", calls)
-	}
-}
-
-func TestCheapestDifficultyProfileChoosesLowestMaxCodexProfile(t *testing.T) {
-	profiles := []protocol.WorkerProfile{
-		{Name: "strong", Harness: "codex", Model: "gpt-strong"},
-		{Name: "cheap", Harness: "codex", Model: "gpt-cheap"},
-		{Name: "claude", Harness: "claude", Model: "claude-cheap"},
-	}
-	scores := []protocol.ModelScore{
-		{Match: "gpt-strong", Score: 60},
-		{Match: "gpt-cheap", Score: 10},
-		{Match: "claude-cheap", Score: 0},
-	}
-	harness, model, ok := cheapestDifficultyProfile(profiles, scores, protocol.DifficultyMinimums)
-	if !ok || harness != "codex" || model != "gpt-cheap" {
-		t.Fatalf("chose %q %q %v", harness, model, ok)
-	}
-	if _, _, ok := cheapestDifficultyProfile(profiles[2:], scores, protocol.DifficultyMinimums); ok {
-		t.Fatal("a harness with no supported one-shot was chosen")
 	}
 }
 

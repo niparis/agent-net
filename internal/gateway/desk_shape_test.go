@@ -433,10 +433,7 @@ func overrideAsk(t *testing.T, s *Store, node, caller, startID string, facts pro
 var cheapOverride = protocol.OverrideFacts{Harness: "opencode", Model: "deepseek/cheap-1", Level: "normal", Provider: "deepseek", CallerFamily: "openai", OverrideFamily: "deepseek"}
 
 func confirmOK() *protocol.ConfirmContext {
-	return &protocol.ConfirmContext{
-		Quotas: &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "deepseek", Windows: []protocol.QuotaWindow{{ID: "5h", PercentUsed: 20}}}}},
-		Scores: []protocol.ModelScore{{Match: "cheap-1", Score: 32}},
-	}
+	return &protocol.ConfirmContext{Scores: []protocol.ModelScore{{Match: "cheap-1", Score: 32}}}
 }
 
 // Decision 0151: a held override goes to the chief first, and the chief

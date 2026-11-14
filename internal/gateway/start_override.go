@@ -68,9 +68,8 @@ func confirmOverrideCheck(q askDB, id string, chief bool, c protocol.ConfirmCont
 }
 
 // confirmContext reads what the chief's confirm of a held start is checked
-// against: the protected providers, the quota reading the start would use on
-// the machine that holds it, the worker floors, and the picker's scores and
-// level minimums.
+// against: the protected providers and the picker's scores and level minimums.
+// The start's gate owns the quota, floor and burn checks.
 func (g *Gateway) confirmContext(ask string) (protocol.ConfirmContext, error) {
 	var c protocol.ConfirmContext
 	var session string
@@ -85,12 +84,6 @@ func (g *Gateway) confirmContext(ask string) (protocol.ConfirmContext, error) {
 		return c, err
 	}
 	c.Protected = protected.Providers
-	if node, err := g.store.SessionNode(session); err == nil {
-		c.Quotas = g.ownerQuotas(node)
-	}
-	if c.Floors, err = g.store.workerFloors(); err != nil {
-		return c, err
-	}
 	if c.Scores, err = g.store.scores(); err != nil {
 		return c, err
 	}

@@ -57,23 +57,20 @@ func TestRunDevAssessPrintsTheAssessment(t *testing.T) {
 	project, task, cfg := stubDev(t, devAssessmentFixture())
 	file := devTaskFile(t, "  change the settings tab\n")
 	var out bytes.Buffer
-	err := runDevAssess(context.Background(), &out, []string{"--project", "/repo/shop", "--task-file", file, "--model", "gpt-cheap"})
+	err := runDevAssess(context.Background(), &out, []string{"--project", "/repo/shop", "--task-file", file})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if *project != "/repo/shop" || *task != "change the settings tab" {
 		t.Fatalf("project %q task %q", *project, *task)
 	}
-	if cfg.DifficultyHarness != "codex" || cfg.DifficultyModel != "gpt-cheap" {
-		t.Fatalf("config: %+v", cfg)
-	}
+	_ = cfg
 	for _, want := range []string{
 		"mode: judge-only",
 		"label: hard  (D 3.60)",
 		"scores: reasoning 4, scope 3, coupling 4, uncertainty 3, verification 3, risk 4",
 		"bottleneck: risk",
 		"confidence: high",
-		"analyzer: codex:gpt-cheap",
 		"judge: codex:gpt-cheap",
 		"elapsed: 1.5s",
 		"notes: fine",
@@ -81,18 +78,6 @@ func TestRunDevAssessPrintsTheAssessment(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}
-	}
-}
-
-func TestRunDevAssessAnalyzerFlagAndMode(t *testing.T) {
-	_, _, cfg := stubDev(t, devAssessmentFixture())
-	file := devTaskFile(t, "change a setting")
-	var out bytes.Buffer
-	if err := runDevAssess(context.Background(), &out, []string{"--project", "/repo/shop", "--task-file", file, "--analyzer"}); err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.DifficultyAnalyzer || !strings.Contains(out.String(), "mode: analyzer + judge") {
-		t.Fatalf("config=%+v output=%s", cfg, out.String())
 	}
 }
 

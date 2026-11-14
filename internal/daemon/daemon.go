@@ -267,16 +267,8 @@ type Config struct {
 	// NoLaunch makes this machine refuse workers (`agent-net setup --no-launch`).
 	NoLaunch bool
 	// Workers are the worker limits and timeouts. Zero fields take the defaults.
-	Workers WorkerSettings
-	// DifficultyHarness and DifficultyModel override the analyzer. Empty means
-	// pick the lowest-max Codex profile of the worker roster (see difficulty.go).
-	DifficultyHarness string
-	DifficultyModel   string
-	// DifficultyAnalyzer enables the repository-reading analyzer before judging.
-	// It is off by default; the judge scores the task brief directly.
-	DifficultyAnalyzer  bool
-	testJudgeHedgeAfter time.Duration
-	testJudgePick       func(context.Context, string) (protocol.DifficultyJudgeChoice, error)
+	Workers       WorkerSettings
+	testJudgePick func(context.Context, string) (protocol.DifficultyJudgeChoice, error)
 	// DifficultyTimeout bounds each one-shot difficulty run. Default 3 minutes.
 	DifficultyTimeout time.Duration
 	// ModelProviders is model_providers of node.json. It goes to the gateway

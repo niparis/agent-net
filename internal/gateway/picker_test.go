@@ -6,6 +6,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -226,21 +227,25 @@ func TestPickerNoDatabaseReadPerPick(t *testing.T) {
 	if table.Tasks() != 5 {
 		t.Fatalf("tasks: %d", table.Tasks())
 	}
+	nodeView := &protocol.NodeView{NodeID: node, Hostname: "h", Harnesses: []protocol.HarnessInfo{{Name: "codex", SignedIn: "yes"}}}
+	candidates := []protocol.WorkerModelCandidate{{Name: "sol low", Harness: "codex", Model: "gpt-6.1-sol:low"}, {Name: "sol medium", Harness: "codex", Model: "gpt-6.1-sol:medium"}}
+	facts, _, err := g.chooseFacts(nodeView, candidates, nil, protocol.WorkerFloors{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// With the database closed any query fails, so a pick that succeeds read
-	// the cache only.
+	// the cache and the facts snapshot only.
 	if err := s.db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if s.pickerTable() != table {
 		t.Fatal("the table changed without a write")
 	}
-	health := func(string, string) (ModelHealth, error) { return ModelHealth{}, nil }
-	rotation := func() (protocol.WorkerRotation, error) { return protocol.WorkerRotation{}, nil }
-	candidates := []protocol.WorkerModelCandidate{{Name: "sol low", Harness: "codex", Model: "gpt-6.1-sol:low"}, {Name: "sol medium", Harness: "codex", Model: "gpt-6.1-sol:medium"}}
-	pick := &protocol.PickerInput{D: 2.5, Table: s.pickerTable()}
-	choice, _, err := g.chooseAutomaticWorkerCore(health, rotation, pick, candidates, "normal", []protocol.ModelScore{{Match: "gpt-6.1-sol", Score: 45}}, nil, nil, nil, protocol.ProtectedProviders{}, false)
-	if err != nil || choice.PickNote == "" {
-		t.Fatalf("pick with the database closed: %+v %v", choice, err)
+	rotation := protocol.WorkerRotation{}
+	got, err := g.Choose(ChooseRequest{Purpose: model.PurposeWorkerAutomatic, Node: nodeView, Candidates: candidates, Difficulty: "normal", D: 2.5,
+		Scores: []protocol.ModelScore{{Match: "gpt-6.1-sol", Score: 45}}, Facts: &facts, Rotation: &rotation})
+	if err != nil || got.Choice.PickNote == "" {
+		t.Fatalf("pick with the database closed: %+v %v", got.Choice, err)
 	}
 }
 
@@ -264,14 +269,17 @@ func BenchmarkPickTwentyProfilesGateway(b *testing.B) {
 		}
 	}
 	g := &Gateway{store: s}
-	health := func(string, string) (ModelHealth, error) { return ModelHealth{}, nil }
+	nodeView := &protocol.NodeView{NodeID: node, Hostname: "h", Harnesses: []protocol.HarnessInfo{{Name: "codex", SignedIn: "yes"}}}
+	facts, _, err := g.chooseFacts(nodeView, candidates, nil, protocol.WorkerFloors{}, nil, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
 	var rotation protocol.WorkerRotation
-	readRotation := func() (protocol.WorkerRotation, error) { return rotation, nil }
-	pick := &protocol.PickerInput{D: 2.65, Table: s.pickerTable()}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, _, err := g.chooseAutomaticWorkerCore(health, readRotation, pick, candidates, "normal", scores, nil, nil, nil, protocol.ProtectedProviders{}, false); err != nil {
+		if _, err := g.Choose(ChooseRequest{Purpose: model.PurposeWorkerAutomatic, Node: nodeView, Candidates: candidates, Difficulty: "normal", D: 2.65,
+			Scores: scores, Facts: &facts, Rotation: &rotation}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -529,4 +537,18 @@ func TestPickerCountsAFailedTestStepOnce(t *testing.T) {
 	if !failedTest.Dirty || !failedAccept.Dirty {
 		t.Fatalf("a failed step makes a task dirty: test %+v accept %+v", failedTest, failedAccept)
 	}
+}
+
+// chooseModelTest is the ranker's first pick, for the tests that once read the
+// old chooser's single answer. The gate decides whether it runs.
+func chooseModelTest(candidates []protocol.WorkerModelCandidate, level string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, rotation *protocol.WorkerRotation, pick ...*protocol.PickerInput) (protocol.WorkerModelChoice, error) {
+	var in *protocol.PickerInput
+	if len(pick) > 0 {
+		in = pick[0]
+	}
+	order, _, err := protocol.WorkerPickOrder(candidates, level, scores, minimums, quotas, running, rotation, in)
+	if err != nil {
+		return protocol.WorkerModelChoice{}, err
+	}
+	return order[0], nil
 }

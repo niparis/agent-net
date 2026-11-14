@@ -152,7 +152,7 @@ func TestCalibrationChangesNoChooserBehavior(t *testing.T) {
 	}
 	scores := []protocol.ModelScore{{Match: "a", Score: 40}, {Match: "b", Score: 40}}
 	first := protocol.WorkerRotation{}
-	firstPick, err := protocol.ChooseWorkerModel(candidates, "normal", scores, nil, nil, nil, &first)
+	firstPick, err := chooseModelTest(candidates, "normal", scores, nil, nil, nil, &first)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestCalibrationChangesNoChooserBehavior(t *testing.T) {
 		t.Fatalf("calibration changed the rotation: %+v -> %+v", before, after)
 	}
 	second := protocol.WorkerRotation{}
-	secondPick, err := protocol.ChooseWorkerModel(candidates, "normal", scores, nil, nil, nil, &second)
+	secondPick, err := chooseModelTest(candidates, "normal", scores, nil, nil, nil, &second)
 	if err != nil {
 		t.Fatal(err)
 	}

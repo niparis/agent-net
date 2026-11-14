@@ -34,7 +34,6 @@ func (d *Daemon) assessWorkerStart(ctx context.Context, project, task string) *p
 		return a
 	}
 	cfg := d.cfg
-	cfg.DifficultyAnalyzer = false
 	cfg.DifficultyTimeout = workerJudgeTimeout
 	jctx, cancel := context.WithTimeout(ctx, workerJudgeTimeout)
 	defer cancel()

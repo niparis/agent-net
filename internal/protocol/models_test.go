@@ -161,21 +161,16 @@ func TestResolveModelRanksRecentSuccessFirst(t *testing.T) {
 	}
 }
 
-// A recent success still ranks first when the other match is on quota pace and
-// the successful model's provider is ahead of its reset clock.
+// A recent success ranks first. Quota is the gate's check, not the ranker's.
 func TestResolveModelRankedQuotaKeepsSuccessFirst(t *testing.T) {
 	models := []string{"codex/gpt-6-luna", "openai/gpt-6.1"}
-	q := &Quotas{Providers: []QuotaProvider{
-		quotaAt("codex", window("weekly", "weekly", 40, QuotaPaceAhead)),
-		quotaAt("openai", window("weekly", "weekly", 20, QuotaPaceOnPace)),
-	}}
-	got, err := ResolveModelRankedQuota("gpt 6", models, nil, nil, nil, nil, q)
+	got, err := ResolveModelRankedQuota("gpt 6", models, nil, nil, nil, nil)
 	if err != nil || got.Model != "openai/gpt-6.1" {
-		t.Fatalf("on pace should win without a success: %+v, %v", got, err)
+		t.Fatalf("the shorter name should win the tie: %+v, %v", got, err)
 	}
-	got, err = ResolveModelRankedQuota("gpt 6", models, nil, nil, nil, map[string]bool{"codex/gpt-6-luna": true}, q)
+	got, err = ResolveModelRankedQuota("gpt 6", models, nil, nil, nil, map[string]bool{"codex/gpt-6-luna": true})
 	if err != nil || got.Model != "codex/gpt-6-luna" {
-		t.Fatalf("a recent success should beat the pace warning: %+v, %v", got, err)
+		t.Fatalf("a recent success should rank first: %+v, %v", got, err)
 	}
 }
 

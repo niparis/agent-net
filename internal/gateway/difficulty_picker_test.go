@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"io"
 	"log"
-	"reflect"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestDifficultyJudgePickerRotationAndProtection(t *testing.T) {
+func TestDifficultyJudgePickerUsesTheFixedListAndProtection(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("test-machine", "linux")
 	if err := s.SetNodeHello(node, "test-machine", "test"); err != nil {
@@ -47,12 +46,12 @@ func TestDifficultyJudgePickerRotationAndProtection(t *testing.T) {
 		return out
 	}
 	first, second := pick(""), pick("")
-	if first["model"] == second["model"] || first["model"] == "" || second["model"] == "" {
-		t.Fatalf("rotation: %v then %v", first, second)
+	if first["model"] == "" || first["model"] != second["model"] {
+		t.Fatalf("a fixed list must keep its first eligible model: %v then %v", first, second)
 	}
 	backup := pick(first["provider"].(string))
 	if backup["provider"] == first["provider"] || backup["model"] == "" {
-		t.Fatalf("backup %v has first provider %v", backup, first)
+		t.Fatalf("the next candidate %v has the first provider %v", backup, first)
 	}
 	if _, err := s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, protectedProvidersKey, `{"protected_providers":["anthropic"]}`); err != nil {
 		t.Fatal(err)
@@ -61,9 +60,6 @@ func TestDifficultyJudgePickerRotationAndProtection(t *testing.T) {
 		if got := pick(""); got["harness"] != "pi" {
 			t.Fatalf("protected provider chosen: %v", got)
 		}
-	}
-	if reflect.DeepEqual(first, second) {
-		t.Fatal("rotation returned the same pick")
 	}
 }
 
@@ -135,8 +131,8 @@ func TestDifficultyJudgePickerChecksMachineAvailabilityAndLevel(t *testing.T) {
 		t.Fatalf("a lone strong model must still be used: %+v", got)
 	}
 	// With a weaker model signed in and in quota, neither has a record and both
-	// are allowed by their benchmark. The strong one is not left out for being
-	// above the work, so the rotation uses both.
+	// are allowed by their benchmark. The fixed list keeps its first eligible
+	// model: the judge does not rotate (decision 0162).
 	if _, err := s.SetNodeHarnesses(node, []protocol.HarnessInfo{
 		{Name: "claude", SignedIn: "yes", Models: []string{"claude-test"}},
 		{Name: "agy", SignedIn: "yes", Models: []string{"gemini-test"}},
@@ -147,7 +143,7 @@ func TestDifficultyJudgePickerChecksMachineAvailabilityAndLevel(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		seen[pick().Model]++
 	}
-	if seen["claude-test"] == 0 || seen["gemini-test"] == 0 || len(seen) != 2 {
-		t.Fatalf("want both untried models in the rotation, got %v", seen)
+	if seen["claude-test"] != 8 {
+		t.Fatalf("want the first eligible model of the fixed list, got %v", seen)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -13,6 +14,7 @@ func TestPickModelHealth(t *testing.T) {
 	now := time.Date(2026, 11, 5, 20, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return now }
 	g := &Gateway{store: s}
+	node := &protocol.NodeView{Hostname: "node", Harnesses: []protocol.HarnessInfo{{Name: "opencode", SignedIn: "yes"}}}
 	candidates := []protocol.WorkerModelCandidate{{Harness: "opencode", Model: "provider/a"}, {Harness: "opencode", Model: "provider/b"}}
 	scores := []protocol.ModelScore{{Match: "provider/a", Score: 40}, {Match: "provider/b", Score: 40}}
 	add := func(outcome string) {
@@ -29,11 +31,11 @@ func TestPickModelHealth(t *testing.T) {
 	add(outcome)
 	pick := func(c []protocol.WorkerModelCandidate) (protocol.WorkerModelChoice, string) {
 		t.Helper()
-		p, n, e := g.chooseAutomaticWorker(c, "normal", scores, nil, nil, nil, protocol.ProtectedProviders{}, false)
+		got, e := g.Choose(ChooseRequest{Purpose: model.PurposeWorkerAutomatic, Node: node, Candidates: c, Difficulty: "normal", Scores: scores})
 		if e != nil {
 			t.Fatal(e)
 		}
-		return p, n
+		return got.Choice, got.Note
 	}
 	p, n := pick(candidates)
 	if p.Model != "provider/b" || !strings.Contains(n, "cooling down") {
