@@ -62,6 +62,14 @@ func TestPlaceTextNamesTheTreeParent(t *testing.T) {
 	if !strings.Contains(text, "You report to the CTO.") {
 		t.Fatalf("place text does not name the tree parent:\n%s", text)
 	}
+	g, err := r.s.GraphForRefWithPlaces(&protocol.GraphRef{Kind: "agent", ID: "other"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := graphNodeByRef(t, g, protocol.GraphRef{Kind: "agent", ID: "other"})
+	if node.Place == nil || node.Place.ReportsTo != "the CTO" {
+		t.Fatalf("graph place reports to %+v, want the tree parent", node.Place)
+	}
 }
 
 // Authority follows the direct lead only. An agent higher in the tree is not

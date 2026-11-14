@@ -358,9 +358,13 @@ type PendingRequest struct {
 type AgentView struct {
 	// AgentID and AgentName identify the lasting agent attached by the gateway.
 	// Old gateways omit both. Workers and owner sessions have no agent.
-	AgentID          string `json:"agent_id,omitempty"`
-	AgentName        string `json:"agent_name,omitempty"`
-	RepoLead         bool   `json:"repo_lead,omitempty"`
+	AgentID   string `json:"agent_id,omitempty"`
+	AgentName string `json:"agent_name,omitempty"`
+	RepoLead  bool   `json:"repo_lead,omitempty"`
+	// ReportsTo is the Agent this session's Agent reports to in the org tree
+	// (decision 0160). Empty for a session without an Agent and for one at the
+	// root. Workers keep their caller link instead.
+	ReportsTo        string `json:"reports_to,omitempty"`
 	RepoLeadExplicit bool   `json:"repo_lead_explicit,omitempty"`
 	TeamLead         bool   `json:"team_lead,omitempty"`
 	RepoMaxAgents    int    `json:"repo_max_agents,omitempty"`

@@ -118,6 +118,30 @@ func TestGraphReadCarriesTheOrgTree(t *testing.T) {
 	}
 }
 
+// Every session the TUI lists carries the tree parent of its Agent, so the
+// TUI reads the same hierarchy as the graph and routing.
+func TestAgentListCarriesTheTreeParent(t *testing.T) {
+	s, ids := orgReadRig(t)
+	agents, err := s.Agents(protocol.QueryAgents{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, a := range agents {
+		got[a.SessionID] = a.ReportsTo
+	}
+	for session, want := range map[string]string{
+		ids["lead"]:     protocol.OrgRoot,
+		ids["member"]:   "lead",
+		ids["member-2"]: "lead",
+		ids["chief"]:    protocol.OrgRoot,
+	} {
+		if got[session] != want {
+			t.Fatalf("session %s reports to %q, want %q (all: %v)", session, got[session], want, got)
+		}
+	}
+}
+
 // root limits graph.get and graph.read to one subtree of the org tree.
 func TestGraphReadRootIsOneSubtree(t *testing.T) {
 	s, _ := orgReadRig(t)

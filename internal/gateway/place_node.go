@@ -39,6 +39,7 @@ type placeIndex struct {
 	repoHeld      map[string]string
 	agentName     map[string]string
 	agentLead     map[string]string
+	agentParent   map[string]string
 	sessionLabel  map[string]string
 	liveByAgent   map[string][]string
 	ownedRepos    map[string][]string
@@ -58,6 +59,7 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 		repoHeld:      map[string]string{},
 		agentName:     map[string]string{},
 		agentLead:     map[string]string{},
+		agentParent:   map[string]string{},
 		sessionLabel:  map[string]string{},
 		liveByAgent:   map[string][]string{},
 		ownedRepos:    map[string][]string{},
@@ -80,6 +82,9 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 		return nil, err
 	}
 	if idx.agentLead, err = orgPairs(s.db, `SELECT id,COALESCE(lead_session,'') FROM agents`); err != nil {
+		return nil, err
+	}
+	if idx.agentParent, err = orgPairs(s.db, `SELECT source,target FROM graph_edges WHERE kind='reports_to'`); err != nil {
 		return nil, err
 	}
 
@@ -242,6 +247,22 @@ func (idx *placeIndex) leadName(agent string) string {
 	return ""
 }
 
+// parentLabel names the Agent an Agent reports to in the tree, the way the
+// turn text does.
+func (idx *placeIndex) parentLabel(agent string) string {
+	switch parent := idx.agentParent[agent]; parent {
+	case "", protocol.OrgRoot:
+		return "the owner"
+	case "cto":
+		return "the CTO"
+	default:
+		if name := idx.leadName(parent); name != "" {
+			return name
+		}
+		return parent
+	}
+}
+
 // repoForAgent is the repo that gives the agent its context: its only owned
 // repo, else the repo of its newest session.
 func (idx *placeIndex) repoForAgent(agent string) string {
@@ -301,13 +322,17 @@ func (idx *placeIndex) place(ref protocol.GraphRef, repo, agent string) (protoco
 			p.HeldBack = append(p.HeldBack, protocol.PlaceHeldBack{Text: item, From: "repo"})
 		}
 	}
-	switch {
-	case p.TeamLead != "":
-		p.ReportsTo = "the " + p.Team + " lead"
-	case p.RepoLead != "" && p.RepoLead != agent && p.RepoLead != ref.ID:
-		p.ReportsTo = "the repo lead " + p.RepoLead
-	default:
-		p.ReportsTo = "the owner"
+	if ref.Kind == "agent" {
+		p.ReportsTo = idx.parentLabel(agent)
+	} else {
+		switch {
+		case p.TeamLead != "":
+			p.ReportsTo = "the " + p.Team + " lead"
+		case p.RepoLead != "" && p.RepoLead != agent && p.RepoLead != ref.ID:
+			p.ReportsTo = "the repo lead " + p.RepoLead
+		default:
+			p.ReportsTo = "the owner"
+		}
 	}
 	return p, true
 }

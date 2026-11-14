@@ -4194,6 +4194,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
  'picker_label',wa.picker_label,'picker_note',wa.picker_note,'error',wa.error) FROM worker_assessments wa
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
+  ` + agentParentOfSQL("s.agent_id") + `,
  COALESCE((COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id),s.id)=s.id) AND s.agent_id=(` + repoTopAgentOfSQL("s.repo_id") + `) AND NOT ` + mergerAgentSQL("s") + `,0),
 	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id AND (COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id),s.id)=s.id)),
  EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id),s.id)=s.id) AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
@@ -4209,7 +4210,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
 // agentListTables are the tables agentListSelect and its joins read, with the
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
 var agentListTables = []string{"sessions", "nodes", "profiles", "apps", "project_display_names", "project_mergers",
-	"worker_assessments", "agents", "repo_leads", "repos", "teams", "team_members", "setting_values", "inbox_items",
+	"worker_assessments", "agents", "graph_edges", "repo_leads", "repos", "teams", "team_members", "setting_values", "inbox_items",
 	"owner_settings", "messages"}
 
 const (
@@ -4255,7 +4256,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.ReplacedBy)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.ReportsTo, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.ReplacedBy)
 	if err != nil {
 		return a, err
 	}

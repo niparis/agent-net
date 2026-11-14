@@ -93,13 +93,16 @@ func (m Model) derivedPlace(n protocol.Node) protocol.NodePlace {
 			p.HeldBack = append(placeHeld(t.HeldBack, "team"), p.HeldBack...)
 		}
 	}
-	switch {
-	case p.TeamLead != "":
-		p.ReportsTo = "the " + p.Team + " lead"
-	case p.RepoLead != "" && (ref.Kind == "agent" && p.RepoLead != ref.ID || ref.Kind == "repo" && p.RepoLead != ref.ID):
-		p.ReportsTo = "the repo lead " + p.RepoLead
-	default:
+	// The tree stores the parent, so the fallback no longer guesses one from
+	// the team or repo lead. An older gateway sends none.
+	switch n.ReportsTo {
+	case "":
+	case protocol.OrgRoot:
 		p.ReportsTo = "the owner"
+	case "cto":
+		p.ReportsTo = "the CTO"
+	default:
+		p.ReportsTo = m.refName(&protocol.GraphRef{Kind: "agent", ID: n.ReportsTo})
 	}
 	return p
 }
