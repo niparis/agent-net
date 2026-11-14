@@ -4399,7 +4399,7 @@ const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND
 // calls: the agent rows (agentListTables), the delegation of each agent, its
 // public charter, its pending requests and its loop. Keep it equal to those
 // queries (see readThrough).
-var agentsTables = tableUnion(agentListTables, delegationTables, shortAgentChartersTables, pendingTables, loopTables)
+var agentsTables = tableUnion(agentListTables, delegationTables, shortAgentChartersTables, pendingTables, loopTables, []string{"node_scopes"})
 
 // Agents lists the agent views that match f.
 //
@@ -4436,6 +4436,9 @@ func (s *Store) agentsRead(f protocol.QueryAgents) ([]protocol.AgentView, error)
 		return nil, err
 	}
 	if err := s.applyEndedWorkerNotes(out); err != nil {
+		return nil, err
+	}
+	if err := s.applyAgentScopes(out); err != nil {
 		return nil, err
 	}
 	return out, nil

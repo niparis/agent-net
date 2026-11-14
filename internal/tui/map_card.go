@@ -443,9 +443,14 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 	if node.LeadLevel != "" {
 		out = append(out, sDim.Render("lead level")+": "+node.LeadLevel, "")
 	}
-	if p := m.nodePlace(node); hasPlace(p) {
+	p := m.nodePlace(node)
+	org := m.orgCardLines(node, w)
+	if hasPlace(p) || len(org) > 0 {
 		out = append(out, section("PLACE", w))
-		out = append(out, placeLines(p, w)...)
+		if hasPlace(p) {
+			out = append(out, placeLines(p, w)...)
+		}
+		out = append(out, org...)
 		out = append(out, "")
 	}
 	out = append(out, section("Charter", w))

@@ -100,7 +100,7 @@ func TestMergerExplicitLeadWinsDeliveryCaller(t *testing.T) {
 	for _, a := range m.snap.Agents {
 		shown[a.SessionID] = a
 	}
-	if got := m.mergerParent(shown[mergerID], shown); got != mainID {
+	if got := m.reportParent(shown[mergerID], shown); got != mainID {
 		t.Fatalf("parent %s", got)
 	}
 }
@@ -131,7 +131,7 @@ func TestMergerFollowsTheTreeNotTheRepoLead(t *testing.T) {
 	for _, a := range m.snap.Agents {
 		shown[a.SessionID] = a
 	}
-	if got := m.mergerParent(shown[mergerID], shown); got != treeLeadID {
+	if got := m.reportParent(shown[mergerID], shown); got != treeLeadID {
 		t.Fatalf("merger parent %s, want the tree parent %s", got, treeLeadID)
 	}
 	order := ids(m)

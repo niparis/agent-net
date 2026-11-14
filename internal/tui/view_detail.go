@@ -196,6 +196,18 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		delegate = a.Delegation.Delegate
 	}
 	out = append(out, kv("delegate", dashIfEmpty(delegate)))
+	// The authority is the text the session reads in its instructions, so the
+	// pane and the session cannot differ (decision 0166). It is a labelled row
+	// with the value wrapped in its own column.
+	if words := authorityWords(a.Scopes); words != "" {
+		for i, line := range wrap(words, max(w-lw-3, 8)) {
+			if i == 0 {
+				out = append(out, clip("  "+sDim.Render(cell("allowed", lw))+" "+line, w))
+			} else {
+				out = append(out, clip(strings.Repeat(" ", lw+3)+line, w))
+			}
+		}
+	}
 
 	if a.Worker != nil && a.Worker.Permissions != "" {
 		note := ""
