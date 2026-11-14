@@ -298,6 +298,48 @@ func placeTeamMembersTx(tx *sql.Tx, team string) error {
 	return nil
 }
 
+// placeEveryAgentTx makes every live Agent's parent and lead session match the
+// old tables. The build and the one-time repair use it.
+func placeEveryAgentTx(tx *sql.Tx) error {
+	rows, err := tx.Query(`SELECT id FROM agents WHERE tombstone=0 ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	var agents []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		agents = append(agents, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if err := placeAgentTx(tx, agent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// repairOrgTreeTx re-places every Agent once, so an edge left stale by a lead
+// write from before every writer re-placed its Repo or Team follows the old
+// tables again. Two passes: an Agent the cycle check leaves in place can move
+// on the second pass once its old parent has moved.
+func repairOrgTreeTx(tx *sql.Tx) error {
+	for pass := 0; pass < 2; pass++ {
+		if err := placeEveryAgentTx(tx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // bindMergerAgentTx gives a project's merger session its own Agent, role
 // merger, under the Repo's top Agent. Its ID has no space, as Agent IDs are
 // used in scope refs and command arguments; the name keeps the session's. The merger then never runs as the
@@ -408,28 +450,8 @@ func buildOrgTreeOnceTx(tx *sql.Tx, now int64) error {
 			return err
 		}
 	}
-	rows, err = tx.Query(`SELECT id FROM agents WHERE tombstone=0 ORDER BY id`)
-	if err != nil {
+	if err := placeEveryAgentTx(tx); err != nil {
 		return err
-	}
-	var agents []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		agents = append(agents, id)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
-	for _, agent := range agents {
-		if err := placeAgentTx(tx, agent); err != nil {
-			return err
-		}
 	}
 	if _, err := tx.Exec(`UPDATE sessions SET started_by='` + protocol.StartedByAgentNet + `' WHERE worker<>'' OR harness='cto'
 		OR id=(SELECT value FROM owner_settings WHERE key='cto_session')

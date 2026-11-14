@@ -31,9 +31,9 @@ func TestGraphNodePlaceMatchesTurnText(t *testing.T) {
 	if lead.Place.Team != "Alpha" || lead.Place.Mode != protocol.AuthorityAbsolute || lead.Place.TeamLead != "forge-lead" {
 		t.Fatalf("agent place: %+v", *lead.Place)
 	}
-	// The tree stores no parent for this Agent, and the turn text says the
-	// owner too. The card no longer guesses the Team lead.
-	if lead.Place.ReportsTo != "the owner" {
+	// The Team lead's parent in the tree, and the turn text, are the CTO.
+	// The card no longer guesses the Team lead.
+	if lead.Place.ReportsTo != "the CTO" {
 		t.Fatalf("agent reports to %q", lead.Place.ReportsTo)
 	}
 

@@ -203,6 +203,99 @@ func TestOrgTreeBuildPrefersRepoLead(t *testing.T) {
 	}
 }
 
+// liveLeadFixture replays the live gateway before the fix: Repo demo is owned
+// by Agent demo and sits in Team alpha, led by lead2. A lead write from an
+// older release stored the Repo lead but left demo's edge at cto.
+func liveLeadFixture(t *testing.T) (*Store, string) {
+	t.Helper()
+	s := teamStore(t)
+	lead := agentSession(t, s, "demo", "lead2")
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &protocol.GraphRef{Kind: "agent", ID: "lead2"}})
+	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &protocol.GraphRef{Kind: "repo", ID: "demo"}})
+	if _, err := s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES('demo','lead2') ON CONFLICT(repo_id) DO UPDATE SET agent_id='lead2'`); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`DELETE FROM graph_edges WHERE source='demo' AND kind='reports_to'`,
+		`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES('demo','cto','reports_to','','normal')`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return s, lead
+}
+
+// The live case: Repo demo, owned by Agent demo, is in Team alpha, led by
+// lead2. Setting the Repo lead to lead2 must move demo, the Repo's own Agent,
+// not only the lead that was set.
+func TestRepoLeadChangeMovesTheRepoOwnerAgent(t *testing.T) {
+	s, lead := liveLeadFixture(t)
+	leadSession(t, s, protocol.GraphRef{Kind: "repo", ID: "demo"}, lead)
+	if got := reportsTo(t, s, "demo"); got != "lead2" {
+		t.Fatalf("the Repo's owner Agent reports to %q, want lead2", got)
+	}
+}
+
+// A lead write from before every writer kept the tree current can leave a
+// stored edge behind. The one-time repair puts it back from the old tables.
+func TestOrgTreeRepairMovesAStaleRepoOwnerAgent(t *testing.T) {
+	s, _ := liveLeadFixture(t)
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, orgTreeRepairMarker)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := reportsTo(t, s, "demo"); got != "lead2" {
+		t.Fatalf("the stale edge survived the repair: demo reports to %q, want lead2", got)
+	}
+}
+
+// BenchmarkRepairOrgTree times the one-time repair on the live-size fixture:
+// about 50 Agents, each with a parent to re-place.
+func BenchmarkRepairOrgTree(b *testing.B) {
+	s := orgReadFixture(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		for _, q := range []string{
+			`DELETE FROM graph_edges WHERE kind='reports_to'`,
+			`INSERT INTO graph_edges(source,target,kind,mode,rule) SELECT id,'cto','reports_to','','normal' FROM agents WHERE id<>'cto' AND tombstone=0`,
+		} {
+			if _, err := s.db.Exec(q); err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.StartTimer()
+		tx, err := s.db.Begin()
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := repairOrgTreeTx(tx); err != nil {
+			tx.Rollback()
+			b.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// A Team's lead follows the Team's top: the owner is placed under the CTO when
+// the Team is created, and re-placed when it is archived.
+func TestTeamLeadPlacementFollowsCreateAndArchive(t *testing.T) {
+	s := teamStore(t)
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &protocol.GraphRef{Kind: "agent", ID: "demo"}})
+	if got := reportsTo(t, s, "demo"); got != "cto" {
+		t.Fatalf("a new Team's lead reports to %q, want cto", got)
+	}
+	teamWrite(t, s, protocol.TeamWrite{Action: "archive", ID: "alpha"})
+	if got := reportsTo(t, s, "demo"); got != "" {
+		t.Fatalf("an archived Team's former lead still reports to %q", got)
+	}
+}
+
 // A lead undo is a lead write: the tree follows it back.
 func TestLeadUndoMovesTheTree(t *testing.T) {
 	s := teamStore(t)
