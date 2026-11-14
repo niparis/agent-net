@@ -278,7 +278,9 @@ func routeCTOTool(ctx context.Context, name string, raw json.RawMessage, propose
 	if err != nil {
 		return nil, err
 	}
-	if class != ctoProposal {
+	// The owner typed what the CTO quotes: his words are the approval, so the
+	// change runs now and no proposal reaches the Desk (decision 0165).
+	if class != ctoProposal || verifiedWords(ctx) != "" {
 		return run(ctx, name, raw)
 	}
 	concrete, _, action, err := ctoConcreteCall(name, raw)

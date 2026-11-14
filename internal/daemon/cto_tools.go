@@ -201,6 +201,10 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 	if err := toolcatalog.RenamedError(name); err != nil {
 		return nil, err
 	}
+	var err error
+	if ctx, raw, err = d.withCTOOwnerWords(ctx, name, raw); err != nil {
+		return nil, err
+	}
 	if private, _ := ctx.Value(privateCTOToolKey{}).(bool); private && d.ctoSessionID() == "" {
 		if _, err := ctoClass(name, raw); err != nil {
 			return nil, err

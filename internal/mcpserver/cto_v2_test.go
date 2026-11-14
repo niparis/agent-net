@@ -523,3 +523,33 @@ func TestCTOV2ProcessStopNeedsAMachineAndPids(t *testing.T) {
 		}
 	}
 }
+
+// The CTO may quote the owner's words on a change (decision 0165): the five
+// ops that wait for an owner proposal and the merged tools whose actions the
+// words let run without one all accept owner_words.
+func TestCTOAcceptsOwnerWords(t *testing.T) {
+	for _, tc := range []struct{ tool, args string }{
+		{"graph_change", `{"action":"charter_set","node":"n","attr":"purpose","value":"x","owner_words":"set it"}`},
+		{"session_change", `{"action":"session_start","project":"p","owner_words":"start it"}`},
+		{"mcp_change", `{"action":"app_ask","code":"ABC234","owner_words":"connect it"}`},
+	} {
+		if err := ValidateCTOActionSchema(tc.tool, json.RawMessage(tc.args)); err != nil {
+			t.Errorf("%s %s: %v", tc.tool, tc.args, err)
+		}
+	}
+	for _, tc := range []struct{ method, args string }{
+		{"node_remove", `{"name":"old","owner_words":"remove old"}`},
+		{"repo_archive", `{"ref":{"kind":"repo","id":"old"},"owner_words":"archive old"}`},
+		{"agent_tombstone", `{"ref":{"kind":"agent","id":"old"},"owner_words":"retire old"}`},
+		{"machine_remove", `{"node_id":"n_1","owner_words":"remove it"}`},
+		{"machine_rotate", `{"node_id":"n_1","owner_words":"rotate it"}`},
+	} {
+		op, ok := CTOOpByName(tc.method)
+		if !ok {
+			t.Fatalf("no op %s", tc.method)
+		}
+		if err := ValidateCTOOpArgs(op, json.RawMessage(tc.args)); err != nil {
+			t.Errorf("%s %s: %v", tc.method, tc.args, err)
+		}
+	}
+}

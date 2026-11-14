@@ -499,12 +499,16 @@ func (s *Store) rejectPermissionTx(tx *sql.Tx, itemID string) error {
 // approves a proposal that waits on the Desk and closes its Desk item with an
 // answer that names who acted and the owner's words. Without one it stores a
 // new, already approved proposal and opens no ask. The owner's words are
-// required: they are the record of his approval. It writes no file.
+// required and must be verified by the daemon (WordsVerified): they are the
+// record of his approval. It writes no file.
 func (s *Store) ApprovePermissionOnOwnerWords(frame protocol.PermissionOwnerApplyFrame) (string, error) {
 	req := frame.Request
 	words := strings.TrimSpace(req.OwnerWords)
 	if words == "" {
 		return "", reject("owner_words is required: quote the owner's instruction from this chat")
+	}
+	if !frame.WordsVerified {
+		return "", reject("owner_words were not verified: the owner must have typed them")
 	}
 	by := "owner"
 	if frame.By == "cto" {

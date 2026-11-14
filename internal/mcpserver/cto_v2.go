@@ -74,6 +74,7 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 		allowed[name] = true
 	}
 	allowed["reason"] = true
+	allowed["owner_words"] = true
 	for name := range args {
 		if !allowed[name] {
 			return fmt.Errorf("field %q is not valid for %s action %q; example: %s", name, tool, action, actionExample(tool))
@@ -81,7 +82,7 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 	}
 	filtered := map[string]any{}
 	for k, v := range args {
-		if k != selector && k != "reason" {
+		if k != selector && k != "reason" && k != "owner_words" {
 			filtered[k] = v
 		}
 	}
