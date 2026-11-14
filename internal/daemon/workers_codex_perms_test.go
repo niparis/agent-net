@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -298,5 +299,47 @@ func TestContinuedCodexWorkerKeepsTheOldLevel(t *testing.T) {
 	rec := readCodex(t, res.Worktree, func(r fakeCodexRecord) bool { return len(r.TurnParams) == 1 })
 	if pol, _ := rec.TurnParams[0]["sandboxPolicy"].(map[string]any); pol["type"] != "workspaceWrite" || pol["networkAccess"] != false {
 		t.Errorf("the continued worker's turn: %v", rec.TurnParams[0])
+	}
+}
+
+// A Codex worker asks to run a command. When the scopes of its caller's role
+// node allow it (tool_decide), agent-net accepts it once; a command on the
+// never list, and a command no scope covers, are declined as before.
+func TestCodexCommandApprovalIsAcceptedOnlyWhenAScopeAllowsIt(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, task, decision string
+		scope                bool
+	}{
+		{"allowed by scope", "FAKE:approve-status x", "accept", true},
+		{"no scope", "FAKE:approve-status x", "decline", false},
+		{"never list", "FAKE:approve x", "decline", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			w := startCodexNode(t, g, shortSet)
+			if _, err := w.d.call(context.Background(), "hello", map[string]any{"hostname": "fixture", "version": "v0.4.145", "graph_refs": true}); err != nil {
+				t.Fatal(err)
+			}
+			waitGraphCutover(t, g)
+			repo := newRepo(t, "shop")
+			w.register(t, repo)
+			caller, callerID := helloPi(t, w.node, "caller", repo, true)
+			if tc.scope {
+				view, ok, err := g.gw.Store().Agent(callerID)
+				if err != nil || !ok || view.AgentID == "" {
+					t.Fatalf("the caller has no role node: %+v %v", view, err)
+				}
+				if _, err := g.gw.Store().SetScope(protocol.ScopeSetRequest{Node: view.AgentID, Kind: protocol.ScopeReview, Over: "repo:shop"}, "owner", false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			startFrom(t, caller, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: tc.task})
+			rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Answers) == 1 })
+			if m, _ := rec.Answers[0].(map[string]any); m["decision"] != tc.decision {
+				t.Errorf("answer: %v, want %s", rec.Answers[0], tc.decision)
+			}
+			eventually(t, "worker cleanup", func() bool { return w.d.workerCount() == 0 })
+		})
 	}
 }

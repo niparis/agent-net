@@ -87,20 +87,31 @@ func (lc *localConn) toolDecideCall(ctx context.Context, client string, ls *loca
 	if sid == "" {
 		return protocol.ToolDecideResult{}, nil
 	}
-	held, ok := d.scopesOf(ctx, sid)
-	if !ok || len(held.Scopes) == 0 {
+	if !d.toolAllowed(ctx, sid, p.Tool, p.Input, folderOr(p.Folder, d.infoOf(ls).Cwd)) {
 		return protocol.ToolDecideResult{}, nil
 	}
-	folder := p.Folder
-	if folder == "" {
-		folder = d.infoOf(ls).Cwd
+	return protocol.ToolDecideResult{Allow: true, Reason: "delegated by the owner through a scope of the session's role"}, nil
+}
+
+func folderOr(folder, fallback string) string {
+	if folder != "" {
+		return folder
+	}
+	return fallback
+}
+
+// toolAllowed is the one decision every harness path asks: the Claude hook
+// through tool_decide, and the Codex and OpenCode adapters directly. It is true
+// only when the scopes of the role node of session sid allow the call. Every
+// other case, including a failure, is false: no decision.
+func (d *Daemon) toolAllowed(ctx context.Context, sid, tool string, input json.RawMessage, folder string) bool {
+	held, ok := d.scopesOf(ctx, sid)
+	if !ok || len(held.Scopes) == 0 {
+		return false
 	}
 	var repo string
 	if folder != "" {
 		repo = d.repo.Lookup(folder).Project
 	}
-	if !authority.Allow(held, authority.Call{Tool: p.Tool, Input: p.Input, Repo: repo}) {
-		return protocol.ToolDecideResult{}, nil
-	}
-	return protocol.ToolDecideResult{Allow: true, Reason: "delegated by the owner through a scope of the session's role"}, nil
+	return authority.Allow(held, authority.Call{Tool: tool, Input: input, Repo: repo})
 }

@@ -1221,8 +1221,12 @@ func fakeCodex() {
 						fakeEdit(dir)
 					}
 					if strings.Contains(text, "FAKE:approve") {
+						command := "rm -rf build"
+						if strings.Contains(text, "FAKE:approve-status") {
+							command = "git status"
+						}
 						write(map[string]any{"id": "srv-1", "method": "item/commandExecution/requestApproval",
-							"params": map[string]any{"threadId": thread, "turnId": turn, "itemId": "i1", "command": "rm -rf build", "reason": "outside the sandbox"}})
+							"params": map[string]any{"threadId": thread, "turnId": turn, "itemId": "i1", "command": command, "cwd": cwd, "reason": "outside the sandbox"}})
 						select {
 						case a := <-answers:
 							var v any
