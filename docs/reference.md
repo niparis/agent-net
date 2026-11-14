@@ -370,7 +370,8 @@ state directory. OpenCode 2.3 reads project skills from `.claude/skills`, so the
 same relative path serves both harnesses. The folder holds `SKILL.md` and a
 generated `reference.md`; each file is written only when its content differs.
 No other session's folder gets them, and a start fails if they cannot be
-written.
+written. `scripts/check-opencode-cto-skill.sh` confirms the OpenCode path on a
+real 2.3 install, in a throwaway folder.
 
 The CTO starts through the same start path as every other session (decision
 0156). Its role (name `agent-net-cto`, the system prompt, the private MCP config,
