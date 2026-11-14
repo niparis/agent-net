@@ -548,7 +548,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if !protocol.ValidIsolation(p.Isolation) {
 		return none, reject("isolation can be %q, %q or empty, not %q", protocol.IsolationWorktree, protocol.IsolationNone, p.Isolation)
 	}
-	// The caller must be a session of the sending node, and not a worker.
+	// The caller must be a session of the sending node, and not a worker. A
+	// recheck comes from the machine the gateway queued the start on, and the
+	// owner session can live on the machine that asked for the start, so there
+	// the tracked start checked by workerRecheck proves the caller instead.
 	owner, ok, err := g.store.Agent(p.Owner)
 	if err != nil {
 		return none, err
@@ -556,7 +559,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if p.FromCTO && (!ok || owner.Harness != protocol.OwnerHarness) {
 		return none, reject("CTO worker start requires an owner session")
 	}
-	if !ok || owner.NodeID != nc.id {
+	if !ok || (!p.RecheckStart && owner.NodeID != nc.id) {
 		return none, reject("owner session %q does not belong to this node", p.Owner)
 	}
 	if owner.Worker != nil {
@@ -1223,10 +1226,18 @@ func (g *Gateway) workerRecheck(ctx context.Context, nc *nodeConn, p protocol.Wo
 	if p.Owner == "" || p.Project == "" {
 		return answer, reject("a recheck needs an owner and a project")
 	}
+	// The owner session may live on another machine. The tracked start proves
+	// the caller: the gateway queued it on this machine for this owner. An
+	// unowned reference is refused in the answer, so the daemon does not launch.
+	if err := g.store.verifyRecheckStart(nc.id, p.Ref, p.Owner); err != nil {
+		answer.Refused, answer.Reason = true, err.Error()
+		return answer, nil
+	}
 	frame := protocol.WorkerStartFrame{
-		Owner:      p.Owner,
-		Level:      p.Difficulty,
-		Assessment: p.Assessment,
+		Owner:        p.Owner,
+		Level:        p.Difficulty,
+		Assessment:   p.Assessment,
+		RecheckStart: true,
 		WorkerStartRequest: protocol.WorkerStartRequest{
 			Project:   p.Project,
 			Machine:   g.store.hostname(nc.id),
