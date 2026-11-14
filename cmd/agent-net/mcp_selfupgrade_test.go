@@ -18,7 +18,8 @@ import (
 )
 
 // fakeDaemon speaks just enough of the daemon's local protocol for `agent-net
-// mcp`: hello (answered with a version), mcp_tools and sessions_find.
+// mcp`: hello (answered with a version), mcp_tools, sessions_find and the
+// tool_decide hook question.
 type fakeDaemon struct {
 	ln      net.Listener
 	version atomic.Value // string
@@ -75,6 +76,8 @@ func (d *fakeDaemon) serve(c net.Conn) {
 				"id": "s_fake", "name": "from-fake-daemon", "kind": "agent", "machine": "m", "project": "p",
 				"harness": "claude", "model": "", "online": true, "status": "idle", "task": "",
 				"last_seen": "2026-01-01T00:00:00Z", "task_started": nil}}}
+		case "tool_decide":
+			result = map[string]any{"allow": true, "reason": "delegated by a fake daemon"}
 		}
 		b, _ := json.Marshal(map[string]any{"id": req.ID, "result": result})
 		c.Write(append(b, '\n'))

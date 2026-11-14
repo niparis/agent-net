@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -64,5 +66,59 @@ func TestToolDecideHookPrintsNothingOtherwise(t *testing.T) {
 		if out, _ := runDecide(t, c.input, c.res, c.err); out != "" {
 			t.Errorf("%s: printed %q", name, out)
 		}
+	}
+}
+
+// runHookCommand runs a hidden hook command the way a Claude session does: the
+// payload arrives on stdin and the hook JSON goes to stdout.
+func runHookCommand(t *testing.T, command, input string) (stdout, stderr string, code int) {
+	t.Helper()
+	payload, err := os.CreateTemp(t.TempDir(), "hook-input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := payload.WriteString(input); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := payload.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	oldStdin := os.Stdin
+	os.Stdin = payload
+	t.Cleanup(func() { os.Stdin = oldStdin })
+	var errOut strings.Builder
+	stdout = captureStdout(t, func() {
+		code = run(context.Background(), []string{command}, &errOut)
+	})
+	return stdout, errOut.String(), code
+}
+
+const ctoOpDecideInput = `{"session_id":"cto_fake","hook_event_name":"PreToolUse","tool_name":"mcp__agent-net-cto__cto_op","tool_input":{"method":"gateway_backup"},"cwd":"/code/cto"}`
+
+// A CTO session launched before v0.5.56 still has `agent-net cto-hook` in its
+// settings. It must make the same decision as `agent-net tool-decide`, or every
+// cto_op call in that session fails with "unknown command".
+func TestCTOHookAliasMatchesToolDecide(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	newFakeDaemon(t, sock, "v_test")
+	t.Setenv("AGENT_NET_SOCKET", sock)
+
+	want, wantErr, wantCode := runHookCommand(t, "tool-decide", ctoOpDecideInput)
+	if wantCode != 0 || wantErr != "" {
+		t.Fatalf("tool-decide exit %d, stderr %q", wantCode, wantErr)
+	}
+	if !strings.Contains(want, `"permissionDecision":"allow"`) {
+		t.Fatalf("tool-decide did not allow the cto_op call: %q", want)
+	}
+
+	got, gotErr, gotCode := runHookCommand(t, "cto-hook", ctoOpDecideInput)
+	if strings.Contains(gotErr, "unknown command") {
+		t.Fatalf("cto-hook is not a command: %q", gotErr)
+	}
+	if gotCode != 0 || gotErr != "" {
+		t.Fatalf("cto-hook exit %d, stderr %q", gotCode, gotErr)
+	}
+	if got != want {
+		t.Fatalf("cto-hook printed %q, tool-decide printed %q", got, want)
 	}
 }
