@@ -45,6 +45,9 @@ proposal classes, a gateway refusal and the CTO's instructions.
   trust, a whole-tool rule or a never-list command. **An owner ask** goes to a
   live session of a node whose `asks` scope covers the asker's repo, before the
   chief. The order is the owner's words, a scope, the chief, the Desk.
+- The CTO's own permission proposals are never approved by the scope path, even
+  though its node holds permissions over everything: only its verified owner
+  words (decision 0165) approve them.
 - **Codex** command approvals are accepted once when `tool_decide` says allow.
 - **OpenCode 2.3** has no hook that can answer allow. The plugin forwards a
   shell permission request, and on allow the daemon replies `once` through

@@ -360,8 +360,15 @@ func (s *Store) permissionScopeHolder(session string, p protocol.PermissionPropo
 			return ""
 		}
 	}
-	_, agent, _, _, err := s.sessionIdentity(session)
-	if err != nil || agent == "" {
+	_, agent, harness, _, err := s.sessionIdentity(session)
+	if err != nil || agent == "" || harness == "cto" {
+		return ""
+	}
+	// The CTO holds permissions over everything "on owner words": its own
+	// proposal is approved only through its verified owner words, never by the
+	// scope (decision 0165). The scope is for the other agents.
+	var role string
+	if s.db.QueryRow(`SELECT role FROM agents WHERE id=?`, agent).Scan(&role) != nil || role == "cto" {
 		return ""
 	}
 	scopes, repos, err := s.ScopesWithRepos(agent)

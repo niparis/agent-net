@@ -248,3 +248,32 @@ func TestAskGoesToTheAsksScopeHolderFirst(t *testing.T) {
 		t.Fatalf("message %q", body)
 	}
 }
+
+// The CTO holds permissions over everything, "on owner words". Its own proposal
+// with no owner words is not approved by that scope: it waits on the Desk. Its
+// owner-words path is separate (ApprovePermissionOnOwnerWords). A session that
+// is the CTO by harness is refused the same way.
+func TestPermissionProposalFromTheCTOIsNotApprovedByScope(t *testing.T) {
+	for _, tc := range []struct{ name, setup string }{
+		{"agent role cto", `UPDATE agents SET role='cto' WHERE id='forge'`},
+		{"session harness cto", `UPDATE sessions SET harness='cto' WHERE agent_id='forge'`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, session := permissionScopeRig(t)
+			if _, err := s.SetScope(scopeSet("forge", protocol.ScopePermissions, "all", "on owner words"), "owner", false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.db.Exec(tc.setup); err != nil {
+				t.Fatal(err)
+			}
+			res := proposeRules(t, s, session, "Bash(gh pr merge:*)")
+			if res.Status != "pending" {
+				t.Fatalf("the CTO's proposal: %+v, want pending", res)
+			}
+			var asks int
+			if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=?`, permissionAskPrefix+res.ID).Scan(&asks); err != nil || asks != 1 {
+				t.Fatalf("Desk asks for the proposal: %d %v", asks, err)
+			}
+		})
+	}
+}
