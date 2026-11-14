@@ -132,10 +132,27 @@ func refAgents(s *Store, f protocol.QueryAgents) ([]protocol.AgentView, error) {
 	if err := s.applyAgentCharters(out, true); err != nil {
 		return nil, err
 	}
+	if err := refAgentLeadSessions(s, out); err != nil {
+		return nil, err
+	}
 	if err := refApplyPending(s, out); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// refAgentLeadSessions fills the pinned lead session the way the real read
+// does, from agents.lead_session. The reference keeps the older scopes and
+// charter paths, but a pin is stored on the Agent and must match.
+func refAgentLeadSessions(s *Store, rows []protocol.AgentView) error {
+	pins, err := orgPairs(s.db, `SELECT id,COALESCE(lead_session,'') FROM agents`)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		rows[i].AgentLeadSession = pins[rows[i].AgentID]
+	}
+	return nil
 }
 
 // refGraphContext is graphContext as it was: it read the full Agents list.
