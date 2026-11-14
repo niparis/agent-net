@@ -747,10 +747,30 @@ func validFields(fields map[string]string) error {
 	return nil
 }
 
+// StepResults are the results a step report accepts.
+var StepResults = []string{StepResultPass, StepResultFail, StepResultNeedsOwner, StepResultClose}
+
+// StepOwnerKinds lists every kind of delivery step owner.
+var StepOwnerKinds = []string{OwnerMerger, OwnerCaller, OwnerNode, OwnerGitHub, OwnerPerson, OwnerDelegate, OwnerNone}
+
+// ValidStepOwnerKind reports whether kind may own step. A node name is
+// required for OwnerNode and is checked when a step is assigned.
+func ValidStepOwnerKind(kind, step string) bool {
+	if !ValidStep(step) {
+		return false
+	}
+	switch kind {
+	case OwnerNode, OwnerCaller, OwnerPerson:
+		return true
+	}
+	return (StepOwner{Kind: kind}).validateFor(step) == nil
+}
+
 func validResult(r string) error {
-	switch r {
-	case StepResultPass, StepResultFail, StepResultNeedsOwner, StepResultClose:
-		return nil
+	for _, v := range StepResults {
+		if r == v {
+			return nil
+		}
 	}
 	return fmt.Errorf("result must be pass, fail, needs_owner or close, not %q", r)
 }

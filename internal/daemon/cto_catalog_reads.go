@@ -534,7 +534,7 @@ func (d *Daemon) ctoCatalogMessageGet(ctx context.Context, raw json.RawMessage) 
 // ctoCharterGuide is the CTO's guide to writing charters and edges. The CTO
 // reads it with agent_graph_read view guide; it is kept out of the schemas.
 func ctoCharterGuide() string {
-	return protocol.CharterGuideText() + "\n\nEdges: depends goes from consumer to provider; deploys from deployer to app. Delivery owner edges accepts, reviews, tests, tests_after_merge, approves, approves_deploy, merges, releases, delivery_deploys and verifies go from the owner node to the repo. Request rules: normal delivers with ordinary peer guidance; auto delivers with peer trust; ask holds for the owner; never refuses."
+	return protocol.CharterGuideText() + "\n\nEdges: depends goes from consumer to provider; deploys from deployer to app. Delivery owner edges accepts, reviews, tests, tests_after_merge, approves, approves_deploy, merges, releases, delivery_deploys and verifies go from the owner node to the repo. Request rules: " + protocol.EdgeRulesText() + "."
 }
 
 func (d *Daemon) ctoCatalogGraphRead(ctx context.Context, raw json.RawMessage) (any, error) {

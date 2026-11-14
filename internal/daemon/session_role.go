@@ -127,9 +127,14 @@ func (d *Daemon) startClaudeRole(ctx context.Context, role sessionRole, id, mode
 }
 
 func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, model string) error {
+	dir := d.claudeRoleDir(role)
+	if role == roleCTO {
+		if err := d.writeCTOSkill("claude"); err != nil {
+			return err
+		}
+	}
 	d.cto.mu.Lock()
 	c := &d.claudeCTO
-	dir := d.claudeRoleDir(role)
 	canAdopt := c.ref == ""
 	if c.ref != "" {
 		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, c.ref)
@@ -215,6 +220,11 @@ func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error 
 	dir := filepath.Join(d.cfg.StateDir, string(role))
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return err
+	}
+	if role == roleCTO {
+		if err = d.writeCTOSkill("opencode"); err != nil {
+			return err
+		}
 	}
 	data, state := filepath.Join(dir, "data"), filepath.Join(dir, "state")
 	if err = copyOpenCodeAuth(ctx, bin, data, state); err != nil {

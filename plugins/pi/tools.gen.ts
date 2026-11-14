@@ -442,7 +442,7 @@ export const TOOL_CATALOG = [
         "value": {
           "type": "string",
           "maxLength": 2048,
-          "description": "The drafted text. Short, from AGENTS.md. Maturity is experimental, early, growing or mature."
+          "description": "The drafted text. Short, from AGENTS.md. Maturity is experimental, early, growing, mature or critical."
         },
         "team": {
           "type": "string",

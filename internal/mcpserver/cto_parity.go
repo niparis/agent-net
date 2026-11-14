@@ -34,14 +34,14 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	// graph_change carries over in to and the note in value, so the CTO schema
 	// gains no fields; the daemon maps them to over and note.
 	scope := map[string]ctoField{"node": s("Agent that holds the scope."), "kind": en("Scope kind.", protocol.ScopeKinds...), "to": s("Over: all, team:<name>, repo:<name> or agent:<name>."), "value": s("Note, shown only.")}
-	add("scope_set", "Store a scope on an Agent, or change its note. Stored, not used yet.", scope)
+	add("scope_set", "Store a scope on an Agent, or change its note. A session whose role holds the scope may do that action without asking the owner.", scope)
 	add("scope_remove", "Remove a scope from an Agent.", scope)
 	add("node_add", "Add an architect node.", map[string]ctoField{"name": s("Name.")})
 	add("node_remove", "Remove an edgeless architect.", map[string]ctoField{"name": s("Name.")})
 	add("edge_set", "Set a directed edge.", map[string]ctoField{
 		"from": {typ: "graph_endpoint"}, "to": {typ: "graph_endpoint"},
 		"kind": en("Consumer to provider, deployer to app.", ctoEdgeKinds...),
-		"rule": en("Deliver, own, hold, refuse.", "normal", "auto", "ask", "never"),
+		"rule": en("Deliver, own, hold, refuse.", protocol.EdgeRules...),
 	})
 	add("edge_remove", "Remove a graph edge.", map[string]ctoField{"from": {typ: "graph_endpoint"}, "to": {typ: "graph_endpoint"}, "kind": en("Kind and direction.", ctoEdgeKinds...)})
 	add("graph_undo", "Undo a graph change.", map[string]ctoField{"id": n("ID; omit for latest.")})

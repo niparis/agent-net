@@ -24,6 +24,9 @@ var ScopeKinds = []string{ScopeAsks, ScopeAdmin, ScopeMerge, ScopeRelease, Scope
 // ScopeOverAll is the over value that covers the whole network.
 const ScopeOverAll = "all"
 
+// ScopeOverKinds are the target kinds an over may name.
+var ScopeOverKinds = []string{ScopeOverAll, "team", "repo", "agent"}
+
 // Scope is one stored scope of a node (an Agent ID). Over is all, or
 // team:<id>, repo:<id> or agent:<id>. Note is shown only.
 type Scope struct {

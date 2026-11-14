@@ -177,7 +177,8 @@ const (
 	OpAgentCreate      = "agent_create"
 	OpAgentTombstone   = "agent_tombstone"
 	// OpScopeSet and OpScopeRemove change the scopes stored on a role node.
-	// Owner only; stored, not used yet.
+	// A session whose role holds the scope may do that action without asking
+	// the owner (decision 0166). Owner only.
 	OpScopeSet    = "scope_set"
 	OpScopeRemove = "scope_remove"
 	// OpNodeSettingsGet and OpNodeSettingsSet read and change a node's
