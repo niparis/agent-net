@@ -63,6 +63,13 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, re
 			continue
 		}
 		otherFiles := repo.Paths(strings.Join(other.paths, "\n"))
+		if other.kind == "running worker" {
+			// A running worker started from its own base tree, which can be
+			// older than the files the new brief's base holds now. A
+			// directory in its brief names an area, not every file that
+			// reached that area since: main's newer files are not its work.
+			otherFiles = repo.FilePaths(strings.Join(other.paths, "\n"))
+		}
 		for _, shared := range otherFiles {
 			if !mineSet[shared] {
 				continue

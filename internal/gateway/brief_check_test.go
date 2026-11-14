@@ -259,6 +259,34 @@ func TestWorkerBriefChangingAFileARunningWorkerAvoidsStarts(t *testing.T) {
 	}
 }
 
+// A running worker's brief can name a directory as the area it reads. Files
+// that another change added to that directory since the worker started are
+// not its work, so a new brief that names one of them starts. A file the
+// brief really names still overlaps.
+func TestWorkerBriefIgnoresFilesAddedAfterARunningWorkersBase(t *testing.T) {
+	s, _ := newTestStore(t)
+	repo := briefTestRepo()
+	repo.Files = append(repo.Files, "internal/gateway/prices.go")
+	worker := runningWorkerWithTask(t, s, "Fix internal/gateway/brief.go and tests in internal/gateway.")
+
+	failures, _, err := s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/prices.go")), "shop", repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("a file added after the running worker's base was refused: %v", failures)
+	}
+
+	failures, _, err = s.checkWorkerBrief(briefFrame(gatewayBrief("internal/gateway/brief.go")), "shop", repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "overlaps running worker " + worker + " on internal/gateway/brief.go"
+	if !strings.Contains(strings.Join(failures, "\n"), want) {
+		t.Fatalf("failures %q do not say %q", failures, want)
+	}
+}
+
 func TestBriefRejectionsAreCountedPerTaskFor24Hours(t *testing.T) {
 	s, c := newTestStore(t)
 	key := protocol.BriefTaskKey("s_caller", "shop", "", "Goal: fix it")

@@ -46,6 +46,65 @@ func TestHandbackOnAnOpenChangeBranchIsTheNextRevision(t *testing.T) {
 	}
 }
 
+// A worker starts from origin/main while the local main is behind. Its
+// hand-back measures the work from the merge-base with origin/main, so files
+// that only the newer default branch has do not count as its own.
+func TestHandbackDiffUsesTheNewerDefaultBranch(t *testing.T) {
+	t.Parallel()
+	n, f := startDeliveryNode(t)
+	f.answer(protocol.FrameDeliveryNeedsPush, func(json.RawMessage) (any, error) {
+		return protocol.DeliveryNeedsPushResult{}, nil
+	})
+	repo := newRepo(t, "demo")
+
+	// Another person's work lands on origin/main; local main does not move.
+	gitIn(t, repo, "checkout", "-q", "-b", "upstream")
+	if err := os.WriteFile(filepath.Join(repo, "other.txt"), []byte("another change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other := "package demo\n\nimport \"testing\"\n\nfunc TestOther(t *testing.T) {}\n"
+	if err := os.WriteFile(filepath.Join(repo, "other_test.go"), []byte(other), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "add", "other.txt", "other_test.go")
+	gitIn(t, repo, "commit", "-q", "-m", "other people's work")
+	upstream := gitHead(t, repo, "upstream")
+	gitIn(t, repo, "update-ref", "refs/remotes/origin/main", upstream)
+	gitIn(t, repo, "checkout", "-q", "main")
+	gitIn(t, repo, "branch", "-q", "-D", "upstream")
+
+	// The worker starts from origin/main, so its branch holds that work.
+	wt := filepath.Join(filepath.Dir(repo), "demo-worker")
+	gitIn(t, repo, "worktree", "add", "-q", "-b", "feat/x", wt, upstream)
+	fix := "package demo\n\nimport \"testing\"\n\nfunc TestFix(t *testing.T) {}\n"
+	if err := os.WriteFile(filepath.Join(wt, "fix_test.go"), []byte(fix), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "add", "fix_test.go")
+	gitIn(t, wt, "commit", "-q", "-m", "the fix")
+
+	w := &worker{id: "w_origin", worktree: wt, branch: "feat/x", base: upstream, owner: "s_owner", sessionID: "s_worker", project: "demo", difficultyUsed: "normal"}
+	id, problem := n.d.recordHandbackChange(context.Background(), w, nil)
+	if id == "" || problem != "" {
+		t.Fatalf("id=%q problem=%q", id, problem)
+	}
+	frames := f.frames(protocol.FrameChangeSubmit)
+	var q protocol.ChangeSubmitRequest
+	if len(frames) != 1 || json.Unmarshal(frames[0], &q) != nil {
+		t.Fatalf("change.submit frames: %s", frames)
+	}
+	if q.BaseCommit != upstream {
+		t.Errorf("the change base is %s, want the origin/main merge-base %s", q.BaseCommit, upstream)
+	}
+	if strings.Contains(q.DiffStat, "other.txt") || !strings.Contains(q.DiffStat, "fix_test.go") {
+		t.Errorf("the change diff stat counts the newer origin/main:\n%s", q.DiffStat)
+	}
+	// The hand-back notice's diff stat reads the same base.
+	if stat, _ := n.d.worktreeFacts(w); strings.Contains(stat, "other.txt") || !strings.Contains(stat, "fix_test.go") {
+		t.Errorf("the notice's diff stat counts the newer origin/main:\n%s", stat)
+	}
+}
+
 // A worker that rebased onto a newer main reports only its own commits: the
 // diff stat and the signals come from the merge-base of its head with main,
 // not from the start commit it rebased away from.
