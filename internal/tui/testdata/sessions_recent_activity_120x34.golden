@@ -4,10 +4,10 @@
 │  ● desk  cpu ? mem ? disk ?                                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT   MODEL                    STATUS   CPU   RAM TASK
- Working (1)                                                                                           view: active  (v)
+ 2 sessions · 1 busy                                                                                   view: active  (v)
 ▸ recent             desk         -         claude · gpt-6.1-sol     idle       ?     ? just finished a turn
- Idle (1)
   1 more idle · v to show
+
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G groups  p pin  ? help  q quit

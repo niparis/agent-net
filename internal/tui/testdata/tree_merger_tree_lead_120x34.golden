@@ -5,9 +5,8 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME                MACHINE      PROJECT    MODEL                    STATUS    CPU   RAM TASK
- Working (1)                                                                                              view: all  (v)
+ 9 sessions · 1 busy                                                                                      view: all  (v)
   tenebrae-53         Mac          tenebrae   claude · opus-5-5        busy        ?     ?
- Idle (8)
   tree lead           Mac          agent-net  claude                   idle        ?     ?
 ▸ └─ agent-net merger Mac          agent-net  claude                   idle        ?     ?
   ★ repo owner        Mac          agent-net  claude                   idle        ?     ?
@@ -25,10 +24,11 @@
 
 
 
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G groups  p pin  ? help  q quit

@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 10 online
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  NAME           MACHINE PROJECT   MODEL        STATUS   CPU   RAM TASK
+ 10 sessions · 4 busy                                                    all (v)
+  chief of staff Mac     -         claude       idle       ?     ?
+  CTO cto        Mac     -         cto          idle       ?     ?
+  ├─ ★ strategy… Mac     -         claude       busy       ?     ?
+  │  ├─ research Mac     -         claude       busy       ?     ?
+  │  ├─ strateg… Mac     -         opencode     busy       ?     ? probe
+  │  └─ backtest Mac     -         claude       idle       ?     ?
+  └─ ★ tenebrae… Mac     -         claude       idle       ?     ?
+     ├─ tenebra… Mac     -         claude       busy       ?     ?
+     ├─ tenebra… Mac     -         claude       idle       ?     ?
+     └─ … merger Mac     -         claude       idle       ?     ?
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open  m msg  x stop or remove  G groups  p pin  q quit

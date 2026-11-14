@@ -5,12 +5,12 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT   MODEL                    STATUS      CPU   RAM TASK
- Needs you (1)                                                                                         Desk: 7 to decide
+ 5 sessions · 1 busy                                                                                   Desk: 7 to decide
+▸ tenebrae-53        Mac          tenebrae  claude · opus-5-5        busy        38%  1.2G
   ◐ ci-runner        build-vm     agent-net pi · gpt-6               needs you    5%  300M
- Working (1)
-  tenebrae-53        Mac          tenebrae  claude · opus-5-5        busy        38%  1.2G
- Idle (3)
   3 more idle · v to show
+
+
 
 
 
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G groups  p pin  ? help  q quit

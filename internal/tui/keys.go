@@ -174,6 +174,7 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextSessions, "z", "toggle tree", "tree", 1), "collapse or expand the selected tree; on a child, act on its lead"),
 	withHelp(bind(contextSessions, "Z", "toggle all trees", "all trees", 1), "collapse or expand all session trees"),
 	withHelp(bind(contextSessions, "v", "cycle view", "view", -1), "cycle the view: active (default) or all, which includes offline sessions"),
+	withHelp(bind(contextSessions, "G", "toggle session groups", "groups", 1), "switch between one tree (the default) and groups: Needs you, Working and Idle"),
 	withHelp(bind(contextSessions, "H", "show hidden", "show hidden", -1), "show or hide sessions hidden with h, and temp-folder sessions in the all view"),
 	withHelp(bind(contextSessions, "a", "archive offline", "archive offline...", -1), "in the offline view, preview and archive offline sessions, or show archived and restore"),
 	withHelp(bind(contextSessions, "p", "pin", "pin", -1), "pin or unpin the selected session so it stays visible in Idle"),

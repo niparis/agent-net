@@ -60,7 +60,7 @@ func countName(m Model, name string) int {
 func TestSessionsHaveNoMineOrMachineGroups(t *testing.T) {
 	m, _ := mineModel(120, 34)
 	for _, g := range m.groups() {
-		if g.host != "Needs you" && g.host != "Working" && g.host != "Idle" {
+		if !g.tree && g.host != "Needs you" && g.host != "Working" && g.host != "Idle" {
 			t.Fatalf("unexpected group %s", g.host)
 		}
 	}

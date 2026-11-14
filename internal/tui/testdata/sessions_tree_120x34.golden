@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 10 online · 4 busy · 1 worker
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME                  MACHINE      PROJECT   MODEL                    STATUS   CPU   RAM TASK
+ 10 sessions · 4 busy                                                                                     view: all  (v)
+  chief of staff        Mac          -         claude                   idle       ?     ?
+  CTO cto               Mac          -         cto                      idle       ?     ?
+  ├─ ★ strategy lead    Mac          -         claude                   busy       ?     ?
+  │  ├─ research        Mac          -         claude                   busy       ?     ?
+  │  ├─ strategy worker Mac          -         opencode                 busy       ?     ? probe
+  │  └─ backtest        Mac          -         claude                   idle       ?     ?
+  └─ ★ tenebrae lead    Mac          -         claude                   idle       ?     ?
+     ├─ tenebrae 2      Mac          -         claude                   busy       ?     ?
+     ├─ tenebrae 3      Mac          -         claude                   idle       ?     ?
+     └─ tenebrae merger Mac          -         claude                   idle       ?     ?
+
+
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G groups  p pin  ? help  q quit

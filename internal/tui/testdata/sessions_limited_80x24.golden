@@ -5,7 +5,7 @@
 │  ○ old-box    v0.3.2 cpu ?                  mem ?                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- Idle (5)                                                                all (v)
+ 5 sessions · 0 busy                                                     all (v)
 ▸ tenebrae-53    Mac     tenebrae  claude · op… limited   38%  1.2G until 15:47…
   ◐ strategies   Mac     strategi… claude · so… idle     240%  4.6G backtest v2
   web            Mac     shop      opencode · … idle        ?     ?
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop or remove  p pin  q quit
+up/down select  enter open  m msg  x stop or remove  G groups  p pin  q quit

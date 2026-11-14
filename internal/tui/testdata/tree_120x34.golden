@@ -5,10 +5,9 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME                            MACHINE      PROJECT    MODEL                 STATUS    CPU   RAM TASK
- Working (2)                                                                                              view: all  (v)
+ 10 sessions · 2 busy                                                                                     view: all  (v)
   ↳ tenebrae                      Mac          tenebrae   opencode · haiku-4-5  busy        ?     ?
   tenebrae-53                     Mac          tenebrae   claude · opus-5-5     busy        ?     ?
- Idle (8)
   ◐ strategies                    Mac          strategies claude · sonnet-5-5   idle        ?     ? backtest v2
   ├─ backtest-a                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe
 ▸ ├─ backtest-b                   Mac          -          opencode · haiku-4-5  idle        ?     ? probe
@@ -25,10 +24,11 @@
 
 
 
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open (ctrl+] back)  m msg  x stop or remove  X remove all offline  p pin  ? help  q quit
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G groups  p pin  ? help  q quit

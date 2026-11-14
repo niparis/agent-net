@@ -4,15 +4,15 @@
 │  ● desk  cpu ? mem ? disk ?                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT MODEL        STATUS      CPU   RAM TASK
- Needs you (1)                                                 Desk: 1 to decide
+ 26 sessions · 1 busy                                          Desk: 1 to decide
 ▸ video          desk    -       claude · op… needs you     ?     ? Combine the…
- Working (3)
+  ★ pinned       desk    -       claude · gp… idle          ?     ? Review the …
   ★ demo lead    desk    demo    claude · gp… idle          ?     ? Review the …
   ├─ worker      build   -       codex · gpt… busy          ?     ? Review the …
   └─ merger      desk    demo    claude · gp… idle          ?     ? Review the …
- Idle (22)
-  ★ pinned       desk    -       claude · gp… idle          ?     ? Review the …
   21 more idle · v to show
+
+
 
 
 
@@ -21,4 +21,4 @@
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop or remove  p pin  q quit
+up/down select  enter open  m msg  x stop or remove  G groups  p pin  q quit
