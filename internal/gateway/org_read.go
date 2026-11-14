@@ -31,6 +31,11 @@ func mergerAgentSQL(alias string) string {
 	return `EXISTS(SELECT 1 FROM agents ma WHERE ma.id=` + alias + `.agent_id AND ma.role='merger')`
 }
 
+// registeredMergerSQL is a merger Agent with a live registration.
+func registeredMergerSQL(alias string) string {
+	return `(` + mergerAgentSQL(alias) + ` AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=` + alias + `.id))`
+}
+
 func orgPairs(q leadDB, query string, args ...any) (map[string]string, error) {
 	rows, err := q.Query(query, args...)
 	if err != nil {
@@ -48,7 +53,6 @@ func orgPairs(q leadDB, query string, args ...any) (map[string]string, error) {
 	return out, rows.Err()
 }
 
-// orgValue reads one string column of one row, and "" when there is no row.
 func orgValue(q leadDB, query string, args ...any) (string, error) {
 	var v string
 	err := q.QueryRow(query, args...).Scan(&v)
@@ -117,8 +121,7 @@ func isLeadSessionQ(q leadDB, lead, agent, session string) (bool, error) {
 	return pin == "" || pin == session, err
 }
 
-// liveLeadSessionQ picks a live session of a lead: a session under its
-// provider limit first, the pinned one first, then one in the Repo.
+// liveLeadSessionQ picks a live session of a lead: not over its limit first.
 func liveLeadSessionQ(q leadDB, agent, repo string, now time.Time) (id, name string, err error) {
 	err = q.QueryRow(`SELECT s.id,a.display_name FROM sessions s JOIN agents a ON a.id=s.agent_id
 		WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') AND a.role<>'merger'

@@ -4184,7 +4184,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
 	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),p.project)),''),
-	CASE WHEN ` + mergerAgentSQL("s") + ` THEN 'merger' ELSE '' END,
+	CASE WHEN ` + registeredMergerSQL("s") + ` THEN 'merger' ELSE '' END,
  COALESCE(p.task_started,0),
  COALESCE((SELECT json_object('run_id',wa.run_id,'session_id',wa.session_id,'started_at',wa.started_at,
  'assessed_at',wa.assessed_at,'reasoning',wa.reasoning,'scope',wa.scope,'coupling',wa.coupling,
