@@ -186,8 +186,8 @@ func TestGraphReadRootIsOneSubtree(t *testing.T) {
 func TestSessionGetShowsWhoTheSessionReportsTo(t *testing.T) {
 	s, ids := orgReadRig(t)
 	for _, c := range []struct{ session, reportsTo, also string }{
-		{ids["member-2"], "member (lead session member-main)", "chief (asks), cto (admin, permissions), lead (merge)"},
-		{ids["member"], "lead (lead session lead-main)", "chief (asks), cto (admin, permissions), lead (merge)"},
+		{ids["member-2"], "member", "chief (asks), cto (admin, permissions), lead (merge)"},
+		{ids["member"], "lead", "chief (asks), cto (admin, permissions), lead (merge)"},
 		{ids["lead"], "owner", "chief (asks), cto (admin, permissions)"},
 		{ids["chief"], "owner", "cto (admin, permissions)"},
 	} {

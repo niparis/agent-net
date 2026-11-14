@@ -39,14 +39,14 @@ func TestGraphReadKeepsTheOrgTree(t *testing.T) {
 // agent_session_get keeps the two org lines through the output schema.
 func TestSessionGetKeepsTheOrgLines(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
-		return json.RawMessage(`{"session":{"id":"s_1","name":"s01","kind":"agent","machine":"research","project":"housing","harness":"claude","model":"standard","online":true,"status":"idle","task":"","last_seen":"2026-01-01T12:00:00Z","task_started":null,"reports_to":"lead (lead session main)","also_answers_to":"chief (asks)"}}`), nil
+		return json.RawMessage(`{"session":{"id":"s_1","name":"s01","kind":"agent","machine":"research","project":"housing","harness":"claude","model":"standard","online":true,"status":"idle","task":"","last_seen":"2026-01-01T12:00:00Z","task_started":null,"reports_to":"lead","also_answers_to":"chief (asks)"}}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_session_get", Arguments: map[string]any{"session": "s_1"}})
 	if err != nil || res.IsError {
 		t.Fatalf("%+v %v", res, err)
 	}
 	session := res.StructuredContent.(map[string]any)["session"].(map[string]any)
-	if session["reports_to"] != "lead (lead session main)" || session["also_answers_to"] != "chief (asks)" {
+	if session["reports_to"] != "lead" || session["also_answers_to"] != "chief (asks)" {
 		t.Fatalf("org lines lost: %+v", session)
 	}
 }
