@@ -23,6 +23,10 @@ func TestQueuedRecheckChoosesAgainThroughTheGate(t *testing.T) {
 		},
 	}
 	g.usage.set(node, c.now(), protocol.UsageReport{Quotas: quotas})
+	// A recheck names a start the gateway queued on this machine.
+	if err := g.store.TrackWorkerStart("q_recheck", node, owner, "alpha", "opencode", ""); err != nil {
+		t.Fatal(err)
+	}
 	// The queued start chose deepseek; the gate must try that model first,
 	// not take a fresh rotation step away from it.
 	request := protocol.WorkerRecheck{Ref: "q_recheck", Owner: owner, Project: "alpha", Difficulty: "hard",

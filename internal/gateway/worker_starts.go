@@ -186,6 +186,29 @@ func (s *Store) verifyStart(nodeID, ref, owner, sessionID string) (bool, error) 
 	return false, nil
 }
 
+// verifyRecheckStart refuses a recheck of a start the gateway did not hand to
+// this machine for this owner. A queued start leaves the queue on the machine
+// that holds it, which is not the owner's machine when the start crossed
+// machines. The tracked start is the proof that the machine may ask, so the
+// owner's node is not checked here.
+func (s *Store) verifyRecheckStart(nodeID, ref, owner string) error {
+	if ref == "" {
+		return reject("a recheck needs a start reference")
+	}
+	var rn, ro string
+	err := s.db.QueryRow(`SELECT node_id, owner FROM worker_starts WHERE ref=? OR (legacy_ref=? AND legacy_ref<>'')`, ref, ref).Scan(&rn, &ro)
+	if errors.Is(err, sql.ErrNoRows) {
+		return reject("start %s is not tracked", ref)
+	}
+	if err != nil {
+		return err
+	}
+	if rn != nodeID || ro != owner {
+		return reject("start %s does not belong to this machine and owner", ref)
+	}
+	return nil
+}
+
 // claimStart atomically claims an open start before relaying its task.
 // Only the caller that transitions state from 'open' to 'starting' may relay.
 func (s *Store) claimStart(nodeID, ref string) (bool, error) {

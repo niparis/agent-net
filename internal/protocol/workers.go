@@ -368,6 +368,10 @@ type (
 		// Precheck is set by the gateway for "worker.precheck": the checks that
 		// need no judge run, nothing starts. A caller never sets it.
 		Precheck bool `json:"-"`
+		// RecheckStart is set by the gateway for "worker.recheck": it verified
+		// that the start it queued on this machine names this owner, and the
+		// owner session may live on another machine. A caller never sets it.
+		RecheckStart bool `json:"-"`
 	}
 	// WorkerStartReport is "worker.start_report", machine to gateway: the end
 	// of a start the machine had accepted without an answer (the judge and the
@@ -583,7 +587,8 @@ type (
 	}
 	// WorkerRecheck is "worker.recheck", machine to gateway: a queued start
 	// asks the gate again when it leaves the queue, because the reading that
-	// chose its model may be old (decision 0162).
+	// chose its model may be old (decision 0162). Ref names the start the
+	// gateway queued on this machine; the owner session may live on another.
 	WorkerRecheck struct {
 		Ref        string            `json:"ref,omitempty"`
 		Owner      string            `json:"owner_session"`
