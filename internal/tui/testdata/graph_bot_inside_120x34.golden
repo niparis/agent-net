@@ -8,21 +8,21 @@
   │                                                                    │ │ team      forge                           │
   │                                                  ⢀⠔○  ingest-forge │ │ lead      ★ strategist                    │
   │                                                ⢀⠔⠁↗   1 session    │ │ mode      charter first                   │
-  │                                               ⡠⠊                   │ │ reports   the forge lead                  │
-  │                                             ⡠⠊                     │ │ held back nothing beyond the always list  │
-  │                                          ⢀⡠⠊                       │ │                                           │
-  │                                        ⢀⠔⠁                         │ │ SESSIONS                                  │
-  │                                 (●) ★ strategist                   │ │ Trade    idle                             │
-  │                                   ⣀⠔1 session                      │ │                                           │
-  │                               ⢀⡠⠔⠊                                 │ │ CLIENT  Cursor                            │
-  │                            ⣀⠤⠊⠁                                    │ │ CONNECTED  Oct 27                         │
-  │                       ⢀⣀⠤⠒⠉                                        │ │ LAST USED  never                          │
-  │                 ⣀⡠⠤⠒⠒⠉⠁                                            │ │ can call: ingest-forge                    │
-  │               (●) ⚙ Trade                                          │ │                                           │
-  │                   1 session                                        │ │ CHARTER                                   │
-  │                                                                    │ │ purpose  Places paper trades              │
+  │                                               ⡠⠊                   │ │ held back nothing beyond the always list  │
+  │                                             ⡠⠊                     │ │                                           │
+  │                                          ⢀⡠⠊                       │ │ SESSIONS                                  │
+  │                                        ⢀⠔⠁                         │ │ Trade    idle                             │
+  │                                 (●) ★ strategist                   │ │                                           │
+  │                                   ⣀⠔1 session                      │ │ CLIENT  Cursor                            │
+  │                               ⢀⡠⠔⠊                                 │ │ CONNECTED  Oct 27                         │
+  │                            ⣀⠤⠊⠁                                    │ │ LAST USED  never                          │
+  │                       ⢀⣀⠤⠒⠉                                        │ │ can call: ingest-forge                    │
+  │                 ⣀⡠⠤⠒⠒⠉⠁                                            │ │                                           │
+  │               (●) ⚙ Trade                                          │ │ CHARTER                                   │
+  │                   1 session                                        │ │ purpose  Places paper trades              │
   │                                                                    │ │ accepts  trade ideas                      │
   │                                                                    │ │ A bot reads its charter only if its own   │
+  │                                                                    │ │ instructions tell it to; its grants and   │
   ╰────────────────────────────────────────────────────────────────────╯ ╰─pgup/pgdn · more──────────────────────────╯
   no messages yet
   needs you: highlighted · busy: bright · idle: normal · offline: dim

@@ -2737,49 +2737,27 @@ func projectOf(a protocol.AgentView) string {
 	return firstNonEmpty(a.Repo.Project, a.Profile.Project)
 }
 
-// mergerParent prefers the explicit online repo lead, then the online agent of
-// the project that most recently called one of its open changes, then the
-// starter. A merger with none of them stays at the top level.
+// mergerParent is the session of the Agent the stored tree says the merger
+// reports to (decision 0160). A merger whose lead has no shown session stays
+// at the top level.
 func (m Model) mergerParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
-	project := projectOf(a)
-	best := ""
-	for id, c := range shown {
-		if id != a.SessionID && c.Online && c.RepoLeadExplicit && project != "" && projectOf(c) == project && (best == "" || id < best) {
-			best = id
-		}
-	}
-	if best != "" {
-		return best
-	}
-	if caller := m.mergerCaller(project, shown); caller != "" {
-		return caller
-	}
-	if a.Worker != nil {
-		if _, ok := shown[a.Worker.Owner]; ok && a.Worker.Owner != a.SessionID {
-			return a.Worker.Owner
-		}
-	}
-	return ""
+	return m.sessionOfAgent(a.ReportsTo, a.SessionID, shown)
 }
 
-// mergerCaller is the online agent of a project that most recently called one
-// of its open changes: the caller of the freshest open change that names an
-// eligible session of that project.
-func (m Model) mergerCaller(project string, shown map[string]protocol.AgentView) string {
-	if project == "" {
+// sessionOfAgent picks the shown session that stands for an Agent: an online
+// one first, then the lowest ID, so the tree order is stable.
+func (m Model) sessionOfAgent(agent, self string, shown map[string]protocol.AgentView) string {
+	if agent == "" {
 		return ""
 	}
-	best, at := "", int64(-1)
-	for _, ch := range m.delivery.changes {
-		if ch.Repo != project || ch.State != protocol.ChangeOpen || ch.Caller == "" || ch.Updated < at {
+	best := ""
+	for id, s := range shown {
+		if id == self || s.AgentID != agent || s.Worker != nil || isMerger(s) {
 			continue
 		}
-		c, ok := shown[ch.Caller]
-		if !ok || !c.Online || c.Worker != nil || isMerger(c) || projectOf(c) != project {
-			continue
-		}
-		if best == "" || ch.Updated > at {
-			best, at = ch.Caller, ch.Updated
+		b := shown[best]
+		if best == "" || s.Online && !b.Online || s.Online == b.Online && id < best {
+			best = id
 		}
 	}
 	return best

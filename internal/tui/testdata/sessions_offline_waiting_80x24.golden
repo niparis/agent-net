@@ -8,9 +8,9 @@
  Idle (5)                                                      Desk: 1 to decide
   ★ pin          -       -       claude       idle          ?     ?
   ★ lead         desk    demo    claude       offline               no report
-  └─ worker      build   -       codex        idle          ?     ?
+  ├─ worker      build   -       codex        idle          ?     ?
+  └─ mer… merger -       demo    claude       idle          ?     ?
   other          -       -       claude       idle          ?     ?
-  └─ wor… merger -       demo    claude       idle          ?     ?
 
 
 

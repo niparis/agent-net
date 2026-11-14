@@ -78,8 +78,13 @@ func agentNameQ(q leadDB, agent string) (string, error) {
 	return name, err
 }
 
+// agentParentOfSQL is the tree parent of the Agent named by a SQL expression.
+func agentParentOfSQL(agent string) string {
+	return `COALESCE((SELECT target FROM graph_edges WHERE source=` + agent + ` AND kind='reports_to'),'')`
+}
+
 func agentParentQ(q leadDB, agent string) (string, error) {
-	return orgValue(q, `SELECT COALESCE((SELECT target FROM graph_edges WHERE source=? AND kind='reports_to'),'')`, agent)
+	return orgValue(q, `SELECT `+agentParentOfSQL("?"), agent)
 }
 
 // agentParentLabelQ names the parent the tree stores for one Agent.

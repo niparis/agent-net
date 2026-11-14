@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,7 @@ func mergerFixture() Snapshot {
 	snap := fakeSnapshot()
 	snap.Agents = append(snap.Agents,
 		agent(mainID, "n_mac", "Mac", "claude", "agent-net", func(a *protocol.AgentView) {
+			a.AgentID = "agent-net"
 			a.LastActive, a.LastSeen = t0.Add(-1*time.Minute).Unix(), t0.Add(-1*time.Minute).Unix()
 			a.Repo = protocol.RepoInfo{Root: "/Users/n/code/agent-net", Worktree: "/Users/n/code/agent-net", Project: "agent-net", Branch: "main"}
 			a.Profile.Project = "agent-net"
@@ -34,7 +36,9 @@ func mergerFixture() Snapshot {
 				StartedAt: t0.Add(-5 * time.Minute).Unix(), Task: "fix-login"}
 		}),
 		agent(mergerID, "n_mac", "Mac", "claude", "agent-net merger", func(a *protocol.AgentView) {
+			a.AgentID = "agent-net-merger"
 			a.Type = "merger"
+			a.ReportsTo = "agent-net"
 			a.LastActive, a.LastSeen = t0.Add(-2*time.Minute).Unix(), t0.Add(-2*time.Minute).Unix()
 			a.Repo = protocol.RepoInfo{Root: "/Users/n/code/agent-net", Project: "agent-net", Branch: "main"}
 			a.Profile.Project = "agent-net"
@@ -98,6 +102,46 @@ func TestMergerExplicitLeadWinsDeliveryCaller(t *testing.T) {
 	}
 	if got := m.mergerParent(shown[mergerID], shown); got != mainID {
 		t.Fatalf("parent %s", got)
+	}
+}
+
+// The tree wins over the old guess. A merger reports to the Agent its stored
+// edge names, even when another Agent of the project is the explicit repo lead
+// and the repo owner.
+func TestMergerFollowsTheTreeNotTheRepoLead(t *testing.T) {
+	snap := fakeSnapshot()
+	const repoLeadID, treeLeadID = "s_0000000000000201", "s_0000000000000202"
+	snap.Agents = append(snap.Agents,
+		agent(repoLeadID, "n_mac", "Mac", "claude", "repo owner", func(a *protocol.AgentView) {
+			a.AgentID = "agent-net"
+			a.Repo.Project, a.Profile.Project = "agent-net", "agent-net"
+			a.RepoLeadExplicit = true
+		}),
+		agent(treeLeadID, "n_mac", "Mac", "claude", "tree lead", func(a *protocol.AgentView) {
+			a.AgentID = "agent-net-lead"
+			a.Repo.Project, a.Profile.Project = "agent-net", "agent-net"
+		}),
+		agent(mergerID, "n_mac", "Mac", "claude", "agent-net merger", func(a *protocol.AgentView) {
+			a.Type = "merger"
+			a.ReportsTo = "agent-net-lead"
+			a.Repo.Project, a.Profile.Project = "agent-net", "agent-net"
+		}))
+	m := treeModel(120, 34, snap)
+	shown := map[string]protocol.AgentView{}
+	for _, a := range m.snap.Agents {
+		shown[a.SessionID] = a
+	}
+	if got := m.mergerParent(shown[mergerID], shown); got != treeLeadID {
+		t.Fatalf("merger parent %s, want the tree parent %s", got, treeLeadID)
+	}
+	order := ids(m)
+	if at := indexOfID(order, treeLeadID); at < 0 || order[at+1] != mergerID {
+		t.Fatalf("merger is not under its tree lead: %v", order)
+	}
+	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
+		frame := quietFixtures(treeModel(size.w, size.h, snap))
+		frame = selectID(frame, mergerID)
+		golden(t, fmt.Sprintf("tree_merger_tree_lead_%dx%d", size.w, size.h), frame.testView())
 	}
 }
 
