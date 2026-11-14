@@ -114,3 +114,55 @@ func TestAuthorityStaysWithTheDirectLead(t *testing.T) {
 		}
 	}
 }
+
+// One Repo lead rule: an explicit repo_leads row wins over the Repo owner, and
+// routing, place text and the graph all name the repo_leads Agent.
+func TestOneRepoLeadRuleNamesTheRepoLeadsAgent(t *testing.T) {
+	s := teamStore(t)
+	var node string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE repo_id='demo'`).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	lead, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead-other", Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='other',name='other' WHERE id=?`, lead); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SetLead(protocol.LeadSetRequest{Ref: protocol.GraphRef{Kind: "repo", ID: "demo"},
+		Lead: &protocol.GraphRef{Kind: "session", ID: lead}}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	helper, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "helper", Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='helper' WHERE id=?`, helper); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := graphSessions(t, s, "outside")
+	m, _, route, err := s.StoreLeadMessage(protocol.MsgSend{Sender: ids["outside"], Recipient: helper, Body: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.To != lead || !strings.Contains(route, "lead of demo") {
+		t.Fatalf("request went to %s (%q), want the repo_leads session %s", m.To, route, lead)
+	}
+	text, err := s.placeText(lead)
+	if err != nil || !strings.Contains(text, "You lead repo demo") {
+		t.Fatalf("place text: %q %v", text, err)
+	}
+	g, err := s.GraphForRefWithPlaces(&protocol.GraphRef{Kind: "repo", ID: "demo"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := graphNodeByRef(t, g, protocol.GraphRef{Kind: "repo", ID: "demo"})
+	if repo.Place == nil || repo.Place.RepoLead != "other" {
+		t.Fatalf("graph repo lead: %+v", repo.Place)
+	}
+	var owner string
+	if err := s.db.QueryRow(`SELECT owner_agent_id FROM repos WHERE id='demo'`).Scan(&owner); err != nil || owner != "demo" {
+		t.Fatalf("repo owner=%q %v", owner, err)
+	}
+}

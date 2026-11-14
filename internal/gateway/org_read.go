@@ -15,10 +15,10 @@ type leadDB interface {
 	Query(string, ...any) (*sql.Rows, error)
 }
 
-// repoTopAgentOfSQL is the Agent at the top of the Repo named by a SQL
-// expression: its explicit lead, else its owner. Writes and reads share it.
+// repoTopAgentOfSQL is the top Agent of the Repo named by a SQL expression.
 func repoTopAgentOfSQL(repo string) string {
-	return `COALESCE(CASE WHEN EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=` + repo + `) THEN (SELECT rl.agent_id FROM repo_leads rl WHERE rl.repo_id=` + repo + `) ELSE (SELECT r.owner_agent_id FROM repos r WHERE r.id=` + repo + `) END,'')`
+	return `COALESCE((SELECT CASE WHEN rl.repo_id IS NULL THEN r.owner_agent_id ELSE rl.agent_id END
+		FROM repos r LEFT JOIN repo_leads rl ON rl.repo_id=r.id WHERE r.id=` + repo + `),'')`
 }
 
 var (
