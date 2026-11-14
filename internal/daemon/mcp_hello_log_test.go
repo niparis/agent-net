@@ -22,9 +22,14 @@ func TestMCPHelloRefusalIsLoggedOnce(t *testing.T) {
 			t.Fatalf("hello %d from a non-child was accepted", i)
 		}
 	}
-	got := logs.String()
 	want := "mcp hello refused: codex t1: peer check failed: this daemon is not connected to a Codex app server"
-	if c := strings.Count(got, want); c != 1 {
-		t.Fatalf("want one refusal line, got %d; daemon log:\n%s", c, got)
+	// The daemon answers the hello before it writes the line, so the second
+	// call can return before the line is in the log. Wait for it; a second
+	// line means the once-only rule broke, which waiting cannot hide.
+	eventually(t, "the refusal line in the daemon log", func() bool {
+		return strings.Count(logs.String(), want) >= 1
+	})
+	if got := logs.String(); strings.Count(got, want) != 1 {
+		t.Fatalf("want one refusal line, got %d; daemon log:\n%s", strings.Count(got, want), got)
 	}
 }
