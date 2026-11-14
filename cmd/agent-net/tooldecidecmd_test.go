@@ -35,6 +35,9 @@ func TestToolDecideHookPrintsAllow(t *testing.T) {
 	if got.HookSpecificOutput.HookEventName != "PreToolUse" || got.HookSpecificOutput.PermissionDecision != "allow" {
 		t.Fatalf("output %+v", got)
 	}
+	if got.HookSpecificOutput.PermissionDecisionReason != "Delegated by the owner through a scope of this session's role." {
+		t.Fatalf("reason %q", got.HookSpecificOutput.PermissionDecisionReason)
+	}
 	if strings.Contains(out, `"block"`) || strings.Contains(out, `"deny"`) {
 		t.Fatalf("the hook must never block: %s", out)
 	}

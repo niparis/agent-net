@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -15,6 +14,9 @@ import (
 // Code waits for the hook before each tool call, so it gives up quickly and
 // then prints nothing.
 const toolDecideBudget = 400 * time.Millisecond
+
+// toolDecideReason is the one sentence Claude Code shows for an allow.
+const toolDecideReason = "Delegated by the owner through a scope of this session's role."
 
 type toolDecideInput struct {
 	SessionID string          `json:"session_id"`
@@ -56,7 +58,7 @@ func runToolDecide(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	var out toolDecideOutput
 	out.HookSpecificOutput.HookEventName = "PreToolUse"
 	out.HookSpecificOutput.PermissionDecision = "allow"
-	out.HookSpecificOutput.PermissionDecisionReason = "The owner delegated this to the session's role. " + strings.TrimSpace(res.Reason)
+	out.HookSpecificOutput.PermissionDecisionReason = toolDecideReason
 	b, err := json.Marshal(out)
 	if err != nil {
 		return
