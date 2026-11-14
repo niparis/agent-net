@@ -202,7 +202,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	if words := authorityWords(a.Scopes); words != "" {
 		for i, line := range wrap(words, max(w-lw-3, 8)) {
 			if i == 0 {
-				out = append(out, clip("  "+sDim.Render(cell("auth", lw))+" "+line, w))
+				out = append(out, clip("  "+sDim.Render(cell("allowed", lw))+" "+line, w))
 			} else {
 				out = append(out, clip(strings.Repeat(" ", lw+3)+line, w))
 			}

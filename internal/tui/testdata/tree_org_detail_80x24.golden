@@ -16,7 +16,7 @@ Selected session ─────────────────────
   trust    -                                         │
   rule     normal                                    │
   delegate -                                         │
-  auth     you may review and accept changes         │
+  allowed  you may review and accept changes         │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

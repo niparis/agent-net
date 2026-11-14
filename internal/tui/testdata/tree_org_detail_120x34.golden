@@ -16,7 +16,7 @@ Selected session ─────────────────────
   trust    -                                                    │
   rule     normal                                               │
   delegate -                                                    │
-  auth     you may review and accept changes everywhere; you    │
+  allowed  you may review and accept changes everywhere; you    │
            may merge in team forge                              │
   remote   -                                                    │
   messages none seen yet                                        │
