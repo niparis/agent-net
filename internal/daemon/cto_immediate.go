@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,10 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 	class, err := ctoClass(name, raw)
 	if err != nil {
 		return nil, err
+	}
+	words := verifiedWords(ctx)
+	if class == ctoProposal && words != "" {
+		return d.applyProposalOnWords(ctx, name, raw, words)
 	}
 	if name == "settings_change" {
 		concrete, args, _, e := ctoConcreteCall(name, raw)
@@ -64,7 +69,8 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 			}
 			delete(fields, "trust")
 		}
-		if on {
+		// The owner's verified words are his yes to the folder trust too.
+		if on || words != "" {
 			if err := d.ctoTrustBeforeStart(ctx, fields); err != nil {
 				return nil, err
 			}
@@ -554,6 +560,7 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 		}
 		text = fmt.Sprintf("CTO archived %d sessions", len(ids))
 	}
+	text += onOwnerWords(words)
 	if reason = cleanLine(reason); reason != "" {
 		text += ": " + reason
 	}
@@ -598,4 +605,102 @@ func mcpChoiceAudit(res protocol.MCPChoiceResult, node string) (string, []string
 	undo, _ := json.Marshal(protocol.FolderMCPRequest{Path: res.Path, NodeID: node,
 		Undo: &protocol.MCPUndo{Choice: res.Choice, Added: res.Added, Restored: res.Restored}})
 	return strings.Join(lines, "\n"), []string{protocol.OpFolderMCP, string(undo)}
+}
+
+// applyProposalOnWords runs one of the actions that wait on the Desk when the
+// owner typed what the CTO quotes. It goes through the same stored proposal
+// as a Desk approval, so it has the same checks, actor and audit, but the
+// proposal is decided in this call and never becomes an ask. The Inbox gets
+// one line with the owner's words and the graph undo where there is one.
+func (d *Daemon) applyProposalOnWords(ctx context.Context, name string, raw json.RawMessage, words string) (any, error) {
+	concrete, args, action, err := ctoConcreteCall(name, raw)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if len(args) > 0 && json.Unmarshal(args, &fields) != nil {
+		return nil, errors.New("bad CTO arguments")
+	}
+	var reason string
+	if value, ok := fields["reason"]; ok {
+		if json.Unmarshal(value, &reason) != nil {
+			return nil, errors.New("reason must be a string")
+		}
+		delete(fields, "reason")
+		if args, err = json.Marshal(fields); err != nil {
+			return nil, err
+		}
+	}
+	if name == "graph_change" {
+		d.ctoGraph.mu.Lock()
+		defer d.ctoGraph.mu.Unlock()
+	}
+	var last int64
+	if name == "graph_change" {
+		data, e := d.call(ctx, "cto.graph_latest", nil)
+		if e != nil {
+			return nil, e
+		}
+		var latest struct {
+			ID int64 `json:"id"`
+		}
+		if e = json.Unmarshal(data, &latest); e != nil {
+			return nil, e
+		}
+		last = latest.ID
+	}
+	record := "On the owner's words: " + cleanLine(words) + "."
+	if reason = cleanLine(reason); reason != "" {
+		record += " " + reason
+	}
+	id, err := d.propose(ctx, name, action, args, record, false)
+	if err != nil {
+		return nil, err
+	}
+	item, decided, err := d.proposalRunner().decideForDialog(ctx, id, true)
+	defer d.syncProposalAsks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !decided || item.Status != "applied" {
+		return nil, fmt.Errorf("%s did not apply: %s", strings.ReplaceAll(concrete, "_", " "), cleanLine(item.Note))
+	}
+	text := "CTO applied " + strings.ReplaceAll(concrete, "_", " ")
+	for _, key := range []string{"name", "node_id"} {
+		var value string
+		if json.Unmarshal(fields[key], &value) == nil && strings.TrimSpace(value) != "" {
+			text += " " + cleanLine(value)
+			break
+		}
+	}
+	var ref struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(fields["ref"], &ref) == nil && ref.ID != "" {
+		text += " " + cleanLine(ref.ID)
+	}
+	text += onOwnerWords(words)
+	if reason != "" {
+		text += ": " + reason
+	}
+	diff := ""
+	var options []string
+	if name == "graph_change" {
+		history, e := d.ctoGraphHistory(ctx, last)
+		if e != nil {
+			return nil, e
+		}
+		if len(history) > 0 {
+			h := history[len(history)-1]
+			b, _ := json.Marshal(protocol.GraphUndoRequest{ID: h.ID})
+			options = []string{"graph_undo", string(b)}
+			diff = fmt.Sprintf("%s: %s -> %s", h.Node, h.OldValue, h.NewValue)
+		}
+	} else {
+		diff = "No undo."
+	}
+	if _, err := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": text, "recommendation": diff, "options": options}); err != nil {
+		return nil, fmt.Errorf("%s; could not add Inbox notice: %w", text, err)
+	}
+	return map[string]any{"state": "applied", "proposal": id, "note": item.Note, "result": item.Result}, nil
 }

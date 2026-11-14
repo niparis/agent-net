@@ -3089,11 +3089,22 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Code  string `json:"code"`
 			Kind  string `json:"kind"`
 			Name  string `json:"name"`
+			// OwnerWords is set only after the daemon found the quote in what
+			// the owner typed in the CTO chat. It is his yes to this consent.
+			OwnerWords string `json:"owner_words"`
 		}
 		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
-		return st.OpenAppConsent(p.Code, p.Kind, p.Name)
+		ask, err := st.OpenAppConsent(p.Code, p.Kind, p.Name)
+		if err != nil || strings.TrimSpace(p.OwnerWords) == "" {
+			return ask, err
+		}
+		if _, err := st.answerAppConsent(ask.ID, "approve", p.Owner, false); err != nil {
+			return nil, err
+		}
+		ask.State = protocol.AskAnswered
+		return ask, nil
 	case "ask.redirect":
 		// The explicit wait of a plugin asks through the daemon's waiting
 		// method. The daemon asks here first whether the team lead takes it.

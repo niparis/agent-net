@@ -233,7 +233,7 @@ func ctoPermissionApplyCall(id string) string {
 }
 
 // ctoPermissionNote tells the CTO when it may apply a permission proposal.
-const ctoPermissionNote = "A permission proposal waits on the owner's Desk. If the owner told you in this chat to grant it, apply it with the answer call and quote his words as owner_words. Otherwise leave it on the Desk."
+const ctoPermissionNote = "A permission proposal waits on the owner's Desk. If the owner told you in this chat to grant it, apply it with cto_op permission_apply and quote his exact words as owner_words: the daemon checks them against what he typed, and it applies at once with no Desk item. Never file a Desk proposal for something he asked. Otherwise leave it on the Desk."
 
 // ctoPermissionProposal reads one permission proposal by its pp_ id as a
 // cto_proposals_find row.

@@ -1005,12 +1005,18 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if err := dec.Decode(&q); err != nil {
 			return nil, true, fmt.Errorf("bad permission_apply arguments: %w", err)
 		}
-		frame := protocol.PermissionOwnerApplyFrame{Request: q, Owner: d.ownerSessionID(), Session: d.ownerSessionID(), By: "owner"}
+		frame := protocol.PermissionOwnerApplyFrame{Request: q, Owner: d.ownerSessionID(), Session: d.ownerSessionID(), By: "owner", WordsVerified: true}
 		if proposalActor(ctx) == "cto" {
-			frame.By = "cto"
+			// The CTO's quote counts only when the owner typed it in the CTO chat.
+			frame.By, frame.WordsVerified = "cto", false
 			if cto := d.ctoSessionID(); cto != "" {
 				frame.Session = cto
 			}
+			words, verr := d.verifyCTOOwnerWords(q.OwnerWords)
+			if verr != nil {
+				return nil, true, verr
+			}
+			frame.WordsVerified = words != ""
 		}
 		res, err = d.call(ctx, protocol.FramePermissionOwnerApply, frame)
 	case protocol.OpLeadSet, protocol.OpTeamWrite, protocol.OpTeamHistory, protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpDeliveryOwnerSet, protocol.OpMergerSet, protocol.OpGraphUndo, protocol.OpRepoCreate, protocol.OpRepoArchive, protocol.OpAgentCreate, protocol.OpAgentTombstone, protocol.OpScopeSet, protocol.OpScopeRemove, protocol.OpNodeSettingsGet, protocol.OpNodeSettingsSet:
@@ -1115,6 +1121,11 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 		if err := d.registerCTOSession(ctx); err != nil {
 			return nil, true, err
+		}
+		// The CTO can reach this call itself through the operator tool. Its own
+		// text is never the owner's words.
+		if proposalActor(ctx) == "" {
+			d.rememberCTOOwnerPrompt(q.Text)
 		}
 		res, err = d.ctoSendTracked(ctx, q.Text, "owner")
 	case protocol.OpCTONew:

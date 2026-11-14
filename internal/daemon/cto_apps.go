@@ -38,6 +38,20 @@ func (d *Daemon) executeCTOApps(ctx context.Context, method string, raw json.Raw
 			return nil, err
 		}
 		args["owner"] = d.ownerSessionID()
+		// Verified words are the owner's yes to this app: the gateway approves
+		// the consent it opens. The browser sign-in stays his own step.
+		if words := verifiedWords(ctx); words != "" {
+			args["owner_words"] = words
+			data, err := d.call(ctx, method, args)
+			if err != nil {
+				return nil, err
+			}
+			text := "CTO approved the app consent for " + cleanLine(fmt.Sprint(args["name"])) + onOwnerWords(words)
+			if _, err := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": text, "recommendation": "Revoke the app in Settings to undo."}); err != nil {
+				return nil, fmt.Errorf("%s; could not add Inbox notice: %w", text, err)
+			}
+			return map[string]any{"state": "approved", "result": map[string]any{"summary": "Consent approved on the owner's words; the browser sign-in is still his.", "data": data}}, nil
+		}
 		data, err := d.call(ctx, method, args)
 		if err != nil {
 			return nil, err
@@ -164,6 +178,7 @@ func (d *Daemon) executeCTOApps(ctx context.Context, method string, raw json.Raw
 	if q.ID != "" {
 		text += " " + cleanLine(q.ID)
 	}
+	text += onOwnerWords(verifiedWords(ctx))
 	if reason = cleanLine(reason); reason != "" {
 		text += ": " + reason
 	}

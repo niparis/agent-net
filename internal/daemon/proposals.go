@@ -22,6 +22,13 @@ type dialogProposalKey struct{}
 
 // Propose validates and stores a call for the owner's decision.
 func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.RawMessage, reason string) (string, error) {
+	return d.propose(ctx, tool, action, args, reason, true)
+}
+
+// propose stores the proposal. announce sends the open list to the Desk. A
+// call the owner's own words approve passes false: it is decided at once and
+// must not flash on the Desk.
+func (d *Daemon) propose(ctx context.Context, tool, action string, args json.RawMessage, reason string, announce bool) (string, error) {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return "", err
 	}
@@ -141,7 +148,9 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 	}
 	id, err := d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
 	if err == nil {
-		d.syncProposalAsks(ctx)
+		if announce {
+			d.syncProposalAsks(ctx)
+		}
 		if dest, ok := ctx.Value(dialogProposalKey{}).(*string); ok {
 			*dest = id
 		}

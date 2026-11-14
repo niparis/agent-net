@@ -2,12 +2,9 @@ package daemon
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -19,18 +16,7 @@ func TestCTOAppAskCannotApproveItsOwnConsent(t *testing.T) {
 	if err := n.d.registerCTOSession(ctx); err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(g.dir, "gateway.db")+"?_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	now := time.Now()
-	if _, err := db.Exec(`INSERT INTO oauth_clients(client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at) VALUES('fixture','Fixture','["https://client.example/cb"]','[]','[]','none',?)`, now.UnixNano()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO oauth_pending(id,user_code,client_id,redirect_uri,code_challenge,state,resource,created_at,expires_at,status) VALUES('pending-fixture','ABC234','fixture','https://client.example/cb','','','',?,?,'pending')`, now.UnixNano(), now.Add(time.Minute).UnixNano()); err != nil {
-		t.Fatal(err)
-	}
+	seedAppPending(t, g)
 	result, err := n.d.runCTOTool(ctx, "mcp_change", json.RawMessage(`{"action":"app_ask","code":"ABC234","kind":"bot","name":"Fixture"}`))
 	if err != nil {
 		t.Fatal(err)

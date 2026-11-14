@@ -156,6 +156,10 @@ type PermissionOwnerApplyFrame struct {
 	Owner   string                      `json:"owner"`
 	Session string                      `json:"session,omitempty"`
 	By      string                      `json:"by,omitempty"`
+	// WordsVerified is set by the daemon when the quote is the owner's own:
+	// he typed it at the command line, or it was found in what he typed in the
+	// CTO chat. The gateway applies nothing without it.
+	WordsVerified bool `json:"words_verified,omitempty"`
 }
 
 // PermissionGetFrame is FramePermissionGet.

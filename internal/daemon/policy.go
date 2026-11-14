@@ -199,6 +199,10 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		return nil, errors.New("bad policy params")
 	}
 	d := lc.d
+	// What the owner types in the CTO's own pane is the words he gives the CTO.
+	if client == "cli" && p.Harness == "claude" && p.Event == "" && isHumanClaudePrompt(p.Prompt) && d.isClaudeCTONative(p.NativeID) {
+		d.rememberCTOOwnerPrompt(p.Prompt)
+	}
 	if client == "cli" {
 		d.mu.Lock()
 		ls = d.sessions[key(p.Harness, p.NativeID)]

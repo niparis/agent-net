@@ -142,6 +142,7 @@ func concreteOpSchema(concrete string, required []string, proposal bool) map[str
 	}
 	if proposal {
 		props["reason"] = map[string]any{"type": "string", "description": "Why"}
+		props["owner_words"] = ownerWordsProperty
 	}
 	if len(required) > 0 {
 		schema["required"] = required
@@ -168,15 +169,15 @@ var ctoMovedOps = []CTOOp{
 	mergedOp("public_on", "Connected apps", "Turn internet access on for connected apps.", "mcp_change", "public_on", "apps.public.on", nil, false, `{}`),
 	mergedOp("public_off", "Connected apps", "Turn internet access off for connected apps.", "mcp_change", "public_off", "apps.public.off", nil, false, `{}`),
 
-	mergedOp("machine_remove", "Machines", "Remove a machine and revoke its token; owner approval.", "settings_change", "machine_remove", "machine_remove", []string{"node_id"}, true, `{"node_id":"node-id","reason":"retired"}`),
-	mergedOp("machine_rotate", "Machines", "Rotate an online machine token; owner approval.", "settings_change", "machine_rotate", "machine_rotate", []string{"node_id"}, true, `{"node_id":"node-id"}`),
+	mergedOp("machine_remove", "Machines", "Remove a machine and revoke its token; owner approval, or at once with his words in owner_words.", "settings_change", "machine_remove", "machine_remove", []string{"node_id"}, true, `{"node_id":"node-id","reason":"retired"}`),
+	mergedOp("machine_rotate", "Machines", "Rotate an online machine token; owner approval, or at once with his words in owner_words.", "settings_change", "machine_rotate", "machine_rotate", []string{"node_id"}, true, `{"node_id":"node-id"}`),
 	mergedOp("process_stop", "Machines", "Stop processes on a machine: TERM then KILL; no undo.", "settings_change", "process_stop", "process_stop", []string{"node_id", "pids"}, false, `{"node_id":"node-id","pids":[1234,5678]}`),
 
 	mergedOp("session_replace", "Sessions", "Move an old session's work to the session that replaced it.", "session_change", "replace", "session_replace", []string{"old_session", "new_session"}, false, `{"old_session":"old-session-id","new_session":"new-session-id"}`),
 
-	mergedOp("node_remove", "Graph", "Remove an edgeless architect; owner approval.", "graph_change", "node_remove", "node_remove", []string{"name"}, true, `{"name":"old-node","reason":"retired"}`),
-	mergedOp("repo_archive", "Graph", "Deactivate a typed repo identity; owner approval.", "graph_change", "repo_archive", "repo_archive", []string{"ref"}, true, `{"ref":{"kind":"repo","id":"old-repo"},"reason":"retired"}`),
-	mergedOp("agent_tombstone", "Graph", "Deactivate a typed agent identity; owner approval.", "graph_change", "agent_tombstone", "agent_tombstone", []string{"ref"}, true, `{"ref":{"kind":"agent","id":"old-agent"},"reason":"retired"}`),
+	mergedOp("node_remove", "Graph", "Remove an edgeless architect; owner approval, or at once with his words in owner_words.", "graph_change", "node_remove", "node_remove", []string{"name"}, true, `{"name":"old-node","reason":"retired"}`),
+	mergedOp("repo_archive", "Graph", "Deactivate a typed repo identity; owner approval, or at once with his words in owner_words.", "graph_change", "repo_archive", "repo_archive", []string{"ref"}, true, `{"ref":{"kind":"repo","id":"old-repo"},"reason":"retired"}`),
+	mergedOp("agent_tombstone", "Graph", "Deactivate a typed agent identity; owner approval, or at once with his words in owner_words.", "graph_change", "agent_tombstone", "agent_tombstone", []string{"ref"}, true, `{"ref":{"kind":"agent","id":"old-agent"},"reason":"retired"}`),
 
 	mergedOp("mcp_import", "Tools", "Import a native MCP server, by candidate or by plan.", "tools_change", "import", "mcp_import", nil, false, `{"candidate":"mcp-candidate"}`),
 }

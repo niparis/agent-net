@@ -308,6 +308,14 @@ func init() {
 	})
 }
 
+// ownerWordsProperty is the quote of what the owner typed in the CTO chat. The
+// daemon checks it against his prompts: a verified quote makes the change run
+// at once, with no Desk item (decision 0165).
+var ownerWordsProperty = map[string]any{"type": "string", "description": "Owner's exact words asking for this"}
+
+// ctoOwnerWordsTools are the tools whose actions take owner_words.
+var ctoOwnerWordsTools = map[string]bool{"graph_change": true, "session_change": true, "settings_change": true, "mcp_change": true, "project_change": true}
+
 // Schema metadata only. The daemon owns the authoritative class table.
 var ctoProposalReasons = func() map[string]bool {
 	out := map[string]bool{}
@@ -382,6 +390,9 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 	props := map[string]any{}
 	if ctoProposalReasons[name] {
 		props["reason"] = map[string]any{"type": "string", "description": "Why"}
+		if ctoOwnerWordsTools[name] {
+			props["owner_words"] = ownerWordsProperty
+		}
 	}
 	for k, f := range spec.fields {
 		description := strings.TrimSuffix(f.desc, ".")

@@ -28,7 +28,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 		add(name, "Create a typed identity.", map[string]ctoField{"name": s("Display name."), "role": s("Agent role; optional.")})
 	}
 	for _, name := range []string{"repo_archive", "agent_tombstone"} {
-		add(name, "Deactivate a typed identity; owner approval required.", map[string]ctoField{"ref": {typ: "graph_ref"}})
+		add(name, "Deactivate a typed identity; owner approval, or his words in owner_words.", map[string]ctoField{"ref": {typ: "graph_ref"}})
 	}
 	add("lead_set", "Set a Repo or Team lead, or grant an Agent lead level; omit lead to clear.", map[string]ctoField{"ref": {typ: "graph_ref"}, "lead": {typ: "graph_ref"}})
 	// graph_change carries over in to and the note in value, so the CTO schema
