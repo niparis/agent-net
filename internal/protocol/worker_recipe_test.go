@@ -90,7 +90,7 @@ func TestWorkerBriefProtocolTokensAreFixed(t *testing.T) {
 // the project's test step. The owner of that step decides whether the line is
 // there; the caller's own step gets no line.
 func TestWorkerBriefTestScopeFollowsTestStepOwner(t *testing.T) {
-	const line = "\n- Tests: run only the tests that cover your change, by name (Go: -run '^(TestA|TestB)$'). Do not run whole packages, race runs, repeat or load runs, or full suites, and run one test command at a time. The delivery test step and CI run the suites."
+	const line = "\n- Tests: run only the tests that cover your change, by name (Go: -run '^(TestA|TestB)$'), or run the project's test-changed script, which picks them from the diff. Do not run whole packages, race runs, repeat or load runs, or full suites, and run one test command at a time. The delivery test step and CI run the full packages."
 	for _, tc := range []struct {
 		name        string
 		project     string
