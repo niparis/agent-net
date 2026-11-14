@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -274,6 +275,43 @@ func TestOverrideProviderResolvedLikeTheStart(t *testing.T) {
 	}
 	if f := d.overrideFacts("s_unknown", protocol.WorkerStartRequest{Effort: "high", Model: "auto"}); f.Provider != "" || f.Model != "" {
 		t.Fatalf("effort-only facts = %+v", f)
+	}
+}
+
+// A start that is accepted and then fails to run tells the caller why. Nothing
+// is dropped silently.
+func TestOverrideAcceptedStartErrorTellsTheCaller(t *testing.T) {
+	_, w, _, piID := overrideNode(t)
+	w.d.reportAcceptedStart("a_fail", piID, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode"}, nil,
+		errors.New("no allowed provider for this start"))
+	body := noticeFor(t, w, piID, "a_fail")
+	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "no allowed provider") || !strings.Contains(body, "shop") {
+		t.Fatalf("notice:\n%s", body)
+	}
+	if !strings.Contains(w.logs.String(), "worker.not_started start=a_fail") {
+		t.Fatalf("no daemon log line:\n%s", w.logs.String())
+	}
+	w.d.wmu.Lock()
+	running := len(w.d.workers)
+	w.d.wmu.Unlock()
+	if running != 0 {
+		t.Fatalf("%d workers started", running)
+	}
+}
+
+// A daemon that no longer holds the start tells the caller when the answer
+// arrives, instead of dropping it.
+func TestOverrideLostHeldStartTellsTheCaller(t *testing.T) {
+	g, w, pi, piID := overrideNode(t)
+	res := startFrom(t, pi, overrideRequest())
+	waitOverrideAsk(t, g)
+	w.d.heldMu.Lock()
+	delete(w.d.heldStarts, res.StartID)
+	w.d.heldMu.Unlock()
+	w.d.onStartDecision(protocol.StartDecision{Ref: protocol.StartOverrideRefPrefix + res.StartID, Session: piID, Answer: protocol.StartAnswerConfirm})
+	body := noticeFor(t, w, piID, res.StartID)
+	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "lost the held start") {
+		t.Fatalf("notice:\n%s", body)
 	}
 }
 
