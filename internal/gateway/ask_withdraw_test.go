@@ -10,11 +10,18 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// agentAsk creates an ask the way agent_owner_ask does: the repeat rule
+// applies to these.
+func agentAsk(t *testing.T, s *Store, from, kind, text string) string {
+	t.Helper()
+	return chiefAskFrom(t, s, from, kind, text, protocol.AskFromSession)
+}
+
 // deskAsk opens one ask and leaves it on the owner's Desk: the chief has sent
 // it to the owner, so it is no longer waiting for the chief.
 func deskAsk(t *testing.T, s *Store, from, kind, text string) string {
 	t.Helper()
-	id := chiefAskKind(t, s, from, kind, text)
+	id := agentAsk(t, s, from, kind, text)
 	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who='owner', owner='chief', state=? WHERE id=?`, protocol.DeskReady, id); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +127,7 @@ func TestChiefWithdrawsAReplacedDeskAsk(t *testing.T) {
 	s, c, chief, asker, node := chiefRig(t)
 	stale := deskAsk(t, s, asker, "approval", "Approve merge #935 at 2143e3af")
 	c.advance(time.Minute)
-	replacement := chiefAskKind(t, s, asker, "approval", "Approve merge #935 at 9999abcd")
+	replacement := agentAsk(t, s, asker, "approval", "Approve merge #935 at 9999abcd")
 	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who='owner', owner='chief', state=? WHERE id=?`, protocol.DeskReady, replacement); err != nil {
 		t.Fatal(err)
 	}
@@ -229,6 +236,34 @@ func TestRelayWithdrawsTheAskItJoined(t *testing.T) {
 	}
 	if status, _, _ := askRow(t, s, `id=?`, id); status != "closed" {
 		t.Fatalf("relay withdrawal left the ask %q", status)
+	}
+}
+
+// A session stall is an event agent-net raises itself, not an agent ask. A
+// stall raised right after one closed is a new event, not a repeat.
+func TestEventAskAfterCloseIsANewAsk(t *testing.T) {
+	s, c, chief, asker, node := chiefRig(t)
+	first := chiefAskKind(t, s, asker, "session_stall", "stall")
+	sortAsk(t, s, chief, node, protocol.AskSortArgs{Ask: first, Result: protocol.AskSortClose, Reason: "handled"})
+	c.advance(time.Minute)
+	second := chiefAskKind(t, s, asker, "session_stall", "stall")
+	if second == first {
+		t.Fatalf("the closed stall caught the new event: %s", second)
+	}
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: second, Result: protocol.AskSortClose, Reason: "handled"}}); err != nil {
+		t.Fatalf("the new stall cannot be sorted: %v", err)
+	}
+}
+
+// An event ask of the same asker with the same text while one is open still
+// joins it, as it did before the repeat rule.
+func TestEventAskWhileOpenStillJoins(t *testing.T) {
+	s, _, _, asker, _ := chiefRig(t)
+	first := chiefAskKind(t, s, asker, "session_stall", "stall")
+	second := chiefAskKind(t, s, asker, "session_stall", "stall")
+	if second != first {
+		t.Fatalf("the open event ask was not refreshed: %s, want %s", second, first)
 	}
 }
 

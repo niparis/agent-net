@@ -196,22 +196,35 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	} else if item.MessageID != "" {
 		// A message is the item's source: its outcome is resolved by that
 		// message, so it never joins another item by text.
-	} else if found, err := repeatAskWithin(db, item, now); err != nil {
-		return item, err
-	} else if found.id != "" {
-		// A repeat joins the open ask, and every asker that joined gets its
-		// answer. A note on the ask keeps the repeat visible to the chief. A
-		// repeat right after the ask closed joins nothing: the closed ask's id
-		// goes back, so the asker reads the answer instead of asking again.
-		if err := noteRepeat(db, found, item); err != nil {
+	} else if item.FromKind == protocol.AskFromSession {
+		// The repeat rule is for asks an agent raised (agent_owner_ask and a
+		// turn-end question, relayed ones included).
+		found, err := repeatAskWithin(db, item, now)
+		if err != nil {
 			return item, err
 		}
-		if found.status == "open" && found.session != item.SessionID {
-			if err := s.joinItem(db, found.id, item, now); err != nil {
+		if found.id != "" {
+			// A repeat joins the open ask, and every asker that joined gets
+			// its answer. A note on the ask keeps the repeat visible to the
+			// chief. A repeat right after the ask closed joins nothing: the
+			// closed ask's id goes back, so the asker reads the answer.
+			if err := noteRepeat(db, found, item); err != nil {
 				return item, err
 			}
+			if found.status == "open" && found.session != item.SessionID {
+				if err := s.joinItem(db, found.id, item, now); err != nil {
+					return item, err
+				}
+			}
+			return scanInbox(db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, found.id))
 		}
-		return scanInbox(db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, found.id))
+	} else if id, err := sameAskWithin(db, item, now); err != nil {
+		return item, err
+	} else if id != "" {
+		// An event or generated ask keeps the behaviour it had: an open ask of
+		// the same asker with the same text catches it, and a closed one does
+		// not. A stall at a new baseline is a new event, not a repeat.
+		return scanInbox(db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, id))
 	}
 	item.ID = protocol.NewID("i")
 	item.CreatedAt = now
@@ -247,6 +260,32 @@ const sameAskWindow = 24 * time.Hour
 // repeatClosedWindow is how long a closed ask still catches a repeat. A repeat
 // this soon after the answer is the asker missing it, not a new question.
 const repeatClosedWindow = 10 * time.Minute
+
+// sameAskWithin is the older rule, kept for asks agent-net raises itself: an
+// open ask of the same asker, made in the last 24 hours, whose text is the
+// same once case, white space and ids are folded.
+func sameAskWithin(db askDB, item protocol.InboxItem, now time.Time) (string, error) {
+	if item.SessionID == "" {
+		return "", nil
+	}
+	rows, err := db.Query(`SELECT id,text FROM inbox_items WHERE session_id=? AND status='open' AND created_at>? ORDER BY created_at,rowid`,
+		item.SessionID, now.Add(-sameAskWindow).UnixNano())
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	key := protocol.NormalizeAskText(item.Text)
+	for rows.Next() {
+		var id, text string
+		if err := rows.Scan(&id, &text); err != nil {
+			return "", err
+		}
+		if protocol.NormalizeAskText(text) == key {
+			return id, nil
+		}
+	}
+	return "", rows.Err()
+}
 
 // repeatAsk is the ask a new ask repeats.
 type repeatAsk struct {

@@ -37,8 +37,15 @@ func chiefAsk(t *testing.T, s *Store, from, text string) string {
 
 func chiefAskKind(t *testing.T, s *Store, from, kind, text string) string {
 	t.Helper()
+	return chiefAskFrom(t, s, from, kind, text, "")
+}
+
+// chiefAskFrom creates an ask with the source of its sender: empty for the
+// kinds agent-net raises itself, session for an agent ask.
+func chiefAskFrom(t *testing.T, s *Store, from, kind, text, fromKind string) string {
+	t.Helper()
 	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: kind, SessionID: from, Node: "demo", Text: text,
-		Recommendation: "yes", Options: []string{"yes", "no"}, AboutKind: protocol.AskAboutProject, AboutID: "demo"})
+		FromKind: fromKind, Recommendation: "yes", Options: []string{"yes", "no"}, AboutKind: protocol.AskAboutProject, AboutID: "demo"})
 	if err != nil {
 		t.Fatal(err)
 	}

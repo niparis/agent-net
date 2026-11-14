@@ -90,6 +90,9 @@ func turnEndQuestion(agent protocol.AgentView, project, name, text string) proto
 // it from the owner; otherwise the ask goes to the chief when one is live. A
 // text that takes an ask back withdraws it; it never makes a new ask.
 func (g *Gateway) agentOwnerAsk(ctx context.Context, st *Store, ask protocol.InboxItem) (map[string]any, error) {
+	// Mark the ask as raised by an agent session. The repeat rule joins only
+	// these asks; an event agent-net raises itself keeps its own behaviour.
+	ask.FromKind = protocol.AskFromSession
 	if id, reason, ok := protocol.AskWithdrawal(ask.Text); ok {
 		return g.withdrawAskByText(st, ask.SessionID, id, reason)
 	}
