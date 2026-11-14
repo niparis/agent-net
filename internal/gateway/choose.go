@@ -77,7 +77,7 @@ func (r ChooseResult) Next() (ChooseResult, bool) {
 	key := r.Granted.Candidate().Key()
 	at := -1
 	for i, c := range r.list {
-		if modelCandidate(c.WorkerModelCandidate).Key() == key {
+		if c.Key() == key {
 			at = i
 			break
 		}
@@ -86,14 +86,14 @@ func (r ChooseResult) Next() (ChooseResult, bool) {
 		return ChooseResult{}, false
 	}
 	rest := r.list[at+1:]
-	granted, skips, err := gateWithCoolingLast(modelCandidates(rest), r.checks, r.facts)
+	granted, skips, err := gateWithCoolingLast(rest, r.checks, r.facts)
 	if err != nil {
 		return ChooseResult{}, false
 	}
 	chosenKey := granted.Candidate().Key()
 	index := -1
 	for i, c := range rest {
-		if modelCandidate(c.WorkerModelCandidate).Key() == chosenKey {
+		if c.Key() == chosenKey {
 			index = i
 			break
 		}
@@ -102,35 +102,13 @@ func (r ChooseResult) Next() (ChooseResult, bool) {
 		return ChooseResult{}, false
 	}
 	choice := rest[index]
-	var note []string
 	if index != 0 {
 		choice.PickNote, choice.Weight, choice.ShareNote = "", 0, ""
 		if choice.Why == "" {
 			choice.Why = protocol.WhyLine(r.level, choice)
 		}
 	}
-	for _, skip := range skips {
-		note = append(note, "skipped "+skip.Candidate.Display()+": "+skip.Reason)
-	}
-	return ChooseResult{Choice: choice, Note: joinModelNote(note), Skips: skips, Granted: granted, list: rest, facts: r.facts, checks: r.checks, level: r.level}, true
-}
-
-// modelCandidatesOf converts a candidate list for the gate.
-func modelCandidatesOf(list []protocol.WorkerModelCandidate) []model.Candidate {
-	out := make([]model.Candidate, len(list))
-	for i, c := range list {
-		out[i] = modelCandidate(c)
-	}
-	return out
-}
-
-// modelCandidates converts an ordered list for the gate.
-func modelCandidates(list []protocol.WorkerModelChoice) []model.Candidate {
-	out := make([]model.Candidate, len(list))
-	for i, c := range list {
-		out[i] = modelCandidate(c.WorkerModelCandidate)
-	}
-	return out
+	return ChooseResult{Choice: choice, Note: joinModelNote(skipNotes(skips)), Skips: skips, Granted: granted, list: rest, facts: r.facts, checks: r.checks, level: r.level}, true
 }
 
 // joinModelNote joins note lines with the separator every model note uses.
@@ -222,7 +200,7 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	if req.Prefer != "" {
 		order = preferFirst(order, req.Prefer)
 	}
-	granted, skips, gateErr := gateWithCoolingLast(modelCandidates(order), policy.Checks, facts)
+	granted, skips, gateErr := gateWithCoolingLast(order, policy.Checks, facts)
 	result := ChooseResult{Skips: skips, LeftOut: resultLeftOut, facts: facts, checks: policy.Checks, list: order, level: level}
 	if gateErr != nil {
 		result.Note = joinModelNote(skipNotes(skips))
@@ -231,7 +209,7 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	key := granted.Candidate().Key()
 	index := -1
 	for i, c := range order {
-		if modelCandidate(c.WorkerModelCandidate).Key() == key {
+		if c.Key() == key {
 			index = i
 			break
 		}
@@ -267,7 +245,7 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 // already chose, instead of taking a fresh rotation step.
 func preferFirst(order []protocol.WorkerModelChoice, key string) []protocol.WorkerModelChoice {
 	for i, c := range order {
-		if modelCandidate(c.WorkerModelCandidate).Key() != key {
+		if c.Key() != key {
 			continue
 		}
 		if i == 0 {
@@ -286,24 +264,24 @@ func preferFirst(order []protocol.WorkerModelChoice, key string) []protocol.Work
 func skipNotes(skips []model.Skip) []string {
 	out := make([]string, 0, len(skips))
 	for _, skip := range skips {
-		out = append(out, "skipped "+skip.Candidate.Display()+": "+skip.Reason)
+		out = append(out, "skipped "+skip.Candidate.Label()+": "+skip.Reason)
 	}
 	return out
 }
 
 // pickedCooling reports whether the chosen candidate is cooling down.
 func pickedCooling(choice protocol.WorkerModelChoice, facts model.Facts) bool {
-	cool, ok := facts.Cooling[modelCandidate(choice.WorkerModelCandidate).Key()]
+	cool, ok := facts.Cooling[choice.Key()]
 	return ok && cool.Until.After(facts.Now)
 }
 
 // hasHealthy reports whether another candidate is not cooling down.
 func hasHealthy(order []protocol.WorkerModelChoice, choice protocol.WorkerModelChoice, facts model.Facts) bool {
 	for _, c := range order {
-		if modelCandidate(c.WorkerModelCandidate).Key() == modelCandidate(choice.WorkerModelCandidate).Key() {
+		if c.Key() == choice.Key() {
 			continue
 		}
-		cool, ok := facts.Cooling[modelCandidate(c.WorkerModelCandidate).Key()]
+		cool, ok := facts.Cooling[c.Key()]
 		if !ok || !cool.Until.After(facts.Now) {
 			return true
 		}
@@ -340,7 +318,11 @@ func protectionNotes(order []protocol.WorkerModelChoice, choice protocol.WorkerM
 // gateWithCoolingLast asks the gate twice when cooling is on: a model that is
 // cooling down is used only when no other candidate can run, as before
 // decision 0162.
-func gateWithCoolingLast(list []model.Candidate, checks model.Checks, facts model.Facts) (model.Granted, []model.Skip, error) {
+func gateWithCoolingLast(order []protocol.WorkerModelChoice, checks model.Checks, facts model.Facts) (model.Granted, []model.Skip, error) {
+	list := make([]model.Candidate, len(order))
+	for i := range order {
+		list[i] = order[i].WorkerModelCandidate
+	}
 	picked, skips, err := model.Gate(list, checks, facts)
 	if err == nil || !checks.Cooling {
 		return picked, skips, err
@@ -402,10 +384,6 @@ func protectedLastOrder(order []protocol.WorkerModelChoice, setting protocol.Pro
 		}
 	}
 	return out
-}
-
-func modelCandidate(c protocol.WorkerModelCandidate) model.Candidate {
-	return model.Candidate{Name: c.Name, Harness: c.Harness, Model: c.Model, Effort: c.Effort, Provider: c.Provider}
 }
 
 // providerLimit is the latest limit a live session reported for one provider.
@@ -478,7 +456,7 @@ func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.Wor
 		auth = map[string]authIndex{}
 	}
 	for _, c := range candidates {
-		key := c.Harness + "\x00" + c.Model
+		key := c.Key()
 		if node != nil {
 			idx, ok := auth[c.Harness]
 			if !ok {
@@ -534,6 +512,6 @@ func appendGateSkips(roster *notStartedRoster, skips []model.Skip) {
 		if skip.Candidate.Name == "" && skip.Candidate.Harness == "" {
 			continue
 		}
-		roster.add(skip.Candidate.Display(), "skipped: "+skip.Reason, rosterRankForSkip(skip.Check))
+		roster.add(skip.Candidate.Label(), "skipped: "+skip.Reason, rosterRankForSkip(skip.Check))
 	}
 }

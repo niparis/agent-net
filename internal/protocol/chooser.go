@@ -8,20 +8,9 @@ import (
 	"time"
 )
 
-// WorkerModelCandidate is one model available on an installed harness.
-type WorkerModelCandidate struct {
-	Name          string
-	Harness       string
-	Model         string
-	Effort        string
-	Provider      string
-	DefaultEffort string
-	Failed        bool
-	Succeeded     bool
-	Track         TrackRecord
-	// EarlyQuitLevels marks recent failed attempts only at their difficulty.
-	EarlyQuitLevels map[string]bool
-}
+// WorkerModelCandidate is one model available on an installed harness. It is
+// the one candidate type, protocol.Candidate.
+type WorkerModelCandidate = Candidate
 
 // WorkerModelChoice explains an automatic worker model selection.
 type WorkerModelChoice struct {
@@ -85,9 +74,6 @@ type WorkerRotationLevel struct {
 
 // workerRotationWindow is how many recent picks a share counts.
 const workerRotationWindow = 10
-
-// WorkerModelKey identifies a candidate in the rotation state.
-func WorkerModelKey(c WorkerModelCandidate) string { return c.Harness + "\x00" + c.Model }
 
 // Clone copies the rotation state, so a preview can advance it without
 // changing what the gateway will do.
@@ -209,7 +195,7 @@ func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelS
 		return nil, leftOut, err
 	}
 	order := []WorkerModelChoice{picked}
-	seen := map[string]bool{WorkerModelKey(picked.WorkerModelCandidate): true}
+	seen := map[string]bool{picked.WorkerModelCandidate.Key(): true}
 	rest := append([]rankedChoice(nil), eligible...)
 	sort.SliceStable(rest, func(i, j int) bool {
 		if rest[i].poor != rest[j].poor {
@@ -218,10 +204,10 @@ func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelS
 		if rest[i].weight != rest[j].weight {
 			return rest[i].weight > rest[j].weight
 		}
-		return WorkerModelKey(rest[i].choice.WorkerModelCandidate) < WorkerModelKey(rest[j].choice.WorkerModelCandidate)
+		return rest[i].choice.WorkerModelCandidate.Key() < rest[j].choice.WorkerModelCandidate.Key()
 	})
 	for _, e := range rest {
-		key := WorkerModelKey(e.choice.WorkerModelCandidate)
+		key := e.choice.WorkerModelCandidate.Key()
 		if seen[key] {
 			continue
 		}
@@ -249,7 +235,7 @@ func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) 
 	// carries weight.
 	keep := make(map[string]bool, len(eligible))
 	for _, e := range eligible {
-		keep[WorkerModelKey(e.choice.WorkerModelCandidate)] = true
+		keep[e.choice.WorkerModelCandidate.Key()] = true
 	}
 	for key := range lvl.Current {
 		if !keep[key] {
@@ -276,7 +262,7 @@ func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) 
 		tier = good
 	}
 	sort.Slice(tier, func(i, j int) bool {
-		return WorkerModelKey(tier[i].choice.WorkerModelCandidate) < WorkerModelKey(tier[j].choice.WorkerModelCandidate)
+		return tier[i].choice.WorkerModelCandidate.Key() < tier[j].choice.WorkerModelCandidate.Key()
 	})
 	total := 0.0
 	for _, e := range tier {
@@ -291,7 +277,7 @@ func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) 
 	best := -1
 	var bestCurrent float64
 	for i, e := range tier {
-		key := WorkerModelKey(e.choice.WorkerModelCandidate)
+		key := e.choice.WorkerModelCandidate.Key()
 		current := lvl.Current[key] + e.weight
 		lvl.Current[key] = current
 		if best < 0 || current > bestCurrent {
@@ -299,7 +285,7 @@ func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) 
 		}
 	}
 	picked := tier[best]
-	pickedKey := WorkerModelKey(picked.choice.WorkerModelCandidate)
+	pickedKey := picked.choice.WorkerModelCandidate.Key()
 	lvl.Current[pickedKey] -= total
 	lvl.Recent = append(lvl.Recent, pickedKey)
 	if len(lvl.Recent) > workerRotationWindow {
@@ -314,7 +300,7 @@ func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) 
 		if name == "" {
 			name = c.Model
 		}
-		names[WorkerModelKey(c)] = name
+		names[c.Key()] = name
 	}
 	out.ShareNote = rotationShareNote(level, names, lvl.Recent)
 	return out, nil
@@ -439,27 +425,6 @@ func rotationShareNote(level string, names map[string]string, recent []string) s
 		parts = append(parts, fmt.Sprintf("%s: %d", names[key], counts[key]))
 	}
 	return fmt.Sprintf("%s of the last %d %s starts", strings.Join(parts, ", "), seen, level)
-}
-
-// WorkerRotationShares summarizes the recent picks of a difficulty for the
-// models the caller offers. It reads the state without advancing it.
-func WorkerRotationShares(level string, candidates []WorkerModelCandidate, rotation *WorkerRotation) string {
-	if rotation == nil {
-		return ""
-	}
-	state := rotation.Levels[level]
-	if state == nil {
-		return ""
-	}
-	names := make(map[string]string, len(candidates))
-	for _, c := range candidates {
-		name := c.Name
-		if name == "" {
-			name = c.Model
-		}
-		names[WorkerModelKey(c)] = name
-	}
-	return rotationShareNote(level, names, state.Recent)
 }
 
 // QuotaRoomForProvider reports the room a start has under a provider's

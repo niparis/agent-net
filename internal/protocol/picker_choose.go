@@ -370,10 +370,10 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 	if err != nil {
 		return nil, header, header + ": fallback to the level rule (" + err.Error() + ")"
 	}
-	pickedKey := WorkerModelKey(picked.WorkerModelCandidate)
+	pickedKey := picked.WorkerModelCandidate.Key()
 	var chosen *pickerEntry
 	for _, e := range final {
-		if WorkerModelKey(e.c) == pickedKey {
+		if e.c.Key() == pickedKey {
 			chosen = e
 			break
 		}
