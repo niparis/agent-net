@@ -4153,11 +4153,13 @@ func (s *Store) AnnounceNotify(nodeID string, p protocol.ProfileAnnounce) (proto
 	if err != nil {
 		return protocol.Profile{}, nil, err
 	}
-	// An announce without a wait says the session went on. A question or an
-	// approval it raised before its earlier announce is overtaken. One raised
-	// since (the ask and the task line of the same turn) stays.
+	// An announce without a wait says the session went on. A question it
+	// raised before its earlier announce is overtaken. One raised since (the
+	// ask and the task line of the same turn) stays. An approval never closes
+	// here: only the owner's answer, the asker's withdraw or the chief's
+	// replace-withdraw ends it, so a stale approval cannot vanish unseen.
 	if previousAnnounce > 0 && protocol.CleanWaiting(p.Waiting) == nil {
-		if _, err := s.closeSessionOwnerAsks(s.db, p.SessionID, previousAnnounce, protocol.AskReasonMovedOn, protocol.AskKindQuestion, protocol.AskKindApproval); err != nil {
+		if _, err := s.closeSessionOwnerAsks(s.db, p.SessionID, previousAnnounce, protocol.AskReasonMovedOn, protocol.AskKindQuestion); err != nil {
 			return protocol.Profile{}, nil, err
 		}
 	}
