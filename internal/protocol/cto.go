@@ -65,6 +65,9 @@ type CTOSettings struct {
 	Harness       string `json:"harness"`
 	OpenCodeModel string `json:"opencode_model"`
 	ClaudeModel   string `json:"claude_model"`
+	// Models is the CTO's ordered model list (decision 0162). The first entry
+	// that passes the gate runs the CTO; the harness changes with the entry.
+	Models []RoleModel `json:"models,omitempty"`
 }
 
 // CTOSettingsRequest reads the settings when all pointers are nil and saves
@@ -75,6 +78,9 @@ type CTOSettingsRequest struct {
 	Title   *string `json:"title,omitempty"`
 	Model   *string `json:"model,omitempty"`
 	Harness *string `json:"harness,omitempty"`
+	// Models replaces the whole ordered list. Model and Harness change the
+	// first entry, which is the CTO's current choice.
+	Models *[]RoleModel `json:"models,omitempty"`
 }
 
 const OpCTOSettings = "cto_settings"

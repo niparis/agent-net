@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 type dialogProposalKey struct{}
@@ -45,10 +46,16 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 			return "", err
 		}
 		if action == "merger_start" {
-			reason = project.Name + " merger: Claude Opus session in " + project.Name + " on " + project.Hostname + ", owns test and merge."
-			if p.Model != "" && p.Model != "claude-opus-5-5" {
-				reason = project.Name + " merger: Claude session (" + p.Model + ") in " + project.Name + " on " + project.Hostname + ", owns test and merge."
+			chosen := firstNonEmpty(p.Model, p.Harness)
+			if chosen == "" {
+				// The gate chooses at approval time; the reason names the list's
+				// first entry, which is what it will start on unless the
+				// checks move it.
+				if list, err := protocol.ParseRoleModels(d.SettingsSnapshot().String(protocol.RoleModelsKey(protocol.RoleMerger), settings.Where{})); err == nil && len(list) > 0 {
+					chosen = list[0].Display()
+				}
 			}
+			reason = project.Name + " merger: " + chosen + " session in " + project.Name + " on " + project.Hostname + ", owns test and merge."
 			raw, err := d.call(ctx, "merger.plan", map[string]string{"project": project.Name})
 			if err != nil {
 				return "", err

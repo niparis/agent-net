@@ -199,7 +199,7 @@ func TestCTODialogProjectCreateReportsReady(t *testing.T) {
 		t.Fatalf("response: %v", p)
 	}
 	message, _ := p["message"].(string)
-	if strings.Contains(message, "\n") || !strings.Contains(message, "company-rag -> ") || !strings.Contains(message, path+", Claude Opus, background. OK?") || !strings.Contains(message, "matching group") {
+	if strings.Contains(message, "\n") || !strings.Contains(message, "company-rag -> ") || !strings.Contains(message, path+", claude-opus-5-5, background. OK?") || !strings.Contains(message, "matching group") {
 		t.Fatalf("confirmation: %q", message)
 	}
 	answer, _ := json.Marshal(map[string]any{"id": p["proposal_id"], "approve": true})
@@ -378,7 +378,7 @@ func TestCTOProjectCloneDialogNamesRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 	message, _ := value.(map[string]any)["message"].(string)
-	if strings.Contains(message, "\n") || !strings.Contains(message, path+", clone of "+remote+", Claude Opus, background. OK?") {
+	if strings.Contains(message, "\n") || !strings.Contains(message, path+", clone of "+remote+", claude-opus-5-5, background. OK?") {
 		t.Fatalf("dialog %q", message)
 	}
 }

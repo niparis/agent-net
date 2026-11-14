@@ -62,9 +62,6 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 			var start protocol.SessionStartRequest
 			if json.Unmarshal(item.Call.Args, &start) == nil {
 				model := firstNonEmpty(start.Model, start.Harness)
-				if start.Harness == "claude" && start.Model == "claude-opus-5-5" {
-					model = "Claude Opus"
-				}
 				name := filepath.Base(filepath.Clean(start.Path))
 				if start.Remote != "" {
 					message = fmt.Sprintf("%s -> %s, %s, clone of %s, %s, background. OK?", name, start.NodeID, start.Path, start.Remote, model)

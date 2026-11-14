@@ -14,6 +14,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/integrations"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest) (protocol.CTOSettings, error) {
@@ -44,6 +45,10 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	if err != nil {
 		return protocol.CTOSettings{}, err
 	}
+	models, err := d.ctoRoleModels(ctx)
+	if err != nil {
+		return protocol.CTOSettings{}, err
+	}
 	previousHarness := harness
 	if in.Harness != nil {
 		if *in.Harness != "opencode" && *in.Harness != "claude" {
@@ -51,12 +56,32 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		}
 		harness = *in.Harness
 	}
-	if in.Model != nil {
+	if in.Models != nil {
+		models = *in.Models
+		if len(models) > 0 {
+			harness = models[0].Harness
+		}
+	}
+	if in.Model != nil || in.Harness != nil {
+		// The form changes the current choice, which is the first entry. The
+		// rest of the ordered list is kept, so a fallback survives an edit.
+		if len(models) == 0 {
+			models = []protocol.RoleModel{{Harness: harness}}
+		}
+		models[0].Harness = harness
+		switch {
+		case in.Model != nil:
+			models[0].Model = *in.Model
+		case in.Harness != nil:
+			// Switching harness without naming a model keeps the model that
+			// harness had, as the per-harness settings did.
+			models[0].Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
+		}
 		switch harness {
 		case "claude":
-			claudeModel = *in.Model
+			claudeModel = models[0].Model
 		default:
-			openCodeModel = *in.Model
+			openCodeModel = models[0].Model
 		}
 	}
 	switched := in.Harness != nil && previousHarness != harness
@@ -66,18 +91,22 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		}
 	}
 
-	if in.Model != nil || in.Harness != nil {
-		if _, err := d.st.db.Exec(`UPDATE cto SET opencode_model=?, claude_model=?, active_harness=? WHERE id=1`, openCodeModel, claudeModel, harness); err != nil {
+	if in.Model != nil || in.Harness != nil || in.Models != nil {
+		model := ""
+		if len(models) > 0 {
+			model = models[0].Model
+		}
+		if err := d.saveCTORoleModels(models, harness, model); err != nil {
 			return protocol.CTOSettings{}, err
 		}
 	}
 	if switched {
 		model := modelForCTOHarness(harness, openCodeModel, claudeModel)
 		if model == "" {
+			model = roleModelForHarness(models, harness)
+		}
+		if model == "" {
 			model = "default"
-			if harness == "claude" {
-				model = "opus"
-			}
 		}
 		payload, err := json.Marshal(model)
 		if err != nil {
@@ -87,11 +116,12 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 			return protocol.CTOSettings{}, err
 		}
 	}
-	if in.Model != nil || in.Harness != nil || in.Title != nil {
+	if in.Model != nil || in.Harness != nil || in.Title != nil || in.Models != nil {
 		remote.Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
 		remote.Harness = harness
 		remote.OpenCodeModel = openCodeModel
 		remote.ClaudeModel = claudeModel
+		remote.Models = models
 		remote.Title = title
 		if err := writeRemoteCTOSettings(ctx, c, remote); err != nil {
 			return protocol.CTOSettings{}, err
@@ -103,6 +133,10 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	out.OpenCodeModel = openCodeModel
 	out.ClaudeModel = claudeModel
 	out.Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
+	if out.Model == "" {
+		out.Model = roleModelForHarness(models, harness)
+	}
+	out.Models = models
 	out.Title = title
 	return out, nil
 }
@@ -186,9 +220,19 @@ func (d *Daemon) migrateCTOModelSettings(legacy protocol.CTOSettings) error {
 	if harness != "claude" && harness != "opencode" {
 		harness = "opencode"
 	}
-	_, err = tx.Exec(`INSERT INTO cto(id,session_id,active_harness,opencode_model,claude_model,models_migrated)
-VALUES(1,'',?,?,?,1)
-ON CONFLICT(id) DO UPDATE SET active_harness=excluded.active_harness,opencode_model=excluded.opencode_model,claude_model=excluded.claude_model,models_migrated=1`, harness, openCodeModel, claudeModel)
+	// The ordered list migrates in the same step (decision 0162). A saved
+	// model becomes a one-entry list; a fresh install takes the setting's
+	// default list.
+	models := protocol.FormatRoleModels(legacy.Models)
+	if models == "" && model != "" {
+		models = protocol.FormatRoleModels([]protocol.RoleModel{{Harness: harness, Model: model}})
+	}
+	if models == "" {
+		models = d.SettingsSnapshot().String(protocol.RoleModelsKey(protocol.RoleCTO), settings.Where{})
+	}
+	_, err = tx.Exec(`INSERT INTO cto(id,session_id,active_harness,active_model,opencode_model,claude_model,models,models_migrated)
+VALUES(1,'',?,?,?,?,?,1)
+ON CONFLICT(id) DO UPDATE SET active_harness=excluded.active_harness,active_model=excluded.active_model,opencode_model=excluded.opencode_model,claude_model=excluded.claude_model,models=excluded.models,models_migrated=1`, harness, model, openCodeModel, claudeModel, models)
 	if err != nil {
 		return err
 	}
@@ -204,6 +248,17 @@ func (d *Daemon) localCTOModelSettings() (openCodeModel, claudeModel, harness st
 		harness = "opencode"
 	}
 	return
+}
+
+// roleModelForHarness is the first list entry for one harness, when the saved
+// per-harness model is empty.
+func roleModelForHarness(models []protocol.RoleModel, harness string) string {
+	for _, m := range models {
+		if m.Harness == harness {
+			return m.Model
+		}
+	}
+	return ""
 }
 
 func modelForCTOHarness(harness, openCodeModel, claudeModel string) string {

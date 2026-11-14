@@ -291,9 +291,6 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 		return nil, err
 	}
 	model := settings.ClaudeModel
-	if model == "" {
-		model = "opus"
-	}
 	id, err := d.claudeCTOSession()
 	if err != nil {
 		return nil, err
@@ -382,9 +379,6 @@ func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (proto
 		return out, err
 	}
 	out.Model = settings.ClaudeModel
-	if out.Model == "" {
-		out.Model = "opus"
-	}
 	id, err := d.claudeCTOSession()
 	if err != nil {
 		return out, err
@@ -655,9 +649,6 @@ func (d *Daemon) adoptLiveClaudeCTO() bool {
 	_, model, _, err := d.localCTOModelSettings()
 	if err != nil {
 		return false
-	}
-	if model == "" {
-		model = "opus"
 	}
 	return d.bindClaudeCTO(sf, model, "", "adopted")
 }

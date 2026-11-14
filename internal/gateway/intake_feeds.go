@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/niparis/agent-net/internal/settings"
-
+	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Feeds of the CTO intake queue that the gateway sees itself (decision 0152).
@@ -149,25 +149,29 @@ func (s *Store) trainRunFeed(tx askDB, project string, e protocol.Evidence, now 
 }
 
 // noProviderFeed runs when the automatic picker found no worker. When every
-// candidate's provider has no quota left, the work is stuck because no
-// provider is available: each of those providers' quota threads gets it.
-func (g *Gateway) noProviderFeed(candidates []protocol.WorkerModelCandidate, quotas *protocol.Quotas) {
-	for provider, reason := range quotaBlockedProviders(candidates, quotas) {
+// candidate's provider was skipped because it has no quota left, the work is
+// stuck because no provider is available: each of those providers' quota
+// threads gets it. The gate already made each refusal, so this reads its skips
+// instead of asking the quota check a second time (decision 0162).
+func (g *Gateway) noProviderFeed(skips []model.Skip) {
+	for provider, reason := range quotaBlockedProviders(skips) {
 		g.quotaStuckProvider(provider, "no worker could start: "+reason)
 	}
 }
 
-// quotaBlockedProviders maps each candidate's quota provider to its refusal,
-// or returns nil when any candidate is not refused for quota.
-func quotaBlockedProviders(candidates []protocol.WorkerModelCandidate, quotas *protocol.Quotas) map[string]string {
+// quotaBlockedProviders maps each exhausted provider to the gate's reason, or
+// returns nil when any candidate was skipped for another check.
+func quotaBlockedProviders(skips []model.Skip) map[string]string {
 	out := map[string]string{}
-	for _, c := range candidates {
-		reason := protocol.QuotaRefusal(quotas, c.Harness, c.Model)
-		provider := protocol.QuotaProviderForStart(c.Harness, c.Model)
-		if reason == "" || provider == "" {
+	for _, skip := range skips {
+		if skip.Check != "exhausted" {
 			return nil
 		}
-		out[provider] = reason
+		provider := skip.Candidate.QuotaProvider()
+		if provider == "" {
+			return nil
+		}
+		out[provider] = skip.Reason
 	}
 	if len(out) == 0 {
 		return nil

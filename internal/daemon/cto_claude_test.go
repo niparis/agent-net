@@ -80,8 +80,8 @@ func TestClaudeCTOBackgroundAndResume(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startClaudeNode(t, g, shortSet)
-	model := "opus"
-	n.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Model: &model})
+	model, claudeHarness := "opus", "claude"
+	n.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &claudeHarness, Model: &model})
 	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
 	defer cancel()
 	h := claudeCTOHarness{}

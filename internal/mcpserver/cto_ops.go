@@ -61,7 +61,7 @@ var ctoOwnerOpTypes = map[string]reflect.Type{
 
 var ctoOwnerOpExamples = map[string]string{
 	"charter_history":  `{"node":"architect"}`,
-	"chief_set":        `{"harness":"claude","model":"claude-opus-5-5","effort":"medium"}`,
+	"chief_set":        `{"harness":"claude","model":"opus","effort":"medium"}`,
 	"gateway_backup":   `{"path":"/tmp/agent-net-backup"}`,
 	"tools_export":     `{"item":"skill-id","version":"version-hash"}`,
 	"tools_import":     `{"item":"skill-id","location":{"node_id":"node-id","location":"/home/owner/skill"}}`,

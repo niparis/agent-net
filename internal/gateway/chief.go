@@ -109,11 +109,12 @@ func (s *Store) SetChief(q protocol.ChiefSetRequest, actor string) error {
 	return err
 }
 
-// chiefModelLine resolves the model fields of a request against the models the
+// chiefModelLine resolves the model list of a request against the models the
 // network's machines report, the way a worker start does, and returns the
-// one-line chief.model value, with the value now stored for the settings write
-// to expect (nil when the setting was never written). A field not given keeps
-// its value from the current setting. A model no machine lists is refused.
+// chief.model value, with the value now stored for the settings write to
+// expect (nil when the setting was never written). The single fields change the
+// first entry; Models replaces the whole ordered list. A model no machine lists
+// is refused.
 func (s *Store) chiefModelLine(q protocol.ChiefSetRequest) (string, json.RawMessage, error) {
 	snap, err := s.SettingsSnapshot()
 	if err != nil {
@@ -129,72 +130,100 @@ func (s *Store) chiefModelLine(q protocol.ChiefSetRequest) (string, json.RawMess
 	if current == "" {
 		current = protocol.DefaultChiefModel
 	}
-	parts := strings.Split(current, " · ")
-	for len(parts) < 4 {
-		parts = append(parts, "")
-	}
-	harness, provider, model, effort := parts[0], parts[1], parts[2], parts[3]
-	if effort == "default" {
-		effort = ""
-	}
-	if q.Harness != "" {
-		harness = q.Harness
-	}
-	if q.Model != "" || q.Harness != "" || q.Provider != "" {
-		// A new model or harness drops the old provider, which belonged to it.
-		provider = q.Provider
-	}
-	if q.Model != "" {
-		model = q.Model
-	}
-	if q.Effort != "" {
-		effort = q.Effort
-	}
-	if model == "default" {
-		model = ""
-	}
-	if model == "" {
-		return "", nil, reject("chief_set needs a model for harness %q", harness)
-	}
-	if !slices.Contains(harnesses.Names, harness) {
-		return "", nil, reject("unknown harness %q; known: %s", harness, strings.Join(harnesses.Names, ", "))
-	}
-	if effort != "" {
-		if _, level := protocol.SplitModelLevel("m:" + effort); level == "" {
-			return "", nil, reject("unknown effort %q", effort)
-		}
+	list, err := protocol.ParseRoleModels(current)
+	if err != nil {
+		return "", nil, reject("%s: %v", protocol.ChiefModelKey, err)
 	}
 	nodes, err := s.Nodes()
 	if err != nil {
 		return "", nil, err
 	}
+	if len(q.Models) > 0 {
+		list = append([]protocol.RoleModel(nil), q.Models...)
+	} else {
+		first := protocol.RoleModel{}
+		if len(list) > 0 {
+			first = list[0]
+		}
+		if q.Harness != "" {
+			first.Harness = q.Harness
+		}
+		if q.Model != "" || q.Harness != "" || q.Provider != "" {
+			// A new model or harness drops the old provider, which belonged to it.
+			first.Provider = q.Provider
+		}
+		if q.Model != "" {
+			first.Model = q.Model
+		}
+		if q.Effort != "" {
+			first.Effort = q.Effort
+		}
+		resolved, err := resolveRoleModel(nodes, first)
+		if err != nil {
+			return "", nil, err
+		}
+		if len(list) == 0 {
+			list = []protocol.RoleModel{resolved}
+		} else {
+			list[0] = resolved
+		}
+	}
+	for i := range list {
+		resolved, err := resolveRoleModel(nodes, list[i])
+		if err != nil {
+			return "", nil, err
+		}
+		list[i] = resolved
+	}
+	return protocol.FormatRoleModels(list), stored, nil
+}
+
+// resolveRoleModel checks one role entry against the machines' model lists.
+func resolveRoleModel(nodes []protocol.NodeView, m protocol.RoleModel) (protocol.RoleModel, error) {
+	if m.Harness == "" {
+		return m, reject("a chief model entry needs a harness")
+	}
+	if !slices.Contains(harnesses.Names, m.Harness) {
+		return m, reject("unknown harness %q; known: %s", m.Harness, strings.Join(harnesses.Names, ", "))
+	}
+	if m.Effort == "default" {
+		m.Effort = ""
+	}
+	if m.Effort != "" {
+		if _, level := protocol.SplitModelLevel("m:" + m.Effort); level == "" {
+			return m, reject("unknown effort %q", m.Effort)
+		}
+	}
+	if m.Model == "" || m.Model == "default" {
+		return m, reject("chief_set needs a model for harness %q", m.Harness)
+	}
 	var models, providers []string
 	for _, n := range nodes {
 		for _, h := range n.Harnesses {
-			if h.Name == harness {
+			if h.Name == m.Harness {
 				models = append(models, h.Models...)
 				providers = append(providers, h.ModelProviders...)
 			}
 		}
 	}
 	if len(models) == 0 {
-		return "", nil, reject("no machine reports a %s model list, so model %q cannot be checked", harness, model)
+		return m, reject("no machine reports a %s model list, so model %q cannot be checked", m.Harness, m.Model)
 	}
-	sel := protocol.ParseModelSelection(harness, provider, model, effort)
-	res, err := protocol.ResolveWorkerModelRankedQuota(harness, sel.ModelID(), models, nil, providers, nil, nil, nil)
+	sel := protocol.ParseModelSelection(m.Harness, m.Provider, m.Model, m.Effort)
+	res, err := protocol.ResolveWorkerModelRankedQuota(m.Harness, sel.ModelID(), models, nil, providers, nil, nil, nil)
 	if err != nil {
-		return "", nil, reject("model %q is not available on this network for %s: %v", model, harness, err)
+		return m, reject("model %q is not available on this network for %s: %v", m.Model, m.Harness, err)
 	}
-	sel = protocol.ParseModelSelection(harness, "", res.Model, sel.Effort)
+	sel = protocol.ParseModelSelection(m.Harness, "", res.Model, sel.Effort)
 	if sel.Provider == "" {
-		sel.Provider = provider
+		sel.Provider = m.Provider
 	}
 	if sel.Harness == "agy" {
 		if _, err := sel.Arguments(models); err != nil {
-			return "", nil, reject("%v", err)
+			return m, reject("%v", err)
 		}
 	}
-	return sel.Display(), stored, nil
+	return protocol.RoleModel{Harness: sel.Harness, Provider: sel.Provider, Model: sel.Model, Effort: sel.Effort}, nil
 }
 
 // setChiefSession applies the session part of a request: a named session
@@ -262,6 +291,11 @@ func (s *Store) ChiefStatus() (protocol.ChiefStatus, error) {
 	out.Model = snap.String(protocol.ChiefModelKey, settings.Where{})
 	if out.Model == "" {
 		out.Model = protocol.DefaultChiefModel
+	}
+	// The status names the choice the chief would start on, which is the
+	// first entry of its ordered list.
+	if list, err := protocol.ParseRoleModels(out.Model); err == nil && len(list) > 0 {
+		out.Model = list[0].Display()
 	}
 	if id == "" {
 		return out, nil

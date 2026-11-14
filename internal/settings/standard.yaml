@@ -1160,11 +1160,27 @@ settings:
     default: "Check the change works in the real setup, the way the owner will use it. Pass, fail with what is wrong, or needs_owner when only the owner can check."
     live: true
   - key: chief.model
-    description: Model of the chief of staff session, as harness, provider, model and effort in one line. Used when the owner or the CTO starts the chief (decision 0114).
+    description: Ordered model list of the chief of staff session, one full candidate per line as harness, provider, model and effort. The first candidate that can run now is used (decision 0162).
     kind: rule
     type: string
     levels: [network]
     default: "codex · openai · gpt-6.1-sol · medium"
+    live: true
+  - key: cto.models
+    description: Ordered model list of the CTO session, one full candidate per line as harness, provider, model and effort. The first candidate that can run now is used (decision 0162).
+    kind: rule
+    type: string
+    levels: [network]
+    default: |-
+      opencode ·
+      claude · anthropic · opus
+    live: true
+  - key: merger.models
+    description: Ordered model list of the merger sessions, one full candidate per line as harness, provider, model and effort. The first candidate that can run now is used (decision 0162).
+    kind: rule
+    type: string
+    levels: [network]
+    default: "claude · anthropic · claude-opus-5-5"
     live: true
   - key: chief.brief_time
     description: Local time of the chief of staff's daily brief, as HH:MM in the owner's time zone (decision 0114). The timer does not run until the owner's time zone is set.
