@@ -1,20 +1,21 @@
 #!/bin/sh
 # scripts/test-changed.sh: run the tests a diff needs, and nothing more.
 #
-# Usage: scripts/test-changed.sh [BASE] [--plan] [-- go-test-args...]
+# Usage: scripts/test-changed.sh [BASE] [--plan] [--run NAMES] [-- go-test-args...]
 #
 # BASE is the ref to compare against; the default is the merge-base of HEAD and
 # main, which is what a worker branch needs. The script lists the changed files,
 # matches each one against the rule table below, and runs the tests the first
-# matching rule names. A file that matches no rule runs its own package.
-# --plan prints the runs and checks without running them.
+# matching rule names. --run adds the tests a brief names to a changed
+# production file's package. --plan prints the runs and checks without running
+# them, and names each package left to CI.
 #
 # Rule table. Keep it short: one line per rule. Add a line when a new
 # cross-package dependency shows up in a failed hand-back.
 #
 #   migration  internal/gateway/store.go, migrations*.go, testdata/migrations.lock
 #              -> gateway migration, replay, upgrade and cutover tests, with -race
-#   test file  any *_test.go -> the tests that file declares
+#   test file  any *_test.go -> only the tests whose bodies changed or were added
 #   tui        internal/tui/* -> tui and graphview golden, title, help and schema tests
 #   settings   internal/settings/*, internal/settingsview/*, any settings*.go
 #              -> settings, gateway settings and cached-read, daemon settings tests, with -race
@@ -22,7 +23,14 @@
 #              -> the changed package plus the tui goldens that quote its text
 #   wire       internal/protocol, internal/client
 #              -> decode, strict, frame and wire tests of the wire packages
-#   (no rule)  -> go test for the changed package
+#   comment    a Go file that changes only comments or blank lines -> no test run
+#   docs       any other non-Go file -> no test run
+#   (no rule)  -> the tests in the _test.go file of the same base name, plus
+#                 the names from --run; no test run when neither exists
+#
+# A test file gets only the functions whose declarations changed or are new. A
+# production file gets its same-name test file only. The full package runs in
+# the merge queue's CI, which decision 0164 made the single test gate.
 #
 # Every diff also runs the contract set: the migrations lock and append-only
 # tests, the CTO schema and read-size checks, and the tool catalog text. These
@@ -43,22 +51,42 @@ fail() {
 
 usage() {
   cat <<'EOF'
-Usage: scripts/test-changed.sh [BASE] [--plan] [-- go-test-args...]
+Usage: scripts/test-changed.sh [BASE] [--plan] [--run NAMES] [-- go-test-args...]
 
 Run the tests a diff needs. BASE defaults to the merge-base of HEAD and main.
-The rule table at the top of the script says which runs a changed path needs;
-a path that matches no rule runs its own package. --plan prints the runs and
-the checks without running them. Arguments after -- go to go test.
+The rule table at the top of the script says which runs a changed path needs.
+A comment-only or docs change runs no tests; a changed test file runs only the
+tests it changed. --run adds the tests a brief names to a production file's
+package. --plan prints the runs and the checks without running them, and names
+the packages left to CI. Arguments after -- go to go test.
 EOF
 }
 
+# The helper lives next to this script. Remember its directory before the script
+# changes to the repository root, so a test can run the script from another
+# repository.
+script_dir=$(cd "$(dirname "$0")" && pwd) || fail "cannot find the script directory"
+
 base=
 plan=0
+run_names=
 extra=
 while [ $# -gt 0 ]; do
   case $1 in
     --plan|-n)
       plan=1
+      shift
+      ;;
+    --run)
+      [ $# -ge 2 ] || fail "--run needs test names"
+      shift
+      run_names=$1
+      [ -n "$run_names" ] || fail "--run needs test names"
+      shift
+      ;;
+    --run=*)
+      run_names=${1#--run=}
+      [ -n "$run_names" ] || fail "--run needs test names"
       shift
       ;;
     --help|-h)
@@ -100,6 +128,23 @@ fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/agent-net-test-changed.XXXXXX") || fail "could not create a temporary directory"
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
+# The diff helper is Go, so it reads Go syntax with the standard library. Build
+# it once with the real toolchain. The fake go in scripts/test-changed-test.sh
+# is only for the go test calls, so that test names the real Go in
+# TEST_CHANGED_GO.
+helper_go=${TEST_CHANGED_GO:-go}
+( cd "$script_dir/.." && "$helper_go" build -o "$work/testchanged" ./scripts/testchanged ) ||
+  fail "could not build scripts/testchanged with $helper_go"
+helper=$work/testchanged
+
+# base_go_file writes the file's base version to $work/base.go. It returns 1
+# when the base does not hold the path, which means the file is new.
+base_go_file() {
+  rm -f "$work/base.go"
+  git cat-file -e "$base:$1" 2>/dev/null || return 1
+  git show "$base:$1" >"$work/base.go" 2>/dev/null
+}
+
 # contract_runs prints the small set every diff runs, whatever it touches.
 contract_runs() {
   printf 'plain %s %s contract\n' "$module/internal/gateway" '^(TestMigrationsAreAppendOnly|TestMigrationsLockAcceptsAppendedMigration|TestDeliveryEvidenceIsAppendOnly)$'
@@ -123,8 +168,10 @@ rule_of() {
       echo text ;;
     internal/protocol/*|internal/client/*)
       echo wire ;;
-    *)
+    *.go)
       echo package ;;
+    *)
+      echo docs ;;
   esac
 }
 
@@ -173,25 +220,67 @@ changed=$(printf '%s\n%s\n' "$changed" "$untracked" | sed '/^$/d' | sort -u)
 
 : >"$work/runs"
 : >"$work/files"
+: >"$work/skips"
 
 printf '%s\n' "$changed" | while IFS= read -r path; do
   [ -n "$path" ] || continue
   rule=$(rule_of "$path")
   pkg=$(package_of "$path")
+
+  # A comment or blank-line change needs no test run. gofmt and go vet still
+  # see the file below, because it stays in $work/files.
+  case $path in
+    *.go)
+      if [ -f "$path" ] && base_go_file "$path" &&
+        "$helper" comments-only "$work/base.go" "$path"; then
+        printf '%s\tcomment\t%s\n' "$path" "$pkg" >>"$work/files"
+        printf '%s\tcomment-only, no test run (full package in CI)\n' "$path" >>"$work/skips"
+        continue
+      fi
+      ;;
+  esac
+
   case $rule in
     package)
       [ -n "$pkg" ] || continue
-      printf 'plain %s all package\n' "$pkg" >>"$work/runs"
+      names=
+      sibling="${path%.go}_test.go"
+      if [ -f "$sibling" ]; then
+        if ! names=$("$helper" names "$sibling" 2>>"$work/helper.log"); then
+          names=all
+        fi
+      fi
+      if [ "$names" != all ] && [ -n "$run_names" ]; then
+        named=$(printf '%s' "$run_names" | tr ',' '\n')
+        names=$(printf '%s\n%s\n' "$names" "$named" | sed '/^$/d' | sort -u)
+      fi
+      if [ "$names" = all ]; then
+        printf 'plain %s all package\n' "$pkg" >>"$work/runs"
+      elif [ -n "$names" ]; then
+        printf 'plain %s ^(%s)$ package\n' "$pkg" "$(printf '%s\n' "$names" | paste -sd '|' -)" >>"$work/runs"
+      else
+        printf '%s\tno matching test file, no test run (full package in CI)\n' "$path" >>"$work/skips"
+      fi
       ;;
     test)
       [ -f "$path" ] || continue
       [ -n "$pkg" ] || continue
-      names=$(grep -hoE '^func (Test|Example|Fuzz)[A-Za-z0-9_]*' "$path" 2>/dev/null | sed 's/^func //')
-      if [ -n "$names" ]; then
+      base_go_file "$path" || rm -f "$work/base.go"
+      names=
+      if ! names=$("$helper" changed-tests "$work/base.go" "$path" 2>>"$work/helper.log"); then
+        # A file the helper cannot parse runs all its tests, never none.
+        names=all
+      fi
+      if [ "$names" = all ]; then
+        printf 'plain %s all test\n' "$pkg" >>"$work/runs"
+      elif [ -n "$names" ]; then
         printf 'plain %s ^(%s)$ test\n' "$pkg" "$(printf '%s\n' "$names" | paste -sd '|' -)" >>"$work/runs"
       else
-        printf 'plain %s all test\n' "$pkg" >>"$work/runs"
+        printf '%s\ttest file, no changed tests (full package in CI)\n' "$path" >>"$work/skips"
       fi
+      ;;
+    docs)
+      printf '%s\tdocs, no test run (full package in CI)\n' "$path" >>"$work/skips"
       ;;
     text)
       # Text that goldens quote: run its own package, then the tui goldens.
@@ -256,6 +345,15 @@ if [ -s "$work/runs" ]; then
   done <"$work/runs"
 else
   printf 'no tests need to run\n'
+fi
+
+# The plan names what did not run here, so a worker sees the packages the merge
+# queue's CI will cover in full.
+if [ "$plan" = 1 ] && [ -s "$work/skips" ]; then
+  printf 'not run here (full package in CI):\n'
+  while IFS="$(printf '\t')" read -r path reason; do
+    printf '  %s: %s\n' "$path" "$reason"
+  done <"$work/skips"
 fi
 
 # gofmt and go vet on the changed files and packages. A deleted file is not

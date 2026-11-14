@@ -859,7 +859,7 @@ settings:
     stricter: owner
     type: text
     levels: [network, repo]
-    default: "Tests: run only the tests that cover your change, by name (Go: -run '^(TestA|TestB)$'). Do not run whole packages, race runs, repeat or load runs, or full suites, and run one test command at a time. The delivery test step and CI run the suites."
+    default: "Tests: run only the tests that cover your change, by name (Go: -run '^(TestA|TestB)$'), or run the project's test-changed script, which picks them from the diff. Do not run whole packages, race runs, repeat or load runs, or full suites, and run one test command at a time. The delivery test step and CI run the full packages."
     live: true
   - key: workers.brief_codex_tools
     rows: [67]
