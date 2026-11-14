@@ -652,26 +652,39 @@ func (s *Store) GraphForRoot(ref *protocol.GraphRef, root string) (protocol.Grap
 }
 
 // sessionOrgLines are the two org lines of agent_session_get. A session that
-// is not its Agent's lead session reports to its lead Agent; the lead session,
-// or a session of an Agent with none, reports to the Agent's parent. The
-// reports_to field is a plain name: the lead session's name belongs only in the
-// place text. Every scope another Agent holds over the session's Agent, Repo,
-// one of their Teams, or all, is someone it also answers to.
+// is not its Agent's lead session reports to that lead session; the lead
+// session, or a session of an Agent with none, reports to the Agent's parent.
+// Every scope another Agent holds over the session's Agent, Repo, one of
+// their Teams, or all, is someone it also answers to.
 func (s *Store) sessionOrgLines(session string) (reportsTo, also string, err error) {
-	var repo, agent, lead, parent string
-	err = s.db.QueryRow(`SELECT COALESCE(s.repo_id,''), COALESCE(a.id,''), COALESCE(a.lead_session,''), COALESCE(e.target,'')
+	var repo, agent, lead, leadName, parent, parentLead, parentLeadName string
+	name := func(col string) string {
+		return `COALESCE((SELECT ` + orgSessionNameSQL + ` FROM sessions x LEFT JOIN profiles p ON p.session_id=x.id WHERE x.id=` + col + `),'')`
+	}
+	err = s.db.QueryRow(`SELECT COALESCE(s.repo_id,''), COALESCE(a.id,''), COALESCE(a.lead_session,''), `+name("a.lead_session")+`,
+		COALESCE(e.target,''), COALESCE(pa.lead_session,''), `+name("pa.lead_session")+`
 		FROM sessions s
 		LEFT JOIN agents a ON a.id=s.agent_id AND a.tombstone=0
 		LEFT JOIN graph_edges e ON e.source=a.id AND e.kind='reports_to'
-		WHERE s.id=?`, session).Scan(&repo, &agent, &lead, &parent)
+		LEFT JOIN agents pa ON pa.id=e.target
+		WHERE s.id=?`, session).Scan(&repo, &agent, &lead, &leadName, &parent, &parentLead, &parentLeadName)
 	if err != nil {
 		return "", "", err
 	}
+	line := func(who, lead, leadName string) string {
+		if lead == "" {
+			return who
+		}
+		if leadName == "" {
+			leadName = lead
+		}
+		return who + " (lead session " + leadName + ")"
+	}
 	switch {
 	case lead != "" && lead != session:
-		reportsTo = agent
+		reportsTo = line(agent, lead, leadName)
 	case parent != "":
-		reportsTo = parent
+		reportsTo = line(parent, parentLead, parentLeadName)
 	}
 	rows, err := s.db.Query(`SELECT ns.node, ns.kind FROM node_scopes ns WHERE ns.node<>?1 AND (ns.over_ref='all'
 		OR ns.over_ref='agent:'||?1 OR ns.over_ref='repo:'||?2
