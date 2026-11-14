@@ -94,10 +94,15 @@ func (d *Daemon) recordTurnEndQuestion(ctx context.Context, ls *localSession, si
 		return
 	}
 	var res struct {
-		Routed bool `json:"routed"`
+		Routed    bool `json:"routed"`
+		Withdrawn bool `json:"withdrawn"`
 	}
 	if json.Unmarshal(raw, &res) != nil {
 		return
 	}
 	d.turnEnds.mark(sid, key, now, res.Routed)
+	if res.Withdrawn && ls != nil {
+		// A withdrawal is not the question the session waits on.
+		d.setWaiting(ls, nil)
+	}
 }

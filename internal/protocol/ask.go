@@ -1,9 +1,33 @@
 package protocol
 
-import "time"
+import (
+	"regexp"
+	"strings"
+	"time"
+)
 
 // An ask is one thing that waits on a person (decision 0090). Every source
 // writes its asks to one gateway store, and the Desk reads that one list.
+
+// askWithdrawalPattern matches a message that takes an ask back: "Withdraw
+// i_...", then the reason on the same line or after it.
+var askWithdrawalPattern = regexp.MustCompile(`(?is)^\s*withdraw\s+(i_[0-9a-f]{4,})\b(.*)$`)
+
+// AskWithdrawal reads a message that takes back an ask. It returns the ask id
+// and the reason, which is empty when the text names only the ask. A sentence
+// that only mentions a withdrawal is not a withdrawal.
+func AskWithdrawal(text string) (id, reason string, ok bool) {
+	m := askWithdrawalPattern.FindStringSubmatch(text)
+	if m == nil {
+		return "", "", false
+	}
+	reason = strings.TrimSpace(m[2])
+	reason = strings.TrimSpace(strings.TrimLeft(reason, " :,-"))
+	if reason == "." {
+		reason = ""
+	}
+	return m[1], reason, true
+}
 
 // Who must act on an ask now. A session id (or a name) can also stand here.
 const (

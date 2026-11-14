@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -104,5 +105,52 @@ func TestPiOpenOwnerAskIsRoutedAtTheNextTurn(t *testing.T) {
 	}
 	if asks := questionAsks(t, g.gw.Store(), sid); len(asks) != 1 {
 		t.Fatalf("asks for the open question: %+v", asks)
+	}
+}
+
+// A Pi session that takes its ask back does not stay waiting on the
+// withdrawal text, and the text makes no new ask.
+func TestPiWithdrawalClearsTheWaitAndMakesNoAsk(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
+	pi, sid := helloPi(t, n, "p1", "/w/one", true)
+	first := pi.mustCall("ask_question", map[string]any{"text": "Which region for the new box?", "options": []string{"eu", "us"}, "recommendation": "eu"})
+	var created struct {
+		Item protocol.InboxItem `json:"item"`
+	}
+	if err := json.Unmarshal(first, &created); err != nil || created.Item.ID == "" {
+		t.Fatalf("first ask: %s, %v", first, err)
+	}
+	eventually(t, "the wait is stored", func() bool {
+		a, ok, _ := g.gw.Store().Agent(sid)
+		return ok && a.Waiting != nil && a.Waiting.Text == "Which region for the new box?"
+	})
+
+	res := pi.mustCall("ask_question", map[string]any{"text": "Withdraw " + created.Item.ID})
+	var out struct {
+		Withdrawn bool `json:"withdrawn"`
+	}
+	if json.Unmarshal(res, &out) != nil || !out.Withdrawn {
+		t.Fatalf("withdrawal answer: %s", res)
+	}
+	eventually(t, "the wait is cleared", func() bool {
+		a, ok, _ := g.gw.Store().Agent(sid)
+		return ok && a.Waiting == nil
+	})
+	if asks := questionAsks(t, g.gw.Store(), sid); len(asks) != 0 {
+		t.Fatalf("the withdrawal left an ask open: %+v", asks)
+	}
+	var made int
+	items, err := g.gw.Store().ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if strings.HasPrefix(item.Text, "Withdraw ") {
+			made++
+		}
+	}
+	if made != 0 {
+		t.Fatalf("the withdrawal text made %d new asks", made)
 	}
 }

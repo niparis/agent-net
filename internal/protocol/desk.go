@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -170,6 +171,21 @@ func NormalizeAskText(s string) string {
 	s = strings.ToLower(s)
 	s = askIDPattern.ReplaceAllString(s, "")
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// SameAskText says whether two asks ask the same thing. It compares the
+// normalized text and keeps the ids apart: a new commit head or a new ask id
+// makes a new ask, not a repeat of the old one.
+func SameAskText(a, b string) bool {
+	if NormalizeAskText(a) != NormalizeAskText(b) {
+		return false
+	}
+	return slices.Equal(askIDs(a), askIDs(b))
+}
+
+// askIDs lists the ids of a text in the order they appear.
+func askIDs(s string) []string {
+	return askIDPattern.FindAllString(strings.ToLower(s), -1)
 }
 
 // questionPrefix matches a list marker before a question: "1.", "2)", "-", "*".

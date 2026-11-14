@@ -728,11 +728,14 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 	// The session that holds a routed ask may close it (decision 0150): either
 	// side of a routed item may close it. It may not sort it any other way.
 	holder := !owner && q.Result == protocol.AskSortClose && q.SessionID != "" && q.SessionID != chief
-	if !owner && !holder && (chief == "" || chief != q.SessionID) {
+	// The asker or a session that relayed the ask may withdraw it. The check
+	// needs the ask itself, so it runs below, after the ask is read.
+	selfWithdraw := !owner && q.Result == protocol.AskSortWithdraw && q.SessionID != "" && q.SessionID != chief
+	if !owner && !holder && !selfWithdraw && (chief == "" || chief != q.SessionID) {
 		return out, none, reject("only the chief of staff may sort asks")
 	}
 	var chiefNode string
-	if !owner && !holder {
+	if !owner && !holder && !selfWithdraw {
 		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil || chiefNode != node {
 			return out, none, reject("the chief of staff is not on this machine")
 		}
@@ -799,15 +802,44 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		return out, none, tx.Commit()
 	}
 	sorter, sorterName, source := chief, "chief", "chief"
-	if holder {
+	switch {
+	case selfWithdraw:
+		var callerNode string
+		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, q.SessionID).Scan(&callerNode); err != nil || callerNode != node {
+			return out, none, reject("the withdrawing session is not on this machine")
+		}
+		relay, err := joinedRelay(tx, q.Ask, q.SessionID)
+		if err != nil {
+			return out, none, err
+		}
+		if a.status != "open" {
+			return out, none, reject("ask %s is not open", q.Ask)
+		}
+		if a.session != q.SessionID && !relay {
+			return out, none, reject("only the asker or a session that relayed ask %s may withdraw it", q.Ask)
+		}
+		if q.ReplacedBy != "" {
+			return out, none, reject("only the chief of staff may name a replacement")
+		}
+		sorter, sorterName, source = q.SessionID, sessionLabel(tx, q.SessionID), "desk"
+	case holder:
 		var holderNode string
 		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, q.SessionID).Scan(&holderNode); err != nil || holderNode != node ||
 			a.status != "open" || a.next != q.SessionID {
 			return out, none, reject("only the chief of staff or the session that holds ask %s may close it", q.Ask)
 		}
 		sorter, sorterName, source = q.SessionID, sessionLabel(tx, q.SessionID), "desk"
-	} else if err := chiefMaySort(tx, q, a); err != nil {
-		return out, none, err
+	case q.Result == protocol.AskSortWithdraw && q.ReplacedBy != "":
+		if a.status != "open" {
+			return out, none, reject("ask %s is not open", q.Ask)
+		}
+		if err := replacementCheck(tx, q.Ask, q.ReplacedBy, a.session); err != nil {
+			return out, none, err
+		}
+	default:
+		if err := chiefMaySort(tx, q, a); err != nil {
+			return out, none, err
+		}
 	}
 	now := s.now()
 	reason := strings.TrimSpace(q.Reason)
@@ -855,6 +887,19 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 			return out, none, err
 		}
 		out.Next, out.State = "", protocol.AskClosed
+	case protocol.AskSortWithdraw:
+		who := sorterName
+		if sorter == chief {
+			who = "Chief"
+		}
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer=?, answered_at=? WHERE id=?`, sorterName+": "+reason, now.UnixNano(), q.Ask); err != nil {
+			return out, none, err
+		}
+		out.Next, out.State = "", protocol.AskClosed
+		logText = who + " withdrew ask: " + text
+		if q.ReplacedBy != "" {
+			logText += " (replaced by " + q.ReplacedBy + ")"
+		}
 	case protocol.AskSortConfirm, protocol.AskSortPicker:
 		// The chief answers a held worker start (decision 0151).
 		var ref string
@@ -946,6 +991,43 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 	}
 	return out, none, tx.Commit()
+}
+
+// joinedRelay says whether session joined ask as a repeat, which makes it the
+// session that relayed the ask and so one that may take it back.
+func joinedRelay(q askDB, ask, session string) (bool, error) {
+	var n int
+	err := q.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dup_of=? AND session_id=?`, ask, session).Scan(&n)
+	return n > 0, err
+}
+
+// replacementCheck checks the newer ask the chief names when it withdraws an
+// ask that is on the owner's Desk: it must be open, from the same asker, and
+// newer than the ask it replaces.
+func replacementCheck(q askDB, ask, replacement, session string) error {
+	var replSession, replStatus string
+	var replCreated int64
+	err := q.QueryRow(`SELECT session_id,status,created_at FROM inbox_items WHERE id=?`, replacement).Scan(&replSession, &replStatus, &replCreated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return reject("unknown replacement ask %q", replacement)
+	}
+	if err != nil {
+		return err
+	}
+	if replStatus != "open" {
+		return reject("replacement ask %s is not open", replacement)
+	}
+	if replSession != session {
+		return reject("replacement ask %s is from another asker", replacement)
+	}
+	var created int64
+	if err := q.QueryRow(`SELECT created_at FROM inbox_items WHERE id=?`, ask).Scan(&created); err != nil {
+		return err
+	}
+	if replCreated <= created {
+		return reject("replacement ask %s is not newer than %s", replacement, ask)
+	}
+	return nil
 }
 
 // chiefMaySort says whether the chief may sort ask a now. It may sort an ask
