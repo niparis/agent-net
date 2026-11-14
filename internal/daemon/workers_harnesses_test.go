@@ -430,6 +430,12 @@ func startPiNode(t *testing.T, g *testGateway, set WorkerSettings) *workerNode {
 	return startWorkerNode(t, g, set, func(c *Config) {
 		c.HarnessPaths = map[string]string{"pi": bin}
 		c.PiSessionsDir = dir
+		// The view reads a worker's figures from the session report. A report
+		// that only moves them waits for the activity interval, 30 s in
+		// production, which is longer than these tests wait. Send the report
+		// at once so the tests do not depend on which report reached the
+		// gateway before the first stats tick.
+		c.testPushActivityEvery = 50 * time.Millisecond
 	})
 }
 
