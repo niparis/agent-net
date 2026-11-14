@@ -135,6 +135,8 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		}
 	case "tool-decide": // hidden: the Claude Code PreToolUse hook that allows delegated calls (decision 0165)
 		err = cmdToolDecide(ctx)
+	case "cto-hook": // hidden alias: a CTO session launched before v0.5.56 still runs it, and it does what tool-decide does. It may go once no running CTO can have been launched before v0.5.56.
+		err = cmdToolDecide(ctx)
 	case "hook":
 		err = cmdAntigravityHook(args)
 	case "mcp":
