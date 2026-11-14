@@ -4608,7 +4608,20 @@ daemon cannot see a timeout that the client ends, so this line is the only
 trace of it. It is not written when the daemon is down (nobody to tell), when
 the gateway is down (the screen already says so), or when the caller cancelled
 the request. The local method is `client_error`; any `cli` client may call it,
-and it only writes the line and bumps the counter below. On screen, a TUI read
+and it only writes the line and bumps the counter below.
+
+An error line the TUI shows the owner is reported through the same line, with
+`method=screen`, the line as `text="<what the owner read>"` and the session as
+`session=<id>` when there is one:
+`event=client_error method=screen ms=0 timeout=0 screen=<tab or view> err="" session=<id> text="<the error line>"`.
+The text is cleaned like the other fields and cut to 1000 bytes (the same
+bound as an Enter failure). A failed call is already in the log through its own
+report, so the screen does not report it a second time (decision 0168).
+
+An Enter whose command fails in the terminal writes
+`event=enter_failed session=<id> err="<exit status>" host=<machine> output="<last output>"`.
+The daemon plans the Enter but the TUI runs the command, so the TUI sends the
+last output back. The text is cleaned and cut to 1000 bytes (decision 0167). On screen, a TUI read
 that ends by its deadline no longer shows the raw `context deadline exceeded`.
 The top banner, the Desk's In flight list and the CTO screen say `slow,
 retrying`, keep the last data and ask once more in the background; a second

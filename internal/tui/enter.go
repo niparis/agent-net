@@ -120,7 +120,7 @@ func (m Model) resumeCmd(a protocol.AgentView, moveToBackground bool) (Model, te
 
 func (m Model) onResume(r resumeMsg) (Model, tea.Cmd) {
 	if r.err != nil {
-		m.fail("Cannot resume: " + explain(r.err))
+		m.failErr(r.err, "Cannot resume: "+explain(r.err))
 		return m, nil
 	}
 	if r.res.Status == "started" && r.res.EnterPlan != nil && r.res.SessionID == "" {
@@ -179,7 +179,7 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 			m.cto.enterNotice = reason
 			m.cto.scroll = 0
 		}
-		m.fail(reason)
+		m.showFail(reason)
 		return m, nil
 	case len(r.plan.Argv) == 0 && r.cto:
 		if m.cto != nil {
@@ -251,13 +251,13 @@ func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 		// ssh could not connect or log in. The command to run on the other
 		// machine is more useful than the exit status.
 		target := firstNonEmpty(sanitize(r.target), "the other machine")
-		m.fail("Could not ssh to " + target + ". Set enter_ssh_hosts in node.json, or " + lowerFirst(sanitize(r.fallback)) + herdrFallbackSuffix(m.enterNote))
+		m.showFail("Could not ssh to " + target + ". Set enter_ssh_hosts in node.json, or " + lowerFirst(sanitize(r.fallback)) + herdrFallbackSuffix(m.enterNote))
 	default:
 		// The note holds the way back and the usual cause (herdr: an attach is
 		// already open), which the screen of the entered command hid. The
 		// command's own last lines say why it failed; the TUI took their screen
 		// away, so repeat them here.
-		m.fail("Left " + r.name + ": " + exitReason(r.err, r.output) + noteSuffix(m.enterNote))
+		m.showFail("Left " + r.name + ": " + exitReason(r.err, r.output) + noteSuffix(m.enterNote))
 	}
 	if !m.fetching {
 		m.fetching = true

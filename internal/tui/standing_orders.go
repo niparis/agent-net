@@ -95,7 +95,7 @@ func (m Model) standingCall(q protocol.StandingOrdersRequest, notice string) tea
 
 func (m Model) onStanding(msg standingMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		m.fail("Standing orders: " + explain(msg.err))
+		m.failErr(msg.err, "Standing orders: "+explain(msg.err))
 		return m, nil
 	}
 	if msg.loaded {

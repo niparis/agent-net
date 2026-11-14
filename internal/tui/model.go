@@ -974,7 +974,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.deliveryDetailLoaded(msg), nil
 	case deliveryReportMsg:
 		if msg.err != nil {
-			m.fail(msg.err.Error())
+			m.failErr(msg.err, msg.err.Error())
 			return m, nil
 		}
 		m.say(msg.text)
@@ -1159,7 +1159,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case inboxSignInMsg:
 		if msg.err != nil {
-			m.fail("Cannot open sign-in: " + explain(msg.err))
+			m.failErr(msg.err, "Cannot open sign-in: "+explain(msg.err))
 			return m, nil
 		}
 		if msg.plan.OpenedHerdr {
@@ -1180,7 +1180,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			if msg.write {
-				m.fail("Could not save tips: " + explain(msg.err))
+				m.failErr(msg.err, "Could not save tips: "+explain(msg.err))
 			}
 		} else {
 			m.onboarding, m.onboardingLoaded = msg.value, true
@@ -1309,14 +1309,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case notificationSettingMsg:
 		if msg.err != nil {
-			m.fail("Could not change desktop notifications: " + explain(msg.err))
+			m.failErr(msg.err, "Could not change desktop notifications: "+explain(msg.err))
 		} else {
 			m.snap.NotificationsDisabled = msg.disabled
 		}
 		return m, nil
 	case hiddenItemsMsg:
 		if msg.err != nil {
-			m.fail("Could not save hidden items: " + sanitize(msg.err.Error()))
+			m.failErr(msg.err, "Could not save hidden items: "+sanitize(msg.err.Error()))
 			return m, nil
 		}
 		m.setHiddenItems(msg.items)
@@ -1415,7 +1415,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.proposalHistoryIndex = 0
 		}
 		if msg.err != nil {
-			m.fail("Proposal failed: " + explain(msg.err))
+			m.failErr(msg.err, "Proposal failed: "+explain(msg.err))
 		} else if msg.action != "x" && m.sessionNoticeSerial != msg.sessionBefore {
 			// Keep the session start result that arrived during approval.
 		} else if msg.action == "A" {
@@ -1453,7 +1453,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case settingValuesMsg:
 		if msg.err != nil {
-			m.fail("Settings: " + explain(msg.err))
+			m.failErr(msg.err, "Settings: "+explain(msg.err))
 			return m, nil
 		}
 		if msg.rows != nil {

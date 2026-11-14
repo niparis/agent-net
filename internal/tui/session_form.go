@@ -905,7 +905,7 @@ func (m Model) onSessionStarted(r sessionStartedMsg) (Model, tea.Cmd) {
 		return m.fetchCmd()
 	}
 	if r.err != nil {
-		m.fail("Session not started: " + explain(r.err))
+		m.failErr(r.err, "Session not started: "+explain(r.err))
 		return m, refresh()
 	}
 	host := m.nodeName(r.res.NodeID, firstNonEmpty(r.res.Hostname, m.localHost()))

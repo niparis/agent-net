@@ -32,7 +32,7 @@ func (m Model) cycleSessionAgent() (Model, tea.Cmd) {
 		defer cancel()
 		raw, err := caller.Call(ctx, protocol.OpSessionAgentList, struct{}{})
 		if err != nil {
-			return actionMsg{err: fmt.Errorf("Agent not changed: %s", explain(err))}
+			return actionMsg{err: actionErr(err, "Agent not changed: %s", explain(err))}
 		}
 		var options protocol.SessionAgentOptions
 		if err = json.Unmarshal(raw, &options); err != nil {
@@ -54,7 +54,7 @@ func (m Model) cycleSessionAgent() (Model, tea.Cmd) {
 		}
 		_, err = caller.Call(ctx, protocol.OpSessionAgentSet, protocol.SessionAgentSetRequest{SessionID: a.SessionID, Agent: next.ID})
 		if err != nil {
-			return actionMsg{err: fmt.Errorf("Agent not changed: %s", explain(err))}
+			return actionMsg{err: actionErr(err, "Agent not changed: %s", explain(err))}
 		}
 		return actionMsg{text: "Agent changed to " + sanitize(next.Name) + "."}
 	}

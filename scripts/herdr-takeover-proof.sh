@@ -2,7 +2,8 @@
 # Text frames for decision 0167: Enter takes the terminal over from a stale
 # herdr attach instead of failing. A real herdr runs in a temporary config
 # folder of its own, never the owner's servers, and a tmux server on its own
-# socket plays the owner's terminals at 80x24 and 120x34. Needs herdr and tmux.
+# socket plays the owner's terminals at 80x24 and 120x34. Needs herdr, tmux and
+# script (which gives the old plan a terminal for its refusal frame).
 # Usage: scripts/herdr-takeover-proof.sh [output folder]
 # Without a folder the frames go to a new temporary folder.
 set -euo pipefail

@@ -18,8 +18,9 @@ import (
 // folder of its own, and shows that Enter of a Pi session takes the terminal
 // over from a stale client instead of failing with "already has an attached
 // client". A tmux server on its own socket plays the owner's terminals: the
-// first client stays attached, and the second one presses Enter (the same
-// plan argv). The first client must end and the second must show the pane.
+// first client stays attached, the old plan is refused and prints the owner's
+// error, and the second client presses Enter (the same plan argv). The first
+// client must end and the second must show the pane.
 // scripts/herdr-takeover-proof.sh runs it and keeps the frames at 80x24 and
 // 120x34.
 func TestEnterHerdrTakesOverRealAttach(t *testing.T) {
@@ -154,14 +155,20 @@ func TestEnterHerdrTakesOverRealAttach(t *testing.T) {
 	sessions := func() string {
 		return strings.TrimSpace(tm("list-sessions", "-F", "#{session_name}"))
 	}
-	clientCommand := func() string {
-		q := make([]string, len(plan.Argv))
-		for i, a := range plan.Argv {
+	quoteArgv := func(argv []string) string {
+		q := make([]string, len(argv))
+		for i, a := range argv {
 			q[i] = shellQuote(a)
 		}
-		return "exec env -i HOME=" + shellQuote(home) + " XDG_CONFIG_HOME=" + shellQuote(xdg) +
-			" PATH=" + shellQuote(os.Getenv("PATH")) + " TERM=xterm-256color LANG=C.UTF-8 " + strings.Join(q, " ")
+		return strings.Join(q, " ")
 	}
+	env := "exec env -i HOME=" + shellQuote(home) + " XDG_CONFIG_HOME=" + shellQuote(xdg) +
+		" PATH=" + shellQuote(os.Getenv("PATH")) + " TERM=xterm-256color LANG=C.UTF-8 "
+	clientCommand := func() string { return env + quoteArgv(plan.Argv) }
+	// The plan from before decision 0167, without --takeover. It is what the
+	// owner ran when he saw "already has an attached client".
+	refusedCommand := strings.TrimPrefix(env, "exec ") + quoteArgv(plan.Argv[:len(plan.Argv)-1])
+	scriptBin, _ := exec.LookPath("script")
 	attach := func(name string, w, h int) {
 		tm("new-session", "-d", "-x", fmt.Sprint(w), "-y", fmt.Sprint(h), "-s", name, clientCommand())
 		waitFor(t, name+" shows the pane", 10*time.Second, func() bool {
@@ -170,6 +177,27 @@ func TestEnterHerdrTakesOverRealAttach(t *testing.T) {
 	}
 	gones := func(name string) bool {
 		return !strings.Contains(tm("list-sessions", "-F", "#{session_name}"), name+"\n")
+	}
+	// refused runs the plan from before decision 0167 on a terminal of its own
+	// and returns what the owner read. script gives the command a PTY, so herdr
+	// reports the refusal it would report in a terminal.
+	refused := func() string {
+		if scriptBin == "" {
+			return ""
+		}
+		cmd := exec.Command(scriptBin, "-qec", refusedCommand, "/dev/null")
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Fatalf("the old plan attached without --takeover: %s", out)
+		}
+		plain := strings.TrimSpace(ansiEscape.ReplaceAllString(strings.ReplaceAll(string(out), "\r", ""), ""))
+		if !strings.Contains(plain, "already has an attached client") {
+			t.Fatalf("the old plan printed %q", plain)
+		}
+		if gones("first") {
+			t.Fatalf("the refused attach took the stale client away: %s", plain)
+		}
+		return plain
 	}
 
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
@@ -180,7 +208,15 @@ func TestEnterHerdrTakesOverRealAttach(t *testing.T) {
 			"the TUI shows the pane while the stale client holds it",
 			"tmux sessions: "+sessions()+"\n\n"+screen("first"))
 
-		// Step 2: Enter runs the daemon's plan. It takes the terminal over:
+		// Step 2: the plan from before decision 0167 fails while the stale
+		// client holds the terminal. This is the owner's error.
+		oldPlan := refused()
+		writeTakeoverProof(t, size.w, size.h, "without-takeover-refused",
+			"run the old plan, without --takeover, while the stale client is still attached",
+			"herdr refuses the attach and the stale client stays",
+			"tmux sessions: "+sessions()+"\n\nthe old plan printed:\n"+oldPlan)
+
+		// Step 3: Enter runs the daemon's plan. It takes the terminal over:
 		// the stale client ends and this one shows the session.
 		tm("new-session", "-d", "-x", fmt.Sprint(size.w), "-y", fmt.Sprint(size.h), "-s", "second", clientCommand())
 		waitFor(t, "the stale client to end", 10*time.Second, func() bool { return gones("first") })
@@ -195,6 +231,10 @@ func TestEnterHerdrTakesOverRealAttach(t *testing.T) {
 		tm("kill-session", "-t", "second")
 	}
 }
+
+// ansiEscape in difficulty_assessor.go strips the terminal control codes a
+// PTY program writes, so the refused frame holds the text and not its
+// colouring.
 
 func writeTakeoverProof(t *testing.T, w, h int, step, action, expected, frame string) {
 	t.Helper()

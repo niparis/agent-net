@@ -105,9 +105,26 @@ func (s *Client) Call(ctx context.Context, method string, params any) (json.RawM
 	start := time.Now()
 	raw, err := s.call(ctx, method, params)
 	if err != nil {
-		s.reportFailure(ctx, method, start, err)
+		if s.reportFailure(ctx, method, start, err) {
+			err = &ReportedError{Err: err}
+		}
 	}
 	return raw, err
+}
+
+// ReportedError is an error from a call whose failure the client already sent
+// to the daemon through client_error. A screen that shows the same failure
+// must not report it a second time, so the mark travels with the error.
+type ReportedError struct{ Err error }
+
+func (e *ReportedError) Error() string { return e.Err.Error() }
+func (e *ReportedError) Unwrap() error { return e.Err }
+
+// IsReported says whether err came from a call whose failure is already in the
+// daemon log.
+func IsReported(err error) bool {
+	var r *ReportedError
+	return errors.As(err, &r)
 }
 
 func roundUpMs(d time.Duration) int64 {
@@ -140,11 +157,12 @@ func TimeoutFromContext(ctx context.Context) (time.Duration, bool) {
 // cancelled the call on purpose, for a report itself, or when the answer says
 // an older daemon or gateway does not know the call (IsOldPeer): that is
 // version skew, not a slow or failed request. It runs in the background and
-// never changes the result of the call.
-func (s *Client) reportFailure(ctx context.Context, method string, start time.Time, err error) {
+// never changes the result of the call. It answers whether it will report, so
+// the error can be marked as already in the log.
+func (s *Client) reportFailure(ctx context.Context, method string, start time.Time, err error) bool {
 	if method == protocol.OpClientError || errors.Is(err, context.Canceled) ||
 		errors.Is(err, ErrDaemonDown) || errors.Is(err, ErrGatewayDown) || IsOldPeer(err.Error()) {
-		return
+		return false
 	}
 	text := err.Error()
 	report := protocol.ClientError{Method: method, Ms: time.Since(start).Milliseconds(), Screen: s.screenName(), Err: text,
@@ -155,6 +173,31 @@ func (s *Client) reportFailure(ctx context.Context, method string, start time.Ti
 		// The deadline was set a moment before start; round up so elapsed time
 		// before start does not reduce the reported timeout by 1 ms.
 		report.TimeoutMs = max(roundUpMs(deadline.Sub(start)), 0)
+	}
+	go func() {
+		rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cl, err := s.conn(rctx)
+		if err != nil {
+			return
+		}
+		_, _ = cl.Call(rctx, protocol.OpClientError, report)
+	}()
+	return true
+}
+
+// ReportScreenError tells the daemon that the screen showed the owner an error
+// line, with the session it belonged to when there is one. It goes through the
+// same client_error report as a failed call, so the line reaches the daemon
+// log and the gateway counters. It runs in the background and never changes
+// what is on screen.
+func (s *Client) ReportScreenError(text, sessionID string) {
+	if text == "" {
+		return
+	}
+	report := protocol.ClientError{
+		Method: protocol.ScreenErrorMethod, Screen: s.screenName(),
+		Text: text, SessionID: sessionID,
 	}
 	go func() {
 		rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

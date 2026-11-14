@@ -44,7 +44,7 @@ func (m Model) toggleSessionPin() (tea.Model, tea.Cmd) {
 
 func (m Model) sessionPinResult(r sessionPinMsg) (tea.Model, tea.Cmd) {
 	if r.err != nil {
-		m.fail("Could not pin session: " + sanitize(r.err.Error()))
+		m.failErr(r.err, "Could not pin session: "+sanitize(r.err.Error()))
 		return m, nil
 	}
 	name := r.id

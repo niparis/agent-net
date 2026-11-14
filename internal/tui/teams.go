@@ -217,7 +217,7 @@ func (m Model) teamWriteCmd(q protocol.TeamWrite, done string) tea.Cmd {
 func (m Model) onTeamWrite(r teamWriteMsg) (Model, tea.Cmd) {
 	if r.err != nil {
 		m.teamUndo = nil
-		m.fail(teamWriteError(r.err))
+		m.failErr(r.err, teamWriteError(r.err))
 	} else {
 		m.say(r.done)
 	}

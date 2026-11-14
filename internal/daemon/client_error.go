@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -29,10 +30,19 @@ func (lc *localConn) clientError(ctx context.Context, client string, raw json.Ra
 	e.Method = clientErrorText(e.Method)
 	e.Screen = clientErrorText(e.Screen)
 	e.Err = clientErrorText(e.Err)
+	e.Text = logText(e.Text, protocol.ScreenErrorMaxText)
+	e.SessionID = clientErrorText(e.SessionID)
 	e.Ms, e.TimeoutMs = max(e.Ms, 0), max(e.TimeoutMs, 0)
 	if d.log != nil {
-		d.log.Printf("event=client_error method=%s ms=%d timeout=%d screen=%s err=%q",
+		line := fmt.Sprintf("event=client_error method=%s ms=%d timeout=%d screen=%s err=%q",
 			logToken(e.Method), e.Ms, e.TimeoutMs, logToken(e.Screen), e.Err)
+		if e.SessionID != "" {
+			line += " session=" + logToken(e.SessionID)
+		}
+		if e.Text != "" {
+			line += fmt.Sprintf(" text=%q", e.Text)
+		}
+		d.log.Printf("%s", line)
 	}
 	via := lc.via()
 	d.wg.Add(1)

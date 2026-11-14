@@ -101,6 +101,18 @@ const (
 	EnterFailureMaxText = 1000
 )
 
+// Screen errors. An error the TUI shows the owner is sent through the
+// existing client_error report, so the daemon log holds what the owner read.
+// The report names the screen, the text and the session when there is one.
+const (
+	// ScreenErrorMethod is the method a screen error report names. It is not
+	// a request: it marks the line as a message the screen showed.
+	ScreenErrorMethod = "screen"
+	// ScreenErrorMaxText bounds the text of a screen error, the same bound as
+	// an Enter failure.
+	ScreenErrorMaxText = 1000
+)
+
 // EnterFailure is one session Enter that failed in the owner's terminal.
 type EnterFailure struct {
 	// SessionID is the session the owner asked to enter.
@@ -127,6 +139,12 @@ type ClientError struct {
 	Screen string `json:"screen,omitempty"`
 	// Err is a short text of the error.
 	Err string `json:"err,omitempty"`
+	// Text is the error line the screen showed the owner, when the report is
+	// about the screen rather than one request. It has its own longer bound
+	// (ScreenErrorMaxText).
+	Text string `json:"text,omitempty"`
+	// SessionID is the session the error belonged to, when there was one.
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // ClientErrorStat counts the failures of one (method, origin) pair.

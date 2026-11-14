@@ -132,7 +132,7 @@ func (m Model) markMapViewed(node string) tea.Cmd {
 		defer cancel()
 		_, err := c.Call(ctx, "learned_view", map[string]any{"suggestion_id": id, "node": node})
 		if err != nil {
-			return actionMsg{err: fmt.Errorf("mark learned changes viewed: %w", err)}
+			return actionMsg{err: actionErr(err, "mark learned changes viewed: %s", explain(err))}
 		}
 		return nil
 	}

@@ -423,7 +423,7 @@ func (m Model) timeZoneKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			defer cancel()
 			out, err := src.TimeZoneSettings(ctx, &write)
 			if err != nil {
-				return actionMsg{err: fmt.Errorf("Time zone not changed: %s", explain(err))}
+				return actionMsg{err: actionErr(err, "Time zone not changed: %s", explain(err))}
 			}
 			if out.Name == protocol.TimeZoneAuto {
 				return actionMsg{text: "Time zone is auto: the zone of your own machine."}
