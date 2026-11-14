@@ -159,5 +159,10 @@ func (s *Store) ArchiveSessions(q protocol.SessionsArchiveRequest) (protocol.Ses
 	if err = tx.Commit(); err != nil {
 		return out, err
 	}
+	if !q.Restore {
+		if err = s.repairArchivedLeadSessions(ids); err != nil {
+			return out, err
+		}
+	}
 	return out, nil
 }

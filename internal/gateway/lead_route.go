@@ -90,6 +90,9 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 			if pick.fallback {
 				return "Lead is waiting for its user; delivered as addressed.", true, nil
 			}
+			if pick.noLead {
+				return "Lead has no lead session; delivered as addressed.", true, nil
+			}
 			return "Lead has no live session; delivered as addressed.", true, nil
 		}
 		if pick.id == m.From || pick.id == m.To {

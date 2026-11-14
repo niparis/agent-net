@@ -66,8 +66,13 @@ func TestLeadRouteOutsideAndCrew(t *testing.T) {
 	if _, err = s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, lead); err != nil {
 		t.Fatal(err)
 	}
+	// A lead Agent has no lead session without a pin, so the request stays
+	// where it was addressed and the sender is told why.
+	if _, err = s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id='demo'`); err != nil {
+		t.Fatal(err)
+	}
 	m, route = send(outsider)
-	if m.To != target || !strings.Contains(route, "no live") {
+	if m.To != target || !strings.Contains(route, "no lead session") {
 		t.Fatalf("dead lead: %+v %q", m, route)
 	}
 }
@@ -386,7 +391,16 @@ func twoRepoLeadSessions(t *testing.T, p *wakeProbe) (older, newer string) {
 // session of that lead and asks for its wake, like a session-ID send.
 func TestRepoAddressQueuesForNewestOfflineLeadSession(t *testing.T) {
 	p := newWakeProbe(t)
-	_, newest := twoRepoLeadSessions(t, p)
+	older, newest := twoRepoLeadSessions(t, p)
+	// With no pin the address keeps its old fallback: the newest session of the
+	// lead, so the wake goes there.
+	var agent string
+	if err := p.s.db.QueryRow(`SELECT agent_id FROM sessions WHERE id=?`, older).Scan(&agent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id=?`, agent); err != nil {
+		t.Fatal(err)
+	}
 	got, err := p.s.ResolveLeadAddress("repo:demo")
 	if err != nil || got != newest {
 		t.Fatalf("resolve repo:demo = %s, want newest session %s: %v", got, newest, err)
@@ -410,6 +424,15 @@ func TestAgentNameQueuesForNewestOfflineSession(t *testing.T) {
 	p := newWakeProbe(t)
 	older, newest := twoRepoLeadSessions(t, p)
 	if _, err := p.s.db.Exec(`UPDATE sessions SET name='Helper' WHERE id=?`, older); err != nil {
+		t.Fatal(err)
+	}
+	// An Agent name is not a lead address, so clear the pin the first session
+	// got at registration: the message is delivered to the session it names.
+	var agent string
+	if err := p.s.db.QueryRow(`SELECT agent_id FROM sessions WHERE id=?`, older).Scan(&agent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id=?`, agent); err != nil {
 		t.Fatal(err)
 	}
 	got, err := p.s.ResolveLeadAddress("Helper")
@@ -580,8 +603,8 @@ func TestLeadRouteNeverGoesToTheMerger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.To == merger || strings.Contains(route, "Redirected") {
-		t.Fatalf("lead request went to the merger: to %s route %q", m.To, route)
+	if m.To != lead || !strings.Contains(route, "Redirected") {
+		t.Fatalf("lead request went to %s with route %q, want the pinned lead %s", m.To, route, lead)
 	}
 	got, err := s.ResolveLeadAddress("repo:demo")
 	if err != nil || got == merger {

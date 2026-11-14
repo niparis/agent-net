@@ -25,6 +25,9 @@ func agentSession(t *testing.T, s *Store, project, agent string) string {
 	if _, err = s.db.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, agent, id); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.pinFirstLeadSessionQ(s.db, id); err != nil {
+		t.Fatal(err)
+	}
 	return id
 }
 

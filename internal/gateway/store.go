@@ -1323,7 +1323,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -3634,6 +3634,11 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 	if err := s.applyStartedAgent(q, nodeID, in, id, known); err != nil {
 		return "", false, err
 	}
+	if !known && in.Worker == nil && in.Harness != "cto" && in.Harness != "bot" && !protocol.IsOwner(in.Harness) {
+		if err := s.pinFirstLeadSessionQ(q, id); err != nil {
+			return "", false, err
+		}
+	}
 	if err := s.updateFailedAgentSession(q, nodeID, in.NativeID, id); err != nil {
 		return "", false, err
 	}
@@ -4238,9 +4243,9 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
   ` + agentParentOfSQL("s.agent_id") + `,
- COALESCE((COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id),s.id)=s.id) AND s.agent_id=(` + repoTopAgentOfSQL("s.repo_id") + `) AND NOT ` + mergerAgentSQL("s") + `,0),
-	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id AND (COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id),s.id)=s.id)),
- EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id),s.id)=s.id) AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
+ COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND s.agent_id=(` + repoTopAgentOfSQL("s.repo_id") + `) AND NOT ` + mergerAgentSQL("s") + `,0),
+	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id),
+ EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
  @MAX@
  @COUNT@
  s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at, s.last_compacted_reason,

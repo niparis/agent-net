@@ -65,7 +65,7 @@ var (
 	// leadSessionSQL is the one live lead session that gets offered steps. A
 	// pinned lead session is the only one.
 	leadSessionSQL = `(SELECT x.id FROM sessions x JOIN agents la ON la.id=x.agent_id WHERE ` + leadOfferedSQL + ` AND x.agent_id=` + repoLeadAgentSQL + ` AND ` + liveSessionSQL + ` AND NOT ` + ownsOtherStepSQL("x") + `
- AND la.role<>'merger' AND COALESCE(la.lead_session,x.id)=x.id ORDER BY x.last_seen DESC,x.id LIMIT 1)`
+ AND la.role<>'merger' AND la.lead_session=x.id ORDER BY x.last_seen DESC,x.id LIMIT 1)`
 	// offeredCallerSessionSQL is the one session a ready caller step is sent to.
 	offeredCallerSessionSQL = `COALESCE(` + liveCallerSessionSQL + `,` + leadSessionSQL + `)`
 	// sessionActsForCallerSQL says that session s may claim and report the
@@ -73,7 +73,7 @@ var (
 	// repo lead once the steps were offered to it.
 	sessionActsForCallerSQL = `(s.id=c.caller OR (` + callerAgentSQL + `<>'' AND s.agent_id=` + callerAgentSQL + ` AND NOT ` + ownsOtherStepSQL("s") + `) OR
  (` + leadOfferedSQL + ` AND NOT ` + callerOwnerLiveSQL + ` AND s.agent_id=` + repoLeadAgentSQL + ` AND NOT ` + ownsOtherStepSQL("s") + `
- AND COALESCE((SELECT la.lead_session FROM agents la WHERE la.id=s.agent_id),s.id)=s.id))`
+ AND (SELECT la.lead_session FROM agents la WHERE la.id=s.agent_id)=s.id))`
 )
 
 // sessionActsForCaller says whether a session may claim or report a step that

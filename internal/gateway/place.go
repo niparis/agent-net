@@ -102,6 +102,10 @@ func (s *Store) placeText(session string) (string, error) {
 		return "", err
 	}
 	var parts []string
+	leadLabel := ""
+	if pin != "" {
+		leadLabel = sessionLabel(s.db, pin)
+	}
 
 	// Teams this session leads.
 	type teamRow struct{ id, name, purpose, mode, held string }
@@ -124,7 +128,10 @@ func (s *Store) placeText(session string) (string, error) {
 	}
 	rows.Close()
 	for _, t := range led {
-		if pin != "" && pin != session {
+		if pin != session {
+			if leadLabel != "" {
+				parts = append(parts, fmt.Sprintf("You are a member of team %s; its lead session is %s.", t.name, leadLabel))
+			}
 			continue
 		}
 		names, err := s.teamMemberNames(t.id, repo, agent)
@@ -148,7 +155,10 @@ func (s *Store) placeText(session string) (string, error) {
 		return "", err
 	}
 	for _, r := range ledRepos {
-		if pin != "" && pin != session {
+		if pin != session {
+			if leadLabel != "" {
+				parts = append(parts, fmt.Sprintf("You are a member of repo %s; its lead session is %s.", r.name, leadLabel))
+			}
 			continue
 		}
 		names, err := s.repoMemberNames(r.id, agent)
@@ -178,10 +188,12 @@ func (s *Store) placeText(session string) (string, error) {
 		}, "\n"))
 	}
 
-	// The team this session belongs to, when it does not lead it.
+	// The team this session belongs to, when it does not lead it. A session of
+	// the leading Agent is already placed above as a member of the team it
+	// leads, so the same team is not described twice.
 	if t, ok, err := s.memberTeamOf(session); err != nil {
 		return "", err
-	} else if ok {
+	} else if ok && t.leadAgent != agent {
 		lead, err := leadNameQ(s.db, t.leadAgent, s.now())
 		if err != nil {
 			return "", err
@@ -253,10 +265,12 @@ func sortedNames(rows *sql.Rows) ([]string, error) {
 }
 
 func leadNameQ(q leadDB, agent string, now time.Time) (string, error) {
-	if id, _, err := liveLeadSessionQ(q, agent, "", now); err == nil {
-		return sessionLabel(q, id), nil
-	} else if err != sql.ErrNoRows {
+	pin, err := agentLeadSessionQ(q, agent)
+	if err != nil {
 		return "", err
+	}
+	if pin != "" {
+		return sessionLabel(q, pin), nil
 	}
 	return agentNameQ(q, agent)
 }

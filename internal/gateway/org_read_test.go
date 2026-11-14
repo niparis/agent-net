@@ -32,6 +32,7 @@ func orgReadRig(t *testing.T) (*Store, map[string]string) {
 	}{
 		{`UPDATE agents SET lead_session=? WHERE id='lead'`, []any{ids["lead"]}},
 		{`UPDATE agents SET lead_session=? WHERE id='member'`, []any{ids["member"]}},
+		{`UPDATE agents SET lead_session=NULL WHERE id='chief'`, nil},
 		{`UPDATE sessions SET online=0 WHERE id=?`, []any{ids["lead"]}},
 		{`UPDATE sessions SET started_by='agent-net' WHERE id=?`, []any{ids["member-2"]}},
 		{`INSERT INTO profiles(session_id,name,updated_at) VALUES(?,'lead-main',0),(?,'member-main',0)`, []any{ids["lead"], ids["member"]}},

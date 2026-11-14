@@ -342,11 +342,14 @@ func bindMergerAgentTx(tx *sql.Tx, project, session string, now int64) error {
 	return placeAgentTx(tx, agent)
 }
 
-// setAgentLeadSessionTx stores an Agent's lead session. The Agent is the only
-// lead session (decision 0160); the old Team and Repo copy columns are gone.
-func setAgentLeadSessionTx(tx *sql.Tx, agent, session string) error {
-	_, err := tx.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, session, agent)
-	return err
+// setAgentLeadSessionTx stores an Agent's lead session and closes the open CTO
+// question about it. The Agent is the only lead session (decision 0160); the
+// old Team and Repo copy columns are gone.
+func (s *Store) setAgentLeadSessionTx(tx *sql.Tx, agent, session string) error {
+	if _, err := tx.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, session, agent); err != nil {
+		return err
+	}
+	return closeLeadSessionQuestionQ(tx, agent, session, s.now().UnixNano())
 }
 
 // clearLostLeadSessionTx clears an Agent's lead session once the Agent leads no

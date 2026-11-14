@@ -49,8 +49,12 @@ func TestLeadSetRepoAndTeam(t *testing.T) {
 		if err := s.SetLead(protocol.LeadSetRequest{Ref: ref, Lead: &other}, "owner", false); err != nil {
 			t.Fatalf("set %s: %v", ref.Kind, err)
 		}
+		want := other
+		if pin := agentLeadSession(t, s, "other"); pin != "" {
+			want = protocol.GraphRef{Kind: "session", ID: pin}
+		}
 		g, err := s.GraphForRef(&ref)
-		if err != nil || len(g.Nodes) != 1 || g.Nodes[0].Lead == nil || *g.Nodes[0].Lead != other {
+		if err != nil || len(g.Nodes) != 1 || g.Nodes[0].Lead == nil || *g.Nodes[0].Lead != want {
 			t.Fatalf("%s lead: %+v %v", ref.Kind, g, err)
 		}
 	}

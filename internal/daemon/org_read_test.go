@@ -61,7 +61,7 @@ func TestCTOGraphReadRootIsOneSubtree(t *testing.T) {
 			ReportsTo string `json:"reports_to"`
 		} `json:"session"`
 	}
-	if err := json.Unmarshal(raw, &row); err != nil || row.Session.ReportsTo != "org-lead" {
+	if err := json.Unmarshal(raw, &row); err != nil || row.Session.ReportsTo != "org-lead (lead session org-lead)" {
 		t.Fatalf("agent_session_get: %s %v", raw, err)
 	}
 	t.Logf("agent_session_get org-member: %s", raw)

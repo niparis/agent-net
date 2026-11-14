@@ -116,22 +116,19 @@ func sessionIsMergerQ(q leadDB, session string) (bool, error) {
 	return merger, err
 }
 
-// isLeadSessionQ says whether a session is the lead's: the Agent's pinned lead
-// session when the tree names one, otherwise any session of the Agent. The pin
-// wins even when the session now belongs to another Agent node, so a split
-// lead session is never redirected away from itself.
+// isLeadSessionQ says whether a session is the lead's: only the Agent's pinned
+// lead session is. A lead Agent with no pin has no lead session, so none of its
+// sessions leads. The pin wins even when the session now belongs to another
+// Agent node, so a split lead session is never redirected away from itself.
 func isLeadSessionQ(q leadDB, lead, agent, session string) (bool, error) {
-	if lead == "" {
+	if lead == "" || session == "" {
 		return false, nil
 	}
 	pin, err := agentLeadSessionQ(q, lead)
 	if err != nil {
 		return false, err
 	}
-	if pin != "" {
-		return pin == session, nil
-	}
-	return lead == agent, nil
+	return pin != "" && pin == session, nil
 }
 
 // liveLeadSessionQ picks a live session of a lead: not over its limit first,
@@ -145,18 +142,19 @@ func liveLeadSessionQ(q leadDB, agent, repo string, now time.Time) (id, name str
 	return
 }
 
-// leadPinStateQ reports whether a pinned session exists, is online, and waits
-// for its user.
-func leadPinStateQ(q leadDB, pin string) (online, waiting, exists bool, err error) {
-	var on, wait int
-	err = q.QueryRow(`SELECT online,CASE WHEN COALESCE(waiting,'')<>'' THEN 1 ELSE 0 END FROM sessions WHERE id=? AND archived_at=0`, pin).Scan(&on, &wait)
+// leadPinStateQ reports whether a pinned session exists, is online, waits for
+// its user, or is over its usage limit.
+func leadPinStateQ(q leadDB, pin string, now time.Time) (online, waiting, limited, exists bool, err error) {
+	var on, wait, lim int
+	err = q.QueryRow(`SELECT online,CASE WHEN COALESCE(waiting,'')<>'' THEN 1 ELSE 0 END,CASE WHEN limited_until>? THEN 1 ELSE 0 END
+		FROM sessions WHERE id=? AND archived_at=0`, now.Unix(), pin).Scan(&on, &wait, &lim)
 	if err == sql.ErrNoRows {
-		return false, false, false, nil
+		return false, false, false, false, nil
 	}
 	if err != nil {
-		return false, false, false, err
+		return false, false, false, false, err
 	}
-	return on != 0, wait != 0, true, nil
+	return on != 0, wait != 0, lim != 0, true, nil
 }
 
 // leadPick is the session a redirect goes to.
@@ -166,40 +164,47 @@ type leadPick struct {
 	// session of the lead takes the request instead. With ready false it says
 	// the pin waits and no other live session can take the request.
 	fallback bool
+	// noLead is true when the lead Agent has no pinned session. Nothing leads,
+	// so the request is delivered as addressed.
+	noLead bool
 }
 
 // redirectLeadSessionQ picks the session a redirected request goes to. A
 // pinned lead session takes it even when offline, queued for its wake. A
 // pinned session that waits for its user is skipped for another live session
 // of the lead. ready is false when the pin waits and no other live session can
-// take the request; the returned pick marks that wait.
+// take the request, or when the lead has no pinned session at all; the returned
+// pick marks which.
 func redirectLeadSessionQ(q leadDB, agent, repo string, now time.Time) (pick leadPick, ready bool, err error) {
 	pin, err := agentLeadSessionQ(q, agent)
 	if err != nil {
 		return pick, false, err
 	}
-	if pin != "" {
-		online, waiting, exists, err := leadPinStateQ(q, pin)
-		if err != nil {
-			return pick, false, err
-		}
-		if exists {
-			if !online || !waiting {
-				name, err := agentNameQ(q, agent)
-				return leadPick{id: pin, name: name}, true, err
-			}
-			id, name, err := liveLeadSessionQ(q, agent, repo, now)
-			if err == sql.ErrNoRows {
-				return leadPick{fallback: true}, false, nil
-			}
-			return leadPick{id: id, name: name, fallback: true}, true, err
-		}
+	if pin == "" {
+		return leadPick{noLead: true}, false, nil
 	}
+	online, waiting, limited, exists, err := leadPinStateQ(q, pin, now)
+	if err != nil {
+		return pick, false, err
+	}
+	if !exists {
+		return leadPick{noLead: true}, false, nil
+	}
+	if !online || (!waiting && !limited) {
+		name, err := agentNameQ(q, agent)
+		return leadPick{id: pin, name: name}, true, err
+	}
+	// A pinned session that waits for its user or is over its limit gives way
+	// to another live session of the lead, which is not told that it leads.
 	id, name, err := liveLeadSessionQ(q, agent, repo, now)
 	if err == sql.ErrNoRows {
-		return leadPick{}, false, nil
+		if waiting {
+			return leadPick{fallback: true}, false, nil
+		}
+		name, err := agentNameQ(q, agent)
+		return leadPick{id: pin, name: name}, true, err
 	}
-	return leadPick{id: id, name: name}, true, err
+	return leadPick{id: id, name: name, fallback: true}, true, err
 }
 
 // resolveLeadSession picks the session of a lead that gets a message: the
@@ -213,12 +218,12 @@ func resolveLeadSession(q leadDB, agent, repo string, now time.Time) (string, er
 		return "", err
 	}
 	if pin != "" {
-		online, waiting, exists, err := leadPinStateQ(q, pin)
+		online, waiting, limited, exists, err := leadPinStateQ(q, pin, now)
 		if err != nil {
 			return "", err
 		}
 		if exists {
-			if !online || !waiting {
+			if !online || (!waiting && !limited) {
 				return pin, nil
 			}
 			if id, _, err := liveLeadSessionQ(q, agent, repo, now); err != sql.ErrNoRows {

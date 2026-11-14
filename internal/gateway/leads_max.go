@@ -42,8 +42,13 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	if q.Ref.Kind != "repo" && q.Ref.Kind != "team" && q.Ref.Kind != "agent" {
 		return reject("lead target must be a Repo, Team or Agent")
 	}
-	if q.Ref.Kind == "agent" && q.Lead != nil && (q.Lead.Kind != "agent" || q.Lead.ID != q.Ref.ID) {
-		return reject("lead level is granted to the Agent itself: name it in lead")
+	if q.Ref.Kind == "agent" && q.Lead != nil {
+		if q.Lead.Kind == "agent" && q.Lead.ID != q.Ref.ID {
+			return reject("lead level is granted to the Agent itself: name it in lead")
+		}
+		if q.Lead.Kind != "agent" && q.Lead.Kind != "session" {
+			return reject("lead must be an Agent or session")
+		}
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -65,6 +70,9 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 			}
 			if q.Ref.Kind == "repo" && repo != q.Ref.ID {
 				return reject("session is not in this Repo")
+			}
+			if q.Ref.Kind == "agent" && agent != q.Ref.ID {
+				return reject("session is not of this Agent")
 			}
 			lead, session = agent, q.Lead.ID
 		case "agent":
@@ -146,7 +154,14 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		return err
 	}
 	if session != nil {
-		if err = setAgentLeadSessionTx(tx, lead.(string), session.(string)); err != nil {
+		if err = s.setAgentLeadSessionTx(tx, lead.(string), session.(string)); err != nil {
+			return err
+		}
+	}
+	// A lead named as an Agent gets its one session pinned. With several
+	// sessions none is chosen here: the CTO is asked once which one leads.
+	if q.Lead != nil && q.Lead.Kind == "agent" {
+		if err = s.pinOrAskLeadSessionTx(tx, lead.(string)); err != nil {
 			return err
 		}
 	}

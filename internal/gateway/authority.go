@@ -88,7 +88,7 @@ func orderAbove(q leadDB, sender, recipient string, now time.Time) (protocol.Ord
 	var id, teamName, mode, held string
 	err = q.QueryRow(`SELECT t.id,t.name,t.authority_mode,t.held_back FROM teams t JOIN team_members tm ON tm.team_id=t.id
 		LEFT JOIN agents a ON a.id=t.owner_agent_id
-		WHERE t.active=1 AND t.owner_agent_id=? AND (a.lead_session IS NULL OR a.lead_session=?)
+		WHERE t.active=1 AND t.owner_agent_id=? AND a.lead_session=?
 		AND ((tm.member_kind='repo' AND tm.member_id=? AND tm.member_id<>'') OR (tm.member_kind='agent' AND tm.member_id=?))
 		ORDER BY t.id LIMIT 1`, from.agent, sender, to.repo, to.agent).Scan(&id, &teamName, &mode, &held)
 	if err == nil {
