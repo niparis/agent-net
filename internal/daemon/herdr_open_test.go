@@ -68,6 +68,21 @@ esac
 	return filepath.Join(dir, "herdr"), log
 }
 
+// watchedDaemon is a Daemon with the lifetime that Start gives it, so a watch
+// it starts stops at cleanup. A sign-in watch lives as long as its pane, which
+// outlives a test; left alone it would keep calling herdr into the fake's
+// temporary folder while the test removes it.
+func watchedDaemon(t *testing.T, cfg Config) *Daemon {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	d := &Daemon{cfg: cfg, ctoCtx: ctx}
+	t.Cleanup(func() {
+		cancel()
+		d.bg.Wait()
+	})
+	return d
+}
+
 // fakeHerdrDefaultConfig is what the fake prints for `herdr --default-config`:
 // a herdr that knows the sidebar setting.
 const fakeHerdrDefaultConfig = "[ui]\n# sidebar_collapsed_mode = \"compact\"\n"

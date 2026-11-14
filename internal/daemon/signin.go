@@ -201,20 +201,40 @@ func (d *Daemon) signInPrepare(raw []byte) (protocol.SignInPrepareResult, error)
 	base := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
 	plan := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, true, base)
 	if plan.OpenedHerdr {
-		go d.watchSignInPane(info.Provider, d.herdrBinary(""), d.hostedSocket("signin:"+info.Provider), plan.HerdrPane)
+		d.watchSignIn(info.Provider, plan.HerdrPane)
 	}
 	return protocol.SignInPrepareResult{Opened: plan.OpenedHerdr, Host: d.hostName(), Pane: plan.HerdrPane, Session: plan.HerdrSession, Note: plan.Note}, nil
 }
 
+// watchSignIn starts the pane watch on the daemon's lifetime. A watch lives as
+// long as its login pane, so Stop cancels it and waits for it through
+// goBackground: no herdr call may outlive the daemon.
+func (d *Daemon) watchSignIn(provider, pane string) {
+	parent := d.ctoCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, signInWatchFor)
+	bin := d.herdrBinary("")
+	socket := d.hostedSocket("signin:" + provider)
+	if !d.goBackground(func() {
+		defer cancel()
+		d.watchSignInPane(ctx, provider, bin, socket, pane)
+	}) {
+		cancel()
+	}
+}
+
 // watchSignInPane waits until the owner closes the login pane, then re-runs
 // that provider's quota check once. A good reading closes the ask as signed in
-// through syncSignInAsks.
-func (d *Daemon) watchSignInPane(provider, bin, socket, pane string) {
-	ctx, cancel := context.WithTimeout(context.Background(), signInWatchFor)
-	defer cancel()
+// through syncSignInAsks. The context ends the watch when the daemon stops.
+func (d *Daemon) watchSignInPane(ctx context.Context, provider, bin, socket, pane string) {
 	ticker := time.NewTicker(signInWatchEvery)
 	defer ticker.Stop()
 	for {
+		if ctx.Err() != nil {
+			return
+		}
 		panes, err := d.herdrPanes(bin, socket)
 		if err != nil {
 			break
