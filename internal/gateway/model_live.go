@@ -14,6 +14,15 @@ import (
 // harness probe itself; this is the outer answer limit.
 const liveModelTimeout = 40 * time.Second
 
+// modelTestTimeout bounds one real test turn that a profile add may run.
+const modelTestTimeout = 100 * time.Second
+
+// ProfileCheckTimeout bounds the whole live check of a new worker profile: the
+// model list reads on the machines and the optional test turn. The daemon
+// waits this long plus a margin for the answer (daemon.profileCallWait), so a
+// slow check is not reported as a gateway timeout while the add still lands.
+const ProfileCheckTimeout = liveModelTimeout + modelTestTimeout + 20*time.Second
+
 // liveModelTTL is how long one live answer is reused for repeat calls.
 const liveModelTTL = 5 * time.Minute
 
@@ -103,6 +112,14 @@ func containsFold(s, part string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(part))
 }
 
+// profileCheckLimit is how long one profile add may spend checking machines.
+func (g *Gateway) profileCheckLimit() time.Duration {
+	if g.profileCheckTimeout > 0 {
+		return g.profileCheckTimeout
+	}
+	return ProfileCheckTimeout
+}
+
 // testModel asks one machine to run a short real turn with a model.
 func (g *Gateway) testModel(ctx context.Context, node protocol.NodeView, harness, model, effort string) (protocol.ModelTestResult, error) {
 	g.mu.Lock()
@@ -111,7 +128,7 @@ func (g *Gateway) testModel(ctx context.Context, node protocol.NodeView, harness
 	if target == nil {
 		return protocol.ModelTestResult{}, fmt.Errorf("machine %s is offline, cannot test the model", node.Hostname)
 	}
-	cctx, cancel := context.WithTimeout(ctx, 100*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, modelTestTimeout)
 	defer cancel()
 	raw, err := target.call(cctx, protocol.FrameModelTest, protocol.ModelTestRequest{Harness: harness, Model: model, Effort: effort})
 	if err != nil {

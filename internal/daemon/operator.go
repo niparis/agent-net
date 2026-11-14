@@ -8,8 +8,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/protocol"
 )
+
+// profileCallWait is how long the daemon waits for a profile add. The gateway
+// checks the model on each machine's live list, bounded by
+// gateway.ProfileCheckTimeout; the plain 20 s call wait was shorter, so a slow
+// check was reported as a gateway timeout while the gateway added the profile
+// afterwards.
+const profileCallWait = gateway.ProfileCheckTimeout + 15*time.Second
 
 // The operator interface on the daemon (decision 0007). The methods and their
 // types are in protocol/operator.go. The data methods are served in local.go;
@@ -133,7 +141,11 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 			}
 		}
 		action := map[string]string{protocol.OpWorkerProfiles: "worker.profile.list", protocol.OpWorkerProfileAdd: "worker.profile.add", protocol.OpWorkerProfileRemove: "worker.profile.remove"}[method]
-		data, err := d.call(ctx, action, protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: sid})
+		callCtx := ctx
+		if method == protocol.OpWorkerProfileAdd {
+			callCtx = withCallWait(ctx, profileCallWait)
+		}
+		data, err := d.call(callCtx, action, protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: sid})
 		if err != nil {
 			return nil, true, tooOldGateway(err)
 		}

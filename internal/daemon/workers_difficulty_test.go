@@ -276,7 +276,13 @@ func TestWorkerStartCellRuleUsesTheBenchmarkWhereThereIsNoRecord(t *testing.T) {
 	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
 	score := 51.0
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
-	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: "strong", Harness: "opencode", Model: "fake/m1"})
+	// The roster is setup here, not the subject: a profile add checks the
+	// model against the machines' live lists, which turns this picker test
+	// into a gateway round trip it does not assert on. Other picker tests add
+	// the profile to the store the same way.
+	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "strong", Harness: "opencode", Model: "fake/m1", AddedBy: w.ownerID()}); err != nil {
+		t.Fatal(err)
+	}
 	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Difficulty: "normal", Task: "x"})
 	if err != nil || res.Model != "fake/m1" || !strings.Contains(res.ModelNote, "bucket 2.33-2.67: strong n0, chosen (benchmark)") {
 		t.Fatalf("a strong model with no record: %+v %v", res, err)
@@ -287,7 +293,9 @@ func TestWorkerStartCellRuleUsesTheBenchmarkWhereThereIsNoRecord(t *testing.T) {
 	}
 	score = 32.5
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m2", Score: &score})
-	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: "adequate", Harness: "opencode", Model: "fake/m2"})
+	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "adequate", Harness: "opencode", Model: "fake/m2", AddedBy: w.ownerID()}); err != nil {
+		t.Fatal(err)
+	}
 	// With a weaker adequate model on the roster, an untried strong model is
 	// still allowed by its benchmark. Neither has a record, so the note names
 	// both and never says the strong one is left out for being overqualified.

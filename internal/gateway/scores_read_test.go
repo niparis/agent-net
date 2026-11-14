@@ -43,7 +43,7 @@ func TestWorkerProfileListIncludesModelScore(t *testing.T) {
 
 	list := func() protocol.WorkerProfile {
 		t.Helper()
-		v, err := g.workerProfileAction(node, "worker.profile.list", protocol.WorkerProfileFrame{})
+		v, err := g.workerProfileAction(context.Background(), node, "worker.profile.list", protocol.WorkerProfileFrame{})
 		if err != nil {
 			t.Fatal(err)
 		}
