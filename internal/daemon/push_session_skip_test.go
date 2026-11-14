@@ -55,6 +55,14 @@ func pushSkipNode(t *testing.T, activityEvery, keepalive time.Duration) (*node, 
 	return n, log, ls
 }
 
+// backdateReport makes the gateway's last report look d older, as if that
+// much time had passed. Tests use it instead of waiting for an interval.
+func backdateReport(ls *localSession, d time.Duration) {
+	ls.pushMu.Lock()
+	ls.push.at = ls.push.at.Add(-d)
+	ls.pushMu.Unlock()
+}
+
 func TestPushSessionSkipsUnchangedReport(t *testing.T) {
 	n, log, ls := pushSkipNode(t, time.Hour, time.Hour)
 	before := log.count()
@@ -79,9 +87,10 @@ func TestPushSessionSendsChangedReport(t *testing.T) {
 }
 
 // Output arrives many times a second. Activity time alone is sent at most once
-// per interval, and the newest value still goes out when the interval ends.
+// per interval. The interval is an hour so that the held reports stay held on
+// a slow machine; backdateReport stands in for the wait.
 func TestPushSessionCoalescesActivity(t *testing.T) {
-	n, log, ls := pushSkipNode(t, 300*time.Millisecond, time.Hour)
+	n, log, ls := pushSkipNode(t, time.Hour, time.Hour)
 	before := log.count()
 	var last time.Time
 	for i := 0; i < 5; i++ {
@@ -94,24 +103,41 @@ func TestPushSessionCoalescesActivity(t *testing.T) {
 	if got := log.count(); got != before {
 		t.Fatalf("activity-only reports sent %d calls at once, want 0", got-before)
 	}
-	eventually(t, "the newest activity time is sent", func() bool {
-		return log.count() == before+1 && log.last().HarnessActivity == last.Unix()
-	})
-	time.Sleep(scaled(400 * time.Millisecond))
+	backdateReport(ls, time.Hour)
+	n.d.pushSessionChanged(ls)
+	if got := log.count(); got != before+1 || log.last().HarnessActivity != last.Unix() {
+		t.Fatalf("after the interval, %d calls with the newest activity %v, want one with %v", got-before, log.last().HarnessActivity, last.Unix())
+	}
+	n.d.pushSessionChanged(ls)
 	if got := log.count(); got != before+1 {
-		t.Fatalf("coalescing sent %d calls, want 1", got-before)
+		t.Fatalf("a second report in the same interval sent %d calls, want 1", got-before)
 	}
 }
 
-// Liveness: a session that reports nothing new is still reported on the slow
-// keepalive, so the gateway keeps its last_seen fresh.
-func TestPushSessionKeepalive(t *testing.T) {
-	n, log, ls := pushSkipNode(t, time.Hour, 300*time.Millisecond)
+// A held activity time goes out by itself when its interval ends, with no
+// further report from the daemon. The test only waits for that send, so a
+// slow machine that sends at once still passes.
+func TestPushSessionSendsHeldActivityOnItsOwn(t *testing.T) {
+	n, log, ls := pushSkipNode(t, 300*time.Millisecond, time.Hour)
 	before := log.count()
+	last := time.Now().Add(time.Second)
+	n.d.mu.Lock()
+	ls.harnessActivity, ls.lastActive = last, last
+	n.d.mu.Unlock()
 	n.d.pushSessionChanged(ls)
-	if log.count() != before {
-		t.Fatal("an unchanged report was sent before the keepalive")
-	}
+	eventually(t, "the held activity time is sent", func() bool {
+		return log.count() > before && log.last().HarnessActivity == last.Unix()
+	})
+}
+
+// Liveness: a session that reports nothing new is still reported on the slow
+// keepalive, so the gateway keeps its last_seen fresh. This test waits for
+// that report. It does not check for silence before it: at a short interval,
+// a slow machine can pass the keepalive before the check runs. Holding back
+// before the keepalive is TestPushSessionSkipsUnchangedReport's job.
+func TestPushSessionKeepalive(t *testing.T) {
+	_, log, _ := pushSkipNode(t, time.Hour, 300*time.Millisecond)
+	before := log.count()
 	eventually(t, "the keepalive report", func() bool { return log.count() > before })
 }
 
