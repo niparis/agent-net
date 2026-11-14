@@ -1855,18 +1855,41 @@ var freshDatabaseSeed func(path string) error
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
-	return openStore(path, freshDatabaseSeed)
+	return openStoreWith(path, storeOpen{seed: freshDatabaseSeed})
 }
 
 // openStore is OpenStore with the seed chosen by the caller. A test that
 // checks the real migration of an empty file passes nil.
 func openStore(path string, seed func(path string) error) (*Store, error) {
+	return openStoreWith(path, storeOpen{seed: seed})
+}
+
+// storeOpen chooses the parts of the open that differ between the gateway and
+// the tools that read a store directly.
+type storeOpen struct {
+	seed func(path string) error
+	// upgradeBackup makes an older file get the automatic backup before the
+	// migration. Only the gateway turns it on: a test or repair tool that opens
+	// a file directly has no gateway keys or skill repository to copy.
+	upgradeBackup bool
+	version       string
+	logf          func(event string, kv ...any)
+	now           func() time.Time
+}
+
+func openStoreWith(path string, o storeOpen) (*Store, error) {
+	if o.now == nil {
+		o.now = time.Now
+	}
+	if o.logf == nil {
+		o.logf = func(string, ...any) {}
+	}
 	// The file is private from the start; SQLite gives -wal and -shm its mode.
 	if err := dbfile.Create(path); err != nil {
 		return nil, err
 	}
-	if seed != nil {
-		if err := seed(path); err != nil {
+	if o.seed != nil {
+		if err := o.seed(path); err != nil {
 			return nil, err
 		}
 	}
@@ -1881,8 +1904,14 @@ func openStore(path string, seed func(path string) error) (*Store, error) {
 	// One connection keeps writes serialized and avoids lock errors. Reads run
 	// on a pool of read-only connections that opens at the end (see openReadPool).
 	wdb.SetMaxOpenConns(1)
-	s := &Store{db: &storeDB{w: wdb}, connector: connector, convEpoch: newConversationEpoch(), path: path, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
+	s := &Store{db: &storeDB{w: wdb}, connector: connector, convEpoch: newConversationEpoch(), path: path, now: o.now, logf: o.logf, buckets: map[string]*bucket{}}
 	db := s.db
+	if o.upgradeBackup {
+		if err := s.backupOldStoreBeforeUpgrade(o.version); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err

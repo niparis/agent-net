@@ -150,7 +150,7 @@ func cmdInvite(args []string) error {
 	host := fs.String("host", "", "host name or IP that machines use to reach the gateway (default: the default-route address)")
 	port := fs.String("port", "7420", "gateway port")
 	fs.Parse(args)
-	lines, err := setup.Invite(setup.InviteOptions{Host: *host, Port: *port, Data: *data})
+	lines, err := setup.Invite(setup.InviteOptions{Host: *host, Port: *port, Data: *data, Version: version})
 	if err != nil {
 		return err
 	}

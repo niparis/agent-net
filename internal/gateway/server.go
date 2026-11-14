@@ -343,7 +343,17 @@ func New(opts Options) (*Gateway, error) {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
-	store, err := OpenStore(filepath.Join(opts.DataDir, "gateway.db"))
+	now := time.Now
+	if opts.Now != nil {
+		now = opts.Now
+	}
+	store, err := openStoreWith(filepath.Join(opts.DataDir, "gateway.db"), storeOpen{
+		seed:          freshDatabaseSeed,
+		upgradeBackup: true,
+		version:       opts.Version,
+		now:           now,
+		logf:          func(event string, kv ...any) { logger.Print(formatLine(now(), event, kv...)) },
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1260,7 +1270,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil || port < 1 || port > 65535 || p.Host == "" || strings.ContainsAny(p.Host, "'\"\r\n") {
 			return nil, reject("invalid invite address")
 		}
-		return Invite(InviteOptions{Host: p.Host, Port: p.Port, Data: g.opts.DataDir})
+		return Invite(InviteOptions{Host: p.Host, Port: p.Port, Data: g.opts.DataDir, Version: g.opts.Version})
 	case "cto.session.register", "cto.session.restore":
 		p, err := decode[struct {
 			Owner string `json:"owner"`

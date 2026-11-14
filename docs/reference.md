@@ -21,6 +21,22 @@ version first started, the owner gets one Inbox item naming the machines to
 upgrade. It is closed when they upgrade. Turning the cutover off later
 requires restoring the backup. Once on, it cannot run again.
 
+## Backup before a gateway upgrade
+
+When the gateway opens a data directory whose database schema is older than the
+binary's migrations, it first writes the same backup as
+`agent-net gateway backup`: a consistent database snapshot, the skill Git
+repository, the CA key and the server key. It writes the backup to
+`gateway-backups/pre-v<version>-<UTC time>` beside the gateway data directory,
+which is `~/.local/state/agent-net/gateway-backups/` in the default setup, and
+only then runs the migrations.
+
+A successful backup writes one log line with the folder and its size. If the
+backup cannot be written, the gateway logs the reason and exits without
+migrating, so the older release can still open the data. A fresh data directory
+has nothing to protect and gets no backup. Automatic backups are never deleted
+automatically: removing one is the owner's call.
+
 ## Remove a machine or rotate its token
 
 In the TUI, open Settings (`6`) and select a machine. Press `x` to remove it
@@ -1107,6 +1123,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Skill journal | `~/.local/state/agent-net/daemon/skill-journal/*.json` | One small record per skill operation that is running. Written before the first change and deleted when the operation ends. Mode 0600, folder 0700. A record left after a crash is read at the next daemon start. Uninstall removes the folder. |
 | Reply sockets | `<socket directory>/r/<session id>.<conversation id>.sock` and `<socket directory>/r/<session id>.sock` | One per sending session and conversation, used to catch Claude Code's native replies (see [Claude replies](#claude-replies)). The socket of a conversation is closed when its rows leave `daemon.db`. The one per sending session is for messages without a conversation and for frames from an older daemon. Mode 0600. |
 | Gateway data | `~/.local/state/agent-net/gateway/` | `funnel.json` records the port and loopback target managed by agent-net so uninstall can safely remove its Funnel route; it is removed when cleanup succeeds or the port is repurposed. `tailscale-node.json` (mode 0600) holds the `--apps-tailscale-name` choice: the name and, if given, the auth key file path, never the key. `tailscale/` (mode 0700) is the state of agent-net's own Tailscale node, with its private keys; `tailscale/agent-net-owned.json` marks it as agent-net's. `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files; it also holds the tools inventory, assignments, plans, audit, MCP registry, the `repos` and `agents` identity tables, the `setting_revision`, `setting_values` and append-only `setting_history` tables, and the delivery pipeline's `delivery_changes`, `delivery_revisions`, `delivery_revision_stats`, append-only `delivery_evidence`, `delivery_step_tasks`, `delivery_step_messages`, `delivery_step_inbox`, `delivery_step_delegates` and `delivery_settings_legacy` tables), `admin.json` (mode 0600: the local admin URL and token) and `skills.git` (mode 0700: the private bare Git repository of imported skills, which can hold secrets from skill files). Uninstall keeps the gateway data, even with `--purge`, apart from the Funnel route record after cleanup and agent-net's own Tailscale node. **Back this folder up** with `agent-net gateway backup --out /absolute/new-directory`; it writes a consistent snapshot while the gateway is running. A backup holds the CA key, so keep it private. Without it every machine has to join again. See [security.md](security.md#what-the-gateway-keeps). |
+| Gateway upgrade backups | `~/.local/state/agent-net/gateway-backups/pre-v<version>-<UTC time>/` | Written by the gateway before it migrates an older database, with the same parts as a manual `gateway backup`: the database snapshot, `skills.git`, `ca.pem`, `ca.key` and `server-key.pem`. Holds the CA key, so keep it private. Never deleted automatically. |
 | Gateway transfer parts | `~/.local/state/agent-net/gateway/transfers/<upload id>/` | One file per part of an upload between machines, named by its part number. Folders 0700, files 0600. At most 100 MB per upload and 1 GB staged for each sending machine. A part file is deleted when the receiving machine confirms the whole file, or 7 days after the upload began. A `gateway backup` does not copy parts that are still in flight. Uninstall keeps them with the rest of the gateway data. See [security.md](security.md#files-between-machines). |
 | Received files | `~/.local/state/agent-net/daemon/inbox/<session>/<message>/<name>` | The files that came with a message to a session of this machine (see [Files between machines](#files-between-machines)). Folders 0700, files 0600. The daemon deletes a message's folder 7 days after its last file arrived. Uninstall keeps them with the state folder; `--purge` removes them. |
 | File send snapshots | `~/.local/state/agent-net/daemon/files/outgoing/o_*/` | A copy of each file being sent, taken while hashing, so the bytes sent match the manifest. Deleted when the send ends; a crash leftover is deleted after a day. |
@@ -2338,8 +2355,14 @@ agent-net gateway backup --out /absolute/path/to/new-backup
 
 The path is on the gateway machine and must be a new directory outside its data
 directory. The backup includes a consistent database snapshot, the skill Git
-repository, and the gateway CA and server keys. Keep it private. To restore on
-the gateway machine, run:
+repository, and the gateway CA and server keys. Keep it private.
+
+The gateway also takes that backup by itself before it migrates an older
+database to a newer release. These automatic backups go to
+`gateway-backups/pre-v<version>-<UTC time>` beside the gateway data directory
+and are never deleted automatically. See [Backup before a gateway
+upgrade](#backup-before-a-gateway-upgrade). To restore on the gateway machine,
+run:
 
 ```
 agent-net gateway restore --backup /path/to/backup --to /path/to/new-data

@@ -17,7 +17,23 @@ func (g *Gateway) Backup(dest string) (err error) {
 	if !filepath.IsAbs(dest) {
 		return errors.New("backup path must be absolute")
 	}
-	src, err := filepath.Abs(g.opts.DataDir)
+	repo, err := g.skillRepository()
+	if err != nil {
+		return err
+	}
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	return backupStore(dest, g.opts.DataDir, g.store.path)
+}
+
+// backupStore writes the snapshot of dbPath, the skill repository under dataDir
+// and the gateway keys. The gateway backup command, the typed Graph cutover and
+// the automatic backup before a migration all call this one function.
+func backupStore(dest, dataDir, dbPath string) (err error) {
+	if !filepath.IsAbs(dest) {
+		return errors.New("backup path must be absolute")
+	}
+	src, err := filepath.Abs(dataDir)
 	if err != nil {
 		return err
 	}
@@ -41,12 +57,6 @@ func (g *Gateway) Backup(dest string) (err error) {
 	if rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return errors.New("backup must be outside gateway data directory")
 	}
-	repo, err := g.skillRepository()
-	if err != nil {
-		return err
-	}
-	repo.mu.Lock()
-	defer repo.mu.Unlock()
 	if err = os.Mkdir(dest, 0700); err != nil {
 		return err
 	}
@@ -57,7 +67,7 @@ func (g *Gateway) Backup(dest string) (err error) {
 	}()
 	// Use a separate WAL reader so a slow snapshot does not occupy the
 	// store's sole connection and stall node hellos.
-	snapshotDB, err := sql.Open("sqlite", "file:"+g.store.path+"?_pragma=busy_timeout(5000)")
+	snapshotDB, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return err
 	}
@@ -68,7 +78,7 @@ func (g *Gateway) Backup(dest string) (err error) {
 	if err = os.Chmod(filepath.Join(dest, "gateway.db"), 0600); err != nil {
 		return err
 	}
-	if err = copyPrivateTree(repo.path, filepath.Join(dest, "skills.git")); err != nil {
+	if err = copyPrivateTree(filepath.Join(src, "skills.git"), filepath.Join(dest, "skills.git")); err != nil {
 		return err
 	}
 	for _, name := range []string{"ca.pem", "ca.key", "server-key.pem"} {
@@ -76,7 +86,9 @@ func (g *Gateway) Backup(dest string) (err error) {
 			return err
 		}
 	}
-	snapshot, err := OpenStore(filepath.Join(dest, "gateway.db"))
+	// Validate without migrating. A backup taken before an upgrade keeps the
+	// old schema, so restoring it and the old binary still works.
+	snapshot, err := openSnapshotStore(filepath.Join(dest, "gateway.db"))
 	if err != nil {
 		return err
 	}

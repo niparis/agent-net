@@ -863,6 +863,7 @@ The daemon scans its own machine at start, after it reconnects and every five mi
 - The skill goes into `skills.git` in the gateway data directory: a private bare Git repository, mode 0700. SQLite keeps the item ID, content hash, commit and source. Nothing is pushed anywhere.
 - Git keeps history. A later version that drops a secret does not erase it from earlier commits. Anyone who can read the data directory or a backup can read these contents.
 - `gateway_backup` holds a consistent database snapshot, the skill repository, the CA key and the server key. The folder and its files are owner-only. Treat a backup like the gateway data. Restore writes only to a new directory and checks SQLite, Git objects and every saved skill hash before it finishes.
+- The gateway takes the same backup by itself before it migrates an older database, in `gateway-backups/pre-v<version>-<UTC time>` beside the gateway data directory. It holds the CA key too, so treat it like the gateway data. The gateway never deletes an automatic backup; removing old ones is the owner's call. If the backup cannot be written, the gateway stops without migrating.
 
 ### Plans, copies and ownership
 
@@ -1068,7 +1069,7 @@ A timer deletes older data once at start and then every hour. A period of `0` ke
 
 **File modes.** `gateway.db` and the daemon's `daemon.db`, with their `-wal` and `-shm` files, are mode 0600. The gateway and the daemon create them with that mode and set it again at each start, so files made by an older version are fixed. The gateway creates its data folder with mode 0700.
 
-**Back up the gateway data.** Run `agent-net gateway backup --out /absolute/new-directory` on the gateway machine. It writes a consistent SQLite snapshot and copies the skill repository and gateway keys while the gateway is running. Keep the copy private: it holds `ca.key` and `server-key.pem`. Without a backup, losing the gateway data means every node must join again and message history is lost.
+**Back up the gateway data.** Run `agent-net gateway backup --out /absolute/new-directory` on the gateway machine. It writes a consistent SQLite snapshot and copies the skill repository and gateway keys while the gateway is running. Keep the copy private: it holds `ca.key` and `server-key.pem`. The gateway also takes that backup itself before it migrates an older database, in `gateway-backups/pre-v<version>-<UTC time>` beside the gateway data directory, and never deletes those folders. Without a backup, losing the gateway data means every node must join again and message history is lost.
 
 ## Project display names
 

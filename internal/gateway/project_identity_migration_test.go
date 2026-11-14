@@ -118,6 +118,7 @@ func TestProjectIdentityMigrationMergesChartersAndLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedGatewayParts(t, dir, s)
 	identityFixture(t, s, "a2a-ocs", "first charter")
 	identityFixture(t, s, "other-folder", "second charter")
 	resetIdentityMigration(t, s)
@@ -148,6 +149,7 @@ func TestProjectIdentityMigrationConflictDoesNotBlockOtherProjects(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedGatewayParts(t, dir, s)
 	identityFixture(t, s, "a2a-ocs", "conflicting charter")
 	identityFixture(t, s, "clean-folder", "clean charter")
 	if _, err = s.db.Exec(`UPDATE sessions SET repo_project='clean-repo', repo_remote='https://example.com/clean-repo.git' WHERE repo_root='/src/clean-folder'`); err != nil {
