@@ -30,6 +30,10 @@ const (
 	SetModel      Operation = "set model"
 	Compact       Operation = "compact"
 	Interrupt     Operation = "interrupt"
+	// PermissionReply answers one pending permission request of a session. It
+	// exists in OpenCode 2.3 (POST .../permission/{requestID}/reply with a
+	// decision of once, always or reject). agent-net only ever sends once.
+	PermissionReply Operation = "reply to permission request"
 )
 
 type route struct{ method, path string }
@@ -38,6 +42,7 @@ var operations = map[Operation]route{
 	Info: {"get", "/api/info"}, Location: {"get", "/api/location"}, Agents: {"get", "/api/agent"}, Models: {"get", "/api/model"},
 	CreateSession: {"post", "/api/session"}, GetSession: {"get", "/api/session/{sessionID}"}, DeleteSession: {"delete", "/api/session/{sessionID}"}, ActiveSession: {"get", "/api/session/active"},
 	Messages: {"get", "/api/session/{sessionID}/message"}, Prompt: {"post", "/api/session/{sessionID}/prompt"}, SetAgent: {"post", "/api/session/{sessionID}/agent"}, SetModel: {"post", "/api/session/{sessionID}/model"}, Compact: {"post", "/api/session/{sessionID}/compact"}, Interrupt: {"post", "/api/session/{sessionID}/interrupt"},
+	PermissionReply: {"post", "/api/session/{sessionID}/permission/{requestID}/reply"},
 }
 
 // Method returns the HTTP method for an operation.
@@ -62,7 +67,9 @@ func Detect(spec io.Reader, version string) (Routes, error) {
 	}
 	r := Routes{version: version, paths: make(map[Operation]string)}
 	for op, rt := range operations {
-		if err == io.EOF && op != Interrupt {
+		// An absent document says nothing about the permission reply route, which
+		// only 2.3 has: it is used only when the document lists it.
+		if err == io.EOF && op != Interrupt && op != PermissionReply {
 			r.paths[op] = rt.path
 			continue
 		}
@@ -87,6 +94,15 @@ func (r Routes) Path(op Operation, id string) (string, error) {
 		return "", r.HTTPError(op, http.StatusNotFound)
 	}
 	return strings.ReplaceAll(path, "{sessionID}", url.PathEscape(id)), nil
+}
+
+// PermissionReplyPath returns the route that answers one permission request.
+func (r Routes) PermissionReplyPath(session, request string) (string, error) {
+	path, err := r.Path(PermissionReply, session)
+	if err != nil {
+		return "", err
+	}
+	return strings.ReplaceAll(path, "{requestID}", url.PathEscape(request)), nil
 }
 
 // HTTPError names the failed operation and the service version.

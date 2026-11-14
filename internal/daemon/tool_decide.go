@@ -87,8 +87,17 @@ func (lc *localConn) toolDecideCall(ctx context.Context, client string, ls *loca
 	if sid == "" {
 		return protocol.ToolDecideResult{}, nil
 	}
-	if !d.toolAllowed(ctx, sid, p.Tool, p.Input, folderOr(p.Folder, d.infoOf(ls).Cwd)) {
+	folder := folderOr(p.Folder, d.infoOf(ls).Cwd)
+	if !d.toolAllowed(ctx, sid, p.Tool, p.Input, folder) {
 		return protocol.ToolDecideResult{}, nil
+	}
+	if p.RequestID != "" {
+		// OpenCode: the harness cannot be told "allow" in a hook, so answer the
+		// request itself. A reply that fails leaves the request as it was.
+		if err := d.replyOpenCodePermission(ctx, ls, p.RequestSession, p.RequestID, folder); err != nil {
+			d.Logf("tool_decide: OpenCode permission %s not answered: %v", p.RequestID, err)
+			return protocol.ToolDecideResult{}, nil
+		}
 	}
 	return protocol.ToolDecideResult{Allow: true, Reason: "delegated by the owner through a scope of the session's role"}, nil
 }

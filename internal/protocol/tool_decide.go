@@ -18,6 +18,14 @@ type ToolDecideRequest struct {
 	Tool     string          `json:"tool"`
 	Input    json.RawMessage `json:"input,omitempty"`
 	Folder   string          `json:"folder,omitempty"`
+	// RequestID and RequestSession name the OpenCode permission request the
+	// plugin saw (permission.asked). OpenCode 2.3 has no hook that can answer
+	// allow, so on allow the daemon replies "once" through OpenCode's own
+	// permission reply route. On no decision it does nothing and the request
+	// stays with the owner. RequestSession is the session that owns the request
+	// (a sub-agent session is not the bound one).
+	RequestID      string `json:"request_id,omitempty"`
+	RequestSession string `json:"request_session,omitempty"`
 }
 
 // ToolDecideResult answers MethodToolDecide. Allow is true when a scope allows

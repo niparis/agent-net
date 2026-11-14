@@ -1925,3 +1925,10 @@ and are never allowed by a scope. Only the owner sets scopes (`scope.set`,
 400 ms budget and a 2 second timeout. Setup adds it to `~/.claude/settings.json`
 without a question and uninstall removes it.
 
+The same scopes lift three agent-net holds (a worker start that names a model, a
+permission proposal, an owner ask) and answer Codex command approvals and
+OpenCode shell permission requests. Each lift is allow or no decision: a request
+no scope covers behaves exactly as before. A permission rule that names a whole
+tool, or whose command is on the never list, and folder trust, always stay with
+the owner. The OpenCode reply is `once` only.
+
