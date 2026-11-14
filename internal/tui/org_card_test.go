@@ -69,8 +69,8 @@ func TestAgentCardShowsLeadSessionAndAuthority(t *testing.T) {
 				t.Errorf("card missing %q:\n%s", want, text)
 			}
 		}
-		if !strings.Contains(text, "no lead session") {
-			t.Errorf("card with no lead session does not say so:\n%s", text)
+		if strings.Contains(text, "agent lead") {
+			t.Errorf("card with no lead session has an agent lead row:\n%s", text)
 		}
 	})
 }

@@ -15,23 +15,26 @@ const orgLabelW = 10
 
 // orgCardLines is the lead session and the delegated authority of an Agent
 // (decision 0160 and decision 0166). The authority is the text a session reads
-// in its instructions, so the card cannot say something else.
+// in its instructions, so the card cannot say something else. A row is left
+// out when it has nothing to say, so most cards keep their layout.
 func (m Model) orgCardLines(node protocol.Node, w int) []string {
 	if node.Ref == nil || node.Ref.Kind != "agent" {
 		return nil
 	}
-	lead, style := m.leadSessionText(node.LeadSession)
-	out := orgRow("agent lead", lead, style, w)
-	authorityText, authStyle := authorityLine(node.Scopes)
-	return append(out, orgRow("authority", authorityText, authStyle, w)...)
+	var out []string
+	if node.LeadSession != nil {
+		lead, style := m.leadSessionText(node.LeadSession)
+		out = append(out, orgRow("agent lead", lead, style, w)...)
+	}
+	if words := authorityWords(node.Scopes); words != "" {
+		out = append(out, orgRow("authority", words, lipgloss.NewStyle(), w)...)
+	}
+	return out
 }
 
 // leadSessionText says whether the Agent's lead session is online, offline
 // since a time, or gone. Gone means the snapshot does not list the session.
 func (m Model) leadSessionText(lead *protocol.GraphSession) (string, lipgloss.Style) {
-	if lead == nil {
-		return "no lead session", sDim
-	}
 	name := firstNonEmpty(lead.Name, lead.ID)
 	a, ok := m.sessionByID(lead.ID)
 	switch {
@@ -55,14 +58,6 @@ func authorityWords(scopes []protocol.Scope) string {
 		return ""
 	}
 	return strings.TrimSuffix(strings.TrimPrefix(text, "Delegated authority: "), ".")
-}
-
-// authorityLine is the authority row of the Agent card.
-func authorityLine(scopes []protocol.Scope) (string, lipgloss.Style) {
-	if text := authorityWords(scopes); text != "" {
-		return text, lipgloss.NewStyle()
-	}
-	return "no delegated authority", sDim
 }
 
 // orgRow is one labelled row, wrapped under the label. The style applies to
