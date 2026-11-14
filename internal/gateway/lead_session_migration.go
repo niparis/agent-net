@@ -58,7 +58,7 @@ INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,
  from_kind,source_ref,about_kind,about_id,next_who,why_you,detail,route_fixed,category)
 SELECT 'i_'||lower(hex(randomblob(8))),'question',cto.value,'',
  'Which session leads '||a.display_name||'?'||char(10)||
- (SELECT group_concat('- '||x.label,char(10)) FROM (SELECT c.label FROM cand c WHERE c.agent=a.id ORDER BY c.label) x),
+ (SELECT group_concat('- '||x.label||' ('||x.session||')',char(10)) FROM (SELECT c.label,c.session FROM cand c WHERE c.agent=a.id ORDER BY c.label) x),
  '','','',CAST(strftime('%s','now') AS INTEGER)*1000000000,'open','[]','agent-net','','gateway',
  'lead_session:'||a.id,'','',cto.value,'','',1,'normal'
 FROM agents a, (SELECT value FROM owner_settings WHERE key='cto_session') cto

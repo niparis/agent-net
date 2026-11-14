@@ -154,7 +154,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		return err
 	}
 	if session != nil {
-		if err = setAgentLeadSessionTx(tx, lead.(string), session.(string)); err != nil {
+		if err = s.setAgentLeadSessionTx(tx, lead.(string), session.(string)); err != nil {
 			return err
 		}
 	}

@@ -92,8 +92,10 @@ func (s *Store) pinFirstLeadSessionQ(q askDB, session string) error {
 		return err
 	}
 	if len(sessions) == 1 && sessions[0].id == session {
-		_, err = q.Exec(`UPDATE agents SET lead_session=? WHERE id=? AND COALESCE(lead_session,'')=''`, session, agent)
-		return err
+		if _, err = q.Exec(`UPDATE agents SET lead_session=? WHERE id=? AND COALESCE(lead_session,'')=''`, session, agent); err != nil {
+			return err
+		}
+		return closeLeadSessionQuestionQ(q, agent, session, s.now().UnixNano())
 	}
 	// A second session with no pin does not pick one: the CTO is asked once.
 	if len(sessions) > 1 {
@@ -113,7 +115,7 @@ func (s *Store) pinOrAskLeadSessionTx(tx *sql.Tx, agent string) error {
 	case 0:
 		return nil
 	case 1:
-		return setAgentLeadSessionTx(tx, agent, sessions[0].id)
+		return s.setAgentLeadSessionTx(tx, agent, sessions[0].id)
 	default:
 		return s.askWhichLeadSessionQ(tx, agent, sessions)
 	}
@@ -122,6 +124,7 @@ func (s *Store) pinOrAskLeadSessionTx(tx *sql.Tx, agent string) error {
 // askWhichLeadSessionQ writes the CTO's one question about an Agent's lead
 // session. It uses the Desk shape that routes an item to the CTO: next_who is
 // the CTO session, so the item waits with the CTO and not on the owner's Desk.
+// An open question for the same Agent is refreshed, never repeated.
 func (s *Store) askWhichLeadSessionQ(q askDB, agent string, sessions []leadSessionRef) error {
 	var cto string
 	err := q.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&cto)
@@ -141,13 +144,31 @@ func (s *Store) askWhichLeadSessionQ(q askDB, agent string, sessions []leadSessi
 	var b strings.Builder
 	fmt.Fprintf(&b, "Which session leads %s?", name)
 	for _, session := range sessions {
-		b.WriteString("\n- " + session.label)
+		b.WriteString("\n- " + session.label + " (" + session.id + ")")
+	}
+	source := leadSessionAskRef + agent
+	var id string
+	err = q.QueryRow(`SELECT id FROM inbox_items WHERE source_ref=? AND status='open'`, source).Scan(&id)
+	if err == nil {
+		_, err = q.Exec(`UPDATE inbox_items SET text=? WHERE id=?`, b.String(), id)
+		return err
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
 	}
 	_, err = s.createInboxItem(q, protocol.InboxItem{
 		Kind: protocol.AskKindQuestion, SessionID: cto, Text: b.String(),
-		FromKind: protocol.AskFromGateway, SourceRef: leadSessionAskRef + agent,
+		FromKind: protocol.AskFromGateway, SourceRef: source,
 		NextWho: cto, AskerName: "agent-net",
 	})
+	return err
+}
+
+// closeLeadSessionQuestionQ marks the open CTO question about an Agent answered
+// when its lead session is pinned.
+func closeLeadSessionQuestionQ(q askDB, agent, session string, now int64) error {
+	_, err := q.Exec(`UPDATE inbox_items SET status='answered',answer=?,answered_at=?
+		WHERE status='open' AND source_ref=?`, "Lead session: "+session, now, leadSessionAskRef+agent)
 	return err
 }
 

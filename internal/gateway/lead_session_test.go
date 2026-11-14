@@ -143,6 +143,43 @@ func TestSecondSessionWithoutPinAsksCTO(t *testing.T) {
 	}
 }
 
+// Two new sessions joining an unpinned lead Agent that already has two keep
+// one open CTO question; each registration refreshes its text.
+func TestRepeatedUnpinnedLeadSessionAsksOneCTOQuestion(t *testing.T) {
+	r := newPlaceRig(t)
+	var node string
+	if err := r.s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, r.lead).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	cto := ctoForTest(t, r.s, node)
+	second := secondSessionOf(t, r.s, r.lead, "two")
+	if _, err := r.s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id='other'`); err != nil {
+		t.Fatal(err)
+	}
+	third := secondSessionOf(t, r.s, r.lead, "three")
+	fourth := secondSessionOf(t, r.s, r.lead, "four")
+	var count int
+	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=? AND status='open'`, "lead_session:other").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("%d open CTO questions, want one", count)
+	}
+	var next, text string
+	if err := r.s.db.QueryRow(`SELECT next_who,text FROM inbox_items WHERE source_ref=? AND status='open'`, "lead_session:other").Scan(&next, &text); err != nil {
+		t.Fatal(err)
+	}
+	if next != cto {
+		t.Fatalf("question next_who=%q, want cto %q", next, cto)
+	}
+	for _, id := range []string{r.lead, second, third, fourth} {
+		label := sessionLabel(r.s.db, id)
+		if !strings.Contains(text, "- "+label+" ("+id+")") {
+			t.Fatalf("question misses %s (%s):\n%s", label, id, text)
+		}
+	}
+}
+
 // A lead_set that names an Agent with exactly one session pins that session.
 func TestLeadSetAgentPinsItsOnlySession(t *testing.T) {
 	s := teamStore(t)
@@ -192,16 +229,23 @@ func TestLeadSetAgentWithSeveralSessionsAsksCTO(t *testing.T) {
 		t.Fatalf("no CTO question: %v", err)
 	}
 	if next != cto || !strings.Contains(text, "Which session leads multi?") ||
-		!strings.Contains(text, "multi-one") || !strings.Contains(text, "multi-two") {
+		!strings.Contains(text, "- multi-one ("+first+")") || !strings.Contains(text, "- multi-two ("+second+")") {
 		t.Fatalf("question next=%q text=%q", next, text)
 	}
-	// The CTO answers with the session it picks.
+	// The CTO answers with the session it picks; the question closes with it.
 	answer := protocol.GraphRef{Kind: "session", ID: second}
 	if err := s.SetLead(protocol.LeadSetRequest{Ref: agent, Lead: &answer}, "cto", false); err != nil {
 		t.Fatal(err)
 	}
 	if got := agentLeadSession(t, s, "multi"); got != second {
 		t.Fatalf("after the CTO answer lead_session=%q, want %q", got, second)
+	}
+	var status, reply string
+	if err := s.db.QueryRow(`SELECT status,answer FROM inbox_items WHERE source_ref='lead_session:multi'`).Scan(&status, &reply); err != nil {
+		t.Fatal(err)
+	}
+	if status != "answered" || !strings.Contains(reply, second) {
+		t.Fatalf("question status=%q answer=%q, want answered with %s", status, reply, second)
 	}
 }
 
@@ -404,6 +448,15 @@ func TestLeadSessionRepairMigration(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("%d CTO questions, want one for each of ai-arch and wbg-infra-game", count)
+	}
+	var question string
+	if err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE source_ref='lead_session:ai-arch' AND status='open'`).Scan(&question); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"s_3000000000000002", "s_3000000000000003"} {
+		if !strings.Contains(question, "- "+id+" ("+id+")") {
+			t.Fatalf("question misses %s with its session id:\n%s", id, question)
+		}
 	}
 	for _, name := range []string{"empty-00", "one-00"} {
 		var pin string
