@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	delegated "github.com/niparis/agent-net/internal/daemon/authority"
+	delegated "github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/linkkeepalive"
 	"github.com/niparis/agent-net/internal/phrasing"
@@ -510,6 +510,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				}
 				// The chief of staff's asks go out in batches (decision 0114).
 				g.flushChief(ctx)
+				g.flushHolderAsks(ctx)
 			}()
 		case <-appsCleanup.C:
 			func() {
@@ -2163,6 +2164,17 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		res, err := st.ProposePermission(p)
 		if err == nil {
 			g.logLine("permission.propose", "node", nc.id, "session", p.SessionID, "proposal", res.ID)
+		}
+		if err == nil && res.Status == "approved" {
+			// A scope approved it: apply it now, like the owner's own words.
+			if approved, perr := st.PermissionProposal(res.ID); perr == nil {
+				if _, aerr := g.applyApprovedPermission(ctx, approved); aerr != nil {
+					g.logLine("permission.apply.refused", "id", res.ID, "reason", aerr.Error())
+				}
+				if done, perr := st.PermissionProposal(res.ID); perr == nil {
+					res.Status = done.Status
+				}
+			}
 		}
 		return res, err
 

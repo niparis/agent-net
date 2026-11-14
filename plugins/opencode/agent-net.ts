@@ -455,6 +455,24 @@ class SessionLink {
     if (this.connected) this.request("waiting", { kind, text: t }).catch(() => {});
   }
 
+  /**
+   * A shell permission request OpenCode is asking the owner about. OpenCode 2.3
+   * has no hook that can answer "allow", so the daemon decides from the scopes
+   * the owner delegated (decision 0166) and, on allow, replies "once" through
+   * OpenCode's own permission route. On no decision it does nothing and the
+   * request stays with the owner. It never blocks and never fails the session.
+   */
+  decideCommand(requestID: string, requestSession: string, command: string) {
+    if (!this.connected) return;
+    this.request("tool_decide", {
+      tool: "Bash",
+      input: { command },
+      folder: this.cwd,
+      request_id: requestID,
+      request_session: requestSession,
+    }).catch(() => {});
+  }
+
   clearWaiting() {
     if (!this.waiting) return;
     this.waiting = undefined;
@@ -1395,6 +1413,13 @@ export default {
         case "permission.asked": {
           const id = String(event.data?.id ?? "");
           if (id) await ask(root, "p:" + id, "permission", permissionText(event.data));
+          const link = await ensureLink(root);
+          // Only a shell command with one resource is forwarded: the daemon's
+          // table matches whole commands, and a pattern is not a command.
+          const resources = Array.isArray(event.data?.resources) ? event.data.resources : [];
+          if (id && String(event.data?.action ?? "") === "bash" && resources.length === 1 && typeof resources[0] === "string") {
+            link?.decideCommand(id, sessionID, resources[0]);
+          }
           (await ensureLink(sessionID))?.touch();
           return;
         }

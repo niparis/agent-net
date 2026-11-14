@@ -1,5 +1,5 @@
 // Package authority holds what the owner delegates to agents, and what he
-// keeps (decision 0165). It has two parts, both plain data with small
+// keeps (decision 0166). It has two parts, both plain data with small
 // functions: the never list in this file, and the scope table in table.go.
 // Nothing here ever answers "block": the answer is allow or no decision, and
 // no decision leaves the harness or agent-net exactly as it was.
@@ -162,4 +162,26 @@ const compoundMarks = ";&|`$()<>\n\r{}\\"
 // Compound says whether a command joins, nests or expands other commands.
 func Compound(command string) bool {
 	return strings.ContainsAny(command, compoundMarks)
+}
+
+// PermissionRuleNever says whether a Claude Code permission rule is too wide or
+// too dangerous for a scope to grant on its own. A rule that names a whole tool
+// (no parentheses, or a bare "*") is too wide. A Bash rule whose command is on
+// the never list is refused. Both stay with the owner.
+func PermissionRuleNever(rule string) bool {
+	rule = strings.TrimSpace(rule)
+	open := strings.Index(rule, "(")
+	if open < 0 || !strings.HasSuffix(rule, ")") {
+		return true
+	}
+	inner := strings.TrimSuffix(rule[open+1:len(rule)-1], ":*")
+	inner = strings.TrimSuffix(inner, "*")
+	if strings.TrimSpace(inner) == "" {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(rule[:open]), "bash") {
+		_, never := CommandNever(inner)
+		return never
+	}
+	return false
 }

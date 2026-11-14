@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	delegated "github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -308,6 +309,27 @@ func (s *Store) ProposePermission(frame protocol.PermissionProposeFrame) (protoc
 		Status:       "pending",
 		CreatedAt:    s.now().UnixNano(),
 	}
+	// A session whose role node holds the permissions scope over every target
+	// repo has the owner's delegation (decision 0166): the proposal is approved
+	// by that scope and opens no Desk ask. Folder trust, a rule that names a
+	// whole tool or sits on the never list, and a target outside the scope stay
+	// with the owner. The result is applied and logged with its undo.
+	if by := s.permissionScopeHolder(session, p); by != "" {
+		p.Status, p.DecidedAt, p.DecidedBy = "approved", p.CreatedAt, "scope:"+by
+		stx, err := s.db.Begin()
+		if err != nil {
+			return res, err
+		}
+		defer stx.Rollback()
+		if err = insertPermissionRow(stx, p); err != nil {
+			return res, err
+		}
+		if err = stx.Commit(); err != nil {
+			return res, err
+		}
+		res.ID, res.Status, res.Targets = p.ID, "approved", targets
+		return res, nil
+	}
 	why := "Claude Code permission rules are yours to allow. Nothing is written before you answer."
 	if kind == protocol.PermissionKindTrust {
 		why = "Claude Code folder trust is yours to grant. Nothing is trusted before you answer."
@@ -325,6 +347,41 @@ func (s *Store) ProposePermission(frame protocol.PermissionProposeFrame) (protoc
 	}
 	res.ID, res.Status, res.Targets = p.ID, "pending", targets
 	return res, nil
+}
+
+// permissionScopeHolder returns the role node whose permissions scope approves
+// the proposal, or "" when the owner must decide.
+func (s *Store) permissionScopeHolder(session string, p protocol.PermissionProposal) string {
+	if p.Kind != protocol.PermissionKindRules || len(p.Targets) == 0 {
+		return ""
+	}
+	for _, rule := range p.Rules {
+		if delegated.PermissionRuleNever(rule) {
+			return ""
+		}
+	}
+	_, agent, harness, _, err := s.sessionIdentity(session)
+	if err != nil || agent == "" || harness == "cto" {
+		return ""
+	}
+	// The CTO holds permissions over everything "on owner words": its own
+	// proposal is approved only through its verified owner words, never by the
+	// scope (decision 0165). The scope is for the other agents.
+	var role string
+	if s.db.QueryRow(`SELECT role FROM agents WHERE id=?`, agent).Scan(&role) != nil || role == "cto" {
+		return ""
+	}
+	scopes, repos, err := s.ScopesWithRepos(agent)
+	if err != nil {
+		return ""
+	}
+	held := delegated.Held{Scopes: scopes, Repos: repos}
+	for _, t := range p.Targets {
+		if !held.Holds(protocol.ScopePermissions, t.Name) {
+			return ""
+		}
+	}
+	return agent
 }
 
 // RaiseTrustAsk opens the gateway's own trust ask after a session start,
@@ -760,8 +817,8 @@ func (g *Gateway) ownerApplyPermission(ctx context.Context, frame protocol.Permi
 // proposal and records what happened. The approval is the owner's Desk answer,
 // or the owner's quoted chat words.
 func (g *Gateway) applyApprovedPermission(ctx context.Context, p protocol.PermissionProposal) ([]protocol.PermissionApplyResult, error) {
-	if p.Status != "approved" || (p.DecidedBy != "owner" && p.OwnerWords == "") {
-		return nil, reject("permission proposal is not approved by the owner")
+	if p.Status != "approved" || (p.DecidedBy != "owner" && p.OwnerWords == "" && !strings.HasPrefix(p.DecidedBy, "scope:")) {
+		return nil, reject("permission proposal is not approved by the owner or by a scope the owner set")
 	}
 	results := make([]protocol.PermissionApplyResult, 0, len(p.Targets))
 	for _, target := range p.Targets {

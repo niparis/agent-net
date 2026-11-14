@@ -498,7 +498,7 @@ type WorkerStartResult struct {
 	// and the judge's difficulty. Empty for a continued worker.
 	OwnerLine string `json:"owner_line,omitempty"`
 	// SelectionPath says how a start that set selection fields went ahead:
-	// SelectionOwnerWords (the owner's own words were found in his prompts) or
+	// SelectionOwnerWords (the owner's own words were found in his prompts), SelectionScope (a scope delegates it) or
 	// SelectionHeld (the start waits for the owner's answer on the Desk). Empty
 	// when the caller set no selection field.
 	SelectionPath string `json:"selection_path,omitempty"`

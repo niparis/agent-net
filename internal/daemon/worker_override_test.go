@@ -276,3 +276,47 @@ func TestOverrideProviderResolvedLikeTheStart(t *testing.T) {
 		t.Fatalf("effort-only facts = %+v", f)
 	}
 }
+
+// A caller whose role node holds admin over the project passes the override
+// check: the owner delegated that choice, so there is no ask. A scope over
+// another project changes nothing: the start is held as before.
+func TestOverrideScopeHolderGoesAheadAtOnce(t *testing.T) {
+	g, w, pi, piID := overrideNode(t)
+	if _, err := w.node.d.call(context.Background(), "hello", map[string]any{"hostname": "fixture", "version": "v0.4.145", "graph_refs": true}); err != nil {
+		t.Fatal(err)
+	}
+	waitGraphCutover(t, g)
+	st := g.gw.Store()
+	if _, err := st.AddProjects(w.node.d.cfg.NodeID, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
+		t.Fatal(err)
+	}
+	// The caller's role node is the agent of its repo.
+	view, ok, err := st.Agent(piID)
+	if err != nil || !ok || view.AgentID == "" {
+		t.Fatalf("the caller has no role node: %+v %v", view, err)
+	}
+	agent := view.AgentID
+	elsewhere := protocol.ScopeSetRequest{Node: agent, Kind: protocol.ScopeAdmin, Over: "repo:other"}
+	if _, err := st.SetScope(elsewhere, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	res := startFrom(t, pi, overrideRequest())
+	if res.SelectionPath != protocol.SelectionHeld {
+		t.Fatalf("an admin scope over another repo lifted the hold: %+v", res)
+	}
+	waitOverrideAsk(t, g)
+
+	if _, err := st.SetScope(protocol.ScopeSetRequest{Node: agent, Kind: protocol.ScopeAdmin, Over: "repo:shop"}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	req := overrideRequest()
+	req.Title = "Second"
+	eventually(t, "the scope reaches the daemon", func() bool {
+		res := startFrom(t, pi, req)
+		if res.SelectionPath == protocol.SelectionHeld {
+			req.Title += "x"
+			return false
+		}
+		return res.SelectionPath == protocol.SelectionScope && res.SessionID != ""
+	})
+}

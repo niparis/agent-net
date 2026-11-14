@@ -104,12 +104,13 @@ func (d *Daemon) ownerWordsMatch(session, quote string) bool {
 // It clears owner_words and reason from the request: they stop here. For an
 // agent whose start sets a selection field it returns:
 //   - selection SelectionOwnerWords when the quote matches: the start goes ahead;
+//   - selection SelectionScope when the caller's role node holds admin over the project;
 //   - hold true with the caller's reason when the start must wait for the owner;
 //   - an error when there is no match and no reason, which says what to give.
 //
 // A start from the owner's command line or the CTO, and a start with no
 // selection field, is not an override.
-func (d *Daemon) checkOverride(caller string, p *protocol.WorkerStartRequest, agent bool) (selection string, hold bool, reason string, err error) {
+func (d *Daemon) checkOverride(ctx context.Context, caller string, p *protocol.WorkerStartRequest, agent bool) (selection string, hold bool, reason string, err error) {
 	words, why := strings.TrimSpace(p.OwnerWords), strings.TrimSpace(p.Reason)
 	p.OwnerWords, p.Reason = "", ""
 	if !agent || d.cfg.testOpenSelection {
@@ -121,6 +122,12 @@ func (d *Daemon) checkOverride(caller string, p *protocol.WorkerStartRequest, ag
 	}
 	if words != "" && d.ownerWordsMatch(caller, words) {
 		return protocol.SelectionOwnerWords, false, "", nil
+	}
+	// The owner's words come first, then a scope. A caller whose role node holds
+	// admin over the project was delegated this choice; with no such scope the
+	// start waits as before (decision 0166).
+	if held, ok := d.scopesOf(ctx, caller); ok && held.Holds(protocol.ScopeAdmin, p.Project) {
+		return protocol.SelectionScope, false, "", nil
 	}
 	if why == "" {
 		if words != "" {

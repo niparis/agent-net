@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/niparis/agent-net/internal/daemon/authority"
+	"github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// tool_decide (decision 0165). A harness hook asks "may this tool call run
+// tool_decide (decision 0166). A harness hook asks "may this tool call run
 // without asking the owner". The daemon answers allow from the scopes of the
 // role node the session speaks for, or gives no decision. It never answers
 // block, and every failure is "no decision": the harness then behaves exactly
@@ -87,20 +87,40 @@ func (lc *localConn) toolDecideCall(ctx context.Context, client string, ls *loca
 	if sid == "" {
 		return protocol.ToolDecideResult{}, nil
 	}
-	held, ok := d.scopesOf(ctx, sid)
-	if !ok || len(held.Scopes) == 0 {
+	folder := folderOr(p.Folder, d.infoOf(ls).Cwd)
+	if !d.toolAllowed(ctx, sid, p.Tool, p.Input, folder) {
 		return protocol.ToolDecideResult{}, nil
 	}
-	folder := p.Folder
-	if folder == "" {
-		folder = d.infoOf(ls).Cwd
+	if p.RequestID != "" {
+		// OpenCode: the harness cannot be told "allow" in a hook, so answer the
+		// request itself. A reply that fails leaves the request as it was.
+		if err := d.replyOpenCodePermission(ctx, ls, p.RequestSession, p.RequestID, folder); err != nil {
+			d.Logf("tool_decide: OpenCode permission %s not answered: %v", p.RequestID, err)
+			return protocol.ToolDecideResult{}, nil
+		}
+	}
+	return protocol.ToolDecideResult{Allow: true, Reason: "delegated by the owner through a scope of the session's role"}, nil
+}
+
+func folderOr(folder, fallback string) string {
+	if folder != "" {
+		return folder
+	}
+	return fallback
+}
+
+// toolAllowed is the one decision every harness path asks: the Claude hook
+// through tool_decide, and the Codex and OpenCode adapters directly. It is true
+// only when the scopes of the role node of session sid allow the call. Every
+// other case, including a failure, is false: no decision.
+func (d *Daemon) toolAllowed(ctx context.Context, sid, tool string, input json.RawMessage, folder string) bool {
+	held, ok := d.scopesOf(ctx, sid)
+	if !ok || len(held.Scopes) == 0 {
+		return false
 	}
 	var repo string
 	if folder != "" {
 		repo = d.repo.Lookup(folder).Project
 	}
-	if !authority.Allow(held, authority.Call{Tool: p.Tool, Input: p.Input, Repo: repo}) {
-		return protocol.ToolDecideResult{}, nil
-	}
-	return protocol.ToolDecideResult{Allow: true, Reason: "delegated by the owner through a scope of the session's role"}, nil
+	return authority.Allow(held, authority.Call{Tool: tool, Input: input, Repo: repo})
 }

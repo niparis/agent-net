@@ -499,7 +499,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	// or his answer on the Desk (worker_override.go). The owner's command line
 	// and TUI and the CTO are not agents here.
 	agent, _ := ctx.Value(answerEarlyKey{}).(bool)
-	selection, hold, reason, err := d.checkOverride(caller, &p, agent && !cto)
+	selection, hold, reason, err := d.checkOverride(ctx, caller, &p, agent && !cto)
 	if err != nil {
 		return nil, err
 	}

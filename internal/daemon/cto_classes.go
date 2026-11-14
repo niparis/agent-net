@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/niparis/agent-net/internal/daemon/authority"
+	"github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 )

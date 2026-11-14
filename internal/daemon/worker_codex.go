@@ -36,8 +36,9 @@ import (
 //     "final_answer"), `thread/tokenUsage/updated` and `turn/completed`.
 //   - When a step needs approval, the server sends a request
 //     (`item/commandExecution/requestApproval`, `item/fileChange/requestApproval`,
-//     `item/permissions/requestApproval`, ...). We never approve: we decline,
-//     and the turn ends with a hand-back of status blocked.
+//     `item/permissions/requestApproval`, ...). We decline, and the turn ends
+//     with a hand-back of status blocked, except for a command that a scope
+//     the owner delegated covers (tool_decide): that one is accepted once.
 //
 // So the daemon registers the thread as a session of harness codex, delivers
 // each message from the owner as a turn, and turns the end of each turn into a
@@ -750,15 +751,44 @@ func (cc *codexConn) readLoop() {
 	}
 }
 
-// serverRequest answers a request from the server. Nothing is ever approved.
+type codexRequest struct {
+	Command   string `json:"command"`
+	Reason    string `json:"reason"`
+	Cwd       string `json:"cwd"`
+	GrantRoot string `json:"grantRoot"`
+}
+
+// codexDecideTimeout bounds the scope check of one command approval.
+const codexDecideTimeout = 3 * time.Second
+
+// serverRequest answers a request from the server. agent-net approves one kind
+// of request, a command that a scope delegated by the owner covers: tool_decide
+// says allow, and the command is accepted once (decision 0166). Everything else,
+// and every doubt, is declined as before. The check runs apart from the read
+// loop: the turn waits for this answer, so nothing else is lost by waiting.
 func (cc *codexConn) serverRequest(m codexMsg) {
-	var p struct {
-		Command   string `json:"command"`
-		Reason    string `json:"reason"`
-		Cwd       string `json:"cwd"`
-		GrantRoot string `json:"grantRoot"`
-	}
+	var p codexRequest
 	json.Unmarshal(m.Params, &p)
+	if m.Method != "item/commandExecution/requestApproval" || p.Command == "" || cc.w.sessionID == "" {
+		cc.decline(m, p)
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), codexDecideTimeout)
+		defer cancel()
+		input, _ := json.Marshal(map[string]string{"command": p.Command})
+		if cc.d.toolAllowed(ctx, cc.w.sessionID, "Bash", input, p.Cwd) {
+			if err := cc.write(map[string]any{"id": m.ID, "result": map[string]any{"decision": "accept"}}); err != nil {
+				cc.d.Logf("worker %s: answer to %s: %v", cc.w.id, m.Method, err)
+			}
+			return
+		}
+		cc.decline(m, p)
+	}()
+}
+
+// decline answers a request with no, and records what blocked the worker.
+func (cc *codexConn) decline(m codexMsg, p codexRequest) {
 	var result any
 	var block *codexBlock
 	switch m.Method {

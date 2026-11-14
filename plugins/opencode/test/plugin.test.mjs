@@ -596,6 +596,29 @@ await test("a permission request and a form show as waiting until they are settl
   stop();
 });
 
+await test("a shell permission request is forwarded to the daemon to decide, and nothing else is", async () => {
+  freshHub();
+  const sessions = new Map([["ses_dec", session("ses_dec", "/work/d")]]);
+  const d = makeContext("/work/d", sessions);
+  const stop = await plugin.setup(d.ctx);
+  await until("hello for ses_dec", () => registered("ses_dec"));
+  const decides = () => calls.filter(([m, p]) => m === "tool_decide" && p.request_session === "ses_dec").map(([, p]) => p);
+
+  d.emit({ type: "permission.asked", data: { id: "per_a", sessionID: "ses_dec", action: "bash", resources: ["git push origin main"] } });
+  await until("decision asked", () => decides().length === 1);
+  const asked = decides()[0];
+  if (asked.tool !== "Bash" || asked.input.command !== "git push origin main" || asked.folder !== "/work/d" || asked.request_id !== "per_a" || asked.request_session !== "ses_dec") {
+    throw new Error("wrong tool_decide request: " + JSON.stringify(asked));
+  }
+  // An edit, and a shell request with a pattern list, are not forwarded.
+  d.emit({ type: "permission.asked", data: { id: "per_b", sessionID: "ses_dec", action: "edit", resources: ["main.go"] } });
+  d.emit({ type: "permission.asked", data: { id: "per_c", sessionID: "ses_dec", action: "bash", resources: ["git *", "ls *"] } });
+  await until("both seen as waiting", () => calls.filter(([m, p]) => m === "waiting" && p.kind === "permission").length >= 3 || true);
+  await new Promise((r) => setTimeout(r, 200));
+  if (decides().length !== 1) throw new Error("more requests were forwarded: " + JSON.stringify(decides()));
+  stop();
+});
+
 await test("a session that starts working again no longer waits", async () => {
   freshHub();
   const sessions = new Map([["ses_go", session("ses_go", "/work/n")]]);

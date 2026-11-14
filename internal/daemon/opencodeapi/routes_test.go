@@ -124,3 +124,25 @@ func TestMissingOperations(t *testing.T) {
 		t.Fatal("missing interrupt absent from inventory")
 	}
 }
+
+// The permission reply route exists only when the service lists it (2.3), and
+// its request ID is escaped.
+func TestPermissionReplyRoute(t *testing.T) {
+	r, err := Detect(strings.NewReader(`{"paths":{"/api/session/{sessionID}/permission/{requestID}/reply":{"post":{}}}}`), "2.3.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.PermissionReplyPath("ses_1", "per 1")
+	if want := "/api/session/ses_1/permission/per%201/reply"; err != nil || got != want {
+		t.Fatalf("got %q, %v; want %q", got, err, want)
+	}
+	for name, spec := range map[string]string{"older service": `{"paths":{}}`, "no document": ""} {
+		r, err := Detect(strings.NewReader(spec), "2.2.6")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.PermissionReplyPath("ses_1", "per_1"); err == nil || !strings.Contains(err.Error(), "has no reply to permission request route") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	delegated "github.com/niparis/agent-net/internal/daemon/authority"
+	delegated "github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -120,5 +120,160 @@ func TestCTOLifecycleRefusalReadsTheNeverList(t *testing.T) {
 	err := s.GraphLifecycle("repo.create", protocol.GraphLifecycleRequest{}, "cto", true)
 	if err != nil && strings.Contains(err.Error(), "owner approval required") {
 		t.Errorf("repo.create refused: %v", err)
+	}
+}
+
+// permissionScopeRig is permissionRig with typed graph refs on and the session
+// attached to the role node forge.
+func permissionScopeRig(t *testing.T) (*Store, string) {
+	t.Helper()
+	s, node, session := permissionRig(t)
+	if _, err := s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/tmp/other"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.loadGraphRefs(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET agent_id='forge' WHERE id=?`, session); err != nil {
+		t.Fatal(err)
+	}
+	return s, session
+}
+
+func proposeRules(t *testing.T, s *Store, session string, rules ...string) protocol.PermissionProposeResult {
+	t.Helper()
+	res, err := s.ProposePermission(protocol.PermissionProposeFrame{SessionID: session,
+		PermissionProposeRequest: protocol.PermissionProposeRequest{Rules: rules, Targets: []string{"forge"}, Reason: "merge PRs"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+// A proposal from a session whose role node holds the permissions scope over
+// the target repo is approved by that scope and opens no Desk ask. A proposal
+// with no such scope, a rule on the never list, or a scope over another repo
+// still waits for the owner, exactly as before.
+func TestPermissionProposalApprovedByScope(t *testing.T) {
+	s, session := permissionScopeRig(t)
+	asks := func() int {
+		var n int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if res := proposeRules(t, s, session, "Bash(gh pr merge:*)"); res.Status != "pending" || asks() != 1 {
+		t.Fatalf("no scope: %+v, %d asks", res, asks())
+	}
+	if _, err := s.SetScope(scopeSet("forge", protocol.ScopePermissions, "repo:other", ""), "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	before := asks()
+	if res := proposeRules(t, s, session, "Bash(gh pr merge:*)"); res.Status != "pending" || asks() != before+1 {
+		t.Fatalf("a scope over another repo: %+v", res)
+	}
+	if _, err := s.SetScope(scopeSet("forge", protocol.ScopePermissions, "repo:forge", ""), "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	before = asks()
+	res := proposeRules(t, s, session, "Bash(gh pr merge:*)")
+	if res.Status != "approved" || asks() != before {
+		t.Fatalf("a scope over the target: %+v, %d asks (was %d)", res, asks(), before)
+	}
+	p, err := s.PermissionProposal(res.ID)
+	if err != nil || p.Status != "approved" || p.DecidedBy != "scope:forge" {
+		t.Fatalf("stored proposal %+v %v", p, err)
+	}
+	for _, rule := range []string{"Bash(git push --force:*)", "Bash", "Bash(rm -rf:*)"} {
+		before = asks()
+		if res := proposeRules(t, s, session, rule); res.Status != "pending" || asks() != before+1 {
+			t.Fatalf("never-list rule %q: %+v", rule, res)
+		}
+	}
+}
+
+// An ask from a repo that a node's asks scope covers goes to a live session of
+// that node, with a message, before the chief or the Desk. An ask from a repo
+// no asks scope covers is routed as before.
+func TestAskGoesToTheAsksScopeHolderFirst(t *testing.T) {
+	s := teamStore(t)
+	var asker, holder string
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE native_id='n-demo'`).Scan(&asker); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE native_id='n-other'`).Scan(&holder); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET agent_id=CASE id WHEN ? THEN 'demo' ELSE 'other' END, online=1 WHERE id IN (?,?)`, asker, asker, holder); err != nil {
+		t.Fatal(err)
+	}
+	ask := func(text string) protocol.InboxItem {
+		t.Helper()
+		item, err := s.createInboxItem(s.db, protocol.InboxItem{Kind: "question", SessionID: asker, Node: "demo", Text: text, Options: []string{"yes", "no"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var next string
+		if err := s.db.QueryRow(`SELECT next_who FROM inbox_items WHERE id=?`, item.ID).Scan(&next); err != nil {
+			t.Fatal(err)
+		}
+		item.NextWho = next
+		return item
+	}
+	if got := ask("first question").NextWho; got != protocol.AskNextOwner {
+		t.Fatalf("with no scope the ask went to %q", got)
+	}
+	if _, err := s.SetScope(scopeSet("other", protocol.ScopeAsks, "repo:other", ""), "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := ask("second question").NextWho; got != protocol.AskNextOwner {
+		t.Fatalf("a scope over another repo sent the ask to %q", got)
+	}
+	if _, err := s.SetScope(scopeSet("other", protocol.ScopeAsks, "repo:demo", ""), "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	item := ask("third question")
+	if item.NextWho != holder {
+		t.Fatalf("the ask went to %q, want the holder %s", item.NextWho, holder)
+	}
+	var body string
+	if err := s.db.QueryRow(`SELECT body FROM messages WHERE recipient=? AND idem_key LIKE ?`, holder, chiefAskKeyPrefix+item.ID+"%").Scan(&body); err != nil {
+		t.Fatalf("no message for the holder: %v", err)
+	}
+	if !strings.Contains(body, "third question") || !strings.Contains(body, "agent_ask_sort") {
+		t.Fatalf("message %q", body)
+	}
+}
+
+// The CTO holds permissions over everything, "on owner words". Its own proposal
+// with no owner words is not approved by that scope: it waits on the Desk. Its
+// owner-words path is separate (ApprovePermissionOnOwnerWords). A session that
+// is the CTO by harness is refused the same way.
+func TestPermissionProposalFromTheCTOIsNotApprovedByScope(t *testing.T) {
+	for _, tc := range []struct{ name, setup string }{
+		{"agent role cto", `UPDATE agents SET role='cto' WHERE id='forge'`},
+		{"session harness cto", `UPDATE sessions SET harness='cto' WHERE agent_id='forge'`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, session := permissionScopeRig(t)
+			if _, err := s.SetScope(scopeSet("forge", protocol.ScopePermissions, "all", "on owner words"), "owner", false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.db.Exec(tc.setup); err != nil {
+				t.Fatal(err)
+			}
+			res := proposeRules(t, s, session, "Bash(gh pr merge:*)")
+			if res.Status != "pending" {
+				t.Fatalf("the CTO's proposal: %+v, want pending", res)
+			}
+			var asks int
+			if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=?`, permissionAskPrefix+res.ID).Scan(&asks); err != nil || asks != 1 {
+				t.Fatalf("Desk asks for the proposal: %d %v", asks, err)
+			}
+		})
 	}
 }

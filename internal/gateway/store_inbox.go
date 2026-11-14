@@ -146,6 +146,14 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	if err != nil {
 		return item, err
 	}
+	// A role node that holds the asks scope over the asker's repo gets an ask the
+	// route table sends to the chief before the chief does (decision 0166).
+	holder := ""
+	if item.NextWho == "" && rt.To == routeChief && (item.FromKind == "" || item.FromKind == protocol.AskFromSession) {
+		if holder = s.asksHolderSession(db, item.SessionID); holder != "" {
+			nextWho, skipped = holder, false
+		}
+	}
 	if skipped {
 		// The chief is registered but cannot work: the ask was sent past it.
 		routeFixed = 1
@@ -203,6 +211,9 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 		from_kind,source_ref,about_kind,about_id,next_who,why_you,detail,route_fixed,category) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status, string(options), item.AskerName, item.ChangeTitle,
 		item.FromKind, item.SourceRef, item.AboutKind, item.AboutID, nextWho, item.WhyYou, item.Detail, routeFixed, item.Category)
+	if err == nil && holder != "" {
+		_, err = s.storeAgentNetMessage(db, holder, s.holderAskBody(db, item), item.ID, now)
+	}
 	return item, err
 }
 

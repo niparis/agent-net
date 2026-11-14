@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -15,6 +14,9 @@ import (
 // Code waits for the hook before each tool call, so it gives up quickly and
 // then prints nothing.
 const toolDecideBudget = 400 * time.Millisecond
+
+// toolDecideReason is the one sentence Claude Code shows for an allow.
+const toolDecideReason = "Delegated by the owner through a scope of this session's role."
 
 type toolDecideInput struct {
 	SessionID string          `json:"session_id"`
@@ -33,7 +35,7 @@ type toolDecideOutput struct {
 }
 
 // runToolDecide is `agent-net tool-decide`, a Claude Code PreToolUse hook for
-// Bash and agent-net tools (decision 0165). It asks the daemon whether a scope
+// Bash and agent-net tools (decision 0166). It asks the daemon whether a scope
 // the owner delegated allows the call. On allow it prints Claude Code's
 // permissionDecision allow. On anything else it prints nothing, so Claude Code
 // asks as it did before: the hook never blocks and never fails a call.
@@ -56,7 +58,7 @@ func runToolDecide(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	var out toolDecideOutput
 	out.HookSpecificOutput.HookEventName = "PreToolUse"
 	out.HookSpecificOutput.PermissionDecision = "allow"
-	out.HookSpecificOutput.PermissionDecisionReason = "The owner delegated this to the session's role. " + strings.TrimSpace(res.Reason)
+	out.HookSpecificOutput.PermissionDecisionReason = toolDecideReason
 	b, err := json.Marshal(out)
 	if err != nil {
 		return
