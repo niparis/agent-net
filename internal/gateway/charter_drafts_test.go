@@ -110,7 +110,7 @@ func TestCharterDraftSubmitValidation(t *testing.T) {
 	for name, q := range map[string]protocol.CharterDraftRequest{
 		"unknown level":      {Level: "global", Attr: "rules", Value: "x"},
 		"agent attr on repo": {Level: "repo", Attr: "accepts", Value: "x"},
-		"bad maturity":       {Level: "repo", Attr: "maturity", Value: "critical"},
+		"bad maturity":       {Level: "repo", Attr: "maturity", Value: "unknown"},
 		"too long":           {Level: "repo", Attr: "purpose", Value: strings.Repeat("x", protocol.CharterValueMaxBytes+1)},
 		"empty":              {Level: "repo", Attr: "purpose", Value: "  "},
 		"not a team lead":    {Level: "team", Attr: "purpose", Value: "x"},

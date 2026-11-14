@@ -5,13 +5,20 @@ import (
 	"testing"
 )
 
+func TestCharterSetAcceptsCriticalMaturity(t *testing.T) {
+	got, err := CleanCharterValue("maturity", MaturityCritical)
+	if err != nil || got != MaturityCritical {
+		t.Fatalf("charter_set maturity critical = %q, %v", got, err)
+	}
+}
+
 func TestCharterMaturityEnum(t *testing.T) {
-	for _, v := range []string{"experimental", "early", "growing", "mature"} {
+	for _, v := range MaturityLevels {
 		if _, err := CleanCharterValue("maturity", v); err != nil {
 			t.Fatal(v, err)
 		}
 	}
-	for _, v := range []string{"critical", "unknown", "mature - daily use"} {
+	for _, v := range []string{"unknown", "critcal", "mature - daily use"} {
 		if _, err := CleanCharterValue("maturity", v); err == nil {
 			t.Fatalf("accepted %q", v)
 		}

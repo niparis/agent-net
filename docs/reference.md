@@ -362,6 +362,17 @@ is part of that prompt, or of the first message for OpenCode. Claude Code's auto
 memory is off for the CTO (`autoMemoryEnabled: false` in its launch settings):
 its memory is its gateway notes, saved with `agent_note_write` and read with
 `agent_notes_find` (owner decision 2026-11-13). Coding sessions keep both.
+
+The daemon writes the CTO's own skill, `agent-net-setup`, into its skills folder
+at start: `cto/claude/.claude/skills/agent-net-setup/` for a Claude CTO, and
+`cto/.claude/skills/agent-net-setup/` for an OpenCode CTO, both under the daemon
+state directory. OpenCode 2.3 reads project skills from `.claude/skills`, so the
+same relative path serves both harnesses. The folder holds `SKILL.md` and a
+generated `reference.md`; each file is written only when its content differs.
+No other session's folder gets them, and a start fails if they cannot be
+written. `scripts/check-opencode-cto-skill.sh` confirms the OpenCode path on a
+real 2.3 install, in a throwaway folder.
+
 The CTO starts through the same start path as every other session (decision
 0156). Its role (name `agent-net-cto`, the system prompt, the private MCP config,
 `--strict-mcp-config` and the `cto_op` hook in its launch settings) is
@@ -4371,13 +4382,15 @@ sessions must run a version with Repo admission support; an older daemon
 cannot enforce this rule for its own local starts. The TUI confirmation to
 raise the max is a later step.
 
-### Scopes (stored, not used yet)
+### Scopes (delegated authority)
 
 A scope is authority the owner delegates to a role node (an Agent). It is not a reporting line and not an edge. Each scope has a `kind`, an `over` target, a `note`, and who set it and when. The kinds are a fixed list: `asks`, `admin`, `merge`, `release`, `deploy`, `review` and `permissions`. A new kind is a code change. `over` is `all`, `team:<id>`, `repo:<id>` or `agent:<id>`, and the target must exist. Owner powers (money, secrets, destructive acts), reporting lines and depends edges are not scopes.
 
-The owner operators `scope_set` and `scope_remove` take `node`, `kind`, `over` and, for `scope_set`, `note`. Each returns the stored or removed row. The CTO runs them with `graph_change`, where `to` carries `over` and `value` carries the note; each change is in the graph history and `graph_change` `undo` restores it. An unknown kind, an unknown node or a bad `over` is refused. Nothing else is checked.
+The owner operators `scope_set` and `scope_remove` take `node`, `kind`, `over` and, for `scope_set`, `note`. Each returns the stored or removed row. The CTO runs them with `graph_change`, where `to` carries `over` and `value` carries the note; each change is in the graph history and `graph_change` `undo` restores it. An unknown kind, an unknown node or a bad `over` is refused.
 
-On upgrade, one migration turns today's grants into scopes, once: the chief of staff gets `asks` over `all`; the CTO gets `admin` and `permissions` over `all`; the wbgpoc team lead gets `merge` over its team (owner rule `so_f960d5fd38dcd366`); the agent that holds a project's merger gets `merge` over that repo; `releases`, `accepts` and `reviews` delivery owners give `release` and `review` (`@merger` is the merger's agent, `@caller` is the repo lead); a `deploys` edge gives `deploy`, unless the repo's `deploy_rule` is `owner`. These scopes are stored only: no session read, screen or check uses them yet.
+On upgrade, one migration turns today's grants into scopes, once: the chief of staff gets `asks` over `all`; the CTO gets `admin` and `permissions` over `all`; the wbgpoc team lead gets `merge` over its team (owner rule `so_f960d5fd38dcd366`); the agent that holds a project's merger gets `merge` over that repo; `releases`, `accepts` and `reviews` delivery owners give `release` and `review` (`@merger` is the merger's agent, `@caller` is the repo lead); a `deploys` edge gives `deploy`, unless the repo's `deploy_rule` is `owner`.
+
+A session whose role holds the scope may do that action without asking the owner (decision 0166). The daemon answers `tool_decide` from the scope table, and the answer is allow or no decision: it never blocks, so a call outside every scope falls back to the harness's own permission prompt. The Claude hook, Codex command approvals and OpenCode permission prompts answer through `tool_decide`. Pi has no permission prompt; it only reads the Delegated authority line. Money, secrets and destructive acts are never covered by a scope.
 
 ### Owner session use and pins
 

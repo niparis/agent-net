@@ -12,8 +12,14 @@ import (
 
 // Scopes are authority the owner delegates to a role node (an Agent). They sit
 // next to agent_charter rather than in it: a charter attribute holds one value,
-// while a node holds many scopes of one kind over different targets. Stored,
-// not used yet: nothing reads or enforces them.
+// while a node holds many scopes of one kind over different targets. A session
+// whose role holds the scope may do that action without asking the owner
+// (decision 0166); the daemon answers tool_decide from this table.
+//
+// The SQL comment inside nodeScopesMigration below still says "stored, not
+// used yet". Shipped migrations are append-only and hashed in
+// testdata/migrations.lock, so that text cannot change; this comment is the
+// current meaning.
 //
 // nodeScopesMigration creates the tables and is replayable. The migration loop
 // runs seedNodeScopesTx after it; the owner_settings marker keeps that seed to

@@ -174,6 +174,37 @@ const EdgeCalls = "calls"
 // tree has no cycle. A role merger Agent is never a target.
 const EdgeReportsTo = "reports_to"
 
+// EdgeKinds are the stored edge kinds edge_set accepts. The delivery kinds
+// assign a delivery step owner; depends and deploys are dependencies.
+var EdgeKinds = []string{"depends", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies"}
+
+// EdgeRules are the request rules of an edge, in display order.
+var EdgeRules = []string{"normal", "auto", "ask", "never"}
+
+// EdgeRuleMeaning is what one request rule does, in plain words.
+func EdgeRuleMeaning(rule string) string {
+	switch rule {
+	case "normal":
+		return "delivers with ordinary peer guidance"
+	case "auto":
+		return "delivers with peer trust"
+	case "ask":
+		return "holds for the owner"
+	case "never":
+		return "refuses"
+	}
+	return ""
+}
+
+// EdgeRulesText names every request rule and what it does.
+func EdgeRulesText() string {
+	parts := make([]string, 0, len(EdgeRules))
+	for _, rule := range EdgeRules {
+		parts = append(parts, rule+" "+EdgeRuleMeaning(rule))
+	}
+	return strings.Join(parts, "; ")
+}
+
 // OrgRoot is the top of the org tree: the owner. It is not an Agent.
 const OrgRoot = "owner"
 
@@ -218,12 +249,24 @@ type Graph struct {
 	Edges    []Edge   `json:"edges"`
 }
 
+// MaturityLevels lists every maturity level. The parser, the charter check and
+// the maturity defaults read this one list.
+var MaturityLevels = []string{MaturityExperimental, MaturityEarly, MaturityGrowing, MaturityMature, MaturityCritical}
+
+// ValidMaturityLevel reports whether level is one of MaturityLevels.
+func ValidMaturityLevel(level string) bool {
+	for _, m := range MaturityLevels {
+		if m == level {
+			return true
+		}
+	}
+	return false
+}
+
 // ParseMaturity parses a maturity level with an optional explanation.
 func ParseMaturity(value string) (level, text string, err error) {
 	level, text, hasText := strings.Cut(value, " - ")
-	switch level {
-	case "experimental", "early", "growing", "mature", "critical":
-	default:
+	if !ValidMaturityLevel(level) {
 		return "", "", fmt.Errorf("invalid maturity level")
 	}
 	if hasText && strings.TrimSpace(text) == "" {
@@ -270,10 +313,8 @@ func CleanCharterValue(attr, value string) (string, error) {
 		}
 	}
 	if attr == "maturity" && value != "" {
-		switch value {
-		case "experimental", "early", "growing", "mature":
-		default:
-			return "", fmt.Errorf("maturity must be experimental, early, growing or mature")
+		if !ValidMaturityLevel(value) {
+			return "", fmt.Errorf("maturity must be one of %s", strings.Join(MaturityLevels, ", "))
 		}
 	}
 	return value, nil

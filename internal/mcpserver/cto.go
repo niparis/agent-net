@@ -51,7 +51,7 @@ var ctoCharterAttrs = func() []string {
 // and the Team mode and held back text (decision 0089).
 var ctoGraphAttrs = append(append([]string{}, ctoCharterAttrs...), "asks_to", "lead_merges", "mode", "held_back")
 
-var ctoEdgeKinds = []string{"depends", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies"}
+var ctoEdgeKinds = append([]string(nil), protocol.EdgeKinds...)
 
 func settingsChangesField() ctoField {
 	return ctoField{typ: "array", desc: "Setting changes with key, level, scope, value or delete, and expect.", items: map[string]any{"type": "object", "additionalProperties": false, "required": []string{"key", "level", "scope"}, "properties": map[string]any{"key": map[string]any{"type": "string"}, "level": map[string]any{"type": "string"}, "scope": map[string]any{"type": "string"}, "value": map[string]any{}, "delete": map[string]any{"type": "boolean"}, "expect": map[string]any{}}}}
@@ -137,7 +137,7 @@ var ctoTools = map[string]ctoToolDef{
 			"from":    {typ: "graph_endpoint", desc: "Source."},
 			"to":      {typ: "graph_endpoint", desc: "Target or scope over."},
 			"kind":    {typ: "string", desc: "Dependency, deploy or delivery owner edge.", enum: append(append([]string{}, ctoEdgeKinds...), protocol.ScopeKinds...)},
-			"rule":    {typ: "string", desc: "Deliver, own, hold, refuse.", enum: []string{"normal", "auto", "ask", "never"}},
+			"rule":    {typ: "string", desc: "Deliver, own, hold, refuse.", enum: protocol.EdgeRules},
 			"id":      {typ: "integer", desc: "History ID; omit for latest."},
 			"setting": {typ: "string", desc: "Node setting, or team asks_to or work_mode.", enum: ctoGraphSettings},
 		},
