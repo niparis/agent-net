@@ -18,10 +18,10 @@ import (
 const leadAskRefPrefix = "lead_ask:"
 
 // memberTeam is the active team of a session that has a lead to send to: its
-// team and lead, and the team's settings that concern a member.
+// team, lead and settings that concern a member.
 type memberTeam struct {
-	name, leadAgent, pinned string
-	asksToLead, leadMerges  bool
+	name, leadAgent, mode, held string
+	asksToLead, leadMerges      bool
 }
 
 // memberTeamOf finds the active team of a session, with a lead that is not the
@@ -49,20 +49,23 @@ func memberTeamIn(q leadDB, session string) (t memberTeam, ok bool, err error) {
 		return t, false, nil
 	}
 	var teamID, asksTo, leadMerges string
-	var lead, pin sql.NullString
-	err = q.QueryRow(`SELECT t.id,t.name,t.owner_agent_id,t.lead_session,t.asks_to,t.lead_merges FROM teams t JOIN team_members tm ON tm.team_id=t.id
+	err = q.QueryRow(`SELECT t.id,t.name,t.owner_agent_id,t.authority_mode,t.held_back,t.asks_to,t.lead_merges FROM teams t JOIN team_members tm ON tm.team_id=t.id
 		WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=? AND tm.member_id<>'') OR (tm.member_kind='agent' AND tm.member_id=?))
-		ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &t.name, &lead, &pin, &asksTo, &leadMerges)
+		ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &t.name, &t.leadAgent, &t.mode, &t.held, &asksTo, &leadMerges)
 	if err == sql.ErrNoRows {
 		return t, false, nil
 	}
 	if err != nil {
 		return t, false, err
 	}
-	if !lead.Valid || lead.String == "" || isLeadSession(lead, pin, agent, session) {
+	if t.leadAgent == "" {
 		return t, false, nil
 	}
-	t.leadAgent, t.pinned = lead.String, pin.String
+	if same, err := isLeadSessionQ(q, t.leadAgent, agent, session); err != nil {
+		return t, false, err
+	} else if same {
+		return t, false, nil
+	}
 	t.asksToLead = asksTo == protocol.AsksToLead
 	t.leadMerges = protocol.NormalLeadMerges(leadMerges) == protocol.LeadMergesOn
 	return t, true, nil
@@ -70,24 +73,24 @@ func memberTeamIn(q leadDB, session string) (t memberTeam, ok bool, err error) {
 
 // askerTeam finds the active team that sends the questions of a session to its
 // lead: a team of the session with asks_to=lead. ok is false otherwise.
-func (s *Store) askerTeam(session string) (teamName, leadAgent, pinned string, ok bool, err error) {
+func (s *Store) askerTeam(session string) (teamName, leadAgent string, ok bool, err error) {
 	t, ok, err := s.memberTeamOf(session)
 	if err != nil || !ok || !t.asksToLead {
-		return "", "", "", false, err
+		return "", "", false, err
 	}
-	return t.name, t.leadAgent, t.pinned, true, nil
+	return t.name, t.leadAgent, true, nil
 }
 
 // leadAskSession picks the session of the lead that gets the question: a live
 // one, otherwise the latest one the lead agent had. The message waits for it.
-// A project merger is never the lead's session.
-func (s *Store) leadAskSession(leadAgent, pinned string) (id, name string, err error) {
-	err = liveLeadSession(s.db, leadAgent, "", pinned, true, s.now()).Scan(&id, &name)
+// A merger is never the lead's session.
+func (s *Store) leadAskSession(leadAgent string) (id, name string, err error) {
+	id, name, err = liveLeadSessionQ(s.db, leadAgent, "", s.now())
 	if err != sql.ErrNoRows {
 		return id, name, err
 	}
 	err = s.db.QueryRow(`SELECT s.id,a.display_name FROM sessions s JOIN agents a ON a.id=s.agent_id
-		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.harness NOT IN ('owner','cto') AND `+notMergerSQL("s")+` ORDER BY s.last_seen DESC,s.id LIMIT 1`, leadAgent).Scan(&id, &name)
+		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.harness NOT IN ('owner','cto') AND a.role<>'merger' ORDER BY s.last_seen DESC,s.id LIMIT 1`, leadAgent).Scan(&id, &name)
 	if err == sql.ErrNoRows {
 		return "", "", nil
 	}
@@ -106,7 +109,7 @@ func (s *Store) TeamLeadFor(session string) (protocol.TeamLeadResult, error) {
 	if err != nil || !ok || (!t.asksToLead && !t.leadMerges) {
 		return out, err
 	}
-	leadSession, leadName, err := s.leadAskSession(t.leadAgent, t.pinned)
+	leadSession, leadName, err := s.leadAskSession(t.leadAgent)
 	if err != nil || leadSession == "" || leadSession == session {
 		return out, err
 	}
@@ -131,11 +134,11 @@ func (s *Store) RedirectOwnerAsk(item protocol.InboxItem) (*protocol.AskRedirect
 	if strings.TrimSpace(item.Text) == "" {
 		return nil, none, nil
 	}
-	teamName, leadAgent, pinned, ok, err := s.askerTeam(item.SessionID)
+	teamName, leadAgent, ok, err := s.askerTeam(item.SessionID)
 	if err != nil || !ok {
 		return nil, none, err
 	}
-	leadSession, leadName, err := s.leadAskSession(leadAgent, pinned)
+	leadSession, leadName, err := s.leadAskSession(leadAgent)
 	if err != nil || leadSession == "" || leadSession == item.SessionID {
 		return nil, none, err
 	}

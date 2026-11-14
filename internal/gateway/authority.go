@@ -46,12 +46,12 @@ func joinHeldBack(parts ...string) string {
 }
 
 // repoTeam is the active team a repo belongs to, if any.
-func repoTeam(q leadDB, repo string) (id, name, mode, held string, owner, pinned sql.NullString, err error) {
+func repoTeam(q leadDB, repo string) (id, name, mode, held string, owner sql.NullString, err error) {
 	if repo == "" {
-		return "", "", "", "", owner, pinned, sql.ErrNoRows
+		return "", "", "", "", owner, sql.ErrNoRows
 	}
-	err = q.QueryRow(`SELECT t.id,t.name,t.authority_mode,t.held_back,t.owner_agent_id,t.lead_session FROM teams t JOIN team_members tm ON tm.team_id=t.id
-		WHERE t.active=1 AND tm.member_kind='repo' AND tm.member_id=? ORDER BY t.id LIMIT 1`, repo).Scan(&id, &name, &mode, &held, &owner, &pinned)
+	err = q.QueryRow(`SELECT t.id,t.name,t.authority_mode,t.held_back,t.owner_agent_id FROM teams t JOIN team_members tm ON tm.team_id=t.id
+		WHERE t.active=1 AND tm.member_kind='repo' AND tm.member_id=? ORDER BY t.id LIMIT 1`, repo).Scan(&id, &name, &mode, &held, &owner)
 	return
 }
 
@@ -87,7 +87,8 @@ func orderAbove(q leadDB, sender, recipient string, now time.Time) (protocol.Ord
 	name := sessionLabel(q, sender)
 	var id, teamName, mode, held string
 	err = q.QueryRow(`SELECT t.id,t.name,t.authority_mode,t.held_back FROM teams t JOIN team_members tm ON tm.team_id=t.id
-		WHERE t.active=1 AND t.owner_agent_id=? AND (t.lead_session IS NULL OR t.lead_session=?)
+		LEFT JOIN agents a ON a.id=t.owner_agent_id
+		WHERE t.active=1 AND t.owner_agent_id=? AND (a.lead_session IS NULL OR a.lead_session=?)
 		AND ((tm.member_kind='repo' AND tm.member_id=? AND tm.member_id<>'') OR (tm.member_kind='agent' AND tm.member_id=?))
 		ORDER BY t.id LIMIT 1`, from.agent, sender, to.repo, to.agent).Scan(&id, &teamName, &mode, &held)
 	if err == nil {
@@ -105,17 +106,23 @@ func orderAbove(q leadDB, sender, recipient string, now time.Time) (protocol.Ord
 	if to.repo == "" {
 		return none, false, nil
 	}
-	var repoID, repoName string
-	var lead, pinned sql.NullString
-	err = q.QueryRow(repoLeadQuery(`id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`), to.repo).Scan(&repoID, &repoName, &lead, &pinned)
-	if err == sql.ErrNoRows {
-		return none, false, nil
-	}
+	lead, err := repoTopAgentQ(q, to.repo)
 	if err != nil {
 		return none, false, err
 	}
-	if !lead.Valid || lead.String != from.agent || (pinned.Valid && pinned.String != "" && pinned.String != sender) {
+	if lead == "" {
 		return none, false, nil
+	}
+	same, err := isLeadSessionQ(q, lead, from.agent, sender)
+	if err != nil {
+		return none, false, err
+	}
+	if !same {
+		return none, false, nil
+	}
+	repoName, err := repoNameQ(q, to.repo)
+	if err != nil {
+		return none, false, err
 	}
 	info := protocol.OrderInfo{Lead: name, Scope: "repo", Name: repoName, Mode: protocol.DefaultAuthorityMode, Above: "the owner"}
 	repoHeld, err := repoHeldBack(q, to.repo)
@@ -123,14 +130,14 @@ func orderAbove(q leadDB, sender, recipient string, now time.Time) (protocol.Ord
 		return none, false, err
 	}
 	teamHeld := ""
-	_, tname, tmode, theld, towner, tpinned, err := repoTeam(q, to.repo)
+	_, tname, tmode, theld, towner, err := repoTeam(q, to.repo)
 	if err != nil && err != sql.ErrNoRows {
 		return none, false, err
 	}
 	if err == nil {
 		info.Mode, teamHeld = tmode, theld
 		if towner.Valid && towner.String != "" {
-			lead, err := leadNameQ(q, towner.String, tpinned.String, now)
+			lead, err := leadNameQ(q, towner.String, now)
 			if err != nil {
 				return none, false, err
 			}

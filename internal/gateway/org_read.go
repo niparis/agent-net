@@ -1,0 +1,242 @@
+package gateway
+
+import (
+	"database/sql"
+	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+// The org tree is how the gateway learns who reports to whom (decision 0160).
+
+// leadDB is the read side of a transaction or the database.
+type leadDB interface {
+	QueryRow(string, ...any) *sql.Row
+	Query(string, ...any) (*sql.Rows, error)
+}
+
+// repoTopAgentOfSQL is the Agent at the top of the Repo named by a SQL
+// expression: its explicit lead, else its owner. Writes and reads share it.
+func repoTopAgentOfSQL(repo string) string {
+	return `COALESCE(CASE WHEN EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=` + repo + `) THEN (SELECT rl.agent_id FROM repo_leads rl WHERE rl.repo_id=` + repo + `) ELSE (SELECT r.owner_agent_id FROM repos r WHERE r.id=` + repo + `) END,'')`
+}
+
+var (
+	repoTopAgentExpr = repoTopAgentOfSQL("repos.id")
+	repoTopAgentSQL  = `SELECT ` + repoTopAgentExpr + ` FROM repos WHERE id=?`
+)
+
+// mergerAgentSQL is true when the session alias runs as a merger Agent.
+func mergerAgentSQL(alias string) string {
+	return `EXISTS(SELECT 1 FROM agents ma WHERE ma.id=` + alias + `.agent_id AND ma.role='merger')`
+}
+
+func orgPairs(q leadDB, query string, args ...any) (map[string]string, error) {
+	rows, err := q.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
+}
+
+// orgValue reads one string column of one row, and "" when there is no row.
+func orgValue(q leadDB, query string, args ...any) (string, error) {
+	var v string
+	err := q.QueryRow(query, args...).Scan(&v)
+	if err == sql.ErrNoRows {
+		err = nil
+	}
+	return v, err
+}
+
+func repoTopAgentQ(q leadDB, repo string) (string, error) {
+	return orgValue(q, repoTopAgentSQL, repo)
+}
+
+func agentLeadSessionQ(q leadDB, agent string) (string, error) {
+	return orgValue(q, `SELECT COALESCE(lead_session,'') FROM agents WHERE id=?`, agent)
+}
+
+func agentNameQ(q leadDB, agent string) (string, error) {
+	name, err := orgValue(q, `SELECT display_name FROM agents WHERE id=?`, agent)
+	if name == "" {
+		name = agent
+	}
+	return name, err
+}
+
+func agentParentQ(q leadDB, agent string) (string, error) {
+	return orgValue(q, `SELECT COALESCE((SELECT target FROM graph_edges WHERE source=? AND kind='reports_to'),'')`, agent)
+}
+
+// agentParentLabelQ names the parent the tree stores for one Agent.
+func agentParentLabelQ(q leadDB, agent string) (string, error) {
+	parent, err := agentParentQ(q, agent)
+	if err != nil {
+		return "", err
+	}
+	switch parent {
+	case "", protocol.OrgRoot:
+		return "the owner", nil
+	case "cto":
+		return "the CTO", nil
+	}
+	return agentNameQ(q, parent)
+}
+
+func repoNameQ(q leadDB, repo string) (string, error) {
+	name, err := orgValue(q, `SELECT display_name FROM repos WHERE id=?`, repo)
+	if name == "" && err == nil {
+		name = repo
+	}
+	return name, err
+}
+
+func sessionIsMergerQ(q leadDB, session string) (bool, error) {
+	var merger bool
+	err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s JOIN agents a ON a.id=s.agent_id WHERE s.id=? AND a.role='merger')`, session).Scan(&merger)
+	return merger, err
+}
+
+// isLeadSessionQ says whether a session is the lead's: any session of the
+// Agent, or only its pinned one when the tree names one.
+func isLeadSessionQ(q leadDB, lead, agent, session string) (bool, error) {
+	if lead == "" || lead != agent {
+		return false, nil
+	}
+	pin, err := agentLeadSessionQ(q, lead)
+	return pin == "" || pin == session, err
+}
+
+// liveLeadSessionQ picks a live session of a lead: a session under its
+// provider limit first, the pinned one first, then one in the Repo.
+func liveLeadSessionQ(q leadDB, agent, repo string, now time.Time) (id, name string, err error) {
+	err = q.QueryRow(`SELECT s.id,a.display_name FROM sessions s JOIN agents a ON a.id=s.agent_id
+		WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') AND a.role<>'merger'
+		ORDER BY CASE WHEN s.limited_until>? THEN 1 ELSE 0 END,CASE WHEN s.id=COALESCE(a.lead_session,'') THEN 0 ELSE 1 END,
+		CASE WHEN s.repo_id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`, agent, now.Unix(), repo).Scan(&id, &name)
+	return
+}
+
+// resolveLeadSession picks the session of a lead that gets a message: a live
+// one, then the pinned one, then the newest in the Repo, then the newest.
+func resolveLeadSession(q leadDB, agent, repo string, now time.Time) (string, error) {
+	if id, _, err := liveLeadSessionQ(q, agent, repo, now); err != sql.ErrNoRows {
+		return id, err
+	}
+	pin, err := agentLeadSessionQ(q, agent)
+	if err != nil {
+		return "", err
+	}
+	pick := func(where string, args ...any) (string, error) {
+		var id string
+		err := q.QueryRow(`SELECT s.id FROM sessions s JOIN agents a ON a.id=s.agent_id WHERE `+where+` ORDER BY s.last_seen DESC,s.id LIMIT 1`, args...).Scan(&id)
+		return id, err
+	}
+	if id, err := pick(`s.id=? AND s.archived_at=0`, pin); err == nil {
+		return id, nil
+	} else if err != sql.ErrNoRows {
+		return "", err
+	}
+	base := `s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.harness NOT IN ('owner','cto') AND a.role<>'merger'`
+	if repo != "" {
+		if id, err := pick(base+` AND s.repo_id=?`, agent, repo); err == nil {
+			return id, nil
+		} else if err != sql.ErrNoRows {
+			return "", err
+		}
+	}
+	return pick(base, agent)
+}
+
+type repoRef struct{ id, name string }
+
+func ledReposQ(q leadDB, agent string) ([]repoRef, error) {
+	rows, err := q.Query(`SELECT id,display_name FROM repos WHERE NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id) AND `+repoTopAgentExpr+`=? ORDER BY id`, agent)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []repoRef
+	for rows.Next() {
+		var r repoRef
+		if err := rows.Scan(&r.id, &r.name); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func sessionLeadsNamedRepoQ(q leadDB, name, agent, session string) (bool, error) {
+	repos, err := orgPairs(q, `SELECT id,id FROM repos WHERE (id=? OR display_name=? COLLATE NOCASE) AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, name, name)
+	if err != nil {
+		return false, err
+	}
+	for repo := range repos {
+		top, err := repoTopAgentQ(q, repo)
+		if err != nil {
+			return false, err
+		}
+		if top != agent {
+			continue
+		}
+		if same, err := isLeadSessionQ(q, top, agent, session); err != nil || same {
+			return same, err
+		}
+	}
+	return false, nil
+}
+
+// leadAddressSessionQ resolves a Repo or Team address to its session.
+func leadAddressSessionQ(q leadDB, kind, name string, now time.Time) (string, error) {
+	query := `SELECT id,` + repoTopAgentExpr + ` FROM repos WHERE (id=? OR display_name=? COLLATE NOCASE) AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`
+	if kind == "team" {
+		query = `SELECT id,COALESCE(owner_agent_id,'') FROM teams WHERE (id=? OR name=? COLLATE NOCASE) AND active=1`
+	}
+	rows, err := q.Query(query, name, name)
+	if err != nil {
+		return "", err
+	}
+	type address struct{ id, lead string }
+	var found []address
+	for rows.Next() {
+		var a address
+		if err := rows.Scan(&a.id, &a.lead); err != nil {
+			rows.Close()
+			return "", err
+		}
+		found = append(found, a)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case len(found) == 0:
+		return "", reject("unknown %s %q", kind, name)
+	case len(found) > 1:
+		return "", reject("ambiguous %s %q; use its ID", kind, name)
+	case found[0].lead == "":
+		return "", reject("%s %s has no lead", kind, name)
+	}
+	a, repo := found[0], ""
+	if kind == "repo" {
+		repo = a.id
+	}
+	session, err := resolveLeadSession(q, a.lead, repo, now)
+	if err == sql.ErrNoRows {
+		return "", reject("%s %s lead has no session", kind, name)
+	}
+	return session, err
+}

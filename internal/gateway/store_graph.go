@@ -708,7 +708,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		}
 		switch targetKind {
 		case "repo":
-			err = tx.QueryRow(`SELECT CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE owner_agent_id END FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, node).Scan(&current)
+			err = tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, node).Scan(&current)
 			if err != nil {
 				return err
 			}

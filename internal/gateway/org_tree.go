@@ -16,13 +16,6 @@ import (
 // orgTreeBuiltKey is the owner_settings marker of the one-time build.
 const orgTreeBuiltKey = "org_tree_built"
 
-// repoTopAgentExpr is the Agent at the top of a Repo: its lead, else its
-// owner. Every reader and writer of the tree uses this one rule.
-const repoTopAgentExpr = `COALESCE(CASE WHEN EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=repos.id) THEN (SELECT agent_id FROM repo_leads WHERE repo_id=repos.id) ELSE repos.owner_agent_id END,'')`
-
-// repoTopAgentSQL is repoTopAgentExpr for one Repo ID.
-const repoTopAgentSQL = `SELECT ` + repoTopAgentExpr + ` FROM repos WHERE id=?`
-
 // checkReportsToTarget holds the endpoint rules of the tree: the source is a
 // live Agent, and the target is a live Agent that is not a merger, or the
 // root. It does not look at the source's current parent, so a move can use it.

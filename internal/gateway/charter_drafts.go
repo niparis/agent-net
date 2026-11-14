@@ -178,7 +178,7 @@ func (s *Store) charterDraftAskFor(session string, c resolvedContext, hash strin
 	}
 	// The project rules and the team charter requests name the lead. A merger
 	// shares its project's lead agent, so it is never asked for them.
-	merger, err := isProjectMerger(tx, session)
+	merger, err := sessionIsMergerQ(tx, session)
 	if err != nil {
 		return "", err
 	}
@@ -218,10 +218,12 @@ func (s *Store) charterDraftAskFor(session string, c resolvedContext, hash strin
 type draftTeam struct{ id, name string }
 
 // draftLedTeams lists the active teams this session leads.
-func draftLedTeams(q interface {
-	Query(string, ...any) (*sql.Rows, error)
-}, session, agent string) ([]draftTeam, error) {
-	rows, err := q.Query(`SELECT id,name FROM teams WHERE active=1 AND owner_agent_id=? AND (lead_session IS NULL OR lead_session=?) ORDER BY id`, agent, session)
+func draftLedTeams(q leadDB, session, agent string) ([]draftTeam, error) {
+	pin, err := agentLeadSessionQ(q, agent)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(`SELECT id,name FROM teams WHERE active=1 AND owner_agent_id=? ORDER BY id`, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +234,9 @@ func draftLedTeams(q interface {
 		if err := rows.Scan(&t.id, &t.name); err != nil {
 			return nil, err
 		}
-		out = append(out, t)
+		if pin == "" || pin == session {
+			out = append(out, t)
+		}
 	}
 	return out, rows.Err()
 }

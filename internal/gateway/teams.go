@@ -364,15 +364,17 @@ func (s *Store) teamGraph() (protocol.Graph, error) {
 	if err != nil {
 		return g, err
 	}
+	pins, err := orgPairs(s.db, `SELECT id,COALESCE(lead_session,'') FROM agents`)
+	if err != nil {
+		return g, err
+	}
 	for _, t := range teams {
 		active := t.Active
 		lead := t.Owner
-		var session sql.NullString
-		if err := s.db.QueryRow(`SELECT lead_session FROM teams WHERE id=?`, t.ID).Scan(&session); err != nil {
-			return g, err
-		}
-		if session.Valid {
-			lead = &protocol.GraphRef{Kind: "session", ID: session.String}
+		if t.Owner != nil {
+			if session := pins[t.Owner.ID]; session != "" {
+				lead = &protocol.GraphRef{Kind: "session", ID: session}
+			}
 		}
 		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Lead: lead, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, AuthorityMode: t.AuthorityMode, HeldBack: t.HeldBack, AsksTo: t.AsksTo, LeadMerges: protocol.NormalLeadMerges(t.LeadMerges), CreatedAt: t.CreatedAt})
 	}

@@ -65,7 +65,11 @@ func leadsOfSession(q leadDB, session string) ([]waitLead, error) {
 		return nil, err
 	}
 	if ok {
-		out = append(out, waitLead{scope: "Team " + t.name, agent: t.leadAgent, pinned: t.pinned})
+		pin, err := agentLeadSessionQ(q, t.leadAgent)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, waitLead{scope: "Team " + t.name, agent: t.leadAgent, pinned: pin})
 	}
 	var agent, repo, harness, worker string
 	err = q.QueryRow(`SELECT COALESCE(agent_id,''),COALESCE(repo_id,''),harness,worker FROM sessions WHERE id=?`, session).Scan(&agent, &repo, &harness, &worker)
@@ -78,19 +82,27 @@ func leadsOfSession(q leadDB, session string) ([]waitLead, error) {
 	if agent == "" || repo == "" || worker != "" || protocol.IsOwner(harness) || harness == "cto" {
 		return out, nil
 	}
-	var repoID, repoName string
-	var lead, pin sql.NullString
-	err = q.QueryRow(repoLeadQuery(`id=?`), repo).Scan(&repoID, &repoName, &lead, &pin)
-	if err == sql.ErrNoRows {
-		return out, nil
-	}
+	lead, err := repoTopAgentQ(q, repo)
 	if err != nil {
 		return nil, err
 	}
-	if lead.Valid && lead.String != "" && !isLeadSession(lead, pin, agent, session) {
-		out = append(out, waitLead{scope: "Repo " + repoName, agent: lead.String, pinned: pin.String})
+	if lead == "" {
+		return out, nil
 	}
-	return out, nil
+	if same, err := isLeadSessionQ(q, lead, agent, session); err != nil {
+		return nil, err
+	} else if same {
+		return out, nil
+	}
+	pin, err := agentLeadSessionQ(q, lead)
+	if err != nil {
+		return nil, err
+	}
+	repoName, err := repoNameQ(q, repo)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, waitLead{scope: "Repo " + repoName, agent: lead, pinned: pin}), nil
 }
 
 // leadNames are the names that point at a lead: its Agent id and display name,

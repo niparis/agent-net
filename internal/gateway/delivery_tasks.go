@@ -1961,16 +1961,12 @@ func delegateAgents(tx *sql.Tx, c protocol.Change) ([]string, error) {
 		}
 		out = append(out, "agent:"+agent)
 	}
-	var repoID, repoName string
-	var lead, pinned sql.NullString
-	err := tx.QueryRow(repoLeadQuery(`id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`), c.Project).Scan(&repoID, &repoName, &lead, &pinned)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	lead, err := repoTopAgentQ(tx, c.Project)
+	if err != nil {
 		return nil, err
 	}
-	if err == nil && lead.Valid {
-		add(lead.String)
-	}
-	_, _, _, _, owner, _, err := repoTeam(tx, c.Project)
+	add(lead)
+	_, _, _, _, owner, err := repoTeam(tx, c.Project)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}

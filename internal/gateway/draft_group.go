@@ -299,11 +299,11 @@ func (s *Store) nodeRoutesToLead(node, prefer string) (bool, error) {
 	if err != nil || session == "" {
 		return false, err
 	}
-	_, leadAgent, pinned, ok, err := s.askerTeam(session)
+	_, leadAgent, ok, err := s.askerTeam(session)
 	if err != nil || !ok {
 		return false, err
 	}
-	lead, _, err := s.leadAskSession(leadAgent, pinned)
+	lead, _, err := s.leadAskSession(leadAgent)
 	return lead != "" && lead != session, err
 }
 

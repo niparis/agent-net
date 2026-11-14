@@ -151,9 +151,16 @@ func (s *Store) causeLead(q askDB, project string) string {
 		if p == "" {
 			continue
 		}
-		var name string
-		err := q.QueryRow(`SELECT a.display_name FROM repos JOIN agents a ON a.id=(`+repoLeadExpr+`) WHERE repos.id=? OR repos.display_name=? LIMIT 1`, p, p).Scan(&name)
-		if err == nil && name != "" {
+		var repo string
+		err := q.QueryRow(`SELECT id FROM repos WHERE id=? OR display_name=? LIMIT 1`, p, p).Scan(&repo)
+		if err != nil {
+			continue
+		}
+		lead, err := repoTopAgentQ(q, repo)
+		if err != nil || lead == "" {
+			continue
+		}
+		if name, err := agentNameQ(q, lead); err == nil && name != "" {
 			return name
 		}
 	}
