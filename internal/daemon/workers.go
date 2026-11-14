@@ -160,6 +160,15 @@ func (s WorkerSettings) filled() WorkerSettings {
 	return s
 }
 
+// quotaReading is one provider quota reading: the provider and window the
+// picker's floor reads, and the percent used. ok is false when there was no
+// usable reading.
+type quotaReading struct {
+	name    string
+	percent float64
+	ok      bool
+}
+
 // worker is one running worker. Fields are guarded by Daemon.wmu.
 type worker struct {
 	runGeneration                                      int
@@ -291,6 +300,9 @@ type worker struct {
 	contextTokens, contextLimit, totalTokens int64
 	// tokenUsage is the run by kind of token, for the cost at API prices.
 	tokenUsage protocol.RunTokens
+	// quotaStart is the provider quota reading when the run began, as the
+	// picker's floor reads it. Its zero value is no reading.
+	quotaStart quotaReading
 	// codex is the connection to the worker's Codex app server.
 	codex        *codexConn
 	agy          *agyConn
@@ -780,7 +792,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
 		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed, touches: strings.Join(l.Touches, ","),
 		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue), changeID: l.ChangeID, fixes: l.Fixes, mcpServers: l.MCPServers,
-		why: l.Why, notFamily: l.NotFamily}
+		why: l.Why, notFamily: l.NotFamily, quotaStart: d.quotaWorkerReading(l.Harness, l.Model)}
 	if l.TaskID != "" {
 		w.taskID = l.TaskID
 		if l.ContinuationPartial {
@@ -1459,7 +1471,8 @@ func (d *Daemon) runWorkerResume(ctx context.Context, row workerRow, set WorkerS
 		continueCount: row.Continue, fixCount: row.Fix, pendingHandback: row.PendingHandback, pendingPartial: row.PendingPartial,
 		taskID: row.TaskID, midrunCount: row.MidrunCount, noticeSinceRequest: row.NoticeSinceRequest, midrunSeen: row.MidrunSeen,
 		autoContinue: row.AutoContinue, autoContinueCount: row.AutoContinueCount,
-		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, changeID: row.ChangeID, fixes: row.Fixes, ready: make(chan struct{}), osSandbox: sandbox}
+		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, changeID: row.ChangeID, fixes: row.Fixes, ready: make(chan struct{}), osSandbox: sandbox,
+		quotaStart: d.quotaWorkerReading(row.Harness, row.Model)}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.wmu.Lock()
 	if d.cleaningWorkers[w.id] {
