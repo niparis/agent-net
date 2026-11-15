@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -100,6 +101,35 @@ func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
 		d.saveActivity(harness, native, at)
 	}
 	d.pushSession(ls)
+}
+
+// sessionWait is the wait a session has now, from the same place setWaiting
+// reads it: a worker's wait is its caller's, not the session row's.
+func (d *Daemon) sessionWait(ls *localSession) *protocol.Waiting {
+	worker := d.workerBySession(ls.sessionID)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if worker != nil {
+		return ls.workerWaiting
+	}
+	return ls.info.Waiting
+}
+
+// blockedAnswer says whether an announce answers the idle check with "blocked"
+// or "blocked on ...". Such an answer says the session did not move on, so it
+// must not clear the wait it still has.
+func blockedAnswer(task string) bool {
+	task = strings.TrimSpace(task)
+	lower := strings.ToLower(task)
+	if !strings.HasPrefix(lower, "blocked") {
+		return false
+	}
+	rest := task[len("blocked"):]
+	if rest == "" {
+		return true
+	}
+	r := []rune(rest)[0]
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
 // sameWaiting says whether a report describes the wait already stored, so a

@@ -1145,9 +1145,14 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, err
 		}
 		// An announce without waiting clears an earlier one: the session went
-		// on to something else.
+		// on to something else. A blocked answer is not that: the session still
+		// waits, so its wait keeps its start.
 		if ls != nil {
-			d.setWaiting(ls, protocol.CleanWaiting(p.Waiting))
+			w := protocol.CleanWaiting(p.Waiting)
+			if w == nil && blockedAnswer(p.Task) {
+				w = d.sessionWait(ls)
+			}
+			d.setWaiting(ls, w)
 			d.touchSession(ls, time.Now())
 		}
 		return res, nil

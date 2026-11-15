@@ -249,3 +249,38 @@ func TestWorkerWaitingNotice(t *testing.T) {
 		t.Fatalf("explicit question reached Needs you: %+v", got)
 	}
 }
+
+// The hourly done-check answer "blocked on ..." repeats the wait the session
+// already has. It must not clear it: the next report of the same wait would
+// then look new and raise another Desk row every hour.
+func TestBlockedAnnounceKeepsTheWaitItAnswers(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	pi, id := helloPi(t, n, "nb", "/work/bob", false)
+	const text = "owner's word on the TRUNCATE reset, then the lead's order to open the pin PR and deploy"
+
+	pi.mustCall("announce", map[string]any{"task": "blocked on the TRUNCATE decision", "waiting": text})
+	var since int64
+	eventually(t, "waiting stored", func() bool {
+		if w := waitingOf(t, n, id); w != nil && w.Text == text {
+			since = w.Since
+			return since != 0
+		}
+		return false
+	})
+
+	// An hour later the check is answered without naming the wait again.
+	pi.mustCall("announce", map[string]any{"task": "blocked on the owner's TRUNCATE decision"})
+	eventually(t, "the same wait is still stored", func() bool {
+		w := waitingOf(t, n, id)
+		return w != nil && w.Text == text
+	})
+
+	// Announcing the same wait again keeps its start, so its ask stays the one.
+	pi.mustCall("announce", map[string]any{"task": "blocked on the TRUNCATE decision", "waiting": text})
+	eventually(t, "the same wait keeps its start", func() bool {
+		w := waitingOf(t, n, id)
+		return w != nil && w.Since == since
+	})
+}

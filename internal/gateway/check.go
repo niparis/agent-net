@@ -609,15 +609,58 @@ func (s *Store) answerCheck(sessionID, task string) error {
 			sessionID, active, checkTaskHash(task)); err != nil {
 			return err
 		}
-		text := name + " is blocked"
-		if line != "" {
-			text += " on " + line
-		}
-		if err = s.checkInboxItem(sessionID, node, text); err != nil {
+		// The answer may only repeat the wait that is already on the Desk.
+		// A check row would then be a copy of it.
+		covered, err := waitHasAsk(s.db, sessionID)
+		if err != nil {
 			return err
+		}
+		if !covered {
+			text := name + " is blocked"
+			if line != "" {
+				text += " on " + line
+			}
+			if err = s.checkInboxItem(sessionID, node, text); err != nil {
+				return err
+			}
 		}
 	}
 	return s.bumpCheckAnswer(kind)
+}
+
+// waitHasAsk says whether the session's current wait already has an ask, open
+// or settled. A blocked answer that repeats that wait adds no check row: the
+// owner or the chief already has it.
+func waitHasAsk(q askDB, sessionID string) (bool, error) {
+	var raw string
+	if err := q.QueryRow(`SELECT waiting FROM sessions WHERE id=?`, sessionID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if raw == "" {
+		return false, nil
+	}
+	var w protocol.Waiting
+	if json.Unmarshal([]byte(raw), &w) != nil {
+		return false, nil
+	}
+	cw := protocol.CleanWaiting(&w)
+	if cw == nil {
+		return false, nil
+	}
+	var text string
+	err := q.QueryRow(`SELECT text FROM inbox_items WHERE source_ref=? AND kind=? AND status<>?
+		ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+		"waiting:"+sessionID, protocol.AskKindWaiting, protocol.ItemStatusJoined).Scan(&text)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return protocol.SameAskText(text, cw.Text), nil
 }
 
 // checkInboxItem leaves one open row per session, so more or a later block
