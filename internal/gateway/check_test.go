@@ -661,3 +661,76 @@ func TestCheckAnnounceWorkerEndedChangesFingerprint(t *testing.T) {
 		t.Fatalf("worker ending did not re-arm check: %+v", got)
 	}
 }
+
+// The hourly check's "blocked on ..." answer repeats the wait the session
+// already has on the Desk. When the chief already closed that wait as the
+// same question, the answer must not make another check row.
+func TestBlockedAnswerRepeatingASettledWaitMakesNoCheckRow(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	const wait = "owner's word on the TRUNCATE reset, then the lead's order to open the pin PR and deploy"
+	sid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p",
+		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: wait}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	// The chief closed the wait as the same question as the open Desk ask.
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed', answer='chief: same wait' WHERE source_ref=?`, "waiting:"+sid); err != nil {
+		t.Fatal(err)
+	}
+	// An hour later the check asks, and the session answers blocked.
+	if _, err := s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)`, sid, c.t.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Hour)
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: "blocked on the owner's TRUNCATE decision"}); err != nil {
+		t.Fatal(err)
+	}
+	if rows := openCheckRows(t, s); len(rows) != 0 {
+		t.Fatalf("check rows after the same wait: %+v", rows)
+	}
+	var open, all int
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(status='open'),0), COUNT(*) FROM inbox_items WHERE source_ref=?`, "waiting:"+sid).Scan(&open, &all); err != nil {
+		t.Fatal(err)
+	}
+	if open != 0 || all != 1 {
+		t.Fatalf("waiting rows = %d open of %d, want the closed one only", open, all)
+	}
+}
+
+// A wait whose text really changes is a new wait and raises a new ask.
+func TestChangedWaitAfterAClosedAskRaisesANewAsk(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	sid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p",
+		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Delete worktree w_1?"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed', answer='chief: done' WHERE source_ref=?`, "waiting:"+sid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p",
+		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Delete worktree w_2?"}}); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	var open, all int
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(status='open'),0), COUNT(*) FROM inbox_items WHERE source_ref=?`, "waiting:"+sid).Scan(&open, &all); err != nil {
+		t.Fatal(err)
+	}
+	if open != 1 || all != 2 {
+		t.Fatalf("waiting rows = %d open of %d, want a new ask", open, all)
+	}
+}
