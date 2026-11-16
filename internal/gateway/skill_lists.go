@@ -361,19 +361,41 @@ func (s *Store) SkillFolder(p protocol.SkillFolderRequest) (protocol.SkillFolder
 	return out, nil
 }
 
-// SkillVersion reads one stored version's bundle. The caller checks the hash
-// before it uses the files.
-func (s *Store) SkillVersion(name string, version int) (protocol.SkillVersion, error) {
+// SkillVersion reads one stored version's bundle, or part part of it when the
+// bundle is over one part (decision 0169). The caller checks the hash before
+// it uses the files.
+func (s *Store) SkillVersion(name string, version, part int) (protocol.SkillVersion, error) {
 	out := protocol.SkillVersion{Name: name, Version: version}
 	if !validSkillName(name) {
 		return out, reject("bad skill name")
 	}
-	err := s.db.QueryRow(`SELECT version, hash, content FROM skill_archive WHERE name=? AND version=? AND removed_at=0`,
-		name, version).Scan(&out.Version, &out.Hash, &out.Data)
+	if part < 0 {
+		return out, reject("skill version part %d is not in the archive", part)
+	}
+	var size int64
+	start := int64(part) * protocol.TransferPartSize
+	// SQLite counts substr from 1. A bundle of one part comes whole from the
+	// first part.
+	err := s.db.QueryRow(`SELECT version, hash, length(content), substr(content, ?, ?) FROM skill_archive WHERE name=? AND version=? AND removed_at=0`,
+		start+1, protocol.TransferPartSize, name, version).Scan(&out.Version, &out.Hash, &size, &out.Data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, reject("skill version is not in the archive")
 	}
-	return out, err
+	if err != nil {
+		return out, err
+	}
+	if size <= protocol.TransferPartSize {
+		if part != 0 {
+			return out, reject("skill version is one part")
+		}
+		return out, nil
+	}
+	parts := protocol.PartCount(size)
+	if part >= parts {
+		return out, reject("skill version part %d is not in the archive", part)
+	}
+	out.Parts, out.Size = parts, size
+	return out, nil
 }
 
 // skillFolderTarget is the node a launch reads. A session uses its Agent, else
@@ -996,7 +1018,7 @@ func (g *Gateway) skillMissingMCP(name string, version int, available map[string
 		return nil, err
 	}
 	defer os.RemoveAll(dir)
-	if inventory.UnpackSkill(bundle, dir) != nil {
+	if inventory.UnpackSkillLimit(bundle, dir, inventory.ArchiveLimit) != nil {
 		return nil, nil
 	}
 	missing := map[string]bool{}

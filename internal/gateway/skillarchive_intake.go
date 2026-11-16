@@ -137,7 +137,7 @@ func (g *Gateway) skillArchiveIntakeMachine(ctx context.Context, id, host, by st
 			m.Existing++
 			continue
 		}
-		name, hash, bundle, fetchErr := g.requestSkillBundle(ctx, id, f.name, f.hash, f.location)
+		name, hash, bundle, fetchErr := g.requestSkillBundle(ctx, id, f.name, f.hash, f.location, true)
 		if fetchErr != nil {
 			skip(f, fetchErr.Error())
 			continue
@@ -201,7 +201,7 @@ func skillContentFromBundle(name string, bundle []byte) (skillArchiveContent, er
 		return skillArchiveContent{}, err
 	}
 	defer os.RemoveAll(dir)
-	if inventory.UnpackSkill(bundle, dir) != nil {
+	if inventory.UnpackSkillLimit(bundle, dir, inventory.ArchiveLimit) != nil {
 		return skillArchiveContent{}, errBadBundle
 	}
 	content, err := skillContentFromDir(name, dir)

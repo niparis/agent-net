@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -108,7 +110,7 @@ func skillContentFromDir(name, dir string) (skillArchiveContent, error) {
 	if err != nil {
 		return skillArchiveContent{}, err
 	}
-	bundle, err := inventory.PackSkill(dir)
+	bundle, err := inventory.PackSkillLimit(dir, inventory.ArchiveLimit)
 	if err != nil {
 		return skillArchiveContent{}, err
 	}
@@ -206,8 +208,11 @@ func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSour
 	if !validSkillName(c.Name) {
 		return out, reject("bad skill name")
 	}
-	if len(c.Bundle) == 0 || len(c.Bundle) > inventory.MaxBundleBytes {
-		return out, reject("skill bundle is empty or too large")
+	if len(c.Bundle) == 0 {
+		return out, reject("skill bundle is empty")
+	}
+	if int64(len(c.Bundle)) > inventory.ArchiveLimit.Bytes {
+		return out, reject("the skill is larger than the %d MB archive limit", inventory.ArchiveLimit.Bytes>>20)
 	}
 	if c.Hash == "" {
 		return out, reject("skill has no content hash")
@@ -519,7 +524,7 @@ func (g *Gateway) skillArchiveRead(name string, version int) (protocol.SkillArch
 		return out, errors.New("cannot stage skill version")
 	}
 	defer os.RemoveAll(dir)
-	if inventory.UnpackSkill(bundle, dir) != nil {
+	if inventory.UnpackSkillLimit(bundle, dir, inventory.ArchiveLimit) != nil {
 		return out, errors.New("invalid stored skill bundle")
 	}
 	if got, err := inventory.SkillHash(dir); err != nil || got != out.Hash {
@@ -563,7 +568,7 @@ func (g *Gateway) skillArchiveAdd(ctx context.Context, p protocol.SkillArchiveAd
 	if p.Location.NodeID == "" || p.Location.Location == "" {
 		return protocol.SkillArchiveAddResult{}, reject("add needs a machine and a folder")
 	}
-	name, hash, bundle, err := g.fetchSkillBundle(ctx, "", p.Location.NodeID, p.Location.Location)
+	name, hash, bundle, err := g.fetchSkillBundle(ctx, "", p.Location.NodeID, p.Location.Location, true)
 	if err != nil {
 		return protocol.SkillArchiveAddResult{}, err
 	}
@@ -572,7 +577,7 @@ func (g *Gateway) skillArchiveAdd(ctx context.Context, p protocol.SkillArchiveAd
 		return protocol.SkillArchiveAddResult{}, errors.New("cannot stage skill bundle")
 	}
 	defer os.RemoveAll(dir)
-	if inventory.UnpackSkill(bundle, dir) != nil {
+	if inventory.UnpackSkillLimit(bundle, dir, inventory.ArchiveLimit) != nil {
 		return protocol.SkillArchiveAddResult{}, reject("invalid or oversized skill bundle")
 	}
 	content, err := skillContentFromDir(name, dir)
@@ -586,7 +591,7 @@ func (g *Gateway) skillArchiveAdd(ctx context.Context, p protocol.SkillArchiveAd
 // fetchSkillBundle reads and checks one skill file tree from a machine. The
 // item may be empty: the location alone names it. kinds limits the identity
 // kinds, and defaults to skills.
-func (g *Gateway) fetchSkillBundle(ctx context.Context, item, nodeID, location string, kinds ...string) (name, hash string, bundle []byte, err error) {
+func (g *Gateway) fetchSkillBundle(ctx context.Context, item, nodeID, location string, archive bool, kinds ...string) (name, hash string, bundle []byte, err error) {
 	if len(kinds) == 0 {
 		kinds = []string{"skill"}
 	}
@@ -606,41 +611,86 @@ func (g *Gateway) fetchSkillBundle(ctx context.Context, item, nodeID, location s
 	if err = g.store.db.QueryRow(query+` LIMIT 1`, args...).Scan(&name, &hash); err != nil || hash == "" {
 		return "", "", nil, reject("skill location is not a current observation")
 	}
-	return g.requestSkillBundle(ctx, nodeID, name, hash, location)
+	return g.requestSkillBundle(ctx, nodeID, name, hash, location, archive)
 }
 
 // requestSkillBundle asks one machine for the folder it listed and checks the
-// content hash before anything is stored.
-func (g *Gateway) requestSkillBundle(ctx context.Context, nodeID, name, hash, location string) (string, string, []byte, error) {
+// content hash before anything is stored. An archive request gets the archive
+// limit, and a bundle over one part comes in parts (decision 0169).
+func (g *Gateway) requestSkillBundle(ctx context.Context, nodeID, name, hash, location string, archive bool) (string, string, []byte, error) {
 	host := g.conn(nodeID)
 	if host == nil {
 		return "", "", nil, reject("skill location is offline")
 	}
-	raw, err := host.request(ctx, "node.skill_bundle", protocol.SkillBundleRequest{Name: name, Hash: hash, Location: location}, 60*time.Second)
+	lim := inventory.ImportLimit
+	if archive {
+		lim = inventory.ArchiveLimit
+	}
+	raw, err := host.request(ctx, "node.skill_bundle", protocol.SkillBundleRequest{Name: name, Hash: hash, Location: location, Archive: archive}, 60*time.Second)
 	if err != nil {
 		return "", "", nil, reject("cannot obtain skill bundle: %v", err)
 	}
-	var result protocol.SkillBundle
-	if json.Unmarshal(raw, &result) != nil {
+	var first protocol.SkillBundle
+	if json.Unmarshal(raw, &first) != nil {
 		return "", "", nil, reject("invalid skill bundle")
+	}
+	data, err := readBundleParts(ctx, host, first)
+	if err != nil {
+		return "", "", nil, err
 	}
 	dir, err := os.MkdirTemp("", "agent-net-skill-bundle-")
 	if err != nil {
 		return "", "", nil, errors.New("cannot stage skill bundle")
 	}
 	defer os.RemoveAll(dir)
-	if inventory.UnpackSkill(result.Data, dir) != nil {
+	if inventory.UnpackSkillLimit(data, dir, lim) != nil {
 		return "", "", nil, reject("invalid or oversized skill bundle")
 	}
 	got, err := inventory.SkillHash(dir)
 	if err != nil || got != hash {
 		return "", "", nil, reject("skill changed since its inventory scan")
 	}
-	canonical, err := inventory.PackSkill(dir)
+	canonical, err := inventory.PackSkillLimit(dir, lim)
 	if err != nil {
 		return "", "", nil, reject("cannot verify skill bundle")
 	}
 	return name, hash, canonical, nil
+}
+
+// readBundleParts joins a bundle that the machine sent in parts (decision
+// 0169). The first answer holds part 0 and names a snapshot for the others. The
+// size and the SHA-256 of the whole are checked before anything is unpacked.
+func readBundleParts(ctx context.Context, host *nodeConn, first protocol.SkillBundle) ([]byte, error) {
+	if first.Parts == 0 {
+		return first.Data, nil
+	}
+	if first.Snapshot == "" || first.Size <= 0 || first.Size > inventory.ArchiveLimit.Bytes ||
+		protocol.PartCount(first.Size) != first.Parts ||
+		int64(len(first.Data)) != min(first.Size, protocol.TransferPartSize) {
+		return nil, reject("invalid skill bundle parts")
+	}
+	out := make([]byte, 0, first.Size)
+	out = append(out, first.Data...)
+	for i := 1; i < first.Parts; i++ {
+		raw, err := host.request(ctx, "node.skill_bundle", protocol.SkillBundleRequest{Snapshot: first.Snapshot, Part: i}, 60*time.Second)
+		if err != nil {
+			return nil, reject("cannot obtain skill bundle part %d: %v", i, err)
+		}
+		var part protocol.SkillBundle
+		if json.Unmarshal(raw, &part) != nil {
+			return nil, reject("invalid skill bundle part %d", i)
+		}
+		remaining := first.Size - int64(i)*protocol.TransferPartSize
+		if int64(len(part.Data)) != min(remaining, protocol.TransferPartSize) {
+			return nil, reject("invalid skill bundle part %d", i)
+		}
+		out = append(out, part.Data...)
+	}
+	sum := sha256.Sum256(out)
+	if hex.EncodeToString(sum[:]) != first.SHA256 {
+		return nil, reject("skill bundle changed while it was read")
+	}
+	return out, nil
 }
 
 // validGitURL accepts the transports that fetch a repository. ext:: and other
@@ -841,7 +891,7 @@ func (g *Gateway) intakeSkillGit() (protocol.SkillArchiveMultiResult, error) {
 		}
 		content, err := func() (skillArchiveContent, error) {
 			defer os.RemoveAll(dir)
-			if inventory.UnpackSkill(bundle, dir) != nil {
+			if inventory.UnpackSkillLimit(bundle, dir, inventory.ArchiveLimit) != nil {
 				return skillArchiveContent{}, errors.New("invalid bundle")
 			}
 			return skillContentFromDir(name, dir)

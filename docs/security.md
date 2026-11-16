@@ -878,9 +878,18 @@ skill contents for secrets.
 - Only the owner and the CTO reach the archive operations: the daemon refuses
   any other caller, and the gateway records the actor (`owner` or `cto`) on
   every add and remove.
-- Adding from a machine reads the folder through `node.skill_bundle`, with the
-  same hash check and 2 MiB, 2,048 entry limits as an import. The machine must
+- Adding from a machine reads the folder through `node.skill_bundle` with the
+  archive limit: at most 64 MiB packed and 10,000 entries (decision 0169). The
+  gateway checks the hash as it does for an import. A bundle over 1 MiB comes in
+  parts. The machine packs it once and keeps that copy until its last part is
+  sent, or for five minutes at most. The gateway joins the parts and checks the
+  size and SHA-256 of the whole before it unpacks anything. The machine must
   have the folder in its current inventory.
+- A session's skill folder reads each archived version with `skills.version`.
+  A version over 1 MiB comes in parts, read by part number. The daemon checks
+  the joined bundle against the archived hash before a session sees it.
+- The Tools tab and the import path keep the 2 MiB, 2,048 entry limit of
+  decision 0048. A skill over 2 MiB is still refused there.
 - Adding from a Git URL has no approval step, as the owner asked. The clone
   keeps no history in the archive. Only `file`, `git`, `http`, `https` and
   `ssh` URLs are accepted: the `ext::` and other helper transports run

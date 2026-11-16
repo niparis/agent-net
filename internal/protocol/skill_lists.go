@@ -37,19 +37,25 @@ type SkillFolder struct {
 	Skills []EffectiveSkill `json:"skills"`
 }
 
-// SkillVersionRequest asks for one stored version's bundle.
+// SkillVersionRequest asks for one stored version's bundle. Part asks for one
+// part of a bundle that is sent in parts (decision 0169); 0 is the first.
 type SkillVersionRequest struct {
 	Name    string `json:"name"`
 	Version int    `json:"version"`
 	By      string `json:"by"`
+	Part    int    `json:"part,omitempty"`
 }
 
-// SkillVersion is one stored version with its bundle and content hash.
+// SkillVersion is one stored version with its bundle and content hash. Parts
+// is 0 when Data is the whole bundle. Otherwise Data is part Part of Parts,
+// and Size is the size of the whole bundle.
 type SkillVersion struct {
 	Name    string `json:"name"`
 	Version int    `json:"version"`
 	Hash    string `json:"hash"`
 	Data    []byte `json:"data"`
+	Parts   int    `json:"parts,omitempty"`
+	Size    int64  `json:"size,omitempty"`
 }
 
 // SkillSetRequest replaces one node's own add and remove lists. A suggestion id

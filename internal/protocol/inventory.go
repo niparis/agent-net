@@ -207,13 +207,30 @@ type ToolImport struct {
 	Item     string             `json:"item"`
 	Location ToolImportLocation `json:"location"`
 }
+
+// SkillBundleRequest asks a machine for one skill folder's bundle. Archive asks
+// for the skill archive's limit (decision 0169). The machine then answers in
+// parts when the bundle is larger than one part. Snapshot and Part ask for a
+// later part of such an answer.
 type SkillBundleRequest struct {
 	Name     string `json:"name"`
 	Hash     string `json:"hash"`
 	Location string `json:"location"`
+	Archive  bool   `json:"archive,omitempty"`
+	Snapshot string `json:"snapshot,omitempty"`
+	Part     int    `json:"part,omitempty"`
 }
+
+// SkillBundle is the answer. Without Parts, Data is the whole bundle. With
+// Parts, Data is part 0 of Parts parts; Snapshot names the bundle for the
+// other parts, and Size and SHA256 describe the whole bundle. A later part's
+// answer carries only Data.
 type SkillBundle struct {
-	Data []byte `json:"data"`
+	Data     []byte `json:"data"`
+	Snapshot string `json:"snapshot,omitempty"`
+	Parts    int    `json:"parts,omitempty"`
+	Size     int64  `json:"size,omitempty"`
+	SHA256   string `json:"sha256,omitempty"`
 }
 
 // ToolVersionRequest selects a stored skill and optional content-hash version.

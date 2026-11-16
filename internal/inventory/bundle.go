@@ -13,14 +13,44 @@ import (
 	"strings"
 )
 
-// MaxBundleBytes bounds transfer through the local socket and gateway link.
+// MaxBundleBytes is the packed size that copies or imports one skill allow
+// (decision 0048). It keeps one frame of the link under the 4 MB read limit.
 const MaxBundleBytes = 2 << 20
 
-// MaxBundleEntries also bounds archive extraction work.
+// MaxBundleEntries also bounds import extraction work.
 const MaxBundleEntries = 2048
+
+// MaxArchiveBytes is the packed size one skill may have in the skill archive
+// (decision 0169). It is the scan's 64 MiB of file data, with the tar headers
+// counted too. The archive moves a skill in parts, so this can be more than a
+// frame holds.
+const MaxArchiveBytes = 64 << 20
+
+// MaxArchiveEntries is the scan's file count (maxFiles in hash.go).
+const MaxArchiveEntries = 10000
+
+// ErrOverLimit says a bundle is over its limit. The callers show its text.
+var ErrOverLimit = errors.New("skill exceeds bundle limit")
+
+// BundleLimit bounds one bundle: its packed bytes and its entries.
+type BundleLimit struct {
+	Bytes   int64
+	Entries int
+}
+
+// ImportLimit is what copying or importing one skill allows (decision 0048).
+var ImportLimit = BundleLimit{Bytes: MaxBundleBytes, Entries: MaxBundleEntries}
+
+// ArchiveLimit is what one skill in the skill archive allows (decision 0169).
+var ArchiveLimit = BundleLimit{Bytes: MaxArchiveBytes, Entries: MaxArchiveEntries}
 
 // PackSkill reads a bounded snapshot without following links out of root.
 func PackSkill(root string) ([]byte, error) {
+	return PackSkillLimit(root, ImportLimit)
+}
+
+// PackSkillLimit is PackSkill with the given limit.
+func PackSkillLimit(root string, lim BundleLimit) ([]byte, error) {
 	info, err := os.Lstat(root)
 	if err != nil {
 		return nil, err
@@ -33,11 +63,16 @@ func PackSkill(root string) ([]byte, error) {
 		return nil, err
 	}
 	defer dir.Close()
-	return PackSkillRoot(dir)
+	return PackSkillRootLimit(dir, lim)
 }
 
 // PackSkillRoot packs a skill through an already opened directory.
 func PackSkillRoot(dir *os.Root) ([]byte, error) {
+	return PackSkillRootLimit(dir, ImportLimit)
+}
+
+// PackSkillRootLimit is PackSkillRoot with the given limit.
+func PackSkillRootLimit(dir *os.Root, lim BundleLimit) ([]byte, error) {
 	var out bytes.Buffer
 	tw := tar.NewWriter(&out)
 	count := 0
@@ -50,7 +85,7 @@ func PackSkillRoot(dir *os.Root) ([]byte, error) {
 			return nil
 		}
 		count++
-		if count > MaxBundleEntries {
+		if count > lim.Entries {
 			return errors.New("skill exceeds entry limit")
 		}
 		info, e := dir.Lstat(name)
@@ -67,8 +102,8 @@ func PackSkillRoot(dir *os.Root) ([]byte, error) {
 			h.Size = info.Size()
 			h.Mode = 0600 | int64(info.Mode()&0111)
 			total += h.Size
-			if h.Size < 0 || total > MaxBundleBytes {
-				return errors.New("skill exceeds bundle limit")
+			if h.Size < 0 || total > lim.Bytes {
+				return ErrOverLimit
 			}
 		case info.Mode()&os.ModeSymlink != 0:
 			h.Typeflag = tar.TypeSymlink
@@ -110,8 +145,8 @@ func PackSkillRoot(dir *os.Root) ([]byte, error) {
 				return errors.New("skill changed during import")
 			}
 		}
-		if out.Len() > MaxBundleBytes {
-			return errors.New("skill exceeds bundle limit")
+		if int64(out.Len()) > lim.Bytes {
+			return ErrOverLimit
 		}
 		return nil
 	})
@@ -121,8 +156,8 @@ func PackSkillRoot(dir *os.Root) ([]byte, error) {
 	if err = tw.Close(); err != nil {
 		return nil, err
 	}
-	if out.Len() > MaxBundleBytes {
-		return nil, errors.New("skill exceeds bundle limit")
+	if int64(out.Len()) > lim.Bytes {
+		return nil, ErrOverLimit
 	}
 	return out.Bytes(), nil
 }
@@ -130,21 +165,31 @@ func PackSkillRoot(dir *os.Root) ([]byte, error) {
 // UnpackSkill accepts only relative paths, regular files, directories and safe links.
 // The destination must be a new empty private directory.
 func UnpackSkill(data []byte, dest string) error {
-	if len(data) > MaxBundleBytes {
-		return errors.New("skill exceeds bundle limit")
+	return UnpackSkillLimit(data, dest, ImportLimit)
+}
+
+// UnpackSkillLimit is UnpackSkill with the given limit.
+func UnpackSkillLimit(data []byte, dest string, lim BundleLimit) error {
+	if int64(len(data)) > lim.Bytes {
+		return ErrOverLimit
 	}
 	root, err := os.OpenRoot(dest)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	return UnpackSkillRoot(data, root)
+	return UnpackSkillRootLimit(data, root, lim)
 }
 
 // UnpackSkillRoot extracts into an already opened empty private directory.
 func UnpackSkillRoot(data []byte, root *os.Root) error {
-	if len(data) > MaxBundleBytes {
-		return errors.New("skill exceeds bundle limit")
+	return UnpackSkillRootLimit(data, root, ImportLimit)
+}
+
+// UnpackSkillRootLimit is UnpackSkillRoot with the given limit.
+func UnpackSkillRootLimit(data []byte, root *os.Root, lim BundleLimit) error {
+	if int64(len(data)) > lim.Bytes {
+		return ErrOverLimit
 	}
 	tr := tar.NewReader(bytes.NewReader(data))
 	seen := map[string]bool{}
@@ -163,7 +208,7 @@ func UnpackSkillRoot(data []byte, root *os.Root) error {
 			return errors.New("invalid skill path")
 		}
 		seen[name] = true
-		if len(seen) > MaxBundleEntries {
+		if len(seen) > lim.Entries {
 			return errors.New("skill exceeds entry limit")
 		}
 		// Require parents to be real directories, never symlinks.
@@ -180,8 +225,8 @@ func UnpackSkillRoot(data []byte, root *os.Root) error {
 			}
 		case tar.TypeReg, tar.TypeRegA:
 			total += h.Size
-			if h.Size < 0 || total > MaxBundleBytes {
-				return errors.New("skill exceeds bundle limit")
+			if h.Size < 0 || total > lim.Bytes {
+				return ErrOverLimit
 			}
 			f, e := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 			if e != nil {

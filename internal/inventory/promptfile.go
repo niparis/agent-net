@@ -132,7 +132,7 @@ func PackFileRoot(root *os.Root, rel, name string) ([]byte, error) {
 		return nil, errors.New("not a regular file")
 	}
 	if info.Size() > MaxBundleBytes {
-		return nil, errors.New("skill exceeds bundle limit")
+		return nil, ErrOverLimit
 	}
 	data, _, err := readBundleFile(root, rel)
 	if err != nil {

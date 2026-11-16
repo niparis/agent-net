@@ -162,7 +162,7 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 	if p.Item == "" || p.Location.NodeID == "" || p.Location.Location == "" {
 		return v, reject("import needs an item and a location")
 	}
-	_, hash, canonical, err := g.fetchSkillBundle(ctx, p.Item, p.Location.NodeID, p.Location.Location, "skill", "prompt", "agent")
+	_, hash, canonical, err := g.fetchSkillBundle(ctx, p.Item, p.Location.NodeID, p.Location.Location, false, "skill", "prompt", "agent")
 	if err != nil {
 		return v, err
 	}
