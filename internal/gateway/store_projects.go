@@ -104,6 +104,14 @@ func (s *Store) AddProjects(nodeID string, in protocol.ProjectAdd) (protocol.Pro
 		return res, err
 	}
 	if !in.DryRun {
+		// The owner chose: a new repo gets one CTO notice to pick its skills.
+		for _, e := range res.Added {
+			if err := s.newProjectSkillNotice(e.Name); err != nil {
+				s.logf("error", "where", "skill notice", "repo", e.Name, "err", err)
+			}
+		}
+	}
+	if !in.DryRun {
 		host := s.hostname(nodeID)
 		for _, e := range res.Added {
 			s.Event("project.added", nodeID, in.AddedBySession, "", strings.TrimPrefix(pairs("name", e.Name, "path", e.Path), " "))

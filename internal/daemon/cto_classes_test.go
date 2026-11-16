@@ -28,6 +28,7 @@ func ctoClassFixture(name string) json.RawMessage {
 		"settings_change": {"area": "onboarding"},
 		"project_change":  {"action": "add"},
 		"skill_archive":   {"action": "list"},
+		"skills":          {"action": "effective"},
 	}[name]
 	fields := map[string]any{}
 	for k, v := range action {

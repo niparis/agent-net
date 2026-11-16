@@ -563,6 +563,10 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 		if noticeText, noticeDiff, noticeOptions := skillArchiveNotice(concrete, result); noticeText != "" {
 			text, diff, options = noticeText, noticeDiff, noticeOptions
 		}
+	case concrete == "skills_set" || concrete == "skills_undo":
+		if noticeText, noticeDiff, noticeOptions := skillsNotice(concrete, result); noticeText != "" {
+			text, diff, options = noticeText, noticeDiff, noticeOptions
+		}
 	}
 	text += onOwnerWords(words)
 	if reason = cleanLine(reason); reason != "" {

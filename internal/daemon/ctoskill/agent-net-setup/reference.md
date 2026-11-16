@@ -110,6 +110,8 @@ Desktop notifications are one owner preference per machine: `notification_settin
 
 Kinds: `skill`, `mcp`, `user`, `project`, `native`, `plugin`, `package`, `system`, `agent-net federation`. Scope is `global` or one or more projects. A project skill tracked by the repository is part of the repo; an untracked project skill is a local copy. `mcp_change` covers shared MCP servers; `tools_change` covers a project's own tools and skills.
 
+`skills` actions: suggest, set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes and makes no model call; nothing is delivered to sessions yet.
+
 ## Notes
 
 Scopes: `agent`, `project`, `owner`. Kinds an agent writes: `feedback`, `fact`, `reference`. The owner rule kind is written only by the owner. Limits: 20 notes per find, 8 titles per scope in a session's start text, 3 similar notes on a write, and a note is stale after 30 days. Nothing is deleted by age. Write with `agent_note_write` and read with `agent_notes_find`.

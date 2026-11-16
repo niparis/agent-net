@@ -29,7 +29,7 @@ var ctoToolClasses = func() map[string]ctoToolClass {
 	for class, names := range map[ctoToolClass]string{
 		ctoRead:  "cto_proposals_find cto_intake_find cto_ops_list agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find agent_owner_judgments_find projects_layout",
 		ctoTalk:  "message cto_placement_memory cto_standing_orders cto_ui_show proposal_ask agent_message_send agent_message_reply agent_message_withdraw agent_owner_ask agent_owner_judgment_record agent_learn agent_note_write agent_notes_find agent_permission_propose agent_step_report",
-		ctoMinor: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new sessions_archive judgment_add skill_archive",
+		ctoMinor: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new sessions_archive judgment_add skill_archive skills",
 	} {
 		for _, name := range strings.Fields(names) {
 			out[name] = class
@@ -50,6 +50,7 @@ var ctoActionField = map[string]string{
 	"settings_change": "area",
 	"project_change":  "action",
 	"skill_archive":   "action",
+	"skills":          "action",
 }
 
 // ctoChangeActions maps a merged action to the concrete daemon call that runs
@@ -84,6 +85,7 @@ var ctoChangeActions = map[string]map[string]string{
 		"list": "skill_archive_list", "read": "skill_archive_read", "add": "skill_archive_add",
 		"add_git": "skill_archive_add_git", "remove": "skill_archive_remove", "undo": "skill_archive_undo", "intake": "skill_archive_intake",
 	},
+	"skills": {"suggest": "skills_suggest", "set": "skills_set", "effective": "skills_effective", "undo": "skills_undo"},
 }
 
 // ownerGate is the class of an owner-only action, read from the one never
@@ -115,6 +117,7 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 	"settings_change": {"operator": ctoMinor, "values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ownerGate("machine_remove"), "machine_rotate": ownerGate("machine_rotate"), "invite": ctoMinor, "onboarding": ctoMinor, "process_stop": ctoMinor},
 	"project_change":  {"add": ctoMinor, "remove": ctoMinor, "display": ctoMinor, "create": ctoMinor},
 	"skill_archive":   {"list": ctoRead, "read": ctoRead, "add": ctoMinor, "add_git": ctoMinor, "remove": ctoMinor, "undo": ctoMinor, "intake": ctoMinor},
+	"skills":          {"suggest": ctoRead, "set": ctoMinor, "effective": ctoRead, "undo": ctoMinor},
 }
 
 var ctoActions = map[string]map[string][]string{
@@ -128,6 +131,7 @@ var ctoActions = map[string]map[string][]string{
 	"settings_change": {"area": {"operator", "values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"}},
 	"project_change":  {"action": {"add", "remove", "display", "create"}},
 	"skill_archive":   {"action": {"list", "read", "add", "add_git", "remove", "undo", "intake"}},
+	"skills":          {"action": {"suggest", "set", "effective", "undo"}},
 }
 
 func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {
