@@ -119,7 +119,7 @@ func (d *Daemon) wakeGuard(a protocol.AgentView) error {
 // daemon registers it, and the gateway delivers the queued messages with
 // thread/queue/add. No turn starts here and no window opens.
 func (d *Daemon) wakeCodex(ctx context.Context, a protocol.AgentView) error {
-	r := protocol.StartedSession{ID: protocol.NewID("wake"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: "codex", Path: a.Cwd, NativeID: a.NativeID, Resumes: a.SessionID}
+	r := protocol.StartedSession{ID: protocol.NewID("wake"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: "codex", Path: a.Cwd, NativeID: a.NativeID}
 	r, err := d.prepareOwnerCodexThread(ctx, r, true)
 	if err != nil {
 		return fmt.Errorf("cannot resume the Codex thread: %w", err)

@@ -117,10 +117,11 @@ Each harness takes the set its own way:
   to the processes agent-net starts: workers and the CTO. An OpenCode session
   that runs in the owner's shared service is not agent-net's process and gets
   no folder here.
-- Codex: `skills/extraRoots/set` with the folder's `skills` root on the app
-  server, after the thread starts. A Codex worker has its own server. A Codex
-  session on the owner's shared server sets the roots of that server, which
-  holds its other threads too.
+- Codex: `skills/extraRoots/set` with the folder's `skills` root on a worker's
+  own app server, after the thread starts. The owner's shared app server gets
+  no call: the method has no thread argument, so one session's roots would
+  replace every other thread's. Owner Codex sessions keep the everyone skills
+  from the user folder, as a hand-started session does.
 - agy: nothing, as the owner chose; agy gets only the everyone skills.
 
 A node with an empty effective list gets no flag and no folder. A failure to

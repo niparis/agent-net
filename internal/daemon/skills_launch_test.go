@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -188,5 +189,61 @@ func TestClaudeResumeAsksTheSessionNode(t *testing.T) {
 	assertSkillFolder(t, argValue(spec.Flags, "--plugin-dir"))
 	if len(g.reqs) != 1 || g.reqs[0].Session != "s1" || g.reqs[0].Repo != "" {
 		t.Fatalf("resume target: %+v", g.reqs)
+	}
+}
+
+// The owner's shared Codex app server is one server for every thread, and
+// skills/extraRoots/set has no thread argument. A call from one owner session
+// would replace the roots of every other session there, so owner sessions are
+// left alone: they keep the skills of the user folder, like a hand-started one
+// (decision 0169). Only a worker's own app server is told.
+func TestOwnerCodexSessionsLeaveSharedSkillRootsAlone(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	f := startFakeShared(t)
+	bins := fakeBin(t, "codex")
+	// Each project has its own set, so a shared-server call would visibly
+	// replace one project's skills with the other's.
+	store := &skillFolderGateway{}
+	sets := map[string]protocol.EffectiveSkill{
+		"shop-one": addSkill(t, store, "alpha", 1, "shop one body"),
+		"shop-two": addSkill(t, store, "alpha", 2, "shop two body"),
+	}
+	// The fake reads a bundle's hash from this list.
+	store.folder.Skills = []protocol.EffectiveSkill{sets["shop-one"], sets["shop-two"]}
+	var mu sync.Mutex
+	var asked []string
+	n := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.HarnessPaths = bins
+		c.CodexHome = f.home
+		c.CodexInterval = 20 * time.Millisecond
+		c.testGatewayCall = func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
+			if typ != protocol.FrameSkillsFolder {
+				return store.call(context.Background(), typ, params)
+			}
+			req, _ := params.(protocol.SkillFolderRequest)
+			mu.Lock()
+			asked = append(asked, req.Repo)
+			mu.Unlock()
+			set := protocol.SkillFolder{Level: "repo", Scope: req.Repo}
+			if skill, ok := sets[req.Repo]; ok {
+				set.Skills = []protocol.EffectiveSkill{skill}
+			}
+			raw, _ := json.Marshal(set)
+			return raw, true, nil
+		}
+	})
+	for _, repo := range []string{newRepo(t, "shop-one"), newRepo(t, "shop-two")} {
+		n.register(t, repo)
+		var r protocol.StartedSession
+		mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "codex"}), &r)
+		if r.Status != "started" || r.SessionID == "" {
+			t.Fatalf("start %s: %+v", repo, r)
+		}
+	}
+	if calls := f.extraRootCalls(); calls != 0 {
+		t.Fatalf("an owner Codex session set skill roots on the shared server: %d call(s)", calls)
+	}
+	if len(asked) != 0 {
+		t.Fatalf("an owner Codex session read a skill set it cannot receive: %v", asked)
 	}
 }
