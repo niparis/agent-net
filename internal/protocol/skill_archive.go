@@ -38,9 +38,16 @@ type SkillArchiveRemove struct {
 }
 
 // SkillArchiveVersion names one version. Zero means the latest live version.
+//
+// A read of the version answers with its file list and SKILL.md. File names
+// one file, and Offset is the byte where its text page starts. After is the
+// cursor of the next page of the file list (SkillArchiveReadResult.NextAfter).
 type SkillArchiveVersion struct {
 	Name    string `json:"name"`
 	Version int    `json:"version,omitempty"`
+	File    string `json:"file,omitempty"`
+	Offset  int64  `json:"offset,omitempty"`
+	After   string `json:"after,omitempty"`
 	By      string `json:"by,omitempty"`
 }
 
@@ -201,19 +208,29 @@ type SkillSourcesResult struct {
 	UserRead     bool          `json:"user_read,omitempty"`
 }
 
-// SkillArchiveFile is one file of a stored version. Text is empty when the
-// file is not bounded UTF-8; Binary says why.
+// SkillArchiveFile is one file of a stored version. Text is one page of its
+// UTF-8 text, from Offset; NextOffset is where the next page starts, and zero
+// when this page reaches the end. Text is empty when the file is not text, and
+// Binary says why.
 type SkillArchiveFile struct {
-	Path   string `json:"path"`
-	Size   int64  `json:"size"`
-	Text   string `json:"text,omitempty"`
-	Binary bool   `json:"binary,omitempty"`
+	Path       string `json:"path"`
+	Size       int64  `json:"size"`
+	Text       string `json:"text,omitempty"`
+	Offset     int64  `json:"offset,omitempty"`
+	NextOffset int64  `json:"next_offset,omitempty"`
+	Binary     bool   `json:"binary,omitempty"`
 }
 
-// SkillArchiveReadResult is one stored version with its files.
+// SkillArchiveReadResult is one stored version: its hash, its file count and
+// one page of its files. The overview lists files in pages: SKILL.md comes
+// first, then the rest in path order, and NextAfter is the cursor of the next
+// page. A read of one file answers with that file alone.
 type SkillArchiveReadResult struct {
 	Name    string             `json:"name"`
 	Version int                `json:"version"`
 	Hash    string             `json:"hash"`
+	Total   int                `json:"total"`
 	Files   []SkillArchiveFile `json:"files"`
+	// NextAfter is set when more files follow this page.
+	NextAfter string `json:"next_after,omitempty"`
 }

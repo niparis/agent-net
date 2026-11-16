@@ -37,7 +37,7 @@ func TestSkillArchiveAddStoresFolderAsItIsNow(t *testing.T) {
 	if got.State != "added" || got.Hash != newHash {
 		t.Fatalf("add: %+v, want the hash now %s", got, newHash)
 	}
-	read, err := g.skillArchiveRead("demo", got.Version)
+	read, err := g.skillArchiveRead(protocol.SkillArchiveVersion{Name: "demo", Version: got.Version})
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}

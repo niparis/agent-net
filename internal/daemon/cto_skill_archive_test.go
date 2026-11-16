@@ -14,6 +14,13 @@ import (
 
 func skillRepo(t *testing.T) string {
 	t.Helper()
+	return skillRepoWithFiles(t, map[string]string{"SKILL.md": "---\ndescription: Ask hard questions.\n---\nbody\n"})
+}
+
+// skillRepoWithFiles commits one skill folder, grill-me, holding the given files
+// (paths relative to the folder). It returns the repository's file URL.
+func skillRepoWithFiles(t *testing.T, files map[string]string) string {
+	t.Helper()
 	dir := t.TempDir()
 	run := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -29,11 +36,14 @@ func skillRepo(t *testing.T) string {
 	}
 	run("init", "-q", "-b", "main")
 	skill := filepath.Join(dir, "grill-me")
-	if err := os.MkdirAll(skill, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\ndescription: Ask hard questions.\n---\nbody\n"), 0o600); err != nil {
-		t.Fatal(err)
+	for path, body := range files {
+		full := filepath.Join(skill, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	run("add", "-A")
 	run("commit", "-q", "-m", "skill")

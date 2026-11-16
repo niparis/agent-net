@@ -67,7 +67,7 @@ func TestSkillArchiveAddTakesSkillOverTheImportLimit(t *testing.T) {
 	if got.State != "added" || got.Version != 1 || got.Hash != hash {
 		t.Fatalf("add: %+v", got)
 	}
-	read, err := g.skillArchiveRead("large", 1)
+	read, err := g.skillArchiveRead(protocol.SkillArchiveVersion{Name: "large", Version: 1})
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}

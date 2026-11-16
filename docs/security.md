@@ -890,6 +890,14 @@ skill contents for secrets.
 - A session's skill folder reads each archived version with `skills.version`.
   A version over 1 MiB comes in parts, read by part number. The daemon checks
   the joined bundle against the archived hash before a session sees it.
+- The CTO reads a version in pages. The overview gives SKILL.md's first 64 KiB
+  of text and 200 file rows at most. A read of one file gives 64 KiB of its
+  text from a byte offset. Every read answer stays under 1 MiB, so a large
+  skill never closes the link to the machine.
+- No answer over the link's 4 MiB frame limit is sent. The daemon closes the
+  link on a larger frame, so the gateway sends an error in its place. The error
+  says that a change may still have been made, so the caller checks before it
+  retries.
 - The Tools tab and the import path keep the 2 MiB, 2,048 entry limit of
   decision 0048. A skill over 2 MiB is still refused there.
 - Adding from a Git URL has no approval step, as the owner asked. The clone

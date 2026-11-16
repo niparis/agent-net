@@ -388,7 +388,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 		}
 		return false, err
 	}
-	ws.SetReadLimit(4 << 20)
+	ws.SetReadLimit(protocol.LinkFrameLimit)
 	d.mu.Lock()
 	d.connecting = true
 	d.mu.Unlock()

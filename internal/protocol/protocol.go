@@ -512,6 +512,11 @@ func EncodeRequestVia(typ, id, via string, params any) ([]byte, error) {
 	return json.Marshal(m)
 }
 
+// LinkFrameLimit is the largest frame a link reads: the websocket read limit of
+// the daemon and of the gateway. A larger frame closes the link, so the gateway
+// sends an error in its place.
+const LinkFrameLimit = 4 << 20
+
 func EncodeResult(id string, data any, err error) ([]byte, error) {
 	h := map[string]any{"type": "result", "id": id, "ok": err == nil}
 	if err != nil {
