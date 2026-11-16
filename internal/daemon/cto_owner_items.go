@@ -51,16 +51,19 @@ func ctoOwnerKindFilter(kind string) (string, error) {
 // proposals as the flat rows of cto_proposals_find.
 func (d *Daemon) ctoOwnerItemRows(ctx context.Context, kind string) ([]map[string]any, error) {
 	rows := make([]map[string]any, 0)
+	// The drafts themselves, with each one's text, besides the asks that
+	// wait for the owner: an ask the chief sent on holds no owner row, and
+	// the CTO decides a field at a time. The drafts come first and keep their
+	// own order. They are kept out of the sort below, which runs newest first
+	// on a created time that has only one-second precision.
+	var drafts []map[string]any
 	if kind == protocol.AskKindDraft {
-		// The drafts themselves, with each one's text, besides the asks that
-		// wait for the owner: an ask the chief sent on holds no owner row, and
-		// the CTO decides a field at a time.
-		drafts, err := d.ctoCharterDrafts(ctx)
+		list, err := d.ctoCharterDrafts(ctx)
 		if err != nil {
 			return nil, err
 		}
-		for _, draft := range drafts {
-			rows = append(rows, ctoCharterDraftRow(draft))
+		for _, draft := range list {
+			drafts = append(drafts, ctoCharterDraftRow(draft))
 		}
 	}
 	if kind != protocol.AskKindProposal {
@@ -105,7 +108,7 @@ func (d *Daemon) ctoOwnerItemRows(ctx context.Context, kind string) ([]map[strin
 		}
 		return rows[i]["id"].(string) < rows[j]["id"].(string)
 	})
-	return rows, nil
+	return append(drafts, rows...), nil
 }
 
 func ctoOwnerSummary(text string) string {
@@ -302,7 +305,24 @@ func (d *Daemon) ctoCharterDrafts(ctx context.Context) ([]protocol.CharterDraft,
 		return nil, err
 	}
 	var out []protocol.CharterDraft
-	return out, ctoDecode(value, &out)
+	if err := ctoDecode(value, &out); err != nil {
+		return nil, err
+	}
+	sortCharterDraftsOldestFirst(out)
+	return out, nil
+}
+
+// sortCharterDraftsOldestFirst orders drafts by when they were made, then by
+// draft number as a number, so draft 9 comes before draft 10. The gateway
+// stamps drafts in nanoseconds; two drafts in the same second still have a
+// fixed order.
+func sortCharterDraftsOldestFirst(drafts []protocol.CharterDraft) {
+	sort.Slice(drafts, func(i, j int) bool {
+		if drafts[i].CreatedAt != drafts[j].CreatedAt {
+			return drafts[i].CreatedAt < drafts[j].CreatedAt
+		}
+		return drafts[i].ID < drafts[j].ID
+	})
 }
 
 // ctoCharterDraft reads one draft in any status.
