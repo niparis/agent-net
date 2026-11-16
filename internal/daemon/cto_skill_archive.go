@@ -153,7 +153,39 @@ func skillArchiveNotice(concrete string, result any) (text, diff string, options
 			}
 			diff += "More than one version: " + strings.Join(r.Shared, ", ")
 		}
+		if line := intakeMachineLine(r); line != "" {
+			if diff != "" {
+				diff += "\n"
+			}
+			diff += line
+		}
 		return text, diff, options
 	}
 	return "", "", nil
+}
+
+// intakeMachineLine names the machines an intake did not read and the count of
+// skills it did not store, so the Inbox never reads as "all done" by accident.
+func intakeMachineLine(r protocol.SkillArchiveMultiResult) string {
+	var parts []string
+	for _, m := range r.Machines {
+		if m.Result != "scanned" {
+			parts = append(parts, cleanLine(m.Name)+" "+m.Result)
+		}
+	}
+	line := ""
+	if len(parts) > 0 {
+		line = "Not read: " + strings.Join(parts, ", ") + "."
+	}
+	if len(r.Skipped) > 0 {
+		if line != "" {
+			line += " "
+		}
+		noun := " skills"
+		if len(r.Skipped) == 1 {
+			noun = " skill"
+		}
+		line += strconv.Itoa(len(r.Skipped)) + noun + " not imported."
+	}
+	return line
 }

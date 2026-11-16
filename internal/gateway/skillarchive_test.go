@@ -305,6 +305,13 @@ func archiveBundle(t *testing.T, dir string) []byte {
 // so one test can serve several distinct skill contents.
 func archiveFakeNode(t *testing.T, g *Gateway, n string, bundles map[string][]byte) {
 	t.Helper()
+	archiveFakeNodeSources(t, g, n, bundles, nil)
+}
+
+// archiveFakeNodeSources is archiveFakeNode for a daemon that also answers
+// node.skill_sources. A nil list is a daemon that does not know the frame.
+func archiveFakeNodeSources(t *testing.T, g *Gateway, n string, bundles map[string][]byte, sources []protocol.SkillSource) {
+	t.Helper()
 	accepted := make(chan *websocket.Conn, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ws, e := websocket.Accept(w, r, nil)
@@ -336,6 +343,13 @@ func archiveFakeNode(t *testing.T, g *Gateway, n string, bundles map[string][]by
 			_ = json.Unmarshal(raw, &h)
 			var data any = map[string]bool{"ok": true}
 			var answerErr error
+			if h.Type == protocol.FrameNodeSkillSources {
+				if sources == nil {
+					answerErr = errors.New("unknown frame")
+				} else {
+					data = protocol.SkillSourcesResult{Sources: sources}
+				}
+			}
 			if h.Type == "node.skill_bundle" {
 				var q protocol.SkillBundleRequest
 				_ = json.Unmarshal(raw, &q)

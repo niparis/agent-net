@@ -25,6 +25,16 @@ type Options struct {
 	Home, CodexHome, Machine string
 	Projects                 []protocol.ProjectEntry
 	TrustedProjects          map[string]bool
+	// OnlyRoot, when set, limits the scan to the skill folders in one root:
+	// the archive intake uses it for plugin skills and the CTO's own skill,
+	// which the normal scan does not list.
+	OnlyRoot *SkillRoot
+}
+
+// SkillRoot is one folder of skill folders. Base is the folder the path must
+// stay inside without a link.
+type SkillRoot struct {
+	Harness, Base, Path string
 }
 
 // Scan discovers supported native roots without executing their contents.
@@ -544,6 +554,10 @@ func Scan(o Options) protocol.InventoryReport {
 			}
 			skills("pi", scope, project, root, base, source)
 		}
+	}
+	if o.OnlyRoot != nil {
+		skills(o.OnlyRoot.Harness, protocol.InventoryUser, "", "", o.OnlyRoot.Base, o.OnlyRoot.Path)
+		return report
 	}
 	home := filepath.Clean(o.Home)
 	codex := o.CodexHome

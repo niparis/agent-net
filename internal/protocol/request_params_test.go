@@ -105,6 +105,7 @@ var requestParams = []any{
 	DeliveryUpdate{},
 	ToolVersionRequest{},
 	SkillBundleRequest{},
+	SkillSourcesRequest{},
 	SkillFolderRequest{},
 	SkillVersionRequest{},
 	HintRequest{},

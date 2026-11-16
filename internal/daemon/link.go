@@ -288,6 +288,9 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 		case "node.skill_folder":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onSkillFolder(ctx, l, h, raw) }()
+		case protocol.FrameNodeSkillSources:
+			d.wg.Add(1)
+			go func() { defer d.wg.Done(); d.onSkillSources(ctx, l, h, raw) }()
 		case "node.skill_bundle":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onSkillBundle(ctx, l, h, raw) }()
