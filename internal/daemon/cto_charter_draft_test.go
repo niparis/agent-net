@@ -5,14 +5,16 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The CTO reads a pending charter draft in full, by list and by id, then
-// applies one and rejects another with cto_op learned_answer. An apply is
-// undone with the graph_undo the notice names.
-func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
+// ctoDraftFixture starts a gateway with the CTO, the owner session and one
+// repo whose session drafts charter fields. It returns the session's client
+// and its id.
+func ctoDraftFixture(t *testing.T) (*testGateway, *node, *localClient, string) {
+	t.Helper()
 	ctx := context.Background()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
@@ -34,6 +36,53 @@ func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 	if err := g.gw.Store().SetCharter("demo", "maturity", "early", "owner"); err != nil {
 		t.Fatal(err)
 	}
+	return g, n, client, id
+}
+
+// draftRow is one charter draft as cto_proposals_find shows it.
+type draftRow struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Level     string `json:"level"`
+	Scope     string `json:"scope"`
+	Attr      string `json:"attr"`
+	Value     string `json:"value"`
+	Source    string `json:"source"`
+	DraftedBy string `json:"drafted_by"`
+	Status    string `json:"status"`
+	Answer    string `json:"answer"`
+}
+
+// ctoDraftRows reads the pending draft rows (cd_ ids) the CTO sees, in the
+// order the list returns them.
+func ctoDraftRows(t *testing.T, n *node) []draftRow {
+	t.Helper()
+	out, err := n.d.readCTOTool(context.Background(), "cto_proposals_find", json.RawMessage(`{"kind":"draft"}`))
+	if err != nil {
+		t.Fatalf("cto_proposals_find draft: %v", err)
+	}
+	raw, _ := json.Marshal(out)
+	var page struct {
+		Items []draftRow `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		t.Fatal(err)
+	}
+	var rows []draftRow
+	for _, r := range page.Items {
+		if strings.HasPrefix(r.ID, "cd_") {
+			rows = append(rows, r)
+		}
+	}
+	return rows
+}
+
+// The CTO reads a pending charter draft in full, by list and by id, then
+// applies one and rejects another with cto_op learned_answer. An apply is
+// undone with the graph_undo the notice names.
+func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
+	ctx := context.Background()
+	g, n, client, id := ctoDraftFixture(t)
 	var purpose, refuses protocol.CharterDraftResult
 	for _, q := range []struct {
 		req protocol.CharterDraftRequest
@@ -47,18 +96,6 @@ func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 		}
 	}
 
-	type row struct {
-		ID        string `json:"id"`
-		Kind      string `json:"kind"`
-		Level     string `json:"level"`
-		Scope     string `json:"scope"`
-		Attr      string `json:"attr"`
-		Value     string `json:"value"`
-		Source    string `json:"source"`
-		DraftedBy string `json:"drafted_by"`
-		Status    string `json:"status"`
-		Answer    string `json:"answer"`
-	}
 	read := func(args string) json.RawMessage {
 		t.Helper()
 		out, err := n.d.readCTOTool(ctx, "cto_proposals_find", json.RawMessage(args))
@@ -68,24 +105,7 @@ func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 		raw, _ := json.Marshal(out)
 		return raw
 	}
-	// The list holds the draft rows (cd_ ids) and the Desk ask about them.
-	drafts := func() []row {
-		t.Helper()
-		var page struct {
-			Items []row `json:"items"`
-		}
-		if err := json.Unmarshal(read(`{"kind":"draft"}`), &page); err != nil {
-			t.Fatal(err)
-		}
-		var out []row
-		for _, r := range page.Items {
-			if strings.HasPrefix(r.ID, "cd_") {
-				out = append(out, r)
-			}
-		}
-		return out
-	}
-	listed := drafts()
+	listed := ctoDraftRows(t, n)
 	if len(listed) != 2 {
 		t.Fatalf("draft list: %+v", listed)
 	}
@@ -95,7 +115,7 @@ func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 		!strings.Contains(first.Answer, "learned_answer") {
 		t.Fatalf("draft row: %+v", first)
 	}
-	var one row
+	var one draftRow
 	if err := json.Unmarshal(read(`{"id":"`+first.ID+`"}`), &one); err != nil || one.Value != first.Value || one.Attr != "purpose" {
 		t.Fatalf("read by id: %+v %v", one, err)
 	}
@@ -128,7 +148,7 @@ func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 	if c, _ := g.gw.Store().EffectiveCharter("demo", "demo", ""); strings.Contains(c.Refuses, "live trading") {
 		t.Fatalf("a rejected draft was written: %q", c.Refuses)
 	}
-	if left := drafts(); len(left) != 0 {
+	if left := ctoDraftRows(t, n); len(left) != 0 {
 		t.Fatalf("decided drafts still listed: %+v", left)
 	}
 	// The apply is undone with graph_undo on its history entry.
@@ -139,5 +159,42 @@ func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 	}
 	if c, _ := g.gw.Store().EffectiveCharter("demo", "demo", ""); c.Purpose == "A small demo repo" {
 		t.Fatalf("undo left the purpose %q", c.Purpose)
+	}
+}
+
+// Drafts are listed oldest first. The second draft is made in a later
+// second than the first, so a list that orders by the second-precision
+// timestamp, newest first, puts the second draft ahead.
+func TestCTODraftsListOldestFirstAcrossSeconds(t *testing.T) {
+	_, n, client, _ := ctoDraftFixture(t)
+	var purpose, refuses protocol.CharterDraftResult
+	if err := json.Unmarshal(client.mustCall(protocol.OpCharterDraft, protocol.CharterDraftRequest{Level: "repo", Attr: "purpose", Value: "A small demo repo"}), &purpose); err != nil || purpose.ID == 0 {
+		t.Fatalf("draft purpose: %v", err)
+	}
+	start := time.Now().Unix()
+	eventually(t, "clock moves into the next second", func() bool { return time.Now().Unix() > start })
+	if err := json.Unmarshal(client.mustCall(protocol.OpCharterDraft, protocol.CharterDraftRequest{Level: "repo", Attr: "refuses", Value: "live trading"}), &refuses); err != nil || refuses.ID == 0 {
+		t.Fatalf("draft refuses: %v", err)
+	}
+	listed := ctoDraftRows(t, n)
+	if len(listed) != 2 || listed[0].Attr != "purpose" || listed[1].Attr != "refuses" {
+		t.Fatalf("draft order: %+v", listed)
+	}
+}
+
+// Drafts made in the same second keep the order of their numbers. The
+// numbers are compared as numbers: draft 9 comes before draft 10.
+func TestCharterDraftsOrderByTimeThenNumber(t *testing.T) {
+	drafts := []protocol.CharterDraft{
+		{ID: 10, CreatedAt: 5_000_000_000},
+		{ID: 9, CreatedAt: 5_000_000_000},
+		{ID: 2, CreatedAt: 4_000_000_000},
+	}
+	sortCharterDraftsOldestFirst(drafts)
+	want := []int64{2, 9, 10}
+	for i, d := range drafts {
+		if d.ID != want[i] {
+			t.Fatalf("draft %d is %d, want %d", i, d.ID, want[i])
+		}
 	}
 }
