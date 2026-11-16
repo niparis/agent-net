@@ -32,9 +32,26 @@ type Options struct {
 }
 
 // SkillRoot is one folder of skill folders. Base is the folder the path must
-// stay inside without a link.
+// stay inside without a link. Project names the checkout the folder belongs
+// to; it is empty for a user folder.
 type SkillRoot struct {
 	Harness, Base, Path string
+	Project             string
+}
+
+// projectSkillDirs are the folders, under a project checkout, that each harness
+// reads project skills from.
+var projectSkillDirs = [][2]string{{"antigravity", ".agent/skills"}, {"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/skills"}, {"pi", ".agents/skills"}}
+
+// ProjectSkillRoots lists the skill folders of one project checkout, one for
+// each harness that reads project skills from it.
+func ProjectSkillRoots(name, base string) []SkillRoot {
+	base = filepath.Clean(base)
+	out := make([]SkillRoot, 0, len(projectSkillDirs))
+	for _, x := range projectSkillDirs {
+		out = append(out, SkillRoot{Harness: x[0], Base: base, Path: filepath.Join(base, x[1]), Project: name})
+	}
+	return out
 }
 
 // Scan discovers supported native roots without executing their contents.
@@ -555,8 +572,12 @@ func Scan(o Options) protocol.InventoryReport {
 			skills("pi", scope, project, root, base, source)
 		}
 	}
-	if o.OnlyRoot != nil {
-		skills(o.OnlyRoot.Harness, protocol.InventoryUser, "", "", o.OnlyRoot.Base, o.OnlyRoot.Path)
+	if r := o.OnlyRoot; r != nil {
+		if r.Project != "" {
+			skills(r.Harness, protocol.InventoryProject, r.Project, r.Base, r.Base, r.Path)
+		} else {
+			skills(r.Harness, protocol.InventoryUser, "", "", r.Base, r.Path)
+		}
 		return report
 	}
 	home := filepath.Clean(o.Home)
@@ -657,7 +678,7 @@ func Scan(o Options) protocol.InventoryReport {
 	}
 	for _, p := range o.Projects {
 		base := filepath.Clean(p.Path)
-		for _, x := range [][2]string{{"antigravity", ".agent/skills"}, {"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/skills"}, {"pi", ".agents/skills"}} {
+		for _, x := range projectSkillDirs {
 			start := len(report.Items)
 			skills(x[0], protocol.InventoryProject, p.Name, base, base, filepath.Join(base, x[1]))
 			if x[1] == ".agent/skills" {

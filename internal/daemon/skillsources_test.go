@@ -47,7 +47,8 @@ func TestSkillSourcesListPluginAndCTOSkills(t *testing.T) {
 	ctoDir, _ := ctoSkillDir(d.cfg.StateDir, "claude")
 
 	got := map[string]protocol.SkillSource{}
-	for _, s := range d.skillSources() {
+	sourcesNow, _ := d.skillSources(nil)
+	for _, s := range sourcesNow {
 		got[s.Location] = s
 	}
 	for location, want := range map[string]struct{ name, origin string }{
@@ -87,7 +88,7 @@ func TestSkillSourcesListPluginAndCTOSkills(t *testing.T) {
 
 func TestSkillSourcesWithoutPluginsOrCTOSkillIsEmpty(t *testing.T) {
 	d, _ := promptTestDaemon(t)
-	if got := d.skillSources(); len(got) != 0 {
+	if got, _ := d.skillSources(nil); len(got) != 0 {
 		t.Fatalf("sources: %+v", got)
 	}
 }

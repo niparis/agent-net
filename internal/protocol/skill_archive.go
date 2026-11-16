@@ -68,6 +68,7 @@ type ArchivedSkill struct {
 	Source        string `json:"source"`
 	SourceKind    string `json:"source_kind"`
 	SourceNode    string `json:"source_node,omitempty"`
+	SourceProject string `json:"source_project,omitempty"`
 	SourcePath    string `json:"source_path,omitempty"`
 	SourceURL     string `json:"source_url,omitempty"`
 	SourceCommit  string `json:"source_commit,omitempty"`
@@ -102,27 +103,32 @@ type SkillArchiveMultiResult struct {
 }
 
 // SkillArchiveMachine is what the intake did on one enrolled machine. Result
-// is scanned, offline or skipped. A scanned machine counts the distinct skill
-// folders it holds: Found = Added + Existing + Skipped.
+// is scanned, offline or skipped. A scanned machine counts distinct skills (a
+// name and its content) and one row per skipped name:
+// Found = Added + Existing + Skipped.
 type SkillArchiveMachine struct {
-	NodeID   string `json:"node_id"`
-	Name     string `json:"name"`
-	Result   string `json:"result"`
-	Reason   string `json:"reason,omitempty"`
+	NodeID string `json:"node_id"`
+	Name   string `json:"name"`
+	Result string `json:"result"`
+	Reason string `json:"reason,omitempty"`
+	// Read says how many skill folders of each kind the machine answered with,
+	// so a missing project folder shows up in the report.
+	Read     string `json:"read,omitempty"`
 	Found    int    `json:"found"`
 	Added    int    `json:"added"`
 	Existing int    `json:"existing"`
 	Skipped  int    `json:"skipped"`
 }
 
-// SkillArchiveSkipped is one skill folder the intake saw and did not store,
-// with the reason. Name is empty when the folder had no readable name.
+// SkillArchiveSkipped is one skill that the intake saw and did not store, with
+// the reason. One row covers every folder that holds the same name on the
+// machine. Name is empty when the folder had no readable name.
 type SkillArchiveSkipped struct {
-	Name     string `json:"name,omitempty"`
-	NodeID   string `json:"node_id"`
-	Machine  string `json:"machine"`
-	Location string `json:"location"`
-	Reason   string `json:"reason"`
+	Name      string   `json:"name,omitempty"`
+	NodeID    string   `json:"node_id"`
+	Machine   string   `json:"machine"`
+	Locations []string `json:"locations"`
+	Reason    string   `json:"reason"`
 }
 
 // FrameNodeSkillSources is the read-only gateway request for the skill folders
@@ -131,24 +137,32 @@ type SkillArchiveSkipped struct {
 // node.skill_bundle for each location it listed.
 const FrameNodeSkillSources = "node.skill_sources"
 
-// SkillSourcesRequest carries no parameter.
-type SkillSourcesRequest struct{}
+// SkillSourcesRequest names the registered projects of the machine. The daemon
+// reads the skill folders of each one at the time of the request.
+type SkillSourcesRequest struct {
+	Projects []ProjectEntry `json:"projects,omitempty"`
+}
 
 // SkillSource is one skill folder found by that request. Origin is
-// "plugin <name>" or "agent-net". State and Reason follow the inventory items:
-// an unreadable folder is listed with its reason.
+// "plugin <name>", "agent-net" or "project <name>"; Project is set for project
+// folders. State and Reason follow the inventory items: an unreadable folder is
+// listed with its reason.
 type SkillSource struct {
 	Name     string `json:"name"`
 	Hash     string `json:"hash,omitempty"`
 	Location string `json:"location"`
 	Origin   string `json:"origin"`
+	Project  string `json:"project,omitempty"`
 	State    string `json:"state"`
 	Reason   string `json:"reason,omitempty"`
 }
 
-// SkillSourcesResult answers SkillSourcesRequest.
+// SkillSourcesResult answers SkillSourcesRequest. ProjectsRead names the
+// projects of the request whose folders the daemon read. A daemon that does
+// not read projects leaves it empty.
 type SkillSourcesResult struct {
-	Sources []SkillSource `json:"sources"`
+	Sources      []SkillSource `json:"sources"`
+	ProjectsRead []string      `json:"projects_read,omitempty"`
 }
 
 // SkillArchiveFile is one file of a stored version. Text is empty when the
