@@ -1792,7 +1792,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !validChangeActor(p.By) {
 			return nil, reject("owner authority required")
 		}
-		return g.store.SkillVersion(p.Name, p.Version)
+		return g.store.SkillVersion(p.Name, p.Version, p.Part)
 
 	case "tools.versions":
 		p, err := decodeOperator[protocol.ToolVersionRequest](raw)

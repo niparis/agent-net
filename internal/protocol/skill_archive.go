@@ -177,10 +177,13 @@ type SkillSource struct {
 
 // SkillSourcesResult answers SkillSourcesRequest. ProjectsRead names the
 // projects of the request whose folders the daemon read. A daemon that does
-// not read projects leaves it empty.
+// not read projects leaves it empty. UserRead says the answer lists the
+// user-level folders as they are on disk now (decision 0169). A daemon without
+// it gets its user folders from its last inventory scan.
 type SkillSourcesResult struct {
 	Sources      []SkillSource `json:"sources"`
 	ProjectsRead []string      `json:"projects_read,omitempty"`
+	UserRead     bool          `json:"user_read,omitempty"`
 }
 
 // SkillArchiveFile is one file of a stored version. Text is empty when the

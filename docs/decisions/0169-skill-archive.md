@@ -157,3 +157,61 @@ version is live. Without a live row, it is the highest live version.
   graphify version 3 no longer takes over the latest. A machine copy looks like
   an explicit machine add, so the migration keeps the old rule for machine
   copies. The CTO can promote a version if that is wrong.
+
+## Size: the archive limit and parts
+
+The archive takes a skill of up to 64 MiB packed and 10,000 entries. The
+scan already reads 64 MiB of file data and 10,000 files, so a skill the scan
+shows is one the archive can take. The packed size counts the tar headers too.
+
+The import limit stays at 2 MiB and 2,048 entries. It still applies to the
+copies into session folders on the Tools tab and to the `tools_import` path
+(decision 0048). A skill over 2 MiB stays too large there.
+
+A frame of the link is 4 MB at most. A bundle over 1 MiB travels in parts of
+1 MiB, each about 1.4 MB in its frame:
+
+- Archive add and intake. The machine's first answer holds part 0, a snapshot
+  ID, the part count, the size and the SHA-256 of the whole bundle. The gateway
+  asks for the other parts by snapshot ID and part number. The machine packs
+  the folder once and serves every part from those bytes, so a folder that
+  changes while it is read fails the hash check and is not stored. The machine
+  drops the snapshot after its last part, or after five minutes.
+- Delivery. `skills.version` takes a part number. The gateway reads one part
+  from the stored row with SQLite's `substr`, so one part does not load the
+  whole version. The daemon joins the parts and checks the hash before it
+  unpacks.
+
+Decision 0054's transfer does not fit this. That transfer is a sender pushing
+an upload to the gateway, to be fetched by a receiving machine. Here the
+gateway pulls from a machine and keeps the bytes in its own database.
+
+Older daemons still work. They ignore the archive flag, so they answer up to
+2 MiB and refuse a larger skill with the import limit text. A daemon older than
+this change gets only the first part of a version over 1 MiB. Its hash check
+fails, and the session starts without that folder, with one log line.
+
+Measured on the development machine, the gateway reads a stored version in
+parts in 13 ms for 6 MB (7 parts) and 0.9 s for 60 MB (61 parts). One whole
+read of the same 60 MB row takes 33 ms. Storing the 60 MB row takes 0.25 s. The
+daemon gives a session's folder build 10 seconds (`skillBuildTimeout`). A
+64 MB skill over a slow link can pass that limit, and then its session starts
+without the folder.
+
+## Live reads for add and intake
+
+An add and an intake read the folders on the machine as they are now, not as
+the inventory scan saw them, because a scan can be five minutes old.
+
+- `node.skill_sources` lists the user-level skill folders too, read live. Its
+  answer says so with `user_read`. Intake takes the user folders from that
+  answer. A daemon that does not set `user_read` gives its user folders from
+  the last inventory scan, as before.
+- An archive add or intake packs the folder as it is on disk now. The daemon
+  packs only a folder that the scan or the last skill sources answer listed. It
+  does not read through a link. It does not check the hash the gateway asked
+  for. The gateway stores the content under the hash of what it received.
+- An import (the Tools tab, decision 0048) keeps the hash check. A changed
+  folder is still refused there.
+- The archive stores the same skill in one row per content hash. A folder that
+  was edited gets a new version, as any new content does.

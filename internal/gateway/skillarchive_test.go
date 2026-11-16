@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -322,8 +325,9 @@ func archiveFakeNodeSources(t *testing.T, g *Gateway, n string, bundles map[stri
 // archiveFakeNodeAnswer is archiveFakeNodeSources with the whole answer to
 // node.skill_sources, so a test can say which projects the daemon read. A nil
 // answer is a daemon that does not know the frame.
-func archiveFakeNodeAnswer(t *testing.T, g *Gateway, n string, bundles map[string][]byte, answer *protocol.SkillSourcesResult) {
+func archiveFakeNodeAnswer(t *testing.T, g *Gateway, n string, bundles map[string][]byte, answer *protocol.SkillSourcesResult) *archiveFrames {
 	t.Helper()
+	frames := &archiveFrames{}
 	accepted := make(chan *websocket.Conn, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ws, e := websocket.Accept(w, r, nil)
@@ -344,6 +348,7 @@ func archiveFakeNodeAnswer(t *testing.T, g *Gateway, n string, bundles map[strin
 	g.conns[n] = nc
 	g.mu.Unlock()
 	done := make(chan struct{})
+	snapshots := map[string][]byte{}
 	go func() {
 		defer close(done)
 		for {
@@ -365,14 +370,11 @@ func archiveFakeNodeAnswer(t *testing.T, g *Gateway, n string, bundles map[strin
 			if h.Type == "node.skill_bundle" {
 				var q protocol.SkillBundleRequest
 				_ = json.Unmarshal(raw, &q)
-				if bundle, ok := bundles[q.Hash]; ok {
-					data = protocol.SkillBundle{Data: bundle}
-				} else {
-					answerErr = errors.New("no such bundle")
-				}
+				data, answerErr = fakeBundleAnswer(q, bundles, snapshots)
 			}
 			if h.ID != "" {
 				b, _ := protocol.EncodeResult(h.ID, data, answerErr)
+				frames.note(len(b))
 				var reply protocol.Header
 				_ = json.Unmarshal(b, &reply)
 				nc.answer(reply)
@@ -388,6 +390,76 @@ func archiveFakeNodeAnswer(t *testing.T, g *Gateway, n string, bundles map[strin
 		ws.CloseNow()
 		<-done
 	})
+	return frames
+}
+
+// archiveFrames records the size of every answer a fake node sent. A frame of
+// the link must stay under the 4 MB read limit.
+type archiveFrames struct {
+	mu  sync.Mutex
+	max int
+}
+
+func (f *archiveFrames) note(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.max = max(f.max, n)
+}
+
+func (f *archiveFrames) largest() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.max
+}
+
+// fakeBundleAnswer answers node.skill_bundle the way the daemon does
+// (decision 0169): a bundle that fits one part comes whole, and a larger
+// archive bundle comes as part 0 and a snapshot for the others. Past the archive
+// limit it refuses with the daemon's text.
+func fakeBundleAnswer(q protocol.SkillBundleRequest, bundles map[string][]byte, snapshots map[string][]byte) (any, error) {
+	if q.Snapshot != "" {
+		bundle, ok := snapshots[q.Snapshot]
+		start := q.Part * protocol.TransferPartSize
+		if !ok || q.Part < 0 || start >= len(bundle) {
+			return nil, errors.New("no such part")
+		}
+		return protocol.SkillBundle{Data: bundle[start:min(start+protocol.TransferPartSize, len(bundle))]}, nil
+	}
+	bundle, ok := bundles[q.Hash]
+	if !ok && q.Archive {
+		// The daemon packs the folder as it is on disk now, whatever hash the
+		// gateway asked for (decision 0169).
+		packed, err := inventory.PackSkillLimit(q.Location, inventory.ArchiveLimit)
+		if err != nil {
+			return nil, errors.New("cannot safely read skill bundle")
+		}
+		bundle, ok = packed, true
+	}
+	if !ok {
+		return nil, errors.New("no such bundle")
+	}
+	if !q.Archive {
+		if len(bundle) > inventory.MaxBundleBytes {
+			return nil, errors.New("the skill is larger than the 2 MB import limit")
+		}
+		return protocol.SkillBundle{Data: bundle}, nil
+	}
+	if int64(len(bundle)) > inventory.ArchiveLimit.Bytes {
+		return nil, errors.New("the skill is larger than the 64 MB archive limit")
+	}
+	if len(bundle) <= protocol.TransferPartSize {
+		return protocol.SkillBundle{Data: bundle}, nil
+	}
+	id := "snap-" + q.Hash
+	snapshots[id] = bundle
+	sum := sha256.Sum256(bundle)
+	return protocol.SkillBundle{
+		Data:     bundle[:protocol.TransferPartSize],
+		Snapshot: id,
+		Parts:    protocol.PartCount(int64(len(bundle))),
+		Size:     int64(len(bundle)),
+		SHA256:   hex.EncodeToString(sum[:]),
+	}, nil
 }
 
 // archiveGateway is a gateway with no machines and no projects.

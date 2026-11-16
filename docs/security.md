@@ -878,9 +878,20 @@ skill contents for secrets.
 - Only the owner and the CTO reach the archive operations: the daemon refuses
   any other caller, and the gateway records the actor (`owner` or `cto`) on
   every add and remove.
-- Adding from a machine reads the folder through `node.skill_bundle`, with the
-  same hash check and 2 MiB, 2,048 entry limits as an import. The machine must
-  have the folder in its current inventory.
+- Adding from a machine reads the folder through `node.skill_bundle` with the
+  archive limit: at most 64 MiB packed and 10,000 entries (decision 0169). The
+  machine packs the folder as it is on disk now. It packs only a folder that
+  the inventory scan or its last `node.skill_sources` answer listed, and it
+  never reads through a link. The gateway does not check the hash it was given:
+  it stores the content under the hash of what it received. A bundle over 1 MiB
+  comes in parts. The machine packs it once and keeps that copy until its last
+  part is sent, or for five minutes at most. The gateway joins the parts and
+  checks the size and SHA-256 of the whole before it unpacks anything.
+- A session's skill folder reads each archived version with `skills.version`.
+  A version over 1 MiB comes in parts, read by part number. The daemon checks
+  the joined bundle against the archived hash before a session sees it.
+- The Tools tab and the import path keep the 2 MiB, 2,048 entry limit of
+  decision 0048. A skill over 2 MiB is still refused there.
 - Adding from a Git URL has no approval step, as the owner asked. The clone
   keeps no history in the archive. Only `file`, `git`, `http`, `https` and
   `ssh` URLs are accepted: the `ext::` and other helper transports run
@@ -890,15 +901,16 @@ skill contents for secrets.
   for a single change; the CTO can undo any recorded change by its id.
 - The one-time intake reads the versions already in `skills.git` and stores
   each name and hash once. It does not delete or change `skills.git`.
-- The machine intake only reads. It stores the user skill folders in each
-  machine's inventory. It also stores the skill folders of each project the
-  gateway has registered on that machine, the Claude Code plugin skills and the
-  CTO's own skill, which the daemon lists on the `node.skill_sources` request.
-  The gateway sends only the registered projects of that machine, and the
-  daemon reads only those folders. The daemon serves
-  `node.skill_bundle` only for a folder it listed, with the hash it gave, and
-  the gateway checks the hash again. Nothing is written or deleted on a
-  machine. Plugin skills come from the install paths in
+- The machine intake only reads. It stores the user skill folders, the skill
+  folders of each project the gateway has registered on that machine, the
+  Claude Code plugin skills and the CTO's own skill. The daemon lists all of
+  them on the `node.skill_sources` request, reading the folders as they are on
+  disk now. The gateway sends only the registered projects of that machine, and
+  the daemon reads only those folders. A daemon that does not list the user
+  folders (`user_read` is not set) gives them from its last inventory scan.
+  For an import from the Tools tab, the daemon serves `node.skill_bundle` only
+  for a folder it listed, with the hash it gave, and the gateway checks the hash
+  again. Nothing is written or deleted on a machine. Plugin skills come from the install paths in
   `~/.claude/plugins/installed_plugins.json` (each must be inside the plugin
   store and free of links). Without that file, only `plugins/cache` is walked:
   no link, no `node_modules` or dot folder, 6 levels and 5,000 folders at most.

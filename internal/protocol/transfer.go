@@ -3,8 +3,14 @@ package protocol
 // TransferPartSize is the part size of the gateway's transfer in parts: 1 MB.
 // A part travels as one JSON frame, so its base64 body is about 1.4 MB, well
 // under the 4 MB WebSocket frame. The same transfer carries a file between
-// machines and a skill above the 2 MB frame limit (decision 0048).
+// machines and a skill above the 2 MB frame limit (decision 0048). The skill
+// archive reads a bundle in parts of this size too (decision 0169).
 const TransferPartSize = 1 << 20
+
+// PartCount is how many parts of TransferPartSize a size is cut into.
+func PartCount(size int64) int {
+	return int((size + TransferPartSize - 1) / TransferPartSize)
+}
 
 // TransferBegin starts an upload. The caller names the receiving machine, the
 // whole size and the whole SHA-256. The gateway answers with a TransferState

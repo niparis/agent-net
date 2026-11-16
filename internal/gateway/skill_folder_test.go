@@ -38,7 +38,7 @@ func TestSkillFolderResolvesSessionAgentWithBundles(t *testing.T) {
 		t.Fatalf("skills: %+v", folder.Skills)
 	}
 	for _, skill := range folder.Skills {
-		version, err := s.SkillVersion(skill.Name, skill.Version)
+		version, err := s.SkillVersion(skill.Name, skill.Version, 0)
 		if err != nil {
 			t.Fatalf("%s: bundle: %v", skill.Name, err)
 		}

@@ -163,7 +163,7 @@ func (d *Daemon) buildSkillFolder(ctx context.Context, dir string, skills []prot
 		if err := os.MkdirAll(target, 0o700); err != nil {
 			return err
 		}
-		if err := inventory.UnpackSkill(data, target); err != nil {
+		if err := inventory.UnpackSkillLimit(data, target, inventory.ArchiveLimit); err != nil {
 			return fmt.Errorf("skill %s: %w", skill.Name, err)
 		}
 		// The gateway sent the version whose bundle it stored. Check the bytes
@@ -188,23 +188,56 @@ func (d *Daemon) buildSkillFolder(ctx context.Context, dir string, skills []prot
 	return os.Rename(tmp, dir)
 }
 
-// skillVersionBundle reads the stored bundle of one version. The gateway
-// sends the hash it stored, and the caller checks the unpacked files against
-// it, so a damaged bundle never reaches a session.
+// skillVersionBundle reads the stored bundle of one version. A version over
+// one part comes part by part (decision 0169). The gateway sends the hash it
+// stored, and the caller checks the unpacked files against it, so a damaged
+// bundle never reaches a session.
 func (d *Daemon) skillVersionBundle(ctx context.Context, skill protocol.EffectiveSkill) ([]byte, error) {
-	raw, err := d.call(ctx, protocol.FrameSkillsVersion, protocol.SkillVersionRequest{Name: skill.Name, Version: skill.Version, By: "owner"})
+	first, err := d.skillVersionPart(ctx, skill, 0)
 	if err != nil {
-		return nil, fmt.Errorf("skill %s: %w", skill.Name, err)
+		return nil, err
+	}
+	if first.Parts == 0 {
+		return first.Data, nil
+	}
+	if first.Size <= 0 || first.Size > inventory.ArchiveLimit.Bytes {
+		return nil, fmt.Errorf("skill %s: the archive sent a bundle of %d bytes", skill.Name, first.Size)
+	}
+	bundle := make([]byte, 0, first.Size)
+	bundle = append(bundle, first.Data...)
+	for i := 1; i < first.Parts; i++ {
+		part, err := d.skillVersionPart(ctx, skill, i)
+		if err != nil {
+			return nil, err
+		}
+		if part.Parts != first.Parts || part.Size != first.Size {
+			return nil, fmt.Errorf("skill %s: part %d says %d parts of %d bytes, part 0 says %d of %d",
+				skill.Name, i, part.Parts, part.Size, first.Parts, first.Size)
+		}
+		bundle = append(bundle, part.Data...)
+	}
+	if int64(len(bundle)) != first.Size {
+		return nil, fmt.Errorf("skill %s: got %d bytes, the archive says %d", skill.Name, len(bundle), first.Size)
+	}
+	return bundle, nil
+}
+
+// skillVersionPart reads one part of a stored version, or the whole version
+// when it is one part. It checks the version and hash the caller asked for.
+func (d *Daemon) skillVersionPart(ctx context.Context, skill protocol.EffectiveSkill, part int) (protocol.SkillVersion, error) {
+	raw, err := d.call(ctx, protocol.FrameSkillsVersion, protocol.SkillVersionRequest{Name: skill.Name, Version: skill.Version, By: "owner", Part: part})
+	if err != nil {
+		return protocol.SkillVersion{}, fmt.Errorf("skill %s: %w", skill.Name, err)
 	}
 	var version protocol.SkillVersion
 	if err := json.Unmarshal(raw, &version); err != nil {
-		return nil, fmt.Errorf("skill %s: %w", skill.Name, err)
+		return protocol.SkillVersion{}, fmt.Errorf("skill %s: %w", skill.Name, err)
 	}
 	if version.Version != skill.Version || version.Hash != skill.Hash {
-		return nil, fmt.Errorf("skill %s: the archive returned version %d at hash %s, wanted %d at %s",
+		return protocol.SkillVersion{}, fmt.Errorf("skill %s: the archive returned version %d at hash %s, wanted %d at %s",
 			skill.Name, version.Version, version.Hash, skill.Version, skill.Hash)
 	}
-	return version.Data, nil
+	return version, nil
 }
 
 // safeSkillDirName keeps every skill inside the set folder. The archive names

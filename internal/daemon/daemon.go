@@ -386,6 +386,8 @@ type Daemon struct {
 	toolsMu          sync.Mutex
 	toolsReport      protocol.InventoryReport
 	sourceSkills     map[string]bool // folders the last node.skill_sources listed; toolsMu guards it
+	skillSnapshots   skillSnapshots  // archive bundles the gateway reads in parts (decision 0169)
+	sourceLocations  map[string]bool // folders the last node.skill_sources listed, any hash; toolsMu guards it
 	toolsWake        chan struct{}
 	toolsFullNext    atomic.Bool // the next reconcile checks every target, see tools_pass.go
 	toolsScanNext    atomic.Bool // the next tools wake scans the disk, see wakeTools

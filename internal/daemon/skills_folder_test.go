@@ -64,7 +64,15 @@ func (g *skillFolderGateway) call(_ context.Context, typ string, params any) (js
 		return raw, true, err
 	}
 	req, _ := params.(protocol.SkillVersionRequest)
-	version := protocol.SkillVersion{Name: req.Name, Version: req.Version, Data: g.bundles[skillVersionKey(req.Name, req.Version)]}
+	bundle := g.bundles[skillVersionKey(req.Name, req.Version)]
+	version := protocol.SkillVersion{Name: req.Name, Version: req.Version, Data: bundle}
+	if len(bundle) > protocol.TransferPartSize {
+		// The gateway serves a version over one part in parts.
+		start := req.Part * protocol.TransferPartSize
+		version.Data = bundle[start:min(start+protocol.TransferPartSize, len(bundle))]
+		version.Parts = protocol.PartCount(int64(len(bundle)))
+		version.Size = int64(len(bundle))
+	}
 	for _, skill := range g.folder.Skills {
 		if skill.Name == req.Name && skill.Version == req.Version {
 			version.Hash = skill.Hash
@@ -202,5 +210,52 @@ func TestSkillFolderRefusesUnsafeName(t *testing.T) {
 	d, _ := skillFolderDaemon(t, g)
 	if f, ok := d.skillsForStart(context.Background(), skillNode{}); ok || f.Dir != "" {
 		t.Fatalf("an unsafe name was accepted: %+v", f)
+	}
+}
+
+// A skill over one part is read part by part and built into a folder whose
+// hash is the archived hash (decision 0169). Each part is one gateway read.
+func TestSkillFolderBuildsLargeVersionInParts(t *testing.T) {
+	skillDir := filepath.Join(t.TempDir(), "large")
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\ndescription: Large.\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Two 3 MB files: over the import limit, under the archive limit.
+	for _, name := range []string{"a.bin", "b.bin"} {
+		if err := os.WriteFile(filepath.Join(skillDir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Truncate(filepath.Join(skillDir, name), 3<<20); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hash, err := inventory.SkillHash(skillDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := inventory.PackSkillLimit(skillDir, inventory.ArchiveLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &skillFolderGateway{
+		folder:  protocol.SkillFolder{Skills: []protocol.EffectiveSkill{{Name: "large", Version: 1, Hash: hash}}},
+		bundles: map[string][]byte{skillVersionKey("large", 1): bundle},
+	}
+	d, logs := skillFolderDaemon(t, g)
+	folder, err := d.skillFolderFor(t.Context(), skillNode{Agent: "agent"})
+	if err != nil {
+		t.Fatalf("build: %v (log %q)", err, logs.String())
+	}
+	if len(folder.Skills) != 1 {
+		t.Fatalf("folder has %d skills, want 1", len(folder.Skills))
+	}
+	if got, err := inventory.SkillHash(folder.Skills[0]); err != nil || got != hash {
+		t.Fatalf("folder skill hash %q (%v), want %q", got, err, hash)
+	}
+	if want := 1 + protocol.PartCount(int64(len(bundle))); g.calls != want {
+		t.Fatalf("gateway reads %d, want one set read and one per part (%d)", g.calls, want)
 	}
 }
