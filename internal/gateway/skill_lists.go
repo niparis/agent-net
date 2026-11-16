@@ -62,7 +62,20 @@ func (s *Store) skillArchiveIndex() (*skillArchiveIndex, error) {
 			idx.latest[name] = m.Version
 		}
 	}
-	return idx, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	// The latest row wins while its version is live (decision 0169).
+	pointers, err := archivePointers(s.db)
+	if err != nil {
+		return nil, err
+	}
+	for name, v := range pointers {
+		if _, live := idx.meta[name][v]; live {
+			idx.latest[name] = v
+		}
+	}
+	return idx, nil
 }
 
 // version resolves a pin, or the latest live version. ok is false when the

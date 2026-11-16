@@ -4,13 +4,14 @@ package protocol
 // the daemon checks that the caller is the owner or the CTO, the gateway
 // records the actor.
 const (
-	FrameSkillArchiveAdd    = "skills.archive_add"
-	FrameSkillArchiveAddGit = "skills.archive_add_git"
-	FrameSkillArchiveRemove = "skills.archive_remove"
-	FrameSkillArchiveList   = "skills.archive_list"
-	FrameSkillArchiveRead   = "skills.archive_read"
-	FrameSkillArchiveUndo   = "skills.archive_undo"
-	FrameSkillArchiveIntake = "skills.archive_intake"
+	FrameSkillArchiveAdd     = "skills.archive_add"
+	FrameSkillArchiveAddGit  = "skills.archive_add_git"
+	FrameSkillArchiveRemove  = "skills.archive_remove"
+	FrameSkillArchiveList    = "skills.archive_list"
+	FrameSkillArchiveRead    = "skills.archive_read"
+	FrameSkillArchiveUndo    = "skills.archive_undo"
+	FrameSkillArchiveIntake  = "skills.archive_intake"
+	FrameSkillArchivePromote = "skills.archive_promote"
 )
 
 // SkillArchiveAdd asks for one skill folder on an online machine.
@@ -39,6 +40,14 @@ type SkillArchiveVersion struct {
 	By      string `json:"by,omitempty"`
 }
 
+// SkillArchivePromote makes one live version the latest of its name. The
+// latest is what a node following latest gets (decision 0169).
+type SkillArchivePromote struct {
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+	By      string `json:"by"`
+}
+
 // SkillArchiveUndo takes back the add or remove with the given change id.
 type SkillArchiveUndo struct {
 	Change string `json:"change"`
@@ -55,11 +64,15 @@ type SkillArchiveList struct {
 	By string `json:"by"`
 }
 
-// ArchivedSkill is the list row: the latest live version of one name.
+// ArchivedSkill is the list row: the latest live version of one name. The
+// other live versions are its candidates, which a node following latest does
+// not get until one is promoted.
 type ArchivedSkill struct {
 	Name          string `json:"name"`
 	Version       int    `json:"version"`
 	Versions      int    `json:"versions"`
+	Candidates    []int  `json:"candidates,omitempty"`
+	NoDescription bool   `json:"no_description,omitempty"`
 	Hash          string `json:"hash"`
 	Description   string `json:"description"`
 	Tokens        int    `json:"tokens"`
@@ -85,7 +98,12 @@ type SkillArchiveAddResult struct {
 	Tokens      int    `json:"tokens"`
 	// Source is the one line that says where the stored version came from.
 	Source string `json:"source"`
-	// State is added, restored, unchanged or removed.
+	// Latest is the version a node following latest gets after this change.
+	// A candidate that intake stored has Version above Latest.
+	Latest int `json:"latest,omitempty"`
+	// NoDescription is set when the skill has no description in its front matter.
+	NoDescription bool `json:"no_description,omitempty"`
+	// State is added, restored, unchanged, removed, promoted or reset.
 	State  string `json:"state"`
 	Change string `json:"change,omitempty"`
 }

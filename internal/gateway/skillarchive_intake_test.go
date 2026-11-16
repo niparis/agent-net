@@ -95,7 +95,7 @@ func TestSkillArchiveIntakeReportsEveryMachine(t *testing.T) {
 	folderOK, hashOK := archiveSkillFolder(t, filepath.Join(dir, "ok"), "---\ndescription: Fine.\n---\nbody\n")
 	folderOld, hashOld := archiveSkillFolder(t, filepath.Join(dir, "old"), "---\ndescription: Known.\n---\nold\n")
 	folderGone, hashGone := archiveSkillFolder(t, filepath.Join(dir, "gone"), "---\ndescription: Gone.\n---\ngone\n")
-	if _, err := g.skillArchivePut(skillContentOf(t, "known", folderOld, hashOld), skillArchiveSource{Kind: "machine", Node: "x", Path: "/x"}, "owner"); err != nil {
+	if _, err := g.skillArchivePut(skillContentOf(t, "known", folderOld, hashOld), skillArchiveSource{Kind: "machine", Node: "x", Path: "/x"}, "owner", false); err != nil {
 		t.Fatal(err)
 	}
 	node := func(host string, items []protocol.InventoryItem) string {

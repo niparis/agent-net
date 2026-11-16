@@ -278,7 +278,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 	}
 	switch name {
 	case "skill_archive_list", "skill_archive_read", "skill_archive_add", "skill_archive_add_git",
-		"skill_archive_remove", "skill_archive_undo", "skill_archive_intake":
+		"skill_archive_remove", "skill_archive_undo", "skill_archive_intake", "skill_archive_promote":
 		return d.ctoSkillArchive(ctx, name, raw)
 	case "skills_suggest", "skills_set", "skills_effective", "skills_undo":
 		return d.ctoSkills(ctx, name, raw)

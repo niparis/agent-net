@@ -84,6 +84,7 @@ var ctoChangeActions = map[string]map[string]string{
 	"skill_archive": {
 		"list": "skill_archive_list", "read": "skill_archive_read", "add": "skill_archive_add",
 		"add_git": "skill_archive_add_git", "remove": "skill_archive_remove", "undo": "skill_archive_undo", "intake": "skill_archive_intake",
+		"promote": "skill_archive_promote",
 	},
 	"skills": {"suggest": "skills_suggest", "set": "skills_set", "effective": "skills_effective", "undo": "skills_undo"},
 }
@@ -116,7 +117,7 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 	"mcp_change":      {"add": ctoMinor, "remove": ctoMinor, "test": ctoMinor, "enable": ctoMinor, "app_ask": ctoMinor, "apps_list": ctoRead, "app_grant": ctoMinor, "app_ungrant": ctoMinor, "app_rename": ctoMinor, "app_revoke": ctoMinor, "public_status": ctoRead, "public_on": ctoMinor, "public_off": ctoMinor},
 	"settings_change": {"operator": ctoMinor, "values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ownerGate("machine_remove"), "machine_rotate": ownerGate("machine_rotate"), "invite": ctoMinor, "onboarding": ctoMinor, "process_stop": ctoMinor},
 	"project_change":  {"add": ctoMinor, "remove": ctoMinor, "display": ctoMinor, "create": ctoMinor},
-	"skill_archive":   {"list": ctoRead, "read": ctoRead, "add": ctoMinor, "add_git": ctoMinor, "remove": ctoMinor, "undo": ctoMinor, "intake": ctoMinor},
+	"skill_archive":   {"list": ctoRead, "read": ctoRead, "add": ctoMinor, "add_git": ctoMinor, "remove": ctoMinor, "undo": ctoMinor, "intake": ctoMinor, "promote": ctoMinor},
 	"skills":          {"suggest": ctoRead, "set": ctoMinor, "effective": ctoRead, "undo": ctoMinor},
 }
 
@@ -130,7 +131,7 @@ var ctoActions = map[string]map[string][]string{
 	"mcp_change":      {"action": {"add", "remove", "test", "enable", "app_ask", "apps_list", "app_grant", "app_ungrant", "app_rename", "app_revoke", "public_status", "public_on", "public_off"}},
 	"settings_change": {"area": {"operator", "values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"}},
 	"project_change":  {"action": {"add", "remove", "display", "create"}},
-	"skill_archive":   {"action": {"list", "read", "add", "add_git", "remove", "undo", "intake"}},
+	"skill_archive":   {"action": {"list", "read", "add", "add_git", "remove", "undo", "intake", "promote"}},
 	"skills":          {"action": {"suggest", "set", "effective", "undo"}},
 }
 
