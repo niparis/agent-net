@@ -426,6 +426,15 @@ func fakeBundleAnswer(q protocol.SkillBundleRequest, bundles map[string][]byte, 
 		return protocol.SkillBundle{Data: bundle[start:min(start+protocol.TransferPartSize, len(bundle))]}, nil
 	}
 	bundle, ok := bundles[q.Hash]
+	if !ok && q.Archive {
+		// The daemon packs the folder as it is on disk now, whatever hash the
+		// gateway asked for (decision 0169).
+		packed, err := inventory.PackSkillLimit(q.Location, inventory.ArchiveLimit)
+		if err != nil {
+			return nil, errors.New("cannot safely read skill bundle")
+		}
+		bundle, ok = packed, true
+	}
 	if !ok {
 		return nil, errors.New("no such bundle")
 	}

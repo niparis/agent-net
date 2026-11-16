@@ -43,7 +43,7 @@ func observedSkill(t *testing.T, sizes ...int64) (*Daemon, protocol.SkillBundleR
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := &Daemon{sourceSkills: map[string]bool{sourceKey("large", hash, folder): true}}
+	d := &Daemon{sourceSkills: map[string]bool{sourceKey("large", hash, folder): true}, sourceLocations: map[string]bool{folder: true}}
 	return d, protocol.SkillBundleRequest{Name: "large", Hash: hash, Location: folder}
 }
 
@@ -113,7 +113,7 @@ func TestSkillBundleLimitsNameTheirLimit(t *testing.T) {
 	// Past 64 MB the pack refuses before it reads a byte, so the hash is not
 	// needed: a placeholder keeps the test from hashing 64 MB.
 	folder := observedFolder(t, inventory.MaxArchiveBytes+1)
-	d = &Daemon{sourceSkills: map[string]bool{sourceKey("large", "placeholder", folder): true}}
+	d = &Daemon{sourceSkills: map[string]bool{sourceKey("large", "placeholder", folder): true}, sourceLocations: map[string]bool{folder: true}}
 	req = protocol.SkillBundleRequest{Name: "large", Hash: "placeholder", Location: folder, Archive: true}
 	if _, err := d.skillBundleAnswer(req); err == nil || !strings.Contains(err.Error(), "64 MB archive limit") {
 		t.Fatalf("archive limit answer: %v", err)

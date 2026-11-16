@@ -614,9 +614,10 @@ func (g *Gateway) fetchSkillBundle(ctx context.Context, item, nodeID, location s
 	return g.requestSkillBundle(ctx, nodeID, name, hash, location, archive)
 }
 
-// requestSkillBundle asks one machine for the folder it listed and checks the
-// content hash before anything is stored. An archive request gets the archive
-// limit, and a bundle over one part comes in parts (decision 0169).
+// requestSkillBundle asks one machine for the folder it listed. An import checks
+// the bytes against the hash it asked for. An archive request gets the archive
+// limit, a bundle over one part comes in parts, and the folder is stored under
+// the hash of the content the machine packed now (decision 0169).
 func (g *Gateway) requestSkillBundle(ctx context.Context, nodeID, name, hash, location string, archive bool) (string, string, []byte, error) {
 	host := g.conn(nodeID)
 	if host == nil {
@@ -647,14 +648,17 @@ func (g *Gateway) requestSkillBundle(ctx context.Context, nodeID, name, hash, lo
 		return "", "", nil, reject("invalid or oversized skill bundle")
 	}
 	got, err := inventory.SkillHash(dir)
-	if err != nil || got != hash {
+	if err != nil {
+		return "", "", nil, reject("cannot verify skill bundle")
+	}
+	if !archive && got != hash {
 		return "", "", nil, reject("skill changed since its inventory scan")
 	}
 	canonical, err := inventory.PackSkillLimit(dir, lim)
 	if err != nil {
 		return "", "", nil, reject("cannot verify skill bundle")
 	}
-	return name, hash, canonical, nil
+	return name, got, canonical, nil
 }
 
 // readBundleParts joins a bundle that the machine sent in parts (decision

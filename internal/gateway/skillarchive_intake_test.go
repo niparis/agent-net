@@ -95,6 +95,10 @@ func TestSkillArchiveIntakeReportsEveryMachine(t *testing.T) {
 	folderOK, hashOK := archiveSkillFolder(t, filepath.Join(dir, "ok"), "---\ndescription: Fine.\n---\nbody\n")
 	folderOld, hashOld := archiveSkillFolder(t, filepath.Join(dir, "old"), "---\ndescription: Known.\n---\nold\n")
 	folderGone, hashGone := archiveSkillFolder(t, filepath.Join(dir, "gone"), "---\ndescription: Gone.\n---\ngone\n")
+	// The scan still lists this folder, but the machine no longer has it.
+	if err := os.RemoveAll(folderGone); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := g.skillArchivePut(skillContentOf(t, "known", folderOld, hashOld), skillArchiveSource{Kind: "machine", Node: "x", Path: "/x"}, "owner", false); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +148,7 @@ func TestSkillArchiveIntakeReportsEveryMachine(t *testing.T) {
 		}
 		reasons[s.Name] = s.Reason
 	}
-	if !strings.Contains(reasons["linked"], "symlink") || !strings.Contains(reasons["vanished"], "no such bundle") {
+	if !strings.Contains(reasons["linked"], "symlink") || !strings.Contains(reasons["vanished"], "cannot safely read") {
 		t.Fatalf("skip reasons: %+v", got.Skipped)
 	}
 }

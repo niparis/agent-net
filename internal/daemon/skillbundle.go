@@ -80,6 +80,20 @@ func (s *skillSnapshots) sweep(now time.Time) {
 	}
 }
 
+// listedSkillFolderLocked says the scan or the last skill sources answer listed
+// a skill folder at this location, with any hash. toolsMu must be held.
+func (d *Daemon) listedSkillFolderLocked(location string) bool {
+	if d.sourceLocations[location] {
+		return true
+	}
+	for _, v := range d.toolsReport.Items {
+		if v.Kind == protocol.InventorySkill && v.Location == location && v.State == protocol.InventoryOK {
+			return true
+		}
+	}
+	return false
+}
+
 // skillBundleFor packs one current observation of a skill, a prompt or an
 // agent. A skill is packed as its folder; a prompt or an agent as a bundle of
 // its one Markdown file. An archive request gets the archive limit
@@ -87,14 +101,22 @@ func (s *skillSnapshots) sweep(now time.Time) {
 func (d *Daemon) skillBundleFor(p protocol.SkillBundleRequest) ([]byte, error) {
 	kind := ""
 	d.toolsMu.Lock()
-	for _, v := range d.toolsReport.Items {
-		if protocol.IsBundleKind(v.Kind) && v.Name == p.Name && v.Hash == p.Hash && v.Location == p.Location && v.State == protocol.InventoryOK {
-			kind = v.Kind
-			break
+	if p.Archive {
+		// The archive packs the folder as it is on disk now, so the hash is not
+		// checked. Only a folder that a scan or a skill sources answer listed.
+		if d.listedSkillFolderLocked(p.Location) {
+			kind = protocol.InventorySkill
 		}
-	}
-	if kind == "" && d.sourceSkills[sourceKey(p.Name, p.Hash, p.Location)] {
-		kind = protocol.InventorySkill
+	} else {
+		for _, v := range d.toolsReport.Items {
+			if protocol.IsBundleKind(v.Kind) && v.Name == p.Name && v.Hash == p.Hash && v.Location == p.Location && v.State == protocol.InventoryOK {
+				kind = v.Kind
+				break
+			}
+		}
+		if kind == "" && d.sourceSkills[sourceKey(p.Name, p.Hash, p.Location)] {
+			kind = protocol.InventorySkill
+		}
 	}
 	d.toolsMu.Unlock()
 	if kind == "" {

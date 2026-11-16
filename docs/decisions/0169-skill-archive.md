@@ -197,3 +197,21 @@ read of the same 60 MB row takes 33 ms. Storing the 60 MB row takes 0.25 s. The
 daemon gives a session's folder build 10 seconds (`skillBuildTimeout`). A
 64 MB skill over a slow link can pass that limit, and then its session starts
 without the folder.
+
+## Live reads for add and intake
+
+An add and an intake read the folders on the machine as they are now, not as
+the inventory scan saw them, because a scan can be five minutes old.
+
+- `node.skill_sources` lists the user-level skill folders too, read live. Its
+  answer says so with `user_read`. Intake takes the user folders from that
+  answer. A daemon that does not set `user_read` gives its user folders from
+  the last inventory scan, as before.
+- An archive add or intake packs the folder as it is on disk now. The daemon
+  packs only a folder that the scan or the last skill sources answer listed. It
+  does not read through a link. It does not check the hash the gateway asked
+  for. The gateway stores the content under the hash of what it received.
+- An import (the Tools tab, decision 0048) keeps the hash check. A changed
+  folder is still refused there.
+- The archive stores the same skill in one row per content hash. A folder that
+  was edited gets a new version, as any new content does.

@@ -54,6 +54,37 @@ func ProjectSkillRoots(name, base string) []SkillRoot {
 	return out
 }
 
+// codexHome is the Codex home the scan reads: the one given, else ~/.codex.
+func codexHome(home, codex string) string {
+	if codex == "" {
+		return filepath.Join(home, ".codex")
+	}
+	return codex
+}
+
+// UserSkillRoots lists the user-level skill folders the scan reads, in the
+// order it reads them. Codex's folder sits under the Codex home; the others sit
+// under the home folder.
+func UserSkillRoots(home, codex string) []SkillRoot {
+	home = filepath.Clean(home)
+	out := make([]SkillRoot, 0, 9)
+	for _, x := range [][2]string{{"antigravity", ".gemini/config/skills"}, {"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".config/opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/agent/skills"}, {"pi", ".agents/skills"}} {
+		out = append(out, SkillRoot{Harness: x[0], Base: home, Path: filepath.Join(home, x[1])})
+	}
+	return append(out, SkillRoot{Harness: "codex", Base: codexHome(home, codex), Path: filepath.Join(codexHome(home, codex), "skills")})
+}
+
+// SystemSkillRoots lists the folders Codex and the agents keep for their own
+// skills. The scan reads them like user folders and marks them as system.
+func SystemSkillRoots(home, codex string) []SkillRoot {
+	home = filepath.Clean(home)
+	c := codexHome(home, codex)
+	return []SkillRoot{
+		{Harness: "codex", Base: c, Path: filepath.Join(c, "skills/.system")},
+		{Harness: "codex", Base: home, Path: filepath.Join(home, ".agents/skills/.system")},
+	}
+}
+
 // Scan discovers supported native roots without executing their contents.
 func Scan(o Options) protocol.InventoryReport {
 	now := time.Now().UTC()
@@ -581,22 +612,18 @@ func Scan(o Options) protocol.InventoryReport {
 		return report
 	}
 	home := filepath.Clean(o.Home)
-	codex := o.CodexHome
-	if codex == "" {
-		codex = filepath.Join(home, ".codex")
+	codex := codexHome(home, o.CodexHome)
+	for _, root := range UserSkillRoots(home, codex) {
+		skills(root.Harness, protocol.InventoryUser, "", "", root.Base, root.Path)
 	}
-	for _, x := range [][2]string{{"antigravity", ".gemini/config/skills"}, {"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".config/opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/agent/skills"}, {"pi", ".agents/skills"}} {
-		skills(x[0], protocol.InventoryUser, "", "", home, filepath.Join(home, x[1]))
-	}
-	skills("codex", protocol.InventoryUser, "", "", codex, filepath.Join(codex, "skills"))
 	for _, kind := range []string{protocol.InventoryPrompt, protocol.InventoryAgent} {
 		for _, rel := range protocol.FileKindRoots(kind) {
 			fileItems(kind, protocol.InventoryUser, "", "", home, filepath.Join(home, rel))
 		}
 	}
-	for _, source := range []struct{ base, path string }{{codex, filepath.Join(codex, "skills/.system")}, {home, filepath.Join(home, ".agents/skills/.system")}} {
+	for _, root := range SystemSkillRoots(home, codex) {
 		start := len(report.Items)
-		skills("codex", protocol.InventoryUser, "", "", source.base, source.path)
+		skills(root.Harness, protocol.InventoryUser, "", "", root.Base, root.Path)
 		for i := start; i < len(report.Items); i++ {
 			report.Items[i].Source = protocol.InventorySystem
 			report.Items[i].Unsupported = append(report.Items[i].Unsupported, "system managed")

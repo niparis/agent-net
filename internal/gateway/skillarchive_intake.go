@@ -15,9 +15,10 @@ import (
 )
 
 // intakeFolder is one skill folder a machine reported. The user folders come
-// from the inventory scan. Project, plugin and agent-net folders come from the
-// node.skill_sources answer. Kind is the source kind the stored version gets,
-// and project names the checkout of a project folder.
+// from the node.skill_sources answer, read on the machine as it is now (decision
+// 0169). A machine whose daemon does not read them live gives them from its last
+// inventory scan. Kind is the source kind the stored version gets, and project
+// names the checkout of a project folder.
 type intakeFolder struct {
 	name, hash, location, kind, project, state, reason string
 }
@@ -70,20 +71,26 @@ func (g *Gateway) skillArchiveIntakeMachine(ctx context.Context, id, host, by st
 		m.Result = "offline"
 		return nil
 	}
-	userFolders, known, err := g.inventoryFolders(id)
-	if err != nil {
-		return err
-	}
-	if !known {
-		m.Result, m.Reason = "skipped", "no inventory report yet"
-		return nil
-	}
-	m.Result = "scanned"
 	registered, err := g.registeredProjectEntries(id)
 	if err != nil {
 		return err
 	}
-	sources, read, note := g.sourceFolders(ctx, id, registered)
+	sources, read, userRead, note := g.sourceFolders(ctx, id, registered)
+	var userFolders []intakeFolder
+	if !userRead {
+		// The daemon does not list the user folders: its last inventory scan is
+		// the list, as it was before the live listing.
+		stored, known, err := g.inventoryFolders(id)
+		if err != nil {
+			return err
+		}
+		if !known {
+			m.Result, m.Reason = "skipped", "no inventory report yet"
+			return nil
+		}
+		userFolders = stored
+	}
+	m.Result = "scanned"
 	if note != "" {
 		m.Reason = note
 	}
@@ -261,14 +268,15 @@ func (g *Gateway) registeredProjectEntries(id string) ([]protocol.ProjectEntry, 
 	return out, rows.Err()
 }
 
-// sourceFolders asks one machine for the folders of its registered projects,
-// its plugin skills and the CTO's own skill. read names the projects whose
-// folders the machine read. A daemon that cannot answer is not an error for
-// the intake: note tells the CTO what was not read.
-func (g *Gateway) sourceFolders(ctx context.Context, id string, projects []protocol.ProjectEntry) (folders []intakeFolder, read []string, note string) {
+// sourceFolders asks one machine for its user folders as they are now, the
+// folders of its registered projects, its plugin skills and the CTO's own skill.
+// read names the projects whose folders the machine read; userRead says the
+// user folders came from that answer. A daemon that cannot answer is not an
+// error for the intake: note tells the CTO what was not read.
+func (g *Gateway) sourceFolders(ctx context.Context, id string, projects []protocol.ProjectEntry) (folders []intakeFolder, read []string, userRead bool, note string) {
 	host := g.conn(id)
 	if host == nil {
-		return nil, nil, "plugin and agent-net skills not read: machine went offline"
+		return nil, nil, false, "plugin and agent-net skills not read: machine went offline"
 	}
 	raw, err := host.request(ctx, protocol.FrameNodeSkillSources, protocol.SkillSourcesRequest{Projects: projects}, 60*time.Second)
 	var result protocol.SkillSourcesResult
@@ -276,11 +284,13 @@ func (g *Gateway) sourceFolders(ctx context.Context, id string, projects []proto
 		err = json.Unmarshal(raw, &result)
 	}
 	if err != nil {
-		return nil, nil, "plugin and agent-net skills not read: " + err.Error()
+		return nil, nil, false, "plugin and agent-net skills not read: " + err.Error()
 	}
 	for _, src := range result.Sources {
 		f := intakeFolder{name: src.Name, hash: src.Hash, location: src.Location, state: src.State, reason: src.Reason, kind: "plugin", project: src.Project}
 		switch {
+		case src.Origin == "user":
+			f.kind = "machine"
 		case src.Project != "":
 			f.kind = "project"
 		case src.Origin == "agent-net":
@@ -288,7 +298,7 @@ func (g *Gateway) sourceFolders(ctx context.Context, id string, projects []proto
 		}
 		folders = append(folders, f)
 	}
-	return folders, result.ProjectsRead, ""
+	return folders, result.ProjectsRead, result.UserRead, ""
 }
 
 // intakeReadLine says how many folders of each kind one machine answered

@@ -15,12 +15,12 @@ import (
 // folders the last node.skill_sources answer listed, with the hash it gave.
 func sourceKey(name, hash, location string) string { return name + "\x00" + hash + "\x00" + location }
 
-// skillSources lists the skill folders the inventory scan does not: Claude Code
-// plugin skills (read only, they stay owned by the plugin), the CTO's own skill
-// that this daemon wrote, and the skill folders of each project the gateway
-// names. read lists the projects whose folders were read. Nothing is written or
-// changed. The scans run without a lock; only the served-folder set is swapped
-// under it.
+// skillSources lists the skill folders as they are on disk now: the user-level
+// folders and their system folders, Claude Code plugin skills (read only, they
+// stay owned by the plugin), the CTO's own skill that this daemon wrote, and the
+// skill folders of each project the gateway names. read lists the projects whose
+// folders were read. Nothing is written or changed. The scans run without a
+// lock; only the served-folder sets are swapped under it.
 func (d *Daemon) skillSources(projects []protocol.ProjectEntry) ([]protocol.SkillSource, []string) {
 	home := d.cfg.InventoryHome
 	var out []protocol.SkillSource
@@ -31,6 +31,15 @@ func (d *Daemon) skillSources(projects []protocol.ProjectEntry) ([]protocol.Skil
 				continue
 			}
 			out = append(out, protocol.SkillSource{Name: it.Name, Hash: it.Hash, Location: it.Location, Origin: origin, Project: root.Project, State: it.State, Reason: it.Reason})
+		}
+	}
+	userRoots := append(inventory.UserSkillRoots(home, d.cfg.CodexHome), inventory.SystemSkillRoots(home, d.cfg.CodexHome)...)
+	scanned := map[string]bool{}
+	for _, root := range userRoots {
+		// The harnesses share folders, so one folder is read once.
+		if !scanned[root.Path] {
+			scanned[root.Path] = true
+			add(root, "user")
 		}
 	}
 	for _, root := range inventory.PluginSkillRoots(home) {
@@ -50,13 +59,18 @@ func (d *Daemon) skillSources(projects []protocol.ProjectEntry) ([]protocol.Skil
 		read = append(read, p.Name)
 	}
 	served := map[string]bool{}
+	locations := map[string]bool{}
 	for _, s := range out {
 		if s.State == protocol.InventoryOK && s.Hash != "" {
 			served[sourceKey(s.Name, s.Hash, s.Location)] = true
 		}
+		if s.State == protocol.InventoryOK {
+			locations[s.Location] = true
+		}
 	}
 	d.toolsMu.Lock()
 	d.sourceSkills = served
+	d.sourceLocations = locations
 	d.toolsMu.Unlock()
 	return out, read
 }
@@ -70,7 +84,7 @@ func (d *Daemon) onSkillSources(ctx context.Context, l *link, h protocol.Header,
 		if sources == nil {
 			sources = []protocol.SkillSource{}
 		}
-		data = protocol.SkillSourcesResult{Sources: sources, ProjectsRead: read}
+		data = protocol.SkillSourcesResult{Sources: sources, ProjectsRead: read, UserRead: true}
 	} else {
 		err = errors.New("cannot read skill sources")
 	}
