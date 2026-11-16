@@ -18,7 +18,8 @@ func TestGuidanceCoversDelegation(t *testing.T) {
 			"agent_handback", "[agent-net worker brief]", "agent_worker_stop", "defect_found_later", "Report a defect found later", "severity from 1 to 4",
 			"Plan before you start workers", "break it into tasks by logic", "whether it can ship alone (the first task changes no behaviour)",
 			"decide the worker sessions as a separate step", "continued part by part with `continue`", "about 1000 lines",
-			"Point every brief to one reference document", "Show me the tasks and the grouping before the first worker starts"} {
+			"Point every brief to one reference document", "Show me the tasks and the grouping before the first worker starts",
+			"Report friction in your hand-back"} {
 			if !strings.Contains(b, want) {
 				t.Errorf("variant %s lacks %q", v, want)
 			}

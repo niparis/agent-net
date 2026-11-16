@@ -365,7 +365,7 @@ func TestDeliveryToolRoles(t *testing.T) {
 				t.Errorf("%s hints = %+v", name, tool.Hints)
 			}
 			props := decodeObject(t, name, tool.InputSchema)["properties"].(map[string]any)
-			for _, field := range map[string][]string{"agent_ask_intake": {"action", "session", "turn", "text", "options", "recommendation", "limit"}, "agent_ask_sort": {"ask", "detail", "result", "into", "to", "reason", "priority", "why_you", "sorter", "since", "until", "from_id", "to_id"}, "agent_change_submit": {"branch", "commit", "change"}, "agent_step_claim": {"change", "step", "for", "after_merge", "commit", "reviewer"}, "agent_step_report": {"change", "step", "for", "after_merge", "result", "commit", "fields", "done_by", "note"}, "agent_changes_find": {"change", "project", "state", "caller", "limit", "cursor"}}[name] {
+			for _, field := range map[string][]string{"agent_ask_intake": {"action", "session", "turn", "text", "options", "recommendation", "limit"}, "agent_ask_sort": {"ask", "detail", "result", "into", "to", "reason", "priority", "why_you", "sorter", "since", "until", "from_id", "to_id"}, "agent_change_submit": {"branch", "commit", "change"}, "agent_step_claim": {"change", "step", "for", "after_merge", "commit", "reviewer"}, "agent_step_report": {"change", "step", "for", "after_merge", "result", "commit", "fields", "done_by", "note", "friction"}, "agent_changes_find": {"change", "project", "state", "caller", "limit", "cursor"}}[name] {
 				if props[field] == nil {
 					t.Errorf("%s has no %s", name, field)
 				}
@@ -373,6 +373,26 @@ func TestDeliveryToolRoles(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("%s is not in the catalog", name)
+		}
+	}
+}
+
+// Decision 0170: the hand-back and the step report advertise the optional
+// friction list, so a model sees it before it reports.
+func TestFrictionIsInTheToolSchemas(t *testing.T) {
+	for _, name := range []string{"agent_handback", "agent_step_report"} {
+		tool, ok := toolNamed(name)
+		if !ok {
+			t.Fatalf("catalog has no %s", name)
+		}
+		props := decodeObject(t, name, tool.InputSchema)["properties"].(map[string]any)
+		friction, ok := props["friction"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s has no friction", name)
+		}
+		items := friction["items"].(map[string]any)["properties"].(map[string]any)
+		if items["area"] == nil || items["text"] == nil {
+			t.Fatalf("%s friction items: %v", name, items)
 		}
 	}
 }

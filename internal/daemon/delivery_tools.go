@@ -491,7 +491,7 @@ func (d *Daemon) stepReport(ctx context.Context, sid string, info protocol.Sessi
 		doneBy = ""
 	}
 	q := protocol.StepReportRequest{SessionID: sid, ChangeID: a.Change, StepRef: a.StepRef, Result: a.Result, Commit: a.Commit,
-		Fields: a.Fields, DoneBy: doneBy, Note: a.Note, Until: a.Until}
+		Fields: a.Fields, DoneBy: doneBy, Note: a.Note, Until: a.Until, Friction: a.Friction}
 	if err := q.Validate(); err != nil {
 		return out, err
 	}
@@ -666,6 +666,28 @@ func fillChangeView(v protocol.ChangeView) protocol.ChangeView {
 // deliveryRecordTimeout is how long a hand-back waits for the gateway to
 // record its change. The hand-back goes on without the record after it.
 const deliveryRecordTimeout = 10 * time.Second
+
+// frictionReportTimeout bounds the best-effort send of a hand-back's friction
+// list, so an unreachable gateway does not hold the notice long.
+const frictionReportTimeout = 3 * time.Second
+
+// reportFriction sends a hand-back's friction list to the gateway. It never
+// fails the hand-back: a lost report is better than a lost task.
+func (d *Daemon) reportFriction(ctx context.Context, w *worker, entries []protocol.FrictionEntry, changeID string) {
+	if len(entries) == 0 {
+		return
+	}
+	d.wmu.Lock()
+	project, harness, model, sid := w.project, w.harness, w.model, w.sessionID
+	d.wmu.Unlock()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), frictionReportTimeout)
+	defer cancel()
+	var out protocol.FrictionReportResult
+	q := protocol.FrictionReportRequest{SessionID: sid, Project: project, ChangeID: changeID, Harness: harness, Model: model, Entries: entries}
+	if err := d.deliveryCall(ctx, protocol.FrameFrictionReport, q, &out); err != nil {
+		d.Logf("worker.friction worker=%s session=%s entries=%d error=%q", w.id, sid, len(entries), err.Error())
+	}
+}
 
 // deliveryDiffStat bounds the summary and removes terminal controls before it
 // is sent to the gateway. Keep truncation on a UTF-8 boundary.

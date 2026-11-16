@@ -36,6 +36,8 @@ func TestCTOOperatorActionSchemas(t *testing.T) {
 		{"tools_versions", `{"item":"item-id","bogus":1}`, false},
 		{"tools_import", `{"item":"item-id","location":{"node_id":"n_1","location":"/tmp/skill"}}`, true},
 		{"tools_import", `{"item":"item-id"}`, false},
+		{"friction_find", `{"project":"demo","area":"ci","limit":20}`, true},
+		{"friction_find", `{"project":"demo","bogus":1}`, false},
 	}
 	for _, tc := range cases {
 		op, ok := CTOOpByName(tc.method)

@@ -187,7 +187,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if v, ok := a["complete"].(bool); ok {
 			complete = &v
 		}
-		m, err := handbackCall(ctx, run, protocol.WorkerHandbackRequest{Report: str("report"), Status: str("status"), Complete: complete, Files: stringSlice(a["files"])})
+		m, err := handbackCall(ctx, run, protocol.WorkerHandbackRequest{Report: str("report"), Status: str("status"), Complete: complete, Files: stringSlice(a["files"]), Friction: frictionList(a["friction"])})
 		if err != nil {
 			return nil, err
 		}
@@ -432,6 +432,23 @@ func stringSlice(v any) []string {
 	return out
 }
 func boolValue(v any) bool { b, _ := v.(bool); return b }
+
+// frictionList reads the friction entries of a hand-back. The daemon validates
+// the areas and the line length, so a bad entry comes back as a clear refusal.
+func frictionList(v any) []protocol.FrictionEntry {
+	a, _ := v.([]any)
+	out := make([]protocol.FrictionEntry, 0, len(a))
+	for _, x := range a {
+		m, _ := x.(map[string]any)
+		if m == nil {
+			continue
+		}
+		area, _ := m["area"].(string)
+		text, _ := m["text"].(string)
+		out = append(out, protocol.FrictionEntry{Area: area, Text: text})
+	}
+	return out
+}
 
 func firstNonEmptyString(values ...string) string {
 	for _, v := range values {

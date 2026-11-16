@@ -51,6 +51,8 @@ type StepReportArgs struct {
 	DoneBy string            `json:"done_by,omitempty"`
 	Note   string            `json:"note,omitempty"`
 	Until  string            `json:"until,omitempty"`
+	// Friction lists what slowed this step down (decision 0170).
+	Friction []FrictionEntry `json:"friction,omitempty"`
 	// Reports is the batch form: several steps reported in one call, each a
 	// report of its own. The fields above stay empty when it is set.
 	Reports []StepReportItem `json:"reports,omitempty"`
@@ -66,11 +68,13 @@ type StepReportItem struct {
 	DoneBy string            `json:"done_by,omitempty"`
 	Note   string            `json:"note,omitempty"`
 	Until  string            `json:"until,omitempty"`
+	// Friction lists what slowed this step down (decision 0170).
+	Friction []FrictionEntry `json:"friction,omitempty"`
 }
 
 // Single is the item as the arguments of a single report.
 func (i StepReportItem) Single() StepReportArgs {
-	return StepReportArgs{Change: i.Change, StepRef: i.StepRef, Result: i.Result, Commit: i.Commit, Fields: i.Fields, DoneBy: i.DoneBy, Note: i.Note, Until: i.Until}
+	return StepReportArgs{Change: i.Change, StepRef: i.StepRef, Result: i.Result, Commit: i.Commit, Fields: i.Fields, DoneBy: i.DoneBy, Note: i.Note, Until: i.Until, Friction: i.Friction}
 }
 
 // IsBatch says the call uses the batch form. A call that sets both the batch
@@ -79,7 +83,7 @@ func (a StepReportArgs) IsBatch() (bool, error) {
 	if len(a.Reports) == 0 {
 		return false, nil
 	}
-	if a.Change != "" || a.Step != "" || a.Result != "" || a.Commit != "" || a.For != "" || a.AfterMerge || a.DoneBy != "" || a.Note != "" || a.Until != "" || len(a.Fields) > 0 {
+	if a.Change != "" || a.Step != "" || a.Result != "" || a.Commit != "" || a.For != "" || a.AfterMerge || a.DoneBy != "" || a.Note != "" || a.Until != "" || len(a.Fields) > 0 || len(a.Friction) > 0 {
 		return false, errors.New("send either one report (change, step, result, commit) or reports, not both")
 	}
 	return true, nil
@@ -95,6 +99,8 @@ type CTOStepReportArgs struct {
 	Commit string            `json:"commit"`
 	Fields map[string]string `json:"fields,omitempty"`
 	Note   string            `json:"note,omitempty"`
+	// Friction lists what slowed this step down (decision 0170).
+	Friction []FrictionEntry `json:"friction,omitempty"`
 }
 
 // OpChangesOwnerFind is the owner's read of the same data, for the TUI: it

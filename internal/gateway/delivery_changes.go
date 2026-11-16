@@ -64,6 +64,24 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		data, err = g.store.ClaimStep(nc.id, q)
+	case protocol.FrameFrictionReport:
+		q, derr := decode[protocol.FrictionReportRequest](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		if q.SessionID != "" {
+			var node string
+			if nerr := g.store.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, q.SessionID).Scan(&node); nerr == nil && node != nc.id {
+				return nil, true, reject("session %q is not on this machine", q.SessionID)
+			}
+		}
+		data, err = g.store.ReportFriction(q)
+	case protocol.FrameFrictionFind:
+		q, derr := decode[protocol.FrictionQuery](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.FrictionFind(q)
 	case protocol.FrameNudgePause:
 		q, derr := decode[protocol.NudgePauseRequest](raw)
 		if derr != nil {
@@ -733,6 +751,12 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	}
 	if err := insertEvidence(tx, e); err != nil {
 		return protocol.StepReportResult{}, err
+	}
+	if len(q.Friction) > 0 {
+		if err := insertFrictionTx(tx, protocol.FrictionReportRequest{SessionID: q.SessionID, Project: c.Project, ChangeID: c.ID,
+			Harness: reporter.harness, Model: reporter.model, Entries: q.Friction}, now); err != nil {
+			return protocol.StepReportResult{}, err
+		}
 	}
 	if train && e.Step == protocol.StepMerge && e.Result == protocol.StepResultPass {
 		if err := insertTrainTipPostMergeTest(tx, c, p, e, now); err != nil {

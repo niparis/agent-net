@@ -655,6 +655,40 @@ export const TOOL_CATALOG = [
         },
         "proof_unavailable": {
           "type": "string"
+        },
+        "friction": {
+          "type": "array",
+          "description": "What slowed you down here: one {area, text} per problem. Leave it out when nothing did.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "area": {
+                "type": "string",
+                "enum": [
+                  "tooling",
+                  "permissions",
+                  "brief",
+                  "review",
+                  "ci",
+                  "environment",
+                  "skill"
+                ],
+                "description": "Where the friction was."
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[^\\r\\n]*$",
+                "description": "One line: what slowed you down."
+              }
+            },
+            "required": [
+              "area",
+              "text"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -2170,6 +2204,40 @@ export const TOOL_CATALOG = [
                 "type": "string",
                 "format": "date-time",
                 "description": "waiting only: RFC 3339 time when evidence can first exist. Reminders pause until new evidence or 24h after this time."
+              },
+              "friction": {
+                "type": "array",
+                "description": "What slowed you down here: one {area, text} per problem. Leave it out when nothing did.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "area": {
+                      "type": "string",
+                      "enum": [
+                        "tooling",
+                        "permissions",
+                        "brief",
+                        "review",
+                        "ci",
+                        "environment",
+                        "skill"
+                      ],
+                      "description": "Where the friction was."
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "pattern": "^[^\\r\\n]*$",
+                      "description": "One line: what slowed you down."
+                    }
+                  },
+                  "required": [
+                    "area",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -2181,6 +2249,40 @@ export const TOOL_CATALOG = [
             "additionalProperties": false
           },
           "description": "Batch form: several reports in one call, each with change, step, result and commit as above. Leave the single-report fields out. A refused report carries its error and the rest still run."
+        },
+        "friction": {
+          "type": "array",
+          "description": "What slowed you down here: one {area, text} per problem. Leave it out when nothing did.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "area": {
+                "type": "string",
+                "enum": [
+                  "tooling",
+                  "permissions",
+                  "brief",
+                  "review",
+                  "ci",
+                  "environment",
+                  "skill"
+                ],
+                "description": "Where the friction was."
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[^\\r\\n]*$",
+                "description": "One line: what slowed you down."
+              }
+            },
+            "required": [
+              "area",
+              "text"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [],

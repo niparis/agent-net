@@ -111,7 +111,8 @@ func TestWorkerHandbackTool(t *testing.T) {
 		return json.RawMessage(`{"sent":true,"status":"done","complete":true,"queued":false}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_handback",
-		Arguments: map[string]any{"report": "done", "status": "done", "complete": true, "files": []string{"/work/result.txt"}}})
+		Arguments: map[string]any{"report": "done", "status": "done", "complete": true, "files": []string{"/work/result.txt"},
+			"friction": []any{map[string]any{"area": "ci", "text": "the suite flaked twice"}}}})
 	if err != nil || res.IsError {
 		t.Fatalf("agent_handback: %v %+v", err, res)
 	}
@@ -120,6 +121,9 @@ func TestWorkerHandbackTool(t *testing.T) {
 	}
 	if len(input.Files) != 1 || input.Files[0] != "/work/result.txt" {
 		t.Fatalf("files lost: %+v", input)
+	}
+	if len(input.Friction) != 1 || input.Friction[0].Area != "ci" || input.Friction[0].Text != "the suite flaked twice" {
+		t.Fatalf("friction lost: %+v", input.Friction)
 	}
 	if res.StructuredContent == nil {
 		t.Fatal("agent_handback has no structured result")

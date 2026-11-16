@@ -351,6 +351,9 @@ func (m Model) quotasView(w, h int) []string {
 		title += " · f set worker floor"
 	}
 	out = append(out, panel(title, subscription, w, roleAccent)...)
+	if m.frictionLoaded || m.frictionErr != "" {
+		out = append(out, m.frictionPanel(w)...)
+	}
 
 	workers := m.quotaModelsView(w)
 	out = append(out, workers...)
@@ -360,6 +363,57 @@ func (m Model) quotasView(w, h int) []string {
 		out = append(out, "")
 	}
 	return out
+}
+
+// frictionPanel is the Work tab's read-only friction section (decision 0170):
+// the newest reports, each on one line, and a count per project.
+func (m Model) frictionPanel(w int) []string {
+	inner := max(w-4, 1)
+	var body []string
+	if m.frictionErr != "" {
+		for _, line := range wrap("Could not load friction: "+m.frictionErr, inner) {
+			body = append(body, sDim.Render(line))
+		}
+		return panel("Friction", body, w, roleAccent)
+	}
+	if len(m.friction.Counts) > 0 {
+		parts := make([]string, 0, len(m.friction.Counts))
+		for _, c := range m.friction.Counts {
+			parts = append(parts, fmt.Sprintf("%s %d", firstNonEmpty(sanitize(c.Project), "(no project)"), c.Count))
+		}
+		body = append(body, sDim.Render(clip("By project: "+strings.Join(parts, " · "), inner)))
+	}
+	if len(m.friction.Entries) == 0 {
+		body = append(body, sDim.Render("No friction reports yet. A worker adds them to its hand-back or a step report."))
+	}
+	for _, e := range m.friction.Entries {
+		line := fmt.Sprintf("%s · %s · %s · %s  %s", firstNonEmpty(sanitize(e.Project), "(no project)"),
+			sanitize(e.Area), firstNonEmpty(sanitize(e.Harness), "?"), m.frictionAge(e.CreatedAt), sanitize(e.Text))
+		body = append(body, clip(line, inner))
+	}
+	if more := m.friction.Total - len(m.friction.Entries); more > 0 {
+		word := "reports"
+		if more == 1 {
+			word = "report"
+		}
+		body = append(body, sDim.Render(fmt.Sprintf("%d more %s", more, word)))
+	}
+	return panel("Friction", body, w, roleAccent)
+}
+
+// frictionAge is how long ago a report was stored, in the list's small form.
+func (m Model) frictionAge(at int64) string {
+	if at <= 0 {
+		return "?"
+	}
+	d := m.now().Sub(time.Unix(at, 0))
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Minute {
+		return "now"
+	}
+	return shortDuration(d) + " ago"
 }
 
 // quotaPanelViewport scrolls the tab's rows while keeping the borders of every

@@ -2,17 +2,17 @@
   Agents    [ Workers ]    System
 you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation─────────────────────────────────────↑ older above─╮
-│ ▸ tenebrae-53 → worker: Polish the sess… ended · 2 ││     - Reuse the package's existing test helpers; add new test  │
-│     worker notice                                  ││     infrastructure only if none exists.                        │
-│   tenebrae-53 → worker: Review the depl… ended · 1 ││     - Put shared setup in one helper, not copied into each     │
-│     The deploy is ready.                           ││     test.                                                      │
-│                                                    ││     - One test per behaviour; no cases for behaviour the task  │
-│                                                    ││     does not change.                                           │
-│                                                    ││     - Do not prove "nothing happened" with sleeps or short     │
-│                                                    ││     timeouts; assert on state.                                 │
+│ ▸ tenebrae-53 → worker: Polish the sess… ended · 2 ││     - One test per behaviour; no cases for behaviour the task  │
+│     worker notice                                  ││     does not change.                                           │
+│   tenebrae-53 → worker: Review the depl… ended · 1 ││     - Do not prove "nothing happened" with sleeps or short     │
+│     The deploy is ready.                           ││     timeouts; assert on state.                                 │
 │                                                    ││     - Comments say why, never restate the code.                │
 │                                                    ││     - Put a check in one place, at the entry point, not        │
 │                                                    ││     repeated in every layer.                                   │
+│                                                    ││     - Report friction: add friction entries to your hand-back  │
+│                                                    ││     or step report, each with an area and one line. Areas:     │
+│                                                    ││     tooling, permissions, brief, review, ci, environment,      │
+│                                                    ││     skill. Write none when nothing did.                        │
 │                                                    ││     The project's own AGENTS.md wins where it conflicts.       │
 │                                                    ││     - permissions: sandboxed (writes only in its worktree,     │
 │                                                    ││     network on) (enforced for claude, codex and agy only for   │
