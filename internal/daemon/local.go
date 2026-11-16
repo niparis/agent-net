@@ -566,9 +566,14 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			// clear a wait: the state lives in the daemon, and a session that
 			// is really working again sends status busy.
 			ls.info.Waiting = old.info.Waiting
+			ls.lastWait = old.lastWait
 			if status == "busy" {
 				// The new process says it works: the wait belongs to the
-				// process before and its reason is solved.
+				// process before and its reason is solved. It may come back
+				// after the turn, so keep its start.
+				if old.info.Waiting != nil {
+					ls.lastWait = old.info.Waiting
+				}
 				ls.info.Waiting = nil
 			}
 			ls.workerWaiting = old.workerWaiting
@@ -927,6 +932,11 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			ls.info.Status = p.Status
 			if p.Status == "busy" {
 				// Working again: the user answered, or the session moved on.
+				// Remember the wait it cleared: the same wait reported after
+				// this turn keeps its start. A later busy report keeps it too.
+				if ls.info.Waiting != nil {
+					ls.lastWait = ls.info.Waiting
+				}
 				ls.info.Waiting = nil
 				ls.info.LastCompactedAt, ls.info.LastCompactedReason = 0, ""
 				ls.turnStartedLocked()

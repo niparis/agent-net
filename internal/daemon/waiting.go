@@ -54,9 +54,20 @@ func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
 				w.Since = 0
 			}
 		}
+		// A busy turn clears the wait (decision 0016). A session that reports
+		// the same wait after that turn still waits on the same question, so
+		// it keeps its start and the gateway raises no second ask for it.
+		if w.Since == 0 && sameWaitText(ls.lastWait, w) {
+			w.Since = ls.lastWait.Since
+		}
 		if w.Since == 0 {
 			w.Since = time.Now().Unix()
 		}
+	}
+	if w == nil || !sameWaitText(ls.lastWait, w) {
+		// The session moved on, or waits on something else now: the wait its
+		// busy turn cleared is not one it can come back to.
+		ls.lastWait = nil
 	}
 	started := w != nil && !sameWaiting(oldWait, w)
 	harness, native, at := ls.info.Harness, ls.info.NativeID, time.Now()
@@ -140,6 +151,16 @@ func sameWaiting(a, b *protocol.Waiting) bool {
 	}
 	return a.Explicit == b.Explicit && a.Blocking == b.Blocking && a.Kind == b.Kind && a.Text == b.Text &&
 		a.Since == b.Since && a.Urgency == b.Urgency && slices.Equal(a.Options, b.Options)
+}
+
+// sameWaitText says whether two reports describe the same question, whatever
+// their start. A busy turn clears the wait and loses its start, and the report
+// after the turn must still count as the same wait.
+func sameWaitText(a, b *protocol.Waiting) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Kind == b.Kind && a.Text == b.Text
 }
 
 // waitingCall serves MethodWaiting. A plugin reports for the session it is

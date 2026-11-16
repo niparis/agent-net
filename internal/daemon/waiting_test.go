@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -282,5 +283,88 @@ func TestBlockedAnnounceKeepsTheWaitItAnswers(t *testing.T) {
 	eventually(t, "the same wait keeps its start", func() bool {
 		w := waitingOf(t, n, id)
 		return w != nil && w.Since == since
+	})
+}
+
+// A session goes busy when it handles the hourly check, and busy clears its
+// wait (decision 0016). Its answer then reports the same wait again. That is
+// the same wait, so it keeps its start: the gateway must not treat the report
+// as a new wait and raise another ask every hour.
+func TestBusyTurnDoesNotRestartTheSameWait(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	pi, id := helloPi(t, n, "nb", "/work/bob", false)
+	const text = "owner's yes on the TRUNCATE, relayed by the lead, then pg_dump, truncate, merge and deploy"
+	const task = "blocked on the owner's TRUNCATE reset"
+
+	pi.mustCall("announce", map[string]any{"task": task, "waiting": text})
+	var since int64
+	eventually(t, "waiting stored", func() bool {
+		if w := waitingOf(t, n, id); w != nil && w.Text == text {
+			since = w.Since
+			return since != 0
+		}
+		return false
+	})
+	// The start is in whole seconds. Let the clock pass it, so a start taken
+	// again would be a different one.
+	eventually(t, "the clock passes the wait's second", func() bool { return time.Now().Unix() != since })
+
+	// The check arrives. The session works on it, which clears the wait. A turn
+	// reports busy more than once, and discovery passes over the session while
+	// it runs; neither may forget the wait the turn cleared.
+	pi.mustCall("status", map[string]any{"status": "busy"})
+	eventually(t, "busy clears the wait", func() bool { return waitingOf(t, n, id) == nil })
+	n.d.SetSessions("pi", []protocol.SessionInfo{{Harness: "pi", NativeID: "nb", Cwd: "/work/bob", Status: "busy"}})
+	pi.mustCall("status", map[string]any{"status": "busy"})
+
+	// It answers blocked on the same wait.
+	pi.mustCall("announce", map[string]any{"task": task, "waiting": text})
+	eventually(t, "the same wait keeps its start", func() bool {
+		w := waitingOf(t, n, id)
+		return w != nil && w.Text == text && w.Since == since
+	})
+}
+
+// Discovery reports a busy session on every poll until the turn ends. The
+// second pass must not forget the wait the first pass cleared: a hook that
+// reports the same wait after the turn keeps its start.
+func TestDiscoveryBusyKeepsTheClearedWaitStart(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	fa := &fakeAdapter{harness: "fake"}
+	n := startNode(t, g, nodeOpts{adapter: fa})
+	fa.setSessions(fakeSession("na", "alice"))
+	eventually(t, "alice has an id", func() bool { return fa.host.SessionID("fake", "na") != "" })
+	id := fa.host.SessionID("fake", "na")
+
+	cli := dialLocal(t, n.sock)
+	cli.mustCall("hello", map[string]any{"client": "cli"})
+	cli.mustCall("waiting", map[string]any{"harness": "fake", "native_id": "na", "kind": "input", "text": "next step?"})
+	var since int64
+	eventually(t, "waiting stored", func() bool {
+		if w := waitingOf(t, n, id); w != nil && w.Text == "next step?" {
+			since = w.Since
+			return since != 0
+		}
+		return false
+	})
+	// The start is in whole seconds. Let the clock pass it, so a start taken
+	// again would be a different one.
+	eventually(t, "the clock passes the wait's second", func() bool { return time.Now().Unix() != since })
+
+	busy := fakeSession("na", "alice")
+	busy.Status = "busy"
+	fa.setSessions(busy)
+	eventually(t, "busy clears waiting", func() bool { return waitingOf(t, n, id) == nil })
+	// The next poll still sees the running turn.
+	fa.setSessions(busy)
+
+	// A hook reports the same wait again.
+	cli.mustCall("waiting", map[string]any{"harness": "fake", "native_id": "na", "kind": "input", "text": "next step?"})
+	eventually(t, "the same wait keeps its start", func() bool {
+		w := waitingOf(t, n, id)
+		return w != nil && w.Text == "next step?" && w.Since == since
 	})
 }

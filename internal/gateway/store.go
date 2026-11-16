@@ -4197,7 +4197,7 @@ func (s *Store) AnnounceNotify(nodeID string, p protocol.ProfileAnnounce) (proto
 			return protocol.Profile{}, nil, err
 		}
 	}
-	if err := s.answerCheck(p.SessionID, p.Task); err != nil {
+	if err := s.answerCheck(p.SessionID, p.Task, p.Waiting); err != nil {
 		return protocol.Profile{}, nil, err
 	}
 	if err := s.recordCheckAnnounce(p.SessionID, p.Waiting); err != nil {

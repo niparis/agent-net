@@ -305,18 +305,22 @@ type Config struct {
 }
 
 type localSession struct {
-	stopToken       string
-	pushMu          sync.Mutex // orders gateway registration updates for this session
-	push            pushState  // what the gateway was last told, protected by pushMu
-	pushInvalid     atomic.Bool
-	info            protocol.SessionInfo
-	sessionID       string
-	workerWaiting   *protocol.Waiting // last unsettled worker wait, protected by d.mu
-	conn            *localConn        // set for plugin sessions
-	statusRevision  uint64            // changes on each plugin status event
-	lastActive      time.Time         // when the session last did something, not when it was seen
-	harnessActivity time.Time         // harness output, state change or acknowledgement
-	ownerStopped    bool              // owner explicitly asked the harness to end
+	stopToken     string
+	pushMu        sync.Mutex // orders gateway registration updates for this session
+	push          pushState  // what the gateway was last told, protected by pushMu
+	pushInvalid   atomic.Bool
+	info          protocol.SessionInfo
+	sessionID     string
+	workerWaiting *protocol.Waiting // last unsettled worker wait, protected by d.mu
+	// lastWait is the wait a busy turn cleared. A session that reports the
+	// same wait after that turn gets its start back (setWaiting), so the
+	// gateway does not read it as a new wait. Protected by d.mu.
+	lastWait        *protocol.Waiting
+	conn            *localConn // set for plugin sessions
+	statusRevision  uint64     // changes on each plugin status event
+	lastActive      time.Time  // when the session last did something, not when it was seen
+	harnessActivity time.Time  // harness output, state change or acknowledgement
+	ownerStopped    bool       // owner explicitly asked the harness to end
 	// limitUntil and limitReason are the provider usage limit the session hit
 	// (limits.go), protected by d.mu. turnErrored says the current turn failed.
 	limitUntil  int64
@@ -981,6 +985,12 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			previousStatus := ls.info.Status
 			statusChanged := in.Status != previousStatus
 			infoChanged := false
+			if in.Status == "busy" && in.Waiting == nil && ls.info.Waiting != nil {
+				// A busy session is not waiting (decision 0016). Remember the
+				// wait it cleared: the same wait reported after the turn keeps
+				// its start. A later busy poll keeps the memory.
+				ls.lastWait = ls.info.Waiting
+			}
 			in.Waiting = keepWaiting(before[k], in)
 			if ls.info != in {
 				sid := ls.info.SessionID
