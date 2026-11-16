@@ -453,6 +453,26 @@ func TestCTOOwnerFrameRequestsConversationReply(t *testing.T) {
 	}
 }
 
+// The daemon checks that a CTO delivery became a turn by finding the message
+// ID in the CTO's transcript, so the text Claude records must carry it.
+func TestCTOFrameContentNamesTheMessage(t *testing.T) {
+	raw, err := BuildCTOFrame("m_0123abcd", "show status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(f.Message.Content, `<cross-session-message from-name="owner" from-mode="prompting" msg-id="m_0123abcd">`+"\n") {
+		t.Fatalf("content: %q", f.Message.Content)
+	}
+}
+
 // A caller's follow-up to a worker that handed back is a request, sent with
 // agent_message_send and often in the conversation of the hand-back. Its frame
 // must ask for the work, never say that no answer is needed: that text is only

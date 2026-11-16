@@ -402,8 +402,10 @@ func BuildFrameFor(m protocol.Message, replySock string, toWorker bool) ([]byte,
 
 // BuildCTOFrame carries the owner's prompt without a peer reply address.
 // The CTO's response belongs in its transcript, not in a network message.
+// The msg-id attribute puts the message ID in the transcript, where the daemon
+// looks for it to know that Claude took the message up.
 func BuildCTOFrame(id, text string) ([]byte, error) {
-	content := fmt.Sprintf("<cross-session-message from-name=\"owner\" from-mode=\"prompting\">\n%s\n\n[agent-net] This is the owner speaking. Please answer in this conversation.\n</cross-session-message>", neutralize(text))
+	content := fmt.Sprintf("<cross-session-message from-name=\"owner\" from-mode=\"prompting\" msg-id=\"%s\">\n%s\n\n[agent-net] This is the owner speaking. Please answer in this conversation.\n</cross-session-message>", nameBad.ReplaceAllString(id, "-"), neutralize(text))
 	return json.Marshal(frame{Type: "user", MsgV: 1, MsgID: id, Priority: "next", Message: frameMessage{Role: "user", Content: content}})
 }
 

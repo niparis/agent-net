@@ -22,7 +22,8 @@ type claudeBackground struct {
 	ModelArgs []string
 	// Flags are session specific flags that come right after --bg.
 	Flags []string
-	// FirstMessage is the first prompt of a new conversation.
+	// FirstMessage is the first prompt of the job: of a new conversation, or
+	// the next turn of a resumed one.
 	FirstMessage string
 	// DropEnv names variables the launch must not inherit. The first launch can
 	// start Claude's background service, and every session that service starts

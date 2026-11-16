@@ -61,6 +61,14 @@ const (
 	// this file exists.
 	envFakeResumeSettleGate = "FAKE_CLAUDE_RESUME_SETTLE_GATE"
 	envFakeCodexNoApprovals = "FAKE_CODEX_NOAPPROVAL"
+	// envFakeClaudeTranscribe makes the session write each prompt it takes
+	// up (the first message and each inbox line) to its transcript as a user
+	// turn, as Claude Code does.
+	envFakeClaudeTranscribe = "FAKE_CLAUDE_TRANSCRIBE"
+	// envFakeClaudeDropFile names a file that holds a count. While it is
+	// above zero, the session accepts an inbox line and never takes it up,
+	// and counts down.
+	envFakeClaudeDropFile = "FAKE_CLAUDE_DROP_FILE"
 )
 
 // runFakeHarness runs the fake that the environment asks for. It reports
@@ -520,6 +528,15 @@ func fakeClaudeSession() {
 	writeFakeClaudeSessionFile(dir, sf)
 
 	var mu sync.Mutex
+	transcribe := os.Getenv(envFakeClaudeTranscribe) != ""
+	userTurn := func(text string) {
+		line, _ := json.Marshal(map[string]any{"type": "user", "timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+			"message": map[string]string{"role": "user", "content": text}})
+		fakeClaudeTranscriptLine(dir, in.Cwd, session, string(line))
+	}
+	if first := argAfterDashes(in.Args); transcribe && first != "" {
+		userTurn(first)
+	}
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -532,10 +549,42 @@ func fakeClaudeSession() {
 			for sc.Scan() {
 				mu.Lock()
 				mcpIn.Write(append(append([]byte(nil), sc.Bytes()...), '\n'))
+				var frame struct {
+					Body string `json:"body"`
+				}
+				if transcribe && json.Unmarshal(sc.Bytes(), &frame) == nil && !fakeClaudeDropInbox() {
+					userTurn(frame.Body)
+				}
 				mu.Unlock()
 			}
 		}()
 	}
+}
+
+// fakeClaudeDropInbox reports whether the session drops this inbox line, and
+// counts the drop.
+func fakeClaudeDropInbox() bool {
+	path := os.Getenv(envFakeClaudeDropFile)
+	if path == "" {
+		return false
+	}
+	raw, err := os.ReadFile(path)
+	n, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil || n <= 0 {
+		return false
+	}
+	os.WriteFile(path, []byte(strconv.Itoa(n-1)), 0o600)
+	return true
+}
+
+// argAfterDashes is the prompt after "--" in a Claude command line.
+func argAfterDashes(args []string) string {
+	for i, a := range args {
+		if a == "--" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 // writeFakeClaudeSessionFile replaces the session file of this process in one
@@ -766,6 +815,11 @@ func (a *fsClaudeAdapter) poll(h Host) {
 }
 
 func (a *fsClaudeAdapter) Deliver(ctx context.Context, target protocol.SessionInfo, m protocol.Message) Result {
+	return a.deliverBody(target, m, m.Body)
+}
+
+// deliverBody writes body to the inbox of the target session and records m.
+func (a *fsClaudeAdapter) deliverBody(target protocol.SessionInfo, m protocol.Message, body string) Result {
 	entries, _ := os.ReadDir(a.dir)
 	for _, e := range entries {
 		raw, err := os.ReadFile(filepath.Join(a.dir, e.Name()))
@@ -781,7 +835,7 @@ func (a *fsClaudeAdapter) Deliver(ctx context.Context, target protocol.SessionIn
 			return Result{Detail: "inbox: " + err.Error()}
 		}
 		defer c.Close()
-		b, _ := json.Marshal(map[string]string{"body": m.Body})
+		b, _ := json.Marshal(map[string]string{"body": body})
 		c.Write(append(b, '\n'))
 		a.mu.Lock()
 		a.delivered = append(a.delivered, m)
@@ -791,8 +845,11 @@ func (a *fsClaudeAdapter) Deliver(ctx context.Context, target protocol.SessionIn
 	return Result{Detail: "no such Claude session"}
 }
 
+// DeliverCTO frames the text with its message ID, as the real adapter's
+// BuildCTOFrame does, so the transcript shows which message a turn took up.
 func (a *fsClaudeAdapter) DeliverCTO(ctx context.Context, target protocol.SessionInfo, id, text string) Result {
-	return a.Deliver(ctx, target, protocol.Message{ID: id, Body: text})
+	body := fmt.Sprintf("<cross-session-message from-name=\"owner\" from-mode=\"prompting\" msg-id=\"%s\">\n%s\n</cross-session-message>", id, text)
+	return a.deliverBody(target, protocol.Message{ID: id, Body: text}, body)
 }
 
 // setFakeClaudeStatus records what the fake Claude session file says about a
