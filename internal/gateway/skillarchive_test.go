@@ -274,7 +274,7 @@ func TestSkillArchiveIntakeFromMachines(t *testing.T) {
 	folderB, hashB := archiveSkillFolder(t, filepath.Join(dir, "b"), "---\ndescription: Second copy.\n---\nother\n")
 	if err := g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
 		{Kind: "skill", Name: "demo", Hash: hashA, State: "ok", Scope: "user", Location: folderA},
-		{Kind: "skill", Name: "demo", Hash: hashB, State: "ok", Scope: "project", Location: folderB},
+		{Kind: "skill", Name: "demo", Hash: hashB, State: "ok", Scope: "user", Location: folderB},
 		{Kind: "skill", Name: "only-plugin", Hash: "plugin", State: "ok", Scope: "plugin", Location: "/plugin/x"},
 	}}); err != nil {
 		t.Fatal(err)
@@ -312,6 +312,18 @@ func archiveFakeNode(t *testing.T, g *Gateway, n string, bundles map[string][]by
 // node.skill_sources. A nil list is a daemon that does not know the frame.
 func archiveFakeNodeSources(t *testing.T, g *Gateway, n string, bundles map[string][]byte, sources []protocol.SkillSource) {
 	t.Helper()
+	var answer *protocol.SkillSourcesResult
+	if sources != nil {
+		answer = &protocol.SkillSourcesResult{Sources: sources}
+	}
+	archiveFakeNodeAnswer(t, g, n, bundles, answer)
+}
+
+// archiveFakeNodeAnswer is archiveFakeNodeSources with the whole answer to
+// node.skill_sources, so a test can say which projects the daemon read. A nil
+// answer is a daemon that does not know the frame.
+func archiveFakeNodeAnswer(t *testing.T, g *Gateway, n string, bundles map[string][]byte, answer *protocol.SkillSourcesResult) {
+	t.Helper()
 	accepted := make(chan *websocket.Conn, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ws, e := websocket.Accept(w, r, nil)
@@ -344,10 +356,10 @@ func archiveFakeNodeSources(t *testing.T, g *Gateway, n string, bundles map[stri
 			var data any = map[string]bool{"ok": true}
 			var answerErr error
 			if h.Type == protocol.FrameNodeSkillSources {
-				if sources == nil {
+				if answer == nil {
 					answerErr = errors.New("unknown frame")
 				} else {
-					data = protocol.SkillSourcesResult{Sources: sources}
+					data = *answer
 				}
 			}
 			if h.Type == "node.skill_bundle" {

@@ -16,18 +16,21 @@ import (
 func sourceKey(name, hash, location string) string { return name + "\x00" + hash + "\x00" + location }
 
 // skillSources lists the skill folders the inventory scan does not: Claude Code
-// plugin skills (read only, they stay owned by the plugin) and the CTO's own
-// skill that this daemon wrote. Nothing is written or changed. The scans run
-// without a lock; only the served-folder set is swapped under it.
-func (d *Daemon) skillSources() []protocol.SkillSource {
+// plugin skills (read only, they stay owned by the plugin), the CTO's own skill
+// that this daemon wrote, and the skill folders of each project the gateway
+// names. read lists the projects whose folders were read. Nothing is written or
+// changed. The scans run without a lock; only the served-folder set is swapped
+// under it.
+func (d *Daemon) skillSources(projects []protocol.ProjectEntry) ([]protocol.SkillSource, []string) {
 	home := d.cfg.InventoryHome
 	var out []protocol.SkillSource
+	var read []string
 	add := func(root inventory.SkillRoot, origin string) {
 		for _, it := range inventory.Scan(inventory.Options{Home: home, OnlyRoot: &root}).Items {
 			if it.Kind != protocol.InventorySkill {
 				continue
 			}
-			out = append(out, protocol.SkillSource{Name: it.Name, Hash: it.Hash, Location: it.Location, Origin: origin, State: it.State, Reason: it.Reason})
+			out = append(out, protocol.SkillSource{Name: it.Name, Hash: it.Hash, Location: it.Location, Origin: origin, Project: root.Project, State: it.State, Reason: it.Reason})
 		}
 	}
 	for _, root := range inventory.PluginSkillRoots(home) {
@@ -40,6 +43,12 @@ func (d *Daemon) skillSources() []protocol.SkillSource {
 			}
 		}
 	}
+	for _, p := range projects {
+		for _, root := range inventory.ProjectSkillRoots(p.Name, p.Path) {
+			add(root, "project "+p.Name)
+		}
+		read = append(read, p.Name)
+	}
 	served := map[string]bool{}
 	for _, s := range out {
 		if s.State == protocol.InventoryOK && s.Hash != "" {
@@ -49,7 +58,7 @@ func (d *Daemon) skillSources() []protocol.SkillSource {
 	d.toolsMu.Lock()
 	d.sourceSkills = served
 	d.toolsMu.Unlock()
-	return out
+	return out, read
 }
 
 func (d *Daemon) onSkillSources(ctx context.Context, l *link, h protocol.Header, raw []byte) {
@@ -57,11 +66,11 @@ func (d *Daemon) onSkillSources(ctx context.Context, l *link, h protocol.Header,
 	err := json.Unmarshal(raw, &req)
 	var data any
 	if err == nil {
-		sources := d.skillSources()
+		sources, read := d.skillSources(req.Projects)
 		if sources == nil {
 			sources = []protocol.SkillSource{}
 		}
-		data = protocol.SkillSourcesResult{Sources: sources}
+		data = protocol.SkillSourcesResult{Sources: sources, ProjectsRead: read}
 	} else {
 		err = errors.New("cannot read skill sources")
 	}

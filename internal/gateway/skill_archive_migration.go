@@ -38,3 +38,8 @@ CREATE TABLE IF NOT EXISTS skill_archive_changes (
  undone_at INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS skill_archive_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
 `
+
+// skillArchiveSourceProjectMigration records the registered project a project
+// skill folder came from, so its source line can name the project. The column
+// itself is added in the migration loop, only when absent.
+const skillArchiveSourceProjectMigration = `SELECT 1 /* skill archive source project column */;`

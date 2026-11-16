@@ -112,7 +112,7 @@ func TestSkillArchiveIntakeReportsEveryMachine(t *testing.T) {
 	}
 	alpha := node("alpha", []protocol.InventoryItem{
 		{Kind: "skill", Name: "fine", Hash: hashOK, State: "ok", Scope: "user", Location: folderOK},
-		{Kind: "skill", Name: "known", Hash: hashOld, State: "ok", Scope: "project", Location: folderOld},
+		{Kind: "skill", Name: "known", Hash: hashOld, State: "ok", Scope: "user", Location: folderOld},
 		{Kind: "skill", Name: "vanished", Hash: hashGone, State: "ok", Scope: "user", Location: folderGone},
 		{Kind: "skill", Name: "linked", State: "error", Scope: "user", Location: "/x/linked", Reason: "skill root is a symlink: /elsewhere"},
 	})
@@ -246,13 +246,26 @@ func TestSkillArchiveIntakeTakesUserAndProjectFoldersOfEveryHarness(t *testing.T
 	if err = g.store.SetInventory(id, report); err != nil {
 		t.Fatal(err)
 	}
-	archiveFakeNode(t, g, id, bundles)
+	if _, err = g.store.AddProjects(id, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "repo", Path: project}}}); err != nil {
+		t.Fatal(err)
+	}
+	// The daemon answers node.skill_sources with the folders of each
+	// registered project. The user folders stay in the inventory report.
+	var sources []protocol.SkillSource
+	for _, it := range report.Items {
+		if it.Scope == protocol.InventoryProject {
+			sources = append(sources, protocol.SkillSource{Name: it.Name, Hash: it.Hash, Location: it.Location, Origin: "project " + it.Project, Project: it.Project, State: it.State, Reason: it.Reason})
+		}
+	}
+	archiveFakeNodeAnswer(t, g, id, bundles, &protocol.SkillSourcesResult{Sources: sources, ProjectsRead: []string{"repo"}})
 	_, first := archiveIntakeJSON(t, g)
 	if len(first.Skills) != len(user)+len(repo) {
 		t.Fatalf("added %d skills, want %d: %+v", len(first.Skills), len(user)+len(repo), first.Skills)
 	}
 	for _, s := range first.Skills {
-		if !strings.HasPrefix(s.Source, "machine "+id+":") || !strings.Contains(s.Source, string(filepath.Separator)+"skills"+string(filepath.Separator)) {
+		fromUser := strings.HasPrefix(s.Source, "machine "+id+":")
+		fromProject := strings.HasPrefix(s.Source, "project repo ")
+		if !(fromUser || fromProject) || !strings.Contains(s.Source, string(filepath.Separator)+"skills"+string(filepath.Separator)) {
 			t.Errorf("unclear source line: %+v", s)
 		}
 	}
