@@ -49,12 +49,13 @@ func (d *Daemon) ctoSkillArchive(ctx context.Context, name string, raw json.RawM
 		return d.call(ctx, protocol.FrameSkillArchiveAddGit, protocol.SkillArchiveAddGit{URL: p.URL, Path: p.Path, By: actor})
 	case "skill_archive_remove":
 		var p struct {
-			Name string `json:"name"`
+			Name    string `json:"name"`
+			Version int    `json:"version"`
 		}
-		if json.Unmarshal(raw, &p) != nil || p.Name == "" {
+		if json.Unmarshal(raw, &p) != nil || p.Name == "" || p.Version < 0 {
 			return nil, errors.New("skill_archive remove needs a name")
 		}
-		return d.call(ctx, protocol.FrameSkillArchiveRemove, protocol.SkillArchiveRemove{Name: p.Name, By: actor})
+		return d.call(ctx, protocol.FrameSkillArchiveRemove, protocol.SkillArchiveRemove{Name: p.Name, Version: p.Version, By: actor})
 	case "skill_archive_undo":
 		var p struct {
 			Change string `json:"change"`
@@ -116,7 +117,11 @@ func skillArchiveNotice(concrete string, result any) (text, diff string, options
 			diff = cleanLine(r.Description)
 			undo(r.Change)
 		case concrete == "skill_archive_remove":
-			text = "CTO removed skill " + cleanLine(r.Name) + " (" + strconv.Itoa(r.Versions) + " versions)"
+			if r.Versions > 0 {
+				text = "CTO removed version " + strconv.Itoa(r.Version) + " of skill " + cleanLine(r.Name)
+			} else {
+				text = "CTO removed skill " + cleanLine(r.Name)
+			}
 			undo(r.Change)
 		case concrete == "skill_archive_promote" && r.State == "unchanged":
 			text = "CTO checked skill " + cleanLine(r.Name) + ": version " + strconv.Itoa(r.Version) + " is already the latest"

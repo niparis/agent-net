@@ -28,9 +28,13 @@ type SkillArchiveAddGit struct {
 }
 
 // SkillArchiveRemove takes a skill name out of the archive for every node.
+//
+// With Version set, only that live version goes. Its content is then kept out of
+// later intakes, and the other versions stay.
 type SkillArchiveRemove struct {
-	Name string `json:"name"`
-	By   string `json:"by"`
+	Name    string `json:"name"`
+	Version int    `json:"version,omitempty"`
+	By      string `json:"by"`
 }
 
 // SkillArchiveVersion names one version. Zero means the latest live version.
@@ -68,14 +72,21 @@ type SkillArchiveList struct {
 // other live versions are its candidates, which a node following latest does
 // not get until one is promoted.
 type ArchivedSkill struct {
-	Name          string `json:"name"`
-	Version       int    `json:"version"`
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+	// Versions counts the live versions. Removed counts the versions taken out
+	// and kept as tombstones: version numbers are never reused, so the latest
+	// version can be above Versions.
 	Versions      int    `json:"versions"`
+	Removed       int    `json:"removed,omitempty"`
 	Candidates    []int  `json:"candidates,omitempty"`
 	NoDescription bool   `json:"no_description,omitempty"`
 	Hash          string `json:"hash"`
 	Description   string `json:"description"`
-	Tokens        int    `json:"tokens"`
+	// ContextTokens is the name plus the description: what every session loads.
+	// SizeTokens is the whole bundle, loaded only when the skill is used.
+	ContextTokens int    `json:"context_tokens"`
+	SizeTokens    int    `json:"size_tokens"`
 	AddedBy       string `json:"added_by"`
 	AddedAt       int64  `json:"added_at"`
 	Source        string `json:"source"`
@@ -90,12 +101,16 @@ type ArchivedSkill struct {
 
 // SkillArchiveAddResult says what one add did to one skill.
 type SkillArchiveAddResult struct {
-	Name        string `json:"name"`
-	Version     int    `json:"version"`
-	Versions    int    `json:"versions"`
-	Hash        string `json:"hash"`
-	Description string `json:"description"`
-	Tokens      int    `json:"tokens"`
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+	// Versions counts the live versions after this change; Removed counts the
+	// removed ones that keep their numbers.
+	Versions      int    `json:"versions"`
+	Removed       int    `json:"removed,omitempty"`
+	Hash          string `json:"hash"`
+	Description   string `json:"description"`
+	ContextTokens int    `json:"context_tokens"`
+	SizeTokens    int    `json:"size_tokens"`
 	// Source is the one line that says where the stored version came from.
 	Source string `json:"source"`
 	// Latest is the version a node following latest gets after this change.

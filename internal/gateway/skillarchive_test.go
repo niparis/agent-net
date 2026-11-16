@@ -127,8 +127,8 @@ func TestSkillArchiveAddFromFolder(t *testing.T) {
 	if got.Description != "A demo skill." {
 		t.Errorf("description %q", got.Description)
 	}
-	if got.Tokens <= 0 {
-		t.Errorf("tokens %d", got.Tokens)
+	if got.SizeTokens <= 0 || got.ContextTokens <= 0 || got.ContextTokens >= got.SizeTokens {
+		t.Errorf("tokens: context %d, size %d", got.ContextTokens, got.SizeTokens)
 	}
 	rows := archiveList(t, g)
 	if len(rows) != 1 || rows[0].Name != "demo" || rows[0].SourceKind != "machine" || rows[0].SourceNode != n || rows[0].SourcePath != "/skills/demo" {

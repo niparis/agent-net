@@ -32,7 +32,9 @@ type skillMeta struct {
 	Version     int
 	Hash        string
 	Description string
-	Tokens      int
+	SizeTokens  int
+	// ContextTokens is the name and description every session loads.
+	ContextTokens int
 }
 
 // skillArchiveIndex holds the live archive versions once for a read.
@@ -43,7 +45,7 @@ type skillArchiveIndex struct {
 
 func (s *Store) skillArchiveIndex() (*skillArchiveIndex, error) {
 	idx := &skillArchiveIndex{latest: map[string]int{}, meta: map[string]map[int]skillMeta{}}
-	rows, err := s.db.Query(`SELECT name, version, hash, description, tokens FROM skill_archive WHERE removed_at=0 ORDER BY name, version`)
+	rows, err := s.db.Query(`SELECT name, version, hash, description, tokens, context_tokens FROM skill_archive WHERE removed_at=0 ORDER BY name, version`)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +53,7 @@ func (s *Store) skillArchiveIndex() (*skillArchiveIndex, error) {
 	for rows.Next() {
 		var name string
 		var m skillMeta
-		if err = rows.Scan(&name, &m.Version, &m.Hash, &m.Description, &m.Tokens); err != nil {
+		if err = rows.Scan(&name, &m.Version, &m.Hash, &m.Description, &m.SizeTokens, &m.ContextTokens); err != nil {
 			return nil, err
 		}
 		if idx.meta[name] == nil {
@@ -172,7 +174,7 @@ func resolveSkillPath(path []skillListRow, rows map[string][]skillListRow, idx *
 				entry := protocol.EffectiveSkill{Name: r.Name, Pin: r.Pin, Level: node.Level, Scope: node.Scope}
 				if meta, ok := idx.version(r.Name, r.Pin); ok {
 					entry.Version, entry.Hash = meta.Version, meta.Hash
-					entry.Description, entry.Tokens = meta.Description, meta.Tokens
+					entry.Description, entry.SizeTokens, entry.ContextTokens = meta.Description, meta.SizeTokens, meta.ContextTokens
 				} else {
 					entry.PinMissing = r.Pin > 0
 				}
@@ -188,10 +190,12 @@ func resolveSkillPath(path []skillListRow, rows map[string][]skillListRow, idx *
 	return out
 }
 
-func skillTokens(list []protocol.EffectiveSkill) int {
+// skillContextTokens totals what a session loads for a list at start. The size
+// of the bundles is not counted: a bundle loads only when its skill is used.
+func skillListContextTokens(list []protocol.EffectiveSkill) int {
 	total := 0
 	for _, entry := range list {
-		total += entry.Tokens
+		total += entry.ContextTokens
 	}
 	return total
 }
@@ -340,7 +344,7 @@ func (s *Store) SkillListsEffective(level, scope string) ([]protocol.EffectiveSk
 	out := make([]protocol.EffectiveSkills, 0, len(targets))
 	for _, t := range targets {
 		list := resolveSkillPath(skillNodePath(t.level, t.scope, t.repo, members), rows, idx)
-		out = append(out, protocol.EffectiveSkills{Level: t.level, Scope: t.scope, Skills: list, Tokens: skillTokens(list)})
+		out = append(out, protocol.EffectiveSkills{Level: t.level, Scope: t.scope, Skills: list, ContextTokens: skillListContextTokens(list)})
 	}
 	return out, nil
 }
@@ -589,7 +593,7 @@ func (s *Store) SkillListSet(req protocol.SkillSetRequest) (protocol.SkillSetRes
 	beforeList := resolveSkillPath(path, withoutNode(rows, level, scope, before), idx)
 	afterList := resolveSkillPath(path, rows, idx)
 	out.Effective = afterList
-	out.BeforeTokens, out.AfterTokens = skillTokens(beforeList), skillTokens(afterList)
+	out.BeforeTokens, out.AfterTokens = skillListContextTokens(beforeList), skillListContextTokens(afterList)
 	out.Added, out.Removed = listDelta(beforeList, afterList)
 	for _, entry := range afterList {
 		if entry.Pin == 0 {
@@ -756,7 +760,7 @@ func (s *Store) SkillListUndo(change string) (protocol.SkillSetResult, error) {
 	}
 	list := resolveSkillPath(skillNodePath(level, resolved, repoCtx, members), rows, idx)
 	out.Level, out.Scope, out.Effective = level, scope, list
-	out.BeforeTokens, out.AfterTokens = skillTokens(list), skillTokens(list)
+	out.BeforeTokens, out.AfterTokens = skillListContextTokens(list), skillListContextTokens(list)
 	out.Restart = s.skillRestartOffer(level, scope)
 	return out, nil
 }
@@ -941,7 +945,8 @@ func (g *Gateway) skillSuggest(req protocol.SkillSuggestRequest) (protocol.Skill
 		name    string
 		version int
 		reason  string
-		tokens  int
+		size    int
+		context int
 		score   int
 		matched []string
 		already bool
@@ -958,7 +963,7 @@ func (g *Gateway) skillSuggest(req protocol.SkillSuggestRequest) (protocol.Skill
 		}
 		sort.Strings(matched)
 		ranked = append(ranked, scored{
-			name: name, version: latest, tokens: meta.Tokens, score: len(matched), matched: matched,
+			name: name, version: latest, size: meta.SizeTokens, context: meta.ContextTokens, score: len(matched), matched: matched,
 			reason: skillReason(matched, meta.Description), already: already[name],
 		})
 	}
@@ -977,8 +982,9 @@ func (g *Gateway) skillSuggest(req protocol.SkillSuggestRequest) (protocol.Skill
 		if row.score == 0 || len(suggestion.Skills) >= limit {
 			continue
 		}
+		suggestion.ContextTokens += row.context
 		suggestion.Skills = append(suggestion.Skills, protocol.SuggestedSkill{
-			Name: row.name, Version: row.version, Reason: row.reason, Tokens: row.tokens,
+			Name: row.name, Version: row.version, Reason: row.reason, ContextTokens: row.context, SizeTokens: row.size,
 		})
 	}
 	available, err := g.store.skillMCPNames(repoCtx)

@@ -94,11 +94,24 @@ type skillArchiveContent struct {
 	Hash        string
 	Bundle      []byte
 	Description string
-	Tokens      int
+	// SizeTokens is the whole bundle; ContextTokens is the name plus the
+	// description, which every session loads.
+	SizeTokens    int
+	ContextTokens int
 }
 
-// skillContentFromDir reads and packs one skill folder. The token count is an
-// estimate: total file bytes divided by four, rounded up.
+// tokenEstimate is bytes divided by four, rounded up.
+func tokenEstimate(bytes int64) int { return int((bytes + 3) / 4) }
+
+// skillContextTokens is what a session loads for a skill before it is used: its
+// name and its description.
+func skillContextTokens(name, description string) int {
+	return tokenEstimate(int64(len(name) + len(description)))
+}
+
+// skillContentFromDir reads and packs one skill folder. The token counts are
+// estimates (see tokenEstimate): the whole bundle, and the name plus the
+// description.
 func skillContentFromDir(name, dir string) (skillArchiveContent, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -131,7 +144,8 @@ func skillContentFromDir(name, dir string) (skillArchiveContent, error) {
 	if err != nil {
 		return skillArchiveContent{}, err
 	}
-	return skillArchiveContent{Name: name, Hash: hash, Bundle: bundle, Description: description, Tokens: int((bytes + 3) / 4)}, nil
+	return skillArchiveContent{Name: name, Hash: hash, Bundle: bundle, Description: description,
+		SizeTokens: tokenEstimate(bytes), ContextTokens: skillContextTokens(name, description)}, nil
 }
 
 // archiveQuerier is what the latest rule reads: a database or a transaction.
@@ -197,6 +211,46 @@ func restoreArchiveLatest(tx *sql.Tx, name string, version, previous int) error 
 	return setArchiveLatest(tx, name, previous)
 }
 
+// archiveCounts answers how many versions of one name are live and how many
+// were removed. Version numbers are never reused, so the two add up to the
+// highest number unless an undo deleted the newest row.
+func archiveCounts(q archiveQuerier, name string) (live, removed int, err error) {
+	err = q.QueryRow(`SELECT COALESCE(SUM(removed_at=0),0), COALESCE(SUM(removed_at<>0),0) FROM skill_archive WHERE name=?`, name).Scan(&live, &removed)
+	return live, removed, err
+}
+
+// archiveRemovedCounts reads the removed versions of every name.
+func archiveRemovedCounts(q interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}) (map[string]int, error) {
+	rows, err := q.Query(`SELECT name, COUNT(*) FROM skill_archive WHERE removed_at<>0 GROUP BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var name string
+		var n int
+		if err = rows.Scan(&name, &n); err != nil {
+			return nil, err
+		}
+		out[name] = n
+	}
+	return out, rows.Err()
+}
+
+// archiveBlock says whether intake must leave this content out, and who removed
+// it: the content was removed, or its name was removed as a whole. An explicit
+// add clears the block.
+func archiveBlock(q archiveQuerier, name, hash string) (actor string, blocked bool, err error) {
+	err = q.QueryRow(`SELECT actor FROM skill_archive_blocks WHERE name=? AND hash IN ('', ?) ORDER BY hash DESC LIMIT 1`, name, hash).Scan(&actor)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return actor, err == nil, err
+}
+
 // skillArchivePut stores one version. Same name and same content is the same
 // version; a version that was removed before is restored, not duplicated.
 // intake says the copy came from the intake. Then a name that already has a live
@@ -204,7 +258,7 @@ func restoreArchiveLatest(tx *sql.Tx, name string, version, previous int) error 
 // explicit add, a new version or a copy of the old store makes the new version
 // the latest.
 func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSource, by string, intake bool) (protocol.SkillArchiveAddResult, error) {
-	out := protocol.SkillArchiveAddResult{Name: c.Name, Hash: c.Hash, Description: c.Description, Tokens: c.Tokens, NoDescription: c.Description == ""}
+	out := protocol.SkillArchiveAddResult{Name: c.Name, Hash: c.Hash, Description: c.Description, SizeTokens: c.SizeTokens, ContextTokens: c.ContextTokens, NoDescription: c.Description == ""}
 	if !validSkillName(c.Name) {
 		return out, reject("bad skill name")
 	}
@@ -254,12 +308,18 @@ func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSour
 		if err = tx.QueryRow(`SELECT COALESCE(MAX(version),0)+1 FROM skill_archive WHERE name=?`, c.Name).Scan(&version); err != nil {
 			return out, err
 		}
-		if _, err = tx.Exec(`INSERT INTO skill_archive(name,version,hash,content,description,tokens,source_kind,source_node,source_project,source_path,source_url,source_commit,source_session,added_by,added_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			c.Name, version, c.Hash, c.Bundle, c.Description, c.Tokens, source.Kind, source.Node, source.Project, source.Path, source.URL, source.Commit, source.Session, by, now); err != nil {
+		if _, err = tx.Exec(`INSERT INTO skill_archive(name,version,hash,content,description,tokens,context_tokens,source_kind,source_node,source_project,source_path,source_url,source_commit,source_session,added_by,added_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			c.Name, version, c.Hash, c.Bundle, c.Description, c.SizeTokens, c.ContextTokens, source.Kind, source.Node, source.Project, source.Path, source.URL, source.Commit, source.Session, by, now); err != nil {
 			return out, err
 		}
 		out.Version, out.State = int(version), "added"
+	}
+	if !intake {
+		// An explicit add is the way back for a removed name or content.
+		if _, err = tx.Exec(`DELETE FROM skill_archive_blocks WHERE name=? AND (hash='' OR hash=?)`, c.Name, c.Hash); err != nil {
+			return out, err
+		}
 	}
 	if out.State != "unchanged" {
 		if !intake || live == 0 {
@@ -273,7 +333,7 @@ func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSour
 			return out, err
 		}
 	}
-	if err = tx.QueryRow(`SELECT COUNT(*) FROM skill_archive WHERE name=? AND removed_at=0`, c.Name).Scan(&out.Versions); err != nil {
+	if out.Versions, out.Removed, err = archiveCounts(tx, c.Name); err != nil {
 		return out, err
 	}
 	if out.Latest, err = archiveLatestOf(tx, c.Name); err != nil {
@@ -282,8 +342,10 @@ func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSour
 	return out, tx.Commit()
 }
 
-// skillArchiveRemove takes every live version of one name out of use.
-func (g *Gateway) skillArchiveRemove(name, by string) (protocol.SkillArchiveAddResult, error) {
+// skillArchiveRemove takes the live versions of one name out of use: every
+// one, or only the given version. What it removes stays out of later intakes
+// until an explicit add (decision 0169).
+func (g *Gateway) skillArchiveRemove(name string, only int, by string) (protocol.SkillArchiveAddResult, error) {
 	out := protocol.SkillArchiveAddResult{Name: name}
 	if !validSkillName(name) {
 		return out, reject("bad skill name")
@@ -293,33 +355,57 @@ func (g *Gateway) skillArchiveRemove(name, by string) (protocol.SkillArchiveAddR
 		return out, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT version FROM skill_archive WHERE name=? AND removed_at=0 ORDER BY version`, name)
+	rows, err := tx.Query(`SELECT version, hash FROM skill_archive WHERE name=? AND removed_at=0 AND (?=0 OR version=?) ORDER BY version`, name, only, only)
 	if err != nil {
 		return out, err
 	}
 	var versions []int
+	var hashes []string
 	for rows.Next() {
 		var v int
-		if err = rows.Scan(&v); err != nil {
+		var hash string
+		if err = rows.Scan(&v, &hash); err != nil {
 			rows.Close()
 			return out, err
 		}
 		versions = append(versions, v)
+		hashes = append(hashes, hash)
 	}
 	rows.Close()
 	if err = rows.Err(); err != nil {
 		return out, err
 	}
+	if len(versions) == 0 && only > 0 {
+		return out, reject("skill %q has no live version %d", name, only)
+	}
 	if len(versions) == 0 {
 		return out, reject("skill %q is not in the archive", name)
 	}
 	now := g.skillArchiveEpoch()
-	if _, err = tx.Exec(`UPDATE skill_archive SET removed_at=? WHERE name=? AND removed_at=0`, now, name); err != nil {
+	for i, v := range versions {
+		if _, err = tx.Exec(`UPDATE skill_archive SET removed_at=? WHERE name=? AND version=?`, now, name, v); err != nil {
+			return out, err
+		}
+		if _, err = tx.Exec(`INSERT INTO skill_archive_blocks(name,hash,actor,at) VALUES(?,?,?,?) ON CONFLICT(name,hash) DO UPDATE SET actor=excluded.actor, at=excluded.at`, name, hashes[i], by, now); err != nil {
+			return out, err
+		}
+	}
+	var live int
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM skill_archive WHERE name=? AND removed_at=0`, name).Scan(&live); err != nil {
 		return out, err
+	}
+	if live == 0 {
+		// The whole name is gone: other content under it stays out too.
+		if _, err = tx.Exec(`INSERT INTO skill_archive_blocks(name,hash,actor,at) VALUES(?,'',?,?) ON CONFLICT(name,hash) DO UPDATE SET actor=excluded.actor, at=excluded.at`, name, by, now); err != nil {
+			return out, err
+		}
 	}
 	list, _ := json.Marshal(versions)
 	out.Change = protocol.NewID("sc")
-	out.State, out.Version, out.Versions = "removed", versions[len(versions)-1], len(versions)
+	out.State, out.Version = "removed", versions[len(versions)-1]
+	if out.Versions, out.Removed, err = archiveCounts(tx, name); err != nil {
+		return out, err
+	}
 	if _, err = tx.Exec(`INSERT INTO skill_archive_changes(id,action,name,version,versions,actor,at) VALUES(?,?,?,?,?,?,?)`,
 		out.Change, "remove", name, out.Version, string(list), by, now); err != nil {
 		return out, err
@@ -367,6 +453,9 @@ func (g *Gateway) skillArchiveUndo(change, by string) (protocol.SkillArchiveAddR
 			if _, err = tx.Exec(`UPDATE skill_archive SET removed_at=0 WHERE name=? AND version=?`, name, v); err != nil {
 				return out, err
 			}
+			if _, err = tx.Exec(`DELETE FROM skill_archive_blocks WHERE name=? AND hash IN ('', (SELECT hash FROM skill_archive WHERE name=? AND version=?))`, name, name, v); err != nil {
+				return out, err
+			}
 		}
 		out.State = "restored"
 	case "promote":
@@ -385,7 +474,7 @@ func (g *Gateway) skillArchiveUndo(change, by string) (protocol.SkillArchiveAddR
 	if _, err = tx.Exec(`UPDATE skill_archive_changes SET undone_at=? WHERE id=?`, now, change); err != nil {
 		return out, err
 	}
-	if err = tx.QueryRow(`SELECT COUNT(*) FROM skill_archive WHERE name=? AND removed_at=0`, name).Scan(&out.Versions); err != nil {
+	if out.Versions, out.Removed, err = archiveCounts(tx, name); err != nil {
 		return out, err
 	}
 	return out, tx.Commit()
@@ -406,8 +495,8 @@ func (g *Gateway) skillArchivePromote(name string, version int, by string) (prot
 		return out, err
 	}
 	defer tx.Rollback()
-	err = tx.QueryRow(`SELECT hash, description, tokens FROM skill_archive WHERE name=? AND version=? AND removed_at=0`, name, version).
-		Scan(&out.Hash, &out.Description, &out.Tokens)
+	err = tx.QueryRow(`SELECT hash, description, tokens, context_tokens FROM skill_archive WHERE name=? AND version=? AND removed_at=0`, name, version).
+		Scan(&out.Hash, &out.Description, &out.SizeTokens, &out.ContextTokens)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, reject("skill %q has no live version %d", name, version)
 	}
@@ -433,7 +522,7 @@ func (g *Gateway) skillArchivePromote(name string, version int, by string) (prot
 		}
 	}
 	out.Latest = version
-	if err = tx.QueryRow(`SELECT COUNT(*) FROM skill_archive WHERE name=? AND removed_at=0`, name).Scan(&out.Versions); err != nil {
+	if out.Versions, out.Removed, err = archiveCounts(tx, name); err != nil {
 		return out, err
 	}
 	return out, tx.Commit()
@@ -444,7 +533,7 @@ func (g *Gateway) skillArchivePromote(name string, version int, by string) (prot
 // the highest live version, as archiveLatestOf does.
 func (g *Gateway) skillArchiveList() (any, error) {
 	rows, err := g.store.db.Query(`
-		SELECT name, version, hash, description, tokens, added_by, added_at,
+		SELECT name, version, hash, description, tokens, context_tokens, added_by, added_at,
 		 source_kind, source_node, source_project, source_path, source_url, source_commit, source_session
 		FROM skill_archive WHERE removed_at=0 ORDER BY name, version`)
 	if err != nil {
@@ -455,7 +544,7 @@ func (g *Gateway) skillArchiveList() (any, error) {
 	var names []string
 	for rows.Next() {
 		var s protocol.ArchivedSkill
-		if err = rows.Scan(&s.Name, &s.Version, &s.Hash, &s.Description, &s.Tokens, &s.AddedBy, &s.AddedAt,
+		if err = rows.Scan(&s.Name, &s.Version, &s.Hash, &s.Description, &s.SizeTokens, &s.ContextTokens, &s.AddedBy, &s.AddedAt,
 			&s.SourceKind, &s.SourceNode, &s.SourceProject, &s.SourcePath, &s.SourceURL, &s.SourceCommit, &s.SourceSession); err != nil {
 			return nil, err
 		}
@@ -471,6 +560,10 @@ func (g *Gateway) skillArchiveList() (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	removed, err := archiveRemovedCounts(g.store.db)
+	if err != nil {
+		return nil, err
+	}
 	out := []protocol.ArchivedSkill{}
 	for _, name := range names {
 		group := byName[name]
@@ -483,7 +576,7 @@ func (g *Gateway) skillArchiveList() (any, error) {
 			}
 		}
 		s := group[chosen]
-		s.Versions = len(group)
+		s.Versions, s.Removed = len(group), removed[name]
 		for i, v := range group {
 			if i != chosen {
 				s.Candidates = append(s.Candidates, v.Version)
