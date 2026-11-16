@@ -104,7 +104,10 @@ type EffectiveSkill struct {
 	Level       string `json:"level"`
 	Scope       string `json:"scope"`
 	Description string `json:"description,omitempty"`
-	Tokens      int    `json:"tokens"`
+	// ContextTokens is what a session loads for this skill at start. SizeTokens
+	// is the whole bundle, loaded only when the skill is used.
+	ContextTokens int `json:"context_tokens"`
+	SizeTokens    int `json:"size_tokens"`
 }
 
 // EffectiveSkills is one node's resolved list.
@@ -112,7 +115,8 @@ type EffectiveSkills struct {
 	Level  string           `json:"level"`
 	Scope  string           `json:"scope"`
 	Skills []EffectiveSkill `json:"skills"`
-	Tokens int              `json:"tokens"`
+	// ContextTokens totals the context figure of the skills.
+	ContextTokens int `json:"context_tokens"`
 }
 
 // SkillRestartSession is a live session that still runs the old set.
@@ -131,12 +135,13 @@ type SkillRestartOffer struct {
 
 // SkillSetResult is the diff one set made, with undo.
 type SkillSetResult struct {
-	Level        string            `json:"level"`
-	Scope        string            `json:"scope"`
-	Added        []string          `json:"added,omitempty"`
-	Removed      []string          `json:"removed,omitempty"`
-	Pinned       []string          `json:"pinned,omitempty"`
-	Unpinned     []string          `json:"unpinned,omitempty"`
+	Level    string   `json:"level"`
+	Scope    string   `json:"scope"`
+	Added    []string `json:"added,omitempty"`
+	Removed  []string `json:"removed,omitempty"`
+	Pinned   []string `json:"pinned,omitempty"`
+	Unpinned []string `json:"unpinned,omitempty"`
+	// BeforeTokens and AfterTokens total the context figure.
 	BeforeTokens int               `json:"before_tokens"`
 	AfterTokens  int               `json:"after_tokens"`
 	Effective    []EffectiveSkill  `json:"effective"`
@@ -152,7 +157,10 @@ type SuggestedSkill struct {
 	Name    string `json:"name"`
 	Version int    `json:"version"`
 	Reason  string `json:"reason"`
-	Tokens  int    `json:"tokens,omitempty"`
+	// ContextTokens is the name and description a session loads at start;
+	// SizeTokens is the whole bundle.
+	ContextTokens int `json:"context_tokens,omitempty"`
+	SizeTokens    int `json:"size_tokens,omitempty"`
 	// MissingMcp names MCP servers the skill text uses and this node lacks.
 	MissingMcp []string `json:"missing_mcp,omitempty"`
 }
@@ -160,10 +168,12 @@ type SuggestedSkill struct {
 // SkillSuggestion is the read-only result of suggest. Its id can be given to
 // set later.
 type SkillSuggestion struct {
-	ID      string           `json:"id"`
-	Level   string           `json:"level"`
-	Scope   string           `json:"scope"`
-	Skills  []SuggestedSkill `json:"skills"`
-	Already []string         `json:"already,omitempty"`
-	Note    string           `json:"note,omitempty"`
+	ID     string           `json:"id"`
+	Level  string           `json:"level"`
+	Scope  string           `json:"scope"`
+	Skills []SuggestedSkill `json:"skills"`
+	// ContextTokens totals the context figure of the suggested skills.
+	ContextTokens int      `json:"context_tokens"`
+	Already       []string `json:"already,omitempty"`
+	Note          string   `json:"note,omitempty"`
 }

@@ -55,7 +55,7 @@ func TestCTOSkillArchiveAddsFromGitListsAndUndoes(t *testing.T) {
 	listed := callCTOSkillArchive[struct {
 		Skills []protocol.ArchivedSkill `json:"skills"`
 	}](t, n.d, ctx, `{"action":"list"}`)
-	if len(listed.Skills) != 1 || listed.Skills[0].Name != "grill-me" || listed.Skills[0].Tokens <= 0 {
+	if len(listed.Skills) != 1 || listed.Skills[0].Name != "grill-me" || listed.Skills[0].SizeTokens <= 0 || listed.Skills[0].ContextTokens <= 0 {
 		t.Fatalf("list: %+v", listed)
 	}
 	// The Desk log records the undo the owner can click.
@@ -155,4 +155,45 @@ func TestCTOSkillArchivePromoteRoutesToGateway(t *testing.T) {
 	if _, err := n.d.runCTOTool(ctx, "skill_archive", json.RawMessage(`{"action":"promote","name":"grill-me"}`)); err == nil {
 		t.Fatal("promote without a version was accepted")
 	}
+}
+
+// A remove with a version takes out that version and leaves the name, and the
+// Desk line names the version.
+func TestCTOSkillArchiveRemovesOneVersion(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	url := skillRepo(t)
+	callCTOSkillArchive[protocol.SkillArchiveMultiResult](t, n.d, ctx, `{"action":"add_git","url":"`+url+`"}`)
+	root := strings.TrimPrefix(url, "file://")
+	if err := os.WriteFile(filepath.Join(root, "grill-me", "SKILL.md"), []byte("---\ndescription: Ask harder questions.\n---\nbody\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "edit"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.invalid", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.invalid")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	callCTOSkillArchive[protocol.SkillArchiveMultiResult](t, n.d, ctx, `{"action":"add_git","url":"`+url+`"}`)
+	removed := callCTOSkillArchive[protocol.SkillArchiveAddResult](t, n.d, ctx, `{"action":"remove","name":"grill-me","version":2}`)
+	if removed.State != "removed" || removed.Version != 2 || removed.Versions != 1 || removed.Removed != 1 {
+		t.Fatalf("remove one version: %+v", removed)
+	}
+	log, err := g.gw.Store().DeskLog(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range log {
+		if strings.Contains(entry.Text, "removed version 2 of skill grill-me") {
+			return
+		}
+	}
+	t.Fatalf("no Desk line for the removed version: %+v", log)
 }

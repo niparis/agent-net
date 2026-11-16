@@ -111,7 +111,7 @@ func skillsNotice(concrete string, result any) (text, diff string, options []str
 		if len(parts) > 0 {
 			text += ": " + strings.Join(parts, "; ")
 		}
-		text += " (" + strconv.Itoa(r.AfterTokens) + " tokens, was " + strconv.Itoa(r.BeforeTokens) + ")"
+		text += " (" + strconv.Itoa(r.AfterTokens) + " context tokens, was " + strconv.Itoa(r.BeforeTokens) + ")"
 		if r.PinnedByMaturity {
 			text += ", pinned to current versions: the repo is mature"
 		}
@@ -129,7 +129,7 @@ func skillsNotice(concrete string, result any) (text, diff string, options []str
 		if skill.Scope != "" {
 			line += " " + cleanLine(skill.Scope)
 		}
-		line += " (" + strconv.Itoa(skill.Tokens) + " tokens)"
+		line += " (" + strconv.Itoa(skill.ContextTokens) + " context tokens, " + strconv.Itoa(skill.SizeTokens) + " in full)"
 		lines = append(lines, line)
 	}
 	if len(r.Restart.Sessions) > 0 {

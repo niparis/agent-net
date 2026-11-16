@@ -27,8 +27,8 @@ func seedArchiveSkill(t *testing.T, s *Store, name string, version, tokens int, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO skill_archive(name,version,hash,content,description,tokens,source_kind,source_node,source_path,added_by,added_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?)`, name, version, hash, bundle, description, tokens, "machine", "n", "/skills/"+name, "test", 0); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO skill_archive(name,version,hash,content,description,tokens,context_tokens,source_kind,source_node,source_path,added_by,added_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, name, version, hash, bundle, description, tokens, skillContextTokens(name, description), "machine", "n", "/skills/"+name, "test", 0); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -84,7 +84,7 @@ func TestSkillListsInheritGlobalTeamRepoAgent(t *testing.T) {
 		t.Fatalf("agent list: %+v", agent)
 	}
 	repo := effective(t, s, "repo", "alpha")
-	if len(repo) != 1 || repo[0].Name != "alpha" || repo[0].Tokens != 10 {
+	if len(repo) != 1 || repo[0].Name != "alpha" || repo[0].SizeTokens != 10 {
 		t.Fatalf("repo list: %+v", repo)
 	}
 }
@@ -95,7 +95,7 @@ func TestSkillListPinHoldsAndLatestFollows(t *testing.T) {
 	seedArchiveSkill(t, s, "alpha", 1, 10, "First.", "one")
 	seedArchiveSkill(t, s, "alpha", 2, 25, "Second.", "two")
 	setSkills(t, s, "repo", "alpha", []string{"alpha"}, nil, map[string]int{"alpha": 1})
-	if got := effective(t, s, "repo", "alpha"); got[0].Version != 1 || got[0].Tokens != 10 || got[0].Pin != 1 {
+	if got := effective(t, s, "repo", "alpha"); got[0].Version != 1 || got[0].SizeTokens != 10 || got[0].ContextTokens != skillContextTokens("alpha", "First.") || got[0].Pin != 1 {
 		t.Fatalf("pinned: %+v", got)
 	}
 	seedArchiveSkill(t, s, "alpha", 3, 40, "Third.", "three")
@@ -103,7 +103,7 @@ func TestSkillListPinHoldsAndLatestFollows(t *testing.T) {
 		t.Fatalf("pin moved to %d", got[0].Version)
 	}
 	setSkills(t, s, "repo", "alpha", []string{"alpha"}, nil, nil)
-	if got := effective(t, s, "repo", "alpha"); got[0].Version != 3 || got[0].Tokens != 40 || got[0].Pin != 0 {
+	if got := effective(t, s, "repo", "alpha"); got[0].Version != 3 || got[0].SizeTokens != 40 || got[0].Pin != 0 {
 		t.Fatalf("latest: %+v", got)
 	}
 }
@@ -147,11 +147,16 @@ func TestSkillListSetBySuggestion(t *testing.T) {
 	if suggestion.ID == "" || len(suggestion.Skills) != 1 || suggestion.Skills[0].Name != "grill-me" || suggestion.Skills[0].Reason == "" {
 		t.Fatalf("suggestion: %+v", suggestion)
 	}
+	// The suggestion shows both figures and totals the one a session loads.
+	grillContext := skillContextTokens("grill-me", "Ask hard questions about a design and its tradeoffs.")
+	if got := suggestion.Skills[0]; got.SizeTokens != 12 || got.ContextTokens != grillContext || suggestion.ContextTokens != grillContext {
+		t.Fatalf("suggestion tokens: %+v", suggestion)
+	}
 	res, err := s.SkillListSet(protocol.SkillSetRequest{Level: "repo", Scope: "alpha", Suggestion: suggestion.ID, By: "cto"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Change == "" || len(res.Added) != 1 || res.Added[0] != "grill-me" || res.AfterTokens != 12 {
+	if res.Change == "" || len(res.Added) != 1 || res.Added[0] != "grill-me" || res.AfterTokens != grillContext {
 		t.Fatalf("set by suggestion: %+v", res)
 	}
 	// The suggestion belongs to its node: another repo is refused.
@@ -200,7 +205,7 @@ func TestSkillListsEffectiveCarriesSource(t *testing.T) {
 			repo = &nodes[i]
 		}
 	}
-	if repo == nil || len(repo.Skills) != 2 || repo.Skills[0].Name != "alpha" || repo.Skills[0].Level != "global" || repo.Skills[1].Level != "repo" || repo.Tokens != 30 {
+	if repo == nil || len(repo.Skills) != 2 || repo.Skills[0].Name != "alpha" || repo.Skills[0].Level != "global" || repo.Skills[1].Level != "repo" || repo.ContextTokens != skillContextTokens("alpha", "Alpha.")+skillContextTokens("beta", "Beta.") {
 		t.Fatalf("repo effective: %+v", repo)
 	}
 }

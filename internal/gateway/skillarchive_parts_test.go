@@ -132,7 +132,7 @@ func TestSkillVersionServesLargeVersionInParts(t *testing.T) {
 	dir := t.TempDir()
 	folder, hash := archiveLargeFolder(t, filepath.Join(dir, "large"))
 	bundle := archiveBundleAt(t, folder)
-	if _, err := g.skillArchivePut(skillArchiveContent{Name: "large", Hash: hash, Bundle: bundle, Description: "A large skill.", Tokens: 1},
+	if _, err := g.skillArchivePut(skillArchiveContent{Name: "large", Hash: hash, Bundle: bundle, Description: "A large skill.", SizeTokens: 1, ContextTokens: 1},
 		skillArchiveSource{Kind: "agent-net"}, "cto", false); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestSkillVersionServesLargeVersionInParts(t *testing.T) {
 	const small = "small"
 	smallFolder, smallHash := archiveSkillFolder(t, filepath.Join(dir, small), "---\ndescription: Small.\n---\nbody\n")
 	smallBundle := archiveBundleAt(t, smallFolder)
-	if _, err := g.skillArchivePut(skillArchiveContent{Name: small, Hash: smallHash, Bundle: smallBundle, Description: "Small.", Tokens: 1},
+	if _, err := g.skillArchivePut(skillArchiveContent{Name: small, Hash: smallHash, Bundle: smallBundle, Description: "Small.", SizeTokens: 1, ContextTokens: 1},
 		skillArchiveSource{Kind: "agent-net"}, "cto", false); err != nil {
 		t.Fatal(err)
 	}

@@ -121,3 +121,24 @@ func TestSkillBundleArchiveRefusesFolderReplacedByLink(t *testing.T) {
 		t.Fatal("a folder replaced by a link was packed")
 	}
 }
+
+// Codex's built-in skills under skills/.system ship with Codex. They are not
+// archive material, so the skill sources answer does not list them.
+func TestSkillSourcesLeavesOutSystemFolders(t *testing.T) {
+	d, home := promptTestDaemon(t)
+	user := filepath.Join(home, ".codex/skills/mine")
+	system := filepath.Join(home, ".codex/skills/.system/imagegen")
+	agentsSystem := filepath.Join(home, ".agents/skills/.system/openai-docs")
+	for _, dir := range []string{user, system, agentsSystem} {
+		writeSourceSkill(t, dir, "---\ndescription: A skill.\n---\nbody\n")
+	}
+	got := userSourceHashes(t, d)
+	if got[user] == "" {
+		t.Fatalf("user folder not listed: %v", got)
+	}
+	for _, dir := range []string{system, agentsSystem} {
+		if _, listed := got[dir]; listed {
+			t.Errorf("system folder %s is listed: %v", dir, got)
+		}
+	}
+}

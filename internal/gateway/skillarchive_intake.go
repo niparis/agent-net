@@ -144,6 +144,15 @@ func (g *Gateway) skillArchiveIntakeMachine(ctx context.Context, id, host, by st
 			m.Existing++
 			continue
 		}
+		// A removal stays until someone adds the skill again (decision 0169).
+		actor, blocked, blockErr := archiveBlock(g.store.db, f.name, f.hash)
+		if blockErr != nil {
+			return blockErr
+		}
+		if blocked {
+			skip(f, "removed by "+firstNonEmpty(actor, "owner")+": add it again to bring it back")
+			continue
+		}
 		name, hash, bundle, fetchErr := g.requestSkillBundle(ctx, id, f.name, f.hash, f.location, true)
 		if fetchErr != nil {
 			skip(f, fetchErr.Error())
@@ -233,7 +242,7 @@ func (g *Gateway) inventoryFolders(id string) (folders []intakeFolder, known boo
 		FROM tool_locations l JOIN tool_identities i ON i.id=l.identity_id
 		WHERE l.node_id=? AND i.kind='skill'
 		 AND json_extract(l.observation,'$.scope')='user'
-		 AND COALESCE(json_extract(l.observation,'$.source'),'')<>'plugin'
+		 AND COALESCE(json_extract(l.observation,'$.source'),'') NOT IN ('plugin','system')
 		ORDER BY i.name, i.hash, l.ordinal`, id)
 	if err != nil {
 		return nil, true, err

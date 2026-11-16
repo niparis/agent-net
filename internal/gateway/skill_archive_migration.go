@@ -67,3 +67,32 @@ INSERT OR IGNORE INTO skill_archive_latest(name, version)
   AND a.version > (SELECT MIN(b.version) FROM skill_archive b WHERE b.name=a.name AND b.removed_at=0))
  GROUP BY a.name;
 `
+
+// skillArchiveGuardMigration keeps removals and splits the token figure
+// (decision 0169). skill_archive_blocks holds what intake must not store
+// again: one row per removed content (name and hash), and one row with an empty
+// hash for a name removed as a whole. An explicit add clears them. The backfill
+// blocks what was removed before this migration. context_tokens is the name
+// plus the description in tokens; the column itself is added in the migration
+// loop, only when absent, before this text runs. The old tokens column keeps
+// the size of the whole bundle.
+const skillArchiveGuardMigration = `
+-- skill archive context tokens column
+CREATE TABLE IF NOT EXISTS skill_archive_blocks (
+ name TEXT NOT NULL,
+ hash TEXT NOT NULL DEFAULT '',
+ actor TEXT NOT NULL DEFAULT '',
+ at INTEGER NOT NULL,
+ PRIMARY KEY(name, hash));
+UPDATE skill_archive SET context_tokens=(length(CAST(name AS BLOB))+length(CAST(description AS BLOB))+3)/4 WHERE context_tokens=0;
+INSERT OR IGNORE INTO skill_archive_blocks(name, hash, actor, at)
+ SELECT a.name, a.hash,
+  COALESCE((SELECT c.actor FROM skill_archive_changes c WHERE c.name=a.name AND c.action='remove' AND c.undone_at=0 ORDER BY c.at DESC LIMIT 1), ''),
+  a.removed_at
+ FROM skill_archive a WHERE a.removed_at<>0;
+INSERT OR IGNORE INTO skill_archive_blocks(name, hash, actor, at)
+ SELECT a.name, '',
+  COALESCE((SELECT c.actor FROM skill_archive_changes c WHERE c.name=a.name AND c.action='remove' AND c.undone_at=0 ORDER BY c.at DESC LIMIT 1), ''),
+  MAX(a.removed_at)
+ FROM skill_archive a GROUP BY a.name HAVING SUM(a.removed_at=0)=0;
+`

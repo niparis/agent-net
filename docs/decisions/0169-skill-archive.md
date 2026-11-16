@@ -215,3 +215,36 @@ the inventory scan saw them, because a scan can be five minutes old.
   folder is still refused there.
 - The archive stores the same skill in one row per content hash. A folder that
   was edited gets a new version, as any new content does.
+
+## Removals stay, version numbers, built-ins, two token figures
+
+The first live intake (v0.5.77) showed four problems. These are the rules.
+
+- **A removal stays.** Remove records a block for each version it takes out
+  (name and content hash), and for the name as a whole when no live version is
+  left. Intake never stores blocked content again, and never stores any content
+  of a blocked name. Only an explicit add clears a block: an add of the name
+  clears the name block and the block on that content, and an undo of the
+  remove clears them too. The intake report lists what it left out as skipped,
+  with `removed by <actor>`. `skill_archive` `remove` takes an optional
+  `version`. With it, only that live version goes and its content stays out of
+  later intakes, so a wrong candidate such as a different `code-review` from the
+  Codex folder is removed once. The block lives in `skill_archive_blocks`; the
+  migration blocks what was removed before it.
+- **Version numbers.** A version number is never reused. A name that is removed
+  and added again with new content has version 2 and one live version. Every
+  answer now says it the same way: `versions` is the live count and `removed` is
+  the count of removed versions that keep their numbers. `latest` is a live
+  version.
+- **Built-ins are not archive material.** Codex keeps built-in skills under
+  `skills/.system` (and `~/.agents/skills/.system`). They ship with the harness.
+  The skill sources answer does not list them, and the inventory fallback
+  leaves system items out.
+- **Two token figures.** A session loads only a skill's name and description
+  until the skill is used. Each archive skill has `context_tokens` (name plus
+  description, bytes divided by four, rounded up) and `size_tokens` (the whole
+  bundle, as the old `tokens` figure was). `skills` suggest and set show both.
+  The totals (`context_tokens` of a suggestion or a node, and `before_tokens`
+  and `after_tokens` of a set) count the context figure, because the bundle
+  loads only when the skill is used. The migration adds `context_tokens` to
+  `skill_archive` and fills it for existing rows.

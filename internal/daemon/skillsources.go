@@ -16,7 +16,7 @@ import (
 func sourceKey(name, hash, location string) string { return name + "\x00" + hash + "\x00" + location }
 
 // skillSources lists the skill folders as they are on disk now: the user-level
-// folders and their system folders, Claude Code plugin skills (read only, they
+// folders, Claude Code plugin skills (read only, they
 // stay owned by the plugin), the CTO's own skill that this daemon wrote, and the
 // skill folders of each project the gateway names. read lists the projects whose
 // folders were read. Nothing is written or changed. The scans run without a
@@ -33,7 +33,9 @@ func (d *Daemon) skillSources(projects []protocol.ProjectEntry) ([]protocol.Skil
 			out = append(out, protocol.SkillSource{Name: it.Name, Hash: it.Hash, Location: it.Location, Origin: origin, Project: root.Project, State: it.State, Reason: it.Reason})
 		}
 	}
-	userRoots := append(inventory.UserSkillRoots(home, d.cfg.CodexHome), inventory.SystemSkillRoots(home, d.cfg.CodexHome)...)
+	// Codex and the agents keep built-in skills in .system folders. They ship
+	// with the harness and are not archive material, so they are not listed.
+	userRoots := inventory.UserSkillRoots(home, d.cfg.CodexHome)
 	scanned := map[string]bool{}
 	for _, root := range userRoots {
 		// The harnesses share folders, so one folder is read once.

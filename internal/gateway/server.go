@@ -1688,7 +1688,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !validChangeActor(p.By) {
 			return nil, reject("owner authority required")
 		}
-		return g.skillArchiveRemove(p.Name, p.By)
+		return g.skillArchiveRemove(p.Name, p.Version, p.By)
 	case protocol.FrameSkillArchiveList:
 		p, err := decodeOperator[protocol.SkillArchiveList](raw)
 		if err != nil {
