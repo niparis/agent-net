@@ -29,7 +29,7 @@ var ctoToolClasses = func() map[string]ctoToolClass {
 	for class, names := range map[ctoToolClass]string{
 		ctoRead:  "cto_proposals_find cto_intake_find cto_ops_list agent_sessions_find agent_session_get agent_machines_find agent_machine_get agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_message_get agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find agent_owner_judgments_find projects_layout",
 		ctoTalk:  "message cto_placement_memory cto_standing_orders cto_ui_show proposal_ask agent_message_send agent_message_reply agent_message_withdraw agent_owner_ask agent_owner_judgment_record agent_learn agent_note_write agent_notes_find agent_permission_propose agent_step_report",
-		ctoMinor: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new sessions_archive judgment_add",
+		ctoMinor: "graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new sessions_archive judgment_add skill_archive",
 	} {
 		for _, name := range strings.Fields(names) {
 			out[name] = class
@@ -49,6 +49,7 @@ var ctoActionField = map[string]string{
 	"mcp_change":      "action",
 	"settings_change": "area",
 	"project_change":  "action",
+	"skill_archive":   "action",
 }
 
 // ctoChangeActions maps a merged action to the concrete daemon call that runs
@@ -79,6 +80,10 @@ var ctoChangeActions = map[string]map[string]string{
 		"process_stop": "process_stop",
 	},
 	"project_change": {"add": "project_add", "remove": "project_remove", "display": "project_display_set", "create": "project_create"},
+	"skill_archive": {
+		"list": "skill_archive_list", "read": "skill_archive_read", "add": "skill_archive_add",
+		"add_git": "skill_archive_add_git", "remove": "skill_archive_remove", "undo": "skill_archive_undo", "intake": "skill_archive_intake",
+	},
 }
 
 // ownerGate is the class of an owner-only action, read from the one never
@@ -109,6 +114,7 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 	"mcp_change":      {"add": ctoMinor, "remove": ctoMinor, "test": ctoMinor, "enable": ctoMinor, "app_ask": ctoMinor, "apps_list": ctoRead, "app_grant": ctoMinor, "app_ungrant": ctoMinor, "app_rename": ctoMinor, "app_revoke": ctoMinor, "public_status": ctoRead, "public_on": ctoMinor, "public_off": ctoMinor},
 	"settings_change": {"operator": ctoMinor, "values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ownerGate("machine_remove"), "machine_rotate": ownerGate("machine_rotate"), "invite": ctoMinor, "onboarding": ctoMinor, "process_stop": ctoMinor},
 	"project_change":  {"add": ctoMinor, "remove": ctoMinor, "display": ctoMinor, "create": ctoMinor},
+	"skill_archive":   {"list": ctoRead, "read": ctoRead, "add": ctoMinor, "add_git": ctoMinor, "remove": ctoMinor, "undo": ctoMinor, "intake": ctoMinor},
 }
 
 var ctoActions = map[string]map[string][]string{
@@ -121,6 +127,7 @@ var ctoActions = map[string]map[string][]string{
 	"mcp_change":      {"action": {"add", "remove", "test", "enable", "app_ask", "apps_list", "app_grant", "app_ungrant", "app_rename", "app_revoke", "public_status", "public_on", "public_off"}},
 	"settings_change": {"area": {"operator", "values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"}},
 	"project_change":  {"action": {"add", "remove", "display", "create"}},
+	"skill_archive":   {"action": {"list", "read", "add", "add_git", "remove", "undo", "intake"}},
 }
 
 func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {

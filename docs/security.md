@@ -865,6 +865,30 @@ The daemon scans its own machine at start, after it reconnects and every five mi
 - `gateway_backup` holds a consistent database snapshot, the skill repository, the CA key and the server key. The folder and its files are owner-only. Treat a backup like the gateway data. Restore writes only to a new directory and checks SQLite, Git objects and every saved skill hash before it finishes.
 - The gateway takes the same backup by itself before it migrates an older database, in `gateway-backups/pre-v<version>-<UTC time>` beside the gateway data directory. It holds the CA key too, so treat it like the gateway data. The gateway never deletes an automatic backup; removing old ones is the owner's call. If the backup cannot be written, the gateway stops without migrating.
 
+### The skill archive
+
+Decision 0169 adds a skill archive in the gateway database: one row per stored
+version with the bundle bytes, the description and the source. Nothing is
+delivered from it yet. It holds the same contents as the skill store, so treat
+it, and every backup, as private as the skill files. The gateway does not scan
+skill contents for secrets.
+
+- Only the owner and the CTO reach the archive operations: the daemon refuses
+  any other caller, and the gateway records the actor (`owner` or `cto`) on
+  every add and remove.
+- Adding from a machine reads the folder through `node.skill_bundle`, with the
+  same hash check and 2 MiB, 2,048 entry limits as an import. The machine must
+  have the folder in its current inventory.
+- Adding from a Git URL has no approval step, as the owner asked. The clone
+  keeps no history in the archive. Only `file`, `git`, `http`, `https` and
+  `ssh` URLs are accepted: the `ext::` and other helper transports run
+  programs, so they are refused. Prompts are disabled and no system or global
+  Git configuration is read.
+- Every add and remove is recorded with a change id. The Desk offers the undo
+  for a single change; the CTO can undo any recorded change by its id.
+- The one-time intake reads the versions already in `skills.git` and stores
+  each name and hash once. It does not delete or change `skills.git`.
+
 ### Plans, copies and ownership
 
 Project skill switches and the new-projects setting use the owner gate at both

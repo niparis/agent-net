@@ -559,6 +559,10 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 			options = []string{"sessions_archive", string(undo)}
 		}
 		text = fmt.Sprintf("CTO archived %d sessions", len(ids))
+	case strings.HasPrefix(concrete, "skill_archive_"):
+		if noticeText, noticeDiff, noticeOptions := skillArchiveNotice(concrete, result); noticeText != "" {
+			text, diff, options = noticeText, noticeDiff, noticeOptions
+		}
 	}
 	text += onOwnerWords(words)
 	if reason = cleanLine(reason); reason != "" {
