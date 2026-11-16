@@ -507,7 +507,15 @@ func TestHandbackAndStepReportStoreFriction(t *testing.T) {
 	c, g, _ := deliveryHandbackNode(t, nil)
 	caller, callerID := deliveryCaller(t, c)
 	res := startDeliveryWorker(t, c, caller, callerID, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude",
-		Title: "Add the dirty file", Task: "FAKE:dirty", Isolation: protocol.IsolationWorktree})
+		Title: "Add the dirty file", Task: "FAKE:ignore", Isolation: protocol.IsolationWorktree})
+	// The fake harness does not hand back this task, so the test can commit
+	// work first and hand back itself. A hand-back without a commit records no
+	// change, and the step report below needs one.
+	if err := os.WriteFile(filepath.Join(res.Worktree, "friction.txt"), []byte("work before the hand-back\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, res.Worktree, "add", "friction.txt")
+	gitIn(t, res.Worktree, "commit", "-q", "-m", "work before the hand-back")
 	if _, err := c.d.handback(context.Background(), res.SessionID, protocol.WorkerHandbackRequest{Report: "done with the hand-back",
 		Friction: []protocol.FrictionEntry{{Area: protocol.FrictionTooling, Text: "the fake harness needed a restart"}}}); err != nil {
 		t.Fatal(err)
@@ -521,10 +529,11 @@ func TestHandbackAndStepReportStoreFriction(t *testing.T) {
 	if handbackStored.Entries[0].Session != res.SessionID {
 		t.Fatalf("hand-back friction session: %+v", handbackStored.Entries[0])
 	}
-	found := findChanges(t, caller, protocol.ChangesFindArgs{Project: "shop"})
-	if len(found.Items) != 1 {
-		t.Fatalf("changes: %+v", found)
-	}
+	var found protocol.ChangesFindResult
+	eventually(t, "the hand-back change row", func() bool {
+		found = findChanges(t, caller, protocol.ChangesFindArgs{Project: "shop"})
+		return len(found.Items) == 1
+	})
 	ch := found.Items[0].Change
 	reportStep(t, caller, protocol.StepReportArgs{Change: ch.ID, StepRef: protocol.StepRef{Step: protocol.StepAccept},
 		Result: protocol.StepResultPass, Commit: ch.HeadCommit, Note: "read the diff",
