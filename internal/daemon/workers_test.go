@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -1370,7 +1371,24 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 func TestLostWorkerIsReportedOnceByConcurrentReporters(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, nil)
+	// The first gateway report waits here until the test lets it go. A
+	// reporter that started earlier (the link connect or the worker loop) can
+	// be in this state: it holds the claim while its call is in flight.
+	held, release := make(chan struct{}), make(chan struct{})
+	letGo := sync.OnceFunc(func() { close(release) })
+	var sent atomic.Int32
+	w := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.testGatewayCall = func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+			if typ == "worker.stopped" && sent.Add(1) == 1 {
+				close(held)
+				<-release
+			}
+			return nil, false, nil
+		}
+	})
+	// Registered after the node's cleanup, so it runs first and the held call
+	// returns before the daemon stops.
+	t.Cleanup(letGo)
 	// A session the lost worker had, and a row for the worker that died while
 	// the daemon was not running. Its process is gone: PID 1 is not it.
 	_, sid := helloPi(t, w.node, "pi-lost", "/work/lost", true)
@@ -1379,6 +1397,13 @@ func TestLostWorkerIsReportedOnceByConcurrentReporters(t *testing.T) {
 		StartedAt: time.Now(), LastActive: time.Now(), EndedReason: protocol.StopLost}
 	if err := w.d.st.saveWorker(row); err != nil {
 		t.Fatal(err)
+	}
+
+	go w.d.reportWorkerEnds(context.Background())
+	select {
+	case <-held:
+	case <-time.After(scaled(20 * time.Second)):
+		t.Fatal("the first report never reached the gateway")
 	}
 
 	var wg sync.WaitGroup
@@ -1393,9 +1418,25 @@ func TestLostWorkerIsReportedOnceByConcurrentReporters(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
+	// The racers found the claim taken: none of them made a call.
+	if n := sent.Load(); n != 1 {
+		t.Fatalf("worker.stopped calls while the first report is held: %d", n)
+	}
 
+	// The reporters returning does not mean the report landed: the held call
+	// finishes on its own time. Wait for the gateway to record it.
+	letGo()
+	eventually(t, "the lost worker is reported", func() bool {
+		evs, _ := g.gw.Store().Events("worker.stopped")
+		return len(evs) > 0
+	})
 	if evs, _ := g.gw.Store().Events("worker.stopped"); len(evs) != 1 || !strings.Contains(evs[0], "reason=lost") {
 		t.Fatalf("worker.stopped events: %v", evs)
+	}
+	// A reporter that runs after the report finds the worker reported.
+	w.d.reportWorkerEnds(context.Background())
+	if n := sent.Load(); n != 1 {
+		t.Fatalf("worker.stopped calls after the report landed: %d", n)
 	}
 }
 
