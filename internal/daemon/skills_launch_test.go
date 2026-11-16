@@ -128,6 +128,8 @@ func TestPiWorkerGetsSkillFlags(t *testing.T) {
 
 // An OpenCode worker gets the skills in its own process config.
 func TestOpenCodeWorkerGetsSkillsConfig(t *testing.T) {
+	// A config the launch already carries is kept, and the skills are added.
+	t.Setenv("OPENCODE_CONFIG_CONTENT", `{"theme":"dark"}`)
 	g := startGateway(t, t.TempDir(), "")
 	var mu sync.Mutex
 	var reqs []protocol.SkillFolderRequest
@@ -140,13 +142,14 @@ func TestOpenCodeWorkerGetsSkillsConfig(t *testing.T) {
 	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "say ok"})
 	rec := readFake(t, repo)
 	var cfg struct {
+		Theme  string   `json:"theme"`
 		Skills []string `json:"skills"`
 	}
 	if err := json.Unmarshal([]byte(rec.Env["OPENCODE_CONFIG_CONTENT"]), &cfg); err != nil {
 		t.Fatalf("OPENCODE_CONFIG_CONTENT %q: %v", rec.Env["OPENCODE_CONFIG_CONTENT"], err)
 	}
-	if len(cfg.Skills) != 1 {
-		t.Fatalf("skills: %v", cfg)
+	if cfg.Theme != "dark" || len(cfg.Skills) != 1 {
+		t.Fatalf("merged config: %q", rec.Env["OPENCODE_CONFIG_CONTENT"])
 	}
 	assertSkillFolder(t, filepath.Dir(cfg.Skills[0]))
 }

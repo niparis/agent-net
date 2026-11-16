@@ -226,7 +226,7 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 		"AGENT_NET_SOCKET":              d.cfg.SocketPath,
 		"XDG_STATE_HOME":                state,
 	}
-	if cfg := d.openCodeSkillsConfig(ctx, workerSkillNode(w), ""); cfg != "" {
+	if cfg := d.openCodeSkillsConfig(ctx, workerSkillNode(w), os.Getenv("OPENCODE_CONFIG_CONTENT")); cfg != "" {
 		vars["OPENCODE_CONFIG_CONTENT"] = cfg
 	}
 	env := d.workerGitEnv(w, os.Environ(), vars)
