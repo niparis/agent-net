@@ -410,6 +410,7 @@ func New(opts Options) (*Gateway, error) {
 		return nil, err
 	}
 	g.skills = skills
+	g.skillArchiveStartIntake()
 	store.logf = g.logLine
 	for _, merge := range store.identityMerges {
 		g.logLine("project.identity_merge", "from", merge[0], "to", merge[1])
@@ -938,7 +939,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "tools.save_changed" || h.Type == "tools.update_plan" || h.Type == "tools.update_copies" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" {
+		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "tools.save_changed" || h.Type == "tools.update_plan" || h.Type == "tools.update_copies" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" || h.Type == protocol.FrameSkillArchiveAdd || h.Type == protocol.FrameSkillArchiveAddGit || h.Type == protocol.FrameSkillArchiveRemove || h.Type == protocol.FrameSkillArchiveList || h.Type == protocol.FrameSkillArchiveRead || h.Type == protocol.FrameSkillArchiveUndo || h.Type == protocol.FrameSkillArchiveIntake || h.Type == protocol.FrameSkillsSuggest || h.Type == protocol.FrameSkillsSet || h.Type == protocol.FrameSkillsEffective || h.Type == protocol.FrameSkillsUndo {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -1660,6 +1661,111 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return g.importSkill(ctx, p)
+
+	case protocol.FrameSkillArchiveAdd:
+		p, err := decodeOperator[protocol.SkillArchiveAdd](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillArchiveAdd(ctx, p, p.By)
+	case protocol.FrameSkillArchiveAddGit:
+		p, err := decodeOperator[protocol.SkillArchiveAddGit](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillArchiveAddGit(ctx, p, p.By)
+	case protocol.FrameSkillArchiveRemove:
+		p, err := decodeOperator[protocol.SkillArchiveRemove](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillArchiveRemove(p.Name, p.By)
+	case protocol.FrameSkillArchiveList:
+		p, err := decodeOperator[protocol.SkillArchiveList](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillArchiveList()
+	case protocol.FrameSkillArchiveRead:
+		p, err := decodeOperator[protocol.SkillArchiveVersion](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillArchiveRead(p.Name, p.Version)
+	case protocol.FrameSkillArchiveUndo:
+		p, err := decodeOperator[protocol.SkillArchiveUndo](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillArchiveUndo(p.Change, p.By)
+	case protocol.FrameSkillArchiveIntake:
+		p, err := decodeOperator[protocol.SkillArchiveIntake](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillArchiveIntakeMachines(ctx, p.By)
+
+	case protocol.FrameSkillsSuggest:
+		p, err := decodeOperator[protocol.SkillSuggestRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillSuggest(p)
+	case protocol.FrameSkillsSet:
+		p, err := decodeOperator[protocol.SkillSetRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.store.SkillListSet(p)
+	case protocol.FrameSkillsEffective:
+		p, err := decodeOperator[protocol.SkillEffectiveRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		nodes, err := g.store.SkillListsEffective(p.Level, p.Scope)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"nodes": nodes}, nil
+	case protocol.FrameSkillsUndo:
+		p, err := decodeOperator[protocol.SkillUndoRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.store.SkillListUndo(p.Change)
 
 	case "tools.versions":
 		p, err := decodeOperator[protocol.ToolVersionRequest](raw)

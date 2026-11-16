@@ -87,6 +87,20 @@ func TestCTOLogUndoTools(t *testing.T) {
 	}
 }
 
+func TestCTOLogUndoSkillArchive(t *testing.T) {
+	method, args, ok := logUndo(logEntry(1, "x", protocol.OpSkillArchiveUndo, `{"change":"sc_test"}`))
+	if !ok || method != protocol.OpSkillArchiveUndo || !strings.Contains(string(args), `"change":"sc_test"`) {
+		t.Fatalf("undo: %q %s %v", method, args, ok)
+	}
+}
+
+func TestCTOLogUndoSkillsSet(t *testing.T) {
+	method, args, ok := logUndo(logEntry(1, "x", protocol.OpSkillsUndo, `{"id":"sl_test"}`))
+	if !ok || method != protocol.OpSkillsUndo || !strings.Contains(string(args), `"id":"sl_test"`) {
+		t.Fatalf("undo: %q %s %v", method, args, ok)
+	}
+}
+
 func TestCTOLogUndoMCPNativeRemove(t *testing.T) {
 	method, args, ok := logUndo(logEntry(1, "x", "mcp_native_remove", `{"undo_plan_id":"plan_test"}`))
 	if !ok || method != "mcp_native_remove" || !strings.Contains(string(args), `"undo_plan_id":"plan_test"`) {

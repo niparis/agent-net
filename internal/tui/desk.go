@@ -684,7 +684,7 @@ func logUndo(e protocol.DeskLogEntry) (string, json.RawMessage, bool) {
 		return e.Options[0], raw, json.Valid(raw)
 	}
 	switch e.Options[0] {
-	case "apps.rename", "apps.grant", "apps.ungrant", "apps.public.on", "apps.public.off", "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive", "folder_trust", "folder_mcp", "standing_orders", "session_resume":
+	case "apps.rename", "apps.grant", "apps.ungrant", "apps.public.on", "apps.public.off", "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive", "folder_trust", "folder_mcp", "standing_orders", "session_resume", "skill_archive_undo", "skills_undo":
 	default:
 		return "", nil, false
 	}

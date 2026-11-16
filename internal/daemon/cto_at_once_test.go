@@ -395,9 +395,13 @@ func TestCTOPlaybookInboxUndo(t *testing.T) {
 func TestCTOActionClassCoverage(t *testing.T) {
 	for tool, actions := range ctoChangeActions {
 		for action := range actions {
-			if tool == "mcp_change" && (action == "apps_list" || action == "public_status") {
+			// A read inside a change tool is exempt: it lists, it does not change.
+			readOnly := (tool == "mcp_change" && (action == "apps_list" || action == "public_status")) ||
+				(tool == "skill_archive" && (action == "list" || action == "read")) ||
+				(tool == "skills" && (action == "suggest" || action == "effective"))
+			if readOnly {
 				if ctoActionClasses[tool][action] != ctoRead {
-					t.Errorf("app read classified as mutation: %s %s", tool, action)
+					t.Errorf("read classified as mutation: %s %s", tool, action)
 				}
 				continue
 			}

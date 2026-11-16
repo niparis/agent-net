@@ -46,6 +46,10 @@ func skillDescription(data []byte) string {
 	return s
 }
 
+// SkillDescription reads the SKILL.md front matter description under root.
+// The skill archive stores it so the CTO can choose skills by description.
+func SkillDescription(root *os.Root) string { return skillDescriptionRoot(root) }
+
 func skillDescriptionRoot(root *os.Root) string {
 	f, err := root.Open("SKILL.md")
 	if err != nil {

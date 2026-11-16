@@ -162,39 +162,9 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 	if p.Item == "" || p.Location.NodeID == "" || p.Location.Location == "" {
 		return v, reject("import needs an item and a location")
 	}
-	var name, hash string
-	err := g.store.db.QueryRow(`SELECT i.name,i.hash FROM tool_identities i JOIN tool_locations l ON l.identity_id=i.id WHERE i.id=? AND i.kind IN ('skill','prompt','agent') AND l.node_id=? AND json_extract(l.observation,'$.location')=? AND json_extract(l.observation,'$.state')='ok' LIMIT 1`, p.Item, p.Location.NodeID, p.Location.Location).Scan(&name, &hash)
-	if err != nil || hash == "" {
-		return v, reject("skill location is not a current observation")
-	}
-	host := g.conn(p.Location.NodeID)
-	if host == nil {
-		return v, reject("skill location is offline")
-	}
-	raw, err := host.request(ctx, "node.skill_bundle", protocol.SkillBundleRequest{Name: name, Hash: hash, Location: p.Location.Location}, 60*time.Second)
+	_, hash, canonical, err := g.fetchSkillBundle(ctx, p.Item, p.Location.NodeID, p.Location.Location, "skill", "prompt", "agent")
 	if err != nil {
-		// Say why: the owner sees this text when an import fails.
-		return v, reject("cannot obtain skill bundle: %v", err)
-	}
-	var result protocol.SkillBundle
-	if json.Unmarshal(raw, &result) != nil {
-		return v, reject("invalid skill bundle")
-	}
-	dir, err := os.MkdirTemp("", "agent-net-skill-import-")
-	if err != nil {
-		return v, errors.New("cannot stage skill import")
-	}
-	defer os.RemoveAll(dir)
-	if inventory.UnpackSkill(result.Data, dir) != nil {
-		return v, reject("invalid or oversized skill bundle")
-	}
-	got, err := inventory.SkillHash(dir)
-	if err != nil || got != hash {
-		return v, reject("skill changed since its inventory scan")
-	}
-	canonical, err := inventory.PackSkill(dir)
-	if err != nil {
-		return v, reject("cannot verify skill bundle")
+		return v, err
 	}
 	if validatingProposal(ctx) {
 		return v, nil
