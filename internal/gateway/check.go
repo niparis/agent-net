@@ -396,7 +396,7 @@ func (s *Store) resetCheckProgress(sessionID string) error {
 
 // answerCheck acts on the next announce after a check. It runs for every
 // announce; only a session with a check waiting is affected.
-func (s *Store) answerCheck(sessionID, task string) error {
+func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) error {
 	s.checkMu.Lock()
 	defer s.checkMu.Unlock()
 	var name, node string
@@ -611,7 +611,7 @@ func (s *Store) answerCheck(sessionID, task string) error {
 		}
 		// The answer may only repeat the wait that is already on the Desk.
 		// A check row would then be a copy of it.
-		covered, err := waitHasAsk(s.db, sessionID)
+		covered, err := waitHasAsk(s.db, sessionID, protocol.CleanWaiting(reported))
 		if err != nil {
 			return err
 		}
@@ -628,25 +628,30 @@ func (s *Store) answerCheck(sessionID, task string) error {
 	return s.bumpCheckAnswer(kind)
 }
 
-// waitHasAsk says whether the session's current wait already has an ask, open
-// or settled. A blocked answer that repeats that wait adds no check row: the
-// owner or the chief already has it.
-func waitHasAsk(q askDB, sessionID string) (bool, error) {
-	var raw string
-	if err := q.QueryRow(`SELECT waiting FROM sessions WHERE id=?`, sessionID).Scan(&raw); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+// waitHasAsk says whether the wait the answer repeats already has an ask, open
+// or settled. The wait the announce carries is the one it answers with; the
+// stored wait is the fallback, for an answer that names no wait. A busy turn
+// may have cleared the stored one before the answer arrived. A blocked answer
+// that repeats either adds no check row: the owner or the chief already has it.
+func waitHasAsk(q askDB, sessionID string, reported *protocol.Waiting) (bool, error) {
+	cw := reported
+	if cw == nil {
+		var raw string
+		if err := q.QueryRow(`SELECT waiting FROM sessions WHERE id=?`, sessionID).Scan(&raw); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return false, nil
+			}
+			return false, err
+		}
+		if raw == "" {
 			return false, nil
 		}
-		return false, err
+		var w protocol.Waiting
+		if json.Unmarshal([]byte(raw), &w) != nil {
+			return false, nil
+		}
+		cw = protocol.CleanWaiting(&w)
 	}
-	if raw == "" {
-		return false, nil
-	}
-	var w protocol.Waiting
-	if json.Unmarshal([]byte(raw), &w) != nil {
-		return false, nil
-	}
-	cw := protocol.CleanWaiting(&w)
 	if cw == nil {
 		return false, nil
 	}

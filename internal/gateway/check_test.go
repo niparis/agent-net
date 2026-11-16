@@ -734,3 +734,68 @@ func TestChangedWaitAfterAClosedAskRaisesANewAsk(t *testing.T) {
 		t.Fatalf("waiting rows = %d open of %d, want a new ask", open, all)
 	}
 }
+
+// A session goes busy to answer the check, and busy clears its stored wait
+// (decision 0016). Its answer then repeats the wait in the announce itself.
+// The chief already closed that wait, so neither a second waiting row nor a
+// check row is raised.
+func TestBlockedAnswerRepeatingItsOwnWaitAfterBusyMakesNoAsk(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	const wait = "owner's yes on the TRUNCATE, relayed by the lead, then pg_dump, truncate, merge and deploy"
+	sid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p",
+		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: wait}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	since := c.t.Unix()
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	// The chief closed the wait as the same question.
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed', answer='chief: same wait' WHERE source_ref=?`, "waiting:"+sid); err != nil {
+		t.Fatal(err)
+	}
+	// An hour later the check arrives and the session goes busy to answer it.
+	c.t = c.t.Add(time.Hour)
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p", Status: "busy"}); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	if err := s.db.QueryRow(`SELECT waiting FROM sessions WHERE id=?`, sid).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw != "" {
+		t.Fatalf("the busy turn kept the wait: %s", raw)
+	}
+	// The check is out and waits for the answer.
+	if _, err := s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)`, sid, c.t.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	// The answer names the same wait again. The daemon kept its original start
+	// across the busy turn.
+	reported := &protocol.Waiting{Kind: protocol.WaitingInput, Text: wait, Since: since}
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid,
+		Task: "blocked on the owner's TRUNCATE reset", Waiting: reported}); err != nil {
+		t.Fatal(err)
+	}
+	if rows := openCheckRows(t, s); len(rows) != 0 {
+		t.Fatalf("check rows after the same wait: %+v", rows)
+	}
+	// The daemon reports the wait again, as it does after the announce.
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p", Waiting: reported}); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+	var open, all int
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(status='open'),0), COUNT(*) FROM inbox_items WHERE source_ref=?`, "waiting:"+sid).Scan(&open, &all); err != nil {
+		t.Fatal(err)
+	}
+	if open != 0 || all != 1 {
+		t.Fatalf("waiting rows = %d open of %d, want the closed one only", open, all)
+	}
+}
