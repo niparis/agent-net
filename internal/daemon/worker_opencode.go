@@ -216,14 +216,20 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 	if err := copyOpenCodeAuth(ctx, bin, data, state); err != nil {
 		return nil, err
 	}
-	env := d.workerGitEnv(w, os.Environ(), map[string]string{
+	// The worker's own OpenCode process takes the skill folder of its node in
+	// its config (decision 0169, task 4). It adds to the owner's folders.
+	vars := map[string]string{
 		"XDG_DATA_HOME":                 data,
 		"OPENCODE_SERVER_PASSWORD":      password,
 		"AGENT_NET_WORKER":              w.id,
 		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(dir, "session"),
 		"AGENT_NET_SOCKET":              d.cfg.SocketPath,
 		"XDG_STATE_HOME":                state,
-	})
+	}
+	if cfg := d.openCodeSkillsConfig(ctx, workerSkillNode(w), ""); cfg != "" {
+		vars["OPENCODE_CONFIG_CONTENT"] = cfg
+	}
+	env := d.workerGitEnv(w, os.Environ(), vars)
 	return d.serveOpenCodePrivate(ctx, openCodeServe{
 		label: "opencode serve", password: password,
 		spawn: func(attempt, port int) (string, string, string, error) {

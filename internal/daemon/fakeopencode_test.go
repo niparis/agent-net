@@ -78,7 +78,7 @@ func runFakeOpenCode() {
 	dir := fakeHarnessDir(cwd, "XDG_DATA_HOME")
 	rec := fakeOCRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
-	for _, k := range []string{"AGENT_NET_CTO", "AGENT_NET_WORKER", "AGENT_NET_WORKER_SESSION_FILE", "AGENT_NET_SOCKET", "XDG_STATE_HOME", "XDG_DATA_HOME", "OPENCODE_SERVER_PASSWORD"} {
+	for _, k := range []string{"AGENT_NET_CTO", "AGENT_NET_WORKER", "AGENT_NET_WORKER_SESSION_FILE", "AGENT_NET_SOCKET", "XDG_STATE_HOME", "XDG_DATA_HOME", "OPENCODE_SERVER_PASSWORD", "OPENCODE_CONFIG_CONTENT"} {
 		rec.Env[k] = os.Getenv(k)
 	}
 	child := exec.Command("sleep", "600")

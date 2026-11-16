@@ -89,6 +89,12 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	args = append(args, modelArgs...)
+	// Pi loads each skill folder it is given (decision 0169, task 4).
+	if folder, ok := d.skillsForStart(ctx, workerSkillNode(w)); ok {
+		for _, dir := range folder.Skills {
+			args = append(args, "--skill", dir)
+		}
+	}
 	w.discardStdout = true // the rpc event stream; stderr (with the errors) goes to the log
 	if err := d.spawnWorkerStdin(w, bin, args, env, in); err != nil {
 		return err

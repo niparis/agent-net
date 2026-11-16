@@ -89,3 +89,41 @@ yet.
 - A new repo gets one notice to the CTO: "new project X: run skills suggest
   and set, then tell the owner". There is no hold and no approval step.
 - There is no token cap; the numbers are shown.
+
+## Task 4: the skills folder of a session
+
+Task 4 hands each session and worker the effective skills of its node. The node
+of a session is its Agent, resolved along agent, repo, team and global; a
+session without an Agent uses its project's Repo. A worker has no Agent of its
+own, so its node is its project's Repo.
+
+The daemon writes one folder per set under its own state folder,
+`<state>/skills/<hash>/`, from the archive bundles the gateway holds. The
+gateway answers the set in one read (`skills.folder`) and each bundle in its own
+(`skills.version`), because a whole set can be larger than one frame may carry.
+The folder's name is the hash of its skills at their resolved versions: an
+unchanged set is reused, a changed set gets a new folder.
+Each bundle is checked by its content hash before a session sees it. The folder
+is in Claude Code's plugin form, so it holds `.claude-plugin/plugin.json` and
+`skills/<name>/`. Nothing is written into a project, a worktree or a user skill
+folder.
+
+Each harness takes the set its own way:
+
+- Claude Code: `--plugin-dir` to the folder.
+- Pi: `--skill` for each `skills/<name>` folder.
+- OpenCode: the `skills` key of its per-process config, which adds to the
+  owner's own folders and to any config agent-net already passes. This applies
+  to the processes agent-net starts: workers and the CTO. An OpenCode session
+  that runs in the owner's shared service is not agent-net's process and gets
+  no folder here.
+- Codex: `skills/extraRoots/set` with the folder's `skills` root on the app
+  server, after the thread starts. A Codex worker has its own server. A Codex
+  session on the owner's shared server sets the roots of that server, which
+  holds its other threads too.
+- agy: nothing, as the owner chose; agy gets only the everyone skills.
+
+A node with an empty effective list gets no flag and no folder. A failure to
+build never blocks the start: the session starts without the folder and one
+daemon log line says why. Nothing restarts a running session; the set result
+already lists the sessions that still run an old set.

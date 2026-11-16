@@ -996,6 +996,8 @@ type fakeCodexRecord struct {
 	// last thread/resume.
 	TurnParams   []map[string]any `json:"turn_params"`
 	ResumeParams map[string]any   `json:"resume_params"`
+	// SkillRoots are the extra skill roots the daemon set on this server.
+	SkillRoots []string `json:"skill_roots"`
 }
 
 // fakeCodexModels is `codex debug models`: the catalog that names the
@@ -1170,6 +1172,18 @@ func fakeCodex() {
 						}
 					}
 				}(thread)
+			case "skills/extraRoots/set":
+				roots, _ := p["extraRoots"].([]any)
+				mu.Lock()
+				rec.SkillRoots = nil
+				for _, root := range roots {
+					if text, ok := root.(string); ok {
+						rec.SkillRoots = append(rec.SkillRoots, text)
+					}
+				}
+				mu.Unlock()
+				save()
+				write(map[string]any{"id": m.ID, "result": map[string]any{}})
 			case "turn/start":
 				text := ""
 				if in, ok := p["input"].([]any); ok && len(in) > 0 {

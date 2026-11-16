@@ -42,6 +42,17 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 	// leaves the mouse to the terminal. Claude sessions get the same choice
 	// from the user's Claude settings (decision 0128); Pi has no env var for it.
 	piArgs = append(piArgs, "--tui-mode", "regular")
+	// Pi takes one path per skill, so the set's own skill folders are passed
+	// (decision 0169, task 4). A set that could not be built adds nothing.
+	node := skillNode{Session: r.Resumes}
+	if r.Resumes == "" {
+		node = startSkillNode(r.AgentID, r.Project)
+	}
+	if folder, ok := d.skillsForStart(d.ctoCtx, node); ok {
+		for _, dir := range folder.Skills {
+			piArgs = append(piArgs, "--skill", dir)
+		}
+	}
 	timeout := d.workerSettings("").StartTimeout
 	plan := protocol.EnterPlan{Argv: piArgs, Dir: r.Path, Host: r.Hostname}
 	opened := d.viewPlan("pi:"+r.NativeID, r.Project, true, plan)

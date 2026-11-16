@@ -78,6 +78,14 @@ func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.Started
 		return r, errors.New("Codex answered without a thread ID")
 	}
 	r.NativeID = out.Thread.ID
+	// This thread's skills go into the app server it runs in, before its first
+	// turn (decision 0169, task 4). A resumed thread asks for the session's own
+	// node, as the other harnesses do.
+	node := startSkillNode(r.AgentID, r.Project)
+	if r.Resumes != "" {
+		node = skillNode{Session: r.Resumes}
+	}
+	d.setCodexSkillRoots(ctx, rpc, node)
 	if err := d.bindRepoStart(ctx, r); err != nil {
 		return r, err
 	}

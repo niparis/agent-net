@@ -89,6 +89,7 @@ func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		return fmt.Errorf("codex answered without a thread ID: %s", truncate(string(raw), 200))
 	}
 	cc.thread = started.Thread.ID
+	d.setCodexSkillRoots(ctx, cc, workerSkillNode(w))
 	cc.effort = effort
 	if effort != "" {
 		// The worker shows the model it was started with, and its effort.
@@ -235,6 +236,7 @@ func (codexLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
 		cc.model = firstNonEmpty(resumed.Thread.Model, name)
 	}
 	cc.thread = w.nativeID
+	d.setCodexSkillRoots(ctx, cc, workerSkillNode(w))
 	d.wmu.Lock()
 	w.codex = cc
 	d.wmu.Unlock()

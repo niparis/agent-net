@@ -333,7 +333,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.Merger {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
-	in := claudeStartInput{Name: name, Settings: claudeSettingsWithMCPAnswers(settings, r.Path), Model: p.Model}
+	in := claudeStartInput{Name: name, Settings: claudeSettingsWithMCPAnswers(settings, r.Path), Model: p.Model, Skills: startSkillNode(p.AgentID, found.Name)}
 	if p.AgentID == "" {
 		in.FirstMessage = p.FirstMessage
 	}
@@ -586,7 +586,7 @@ func (d *Daemon) claudeResumeSpec(a protocol.AgentView) claudeBackground {
 	if a.Type == "merger" {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
-	return d.claudeStartSpec(context.Background(), claudeStartInput{Resume: a.NativeID, Settings: claudeSettingsWithMCPAnswers(settings, a.Cwd)})
+	return d.claudeStartSpec(context.Background(), claudeStartInput{Resume: a.NativeID, Settings: claudeSettingsWithMCPAnswers(settings, a.Cwd), Skills: skillNode{Session: a.SessionID}})
 }
 
 func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {

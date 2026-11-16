@@ -844,7 +844,14 @@ func (d *Daemon) goBackground(fn func()) bool {
 	return true
 }
 
-func (d *Daemon) Logf(format string, args ...any) { d.log.Printf(format, args...) }
+func (d *Daemon) Logf(format string, args ...any) {
+	// A Daemon built by a test may have no logger, and a start must never
+	// fail on a log line.
+	if d.log == nil {
+		return
+	}
+	d.log.Printf(format, args...)
+}
 
 func (d *Daemon) Replies() ReplyBook { return d.st }
 
