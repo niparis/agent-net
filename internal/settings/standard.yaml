@@ -1094,7 +1094,7 @@ settings:
     type: text
     levels: [network]
     slots: [handback]
-    default: "- **If you are a worker** (your first message starts with `[agent-net worker brief]`), follow that brief over every general rule above, including the rule to announce your task, and finish the way the brief says (with `{{handback}}`, or with your final answer when the brief says agent-net tools are off). You cannot start workers."
+    default: "- **If you are a worker** (your first message starts with `[agent-net worker brief]`), follow that brief over every general rule above, including the rule to announce your task, and finish the way the brief says (with `{{handback}}`, or with your final answer when the brief says agent-net tools are off). You cannot start workers. Report friction in your hand-back: say what slowed you down, or none."
     live: true
   - key: delivery.contract.accept
     description: Contract for the accept step.

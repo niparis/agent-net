@@ -1176,6 +1176,9 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 	if strings.TrimSpace(req.Report) == "" {
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
+	if err := protocol.ValidateFriction(req.Friction); err != nil {
+		return nil, err
+	}
 	handedOver := false
 	if files == nil {
 		var err error
@@ -1277,6 +1280,11 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 			}
 			t.recorded, t.changeID, t.deliveryProblem = true, changeID, deliveryProblem
 		}
+	}
+	// Friction is best effort and never fails a hand-back. A replayed
+	// hand-back already reported it before it was saved.
+	if !t.persisted {
+		d.reportFriction(ctx, w, req.Friction, changeID)
 	}
 	var st workerStats
 	if t.stats != nil {

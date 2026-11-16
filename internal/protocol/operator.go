@@ -196,7 +196,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
-	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet,
+	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet, OpFrictionFind,
 	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpChiefSorts, OpAskUndo, OpAskMark, OpAskDiscuss, OpDeskLog, OpDeskSettle, OpNudgeStats, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone, OpScopeSet, OpScopeRemove,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpSkillArchiveUndo, OpSkillsUndo, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick, OpJudgmentAdd, OpPermissionUndo, OpPermissionApply, OpSignInOpen}
@@ -584,6 +584,9 @@ type WorkerHandbackRequest struct {
 	Complete *bool `json:"complete,omitempty"`
 	// Files are absolute paths in the worker's own worktree.
 	Files []string `json:"files,omitempty"`
+	// Friction lists what slowed the worker down (decision 0170). Empty means
+	// nothing to report.
+	Friction []FrictionEntry `json:"friction,omitempty"`
 }
 
 // IsComplete tells whether the hand-back reports the whole task done.

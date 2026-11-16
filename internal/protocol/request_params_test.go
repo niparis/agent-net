@@ -44,6 +44,8 @@ var requestParams = []any{
 	WorkerStartRequest{},
 	WorkerStopRequest{},
 	WorkerHandbackRequest{},
+	FrictionQuery{},
+	FrictionReportRequest{},
 	SessionTrustRequest{},
 	SessionRenameRequest{},
 	SessionReplaceRequest{},

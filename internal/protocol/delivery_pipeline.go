@@ -1785,6 +1785,9 @@ type StepReportRequest struct {
 	DoneBy string            `json:"done_by,omitempty"`
 	Note   string            `json:"note,omitempty"`
 	Until  string            `json:"until,omitempty"`
+	// Friction lists what slowed this step down (decision 0170). Empty means
+	// nothing to report.
+	Friction []FrictionEntry `json:"friction,omitempty"`
 	// MergeContainsHead is the daemon's git check for a merge pass. Nil is
 	// an older daemon without the check; versions from 0.4.131 must send it.
 	// False refuses the merge report.
@@ -1836,6 +1839,9 @@ func (q StepReportRequest) Validate() error {
 	}
 	if len(q.Note) > MaxEvidenceNoteBytes {
 		return fmt.Errorf("note is longer than %d bytes", MaxEvidenceNoteBytes)
+	}
+	if err := ValidateFriction(q.Friction); err != nil {
+		return err
 	}
 	if q.Result == StepResultClose && strings.TrimSpace(q.Note) == "" {
 		return errors.New("a close needs a note: say why the change is closed")

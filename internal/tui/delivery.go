@@ -111,6 +111,10 @@ const deliveryFullReadEvery = 2 * time.Minute
 // does not show them, so its count is never stale for long.
 const inboxRefreshEvery = 10 * time.Second
 
+// frictionRefreshEvery is how often the Work tab reads the friction reports.
+// They arrive when a worker hands back, so a minute is enough.
+const frictionRefreshEvery = time.Minute
+
 // deliveryState is everything the view keeps. It sits in the Model by value
 // and is replaced, never shared.
 type deliveryState struct {

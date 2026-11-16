@@ -500,3 +500,40 @@ func TestHandbackReportFirstLineCompleteNoRecordsNoChange(t *testing.T) {
 		t.Errorf("the notice names a change:\n%s", n.Body)
 	}
 }
+
+// Decision 0170: friction from a hand-back and from a step report reaches the
+// gateway's table, tied to the worker's session and its change.
+func TestHandbackAndStepReportStoreFriction(t *testing.T) {
+	c, g, _ := deliveryHandbackNode(t, nil)
+	caller, callerID := deliveryCaller(t, c)
+	res := startDeliveryWorker(t, c, caller, callerID, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude",
+		Title: "Add the dirty file", Task: "FAKE:dirty", Isolation: protocol.IsolationWorktree})
+	if _, err := c.d.handback(context.Background(), res.SessionID, protocol.WorkerHandbackRequest{Report: "done with the hand-back",
+		Friction: []protocol.FrictionEntry{{Area: protocol.FrictionTooling, Text: "the fake harness needed a restart"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var handbackStored protocol.FrictionFindResult
+	eventually(t, "the hand-back friction is stored", func() bool {
+		got, err := g.gw.Store().FrictionFind(protocol.FrictionQuery{Project: "shop", Area: protocol.FrictionTooling})
+		handbackStored = got
+		return err == nil && len(got.Entries) == 1
+	})
+	if handbackStored.Entries[0].Session != res.SessionID {
+		t.Fatalf("hand-back friction session: %+v", handbackStored.Entries[0])
+	}
+	found := findChanges(t, caller, protocol.ChangesFindArgs{Project: "shop"})
+	if len(found.Items) != 1 {
+		t.Fatalf("changes: %+v", found)
+	}
+	ch := found.Items[0].Change
+	reportStep(t, caller, protocol.StepReportArgs{Change: ch.ID, StepRef: protocol.StepRef{Step: protocol.StepAccept},
+		Result: protocol.StepResultPass, Commit: ch.HeadCommit, Note: "read the diff",
+		Friction: []protocol.FrictionEntry{{Area: protocol.FrictionCI, Text: "the suite took 40 minutes"}}})
+	step, err := g.gw.Store().FrictionFind(protocol.FrictionQuery{Project: "shop", Area: protocol.FrictionCI})
+	if err != nil || len(step.Entries) != 1 {
+		t.Fatalf("step friction: %+v %v", step, err)
+	}
+	if step.Entries[0].Change != ch.ID || step.Entries[0].Session != callerID {
+		t.Fatalf("step friction link: %+v", step.Entries[0])
+	}
+}

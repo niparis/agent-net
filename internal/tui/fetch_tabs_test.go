@@ -37,6 +37,8 @@ func (f *fetchCountSource) Call(_ context.Context, method string, _ any) (json.R
 		return json.Marshal(map[string]any{"asks": append(askItems(f.inbox), openProposalAsks(f.proposals)...)})
 	case protocol.OpProposalList:
 		return json.Marshal(f.proposals)
+	case protocol.OpFrictionFind:
+		return json.Marshal(protocol.FrictionFindResult{})
 	}
 	return nil, nil
 }
@@ -307,5 +309,32 @@ func TestDeliveryTickOnlyOnShowingScreens(t *testing.T) {
 	m.tab = sessionsTab
 	if _, cmd := m.deliveryTick(); cmd == nil {
 		t.Fatal("Sessions did not ask for delivery changes")
+	}
+}
+
+// The friction section is read only on the Work tab, and at most once a minute.
+func TestFrictionReadOnlyOnTheWorkTab(t *testing.T) {
+	src := &fetchCountSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+	clock := t0
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return clock }
+	m.tab = sessionsTab
+	m = refresh(m, src)
+	if got := src.count(protocol.OpFrictionFind); got != 0 {
+		t.Fatalf("the Sessions tab read friction %d times", got)
+	}
+	m.tab = quotasTab
+	m = refresh(m, src)
+	if got := src.count(protocol.OpFrictionFind); got != 1 {
+		t.Fatalf("the Work tab read friction %d times", got)
+	}
+	m = refresh(m, src)
+	if got := src.count(protocol.OpFrictionFind); got != 1 {
+		t.Fatalf("a second refresh inside the minute read friction %d times", got)
+	}
+	clock = t0.Add(frictionRefreshEvery)
+	m = refresh(m, src)
+	if got := src.count(protocol.OpFrictionFind); got != 2 {
+		t.Fatalf("the read did not refresh after a minute: %d", got)
 	}
 }

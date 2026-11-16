@@ -117,17 +117,23 @@ type Model struct {
 	qualityDetail       bool
 	// The picker table of the Quality subtab. It changes only on writes, so it
 	// is read when the subtab opens and on R, not on every tick.
-	picker            protocol.PickerAnalysis
-	pickerLoaded      bool
-	pickerErr         string
-	pickerWanted      bool
-	pickerSelModel    int
-	pickerSelBucket   int
-	pickerShowOlder   bool
-	weeklyScores      []protocol.ScoresWeeklyRow
-	weeklyLoaded      bool
-	weeklyErr         string
-	weeklyWanted      bool
+	picker          protocol.PickerAnalysis
+	pickerLoaded    bool
+	pickerErr       string
+	pickerWanted    bool
+	pickerSelModel  int
+	pickerSelBucket int
+	pickerShowOlder bool
+	weeklyScores    []protocol.ScoresWeeklyRow
+	weeklyLoaded    bool
+	weeklyErr       string
+	weeklyWanted    bool
+	// The Work tab's friction section (decision 0170). It is read only, and
+	// read at most once a minute while that tab is open.
+	friction          protocol.FrictionFindResult
+	frictionLoaded    bool
+	frictionErr       string
+	frictionAt        time.Time
 	showWeekly        bool
 	messageShowEvents bool
 	hideWorkerThreads bool
@@ -405,6 +411,10 @@ type fetchedMsg struct {
 	onboardingRevision   int
 	onboardingToolsCount int
 	onboardingToolsKnown bool
+	// friction is asked for only on the Work tab, at most once a minute.
+	frictionAsked bool
+	friction      protocol.FrictionFindResult
+	frictionErr   error
 }
 
 type notificationSettingMsg struct {
@@ -554,6 +564,7 @@ func (m Model) fetchCmd() tea.Cmd {
 	wantWorkerLog := m.tab == quotasTab && m.workersLog
 	wantPicker := m.tab == quotasTab && !m.workersLog && m.pickerWanted
 	wantWeekly := m.tab == quotasTab && m.qualityDetail && (m.weeklyWanted || !m.weeklyLoaded)
+	wantFriction := m.tab == quotasTab && (m.frictionAt.IsZero() || m.now().Sub(m.frictionAt) >= frictionRefreshEvery)
 	now := m.now
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
@@ -623,6 +634,23 @@ func (m Model) fetchCmd() tea.Cmd {
 					res.weeklyErr = err
 				} else {
 					res.weeklyErr = ErrTooOld
+				}
+			})
+		}
+
+		if wantFriction {
+			res.frictionAsked = true
+			group(func(ctx context.Context) {
+				if caller, ok := src.(interface {
+					Call(context.Context, string, any) (json.RawMessage, error)
+				}); ok {
+					raw, err := caller.Call(ctx, protocol.OpFrictionFind, protocol.FrictionQuery{Limit: 10})
+					if err == nil {
+						err = json.Unmarshal(raw, &res.friction)
+					}
+					res.frictionErr = err
+				} else {
+					res.frictionErr = ErrTooOld
 				}
 			})
 		}
@@ -1281,6 +1309,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.weeklyScores, m.weeklyErr = msg.weekly, ""
 				m.weeklyLoaded = true
+			}
+		}
+		if msg.frictionAsked {
+			m.frictionAt = msg.at
+			if msg.frictionErr != nil {
+				if !errors.Is(msg.frictionErr, ErrTooOld) {
+					m.frictionErr = sanitize(msg.frictionErr.Error())
+				}
+			} else {
+				m.friction, m.frictionErr = msg.friction, ""
+				m.frictionLoaded = true
 			}
 		}
 		if msg.err == nil && msg.snap.Connected {

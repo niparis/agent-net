@@ -761,6 +761,7 @@ func workerPreambleBar(harness string, snap settings.Snapshot, repo string, bar 
 		`Do not prove "nothing happened" with sleeps or short timeouts; assert on state.`,
 		"Comments say why, never restate the code.",
 		"Put a check in one place, at the entry point, not repeated in every layer.",
+		"Report friction: add friction entries to your hand-back or step report, each with an area and one line. Areas: tooling, permissions, brief, review, ci, environment, skill. Write none when nothing did.",
 	} {
 		b += "\n- " + rule
 	}

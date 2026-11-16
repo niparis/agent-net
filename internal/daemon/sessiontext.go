@@ -62,6 +62,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpPermissionApply: true,
 	protocol.OpNudgeUndo:       true,
 	protocol.OpNudgeStats:      true,
+	protocol.OpFrictionFind:    true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -671,6 +672,15 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, err
 		}
 		res, err = d.call(ctx, protocol.FrameNudgeStats, p)
+	case protocol.OpFrictionFind:
+		var p protocol.FrictionQuery
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad friction_find request")
+		}
+		if err = p.Validate(); err != nil {
+			return nil, true, err
+		}
+		res, err = d.call(ctx, protocol.FrameFrictionFind, p)
 	case "learned_list", "learned_answer", "learned_view":
 		var p struct {
 			ID        int64  `json:"suggestion_id"`
