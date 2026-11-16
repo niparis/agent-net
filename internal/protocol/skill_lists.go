@@ -11,7 +11,46 @@ const (
 	FrameSkillsSet       = "skills.set"
 	FrameSkillsEffective = "skills.effective"
 	FrameSkillsUndo      = "skills.undo"
+	// FrameSkillsFolder is the launch read of task 4: one target resolved to
+	// its effective skills at their versions.
+	FrameSkillsFolder = "skills.folder"
+	// FrameSkillsVersion reads one stored version's bundle. The daemon asks
+	// for each skill it does not have yet: one bundle is bounded, a whole set
+	// is not.
+	FrameSkillsVersion = "skills.version"
 )
+
+// SkillFolderRequest names the target of a launch. Session resolves to that
+// session's Agent, else its Repo; Agent and Repo name one directly; an empty
+// request is the global node.
+type SkillFolderRequest struct {
+	Session string `json:"session,omitempty"`
+	Agent   string `json:"agent,omitempty"`
+	Repo    string `json:"repo,omitempty"`
+	By      string `json:"by"`
+}
+
+// SkillFolder is one launch target's set, without the bundles.
+type SkillFolder struct {
+	Level  string           `json:"level"`
+	Scope  string           `json:"scope"`
+	Skills []EffectiveSkill `json:"skills"`
+}
+
+// SkillVersionRequest asks for one stored version's bundle.
+type SkillVersionRequest struct {
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+	By      string `json:"by"`
+}
+
+// SkillVersion is one stored version with its bundle and content hash.
+type SkillVersion struct {
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+	Hash    string `json:"hash"`
+	Data    []byte `json:"data"`
+}
 
 // SkillSetRequest replaces one node's own add and remove lists. A suggestion id
 // supplies the add list; add and remove are the explicit form. Pins name a
@@ -53,6 +92,7 @@ type SkillUndoRequest struct {
 type EffectiveSkill struct {
 	Name        string `json:"name"`
 	Version     int    `json:"version"`
+	Hash        string `json:"hash,omitempty"`
 	Pin         int    `json:"pin,omitempty"`
 	PinMissing  bool   `json:"pin_missing,omitempty"`
 	Level       string `json:"level"`

@@ -39,6 +39,9 @@ func (d *Daemon) claudeRoleDir(role sessionRole) string {
 type claudeStartInput struct {
 	Role                                        sessionRole
 	Name, Resume, Model, Settings, FirstMessage string
+	// Skills is the graph node this start takes its skills from. The zero
+	// value gets no folder.
+	Skills skillNode
 }
 
 // claudeStartSpec is the one builder of a Claude start. A role replaces the
@@ -50,6 +53,13 @@ func (d *Daemon) claudeStartSpec(ctx context.Context, in claudeStartInput) claud
 	}
 	if in.Role == roleCTO {
 		d.applyCTOClaudeRole(ctx, &spec)
+	}
+	// Claude Code takes a whole skill set as one plugin folder (decision 0169,
+	// task 4). A set that could not be built leaves the launch as it was.
+	if !in.Skills.empty() {
+		if folder, ok := d.skillsForStart(ctx, in.Skills); ok {
+			spec.Flags = append(spec.Flags, "--plugin-dir", folder.Dir)
+		}
 	}
 	return spec
 }
@@ -182,7 +192,7 @@ func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, 
 	if err := claudetrust.Set(dir); err != nil {
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
-	spec := d.claudeStartSpec(ctx, claudeStartInput{Role: role, Resume: id, Model: model, FirstMessage: first})
+	spec := d.claudeStartSpec(ctx, claudeStartInput{Role: role, Resume: id, Model: model, FirstMessage: first, Skills: skillNode{Agent: "cto"}})
 	c.starting.Store(true)
 	defer c.starting.Store(false)
 	// The launch is bounded like every start. The old private path bounded only
@@ -250,6 +260,10 @@ func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error 
 	if err = os.WriteFile(filepath.Join(dir, "opencode.json"), configData, 0600); err != nil {
 		return err
 	}
+	// The role's node takes its skills in its per-process config (decision
+	// 0169, task 4), which adds to the file above. A set that could not be
+	// built leaves the process config empty.
+	skillsConfig := d.openCodeSkillsConfig(ctx, skillNode{Agent: "cto"}, "")
 	pass := protocol.NewToken()
 	logf, err := os.OpenFile(filepath.Join(dir, "opencode.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -264,7 +278,7 @@ func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error 
 		spawn: func(attempt, port int) (string, string, string, error) {
 			cmd := exec.Command(bin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
 			cmd.Dir = dir
-			cmd.Env = workerEnv(os.Environ(), map[string]string{"XDG_DATA_HOME": data, "XDG_STATE_HOME": state, "XDG_CONFIG_HOME": config, "OPENCODE_CONFIG": "", "OPENCODE_CONFIG_CONTENT": "", "OPENCODE_CONFIG_DIR": "", "XDG_CACHE_HOME": cache, "OPENCODE_SERVER_PASSWORD": pass, "AGENT_NET_CTO": "1", "AGENT_NET_WORKER": "", "AGENT_NET_WORKER_SESSION_FILE": "", "AGENT_NET_SOCKET": ""})
+			cmd.Env = workerEnv(os.Environ(), map[string]string{"XDG_DATA_HOME": data, "XDG_STATE_HOME": state, "XDG_CONFIG_HOME": config, "OPENCODE_CONFIG": "", "OPENCODE_CONFIG_CONTENT": skillsConfig, "OPENCODE_CONFIG_DIR": "", "XDG_CACHE_HOME": cache, "OPENCODE_SERVER_PASSWORD": pass, "AGENT_NET_CTO": "1", "AGENT_NET_WORKER": "", "AGENT_NET_WORKER_SESSION_FILE": "", "AGENT_NET_SOCKET": ""})
 			cmd.Stdout, cmd.Stderr = logf, logf
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 			if err := cmd.Start(); err != nil {

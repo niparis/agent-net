@@ -78,6 +78,11 @@ func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.Started
 		return r, errors.New("Codex answered without a thread ID")
 	}
 	r.NativeID = out.Thread.ID
+	// No skill roots here. The owner's app server is shared by every thread on
+	// the machine and skills/extraRoots/set has no thread argument, so one
+	// session's call would replace the roots of all the others. These sessions
+	// keep the everyone skills from the user folder, as a hand-started one does
+	// (decision 0169, task 4). Only a worker's own app server is told.
 	if err := d.bindRepoStart(ctx, r); err != nil {
 		return r, err
 	}

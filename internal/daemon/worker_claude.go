@@ -149,6 +149,11 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 			"agent-net": map[string]any{"command": d.cfg.Exe, "args": []string{"mcp"}}}})
 		spec.Flags = []string{"--mcp-config", string(mcp)}
 	}
+	// The worker's node gives it its skills, as a plugin folder (decision
+	// 0169, task 4). A set that could not be built leaves the launch as it was.
+	if folder, ok := d.skillsForStart(ctx, workerSkillNode(w)); ok {
+		spec.Flags = append(spec.Flags, "--plugin-dir", folder.Dir)
+	}
 	modelArgs, err := protocol.ParseModelSelection("claude", "", w.model, "").Arguments(nil)
 	if err != nil {
 		return err

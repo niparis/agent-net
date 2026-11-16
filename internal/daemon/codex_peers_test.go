@@ -62,6 +62,9 @@ type fakeShared struct {
 	queued  []fakeQueued
 	conns   []*websocket.Conn
 	reads   int
+	// extraRoots counts skills/extraRoots/set calls. The real method is
+	// server-wide, so any owner-session call would change every thread there.
+	extraRoots int
 }
 
 func startFakeShared(t *testing.T) *fakeShared {
@@ -108,6 +111,12 @@ func (f *fakeShared) remove(id string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.threads, id)
+}
+
+func (f *fakeShared) extraRootCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.extraRoots
 }
 
 func (f *fakeShared) queue() []fakeQueued {
@@ -221,6 +230,11 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			reply(map[string]any{"thread": map[string]any{"id": th.ID, "cwd": th.Cwd, "name": name, "model": th.Model,
 				"ephemeral": th.Ephemeral, "parentThreadId": parent, "source": src, "status": status}}, "")
+			continue
+		case "skills/extraRoots/set":
+			f.extraRoots++
+			f.mu.Unlock()
+			reply(map[string]any{}, "")
 			continue
 		case "thread/queue/add":
 			if f.threads[p.ThreadID] == nil {

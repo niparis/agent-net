@@ -30,6 +30,7 @@ type skillListRow struct {
 // skillMeta is one live archive version without its bundle.
 type skillMeta struct {
 	Version     int
+	Hash        string
 	Description string
 	Tokens      int
 }
@@ -42,7 +43,7 @@ type skillArchiveIndex struct {
 
 func (s *Store) skillArchiveIndex() (*skillArchiveIndex, error) {
 	idx := &skillArchiveIndex{latest: map[string]int{}, meta: map[string]map[int]skillMeta{}}
-	rows, err := s.db.Query(`SELECT name, version, description, tokens FROM skill_archive WHERE removed_at=0 ORDER BY name, version`)
+	rows, err := s.db.Query(`SELECT name, version, hash, description, tokens FROM skill_archive WHERE removed_at=0 ORDER BY name, version`)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +51,7 @@ func (s *Store) skillArchiveIndex() (*skillArchiveIndex, error) {
 	for rows.Next() {
 		var name string
 		var m skillMeta
-		if err = rows.Scan(&name, &m.Version, &m.Description, &m.Tokens); err != nil {
+		if err = rows.Scan(&name, &m.Version, &m.Hash, &m.Description, &m.Tokens); err != nil {
 			return nil, err
 		}
 		if idx.meta[name] == nil {
@@ -157,7 +158,8 @@ func resolveSkillPath(path []skillListRow, rows map[string][]skillListRow, idx *
 				}
 				entry := protocol.EffectiveSkill{Name: r.Name, Pin: r.Pin, Level: node.Level, Scope: node.Scope}
 				if meta, ok := idx.version(r.Name, r.Pin); ok {
-					entry.Version, entry.Description, entry.Tokens = meta.Version, meta.Description, meta.Tokens
+					entry.Version, entry.Hash = meta.Version, meta.Hash
+					entry.Description, entry.Tokens = meta.Description, meta.Tokens
 				} else {
 					entry.PinMissing = r.Pin > 0
 				}
@@ -328,6 +330,77 @@ func (s *Store) SkillListsEffective(level, scope string) ([]protocol.EffectiveSk
 		out = append(out, protocol.EffectiveSkills{Level: t.level, Scope: t.scope, Skills: list, Tokens: skillTokens(list)})
 	}
 	return out, nil
+}
+
+// SkillFolder resolves a launch target (decision 0169, task 4) and returns its
+// effective skills at their versions. The bundles are read one at a time with
+// SkillVersion: a whole set can be larger than one frame may carry.
+func (s *Store) SkillFolder(p protocol.SkillFolderRequest) (protocol.SkillFolder, error) {
+	level, scope := s.skillFolderTarget(p)
+	nodes, err := s.SkillListsEffective(level, scope)
+	if err != nil {
+		return protocol.SkillFolder{}, err
+	}
+	out := protocol.SkillFolder{Level: level, Scope: scope, Skills: []protocol.EffectiveSkill{}}
+	if len(nodes) == 1 {
+		out.Skills = nodes[0].Skills
+	}
+	return out, nil
+}
+
+// SkillVersion reads one stored version's bundle. The caller checks the hash
+// before it uses the files.
+func (s *Store) SkillVersion(name string, version int) (protocol.SkillVersion, error) {
+	out := protocol.SkillVersion{Name: name, Version: version}
+	if !validSkillName(name) {
+		return out, reject("bad skill name")
+	}
+	err := s.db.QueryRow(`SELECT version, hash, content FROM skill_archive WHERE name=? AND version=? AND removed_at=0`,
+		name, version).Scan(&out.Version, &out.Hash, &out.Data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, reject("skill version is not in the archive")
+	}
+	return out, err
+}
+
+// skillFolderTarget is the node a launch reads. A session uses its Agent, else
+// its Repo, else the global node; a named Agent or Repo that no longer exists
+// falls back the same way, so a start never fails on a stale identity.
+func (s *Store) skillFolderTarget(p protocol.SkillFolderRequest) (level, scope string) {
+	if p.Session != "" {
+		var agent, repo, project string
+		err := s.db.QueryRow(`SELECT COALESCE(agent_id,''), COALESCE(repo_id,''), COALESCE(repo_project,'') FROM sessions WHERE id=?`, p.Session).
+			Scan(&agent, &repo, &project)
+		if err == nil {
+			if agent != "" && s.skillAgentLive(agent) {
+				return "agent", agent
+			}
+			if repo == "" && project != "" {
+				repo, _ = s.skillRepoID(project)
+			}
+			if repo != "" {
+				return "repo", repo
+			}
+		}
+	}
+	if p.Agent != "" && s.skillAgentLive(p.Agent) {
+		return "agent", p.Agent
+	}
+	if p.Repo != "" {
+		if id, err := s.skillRepoID(p.Repo); err == nil {
+			return "repo", id
+		}
+	}
+	return "global", ""
+}
+
+// skillAgentLive says the Agent still exists. A tombstoned one has no path.
+func (s *Store) skillAgentLive(id string) bool {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM agents WHERE id=? AND tombstone=0`, id).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
 }
 
 // skillEntryState is one row of a node's own list, kept for a change record.

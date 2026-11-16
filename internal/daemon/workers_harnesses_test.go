@@ -39,12 +39,22 @@ type claudeNode struct {
 
 func startClaudeNode(t *testing.T, g *testGateway, set WorkerSettings) *claudeNode {
 	t.Helper()
+	return startClaudeNodeWith(t, g, set, nil)
+}
+
+// startClaudeNodeWith is startClaudeNode with more Config changes, for a test
+// that fakes a gateway frame.
+func startClaudeNodeWith(t *testing.T, g *testGateway, set WorkerSettings, cfg func(*Config)) *claudeNode {
+	t.Helper()
 	sessions, stopLog := useFakeClaude(t)
 	adapter := &fsClaudeAdapter{dir: sessions}
 	w := startWorkerNode(t, g, set, func(c *Config) {
 		c.ClaudeSessionsDir = sessions
 		c.Adapters = append(c.Adapters, adapter)
 		c.HarnessPaths = map[string]string{"claude": os.Args[0]}
+		if cfg != nil {
+			cfg(c)
+		}
 	})
 	return &claudeNode{workerNode: w, sessions: sessions, stopLog: stopLog, adapter: adapter}
 }
@@ -423,6 +433,11 @@ func TestClaudeTranscriptStats(t *testing.T) {
 
 func startPiNode(t *testing.T, g *testGateway, set WorkerSettings) *workerNode {
 	t.Helper()
+	return startPiNodeWith(t, g, set, nil)
+}
+
+func startPiNodeWith(t *testing.T, g *testGateway, set WorkerSettings, cfg func(*Config)) *workerNode {
+	t.Helper()
 	dir := t.TempDir()
 	// Keep the fake's session directory in its own process environment, so
 	// independent Pi nodes can run concurrently without changing this process.
@@ -436,6 +451,9 @@ func startPiNode(t *testing.T, g *testGateway, set WorkerSettings) *workerNode {
 		// at once so the tests do not depend on which report reached the
 		// gateway before the first stats tick.
 		c.testPushActivityEvery = 50 * time.Millisecond
+		if cfg != nil {
+			cfg(c)
+		}
 	})
 }
 
