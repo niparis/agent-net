@@ -100,6 +100,13 @@ type Config struct {
 	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
 	// leave fake processes behind. A real daemon leaves it running.
 	testStopCTOOnExit bool
+	// testNoCTOConfirm turns off the check that a message delivered to the
+	// Claude CTO became a turn. Most tests use a fake Claude that never writes
+	// a transcript, so the check would deliver their messages again.
+	testNoCTOConfirm bool
+	// ctoConfirmWait is how long the Claude CTO may sit idle after a delivery
+	// before agent-net delivers again. Zero means ctoConfirmWaitDefault.
+	ctoConfirmWait time.Duration
 	// testProcessSignal replaces the kill call of a process stop, so a test
 	// can send a signal only to the throwaway children it started.
 	testProcessSignal func(pid int, sig syscall.Signal) error
@@ -1773,7 +1780,7 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 				sender = m.From
 			}
 		}
-		if _, err := d.ctoSendTriggered(ctx, text, sender, ctoMessageTrigger(m.FromHarness)); err != nil {
+		if _, err := d.ctoSendTriggered(withCTOMessageID(ctx, m.ID), text, sender, ctoMessageTrigger(m.FromHarness)); err != nil {
 			return Result{Detail: "CTO delivery: " + err.Error()}
 		}
 		return Result{Delivered: true, Detail: "CTO"}

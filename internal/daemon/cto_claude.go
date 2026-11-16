@@ -300,26 +300,25 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 	}
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
-	oldID := id
-	id = d.claudeCTO.session
-	if _, err = d.st.db.Exec(`INSERT INTO cto(id,session_id,claude_session_id) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET claude_session_id=excluded.claude_session_id`, id); err != nil {
+	if id, err = d.saveClaudeCTOSessionLocked(id); err != nil {
 		return nil, err
 	}
-	if _, err = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE (session_id='' OR session_id=?) AND harness='claude'`, id, oldID); err != nil {
+	a, err := d.claudeCTODeliverer()
+	if err != nil {
 		return nil, err
 	}
-	a, ok := d.adapters["claude"].(interface {
-		DeliverCTO(context.Context, protocol.SessionInfo, string, string) Result
-	})
-	if !ok {
-		return nil, errors.New("Claude adapter is not available")
+	msgID, _ := ctx.Value(ctoMessageIDKey{}).(string)
+	if msgID == "" {
+		msgID = protocol.NewToken()
 	}
-	msgID := protocol.NewToken()
+	watch := &ctoTranscriptWatch{projects: filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects"), session: id, needle: []byte(msgID)}
+	watch.start()
 	deadline, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	for {
 		res := a.DeliverCTO(deadline, protocol.SessionInfo{Harness: "claude", NativeID: id}, msgID, text)
 		if res.Delivered {
+			d.confirmClaudeCTODelivery(watch, msgID, text)
 			return map[string]string{"session_id": id}, nil
 		}
 		select {
@@ -328,6 +327,30 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+// saveClaudeCTOSessionLocked stores the conversation the CTO's Claude runs
+// now, which a resume can change from oldID, and moves the recorded actions to
+// it. The caller holds cto.mu.
+func (d *Daemon) saveClaudeCTOSessionLocked(oldID string) (string, error) {
+	id := d.claudeCTO.session
+	if _, err := d.st.db.Exec(`INSERT INTO cto(id,session_id,claude_session_id) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET claude_session_id=excluded.claude_session_id`, id); err != nil {
+		return id, err
+	}
+	_, err := d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE (session_id='' OR session_id=?) AND harness='claude'`, id, oldID)
+	return id, err
+}
+
+type claudeCTODeliverer interface {
+	DeliverCTO(context.Context, protocol.SessionInfo, string, string) Result
+}
+
+func (d *Daemon) claudeCTODeliverer() (claudeCTODeliverer, error) {
+	a, ok := d.adapters["claude"].(claudeCTODeliverer)
+	if !ok {
+		return nil, errors.New("Claude adapter is not available")
+	}
+	return a, nil
 }
 
 func (d *Daemon) claudeCTOSession() (string, error) {

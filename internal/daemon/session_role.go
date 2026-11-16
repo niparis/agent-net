@@ -102,9 +102,15 @@ func (d *Daemon) applyCTOClaudeRole(ctx context.Context, spec *claudeBackground)
 // restart, crash monitoring), which part B moves into the ordinary session
 // record.
 func (d *Daemon) startClaudeRole(ctx context.Context, role sessionRole, id, model string) error {
+	return d.startClaudeRoleWith(ctx, role, id, model, "")
+}
+
+// startClaudeRoleWith is startClaudeRole with a first prompt. A start with a
+// prompt always launches: an adopted job would never get the prompt.
+func (d *Daemon) startClaudeRoleWith(ctx context.Context, role sessionRole, id, model, first string) error {
 	d.setClaudeCTORestarted(false)
 	start := func(id string) error {
-		err := d.startClaudeRoleOnce(ctx, role, id, model)
+		err := d.startClaudeRoleOnce(ctx, role, id, model, first)
 		var failure *claudeJobFailure
 		if errors.As(err, &failure) && failure.ended {
 			d.Logf("cto.crash harness=claude reason=startup_job_failed detail=%q", failure.detail)
@@ -126,7 +132,7 @@ func (d *Daemon) startClaudeRole(ctx context.Context, role sessionRole, id, mode
 	return nil
 }
 
-func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, model string) error {
+func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, model, first string) error {
 	dir := d.claudeRoleDir(role)
 	if role == roleCTO {
 		if err := d.writeCTOSkill("claude"); err != nil {
@@ -135,7 +141,7 @@ func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, 
 	}
 	d.cto.mu.Lock()
 	c := &d.claudeCTO
-	canAdopt := c.ref == ""
+	canAdopt := c.ref == "" && first == ""
 	if c.ref != "" {
 		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, c.ref)
 		root := c.root.Load()
@@ -144,7 +150,7 @@ func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, 
 			tok, alive = procToken(root.pid)
 		}
 		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, c.ref)
-		if ok && !claudeJobEnded(status) && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
+		if first == "" && ok && !claudeJobEnded(status) && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
 			d.cto.mu.Unlock()
 			return nil
 		}
@@ -176,7 +182,7 @@ func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, 
 	if err := claudetrust.Set(dir); err != nil {
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
-	spec := d.claudeStartSpec(ctx, claudeStartInput{Role: role, Resume: id, Model: model})
+	spec := d.claudeStartSpec(ctx, claudeStartInput{Role: role, Resume: id, Model: model, FirstMessage: first})
 	c.starting.Store(true)
 	defer c.starting.Store(false)
 	// The launch is bounded like every start. The old private path bounded only
