@@ -43,3 +43,27 @@ CREATE TABLE IF NOT EXISTS skill_archive_meta (key TEXT PRIMARY KEY, value TEXT 
 // skill folder came from, so its source line can name the project. The column
 // itself is added in the migration loop, only when absent.
 const skillArchiveSourceProjectMigration = `SELECT 1 /* skill archive source project column */;`
+
+// skillArchiveChangePreviousMigration records the latest version before a
+// change, so an undo can put it back. The column itself is added in the
+// migration loop, only when absent.
+const skillArchiveChangePreviousMigration = `SELECT 1 /* skill archive change previous column */;`
+
+// skillArchiveLatestMigration adds the latest choice of each name (decision
+// 0169). An intake copy of a name that already has a live version does not
+// move it; an explicit add, a new version or a promote does. Before this table,
+// the latest was the highest live version. The backfill keeps that, except for
+// the project, plugin and agent-net copies that intake added after a name's
+// first version: those were the copies that took over the latest, so they
+// become candidates. A machine copy looks like an explicit machine add, so it
+// keeps the highest-version rule.
+const skillArchiveLatestMigration = `
+CREATE TABLE IF NOT EXISTS skill_archive_latest (
+ name TEXT PRIMARY KEY,
+ version INTEGER NOT NULL);
+INSERT OR IGNORE INTO skill_archive_latest(name, version)
+ SELECT a.name, MAX(a.version) FROM skill_archive a
+ WHERE a.removed_at=0 AND NOT (a.source_kind IN ('project','plugin','agent-net')
+  AND a.version > (SELECT MIN(b.version) FROM skill_archive b WHERE b.name=a.name AND b.removed_at=0))
+ GROUP BY a.name;
+`

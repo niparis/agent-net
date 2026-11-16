@@ -132,10 +132,77 @@ func skillContentFromDir(name, dir string) (skillArchiveContent, error) {
 	return skillArchiveContent{Name: name, Hash: hash, Bundle: bundle, Description: description, Tokens: int((bytes + 3) / 4)}, nil
 }
 
+// archiveQuerier is what the latest rule reads: a database or a transaction.
+type archiveQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+// archiveLatestOf answers the version a node following latest gets: the one the
+// latest row names when that version is live, else the highest live version.
+// It is 0 when the name has no live version.
+func archiveLatestOf(q archiveQuerier, name string) (int, error) {
+	var v int
+	err := q.QueryRow(`SELECT COALESCE(
+		(SELECT p.version FROM skill_archive_latest p WHERE p.name=? AND EXISTS(SELECT 1 FROM skill_archive a WHERE a.name=p.name AND a.version=p.version AND a.removed_at=0)),
+		(SELECT MAX(version) FROM skill_archive WHERE name=? AND removed_at=0), 0)`, name, name).Scan(&v)
+	return v, err
+}
+
+// archivePointers reads the latest row of every name: the version it names,
+// which may be removed. The list and the lists index apply the live check.
+func archivePointers(q interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}) (map[string]int, error) {
+	rows, err := q.Query(`SELECT name, version FROM skill_archive_latest`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var name string
+		var v int
+		if err = rows.Scan(&name, &v); err != nil {
+			return nil, err
+		}
+		out[name] = v
+	}
+	return out, rows.Err()
+}
+
+// setArchiveLatest names version as the latest of its name.
+func setArchiveLatest(tx *sql.Tx, name string, version int) error {
+	_, err := tx.Exec(`INSERT INTO skill_archive_latest(name,version) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET version=excluded.version`, name, version)
+	return err
+}
+
+// restoreArchiveLatest takes back a latest choice that a change made. It acts
+// only while that version is still the latest: a later choice is kept. With no
+// earlier latest, the row goes and the highest live version is used.
+func restoreArchiveLatest(tx *sql.Tx, name string, version, previous int) error {
+	var current int
+	err := tx.QueryRow(`SELECT version FROM skill_archive_latest WHERE name=?`, name).Scan(&current)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && current != version) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if previous == 0 {
+		_, err = tx.Exec(`DELETE FROM skill_archive_latest WHERE name=?`, name)
+		return err
+	}
+	return setArchiveLatest(tx, name, previous)
+}
+
 // skillArchivePut stores one version. Same name and same content is the same
 // version; a version that was removed before is restored, not duplicated.
-func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSource, by string) (protocol.SkillArchiveAddResult, error) {
-	out := protocol.SkillArchiveAddResult{Name: c.Name, Hash: c.Hash, Description: c.Description, Tokens: c.Tokens}
+// intake says the copy came from the intake. Then a name that already has a live
+// version keeps its latest, and the copy is a candidate (decision 0169). An
+// explicit add, a new version or a copy of the old store makes the new version
+// the latest.
+func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSource, by string, intake bool) (protocol.SkillArchiveAddResult, error) {
+	out := protocol.SkillArchiveAddResult{Name: c.Name, Hash: c.Hash, Description: c.Description, Tokens: c.Tokens, NoDescription: c.Description == ""}
 	if !validSkillName(c.Name) {
 		return out, reject("bad skill name")
 	}
@@ -157,6 +224,15 @@ func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSour
 		Scan(&version, &removed, &stored.Kind, &stored.Node, &stored.Project, &stored.Path, &stored.URL, &stored.Commit, &stored.Session)
 	restored := false
 	out.Source = source.sourceLine()
+	// The latest and the live count are read before this add changes them.
+	previous, latestErr := archiveLatestOf(tx, c.Name)
+	if latestErr != nil {
+		return out, latestErr
+	}
+	var live int
+	if latestErr = tx.QueryRow(`SELECT COUNT(*) FROM skill_archive WHERE name=? AND removed_at=0`, c.Name).Scan(&live); latestErr != nil {
+		return out, latestErr
+	}
 	switch {
 	case err == nil && removed == 0:
 		// An unchanged add keeps the source the version first came with.
@@ -181,13 +257,21 @@ func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSour
 		out.Version, out.State = int(version), "added"
 	}
 	if out.State != "unchanged" {
+		if !intake || live == 0 {
+			if err = setArchiveLatest(tx, c.Name, out.Version); err != nil {
+				return out, err
+			}
+		}
 		out.Change = protocol.NewID("sc")
-		if _, err = tx.Exec(`INSERT INTO skill_archive_changes(id,action,name,version,versions,restored,actor,at) VALUES(?,?,?,?,?,?,?,?)`,
-			out.Change, "add", c.Name, out.Version, "[]", restored, by, now); err != nil {
+		if _, err = tx.Exec(`INSERT INTO skill_archive_changes(id,action,name,version,versions,restored,actor,at,previous) VALUES(?,?,?,?,?,?,?,?,?)`,
+			out.Change, "add", c.Name, out.Version, "[]", restored, by, now, previous); err != nil {
 			return out, err
 		}
 	}
 	if err = tx.QueryRow(`SELECT COUNT(*) FROM skill_archive WHERE name=? AND removed_at=0`, c.Name).Scan(&out.Versions); err != nil {
+		return out, err
+	}
+	if out.Latest, err = archiveLatestOf(tx, c.Name); err != nil {
 		return out, err
 	}
 	return out, tx.Commit()
@@ -238,7 +322,7 @@ func (g *Gateway) skillArchiveRemove(name, by string) (protocol.SkillArchiveAddR
 	return out, tx.Commit()
 }
 
-// skillArchiveUndo takes back one recorded add or remove.
+// skillArchiveUndo takes back one recorded add, remove or promote.
 func (g *Gateway) skillArchiveUndo(change, by string) (protocol.SkillArchiveAddResult, error) {
 	out := protocol.SkillArchiveAddResult{}
 	if change == "" {
@@ -250,10 +334,9 @@ func (g *Gateway) skillArchiveUndo(change, by string) (protocol.SkillArchiveAddR
 	}
 	defer tx.Rollback()
 	var action, name, versions string
-	var version, restored int64
-	var undone int64
-	if err = tx.QueryRow(`SELECT action,name,version,versions,restored,undone_at FROM skill_archive_changes WHERE id=?`, change).
-		Scan(&action, &name, &version, &versions, &restored, &undone); err != nil {
+	var version, restored, undone, previous int64
+	if err = tx.QueryRow(`SELECT action,name,version,versions,restored,undone_at,previous FROM skill_archive_changes WHERE id=?`, change).
+		Scan(&action, &name, &version, &versions, &restored, &undone, &previous); err != nil {
 		return out, reject("unknown archive change")
 	}
 	if undone != 0 {
@@ -281,11 +364,18 @@ func (g *Gateway) skillArchiveUndo(change, by string) (protocol.SkillArchiveAddR
 			}
 		}
 		out.State = "restored"
+	case "promote":
+		out.State = "reset"
 	default:
 		return out, reject("archive change is not undoable")
 	}
 	if err != nil {
 		return out, err
+	}
+	if action == "add" || action == "promote" {
+		if err = restoreArchiveLatest(tx, name, int(version), int(previous)); err != nil {
+			return out, err
+		}
 	}
 	if _, err = tx.Exec(`UPDATE skill_archive_changes SET undone_at=? WHERE id=?`, now, change); err != nil {
 		return out, err
@@ -296,30 +386,109 @@ func (g *Gateway) skillArchiveUndo(change, by string) (protocol.SkillArchiveAddR
 	return out, tx.Commit()
 }
 
-// skillArchiveList answers one row per name: its latest live version.
+// skillArchivePromote makes one live version the latest of its name. The
+// change is recorded with the earlier latest, so the owner can undo it.
+func (g *Gateway) skillArchivePromote(name string, version int, by string) (protocol.SkillArchiveAddResult, error) {
+	out := protocol.SkillArchiveAddResult{Name: name, Version: version}
+	if !validSkillName(name) {
+		return out, reject("bad skill name")
+	}
+	if version <= 0 {
+		return out, reject("promote needs a version")
+	}
+	tx, err := g.store.db.Begin()
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRow(`SELECT hash, description, tokens FROM skill_archive WHERE name=? AND version=? AND removed_at=0`, name, version).
+		Scan(&out.Hash, &out.Description, &out.Tokens)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, reject("skill %q has no live version %d", name, version)
+	}
+	if err != nil {
+		return out, err
+	}
+	out.NoDescription = out.Description == ""
+	previous, err := archiveLatestOf(tx, name)
+	if err != nil {
+		return out, err
+	}
+	if previous == version {
+		out.State = "unchanged"
+	} else {
+		if err = setArchiveLatest(tx, name, version); err != nil {
+			return out, err
+		}
+		out.State = "promoted"
+		out.Change = protocol.NewID("sc")
+		if _, err = tx.Exec(`INSERT INTO skill_archive_changes(id,action,name,version,versions,restored,actor,at,previous) VALUES(?,?,?,?,?,?,?,?,?)`,
+			out.Change, "promote", name, version, "[]", 0, by, g.skillArchiveEpoch(), previous); err != nil {
+			return out, err
+		}
+	}
+	out.Latest = version
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM skill_archive WHERE name=? AND removed_at=0`, name).Scan(&out.Versions); err != nil {
+		return out, err
+	}
+	return out, tx.Commit()
+}
+
+// skillArchiveList answers one row per name: its latest version, with the
+// other live versions as candidates. A latest that was removed falls back to
+// the highest live version, as archiveLatestOf does.
 func (g *Gateway) skillArchiveList() (any, error) {
 	rows, err := g.store.db.Query(`
-		SELECT a.name, a.version, a.hash, a.description, a.tokens, a.added_by, a.added_at,
-		 a.source_kind, a.source_node, a.source_project, a.source_path, a.source_url, a.source_commit, a.source_session,
-		 (SELECT COUNT(*) FROM skill_archive b WHERE b.name=a.name AND b.removed_at=0)
-		FROM skill_archive a
-		WHERE a.removed_at=0 AND a.version=(SELECT MAX(c.version) FROM skill_archive c WHERE c.name=a.name AND c.removed_at=0)
-		ORDER BY a.name`)
+		SELECT name, version, hash, description, tokens, added_by, added_at,
+		 source_kind, source_node, source_project, source_path, source_url, source_commit, source_session
+		FROM skill_archive WHERE removed_at=0 ORDER BY name, version`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []protocol.ArchivedSkill{}
+	byName := map[string][]protocol.ArchivedSkill{}
+	var names []string
 	for rows.Next() {
 		var s protocol.ArchivedSkill
 		if err = rows.Scan(&s.Name, &s.Version, &s.Hash, &s.Description, &s.Tokens, &s.AddedBy, &s.AddedAt,
-			&s.SourceKind, &s.SourceNode, &s.SourceProject, &s.SourcePath, &s.SourceURL, &s.SourceCommit, &s.SourceSession, &s.Versions); err != nil {
+			&s.SourceKind, &s.SourceNode, &s.SourceProject, &s.SourcePath, &s.SourceURL, &s.SourceCommit, &s.SourceSession); err != nil {
 			return nil, err
 		}
+		if _, seen := byName[s.Name]; !seen {
+			names = append(names, s.Name)
+		}
+		byName[s.Name] = append(byName[s.Name], s)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	pointers, err := archivePointers(g.store.db)
+	if err != nil {
+		return nil, err
+	}
+	out := []protocol.ArchivedSkill{}
+	for _, name := range names {
+		group := byName[name]
+		chosen := len(group) - 1
+		if p := pointers[name]; p > 0 {
+			for i := range group {
+				if group[i].Version == p {
+					chosen = i
+				}
+			}
+		}
+		s := group[chosen]
+		s.Versions = len(group)
+		for i, v := range group {
+			if i != chosen {
+				s.Candidates = append(s.Candidates, v.Version)
+			}
+		}
+		s.NoDescription = s.Description == ""
 		s.Source = skillArchiveSource{Kind: s.SourceKind, Node: s.SourceNode, Project: s.SourceProject, Path: s.SourcePath, URL: s.SourceURL, Commit: s.SourceCommit, Session: s.SourceSession}.sourceLine()
 		out = append(out, s)
 	}
-	return map[string]any{"skills": out}, rows.Err()
+	return map[string]any{"skills": out}, nil
 }
 
 // skillArchiveRead answers one stored version with its files.
@@ -328,15 +497,18 @@ func (g *Gateway) skillArchiveRead(name string, version int) (protocol.SkillArch
 	if !validSkillName(name) {
 		return out, reject("bad skill name")
 	}
-	query := `SELECT version, hash, content FROM skill_archive WHERE name=? AND removed_at=0`
-	args := []any{name}
-	if version > 0 {
-		query += ` AND version=?`
-		args = append(args, version)
+	if version <= 0 {
+		latest, err := archiveLatestOf(g.store.db, name)
+		if err != nil {
+			return out, err
+		}
+		if latest == 0 {
+			return out, reject("skill version is not in the archive")
+		}
+		version = latest
 	}
-	query += ` ORDER BY version DESC LIMIT 1`
 	var bundle []byte
-	if err := g.store.db.QueryRow(query, args...).Scan(&out.Version, &out.Hash, &bundle); err != nil {
+	if err := g.store.db.QueryRow(`SELECT version, hash, content FROM skill_archive WHERE name=? AND version=? AND removed_at=0`, name, version).Scan(&out.Version, &out.Hash, &bundle); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return out, reject("skill version is not in the archive")
 		}
@@ -408,7 +580,7 @@ func (g *Gateway) skillArchiveAdd(ctx context.Context, p protocol.SkillArchiveAd
 		return protocol.SkillArchiveAddResult{}, reject("cannot read skill: %v", err)
 	}
 	content.Hash = hash
-	return g.skillArchivePut(content, skillArchiveSource{Kind: "machine", Node: p.Location.NodeID, Path: p.Location.Location}, by)
+	return g.skillArchivePut(content, skillArchiveSource{Kind: "machine", Node: p.Location.NodeID, Path: p.Location.Location}, by, false)
 }
 
 // fetchSkillBundle reads and checks one skill file tree from a machine. The
@@ -550,7 +722,7 @@ func (g *Gateway) skillArchiveAddGit(ctx context.Context, p protocol.SkillArchiv
 		if rel != "." {
 			sourcePath = filepath.ToSlash(rel)
 		}
-		added, err := g.skillArchivePut(content, skillArchiveSource{Kind: "git", URL: p.URL, Path: sourcePath, Commit: commit}, by)
+		added, err := g.skillArchivePut(content, skillArchiveSource{Kind: "git", URL: p.URL, Path: sourcePath, Commit: commit}, by, false)
 		if err != nil {
 			return out, err
 		}
@@ -681,7 +853,7 @@ func (g *Gateway) intakeSkillGit() (protocol.SkillArchiveMultiResult, error) {
 		if r.node == "" && r.location == "" {
 			source = skillArchiveSource{Kind: "git_store"}
 		}
-		added, err := g.skillArchivePut(content, source, "intake")
+		added, err := g.skillArchivePut(content, source, "intake", false)
 		if err != nil {
 			return out, err
 		}

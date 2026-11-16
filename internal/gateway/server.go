@@ -1716,6 +1716,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return g.skillArchiveUndo(p.Change, p.By)
+	case protocol.FrameSkillArchivePromote:
+		p, err := decodeOperator[protocol.SkillArchivePromote](raw)
+		if err != nil {
+			return nil, err
+		}
+		if !validChangeActor(p.By) {
+			return nil, reject("owner authority required")
+		}
+		return g.skillArchivePromote(p.Name, p.Version, p.By)
 	case protocol.FrameSkillArchiveIntake:
 		p, err := decodeOperator[protocol.SkillArchiveIntake](raw)
 		if err != nil {

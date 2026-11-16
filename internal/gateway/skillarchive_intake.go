@@ -148,7 +148,7 @@ func (g *Gateway) skillArchiveIntakeMachine(ctx context.Context, id, host, by st
 			continue
 		}
 		content.Hash = hash
-		added, putErr := g.skillArchivePut(content, skillArchiveSource{Kind: f.kind, Node: id, Path: f.location, Project: f.project}, by)
+		added, putErr := g.skillArchivePut(content, skillArchiveSource{Kind: f.kind, Node: id, Path: f.location, Project: f.project}, by, true)
 		var refused Rejection
 		if errors.As(putErr, &refused) {
 			skip(f, putErr.Error())

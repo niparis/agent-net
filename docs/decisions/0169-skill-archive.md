@@ -134,3 +134,26 @@ A node with an empty effective list gets no flag and no folder. A failure to
 build never blocks the start: the session starts without the folder and one
 daemon log line says why. Nothing restarts a running session; the set result
 already lists the sessions that still run an old set.
+
+## Latest version
+
+Each name has one latest version, and a node following latest gets it. The
+latest is the version that the `skill_archive_latest` row names, while that
+version is live. Without a live row, it is the highest live version.
+
+- An explicit add, a new version from a Git URL, or a copy of the old store
+  makes the new version the latest.
+- An intake copy of a name that already has a live version is a candidate. It
+  is stored and listed, but the latest does not change. An intake copy of a name
+  with no live version is the latest.
+- `skill_archive` `promote` (name and version) makes a live version the latest.
+  Its change records the earlier latest, so the undo in the Desk puts it back.
+- `skill_archive` `list` shows each name's latest version and its candidates.
+  The intake report names each candidate with the version that stays the latest,
+  and it names each skill that has no description.
+- The migration that adds the table backfills it from the old rule (the highest
+  live version). It makes the project, plugin and agent-net copies that intake
+  added after a name's first version into candidates, so a project copy such as
+  graphify version 3 no longer takes over the latest. A machine copy looks like
+  an explicit machine add, so the migration keeps the old rule for machine
+  copies. The CTO can promote a version if that is wrong.

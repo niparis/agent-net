@@ -136,3 +136,23 @@ func listSkillArchive(t *testing.T, d *Daemon, ctx context.Context) []protocol.A
 		Skills []protocol.ArchivedSkill `json:"skills"`
 	}](t, d, ctx, `{"action":"list"}`).Skills
 }
+
+// promote goes through the CTO tool to the gateway. A version that is already
+// the latest changes nothing, and a promote without a version is refused.
+func TestCTOSkillArchivePromoteRoutesToGateway(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	url := skillRepo(t)
+	callCTOSkillArchive[protocol.SkillArchiveMultiResult](t, n.d, ctx, `{"action":"add_git","url":"`+url+`"}`)
+	got := callCTOSkillArchive[protocol.SkillArchiveAddResult](t, n.d, ctx, `{"action":"promote","name":"grill-me","version":1}`)
+	if got.State != "unchanged" || got.Latest != 1 {
+		t.Fatalf("promote: %+v", got)
+	}
+	if _, err := n.d.runCTOTool(ctx, "skill_archive", json.RawMessage(`{"action":"promote","name":"grill-me"}`)); err == nil {
+		t.Fatal("promote without a version was accepted")
+	}
+}

@@ -65,6 +65,15 @@ func (d *Daemon) ctoSkillArchive(ctx context.Context, name string, raw json.RawM
 		return d.call(ctx, protocol.FrameSkillArchiveUndo, protocol.SkillArchiveUndo{Change: p.Change, By: actor})
 	case "skill_archive_intake":
 		return d.call(ctx, protocol.FrameSkillArchiveIntake, protocol.SkillArchiveIntake{By: actor})
+	case "skill_archive_promote":
+		var p struct {
+			Name    string `json:"name"`
+			Version int    `json:"version"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.Name == "" || p.Version <= 0 {
+			return nil, errors.New("skill_archive promote needs a name and a version")
+		}
+		return d.call(ctx, protocol.FrameSkillArchivePromote, protocol.SkillArchivePromote{Name: p.Name, Version: p.Version, By: actor})
 	}
 	return nil, errors.New("unknown skill_archive action")
 }
@@ -89,7 +98,7 @@ func skillArchiveNotice(concrete string, result any) (text, diff string, options
 		options = []string{"skill_archive_undo", string(raw)}
 	}
 	switch concrete {
-	case "skill_archive_add", "skill_archive_remove", "skill_archive_undo":
+	case "skill_archive_add", "skill_archive_remove", "skill_archive_undo", "skill_archive_promote":
 		var r protocol.SkillArchiveAddResult
 		b, _ := json.Marshal(result)
 		if json.Unmarshal(b, &r) != nil {
@@ -109,10 +118,18 @@ func skillArchiveNotice(concrete string, result any) (text, diff string, options
 		case concrete == "skill_archive_remove":
 			text = "CTO removed skill " + cleanLine(r.Name) + " (" + strconv.Itoa(r.Versions) + " versions)"
 			undo(r.Change)
+		case concrete == "skill_archive_promote" && r.State == "unchanged":
+			text = "CTO checked skill " + cleanLine(r.Name) + ": version " + strconv.Itoa(r.Version) + " is already the latest"
+		case concrete == "skill_archive_promote":
+			text = "CTO chose version " + strconv.Itoa(r.Version) + " of skill " + cleanLine(r.Name) + " as the latest"
+			undo(r.Change)
 		default:
 			verb := "restored"
-			if r.State == "removed" {
+			switch r.State {
+			case "removed":
 				verb = "removed"
+			case "reset":
+				verb = "reset the latest of"
 			}
 			text = "CTO undid an archive change: " + verb + " " + cleanLine(r.Name)
 		}
@@ -123,12 +140,18 @@ func skillArchiveNotice(concrete string, result any) (text, diff string, options
 		if json.Unmarshal(b, &r) != nil {
 			return "", "", nil
 		}
-		var names []string
+		var names, candidates, noDescription []string
 		changed := 0
 		last := ""
 		for _, skill := range r.Skills {
 			if skill.State == "added" || skill.State == "restored" {
 				names = append(names, cleanLine(skill.Name)+" v"+strconv.Itoa(skill.Version))
+				if skill.Latest != 0 && skill.Latest != skill.Version {
+					candidates = append(candidates, cleanLine(skill.Name)+" v"+strconv.Itoa(skill.Version)+" (latest stays v"+strconv.Itoa(skill.Latest)+")")
+				}
+				if skill.NoDescription {
+					noDescription = append(noDescription, cleanLine(skill.Name))
+				}
 				changed++
 				last = skill.Change
 			}
@@ -153,6 +176,18 @@ func skillArchiveNotice(concrete string, result any) (text, diff string, options
 			}
 			diff += "More than one version: " + strings.Join(r.Shared, ", ")
 		}
+		for _, line := range []string{
+			joinLabeled("Not latest", candidates),
+			joinLabeled("No description", noDescription),
+		} {
+			if line == "" {
+				continue
+			}
+			if diff != "" {
+				diff += "\n"
+			}
+			diff += line
+		}
 		if line := intakeMachineLine(r); line != "" {
 			if diff != "" {
 				diff += "\n"
@@ -162,6 +197,14 @@ func skillArchiveNotice(concrete string, result any) (text, diff string, options
 		return text, diff, options
 	}
 	return "", "", nil
+}
+
+// joinLabeled is "label: a, b", or empty when there is nothing to name.
+func joinLabeled(label string, items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	return label + ": " + strings.Join(items, ", ")
 }
 
 // intakeMachineLine names the machines an intake did not read and the count of
