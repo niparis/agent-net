@@ -99,3 +99,40 @@ func callCTOSkillArchive[T any](t *testing.T, d *Daemon, ctx context.Context, ar
 	}
 	return out
 }
+
+// The whole path: a real gateway and node, a user skill, a plugin skill and
+// the CTO's own skill, one intake call. The report names the machine and every
+// row has a source line.
+func TestCTOSkillArchiveIntakeReachesPluginAndCTOSkills(t *testing.T) {
+	home := t.TempDir()
+	writeSourceSkill(t, filepath.Join(home, ".claude/skills/mine"), "---\ndescription: Mine.\n---\nbody\n")
+	writeSourceSkill(t, filepath.Join(home, ".claude/plugins/cache/market/remotion/1.0.0/skills/remotion"), "---\ndescription: Video.\n---\nbody\n")
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: fakeInventory, cfg: func(c *Config) { c.InventoryHome = home }})
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.d.writeCTOSkill("claude"); err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.SkillArchiveMultiResult
+	eventually(t, "inventory of the user skill", func() bool {
+		got = callCTOSkillArchive[protocol.SkillArchiveMultiResult](t, n.d, ctx, `{"action":"intake"}`)
+		return len(got.Machines) == 1 && got.Machines[0].Result == "scanned" && got.Machines[0].Found >= 3
+	})
+	lines := map[string]string{}
+	for _, row := range listSkillArchive(t, n.d, ctx) {
+		lines[row.Name] = row.Source
+	}
+	if lines["remotion"] != "plugin remotion" || lines["agent-net-setup"] != "agent-net" || !strings.HasPrefix(lines["mine"], "machine ") {
+		t.Fatalf("source lines: %+v (report %+v)", lines, got)
+	}
+}
+
+func listSkillArchive(t *testing.T, d *Daemon, ctx context.Context) []protocol.ArchivedSkill {
+	t.Helper()
+	return callCTOSkillArchive[struct {
+		Skills []protocol.ArchivedSkill `json:"skills"`
+	}](t, d, ctx, `{"action":"list"}`).Skills
+}

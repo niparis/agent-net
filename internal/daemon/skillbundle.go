@@ -26,6 +26,9 @@ func (d *Daemon) skillBundleFor(p protocol.SkillBundleRequest) ([]byte, error) {
 			break
 		}
 	}
+	if kind == "" && d.sourceSkills[sourceKey(p.Name, p.Hash, p.Location)] {
+		kind = protocol.InventorySkill
+	}
 	d.toolsMu.Unlock()
 	if kind == "" {
 		return nil, errors.New("skill location is not a current observation")

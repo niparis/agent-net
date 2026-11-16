@@ -82,6 +82,8 @@ type SkillArchiveAddResult struct {
 	Hash        string `json:"hash"`
 	Description string `json:"description"`
 	Tokens      int    `json:"tokens"`
+	// Source is the one line that says where the stored version came from.
+	Source string `json:"source"`
 	// State is added, restored, unchanged or removed.
 	State  string `json:"state"`
 	Change string `json:"change,omitempty"`
@@ -93,6 +95,60 @@ type SkillArchiveMultiResult struct {
 	Skills []SkillArchiveAddResult `json:"skills"`
 	// Shared names two different contents under one name.
 	Shared []string `json:"shared,omitempty"`
+	// Machines and Skipped are the intake report: one row for every enrolled
+	// machine, and one for every skill that was seen but not stored.
+	Machines []SkillArchiveMachine `json:"machines,omitempty"`
+	Skipped  []SkillArchiveSkipped `json:"skipped,omitempty"`
+}
+
+// SkillArchiveMachine is what the intake did on one enrolled machine. Result
+// is scanned, offline or skipped. A scanned machine counts the distinct skill
+// folders it holds: Found = Added + Existing + Skipped.
+type SkillArchiveMachine struct {
+	NodeID   string `json:"node_id"`
+	Name     string `json:"name"`
+	Result   string `json:"result"`
+	Reason   string `json:"reason,omitempty"`
+	Found    int    `json:"found"`
+	Added    int    `json:"added"`
+	Existing int    `json:"existing"`
+	Skipped  int    `json:"skipped"`
+}
+
+// SkillArchiveSkipped is one skill folder the intake saw and did not store,
+// with the reason. Name is empty when the folder had no readable name.
+type SkillArchiveSkipped struct {
+	Name     string `json:"name,omitempty"`
+	NodeID   string `json:"node_id"`
+	Machine  string `json:"machine"`
+	Location string `json:"location"`
+	Reason   string `json:"reason"`
+}
+
+// FrameNodeSkillSources is the read-only gateway request for the skill folders
+// the inventory scan does not list: Claude Code plugin skills and the CTO's
+// own skill. The daemon answers with SkillSources and then serves
+// node.skill_bundle for each location it listed.
+const FrameNodeSkillSources = "node.skill_sources"
+
+// SkillSourcesRequest carries no parameter.
+type SkillSourcesRequest struct{}
+
+// SkillSource is one skill folder found by that request. Origin is
+// "plugin <name>" or "agent-net". State and Reason follow the inventory items:
+// an unreadable folder is listed with its reason.
+type SkillSource struct {
+	Name     string `json:"name"`
+	Hash     string `json:"hash,omitempty"`
+	Location string `json:"location"`
+	Origin   string `json:"origin"`
+	State    string `json:"state"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// SkillSourcesResult answers SkillSourcesRequest.
+type SkillSourcesResult struct {
+	Sources []SkillSource `json:"sources"`
 }
 
 // SkillArchiveFile is one file of a stored version. Text is empty when the

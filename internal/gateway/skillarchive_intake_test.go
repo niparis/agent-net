@@ -1,0 +1,271 @@
+package gateway
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/niparis/agent-net/internal/inventory"
+	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/toolcatalog"
+)
+
+// archiveIntakeJSON runs the intake and returns the raw output the CTO tool
+// would hand to the catalog schema.
+func archiveIntakeJSON(t *testing.T, g *Gateway) (json.RawMessage, protocol.SkillArchiveMultiResult) {
+	t.Helper()
+	data, err := g.skillArchiveIntakeMachines(t.Context(), "cto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw, data
+}
+
+func archiveSkillSchema(t *testing.T) (json.RawMessage, *jsonschema.Resolved) {
+	t.Helper()
+	for _, tool := range toolcatalog.Tools {
+		if tool.Name != "skill_archive" {
+			continue
+		}
+		var schema jsonschema.Schema
+		if err := json.Unmarshal(tool.OutputSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := schema.Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tool.OutputSchema, resolved
+	}
+	t.Fatal("no skill_archive tool")
+	return nil, nil
+}
+
+// An intake answer must pass the schema the CTO tool checks, and the schema
+// must not drop any field of it.
+func TestSkillArchiveIntakeOutputMatchesCatalogSchema(t *testing.T) {
+	g, n, _ := toggleFixture(t)
+	dir := t.TempDir()
+	folder, hash := archiveSkillFolder(t, filepath.Join(dir, "a"), "---\ndescription: First copy.\n---\nbody\n")
+	if err := g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
+		{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: folder},
+		{Kind: "skill", Name: "linked", State: "error", Scope: "user", Location: "/x/linked", Reason: "skill root is a symlink: /elsewhere"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archiveFakeNode(t, g, n, map[string][]byte{hash: archiveBundle(t, folder)})
+	raw, got := archiveIntakeJSON(t, g)
+	if len(got.Skills) != 1 || got.Skills[0].Source == "" {
+		t.Fatalf("row without a source line: %+v", got.Skills)
+	}
+	schema, resolved := archiveSkillSchema(t)
+	var instance any
+	if err := json.Unmarshal(raw, &instance); err != nil {
+		t.Fatal(err)
+	}
+	if err := resolved.Validate(instance); err != nil {
+		t.Fatalf("intake output does not match the catalog schema: %v\n%s", err, raw)
+	}
+	pruned, err := toolcatalog.PruneOutput(schema, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a, b any
+	_ = json.Unmarshal(raw, &a)
+	_ = json.Unmarshal(pruned, &b)
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("the schema drops fields of the intake output:\n%s\n%s", raw, pruned)
+	}
+}
+
+// Every enrolled machine gets one result, and every folder that was seen and
+// not stored is listed with its reason.
+func TestSkillArchiveIntakeReportsEveryMachine(t *testing.T) {
+	g := archiveGateway(t)
+	dir := t.TempDir()
+	folderOK, hashOK := archiveSkillFolder(t, filepath.Join(dir, "ok"), "---\ndescription: Fine.\n---\nbody\n")
+	folderOld, hashOld := archiveSkillFolder(t, filepath.Join(dir, "old"), "---\ndescription: Known.\n---\nold\n")
+	folderGone, hashGone := archiveSkillFolder(t, filepath.Join(dir, "gone"), "---\ndescription: Gone.\n---\ngone\n")
+	if _, err := g.skillArchivePut(skillContentOf(t, "known", folderOld, hashOld), skillArchiveSource{Kind: "machine", Node: "x", Path: "/x"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	node := func(host string, items []protocol.InventoryItem) string {
+		id, _, err := g.store.CreateNode(host, "linux")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if items != nil {
+			if err = g.store.SetInventory(id, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: items}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return id
+	}
+	alpha := node("alpha", []protocol.InventoryItem{
+		{Kind: "skill", Name: "fine", Hash: hashOK, State: "ok", Scope: "user", Location: folderOK},
+		{Kind: "skill", Name: "known", Hash: hashOld, State: "ok", Scope: "project", Location: folderOld},
+		{Kind: "skill", Name: "vanished", Hash: hashGone, State: "ok", Scope: "user", Location: folderGone},
+		{Kind: "skill", Name: "linked", State: "error", Scope: "user", Location: "/x/linked", Reason: "skill root is a symlink: /elsewhere"},
+	})
+	beta := node("beta", []protocol.InventoryItem{{Kind: "skill", Name: "fine", Hash: hashOK, State: "ok", Scope: "user", Location: folderOK}})
+	gamma := node("gamma", nil)
+	archiveFakeNode(t, g, alpha, map[string][]byte{hashOK: archiveBundle(t, folderOK), hashOld: archiveBundle(t, folderOld)})
+	archiveFakeNode(t, g, gamma, nil)
+	_ = beta // enrolled, inventory known, but no connection
+
+	_, got := archiveIntakeJSON(t, g)
+	want := map[string]protocol.SkillArchiveMachine{
+		"alpha": {Result: "scanned", Found: 4, Added: 1, Existing: 1, Skipped: 2},
+		"beta":  {Result: "offline"},
+		"gamma": {Result: "skipped", Reason: "no inventory report yet"},
+	}
+	if len(got.Machines) != len(want) {
+		t.Fatalf("machines: %+v", got.Machines)
+	}
+	for _, m := range got.Machines {
+		w := want[m.Name]
+		if m.Result != w.Result || m.Found != w.Found || m.Added != w.Added || m.Existing != w.Existing || m.Skipped != w.Skipped || !strings.HasPrefix(m.Reason, w.Reason) {
+			t.Errorf("machine %s = %+v, want %+v", m.Name, m, w)
+		}
+	}
+	reasons := map[string]string{}
+	for _, s := range got.Skipped {
+		if s.Machine != "alpha" || s.NodeID != alpha {
+			t.Errorf("skip names the wrong machine: %+v", s)
+		}
+		reasons[s.Name] = s.Reason
+	}
+	if !strings.Contains(reasons["linked"], "symlink") || !strings.Contains(reasons["vanished"], "no such bundle") {
+		t.Fatalf("skip reasons: %+v", got.Skipped)
+	}
+}
+
+func skillContentOf(t *testing.T, name, dir, hash string) skillArchiveContent {
+	t.Helper()
+	c, err := skillContentFromDir(name, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Hash = hash
+	return c
+}
+
+// Plugin skills and the CTO's own skill come from the daemon's
+// node.skill_sources answer, with their own source lines. A daemon that does
+// not know the frame still gets its inventory read, and the report says so.
+func TestSkillArchiveIntakeTakesPluginAndAgentNetSkills(t *testing.T) {
+	g := archiveGateway(t)
+	dir := t.TempDir()
+	plugin, pluginHash := archiveSkillFolder(t, filepath.Join(dir, ".claude/plugins/cache/market/remotion/1.0.0/skills/remotion"), "---\ndescription: Video.\n---\nbody\n")
+	cto, ctoHash := archiveSkillFolder(t, filepath.Join(dir, "cto/claude/.claude/skills/agent-net-setup"), "---\ndescription: Setup.\n---\nbody\n")
+	id, _, err := g.store.CreateNode("alpha", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = g.store.SetInventory(id, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{}}); err != nil {
+		t.Fatal(err)
+	}
+	archiveFakeNodeSources(t, g, id, map[string][]byte{pluginHash: archiveBundle(t, plugin), ctoHash: archiveBundle(t, cto)}, []protocol.SkillSource{
+		{Name: "remotion", Hash: pluginHash, Location: plugin, Origin: "plugin remotion", State: "ok"},
+		{Name: "agent-net-setup", Hash: ctoHash, Location: cto, Origin: "agent-net", State: "ok"},
+		{Name: "broken", Location: "/p/broken", Origin: "plugin typesafe", State: "error", Reason: "invalid skill file"},
+	})
+	_, got := archiveIntakeJSON(t, g)
+	lines := map[string]string{}
+	for _, s := range got.Skills {
+		lines[s.Name] = s.Source
+	}
+	if lines["remotion"] != "plugin remotion" || lines["agent-net-setup"] != "agent-net" || len(got.Skills) != 2 {
+		t.Fatalf("source lines: %+v", got.Skills)
+	}
+	if len(got.Machines) != 1 || got.Machines[0].Found != 3 || got.Machines[0].Added != 2 || got.Machines[0].Skipped != 1 {
+		t.Fatalf("machine: %+v", got.Machines)
+	}
+	if len(got.Skipped) != 1 || got.Skipped[0].Name != "broken" || got.Skipped[0].Reason != "invalid skill file" {
+		t.Fatalf("skipped: %+v", got.Skipped)
+	}
+	rows := archiveList(t, g)
+	for _, r := range rows {
+		if r.Name == "remotion" && r.Source != "plugin remotion" {
+			t.Fatalf("list source line: %+v", r)
+		}
+	}
+}
+
+func TestSkillArchiveIntakeNamesWhatItCouldNotReadOnAnOldDaemon(t *testing.T) {
+	g, n, _ := toggleFixture(t)
+	archiveFakeNode(t, g, n, nil)
+	_, got := archiveIntakeJSON(t, g)
+	if len(got.Machines) != 1 || got.Machines[0].Result != "scanned" || !strings.Contains(got.Machines[0].Reason, "plugin and agent-net skills not read") {
+		t.Fatalf("machine: %+v", got.Machines)
+	}
+}
+
+// The real inventory scan of every harness's user folder and of a registered
+// project's folders reaches the archive, and a second intake changes nothing.
+func TestSkillArchiveIntakeTakesUserAndProjectFoldersOfEveryHarness(t *testing.T) {
+	g := archiveGateway(t)
+	home, project := t.TempDir(), t.TempDir()
+	user := map[string]string{
+		".claude/skills/u-claude":            "claude",
+		".agents/skills/u-agents":            "agents",
+		".config/opencode/skills/u-opencode": "opencode",
+		".pi/agent/skills/u-pi":              "pi",
+		".codex/skills/u-codex":              "codex",
+		".gemini/config/skills/u-agy":        "agy",
+	}
+	repo := map[string]string{
+		".claude/skills/p-claude":     "claude",
+		".agents/skills/p-agents":     "agents",
+		".opencode/skills/p-opencode": "opencode",
+		".pi/skills/p-pi":             "pi",
+	}
+	bundles := map[string][]byte{}
+	write := func(root string, set map[string]string) {
+		for rel, body := range set {
+			folder, hash := archiveSkillFolder(t, filepath.Join(root, rel), "---\ndescription: "+body+".\n---\n"+body+"\n")
+			bundles[hash] = archiveBundle(t, folder)
+		}
+	}
+	write(home, user)
+	write(project, repo)
+	report := inventory.Scan(inventory.Options{Home: home, CodexHome: filepath.Join(home, ".codex"), Machine: "m", Projects: []protocol.ProjectEntry{{Name: "repo", Path: project}}})
+	id, _, err := g.store.CreateNode("alpha", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = g.store.SetInventory(id, report); err != nil {
+		t.Fatal(err)
+	}
+	archiveFakeNode(t, g, id, bundles)
+	_, first := archiveIntakeJSON(t, g)
+	if len(first.Skills) != len(user)+len(repo) {
+		t.Fatalf("added %d skills, want %d: %+v", len(first.Skills), len(user)+len(repo), first.Skills)
+	}
+	for _, s := range first.Skills {
+		if !strings.HasPrefix(s.Source, "machine "+id+":") || !strings.Contains(s.Source, string(filepath.Separator)+"skills"+string(filepath.Separator)) {
+			t.Errorf("unclear source line: %+v", s)
+		}
+	}
+	_, second := archiveIntakeJSON(t, g)
+	if len(second.Skills) != 0 || second.Machines[0].Added != 0 || second.Machines[0].Existing != len(user)+len(repo) {
+		t.Fatalf("second intake: %+v", second)
+	}
+	for _, r := range archiveList(t, g) {
+		if r.Versions != 1 {
+			t.Errorf("repeat made a version: %+v", r)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude/skills/u-claude/SKILL.md")); err != nil {
+		t.Fatal("intake must not touch the source folders")
+	}
+}

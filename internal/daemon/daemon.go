@@ -385,6 +385,7 @@ type Daemon struct {
 	mouseNotices     map[string]time.Time
 	toolsMu          sync.Mutex
 	toolsReport      protocol.InventoryReport
+	sourceSkills     map[string]bool // folders the last node.skill_sources listed; toolsMu guards it
 	toolsWake        chan struct{}
 	toolsFullNext    atomic.Bool // the next reconcile checks every target, see tools_pass.go
 	toolsScanNext    atomic.Bool // the next tools wake scans the disk, see wakeTools

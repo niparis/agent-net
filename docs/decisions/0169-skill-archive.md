@@ -50,6 +50,12 @@ name and hash. The copy is safe to repeat. A CTO action, `skill_archive`
 intake, also pulls every distinct skill from the online machines' user-level
 and project skill folders.
 
+The intake covers every enrolled machine: the user skill folders of every
+harness, the skill folders of every registered project checkout, Claude Code
+plugin skills (read only, source "plugin <name>") and the CTO's own skill
+(source "agent-net"). Its report gives one result per machine (scanned,
+offline or skipped) and each skill it could not store, with the reason.
+
 Nothing is delivered from the archive in task 2. The Tools tab and the current
 skill code keep working until task 5 retires them.
 

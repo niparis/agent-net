@@ -888,6 +888,16 @@ skill contents for secrets.
   for a single change; the CTO can undo any recorded change by its id.
 - The one-time intake reads the versions already in `skills.git` and stores
   each name and hash once. It does not delete or change `skills.git`.
+- The machine intake only reads. It stores the skill folders in each machine's
+  inventory, plus the folders of Claude Code plugins and the CTO's own skill
+  that the daemon lists on the `node.skill_sources` request. The daemon serves
+  `node.skill_bundle` only for a folder it listed, with the hash it gave, and
+  the gateway checks the hash again. Nothing is written or deleted on a
+  machine. Plugin skills come from the install paths in
+  `~/.claude/plugins/installed_plugins.json` (each must be inside the plugin
+  store and free of links). Without that file, only `plugins/cache` is walked:
+  no link, no `node_modules` or dot folder, 6 levels and 5,000 folders at most.
+  A marketplace clone is never walked, so an uninstalled plugin adds nothing.
 
 ### Skill lists on nodes
 
