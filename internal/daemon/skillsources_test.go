@@ -27,9 +27,17 @@ func TestSkillSourcesListPluginAndCTOSkills(t *testing.T) {
 	d, home := promptTestDaemon(t)
 	plugin := filepath.Join(home, ".claude/plugins/cache/market/remotion/1.0.0/skills/remotion")
 	market := filepath.Join(home, ".claude/plugins/marketplaces/anthropic-skills/skills/docx")
+	offered := filepath.Join(home, ".claude/plugins/marketplaces/big-market/plugins/never-installed/skills/unused")
 	broken := filepath.Join(home, ".claude/plugins/cache/market/typesafe/2.0.0/skills/typesafe")
 	writeSourceSkill(t, plugin, "---\ndescription: Video.\n---\nbody\n")
 	writeSourceSkill(t, market, "---\ndescription: Docs.\n---\nbody\n")
+	writeSourceSkill(t, offered, "---\ndescription: Not installed.\n---\nbody\n")
+	installed := `{"version":2,"plugins":{"remotion@market":[{"installPath":"` + filepath.Join(home, ".claude/plugins/cache/market/remotion/1.0.0") + `"}],
+		"docx@anthropic-skills":[{"installPath":"` + filepath.Join(home, ".claude/plugins/marketplaces/anthropic-skills") + `"}],
+		"typesafe@market":[{"installPath":"` + filepath.Join(home, ".claude/plugins/cache/market/typesafe/2.0.0") + `"}]}}`
+	if err := os.WriteFile(filepath.Join(home, ".claude/plugins/installed_plugins.json"), []byte(installed), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(broken, "SKILL.md"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +70,9 @@ func TestSkillSourcesListPluginAndCTOSkills(t *testing.T) {
 		if hash, err := inventory.SkillHash(dir); err != nil || hash != s.Hash {
 			t.Fatalf("bundle hash %q (%v), want %q", hash, err, s.Hash)
 		}
+	}
+	if _, ok := got[offered]; ok {
+		t.Fatal("a plugin that is only offered by a marketplace was listed")
 	}
 	if s := got[broken]; s.State != protocol.InventoryError || s.Reason == "" || s.Origin != "plugin typesafe" {
 		t.Fatalf("unreadable plugin skill: %+v", s)

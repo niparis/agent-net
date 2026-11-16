@@ -893,8 +893,11 @@ skill contents for secrets.
   that the daemon lists on the `node.skill_sources` request. The daemon serves
   `node.skill_bundle` only for a folder it listed, with the hash it gave, and
   the gateway checks the hash again. Nothing is written or deleted on a
-  machine. The plugin walk follows no link, skips `node_modules` and dot
-  folders, and stops at 6 levels and 5,000 folders.
+  machine. Plugin skills come from the install paths in
+  `~/.claude/plugins/installed_plugins.json` (each must be inside the plugin
+  store and free of links). Without that file, only `plugins/cache` is walked:
+  no link, no `node_modules` or dot folder, 6 levels and 5,000 folders at most.
+  A marketplace clone is never walked, so an uninstalled plugin adds nothing.
 
 ### Skill lists on nodes
 
