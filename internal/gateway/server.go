@@ -802,7 +802,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 		g.machineAuthMu.Unlock()
 		return
 	}
-	ws.SetReadLimit(4 << 20)
+	ws.SetReadLimit(protocol.LinkFrameLimit)
 	ctx, cancel := context.WithCancel(context.Background())
 	nc := &nodeConn{id: nodeID, tokenHash: hashHex(token), ws: ws, cancel: cancel, dead: make(chan struct{}), health: health, lastFrame: &lastFrame}
 	// After cutover require a fresh hello before routing. Its capability
@@ -1020,6 +1020,17 @@ func (g *Gateway) msgSendMayResume(raw []byte) bool {
 	return err == nil && ok && a.Worker != nil
 }
 
+// answerFrame encodes the answer to one request. The daemon reads frames up to
+// protocol.LinkFrameLimit, and a larger one closes the link. The caller gets an
+// error in its place, which says that a change may still have been made.
+func answerFrame(id string, data any, err error) ([]byte, error) {
+	reply, eerr := protocol.EncodeResult(id, data, err)
+	if eerr != nil || len(reply) <= protocol.LinkFrameLimit {
+		return reply, eerr
+	}
+	return protocol.EncodeResult(id, nil, fmt.Errorf("answer too large for the link (%d bytes, limit %d); a change may still have been made, so check before you retry", len(reply), protocol.LinkFrameLimit))
+}
+
 // answer handles one frame and writes its result. A link error ends the loop.
 func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) error {
 	start, sent := time.Now(), 0
@@ -1032,10 +1043,8 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 		if !errors.As(err, &rj) {
 			g.logLine("error", "node", nc.id, "where", h.Type, "err", err)
 		}
-		reply, eerr = protocol.EncodeResult(h.ID, nil, err)
-	} else {
-		reply, eerr = protocol.EncodeResult(h.ID, data, nil)
 	}
+	reply, eerr = answerFrame(h.ID, data, err)
 	if eerr != nil {
 		g.logLine("error", "where", "encode result", "err", eerr)
 		return nil
@@ -1706,7 +1715,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !validChangeActor(p.By) {
 			return nil, reject("owner authority required")
 		}
-		return g.skillArchiveRead(p.Name, p.Version)
+		return g.skillArchiveRead(p)
 	case protocol.FrameSkillArchiveUndo:
 		p, err := decodeOperator[protocol.SkillArchiveUndo](raw)
 		if err != nil {

@@ -176,7 +176,7 @@ func TestSkillArchiveVersionNumbersAfterRemoveAndAdd(t *testing.T) {
 	if len(rows) != 1 || rows[0].Version != 2 || rows[0].Versions != 1 || rows[0].Removed != 1 || len(rows[0].Candidates) != 0 {
 		t.Fatalf("list after remove and add: %+v", rows)
 	}
-	read, err := f.g.skillArchiveRead("mastering-postgresql", 0)
+	read, err := f.g.skillArchiveRead(protocol.SkillArchiveVersion{Name: "mastering-postgresql"})
 	if err != nil || read.Version != rows[0].Version {
 		t.Fatalf("read of the latest: %+v, %v", read, err)
 	}
