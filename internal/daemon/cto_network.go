@@ -39,8 +39,13 @@ func (d *Daemon) saveCTONetwork(ctx context.Context, method string) error {
 	if json.Unmarshal(raw, &result) != nil || result.SessionID == "" {
 		return errors.New("gateway did not register the CTO network session")
 	}
-	_, err = d.st.db.Exec(`INSERT INTO cto_network(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, result.SessionID)
-	return err
+	before := d.ctoSessionID()
+	if _, err = d.st.db.Exec(`INSERT INTO cto_network(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, result.SessionID); err != nil {
+		return err
+	}
+	// The conversations made before the CTO had this ID, or under an earlier
+	// one, belong to it now (decision 0171).
+	return d.rekeyCTOConversations(result.SessionID, before)
 }
 
 // Build a plain peer message. Owner attribution is never read from arguments.

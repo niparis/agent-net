@@ -3239,7 +3239,29 @@ does what it names or is refused:
 The model is the setting `chief.model`, default
 `codex · openai · gpt-6.1-sol · medium`, which `chief.get` (operator `chief_get`)
 returns with the session, its name and whether it is online. Changing it does
-not restart the chief: the setting is used when the owner or the CTO starts it.
+not restart a running chief.
+
+**The chief starts itself ([decision 0171](decisions/0171-session-harness-switch.md)).**
+On the machine that runs the CTO, the daemon looks at the chief once a minute.
+When no chief is set, or the set chief is offline on a harness no message can
+wake (Pi), it starts one through the ordinary session start, in its own folder
+`<state>/chief`, on the first usable entry of `chief.model`. The entry goes
+through the one gate of decision 0162 with the CTO, chief and merger policy. A
+Pi entry is skipped with the reason `Pi cannot be woken by a message yet`; a
+list with only Pi entries is refused with that reason. The started session is
+pinned with `chief.set`, the same way a hand-started one is, and `chief.set`
+with a `session_id` stays the way to adopt a session you started yourself. An
+online chief, and an offline chief on Claude, Codex or OpenCode, are left alone:
+the wake path brings them back. A failed start is logged as `chief.start failed`
+and tried again after 10 minutes. The chief's memory is its gateway notes. A
+Claude chief starts and resumes with Claude Code's auto memory off
+(`autoMemoryEnabled: false`).
+
+**Role addresses.** A message to `chief` or `cto` goes to the session pinned for
+that role when the message is stored. A message to the id of a chief that was
+replaced goes to the chief that replaced it. The sender's receipt names the
+session that got the message. With no chief set, a message to `chief` is
+refused and says so.
 
 **Routing.** A new ask goes to the chief (`next = chief`, the Desk shows it as
 "with someone") when a chief is online and the ask does not name another next.
@@ -4089,6 +4111,10 @@ a queued message to an offline owner session of a wakeable harness (Claude in
 terminal, background or unknown mode, Codex, OpenCode; not Pi; never workers)
 asks that session's machine to resume the same session, then the gateway
 delivers the queued messages.
+The chief of staff and a project's merger are woken whatever `wake_on_message`
+and the autonomy say, for a message and for a ready step, on any wakeable
+harness: other agents rely on them, and those settings are made for coding
+sessions. The CTO is not woken this way, because the daemon keeps it running.
 The limits are the ones above: one attempt per session per 10 minutes, kept
 across gateway restarts, a failure logged once, never a worker, and never a new
 session or a clone. A wake never opens a view, a herdr pane or a window: the

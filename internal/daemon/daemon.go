@@ -581,6 +581,9 @@ type Daemon struct {
 	// from its owner cannot start two processes.
 	resumeMu      sync.Mutex
 	claudeStartMu sync.Mutex
+	// chiefStarting is set while the chief is being started (chief_start.go).
+	// It is a flag, not a lock: a start calls the gateway.
+	chiefStarting atomic.Bool
 	// wakes holds the session wakes in flight, by session ID (wakeSession).
 	wakeMu sync.Mutex
 	wakes  map[string]*wakeCall
@@ -818,6 +821,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.sleepLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.linkLoop(ctx) }()
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.chiefLoop(ctx) }()
 	return nil
 }
 

@@ -41,6 +41,14 @@ func (g *Gateway) pickRole(nodeID string, req protocol.RolePickRequest) (protoco
 		out.Refused = "the " + req.Role + " model list is empty"
 		return out, nil
 	}
+	// Pi is refused for every role until a message can wake it (decision 0171):
+	// a role is reached by messages, and it must come back after a stop.
+	list, piSkipped := dropPi(list)
+	req.Current = dropPiCurrent(req.Current)
+	if len(list) == 0 {
+		out.Refused = piRoleReason
+		return out, nil
+	}
 	// A role resumes on the model it already runs. The rest of the list
 	// follows, so a locked check moves it to a new conversation on the next
 	// entry instead of refusing the role.
@@ -99,8 +107,34 @@ func (g *Gateway) pickRole(nodeID string, req protocol.RolePickRequest) (protoco
 		}
 	}
 	out.Note = chosen.Note
+	if piSkipped {
+		out.Note = joinModelNote([]string{piRoleReason, chosen.Note})
+	}
 	out.NewConversation = req.Resume && granted.Key() != req.Current.Key()
 	return out, nil
+}
+
+// piRoleReason is why no role runs on Pi.
+const piRoleReason = "Pi cannot be woken by a message yet"
+
+// dropPi removes the Pi entries of a role list. skipped says one was there.
+func dropPi(list []protocol.RoleModel) (kept []protocol.RoleModel, skipped bool) {
+	for _, m := range list {
+		if m.Harness == "pi" {
+			skipped = true
+			continue
+		}
+		kept = append(kept, m)
+	}
+	return kept, skipped
+}
+
+// dropPiCurrent clears a current model on Pi, so a role never resumes on it.
+func dropPiCurrent(m protocol.RoleModel) protocol.RoleModel {
+	if m.Harness == "pi" {
+		return protocol.RoleModel{}
+	}
+	return m
 }
 
 // roleModels is the ordered list a role start decides on.

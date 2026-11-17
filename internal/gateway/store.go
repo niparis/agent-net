@@ -4799,10 +4799,11 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		return s.agentNetReply(tx, p)
 	}
 	// A role address names the session pinned for the role (role_address.go).
+	roleAddress := ""
 	if id, isRole, err := resolveRoleAddress(tx, p.Recipient); err != nil {
 		return msg, false, err
 	} else if isRole {
-		p.Recipient = id
+		roleAddress, p.Recipient = p.Recipient, id
 	}
 	// A message to a replaced session goes to the session that replaced it. A
 	// worker's daemon, for one, keeps the caller ID it started with.
@@ -4995,6 +4996,12 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			*route += "\n"
 		}
 		*route += fmt.Sprintf("Session %s was replaced by %s, so the message went to %s.", requested, live, live)
+	}
+	if route != nil && roleAddress != "" {
+		if *route != "" {
+			*route += "\n"
+		}
+		*route += fmt.Sprintf("%q is session %s now, so the message went to %s.", roleAddress, m.To, m.To)
 	}
 	if route != nil {
 		note, err := limitedNote(tx, m.To, s.now())

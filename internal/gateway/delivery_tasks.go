@@ -1143,7 +1143,7 @@ func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int6
    WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
    AND d.after_merge=t.after_merge AND d.session_id=s.id),t.change_id,t.owner_node,t.created_at,t.urgent
   FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
-  JOIN sessions s ON s.online=0 AND s.harness='claude' AND s.worker=''
+  JOIN sessions s ON s.online=0 AND s.harness IN ('claude','codex','opencode') AND s.worker=''
   WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by=''
   AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
   AND ((t.owner_node=? AND s.id=c.caller AND NOT `+callerOwnerLiveSQL+`) OR (t.owner_node=? AND EXISTS

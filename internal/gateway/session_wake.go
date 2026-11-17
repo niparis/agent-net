@@ -51,7 +51,19 @@ func (s *Store) claimWake(session string) (bool, error) {
 
 // wakeHarness tells whether agent-net can resume an offline session of this
 // harness at all. Pi cannot: its rpc mode does not open an existing session.
-func wakeHarness(h string) bool { return h == "claude" || h == "codex" || h == "opencode" }
+func wakeHarness(h string) bool { return protocol.WakeHarness(h) }
+
+// roleSession tells whether a session holds a role other agents rely on: the
+// chief of staff or a project's merger. It is woken whatever its agent's wake
+// and autonomy settings say, because those settings are made for coding
+// sessions (decision 0171). The CTO is not here: the daemon keeps it running
+// and delivers to it directly. A lookup error is false.
+func (s *Store) roleSession(id string) bool {
+	var held bool
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM owner_settings WHERE key=? AND value=?)
+ OR EXISTS(SELECT 1 FROM project_mergers WHERE session_id=?)`, chiefSessionKey, id, id).Scan(&held)
+	return err == nil && held
+}
 
 // autonomyWake tells whether the agent's autonomy rule lets agent-net wake it
 // for a message. A lookup error is off.
@@ -141,7 +153,9 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online || a.ReplacedBy != "" {
 		return false
 	}
-	autonomy := loop || g.autonomyWake(a)
+	// A role session is woken whatever the autonomy setting. The frame carries
+	// the autonomy, which is what lets the machine wake a Codex or OpenCode one.
+	autonomy := loop || g.autonomyWake(a) || g.store.roleSession(a.SessionID)
 	if !fromMessage {
 		if !autonomy && (a.Harness != "claude" || a.Mode == protocol.ModeForeground) {
 			return false

@@ -499,3 +499,9 @@ type ChiefSort struct {
 type ChiefSortsResult struct {
 	Sorts []ChiefSort `json:"sorts"`
 }
+
+// WakeHarness tells whether a message can wake an offline session of this
+// harness. Pi cannot: its rpc mode does not open an existing session. A role
+// session (the chief, a merger) runs only on a harness that can be woken
+// (decision 0171).
+func WakeHarness(h string) bool { return h == "claude" || h == "codex" || h == "opencode" }

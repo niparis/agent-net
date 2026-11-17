@@ -51,11 +51,15 @@ func TestRoleAddressWithNoPinnedChief(t *testing.T) {
 	}
 }
 
-// The CTO role address follows the registered CTO network session.
+// The CTO role address follows the registered CTO network session. The CTO only
+// takes messages from the owner, so the sender is an owner session.
 func TestRoleAddressFollowsCTOSession(t *testing.T) {
 	s, _, _, asker, node := chiefRig(t)
 	cto, err := s.RegisterCTOSession(node)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET harness=? WHERE id=?`, protocol.OwnerHarness, asker); err != nil {
 		t.Fatal(err)
 	}
 	m, _, err := s.StoreMessage(protocol.MsgSend{Sender: asker, Recipient: "cto", Body: "a message for the CTO"})
@@ -64,5 +68,30 @@ func TestRoleAddressFollowsCTOSession(t *testing.T) {
 	}
 	if m.To != cto {
 		t.Fatalf("message to the cto role went to %s, want the CTO session %s", m.To, cto)
+	}
+}
+
+// The sender is told which session got a message sent to a role address, and
+// that a replaced session's message went to the one that replaced it.
+func TestRoleAddressTellsTheSender(t *testing.T) {
+	s, _, oldChief, asker, node := chiefRig(t)
+	newChief, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "chief-two", Name: "chief two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id=?`, newChief); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: newChief}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	for _, to := range []string{"chief", oldChief} {
+		m, _, note, err := s.StoreLeadMessage(protocol.MsgSend{Sender: asker, Recipient: to, Body: "a question for the chief"})
+		if err != nil {
+			t.Fatalf("send to %q: %v", to, err)
+		}
+		if m.To != newChief || !strings.Contains(note, newChief) {
+			t.Fatalf("send to %q: went to %s with note %q, want a note that names %s", to, m.To, note, newChief)
+		}
 	}
 }
