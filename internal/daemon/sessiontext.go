@@ -233,8 +233,11 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &request) != nil {
 			return nil, true, errors.New("bad role setup request")
 		}
-		res, err := d.setupRoleModels(ctx)
-		return res, true, err
+		result, err := d.setupRoleModels(ctx)
+		if err == nil && request.Start {
+			err = d.startSetupRoles(ctx, result.Added)
+		}
+		return result, true, err
 	case "bar_edit":
 		// The CTO's cto_op form of agent_bar_edit. It acts as the owner session,
 		// which the gateway accepts for any project the call names.
