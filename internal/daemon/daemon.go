@@ -406,6 +406,7 @@ type Daemon struct {
 	toolsConflictLog map[toolConflictKey]time.Time
 	toolsSummaryAt   time.Time
 	ctoDispatchMu    ctoDispatchLock
+	ctoHandovers     []*ctoHandoverFlight // model layer handovers in flight; guarded by cto.mu
 	ctoPresenceMu    sync.Mutex
 	ctoEnterMu       sync.Mutex
 	ctoEntering      *ctoEnterCall

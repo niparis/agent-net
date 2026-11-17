@@ -9,7 +9,7 @@ import (
 func (d *Daemon) ctoRunning() bool {
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
-	if d.cto.cmd != nil {
+	if d.cto.cmd != nil && !d.ctoHandoverPendingLocked("opencode") {
 		select {
 		case <-d.cto.exited:
 		default:
@@ -17,7 +17,7 @@ func (d *Daemon) ctoRunning() bool {
 		}
 	}
 	c := &d.claudeCTO
-	if c.ref == "" {
+	if c.ref == "" || d.ctoHandoverPendingLocked("claude") {
 		return false
 	}
 	root := c.root.Load()

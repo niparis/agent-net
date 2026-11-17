@@ -110,7 +110,18 @@ func TestCTOConfigHasFullTools(t *testing.T) {
 		t.Error("the general subagent is still configured")
 	}
 	rules := cfg.Agents["cto"].Permissions
-	if len(rules) != 1 || rules[0].Action != "agent-net-cto_*" || rules[0].Resource != "*" || rules[0].Effect != "allow" {
-		t.Errorf("cto rules = %+v", rules)
+	// The tools rule, then the two read rules for env files (decision 0171).
+	want := []struct{ Action, Resource, Effect string }{
+		{"agent-net-cto_*", "*", "allow"},
+		{"read", "*.env", "allow"},
+		{"read", "*.env.*", "allow"},
+	}
+	if len(rules) != len(want) {
+		t.Fatalf("cto rules = %+v", rules)
+	}
+	for i, w := range want {
+		if rules[i] != w {
+			t.Errorf("cto rule %d = %+v, want %+v", i, rules[i], w)
+		}
 	}
 }

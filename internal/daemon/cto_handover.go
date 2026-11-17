@@ -34,6 +34,11 @@ const ctoHandoverOwnerMessages = 10
 // only for an owner switch from a harness that was running (answer), so a
 // handover never starts a harness. A fallback writes the mechanical layer only.
 func (d *Daemon) ctoHandover(ctx context.Context, from, to string, ownerStarted, answer bool) error {
+	// A switch back to a harness that is still answering an earlier handover
+	// ends that one: its conversation continues, so there is nothing to hand over.
+	d.cto.mu.Lock()
+	d.endHandoverLocked(to)
+	d.cto.mu.Unlock()
 	sid := d.ctoSessionID()
 	if sid == "" {
 		d.Logf("cto.handover skipped: the CTO network session is not registered")
@@ -55,20 +60,110 @@ func (d *Daemon) ctoHandover(ctx context.Context, from, to string, ownerStarted,
 	if err := d.writeHandoverNote(ctx, sid, name, from, to, now, mechanical); err != nil {
 		return err
 	}
-	// A busy turn skips the model layer: the old conversation cannot answer
-	// until its turn ends (decision 0171).
-	if ownerStarted && answer && !busy {
-		if answer, ok := d.ctoModelHandover(ctx, from); ok {
-			body := mechanical + "\n\n## Model output (not the owner's words)\n\n" + answer
-			if err := d.writeHandoverNote(ctx, sid, name, from, to, now, body); err != nil {
-				return err
-			}
-		}
-	}
 	if _, err := d.st.db.Exec(`UPDATE cto SET handover_note=? WHERE id=1`, name); err != nil {
 		return err
 	}
+	// A busy turn skips the model layer: the old conversation cannot answer
+	// until its turn ends (decision 0171). The model layer runs after the switch
+	// returns, so a silent old harness never holds the owner's call.
+	if ownerStarted && answer && !busy {
+		d.startModelHandover(ctx, sid, name, from, to, now, mechanical)
+	}
 	return nil
+}
+
+// ctoHandoverFlight is one model layer handover that has not finished. Its old
+// harness stays up until the note is written or the wait ends, and is then
+// stopped. cancelled is set under cto.mu when the CTO moves back to that
+// harness first.
+type ctoHandoverFlight struct {
+	from      string
+	cancel    context.CancelFunc
+	cancelled bool
+}
+
+// startModelHandover asks the old conversation for its words in the
+// background, appends them to the handover note, and then stops the old
+// harness. A daemon that is stopping starts nothing: Stop ends every harness.
+func (d *Daemon) startModelHandover(ctx context.Context, sid, name, from, to string, at time.Time, mechanical string) {
+	// The daemon's own context, not the caller's: the owner's call has returned
+	// by the time the old harness answers.
+	base := d.ctoCtx
+	if base == nil {
+		base = context.WithoutCancel(ctx)
+	}
+	bg, cancel := context.WithCancel(base)
+	flight := &ctoHandoverFlight{from: from, cancel: cancel}
+	d.cto.mu.Lock()
+	d.ctoHandovers = append(d.ctoHandovers, flight)
+	d.cto.mu.Unlock()
+	started := d.goBackground(func() {
+		defer cancel()
+		if answer, ok := d.ctoModelHandover(bg, from); ok && bg.Err() == nil {
+			body := mechanical + "\n\n## Model output (not the owner's words)\n\n" + answer
+			if err := d.writeHandoverNote(bg, sid, name, from, to, at, body); err != nil {
+				d.Logf("cto.handover model layer from=%s to=%s: %v", from, to, err)
+			}
+		}
+		d.cto.mu.Lock()
+		defer d.cto.mu.Unlock()
+		d.dropHandoverFlightLocked(flight)
+		if !flight.cancelled {
+			d.stopCTOHarnessLocked(from, "handover_done")
+		}
+	})
+	if !started {
+		cancel()
+		d.cto.mu.Lock()
+		d.dropHandoverFlightLocked(flight)
+		d.cto.mu.Unlock()
+	}
+}
+
+// dropHandoverFlightLocked removes a finished flight. Caller holds cto.mu.
+func (d *Daemon) dropHandoverFlightLocked(f *ctoHandoverFlight) {
+	for i, other := range d.ctoHandovers {
+		if other == f {
+			d.ctoHandovers = append(d.ctoHandovers[:i], d.ctoHandovers[i+1:]...)
+			return
+		}
+	}
+}
+
+// ctoHandoverPendingLocked says whether the harness is still answering a
+// handover. Its process is kept until then. Caller holds cto.mu.
+func (d *Daemon) ctoHandoverPendingLocked(harness string) bool {
+	for _, f := range d.ctoHandovers {
+		if f.from == harness {
+			return true
+		}
+	}
+	return false
+}
+
+// endHandoverLocked ends the handover of a harness the CTO moves back to and
+// stops its process, as a switch away used to. Caller holds cto.mu.
+func (d *Daemon) endHandoverLocked(harness string) {
+	ended := false
+	for _, f := range d.ctoHandovers {
+		if f.from == harness && !f.cancelled {
+			f.cancelled = true
+			f.cancel()
+			ended = true
+		}
+	}
+	if ended {
+		d.stopCTOHarnessLocked(harness, "harness_switch")
+	}
+}
+
+// stopCTOHarnessLocked stops one harness's process. Caller holds cto.mu.
+func (d *Daemon) stopCTOHarnessLocked(harness, reason string) {
+	if harness == "claude" {
+		d.stopClaudeCTOLocked(reason)
+		return
+	}
+	d.stopOpenCodeCTOLocked(reason)
 }
 
 // writeHandoverNote stores the handover under its name. The same name again

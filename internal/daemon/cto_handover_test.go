@@ -120,6 +120,11 @@ func testCTOHandoverBothLayersWhenOldHarnessAnswers(t *testing.T) {
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Model: &model})
 	cli.mustCall("cto_send", map[string]string{"text": "keep the release notes short"})
 	switchCTOHarness(t, cli, "claude")
+	// The old conversation answers after the switch has returned.
+	waitHandoverSettled(t, n.d)
+	if n.d.ctoHarnessRunning("opencode") {
+		t.Fatal("the old OpenCode is still running after its note was written")
+	}
 
 	name := n.d.latestHandoverNote()
 	body := handoverNotes(t, n.d)[name]
