@@ -214,6 +214,9 @@ func testCTOHarnessConversations(t *testing.T) {
 		c.ClaudeSessionsDir = sessions
 		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
 		c.HarnessPaths = map[string]string{"claude": os.Args[0], "opencode": os.Args[0]}
+		// The fake Claude never answers a handover, so a switch away from it
+		// waits this long before it goes on (decision 0171).
+		c.testHandoverWait = time.Second
 	}})
 	cli := cliClient(t, n)
 	model, harness := "fake/m1", "opencode"
@@ -241,6 +244,8 @@ func testCTOHarnessConversations(t *testing.T) {
 	oldRoot := n.d.claudeCTO.root.Load()
 	model, harness = "fake/m1", "opencode"
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Model: &model, Harness: &harness})
+	// The old Claude is stopped when its handover wait ends, after the call.
+	waitHandoverSettled(t, n.d)
 	if oldRoot == nil || n.d.isCTOPeer(oldRoot.pid) {
 		t.Fatal("previous harness retains CTO access after switch")
 	}
@@ -289,6 +294,9 @@ func testCTOEventsKeepTimelineAcrossHarnessSwitchesAndRestart(t *testing.T) {
 		c.ClaudeSessionsDir = sessions
 		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
 		c.HarnessPaths = map[string]string{"claude": os.Args[0], "opencode": os.Args[0]}
+		// The fake Claude never answers a handover, so a switch away from it
+		// waits this long before it goes on (decision 0171).
+		c.testHandoverWait = time.Second
 	}})
 	cli := cliClient(t, n)
 	set := func(harness, model string) {

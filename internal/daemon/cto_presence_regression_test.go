@@ -126,6 +126,16 @@ func TestCTOClaudeWakeAfterHarnessSwitch(t *testing.T) {
 	}
 	harness = "opencode"
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	// The switch asks the old Claude for its handover. The request goes out
+	// after the call returns, so the test reads it before moving back.
+	select {
+	case text := <-adapter.received:
+		if text != ctoHandoverPrompt {
+			t.Fatalf("expected the handover request, got %q", text)
+		}
+	case <-time.After(scaled(10 * time.Second)):
+		t.Fatal("the old Claude was not asked for its handover")
+	}
 	harness = "claude"
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
 	eventually(t, "switched CTO dormant", func() bool { a, _, _ := g.gw.Store().Agent(id); return a.Online && a.Status == "dormant" })

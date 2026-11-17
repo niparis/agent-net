@@ -80,7 +80,11 @@ Its data, state, configuration and cache are private to the daemon. The OpenCode
 agent-net plugin is disabled in that process. The private configuration copies
 the owner's OpenCode provider and other general settings, without plugins.
 It excludes the owner's agents, MCP servers, permissions and instructions to keep
-the CTO's tools private. The Claude Code CTO uses the
+the CTO's tools private. The CTO's own OpenCode rules allow the agent-net CTO
+tools, and reads of `*.env` and `*.env.*` files without a prompt, because nobody
+answers a prompt for an unwatched CTO. Other reads, shell commands and edits
+follow OpenCode's defaults, which the real-server check in
+`cto_opencode_real_test.go` records (decision 0171). The Claude Code CTO uses the
 owner's Claude login and a background session in a private working directory.
 Its session receives `--strict-mcp-config` and a private MCP configuration that
 contains only `agent-net cto-mcp`, not the ordinary agent-net MCP server. The

@@ -357,6 +357,9 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 		res := a.DeliverCTO(deadline, protocol.SessionInfo{Harness: "claude", NativeID: id}, msgID, text)
 		if res.Delivered {
 			d.confirmClaudeCTODelivery(watch, msgID, text)
+			if err := d.touchCTOConversation("claude"); err != nil {
+				return nil, err
+			}
 			return map[string]string{"session_id": id}, nil
 		}
 		select {
@@ -372,7 +375,7 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 // it. The caller holds cto.mu.
 func (d *Daemon) saveClaudeCTOSessionLocked(oldID string) (string, error) {
 	id := d.claudeCTO.session
-	if _, err := d.st.db.Exec(`INSERT INTO cto(id,session_id,claude_session_id) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET claude_session_id=excluded.claude_session_id`, id); err != nil {
+	if err := d.setCTOConversation("claude", id); err != nil {
 		return id, err
 	}
 	_, err := d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE (session_id='' OR session_id=?) AND harness='claude'`, id, oldID)
@@ -392,12 +395,7 @@ func (d *Daemon) claudeCTODeliverer() (claudeCTODeliverer, error) {
 }
 
 func (d *Daemon) claudeCTOSession() (string, error) {
-	var id string
-	err := d.st.db.QueryRow(`SELECT claude_session_id FROM cto WHERE id=1`).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return id, err
+	return d.ctoConversation("claude")
 }
 
 // newConversation ends the Claude conversation. The gateway call runs without
@@ -450,7 +448,10 @@ func (d *Daemon) resetClaudeCTOLocked(graphAfter int64) error {
 	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id='' AND harness='claude'`); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,claude_session_id,claude_graph_after) VALUES(1,'','',?) ON CONFLICT(id) DO UPDATE SET claude_session_id='',claude_graph_after=excluded.claude_graph_after`, graphAfter); err != nil {
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,claude_graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET claude_graph_after=excluded.claude_graph_after`, graphAfter); err != nil {
+		return err
+	}
+	if err = setCTOConversationExec(tx, d.ctoNowTime(), "claude", ""); err != nil {
 		return err
 	}
 	return tx.Commit()

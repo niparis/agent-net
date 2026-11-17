@@ -144,11 +144,6 @@ func (d *Daemon) startClaudeRoleWith(ctx context.Context, role sessionRole, id, 
 
 func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, model, first string) error {
 	dir := d.claudeRoleDir(role)
-	if role == roleCTO {
-		if err := d.writeCTOSkill("claude"); err != nil {
-			return err
-		}
-	}
 	d.cto.mu.Lock()
 	c := &d.claudeCTO
 	canAdopt := c.ref == "" && first == ""
@@ -237,11 +232,7 @@ func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error 
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	if role == roleCTO {
-		if err = d.writeCTOSkill("opencode"); err != nil {
-			return err
-		}
-	}
+
 	data, state := filepath.Join(dir, "data"), filepath.Join(dir, "state")
 	if err = copyOpenCodeAuth(ctx, bin, data, state); err != nil {
 		return err

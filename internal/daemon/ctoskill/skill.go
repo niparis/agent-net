@@ -14,6 +14,11 @@ import (
 // Name is the skill's folder name, and Dir is its path inside the package.
 const Name = "agent-net-setup"
 
+// Bundled reports whether agent-net carries a skill of that name. The gateway
+// takes a daemon's bundled skill only for these names, so a daemon cannot put
+// any other skill into the archive.
+func Bundled(name string) bool { return name == Name }
+
 const dir = Name
 
 // Names are the skill files, in the order they are written.

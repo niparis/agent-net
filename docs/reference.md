@@ -379,15 +379,40 @@ memory is off for the CTO (`autoMemoryEnabled: false` in its launch settings):
 its memory is its gateway notes, saved with `agent_note_write` and read with
 `agent_notes_find` (owner decision 2026-11-13). Coding sessions keep both.
 
-The daemon writes the CTO's own skill, `agent-net-setup`, into its skills folder
-at start: `cto/claude/.claude/skills/agent-net-setup/` for a Claude CTO, and
-`cto/.claude/skills/agent-net-setup/` for an OpenCode CTO, both under the daemon
-state directory. OpenCode 2.3 reads project skills from `.claude/skills`, so the
-same relative path serves both harnesses. The folder holds `SKILL.md` and a
-generated `reference.md`; each file is written only when its content differs.
-No other session's folder gets them, and a start fails if they cannot be
-written. `scripts/check-opencode-cto-skill.sh` confirms the OpenCode path on a
-real 2.3 install, in a throwaway folder.
+The CTO's own skill, `agent-net-setup`, is carried in the daemon's binary. Before
+a CTO start the daemon ships it to the skill archive when its content changes,
+and adds it once to the CTO's node list (`agent` `cto`). Each harness then gets
+it from the node's skill folder, as every skill does: a Claude CTO through
+`--plugin-dir`, an OpenCode CTO through the skills root in its process config.
+Nothing is written into a harness folder. The copies that earlier builds wrote,
+`cto/claude/.claude/skills/agent-net-setup/` and `cto/.claude/skills/agent-net-setup/`
+under the daemon state directory, are deleted at the first start. A skill the
+owner takes off the CTO's list stays off (decision 0171).
+
+A switch of harness writes a handover note, named `handover-<UTC time>`, into
+the CTO's gateway notes. It lists the open asks, the messages the CTO owes a
+reply, the workers and changes it started that are not done, the owner's last
+ten messages, and any busy turn. When the old conversation can answer within 60
+seconds, its answer follows, marked as model output. A switch to a harness whose
+conversation was last used more than 24 hours ago starts a new conversation
+(decision 0171).
+
+Every delivered message to a session is checked for a turn (decision 0171). If
+the session is idle and no turn started within 20 seconds, the daemon sends the
+message once more, then restarts the session with the message as its first
+prompt. The check reads what the harness reports, once per check: the Claude
+transcript, the OpenCode conversation, or the queued-message notice Codex
+sends. A busy session is checked again 20 seconds later and is not sent to
+again. A session has one check at a time: a newer message replaces the older
+check, and the check ends when the message is taken, when the session goes
+offline, ends or is archived, when agent-net stops it, or when the daemon stops. Plugin and Pi sessions have a synchronous acknowledgement and get no
+check.
+
+A Codex thread gets its project's charter and the note titles as developer
+instructions when it starts. After a compaction, the next turn of a session
+carries its start block again (standing orders, note titles and charter). Claude Code gets it from its
+PostCompact hook. OpenCode and Codex get it on their next turn after the
+daemon's compaction event.
 
 The CTO starts through the same start path as every other session (decision
 0156). Its role (name `agent-net-cto`, the system prompt, the private MCP config,

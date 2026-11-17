@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS cto_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, 
 CREATE TABLE IF NOT EXISTS cto_placements (purpose TEXT PRIMARY KEY, placement TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_proposal_messages (proposal_id INTEGER NOT NULL, sender TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS cto_owner_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, text TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS cto_proposals_open_call ON cto_proposals(tool,action,args) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS cto_proposal_messages_proposal ON cto_proposal_messages(proposal_id);
 CREATE INDEX IF NOT EXISTS cto_history_harness ON cto_history(harness,kind,id);
@@ -317,6 +318,12 @@ CREATE TABLE IF NOT EXISTS workers (
 			db.Close()
 			return nil, err
 		}
+	}
+	// Decision 0171: one conversation row per session and harness, copied once
+	// from the CTO's two old columns.
+	if err := migrateCTOState(db); err != nil {
+		db.Close()
+		return nil, err
 	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {

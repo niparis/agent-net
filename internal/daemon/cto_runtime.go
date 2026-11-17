@@ -79,6 +79,19 @@ func (d *Daemon) selectedCTOHarness(ctx context.Context) (ctoHarness, error) {
 	if err != nil {
 		return nil, err
 	}
+	if pick.Harness != settings.Harness {
+		// A fallback to another harness hands over like an owner switch, with
+		// the mechanical layer only: the old model has just failed (decision
+		// 0171). A handover that fails is logged, and the fallback goes on.
+		if err := d.ctoHandover(ctx, settings.Harness, pick.Harness, false, false); err != nil {
+			d.Logf("cto.handover harness=%s to=%s: %v", settings.Harness, pick.Harness, err)
+		}
+		if !pick.NewConversation {
+			if err := d.ctoSwitchConversation(pick.Harness); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if pick.NewConversation {
 		// The current model failed a locked check. The role falls to its list
 		// with a new conversation; the old one stays in the other harness.
@@ -114,15 +127,14 @@ func (d *Daemon) prepareStoredCTOHarness(ctx context.Context) (ctoHarness, error
 // clearCTOConversation drops the stored conversation of one harness, so the
 // next start opens a new one.
 func (d *Daemon) clearCTOConversation(harness string) error {
-	column := "session_id"
-	if harness == "claude" {
-		column = "claude_session_id"
-	}
-	_, err := d.st.db.Exec(`UPDATE cto SET ` + column + `='' WHERE id=1`)
-	return err
+	return d.setCTOConversation(harness, "")
 }
 
 func (d *Daemon) prepareCTOHarness(settings protocol.CTOSettings) (ctoHarness, error) {
+	// Every start passes here before its launch, and the CTO's skill must be in
+	// the archive before the launch builds its skill folder. It runs before
+	// cto.mu is taken: it calls the gateway.
+	d.ensureCTOSkillLogged()
 	var h ctoHarness = openCodeCTOHarness{}
 	switch settings.Harness {
 	case "claude":
@@ -133,10 +145,16 @@ func (d *Daemon) prepareCTOHarness(settings protocol.CTOSettings) (ctoHarness, e
 	}
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
+	// A harness that is still writing its handover note stays up until the note
+	// is written (ctoHandover). One the CTO moves back to is stopped now, as a
+	// switch away used to stop it.
+	d.endHandoverLocked(h.name())
+	other := "claude"
 	if h.name() == "claude" {
-		d.stopOpenCodeCTOLocked("harness_switch")
-	} else {
-		d.stopClaudeCTOLocked("harness_switch")
+		other = "opencode"
+	}
+	if !d.ctoHandoverPendingLocked(other) {
+		d.stopCTOHarnessLocked(other, "harness_switch")
 	}
 	_, err := d.st.db.Exec(`INSERT INTO cto(id,session_id,active_harness) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET active_harness=excluded.active_harness`, h.name())
 	return h, err
@@ -180,6 +198,11 @@ func (d *Daemon) ctoSendTriggered(ctx context.Context, text, sender, trigger str
 	if !d.ctoRunning() {
 		d.Logf("cto.wake trigger=%s harness=%s", trigger, h.name())
 	}
+	if trigger == "owner" {
+		if err := d.recordCTOOwnerMessage(text); err != nil {
+			return nil, err
+		}
+	}
 	out, err := h.send(ctx, d, text)
 	if err == nil && sender != "" {
 		err = d.st.recordCTODelivery(sender, time.Now())
@@ -209,6 +232,7 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 		if err != nil {
 			return out, err
 		}
+		out.Messages = dropHandoverExchange(out.Messages)
 		return d.mergeCTOHistory(out, "claude", index)
 	}
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
@@ -226,6 +250,7 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	if err != nil {
 		return out, err
 	}
+	out.Messages = dropHandoverExchange(out.Messages)
 	return d.mergeCTOHistory(out, h.name(), index)
 }
 
@@ -314,7 +339,7 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (protocol.Ent
 		defer d.cto.mu.Unlock()
 		oldID := id
 		id = d.claudeCTO.session
-		if _, e = d.st.db.Exec(`INSERT INTO cto(id,session_id,claude_session_id) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET claude_session_id=excluded.claude_session_id`, id); e != nil {
+		if e = d.setCTOConversation("claude", id); e != nil {
 			return plan, e
 		}
 		if _, e = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE (session_id='' OR session_id=?) AND harness='claude'`, id, oldID); e != nil {

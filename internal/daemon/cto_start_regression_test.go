@@ -33,7 +33,7 @@ func TestCTOResumeCopy(t *testing.T) {
 	harness := "claude"
 	n.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
 	old := "old-conversation"
-	if _, err := n.d.st.db.Exec(`UPDATE cto SET claude_session_id=? WHERE id=1`, old); err != nil {
+	if err := n.d.setCTOConversation("claude", old); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := n.d.st.db.Exec(`INSERT INTO cto_actions(session_id,harness,text,at) VALUES(?,'claude','saved action',1)`, old); err != nil {
@@ -154,7 +154,7 @@ func TestCTOClaudeFailedResumeFallback(t *testing.T) {
 			harness := "claude"
 			n.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
 			old := "missing-session"
-			if _, err := n.d.st.db.Exec(`UPDATE cto SET claude_session_id=? WHERE id=1`, old); err != nil {
+			if err := n.d.setCTOConversation("claude", old); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := n.d.st.db.Exec(`INSERT INTO cto_actions(session_id,harness,text,at) VALUES(?,'claude','preserved action',1)`, old); err != nil {
@@ -201,7 +201,7 @@ func TestCTOClaudeOtherStartupFailureKeepsSession(t *testing.T) {
 	n := startClaudeNode(t, g, shortSet)
 	harness := "claude"
 	n.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
-	if _, err := n.d.st.db.Exec(`UPDATE cto SET claude_session_id='prior-session' WHERE id=1`); err != nil {
+	if err := n.d.setCTOConversation("claude", "prior-session"); err != nil {
 		t.Fatal(err)
 	}
 	_, err := n.d.ctoEnter(context.Background())

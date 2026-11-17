@@ -60,8 +60,10 @@ type fakeShared struct {
 	mu      sync.Mutex
 	threads map[string]*fakeThread
 	queued  []fakeQueued
-	conns   []*websocket.Conn
-	reads   int
+	// turns holds the prompts of turn/start, in order.
+	turns []string
+	conns []*websocket.Conn
+	reads int
 	// extraRoots counts skills/extraRoots/set calls. The real method is
 	// server-wide, so any owner-session call would change every thread there.
 	extraRoots int
@@ -123,6 +125,17 @@ func (f *fakeShared) queue() []fakeQueued {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]fakeQueued(nil), f.queued...)
+}
+
+// notifyWith sends one notification with params to every connected client.
+func (f *fakeShared) notifyWith(method string, params any) {
+	f.mu.Lock()
+	conns := append([]*websocket.Conn(nil), f.conns...)
+	f.mu.Unlock()
+	b, _ := json.Marshal(map[string]any{"method": method, "params": params})
+	for _, c := range conns {
+		c.Write(context.Background(), websocket.MessageText, b)
+	}
 }
 
 func (f *fakeShared) notify(method string) {
@@ -235,6 +248,15 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 			f.extraRoots++
 			f.mu.Unlock()
 			reply(map[string]any{}, "")
+			continue
+		case "turn/start":
+			text := ""
+			if len(p.Input) > 0 {
+				text = p.Input[0].Text
+			}
+			f.turns = append(f.turns, text)
+			f.mu.Unlock()
+			reply(map[string]any{"turn": map[string]any{"id": "turn-fake"}}, "")
 			continue
 		case "thread/queue/add":
 			if f.threads[p.ThreadID] == nil {

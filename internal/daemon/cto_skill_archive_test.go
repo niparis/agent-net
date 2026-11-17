@@ -123,13 +123,15 @@ func TestCTOSkillArchiveIntakeReachesPluginAndCTOSkills(t *testing.T) {
 	if err := n.d.registerCTOSession(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := n.d.writeCTOSkill("claude"); err != nil {
+	// The CTO's skill is not on disk any more: the daemon ships it (decision
+	// 0171), so intake finds the two user skills only.
+	if err := n.d.ensureCTOSkill(ctx); err != nil {
 		t.Fatal(err)
 	}
 	var got protocol.SkillArchiveMultiResult
 	eventually(t, "inventory of the user skill", func() bool {
 		got = callCTOSkillArchive[protocol.SkillArchiveMultiResult](t, n.d, ctx, `{"action":"intake"}`)
-		return len(got.Machines) == 1 && got.Machines[0].Result == "scanned" && got.Machines[0].Found >= 3
+		return len(got.Machines) == 1 && got.Machines[0].Result == "scanned" && got.Machines[0].Found >= 2
 	})
 	lines := map[string]string{}
 	for _, row := range listSkillArchive(t, n.d, ctx) {

@@ -50,7 +50,7 @@ func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.Started
 	// resumes gets the charter, with the owner's global rules, as developer
 	// instructions, so the rules reach it even when it does not read the MCP
 	// server instructions.
-	if text := d.codexThreadInstructions(ctx, r.Project); text != "" {
+	if text := d.codexStartBlock(ctx, r.ID, r.Project); text != "" {
 		params["developerInstructions"] = text
 	}
 	if r.Model != "" {

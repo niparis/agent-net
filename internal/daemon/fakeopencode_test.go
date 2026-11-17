@@ -49,7 +49,14 @@ import (
 var fakeOCFailed atomic.Bool
 var fakeOCLocalFailed atomic.Bool
 
-const fakeOCError = "AI.Error: Upstream request failed: Insufficient account funds. api_key=sk-abcdefghijklmnopqrstuvwxyz123456\nadd funds"
+// fakeOCHandoverAnswer is the model layer the fake gives a handover request.
+const fakeOCHandoverAnswer = "Promise: finish the migration plan."
+
+// fakeOCKey is a throwaway key for the redaction tests. It is split so the
+// file holds no key-shaped literal.
+const fakeOCKey = "sk-" + "abcdefghijklmnopqrstuvwxyz123456"
+
+const fakeOCError = "AI.Error: Upstream request failed: Insufficient account funds. api_key=" + fakeOCKey + "\nadd funds"
 
 type fakeOCRecord struct {
 	Args        []string          `json:"args"`
@@ -494,9 +501,17 @@ func runFakeOpenCode() {
 			return
 		}
 		item := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "user", "text": prompt.Text, "time": map[string]any{"created": time.Now().UnixMilli()}}
-		items = append([]map[string]any{item}, items...)
+		if !strings.HasPrefix(prompt.Text, "FAKE:drop") {
+			items = append([]map[string]any{item}, items...)
+		}
+		if prompt.Text == ctoHandoverPrompt || strings.HasPrefix(prompt.Text, "FAKE:answer") {
+			// The model layer of a handover (decision 0171) asks for words; the
+			// fake answers as a model would, in the OpenCode message form.
+			answer := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "assistant", "content": []map[string]any{{"type": "text", "text": fakeOCHandoverAnswer}}, "time": map[string]any{"created": time.Now().UnixMilli()}}
+			items = append([]map[string]any{answer}, items...)
+		}
 		if prompt.Text == "FAKE:ctofail" {
-			items = append([]map[string]any{{"type": "idle", "outcome": "failed", "error": map[string]any{"message": "unknown model"}}}, items...)
+			items = append([]map[string]any{{"id": "msg_" + protocol.NewToken(), "type": "idle", "outcome": "failed", "time": map[string]any{"created": time.Now().UnixMilli()}, "error": map[string]any{"message": "unknown model"}}}, items...)
 		}
 		raw, _ = json.Marshal(items)
 		if err := os.WriteFile(path, raw, 0o600); err != nil {

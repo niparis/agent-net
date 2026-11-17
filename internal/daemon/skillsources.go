@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -46,13 +44,6 @@ func (d *Daemon) skillSources(projects []protocol.ProjectEntry) ([]protocol.Skil
 	}
 	for _, root := range inventory.PluginSkillRoots(home) {
 		add(inventory.SkillRoot{Harness: "claude", Base: home, Path: root}, "plugin "+inventory.PluginName(root))
-	}
-	for _, harness := range []string{"claude", "opencode"} {
-		if dir, ok := ctoSkillDir(d.cfg.StateDir, harness); ok {
-			if _, err := os.Lstat(dir); err == nil {
-				add(inventory.SkillRoot{Harness: harness, Base: d.cfg.StateDir, Path: filepath.Dir(dir)}, "agent-net")
-			}
-		}
 	}
 	for _, p := range projects {
 		for _, root := range inventory.ProjectSkillRoots(p.Name, p.Path) {

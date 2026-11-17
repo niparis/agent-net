@@ -1,127 +1,174 @@
 package daemon
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/daemon/ctoskill"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestCTOSkillFilesWrittenForBothCTOHarnesses(t *testing.T) {
-	state := t.TempDir()
-	d := &Daemon{cfg: Config{StateDir: state}}
-	for _, tc := range []struct{ harness, root string }{
-		{"claude", filepath.Join(state, "cto", "claude")},
-		{"opencode", filepath.Join(state, "cto")},
-	} {
-		if err := d.writeCTOSkill(tc.harness); err != nil {
-			t.Fatalf("%s CTO skill: %v", tc.harness, err)
+// ctoSkillGateway is the gateway the CTO's skill needs: it takes the bundle the
+// daemon ships, serves it in the CTO's skill folder, and records the list adds.
+type ctoSkillGateway struct {
+	mu       sync.Mutex
+	skills   *skillFolderGateway
+	shipped  []protocol.SkillArchiveBundled
+	adds     []protocol.SkillSetRequest
+	failShip bool
+}
+
+func (g *ctoSkillGateway) call(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
+	switch typ {
+	case protocol.FrameSkillArchiveBundled:
+		p := params.(protocol.SkillArchiveBundled)
+		g.mu.Lock()
+		failShip := g.failShip
+		if !failShip {
+			g.shipped = append(g.shipped, p)
 		}
-		for _, name := range ctoskill.Names {
-			path := filepath.Join(tc.root, ".claude", "skills", ctoskill.Name, name)
-			got, err := os.ReadFile(path)
-			want, readErr := ctoskill.File(name)
-			if err != nil || readErr != nil || !bytes.Equal(got, want) {
-				t.Fatalf("%s CTO skill file %s = %q, %v; want %q", tc.harness, path, got, err, want)
-			}
+		g.mu.Unlock()
+		if failShip {
+			return nil, true, errors.New("gateway is down")
 		}
+		_, hash, err := packCTOSkillOnce()
+		if err != nil {
+			return nil, true, err
+		}
+		g.skills.mu.Lock()
+		g.skills.bundles = map[string][]byte{skillVersionKey(p.Name, 1): p.Bundle}
+		g.skills.folder = protocol.SkillFolder{Level: "agent", Scope: "cto", Skills: []protocol.EffectiveSkill{{Name: p.Name, Version: 1, Hash: hash}}}
+		g.skills.mu.Unlock()
+		return json.RawMessage(`{}`), true, nil
+	case protocol.FrameSkillsSet:
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		g.adds = append(g.adds, params.(protocol.SkillSetRequest))
+		return json.RawMessage(`{}`), true, nil
+	case protocol.FrameSkillsFolder, protocol.FrameSkillsVersion:
+		// The skill folder fake has its own lock. This handler holds none
+		// across the call, so the two locks never nest.
+		return g.skills.call(ctx, typ, params)
 	}
-	for _, harness := range []string{"pi", "codex", "agy"} {
-		if dir, ok := ctoSkillDir(state, harness); ok || dir != "" {
-			t.Fatalf("harness %s got a CTO skill folder %q", harness, dir)
-		}
-		if err := d.writeCTOSkill(harness); err != nil {
-			t.Fatalf("harness %s: %v", harness, err)
-		}
-		if _, err := os.Stat(filepath.Join(state, harness)); !os.IsNotExist(err) {
-			t.Fatalf("harness %s got a folder", harness)
-		}
+	return json.RawMessage(`null`), true, nil
+}
+
+// ctoSkillDaemon is a daemon with a state folder and the fake gateway.
+func ctoSkillDaemon(t *testing.T) (*Daemon, *ctoSkillGateway) {
+	t.Helper()
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.close() })
+	g := &ctoSkillGateway{skills: &skillFolderGateway{}}
+	d := &Daemon{cfg: Config{StateDir: t.TempDir(), testGatewayCall: g.call}, st: st, log: log.New(io.Discard, "", 0)}
+	return d, g
+}
+
+// The CTO's skill goes to the archive once, and is added to the CTO's list once.
+// A second ensure with the same content sends nothing, and an owner who took it
+// off the list keeps it off.
+func TestCTOSkillShipsOnceAndListsOnce(t *testing.T) {
+	d, g := ctoSkillDaemon(t)
+	ctx := context.Background()
+	if err := d.ensureCTOSkill(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(g.shipped) != 1 || g.shipped[0].Name != ctoskill.Name || g.shipped[0].By != "cto" {
+		t.Fatalf("shipped %+v", g.shipped)
+	}
+	want := protocol.SkillSetRequest{Level: "agent", Scope: "cto", Add: []string{ctoskill.Name}, By: "cto"}
+	if len(g.adds) != 1 || g.adds[0].Level != want.Level || g.adds[0].Scope != want.Scope || len(g.adds[0].Add) != 1 || g.adds[0].Add[0] != ctoskill.Name {
+		t.Fatalf("list adds %+v", g.adds)
+	}
+	if err := d.ensureCTOSkill(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(g.shipped) != 1 || len(g.adds) != 1 {
+		t.Fatalf("a second ensure sent again: shipped %d, adds %d", len(g.shipped), len(g.adds))
 	}
 }
 
-func TestCTOSkillRewrittenOnlyWhenDifferent(t *testing.T) {
-	state := t.TempDir()
-	d := &Daemon{cfg: Config{StateDir: state}}
-	if err := d.writeCTOSkill("claude"); err != nil {
+// Both CTO harnesses get the skill from the CTO node's skill folder: Claude as a
+// plugin folder, OpenCode as its skills root.
+func TestCTOSkillReachesBothHarnessesFromTheArchive(t *testing.T) {
+	d, _ := ctoSkillDaemon(t)
+	ctx := context.Background()
+	if err := d.ensureCTOSkill(ctx); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(state, "cto", "claude", ".claude", "skills", ctoskill.Name)
-	past := time.Now().Add(-time.Hour).Truncate(time.Second)
-	for _, name := range ctoskill.Names {
-		if err := os.Chtimes(filepath.Join(dir, name), past, past); err != nil {
+	folder, err := d.skillFolderFor(ctx, skillNode{Agent: "cto"})
+	if err != nil || folder.Dir == "" {
+		t.Fatalf("CTO skill folder: %+v %v", folder, err)
+	}
+	got, err := os.ReadFile(filepath.Join(folder.Root, ctoskill.Name, "SKILL.md"))
+	want, _ := ctoskill.File("SKILL.md")
+	if err != nil || string(got) != string(want) {
+		t.Fatalf("skill in the folder: %v", err)
+	}
+
+	spec := d.claudeStartSpec(ctx, claudeStartInput{Role: roleCTO, Skills: skillNode{Agent: "cto"}})
+	if argValue(spec.Flags, "--plugin-dir") != folder.Dir {
+		t.Fatalf("Claude CTO flags %v, want the plugin folder %s", spec.Flags, folder.Dir)
+	}
+
+	var cfg struct {
+		Skills []string `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(d.openCodeSkillsConfig(ctx, skillNode{Agent: "cto"}, "")), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Skills) != 1 || cfg.Skills[0] != folder.Root {
+		t.Fatalf("OpenCode CTO skills %v, want %s", cfg.Skills, folder.Root)
+	}
+}
+
+// The copies that earlier builds wrote into the CTO's harness folders are gone
+// after an ensure, and an ensure does not write them again.
+func TestCTOSkillOldHarnessCopiesAreRemoved(t *testing.T) {
+	d, _ := ctoSkillDaemon(t)
+	old := []string{
+		filepath.Join(d.cfg.StateDir, "cto", "claude", ".claude", "skills", ctoskill.Name),
+		filepath.Join(d.cfg.StateDir, "cto", ".claude", "skills", ctoskill.Name),
+	}
+	for _, dir := range old {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("old"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := d.writeCTOSkill("claude"); err != nil {
+	if err := d.ensureCTOSkill(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range ctoskill.Names {
-		st, err := os.Stat(filepath.Join(dir, name))
-		if err != nil || !st.ModTime().Equal(past) {
-			t.Fatalf("%s was rewritten although its content was current", name)
+	for _, dir := range old {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("old copy %s is still there: %v", dir, err)
 		}
-	}
-
-	reference := filepath.Join(dir, "reference.md")
-	if err := os.WriteFile(reference, []byte("old"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(reference, past, past); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.writeCTOSkill("claude"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(reference)
-	want, readErr := ctoskill.File("reference.md")
-	if err != nil || readErr != nil || !bytes.Equal(got, want) {
-		t.Fatalf("reference.md was not restored: %q, %v", got, err)
-	}
-	if st, err := os.Stat(reference); err != nil || !st.ModTime().After(past) {
-		t.Fatalf("reference.md was not rewritten after its content changed")
-	}
-	if st, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil || !st.ModTime().Equal(past) {
-		t.Fatalf("SKILL.md was rewritten although its content was current")
 	}
 }
 
-// The skill belongs to the CTO role only, so both role start paths must write
-// it before they launch anything.
-func TestCTOSkillIsWrittenWhenTheCTOStarts(t *testing.T) {
-	for _, harness := range []string{"claude", "opencode"} {
-		t.Run(harness, func(t *testing.T) {
-			state := t.TempDir()
-			bin := filepath.Join(t.TempDir(), harness)
-			if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
-				t.Fatal(err)
-			}
-			d := &Daemon{cfg: Config{StateDir: state, HarnessPaths: map[string]string{harness: bin}}}
-			var err error
-			if harness == "claude" {
-				err = d.startClaudeRole(context.Background(), roleCTO, "", "opus")
-			} else {
-				d.cto.mu.Lock()
-				err = d.startOpenCodeRole(context.Background(), roleCTO)
-				d.cto.mu.Unlock()
-			}
-			if err == nil {
-				t.Fatal("the fake harness must fail the start")
-			}
-			dir, ok := ctoSkillDir(state, harness)
-			if !ok {
-				t.Fatalf("%s has no CTO skill folder", harness)
-			}
-			for _, name := range ctoskill.Names {
-				got, readErr := os.ReadFile(filepath.Join(dir, name))
-				want, fileErr := ctoskill.File(name)
-				if readErr != nil || fileErr != nil || !bytes.Equal(got, want) {
-					t.Fatalf("%s start did not write %s: %q, %v", harness, name, got, readErr)
-				}
-			}
-		})
+// A failed ship is retried by the next start: the daemon marks the skill as
+// ensured only after the gateway took it.
+func TestCTOSkillEnsureRetriesAfterGatewayFailure(t *testing.T) {
+	d, g := ctoSkillDaemon(t)
+	g.failShip = true
+	d.ensureCTOSkillLogged()
+	if d.ctoSkillDone.Load() {
+		t.Fatal("a failed ship marked the skill as done")
+	}
+	g.failShip = false
+	d.ensureCTOSkillLogged()
+	if !d.ctoSkillDone.Load() || len(g.shipped) != 1 || len(g.adds) != 1 {
+		t.Fatalf("retry: done %v, shipped %d, adds %d", d.ctoSkillDone.Load(), len(g.shipped), len(g.adds))
 	}
 }
