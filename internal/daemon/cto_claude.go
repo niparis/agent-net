@@ -400,35 +400,60 @@ func (d *Daemon) claudeCTOSession() (string, error) {
 	return id, err
 }
 
+// newConversation ends the Claude conversation. The gateway call runs without
+// d.cto.mu (B12). It follows the retry rule of openCodeCTONew: the Claude run
+// (root, session, model, ref) must be the one read before the call.
 func (claudeCTOHarness) newConversation(ctx context.Context, d *Daemon) (any, error) {
-	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
-	data, err := d.call(ctx, "cto.graph_latest", nil)
-	if err != nil {
-		return nil, err
+	c := &d.claudeCTO
+	for attempt := 1; ; attempt++ {
+		d.cto.mu.Lock()
+		session, model, ref, root := c.session, c.model, c.ref, c.root.Load()
+		d.cto.mu.Unlock()
+
+		data, err := d.call(ctx, "cto.graph_latest", nil)
+		if err != nil {
+			return nil, err
+		}
+		var latest struct {
+			ID int64 `json:"id"`
+		}
+		if err = json.Unmarshal(data, &latest); err != nil {
+			return nil, err
+		}
+
+		d.cto.mu.Lock()
+		if c.session != session || c.model != model || c.ref != ref || c.root.Load() != root {
+			d.cto.mu.Unlock()
+			if attempt == 1 {
+				continue
+			}
+			return nil, errors.New("the CTO conversation changed while a new one was starting; try again")
+		}
+		err = d.resetClaudeCTOLocked(latest.ID)
+		d.cto.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		return struct{}{}, nil
 	}
-	var latest struct {
-		ID int64 `json:"id"`
-	}
-	if err = json.Unmarshal(data, &latest); err != nil {
-		return nil, err
-	}
+}
+
+// resetClaudeCTOLocked stops the Claude CTO and records the graph id that the
+// next conversation starts after. The caller holds d.cto.mu.
+func (d *Daemon) resetClaudeCTOLocked(graphAfter int64) error {
 	d.stopClaudeCTOLocked("new_conversation")
 	tx, err := d.st.db.Begin()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer tx.Rollback()
 	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id='' AND harness='claude'`); err != nil {
-		return nil, err
+		return err
 	}
-	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,claude_session_id,claude_graph_after) VALUES(1,'','',?) ON CONFLICT(id) DO UPDATE SET claude_session_id='',claude_graph_after=excluded.claude_graph_after`, latest.ID); err != nil {
-		return nil, err
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,claude_session_id,claude_graph_after) VALUES(1,'','',?) ON CONFLICT(id) DO UPDATE SET claude_session_id='',claude_graph_after=excluded.claude_graph_after`, graphAfter); err != nil {
+		return err
 	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
-	}
-	return struct{}{}, nil
+	return tx.Commit()
 }
 
 func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (protocol.CTOEvents, error) {
