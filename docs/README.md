@@ -5,6 +5,7 @@
 ## Use it
 
 - [tour.md](tour.md): a tour of every TUI screen and what you can do on each.
+- [feature-map.md](feature-map.md): the tabs, panels, keys and agent and CTO tools by the names the owner uses. Generated from the code.
 - [principles.md](principles.md): the product principles that decide unclear design choices.
 - [setup.md](setup.md): install, add a machine, update, remove. The details behind the README quickstart.
 - [reference.md](reference.md): ports, files, environment variables, flags, and what setup changes on your machine.

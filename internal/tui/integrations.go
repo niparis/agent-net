@@ -116,7 +116,7 @@ func (m Model) saveIntegrations() (tea.Model, tea.Cmd) {
 
 func (m Model) integrationsView(w, rows int) []string {
 	f := m.intg
-	out := []string{section("Integrations (all machines)", w)}
+	out := []string{section(panelIntegrationsAll, w)}
 	for i, s := range networkSettingSpecs() {
 		mark := "  "
 		if i == f.cur {

@@ -18,7 +18,7 @@ func (m Model) qualityWeeklyView(w, h int) []string {
 			body = append(body, sBad.Render(clip("Could not read weekly scores: "+m.weeklyErr, w-4)))
 		}
 		body = append(body, sDim.Render("R reads it again."))
-		out = append(out, panel("Quality · scores over time", body, w, roleAccent)...)
+		out = append(out, panel(panelQualityScores, body, w, roleAccent)...)
 		for len(out) < h {
 			out = append(out, "")
 		}
@@ -28,7 +28,7 @@ func (m Model) qualityWeeklyView(w, h int) []string {
 		return out
 	}
 	body := m.qualityWeeklyBody(w, max(h-4, 1))
-	out = append(out, panel("Quality · scores over time", body, w, roleAccent)...)
+	out = append(out, panel(panelQualityScores, body, w, roleAccent)...)
 	for len(out) < h {
 		out = append(out, "")
 	}

@@ -2,6 +2,8 @@
 
 This file is generated from the code lists. Do not edit it by hand. Run `go generate ./internal/daemon/ctoskill`, or `go test ./internal/daemon/ctoskill -run TestReferenceMatchesCode -update`.
 
+The screens, panels, keys and tools are named in docs/feature-map.md of the agent-net source tree.
+
 ## Node settings
 
 Set with `graph_change` action `settings_set`, or `settings_change` area `values_write`, on a node.

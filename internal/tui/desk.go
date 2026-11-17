@@ -563,7 +563,7 @@ func (m Model) inboxTabView(w, h int) []string {
 	}
 	if m.inboxDetail {
 		rows := m.inboxRows()
-		out = append(out, section("Inbox detail", w))
+		out = append(out, section(panelInboxDetail, w))
 		row, _ := m.inboxSelected(rows)
 		var lines []string
 		for _, line := range m.inboxDetailLines(row) {

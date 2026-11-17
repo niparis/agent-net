@@ -589,7 +589,9 @@ type helpEntry struct {
 	action actionID
 }
 
-func (m Model) contextHelpLines(context keyContext, w int, skipGlobal bool) []string {
+// helpEntries are the key rows of one context, merged as the overlay and the
+// feature map both show them.
+func (m Model) helpEntries(context keyContext, skipGlobal bool) []helpEntry {
 	var entries []helpEntry
 	for _, binding := range keyBindings {
 		if context == contextApps && binding.action == "back" {
@@ -604,9 +606,12 @@ func (m Model) contextHelpLines(context keyContext, w int, skipGlobal bool) []st
 		help := m.bindingHelpText(binding)
 		entries = append(entries, helpEntry{keys: append([]string(nil), binding.keys...), help: help, action: binding.action})
 	}
-	entries = mergeHelpEntries(entries)
+	return mergeHelpEntries(entries)
+}
+
+func (m Model) contextHelpLines(context keyContext, w int, skipGlobal bool) []string {
 	var out []string
-	for _, entry := range entries {
+	for _, entry := range m.helpEntries(context, skipGlobal) {
 		keys := strings.Join(entry.keys, ", ")
 		if ansi.StringWidth(keys) <= helpKeyWidth {
 			out = append(out, m.helpRow(keys, entry.help, w)...)

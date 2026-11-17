@@ -201,7 +201,7 @@ func (m Model) toolBaseStatus(r toolsdiff.Row) string {
 	return "on " + strings.Join(on, ", ") + " only"
 }
 func (m Model) toolListView(w, h int) []string {
-	title := "Tools"
+	title := panelTools
 	if m.tl.search != "" || m.tl.searching {
 		title += " / " + sanitize(m.tl.search) + searchCursor(m.tl.searching)
 	}

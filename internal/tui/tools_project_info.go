@@ -29,12 +29,12 @@ func (m Model) agentMachineName(id string) string {
 }
 
 func (m Model) agentInfoView(w int) []string {
-	title := "Project information"
+	title := panelProjectInfo
 	var body []string
 	add := func(s string) { body = append(body, wordsLines(s, w-4)...) }
 	project := m.agentProject()
 	if m.tl.skillsFocus && len(m.agentSkills()) > 0 {
-		title = "Skill information"
+		title = panelSkillInfo
 		rows := m.agentSkills()
 		r := rows[min(m.tl.skillRow, len(rows)-1)]
 		add(sanitize(r.Name) + " · " + tokenCountText(m.agentSkillCost(r)) + " per session")

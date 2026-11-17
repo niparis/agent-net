@@ -741,9 +741,9 @@ func (m Model) quotaModelsView(w int) []string {
 	for _, line := range legend {
 		body = append(body, sDim.Render(clip(line, w-4)))
 	}
-	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
+	title := fmt.Sprintf(panelWorkers+" · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	if len(m.snap.ProtectedProviders.Providers) > 0 {
-		title = fmt.Sprintf("Workers · 🔒 protected · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
+		title = fmt.Sprintf(panelWorkers+" · 🔒 protected · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	}
 	return panel(title, body, w, roleAccent)
 }

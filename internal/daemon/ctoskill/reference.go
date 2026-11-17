@@ -21,6 +21,7 @@ func Reference() string {
 
 	w("# agent-net options reference (generated from the code of this agent-net version)\n\n")
 	w("This file is generated from the code lists. Do not edit it by hand. Run `go generate ./internal/daemon/ctoskill`, or `go test ./internal/daemon/ctoskill -run TestReferenceMatchesCode -update`.\n\n")
+	w("The screens, panels, keys and tools are named in docs/feature-map.md of the agent-net source tree.\n\n")
 
 	w("## Node settings\n\n")
 	w("Set with `graph_change` action `settings_set`, or `settings_change` area `values_write`, on a node.\n\n")

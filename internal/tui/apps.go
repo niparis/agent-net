@@ -398,7 +398,7 @@ func (m Model) appsDate(t time.Time) string {
 
 func (m Model) appsView(w, rows int) []string {
 	f := m.apps
-	out := []string{section("Connected apps", w)}
+	out := []string{section(panelConnectedApps, w)}
 	if f.public.On {
 		phone := strings.TrimRight(f.public.URL, "/") + "/"
 		bots := strings.TrimRight(f.public.URL, "/") + "/mcp"

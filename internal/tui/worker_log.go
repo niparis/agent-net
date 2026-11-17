@@ -127,8 +127,8 @@ func (m Model) workersLogView(w, h int) []string {
 	if dh <= 11 && hasAssessment {
 		detail = workerLogAssessmentFirst(detail)
 	}
-	out = append(out, panel("Workers log", messageFit(list, lh, selected), w, roleAccent)...)
-	out = append(out, panel("Difficulty details", workerLogDetailsFit(detail, dh, m.workerLogDetail, inner), w, roleAccent)...)
+	out = append(out, panel(panelWorkersLog, messageFit(list, lh, selected), w, roleAccent)...)
+	out = append(out, panel(panelDifficulty, workerLogDetailsFit(detail, dh, m.workerLogDetail, inner), w, roleAccent)...)
 	return out
 }
 
