@@ -87,9 +87,14 @@ type WorkerSettings struct {
 	// TmpMaxAge removes old subfolders from the worker test temp dir. Default 6 h.
 	// 0 turns it off.
 	TmpMaxAge time.Duration
-	// OSSandbox lists the projects whose Pi and OpenCode workers run in the
-	// OS sandbox ("*" is every project): workers.os_sandbox of node.json.
+	// OSSandbox lists the projects that have the OS sandbox on by name
+	// ("*" is every project): workers.os_sandbox of node.json. Pi and OpenCode
+	// workers are in it by default; the name also refuses a Claude worker.
 	OSSandbox []string
+	// OSSandboxOff lists the projects whose Pi and OpenCode workers run
+	// without the OS sandbox ("*" is every project):
+	// workers.os_sandbox_off of node.json.
+	OSSandboxOff []string
 }
 
 func (s WorkerSettings) filled() WorkerSettings {
@@ -928,13 +933,13 @@ func (d *Daemon) spawnWorkerIO(w *worker, bin string, args []string, env []strin
 		return err
 	}
 	// The OS sandbox: a Pi or OpenCode worker of a project that has it on
-	// never starts without it.
+	// (the default) never starts without it.
 	d.wmu.Lock()
 	sandbox := w.osSandbox
 	d.wmu.Unlock()
-	if sandbox == "" && (w.harness == "pi" || w.harness == "opencode") && d.cfg.Workers.osSandboxOn(w.project) {
+	if sandbox == "" && (w.harness == "pi" || w.harness == "opencode") && d.cfg.Workers.osSandboxMode(w.project) != osSandboxOff {
 		logf.Close()
-		return errors.New("the OS sandbox is on for this project (workers.os_sandbox in node.json), but this start did not apply it")
+		return errors.New("the OS sandbox is on for this project, but this start did not apply it")
 	}
 	if sandbox != "" {
 		var werr error

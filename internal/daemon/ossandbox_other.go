@@ -1,14 +1,20 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package daemon
 
 import "errors"
 
-// osSandboxName is the wrapper on this OS. Only Linux has one today.
-const osSandboxName = "bubblewrap"
+// osSandboxName is the wrapper on this OS. There is none here.
+const osSandboxName = "none"
 
-// osSandboxReady refuses: the macOS wrapper (sandbox-exec) is designed in
-// docs/design/worker-os-sandbox.md, not built.
-func osSandboxReady() error {
-	return errors.New("the OS sandbox is built for Linux only (bubblewrap); the macOS one (sandbox-exec) is designed but not built yet")
+var errNoOSSandbox = errors.New("the OS sandbox is built for Linux (bubblewrap) and macOS (sandbox-exec) only")
+
+func osSandboxReady() error { return errNoOSSandbox }
+
+func osSandboxTool() (string, error) { return "", errNoOSSandbox }
+
+func osSandboxCommand(p osSandboxPolicy, bin string, args []string) []string {
+	return append([]string{bin}, args...)
 }
+
+func osSandboxTmpEnv(tmp string) string { return tmp }

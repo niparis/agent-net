@@ -59,6 +59,12 @@ func startWorkerNode(t *testing.T, g *testGateway, set WorkerSettings, cfg func(
 	n := startNode(t, g, nodeOpts{exe: "/x/opencode", cmdline: "pi", detect: fakeInventory, interval: time.Hour,
 		logger: log.New(logs, "", 0), cfg: func(c *Config) {
 			c.Workers = set
+			if len(set.OSSandbox) == 0 {
+				// Fake harnesses run without the OS sandbox, which is on by
+				// default. A test of the sandbox lists the project in
+				// OSSandbox or sets OSSandboxOff back to nil in cfg.
+				c.Workers.OSSandboxOff = []string{"*"}
+			}
 			if cfg != nil {
 				cfg(c)
 			}

@@ -186,6 +186,7 @@ func Setup(ctx context.Context, o Options) error {
 		return r.failed
 	}
 	r.workersSetting()
+	r.osSandboxSetting()
 	if r.NoAutoUpgrade || r.AutoUpgrade {
 		if err := daemon.SetNoAutoUpgrade(daemon.ConfigDir(), r.NoAutoUpgrade); err != nil {
 			r.step("auto-upgrade", "", err)
@@ -489,6 +490,32 @@ func (r *runner) workersSetting() {
 		return
 	}
 	r.step("workers", "accepted (refuse them with --no-launch)", nil)
+}
+
+// osSandboxCheck says whether Pi and OpenCode workers can run in the OS
+// sandbox here. A test replaces it.
+var osSandboxCheck = daemon.OSSandboxCheck
+
+// osSandboxSetting says once what the OS sandbox of workers does on this
+// machine. Pi and OpenCode workers are sandboxed by default, and one that
+// cannot be is refused, so a missing tool is told now with its fix and not at
+// the first start. A machine that turns the sandbox off for every project
+// (workers.os_sandbox_off in node.json) needs nothing.
+func (r *runner) osSandboxSetting() {
+	nc, _, err := daemon.LoadNode(daemon.ConfigDir())
+	if err == nil {
+		if s, err := nc.WorkerSettings(); err == nil && daemon.OSSandboxOffEverywhere(s) {
+			r.step("worker sandbox", "off for every project (workers.os_sandbox_off in node.json)", nil)
+			return
+		}
+	}
+	name, err := osSandboxCheck()
+	if err != nil {
+		r.step("worker sandbox", "not ready: Pi and OpenCode workers are refused on this machine until it is", nil)
+		r.hint("%v", err)
+		return
+	}
+	r.step("worker sandbox", "ok ("+name+": Pi and OpenCode workers run in it by default)", nil)
 }
 
 // ---- daemon service ----

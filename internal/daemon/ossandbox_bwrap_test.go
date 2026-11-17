@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -23,47 +22,6 @@ func requireBwrap(t *testing.T) {
 	t.Helper()
 	if err := osSandboxReady(); err != nil {
 		t.Skipf("bubblewrap cannot run here: %v", err)
-	}
-}
-
-// outsideHome is a folder the test can write and the sandbox can see but must
-// not write: not under /tmp, which the sandbox replaces with a private one.
-func outsideHome(t *testing.T) string {
-	t.Helper()
-	d, err := os.MkdirTemp("/var/tmp", "agent-net-osbox-home-")
-	if err != nil {
-		t.Skipf("no /var/tmp to make a home outside the sandbox: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll(d) })
-	return resolved(d)
-}
-
-// sandboxWorker makes a daemon, a repository with a linked worktree, and an
-// OpenCode worker of the given level in that worktree, wrapped by bubblewrap.
-func sandboxWorker(t *testing.T, level string) (*Daemon, *worker, string) {
-	t.Helper()
-	state := seededStateDir(t)
-	d, err := New(Config{StateDir: state, SocketPath: filepath.Join(shortDir(t), "d.sock")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { d.st.close() })
-	repo := newRepo(t, "shop")
-	id := "w_osbox" + strconv.Itoa(int(time.Now().UnixNano()%1e6))
-	wt := filepath.Join(state, "worktrees", id)
-	gitIn(t, repo, "worktree", "add", "-q", "-b", "agent-net/"+id, wt)
-	w := &worker{id: id, harness: "opencode", project: "shop", path: wt, permissions: level,
-		osSandbox: osSandboxName, ready: make(chan struct{}), startedAt: time.Now()}
-	t.Cleanup(func() { d.killGroup(w) })
-	return d, w, repo
-}
-
-func waitExit(t *testing.T, w *worker) {
-	t.Helper()
-	select {
-	case <-w.exited:
-	case <-time.After(20 * time.Second):
-		t.Fatal("the sandboxed process did not end")
 	}
 }
 
@@ -81,20 +39,6 @@ echo "dotgit: $(try sh -c 'echo x >> .git')"
 if git add probe >/dev/null 2>&1 && git -c user.name=t -c user.email=t@example.com commit -qm probe >/dev/null 2>&1; then echo "commit: ok"; else echo "commit: failed"; fi
 } > /tmp/result 2>&1
 `
-
-func probeResults(t *testing.T, d *Daemon, w *worker) map[string]string {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(d.cfg.StateDir, "workers", w.id, "tmp", "result"))
-	if err != nil {
-		t.Fatalf("no result from the sandboxed harness: %v (log: %s)", err, d.workerLogTail(w))
-	}
-	out := map[string]string{}
-	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-		k, v, _ := strings.Cut(line, ": ")
-		out[k] = v
-	}
-	return out
-}
 
 // A sandboxed harness writes in its worktree, its private /tmp and the git
 // folders of a commit, and nowhere else: not in the home folder, not in the

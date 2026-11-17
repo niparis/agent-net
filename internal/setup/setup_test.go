@@ -141,6 +141,9 @@ func newFixture(t *testing.T) *fixture {
 	ensureQuotaAXIAsync = func(func(string, ...any)) {}
 	removeQuotaAXI = func() (bool, error) { return false, nil }
 	t.Cleanup(func() { ensureQuotaAXI, ensureQuotaAXIAsync, removeQuotaAXI = oldEnsure, oldAsync, oldRemove })
+	oldSandbox := osSandboxCheck
+	osSandboxCheck = func() (string, error) { return "bubblewrap", nil }
+	t.Cleanup(func() { osSandboxCheck = oldSandbox })
 	noTTY(t)
 	data := t.TempDir()
 	copyFixtureDatabase(t, data)

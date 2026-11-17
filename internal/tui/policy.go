@@ -402,7 +402,7 @@ func (m Model) policyView(w, rows int) []string {
 	}
 	level := protocol.WorkerPermissionsOrDefault(workersChoices[f.workers])
 	out = append(out, sDim.Render(clip("  Workers: "+workersHelp(level), w)))
-	out = append(out, sDim.Render(clip("  Enforced for "+protocol.WorkerEnforcedBy(level)+" only for now.", w)))
+	out = append(out, sDim.Render(clip("  "+protocol.WorkerEnforcedLine(level), w)))
 	out = append(out, sDim.Render(clip("  left/right changes a choice. Enter on Scope saves. The policy is added to the session's context on every turn.", w)))
 	for len(out) < rows {
 		out = append(out, "")

@@ -15,22 +15,25 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The OS sandbox of a worker (hardening plan W7, docs/design/worker-os-sandbox.md).
+// The OS sandbox of a worker (hardening plan W7, docs/design/worker-os-sandbox.md,
+// decision 0171 phase 4b).
 //
-// An optional wrapper around the whole harness process of a Pi or OpenCode
-// worker, switched on per project in node.json (workers.os_sandbox) on the
-// machine that runs the worker. On Linux it is bubblewrap: the host is
-// read-only, the worker's folder, the narrow git folders of a commit and the
-// harness's private state are writable, /tmp is private, the folders of the
-// user's control sockets are hidden, and the agent-net socket is bound back.
+// A wrapper around the whole harness process of a Pi or OpenCode worker. It is
+// on by default (decision of 2026-11-17); node.json on the machine that runs
+// the worker can turn it off for a project (workers.os_sandbox_off). On Linux
+// it is bubblewrap: the host is read-only, the worker's folder, the narrow git
+// folders of a commit and the harness's private state are writable, /tmp is
+// private, the folders of the user's control sockets are hidden, and the
+// agent-net socket is bound back. On macOS it is a sandbox-exec profile built
+// from the same policy (ossandbox_seatbelt.go).
 //
 // Codex and Antigravity keep their own sandboxes and are not wrapped. A Claude
 // worker is `claude --bg`, which runs the session in Claude Code's own
 // background service, outside any wrapper: with the switch on, it is refused.
 // The level (decision 0020) is not chosen here; the wrapper applies it.
 //
-// Never a silent start without the sandbox: when the switch is on and the
-// wrapper cannot be used, the start is refused with the reason.
+// Never a silent start without the sandbox: when the sandbox is on and the
+// wrapper cannot be used, the start is refused with the reason and the fix.
 
 // osSandboxMarker is the file in a worker's private folder that records the
 // wrapper it was started in, so its follow-ups and a daemon restart keep it.
@@ -54,9 +57,17 @@ func (p *projectList) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// osSandboxOn tells whether node.json switches the OS sandbox on for project.
-func (s WorkerSettings) osSandboxOn(project string) bool {
-	for _, p := range s.OSSandbox {
+// osSandboxMode is how node.json treats the OS sandbox for one project.
+type osSandboxMode int
+
+const (
+	osSandboxDefault  osSandboxMode = iota // on for Pi and OpenCode, as nothing was set
+	osSandboxExplicit                      // listed in workers.os_sandbox: on for every harness it can wrap, and the rest refused
+	osSandboxOff                           // listed in workers.os_sandbox_off: no wrapper
+)
+
+func inProjectList(list []string, project string) bool {
+	for _, p := range list {
 		if p == "*" || strings.EqualFold(p, project) {
 			return true
 		}
@@ -64,23 +75,45 @@ func (s WorkerSettings) osSandboxOn(project string) bool {
 	return false
 }
 
+// osSandboxMode tells how node.json treats the OS sandbox for project. A
+// project in both lists is off: turning it off is the owner's last word.
+func (s WorkerSettings) osSandboxMode(project string) osSandboxMode {
+	switch {
+	case inProjectList(s.OSSandboxOff, project):
+		return osSandboxOff
+	case inProjectList(s.OSSandbox, project):
+		return osSandboxExplicit
+	}
+	return osSandboxDefault
+}
+
 // osSandboxDecide is the rule for one start: the wrapper's name, "" when the
-// worker runs without it, or the refusal. on is the switch (or a worker that
-// was started in the wrapper before); ready checks the tool on this machine.
-func osSandboxDecide(on bool, harness, level string, ready func() error) (string, error) {
-	if !on {
+// worker runs without it, or the refusal. A worker that was started in the
+// wrapper before comes here as osSandboxExplicit; ready checks the tool on
+// this machine.
+func osSandboxDecide(mode osSandboxMode, harness, level string, ready func() error) (string, error) {
+	if mode == osSandboxOff {
 		return "", nil
 	}
-	const where = "this project has the OS sandbox on (workers.os_sandbox in node.json on this machine)"
-	const off = "or take the project out of workers.os_sandbox"
+	where := "the OS sandbox is on by default for Pi and OpenCode workers"
+	if mode == osSandboxExplicit {
+		where = "this project has the OS sandbox on (workers.os_sandbox in node.json on this machine)"
+	}
+	const off = `or turn it off for this project with "os_sandbox_off": ["<project>"] under "workers" in node.json on this machine (then the worker runs without an OS sandbox)`
 	switch harness {
 	case "codex", "agy":
 		return "", nil // their own sandbox, inside
 	case "claude":
-		return "", fmt.Errorf("%s, and it cannot wrap a Claude worker: `claude --bg` runs the session in Claude Code's own background service, outside any wrapper. Use a Pi, OpenCode or Codex worker, %s", where, off)
+		if mode == osSandboxDefault {
+			return "", nil // Claude Code's own sandbox settings, set per worker
+		}
+		return "", fmt.Errorf("%s, and it cannot wrap a Claude worker: `claude --bg` runs the session in Claude Code's own background service, outside any wrapper. Use a Pi, OpenCode or Codex worker, or take the project out of workers.os_sandbox", where)
 	case "pi", "opencode":
 	default:
-		return "", fmt.Errorf("%s, and it cannot wrap %s workers; %s", where, harness, off)
+		if mode == osSandboxDefault {
+			return "", nil
+		}
+		return "", fmt.Errorf("%s, and it cannot wrap %s workers; or take the project out of workers.os_sandbox", where, harness)
 	}
 	if protocol.WorkerPermissionsOrDefault(level) == protocol.WorkersNoNetwork {
 		return "", fmt.Errorf("%s, and the workers level is no-network: the OS sandbox wraps the whole %s process, so no-network would also cut its connection to its model. Use a Codex worker for no-network, %s", where, harness, off)
@@ -91,14 +124,32 @@ func osSandboxDecide(on bool, harness, level string, ready func() error) (string
 	return osSandboxName, nil
 }
 
-// osSandboxChoice applies osSandboxDecide with this daemon's switch. recorded
-// is true for a worker that already ran in the wrapper.
+// OSSandboxOffEverywhere tells whether node.json turns the OS sandbox off for
+// every project.
+func OSSandboxOffEverywhere(s WorkerSettings) bool { return containsString(s.OSSandboxOff, "*") }
+
+// OSSandboxCheck is the check that setup runs: the wrapper's name when a Pi or
+// OpenCode worker can run in the OS sandbox on this machine, else the reason
+// and the fix.
+func OSSandboxCheck() (string, error) {
+	if err := osSandboxReady(); err != nil {
+		return "", err
+	}
+	return osSandboxName, nil
+}
+
+// osSandboxChoice applies osSandboxDecide with this daemon's settings.
+// recorded is true for a worker that already ran in the wrapper.
 func (d *Daemon) osSandboxChoice(project, harness, level string, recorded bool) (string, error) {
 	ready := osSandboxReady
 	if d.cfg.testOSSandboxReady != nil {
 		ready = d.cfg.testOSSandboxReady
 	}
-	return osSandboxDecide(recorded || d.cfg.Workers.osSandboxOn(project), harness, level, ready)
+	mode := d.cfg.Workers.osSandboxMode(project)
+	if recorded {
+		mode = osSandboxExplicit
+	}
+	return osSandboxDecide(mode, harness, level, ready)
 }
 
 // readOSSandboxMarker returns the wrapper recorded in a worker's folder.
@@ -264,9 +315,9 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 	if dir == "" {
 		dir = filepath.Join(d.cfg.StateDir, "workers", w.id)
 	}
-	tool, err := exec.LookPath("bwrap")
+	tool, err := osSandboxTool()
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("the OS sandbox is on for this worker, but bubblewrap is not installed: %w", err)
+		return "", nil, nil, fmt.Errorf("the OS sandbox is on for this worker, but %w", err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "tmp"), 0o700); err != nil {
 		return "", nil, nil, err
@@ -290,7 +341,7 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 			in.GitRoots = append(in.GitRoots, resolved(r))
 		}
 	}
-	set := map[string]string{"TMPDIR": "/tmp"}
+	set := map[string]string{"TMPDIR": osSandboxTmpEnv(filepath.Join(in.WorkerDir, "tmp"))}
 	switch harness {
 	case "pi":
 		if err := d.piPrivateAgent(&in, set); err != nil {
@@ -310,7 +361,7 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 	if err := os.WriteFile(filepath.Join(dir, osSandboxMarker), []byte(name+"\n"), 0o600); err != nil {
 		return "", nil, nil, err
 	}
-	argv := bwrapArgs(buildOSSandboxPolicy(in), bin, args)
+	argv := osSandboxCommand(buildOSSandboxPolicy(in), bin, args)
 	return tool, argv, workerEnv(env, set), nil
 }
 

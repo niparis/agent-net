@@ -20,8 +20,8 @@ folder.
 3. **The chief keeps gateway notes only**, like the CTO. Its memory is the
    notes the gateway holds, not a harness memory.
 4. **Pi is refused for every role** until it can be woken and resumed.
-5. **OpenCode and Pi workers are sandboxed by default.** Open until phase 4;
-   setup must ask once and show the choice.
+5. **OpenCode and Pi workers are sandboxed by default.** Settled in phase 4b
+   (owner, 2026-11-17). See "Phase 4b: the OS sandbox is the default" below.
 
 ## Conversation per session
 
@@ -205,6 +205,26 @@ opencode and codex, and keeps the model typed for each.
 
 The real-protocol check is `cto_codex_real_test.go`, run with
 `AGENT_NET_TEST_REAL_CODEX`.
+
+## Phase 4b: the OS sandbox is the default
+
+Pi and OpenCode workers run in the OS sandbox unless the project is turned off
+in `node.json` (`workers.os_sandbox_off`). The policy is the one Claude and
+Codex workers get: writes only in the worktree, the git folders of a commit and
+the harness's own state, network on. On Linux the wrapper is bubblewrap. On
+macOS it is `sandbox-exec` with a profile built from the same policy. A
+Claude worker is not wrapped (it keeps Claude Code's own sandbox settings),
+and Codex and Antigravity keep theirs.
+
+The start is refused, with the reason and the fix, when the wrapper cannot run
+(bubblewrap missing, user namespaces off, `sandbox-exec` missing), and for a
+`no-network` Pi or OpenCode worker. It never starts without the sandbox
+silently. Setup checks for the wrapper and says so once. A project that turns
+the sandbox off gets "(no OS sandbox: turned off for this project in
+node.json)" in the start notice, and the setting of an earlier worker is kept
+for its follow-ups. The macOS profile has not been run on a Mac by the worker
+that built it: the opt-in check `AGENT_NET_TEST_REAL_SANDBOX=1` must be run on
+one before release.
 
 ## What this does not cover
 
