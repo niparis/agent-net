@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -1100,13 +1101,26 @@ func fakeCodexExec() {
 		}
 	}
 	if os.Getenv(envFakeCodexExecHang) != "" || strings.HasPrefix(out, "HANG") {
-		time.Sleep(10 * time.Second)
+		waitUntilKilled()
 	}
 	if path := argValue(os.Args, "-o"); path != "" {
 		os.WriteFile(path, []byte(out), 0o644)
 	}
 	fmt.Print(out)
 	os.Exit(0)
+}
+
+// waitUntilKilled keeps a hanging fake running until its parent kills it. The
+// daemon kills a run that passes its time limit, so the fake never has to end
+// on its own. It waits on a pipe whose write end nothing writes to.
+func waitUntilKilled() {
+	r, w, err := os.Pipe()
+	if err != nil {
+		panic("fake codex: " + err.Error())
+	}
+	io.Copy(io.Discard, r)
+	// The write end must stay open while the copy waits, or the read ends.
+	runtime.KeepAlive(w)
 }
 
 // fakeCodex is `codex app-server --listen ws://...`: a WebSocket server with

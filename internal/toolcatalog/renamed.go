@@ -2,6 +2,7 @@ package toolcatalog
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -46,6 +47,17 @@ var renamed = map[string][]string{
 	"ask_owner": {"agent_owner_ask"},
 	"learn":     {"agent_learn"},
 	"ui":        {"cto_ui_show"},
+}
+
+// RenamedNames lists the old tool names, sorted. A test checks that no server
+// lists one of them.
+func RenamedNames() []string {
+	names := make([]string, 0, len(renamed))
+	for name := range renamed {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // RenamedError returns the one-line error for a call with an old tool name,

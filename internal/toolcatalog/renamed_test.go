@@ -1,9 +1,25 @@
 package toolcatalog
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
+
+// RenamedNames lists every old name once, sorted, so a parity test can check
+// the whole list without its own copy.
+func TestRenamedNamesListsEveryOldName(t *testing.T) {
+	got := RenamedNames()
+	if len(got) != len(renamed) {
+		t.Fatalf("RenamedNames has %d names, the table has %d", len(got), len(renamed))
+	}
+	if !slices.IsSorted(got) {
+		t.Fatalf("RenamedNames is not sorted: %v", got)
+	}
+	if !slices.Contains(got, "overview") {
+		t.Fatalf("RenamedNames misses an old CTO tool: %v", got)
+	}
+}
 
 // Every old name points at tools that exist in the catalog, and none of the
 // old names is still a catalog tool.

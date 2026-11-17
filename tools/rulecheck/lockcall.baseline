@@ -1,0 +1,22 @@
+# Lock-across-call sites that existed when the B12 check was added.
+#
+# Each line is a site count, a tab and a site key. The check fails on a new
+# site. It also fails when a listed site is gone but its line still counts it,
+# so the count can only go down. Most sites here hold a lock to keep gateway
+# writes in order, such as outbox sends, graph changes and inventory uploads.
+# Each needs a design that does not wait on the gateway while it holds a lock.
+# When a site is fixed, lower its count or remove its line.
+1	github.com/niparis/agent-net/internal/daemon/cto.go *Daemon.openCodeCTONew d.call while c.mu
+1	github.com/niparis/agent-net/internal/daemon/cto_claude.go claudeCTOHarness.newConversation d.call while d.cto.mu
+2	github.com/niparis/agent-net/internal/daemon/cto_immediate.go *Daemon.applyProposalOnWords d.call while d.ctoGraph.mu
+10	github.com/niparis/agent-net/internal/daemon/cto_immediate.go *Daemon.executeImmediateCTOTool d.call while d.ctoGraph.mu
+2	github.com/niparis/agent-net/internal/daemon/cto_operator.go *Daemon.executeCTOOperator d.call while d.ctoGraph.mu
+1	github.com/niparis/agent-net/internal/daemon/cto_presence.go *Daemon.publishCTOPresence d.call while d.ctoPresenceMu
+1	github.com/niparis/agent-net/internal/daemon/daemon.go *Daemon.flushOutbox d.call while d.sendMu
+1	github.com/niparis/agent-net/internal/daemon/daemon.go *Daemon.pushSessionMode d.call while ls.pushMu
+1	github.com/niparis/agent-net/internal/daemon/daemon.go *Daemon.send d.call while d.sendMu
+1	github.com/niparis/agent-net/internal/daemon/fakeopencode_test.go runFakeOpenCode exec.Command while ctoMu
+1	github.com/niparis/agent-net/internal/daemon/session_stop.go *Daemon.sessionStopLocal exec.CommandContext while d.claudeStartMu
+3	github.com/niparis/agent-net/internal/daemon/tools_inventory.go *Daemon.scanToolsWithUpload d.call while d.toolsMu
+1	github.com/niparis/agent-net/internal/daemon/worker_assessment.go *Daemon.flushWorkerAssessments d.call while d.st.assessmentMu
+1	github.com/niparis/agent-net/internal/gateway/machine_tokens.go *Gateway.machineAction target.call while g.machineRotationMu

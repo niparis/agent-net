@@ -53,6 +53,16 @@ jobs:
             exit 1
           fi
       - run: go vet ./...
+      # The rule checker is its own module, so it adds nothing to the agent-net
+      # module graph. Its tests check the checker itself, and the checker then
+      # runs on the repository: no long test sleep (B4), no em dash in production
+      # strings or docs (B9), and no lock held across a gateway call (B12).
+      - name: rule checker vet and tests
+        run: go -C tools/rulecheck vet ./... && go -C tools/rulecheck test -count=1 ./...
+      - name: rule checks
+        run: |
+          go -C tools/rulecheck build -o "$RUNNER_TEMP/rulecheck" .
+          "$RUNNER_TEMP/rulecheck" -docs docs ./...
       - name: install.sh syntax
         run: sh -n install.sh
       - name: test script syntax
