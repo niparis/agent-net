@@ -1155,7 +1155,13 @@ func fakeCodex() {
 	}
 	var mu sync.Mutex
 	// threadTurns keeps each thread's turns, as user text and answer, for thread/read.
+	// Codex keeps a thread on disk, so the turns are read back from the file a
+	// restarted server finds, not only from this process's memory.
 	threadTurns := map[string][][2]string{}
+	threadsFile := filepath.Join(dir, "fake-codex-threads.json")
+	if raw, err := os.ReadFile(threadsFile); err == nil {
+		_ = json.Unmarshal(raw, &threadTurns)
+	}
 	save := func() {
 		mu.Lock()
 		defer mu.Unlock()
@@ -1384,6 +1390,8 @@ func fakeCodex() {
 					}
 					mu.Lock()
 					threadTurns[thread] = append(threadTurns[thread], [2]string{text, report})
+					raw, _ := json.Marshal(threadTurns)
+					_ = os.WriteFile(threadsFile, raw, 0o600)
 					mu.Unlock()
 					write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "turnId": turn,
 						"item": map[string]any{"type": "agentMessage", "id": "m1", "phase": "final_answer", "text": report}}})

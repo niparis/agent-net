@@ -340,14 +340,18 @@ func (d *Daemon) recordCTOOwnerMessage(text string) error {
 }
 
 // ctoHarnessRunning says whether the CTO's harness has a live process or job.
+// ctoHarnessRunning says whether the old harness can answer a handover. A Codex
+// CTO that went idle still answers when its stored conversation was used in the
+// last day: the daemon starts its app server for the request (decision 0171).
 func (d *Daemon) ctoHarnessRunning(harness string) bool {
+	storedCodex := harness == "codex" && d.codexConversationFresh()
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
 	switch harness {
 	case "claude":
 		return d.claudeCTO.ref != ""
 	case "codex":
-		return d.codexCTORunningLocked() && d.codexCTO.thread != ""
+		return (d.codexCTORunningLocked() && d.codexCTO.thread != "") || storedCodex
 	}
 	return d.cto.base != "" && d.cto.session != ""
 }
@@ -401,6 +405,11 @@ func (d *Daemon) ctoModelHandover(ctx context.Context, from string) (string, boo
 	defer cancel()
 	before, err := h.events(wait, d, 0)
 	if err != nil {
+		return "", false
+	}
+	// A Codex thread with no turns has nothing to hand over, so the request is
+	// not sent.
+	if from == "codex" && before.Next == 0 {
 		return "", false
 	}
 	start := before.Next

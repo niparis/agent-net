@@ -336,6 +336,92 @@ func TestCTOCodexModelLayerHandover(t *testing.T) {
 	})
 }
 
+// codexCTOWithOneMessage runs a Codex CTO that answered one message and then
+// went idle: its app server stopped, so its stored thread is no longer loaded.
+func codexCTOWithOneMessage(t *testing.T, n *node, cli *localClient) {
+	t.Helper()
+	setCTOHarness(t, cli, "opencode", "fake/m1")
+	ctoSendID(t, cli, "open one")
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	waitHandoverSettled(t, n.d)
+	ctoSendID(t, cli, "codex one")
+	// The fake writes the answer when its turn ends. The server stops only after
+	// that, so the thread has a turn on disk when it is read again.
+	eventually(t, "codex turn recorded", func() bool {
+		raw, err := os.ReadFile(filepath.Join(codexCTODir(n), "fake-codex-threads.json"))
+		return err == nil && strings.Contains(string(raw), "codex one")
+	})
+	n.d.cto.mu.Lock()
+	n.d.stopCodexCTOLocked("idle")
+	n.d.cto.mu.Unlock()
+}
+
+// The real case: a Codex CTO that did work and then idled still writes its model
+// layer when the owner switches away, because its stored thread has turns and
+// was used within the last day (decision 0171).
+func TestCTOCodexIdleWithHistoryAnswersTheHandover(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, func(t *testing.T) {
+		n, _ := startCodexCTONode(t)
+		n.d.cfg.testHandoverWait = 10 * time.Second
+		cli := cliClient(t, n)
+		codexCTOWithOneMessage(t, n, cli)
+		switchCTOHarness(t, cli, "claude")
+		waitHandoverSettled(t, n.d)
+		body := handoverNotes(t, n.d)[n.d.latestHandoverNote()]
+		if !strings.Contains(body, "## Model output (not the owner's words)") {
+			t.Fatalf("an idle Codex CTO with history wrote no model layer:\n%s", body)
+		}
+	})
+}
+
+// A Codex thread with no turns has nothing to hand over, so its note keeps the
+// mechanical layer alone.
+func TestCTOCodexThreadWithoutTurnsHasNoModelLayer(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, func(t *testing.T) {
+		n, _ := startCodexCTONode(t)
+		n.d.cfg.testHandoverWait = 10 * time.Second
+		cli := cliClient(t, n)
+		setCTOHarness(t, cli, "opencode", "fake/m1")
+		ctoSendID(t, cli, "open one")
+		setCTOHarness(t, cli, "codex", "gpt-fake")
+		waitHandoverSettled(t, n.d)
+		// Loading the thread stores it with no message in it, as Enter does.
+		if _, _, _, err := n.d.codexCTOConn(context.Background(), "", true); err != nil {
+			t.Fatal(err)
+		}
+		n.d.cto.mu.Lock()
+		n.d.stopCodexCTOLocked("idle")
+		n.d.cto.mu.Unlock()
+		switchCTOHarness(t, cli, "claude")
+		waitHandoverSettled(t, n.d)
+		body := handoverNotes(t, n.d)[n.d.latestHandoverNote()]
+		if strings.Contains(body, "## Model output") {
+			t.Fatalf("a Codex thread with no turns wrote a model layer:\n%s", body)
+		}
+	})
+}
+
+// A Codex conversation used more than a day ago is not asked for a model layer,
+// even with turns in it.
+func TestCTOCodexConversationOlderThanADayHasNoModelLayer(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, func(t *testing.T) {
+		n, _ := startCodexCTONode(t)
+		n.d.cfg.testHandoverWait = 10 * time.Second
+		cli := cliClient(t, n)
+		codexCTOWithOneMessage(t, n, cli)
+		old := n.d.ctoNowTime().Add(-ctoConversationFresh - time.Hour).UnixNano()
+		if _, err := n.d.st.db.Exec(`UPDATE session_conversations SET updated_at=? WHERE harness='codex'`, old); err != nil {
+			t.Fatal(err)
+		}
+		switchCTOHarness(t, cli, "claude")
+		waitHandoverSettled(t, n.d)
+		body := handoverNotes(t, n.d)[n.d.latestHandoverNote()]
+		if strings.Contains(body, "## Model output") {
+			t.Fatalf("a Codex conversation older than a day wrote a model layer:\n%s", body)
+		}
+	})
+}
+
 // Enter on the CTO's session row opens the Codex plan on this machine, not a
 // Claude view, and keeps the app server's token on this machine for a client
 // that comes through the gateway.
