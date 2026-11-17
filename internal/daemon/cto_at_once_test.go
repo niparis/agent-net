@@ -3,10 +3,13 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"github.com/niparis/agent-net/internal/protocol"
+	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestCTOAtOnceRouting(t *testing.T) {
@@ -392,27 +395,89 @@ func TestCTOPlaybookInboxUndo(t *testing.T) {
 	}
 }
 
-func TestCTOActionClassCoverage(t *testing.T) {
-	for tool, actions := range ctoChangeActions {
-		for action := range actions {
-			// A read inside a change tool is exempt: it lists, it does not change.
-			readOnly := (tool == "mcp_change" && (action == "apps_list" || action == "public_status")) ||
-				(tool == "skill_archive" && (action == "list" || action == "read")) ||
-				(tool == "skills" && (action == "suggest" || action == "effective"))
-			if readOnly {
-				if ctoActionClasses[tool][action] != ctoRead {
-					t.Errorf("read classified as mutation: %s %s", tool, action)
-				}
+// ctoActionCoverage lists what the class table and the routes disagree on: a
+// routed action with no class, a class with no route, and a class that is not
+// read, minor or proposal. Both tables are the source, so a new action needs no
+// test edit.
+func ctoActionCoverage(routes map[string]map[string]string, classes map[string]map[string]ctoToolClass) []string {
+	tools := map[string]bool{}
+	for tool := range routes {
+		tools[tool] = true
+	}
+	for tool := range classes {
+		tools[tool] = true
+	}
+	var names []string
+	for tool := range tools {
+		names = append(names, tool)
+	}
+	sort.Strings(names)
+
+	var problems []string
+	for _, tool := range names {
+		for _, action := range sortedKeys(routes[tool]) {
+			class, ok := classes[tool][action]
+			if !ok {
+				problems = append(problems, fmt.Sprintf("unclassified %s %s", tool, action))
 				continue
 			}
-			if class, ok := ctoActionClasses[tool][action]; !ok || (class != ctoMinor && class != ctoProposal) {
-				t.Errorf("unclassified %s %s", tool, action)
+			switch class {
+			case ctoRead, ctoMinor, ctoProposal:
+			default:
+				problems = append(problems, fmt.Sprintf("unknown class %q for %s %s", class, tool, action))
 			}
 		}
-		for action := range ctoActionClasses[tool] {
-			if _, ok := actions[action]; !ok {
-				t.Errorf("class without route %s %s", tool, action)
+		for _, action := range sortedKeys(classes[tool]) {
+			if _, ok := routes[tool][action]; !ok {
+				problems = append(problems, fmt.Sprintf("class without route %s %s", tool, action))
 			}
 		}
+	}
+	return problems
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func TestCTOActionClassCoverage(t *testing.T) {
+	for _, problem := range ctoActionCoverage(ctoChangeActions, ctoActionClasses) {
+		t.Error(problem)
+	}
+}
+
+// TestCTOActionCoverageSeesNewActions proves the check reads both tables: an
+// action in one table alone is reported, and the same action in both passes.
+func TestCTOActionCoverageSeesNewActions(t *testing.T) {
+	route := map[string]map[string]string{"mcp_change": {"fixture_action": "fixture.call"}}
+	class := map[string]map[string]ctoToolClass{"mcp_change": {"fixture_action": ctoMinor}}
+	for _, tc := range []struct {
+		name    string
+		routes  map[string]map[string]string
+		classes map[string]map[string]ctoToolClass
+		want    string
+	}{
+		{"route without class", route, map[string]map[string]ctoToolClass{}, "unclassified mcp_change fixture_action"},
+		{"class without route", map[string]map[string]string{}, class, "class without route mcp_change fixture_action"},
+		{"unknown class", route, map[string]map[string]ctoToolClass{"mcp_change": {"fixture_action": "talk"}}, "unknown class"},
+		{"classed and routed", route, class, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			problems := ctoActionCoverage(tc.routes, tc.classes)
+			if tc.want == "" {
+				if len(problems) != 0 {
+					t.Fatalf("want no problem, got %v", problems)
+				}
+				return
+			}
+			if len(problems) != 1 || !strings.Contains(problems[0], tc.want) {
+				t.Fatalf("want %q, got %v", tc.want, problems)
+			}
+		})
 	}
 }

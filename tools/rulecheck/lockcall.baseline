@@ -1,0 +1,29 @@
+# Lock-across-call sites that existed when the B12 check was added. This list is
+# debt, not an exemption. Each line is a site count, a tab and a site key. The
+# check fails on a new site. It also fails when a listed site is gone but its
+# line still counts it, so the count can only go down. When a site is fixed,
+# lower its count or remove its line.
+#
+# What each lock orders, one line per group:
+#   d.ctoGraph.mu: one CTO graph change at a time, from reading the latest graph
+#     id through applying it to recording its undo.
+#   d.sendMu: outbox messages reach the gateway in order (send and flushOutbox).
+#   d.toolsMu: the merged inventory report and its upload stay in order.
+#   ls.pushMu: session upserts for one session stay in order.
+#   d.ctoPresenceMu: CTO presence updates stay in order.
+#   d.st.assessmentMu: one flush of difficulty assessments at a time.
+#   g.machineRotationMu: one token rotation per machine at a time.
+#   d.claudeStartMu: a Claude background stop runs its process while starts wait.
+#   ctoMu (test fake): the fake OpenCode server creates its MCP session once.
+2	github.com/niparis/agent-net/internal/daemon/cto_immediate.go *Daemon.applyProposalOnWords d.call while d.ctoGraph.mu
+10	github.com/niparis/agent-net/internal/daemon/cto_immediate.go *Daemon.executeImmediateCTOTool d.call while d.ctoGraph.mu
+2	github.com/niparis/agent-net/internal/daemon/cto_operator.go *Daemon.executeCTOOperator d.call while d.ctoGraph.mu
+1	github.com/niparis/agent-net/internal/daemon/cto_presence.go *Daemon.publishCTOPresence d.call while d.ctoPresenceMu
+1	github.com/niparis/agent-net/internal/daemon/daemon.go *Daemon.flushOutbox d.call while d.sendMu
+1	github.com/niparis/agent-net/internal/daemon/daemon.go *Daemon.pushSessionMode d.call while ls.pushMu
+1	github.com/niparis/agent-net/internal/daemon/daemon.go *Daemon.send d.call while d.sendMu
+1	github.com/niparis/agent-net/internal/daemon/fakeopencode_test.go runFakeOpenCode exec.Command while ctoMu
+1	github.com/niparis/agent-net/internal/daemon/session_stop.go *Daemon.sessionStopLocal exec.CommandContext while d.claudeStartMu
+3	github.com/niparis/agent-net/internal/daemon/tools_inventory.go *Daemon.scanToolsWithUpload d.call while d.toolsMu
+1	github.com/niparis/agent-net/internal/daemon/worker_assessment.go *Daemon.flushWorkerAssessments d.call while d.st.assessmentMu
+1	github.com/niparis/agent-net/internal/gateway/machine_tokens.go *Gateway.machineAction target.call while g.machineRotationMu

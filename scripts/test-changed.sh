@@ -39,6 +39,13 @@
 #
 # It also runs gofmt -l on the changed files and go vet on the changed packages,
 # and exits non-zero if a run or a check fails.
+#
+# The rule checker (tools/rulecheck, its own Go module) checks three rules on the
+# changed packages: no test sleeps over 2 seconds (B4), no em dash in production
+# strings (B9), and no lock held across a gateway call beyond lockcall.baseline
+# (B12). It also checks the Markdown under docs/ when a file there changed. A
+# repository without tools/rulecheck has no rule checks. Its own tests run in CI,
+# with go -C tools/rulecheck test, so a change there is not run here.
 
 set -u
 
@@ -156,6 +163,8 @@ contract_runs() {
 # rule_of maps a changed path to the rule that knows what it needs.
 rule_of() {
   case $1 in
+    tools/rulecheck/*)
+      echo tool ;;
     internal/gateway/store.go|internal/gateway/migrations*.go|internal/gateway/testdata/migrations.lock)
       echo migration ;;
     *_test.go)
@@ -282,6 +291,9 @@ printf '%s\n' "$changed" | while IFS= read -r path; do
     docs)
       printf '%s\tdocs, no test run (full package in CI)\n' "$path" >>"$work/skips"
       ;;
+    tool)
+      printf '%s\trule checker module, its tests run in CI (go -C tools/rulecheck test)\n' "$path" >>"$work/skips"
+      ;;
     text)
       # Text that goldens quote: run its own package, then the tui goldens.
       [ -n "$pkg" ] || continue
@@ -363,7 +375,7 @@ awk -F "$(printf '\t')" '$1 ~ /\.go$/ { print $1 }' "$work/files" |
   while IFS= read -r file; do
     [ -f "$file" ] && printf '%s\n' "$file"
   done >"$work/gofmt-files"
-changed_packages=$(awk -F "$(printf '\t')" '$1 ~ /\.go$/ { print $3 }' "$work/files" | sed '/^$/d' | sort -u)
+changed_packages=$(awk -F "$(printf '\t')" '$1 ~ /\.go$/ && $3 !~ /^tools\/rulecheck/ { print $3 }' "$work/files" | sed '/^$/d' | sort -u)
 if [ -s "$work/gofmt-files" ]; then
   printf 'gofmt -l on %s changed Go file(s)\n' "$(wc -l <"$work/gofmt-files" | tr -d ' ')"
   if [ "$plan" = 1 ]; then
@@ -395,6 +407,31 @@ if [ -n "$changed_packages" ]; then
       cat "$work/vet.log"
       checks_failed=1
     fi
+  fi
+fi
+# The rule checks run on the changed packages, and on the docs when a Markdown
+# file under docs/ changed. Comment-only Go changes cannot break those rules, so
+# they are not in the list. The checker is built with the real Go, then run from
+# the repository root, where its patterns and the lock baseline are relative.
+rule_list=$(awk -F "$(printf '\t')" '$1 ~ /\.go$/ && $2 != "comment" && $3 != "" && $3 !~ /^tools\/rulecheck/ { print "./" $3 }' "$work/files" | sort -u | paste -sd ' ' -)
+rule_docs=
+if awk -F "$(printf '\t')" '$1 ~ /^docs\/.*\.md$/ { found = 1 } END { exit !found }' "$work/files"; then
+  rule_docs=docs
+fi
+if [ -f "$root/tools/rulecheck/go.mod" ] && { [ -n "$rule_list" ] || [ -n "$rule_docs" ]; }; then
+  if [ "$plan" = 1 ]; then
+    printf 'rule checks: rulecheck%s%s\n' "${rule_docs:+ -docs $rule_docs}" "${rule_list:+ $rule_list}"
+  else
+    rule_bin=$work/rulecheck
+    if ! (cd "$root/tools/rulecheck" && "$helper_go" build -o "$rule_bin" .) >"$work/rulecheck-build.log" 2>&1; then
+      cat "$work/rulecheck-build.log"
+      fail "could not build tools/rulecheck with $helper_go"
+    fi
+    printf 'rule checks: rulecheck%s%s\n' "${rule_docs:+ -docs $rule_docs}" "${rule_list:+ $rule_list}"
+    if ! (cd "$root" && if [ -n "$rule_docs" ]; then "$rule_bin" -docs "$rule_docs" $rule_list; else "$rule_bin" $rule_list; fi) >"$work/rules.log" 2>&1; then
+      checks_failed=1
+    fi
+    cat "$work/rules.log"
   fi
 fi
 checks_failed=${checks_failed:-0}

@@ -621,6 +621,52 @@ func TestClaudeCTOCapabilityCheckIsSerialized(t *testing.T) {
 	}
 }
 
+// A slow probe of one binary must not hold up the check of another. The probe
+// used to run under the capability lock, so the second check waited for it.
+func TestClaudeCTOCapabilityProbeDoesNotHoldTheLock(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	release, started := filepath.Join(dir, "release"), filepath.Join(dir, "started")
+	// The slow probe waits for the test to create the release file.
+	slow := filepath.Join(dir, "slow-claude")
+	slowScript := "#!/bin/sh\n" +
+		"if [ \"$1\" = --help ]; then echo started > " + started + "; while [ ! -f " + release + " ]; do sleep 0.05; done; echo '--strict-mcp-config'; else echo 2.1.316; fi\n"
+	fast := filepath.Join(dir, "fast-claude")
+	fastScript := "#!/bin/sh\nif [ \"$1\" = --help ]; then echo '--strict-mcp-config'; else echo 2.1.316; fi\n"
+	for bin, script := range map[string]string{slow: slowScript, fast: fastScript} {
+		if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Release the slow probe on every exit, so a failing run does not leave it polling.
+	t.Cleanup(func() { os.WriteFile(release, nil, 0600) })
+	d := &Daemon{log: log.New(&bytes.Buffer{}, "", 0)}
+
+	slowDone := make(chan error, 1)
+	go func() { slowDone <- d.checkClaudeCTOCapabilities(context.Background(), slow) }()
+	eventually(t, "the slow probe to start", func() bool {
+		_, err := os.Stat(started)
+		return err == nil
+	})
+
+	fastDone := make(chan error, 1)
+	go func() { fastDone <- d.checkClaudeCTOCapabilities(context.Background(), fast) }()
+	select {
+	case err := <-fastDone:
+		if err != nil {
+			t.Fatalf("the fast binary: %v", err)
+		}
+	case <-time.After(scaled(10 * time.Second)):
+		t.Fatal("a check for another binary waited for the slow probe")
+	}
+	if err := os.WriteFile(release, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-slowDone; err != nil {
+		t.Fatalf("the slow binary: %v", err)
+	}
+}
+
 func TestClaudeCTOTrustPromptError(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	dir := t.TempDir()

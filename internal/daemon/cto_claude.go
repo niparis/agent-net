@@ -27,8 +27,9 @@ import (
 )
 
 // claudeCTOState runtime fields are protected by cto.mu. The process root and
-// starting flag are atomic. capMu serializes the capability check and its
-// cache, which a start from the owner and one from a proposal note both use.
+// starting flag are atomic. capMu guards the capability cache and the probes in
+// flight, which a start from the owner and one from a proposal note both use.
+// No probe runs while capMu is held.
 type claudeCTOState struct {
 	root                atomic.Pointer[claudeCTORoot]
 	starting            atomic.Bool
@@ -36,7 +37,10 @@ type claudeCTOState struct {
 	token               string
 	ref, session, model string
 	capabilities        map[string]claudeCTOCapability
-	restarted           bool
+	// capProbing has one entry per binary whose probe is running. The callers
+	// that arrive meanwhile wait for it, so a binary is probed once at a time.
+	capProbing map[string]chan struct{}
+	restarted  bool
 }
 
 type claudeCTOCapability struct {
@@ -219,20 +223,61 @@ func claudeJobEnded(state string) bool {
 
 var claudeVersionPattern = regexp.MustCompile(`\b[0-9]+\.[0-9]+\.[0-9]+\b`)
 
+// checkClaudeCTOCapabilities returns an error when the Claude binary lacks a
+// flag the CTO needs. The result is cached per binary and modification time.
+// One probe runs per binary at a time: a caller that arrives meanwhile waits for
+// it. The lock is not held while a probe runs (B12).
 func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) error {
 	c := &d.claudeCTO
-	c.capMu.Lock()
-	defer c.capMu.Unlock()
 	info, err := os.Stat(bin)
 	if err != nil {
 		return fmt.Errorf("check Claude Code: %w", err)
 	}
-	if cached, ok := c.capabilities[bin]; ok && cached.mtime.Equal(info.ModTime()) {
-		return cached.err
+	for {
+		c.capMu.Lock()
+		if cached, ok := c.capabilities[bin]; ok && cached.mtime.Equal(info.ModTime()) {
+			c.capMu.Unlock()
+			return cached.err
+		}
+		if probing, ok := c.capProbing[bin]; ok {
+			c.capMu.Unlock()
+			select {
+			case <-probing:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		if c.capProbing == nil {
+			c.capProbing = make(map[string]chan struct{})
+		}
+		done := make(chan struct{})
+		c.capProbing[bin] = done
+		c.capMu.Unlock()
+
+		cacheable, result := d.probeClaudeCTO(ctx, bin)
+
+		c.capMu.Lock()
+		delete(c.capProbing, bin)
+		if cacheable {
+			if c.capabilities == nil {
+				c.capabilities = make(map[string]claudeCTOCapability)
+			}
+			c.capabilities[bin] = claudeCTOCapability{mtime: info.ModTime(), err: result}
+		}
+		c.capMu.Unlock()
+		close(done)
+		return result
 	}
+}
+
+// probeClaudeCTO runs the help and version commands of bin and checks its help
+// for the flags the CTO needs. It reports cacheable false when a command could
+// not run, so the next caller probes again.
+func (d *Daemon) probeClaudeCTO(ctx context.Context, bin string) (cacheable bool, result error) {
 	help, err := exec.CommandContext(ctx, bin, "--help").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("check Claude Code help: %w", err)
+		return false, fmt.Errorf("check Claude Code help: %w", err)
 	}
 	version, versionErr := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
 	v := claudeVersionPattern.FindString(string(version))
@@ -242,7 +287,6 @@ func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) err
 	if d.log != nil {
 		d.log.Printf("CTO Claude Code version: %s", v)
 	}
-	var result error
 	for _, flag := range []string{"--strict-mcp-config"} {
 		present := false
 		for _, word := range strings.Fields(string(help)) {
@@ -252,16 +296,10 @@ func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) err
 			}
 		}
 		if !present {
-			result = fmt.Errorf("CTO Claude: required capability %s is missing from --help; run `claude update`", flag)
-			break
+			return true, fmt.Errorf("CTO Claude: required capability %s is missing from --help; run `claude update`", flag)
 		}
 	}
-
-	if c.capabilities == nil {
-		c.capabilities = make(map[string]claudeCTOCapability)
-	}
-	c.capabilities[bin] = claudeCTOCapability{mtime: info.ModTime(), err: result}
-	return result
+	return true, nil
 }
 
 func claudeTrustPrompt(output []byte) bool {
@@ -362,35 +400,60 @@ func (d *Daemon) claudeCTOSession() (string, error) {
 	return id, err
 }
 
+// newConversation ends the Claude conversation. The gateway call runs without
+// d.cto.mu (B12). It follows the retry rule of openCodeCTONew: the Claude run
+// (root, session, model, ref) must be the one read before the call.
 func (claudeCTOHarness) newConversation(ctx context.Context, d *Daemon) (any, error) {
-	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
-	data, err := d.call(ctx, "cto.graph_latest", nil)
-	if err != nil {
-		return nil, err
+	c := &d.claudeCTO
+	for attempt := 1; ; attempt++ {
+		d.cto.mu.Lock()
+		session, model, ref, root := c.session, c.model, c.ref, c.root.Load()
+		d.cto.mu.Unlock()
+
+		data, err := d.call(ctx, "cto.graph_latest", nil)
+		if err != nil {
+			return nil, err
+		}
+		var latest struct {
+			ID int64 `json:"id"`
+		}
+		if err = json.Unmarshal(data, &latest); err != nil {
+			return nil, err
+		}
+
+		d.cto.mu.Lock()
+		if c.session != session || c.model != model || c.ref != ref || c.root.Load() != root {
+			d.cto.mu.Unlock()
+			if attempt == 1 {
+				continue
+			}
+			return nil, errors.New("the CTO conversation changed while a new one was starting; try again")
+		}
+		err = d.resetClaudeCTOLocked(latest.ID)
+		d.cto.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		return struct{}{}, nil
 	}
-	var latest struct {
-		ID int64 `json:"id"`
-	}
-	if err = json.Unmarshal(data, &latest); err != nil {
-		return nil, err
-	}
+}
+
+// resetClaudeCTOLocked stops the Claude CTO and records the graph id that the
+// next conversation starts after. The caller holds d.cto.mu.
+func (d *Daemon) resetClaudeCTOLocked(graphAfter int64) error {
 	d.stopClaudeCTOLocked("new_conversation")
 	tx, err := d.st.db.Begin()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer tx.Rollback()
 	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id='' AND harness='claude'`); err != nil {
-		return nil, err
+		return err
 	}
-	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,claude_session_id,claude_graph_after) VALUES(1,'','',?) ON CONFLICT(id) DO UPDATE SET claude_session_id='',claude_graph_after=excluded.claude_graph_after`, latest.ID); err != nil {
-		return nil, err
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,claude_session_id,claude_graph_after) VALUES(1,'','',?) ON CONFLICT(id) DO UPDATE SET claude_session_id='',claude_graph_after=excluded.claude_graph_after`, graphAfter); err != nil {
+		return err
 	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
-	}
-	return struct{}{}, nil
+	return tx.Commit()
 }
 
 func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (protocol.CTOEvents, error) {

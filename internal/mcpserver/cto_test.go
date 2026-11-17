@@ -3,12 +3,14 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
 func ctoTestSession(t *testing.T) *mcp.ClientSession {
@@ -224,6 +226,9 @@ func TestCTOToolsForward(t *testing.T) {
 	}
 }
 
+// TestCTOParityTools checks that the CTO lists exactly the catalog's CTO tools
+// and the two op tier tools. The expected names come from the catalog, so a new
+// tool needs no edit here.
 func TestCTOParityTools(t *testing.T) {
 	cs := ctoTestSession(t)
 	list, err := cs.ListTools(context.Background(), nil)
@@ -234,20 +239,50 @@ func TestCTOParityTools(t *testing.T) {
 	for _, tool := range list.Tools {
 		got[tool.Name] = true
 	}
-	for _, name := range []string{"cto_proposals_find", "cto_intake_find", "cto_placement_memory", "cto_standing_orders", "cto_ui_show", "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "sessions_archive", "proposal_ask", "cto_new",
-		"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_message_get", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "agent_message_send", "agent_message_reply", "agent_message_withdraw", "agent_owner_ask", "agent_learn", "agent_note_write", "agent_notes_find", "agent_permission_propose", "projects_layout", "agent_owner_judgments_find", "agent_owner_judgment_record", "cto_ops_list", "cto_op", "skill_archive", "skills"} {
+	want := map[string]bool{}
+	for _, name := range CTOToolNames() {
+		want[name] = true
 		if !got[name] {
 			t.Errorf("missing CTO tool %s", name)
 		}
 	}
-	if len(got) != 45 {
-		t.Errorf("CTO exposes %d tools, want 45: %v", len(got), got)
+	for name := range got {
+		if !want[name] {
+			t.Errorf("CTO lists %s, which is not in the catalog", name)
+		}
 	}
-	for _, name := range []string{"overview", "sessions", "session", "proposals", "feed", "messages", "graph", "machines", "projects", "workers", "tools", "settings", "message", "ask_owner", "learn", "ui", "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "session_rename", "session_trust", "session_policy", "worker_start", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "tools_plan", "tools_apply", "tools_undo", "mcp_import", "mcp_native_remove", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "send", "reply", "ui_show", "ui_notice", "cto_send"} {
+	for _, name := range toolcatalog.RenamedNames() {
 		if got[name] {
 			t.Errorf("old name %s is still a CTO tool", name)
 		}
 	}
+}
+
+// TestCTOParityPicksUpCatalogEntry adds a CTO entry to the catalog and checks
+// that both the expected names and the listed tools include it.
+func TestCTOParityPicksUpCatalogEntry(t *testing.T) {
+	saved := toolcatalog.Tools
+	toolcatalog.Tools = append(slices.Clone(saved), toolcatalog.Tool{
+		Name:        "cto_parity_fixture",
+		Description: "Fixture entry for the parity test.",
+		Roles:       []toolcatalog.Role{toolcatalog.RoleCTO},
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+	})
+	t.Cleanup(func() { toolcatalog.Tools = saved })
+
+	if !slices.Contains(CTOToolNames(), "cto_parity_fixture") {
+		t.Fatal("the expected CTO names miss a catalog entry for the CTO role")
+	}
+	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name == "cto_parity_fixture" {
+			return
+		}
+	}
+	t.Fatal("the CTO does not list a catalog entry for the CTO role")
 }
 
 func TestCTOSettingsSchemasDescribeNestedValues(t *testing.T) {

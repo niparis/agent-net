@@ -76,6 +76,28 @@ package fake
 func Other() int { return 2 }
 EOF
 printf 'first\n' >internal/fake/notes.txt
+# A stand-in rule checker. It prints its arguments, so a run shows which
+# packages and docs it was given.
+mkdir -p tools/rulecheck
+cat >tools/rulecheck/go.mod <<'EOF'
+module example.invalid/rulecheck
+
+go 1.21
+EOF
+cat >tools/rulecheck/main.go <<'EOF'
+package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+func main() {
+	fmt.Println("rulecheck args: " + strings.Join(os.Args[1:], " "))
+	fmt.Println("rulecheck: PASS")
+}
+EOF
 git add . && git -c user.name=test -c user.email=test@example.invalid commit -q -m base
 
 # reset_tree drops the previous case, so each case starts from the base commit.
@@ -134,6 +156,22 @@ grep -Fq 'test -count=1 -run ^(TestCTOSchemaBudgetAndCharterGuide)$' "$work/go.l
   fail "the contract set did not run the CTO schema budget test: $(cat "$work/go.log")"
 grep -Fq 'test -count=1 -run ^(TestDescriptions|TestOutputSchemasCoverProtocolTypes)$' "$work/go.log" ||
   fail "the contract set did not run the tool catalog tests: $(cat "$work/go.log")"
+
+# The rule checker runs on the changed package, with the package as its
+# argument, and passes the changed docs with -docs.
+reset_tree
+change_production
+run_check
+grep -Fq 'rulecheck args: ./internal/fake' "$work/out" ||
+  fail "the rule checker did not run on the changed package: $(cat "$work/out")"
+[ "$status" = 0 ] || fail "a passing rule check exited $status"
+
+reset_tree
+mkdir -p docs
+printf 'A plain line.\n' >docs/guide.md
+run_check
+grep -Fq 'rulecheck args: -docs docs' "$work/out" ||
+  fail "the rule checker did not check the changed docs: $(cat "$work/out")"
 
 # --plan lists the contract set, so a worker can say what will run.
 run_plan() {

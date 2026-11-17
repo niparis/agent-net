@@ -200,11 +200,23 @@ func (g *Gateway) skillVersions(item string) (any, error) {
 	return map[string]any{"versions": versions}, nil
 }
 
-func (s *skillStore) read(item, hash string) ([]byte, error) {
+// commitOf returns the commit that stores one version. The lock covers the
+// lookup only, so a read does not wait for git.
+func (s *skillStore) commitOf(item, hash string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var commit string
 	if err := s.db.db.QueryRow(`SELECT commit_id FROM skill_versions WHERE item=? AND hash=?`, item, hash).Scan(&commit); err != nil {
+		return "", false
+	}
+	return commit, true
+}
+
+func (s *skillStore) read(item, hash string) ([]byte, error) {
+	// Git objects are immutable once written, so the blob is read without the
+	// lock, and a put never waits for a reader's git process.
+	commit, ok := s.commitOf(item, hash)
+	if !ok {
 		return nil, errors.New("skill version not found")
 	}
 	if len(commit) != 40 {

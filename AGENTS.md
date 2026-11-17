@@ -26,7 +26,18 @@ bash -n scripts/test.sh
 sh scripts/test-changed-test.sh # checks how test-changed.sh calls go test (fake go, about 1 s)
 plugins/pi/typecheck.sh     # type-check the Pi extension (needs Pi installed)
 plugins/claude/test-agent-net-workers.sh # validate and test Claude hooks (needs npm)
+go -C tools/rulecheck vet ./... && go -C tools/rulecheck test -count=1 ./... # the rule checker and its fixtures
 ```
+
+### Rule checks
+
+`tools/rulecheck` is a separate Go module that checks rules which reviewers used to check by reading. CI and `scripts/test-changed.sh` run it.
+
+- B4: no test calls `time.Sleep` with a constant duration over 2 seconds.
+- B9: no em dash in a production Go string literal or in a Markdown file under `docs/`.
+- B12: no call to the gateway or another process while a mutex of `internal/daemon` or `internal/gateway` is held. The sites that existed when the check was added are listed in `tools/rulecheck/lockcall.baseline`. That list may only shrink: when you fix a site, lower its count or remove its line.
+
+Run it from the repository root: `go -C tools/rulecheck build -o "${TMPDIR:-/tmp}/rulecheck" . && "${TMPDIR:-/tmp}/rulecheck" -docs docs ./...`
 
 Before handing back, run scripts/test-changed.sh. It runs only the tests your
 diff needs: a comment-only or docs change runs no package tests, a changed test

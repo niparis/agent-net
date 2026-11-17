@@ -10,6 +10,15 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// neverAnswers returns a channel that a fake handler waits on instead of
+// answering. The test closes it at cleanup, so the handler ends with the test.
+func neverAnswers(t *testing.T) <-chan struct{} {
+	t.Helper()
+	released := make(chan struct{})
+	t.Cleanup(func() { close(released) })
+	return released
+}
+
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -26,9 +35,10 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 // the time waited, the deadline and the screen that asked. The report is what
 // puts a TUI timeout in the daemon log.
 func TestTimedOutCallIsReportedToTheDaemon(t *testing.T) {
+	released := neverAnswers(t)
 	fake, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
 		if method == "proposal_list" {
-			time.Sleep(time.Hour) // never answers
+			<-released // never answers
 		}
 		return map[string]any{}, ""
 	})
@@ -60,12 +70,13 @@ func TestTimedOutCallIsReportedToTheDaemon(t *testing.T) {
 // A refusal from the daemon is a failed request too, and reported. A call the
 // user cancelled, and a report about a report, are not.
 func TestOnlyRealFailuresAreReported(t *testing.T) {
+	released := neverAnswers(t)
 	fake, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
 		switch method {
 		case "refused":
 			return nil, "no way"
 		case "slow":
-			time.Sleep(time.Hour)
+			<-released
 		case protocol.OpClientError:
 			return nil, "report refused" // must not start a loop of reports
 		}
@@ -163,9 +174,10 @@ func TestOldPeerAnswersAreNotReported(t *testing.T) {
 // A timed-out call reports the configured timeout of the call, even when time
 // elapsed before the call began.
 func TestConfiguredTimeoutIsReportedWhenTimeElapsed(t *testing.T) {
+	released := neverAnswers(t)
 	fake, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
 		if method == "slow" {
-			time.Sleep(time.Hour)
+			<-released
 		}
 		return map[string]any{}, ""
 	})

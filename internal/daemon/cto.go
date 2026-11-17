@@ -409,39 +409,68 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 	}
 	return map[string]string{"session_id": id}, err
 }
+
+// openCodeCTONew ends the OpenCode conversation. The gateway call runs without
+// c.mu (B12). If the conversation changed while the call ran, the graph id is
+// stale for it, so the call runs once more. A second change refuses the reset.
 func (d *Daemon) openCodeCTONew(ctx context.Context) (any, error) {
 	c := &d.cto
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	data, err := d.call(ctx, "cto.graph_latest", nil)
-	if err != nil {
-		return nil, err
+	for attempt := 1; ; attempt++ {
+		c.mu.Lock()
+		session, model := c.session, c.model
+		c.mu.Unlock()
+
+		data, err := d.call(ctx, "cto.graph_latest", nil)
+		if err != nil {
+			return nil, err
+		}
+		var latest struct {
+			ID int64 `json:"id"`
+		}
+		if err = json.Unmarshal(data, &latest); err != nil {
+			return nil, err
+		}
+
+		c.mu.Lock()
+		if c.session != session || c.model != model {
+			c.mu.Unlock()
+			if attempt == 1 {
+				continue
+			}
+			return nil, errors.New("the CTO conversation changed while a new one was starting; try again")
+		}
+		err = d.resetOpenCodeCTOLocked(latest.ID)
+		c.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		return struct{}{}, nil
 	}
-	var latest struct {
-		ID int64 `json:"id"`
-	}
-	if err = json.Unmarshal(data, &latest); err != nil {
-		return nil, err
-	}
+}
+
+// resetOpenCodeCTOLocked ends the OpenCode conversation and records the graph id
+// that the next one starts after. The caller holds c.mu.
+func (d *Daemon) resetOpenCodeCTOLocked(graphAfter int64) error {
+	c := &d.cto
 	tx, err := d.st.db.Begin()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer tx.Rollback()
 	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id='' AND harness='opencode'`); err != nil {
-		return nil, err
+		return err
 	}
-	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET session_id='',graph_after=excluded.graph_after`, latest.ID); err != nil {
-		return nil, err
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET session_id='',graph_after=excluded.graph_after`, graphAfter); err != nil {
+		return err
 	}
 	if err = tx.Commit(); err != nil {
-		return nil, err
+		return err
 	}
 	c.session, c.model = "", ""
 	c.compact.mu.Lock()
 	c.compact.reset("")
 	c.compact.mu.Unlock()
-	return struct{}{}, nil
+	return nil
 }
 func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
 	c := &d.cto
