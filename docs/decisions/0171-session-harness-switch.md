@@ -206,6 +206,17 @@ opencode and codex, and keeps the model typed for each.
 The real-protocol check is `cto_codex_real_test.go`, run with
 `AGENT_NET_TEST_REAL_CODEX`.
 
+## Phase 4a, part 1: Codex chief and merger
+
+A chief or merger started on the shared Codex server uses approval `never` and
+the workspace-write sandbox with network access. A merger also receives the
+shared Go build cache as `GOCACHE`, with permission to write that folder and
+the Git folders its linked worktree needs. The same settings apply when the
+session is resumed or woken. Ordinary owner sessions keep their own settings.
+
+The first-use harness probe, OpenCode role settings, TUI defaults and the
+no-Claude end-to-end check remain for the rest of phase 4a.
+
 ## What this does not cover
 
 - Setup's first-use role step (phase 4).

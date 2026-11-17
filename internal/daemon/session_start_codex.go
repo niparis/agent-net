@@ -10,9 +10,9 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Create only the owner's new thread, then relinquish the temporary subscription.
-// The long-lived discovery client remains read-only. No turn starts here: the
-// owner's CLI resumes this exact ID and handles its normal permission prompts.
+// Create the thread, then relinquish the temporary subscription. The
+// long-lived discovery client remains read-only, and no turn starts here.
+// Ordinary sessions keep the owner's policy; unattended roles use theirs.
 func (d *Daemon) prepareOwnerCodex(ctx context.Context, r protocol.StartedSession) (protocol.StartedSession, error) {
 	return d.prepareOwnerCodexThread(ctx, r, false)
 }
@@ -53,12 +53,16 @@ func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.Started
 	if text := d.codexStartBlock(ctx, r.ID, r.Project); text != "" {
 		params["developerInstructions"] = text
 	}
+	config := d.codexOwnerRolePolicy(ctx, r, params)
 	if r.Model != "" {
 		model, effort := splitCodexModel(r.Model)
 		params["model"] = model
 		if effort != "" {
-			params["config"] = map[string]string{"model_reasoning_effort": effort}
+			config["model_reasoning_effort"] = effort
 		}
+	}
+	if len(config) != 0 {
+		params["config"] = config
 	}
 	method := "thread/start"
 	if resume {
@@ -104,6 +108,25 @@ func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.Started
 		case <-ticker.C:
 		}
 	}
+}
+
+func (d *Daemon) codexOwnerRolePolicy(ctx context.Context, r protocol.StartedSession, params map[string]any) map[string]any {
+	config := map[string]any{}
+	if r.Type != "chief" && r.Type != "merger" {
+		return config
+	}
+	var roots []string
+	if r.Type == "merger" {
+		roots = append(workerGitRoots(ctx, r.Path), d.workerGoCacheDir())
+		config["shell_environment_policy"] = map[string]any{"set": map[string]string{"GOCACHE": d.workerGoCacheDir()}}
+	}
+	sandbox := writeSandbox(roots, true)
+	params["approvalPolicy"] = "never"
+	params["sandbox"] = sandbox.mode
+	for k, v := range sandbox.config {
+		config[k] = v
+	}
+	return config
 }
 
 // codexThreadInstructions is the charter text for a Codex thread of a project.

@@ -39,6 +39,7 @@ type fakeThread struct {
 	ID, Cwd, Name, Model, Status, Source string
 	// DeveloperInstructions is what thread/start or thread/resume carried.
 	DeveloperInstructions string
+	Params                map[string]any
 	Ephemeral             bool
 	Parent                string
 	// Flags are the activeFlags of an active thread, for example
@@ -198,14 +199,18 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 			continue
 		case "thread/resume":
 			id := p.ThreadID
-			f.threads[id] = &fakeThread{ID: id, Cwd: p.Cwd, Status: "idle", Source: "appServer", DeveloperInstructions: p.DevInstr}
+			var params map[string]any
+			json.Unmarshal(m.Params, &params)
+			f.threads[id] = &fakeThread{ID: id, Cwd: p.Cwd, Status: "idle", Source: "appServer", DeveloperInstructions: p.DevInstr, Params: params}
 			f.mu.Unlock()
 			reply(map[string]any{"thread": map[string]any{"id": id}}, "")
 			f.notify("thread/started")
 			continue
 		case "thread/start":
 			id := protocol.NewID("thread")
-			f.threads[id] = &fakeThread{ID: id, Cwd: p.Cwd, Model: p.Model, Status: "idle", Source: "appServer", DeveloperInstructions: p.DevInstr}
+			var params map[string]any
+			json.Unmarshal(m.Params, &params)
+			f.threads[id] = &fakeThread{ID: id, Cwd: p.Cwd, Model: p.Model, Status: "idle", Source: "appServer", DeveloperInstructions: p.DevInstr, Params: params}
 			f.mu.Unlock()
 			reply(map[string]any{"thread": map[string]any{"id": id}}, "")
 			f.notify("thread/started")
