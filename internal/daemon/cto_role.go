@@ -15,9 +15,10 @@ import (
 // list on an install that already had them (decision 0162). An entry with no
 // model means that harness's own default, which is read live.
 func (d *Daemon) ctoRoleModels(ctx context.Context) ([]protocol.RoleModel, error) {
-	var raw, harness, activeModel, openCodeModel, claudeModel string
-	err := d.st.db.QueryRow(`SELECT models, active_harness, active_model, opencode_model, claude_model FROM cto WHERE id=1`).
-		Scan(&raw, &harness, &activeModel, &openCodeModel, &claudeModel)
+	var raw, harness, activeModel string
+	var perHarness ctoHarnessModels
+	err := d.st.db.QueryRow(`SELECT models, active_harness, active_model, opencode_model, claude_model, codex_model FROM cto WHERE id=1`).
+		Scan(&raw, &harness, &activeModel, &perHarness.OpenCode, &perHarness.Claude, &perHarness.Codex)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		// A fresh install: the setting is the default list.
@@ -37,7 +38,7 @@ func (d *Daemon) ctoRoleModels(ctx context.Context) ([]protocol.RoleModel, error
 		}
 		model := activeModel
 		if model == "" {
-			model = modelForCTOHarness(harness, openCodeModel, claudeModel)
+			model = perHarness.of(harness)
 		}
 		return d.resolveRoleModels(ctx, []protocol.RoleModel{{Harness: harness, Model: model}}), nil
 	}
@@ -104,31 +105,13 @@ func defaultRoleModel(harness string, live []string) string {
 	return live[0]
 }
 
-// saveCTORoleModels writes the ordered list and the current choice. The two
-// per-harness columns stay for the OpenCode and Claude runtimes.
+// saveCTORoleModels writes the ordered list and the current choice. The
+// per-harness columns keep the model of each harness runtime.
 func (d *Daemon) saveCTORoleModels(models []protocol.RoleModel, harness, model string) error {
 	raw := protocol.FormatRoleModels(models)
-	openCodeModel, claudeModel := "", ""
-	if harness == "opencode" {
-		openCodeModel = model
-	}
-	if harness == "claude" {
-		claudeModel = model
-	}
-	_, err := d.st.db.Exec(`UPDATE cto SET models=?, active_harness=?, active_model=?, opencode_model=CASE WHEN ?='opencode' THEN ? ELSE opencode_model END, claude_model=CASE WHEN ?='claude' THEN ? ELSE claude_model END WHERE id=1`,
-		raw, harness, model, harness, openCodeModel, harness, claudeModel)
+	_, err := d.st.db.Exec(`UPDATE cto SET models=?, active_harness=?, active_model=?, opencode_model=CASE WHEN ?='opencode' THEN ? ELSE opencode_model END, claude_model=CASE WHEN ?='claude' THEN ? ELSE claude_model END, codex_model=CASE WHEN ?='codex' THEN ? ELSE codex_model END WHERE id=1`,
+		raw, harness, model, harness, model, harness, model, harness, model)
 	return err
-}
-
-// ctoCurrentRoleModel is the model the CTO runs now, for the resume check.
-func ctoCurrentRoleModel(harness, activeModel, openCodeModel, claudeModel string) protocol.RoleModel {
-	if harness == "" {
-		harness = "opencode"
-	}
-	if activeModel == "" {
-		activeModel = modelForCTOHarness(harness, openCodeModel, claudeModel)
-	}
-	return protocol.RoleModel{Harness: harness, Model: activeModel}
 }
 
 // ctoPick asks the one gate which CTO model may start. The CTO is a role, so

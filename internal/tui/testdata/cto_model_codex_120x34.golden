@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 6 sessions, 5 online · 1 busy      updated 14:05:00
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?   no pi                                                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no codex · no opencode                                         │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME               MACHINE      PROJECT   MODEL                    STATUS    CPU   RAM TASK
+ 5 sessions · 1 busy                                                                                   view: active  (v)
+▸ tenebrae-53        Mac          tenebrae  claude · opus-5-5        busy        ?     ?
+  4 more idle · v to show
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭─CTO · opencode · openai/gpt-6────────────────────────────────────────────────────────────────────────────────────────╮
+│ > Harness: claude  opencode  [codex]                                                                                 │
+│   Title:   CTO                                                                                                       │
+│   Model:   gpt-6.1-codex:high                                                                                        │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down field  left/right harness  tab field  enter save  esc cancel

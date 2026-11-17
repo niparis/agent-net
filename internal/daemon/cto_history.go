@@ -25,9 +25,12 @@ type ctoHistoryEntry struct {
 func (d *Daemon) snapshotCTOHarness(ctx context.Context, harness string) error {
 	var events protocol.CTOEvents
 	var err error
-	if harness == "claude" {
+	switch harness {
+	case "claude":
 		events, err = (claudeCTOHarness{}).events(ctx, d, 0)
-	} else {
+	case "codex":
+		events, err = d.codexCTOEvents(ctx, 0)
+	default:
 		events, err = d.openCodeCTOEvents(ctx, 0)
 	}
 	if err != nil {

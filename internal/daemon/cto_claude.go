@@ -733,9 +733,9 @@ func (d *Daemon) adoptLiveClaudeCTO() bool {
 	if claudeJobEnded(status) {
 		return false
 	}
-	_, model, _, err := d.localCTOModelSettings()
+	models, _, err := d.localCTOModelSettings()
 	if err != nil {
 		return false
 	}
-	return d.bindClaudeCTO(sf, model, "", "adopted")
+	return d.bindClaudeCTO(sf, models.Claude, "", "adopted")
 }

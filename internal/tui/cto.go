@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,6 +50,7 @@ type ctoState struct {
 	enterNotice      string
 	opencodeModel    string
 	claudeModel      string
+	codexModel       string
 	messages         []string
 	renderCache      map[ctoRenderKey][]string
 	scroll, pageRows int
@@ -64,13 +66,13 @@ type ctoState struct {
 	generation       int
 }
 type ctoSettingsForm struct {
-	harness       string
-	titleInput    textinput.Model
-	input         textinput.Model
-	field         int // 0 harness, 1 title, 2 model
-	err           string
-	opencodeDraft string
-	claudeDraft   string
+	harness    string
+	harnesses  []string // the harnesses the form offers, in order
+	titleInput textinput.Model
+	input      textinput.Model
+	field      int // 0 harness, 1 title, 2 model
+	err        string
+	drafts     map[string]string // the model typed for each harness
 }
 type ctoSettingsMsg struct {
 	settings   protocol.CTOSettings
@@ -82,6 +84,7 @@ type ctoPollMsg struct {
 	configuredModel string
 	opencodeModel   string
 	claudeModel     string
+	codexModel      string
 	title           string
 	events          protocol.CTOEvents
 	history         []protocol.CTOGraphChange
@@ -211,15 +214,18 @@ func (m Model) ctoPollCmd() tea.Cmd {
 		if harness == "" {
 			harness = "opencode"
 		}
-		openCodeModel, claudeModel := settings.OpenCodeModel, settings.ClaudeModel
-		if openCodeModel == "" && claudeModel == "" && settings.Model != "" {
-			if harness == "claude" {
+		openCodeModel, claudeModel, codexModel := settings.OpenCodeModel, settings.ClaudeModel, settings.CodexModel
+		if openCodeModel == "" && claudeModel == "" && codexModel == "" && settings.Model != "" {
+			switch harness {
+			case "claude":
 				claudeModel = settings.Model
-			} else {
+			case "codex":
+				codexModel = settings.Model
+			default:
 				openCodeModel = settings.Model
 			}
 		}
-		return ctoPollMsg{windowUntil: window.Until, events: events, history: history, model: model, harness: harness, title: protocol.CTOTitleOrDefault(settings.Title), configuredModel: settings.Model, opencodeModel: openCodeModel, claudeModel: claudeModel, err: err, generation: generation}
+		return ctoPollMsg{windowUntil: window.Until, events: events, history: history, model: model, harness: harness, title: protocol.CTOTitleOrDefault(settings.Title), configuredModel: settings.Model, opencodeModel: openCodeModel, claudeModel: claudeModel, codexModel: codexModel, err: err, generation: generation}
 	}
 }
 func (m Model) ctoOlderCmd() tea.Cmd {
@@ -405,7 +411,8 @@ func (m Model) ctoKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		title.Prompt = ""
 		title.CharLimit = 24
 		title.SetValue(protocol.CTOTitleOrDefault(c.title))
-		c.settingsForm = &ctoSettingsForm{harness: harness, titleInput: title, input: ti, opencodeDraft: c.opencodeModel, claudeDraft: c.claudeModel}
+		c.settingsForm = &ctoSettingsForm{harness: harness, harnesses: m.ctoUsableHarnesses(harness), titleInput: title, input: ti,
+			drafts: map[string]string{"opencode": c.opencodeModel, "claude": c.claudeModel, "codex": c.codexModel}}
 		return m, nil
 	case "undo":
 		src := m.src.(ctoSource)
@@ -461,6 +468,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	c.configuredModel = r.configuredModel
 	c.opencodeModel = r.opencodeModel
 	c.claudeModel = r.claudeModel
+	c.codexModel = r.codexModel
 	c.model = r.model
 	c.harness = r.harness
 	c.windowUntil = r.windowUntil
@@ -559,16 +567,15 @@ func (m Model) ctoSettingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, f.setField(f.field + 1)
 	case "previous choice", "next choice":
-		if f.field == 0 {
-			if f.harness == "opencode" {
-				f.opencodeDraft = f.input.Value()
-				f.harness = "claude"
-				f.input.SetValue(f.claudeDraft)
-			} else {
-				f.claudeDraft = f.input.Value()
-				f.harness = "opencode"
-				f.input.SetValue(f.opencodeDraft)
+		if f.field == 0 && len(f.harnesses) > 0 {
+			step := 1
+			if keyAction(contextForm, k.String()) == "previous choice" {
+				step = -1
 			}
+			i := max(slices.Index(f.harnesses, f.harness), 0)
+			f.drafts[f.harness] = f.input.Value()
+			f.harness = f.harnesses[(i+step+len(f.harnesses))%len(f.harnesses)]
+			f.input.SetValue(f.drafts[f.harness])
 			f.input.CursorEnd()
 			return m, nil
 		}
@@ -602,6 +609,30 @@ func (m Model) ctoSettingsKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// ctoUsableHarnesses are the harnesses the CTO can run on that this machine
+// has, in the CTO's order. Pi is never one. A machine that has not reported
+// its harnesses yet offers them all. The current harness is always offered.
+func (m Model) ctoUsableHarnesses(current string) []string {
+	installed := map[string]bool{}
+	reported := false
+	for _, n := range m.snap.Nodes {
+		if n.NodeID != m.snap.NodeID {
+			continue
+		}
+		for _, h := range n.Harnesses {
+			reported = true
+			installed[h.Name] = true
+		}
+	}
+	var out []string
+	for _, h := range protocol.CTOHarnesses {
+		if !reported || installed[h] || h == current {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
 func (m Model) ctoModelCandidates(harness, query string) []string {
 	var models []string
 	if harness == "claude" {
@@ -629,8 +660,11 @@ func (m Model) ctoModelCandidates(harness, query string) []string {
 }
 
 func (c *ctoState) modelForHarness(harness string) string {
-	if harness == "claude" {
+	switch harness {
+	case "claude":
 		return c.claudeModel
+	case "codex":
+		return c.codexModel
 	}
 	return c.opencodeModel
 }

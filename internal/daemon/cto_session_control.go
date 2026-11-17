@@ -158,6 +158,7 @@ func (d *Daemon) stopCTOSession(ctx context.Context) (protocol.SessionStopResult
 	d.cto.mu.Lock()
 	d.stopClaudeCTOLocked("owner_stop")
 	d.stopOpenCodeCTOLocked("owner_stop")
+	d.stopCodexCTOLocked("owner_stop")
 	d.cto.mu.Unlock()
 	d.scheduleCTOPresence()
 	return protocol.SessionStopResult{Note: "Stopped the CTO. The conversation is kept."}, nil

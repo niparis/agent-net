@@ -419,6 +419,7 @@ type Daemon struct {
 	signIn           signInState
 	cto              ctoRuntime
 	claudeCTO        claudeCTOState
+	codexCTO         codexCTOState
 	ctoTranscript    ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
 	layoutMu         sync.Mutex
 	layoutCache      *protocol.MachineLayout
@@ -852,6 +853,7 @@ func (d *Daemon) Stop() {
 		d.releaseClaudeCTOLocked()
 	}
 	d.stopOpenCodeCTOLocked("daemon_shutdown")
+	d.stopCodexCTOLocked("daemon_shutdown")
 	d.cto.mu.Unlock()
 	d.ctoDispatchMu.unlock()
 	d.mcp.stop()

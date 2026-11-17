@@ -1147,6 +1147,8 @@ func fakeCodex() {
 		go child.Wait()
 	}
 	var mu sync.Mutex
+	// threadTurns keeps each thread's turns, as user text and answer, for thread/read.
+	threadTurns := map[string][][2]string{}
 	save := func() {
 		mu.Lock()
 		defer mu.Unlock()
@@ -1255,20 +1257,46 @@ func fakeCodex() {
 				mu.Unlock()
 				save()
 				write(map[string]any{"id": m.ID, "result": map[string]any{}})
-			case "turn/start":
+			case "thread/read":
+				id, _ := p["threadId"].(string)
+				mu.Lock()
+				turns := []any{}
+				for _, t := range threadTurns[id] {
+					turns = append(turns, map[string]any{"id": "turn-read", "status": "completed", "items": []any{
+						map[string]any{"type": "userMessage", "content": []any{map[string]any{"type": "text", "text": t[0]}}},
+						map[string]any{"type": "agentMessage", "phase": "final_answer", "text": t[1]}}})
+				}
+				mu.Unlock()
+				write(map[string]any{"id": m.ID, "result": map[string]any{"thread": map[string]any{"id": id, "turns": turns}}})
+			case "turn/start", "thread/queue/add":
+				// thread/queue/add is how agent-net sends a message to a thread it
+				// drives: the user message item carries the message's ID as clientId.
 				text := ""
 				if in, ok := p["input"].([]any); ok && len(in) > 0 {
 					text, _ = in[0].(map[string]any)["text"].(string)
 				}
+				clientID, _ := p["clientUserMessageId"].(string)
 				mu.Lock()
 				rec.Turns = append(rec.Turns, text)
 				rec.TurnParams = append(rec.TurnParams, p)
 				mu.Unlock()
 				save()
 				turn := "turn-" + randHex(3)
-				write(map[string]any{"id": m.ID, "result": map[string]any{"turn": map[string]any{"id": turn, "status": "inProgress"}}})
+				if m.Method == "turn/start" {
+					write(map[string]any{"id": m.ID, "result": map[string]any{"turn": map[string]any{"id": turn, "status": "inProgress"}}})
+				} else {
+					write(map[string]any{"id": m.ID, "result": map[string]any{}})
+				}
 				go func() {
 					write(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": thread, "turn": map[string]any{"id": turn, "status": "inProgress"}}})
+					if clientID != "" && !strings.Contains(text, "FAKE:untaken") {
+						write(map[string]any{"method": "item/started", "params": map[string]any{"threadId": thread, "turnId": turn,
+							"item": map[string]any{"type": "userMessage", "clientId": clientID, "content": []any{map[string]any{"type": "text", "text": text}}}}})
+					}
+					if strings.Contains(text, "FAKE:compact") {
+						write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "turnId": turn,
+							"item": map[string]any{"type": "contextCompaction", "id": "c1"}}})
+					}
 					if strings.Contains(text, "FAKE:offline") {
 						// The server keeps working even when its subscriber goes away.
 						for {
@@ -1347,6 +1375,9 @@ func fakeCodex() {
 					if strings.Contains(text, "Turn each phrase in the JSON array below") {
 						report = `{"backups":"daily backup operations","ops for backups":"ops for backup operations"}`
 					}
+					mu.Lock()
+					threadTurns[thread] = append(threadTurns[thread], [2]string{text, report})
+					mu.Unlock()
 					write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "turnId": turn,
 						"item": map[string]any{"type": "agentMessage", "id": "m1", "phase": "final_answer", "text": report}}})
 					write(map[string]any{"method": "thread/tokenUsage/updated", "params": map[string]any{"threadId": thread, "turnId": turn,

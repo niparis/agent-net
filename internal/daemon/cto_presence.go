@@ -16,6 +16,9 @@ func (d *Daemon) ctoRunning() bool {
 			return true
 		}
 	}
+	if d.codexCTORunningLocked() && !d.ctoHandoverPendingLocked("codex") {
+		return true
+	}
 	c := &d.claudeCTO
 	if c.ref == "" || d.ctoHandoverPendingLocked("claude") {
 		return false

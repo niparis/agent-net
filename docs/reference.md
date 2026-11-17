@@ -268,8 +268,9 @@ inventory default when its saved model is empty, and so does Claude Code. Pass a
 object to change the auto-compaction rules; the gateway stores those rules with
 the other owner settings. Saving settings does not start a CTO runtime.
 
-Run `agent-net cto` to show the settings, `agent-net cto harness claude` or
-`agent-net cto harness opencode` to change the harness, and
+Run `agent-net cto` to show the settings, `agent-net cto harness claude`,
+`agent-net cto harness opencode` or `agent-net cto harness codex` to change the
+harness, and
 `agent-net cto model opus` to set the model for the active harness. Pass an
 empty argument (`agent-net cto model ""`) to restore that harness's default.
 
@@ -364,6 +365,20 @@ plugins, and uses only the CTO's agent and MCP server. The
 owner's agents, MCP servers, permissions, instructions, server and autoupdate
 settings are excluded. A config that cannot be read falls back to private defaults
 and is reported in the daemon log.
+
+Codex runs in a private `codex app-server` that the daemon starts in
+`cto/codex` in daemon state, on a loopback WebSocket with a capability token in
+`cto/codex/token`, as a Codex worker does. It uses the owner's Codex login and
+config. The daemon adds one MCP server with `-c`, `agent-net-cto`
+(`agent-net cto-mcp`), whose tools Codex calls without asking, and turns the
+owner's own `agent-net` server off when the config defines one. The thread runs
+with approval `never` and the `danger-full-access` sandbox, and gets the CTO
+prompt and start text as developer instructions. Messages go in with
+`thread/queue/add`. The CTO's skills reach the server with
+`skills/extraRoots/set`. Enter opens the thread with
+`codex resume <thread> --remote ws://... --remote-auth-token-env`. The server
+stops with the daemon; the thread stays on disk and resumes at the next start.
+The app server's log is `cto/codex/codex.log`.
 
 Claude Code uses a private working directory under `cto/claude` in daemon
 state. The daemon passes a private MCP configuration with `--mcp-config` and

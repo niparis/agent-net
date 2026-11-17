@@ -41,7 +41,7 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	if err := d.migrateCTOModelSettings(remote); err != nil {
 		return protocol.CTOSettings{}, err
 	}
-	openCodeModel, claudeModel, harness, err := d.localCTOModelSettings()
+	perHarness, harness, err := d.localCTOModelSettings()
 	if err != nil {
 		return protocol.CTOSettings{}, err
 	}
@@ -51,13 +51,16 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	}
 	previousHarness := harness
 	if in.Harness != nil {
-		if *in.Harness != "opencode" && *in.Harness != "claude" {
-			return protocol.CTOSettings{}, fmt.Errorf("bad CTO harness %q", *in.Harness)
+		if err := protocol.CheckCTOHarness(*in.Harness); err != nil {
+			return protocol.CTOSettings{}, err
 		}
 		harness = *in.Harness
 	}
 	if in.Models != nil {
 		models = *in.Models
+		if err := checkCTOModelList(models); err != nil {
+			return protocol.CTOSettings{}, err
+		}
 		if len(models) > 0 {
 			harness = models[0].Harness
 		}
@@ -75,14 +78,9 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		case in.Harness != nil:
 			// Switching harness without naming a model keeps the model that
 			// harness had, as the per-harness settings did.
-			models[0].Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
+			models[0].Model = perHarness.of(harness)
 		}
-		switch harness {
-		case "claude":
-			claudeModel = models[0].Model
-		default:
-			openCodeModel = models[0].Model
-		}
+		perHarness.set(harness, models[0].Model)
 	}
 	switched := in.Harness != nil && previousHarness != harness
 	if switched {
@@ -113,7 +111,7 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		}
 	}
 	if switched {
-		model := modelForCTOHarness(harness, openCodeModel, claudeModel)
+		model := perHarness.of(harness)
 		if model == "" {
 			model = roleModelForHarness(models, harness)
 		}
@@ -129,10 +127,11 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		}
 	}
 	if in.Model != nil || in.Harness != nil || in.Title != nil || in.Models != nil {
-		remote.Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
+		remote.Model = perHarness.of(harness)
 		remote.Harness = harness
-		remote.OpenCodeModel = openCodeModel
-		remote.ClaudeModel = claudeModel
+		remote.OpenCodeModel = perHarness.OpenCode
+		remote.ClaudeModel = perHarness.Claude
+		remote.CodexModel = perHarness.Codex
 		remote.Models = models
 		remote.Title = title
 		if err := writeRemoteCTOSettings(ctx, c, remote); err != nil {
@@ -142,9 +141,10 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 
 	out := remote
 	out.Harness = harness
-	out.OpenCodeModel = openCodeModel
-	out.ClaudeModel = claudeModel
-	out.Model = modelForCTOHarness(harness, openCodeModel, claudeModel)
+	out.OpenCodeModel = perHarness.OpenCode
+	out.ClaudeModel = perHarness.Claude
+	out.CodexModel = perHarness.Codex
+	out.Model = perHarness.of(harness)
 	if out.Model == "" {
 		out.Model = roleModelForHarness(models, harness)
 	}
@@ -229,7 +229,7 @@ func (d *Daemon) migrateCTOModelSettings(legacy protocol.CTOSettings) error {
 		claudeModel = model
 	}
 	harness := legacy.Harness
-	if harness != "claude" && harness != "opencode" {
+	if protocol.CheckCTOHarness(harness) != nil {
 		harness = "opencode"
 	}
 	// The ordered list migrates in the same step (decision 0162). A saved
@@ -251,10 +251,50 @@ ON CONFLICT(id) DO UPDATE SET active_harness=excluded.active_harness,active_mode
 	return tx.Commit()
 }
 
-func (d *Daemon) localCTOModelSettings() (openCodeModel, claudeModel, harness string, err error) {
-	err = d.st.db.QueryRow(`SELECT opencode_model,claude_model,active_harness FROM cto WHERE id=1`).Scan(&openCodeModel, &claudeModel, &harness)
+// ctoHarnessModels is the model each CTO harness keeps, so a switch back to a
+// harness keeps the model it had.
+type ctoHarnessModels struct{ OpenCode, Claude, Codex string }
+
+func (m ctoHarnessModels) of(harness string) string {
+	switch harness {
+	case "claude":
+		return m.Claude
+	case "codex":
+		return m.Codex
+	}
+	return m.OpenCode
+}
+
+func (m *ctoHarnessModels) set(harness, model string) {
+	switch harness {
+	case "claude":
+		m.Claude = model
+	case "codex":
+		m.Codex = model
+	default:
+		m.OpenCode = model
+	}
+}
+
+// checkCTOModelList refuses a list of Pi entries only, with the Pi reason. The
+// gate drops a Pi entry from a mixed list with the same reason, and refuses
+// other entries this machine cannot run when the CTO starts (decision 0171).
+func checkCTOModelList(models []protocol.RoleModel) error {
+	for _, m := range models {
+		if m.Harness != "pi" {
+			return nil
+		}
+	}
+	if len(models) > 0 {
+		return errors.New(protocol.PiRoleReason)
+	}
+	return nil
+}
+
+func (d *Daemon) localCTOModelSettings() (models ctoHarnessModels, harness string, err error) {
+	err = d.st.db.QueryRow(`SELECT opencode_model,claude_model,codex_model,active_harness FROM cto WHERE id=1`).Scan(&models.OpenCode, &models.Claude, &models.Codex, &harness)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", "opencode", nil
+		return ctoHarnessModels{}, "opencode", nil
 	}
 	if err == nil && harness == "" {
 		harness = "opencode"
@@ -271,11 +311,4 @@ func roleModelForHarness(models []protocol.RoleModel, harness string) string {
 		}
 	}
 	return ""
-}
-
-func modelForCTOHarness(harness, openCodeModel, claudeModel string) string {
-	if harness == "claude" {
-		return claudeModel
-	}
-	return openCodeModel
 }

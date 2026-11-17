@@ -159,11 +159,14 @@ func (d *Daemon) endHandoverLocked(harness string) {
 
 // stopCTOHarnessLocked stops one harness's process. Caller holds cto.mu.
 func (d *Daemon) stopCTOHarnessLocked(harness, reason string) {
-	if harness == "claude" {
+	switch harness {
+	case "claude":
 		d.stopClaudeCTOLocked(reason)
-		return
+	case "codex":
+		d.stopCodexCTOLocked(reason)
+	default:
+		d.stopOpenCodeCTOLocked(reason)
 	}
-	d.stopOpenCodeCTOLocked(reason)
 }
 
 // writeHandoverNote stores the handover under its name. The same name again
@@ -209,7 +212,7 @@ func (d *Daemon) ctoMechanicalHandover(ctx context.Context, sid, from, work stri
 	changes, err := d.handoverChanges(ctx, sid)
 	writeHandoverSection(&b, "Changes the CTO started that are not done", changes, err)
 
-	fmt.Fprintf(&b, "Harness-local work (%s): %s. agent-net sees a busy OpenCode turn and the Claude job state only; subagents, background shells and monitors are not visible to it.\n\n", from, work)
+	fmt.Fprintf(&b, "Harness-local work (%s): %s. agent-net sees a busy OpenCode or Codex turn and the Claude job state only; subagents, background shells and monitors are not visible to it.\n\n", from, work)
 
 	b.WriteString("Owner's last messages, verbatim, oldest first:\n")
 	msgs, err := d.ctoOwnerMessages(ctoHandoverOwnerMessages)
@@ -328,19 +331,23 @@ func (d *Daemon) recordCTOOwnerMessage(text string) error {
 
 // ctoHarnessRunning says whether the CTO's harness has a live process or job.
 func (d *Daemon) ctoHarnessRunning(harness string) bool {
-	if harness == "claude" {
-		d.cto.mu.Lock()
-		defer d.cto.mu.Unlock()
-		return d.claudeCTO.ref != ""
-	}
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
+	switch harness {
+	case "claude":
+		return d.claudeCTO.ref != ""
+	case "codex":
+		return d.codexCTORunningLocked() && d.codexCTO.thread != ""
+	}
 	return d.cto.base != "" && d.cto.session != ""
 }
 
 // ctoLocalWork says whether the old harness is in a busy turn, and what the
 // daemon can see of it. An unknown answer is not busy.
 func (d *Daemon) ctoLocalWork(ctx context.Context, harness string) (bool, string) {
+	if harness == "codex" {
+		return d.codexCTOLocalWork()
+	}
 	if harness == "claude" {
 		d.cto.mu.Lock()
 		ref := d.claudeCTO.ref
@@ -375,10 +382,7 @@ func (d *Daemon) ctoLocalWork(ctx context.Context, harness string) (bool, string
 // up to ctoHandoverModelWait for the answer. Any failure, timeout or busy
 // turn that does not end gives ok false, and the mechanical layer stands alone.
 func (d *Daemon) ctoModelHandover(ctx context.Context, from string) (string, bool) {
-	var h ctoHarness = openCodeCTOHarness{}
-	if from == "claude" {
-		h = claudeCTOHarness{}
-	}
+	h := ctoHarnessFor(from)
 	limit := ctoHandoverModelWait
 	if d.cfg.testHandoverWait > 0 {
 		limit = d.cfg.testHandoverWait
