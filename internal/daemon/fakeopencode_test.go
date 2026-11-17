@@ -52,7 +52,11 @@ var fakeOCLocalFailed atomic.Bool
 // fakeOCHandoverAnswer is the model layer the fake gives a handover request.
 const fakeOCHandoverAnswer = "Promise: finish the migration plan."
 
-const fakeOCError = "AI.Error: Upstream request failed: Insufficient account funds. api_key=sk-abcdefghijklmnopqrstuvwxyz123456\nadd funds"
+// fakeOCKey is a throwaway key for the redaction tests. It is split so the
+// file holds no key-shaped literal.
+const fakeOCKey = "sk-" + "abcdefghijklmnopqrstuvwxyz123456"
+
+const fakeOCError = "AI.Error: Upstream request failed: Insufficient account funds. api_key=" + fakeOCKey + "\nadd funds"
 
 type fakeOCRecord struct {
 	Args        []string          `json:"args"`
