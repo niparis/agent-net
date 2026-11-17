@@ -409,8 +409,35 @@ func BuildCTOFrame(id, text string) ([]byte, error) {
 	return json.Marshal(frame{Type: "user", MsgV: 1, MsgID: id, Priority: "next", Message: frameMessage{Role: "user", Content: content}})
 }
 
+// BuildCTOAgentFrame carries agent-net's own prompt to the CTO, marked with
+// agent-net as the sender and a label the conversation can tell apart from the
+// owner's words. It has no peer reply address, like BuildCTOFrame.
+func BuildCTOAgentFrame(id, label, text string) ([]byte, error) {
+	content := fmt.Sprintf("<cross-session-message from-name=\"agent-net\" from-mode=\"prompting\" msg-id=\"%s\">\n[agent-net: %s]\n\n%s\n</cross-session-message>",
+		nameBad.ReplaceAllString(id, "-"), neutralize(label), neutralize(text))
+	return json.Marshal(frame{Type: "user", MsgV: 1, MsgID: id, Priority: "next", Message: frameMessage{Role: "user", Content: content}})
+}
+
 // DeliverCTO delivers only to a session the daemon selected as its CTO.
 func (a *Adapter) DeliverCTO(ctx context.Context, target protocol.SessionInfo, id, text string) daemon.Result {
+	line, err := BuildCTOFrame(id, text)
+	if err != nil {
+		return daemon.Result{Detail: err.Error()}
+	}
+	return a.deliverCTOLine(ctx, target, line)
+}
+
+// DeliverCTOSystem delivers agent-net's own labeled prompt to the CTO session,
+// never as the owner.
+func (a *Adapter) DeliverCTOSystem(ctx context.Context, target protocol.SessionInfo, id, label, text string) daemon.Result {
+	line, err := BuildCTOAgentFrame(id, label, text)
+	if err != nil {
+		return daemon.Result{Detail: err.Error()}
+	}
+	return a.deliverCTOLine(ctx, target, line)
+}
+
+func (a *Adapter) deliverCTOLine(ctx context.Context, target protocol.SessionInfo, line []byte) daemon.Result {
 	if warning := a.deliveryWarning(); warning != "" {
 		return daemon.Result{Detail: warning}
 	}
@@ -422,10 +449,6 @@ func (a *Adapter) DeliverCTO(ctx context.Context, target protocol.SessionInfo, i
 	}
 	if err := checkSocket(f.sock); err != nil {
 		return daemon.Result{Detail: "inbox socket refused: " + err.Error()}
-	}
-	line, err := BuildCTOFrame(id, text)
-	if err != nil {
-		return daemon.Result{Detail: err.Error()}
 	}
 	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "unix", f.sock)
 	if err != nil {

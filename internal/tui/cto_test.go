@@ -354,6 +354,19 @@ func TestCTOTitleShowsHarnessAndModel(t *testing.T) {
 	}
 }
 
+// The CTO line names the model a Codex CTO runs on, so a switch never leaves
+// the owner with an empty model (text frames at both sizes, B13).
+func TestCTOTitleShowsTheCodexModel(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := Model{cto: &ctoState{harness: "codex", model: "gpt-fake"}}
+		view := strings.Join(m.ctoView(size[0], size[1]), "\n")
+		if got := ansi.Strip(view); !strings.Contains(got, "CTO · codex · gpt-fake") {
+			t.Fatalf("%dx%d title: %s", size[0], size[1], got)
+		}
+		golden(t, fmt.Sprintf("cto_codex_model_%dx%d", size[0], size[1]), view)
+	}
+}
+
 func TestCTOTitleUsesConfiguredModel(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Model: "fake/m2"}}
 	m := New(src)

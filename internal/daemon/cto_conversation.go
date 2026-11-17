@@ -148,6 +148,20 @@ func (d *Daemon) ctoConversation(harness string) (string, error) {
 	return id, err
 }
 
+// codexConversationFresh says whether the CTO's stored Codex conversation exists
+// and was used within ctoConversationFresh. It reads the database only, so the
+// caller may hold cto.mu.
+func (d *Daemon) codexConversationFresh() bool {
+	var native string
+	var updated int64
+	err := d.st.db.QueryRow(`SELECT native_id, updated_at FROM session_conversations WHERE session_id=`+ctoKeySQL+` AND harness='codex'`).Scan(&native, &updated)
+	if err != nil || native == "" {
+		return false
+	}
+	age := d.ctoNowTime().UnixNano() - updated
+	return age >= 0 && age <= int64(ctoConversationFresh)
+}
+
 // setCTOConversation stores the native conversation of one harness and marks
 // it used now. An empty native ID ends the conversation.
 func (d *Daemon) setCTOConversation(harness, native string) error {

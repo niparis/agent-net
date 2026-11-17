@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -112,6 +113,46 @@ func (d *Daemon) saveCTORoleModels(models []protocol.RoleModel, harness, model s
 	_, err := d.st.db.Exec(`UPDATE cto SET models=?, active_harness=?, active_model=?, opencode_model=CASE WHEN ?='opencode' THEN ? ELSE opencode_model END, claude_model=CASE WHEN ?='claude' THEN ? ELSE claude_model END, codex_model=CASE WHEN ?='codex' THEN ? ELSE codex_model END WHERE id=1`,
 		raw, harness, model, harness, model, harness, model, harness, model)
 	return err
+}
+
+// writeCTOModelsSetting stores the CTO's ordered list as the network setting,
+// so the value the owner reads in Settings names the CTO that runs now. Only a
+// harness switch writes it: the other edits change the local list only.
+func (d *Daemon) writeCTOModelsSetting(ctx context.Context, models []protocol.RoleModel) error {
+	// A network setting write names the value it replaces. Read first, so a
+	// change made since the daemon's last snapshot is not overwritten.
+	raw, err := d.call(ctx, "settings.snapshot", nil)
+	if err != nil {
+		return err
+	}
+	if err = d.acceptSettingsSnapshot(raw, false); err != nil {
+		return err
+	}
+	value, err := json.Marshal(protocol.FormatRoleModels(models))
+	if err != nil {
+		return err
+	}
+	change := protocol.SettingsChange{
+		Key: protocol.RoleModelsKey(protocol.RoleCTO), Level: "network", Scope: "network", Value: value,
+	}
+	for _, v := range d.SettingsSnapshot().Values {
+		if v.Key == change.Key && v.Level == change.Level && v.Scope == change.Scope && v.Item == "" {
+			change.Expect = v.Value
+			break
+		}
+	}
+	if _, err = d.call(ctx, "settings.write", protocol.SettingsWrite{
+		Changes: []protocol.SettingsChange{change},
+		Reason:  "Record the CTO harness switch",
+		By:      "owner",
+	}); err != nil {
+		return err
+	}
+	raw, err = d.call(ctx, "settings.snapshot", nil)
+	if err != nil {
+		return err
+	}
+	return d.acceptSettingsSnapshot(raw, false)
 }
 
 // ctoPick asks the one gate which CTO model may start. The CTO is a role, so

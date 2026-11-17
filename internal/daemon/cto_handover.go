@@ -24,6 +24,16 @@ const ctoHandoverModelWait = 60 * time.Second
 // work, because the switch is already underway.
 const ctoHandoverPrompt = "The owner is moving the CTO to another harness now. Write the handover for the next conversation in at most 200 words of plain text: the promises you made and what is still owed, and the threads that matter and why. Do not call any tool and do not start any work."
 
+// ctoHandoverLabel marks the request as agent-net's own prompt, so the old
+// conversation never mistakes it for the owner speaking.
+const ctoHandoverLabel = "harness switch handover"
+
+// ctoSystemPromptText is how a harness without a frame labels agent-net's
+// prompt. Claude gets the label in its cross-session frame instead.
+func ctoSystemPromptText(label, text string) string {
+	return "[agent-net: " + label + "]\n\n" + text
+}
+
 // ctoHandoverOwnerMessages is how many of the owner's messages the handover
 // carries, verbatim.
 const ctoHandoverOwnerMessages = 10
@@ -329,15 +339,18 @@ func (d *Daemon) recordCTOOwnerMessage(text string) error {
 	return err
 }
 
-// ctoHarnessRunning says whether the CTO's harness has a live process or job.
+// ctoHarnessRunning says whether the old harness can answer a handover. A Codex
+// CTO that went idle still answers when its stored conversation was used in the
+// last day: the daemon starts its app server for the request (decision 0171).
 func (d *Daemon) ctoHarnessRunning(harness string) bool {
+	storedCodex := harness == "codex" && d.codexConversationFresh()
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
 	switch harness {
 	case "claude":
 		return d.claudeCTO.ref != ""
 	case "codex":
-		return d.codexCTORunningLocked() && d.codexCTO.thread != ""
+		return (d.codexCTORunningLocked() && d.codexCTO.thread != "") || storedCodex
 	}
 	return d.cto.base != "" && d.cto.session != ""
 }
@@ -393,8 +406,13 @@ func (d *Daemon) ctoModelHandover(ctx context.Context, from string) (string, boo
 	if err != nil {
 		return "", false
 	}
+	// A Codex thread with no turns has nothing to hand over, so the request is
+	// not sent.
+	if from == "codex" && before.Next == 0 {
+		return "", false
+	}
 	start := before.Next
-	if _, err = h.send(wait, d, ctoHandoverPrompt); err != nil {
+	if _, err = h.sendSystem(wait, d, ctoHandoverLabel, ctoHandoverPrompt); err != nil {
 		return "", false
 	}
 	// Each poll reads the whole conversation, so the interval is a second.
@@ -462,6 +480,14 @@ func firstLineOf(text string) string {
 	return strings.TrimSpace(line)
 }
 
+// isCTOHandoverRequest says whether a user message is the handover request.
+// The raw prompt is what older conversations hold; the labelled form is what
+// the current sends use.
+func isCTOHandoverRequest(text string) bool {
+	text = strings.TrimSpace(text)
+	return text == ctoHandoverPrompt || text == ctoSystemPromptText(ctoHandoverLabel, ctoHandoverPrompt)
+}
+
 // dropHandoverExchange removes the handover request the daemon sent to the old
 // conversation, and the reply to it, from what the owner sees. The conversation
 // keeps them, since it is the same conversation when the harness comes back, but
@@ -483,7 +509,7 @@ func dropHandoverExchange(messages []json.RawMessage) []json.RawMessage {
 			continue
 		}
 		if m.Type == "user" {
-			inExchange = strings.TrimSpace(m.Text) == ctoHandoverPrompt
+			inExchange = isCTOHandoverRequest(m.Text)
 			if !inExchange {
 				out = append(out, raw)
 			}

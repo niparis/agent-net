@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -853,6 +854,13 @@ func (a *fsClaudeAdapter) DeliverCTO(ctx context.Context, target protocol.Sessio
 	return a.deliverBody(target, protocol.Message{ID: id, Body: text}, body)
 }
 
+// DeliverCTOSystem frames agent-net's own prompt with its label, as the real
+// adapter's BuildCTOAgentFrame does.
+func (a *fsClaudeAdapter) DeliverCTOSystem(ctx context.Context, target protocol.SessionInfo, id, label, text string) Result {
+	body := fmt.Sprintf("<cross-session-message from-name=\"agent-net\" from-mode=\"prompting\" msg-id=\"%s\">\n[agent-net: %s]\n\n%s\n</cross-session-message>", id, label, text)
+	return a.deliverBody(target, protocol.Message{ID: id, Body: text}, body)
+}
+
 // setFakeClaudeStatus records what the fake Claude session file says about a
 // turn, as Claude Code does: busy while the model works and idle when it ends.
 func setFakeClaudeStatus(t *testing.T, sessions string, pid int, status string) {
@@ -1123,6 +1131,20 @@ func waitUntilKilled() {
 	runtime.KeepAlive(w)
 }
 
+// fakeCodexThreadsFile is where a fake app server keeps the turns of its threads.
+// It is never in the fake's folder: for a worker that folder is its worktree,
+// and a file there is listed in the worker's diff. The run's fake folder holds
+// it instead, under a name made from the fake's folder, so two fakes never
+// share a file. The reaper skips names that are not pids.
+func fakeCodexThreadsFile(folder string) string {
+	root := os.Getenv(envFakePids)
+	if root == "" {
+		root = os.TempDir()
+	}
+	sum := sha256.Sum256([]byte(folder))
+	return filepath.Join(root, "fake-codex-threads-"+hex.EncodeToString(sum[:8])+".json")
+}
+
 // fakeCodex is `codex app-server --listen ws://...`: a WebSocket server with
 // the JSON-RPC of the real one, for the parts a worker uses. A turn is
 // answered by what the text says: FAKE:approve asks for an approval first (and
@@ -1148,7 +1170,13 @@ func fakeCodex() {
 	}
 	var mu sync.Mutex
 	// threadTurns keeps each thread's turns, as user text and answer, for thread/read.
+	// Codex keeps a thread on disk, so the turns are read back from the file a
+	// restarted server finds, not only from this process's memory.
 	threadTurns := map[string][][2]string{}
+	threadsFile := fakeCodexThreadsFile(cwd)
+	if raw, err := os.ReadFile(threadsFile); err == nil {
+		_ = json.Unmarshal(raw, &threadTurns)
+	}
 	save := func() {
 		mu.Lock()
 		defer mu.Unlock()
@@ -1377,6 +1405,8 @@ func fakeCodex() {
 					}
 					mu.Lock()
 					threadTurns[thread] = append(threadTurns[thread], [2]string{text, report})
+					raw, _ := json.Marshal(threadTurns)
+					_ = os.WriteFile(threadsFile, raw, 0o600)
 					mu.Unlock()
 					write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "turnId": turn,
 						"item": map[string]any{"type": "agentMessage", "id": "m1", "phase": "final_answer", "text": report}}})
