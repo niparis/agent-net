@@ -32,7 +32,8 @@
     "CacheMaxBytes": 16106127360,
     "CacheLowBytes": 10737418240,
     "TmpMaxAge": 21600000000000,
-    "OSSandbox": null
+    "OSSandbox": null,
+    "OSSandboxOff": null
   },
   "node_json": {
     "Max": 3,
@@ -56,6 +57,7 @@
     "CacheMaxBytes": 16106127360,
     "CacheLowBytes": 10737418240,
     "TmpMaxAge": 21600000000000,
-    "OSSandbox": null
+    "OSSandbox": null,
+    "OSSandboxOff": null
   }
 }
