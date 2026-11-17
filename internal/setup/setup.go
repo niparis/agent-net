@@ -215,7 +215,42 @@ func Setup(ctx context.Context, o Options) error {
 	}
 	r.guidance()
 	r.daemonStatus(ctx)
+	r.setupRoles(ctx)
 	return r.failed
+}
+
+func (r *runner) setupRoles(ctx context.Context) {
+	var result protocol.RoleSetupResult
+	if r.statusClient == nil {
+		for _, role := range []string{protocol.RoleCTO, protocol.RoleChief, protocol.RoleMerger} {
+			r.step(role+" model", "not checked (daemon is not connected)", nil)
+		}
+		return
+	}
+	raw, err := r.statusClient.Call(ctx, protocol.OpRoleSetup, protocol.RoleSetupRequest{Start: true})
+	if err == nil {
+		err = json.Unmarshal(raw, &result)
+	}
+	if err != nil {
+		r.step("role models", "", err)
+		return
+	}
+	for _, failure := range result.Failures {
+		r.hint("%s", strings.Join(strings.Fields(failure), " "))
+	}
+	kept := map[string]bool{}
+	for _, role := range result.Kept {
+		kept[role] = true
+	}
+	for _, role := range []string{protocol.RoleCTO, protocol.RoleChief, protocol.RoleMerger} {
+		text := "install or sign in: Codex, OpenCode or Claude Code"
+		if kept[role] {
+			text = "kept existing model list"
+		} else if len(result.Models) > 0 {
+			text = "using " + result.Models[0].Display()
+		}
+		r.step(role+" model", text, nil)
+	}
 }
 
 // ---- gateway ----

@@ -1,4 +1,7 @@
 daemon status         connected to https://gateway.example:7420 as node n_build
+cto model             kept existing model list
+chief model           kept existing model list
+merger model          kept existing model list
 [32;1magent-net is running on build-vm, with 1 other machine.[0m
 
 [1mWhat you have now[0m

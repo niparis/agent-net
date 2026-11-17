@@ -1,4 +1,7 @@
 daemon status         connected to https://gateway.example:7420 as node n_laptop
+cto model             kept existing model list
+chief model           kept existing model list
+merger model          kept existing model list
 agent-net is running on laptop.
 
 What you have now

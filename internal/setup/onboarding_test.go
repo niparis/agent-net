@@ -22,14 +22,17 @@ import (
 )
 
 type setupDaemonFixture struct {
-	info      protocol.OperatorInfo
-	nodes     protocol.NodesInfo
-	agents    protocol.AgentsResult
-	projects  protocol.ProjectsResult
-	graph     protocol.GraphGot
-	protected protocol.ProtectedProviders
-	workers   protocol.WorkersResult
-	listAfter int
+	info         protocol.OperatorInfo
+	nodes        protocol.NodesInfo
+	agents       protocol.AgentsResult
+	projects     protocol.ProjectsResult
+	graph        protocol.GraphGot
+	protected    protocol.ProtectedProviders
+	workers      protocol.WorkersResult
+	listAfter    int
+	roleModels   []protocol.RoleModel
+	roleKept     []string
+	roleFailures []string
 }
 
 func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
@@ -88,6 +91,8 @@ func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
 						result = fixture.workers
 					case protocol.OpToolsDifferences:
 						result = map[string]any{"differences": []any{}, "to_look_at": 0}
+					case "role_setup":
+						result = map[string]any{"models": fixture.roleModels, "kept": fixture.roleKept, "failures": fixture.roleFailures}
 					default:
 						fmt.Fprintf(conn, "{\"id\":%q,\"error\":%q}\n", request.ID, "unknown method")
 						continue
@@ -98,6 +103,25 @@ func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
 			}(conn)
 		}
 	}()
+}
+
+func TestSetupPrintsRoleChoicesAndFailures(t *testing.T) {
+	tempSetupDirs(t)
+	fixture, _, _, _ := onboardingFixture("empty-first-machine")
+	fixture.roleModels = []protocol.RoleModel{{Harness: "codex", Provider: "openai", Model: "fake-model"}}
+	fixture.roleKept = []string{"chief"}
+	fixture.roleFailures = []string{"opencode: quota exhausted"}
+	fakeSetupDaemon(t, fixture)
+	var out strings.Builder
+	r := &runner{Options: Options{Out: &out}}
+	r.daemonStatus(context.Background())
+	defer r.statusClient.Close()
+	r.setupRoles(context.Background())
+	for _, want := range []string{"cto", "chief", "merger", "codex", "kept", "quota exhausted"} {
+		if !strings.Contains(strings.ToLower(out.String()), want) {
+			t.Fatalf("setup output lacks %q:\n%s", want, out.String())
+		}
+	}
 }
 
 func onboardingFixture(name string) (setupDaemonFixture, bool, []string, []string) {
@@ -124,7 +148,7 @@ func onboardingFixture(name string) (setupDaemonFixture, bool, []string, []strin
 			projects[i] = protocol.ProjectView{Name: fmt.Sprintf("project-%d", i+1), NodeID: "n_laptop", Hostname: "laptop"}
 			graphNodes[i] = protocol.Node{Name: projects[i].Name, Kind: "project"}
 		}
-		return setupDaemonFixture{info: info, nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", []string{"claude", "codex", "pi", "opencode"})}},
+		return setupDaemonFixture{info: info, nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", []string{"claude", "codex", "pi", "opencode"})}}, roleKept: []string{"cto", "chief", "merger"},
 			agents: protocol.AgentsResult{Agents: agents}, projects: protocol.ProjectsResult{Projects: projects}, graph: protocol.GraphGot{Graph: protocol.Graph{Nodes: graphNodes}},
 			protected: protocol.ProtectedProviders{Providers: []string{"anthropic"}, Configured: true}}, false, []string{"claude", "codex", "pi", "opencode"}, []string{"claude", "codex"}
 	case "empty-first-machine":
@@ -138,7 +162,7 @@ func onboardingFixture(name string) (setupDaemonFixture, bool, []string, []strin
 			{SessionID: "s_oc", NodeID: "n_build", Hostname: "build-vm", Harness: "opencode", Status: "idle", Online: true},
 			{SessionID: "s_laptop", NodeID: "n_laptop", Hostname: "laptop", Harness: "claude", Status: "busy", Online: true},
 		}
-		return setupDaemonFixture{info: info, nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", []string{"claude", "codex"}), makeNode("n_build", "build-vm", []string{"pi", "opencode"})}},
+		return setupDaemonFixture{info: info, nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", []string{"claude", "codex"}), makeNode("n_build", "build-vm", []string{"pi", "opencode"})}}, roleKept: []string{"cto", "chief", "merger"},
 			agents: protocol.AgentsResult{Agents: agents}, projects: protocol.ProjectsResult{}, graph: protocol.GraphGot{}, protected: protocol.ProtectedProviders{}}, true, []string{"pi", "opencode"}, nil
 	default:
 		panic("unknown onboarding fixture " + name)
@@ -229,6 +253,7 @@ func TestSetupOnboardingGolden(t *testing.T) {
 					r.step("daemon service", "", errors.New("systemctl --user start: exit 1"))
 				} else {
 					r.daemonStatus(ctx)
+					r.setupRoles(ctx)
 				}
 				r.finish(ctx)
 				got := out.String()

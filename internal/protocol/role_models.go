@@ -92,6 +92,20 @@ func RoleModelsKey(role string) string {
 // OpRolePick is the worker frame that asks the one gate for a role's start.
 const OpRolePick = "role_pick"
 
+// OpRoleSetup probes the local machine and sets role lists that are unset.
+const OpRoleSetup = "role_setup"
+
+type RoleSetupRequest struct {
+	Start bool `json:"start,omitempty"`
+}
+
+type RoleSetupResult struct {
+	Models   []RoleModel `json:"models"`
+	Kept     []string    `json:"kept"`
+	Added    []string    `json:"added"`
+	Failures []string    `json:"failures"`
+}
+
 // RolePickRequest asks which model a role session may start on. The CTO sends
 // its local ordered list; the chief and merger leave Candidates empty and the
 // gateway reads their setting. Resume keeps Current first: a role resumes on

@@ -62,9 +62,10 @@ type fakeShared struct {
 	threads map[string]*fakeThread
 	queued  []fakeQueued
 	// turns holds the prompts of turn/start, in order.
-	turns []string
-	conns []*websocket.Conn
-	reads int
+	turns    []string
+	conns    []*websocket.Conn
+	reads    int
+	autoTurn bool
 	// extraRoots counts skills/extraRoots/set calls. The real method is
 	// server-wide, so any owner-session call would change every thread there.
 	extraRoots int
@@ -274,8 +275,16 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 				text = p.Input[0].Text
 			}
 			f.queued = append(f.queued, fakeQueued{p.ThreadID, p.ClientUserMessageID, text})
+			autoTurn := f.autoTurn
+			if autoTurn {
+				f.turns = append(f.turns, text)
+			}
 			f.mu.Unlock()
 			reply(map[string]any{"queuedSubmission": map[string]any{"id": "q1"}}, "")
+			if autoTurn {
+				f.notifyWith("item/started", map[string]any{"threadId": p.ThreadID, "item": map[string]any{"type": "userMessage", "clientId": p.ClientUserMessageID}})
+				f.notifyWith("turn/completed", map[string]any{"threadId": p.ThreadID, "turn": map[string]any{"id": "turn-fake", "status": "completed"}})
+			}
 			continue
 		}
 		f.mu.Unlock()
