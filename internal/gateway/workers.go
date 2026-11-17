@@ -808,6 +808,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	var choice protocol.WorkerModelChoice
 	var granted model.Granted
 	var chosen ChooseResult
+	// pickRows is the automatic pick's row for each candidate. It is kept from
+	// the first pick, because a launch that fails moves to another candidate
+	// without making a new pick.
+	var pickRows []protocol.PickCandidate
 	var namedOrder []protocol.WorkerModelCandidate
 	var namedScores []protocol.ModelScore
 	var namedMinimums map[string]float64
@@ -891,6 +895,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
 			granted = chosen.Granted
+			pickRows = chosen.Pick
 			p.Harness, p.Model = choice.Harness, choice.Model
 			automaticNote = "(" + workerChoiceNote(difficulty, choice, candidates, scores, minimums)
 			if note := resolutionNotes[p.Harness+"\x00"+p.Model]; note != "" {
@@ -1086,6 +1091,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if launchAssessment != nil {
 		copied := *launchAssessment
 		copied.PickerNote = modelNote
+		copied.PickRows = pickRows
 		launchAssessment = &copied
 	}
 	launchBegan := time.Now()
@@ -1168,7 +1174,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
 	}
-	g.recordWorkerPickerNote(p.Assessment, launched.SessionID, modelNote)
+	g.recordWorkerPickerNote(p.Assessment, launched.SessionID, modelNote, pickRows)
 	if automatic {
 		dVal := protocol.PickerD(p.Assessment, difficultyUsed)
 		g.logLine("worker.pick", "session", launched.SessionID, "level", difficultyUsed, "d", fmt.Sprintf("%.2f", dVal), "chosen", p.Harness+" "+p.Model, "reason", choice.Why)
@@ -1316,13 +1322,14 @@ func (g *Gateway) workerStartReport(ctx context.Context, nc *nodeConn, p protoco
 // explanation for the model under the new session. The machine's daemon sends
 // the same result later; the run id makes that write a no-op, and the store
 // keeps the note when the machine's write lands first.
-func (g *Gateway) recordWorkerPickerNote(a *protocol.WorkerAssessment, sessionID, note string) {
+func (g *Gateway) recordWorkerPickerNote(a *protocol.WorkerAssessment, sessionID, note string, rows []protocol.PickCandidate) {
 	if a == nil || a.RunID == "" || sessionID == "" {
 		return
 	}
 	copied := *a
 	copied.SessionID = sessionID
 	copied.PickerNote = note
+	copied.PickRows = rows
 	if err := g.store.RecordWorkerStartAssessment(copied); err != nil {
 		g.logLine("error", "where", "worker picker note", "session", sessionID, "err", err)
 	}
@@ -1774,7 +1781,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil || c.SessionID == "" {
 		return none, reject("machine %s answered without a session", old.Hostname)
 	}
-	g.recordWorkerPickerNote(c.Assessment, c.SessionID, modelNote)
+	g.recordWorkerPickerNote(c.Assessment, c.SessionID, modelNote, nil)
 	event := "worker.started"
 	if c.Starting {
 		event = "worker.starting"

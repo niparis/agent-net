@@ -118,6 +118,12 @@ type pickerEntry struct {
 	priceUnknown                 bool
 }
 
+// adjusted is the expected cost over the quota pace factor. A provider behind
+// its pace has the lower adjusted cost, one ahead of it the higher.
+func (e *pickerEntry) adjusted() float64 {
+	return e.expected / quotaPaceFactor(e.room, e.measured)
+}
+
 // expectedCosts fills the cost terms of the entries. A run's cost already
 // holds its fix rounds, so p counts only the tasks that ended clean (complete,
 // no failed accept, review or test step, no defect found later) and the
@@ -181,34 +187,20 @@ func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, price
 	}
 }
 
-// pickerCostText is the expected cost of an entry for the note. Nothing when
-// no cost is known; "est" when the run cost is a price times an average run.
-func pickerCostText(e *pickerEntry) string {
-	if !e.costKnown {
-		return ""
-	}
-	text := fmt.Sprintf(" $%.2f/run, p %.2f, $%.2f expected", e.cost, e.pass, e.expected)
-	if !e.recorded {
-		text = " est" + text
-	}
-	if e.priceUnknown {
-		text += " (price unknown)"
-	}
-	return text
-}
-
 // pickOrderByCells returns the cell rule's whole order (decision 0162). The
-// first choice is the one the rule picked; the rest follow in the order the
-// gate should try them.
+// first choice is the one the rule picked and carries the pick's rows and note;
+// the rest follow in the order the gate should try them.
 //
 // A candidate whose provider has no room stays in the order, at the end where
 // the gate refuses it with the reason of its own check: the ranking never
 // decides that a candidate may not run.
-func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput) ([]WorkerModelChoice, string, string) {
+//
+// The second return value is empty when the cell rule picked. Otherwise it is
+// the reason the level rule makes the pick, for the note.
+func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput) ([]WorkerModelChoice, string) {
 	table, set := in.Table, in.Table.Settings()
 	bucket := table.Bucket(in.D)
 	bucketLo, bucketHi := table.BucketRange(bucket)
-	header := fmt.Sprintf("bucket %.2f-%.2f", bucketLo, bucketHi)
 	state := rotation
 	if state == nil {
 		state = &WorkerRotation{}
@@ -237,7 +229,7 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 		entries = append(entries, e)
 	}
 	if len(entries) == 0 {
-		return nil, header, header + ": fallback to the level rule (no candidate)"
+		return nil, "fallback to the level rule (no candidate)"
 	}
 
 	// 1-3. The same decision the Quality subtab shows, one verdict per entry.
@@ -290,7 +282,11 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 	choices := map[*pickerEntry]WorkerModelChoice{}
 	var eligible []rankedChoice
 	var final []*pickerEntry
+	var winner *pickerEntry
 	exploring := false
+	// The exploration credit before and after the pick. Nil when the pick had
+	// no thin cell, so the credit did not move.
+	var creditBefore, creditAfter *float64
 	if len(qualified) == 0 {
 		eligible = nil
 		final = nil
@@ -315,16 +311,15 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 			eligible = append(eligible, rankedChoice{choice: choice, weight: weight})
 		}
 		if len(final) == 0 {
-			return nil, header, header + ": fallback to the level rule (no profile is allowed by its record or its benchmark)"
+			return nil, "fallback to the level rule (no profile is allowed by its record or its benchmark)"
 		}
 	} else {
 		// The proven model with the lowest expected cost per accepted result
 		// wins. A provider behind its quota pace counts as cheaper, one ahead
 		// of it as dearer; a quota floor has already left a model out.
-		winner := qualified[0]
-		adjusted := func(e *pickerEntry) float64 { return e.expected / quotaPaceFactor(e.room, e.measured) }
+		winner = qualified[0]
 		for _, e := range qualified[1:] {
-			a, w := adjusted(e), adjusted(winner)
+			a, w := e.adjusted(), winner.adjusted()
 			if a < w || a == w && (e.cell.Score > winner.cell.Score || e.cell.Score == winner.cell.Score && e.name < winner.name) {
 				winner = e
 			}
@@ -332,11 +327,14 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 		final = []*pickerEntry{winner}
 		if len(thin) > 0 {
 			lvl := state.level(level)
+			before := lvl.ExploreCredit
 			lvl.ExploreCredit += set.ExploreShare
 			if lvl.ExploreCredit >= 1-1e-9 {
 				lvl.ExploreCredit -= 1
 				final, exploring = thin, true
 			}
+			after := lvl.ExploreCredit
+			creditBefore, creditAfter = &before, &after
 		}
 		for _, e := range allowed {
 			weight := quotaPaceFactor(e.room, e.measured)
@@ -355,6 +353,13 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 			eligible = append(eligible, rankedChoice{choice: choice, weight: weight})
 		}
 	}
+	// owners and weights line up with eligible. rotateRanked may reorder
+	// eligible, so the weights are read here, before the rotation.
+	owners := final
+	weights := make([]float64, len(eligible))
+	for i := range eligible {
+		weights[i] = eligible[i].weight
+	}
 	var saved map[string]float64
 	if exploring {
 		lvl := state.level(level)
@@ -362,13 +367,13 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 	}
 
 	// 4. Rotate among the allowed.
-	picked, err := rotateRanked(state, level, eligible)
+	picked, shares, err := rotateRanked(state, level, eligible)
 	if exploring {
 		lvl := state.level(level)
 		lvl.ExploreCurrent, lvl.Current = lvl.Current, saved
 	}
 	if err != nil {
-		return nil, header, header + ": fallback to the level rule (" + err.Error() + ")"
+		return nil, "fallback to the level rule (" + err.Error() + ")"
 	}
 	pickedKey := picked.WorkerModelCandidate.Key()
 	var chosen *pickerEntry
@@ -378,17 +383,25 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 			break
 		}
 	}
-	if len(qualified) > 0 {
-		if !exploring {
-			// The cost rule picked, not the rotation: a weight would mislead.
-			picked.Weight = 0
-		}
-		picked.PickNote = pickerNoteQualifying(header, entries, chosen, bestEntry, exploring, set)
-	} else {
-		picked.PickNote = pickerNote(header, entries, chosen, bestEntry)
+	rotated := len(qualified) == 0 || exploring
+	if !rotated {
+		// The cost rule picked, not the rotation: a weight would mislead.
+		picked.Weight = 0
 	}
+	weightOf := map[*pickerEntry]float64{}
+	shareOf := map[*pickerEntry]float64{}
+	for i, e := range owners {
+		shareOf[e] = shares[i]
+		if rotated {
+			weightOf[e] = weights[i]
+		}
+	}
+	rows := cellPickRows(entries, cellPick{lo: bucketLo, hi: bucketHi, chosen: chosen, best: bestEntry, winner: winner,
+		exploring: exploring, creditBefore: creditBefore, creditAfter: creditAfter, weight: weightOf, share: shareOf})
+	picked.PickRows = rows
+	picked.PickNote = PickNote(rows, set.ExploreShare)
 	picked.Why = pickerShortWhy(level, in.D, in.DifficultyNote, chosen, len(qualified), entries)
-	return pickOrder(level, picked, chosen, entries, final, qualified, allowed, choices), header, ""
+	return pickOrder(level, picked, chosen, entries, final, qualified, allowed, choices), ""
 }
 
 // pickOrder lays the whole list behind the pick the cell rule made. A
@@ -422,7 +435,6 @@ func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entr
 	if chosen != nil {
 		seen[chosen] = true
 	}
-	adjusted := func(e *pickerEntry) float64 { return e.expected / quotaPaceFactor(e.room, e.measured) }
 	byWeight := func(list []*pickerEntry) {
 		sort.SliceStable(list, func(i, j int) bool {
 			if list[i].weight != list[j].weight {
@@ -444,7 +456,7 @@ func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entr
 		rest = append(rest, e)
 	}
 	sort.SliceStable(rest, func(i, j int) bool {
-		a, b := adjusted(rest[i]), adjusted(rest[j])
+		a, b := rest[i].adjusted(), rest[j].adjusted()
 		if a != b {
 			return a < b
 		}
@@ -561,104 +573,56 @@ func exploreIsUp(table *PickerTable, e *pickerEntry, level string, bucket int) b
 	return e.scored && e.benchLevel == level
 }
 
-// pickerNote is the explanation of a cell pick: the chosen cell, the best cell
-// and what was left out with its reason. It names at most three allowed and
-// five left out models.
-func pickerNote(header string, entries []*pickerEntry, chosen, best *pickerEntry) string {
-	item := func(e *pickerEntry, tail string) string {
-		return strings.TrimSpace(e.name+" "+pickerCellText(e.cell)) + pickerCostText(e) + tail
-	}
-	var allowed, left []*pickerEntry
-	for _, e := range entries {
-		switch {
-		case e == chosen:
-		case e.reason != "":
-			left = append(left, e)
-		default:
-			allowed = append(allowed, e)
-		}
-	}
-	byScore := func(list []*pickerEntry) {
-		sort.SliceStable(list, func(i, j int) bool {
-			if list[i].cell.Score != list[j].cell.Score {
-				return list[i].cell.Score > list[j].cell.Score
-			}
-			return list[i].name < list[j].name
-		})
-	}
-	byScore(allowed)
-	byScore(left)
-
-	tag := func(e *pickerEntry) string {
-		if e.prior {
-			return " (benchmark)"
-		}
-		return ""
-	}
-	parts := []string{}
-	switch {
-	case chosen == best:
-		parts = append(parts, item(chosen, ", best"+tag(chosen)))
-	default:
-		parts = append(parts, item(chosen, ", chosen"+tag(chosen)))
-	}
-	for i, e := range allowed {
-		if i == 3 {
-			parts = append(parts, fmt.Sprintf("+%d more allowed", len(allowed)-3))
-			break
-		}
-		t := " allowed"
-		if e == best {
-			t += ", best"
-		}
-		parts = append(parts, item(e, t+tag(e)))
-	}
-	for i, e := range left {
-		if i == 5 {
-			parts = append(parts, fmt.Sprintf("+%d more left out", len(left)-5))
-			break
-		}
-		parts = append(parts, item(e, " left out ("+e.reason+")"))
-	}
-	return header + ": " + strings.Join(parts, "; ")
+// cellPick is what a cell pick decided, as its rows show it.
+type cellPick struct {
+	lo, hi                    float64
+	chosen, best, winner      *pickerEntry
+	exploring                 bool
+	creditBefore, creditAfter *float64
+	// weight and share are the rotation weight and share of each candidate the
+	// rotation chose from. A candidate outside that rotation has neither.
+	weight, share map[*pickerEntry]float64
 }
 
-// pickerNoteQualifying is the note of a pick made from the qualifying set. It
-// names the chosen cell, every qualifier with its expected cost, the thin
-// cells that were open to the exploration share, and each candidate that was
-// left out with the reason.
-func pickerNoteQualifying(header string, entries []*pickerEntry, chosen, best *pickerEntry, exploring bool, set PickerSettings) string {
-	cell := func(e *pickerEntry) string {
-		return strings.TrimSpace(e.name + " " + pickerCellText(e.cell))
+// cellPickRows writes one row per candidate of a cell pick, in roster order.
+// The rows hold the terms the rule read, and the note is written from them.
+func cellPickRows(entries []*pickerEntry, p cellPick) []PickCandidate {
+	rows := make([]PickCandidate, len(entries))
+	for i, e := range entries {
+		r := PickCandidate{Name: e.name, Harness: e.c.Harness, Provider: e.c.Provider, Model: e.c.Model, Effort: e.c.Effort,
+			Rule: PickRuleCell, BucketLo: p.lo, BucketHi: p.hi,
+			Cell: e.cell, Allowed: e.allowed, Qualified: e.qualified, Prior: e.prior,
+			Best: e == p.best, Chosen: e == p.chosen, Winner: e == p.winner, LeftOutReason: e.reason,
+			CostKnown: e.costKnown, CostRecorded: e.recorded, PriceUnknown: e.priceUnknown,
+			CostPerRun: e.cost, PClean: e.pass, RescueCost: e.rescue, ExpectedCost: e.expected,
+			PaceFactor: quotaPaceFactor(e.room, e.measured), AdjustedCost: e.adjusted(),
+			Weight: p.weight[e], Probability: p.share[e],
+			Explore: p.exploring, ExploreCreditBefore: p.creditBefore, ExploreCreditAfter: p.creditAfter}
+		if e.measured {
+			room := e.room
+			r.PaceRoom = &room
+		}
+		rows[i] = r
 	}
-	var qualifying, thin, left []string
-	for _, e := range entries {
-		switch {
-		case e.qualified:
-			qualifying = append(qualifying, cell(e)+pickerCostText(e))
-		case e.allowed && e.cell.N < PickerMinCellTasks && e.reason == "":
-			thin = append(thin, cell(e)+" (benchmark)"+pickerCostText(e))
-		case e.reason != "":
-			left = append(left, cell(e)+pickerCostText(e)+" left out ("+e.reason+")")
+	// The margin is the runner-up's adjusted cost over the winner's. It needs a
+	// runner-up, and a winner with a cost above zero.
+	if p.winner != nil && p.winner.adjusted() > 0 {
+		var runnerUp *pickerEntry
+		for _, e := range entries {
+			if e.qualified && e != p.winner && (runnerUp == nil || e.adjusted() < runnerUp.adjusted()) {
+				runnerUp = e
+			}
+		}
+		if runnerUp != nil {
+			margin := runnerUp.adjusted() / p.winner.adjusted()
+			for i, e := range entries {
+				if e == p.winner {
+					rows[i].Margin = &margin
+				}
+			}
 		}
 	}
-	tag := ", lowest expected cost"
-	switch {
-	case exploring:
-		tag = ", exploration pick"
-	case chosen == best:
-		tag = ", best"
-	}
-	parts := []string{cell(chosen) + tag}
-	parts = append(parts, "qualifying: "+strings.Join(qualifying, ", "))
-	if len(thin) > 0 {
-		share := fmt.Sprintf("thin cells (explore share %g): ", set.ExploreShare)
-		parts = append(parts, share+strings.Join(thin, ", "))
-	}
-	if len(left) > 0 {
-		parts = append(parts, strings.Join(left, "; "))
-	}
-	return header + ": " + strings.Join(parts, "; ")
+	return rows
 }
 
 // PickerCostRow is the cost terms of one candidate in one bucket.

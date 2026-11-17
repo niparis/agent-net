@@ -1,0 +1,365 @@
+== cell rule with a thin cell at the explore share
+pick 1: first=good weight=0 share="good: 1 of the last 1 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 2: first=good weight=0 share="good: 2 of the last 2 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 3: first=good weight=0 share="good: 3 of the last 3 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 4: first=good weight=0 share="good: 4 of the last 4 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 5: first=good weight=0 share="good: 5 of the last 5 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 6: first=good weight=0 share="good: 6 of the last 6 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 7: first=good weight=0 share="good: 7 of the last 7 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 8: first=good weight=0 share="good: 8 of the last 8 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 9: first=good weight=0 share="good: 9 of the last 9 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 10: first=new weight=1.30769 share="new: 1 of the last 1 normal starts" quota="" why="difficulty normal (D 2.50); new 0.67 (n2); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: new 0.67 [0.45-0.89] n2, exploration pick; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: new, good
+pick 11: first=good weight=0 share="good: 9 of the last 9 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+pick 12: first=good weight=0 share="good: 9 of the last 9 normal starts" quota="" why="difficulty normal (D 2.50); good 0.75 (n30); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: good 0.75 [0.68-0.82] n30, best; qualifying: good 0.75 [0.68-0.82] n30; thin cells (explore share 0.1): new 0.67 [0.45-0.89] n2 (benchmark)
+  order: good, new
+== cell rule with API prices and a model with no price
+pick 1: first=opus weight=0 share="opus: 1 of the last 1 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 2: first=opus weight=0 share="opus: 2 of the last 2 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 3: first=opus weight=0 share="opus: 3 of the last 3 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 4: first=opus weight=0 share="opus: 4 of the last 4 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 5: first=opus weight=0 share="opus: 5 of the last 5 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 6: first=opus weight=0 share="opus: 6 of the last 6 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 7: first=opus weight=0 share="opus: 7 of the last 7 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 8: first=opus weight=0 share="opus: 8 of the last 8 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 9: first=opus weight=0 share="opus: 9 of the last 9 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 10: first=opus weight=0 share="opus: 10 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 11: first=opus weight=0 share="opus: 10 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+pick 12: first=opus weight=0 share="opus: 10 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); opus 1.00 (n10); no other qualifying; left out: haiku, mystery (explore is up only)" fallback=false
+  note: bucket 2.33-2.67: opus 1.00 [1.00-1.00] n10, best; qualifying: opus 1.00 [1.00-1.00] n10 $1.00/run, p 1.00, $1.00 expected; haiku n0 est $0.00/run, p 1.00, $0.00 expected left out (explore is up only); mystery n0 est $0.00/run, p 1.00, $0.00 expected (price unknown) left out (explore is up only)
+  order: opus, haiku, mystery
+== cost rule, cheapest per accepted result
+pick 1: first=deepseek weight=0 share="deepseek: 1 of the last 1 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 2: first=deepseek weight=0 share="deepseek: 2 of the last 2 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 3: first=deepseek weight=0 share="deepseek: 3 of the last 3 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 4: first=deepseek weight=0 share="deepseek: 4 of the last 4 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 5: first=deepseek weight=0 share="deepseek: 5 of the last 5 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 6: first=deepseek weight=0 share="deepseek: 6 of the last 6 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 7: first=deepseek weight=0 share="deepseek: 7 of the last 7 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 8: first=deepseek weight=0 share="deepseek: 8 of the last 8 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 9: first=deepseek weight=0 share="deepseek: 9 of the last 9 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 10: first=deepseek weight=0 share="deepseek: 10 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 11: first=deepseek weight=0 share="deepseek: 10 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+pick 12: first=deepseek weight=0 share="deepseek: 10 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.77 (n10); 2 other qualifying" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.77 [0.71-0.82] n10, lowest expected cost; qualifying: opus 0.86 [0.81-0.91] n20 $2.00/run, p 1.00, $2.00 expected, sonnet 0.76 [0.68-0.84] n20 $0.60/run, p 1.00, $0.60 expected, deepseek 0.77 [0.71-0.82] n10 $0.05/run, p 1.00, $0.05 expected
+  order: deepseek, sonnet, opus
+== quota pace: the lagging provider wins a tie
+pick 1: first=a weight=0 share="a: 1 of the last 1 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 2: first=a weight=0 share="a: 2 of the last 2 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 3: first=a weight=0 share="a: 3 of the last 3 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 4: first=a weight=0 share="a: 4 of the last 4 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 5: first=a weight=0 share="a: 5 of the last 5 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 6: first=a weight=0 share="a: 6 of the last 6 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 7: first=a weight=0 share="a: 7 of the last 7 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 8: first=a weight=0 share="a: 8 of the last 8 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 9: first=a weight=0 share="a: 9 of the last 9 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 10: first=a weight=0 share="a: 10 of the last 10 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 11: first=a weight=0 share="a: 10 of the last 10 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+pick 12: first=a weight=0 share="a: 10 of the last 10 normal starts" quota="pa 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); a 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: a 1.00 [1.00-1.00] n5, best; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: a, b
+== quota pace: the provider ahead of pace loses a tie
+pick 1: first=b weight=0 share="b: 1 of the last 1 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 2: first=b weight=0 share="b: 2 of the last 2 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 3: first=b weight=0 share="b: 3 of the last 3 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 4: first=b weight=0 share="b: 4 of the last 4 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 5: first=b weight=0 share="b: 5 of the last 5 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 6: first=b weight=0 share="b: 6 of the last 6 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 7: first=b weight=0 share="b: 7 of the last 7 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 8: first=b weight=0 share="b: 8 of the last 8 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 9: first=b weight=0 share="b: 9 of the last 9 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 10: first=b weight=0 share="b: 10 of the last 10 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 11: first=b weight=0 share="b: 10 of the last 10 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+pick 12: first=b weight=0 share="b: 10 of the last 10 normal starts" quota="pb 20% behind pace (weekly, 30% used at 50% elapsed)" why="difficulty normal (D 2.50); b 1.00 (n5); 1 other qualifying" fallback=false
+  note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
+  order: b, a
+== rotation over the allowed set when none qualifies
+pick 1: first=y weight=1.23214 share="y: 1 of the last 1 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
+  order: y, x
+pick 2: first=x weight=1.01786 share="x: 1, y: 1 of the last 2 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
+  order: x, y
+pick 3: first=y weight=1.23214 share="y: 2, x: 1 of the last 3 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
+  order: y, x
+pick 4: first=x weight=1.01786 share="x: 2, y: 2 of the last 4 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
+  order: x, y
+pick 5: first=y weight=1.23214 share="y: 3, x: 2 of the last 5 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
+  order: y, x
+pick 6: first=x weight=1.01786 share="x: 3, y: 3 of the last 6 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
+  order: x, y
+pick 7: first=y weight=1.23214 share="y: 4, x: 3 of the last 7 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
+  order: y, x
+pick 8: first=x weight=1.01786 share="x: 4, y: 4 of the last 8 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
+  order: x, y
+pick 9: first=y weight=1.23214 share="y: 5, x: 4 of the last 9 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
+  order: y, x
+pick 10: first=x weight=1.01786 share="x: 5, y: 5 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
+  order: x, y
+pick 11: first=y weight=1.23214 share="x: 5, y: 5 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
+  order: y, x
+pick 12: first=y weight=1.23214 share="y: 6, x: 4 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+  note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
+  order: y, x
+== level rule when no model is allowed
+pick 1: first=a weight=1 share="a: 1 of the last 1 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: a, b
+pick 2: first=b weight=1 share="a: 1, b: 1 of the last 2 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: b, a
+pick 3: first=a weight=1 share="a: 2, b: 1 of the last 3 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: a, b
+pick 4: first=b weight=1 share="a: 2, b: 2 of the last 4 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: b, a
+pick 5: first=a weight=1 share="a: 3, b: 2 of the last 5 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: a, b
+pick 6: first=b weight=1 share="a: 3, b: 3 of the last 6 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: b, a
+pick 7: first=a weight=1 share="a: 4, b: 3 of the last 7 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: a, b
+pick 8: first=b weight=1 share="a: 4, b: 4 of the last 8 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: b, a
+pick 9: first=a weight=1 share="a: 5, b: 4 of the last 9 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: a, b
+pick 10: first=b weight=1 share="a: 5, b: 5 of the last 10 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: b, a
+pick 11: first=a weight=1 share="a: 5, b: 5 of the last 10 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: a, b
+pick 12: first=b weight=1 share="a: 5, b: 5 of the last 10 normal starts" quota="" why="" fallback=true
+  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
+  order: b, a
+== level rule without a picker input
+pick 1: first=a weight=1 share="a: 1 of the last 1 normal starts" quota="" why="" fallback=false
+  note: 
+  order: a
+pick 2: first=a weight=1 share="a: 2 of the last 2 normal starts" quota="" why="" fallback=false
+  note: 
+  order: a
+pick 3: first=a weight=1 share="a: 3 of the last 3 normal starts" quota="" why="" fallback=false
+  note: 
+  order: a
+== note names the left out models
+pick 1: first=deepseek weight=0 share="deepseek: 1 of the last 1 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 2: first=deepseek weight=0 share="deepseek: 2 of the last 2 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 3: first=deepseek weight=0 share="deepseek: 3 of the last 3 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 4: first=deepseek weight=0 share="deepseek: 4 of the last 4 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 5: first=deepseek weight=0 share="deepseek: 5 of the last 5 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 6: first=deepseek weight=0 share="deepseek: 6 of the last 6 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 7: first=deepseek weight=0 share="deepseek: 7 of the last 7 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 8: first=deepseek weight=0 share="deepseek: 8 of the last 8 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 9: first=deepseek weight=0 share="deepseek: 9 of the last 9 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 10: first=deepseek weight=0 share="deepseek: 10 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 11: first=deepseek weight=0 share="deepseek: 10 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+pick 12: first=deepseek weight=0 share="deepseek: 10 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
+  note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
+  order: deepseek, flash
+  left out: terra:medium (max very_complex, score 51, excellent)
+== note names a prior and the chosen model, not the best
+pick 1: first=cheap weight=0 share="cheap: 1 of the last 1 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 2: first=cheap weight=0 share="cheap: 2 of the last 2 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 3: first=cheap weight=0 share="cheap: 3 of the last 3 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 4: first=cheap weight=0 share="cheap: 4 of the last 4 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 5: first=cheap weight=0 share="cheap: 5 of the last 5 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 6: first=cheap weight=0 share="cheap: 6 of the last 6 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 7: first=cheap weight=0 share="cheap: 7 of the last 7 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 8: first=cheap weight=0 share="cheap: 8 of the last 8 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 9: first=cheap weight=0 share="cheap: 9 of the last 9 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 10: first=cheap weight=0 share="cheap: 10 of the last 10 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 11: first=cheap weight=0 share="cheap: 10 of the last 10 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+pick 12: first=cheap weight=0 share="cheap: 10 of the last 10 simple starts" quota="" why="difficulty simple (D 1.80); cheap 0.90 (n30); 1 other qualifying; left out: fresh (explore is up only)" fallback=false
+  note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
+  order: cheap, strong, fresh
+== a provider out of quota stays last
+pick 1: first=deepseek weight=1 share="deepseek: 1 of the last 1 hard starts" quota="" why="" fallback=false
+  note: 
+  order: deepseek, go, terra
+pick 2: first=go weight=1 share="deepseek: 1, go: 1 of the last 2 hard starts" quota="" why="" fallback=false
+  note: 
+  order: go, deepseek, terra
+pick 3: first=terra weight=0.472367 share="deepseek: 1, go: 1, terra: 1 of the last 3 hard starts" quota="" why="" fallback=false
+  note: 
+  order: terra, deepseek, go
