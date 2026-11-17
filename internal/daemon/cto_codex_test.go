@@ -234,6 +234,25 @@ func TestCTOSwitchToCodexWithoutModelUsesTheCodexDefault(t *testing.T) {
 	}
 }
 
+// Clearing the model of the harness the CTO already runs leaves it empty. Only
+// a harness switch takes the harness's default.
+func TestCTOClearingTheModelKeepsItEmptyOnTheSameHarness(t *testing.T) {
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	empty := ""
+	var out protocol.CTOSettings
+	if err := json.Unmarshal(cli.mustCall(protocol.OpCTOSettings, protocol.CTOSettingsRequest{Model: &empty}), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Harness != "codex" || out.Model != "" {
+		t.Fatalf("settings after clearing the model: %+v", out)
+	}
+	if len(out.Models) == 0 || out.Models[0].Model != "" {
+		t.Fatalf("model list after clearing the model: %+v", out.Models)
+	}
+}
+
 // When the model catalog gives no Codex default, the model the app server
 // reports on thread/start fills the record and the owner's screen, so neither
 // shows an empty model.

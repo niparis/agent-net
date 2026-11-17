@@ -421,7 +421,8 @@ func (d *Daemon) loadCodexCTOThread(ctx context.Context, rpc *codexRPC, model st
 }
 
 // codexThreadModel reads the model in a thread/start or thread/resume answer.
-// The app server names it on the thread, and some builds also at the top.
+// The protocol names it at the top of the answer; the thread object carries it
+// too, so the thread's own model is the fallback.
 func codexThreadModel(raw json.RawMessage) string {
 	var answer struct {
 		Model  string `json:"model"`

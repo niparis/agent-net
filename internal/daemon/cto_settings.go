@@ -65,6 +65,7 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 			harness = models[0].Harness
 		}
 	}
+	switched := in.Harness != nil && previousHarness != harness
 	if in.Model != nil || in.Harness != nil {
 		// The form changes the current choice, which is the first entry. The
 		// rest of the ordered list is kept, so a fallback survives an edit.
@@ -80,9 +81,10 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 			// harness had, as the per-harness settings did.
 			models[0].Model = perHarness.of(harness)
 		}
-		if models[0].Model == "" {
+		if models[0].Model == "" && switched {
 			// A switch with no model named takes the harness's own default,
-			// never the model or provider of the harness it leaves.
+			// never the model or provider of the harness it leaves. An edit that
+			// keeps the harness keeps an empty model empty.
 			live, _ := d.readHarnessModels(ctx, harness)
 			models[0].Model = defaultRoleModel(harness, live)
 		}
@@ -93,7 +95,6 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		}
 		perHarness.set(harness, models[0].Model)
 	}
-	switched := in.Harness != nil && previousHarness != harness
 	if switched {
 		// Only a harness that was running can answer the handover. The timeline
 		// read below starts an idle one, so the state is read first.

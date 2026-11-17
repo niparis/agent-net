@@ -275,6 +275,35 @@ func TestCTOHandoverRequestIsAgentNetNotTheOwner(t *testing.T) {
 	}
 }
 
+// The owner's Claude timeline does not show the handover request either. The
+// transcript keeps agent-net's labelled prompt inside its frame, and the timeline
+// reads it back to the labelled prompt, so the exchange is dropped there too.
+func TestCTOHandoverRequestIsHiddenFromTheClaudeTimeline(t *testing.T) {
+	t.Setenv(envFakeClaudeTranscribe, "1")
+	n, cli := handoverClaudeNode(t, time.Second)
+	switchCTOHarness(t, cli, "opencode")
+	waitHandoverSettled(t, n.d)
+	switchCTOHarness(t, cli, "claude")
+	waitHandoverSettled(t, n.d)
+	var events protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0}), &events); err != nil {
+		t.Fatal(err)
+	}
+	sawOwner := false
+	for _, raw := range events.Messages {
+		text := string(raw)
+		if strings.Contains(text, "claude one") {
+			sawOwner = true
+		}
+		if strings.Contains(text, ctoHandoverPrompt) {
+			t.Fatalf("the owner's Claude timeline shows the handover request: %s", text)
+		}
+	}
+	if !sawOwner {
+		t.Fatalf("the owner's Claude timeline lacks the owner's message: %v", events.Messages)
+	}
+}
+
 // The owner's timeline does not show the handover request or its reply, in
 // either message form. Other messages stay, in order.
 func TestHandoverExchangeIsHiddenFromTheOwnerTimeline(t *testing.T) {

@@ -687,6 +687,10 @@ func parseCTOTranscriptLine(raw []byte, lastCmd *string) (json.RawMessage, bool)
 		if _, body, ok := strings.Cut(text, ">\n"); ok {
 			if owner, _, ok := strings.Cut(body, "\n\n[agent-net]"); ok {
 				text = owner
+			} else if prompt, ok := strings.CutSuffix(body, "\n</cross-session-message>"); ok && strings.HasPrefix(prompt, "[agent-net: ") {
+				// agent-net's own labelled prompt, such as the handover request,
+				// reads back as the form the timeline drops (ctoSystemPromptText).
+				text = prompt
 			}
 		}
 	}
