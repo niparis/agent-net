@@ -412,6 +412,11 @@ func TestSessionStartOpenCode(t *testing.T) {
 			repo := newRepo(t, "shop space")
 			n.register(t, repo)
 			n.register(t, newRepo(t, "chosen"))
+			// The service's own folder stands for the home folder it runs in.
+			// Real OpenCode 2.2.7 and 2.3.0 ignore x-opencode-directory for
+			// session create (checked against a real `opencode serve`); only
+			// the body location is honoured.
+			serviceHome := t.TempDir()
 			var creates, prompts atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				user, pass, ok := r.BasicAuth()
@@ -426,18 +431,23 @@ func TestSessionStartOpenCode(t *testing.T) {
 				switch r.Method + " " + r.URL.Path {
 				case "POST /api/session":
 					var body struct {
-						Title string
-						Model struct{ ProviderID, ID, Variant string }
+						Title    string
+						Model    struct{ ProviderID, ID, Variant string }
+						Location struct{ Directory string }
 					}
 					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 						t.Error(err)
 					}
-					if body.Title != "shop space" || body.Model.ProviderID != "test" || body.Model.ID != "model" || body.Model.Variant != "high" {
+					if body.Title != "shop space" || body.Model.ProviderID != "test" || body.Model.ID != "model" || body.Model.Variant != "high" || body.Location.Directory != repo {
 						t.Errorf("create: %+v", body)
 					}
+					directory := body.Location.Directory
+					if directory == "" {
+						directory = serviceHome
+					}
 					creates.Add(1)
-					helloOpenCode(t, n.node, "ses_owner", repo)
-					fmt.Fprint(w, `{"data":{"id":"ses_owner"}}`)
+					helloOpenCode(t, n.node, "ses_owner", directory)
+					fmt.Fprintf(w, `{"data":{"id":"ses_owner","location":{"directory":%q}}}`, directory)
 				case "POST /api/session/ses_owner/prompt":
 					a := n.agentOf(t, n.d.SessionID("opencode", "ses_owner"))
 					if a == nil || a.AgentID != "chosen" {
@@ -478,7 +488,7 @@ func TestSessionStartOpenCode(t *testing.T) {
 				t.Fatalf("result %+v creates %d prompts %d", r, creates.Load(), prompts.Load())
 			}
 			a := n.agentOf(t, r.SessionID)
-			if a == nil || a.Worker != nil {
+			if a == nil || a.Worker != nil || a.Cwd != repo || a.Repo.Project != "shop space" {
 				t.Fatalf("owner row: %+v", a)
 			}
 			plan, err := n.d.localEnter(context.Background(), protocol.EnterRequest{SessionID: r.SessionID}, false)
@@ -490,6 +500,35 @@ func TestSessionStartOpenCode(t *testing.T) {
 				t.Fatalf("worker records: %+v", rows)
 			}
 		})
+	}
+}
+
+// A service that creates the session in its own folder (home) is not the
+// session the caller asked for. The start must fail and name both folders,
+// instead of registering the start under the wrong project.
+func TestSessionStartOpenCodeRejectsSessionCreatedElsewhere(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	g := startGateway(t, t.TempDir(), "")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} })
+	repo := newRepo(t, "shop")
+	n.register(t, repo)
+	serviceHome := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method+" "+r.URL.Path != "POST /api/session" {
+			http.NotFound(w, r)
+			return
+		}
+		// The service ignores the requested location, like OpenCode did when
+		// it only read the header that it discards for this route.
+		helloOpenCode(t, n.node, "ses_elsewhere", serviceHome)
+		fmt.Fprintf(w, `{"data":{"id":"ses_elsewhere","location":{"directory":%q}}}`, serviceHome)
+	}))
+	defer server.Close()
+	writeOwnerOpenCodeService(t, state, server.URL)
+	_, err := n.cli.call("session_start", protocol.SessionStartRequest{Project: repo, Harness: "opencode"})
+	if err == nil || !strings.Contains(err.Error(), serviceHome) || !strings.Contains(err.Error(), repo) {
+		t.Fatalf("start error = %v, want both %q and %q", err, serviceHome, repo)
 	}
 }
 
