@@ -25,6 +25,10 @@ type WorkerModelChoice struct {
 	// PickNote explains a pick by cell record: the bucket, the chosen model's
 	// cell, the best cell and what was left out.
 	PickNote string
+	// PickRows is the pick's row for each candidate, in roster order. The
+	// picker writes PickNote from them. Only the first choice of a pick
+	// carries them.
+	PickRows []PickCandidate `json:"-"`
 	// Fallback is true when no profile was allowed by its cell and the old level
 	// rule chose the model.
 	Fallback bool
@@ -117,13 +121,14 @@ func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
 // the rotation picked; the rest follow by rotation weight, so the gate can try
 // them in the same order. keepBlocked leaves a candidate whose provider has no
 // room at the end, for the gate to refuse; without it the candidate leaves the
-// order, as the routes part 3 has not moved yet expect.
-func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation) ([]WorkerModelChoice, []WorkerLeftOut, error) {
+// order, as the routes part 3 has not moved yet expect. The third return value
+// is the pick's row for each candidate, in roster order.
+func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation) ([]WorkerModelChoice, []WorkerLeftOut, []PickCandidate, error) {
 	if level == "" {
 		level = "normal"
 	}
 	if _, err := DifficultyFit(0, level, minimums); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	state := rotation
 	if state == nil {
@@ -140,17 +145,34 @@ func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelS
 		}
 	}
 	var eligible []rankedChoice
+	// eligibleRow is the row of each eligible candidate, lined up with eligible.
+	var eligibleRow []int
 	var reasons []string
 	var leftOut []WorkerLeftOut
+	rows := make([]PickCandidate, 0, len(candidates))
 	for _, c := range candidates {
 		score, fit, isAdequate, ok := WorkerCandidateFit(c, level, scores, minimums)
 		name := c.Name
 		if name == "" {
 			name = c.Harness + " " + c.Model
 		}
+		// The gate owns the quota check. The ranker only needs a pace for its
+		// order, so a used-up window is left out of that reading.
+		provider := c.Provider
+		if provider == "" {
+			provider = QuotaProviderForStart(c.Harness, c.Model)
+		}
+		room, note, measured := WorkerQuotaPace(quotas, provider, c.Model)
+		servedRoom := room
+		if measured {
+			servedRoom -= 5 * float64(running[provider])
+		}
+		rows = append(rows, levelPickRow(c, servedRoom, measured))
+		at := len(rows) - 1
 		if !ok {
 			reasons = append(reasons, name+" (max unknown: unscored)")
 			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: "unscored (no benchmark or rating)", Rank: LeftOutNoScore})
+			rows[at].LeftOutReason = "unscored (no benchmark or rating)"
 			continue
 		}
 		scoreText := fmt.Sprintf("%g", score)
@@ -159,23 +181,17 @@ func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelS
 		}
 		reasons = append(reasons, fmt.Sprintf("%s (max %s, score %s, %s)", name, WorkerMaximumLevel(score, minimums), scoreText, fit))
 		if !isAdequate {
-			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: fmt.Sprintf("max %s, score %g, %s", WorkerMaximumLevel(score, minimums), score, fit), Rank: LeftOutFit})
+			reason := fmt.Sprintf("max %s, score %g, %s", WorkerMaximumLevel(score, minimums), score, fit)
+			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: reason, Rank: LeftOutFit})
+			rows[at].LeftOutReason = reason
 			continue
-		}
-		provider := c.Provider
-		if provider == "" {
-			provider = QuotaProviderForStart(c.Harness, c.Model)
-		}
-		// The gate owns the quota check. The ranker only needs a pace for its
-		// order, so a used-up window is left out of that reading.
-		room, note, measured := WorkerQuotaPace(quotas, provider, c.Model)
-		servedRoom := room
-		if measured {
-			servedRoom -= 5 * float64(running[provider])
 		}
 		// An early quit is one failed attempt, with the existing failure weight.
 		c.Failed = c.Failed || c.EarlyQuitLevels[level]
 		weight := workerRotationWeight(c, score, weakestAdequate, servedRoom, measured)
+		rows[at].Allowed = true
+		rows[at].Weight = weight
+		eligibleRow = append(eligibleRow, at)
 		eligible = append(eligible, rankedChoice{
 			choice: WorkerModelChoice{WorkerModelCandidate: c, Score: score, Fit: fit, QuotaNote: note},
 			weight: weight,
@@ -188,11 +204,26 @@ func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelS
 		if roster == "" {
 			roster = "none"
 		}
-		return nil, leftOut, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
+		return nil, leftOut, rows, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
 	}
-	picked, err := rotateRanked(state, level, eligible)
+	// keys are the candidate of each eligible row before rotateRanked may
+	// reorder eligible.
+	keys := make([]string, len(eligible))
+	for i, e := range eligible {
+		keys[i] = e.choice.WorkerModelCandidate.Key()
+	}
+	picked, shares, err := rotateRanked(state, level, eligible)
 	if err != nil {
-		return nil, leftOut, err
+		return nil, leftOut, rows, err
+	}
+	pickedKey := picked.WorkerModelCandidate.Key()
+	chosenSet := false
+	for i, at := range eligibleRow {
+		rows[at].Probability = shares[i]
+		if !chosenSet && keys[i] == pickedKey {
+			rows[at].Chosen = true
+			chosenSet = true
+		}
 	}
 	order := []WorkerModelChoice{picked}
 	seen := map[string]bool{picked.WorkerModelCandidate.Key(): true}
@@ -216,7 +247,7 @@ func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelS
 		ch.Why = WhyLine(level, ch)
 		order = append(order, ch)
 	}
-	return order, leftOut, nil
+	return order, leftOut, rows, nil
 }
 
 // rankedChoice is a candidate that passed the rules of a pick, with its
@@ -228,8 +259,10 @@ type rankedChoice struct {
 }
 
 // rotateRanked is the smooth weighted round robin step shared by both rules.
-// It advances the rotation state of the level and returns the picked choice.
-func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) (WorkerModelChoice, error) {
+// It advances the rotation state of the level and returns the picked choice,
+// with the share of each candidate of eligible: its long-run share of the
+// picks. The shares line up with eligible as it was passed in.
+func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) (WorkerModelChoice, []float64, error) {
 	lvl := state.level(level)
 	// Follow the roster: a model that left or lost its allowance no longer
 	// carries weight.
@@ -252,6 +285,20 @@ func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) 
 			break
 		}
 	}
+	// The shares are read before the tier is sorted, while eligible still lines
+	// up with the caller's list.
+	shares := make([]float64, len(eligible))
+	var tierWeight float64
+	for _, e := range eligible {
+		if !hasGood || !e.poor {
+			tierWeight += e.weight
+		}
+	}
+	for i, e := range eligible {
+		if (!hasGood || !e.poor) && tierWeight > 0 {
+			shares[i] = e.weight / tierWeight
+		}
+	}
 	if hasGood {
 		good := make([]rankedChoice, 0, len(eligible))
 		for _, e := range eligible {
@@ -269,7 +316,7 @@ func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) 
 		total += e.weight
 	}
 	if total <= 0 {
-		return WorkerModelChoice{}, fmt.Errorf("no model qualifies for %s", level)
+		return WorkerModelChoice{}, nil, fmt.Errorf("no model qualifies for %s", level)
 	}
 	if lvl.Current == nil {
 		lvl.Current = map[string]float64{}
@@ -303,7 +350,7 @@ func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) 
 		names[c.Key()] = name
 	}
 	out.ShareNote = rotationShareNote(level, names, lvl.Recent)
-	return out, nil
+	return out, shares, nil
 }
 
 // workerOverQualificationScale is the score gap above the weakest adequate

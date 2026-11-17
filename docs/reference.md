@@ -2729,6 +2729,51 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 **The operator interface.** The daemon's local socket serves these methods to the command line and the TUI, and the phone app will use the same ones: `info`, `nodes`, `list`, `projects`, `events`, `conversations`, `conversation_messages`, `message_status`, `workers` (reads) and `owner_send`, `worker_start`, `worker_stop` (actions). The owner-only methods include `conversations`, `conversation_messages`, `playbook_get`, `playbook_set`, `changes_owner_find` and `changes_owner_report` (see [the playbook](#the-playbook-and-the-track-record) and [the Delivery tab](#the-delivery-tab)). The types are in `internal/protocol/operator.go`; `worker_handback` is the worker's own call. Agent connections may use `worker_start`, `worker_stop`, `worker_handback`, `agent_learn`, `agent_worker_rate` and `workers`. `owner_send` is for the command line only; `agent_learn` and `agent_worker_rate` are for agent sessions only. `worker_defect` is the owner's own call for a defect found later, used by the Messages tab key; it takes a worker, a severity from 1 to 4 and a one-line note, and files the same `defect_found_later` report as `agent_worker_rate`.
 
+### Pick records
+
+Each automatic start stores one row per candidate of its pick in `pick_candidates`, in the same transaction as the judge result. A start with 12 candidates writes 12 rows. `run_id` is the judge result's id (`worker_assessments.run_id`) and `pos` is the candidate's place in the roster. The picker note (`picker_note`) is written from these rows, so the note and the table agree. A queued start keeps its rows until it runs. Rows are kept as long as their judge result is kept. Retention does not prune judge results, so it does not prune the rows.
+
+The columns that answer most questions:
+
+- `rule`: `cell` for a cell pick, or `level` for the fallback to the level rule (`fallback` says why). A level row has no cell and no cost, so its cell and cost columns are NULL.
+- `cell_score`, `cell_low`, `cell_high`, `cell_n`: the candidate's cell in the bucket.
+- `cost_per_run`, `p_clean`, `rescue_cost`, `expected_cost`: the cost terms. `expected_cost` is `cost_per_run + (1 - p_clean) x rescue_cost`.
+- `pace_room`: quota room in percentage points, positive when the provider is behind pace. NULL when no window has a reading. `pace_factor` is the factor the room gave, and `adjusted_cost` is `expected_cost / pace_factor`.
+- `is_allowed`, `is_qualified`, `is_best`, `is_chosen`, `is_winner`: `is_winner` marks the lowest adjusted cost among the qualifying candidates. `is_chosen` marks the candidate the start tried first. On an exploration pick the two differ.
+- `weight`, `probability`: the rotation weight and the candidate's share of the rotation. The cost rule does not rotate, so its winner has probability 1 and the others 0.
+- `explore`, `explore_credit_before`, `explore_credit_after`: whether the pick was an exploration pick, and the credit before and after it. NULL when the pick had no thin cell.
+- `margin`: the runner-up's adjusted cost over the winner's. Set on the winner only, and only when another candidate qualified.
+- `left_out_reason`: why the rule left the candidate out. `skipped_reason`: why the gate refused the candidate before it granted a model.
+
+A pick has no `worker_runs` id. To find its run's outcome, join through the session. The run is the first `worker_runs` row of the same session that starts at or after the judge result, less five seconds, because the judge is asked a few seconds before the run. `worker_assessments.started_at` is in nanoseconds and `worker_runs.started_at` is in seconds.
+
+This query counts the picks where the pace bump changed the winner, and how many of those runs completed. A tie in expected cost goes to the earlier candidate in the roster.
+
+```sql
+WITH picks AS (
+  SELECT c.run_id, wa.session_id, wa.started_at,
+         c.harness || '/' || c.provider || '/' || c.model || '/' || c.effort AS adjusted_winner,
+         (SELECT r.harness || '/' || r.provider || '/' || r.model || '/' || r.effort
+            FROM pick_candidates r
+           WHERE r.run_id = c.run_id AND r.is_qualified = 1
+           ORDER BY r.expected_cost, r.pos LIMIT 1) AS raw_winner
+    FROM pick_candidates c
+    JOIN worker_assessments wa ON wa.run_id = c.run_id
+   WHERE c.is_winner = 1
+), outcomes AS (
+  SELECT p.*, (SELECT r.outcome FROM worker_runs r
+                WHERE r.session_id = p.session_id
+                  AND r.started_at * 1000000000 >= p.started_at - 5000000000
+                ORDER BY r.started_at, r.id LIMIT 1) AS outcome
+    FROM picks p
+)
+SELECT adjusted_winner <> raw_winner AS pace_changed_winner,
+       COUNT(*) AS picks,
+       SUM(outcome = 'complete') AS complete
+  FROM outcomes
+ GROUP BY pace_changed_winner;
+```
+
 ## The TUI screen
 
 Tab 3, Quotas, has three sub-tabs. Press `Tab` to switch between Quotas,

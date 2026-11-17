@@ -13,6 +13,9 @@ import (
 // The cell rule orders by the expected cost of one accepted result, with the
 // level rule as its fallback. Pace is part of the weight; protected providers
 // last and rotation are modifiers the caller applies to this list.
+//
+// The first choice of a pick carries the pick's rows (PickRows) and its note,
+// written from the rows.
 func WorkerPickOrder(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput) ([]WorkerModelChoice, []WorkerLeftOut, error) {
 	if in != nil && in.usable() {
 		if level == "" {
@@ -21,17 +24,23 @@ func WorkerPickOrder(candidates []WorkerModelCandidate, level string, scores []M
 		if _, err := DifficultyFit(0, level, minimums); err != nil {
 			return nil, nil, err
 		}
-		order, _, fallback := pickOrderByCells(candidates, level, scores, minimums, quotas, running, rotation, in)
+		order, fallback := pickOrderByCells(candidates, level, scores, minimums, quotas, running, rotation, in)
 		if fallback == "" {
 			return order, leftOutAfter(candidates, order, level, scores, minimums), nil
 		}
-		order, leftOut, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation)
+		order, leftOut, rows, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation)
 		if err == nil && len(order) > 0 {
-			order[0].PickNote, order[0].Fallback = fallback, true
+			lo, hi := in.Table.BucketRange(in.Table.Bucket(in.D))
+			for i := range rows {
+				rows[i].BucketLo, rows[i].BucketHi, rows[i].Fallback = lo, hi, fallback
+			}
+			order[0].PickRows = rows
+			order[0].PickNote = PickNote(rows, in.Table.Settings().ExploreShare)
+			order[0].Fallback = true
 		}
 		return order, leftOut, err
 	}
-	order, leftOut, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation)
+	order, leftOut, _, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation)
 	return order, leftOut, err
 }
 

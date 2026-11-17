@@ -28,7 +28,11 @@ type WorkerAssessment struct {
 	// with the start so the owner's worker view can show why it was chosen.
 	// Empty for runs recorded before this field existed.
 	PickerNote string `json:"picker_note,omitempty"`
-	Error      string `json:"error,omitempty"`
+	// PickRows is the automatic pick's row for each candidate, with the note
+	// above written from them. It travels with the start like the note, so a
+	// queued start keeps it until it runs. Empty when the start was not picked.
+	PickRows []PickCandidate `json:"pick_rows,omitempty"`
+	Error    string          `json:"error,omitempty"`
 }
 
 // DifficultyLine is the one-line score profile: the six scores, D and label.

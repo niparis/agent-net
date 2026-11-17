@@ -59,6 +59,9 @@ type ChooseResult struct {
 	Granted model.Granted
 	// LeftOut names each candidate the ranker left out, with its reason.
 	LeftOut []protocol.WorkerLeftOut
+	// Pick is the pick's row for each candidate, with the gate's reason on each
+	// candidate the gate skipped. Nil for a ranker that makes no pick.
+	Pick []protocol.PickCandidate
 	// list and facts stay with the answer, so a launch that fails can ask the
 	// gate for the next candidate in the same list.
 	list   []protocol.WorkerModelChoice
@@ -194,6 +197,7 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	// cost terms. Keep it when the gate moves to another candidate, or the
 	// start reads like the old level rule.
 	rankerNote := order[0].PickNote
+	rankerRows := order[0].PickRows
 	if policy.ProtectedLast {
 		order = protectedLastOrder(order, req.Protected)
 	}
@@ -201,7 +205,7 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 		order = preferFirst(order, req.Prefer)
 	}
 	granted, skips, gateErr := gateWithCoolingLast(order, policy.Checks, facts)
-	result := ChooseResult{Skips: skips, LeftOut: resultLeftOut, facts: facts, checks: policy.Checks, list: order, level: level}
+	result := ChooseResult{Skips: skips, LeftOut: resultLeftOut, Pick: markPickSkips(rankerRows, skips), facts: facts, checks: policy.Checks, list: order, level: level}
 	if gateErr != nil {
 		result.Note = joinModelNote(skipNotes(skips))
 		return result, gateErr
@@ -238,6 +242,30 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	notes = append(notes, skipNotes(skips)...)
 	result.Note = joinModelNote(notes)
 	return result, nil
+}
+
+// markPickSkips copies the rows of a pick and writes the gate's reason on each
+// candidate the gate skipped. The rows describe the pick; the skips describe the
+// gate that ran after it. The first reason for a candidate is kept.
+func markPickSkips(rows []protocol.PickCandidate, skips []model.Skip) []protocol.PickCandidate {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := append([]protocol.PickCandidate(nil), rows...)
+	for _, s := range skips {
+		for i := range out {
+			if out[i].SkippedReason == "" && sameRowCandidate(out[i], s.Candidate) {
+				out[i].SkippedReason = s.Reason
+			}
+		}
+	}
+	return out
+}
+
+// sameRowCandidate tells whether a row is the candidate: its harness, provider,
+// model and effort.
+func sameRowCandidate(r protocol.PickCandidate, c protocol.Candidate) bool {
+	return r.Harness == c.Harness && r.Provider == c.Provider && r.Model == c.Model && r.Effort == c.Effort
 }
 
 // preferFirst moves one candidate to the front of the order and keeps the
