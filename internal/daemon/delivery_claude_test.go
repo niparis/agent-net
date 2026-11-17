@@ -36,8 +36,8 @@ func startConfirmingCTO(t *testing.T) *confirmingCTO {
 		c.ClaudeSessionsDir = sessions
 		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
 		c.HarnessPaths = map[string]string{"claude": os.Args[0]}
-		c.testNoCTOConfirm = false
-		c.ctoConfirmWait = scaled(500 * time.Millisecond)
+		c.testNoDeliveryConfirm = false
+		c.deliveryConfirmWait = scaled(500 * time.Millisecond)
 	}})
 	cli := cliClient(t, n)
 	peer, peerID := helloPi(t, n, "cto-confirm-peer", "/w/peer", true)
@@ -134,5 +134,17 @@ func TestClaudeCTODeliveryTakenUpOnce(t *testing.T) {
 	}
 	if lines := c.logs.lines("cto.restart_for_delivery"); len(lines) != 0 {
 		t.Fatalf("restarted for a message the CTO took up: %v", lines)
+	}
+}
+
+// The cost of the check on a taken message: one read of the transcript, and
+// nothing else. The check never polls.
+func TestClaudeCTODeliveryReadsOncePerTakenMessage(t *testing.T) {
+	c := startConfirmingCTO(t)
+	before := c.n.d.deliveryReads.Load()
+	id := c.reply(t, "one read please")
+	eventually(t, "the delivery confirmed", func() bool { return len(c.logs.lines("cto.delivery_confirmed msg="+id)) == 1 })
+	if got := c.n.d.deliveryReads.Load() - before; got != 1 {
+		t.Fatalf("reads for one taken delivery: %d, want 1", got)
 	}
 }

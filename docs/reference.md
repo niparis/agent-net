@@ -397,6 +397,21 @@ seconds, its answer follows, marked as model output. A switch to a harness whose
 conversation was last used more than 24 hours ago starts a new conversation
 (decision 0171).
 
+Every delivered message to a session is checked for a turn (decision 0171). If
+the session is idle and no turn started within 20 seconds, the daemon sends the
+message once more, then restarts the session with the message as its first
+prompt. The check reads what the harness reports, once per check: the Claude
+transcript, the OpenCode conversation, or the queued-message notice Codex
+sends. A busy session is checked again 20 seconds later and is not sent to
+again. Plugin and Pi sessions have a synchronous acknowledgement and get no
+check.
+
+A Codex thread gets its project's charter and the note titles as developer
+instructions when it starts. After a compaction, the next turn of a session
+carries its start block again (standing orders, note titles and charter). Claude Code gets it from its
+PostCompact hook. OpenCode and Codex get it on their next turn after the
+daemon's compaction event.
+
 The CTO starts through the same start path as every other session (decision
 0156). Its role (name `agent-net-cto`, the system prompt, the private MCP config,
 `--strict-mcp-config` and the `cto_op` hook in its launch settings) is

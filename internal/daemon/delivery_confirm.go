@@ -12,21 +12,20 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// A message written to the Claude CTO's inbox is only accepted by the socket:
-// on 2026-11-16 the running CTO accepted the owner's message and never started
-// a turn for it. After each delivery agent-net watches the CTO's transcript
-// for the message ID. If the CTO sits idle without taking the message up, it
-// delivers once more, and then restarts the conversation with the message as
-// its first prompt.
+// The delivery confirm (decision 0171, part b). A message the daemon delivered
+// to a session should start a turn. When none starts within the wait, the daemon
+// delivers once more, then restarts the session with the message as its first
+// prompt. On 2026-11-16 the running CTO's inbox accepted a message and Claude
+// never started a turn for it, which is why the check exists.
+//
+// Each check reads what the harness reports, once: the Claude transcript, the
+// OpenCode conversation, or the queued-message notice that Codex sends. A session
+// that is busy at a check is not redelivered to, because its harness takes the
+// message when the turn ends. The check waits again on the same cadence, so
+// nothing spins.
 
-// ctoConfirmWaitDefault is how long an idle CTO may leave a message untaken.
-// Claude Code starts a turn for an inbox line within a second or two; time
-// while the CTO is busy with a turn does not count, since Claude holds the
-// message until that turn ends.
-const ctoConfirmWaitDefault = 20 * time.Second
-
-// ctoMessageIDKey carries the network message ID of a delivery to the CTO,
-// so the frame and the log lines name the message the owner sees.
+// ctoMessageIDKey carries the network message ID of a delivery to the CTO, so
+// the frame and the log lines name the message the owner sees.
 type ctoMessageIDKey struct{}
 
 func withCTOMessageID(ctx context.Context, id string) context.Context {
@@ -34,6 +33,108 @@ func withCTOMessageID(ctx context.Context, id string) context.Context {
 		return ctx
 	}
 	return context.WithValue(ctx, ctoMessageIDKey{}, id)
+}
+
+// deliveryConfirmWaitDefault is how long a session may leave a delivered
+// message without starting a turn before the daemon acts.
+const deliveryConfirmWaitDefault = 20 * time.Second
+
+// deliveryWatch is the check of one delivered message. The closures do the work
+// of one harness; the loop in runDeliveryWatch decides what to do with the answers.
+type deliveryWatch struct {
+	// label prefixes the log lines: "cto" for the CTO, "session" for the rest.
+	label string
+	msgID string
+	// gone reports that the session no longer runs the conversation that took
+	// the delivery.
+	gone func() bool
+	// busy reports that the session runs a turn now.
+	busy func(ctx context.Context) bool
+	// taken reports that a turn started for the message since the delivery.
+	taken func(ctx context.Context) bool
+	// redeliver sends the message once more. It reports whether the check goes on.
+	redeliver func(ctx context.Context) bool
+	// restart starts the session with the message as its first prompt. Nil when
+	// the harness has no restart.
+	restart func(ctx context.Context)
+	// done runs when the check ends, however it ends. Nil when nothing is kept.
+	done func()
+}
+
+// confirmDelivery starts the check of one delivery in the background. It does
+// nothing in a test that turns the check off, or before the daemon's context exists.
+func (d *Daemon) confirmDelivery(w deliveryWatch) {
+	if d.cfg.testNoDeliveryConfirm || d.ctoCtx == nil || !d.goBackground(func() { d.runDeliveryWatch(d.ctoCtx, w) }) {
+		if w.done != nil {
+			w.done()
+		}
+	}
+}
+
+// runDeliveryWatch is the one sequence of checks for every harness. Only a
+// check that finds the session idle and the message untaken goes on to the next
+// step: one redelivery, then a restart.
+func (d *Daemon) runDeliveryWatch(ctx context.Context, w deliveryWatch) {
+	if w.done != nil {
+		defer w.done()
+	}
+	// attempt counts redeliveries only. A busy check waits again without counting.
+	attempt := 1
+	for {
+		if !d.waitDeliveryCheck(ctx) {
+			return
+		}
+		if w.gone() {
+			d.Logf("%s.delivery_unconfirmed msg=%s reason=cto_changed", w.label, w.msgID)
+			return
+		}
+		if w.taken(ctx) {
+			d.Logf("%s.delivery_confirmed msg=%s attempt=%d", w.label, w.msgID, attempt)
+			return
+		}
+		if w.busy(ctx) {
+			continue
+		}
+		if attempt == 1 {
+			d.Logf("%s.delivery_retry msg=%s", w.label, w.msgID)
+			if !w.redeliver(ctx) {
+				return
+			}
+			attempt = 2
+			continue
+		}
+		if w.restart == nil {
+			d.Logf("%s.delivery_unconfirmed msg=%s reason=no_restart", w.label, w.msgID)
+			return
+		}
+		d.Logf("%s.restart_for_delivery msg=%s", w.label, w.msgID)
+		w.restart(ctx)
+		return
+	}
+}
+
+// waitDeliveryCheck sleeps for one check interval. It reports false when the
+// daemon stops first.
+func (d *Daemon) waitDeliveryCheck(ctx context.Context) bool {
+	wait := d.cfg.deliveryConfirmWait
+	if wait <= 0 {
+		wait = deliveryConfirmWaitDefault
+	}
+	t := time.NewTimer(wait)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// countDeliveryRead counts one read of a harness made for a delivery check. A
+// closure that reads the harness calls it; a check that reads nothing does not.
+// The count is what the cost of the confirm is measured by.
+func (d *Daemon) countDeliveryRead() {
+	d.deliveryReads.Add(1)
 }
 
 // ctoTranscriptWatch finds a message ID in the bytes appended to the CTO's
@@ -96,77 +197,25 @@ func (w *ctoTranscriptWatch) seen() bool {
 	return false
 }
 
-type ctoTurn int
-
-const (
-	ctoTurnTaken    ctoTurn = iota
-	ctoTurnNotTaken         // idle for the whole wait without the message
-	ctoTurnGone             // the CTO stopped or runs another conversation
-	ctoTurnStopped          // the daemon is stopping
-)
-
-// confirmClaudeCTODelivery starts the check of one delivery. The caller has
-// just written msgID to the inbox of w.session.
+// confirmClaudeCTODelivery starts the check of one delivery to the Claude CTO.
+// The caller has just written msgID to the inbox of w.session.
 func (d *Daemon) confirmClaudeCTODelivery(w *ctoTranscriptWatch, msgID, text string) {
-	if d.cfg.testNoCTOConfirm || d.ctoCtx == nil {
-		return
-	}
-	ctx := d.ctoCtx
-	d.goBackground(func() {
-		for attempt := 1; ; attempt++ {
-			switch d.waitClaudeCTOTurn(ctx, w) {
-			case ctoTurnTaken:
-				d.Logf("cto.delivery_confirmed msg=%s attempt=%d", msgID, attempt)
-				return
-			case ctoTurnGone:
-				d.Logf("cto.delivery_unconfirmed msg=%s reason=cto_changed", msgID)
-				return
-			case ctoTurnStopped:
-				return
-			}
-			if attempt == 1 {
-				if !d.redeliverClaudeCTO(ctx, w, msgID, text) {
-					return
-				}
-				continue
-			}
-			d.restartClaudeCTOForDelivery(ctx, w, msgID, text)
-			return
-		}
+	d.confirmDelivery(deliveryWatch{
+		label: "cto",
+		msgID: msgID,
+		gone:  func() bool { _, ok := d.claudeCTOPID(w.session); return !ok },
+		busy: func(ctx context.Context) bool {
+			d.countDeliveryRead()
+			pid, ok := d.claudeCTOPID(w.session)
+			return ok && claudeSessionStatus(d.cfg.ClaudeSessionsDir, pid) == "busy"
+		},
+		taken: func(ctx context.Context) bool {
+			d.countDeliveryRead()
+			return w.seen()
+		},
+		redeliver: func(ctx context.Context) bool { return d.redeliverClaudeCTO(ctx, w, msgID, text) },
+		restart:   func(ctx context.Context) { d.restartClaudeCTOForDelivery(ctx, w, msgID, text) },
 	})
-}
-
-func (d *Daemon) waitClaudeCTOTurn(ctx context.Context, w *ctoTranscriptWatch) ctoTurn {
-	wait := d.cfg.ctoConfirmWait
-	if wait <= 0 {
-		wait = ctoConfirmWaitDefault
-	}
-	tick := time.NewTicker(min(250*time.Millisecond, wait/4))
-	defer tick.Stop()
-	var idle time.Duration
-	last := time.Now()
-	for {
-		if w.seen() {
-			return ctoTurnTaken
-		}
-		pid, ok := d.claudeCTOPID(w.session)
-		if !ok {
-			return ctoTurnGone
-		}
-		now := time.Now()
-		if claudeSessionStatus(d.cfg.ClaudeSessionsDir, pid) != "busy" {
-			idle += now.Sub(last)
-		}
-		last = now
-		if idle >= wait {
-			return ctoTurnNotTaken
-		}
-		select {
-		case <-ctx.Done():
-			return ctoTurnStopped
-		case <-tick.C:
-		}
-	}
 }
 
 // claudeCTOPID is the process of the CTO's Claude while it runs session.
@@ -215,10 +264,9 @@ func (d *Daemon) redeliverClaudeCTO(ctx context.Context, w *ctoTranscriptWatch, 
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=%q", msgID, err.Error())
 		return false
 	}
-	d.Logf("cto.delivery_retry msg=%s", msgID)
 	deliver, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	// A failed write needs no own step: the next wait sees no turn, and the
+	// A failed write needs no own step: the next check sees no turn, and the
 	// restart delivers it.
 	if res := a.DeliverCTO(deliver, protocol.SessionInfo{Harness: "claude", NativeID: w.session}, msgID, text); !res.Delivered {
 		d.Logf("cto.delivery_retry_failed msg=%s detail=%q", msgID, res.Detail)
@@ -249,7 +297,6 @@ func (d *Daemon) restartClaudeCTOForDelivery(ctx context.Context, w *ctoTranscri
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=cto_changed", msgID)
 		return
 	}
-	d.Logf("cto.restart_for_delivery msg=%s", msgID)
 	d.stopClaudeCTOLocked("delivery_unconfirmed")
 	d.cto.mu.Unlock()
 	if err := d.startClaudeRoleWith(ctx, roleCTO, w.session, settings.ClaudeModel, text); err != nil {

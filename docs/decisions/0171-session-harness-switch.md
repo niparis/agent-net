@@ -82,6 +82,26 @@ the node's skill folder (decision 0169, task 4): `--plugin-dir` for Claude and
 the skills root in `OPENCODE_CONFIG_CONTENT` for OpenCode. The "once" rule
 means an owner who removes the skill from the list keeps it removed.
 
+## Part b: the delivery confirm and the start block
+
+One check per delivered message replaces the Claude-only confirm. The check
+waits 20 seconds, then reads what the harness reports. A taken message costs one
+read, the read that finds the turn. A busy session is checked again 20 seconds
+later, and each busy check costs two reads (the busy state and the turn). An
+idle, untaken message is sent once more, then the session restarts with the
+message as its first prompt.
+
+The sources are the Claude transcript (the message ID in the bytes added since
+the send), the OpenCode conversation (a message the owner did not write, created
+at or after the prompt, which includes a turn that fails), and Codex's notice
+that its user message item carries the message ID (checked against a real app
+server in codex_real_test.go). Pi and plugin sessions answer synchronously, so
+they get no check.
+
+After a compaction, the next turn carries the start block again. Claude keeps
+its PostCompact hook. OpenCode and Codex take the daemon's compaction event
+(noteCompacted, and the CTO's compaction).
+
 ## What this does not cover
 
 - The generic delivery confirm and the compaction re-send (phase 1, part b).

@@ -377,7 +377,8 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	if id == "" {
+	fresh := id == ""
+	if fresh {
 		id, err = d.createCTOLocked(ctx)
 		if err != nil {
 			return nil, err
@@ -385,13 +386,36 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 		// The first turn of a conversation carries the standing orders.
 		text = d.ctoFirstTurn(ctx, text)
 	}
+	// After a compaction the next turn carries the start block again (start_context.go).
+	if d.takeStartContextDue(d.ctoSessionID()) && !fresh {
+		text = prependStartBlock(d.ctoStartBlock(ctx), text)
+	}
 	if _, err = d.syncOpenCodeCTOSelection(ctx, id); err != nil {
 		return nil, err
 	}
 	before := d.openCodeSessionContext(ctx, c.base, c.password, c.version, c.identity, id)
-	_, err = d.ctoOp(ctx, opencodeapi.Prompt, id, "", map[string]string{"text": text, "delivery": "queue"})
+	var sent []byte
+	sent, err = d.ctoOp(ctx, opencodeapi.Prompt, id, "", map[string]string{"text": text, "delivery": "queue"})
 	if err == nil {
 		err = d.touchCTOConversation("opencode")
+	}
+	if err == nil {
+		msgID, _ := ctx.Value(ctoMessageIDKey{}).(string)
+		if msgID == "" {
+			msgID = protocol.NewToken()
+		}
+		// The prompt's own message names when it was sent. A turn that starts,
+		// or ends with an error, has a message created after that.
+		var prompt struct {
+			Data struct {
+				Time struct {
+					Created int64 `json:"created"`
+				} `json:"time"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(sent, &prompt) == nil && prompt.Data.Time.Created > 0 {
+			d.watchOpenCodeCTODelivery(id, c.base, c.password, c.version, c.identity, prompt.Data.Time.Created, text, msgID)
+		}
 	}
 	if err == nil {
 		cs := &c.compact
@@ -742,7 +766,7 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("compact: %w", err)
 	}
-	d.noteCompacted("opencode", session, d.ctoNowTime().Unix(), reason)
+	d.noteCTOCompacted(session, reason)
 	return nil
 }
 

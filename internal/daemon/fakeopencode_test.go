@@ -498,14 +498,14 @@ func runFakeOpenCode() {
 		}
 		item := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "user", "text": prompt.Text, "time": map[string]any{"created": time.Now().UnixMilli()}}
 		items = append([]map[string]any{item}, items...)
-		if prompt.Text == ctoHandoverPrompt {
+		if prompt.Text == ctoHandoverPrompt || strings.HasPrefix(prompt.Text, "FAKE:answer") {
 			// The model layer of a handover (decision 0171) asks for words; the
 			// fake answers as a model would, in the OpenCode message form.
 			answer := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "assistant", "content": []map[string]any{{"type": "text", "text": fakeOCHandoverAnswer}}, "time": map[string]any{"created": time.Now().UnixMilli()}}
 			items = append([]map[string]any{answer}, items...)
 		}
 		if prompt.Text == "FAKE:ctofail" {
-			items = append([]map[string]any{{"type": "idle", "outcome": "failed", "error": map[string]any{"message": "unknown model"}}}, items...)
+			items = append([]map[string]any{{"id": "msg_" + protocol.NewToken(), "type": "idle", "outcome": "failed", "time": map[string]any{"created": time.Now().UnixMilli()}, "error": map[string]any{"message": "unknown model"}}}, items...)
 		}
 		raw, _ = json.Marshal(items)
 		if err := os.WriteFile(path, raw, 0o600); err != nil {

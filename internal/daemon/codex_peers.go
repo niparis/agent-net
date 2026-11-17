@@ -38,6 +38,10 @@ type codexAdapter struct {
 	threads map[string]codexThread
 	started bool
 	kick    chan struct{}
+	// queued holds the messages whose delivery check is open, by message ID.
+	// The value is true once Codex reports the message taken into a turn
+	// (codex_delivery.go).
+	queued map[string]bool
 }
 
 // codexThread is what the adapter keeps of one open thread.
@@ -141,6 +145,7 @@ func (a *codexAdapter) onNote(method string, raw json.RawMessage) {
 	}
 	if method == "item/started" {
 		a.onUserMessage(raw)
+		a.noteQueuedTaken(raw)
 	}
 	if method == "turn/started" {
 		var p struct {
@@ -433,7 +438,9 @@ func (a *codexAdapter) compact(ctx context.Context, id string) error {
 	return err
 }
 
-// Deliver puts the message in the thread's queue.
+// Deliver puts the message in the thread's queue, then watches for the turn
+// it should start (codex_delivery.go). A session compacted since its last turn
+// gets the start block again in front of this message.
 func (a *codexAdapter) Deliver(ctx context.Context, target protocol.SessionInfo, m protocol.Message) Result {
 	if w := a.d.workerByNative("codex", target.NativeID); w != nil {
 		return a.deliverWorker(w, m)
@@ -450,14 +457,14 @@ func (a *codexAdapter) Deliver(ctx context.Context, target protocol.SessionInfo,
 	if !ok {
 		return Result{Detail: "this Codex thread is not open any more"}
 	}
-	_, err := rpc.call(ctx, "thread/queue/add", map[string]any{
-		"threadId":            target.NativeID,
-		"clientUserMessageId": m.ID,
-		"input":               []map[string]any{{"type": "text", "text": codexFrame(m), "text_elements": []any{}}},
-	})
-	if err != nil {
+	text := codexFrame(m)
+	if a.d.takeStartContextDue(target.SessionID) {
+		text = prependStartBlock(a.d.codexStartBlock(ctx, target.SessionID, target.Repo.Project), text)
+	}
+	if err := a.queueAdd(ctx, rpc, target.NativeID, m.ID, text); err != nil {
 		return Result{Detail: "codex refused the message: " + err.Error()}
 	}
+	a.watchQueuedDelivery(target, m, text)
 	return Result{Delivered: true}
 }
 

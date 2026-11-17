@@ -100,13 +100,13 @@ type Config struct {
 	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
 	// leave fake processes behind. A real daemon leaves it running.
 	testStopCTOOnExit bool
-	// testNoCTOConfirm turns off the check that a message delivered to the
+	// testNoDeliveryConfirm turns off the check that a message delivered to the
 	// Claude CTO became a turn. Most tests use a fake Claude that never writes
 	// a transcript, so the check would deliver their messages again.
-	testNoCTOConfirm bool
-	// ctoConfirmWait is how long the Claude CTO may sit idle after a delivery
-	// before agent-net delivers again. Zero means ctoConfirmWaitDefault.
-	ctoConfirmWait time.Duration
+	testNoDeliveryConfirm bool
+	// deliveryConfirmWait is how long a session may leave a delivered message
+	// untaken before agent-net acts. Zero means deliveryConfirmWaitDefault.
+	deliveryConfirmWait time.Duration
 	// testProcessSignal replaces the kill call of a process stop, so a test
 	// can send a signal only to the throwaway children it started.
 	testProcessSignal func(pid int, sig syscall.Signal) error
@@ -431,7 +431,14 @@ type Daemon struct {
 	ctoNow func() time.Time
 	// ctoSkillDone is set once this daemon has ensured the CTO's skill in the
 	// archive (decision 0171).
-	ctoSkillDone    atomic.Bool
+	ctoSkillDone atomic.Bool
+	// deliveryReads counts the reads of harness events made by delivery checks
+	// (decision 0171, part b). The tests measure the cost with it.
+	deliveryReads atomic.Int64
+	// startDue holds the sessions whose next turn must carry the start block
+	// again, because their harness compacted (start_context.go).
+	startDueMu      sync.Mutex
+	startDue        map[string]bool
 	ctoCompactEvery time.Duration
 	ctoCtx          context.Context
 	testCleanupNow  func() time.Time
@@ -1171,6 +1178,12 @@ func (d *Daemon) noteCompacted(harness, nativeID string, at int64, reason string
 	}
 	d.mu.Unlock()
 	if ls != nil {
+		// Only the Claude Code hook re-sends the charter after a compaction
+		// (charter_send.go). The other harnesses get the start block again on
+		// their next turn (start_context.go).
+		if harness != "claude" {
+			d.markStartContextDue(d.currentSessionID(ls))
+		}
 		d.goBackground(func() { d.pushSession(ls) })
 	}
 }
