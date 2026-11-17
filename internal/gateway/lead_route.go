@@ -217,10 +217,10 @@ func (s *Store) resolveSessionName(name string) (string, error) {
 	return id, err
 }
 
-// ResolveLeadAddress resolves a Repo or Team name or ID, or an exact session
-// name, to the session that gets the message. A live session comes first. When
-// the lead or agent has no live session, the newest one is returned so the
-// caller stores and queues the message exactly as for a session-ID send.
+// ResolveLeadAddress resolves a Repo or Team name or ID, a role address, or an
+// exact session name, to the session that gets the message. A live session comes
+// first. When the lead or agent has no live session, the newest one is returned
+// so the caller stores and queues the message exactly as for a session-ID send.
 func (s *Store) ResolveLeadAddress(address string) (string, error) {
 	kind, name, ok := strings.Cut(strings.TrimSpace(address), ":")
 	name = strings.TrimSpace(name)
@@ -228,6 +228,14 @@ func (s *Store) ResolveLeadAddress(address string) (string, error) {
 		address = strings.TrimSpace(address)
 		if address == "" {
 			return "", reject("use a session ID, an exact name, repo:<name> or team:<name>")
+		}
+		// A role address is decided before any session or agent name, so a
+		// session called "chief" cannot shadow the pinned chief (decision
+		// 0171, phase 2).
+		if id, isRole, err := resolveRoleAddress(s.db, address); err != nil {
+			return "", err
+		} else if isRole {
+			return id, nil
 		}
 		return s.resolveSessionName(address)
 	}
