@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon/ctoskill"
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -620,6 +621,9 @@ func (g *Gateway) skillArchiveAdd(ctx context.Context, p protocol.SkillArchiveAd
 func (g *Gateway) skillArchiveBundled(p protocol.SkillArchiveBundled, by string) (protocol.SkillArchiveAddResult, error) {
 	if !validSkillName(p.Name) || len(p.Bundle) == 0 {
 		return protocol.SkillArchiveAddResult{}, reject("bundled skill needs a name and a bundle")
+	}
+	if !ctoskill.Bundled(p.Name) {
+		return protocol.SkillArchiveAddResult{}, reject("agent-net bundles only %s; it refuses %q", ctoskill.Name, p.Name)
 	}
 	dir, err := os.MkdirTemp("", "agent-net-archive-bundled-")
 	if err != nil {

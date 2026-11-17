@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -252,5 +253,36 @@ func TestHandoverExchangeIsHiddenFromTheOwnerTimeline(t *testing.T) {
 		if !strings.Contains(string(out[i]), want) {
 			t.Fatalf("message %d is %s, want one with %q", i, out[i], want)
 		}
+	}
+}
+
+// Only the newest ten owner messages are ever read, so the record keeps no more
+// than that. The handover reads the newest ten, oldest first.
+func TestCTOOwnerMessagesKeepTheNewestTen(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	d := &Daemon{st: st}
+	for i := 1; i <= 12; i++ {
+		if err := d.recordCTOOwnerMessage(fmt.Sprintf("message %d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var rows int
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM cto_owner_messages`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != ctoHandoverOwnerMessages {
+		t.Fatalf("the record holds %d messages, want %d", rows, ctoHandoverOwnerMessages)
+	}
+	got, err := d.ctoOwnerMessages(ctoHandoverOwnerMessages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 10 || got[0].text != "message 3" || got[9].text != "message 12" {
+		t.Fatalf("newest ten, oldest first: %+v", got)
 	}
 }

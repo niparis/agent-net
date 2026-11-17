@@ -222,7 +222,12 @@ func (d *Daemon) ctoOwnerMessages(n int) ([]ctoOwnerMsg, error) {
 // recordCTOOwnerMessage keeps what the owner typed to the CTO, for the next
 // handover.
 func (d *Daemon) recordCTOOwnerMessage(text string) error {
-	_, err := d.st.db.Exec(`INSERT INTO cto_owner_messages(at,text) VALUES(?,?)`, d.ctoNowTime().UnixNano(), text)
+	if _, err := d.st.db.Exec(`INSERT INTO cto_owner_messages(at,text) VALUES(?,?)`, d.ctoNowTime().UnixNano(), text); err != nil {
+		return err
+	}
+	// Only the newest ctoHandoverOwnerMessages are ever read, so older rows go.
+	// This is housekeeping, not a limit on what the owner may send.
+	_, err := d.st.db.Exec(`DELETE FROM cto_owner_messages WHERE id <= (SELECT MAX(id) FROM cto_owner_messages) - ?`, ctoHandoverOwnerMessages)
 	return err
 }
 
