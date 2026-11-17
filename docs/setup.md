@@ -61,7 +61,7 @@ Steps that do not apply say `skipped (reason)`. Setup:
 
 When setup finds no harness on this machine, it says to install one and sign in.
 
-After the daemon connects, setup sets the model lists of the CTO, the chief of staff and the merger when they are not set. It tries Codex, OpenCode and Claude Code in that order with one short hello each, and keeps the ones that answer. It never changes a list you already set. Setup prints one line per role, and a line with the reason when a harness did not answer. On the first machine it then starts the CTO and the chief on the first harness that answered. Setup needs no Claude Code for this. See decision 0171.
+After the daemon connects, an interactive setup on a new network sets the model lists of the CTO, the chief of staff and the merger when they are not set. A network is new while it has no CTO, no chief and no merger. On a network that already has one, setup changes no list and starts nothing: it prints what each unset role uses. An upgrade and a setup with no terminal skip this step. It tries Codex, OpenCode and Claude Code in that order with one short hello each, and keeps the ones that answer. It never changes a list you already set. Setup prints one line per role, and a line with the reason when a harness did not answer. On the first machine it then starts the CTO and the chief on the first harness that answered. Setup needs no Claude Code for this. See decision 0171.
 
 ### CTO title
 

@@ -49,3 +49,18 @@ func (s *Store) RegisterCTOSession(node string) (string, error) {
 	}
 	return id, tx.Commit()
 }
+
+// RoleNetwork reads which role sessions exist, for setup to tell a new
+// network from one that already has a CTO, a chief or a merger.
+func (s *Store) RoleNetwork() (protocol.RoleNetwork, error) {
+	var out protocol.RoleNetwork
+	var err error
+	if out.CTOSession, err = s.CTOSessionID(); err != nil {
+		return out, err
+	}
+	if out.ChiefSession, err = chiefSession(s.db); err != nil {
+		return out, err
+	}
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM project_mergers`).Scan(&out.Mergers)
+	return out, err
+}

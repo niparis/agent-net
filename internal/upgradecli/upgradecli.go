@@ -108,6 +108,10 @@ func (r *run) devGuard() error {
 // refreshes the integrations.
 func (r *run) runSetup(ctx context.Context, args ...string) error {
 	cmd := exec.CommandContext(ctx, r.Exe, append([]string{"setup"}, args...)...)
+	// An upgrade never chooses role models or starts a CTO (decision 0171). An
+	// environment variable, not a flag, because a rolled-back binary runs this
+	// setup and does not know new flags.
+	cmd.Env = append(os.Environ(), setup.NoRolesEnv+"=1")
 	cmd.Stdout, cmd.Stderr = r.Out, r.Out
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s setup failed: %w", r.Exe, err)

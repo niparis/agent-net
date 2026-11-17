@@ -99,11 +99,36 @@ type RoleSetupRequest struct {
 	Start bool `json:"start,omitempty"`
 }
 
+// RoleSetupResult says what setup did for the three role lists. On an
+// existing network setup writes and starts nothing: Existing is true, Unset
+// names the roles with no list, Defaults gives the first entry each uses now,
+// and Missing names the roles with no session on the network.
 type RoleSetupResult struct {
-	Models   []RoleModel `json:"models"`
-	Kept     []string    `json:"kept"`
-	Added    []string    `json:"added"`
-	Failures []string    `json:"failures"`
+	Models   []RoleModel       `json:"models"`
+	Kept     []string          `json:"kept"`
+	Added    []string          `json:"added"`
+	Failures []string          `json:"failures"`
+	Existing bool              `json:"existing,omitempty"`
+	Unset    []string          `json:"unset,omitempty"`
+	Defaults map[string]string `json:"defaults,omitempty"`
+	Missing  []string          `json:"missing,omitempty"`
+}
+
+// OpRoleNetwork is the gateway read that says which role sessions exist.
+const OpRoleNetwork = "role.network"
+
+// RoleNetwork is what the gateway holds for the roles: the registered CTO
+// session, the pinned chief, and how many project mergers exist. A network
+// with none of the three is new (decision 0171, phase 4a).
+type RoleNetwork struct {
+	CTOSession   string `json:"cto_session,omitempty"`
+	ChiefSession string `json:"chief_session,omitempty"`
+	Mergers      int    `json:"mergers"`
+}
+
+// New reports a network no role has run on yet.
+func (n RoleNetwork) New() bool {
+	return n.CTOSession == "" && n.ChiefSession == "" && n.Mergers == 0
 }
 
 // RolePickRequest asks which model a role session may start on. The CTO sends

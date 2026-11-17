@@ -33,6 +33,9 @@ type setupDaemonFixture struct {
 	roleModels   []protocol.RoleModel
 	roleKept     []string
 	roleFailures []string
+	// roleExisting replaces the three fields above with an existing network's answer.
+	roleExisting *protocol.RoleSetupResult
+	roleCalls    *int
 }
 
 func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
@@ -92,7 +95,13 @@ func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
 					case protocol.OpToolsDifferences:
 						result = map[string]any{"differences": []any{}, "to_look_at": 0}
 					case "role_setup":
+						if fixture.roleCalls != nil {
+							*fixture.roleCalls++
+						}
 						result = map[string]any{"models": fixture.roleModels, "kept": fixture.roleKept, "failures": fixture.roleFailures}
+						if fixture.roleExisting != nil {
+							result = fixture.roleExisting
+						}
 					default:
 						fmt.Fprintf(conn, "{\"id\":%q,\"error\":%q}\n", request.ID, "unknown method")
 						continue
@@ -113,7 +122,7 @@ func TestSetupPrintsRoleChoicesAndFailures(t *testing.T) {
 	fixture.roleFailures = []string{"opencode: quota exhausted"}
 	fakeSetupDaemon(t, fixture)
 	var out strings.Builder
-	r := &runner{Options: Options{Out: &out}}
+	r := &runner{Options: Options{Out: &out}, interactive: true}
 	r.daemonStatus(context.Background())
 	defer r.statusClient.Close()
 	r.setupRoles(context.Background())
@@ -121,6 +130,59 @@ func TestSetupPrintsRoleChoicesAndFailures(t *testing.T) {
 		if !strings.Contains(strings.ToLower(out.String()), want) {
 			t.Fatalf("setup output lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+func roleSetupOutput(t *testing.T, fixture setupDaemonFixture, r *runner) (string, *strings.Builder) {
+	t.Helper()
+	tempSetupDirs(t)
+	fakeSetupDaemon(t, fixture)
+	var out strings.Builder
+	r.Out = &out
+	r.daemonStatus(context.Background())
+	defer r.statusClient.Close()
+	out.Reset()
+	r.setupRoles(context.Background())
+	return out.String(), &out
+}
+
+// On a network that already has a CTO, setup shows what each role uses now
+// and writes nothing.
+func TestSetupPrintsRolesOfAnExistingNetwork(t *testing.T) {
+	fixture, _, _, _ := onboardingFixture("empty-first-machine")
+	fixture.roleExisting = &protocol.RoleSetupResult{Existing: true, Kept: []string{"chief"}, Unset: []string{"cto", "merger"},
+		Defaults: map[string]string{"merger": "claude · anthropic · claude-opus-5-5"}, Missing: []string{"merger"}}
+	got, _ := roleSetupOutput(t, fixture, &runner{interactive: true})
+	for _, want := range []string{
+		"cto model             not set on this network, uses its default",
+		"chief model           kept existing model list",
+		"merger model          not set on this network, uses claude · anthropic · claude-opus-5-5",
+		"no merger is running on this network",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("setup output lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "using ") || strings.Contains(got, "install or sign in") {
+		t.Fatalf("setup acted on an existing network:\n%s", got)
+	}
+}
+
+// Upgrade runs setup with no person to answer. It must not choose role models.
+func TestSetupDoesNotTouchRolesUnlessInteractive(t *testing.T) {
+	for name, r := range map[string]*runner{
+		"no terminal": {interactive: false},
+		"--no-roles":  {interactive: true, Options: Options{NoRoles: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := 0
+			fixture, _, _, _ := onboardingFixture("empty-first-machine")
+			fixture.roleCalls = &calls
+			got, _ := roleSetupOutput(t, fixture, r)
+			if calls != 0 || !strings.Contains(got, "skipped") {
+				t.Fatalf("role_setup calls = %d, output:\n%s", calls, got)
+			}
+		})
 	}
 }
 
@@ -510,5 +572,13 @@ func TestMapPointWithoutTheGraphGivesNoFolderCount(t *testing.T) {
 	point := (&runner{}).mapPoint(summary)
 	if strings.ContainsAny(point.first, "0123456789") {
 		t.Fatalf("Map line %q counts folders without the graph", point.first)
+	}
+}
+
+func TestSetupReadsTheNoRolesEnvironment(t *testing.T) {
+	t.Setenv(NoRolesEnv, "1")
+	r, err := newRunner(Options{Out: io.Discard})
+	if err != nil || !r.NoRoles {
+		t.Fatalf("runner NoRoles = %v, %v", r != nil && r.NoRoles, err)
 	}
 }

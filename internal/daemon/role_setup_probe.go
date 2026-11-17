@@ -26,6 +26,20 @@ func (d *Daemon) setupRoleModels(ctx context.Context) (protocol.RoleSetupResult,
 	if err != nil {
 		return result, err
 	}
+	// Only a network with no CTO, no chief and no merger is new. The gateway
+	// decides it, not this machine's own state: another machine may already
+	// run the owner's CTO.
+	rawNetwork, err := d.call(ctx, protocol.OpRoleNetwork, nil)
+	if err != nil {
+		return result, err
+	}
+	var network protocol.RoleNetwork
+	if err := json.Unmarshal(rawNetwork, &network); err != nil {
+		return result, err
+	}
+	if !network.New() {
+		return existingNetworkRoles(snapshot, network), nil
+	}
 	missing := setupRoleChanges(snapshot, []protocol.RoleModel{{Harness: "codex"}})
 	missingKeys := map[string]bool{}
 	for _, change := range missing {
@@ -87,6 +101,42 @@ func (d *Daemon) setupRoleModels(ctx context.Context) (protocol.RoleSetupResult,
 	return result, nil
 }
 
+// existingNetworkRoles reports the role lists of a network that already has
+// role sessions. It changes nothing: an unset list keeps its default, which a
+// setup run on a new machine must not replace.
+func existingNetworkRoles(snapshot settings.Snapshot, network protocol.RoleNetwork) protocol.RoleSetupResult {
+	result := protocol.RoleSetupResult{Existing: true, Defaults: map[string]string{}}
+	set := networkSetKeys(snapshot)
+	sessions := map[string]bool{
+		protocol.RoleCTO: network.CTOSession != "", protocol.RoleChief: network.ChiefSession != "", protocol.RoleMerger: network.Mergers > 0,
+	}
+	for _, role := range []string{protocol.RoleCTO, protocol.RoleChief, protocol.RoleMerger} {
+		key := protocol.RoleModelsKey(role)
+		if set[key] {
+			result.Kept = append(result.Kept, role)
+		} else {
+			result.Unset = append(result.Unset, role)
+			if list, err := protocol.ParseRoleModels(snapshot.String(key, settings.Where{})); err == nil && len(list) > 0 {
+				result.Defaults[role] = list[0].Display()
+			}
+		}
+		if !sessions[role] {
+			result.Missing = append(result.Missing, role)
+		}
+	}
+	return result
+}
+
+func networkSetKeys(snapshot settings.Snapshot) map[string]bool {
+	set := map[string]bool{}
+	for _, v := range snapshot.Values {
+		if v.Level == "network" && v.Scope == "network" && v.Item == "" {
+			set[v.Key] = true
+		}
+	}
+	return set
+}
+
 func (d *Daemon) startSetupRoles(ctx context.Context, added []string) error {
 	startCTO, startChief := false, false
 	for _, role := range added {
@@ -134,12 +184,7 @@ func setupRoleChanges(snapshot settings.Snapshot, models []protocol.RoleModel) [
 	if len(models) == 0 {
 		return nil
 	}
-	set := map[string]bool{}
-	for _, v := range snapshot.Values {
-		if v.Level == "network" && v.Scope == "network" && v.Item == "" {
-			set[v.Key] = true
-		}
-	}
+	set := networkSetKeys(snapshot)
 	value, _ := json.Marshal(protocol.FormatRoleModels(models))
 	var changes []protocol.SettingsChange
 	for _, role := range []string{protocol.RoleCTO, protocol.RoleChief, protocol.RoleMerger} {

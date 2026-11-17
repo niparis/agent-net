@@ -160,3 +160,21 @@ func TestUpgradeNodesPassesForce(t *testing.T) {
 		})
 	}
 }
+
+// The setup an upgrade runs must not choose role models or start a CTO, even
+// when the person runs the upgrade in a terminal.
+func TestUpgradeRunsSetupWithRoleStepOff(t *testing.T) {
+	isolate(t)
+	exe := filepath.Join(t.TempDir(), "agent-net")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho \"$1 no-roles=$AGENT_NET_SETUP_NO_ROLES\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	r := &run{Options: Options{Exe: exe, Out: &out}}
+	if err := r.runSetup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "setup no-roles=1") {
+		t.Fatalf("setup output = %q", out.String())
+	}
+}

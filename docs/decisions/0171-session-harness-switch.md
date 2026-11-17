@@ -222,6 +222,18 @@ network list is unset. Setup prints one line per role: `using <model>`, `kept
 existing model list`, or what to install or sign in to. A failed probe adds a
 line with its reason, so the owner sees why a harness was skipped.
 
+**A new network only.** Setup writes lists and starts roles only on a new
+network: the gateway has no registered CTO session, no pinned chief and no
+project merger (`role.network`). The gateway decides it, not this machine's
+local CTO state, because another machine may already run the CTO. On an
+existing network setup writes nothing and starts nothing. It prints, for each
+unset list, that it is not set and what it uses now, and a hint when a role has
+no session. It never registers a second CTO. The role step runs only in an
+interactive setup. An upgrade runs setup too, and sets
+`AGENT_NET_SETUP_NO_ROLES=1` for it, an environment variable and not a flag
+because a rolled-back binary runs that setup. A setup with no terminal skips the
+step as well.
+
 **The first start.** When setup added the CTO list, the daemon registers the CTO
 and sends it a first message. When it added the chief list, the daemon starts
 the chief through the ordinary start (`ensureChief`) and waits for it to

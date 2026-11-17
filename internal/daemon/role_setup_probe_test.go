@@ -41,8 +41,8 @@ func TestRoleSetupWritesOnlyUnsetLists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Models) != 1 || result.Models[0].Harness != "codex" {
-		t.Fatalf("setup result = %+v", result)
+	if len(result.Models) != 1 || result.Models[0].Harness != "codex" || result.Existing {
+		t.Fatalf("setup result on a new network = %+v", result)
 	}
 	snap, err := g.gw.Store().SettingsSnapshot()
 	if err != nil {
@@ -216,5 +216,59 @@ func TestRoleSetupProbeFallsThroughInOrder(t *testing.T) {
 	}
 	if len(failures) != 1 || !strings.Contains(failures[0], "429 quota exhausted") {
 		t.Fatalf("failure reasons = %v", failures)
+	}
+}
+
+func roleSettingValues(t *testing.T, g *testGateway) map[string]string {
+	t.Helper()
+	snap, err := g.gw.Store().SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{}
+	for _, value := range snap.Values {
+		if value.Level == "network" && value.Scope == "network" && (value.Key == "cto.models" || value.Key == "merger.models" || value.Key == "chief.model") {
+			var text string
+			if json.Unmarshal(value.Value, &text) == nil {
+				values[value.Key] = text
+			}
+		}
+	}
+	return values
+}
+
+// A network that already has a CTO on another machine keeps its role lists
+// unset and its CTO where it is: setup here writes nothing and starts nothing.
+func TestRoleSetupOnAnExistingNetworkWritesAndStartsNothing(t *testing.T) {
+	n, g := setupRoleProbeFixture(t)
+	other := startWorkerNode(t, g, shortSet, nil)
+	if _, err := g.gw.Store().RegisterCTOSession(other.d.cfg.NodeID); err != nil {
+		t.Fatal(err)
+	}
+	setChiefModels(t, g, "claude · anthropic · owner-model")
+	before := roleSettingValues(t, g)
+	var result protocol.RoleSetupResult
+	raw, err := n.cli.callWithin(scaled(60*time.Second), protocol.OpRoleSetup, protocol.RoleSetupRequest{Start: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustJSON(t, raw, &result)
+	if !result.Existing || len(result.Added) != 0 || len(result.Models) != 0 {
+		t.Fatalf("role setup on an existing network = %s", raw)
+	}
+	if strings.Join(result.Unset, ",") != "cto,merger" || strings.Join(result.Kept, ",") != "chief" {
+		t.Fatalf("unset = %v, kept = %v", result.Unset, result.Kept)
+	}
+	if after := roleSettingValues(t, g); len(after) != len(before) || after["chief.model"] != before["chief.model"] {
+		t.Fatalf("role lists changed: before %v, after %v", before, after)
+	}
+	if n.d.ctoRunning() || n.d.ctoSessionID() != "" {
+		t.Fatal("setup registered or started a second CTO")
+	}
+	if chief, err := g.gw.Store().ChiefStatus(); err != nil || chief.SessionID != "" {
+		t.Fatalf("setup started a chief: %+v, %v", chief, err)
+	}
+	if id, _ := g.gw.Store().CTOSessionID(); id == "" {
+		t.Fatal("the registered CTO was lost")
 	}
 }
