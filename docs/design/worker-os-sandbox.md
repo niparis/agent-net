@@ -1,10 +1,10 @@
 # OS sandbox for workers (W7)
 
-Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)), and on by default on Linux and macOS since 2026-11-17 ([decision 0171](../decisions/0171-session-harness-switch.md), phase 4b). A project turns it off with `workers.os_sandbox_off` in node.json. Claude workers are refused only for a project listed in `workers.os_sandbox` (see below). The macOS profile is built from the same policy (`internal/daemon/ossandbox_seatbelt.go`); it has been unit tested and not yet run on a Mac. Plan: [hardening-plan.md](hardening-plan.md) W7. Earlier research: [worker-sandbox.md](worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
+Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)), and on by default on Linux since 2026-11-17 ([decision 0171](../decisions/0171-session-harness-switch.md), phase 4b). A project turns it off with `workers.os_sandbox_off` in node.json. On macOS it stays opt-in (`workers.os_sandbox`) until the profile has run on a Mac. Claude workers are refused only for a project listed in `workers.os_sandbox` (see below). The macOS profile is built from the same policy (`internal/daemon/ossandbox_seatbelt.go`); it has been unit tested and not yet run on a Mac. Plan: [hardening-plan.md](hardening-plan.md) W7. Earlier research: [worker-sandbox.md](worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
 
 ## What it is
 
-A wrapper around the whole harness process of a Pi or OpenCode worker. Every child of the harness (shell commands, language servers, MCP servers) inherits it. It is on by default. The owner turns it off per project, on the machine that runs the workers (`workers.os_sandbox_off`).
+A wrapper around the whole harness process of a Pi or OpenCode worker. Every child of the harness (shell commands, language servers, MCP servers) inherits it. It is on by default on Linux and opt-in on macOS. The owner turns it off per project, on the machine that runs the workers (`workers.os_sandbox_off`).
 
 It does not change how the level (`sandboxed`, `no-network`, `read-only`) is chosen or stored. The level still comes from the project policy and the settings layer. The switch only says whether the OS wrapper is used.
 

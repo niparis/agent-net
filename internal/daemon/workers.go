@@ -937,11 +937,11 @@ func (d *Daemon) spawnWorkerIO(w *worker, bin string, args []string, env []strin
 	d.wmu.Lock()
 	sandbox := w.osSandbox
 	d.wmu.Unlock()
-	if sandbox == "" && (w.harness == "pi" || w.harness == "opencode") && d.cfg.Workers.osSandboxMode(w.project) != osSandboxOff {
+	if sandbox == "" && (w.harness == "pi" || w.harness == "opencode") && osSandboxRequired(OSSandboxDefaultOn, d.cfg.Workers.osSandboxMode(w.project)) {
 		logf.Close()
 		return errors.New("the OS sandbox is on for this project, but this start did not apply it")
 	}
-	if sandbox != "" {
+	if protocol.OSSandboxWrapper(sandbox) != "" {
 		var werr error
 		if bin, args, env, werr = d.osSandboxWrap(w, bin, args, env); werr != nil {
 			logf.Close()
@@ -1944,6 +1944,9 @@ func (d *Daemon) adoptWorkers() {
 			difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed, touches: r.Touches, changeID: r.ChangeID, fixes: r.Fixes}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		w.osSandbox = readOSSandboxMarker(w.dir)
+		if w.osSandbox == "" && (w.harness == "pi" || w.harness == "opencode") && d.cfg.Workers.osSandboxMode(w.project) == osSandboxDefault && !OSSandboxDefaultOn {
+			w.osSandbox = protocol.OSSandboxNoneMacOS
+		}
 		if since, key, report, sent, err := d.st.loadWorkerIdleNotice(w.id); err == nil {
 			w.idleNoticeSince, w.idleNoticeKey, w.idleNoticeReport, w.idleNoticeSent = since, key, report, sent
 		} else {

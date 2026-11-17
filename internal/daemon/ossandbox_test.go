@@ -388,3 +388,39 @@ func TestSeatbeltProfile(t *testing.T) {
 		t.Errorf("sandbox-exec args %q", args)
 	}
 }
+
+// Where the default is off (macOS), a Pi or OpenCode worker of a project that
+// is not listed runs without the wrapper and the notice says why; a listed
+// project still gets the wrapper, and a project that is turned off says
+// nothing about macOS.
+func TestOSSandboxDefaultOffWhereTheOSHasNoDefault(t *testing.T) {
+	never := func() error { t.Error("the tool was probed where the default is off"); return nil }
+	ok := func() error { return nil }
+	for _, tc := range []struct {
+		name    string
+		mode    osSandboxMode
+		harness string
+		level   string
+		ready   func() error
+		want    string
+		refuse  bool
+	}{
+		{"default pi", osSandboxDefault, "pi", "", never, protocol.OSSandboxNoneMacOS, false},
+		{"default opencode no-network", osSandboxDefault, "opencode", protocol.WorkersNoNetwork, never, protocol.OSSandboxNoneMacOS, false},
+		{"default claude", osSandboxDefault, "claude", "", never, "", false},
+		{"default codex", osSandboxDefault, "codex", "", never, "", false},
+		{"listed pi wraps", osSandboxExplicit, "pi", "", ok, osSandboxName, false},
+		{"listed claude refused", osSandboxExplicit, "claude", "", ok, "", true},
+		{"turned off", osSandboxOff, "pi", "", never, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := osSandboxDecideOn(false, tc.mode, tc.harness, tc.level, tc.ready)
+			if (err != nil) != tc.refuse || got != tc.want {
+				t.Fatalf("got %q, %v; want %q (refuse %v)", got, err, tc.want, tc.refuse)
+			}
+		})
+	}
+	if osSandboxRequired(false, osSandboxDefault) || !osSandboxRequired(false, osSandboxExplicit) || !osSandboxRequired(true, osSandboxDefault) || osSandboxRequired(true, osSandboxOff) {
+		t.Error("osSandboxRequired does not follow the default of the OS")
+	}
+}

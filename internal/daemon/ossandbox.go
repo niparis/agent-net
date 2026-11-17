@@ -88,11 +88,32 @@ func (s WorkerSettings) osSandboxMode(project string) osSandboxMode {
 }
 
 // osSandboxDecide is the rule for one start: the wrapper's name, "" when the
-// worker runs without it, or the refusal. A worker that was started in the
+// worker runs without it, protocol.OSSandboxNoneMacOS when a Mac runs it
+// without by default, or the refusal. A worker that was started in the
 // wrapper before comes here as osSandboxExplicit; ready checks the tool on
 // this machine.
 func osSandboxDecide(mode osSandboxMode, harness, level string, ready func() error) (string, error) {
+	return osSandboxDecideOn(OSSandboxDefaultOn, mode, harness, level, ready)
+}
+
+// osSandboxRequired tells whether a Pi or OpenCode worker of a project must
+// run in the wrapper: the project is listed, or nothing was set and this OS
+// has the sandbox on by default.
+func osSandboxRequired(defaultOn bool, mode osSandboxMode) bool {
+	return mode == osSandboxExplicit || (mode == osSandboxDefault && defaultOn)
+}
+
+// osSandboxDecideOn is osSandboxDecide for an OS whose default is defaultOn.
+// Where the default is off (macOS), a Pi or OpenCode worker of a project that
+// is not listed runs without the wrapper, and says so.
+func osSandboxDecideOn(defaultOn bool, mode osSandboxMode, harness, level string, ready func() error) (string, error) {
 	if mode == osSandboxOff {
+		return "", nil
+	}
+	if mode == osSandboxDefault && !defaultOn {
+		if harness == "pi" || harness == "opencode" {
+			return protocol.OSSandboxNoneMacOS, nil
+		}
 		return "", nil
 	}
 	where := "the OS sandbox is on by default for Pi and OpenCode workers"

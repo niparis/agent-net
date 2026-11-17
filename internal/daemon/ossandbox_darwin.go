@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+// OSSandboxDefaultOn tells whether Pi and OpenCode workers run in the OS
+// sandbox without being asked. On macOS it is off until the profile has been
+// run on a Mac (decision 0171, phase 4b): a project opts in with
+// workers.os_sandbox in node.json.
+const OSSandboxDefaultOn = false
+
 // osSandboxName is the wrapper on this OS, as the permissions line names it.
 const osSandboxName = "sandbox-exec"
 

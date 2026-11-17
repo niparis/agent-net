@@ -53,3 +53,19 @@ func TestSetupSaysWhatTheWorkerSandboxDoes(t *testing.T) {
 		t.Errorf("turned off:\n%s", out)
 	}
 }
+
+// On macOS the sandbox is opt-in for now, and setup says so instead of
+// checking for a tool the default does not use.
+func TestSetupSaysTheMacSandboxIsOptIn(t *testing.T) {
+	f := newFixture(t)
+	fakeClaude(t, f.home)
+	old := osSandboxDefaultOn
+	osSandboxDefaultOn = false
+	t.Cleanup(func() { osSandboxDefaultOn = old })
+	osSandboxCheck = func() (string, error) { t.Error("the check ran where the default is off"); return "", nil }
+
+	out := run(t, Options{Join: f.newJoin(t)})
+	if !strings.Contains(out, "worker sandbox no OS sandbox on macOS yet: opt in with workers.os_sandbox in node.json") {
+		t.Errorf("macOS line:\n%s", out)
+	}
+}

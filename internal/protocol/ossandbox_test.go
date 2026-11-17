@@ -16,6 +16,7 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 		{WorkersReadOnly, "opencode", "bubblewrap", "permissions: read-only (no writes) (sandboxed by bubblewrap)"},
 		{WorkersSandboxed, "pi", "", "permissions: sandboxed (writes only in its worktree, network on) (no OS sandbox: turned off for this project in node.json)"},
 		{WorkersSandboxed, "opencode", "sandbox-exec", "permissions: sandboxed (writes only in its worktree, network on) (sandboxed by sandbox-exec)"},
+		{WorkersSandboxed, "pi", OSSandboxNoneMacOS, "permissions: sandboxed (writes only in its worktree, network on) (no OS sandbox on macOS yet: opt in with workers.os_sandbox in node.json)"},
 		{WorkersSandboxed, "claude", "", "permissions: sandboxed (writes only in its worktree, network on)"},
 		{WorkersReadOnly, "codex", "", "permissions: read-only (no writes)"},
 		{WorkersSandboxed, "agy", "", "permissions: sandboxed (writes only in its worktree, network on)"},
@@ -30,6 +31,9 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 	}
 	if got := WorkerEnforcer(WorkersSandboxed, "opencode", ""); got != "" {
 		t.Errorf("enforcer of an unwrapped OpenCode worker: %q", got)
+	}
+	if got := WorkerEnforcer(WorkersSandboxed, "opencode", OSSandboxNoneMacOS); got != "" {
+		t.Errorf("enforcer of a Mac worker without the wrapper: %q", got)
 	}
 	if got := WorkerEnforcer(WorkersSandboxed, "opencode", "bubblewrap"); got != "bubblewrap" {
 		t.Errorf("enforcer of a wrapped OpenCode worker: %q", got)
