@@ -234,6 +234,19 @@ func TestCTOSwitchToCodexWithoutModelUsesTheCodexDefault(t *testing.T) {
 	}
 }
 
+// A harness switch writes the entry the CTO runs to the cto.models setting, so
+// the owner's Settings names the CTO that runs now (decision 0162). The check
+// reads the setting back from the daemon, the way Settings does.
+func TestCTOSwitchWritesTheRunningEntryToTheSetting(t *testing.T) {
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "opencode", "fake/m1")
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	if got := n.d.SettingsSnapshot().String("cto.models", settings.Where{}); !strings.Contains(got, "codex · openai · gpt-fake") {
+		t.Fatalf("cto.models after the switch: %q", got)
+	}
+}
+
 // Clearing the model of the harness the CTO already runs leaves it empty. Only
 // a harness switch takes the harness's default.
 func TestCTOClearingTheModelKeepsItEmptyOnTheSameHarness(t *testing.T) {
@@ -348,7 +361,7 @@ func codexCTOWithOneMessage(t *testing.T, n *node, cli *localClient) {
 	// The fake writes the answer when its turn ends. The server stops only after
 	// that, so the thread has a turn on disk when it is read again.
 	eventually(t, "codex turn recorded", func() bool {
-		raw, err := os.ReadFile(filepath.Join(codexCTODir(n), "fake-codex-threads.json"))
+		raw, err := os.ReadFile(fakeCodexThreadsFile(codexCTODir(n)))
 		return err == nil && strings.Contains(string(raw), "codex one")
 	})
 	n.d.cto.mu.Lock()

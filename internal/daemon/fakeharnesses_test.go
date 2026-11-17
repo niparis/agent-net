@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1130,6 +1131,20 @@ func waitUntilKilled() {
 	runtime.KeepAlive(w)
 }
 
+// fakeCodexThreadsFile is where a fake app server keeps the turns of its threads.
+// It is never in the fake's folder: for a worker that folder is its worktree,
+// and a file there is listed in the worker's diff. The run's fake folder holds
+// it instead, under a name made from the fake's folder, so two fakes never
+// share a file. The reaper skips names that are not pids.
+func fakeCodexThreadsFile(folder string) string {
+	root := os.Getenv(envFakePids)
+	if root == "" {
+		root = os.TempDir()
+	}
+	sum := sha256.Sum256([]byte(folder))
+	return filepath.Join(root, "fake-codex-threads-"+hex.EncodeToString(sum[:8])+".json")
+}
+
 // fakeCodex is `codex app-server --listen ws://...`: a WebSocket server with
 // the JSON-RPC of the real one, for the parts a worker uses. A turn is
 // answered by what the text says: FAKE:approve asks for an approval first (and
@@ -1158,7 +1173,7 @@ func fakeCodex() {
 	// Codex keeps a thread on disk, so the turns are read back from the file a
 	// restarted server finds, not only from this process's memory.
 	threadTurns := map[string][][2]string{}
-	threadsFile := filepath.Join(dir, "fake-codex-threads.json")
+	threadsFile := fakeCodexThreadsFile(cwd)
 	if raw, err := os.ReadFile(threadsFile); err == nil {
 		_ = json.Unmarshal(raw, &threadTurns)
 	}
