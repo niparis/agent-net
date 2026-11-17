@@ -3935,8 +3935,12 @@ the owner's command is trusted at once.
 For OpenCode, the daemon reads the owner's running service address and password
 from `$XDG_STATE_HOME/opencode/service.json` (default:
 `~/.local/state/opencode/service.json`). It creates the session on that service
-with the project folder in `x-opencode-directory`. A model uses
-`provider/model[:level]`. A first message is queued as an owner prompt through
+with the project folder in the body as `location.directory`, and also in
+`x-opencode-directory`. OpenCode 2.2 and 2.3 ignore that header on session
+create and would put the session in the service's own folder (the home folder),
+so the daemon reads the folder the service reports and refuses the start when
+it is not the requested one. A model uses `provider/model[:level]`. A first
+message is queued as an owner prompt through
 OpenCode 2.2's `/api/session/{id}/prompt` API. The session stays in the service and Enter opens it with `opencode --server <service url> --session <id>`. The service keeps the
 conversation, including offline and dormant rows; Enter keeps its existing
 plan for those rows. The daemon never starts the owner's service. If its record

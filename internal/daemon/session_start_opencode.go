@@ -102,7 +102,11 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 	if err != nil {
 		return protocol.StartedSession{}, down
 	}
-	request := map[string]any{"title": r.Project}
+	// The location must be in the body. OpenCode 2.2 and 2.3 ignore the
+	// x-opencode-directory header on create session and use the service's own
+	// folder, which is the home folder for the owner's shared service. The
+	// header stays for versions that read it.
+	request := map[string]any{"title": r.Project, "location": map[string]string{"directory": r.Path}}
 	if r.Model != "" {
 		provider, model, ok := strings.Cut(r.Model, "/")
 		if !ok || provider == "" || model == "" {
@@ -148,11 +152,21 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 	}
 	var created struct {
 		Data struct {
-			ID string `json:"id"`
+			ID       string `json:"id"`
+			Location struct {
+				Directory string `json:"directory"`
+			} `json:"location"`
 		} `json:"data"`
 	}
 	if json.Unmarshal(body, &created) != nil || created.Data.ID == "" {
 		return protocol.StartedSession{}, errors.New("OpenCode answered without a session ID")
+	}
+	// An older service may omit the location; the header and the start path
+	// still decide it. When the service reports one, it must be the folder
+	// the caller asked for, or the session would be filed under another
+	// project.
+	if dir := created.Data.Location.Directory; !resume && dir != "" && !sameDir(dir, r.Path) {
+		return protocol.StartedSession{}, fmt.Errorf("OpenCode created the session in %s instead of %s", dir, r.Path)
 	}
 	r.NativeID = created.Data.ID
 	if err := d.bindRepoStart(ctx, r); err != nil {
