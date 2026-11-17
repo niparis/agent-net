@@ -343,6 +343,7 @@ func TestDetailShowsWorkerOSSandbox(t *testing.T) {
 	}
 	for _, tc := range []struct{ harness, os, want, not string }{
 		{"pi", "bubblewrap", "sandboxed (sandboxed by bubblewrap)", "not enforced"},
+		{"pi", "sandbox-exec", "sandboxed (sandboxed by sandbox-exec)", "OS sandbox off"},
 		{"pi", "", "sandboxed (OS sandbox off)", "bubblewrap"},
 		{"pi", protocol.OSSandboxNoneMacOS, "sandboxed (OS sandbox off)", "sandboxed by"},
 		{"agy", "", "sandboxed", "not enforced"},

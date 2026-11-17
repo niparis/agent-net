@@ -892,10 +892,10 @@ func WorkerPermissionsText(level, harness string) string {
 }
 
 // OSSandboxNoneMacOS is the value of a worker's os_sandbox field for a Pi or
-// OpenCode worker that is not wrapped because its machine is a Mac, where the
-// OS sandbox is opt-in until the profile has been checked on a Mac (decision
-// 0171, phase 4b). It travels in the field so a notice formatted on another
-// machine still says why.
+// OpenCode worker that a Mac daemon left unwrapped before macOS default-on
+// (decision 0171, phase 4b). No daemon writes it since 2026-11-17; it stays so
+// a notice formatted on another machine still says why for the workers of an
+// older Mac daemon.
 const OSSandboxNoneMacOS = "none:macos"
 
 // OSSandboxWrapper is the wrapper a worker really runs in ("bubblewrap"), or
@@ -960,8 +960,8 @@ func WorkerEnforcedBy(level string) string {
 
 // WorkerEnforcedLine is the line of the policy screen that says what enforces
 // a workers level. Pi and OpenCode workers run in the OS sandbox by default
-// on Linux, and opt in on macOS (decision 0171, phase 4b); no-network is
-// refused for them, so it is not listed.
+// on Linux and macOS (decision 0171, phase 4b); no-network is refused for
+// them, so it is not listed.
 func WorkerEnforcedLine(level string) string {
 	text := "Enforced for " + WorkerEnforcedBy(level) + " only for now."
 	if WorkerPermissionsOrDefault(level) == WorkersNoNetwork {

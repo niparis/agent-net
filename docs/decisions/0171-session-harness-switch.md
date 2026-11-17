@@ -21,7 +21,7 @@ folder.
    notes the gateway holds, not a harness memory.
 4. **Pi is refused for every role** until it can be woken and resumed.
 5. **OpenCode and Pi workers are sandboxed by default.** Settled in phase 4b
-   (owner, 2026-11-17): the default on Linux, opt-in on macOS until a real check. See "Phase 4b: the OS sandbox is the default" below.
+   (owner, 2026-11-17): the default on Linux, and on macOS once its real check passed. See "Phase 4b: the OS sandbox is the default" below.
 
 ## Conversation per session
 
@@ -270,7 +270,7 @@ fakes cannot run a shell command. The real checks are opt-in tests:
 and `AGENT_NET_TEST_REAL_OPENCODE=1` for `TestRoleSetupProbeRealOpenCode` and
 `TestOpenCodeRolePermissionsRealServer`.
 
-## Phase 4b: the OS sandbox is the default on Linux
+## Phase 4b: the OS sandbox is the default on Linux and macOS
 
 Pi and OpenCode workers on Linux run in the OS sandbox unless the project is
 turned off in `node.json` (`workers.os_sandbox_off`). The policy is the one
@@ -279,26 +279,31 @@ commit and the harness's own state, network on. The wrapper is bubblewrap. A
 Claude worker is not wrapped (it keeps Claude Code's own sandbox settings), and
 Codex and Antigravity keep theirs.
 
-**macOS stays opt-in for now.** A `sandbox-exec` profile is built from the same
-policy (`internal/daemon/ossandbox_seatbelt.go`) and is unit tested, but it has
-never run on a Mac, and no Mac session with this repo can run the check. So on
-a Mac the default does not wrap: a Pi or OpenCode worker runs without an OS
-sandbox, and the start notice says `(no OS sandbox on macOS yet: opt in with
-workers.os_sandbox in node.json)`. A project listed in `workers.os_sandbox`
-does get the profile. Setup prints the same sentence on macOS. macOS default-on
-follows after `AGENT_NET_TEST_REAL_SANDBOX=1 go test ./internal/daemon -run
-TestRealSandboxWriteBoundary` has passed on a Mac. The one constant to change
-then is `OSSandboxDefaultOn` in `internal/daemon/ossandbox_darwin.go`, with its
-test.
+**macOS is default-on too.** A `sandbox-exec` profile is built from the same
+policy (`internal/daemon/ossandbox_seatbelt.go`). The owner ran the opt-in real
+check on his Mac on 2026-11-17: `AGENT_NET_TEST_REAL_SANDBOX=1 go test
+./internal/daemon -run '^TestRealSandboxWriteBoundary$' -count=1 -v` passed in
+0.90s on macOS 26.5.1 arm64 (go 1.27.3, main ef22b55ff1), and the test was not
+skipped. So `OSSandboxDefaultOn` is true in
+`internal/daemon/ossandbox_darwin.go`, the start notice says `(sandboxed by
+sandbox-exec)`, and setup checks `/usr/bin/sandbox-exec` the way Linux checks
+`bwrap`. The marker `none:macos` is no longer produced; it stays in the
+protocol so a notice for a worker of an older Mac daemon still says why.
 
-On Linux the start is refused, with the reason and the fix, when the wrapper
-cannot run (bubblewrap missing, user namespaces off), and for a `no-network` Pi
-or OpenCode worker. It never starts without the sandbox silently. For a listed
-project on macOS the same refusal applies when `sandbox-exec` is missing. Setup
-checks for the wrapper on Linux and says so once. A project that turns the
-sandbox off gets `(no OS sandbox: turned off for this project in node.json)` in
-the start notice, and the setting of an earlier worker is kept for its
-follow-ups.
+The real check did not prove that DNS and network work inside the profile: the
+mDNSResponder allowance was a guess. `TestRealSandboxNetwork` now checks,
+inside the wrapper on Linux and macOS, that a DNS lookup of `github.com`
+through the system resolver, and an HTTPS connection to `github.com:443`,
+work. Run both on a Mac before a release: `AGENT_NET_TEST_REAL_SANDBOX=1 go
+test ./internal/daemon -run '^TestRealSandbox' -count=1 -v`.
+
+On Linux and macOS the start is refused, with the reason and the fix, when the
+wrapper cannot run (bubblewrap missing or user namespaces off; `sandbox-exec`
+missing on macOS), and for a `no-network` Pi or OpenCode worker. It never
+starts without the sandbox silently. Setup checks for the wrapper and says so
+once. A project that turns the sandbox off gets `(no OS sandbox: turned off for
+this project in node.json)` in the start notice, and the setting of an earlier
+worker is kept for its follow-ups.
 
 ## What this does not cover
 

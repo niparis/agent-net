@@ -1,10 +1,10 @@
 # OS sandbox for workers (W7)
 
-Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)), and on by default on Linux since 2026-11-17 ([decision 0171](../decisions/0171-session-harness-switch.md), phase 4b). A project turns it off with `workers.os_sandbox_off` in node.json. On macOS it stays opt-in (`workers.os_sandbox`) until the profile has run on a Mac. Claude workers are refused only for a project listed in `workers.os_sandbox` (see below). The macOS profile is built from the same policy (`internal/daemon/ossandbox_seatbelt.go`); it has been unit tested and not yet run on a Mac. Plan: [hardening-plan.md](hardening-plan.md) W7. Earlier research: [worker-sandbox.md](worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
+Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)), and on by default on Linux and macOS since 2026-11-17 ([decision 0171](../decisions/0171-session-harness-switch.md), phase 4b). A project turns it off with `workers.os_sandbox_off` in node.json. Claude workers are refused only for a project listed in `workers.os_sandbox` (see below). The macOS profile is built from the same policy (`internal/daemon/ossandbox_seatbelt.go`); it is unit tested and passed its real check on a Mac (macOS 26.5.1, 2026-11-17). Plan: [hardening-plan.md](hardening-plan.md) W7. Earlier research: [worker-sandbox.md](worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
 
 ## What it is
 
-A wrapper around the whole harness process of a Pi or OpenCode worker. Every child of the harness (shell commands, language servers, MCP servers) inherits it. It is on by default on Linux and opt-in on macOS. The owner turns it off per project, on the machine that runs the workers (`workers.os_sandbox_off`).
+A wrapper around the whole harness process of a Pi or OpenCode worker. Every child of the harness (shell commands, language servers, MCP servers) inherits it. It is on by default on Linux and macOS. The owner turns it off per project, on the machine that runs the workers (`workers.os_sandbox_off`).
 
 It does not change how the level (`sandboxed`, `no-network`, `read-only`) is chosen or stored. The level still comes from the project policy and the settings layer. The switch only says whether the OS wrapper is used.
 
@@ -117,6 +117,7 @@ The daemon runs `/usr/bin/sandbox-exec -p <profile> <harness> <args>`. `seatbelt
 (allow file-write* (subpath "<worker folder>") (subpath "<git folders>") (subpath "<private state>")
                    (subpath "<private tmp>") (literal "/dev/null") (regex #"^/dev/tty"))
 (deny network-outbound (remote unix-socket))
+(allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
 (allow network-outbound (remote unix-socket (path-literal "<agent-net socket>")))
 ```
 
@@ -126,7 +127,7 @@ Known gaps on macOS, which the Linux wrapper does not have:
 
 - `(allow default)` allows Mach service lookups, so a worker could ask `launchd` or another app (Terminal through Apple Events) to run a process outside the sandbox. A deny list of Mach services needs testing on each supported macOS version, and is not built.
 - There is no private `/tmp` mount. `TMPDIR` points at the worker's private folder, but a program that writes `/tmp` directly is refused, and one that reads the host's `/tmp` can read it.
-- Seatbelt syntax is not a stable public API. The profile has been unit tested here and has not been run on a Mac: run `AGENT_NET_TEST_REAL_SANDBOX=1 go test ./internal/daemon -run TestRealSandboxWriteBoundary` on one before release.
+- Seatbelt syntax is not a stable public API. The profile passed its real check on a Mac on 2026-11-17 (macOS 26.5.1): a write outside the worktree failed, and a DNS lookup and an HTTPS connection worked inside it. Run `AGENT_NET_TEST_REAL_SANDBOX=1 go test ./internal/daemon -run '^TestRealSandbox' -count=1 -v` on a Mac before a release.
 
 ## The threat it covers
 

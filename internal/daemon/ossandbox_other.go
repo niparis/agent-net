@@ -5,9 +5,8 @@ package daemon
 import "errors"
 
 // OSSandboxDefaultOn tells whether Pi and OpenCode workers run in the OS
-// sandbox without being asked. On macOS it is off until the profile has been
-// run on a Mac (decision 0171, phase 4b): a project opts in with
-// workers.os_sandbox in node.json.
+// sandbox without being asked. There is no wrapper on this OS, so it is off;
+// Linux and macOS have it on (decision 0171, phase 4b).
 const OSSandboxDefaultOn = false
 
 // osSandboxName is the wrapper on this OS. There is none here.
